@@ -6,9 +6,9 @@ description: "How a node boots, decides whether a boot is healthy, and falls bac
 # Boot, health and rollback
 
 A node boots a chain of signed and hashed parts, from the firmware to
-[chalkd](../../reference/glossary.md#chalkd), and each part checks the next. After an
-[upgrade](../../reference/glossary.md#upgrade), the boot loader gives the new
-[image](../../reference/glossary.md#image) a fixed number of tries, chalkd decides whether each try
+chalkd, and each part checks the next. After an
+upgrade, the boot loader gives the new
+image a fixed number of tries, chalkd decides whether each try
 is healthy and a new image that never becomes healthy is replaced by the one the node ran
 before. So a bad image leaves a node running its previous image after a few reboots, instead of
 a node that does not come back.
@@ -16,7 +16,7 @@ a node that does not come back.
 ## How does a node boot?
 
 The boot chain runs from the firmware through systemd-boot and the
-[UKI](../../reference/glossary.md#uki) to the initrd, which opens the store and the node's
+UKI to the initrd, which opens the store and the node's
 partitions before the system starts.
 
 ```mermaid
@@ -32,9 +32,9 @@ flowchart LR
     stage2 --> chalkd
 ```
 
-1. The UEFI firmware starts systemd-boot from the [ESP](../../reference/glossary.md#esp). With
-   [Secure Boot](../../reference/glossary.md#secure-boot) on, it first checks systemd-boot's
-   signature against [db and dbx](../../reference/glossary.md#db-and-dbx).
+1. The UEFI firmware starts systemd-boot from the ESP. With
+   Secure Boot on, it first checks systemd-boot's
+   signature against db and dbx.
 2. systemd-boot picks a UKI and asks the firmware to start it, which checks the UKI's signature
    the same way.
 3. The UKI's stub starts the kernel with the initrd and command line the UKI carries, so both are
@@ -66,21 +66,21 @@ An entry with a tries counter in its name is being counted;
 The initrd prepares the root file system in four steps.
 
 - systemd-repart compares the boot disk with the image's partition definitions. On the first boot
-  of an image it adds [slot](../../reference/glossary.md#slot) B and an empty STATE; on later
+  of an image it adds slot B and an empty STATE; on later
   boots everything is there and it changes nothing. It runs only on the disk systemd-boot was
   loaded from, which udev marks, so a second disk with the same image is never touched.
-- The kernel command line's `usrhash=` names the [store](../../reference/glossary.md#store)'s
-  [root hash](../../reference/glossary.md#root-hash). systemd finds the data and hash partitions
-  whose UUIDs derive from it, opens them with [dm-verity](../../reference/glossary.md#dm-verity) and
+- The kernel command line's `usrhash=` names the store's
+  root hash. systemd finds the data and hash partitions
+  whose UUIDs derive from it, opens them with dm-verity and
   mounts the store read-only.
-- `chalkos-state.service` unlocks [STATE](../../reference/glossary.md#state) and mounts it. The
-  [TPM](../../reference/glossary.md#tpm) unseals its key when [PCR 7](../../reference/glossary.md#pcr-7)
+- `chalkos-state.service` unlocks STATE and mounts it. The
+  TPM unseals its key when PCR 7
   holds the value it was sealed to, which is the case after an upgrade signed by the same key.
   When the TPM refuses, systemd-cryptsetup asks on the console for the second key: the node's
-  [recovery key](../../reference/glossary.md#recovery-key) or a password, as the node's storage
+  recovery key or a password, as the node's storage
   settings chose.
 - `chalkos-storage.service` reads the storage section recorded on STATE, creates any volume that
-  is missing, and unlocks and mounts [VAR](../../reference/glossary.md#var) the same way. A node that
+  is missing, and unlocks and mounts VAR the same way. A node that
   is not installed has no storage section, so `/var` stays in memory.
 
 [Storage and encryption](storage.md) explains the keys and volumes.
@@ -89,7 +89,7 @@ The initrd prepares the root file system in four steps.
 
 Stage 2 starts the node's own services in order:
 
-1. `chalkos-config.service` applies the [config](../../reference/glossary.md#config) that STATE keeps
+1. `chalkos-config.service` applies the config that STATE keeps
    for the booted image, its [config slot](config.md#where-does-a-node-keep-its-config), before
    networkd starts: the hostname, the documents services read and the outputs rendered from them,
    networkd's units and chrony's time servers among them. A fallback boots the image before with
@@ -97,8 +97,8 @@ Stage 2 starts the node's own services in order:
    is not found healthy.
 2. systemd-networkd brings up the network.
 3. chalkd starts. It finds the `installed` marker on STATE and serves in
-   [normal mode](../../reference/glossary.md#normal-mode), or finds none and serves in
-   [maintenance mode](../../reference/glossary.md#maintenance-mode).
+   normal mode, or finds none and serves in
+   maintenance mode.
 4. On an image with Kubernetes, `chalkos-kubernetes.service` waits for the node's addresses and
    prepares its certificates and configuration, and containerd and the kubelet follow.
 5. On a boot that systemd-boot counts, `chalkos-health.service` decides whether the boot is
@@ -115,7 +115,7 @@ installed sets it, not the one running.
 Before each boot of the entry, systemd-boot renames the file to count the try: `+3` becomes
 `+2-1`, then `+1-2`, then `+0-3`. Once the system decides the boot is good,
 `systemd-bless-boot.service` renames the file to `chalkos_<generation>.efi`, without a counter, and
-the entry is a normal, [blessed](../../reference/glossary.md#blessed-boot) entry from then on. An
+the entry is a normal, blessed entry from then on. An
 entry at `+0` is used up, and systemd-boot skips it.
 
 The diagram shows the states of a new image's entry.
@@ -149,13 +149,13 @@ unit is required by. It checks every 5 seconds until the node is healthy or
 
 Every check starts with chalkd: it must complete a TLS handshake with the node's own certificate
 on port 50000, because a node chalkd cannot serve cannot be managed and must fall back. The rest
-of the [health check](../../reference/glossary.md#health-check) depends on the node's part in
+of the health check depends on the node's part in
 Kubernetes:
 
 | Node | Healthy when |
 | --- | --- |
-| [Control plane](../../reference/glossary.md#control-plane) that is an [etcd member](../../reference/glossary.md#etcd-member) | its local etcd member answers, its API server is ready and its kubelet's `/healthz` answers |
-| [Worker](../../reference/glossary.md#worker) | its kubelet's `/healthz` answers and its Node is registered |
+| Control plane that is an etcd member | its local etcd member answers, its API server is ready and its kubelet's `/healthz` answers |
+| Worker | its kubelet's `/healthz` answers and its Node is registered |
 | Node without Kubernetes, or not yet part of a cluster | its config was applied and no unit of the boot failed |
 
 A Kubernetes node whose preparation failed is unhealthy. "No unit failed" counts the units that
@@ -191,7 +191,7 @@ and no health check runs.
 chalkd reads the boot from the ESP whenever it reports status: the entry it booted, whether that
 boot was blessed, an entry of the image with tries left that boots next and an entry with its
 tries used up that it fell back from. [`chalkctl status`](../../reference/cli/chalkctl_status.md)
-prints those as its first lines. After a [rollback](../../reference/glossary.md#rollback) they read:
+prints those as its first lines. After a rollback they read:
 
 ```text
 image <image>, booted from chalkos_<generation>.efi

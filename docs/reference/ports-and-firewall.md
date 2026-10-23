@@ -22,11 +22,11 @@ depend on whether the image has Kubernetes, on the node's type (`Node.spec.type`
 
 | Port | Protocol | Service | Nodes | Connects to it |
 | --- | --- | --- | --- | --- |
-| 50000 | TCP | [chalkd](glossary.md#chalkd)'s node API, mutual TLS | every node, the [installer](glossary.md#installer) too | chalkctl and [chalklab](glossary.md#chalklab); nodes renewing their [node certificate](glossary.md#node-certificate), at a [control plane](glossary.md#control-plane) through the [cluster endpoint](glossary.md#cluster-endpoint)'s host |
+| 50000 | TCP | chalkd's node API, mutual TLS | every node, the installer too | chalkctl and chalklab; nodes renewing their node certificate, at a control plane through the cluster endpoint's host |
 | 6443 | TCP | Kubernetes API server | control planes | kubectl, every kubelet and kube-proxy at the cluster endpoint; pods, flannel among them, through the `kubernetes` service |
 | 2379 | TCP | etcd's client port | control planes | the other control planes |
 | 2380 | TCP | etcd's peer port | control planes | the other control planes |
-| 10250 | TCP | kubelet | control planes and [workers](glossary.md#worker) | the API server |
+| 10250 | TCP | kubelet | control planes and workers | the API server |
 | 30000–32767 | TCP | NodePort services | control planes and workers | clients of NodePort services |
 | 8472 | UDP | flannel's VXLAN | control planes and workers, with flannel | the other nodes |
 
@@ -143,6 +143,6 @@ between the nodes.
 | The other Kubernetes nodes | 10250 | TCP | The API server reaching kubelets, from control planes. |
 | The other Kubernetes nodes | 8472 | UDP | flannel's VXLAN. |
 
-A [VIP](glossary.md#vip) needs no port of its own: chalkd adds the address to an interface of the
+A VIP needs no port of its own: chalkd adds the address to an interface of the
 control plane that holds it and announces it to the neighbours with ARP or IPv6 neighbour
 advertisements.

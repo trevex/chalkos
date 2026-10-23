@@ -21,7 +21,7 @@ Start at the top of the table and go down only when the level above cannot show 
 | Namespace or disk-image test | `pkg/kubernetes/vip`, `pkg/install/parts_test.go`, `pkg/upgrade/lab_test.go`, the `vxlan-rule` check | network rules, partition tables and file systems written by the real tools | seconds |
 | Evaluation test | `test/nix/eval.nix`, `test/nix/kinds.nix` | the arguments of `mkImages`, option defaults, assertions, what a module sets in an image, config kinds | one evaluation |
 | Build check | `nix/checks.nix` | what an image build produces: kernel modules, sizes, the bootspec | one image build |
-| End-to-end test | `test/e2e/` | behaviour that needs a booted node: firmware, [Secure Boot](../reference/glossary.md#secure-boot), the [TPM](../reference/glossary.md#tpm), the initrd, a cluster | minutes and 2 GiB or more per VM |
+| End-to-end test | `test/e2e/` | behaviour that needs a booted node: firmware, Secure Boot, the TPM, the initrd, a cluster | minutes and 2 GiB or more per VM |
 
 ## Go unit tests
 
@@ -41,16 +41,16 @@ that passed on skipped tests would prove nothing.
 Some behaviour depends on the kernel or on real tools, but not on a booted node. These tests
 run them in isolation:
 
-- The [VIP](../reference/glossary.md#vip) tests in `pkg/kubernetes/vip` re-run themselves in
+- The VIP tests in `pkg/kubernetes/vip` re-run themselves in
   a new user and network namespace, where they add addresses to interfaces and capture the
   frames that announce them.
 - The install tests in `pkg/install/parts_test.go` and the upgrade tests in
   `pkg/upgrade/lab_test.go` partition a disk image file with the real sfdisk, and
-  systemd-repart for an install, and stand in for the [ESP](../reference/glossary.md#esp)'s
+  systemd-repart for an install, and stand in for the ESP's
   mount, LUKS, the TPM and the firmware's variables with directories and fakes. They stop an
   install or upgrade before each change it makes and check that the disk still boots, so they
   cover interruptions that a VM test could reach only one at a time.
-- The `vxlan-rule` check loads a [worker](../reference/glossary.md#worker)'s firewall as NixOS
+- The `vxlan-rule` check loads a worker's firewall as NixOS
   renders it in a network namespace, with a peer and a pod in namespaces of their own, and sends UDP
   to check what the VXLAN rule accepts.
 
@@ -77,15 +77,15 @@ Build checks in `nix/checks.nix` check what an image build produces, without boo
 | --- | --- |
 | `kernel-modules` | An image's module tree holds its groups' modules and no others, and the tool refuses unknown modules and missing dependencies. |
 | `image-size` | The test images stay within the ceilings in `nix/testing/image-sizes.nix`, and the fit check every image build runs refuses images that leave no room. |
-| `bootspec` | An image's bootspec names the [UKI](../reference/glossary.md#uki) on the ESP and no initrd. |
+| `bootspec` | An image's bootspec names the UKI on the ESP and no initrd. |
 | `vxlan-rule` | The VXLAN firewall rule, in network namespaces. |
-| `template-lab` | The [lab](../reference/glossary.md#lab) template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
+| `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
 | `example-homelab` | The homelab example's image builds, and `chalkctl validate` accepts its YAML, `Rack` documents included, with it. |
 
 ## End-to-end tests
 
 The end-to-end tests in `test/e2e` boot chalkos images in QEMU with OVMF, Secure Boot and a software
-TPM, through the same `pkg/lab` code [chalklab](../reference/glossary.md#chalklab) uses, and drive
+TPM, through the same `pkg/lab` code chalklab uses, and drive
 the nodes with the real chalkctl. Each check runs one test or a group of them:
 
 | Check | Test | VMs |
@@ -95,11 +95,11 @@ the nodes with the real chalkctl. Each check runs one test or a group of them:
 | `e2e-secureboot` | A signed image boots under Secure Boot and an unsigned one is refused. | 1 per test |
 | `e2e-verity` | A tampered store fails to read. | 1 |
 | `e2e-install` | An install in place, with a second disk. | 1 |
-| `e2e-installer` | The [installer](../reference/glossary.md#installer) installs a node onto a blank disk under Secure Boot: an install streamed from a directory and cancelled while it writes slot A, continued by one the installer pulls from a registry the test serves, with credentials. | 1 |
+| `e2e-installer` | The installer installs a node onto a blank disk under Secure Boot: an install streamed from a directory and cancelled while it writes slot A, continued by one the installer pulls from a registry the test serves, with credentials. | 1 |
 | `e2e-iso` | The installer's ISO, signed as chalkbuild signs it, boots. | 1 |
 | `e2e-storage` | Volumes on the system disk and a data disk. | 1 |
-| `e2e-upgrade` | Under Secure Boot, an [upgrade](../reference/glossary.md#upgrade) that the node pulls through a mirror endpoint, a registry the test serves, with the endpoint's credentials, that boots from [slot](../reference/glossary.md#slot) B and is found healthy, then one streamed from a directory that never becomes healthy and falls back. | 1 |
-| `e2e-kubernetes` | A dual-stack cluster of a [control plane](../reference/glossary.md#control-plane) and a worker through chalklab: networking, DNS, a private image pulled through a mirror with the node's credentials, renewals and [rotations](../reference/glossary.md#rotation), a reboot. | 2 |
+| `e2e-upgrade` | Under Secure Boot, an upgrade that the node pulls through a mirror endpoint, a registry the test serves, with the endpoint's credentials, that boots from slot B and is found healthy, then one streamed from a directory that never becomes healthy and falls back. | 1 |
+| `e2e-kubernetes` | A dual-stack cluster of a control plane and a worker through chalklab: networking, DNS, a private image pulled through a mirror with the node's credentials, renewals and rotations, a reboot. | 2 |
 | `e2e-kubernetes-ha` | Three control planes of an IPv6-only cluster behind a VIP: joins, failover, reinstalls and a rolling upgrade. | 3 |
 
 A VM gets 2 CPUs and 2 GiB of memory unless its test asks for less, on a 16 GiB sparse disk.

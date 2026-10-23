@@ -6,11 +6,11 @@ description: "Install chalkos on physical machines from the installer ISO"
 # Install on bare metal
 
 This guide installs a cluster on physical machines. You build the cluster's
-[installer](../reference/glossary.md#installer) and its image, sign the installer for
-[Secure Boot](../reference/glossary.md#secure-boot), boot it from a USB stick on each machine,
+installer and its image, sign the installer for
+Secure Boot, boot it from a USB stick on each machine,
 and run [`chalkctl install`](../reference/cli/chalkctl_install.md) from your workstation, which
 streams the node's image to the machine and writes it to the system disk. The machine then
-reboots into its image, and the first [control plane](../reference/glossary.md#control-plane)
+reboots into its image, and the first control plane
 is bootstrapped. The installer takes an empty system disk, and replaces one that holds data only
 when you say so.
 
@@ -19,24 +19,24 @@ when you say so.
 You need:
 
 - The cluster's repository: a flake that builds its images with `chalkos.lib.mkImages` and
-  exposes them and the installer as packages, an [inventory](../reference/glossary.md#inventory)
+  exposes them and the installer as packages, an inventory
   that names every node with its address, image and files, and each node's YAML with its `Node`,
   `SystemDisk` and `Network` documents. [Plan a production cluster](../kubernetes/production-cluster.md) lays
   one out, and [Config and the inventory](../how-it-works/node/config.md) explains the files. The commands
   below run in the repository's directory, where `chalkos.yaml` is.
-- The cluster's [secrets file](../reference/glossary.md#secrets-file), `secrets.age`, written once
+- The cluster's secrets file, `secrets.age`, written once
   with [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md), and the
   [`osCA`](../reference/options.md#osca) argument of `mkImages` set to its public part,
   `./secrets.pub.json`, tracked by git. The images and the installer then carry the cluster's
-  [OS CA](../reference/glossary.md#os-ca), so a machine in
-  [maintenance mode](../reference/glossary.md#maintenance-mode) accepts only your chalkctl.
-- Machines with UEFI firmware, Secure Boot and a [TPM](../reference/glossary.md#tpm) 2.0. The
+  OS CA, so a machine in
+  maintenance mode accepts only your chalkctl.
+- Machines with UEFI firmware, Secure Boot and a TPM 2.0. The
   [requirements](../get-started/requirements.md) list the rest.
-- A Secure Boot [db](../reference/glossary.md#db-and-dbx) key and certificate, `db.key` and
+- A Secure Boot db key and certificate, `db.key` and
   `db.crt`, and the certificate enrolled in each machine's firmware.
   [Sign images for Secure Boot](../build/secure-boot-signing.md) creates them and explains the enrolment,
   which chalkos does not do for you.
-- [chalkbuild](../reference/glossary.md#chalkbuild), which signs the images, on the machine that
+- chalkbuild, which signs the images, on the machine that
   holds `db.key`, from `nix shell github:trevex/chalkos#chalkbuild` or
   `chalkos.packages.${system}.chalkbuild` in the cluster flake's dev shell.
 - A USB stick larger than the installer ISO, about 450 MiB, or a BMC that mounts an ISO as
@@ -46,14 +46,14 @@ You need:
 
     The steps work on machines with Secure Boot off: leave out the signing. The node then checks
     no signatures, seals its disk keys to the Secure-Boot-off state of
-    [PCR 7](../reference/glossary.md#pcr-7), and anyone holding an operator certificate can run
+    PCR 7, and anyone holding an operator certificate can run
     an image of their own on it. [Security model](../how-it-works/node/security.md) explains why.
 
 ## Build the installer
 
-The installer is a NixOS image that runs [chalkd](../reference/glossary.md#chalkd) in
+The installer is a NixOS image that runs chalkd in
 maintenance mode and never touches the medium it boots from. One installer serves every
-[variant](../reference/glossary.md#variant) and [platform](../reference/glossary.md#platform) of
+variant and platform of
 the cluster. Build it from the repository's directory:
 
 ```console
@@ -87,7 +87,7 @@ chalkctl validate
 ```
 
 [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs the copy's boot loader and
-[UKI](../reference/glossary.md#uki) and checks them against `db.crt`. The output directory must not
+UKI and checks them against `db.crt`. The output directory must not
 exist, so `rm -rf` removes the signed copy of an earlier build first.
 
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) checks every node's config against
@@ -104,10 +104,10 @@ chalkbuild sign --key=db.key --cert=db.crt installer installer-signed
 ```
 
 Sign the installer with the same key as the images. The installer seals the node's
-[STATE](../reference/glossary.md#state) to PCR 7 as it measures it while the installer runs, and
+STATE to PCR 7 as it measures it while the installer runs, and
 PCR 7 includes the certificate that verified the boot binaries. An image signed with another key
 boots, but its first boot finds PCR 7 changed and asks for the
-[recovery key](../reference/glossary.md#recovery-key) on the console.
+recovery key on the console.
 
 ## Write the installer to a USB stick
 
@@ -195,11 +195,11 @@ chalkctl takes the image from the signed copy the inventory names for the node's
 refuses it unless it is the build whose root hash that directory's `metadata.json` names. It
 checks no signature: the installer checks the UKI and the boot loader against the machine's db and
 dbx when Secure Boot is enforced, and refuses an unsigned or wrongly signed image. chalkctl then
-sends the node its [config](../reference/glossary.md#config), the documents of the files the
+sends the node its config, the documents of the files the
 inventory gives it, checked against the image's schemas, a
-[node certificate](../reference/glossary.md#node-certificate), the OS CA, the secret of the
+node certificate, the OS CA, the secret of the
 second keyslot and, on a node with Kubernetes, the node's
-[Kubernetes share](../reference/glossary.md#kubernetes-share), followed by the image's store,
+Kubernetes share, followed by the image's store,
 hash tree, UKI and boot loader. It does not send the whole raw image, only the compressed store
 and what boots it. chalkctl prints:
 
@@ -224,21 +224,21 @@ On the machine, the installer:
 
 1. refuses the disk it runs from, and any disk that holds data (see below);
 2. lays out the system region with the image's own partition definitions: the
-   [ESP](../reference/glossary.md#esp), [slot](../reference/glossary.md#slot) A, an empty slot B
+   ESP, slot A, an empty slot B
    and STATE, encrypted and sealed to PCR 7 unless the `SystemDisk` turns encryption off;
 3. writes slot A and verifies it from the disk against the
-   [root hash](../reference/glossary.md#root-hash);
+   root hash;
 4. writes the UKI, after checking its signature against the firmware's db and dbx when Secure
    Boot is enforced, so the machine never reboots into an image its firmware refuses;
 5. writes the config and the certificates to STATE, creates
-   [VAR](../reference/glossary.md#var) and the node's other volumes, and enrols the second
+   VAR and the node's other volumes, and enrols the second
    keyslot unless the fallback is `none`;
 6. writes the boot loader, adds a UEFI boot entry named `chalkos` and boots it next, and writes
    the marker that the node is installed, last.
 
 The machine reboots into its image. The boot entry the install creates goes first in the boot order,
 so the stick may stay in; remove it before the next install elsewhere. After the reboot the node
-runs in [normal mode](../reference/glossary.md#normal-mode) with the network of its config, and
+runs in normal mode with the network of its config, and
 chalkctl reaches it at the address the inventory names.
 
 `--fingerprint` is the way to pin the node. When reading the console is impractical, `--insecure`
@@ -316,10 +316,10 @@ kubectl --kubeconfig kubeconfig get nodes
 ```
 
 Day-to-day commands such as `status`, `logs`, `reboot` and `upgrade` work without the secrets
-file. Give each person a [client file](../reference/glossary.md#client-file) of the
-[client role](../reference/glossary.md#client-role) they need with
+file. Give each person a client file of the
+client role they need with
 [`chalkctl config new`](../reference/cli/chalkctl_config_new.md), and keep the secrets file for
-installs, [rotations](../reference/glossary.md#rotation) and kubeconfigs:
+installs, rotations and kubeconfigs:
 
 ```sh
 chalkctl config new --name=<name> --role=operator --secrets=secrets.age
@@ -349,7 +349,7 @@ as a password manager.
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows what a node runs: its config and
 whether it is the one the inventory gives, the image it booted by its
-[root hash](../reference/glossary.md#root-hash) and whether the boot was found healthy,
+root hash and whether the boot was found healthy,
 whether its store is the image the inventory names for it, its volumes, Kubernetes, its
 certificates and any failed units. With the client file from the step before:
 

@@ -25,7 +25,7 @@ section and template:
 | Reference | reference | What exactly is this value, port or field? |
 
 Contributing, this section, holds the pages for developers. Each section starts with an index
-page that lists its pages. The [glossary](../reference/glossary.md) defines the terms every page
+page that lists its pages. The glossary defines the terms every page
 links on first use.
 
 `zensical.toml` sets the site's name, theme and navigation. The navigation lists every page;
@@ -59,7 +59,7 @@ These pages are generated and never edited by hand:
 
 | Page | Generated from | By |
 | --- | --- | --- |
-| `docs/reference/cli/` | the command trees of chalkctl, [chalklab](../reference/glossary.md#chalklab), [chalkbuild](../reference/glossary.md#chalkbuild) and [chalkcfg](../reference/glossary.md#chalkcfg), with their help in `pkg/chalkctl/help.go`, `pkg/chalklab/help.go`, `pkg/chalkbuild/help.go` and `pkg/chalkcfg/help.go` | `docgen cli` |
+| `docs/reference/cli/` | the command trees of chalkctl, chalklab, chalkbuild and chalkcfg, with their help in `pkg/chalkctl/help.go`, `pkg/chalklab/help.go`, `pkg/chalkbuild/help.go` and `pkg/chalkcfg/help.go` | `docgen cli` |
 | `docs/reference/kinds.md` | the JSON Schemas of the default variant's kinds, declared in `modules/node/kinds/builtin.nix`, and of the inventory and the lab file, `pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and `pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json` | `docgen kinds` |
 | `docs/reference/options.md` | the arguments of `mkImages` in `lib/images-arguments.nix` and the option declarations of the node modules | nixosOptionsDoc |
 | `docs/reference/api.md` | `api/chalkos/node/v1/node.proto`, through the template `api/markdown.tmpl` | protoc-gen-doc in `buf.gen.yaml` |

@@ -55,7 +55,7 @@ sentences.
 - Define a term before an argument depends on it. A short clause on the same line is enough:
   "STATE, the small encrypted partition that holds the node's config, ...".
 - Use the precise term and keep it. A slot stays a slot for the whole page; it does not become a
-  "partition set" in the next paragraph. The [glossary](../reference/glossary.md) lists the
+  "partition set" in the next paragraph. The glossary lists the
   terms and their spelling.
 - Quote the exact text the reader will see, such as an error message or a status line, and say
   what it means.

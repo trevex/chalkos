@@ -5,18 +5,18 @@ description: "Give the installer static addresses, VLANs, bonds, drivers or firm
 
 # Customise the installer
 
-The cluster's [installer](../reference/glossary.md#installer) takes its addresses by DHCP on
+The cluster's installer takes its addresses by DHCP on
 every Ethernet port and carries the drivers of the base
-[module groups](../reference/glossary.md#module-group). When a machine has no DHCP on its
+module groups. When a machine has no DHCP on its
 network, sits on a VLAN, needs a bond, or has a network card or storage controller the installer
 cannot drive, add NixOS modules to the installer with the
 [`installer.modules`](../reference/options.md#installermodules) argument of `chalkos.lib.mkImages`,
 build it again and sign it. The change affects the installer alone; the images of the
-[variants](../reference/glossary.md#variant) and installed nodes stay as they are. `mkImages`
+variants and installed nodes stay as they are. `mkImages`
 builds one installer, which installs the images of every platform.
 
-The settings go into the image because under [Secure Boot](../reference/glossary.md#secure-boot)
-the kernel command line is part of the signed [UKI](../reference/glossary.md#uki), so you cannot
+The settings go into the image because under Secure Boot
+the kernel command line is part of the signed UKI, so you cannot
 add `ip=` or a driver option at the boot menu, and there is nothing on the medium to edit after
 signing. Whatever differs between machines goes into the installer and is matched at boot by MAC
 address or interface name. One installer then serves the whole cluster: each machine finds the
@@ -25,7 +25,7 @@ network configuration written for it, and the others fall back to DHCP.
 ## Before you begin
 
 You need the flake that builds the cluster's images with `mkImages`, with
-[`osCA`](../reference/options.md#osca) set, the [db](../reference/glossary.md#db-and-dbx) key and
+[`osCA`](../reference/options.md#osca) set, the db key and
 certificate from [Sign images for Secure Boot](secure-boot-signing.md), and the MAC addresses of
 the machines' ports, from the BMC, the firmware setup or the machines' labels.
 [Install on bare metal](../operate/install-bare-metal.md) builds the unchanged installer.
@@ -73,7 +73,7 @@ The options are NixOS's
 [`systemd.network`](https://nixos.org/manual/nixos/stable/options#opt-systemd.network.networks)
 options, whose sections and keys a node's `Network` documents carry in camelCase. Giving a
 machine the address its node will have after the install lets chalkctl reach it without
-`--address`, at the address the [inventory](../reference/glossary.md#inventory) names for the
+`--address`, at the address the inventory names for the
 node.
 
 ## Put the installer on a VLAN
@@ -176,7 +176,7 @@ modules.
 
 The installer writes its console to the screen and to the first serial port, `ttyS0`. Linux sends
 kernel messages to every console on the command line, but
-[chalkd](../reference/glossary.md#chalkd)'s lines, with the fingerprint and the addresses, go to the
+chalkd's lines, with the fingerprint and the addresses, go to the
 last one only. A machine whose BMC shows serial-over-LAN on the second port needs that port last:
 
 ```nix title="installer.nix"
@@ -217,13 +217,13 @@ refuses an output directory that exists, so the first command removes the copy o
 build. Write `installer-signed/chalkos-installer.iso` to the stick.
 
 Sign the installer with the key the nodes' images are signed with: the installer seals each
-node's [STATE](../reference/glossary.md#state) to [PCR 7](../reference/glossary.md#pcr-7) as
+node's STATE to PCR 7 as
 measured under the installer, and an image signed with another key asks for the
-[recovery key](../reference/glossary.md#recovery-key) on its first boot.
+recovery key on its first boot.
 
-The installer also carries the [OS CA](../reference/glossary.md#os-ca) of the
+The installer also carries the OS CA of the
 `secrets.pub.json` that the `osCA` argument names, and accepts only clients whose certificate
-chains to it. After an OS CA [rotation](../reference/glossary.md#rotation) with
+chains to it. After an OS CA rotation with
 [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md), build and sign the installer and the
 images again, since images carry the OS CA too. An installer or image in maintenance mode built
 before the rotation refuses chalkctl's new certificate, and chalkctl says so:

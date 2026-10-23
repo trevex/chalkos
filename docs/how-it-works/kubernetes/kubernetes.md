@@ -8,12 +8,12 @@ description: "How chalkos runs etcd, the control plane, the kubelet and the clus
 chalkos runs upstream Kubernetes in the layout kubeadm uses, without kubeadm. containerd and the
 kubelet are systemd units of the image; etcd, the API server, the controller-manager and the
 scheduler run as static pods from the upstream images, which
-[chalkd](../../reference/glossary.md#chalkd) renders on every
-[control plane](../../reference/glossary.md#control-plane). Certificates come from the cluster's
-[secrets file](../../reference/glossary.md#secrets-file) instead of `kubeadm init`, control planes
+chalkd renders on every
+control plane. Certificates come from the cluster's
+secrets file instead of `kubeadm init`, control planes
 join etcd on their own, and chalkd applies the cluster's add-ons at every boot. The image fixes
 the Kubernetes release; every setting of the cluster and of each node is a
-[config document](../../reference/glossary.md#config-document).
+config document.
 
 ## Which Kubernetes does a node run?
 
@@ -23,14 +23,14 @@ nixpkgs's `kubernetes` by default. Nodes run its kubelet; the control plane runs
 images of the same version from `registry.k8s.io`, so a node's kubelet and control plane always run
 the same version. etcd, the pause image and CoreDNS have their own images under
 [`chalkos.kubernetes.images`](../../reference/options.md#chalkoskubernetesimagesetcd).
-A Kubernetes upgrade is therefore an image [upgrade](../../reference/glossary.md#upgrade), rolled
+A Kubernetes upgrade is therefore an image upgrade, rolled
 through the cluster like any other, as [Upgrades](../node/upgrades.md) describes.
 
 `spec.type` of the node's [`Node`](../../reference/kinds.md#node) document decides what the node is
 in Kubernetes, so control planes and workers boot the same image. A node keeps its type once it
-holds its [Kubernetes share](../../reference/glossary.md#kubernetes-share): chalkd refuses config that
+holds its Kubernetes share: chalkd refuses config that
 changes it, because the share holds certificates for that type. The images of a
-[variant](../../reference/glossary.md#variant) built with
+variant built with
 [`kubernetes = false`](../../reference/options.md#variantskubernetes) run no Kubernetes and have no
 `Node` kind, so their nodes have no type:
 
@@ -44,17 +44,17 @@ changes it, because the share holds certificates for that type. The images of a
 
 The image fixes what it ships: the Kubernetes release, the images of its components and the pod
 network, recorded in `/etc/chalkos/kubernetes/image.json`. Everything else is
-[config](../../reference/glossary.md#config), in documents of the kinds of the group
+config, in documents of the kinds of the group
 `kubernetes.chalkos.dev`:
 
 | Kind | Count | Holds |
 | --- | --- | --- |
-| [`Cluster`](../../reference/kinds.md#cluster) | one, required | The URL of the cluster's API server, its address families and ranges, DNS domain and address, how nodes pick their addresses, the [VIP](../../reference/glossary.md#vip), scheduling on control planes and extra flags of the control plane's components |
+| [`Cluster`](../../reference/kinds.md#cluster) | one, required | The URL of the cluster's API server, its address families and ranges, DNS domain and address, how nodes pick their addresses, the VIP, scheduling on control planes and extra flags of the control plane's components |
 | [`Node`](../../reference/kinds.md#node) | one, required | The node's type and its own labels, taints, addresses, extra flags of its kubelet and the interface it holds the VIP on |
 | [`Flannel`](../../reference/kinds.md#flannel) | at most one, on images with flannel | The MTU flannel assumes and the ranges its VXLAN must come from |
 | [`Addon`](../../reference/kinds.md#addon) | any | Kubernetes objects the control planes apply |
 
-The cluster's documents go into the files the [inventory](../../reference/glossary.md#inventory) gives
+The cluster's documents go into the files the inventory gives
 every node, so all nodes hold the same ones, and a node's `Node` goes into its own file, as
 [Config and the inventory](../node/config.md#how-does-the-inventory-assign-files-to-nodes) describes;
 chalkctl refuses an inventory whose nodes hold different `Cluster` or `Flannel` specs. The node's
@@ -62,7 +62,7 @@ config must hold one `Cluster` and one `Node` document on an image with Kubernet
 [`chalkctl validate`](../../reference/cli/chalkctl_validate.md) and chalkd refuse a set without one,
 with `no Cluster: the config of a node whose image runs Kubernetes holds one Cluster document`
 or `no Node: the config of a node whose image runs Kubernetes holds one Node document`. The
-`Cluster` document names the [cluster endpoint](../../reference/glossary.md#cluster-endpoint), the
+`Cluster` document names the cluster endpoint, the
 URL of the API server, which every node names alike. Every other field has a default, so a
 cluster on IPv4 with the default ranges needs no more than the lab template's document:
 
@@ -204,14 +204,14 @@ into `/run/chalkos/kubernetes/manifests`, where the kubelet picks them up. Their
 issued at every boot into `/run/chalkos/kubernetes/pki`, a tmpfs mounted into the pods as
 `/etc/kubernetes/pki`. Each pod carries a hash of the certificates it mounts in the annotation
 `chalkos.dev/certificates`, so when chalkd renews the certificates the kubelet starts the pod
-again on the new files. etcd keeps its data on [VAR](../../reference/glossary.md#var) in
+again on the new files. etcd keeps its data on VAR in
 `/var/lib/etcd`, which `chalkos-controlplane.service` makes at boot on a node whose `Node`
 document has the type `controlplane`. The same unit opens the API server's and etcd's ports in
 the firewall on such a node and closes them on a worker, at boot and whenever the `Node`
 document changes, as [Ports and firewall](../../reference/ports-and-firewall.md) describes.
 
 The flags are close to kubeadm's, with a few chalkos choices: the API server talks to its node's own
-[etcd member](../../reference/glossary.md#etcd-member) only, authorises with `Node,RBAC` and admits
+etcd member only, authorises with `Node,RBAC` and admits
 with `NodeRestriction`, allows anonymous requests only to `/livez`, `/readyz` and `/healthz`, has
 bootstrap-token authentication off, and encrypts Secrets in etcd with the cluster's encryption key.
 The controller-manager runs without the bootstrap-signer and token-cleaner controllers, since
@@ -260,8 +260,8 @@ One control plane initialises etcd, once, with
 chalkctl bootstrap <node>
 ```
 
-chalkd records the [bootstrap](../../reference/glossary.md#bootstrap) on
-[STATE](../../reference/glossary.md#state) before it starts anything, so a failure after that point
+chalkd records the bootstrap on
+STATE before it starts anything, so a failure after that point
 is retried by the next boot and never initialises a second cluster. It then renders the static
 pods with an etcd of one member, waits for the API server, and applies chalkos's add-ons and the
 objects of the node's `Addon` documents; chalkctl waits until they are applied, up to `--timeout`
@@ -308,16 +308,16 @@ chalkctl etcd leave <node>
 ```
 
 `remove-member` removes another node's member and `leave` takes a node out itself, releasing its
-[VIPs](../../reference/glossary.md#vip), stopping its control plane, deleting its etcd data and
+VIPs, stopping its control plane, deleting its etcd data and
 unpinning its addresses. Both refuse when the voters left would have fewer healthy members than
 their quorum; `remove-member --force` removes a member anyway. A node that left joins again only
 after a reinstall.
 
 ## How do workers join?
 
-A [worker](../../reference/glossary.md#worker) receives a kubelet client certificate for its own node
-name in its share at install, and its kubelet registers at the [cluster
-endpoint](../../reference/glossary.md#cluster-endpoint) with it. There is no bootstrap token and no
+A worker receives a kubelet client certificate for its own node
+name in its share at install, and its kubelet registers at the cluster
+endpoint with it. There is no bootstrap token and no
 join step. The kubelet renews the certificate itself through a certificate request, which the
 controller-manager approves for nodes renewing their own.
 
@@ -369,7 +369,7 @@ every node gets, but chalkctl delivers `Addon` documents only to the nodes whose
 has the type `controlplane`, and workers never hold them; a worker given one anyway applies nothing
 and restarts nothing. The objects may include
 Secrets, so a control plane keeps its `Addon` documents in its stored config on
-[STATE](../../reference/glossary.md#state), readable by root alone: chalkd never writes them below
+STATE, readable by root alone: chalkd never writes them below
 `/run/chalkos/config` for the node's services, and `chalkcfg` does not print them.
 
 ## How is the cluster reached?

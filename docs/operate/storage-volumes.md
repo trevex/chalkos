@@ -5,18 +5,18 @@ description: "Size VAR and add encrypted or raw volumes on the system disk or on
 
 # Add storage volumes
 
-A node keeps what it writes on [VAR](../reference/glossary.md#var), which fills the rest of its
+A node keeps what it writes on VAR, which fills the rest of its
 system disk unless you size it. Storage for a CSI driver, local persistent volumes or swap goes
-on [volumes](../reference/glossary.md#volume): partitions on the system disk or whole disks of
+on volumes: partitions on the system disk or whole disks of
 their own, encrypted or not, formatted and mounted or left raw. This guide declares them in the
-node's [config](../reference/glossary.md#config), applies them to a running node, and recreates a
+node's config, applies them to a running node, and recreates a
 volume when a change cannot be applied in place.
 
-A node's storage is two kinds of [config document](../reference/glossary.md#config-document):
+A node's storage is two kinds of config document:
 one [`SystemDisk`](../reference/kinds.md#systemdisk), which names the system disk and sets VAR
 and the encryption, and a [`Volume`](../reference/kinds.md#volume) per further volume, named by
 its `metadata.name`. Volumes are created with systemd-repart: by
-[chalkd](../reference/glossary.md#chalkd) at install and when
+chalkd at install and when
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers a change, and by
 `chalkos-storage.service` in the initrd at every boot. repart only ever adds partitions or grows
 them. A change that would shrink, reformat or re-encrypt a volume is refused until you reset
@@ -25,10 +25,10 @@ reinstall.
 
 ## Before you begin
 
-- The cluster's [inventory](../reference/glossary.md#inventory), `chalkos.yaml`, with the YAML
-  files of its nodes, and its [secrets file](../reference/glossary.md#secrets-file):
+- The cluster's inventory, `chalkos.yaml`, with the YAML
+  files of its nodes, and its secrets file:
   `chalkctl apply-config` needs the secrets file.
-- For a node that is installed, a reader [client file](../reference/glossary.md#client-file) or
+- For a node that is installed, a reader client file or
   the secrets file to list its disks, and an admin client file or the secrets file to reset a
   volume.
 - [Storage and encryption](../how-it-works/node/storage.md) explains how disks are pinned and how volumes
@@ -50,8 +50,8 @@ DEVICE            SIZE    TYPE         MODEL                    SERIAL          
 ```
 
 `boot` marks the system disk; `disk <name>` marks a disk a volume holds. A machine that the
-inventory does not name yet, booted into the [installer](../reference/glossary.md#installer), is
-reached at its address in [maintenance mode](../reference/glossary.md#maintenance-mode):
+inventory does not name yet, booted into the installer, is
+reached at its address in maintenance mode:
 
 ```sh
 chalkctl disks --address=<address> --insecure --secrets=secrets.age
@@ -122,8 +122,8 @@ system disk. Sizes are a number with an optional `K`, `M`, `G`, `T` or `P`, in u
 
 At most one volume per disk may fill its disk, and VAR counts, so a volume on the system disk
 needs a size as long as VAR has none, or the other way round. VAR holds etcd, containerd's images
-and the logs: give a [control plane](../reference/glossary.md#control-plane) or a
-[worker](../reference/glossary.md#worker) with large images at least tens of gigabytes. VAR
+and the logs: give a control plane or a
+worker with large images at least tens of gigabytes. VAR
 grows later without losing data. It does not shrink: shrinking is destructive, and VAR cannot be
 reset while the node runs, so a smaller VAR means reinstalling the node.
 
@@ -162,7 +162,7 @@ A selector must match exactly one disk. When it matches none or several, chalkd 
 found, `no disk matches ...` or `2 disks match ..., refusing to choose`, and does not create the
 volume: `chalkctl apply-config` fails with the message, and at boot the node starts without
 the volume. Once a reference found its disk, chalkd pins the disk on
-[STATE](../reference/glossary.md#state) by its WWN, serial number and path, and finds it by the
+STATE by its WWN, serial number and path, and finds it by the
 strongest of those from then on, even when the device names change.
 
 chalkd partitions a new disk only when it is empty: blkid finds nothing on it, or it carries a
@@ -205,8 +205,8 @@ mount point can start before the volume is mounted.
 ## Choose the encryption
 
 A volume is encrypted like the node, by `spec.encryption.mode` of the `SystemDisk`, which is
-`tpm2` by default: LUKS2 with a key the [TPM](../reference/glossary.md#tpm) seals to
-[PCR 7](../reference/glossary.md#pcr-7). A volume's own `spec.encryption.mode`, and
+`tpm2` by default: LUKS2 with a key the TPM seals to
+PCR 7. A volume's own `spec.encryption.mode`, and
 `spec.var.encryption.mode` of the `SystemDisk` for VAR, override it:
 
 ```yaml title="groups/longhorn.yaml"
@@ -222,8 +222,8 @@ spec:
 ```
 
 Every new encrypted volume also gets the node's
-[fallback keyslot](../reference/glossary.md#fallback-keyslot), set by `spec.encryption.fallback`
-of the `SystemDisk`: its [recovery key](../reference/glossary.md#recovery-key) by default, a
+fallback keyslot, set by `spec.encryption.fallback`
+of the `SystemDisk`: its recovery key by default, a
 password, or none. It unlocks the volume when the TPM does not. A node whose fallback is a
 password needs it again whenever a new encrypted volume appears: chalkctl asks for it, or reads it
 from `--password-file`.

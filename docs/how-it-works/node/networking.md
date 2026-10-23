@@ -6,14 +6,14 @@ description: "Node addresses, dual stack, the VIP and packet filtering with nfta
 # Networking
 
 A chalkos node configures its interfaces with systemd-networkd from its
-[config](../../reference/glossary.md#config), picks one address per IP family for Kubernetes,
+config, picks one address per IP family for Kubernetes,
 and filters traffic with nftables. Control planes can share a virtual IP, the
-[VIP](../../reference/glossary.md#vip), that one healthy control plane holds at a time, and flannel
+VIP, that one healthy control plane holds at a time, and flannel
 connects pods across nodes with VXLAN.
 
 ## How does a node configure its interfaces?
 
-A node's network is a set of [config documents](../../reference/glossary.md#config-document) of
+A node's network is a set of config documents of
 three kinds, [`Network`](../../reference/kinds.md#network), [`NetDev`](../../reference/kinds.md#netdev)
 and [`Link`](../../reference/kinds.md#link), which mirror systemd-networkd's `.network`, `.netdev` and
 `.link` files one to one. A document's `metadata.name` is the unit file's name without its suffix,
@@ -52,8 +52,8 @@ its units.
 
 ## Which addresses does a node use for Kubernetes?
 
-A node with Kubernetes registers one address of each IP family of the cluster. On a [control
-plane](../../reference/glossary.md#control-plane), its certificates name the same addresses, and etcd
+A node with Kubernetes registers one address of each IP family of the cluster. On a control
+plane, its certificates name the same addresses, and etcd
 and the API server advertise the primary family's. Before the kubelet starts, the preparation
 (`chalkos-kubernetes.service`) picks them and writes them to `/run/chalkos/kubernetes/node-ip`.
 
@@ -99,8 +99,8 @@ kubernetes worker: preparation failed: no ipv4 node address matches validSubnets
 ### Why are a control plane's addresses pinned?
 
 etcd's peers know a member by the address it joined with, and the control plane's certificates name
-that address. When a control plane becomes an [etcd member](../../reference/glossary.md#etcd-member),
-by bootstrap or by joining, [chalkd](../../reference/glossary.md#chalkd) pins the addresses it picked
+that address. When a control plane becomes an etcd member,
+by bootstrap or by joining, chalkd pins the addresses it picked
 on STATE, and every later boot waits for exactly those, whatever the subnets say. A pinned address
 that does not come back stops the preparation:
 
@@ -146,7 +146,7 @@ kubelet gives pods one name server; it still answers A and AAAA queries.
 ## How does the VIP move between control planes?
 
 A VIP is an address of the API server that no single machine owns: one healthy control plane holds
-it at a time, so the [cluster endpoint](../../reference/glossary.md#cluster-endpoint) stays reachable
+it at a time, so the cluster endpoint stays reachable
 while a control plane reboots or fails. `vip.addresses` of the `Cluster` document takes at most
 one address per family, and the document's `endpoint` is then one of them or a name that resolves
 to them. The document goes into the files every node gets:
@@ -186,7 +186,7 @@ seconds:
 `vip holder` or `vip standby` in its Kubernetes line.
 
 The diagram shows a cluster of three control planes and two
-[workers](../../reference/glossary.md#worker) on one L2 network, with cp1 holding the VIP.
+workers on one L2 network, with cp1 holding the VIP.
 
 ```mermaid
 flowchart TD
@@ -271,7 +271,7 @@ family, as the kubelet registered them.
 ## How do extensions provide addresses?
 
 A node's addresses do not have to come from networkd. A routing daemon, such as a BGP speaker an
-[extension](../../reference/glossary.md#extension) adds to a variant, can announce an address on a
+extension adds to a variant, can announce an address on a
 loopback or dummy interface. Such a unit orders itself before `chalkos-node-addresses.target` and
 is wanted by it; the preparation starts after the target and still waits up to `nodeIP.timeout`
 for the addresses. An address on a loopback interface needs the `Flannel` document's `spec.mtu`,

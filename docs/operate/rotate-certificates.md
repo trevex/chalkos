@@ -7,14 +7,14 @@ description: "Issue client files, renew node certificates and rotate the cluster
 
 This guide gives people access to a cluster, renews what does not renew itself, replaces the
 cluster's CAs and keys, and takes access away again. All of it starts from the
-[secrets file](../reference/glossary.md#secrets-file), which holds every CA's key. A
-[rotation](../reference/glossary.md#rotation) changes what every node trusts, one phase at a
+secrets file, which holds every CA's key. A
+rotation changes what every node trusts, one phase at a
 time, while the cluster keeps running; it is also the only way to revoke a client file or a
 kubeconfig.
 
 ## Before you begin
 
-- The secrets file and the cluster's [inventory](../reference/glossary.md#inventory). Every
+- The secrets file and the cluster's inventory. Every
   command on this page needs the secrets file.
 - For a rotation, every node of the inventory running and reachable: each phase waits
   until each node confirms it, and a node that does not answer stops the phase until it does.
@@ -23,18 +23,18 @@ kubeconfig.
 
 ## Give someone access to the nodes
 
-A [client file](../reference/glossary.md#client-file) lets a person run chalkctl without the
+A client file lets a person run chalkctl without the
 secrets file. [`chalkctl config new`](../reference/cli/chalkctl_config_new.md) issues one for a
-name and a [client role](../reference/glossary.md#client-role):
+name and a client role:
 
 ```console
 $ chalkctl config new --name=alice --role=operator --ttl=2160h --out=alice.json
 wrote alice.json for alice with the operator role; its certificate expires on 2027-01-08
 ```
 
-A [reader](../reference/glossary.md#reader) may read node information, disks, status, logs and
-etcd's members; an [operator](../reference/glossary.md#operator) may also reboot, drain, uncordon
-and upgrade nodes; an [admin](../reference/glossary.md#admin) may call every method but node
+A reader may read node information, disks, status, logs and
+etcd's members; an operator may also reboot, drain, uncordon
+and upgrade nodes; an admin may call every method but node
 certificate renewal. [Security model](../how-it-works/node/security.md#who-may-call-the-node-api) lists the
 methods of each role. Without `--out` the file goes to `~/.config/chalkos/config`, where chalkctl
 looks for it; `--config` or `$CHALKOSCONFIG` names another. chalkctl warns 30 days before the
@@ -56,8 +56,8 @@ the API server.
 
 ## Renew a node certificate by hand
 
-Nodes with Kubernetes renew their [node certificates](../reference/glossary.md#node-certificate)
-through a [control plane](../reference/glossary.md#control-plane) once two thirds of the year's
+Nodes with Kubernetes renew their node certificates
+through a control plane once two thirds of the year's
 lifetime have passed. Two kinds of node need
 [`chalkctl node renew`](../reference/cli/chalkctl_node_renew.md) instead: a node whose image has no
 Kubernetes, which has no control plane to ask, and a node whose certificate expired, for example
@@ -75,12 +75,12 @@ is the reminder.
 
 ## Rotate the node CA
 
-The [node CA](../reference/glossary.md#node-ca) issues every node certificate, and control
+The node CA issues every node certificate, and control
 planes hold it to renew them. It is valid for five years, and control planes report
 `node CA expires <date>; run chalkctl node-ca rotate` once less than 18 months remain, because
 no node certificate may outlive it.
 [`chalkctl node-ca rotate`](../reference/cli/chalkctl_node-ca_rotate.md) issues a new one from
-the [OS CA](../reference/glossary.md#os-ca) and delivers it to every control plane:
+the OS CA and delivers it to every control plane:
 
 ```console
 $ chalkctl node-ca rotate
@@ -174,8 +174,8 @@ Every node serves a certificate of the new node CA and trusts the old and the ne
 ```
 
 At this pause, commit the new `secrets.pub.json` and rebuild the
-[installer](../reference/glossary.md#installer) and any images you keep for installs: images carry
-the OS CA that [maintenance mode](../reference/glossary.md#maintenance-mode) accepts. Running nodes
+installer and any images you keep for installs: images carry
+the OS CA that maintenance mode accepts. Running nodes
 need no new image, but the next image you build carries the new OS CA, which gives it a new root
 hash like any other change. Then finish:
 
@@ -230,7 +230,7 @@ because removing the key would lose them.
 
 ## Revoke access
 
-[chalkd](../reference/glossary.md#chalkd) and the API server check no revocation list. Access ends
+chalkd and the API server check no revocation list. Access ends
 when what the certificate chains to is no longer trusted:
 
 - To revoke a client file, rotate the OS CA, and issue new client files at its first pause to
@@ -245,7 +245,7 @@ rotation.
 ## Check that it worked
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) lists what a node trusts, by the first 16
-hexadecimal digits of each fingerprint. A [worker](../reference/glossary.md#worker) in the middle of
+hexadecimal digits of each fingerprint. A worker in the middle of
 an OS CA rotation trusts two OS CAs:
 
 ```console

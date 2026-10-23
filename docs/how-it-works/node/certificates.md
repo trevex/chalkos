@@ -7,11 +7,11 @@ description: "Every certificate authority and certificate of a cluster, and how 
 
 A chalkos cluster runs on five certificate authorities and two keys, all generated once by
 [`chalkctl gen secrets`](../../reference/cli/chalkctl_gen_secrets.md) and kept in the
-[secrets file](../../reference/glossary.md#secrets-file). Two CAs authenticate the node API that
-[chalkd](../../reference/glossary.md#chalkd) serves; three authenticate Kubernetes. This page lists
+secrets file. Two CAs authenticate the node API that
+chalkd serves; three authenticate Kubernetes. This page lists
 what each one issues, how long each certificate lives, what renews it, and how a CA or key is
 replaced. The secrets file also holds the recovery secret, from which each node's
-[recovery key](../../reference/glossary.md#recovery-key) is derived. The [Security model](security.md)
+recovery key is derived. The [Security model](security.md)
 explains who is allowed what with these certificates.
 
 ## Which CAs and keys does a cluster have?
@@ -21,8 +21,8 @@ expiry and backdated by an hour, so a node whose clock lags slightly still accep
 
 | CA or key | Lifetime | Issues or does | Held by |
 | --- | --- | --- | --- |
-| [OS CA](../../reference/glossary.md#os-ca) | 10 years | Client certificates and the node CA; path length 1 | The secrets file; its certificate is on every installed node, and in every image built with [`osCA`](../../reference/options.md#osca) |
-| [Node CA](../../reference/glossary.md#node-ca) | 5 years | Node certificates, for TLS servers and clients only; path length 0 | The secrets file and every control plane |
+| OS CA | 10 years | Client certificates and the node CA; path length 1 | The secrets file; its certificate is on every installed node, and in every image built with [`osCA`](../../reference/options.md#osca) |
+| Node CA | 5 years | Node certificates, for TLS servers and clients only; path length 0 | The secrets file and every control plane |
 | Kubernetes CA | 10 years | The API server's, controllers' and kubelets' certificates and admin kubeconfigs | The secrets file and every control plane; workers get its certificate |
 | Front-proxy CA | 10 years | The certificate the API server presents to aggregated API servers | The secrets file and every control plane |
 | etcd CA | 10 years | etcd's server and peer certificates and its clients' | The secrets file and every control plane |
@@ -58,15 +58,15 @@ flowchart TD
 
 ### Certificates of the node API
 
-A node's [node certificate](../../reference/glossary.md#node-certificate) is what chalkd serves and
+A node's node certificate is what chalkd serves and
 what it presents to renew itself. It carries the node's name in the inventory as its subject,
 which chalkd takes as the node's name, the host name its `Host` document gives and the node's
 addresses. It lives one year and is stored with its key and the node CA's certificate in one file
-on [STATE](../../reference/glossary.md#state), `/state/chalkd/node.pem`. chalkctl issues the first
+on STATE, `/state/chalkd/node.pem`. chalkctl issues the first
 one at install.
 
 Client certificates come from the OS CA directly, with the role in their Organization. A
-[client file](../../reference/glossary.md#client-file) from
+client file from
 [`chalkctl config new`](../../reference/cli/chalkctl_config_new.md) holds one, valid for one year by
 default (`--ttl`). A command that reads the secrets file issues itself an admin certificate that
 lives one hour and exists only in memory, so using the secrets file leaves no admin certificate
@@ -74,25 +74,25 @@ behind.
 
 ### Certificates of Kubernetes
 
-A [control plane](../../reference/glossary.md#control-plane) issues its own certificates from the CAs
-in its [Kubernetes share](../../reference/glossary.md#kubernetes-share) at every boot: the API server's
+A control plane issues its own certificates from the CAs
+in its Kubernetes share at every boot: the API server's
 serving certificate, its clients of the kubelets and etcd, the front-proxy client, etcd's server and
 peer certificates, and the kubeconfigs of the controller-manager and the scheduler. Each lives one
 year. They are written to `/run/chalkos/kubernetes/pki`, a tmpfs, so they never reach a disk. The
-API server's certificate names the [cluster endpoint](../../reference/glossary.md#cluster-endpoint),
-every [VIP](../../reference/glossary.md#vip), the node's addresses and the `kubernetes` service names.
+API server's certificate names the cluster endpoint,
+every VIP, the node's addresses and the `kubernetes` service names.
 
 chalkd's own clients of the API server and of etcd are certificates it issues itself in memory,
 valid for one hour and replaced at half their lifetime. The API server client is in
 `system:masters`, because chalkd creates the RBAC bindings everything else depends on.
 
 A kubelet authenticates with a client certificate for `system:node:<node>` in `system:nodes`. A
-[worker](../../reference/glossary.md#worker) receives the first one in its share at install, issued
+worker receives the first one in its share at install, issued
 for its name; a control plane issues its own at every boot. The kubelet renews it itself, once 70
 to 90% of its lifetime have passed, through a certificate request the controller-manager
 approves. The kubelet's serving certificate, which the API server verifies when it fetches logs or
 runs `kubectl exec`, comes from a request that chalkd on a control plane approves. Both live in
-`/var/lib/kubelet/pki` on [VAR](../../reference/glossary.md#var).
+`/var/lib/kubelet/pki` on VAR.
 
 An admin kubeconfig from [`chalkctl kubeconfig`](../../reference/cli/chalkctl_kubeconfig.md) holds a
 client certificate in the group `chalkos:cluster-admins`, which chalkos's RBAC addon binds to
@@ -228,7 +228,7 @@ A client file and a kubeconfig hold the CA certificates they verify the servers 
 cannot reach those files. During an `os-ca` rotation, client files from before it stop verifying the
 nodes at the switch and are refused at the finish; files issued after the accept phase carry both OS
 CAs. During a `kubernetes-ca` rotation, kubeconfigs from before it stop verifying the API server at
-the switch and are refused at the finish. Images and [installer](../../reference/glossary.md#installer)
+the switch and are refused at the finish. Images and installer
 media carry the OS CA too, so after an `os-ca` rotation they are built again from the new
 `secrets.pub.json`; older ones fail to install.
 

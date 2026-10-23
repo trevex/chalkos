@@ -6,16 +6,16 @@ description: "Run chalkos nodes as virtual machines on a KVM hypervisor"
 # Run on KVM, Proxmox or libvirt
 
 chalkos nodes run as KVM virtual machines from the `kvm`
-[platform](../reference/glossary.md#platform)'s images, with UEFI
-[Secure Boot](../reference/glossary.md#secure-boot) and a virtual
-[TPM](../reference/glossary.md#tpm) like a physical machine. This guide builds the `kvm` image
-of the nodes' [variant](../reference/glossary.md#variant), signs it, turns it into a VM disk,
+platform's images, with UEFI
+Secure Boot and a virtual
+TPM like a physical machine. This guide builds the `kvm` image
+of the nodes' variant, signs it, turns it into a VM disk,
 creates the VM under plain QEMU, libvirt or Proxmox, and installs the node in place: the VM
-boots its own image into [maintenance mode](../reference/glossary.md#maintenance-mode) and
+boots its own image into maintenance mode and
 [`chalkctl install`](../reference/cli/chalkctl_install.md) gives it its
-[config](../reference/glossary.md#config) and secrets, without an installer. The VM's disk is
+config and secrets, without an installer. The VM's disk is
 the node's system disk, so nothing else on the hypervisor changes. For a local test cluster,
-[chalklab](../reference/glossary.md#chalklab) does all of this for you; this guide is for
+chalklab does all of this for you; this guide is for
 hypervisors you run yourself.
 
 ## Before you begin
@@ -23,19 +23,19 @@ hypervisors you run yourself.
 You need:
 
 - The cluster's repository, with a flake whose `mkImages` builds the `kvm` platform, an
-  [inventory](../reference/glossary.md#inventory) and the nodes' YAML, as
+  inventory and the nodes' YAML, as
   [Plan a production cluster](../kubernetes/production-cluster.md#lay-out-the-repository) lays it out; its
-  [secrets file](../reference/glossary.md#secrets-file), `secrets.age`; and the
+  secrets file, `secrets.age`; and the
   [`osCA`](../reference/options.md#osca) argument of `mkImages` set to `./secrets.pub.json`, as
   in [Install on bare metal](install-bare-metal.md#before-you-begin).
-- A Secure Boot [db](../reference/glossary.md#db-and-dbx) key and certificate, `db.key` and
+- A Secure Boot db key and certificate, `db.key` and
   `db.crt`, from [Sign images for Secure Boot](../build/secure-boot-signing.md), and
-  [chalkbuild](../reference/glossary.md#chalkbuild), which signs images with them. On a VM you own
+  chalkbuild, which signs images with them. On a VM you own
   the firmware's variable store, so you enrol the certificate yourself, as shown below.
 - A KVM host with QEMU, OVMF built with Secure Boot and SMM support, and swtpm. libvirt and
   Proxmox bring all three. `qemu-img` on the machine where you prepare the disk.
-- 2 vCPUs and about 3 GiB of memory per [control plane](../reference/glossary.md#control-plane)
-  and 2 GiB per [worker](../reference/glossary.md#worker), the sizes chalklab gives its VMs, and
+- 2 vCPUs and about 3 GiB of memory per control plane
+  and 2 GiB per worker, the sizes chalklab gives its VMs, and
   at least 16 GiB of disk per node. The [requirements](../get-started/requirements.md) list
   what a node uses before workloads.
 
@@ -110,18 +110,18 @@ cp --sparse=always images/node-kvm/chalkos.raw node.raw
 The output directory of `chalkbuild sign` must not exist, so `rm -rf` removes the signed copy
 of an earlier build first.
 
-The image holds the [ESP](../reference/glossary.md#esp), with its UKI as the first boot entry
-`chalkos_1.efi`, and [slot](../reference/glossary.md#slot) A only, and
+The image holds the ESP, with its UKI as the first boot entry
+`chalkos_1.efi`, and slot A only, and
 every node whose image is `node-kvm` boots the same signed image; what differs between nodes
 reaches them at install. Sign before the first boot: an in-place install sends no image, so the
 image the VM boots is the one the node keeps until its first
-[upgrade](../reference/glossary.md#upgrade).
+upgrade.
 
 ## Make a disk for each VM
 
 Give each VM its own disk, converted from the signed image and grown to the node's disk size.
-On its first boot the image adds slot B and [STATE](../reference/glossary.md#state) behind slot
-A, and the install creates [VAR](../reference/glossary.md#var) in the rest of the disk, so the
+On its first boot the image adds slot B and STATE behind slot
+A, and the install creates VAR in the rest of the disk, so the
 disk must be larger than the image:
 
 ```sh
@@ -143,7 +143,7 @@ Every hypervisor below sets the same things:
 | TPM | TPM 2.0, emulated by swtpm | chalkos seals the disk keys to it; its state must persist with the VM. |
 | Disk | virtio block, the image's disk | The node's system disk, `/dev/vda` in the guest. |
 | Network | virtio-net, with the MAC address the node's network matches | |
-| Serial port | the first one, `ttyS0` | The kvm image's console, where [chalkd](../reference/glossary.md#chalkd) prints its fingerprint. |
+| Serial port | the first one, `ttyS0` | The kvm image's console, where chalkd prints its fingerprint. |
 | Guest agent channel | virtio-serial port `org.qemu.guest_agent.0` | Optional: lets the host shut the VM down cleanly and read its addresses. |
 
 The guest agent answers only `guest-sync-delimited`, `guest-sync`, `guest-ping`, `guest-info`,
@@ -153,9 +153,9 @@ files for the host, which the agent would otherwise allow, so the hypervisor's a
 on the node through it.
 
 Keep the VM's variable store and TPM state for the node's life. The node's disk keys are sealed to
-[PCR 7](../reference/glossary.md#pcr-7), which measures the Secure Boot variables, so a reset
+PCR 7, which measures the Secure Boot variables, so a reset
 variable store or a new TPM state stops the node from unlocking without its
-[recovery key](../reference/glossary.md#recovery-key).
+recovery key.
 
 ### Plain QEMU
 
@@ -326,7 +326,7 @@ prints `installing cp1 in place` and, once the node accepted everything,
 match the encryption policy of its `SystemDisk`, writes its config and certificates there,
 creates VAR and its volumes, enrols the second keyslot and gives the ESP a random partition UUID,
 so no two VMs made from the same image share it. The node reboots into
-[normal mode](../reference/glossary.md#normal-mode) with the static address of its config; keep
+normal mode with the static address of its config; keep
 the inventory's `address` for the node the same, since chalkctl reaches the node there.
 
 From here a VM cluster continues as a bare-metal one:
@@ -335,7 +335,7 @@ then install the other nodes.
 
 ## Use the installer instead
 
-The [installer](../reference/glossary.md#installer) works in a VM too: attach the signed
+The installer works in a VM too: attach the signed
 installer ISO from [Install on bare metal](install-bare-metal.md#sign-the-installer) as a CD-ROM
 next to an empty virtio disk, and install as on a physical machine. chalkctl then sends the
 node's `kvm` image, the signed copy the inventory names, to the installer. When the inventory

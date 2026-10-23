@@ -15,26 +15,26 @@ this page is for changing it.
 Go code never evaluates Nix itself. Nix builds images; everything about a cluster or a node is
 YAML that Go reads. They meet in these places:
 
-- The [image](../reference/glossary.md#image) directory. `chalkos.lib.mkImages` builds one per
-  [variant](../reference/glossary.md#variant) and [platform](../reference/glossary.md#platform)
+- The image directory. `chalkos.lib.mkImages` builds one per
+  variant and platform
   from the node modules (`lib/images.nix`, `modules/node`): the raw image with its partitions,
   `metadata.json` (variant, platform, root hash, revision and tag), `image.json` (what the image
   fixes about Kubernetes) and `schemas/`, the JSON Schemas of the
-  [config kinds](../reference/glossary.md#kind) the image accepts. chalkctl and chalklab read
+  config kinds the image accepts. chalkctl and chalklab read
   them from there, or from a running node through the Contract method.
 - Files the image carries in `/etc/chalkos`, written by the node modules: the same
   `kubernetes/image.json` and `schemas`, the units granted each kind in `services.json`, the
   outputs a node renders in `outputs.json`, what a delivery restarts or reloads in
   `effects.json`, the system region's repart definitions in `repart.d`
-  and the [OS CA](../reference/glossary.md#os-ca) certificate in `os-ca.crt` when `mkImages` has
+  and the OS CA certificate in `os-ca.crt` when `mkImages` has
   an `osCA`; and the image's own description in `/etc/os-release`. chalkd reads them on the node.
-- A node's [config](../reference/glossary.md#config): the YAML
-  [config documents](../reference/glossary.md#config-document) an inventory gives the node,
+- A node's config: the YAML
+  config documents an inventory gives the node,
   which chalkctl reads (`pkg/inventory`), checks against the schemas of the image the inventory
-  names for the node and translates into the [identity](../reference/glossary.md#identity) the
+  names for the node and translates into the identity the
   node applies (`pkg/config`). chalkctl delivers the documents to
-  [chalkd](../reference/glossary.md#chalkd), which checks them again against its own image's
-  schemas, keeps them on [STATE](../reference/glossary.md#state) and translates them the same
+  chalkd, which checks them again against its own image's
+  schemas, keeps them on STATE and translates them the same
   way.
 - The node's Kubernetes cluster, which chalkd builds from the `Cluster` and `Flannel`
   documents and the image's `image.json` into `/run/chalkos/kubernetes/cluster.json`. chalkd renders
@@ -79,36 +79,36 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `chalkbuild` | The chalkbuild command tree. |
 | `chalkcfg` | The chalkcfg command tree: reads the documents below `/run/chalkos/config` and the kinds the image's schemas name, and prints them. |
 | `chalkctl` | The chalkctl command tree. |
-| `chalkd` | The node API server, with the permissions of each method, and chalkd's work at boot: renewals, the [VIP](../reference/glossary.md#vip) election, the [health check](../reference/glossary.md#health-check). |
+| `chalkd` | The node API server, with the permissions of each method, and chalkd's work at boot: renewals, the VIP election, the health check. |
 | `chalklab` | The chalklab command tree. |
-| `client` | Connections to chalkd: by fingerprint in [maintenance mode](../reference/glossary.md#maintenance-mode), by the OS CA otherwise. |
+| `client` | Connections to chalkd: by fingerprint in maintenance mode, by the OS CA otherwise. |
 | `config` | Config documents: parsing, the rules of a set, defaults, the hash, and the translation into the identity the node applies. |
 | `config/store` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
-| `facts` | Loads the [facts](../reference/glossary.md#fact) change rules read: files, and commands of the image's store run in a sandbox. |
+| `facts` | Loads the facts change rules read: files, and commands of the image's store run in a sandbox. |
 | `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads, and the kinds of Kubernetes nodes. |
 | `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |
 | `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
-| `install` | Installs a node in place or from the [installer](../reference/glossary.md#installer), step by step and repeatable. |
+| `install` | Installs a node in place or from the installer, step by step and repeatable. |
 | `kubernetes` | The node's Kubernetes cluster as the image records it, and the node as its config names it. |
 | `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
 | `kubernetes/etcd` | etcd membership: learners, promotion, quorum-safe removal. |
-| `kubernetes/manifests` | The [control plane](../reference/glossary.md#control-plane)'s static pods. |
+| `kubernetes/manifests` | The control plane's static pods. |
 | `kubernetes/node` | The node's Kubernetes files at boot: addresses, kubelet credentials and flags, control-plane certificates. |
 | `kubernetes/nodeip` | Picks the node's address of each family. |
 | `kubernetes/pki` | The Kubernetes certificates: the share, the control plane's leaves, admin kubeconfigs. |
 | `kubernetes/vip` | Adds a VIP to an interface and announces it. |
-| `lab` | QEMU VMs, swtpm, the lab switch and console and the [lab](../reference/glossary.md#lab)'s supervisor, for chalklab and the end-to-end tests. |
+| `lab` | QEMU VMs, swtpm, the lab switch and console and the lab's supervisor, for chalklab and the end-to-end tests. |
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
 | `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the granted units, renders the outputs at boot, networkd's units and chrony's servers among them, and reads the image's grants and effects. |
-| `outputs` | Renders and checks the image's [outputs](../reference/glossary.md#output) in a sandbox of their own, as an unprivileged user, swaps them in by a symlink rename, and records their hashes and failures. |
-| `pki` | The [secrets file](../reference/glossary.md#secrets-file), the OS CA and [node CA](../reference/glossary.md#node-ca), client and [node certificates](../reference/glossary.md#node-certificate), client roles. |
-| `rules` | Compiles the [change rules](../reference/glossary.md#change-rule) of an image's schemas, with chalkos's CEL functions, and evaluates them against a config, the config it replaces and the node's facts. |
+| `outputs` | Renders and checks the image's outputs in a sandbox of their own, as an unprivileged user, swaps them in by a symlink rename, and records their hashes and failures. |
+| `pki` | The secrets file, the OS CA and node CA, client and node certificates, client roles. |
+| `rules` | Compiles the change rules of an image's schemas, with chalkos's CEL functions, and evaluates them against a config, the config it replaces and the node's facts. |
 | `schema` | Reads an image's config contract: `metadata.json` and the JSON Schemas of its kinds, and validates documents against them. |
 | `storage` | Storage sections, disk references and pins, repart definitions, and the changes a delivered section makes to the recorded one. |
-| `storage/node` | Storage on the node: STATE, [volumes](../reference/glossary.md#volume), [VAR](../reference/glossary.md#var) and the generator's units. |
-| `uki` | Reads a [UKI](../reference/glossary.md#uki)'s os-release and command line, and checks its signature as firmware does. |
-| `upgrade` | Writes an image into the inactive [slot](../reference/glossary.md#slot) and makes it the next boot; the slot writer install shares. |
-| `verity` | Reads and checks [dm-verity](../reference/glossary.md#dm-verity) hash trees. |
+| `storage/node` | Storage on the node: STATE, volumes, VAR and the generator's units. |
+| `uki` | Reads a UKI's os-release and command line, and checks its signature as firmware does. |
+| `upgrade` | Writes an image into the inactive slot and makes it the next boot; the slot writer install shares. |
+| `verity` | Reads and checks dm-verity hash trees. |
 
 `uki/ukitest`, `image/imagetest` and `kubernetes/etcd/etcdtest` hold test helpers: small UKIs, small
 disk images and db signers, and in-process etcd members.
@@ -116,7 +116,7 @@ disk images and db signers, and in-process etcd members.
 ## The node API
 
 The API is defined in `api/chalkos/node/v1/node.proto` and served by chalkd over Connect on
-TCP port 50000 with mutual TLS. Which [client role](../reference/glossary.md#client-role) may
+TCP port 50000 with mutual TLS. Which client role may
 call a method, and in which mode, is one table: `permissions` in `pkg/chalkd/server.go`.
 
 ```go
@@ -153,7 +153,7 @@ it has no `completion` command.
 
 The layout follows these rules, so each change has one place to go:
 
-- An [extension](../reference/glossary.md#extension) is a NixOS module in a variant's
+- An extension is a NixOS module in a variant's
   `modules`: its kinds, its units, their outputs and their effects, together.
 - The node modules declare the image options; `lib/images-arguments.nix` declares the
   arguments of `mkImages`. Everything about a cluster or a node is a config kind, not an option.

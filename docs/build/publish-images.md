@@ -7,15 +7,15 @@ description: "Build an image as an OCI artifact, sign it for Secure Boot, push i
 
 A chalkos image can be published to an OCI registry as one artifact, so a cluster's inventory names
 it by its reference in the registry. The artifact holds the same
-image as an [image directory](../reference/glossary.md#image-directory): the store, its hash tree,
-the [UKI](../reference/glossary.md#uki), the boot loader and the contract, which describes the
+image as an image directory: the store, its hash tree,
+the UKI, the boot loader and the contract, which describes the
 config the image accepts. [`chalkctl validate`](../reference/cli/chalkctl_validate.md),
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) and
 [`chalkctl status`](../reference/cli/chalkctl_status.md) read the image's header and contract from
 the registry. [`chalkctl install`](../reference/cli/chalkctl_install.md) on a machine that runs
 the installer and [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) both have the node
 pull the image from it. This guide builds the artifact with `mkImages`, signs it, pushes it with
-[chalkbuild](../reference/glossary.md#chalkbuild), names it in the inventory, gives the nodes the
+chalkbuild, names it in the inventory, gives the nodes the
 registry's credentials, and installs and upgrades them from it.
 
 ## Before you begin
@@ -209,7 +209,7 @@ describes.
 ## Install from the registry
 
 `chalkctl install` without `--image`, on a machine that runs the
-[installer](../reference/glossary.md#installer), sends the installer the image's reference by
+installer, sends the installer the image's reference by
 digest in place of the image:
 
 ```sh

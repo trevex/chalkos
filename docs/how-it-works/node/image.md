@@ -5,10 +5,10 @@ description: "What an image holds: the erofs store on dm-verity, the signed UKI 
 
 # The image
 
-An [image](../../reference/glossary.md#image) is the whole operating system of a node in one unsigned
-raw disk image: systemd-boot, a [UKI](../../reference/glossary.md#uki) with the kernel and initrd, and
-a read-only Nix [store](../../reference/glossary.md#store). `chalkos.lib.mkImages` builds one per
-[variant](../../reference/glossary.md#variant) and [platform](../../reference/glossary.md#platform), and
+An image is the whole operating system of a node in one unsigned
+raw disk image: systemd-boot, a UKI with the kernel and initrd, and
+a read-only Nix store. `chalkos.lib.mkImages` builds one per
+variant and platform, and
 every node the [inventory](../../reference/kinds.md#inventory) runs on it boots the same bytes. One
 signature on the UKI covers the whole store, so the firmware's signature check extends to every
 block the node reads, and an upgrade replaces all of it at once.
@@ -20,14 +20,14 @@ The table names the x86-64 boot loader; an arm64 image has `BOOTAA64.EFI`.
 
 | Partition | Size | Contents |
 | --- | --- | --- |
-| [ESP](../../reference/glossary.md#esp) | 1 GiB | systemd-boot as `/EFI/BOOT/BOOTX64.EFI` and the UKI as `/EFI/Linux/chalkos_1.efi` |
-| Slot A, hash tree | 128 MiB | The store's [dm-verity](../../reference/glossary.md#dm-verity) hash tree, labelled `store-verity_<hash16>` |
+| ESP | 1 GiB | systemd-boot as `/EFI/BOOT/BOOTX64.EFI` and the UKI as `/EFI/Linux/chalkos_1.efi` |
+| Slot A, hash tree | 128 MiB | The store's dm-verity hash tree, labelled `store-verity_<hash16>` |
 | Slot A, data | 3 GiB | The store as erofs, labelled `store_<hash16>` |
 
 On its first boot, systemd-repart in the initrd adds slot B, two partitions of the same sizes
-labelled `_empty`, and [STATE](../../reference/glossary.md#state), 128 MiB, encrypted and sealed to the
-[TPM](../../reference/glossary.md#tpm). The [installer](../../reference/glossary.md#installer) lays out
-the same partitions on its target disk in one run. [VAR](../../reference/glossary.md#var) and further
+labelled `_empty`, and STATE, 128 MiB, encrypted and sealed to the
+TPM. The installer lays out
+the same partitions on its target disk in one run. VAR and further
 volumes come from the node's [`SystemDisk`](../../reference/kinds.md#systemdisk) and
 [`Volume`](../../reference/kinds.md#volume) documents at install. The sizes are the defaults of
 [`chalkos.disk`](../../reference/options.md#chalkosdiskstoresize); a slot's size is fixed at install
@@ -47,7 +47,7 @@ profile:
 - The image avoids Perl and keeps interpreters out where it can.
 
 What a node must keep goes to two partitions: STATE for its
-[config](../../reference/glossary.md#config), certificates and Kubernetes secrets, and VAR at `/var`
+config, certificates and Kubernetes secrets, and VAR at `/var`
 for etcd, containerd, the kubelet and logs. [Storage and encryption](storage.md) describes both.
 
 ## How is the store built?
@@ -64,9 +64,9 @@ them back into the system's closure.
 ## How does dm-verity protect the store?
 
 dm-verity checks every block of the store against a hash tree when it is read, so a modified
-block fails to read. The tree's top hash, the [root hash](../../reference/glossary.md#root-hash), is
+block fails to read. The tree's top hash, the root hash, is
 on the UKI's kernel command line as `usrhash=`. The UKI is signed, and
-[Secure Boot](../../reference/glossary.md#secure-boot) verifies the signature before the firmware
+Secure Boot verifies the signature before the firmware
 starts it, so the firmware's check covers the whole store.
 
 ```mermaid
@@ -97,7 +97,7 @@ The UKI is one EFI binary with four parts that matter here:
 - the kernel command line, with `usrhash=` and the platform's console settings;
 - os-release, which names the image.
 
-Its os-release fields tell [chalkd](../../reference/glossary.md#chalkd) what an image is before it
+Its os-release fields tell chalkd what an image is before it
 installs it. chalkd reads them from the UKI, whose signature covers them, and refuses an image
 whose ID or platform does not match the node:
 
@@ -134,10 +134,10 @@ installed with stays.
 
 ## What are slots A and B?
 
-A [slot](../../reference/glossary.md#slot) is a pair of partitions that holds one image's store: its
-hash tree and its data. A node has two, A and B, which is the [A/B](../../reference/glossary.md#a-b)
+A slot is a pair of partitions that holds one image's store: its
+hash tree and its data. A node has two, A and B, which is the A/B
 scheme: the node boots one slot while an upgrade writes the other, so the image it ran before
-stays on disk for a [rollback](../../reference/glossary.md#rollback).
+stays on disk for a rollback.
 
 Nothing records which slot is active. The partitions say it, here with the GPT types of an x86-64
 image:
@@ -155,10 +155,10 @@ root hash. [Upgrades](upgrades.md) describes the steps.
 
 ## What identifies an image?
 
-An image is its store's [root hash](../../reference/glossary.md#root-hash). Two builds of the same
+An image is its store's root hash. Two builds of the same
 modules from the same inputs, the same chalkos, `flake.lock` and OS CA, have the same store and so
 the same root hash, and an image that changes in any byte of its store has another. chalkd and
-[chalkctl](../../reference/glossary.md#chalkctl) compare images by it alone: an upgrade to the root
+chalkctl compare images by it alone: an upgrade to the root
 hash a node runs is installed already and changes nothing, and any other is a new image. No
 version needs raising for a new build. The build refuses `system.image.version`, because
 systemd-boot would order the entries by it before their generation.
@@ -183,7 +183,7 @@ module groups or agents to the images for that kind of machine alone.
 ## Which kernel modules does an image carry?
 
 An image carries a filtered copy of nixpkgs's prebuilt kernel module tree, so the kernel itself is
-nixpkgs's and comes from its binary cache. [Module groups](../../reference/glossary.md#module-group),
+nixpkgs's and comes from its binary cache. Module groups,
 listed in [`chalkos.kernel.moduleGroups`](../../reference/options.md#chalkoskernelmodulegroups), pick
 what the tree keeps. Most groups name directories of the tree, so a kernel update brings a
 subsystem's new drivers along.
@@ -245,11 +245,11 @@ slot sizes it was installed with, and refuses a store that does not fit them.
 
 ## How is an image built?
 
-`nix build` builds one [image directory](../../reference/glossary.md#image-directory): the image of
+`nix build` builds one image directory: the image of
 one variant on one platform, `images.<variant>-<platform>` of the flake's mkImages call. The lab
 template's flake exposes `images.node-kvm` as the package `node-kvm`, the image both its
-[control plane](../../reference/glossary.md#control-plane) and its
-[worker](../../reference/glossary.md#worker) boot, and its inventory names the directory the build is
+control plane and its
+worker boot, and its inventory names the directory the build is
 linked to:
 
 ```console
@@ -287,7 +287,7 @@ chalkbuild sign --key=<db-key> --cert=<db-cert> build/node-kvm images/node-kvm
 ```
 
 `<db-key>` and `<db-cert>` are the PEM key and certificate of a signer the machines' firmware
-trusts in [db](../../reference/glossary.md#db-and-dbx).
+trusts in db.
 [Sign images for Secure Boot](../../build/secure-boot-signing.md) covers the keys.
 
 `mkImages` also builds each image as an OCI artifact, `oci.<variant>-<platform>`: an OCI image

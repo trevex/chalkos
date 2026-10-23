@@ -7,9 +7,9 @@ description: "STATE, VAR and volumes, how they are encrypted and unlocked, and h
 
 A chalkos node keeps everything it writes on partitions that are encrypted by default and unlock
 through the TPM without a password. The image fixes the partitions that hold the system itself;
-the node's [config](../../reference/glossary.md#config) declares the rest in its `SystemDisk` and
-`Volume` documents: how large [VAR](../../reference/glossary.md#var) is, and which further
-[volumes](../../reference/glossary.md#volume) exist, on which disks, encrypted or not. This page
+the node's config declares the rest in its `SystemDisk` and
+`Volume` documents: how large VAR is, and which further
+volumes exist, on which disks, encrypted or not. This page
 explains how those partitions are laid out, created, unlocked and changed, and what happens when
 a disk or the TPM fails.
 
@@ -17,12 +17,12 @@ a disk or the TPM fails.
 
 The system disk starts with the system region, which every node of an image shares:
 
-- the [ESP](../../reference/glossary.md#esp), which holds systemd-boot and the
-  [UKIs](../../reference/glossary.md#uki) of both slots, 1 GiB by default;
-- two [slots](../../reference/glossary.md#slot), A and B, each a pair of partitions for an image's
-  erofs [store](../../reference/glossary.md#store) and its
-  [dm-verity](../../reference/glossary.md#dm-verity) hash tree, 3 GiB and 128 MiB by default;
-- [STATE](../../reference/glossary.md#state), 128 MiB by default.
+- the ESP, which holds systemd-boot and the
+  UKIs of both slots, 1 GiB by default;
+- two slots, A and B, each a pair of partitions for an image's
+  erofs store and its
+  dm-verity hash tree, 3 GiB and 128 MiB by default;
+- STATE, 128 MiB by default.
 
 Their sizes are options of the image, such as
 [`chalkos.disk.stateSize`](../../reference/options.md#chalkosdiskstatesize), because every node of the
@@ -30,17 +30,17 @@ image must agree on them. VAR follows on the system disk and fills the rest of i
 Volumes go on the system disk after VAR, or each on a disk of its own. [Image and partition
 layout](../../reference/image-layout.md) shows the partition map.
 
-STATE is small and holds what makes the node itself: its [config](../../reference/glossary.md#config),
-its [node certificate](../../reference/glossary.md#node-certificate) and key, the OS CAs it trusts, its
-[Kubernetes share](../../reference/glossary.md#kubernetes-share), its storage section with the disks it
-pinned, its etcd markers and pinned addresses on a [control
-plane](../../reference/glossary.md#control-plane), and the marker that the node is installed. VAR,
+STATE is small and holds what makes the node itself: its config,
+its node certificate and key, the OS CAs it trusts, its
+Kubernetes share, its storage section with the disks it
+pinned, its etcd markers and pinned addresses on a control
+plane, and the marker that the node is installed. VAR,
 mounted at `/var`, holds what the node writes while it runs: etcd's data, containerd's images, the
 kubelet's state and the journal. The root file system is a tmpfs, so nothing else survives a reboot.
 
 ## How is a node's storage declared?
 
-Two kinds of [config document](../../reference/glossary.md#config-document) declare a node's storage:
+Two kinds of config document declare a node's storage:
 
 - One [`SystemDisk`](../../reference/kinds.md#systemdisk), which every node's config holds: the disk
   the node runs from, the encryption of STATE, VAR and volumes, and VAR's size.
@@ -50,7 +50,7 @@ Two kinds of [config document](../../reference/glossary.md#config-document) decl
 Each node's set holds its own storage documents, usually in the node's own file, since disks differ
 between machines. Nothing merges a node's documents with those of other files: a field a document
 leaves out takes the kind's default, and a set holds one `SystemDisk`. The homelab example gives its
-[worker](../../reference/glossary.md#worker) w1 a VAR of 200 GiB and a volume on a SATA SSD of its own:
+worker w1 a VAR of 200 GiB and a volume on a SATA SSD of its own:
 
 ```yaml
 apiVersion: storage.chalkos.dev/v1alpha1
@@ -88,7 +88,7 @@ The system disk is always the disk the node booted from. udev links it as
 `/dev/disk/chalk-boot-disk` and its partitions as `/dev/disk/chalk-boot/<label>`, and only that
 disk gets the links, so a second disk carrying the same image never stands in for it. A node
 installed in place checks that its `SystemDisk`'s `spec.disk` names the disk it booted from; the
-[installer](../../reference/glossary.md#installer) writes the image to the disk it names.
+installer writes the image to the disk it names.
 
 A disk reference, `spec.disk` of a `SystemDisk` or a `Volume`, is a `path` below `/dev/` or a
 selector of `model` (a glob), `serial`, `wwn`, `size` (a comparison such as `>= 1T`) and `type`
@@ -123,8 +123,8 @@ the typed fields set (`Type`, `Label`, `Encrypt`, `Format`, `SizeMinBytes`, `Siz
 ## How are the partitions encrypted?
 
 With `spec.encryption.mode` of the `SystemDisk` set to `tpm2`, the default, STATE, VAR and volumes
-are LUKS2 volumes whose key the [TPM](../../reference/glossary.md#tpm) seals to
-[PCR 7](../../reference/glossary.md#pcr-7). VAR (`spec.var.encryption.mode`) and each volume (its
+are LUKS2 volumes whose key the TPM seals to
+PCR 7. VAR (`spec.var.encryption.mode`) and each volume (its
 `Volume`'s `spec.encryption.mode`) can override the mode; STATE follows the `SystemDisk`'s. `none`
 leaves the partitions unencrypted, and `chalkctl validate` warns when STATE, which holds the node's
 private keys, would be one of them:
@@ -140,11 +140,11 @@ with `spec.encryption.fallback` of the `SystemDisk`:
 
 | Fallback | Second keyslot |
 | --- | --- |
-| `recovery-key` (default) | The node's [recovery key](../../reference/glossary.md#recovery-key), derived from the [secrets file](../../reference/glossary.md#secrets-file); [`chalkctl recovery-key`](../../reference/cli/chalkctl_recovery-key.md) prints it |
+| `recovery-key` (default) | The node's recovery key, derived from the secrets file; [`chalkctl recovery-key`](../../reference/cli/chalkctl_recovery-key.md) prints it |
 | `password` | A password chalkctl asks for on the terminal, or reads from `--password-file`, at install, with each later change that adds an encrypted volume and when `chalkctl storage reset` recreates one |
 | `none` | None: a volume the TPM does not unseal can only be recreated empty |
 
-[chalkd](../../reference/glossary.md#chalkd) enrols the fallback with `systemd-cryptenroll` at install,
+chalkd enrols the fallback with `systemd-cryptenroll` at install,
 unlocking each volume with the TPM, and enrols it on every encrypted volume added later. Before it
 enrols a secret on a new volume it checks that the secret opens an existing keyslot, so a mistyped
 password cannot leave volumes with different fallbacks.
@@ -171,7 +171,7 @@ STATE itself and cannot be known before it is mounted.
 
 ## What happens when the TPM does not unseal?
 
-When PCR 7 changed, after a change of the [Secure Boot](../../reference/glossary.md#secure-boot) keys
+When PCR 7 changed, after a change of the Secure Boot keys
 or with Secure Boot off, the TPM releases no key. The console then asks for the second keyslot:
 always for STATE, and for VAR and the volumes unless the fallback is `none`. Typing the recovery key
 or password boots the node as usual.

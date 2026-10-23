@@ -12,18 +12,18 @@ does not unlock, boot, renew or rejoin, [Recover a node](recover-node.md) has th
 
 ## Before you begin
 
-- A reader [client file](../reference/glossary.md#client-file) or the
-  [secrets file](../reference/glossary.md#secrets-file), for `chalkctl status` and
+- A reader client file or the
+  secrets file, for `chalkctl status` and
   `chalkctl logs`.
 - The node's console, through its BMC, in person, or with `chalklab console` in a
-  [lab](../reference/glossary.md#lab).
+  lab.
 - A kubeconfig, for the shell inside a node.
 
 ## Read the node's status
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) is the first command to run. It asks the
-node's [chalkd](../reference/glossary.md#chalkd) for everything chalkd checks, and compares the
-node's config and image with the inventory. A healthy [worker](../reference/glossary.md#worker):
+node's chalkd for everything chalkd checks, and compares the
+node's config and image with the inventory. A healthy worker:
 
 ```console
 $ chalkctl status w1
@@ -50,14 +50,14 @@ Read it from the top:
 
 | Line | Says | When it is wrong |
 | --- | --- | --- |
-| `config` | The version of the [config](../reference/glossary.md#config) the node runs, the SHA-256 of its documents, and whether it is the inventory's; `none` on a node installed before config documents. | `not the inventory's; chalkctl apply-config w1 delivers it`: the node's files changed since the last delivery. `cannot read the config the inventory gives it: ...`: chalkctl could not build the node's documents from the inventory, for the reason it names. |
+| `config` | The version of the config the node runs, the SHA-256 of its documents, and whether it is the inventory's; `none` on a node installed before config documents. | `not the inventory's; chalkctl apply-config w1 delivers it`: the node's files changed since the last delivery. `cannot read the config the inventory gives it: ...`: chalkctl could not build the node's documents from the inventory, for the reason it names. |
 | `platform` | The platform the image was built for. | A mismatch with the platform of the node's image in the inventory: changing a node's platform is a reinstall. |
-| `image` | The image booted, by the first 12 hex characters of its [root hash](../reference/glossary.md#root-hash) with the tag and revision it was built from when the node's record knows them, its boot entry, and `not found healthy yet` while the [health check](../reference/glossary.md#health-check) runs. | `upgrade to ... failed: rolled back to ...`, followed by the failed boot's log lines: see [Upgrade a cluster](upgrade-cluster.md#if-a-node-rolls-back). |
+| `image` | The image booted, by the first 12 hex characters of its root hash with the tag and revision it was built from when the node's record knows them, its boot entry, and `not found healthy yet` while the health check runs. | `upgrade to ... failed: rolled back to ...`, followed by the failed boot's log lines: see [Upgrade a cluster](upgrade-cluster.md#if-a-node-rolls-back). |
 | `its store's root hash is ...` | Shown only when the node runs another build than the directory of its image in the inventory, whose `metadata.json` names the root hash. | `chalkctl upgrade --nodes w1 installs that image`: the image was rebuilt since the node's upgrade. `it has ... staged`: the node boots that build with its next reboot. |
 | `VOLUME` table | Each volume, its disk, mount point and state. | `missing` or `not mounted`; a `disk <name>: ...` line after the table names the disk's problem. |
-| `kubernetes` | The node's kind and state, whether its Node is Ready, its part in the [VIP](../reference/glossary.md#vip) and its [control plane](../reference/glossary.md#control-plane)'s state. | Any state other than `bootstrapped` or `joined`, or one of them followed by `: <problem>`; the table of symptoms below lists them. |
+| `kubernetes` | The node's kind and state, whether its Node is Ready, its part in the VIP and its control plane's state. | Any state other than `bootstrapped` or `joined`, or one of them followed by `: <problem>`; the table of symptoms below lists them. |
 | `certificates:` | Every certificate the node holds or issues, with its expiry. | A third column names what needs doing. |
-| `trust:` | The CAs and keys the node trusts, by fingerprint; `(issues)` marks the one that issues. | Two fingerprints outside a [rotation](../reference/glossary.md#rotation). |
+| `trust:` | The CAs and keys the node trusts, by fingerprint; `(issues)` marks the one that issues. | Two fingerprints outside a rotation. |
 | `time` | Whether chrony synchronised the clock, to which source and with what offset. | `not synchronised`. |
 | `failed unit` | Each systemd unit that failed in this boot. | Any line: read that unit's log. |
 
@@ -89,13 +89,13 @@ The units that matter most:
 
 `chalkctl logs` shows the current boot only. For a boot that fell back after an upgrade, the health
 check keeps the last 30 lines that chalkd and the check logged on
-[VAR](../reference/glossary.md#var), and `chalkctl status` shows them.
+VAR, and `chalkctl status` shows them.
 
 ## Watch the console
 
 The console shows what happens before chalkd serves: the boot loader, the initrd, a prompt for a
 disk's passphrase, and chalkd's own output, which includes the certificate fingerprint and the
-node's addresses in [maintenance mode](../reference/glossary.md#maintenance-mode). On hardware
+node's addresses in maintenance mode. On hardware
 the console is the BMC's serial-over-LAN or a screen. In a lab,
 [`chalklab console`](../reference/cli/chalklab_console.md) prints a VM's serial console and
 follows it; it is read-only, so a lab node cannot answer a passphrase prompt.
@@ -124,14 +124,14 @@ Each problem starts from what the status, the console or kubectl shows.
 ### The node is in maintenance mode after the install
 
 The console shows a fingerprint again, and `chalkctl status` cannot verify the node. The machine
-booted the [installer](../reference/glossary.md#installer) medium again, or the install did not
+booted the installer medium again, or the install did not
 finish. [Recover a node](recover-node.md#the-node-is-in-maintenance-mode) has both fixes.
 
 ### The console asks for a passphrase
 
-The [TPM](../reference/glossary.md#tpm) did not unseal [STATE](../reference/glossary.md#state),
-usually after a change to [Secure Boot](../reference/glossary.md#secure-boot) or the firmware. Type
-the node's [recovery key](../reference/glossary.md#recovery-key); [Recover a
+The TPM did not unseal STATE,
+usually after a change to Secure Boot or the firmware. Type
+the node's recovery key; [Recover a
 node](recover-node.md#the-console-asks-for-a-passphrase-at-boot) explains the causes and what comes
 after.
 
@@ -233,10 +233,10 @@ whose reboot would cost etcd its quorum, or at a drain that does not finish.
 
 | Third column | Means | Do |
 | --- | --- | --- |
-| `less than a third of its lifetime remains` | The [node certificate](../reference/glossary.md#node-certificate) is due for renewal. | Nothing on a node with Kubernetes, which renews it; `chalkctl node renew <node>` on one without. |
+| `less than a third of its lifetime remains` | The node certificate is due for renewal. | Nothing on a node with Kubernetes, which renews it; `chalkctl node renew <node>` on one without. |
 | `renewal failing: ...; expires ...` | The node could not renew through a control plane. | Fix what the message names, usually the endpoint not reaching chalkd on port 50000. |
 | `expired` | The certificate expired. | [Recover a node](recover-node.md#the-node-certificate-expired). |
-| `node CA expires ...; run chalkctl node-ca rotate` | The [node CA](../reference/glossary.md#node-ca) has less than 18 months left. | `chalkctl node-ca rotate`. |
+| `node CA expires ...; run chalkctl node-ca rotate` | The node CA has less than 18 months left. | `chalkctl node-ca rotate`. |
 | `OS CA expires ...`, `Kubernetes CA expires ...` | A CA has less than a year left. | [Rotate it](rotate-certificates.md). |
 | `less than a tenth of its lifetime remains, though the kubelet renews it itself` | The kubelet did not renew its certificate. | Read `kubelet.service`'s log; look for pending CertificateSigningRequests. |
 
@@ -253,7 +253,7 @@ issued, so a small offset does no harm, but a clock that is days off rejects val
 `chalklab create` and `chalklab start` run each node as a QEMU virtual machine on KVM.
 
 - `/dev/kvm does not exist`: the machine has no hardware virtualisation, it is disabled in the
-  firmware, or the kvm module is not loaded. [chalklab](../reference/glossary.md#chalklab) needs an
+  firmware, or the kvm module is not loaded. chalklab needs an
   x86-64 machine with KVM.
 - `you may not open /dev/kvm`: join the `kvm` group (on NixOS, add it to
   `users.users.<you>.extraGroups`) and log in again.

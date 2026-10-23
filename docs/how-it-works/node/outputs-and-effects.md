@@ -6,7 +6,7 @@ description: "How a node renders and checks its services' config files before a 
 # Outputs and effects
 
 An output is a set of config files for a service, rendered from a node's
-[config documents](../../reference/glossary.md#config-document) by a program of the image, and an
+config documents by a program of the image, and an
 effect is what a delivery does to the node's services when an output or a kind's documents
 change: restart a unit, reload it or run a command. chalkd renders and checks every output before
 a delivery changes the node, so a document that would give a service a file it rejects is refused
@@ -27,7 +27,7 @@ An image declares the three parts in its NixOS modules:
 
 A grant gives a unit runtime access to config kinds: chalkd writes the node's documents of those
 kinds below `/run/chalkos/config`, the values their `secretRef` fields name as the unit's systemd
-credentials `secret_<secret>.<key>`, and puts [chalkcfg](../../reference/glossary.md#chalkcfg) on the
+credentials `secret_<secret>.<key>`, and puts chalkcfg on the
 unit's `PATH`. A grant never restarts the unit, because which changes matter to a service is the
 service's to say, in an effect. A service that reads only its rendered outputs needs no grant,
 unless it reads a secret: renderers never see secret values, so the secret reaches the service as

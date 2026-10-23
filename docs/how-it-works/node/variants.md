@@ -5,14 +5,14 @@ description: "How mkImages builds a cluster's images from variants, platforms an
 
 # Variants and platforms
 
-`chalkos.lib.mkImages` builds every [image](../../reference/glossary.md#image) of a cluster from NixOS
-modules: one image per [variant](../../reference/glossary.md#variant) and
-[platform](../../reference/glossary.md#platform), and one
-[installer](../../reference/glossary.md#installer). An image fixes the software a node runs and nothing
-about the cluster, so one image serves every node of its variant and platform, [control
-planes](../../reference/glossary.md#control-plane) and [workers](../../reference/glossary.md#worker)
+`chalkos.lib.mkImages` builds every image of a cluster from NixOS
+modules: one image per variant and
+platform, and one
+installer. An image fixes the software a node runs and nothing
+about the cluster, so one image serves every node of its variant and platform, control
+planes and workers
 alike. What differs between nodes, from their addresses to the cluster's endpoint, is their
-[config](../../reference/glossary.md#config), YAML documents that [Config and the inventory](config.md)
+config, YAML documents that [Config and the inventory](config.md)
 describes.
 
 ## How does a flake build images?
@@ -68,7 +68,7 @@ for bare metal, with two extensions that add config kinds:
 The arguments are checked as module options, so a misspelled argument fails the evaluation with
 its name. `mkImages` returns three attribute sets:
 
-- `images.<variant>-<platform>`, the [image directory](../../reference/glossary.md#image-directory)
+- `images.<variant>-<platform>`, the image directory
   of a variant on a platform, such as `images.node-metal`, each built only when asked for;
 - `installer`, a raw image and a hybrid ISO in one directory, which installs images of every
   platform;
@@ -77,7 +77,7 @@ its name. `mkImages` returns three attribute sets:
 
 The flake pins the chalkos version in `flake.lock`, so its images change only when the lock file or
 the flake's own modules do. Nix is needed only to build images:
-[chalkctl](../../reference/glossary.md#chalkctl) and [chalklab](../../reference/glossary.md#chalklab)
+chalkctl and chalklab
 never evaluate the flake. The [inventory](../../reference/kinds.md#inventory) names the directory a
 node's build was linked to, so the machine that runs chalkctl needs the directory and no Nix.
 
@@ -89,8 +89,8 @@ a letter or digit, becomes `CHALKOS_VARIANT` in its images' os-release and `vari
 `metadata.json`. A variant declares two things:
 
 - [`modules`](../../reference/options.md#variantsmodules), plain NixOS modules for a GPU driver, a
-  monitoring agent, more kernel [module groups](../../reference/glossary.md#module-group) or an
-  [extension](../../reference/glossary.md#extension)'s kinds and services;
+  monitoring agent, more kernel module groups or an
+  extension's kinds and services;
 - [`kubernetes`](../../reference/options.md#variantskubernetes), whether its images run
   Kubernetes, `true` by default. One image serves control planes and workers: each node's
   [`Node`](../../reference/kinds.md#node) document makes it one or the other.
@@ -120,7 +120,7 @@ It returns `images.node-metal`, `images.node-kvm`, `images.storage-metal` and
 a dash, such as `a-b` on `metal` and `a` on `b-metal`; `mkImages` refuses that pair and names it.
 
 No check compares variants. A node may move to another variant's image with an
-[upgrade](../../reference/glossary.md#upgrade); the node checks the config the upgrade carries against
+upgrade; the node checks the config the upgrade carries against
 the new image's schemas before the image becomes its next boot, so an image that does not accept
 the node's config never boots. [Customise an image](../../build/customise-image.md) adds modules to a
 variant.
@@ -182,7 +182,7 @@ node or its surroundings. The table lists both sides:
 | NixOS services and the variant's modules | systemd-networkd units: `Network`, `NetDev` and `Link` documents |
 | Kubernetes release ([`chalkos.kubernetes.package`](../../reference/options.md#chalkoskubernetespackage)) and the images of etcd, the pod sandbox and CoreDNS | Whether the node is a control plane or a worker, its labels, taints and addresses |
 | The pod network ([`chalkos.cni.provider`](../../reference/options.md#chalkoscniprovider)): flannel or none, and the CNI plugins | The cluster's endpoint and its Kubernetes settings: ranges, VIP, extra flags, flannel's MTU, registry mirrors and addons |
-| The [OS CA](../../reference/glossary.md#os-ca) for maintenance mode, from `osCA` | Storage: system disk, VAR, volumes and encryption |
+| The OS CA for maintenance mode, from `osCA` | Storage: system disk, VAR, volumes and encryption |
 | Partition sizes of the system region ([`chalkos.disk`](../../reference/options.md#chalkosdiskstoresize)) | Time servers and whether DHCP may add more |
 | Boot tries and health timeout ([`chalkos.upgrade`](../../reference/options.md#chalkosupgradeboottries)) | `Secret` documents and documents of the kinds extensions declare |
 | The image's revision and tag, from mkImages's `revision` and `tag`, which only `metadata.json` records | |
@@ -197,7 +197,7 @@ and fifty workers on one platform builds and signs one image.
 ## How does an extension add a kind?
 
 An extension is a NixOS module in a variant that declares a config
-[kind](../../reference/glossary.md#kind) and the services that read its documents. chalkos's own
+kind and the services that read its documents. chalkos's own
 kinds are declared the same way. The homelab's rack extension records where each node is mounted
 and hands the value to a unit on that node:
 
@@ -270,7 +270,7 @@ The module does five things:
   `Rack` changes, because the unit reads it only when it starts, as
   [Outputs and effects](outputs-and-effects.md#what-is-an-effect) describes.
 - [`chalkos.kinds.<Kind>.get`](../../reference/options.md#chalkoskindsget) builds the
-  [chalkcfg](../../reference/glossary.md#chalkcfg) command that prints the value. The evaluation
+  chalkcfg command that prints the value. The evaluation
   checks the path `spec.location` against the kind's options, so a typo fails the build instead of
   printing nothing on the node.
 
@@ -363,11 +363,11 @@ An extension's own image options live under a namespace of its own, such as `rac
 ## Where does the OS CA come from?
 
 [`chalkctl gen secrets`](../../reference/cli/chalkctl_gen_secrets.md) writes the cluster's
-[secrets file](../../reference/glossary.md#secrets-file) and its public part, `secrets.pub.json`.
+secrets file and its public part, `secrets.pub.json`.
 [`osCA`](../../reference/options.md#osca) names the public part, which holds certificates and no
 keys, so it belongs in the repository beside `flake.nix`. Every image and the installer carry its
-[OS CA](../../reference/glossary.md#os-ca), so chalkd in
-[maintenance mode](../../reference/glossary.md#maintenance-mode) accepts only clients with a
+OS CA, so chalkd in
+maintenance mode accepts only clients with a
 certificate from it. chalkos reads version 3 of the file only; the evaluation fails on another
 version and says to generate new secrets.
 
@@ -385,7 +385,7 @@ copies a flake's tracked files.
 - `mkImages` builds images for one Nix `system` per call; a cluster of x86-64 and arm64 machines
   calls it once for each.
 - A flake rebuilds an image whenever its modules or `flake.lock` change. A build whose store
-  changed has a new [root hash](../../reference/glossary.md#root-hash) and is a new image to
+  changed has a new root hash and is a new image to
   `chalkctl upgrade`; one whose store did not is the image the nodes run already.
 
 ## Related pages

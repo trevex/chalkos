@@ -5,12 +5,12 @@ description: "Run a chalkos cluster of two QEMU virtual machines on this machine
 
 # Quick start
 
-This tutorial builds a chalkos cluster of one [control
-plane](../reference/glossary.md#control-plane) and one [worker](../reference/glossary.md#worker) on
+This tutorial builds a chalkos cluster of one control
+plane and one worker on
 your machine, runs kubectl against it, upgrades both nodes to a new image and removes the cluster
-again. [chalklab](../reference/glossary.md#chalklab) runs the two nodes as QEMU virtual machines,
-each with UEFI firmware, [Secure Boot](../reference/glossary.md#secure-boot) and a
-[TPM](../reference/glossary.md#tpm), so they go through the same install, bootstrap and upgrade
+again. chalklab runs the two nodes as QEMU virtual machines,
+each with UEFI firmware, Secure Boot and a
+TPM, so they go through the same install, bootstrap and upgrade
 steps as real machines. It takes about 15 minutes; most of that is Nix downloading and building the
 image the first time.
 
@@ -45,7 +45,7 @@ wrote: "/home/alice/lab/nodes/cp1.yaml"
 wrote: "/home/alice/lab/nodes/w1.yaml"
 ```
 
-Nix builds the [image](../reference/glossary.md#image); YAML files describe the cluster.
+Nix builds the image; YAML files describe the cluster.
 `flake.nix` pins chalkos as an input, builds the image the nodes run with `mkImages`, and
 gives a development shell. `chalkos.yaml` is the inventory: it names the two nodes, the address
 chalkctl reaches each at, the image both run, and the files each gets, every file of `cluster/` and
@@ -129,7 +129,7 @@ tutorial in this shell.
 
 ## Generate the cluster's secrets
 
-Every cluster has one [secrets file](../reference/glossary.md#secrets-file) with its CAs and
+Every cluster has one secrets file with its CAs and
 keys, written once by
 [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md):
 
@@ -139,8 +139,8 @@ wrote secrets.json and secrets.pub.json
 warning: secrets.json holds the cluster's secrets unencrypted; protect it by other means, for example keep it out of version control with a .gitignore entry
 ```
 
-`secrets.json` holds every secret of the cluster in plain text, including the [OS
-CA](../reference/glossary.md#os-ca)'s key, which grants admin access to every node. The template's
+`secrets.json` holds every secret of the cluster in plain text, including the OS
+CA's key, which grants admin access to every node. The template's
 `.gitignore` keeps it out of git. `secrets.pub.json` is the public part: `flake.nix` names it in the
 `osCA` of `mkImages`, so the image trusts the OS CA. A real cluster encrypts its secrets with age:
 `--recipient` in place of `--plaintext` writes `secrets.age`, which can live in the repository.
@@ -211,20 +211,20 @@ image with the lab's db key and upgrade the nodes of its variant with it:
 
 The output follows the life of a node:
 
-1. Both nodes boot the one image built for the `kvm` [platform](../reference/glossary.md#platform);
+1. Both nodes boot the one image built for the `kvm` platform;
    what differs between them, such as cp1 being the control plane, travels separately as their
-   [config](../reference/glossary.md#config).
+   config.
 2. chalklab creates Secure Boot keys for this lab, enrols them in the firmware of the virtual
    machines and signs a copy of the image for each node with them. It writes the lab's
    inventory, `chalkos.yaml` in the lab's state, which names the nodes at the ports chalklab
-   forwards to them, and an admin [client file](../reference/glossary.md#client-file),
+   forwards to them, and an admin client file,
    `chalkctl.json`.
 3. Each virtual machine boots its image in
-   [maintenance mode](../reference/glossary.md#maintenance-mode), where
-   [chalkd](../reference/glossary.md#chalkd) prints its certificate's fingerprint on the console.
+   maintenance mode, where
+   chalkd prints its certificate's fingerprint on the console.
    chalklab reads it there and runs [`chalkctl install`](../reference/cli/chalkctl_install.md)
    with `--fingerprint`, so chalkctl talks only to that chalkd. The install creates the node's
-   encrypted [STATE](../reference/glossary.md#state) and [VAR](../reference/glossary.md#var)
+   encrypted STATE and VAR
    partitions, sealed to its TPM, writes its config and certificates and reboots it.
 4. After the reboot, cp1 waits to be bootstrapped. chalklab runs
    [`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md), which starts etcd and the
@@ -337,7 +337,7 @@ certificates section lists the node's certificates and CAs with their expiry
 dates; the control plane renews the node's certificates before they expire. The trust section
 lists the CAs and keys the node trusts by the start of their fingerprints; `(issues)` marks the
 one the control plane signs with, which matters during a
-[rotation](../reference/glossary.md#rotation), when two are trusted.
+rotation, when two are trusted.
 
 [`chalklab status`](../reference/cli/chalklab_status.md) shows the lab itself: the virtual
 machines, their forwarded ports and the lab's files.
@@ -410,8 +410,8 @@ the new file. `chalkctl status` now shows each node's new config version as the 
 ## Upgrade the cluster
 
 A node changes its software only by booting a new image. An
-[upgrade](../reference/glossary.md#upgrade) writes the new image into the node's inactive
-[slot](../reference/glossary.md#slot) and reboots into it; if the new image does not become
+upgrade writes the new image into the node's inactive
+slot and reboots into it; if the new image does not become
 healthy, the node falls back to the image it ran before.
 
 Any change to an image's modules makes a new image, which its store's root hash tells apart from
@@ -483,9 +483,9 @@ Each node goes through the same steps. chalkctl sends the image to chalkd, which
 the inactive slot and adds a boot entry with three tries, `chalkos_2+3.efi`, one generation above
 the entry the node booted, so systemd-boot boots it first. The node is
 drained and reboots into the new image with
-[boot counting](../reference/glossary.md#boot-counting). Once its
-[health check](../reference/glossary.md#health-check) passes, the boot is
-[blessed](../reference/glossary.md#blessed-boot), which removes the counter, and chalkctl
+boot counting. Once its
+health check passes, the boot is
+blessed, which removes the counter, and chalkctl
 uncordons the node. A node whose new image is not found healthy within its three tries boots the
 image before again, and chalkctl stops there and shows what the failed boot logged.
 
@@ -561,6 +561,6 @@ state and ports.
 - [chalkos in five minutes](what-is-chalkos.md) puts what this tutorial showed into one model.
 - [Architecture](../how-it-works/node/architecture.md) explains the parts and how a node is installed.
 - [Upgrades](../how-it-works/node/upgrades.md) explains slots, boot counting and
-  [rollback](../reference/glossary.md#rollback), and [Upgrade a
+  rollback, and [Upgrade a
   cluster](../operate/upgrade-cluster.md) upgrades a real one.
 - [Install on bare metal](../operate/install-bare-metal.md) installs chalkos on hardware.

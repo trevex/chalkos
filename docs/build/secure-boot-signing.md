@@ -5,21 +5,21 @@ description: "Create a db signing key, enrol it in firmware and sign images and 
 
 # Sign images for Secure Boot
 
-A Secure Boot db key decides which images a cluster's machines boot. Firmware with [Secure
-Boot](../reference/glossary.md#secure-boot) on starts a boot binary only when a certificate in its
-[db](../reference/glossary.md#db-and-dbx) signed it. chalkos signs two binaries per image,
-systemd-boot and the [UKI](../reference/glossary.md#uki), and the UKI's signature covers the whole
-read-only store through the [root hash](../reference/glossary.md#root-hash) on its command line.
+A Secure Boot db key decides which images a cluster's machines boot. Firmware with Secure
+Boot on starts a boot binary only when a certificate in its
+db signed it. chalkos signs two binaries per image,
+systemd-boot and the UKI, and the UKI's signature covers the whole
+read-only store through the root hash on its command line.
 This guide creates the key and certificate, gets the firmware of your machines to trust the
-certificate, and signs the [installer](../reference/glossary.md#installer) and the node images with
+certificate, and signs the installer and the node images with
 the key. Nix builds images unsigned; you sign them with
-[chalkbuild](../reference/glossary.md#chalkbuild) on the machine that holds the key, so the key
+chalkbuild on the machine that holds the key, so the key
 never enters the Nix store or a binary cache, and nodes never hold it.
 
 !!! note "chalkos does not enrol keys"
 
     Getting the certificate into each machine's db is a step you do with the firmware's own
-    tools, described below. Only [chalklab](../reference/glossary.md#chalklab) enrols keys, its
+    tools, described below. Only chalklab enrols keys, its
     own, in the firmware of its virtual machines.
 
 ## Before you begin
@@ -83,7 +83,7 @@ Pick the way your hardware offers:
   libvirt](../operate/kvm-proxmox-libvirt.md#what-the-vm-needs) shows how for QEMU, libvirt and Proxmox.
 
 Enrol the certificate before the node is installed. Changing db, KEK or dbx changes
-[PCR 7](../reference/glossary.md#pcr-7), so doing it on an installed node makes its next boot
+PCR 7, so doing it on an installed node makes its next boot
 ask for the recovery key.
 
 ## Sign the images
@@ -92,7 +92,7 @@ Every binary that firmware or systemd-boot starts must be signed: the installer'
 image's when a machine boots it directly, and each new UKI an upgrade brings.
 [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs a copy of an image directory as
 `nix build` links it: the boot loader (`/EFI/BOOT/BOOT*.EFI`) and the UKIs (`/EFI/Linux/*.efi`)
-on the [ESP](../reference/glossary.md#esp) of its raw image, and nothing else, so no other file on
+on the ESP of its raw image, and nothing else, so no other file on
 the ESP gains the cluster's signature. The build in the Nix store stays as it is, and the copy
 holds no link into the store.
 
@@ -154,7 +154,7 @@ in db, stops with `Secure Boot would refuse the UKI: ...` or `... boot loader: .
 
 ## Sign images for a lab
 
-A [lab](../reference/glossary.md#lab)'s VMs trust the lab's own keys, which chalkbuild never
+A lab's VMs trust the lab's own keys, which chalkbuild never
 holds. [`chalklab sign`](../reference/cli/chalklab_sign.md) signs a copy of an image directory with
 them, and `chalkctl upgrade --image` takes the copy:
 
@@ -167,12 +167,12 @@ chalkctl upgrade --image images/node-kvm-signed \
 
 ## Why the key must not change for an installed node
 
-A node's [STATE](../reference/glossary.md#state), [VAR](../reference/glossary.md#var) and encrypted
+A node's STATE, VAR and encrypted
 volumes are sealed to PCR 7, which measures the Secure Boot state and the db certificate that
 verified the boot binaries. An image signed with the same key boots with the same PCR 7, so upgrades
 unlock the disks without anyone typing a key. An image signed with another key that db also trusts
-boots, but PCR 7 differs, the [TPM](../reference/glossary.md#tpm) does not unseal, and the console
-asks for the node's [recovery key](../reference/glossary.md#recovery-key).
+boots, but PCR 7 differs, the TPM does not unseal, and the console
+asks for the node's recovery key.
 
 That has three consequences:
 
@@ -182,7 +182,7 @@ That has three consequences:
 - Keep one key for the life of every installed node. chalkos has no command that seals the disk
   keys again to a new PCR 7 value, so a node upgraded to an image signed with a new key asks for
   its recovery key at every boot. Such a boot waits at the prompt and is never judged by the
-  [health check](../reference/glossary.md#health-check), so the upgrade does not roll back on its
+  health check, so the upgrade does not roll back on its
   own: the node waits until someone enters the key or resets it, and each reset uses one of the
   image's boot tries. [Recover a node](../operate/recover-node.md) covers the way out.
 - Firmware updates that change db or dbx, and turning Secure Boot off or on, change PCR 7 too.
@@ -194,7 +194,7 @@ chalkos installs and runs on machines with Secure Boot off, and the images need 
 there. chalkd checks signatures only when Secure Boot is enforced: on, and the firmware not in
 Setup Mode. The cost is the protection itself. The disk keys are sealed to the Secure-Boot-off
 value of PCR 7, so the TPM unseals them for any image the machine boots, and anyone allowed to
-upgrade the node, the [operator](../reference/glossary.md#operator) role included, can install an
+upgrade the node, the operator role included, can install an
 image of their own and run it as root with the disks unlocked. Turning Secure Boot on later
 changes PCR 7, so each node asks for its recovery key at every boot until it is reinstalled.
 

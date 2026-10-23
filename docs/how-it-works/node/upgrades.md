@@ -5,10 +5,10 @@ description: "How a new image reaches a node, how chalkctl rolls it through a cl
 
 # Upgrades
 
-An [upgrade](../../reference/glossary.md#upgrade) installs a new
-[image](../../reference/glossary.md#image) on a node: the operating system, Kubernetes and
-[chalkd](../../reference/glossary.md#chalkd) together. chalkd writes the image into the node's inactive
-[slot](../../reference/glossary.md#slot), and the node boots it with a fixed number of tries; an image
+An upgrade installs a new
+image on a node: the operating system, Kubernetes and
+chalkd together. chalkd writes the image into the node's inactive
+slot, and the node boots it with a fixed number of tries; an image
 that does not become healthy is replaced by the one before.
 [`chalkctl upgrade`](../../reference/cli/chalkctl_upgrade.md) rolls the upgrade through a cluster node
 by node, so the cluster keeps its etcd quorum and its workloads keep running.
@@ -16,7 +16,7 @@ by node, so the cluster keeps its etcd quorum and its workloads keep running.
 ## What is an upgrade?
 
 An upgrade replaces the whole image with another, which its store's
-[root hash](../../reference/glossary.md#root-hash) identifies. Any change to an image's modules gives
+root hash identifies. Any change to an image's modules gives
 it a new root hash, so a new build needs nothing raised before it is installed. There are no
 packages to update on a node and no separate Kubernetes upgrade: a new Kubernetes release is a new
 image built with a new
@@ -25,19 +25,19 @@ other.
 
 The node receives three parts of the image, in this order:
 
-- the [store](../../reference/glossary.md#store)'s data, the compressed erofs file system that the
-  [root hash](../../reference/glossary.md#root-hash) covers, about 250 MiB for an image with
+- the store's data, the compressed erofs file system that the
+  root hash covers, about 250 MiB for an image with
   Kubernetes;
-- the store's [dm-verity](../../reference/glossary.md#dm-verity) hash tree, about 2 MiB;
-- the [UKI](../../reference/glossary.md#uki), about 44 MiB, signed for
-  [Secure Boot](../../reference/glossary.md#secure-boot).
+- the store's dm-verity hash tree, about 2 MiB;
+- the UKI, about 44 MiB, signed for
+  Secure Boot.
 
 An upgrade never sends a boot loader, and the node refuses one: systemd-boot stays as it was
 installed. The parts are the ones an install sends, read from the same image, so a node installed
 from an image and one upgraded to it run the same bytes.
 
 The node keeps no upgrade state of its own. The slots' partition UUIDs and labels and the UKIs on
-the [ESP](../../reference/glossary.md#esp) say what is installed, and the root hashes the nodes run
+the ESP say what is installed, and the root hashes the nodes run
 and their cordons say how far a rolling upgrade got. So any step can stop at any point, and running
 the
 same command again continues.
@@ -98,7 +98,7 @@ writes anything, when Secure Boot is enforced, and refuses an unsigned or wrongl
 chalkctl checks every node's config before it drains the first node. It needs the inventory for
 that, whatever it authenticates with; without one, the node's own check is all there is.
 
-A node may get an image of another [variant](../../reference/glossary.md#variant) than the one it
+A node may get an image of another variant than the one it
 runs: the check of its config against the image's schemas decides whether the image suits it.
 
 ## What config does an upgrade carry?
@@ -111,7 +111,7 @@ image it runs. The new image boots with its own config, and a
 new image accepts, such as a document of a kind its extension declares, goes with the upgrade.
 Without an inventory, chalkctl sends no config, and the node carries the documents of the running
 image's slot over, checked against the new image the same way. Delivering config with an upgrade
-needs the [admin](../../reference/glossary.md#admin) role, as `apply-config` does. With an operator
+needs the admin role, as `apply-config` does. With an operator
 client file chalkctl sends no config either, and with an inventory prints one line for the run
 instead of a line per node:
 
@@ -139,8 +139,8 @@ config without writing the image again.
 ## What does the node check?
 
 The [Upgrade](../../reference/api.md#method-upgrade) method needs the
-[operator](../../reference/glossary.md#operator) role, the admin role when it carries config or a
-fallback secret, and [normal mode](../../reference/glossary.md#normal-mode). Before it changes
+operator role, the admin role when it carries config or a
+fallback secret, and normal mode. Before it changes
 anything, chalkd checks the image's header against the running image's os-release and the disk:
 
 - the image ID and platform equal the running image's, and the architecture the machine's;
@@ -168,7 +168,7 @@ The UKI is checked when it arrives, before anything can boot it. Its SHA-256 mus
 header, its os-release must name the same image ID and platform as the header and set
 `IMAGE_VERSION` empty, its `usrhash=` must equal the header's root hash, and its boot tries must
 be a positive number. With Secure Boot enforced, chalkd checks its signature against the firmware's
-[db and dbx](../../reference/glossary.md#db-and-dbx) as the firmware will, and refuses it when dbx
+db and dbx as the firmware will, and refuses it when dbx
 lists its digest or any certificate in its signer's chain.
 
 ## How does a node install the image?
@@ -211,13 +211,13 @@ The running slot and its UKI are never written. Once the client stops sending, c
 between steps, never in the middle of a partition table change.
 
 [Boot, health and rollback](boot-and-rollback.md) explains what happens at the next boot: the
-counted tries, the [health check](../../reference/glossary.md#health-check), the
-[blessed boot](../../reference/glossary.md#blessed-boot) and the fallback.
+counted tries, the health check, the
+blessed boot and the fallback.
 
 ## How does an upgrade roll through a cluster?
 
-`chalkctl upgrade` upgrades the [control planes](../../reference/glossary.md#control-plane) first,
-one at a time, then the [workers](../../reference/glossary.md#worker) and nodes without Kubernetes in
+`chalkctl upgrade` upgrades the control planes first,
+one at a time, then the workers and nodes without Kubernetes in
 batches of `--max-unavailable`, 1 by default. Control planes go first across every image and
 platform, which also keeps every kubelet at or behind its API server's version, as Kubernetes
 requires.
@@ -283,7 +283,7 @@ upgraded 3 nodes to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 ### Why must etcd keep its quorum?
 
 etcd needs a majority of its voting members to answer, and the API server needs etcd. Before a
-control plane that is an [etcd member](../../reference/glossary.md#etcd-member) reboots, chalkctl asks
+control plane that is an etcd member reboots, chalkctl asks
 for etcd's members through a control plane and requires that enough of the other voters are healthy
 to make a majority of all voters. A learner refuses the check until it has joined as a voter. etcd
 may need a moment after the previous control plane came back, so the check is retried for up to a
@@ -311,7 +311,7 @@ right before it reboots.
 ## What stops a run?
 
 A run stops at the first node that fails, and leaves the rest as they are. The most important case
-is a [rollback](../../reference/glossary.md#rollback): a node that fell back from the new image. The
+is a rollback: a node that fell back from the new image. The
 error names the node and the image it runs again, and the journal lines its failed boot
 recorded follow it:
 
@@ -354,10 +354,10 @@ is installed like any other image.
 | `--delete-emptydir-data` | Evict pods with emptyDir volumes too, deleting their data |
 | `--timeout` | How long a drain and a node's return may take, 30 minutes by default |
 
-The command needs an operator [client file](../../reference/glossary.md#client-file) or the
-[secrets file](../../reference/glossary.md#secrets-file), and to deliver config an admin client file
+The command needs an operator client file or the
+secrets file, and to deliver config an admin client file
 or the secrets file. Without an inventory, `--address NODE=ADDR` names the nodes, and `--image` is
-needed. A [lab](../../reference/glossary.md#lab), for example, is
+needed. A lab, for example, is
 upgraded with the lab's inventory and client file, which
 [`chalklab status`](../../reference/cli/chalklab_status.md) names, and a copy of an image that
 [`chalklab sign`](../../reference/cli/chalklab_sign.md) signed with the lab's Secure Boot key:
@@ -383,19 +383,19 @@ chalkd checks that an image is of its platform, that the node's config suits it,
 it boots the store it carries; it cannot tell an image to trust from another. Secure Boot does
 that. With Secure Boot enforced, the node refuses a UKI that the firmware's db does not accept, so
 only images signed by a trusted signer run. Without Secure Boot, an operator can upgrade a node
-to any image, which then runs as root with [STATE](../../reference/glossary.md#state) and
-[VAR](../../reference/glossary.md#var) unsealed, because their keys are sealed to
-[PCR 7](../../reference/glossary.md#pcr-7) alone.
+to any image, which then runs as root with STATE and
+VAR unsealed, because their keys are sealed to
+PCR 7 alone.
 [Security model](security.md) explains the consequences.
 
 An image a node pulls from a registry passes the same checks as a streamed one, against the
 digests and root hash chalkctl read, so the registry needs no more trust than a directory an image
 is streamed from.
 
-After a [rotation](../../reference/glossary.md#rotation) of the [OS
-CA](../../reference/glossary.md#os-ca), images rebuilt from the new `secrets.pub.json` and rolled out
-with `chalkctl upgrade` bring the trust of [maintenance
-mode](../../reference/glossary.md#maintenance-mode) up to date, for nodes that are installed again
+After a rotation of the OS
+CA, images rebuilt from the new `secrets.pub.json` and rolled out
+with `chalkctl upgrade` bring the trust of maintenance
+mode up to date, for nodes that are installed again
 later.
 
 ## Limits
@@ -414,8 +414,8 @@ later.
 
 ## Related pages
 
-- [Boot, health and rollback](boot-and-rollback.md) for [boot
-  counting](../../reference/glossary.md#boot-counting) and the health check.
+- [Boot, health and rollback](boot-and-rollback.md) for boot
+  counting and the health check.
 - [The image](image.md) for what an image holds and how its root hash identifies it.
 - [Kubernetes on chalkos](../kubernetes/kubernetes.md) for etcd membership and the control plane.
 - [Upgrade a cluster](../../operate/upgrade-cluster.md) for the task, step by step.

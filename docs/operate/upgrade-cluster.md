@@ -5,13 +5,13 @@ description: "Roll a new chalkos or Kubernetes version through a cluster, node b
 
 # Upgrade a cluster
 
-An [upgrade](../reference/glossary.md#upgrade) installs a new
-[image](../reference/glossary.md#image) on every node and reboots the node into it. Any change to
+An upgrade installs a new
+image on every node and reboots the node into it. Any change to
 what the image holds goes this way: a new chalkos release, a new Kubernetes release, a change to a
-[variant](../reference/glossary.md#variant)'s NixOS modules.
+variant's NixOS modules.
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) does it for the whole cluster: it writes
-each node's inactive [slot](../reference/glossary.md#slot), drains the node, reboots it and waits
-until the new image is found healthy, [control planes](../reference/glossary.md#control-plane) one
+each node's inactive slot, drains the node, reboots it and waits
+until the new image is found healthy, control planes one
 at a time and the other nodes in batches. A node whose new image never becomes healthy boots its
 previous image again, and the run stops there.
 
@@ -21,11 +21,11 @@ PodDisruptionBudgets.
 ## Before you begin
 
 - A running cluster, its inventory and the flake that builds its images, with the
-  [secrets file](../reference/glossary.md#secrets-file)
-  or an admin [client file](../reference/glossary.md#client-file). An operator client file upgrades
+  secrets file
+  or an admin client file. An operator client file upgrades
   too, but delivers no config: each node carries its own over.
-- The [Secure Boot](../reference/glossary.md#secure-boot) [db](../reference/glossary.md#db-and-dbx)
-  key and certificate and [chalkbuild](../reference/glossary.md#chalkbuild), when your nodes
+- The Secure Boot db
+  key and certificate and chalkbuild, when your nodes
   enforce Secure Boot. [Sign images for Secure Boot](../build/secure-boot-signing.md) explains the keys.
 - Three control planes, for an upgrade without API downtime. A cluster with one or two needs
   `--allow-downtime`, described below.
@@ -33,7 +33,7 @@ PodDisruptionBudgets.
 
 ## Change the image
 
-An image is its store's [root hash](../reference/glossary.md#root-hash), so any change to its
+An image is its store's root hash, so any change to its
 modules or to `flake.lock` makes a new image, and nothing needs raising before it is installed. A
 node numbers the boot entries it installs itself, and boots the one installed last. The call of
 [`chalkos.lib.mkImages`](../reference/options.md) in `flake.nix` passes the commit the images are
@@ -78,13 +78,13 @@ as `tag = "v1.5.0";`. Both are for display only. Make the change itself:
   variant's modules. Every image with Kubernetes carries the kubelet, so every such variant gets
   a new image. Move one minor release at a time, as the Kubernetes version skew policy
   requires; `chalkctl upgrade` upgrades the control planes before the
-  [workers](../reference/glossary.md#worker), which keeps the kubelets no newer than the API
+  workers, which keeps the kubelets no newer than the API
   server.
 
 ## Decide how the images are built and signed
 
 Without `--image`, `chalkctl upgrade` gives each node the image the inventory names for it, the
-[image directory](../reference/glossary.md#image-directory) of a build. Build the images first,
+image directory of a build. Build the images first,
 sign a copy of each with [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) where the
 inventory's images point, and check the nodes' config against them with
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md). The output directory of
@@ -116,7 +116,7 @@ chalkctl upgrade --image=images/node-metal
 ```
 
 On nodes that enforce Secure Boot, each image's UKI must be signed by a key in the firmware's db,
-and [chalkd](../reference/glossary.md#chalkd) refuses one that is not before it writes anything.
+and chalkd refuses one that is not before it writes anything.
 Sign each build with `chalkbuild sign` before the upgrade; chalkctl sends the image as the
 directory holds it and checks no signature. An upgrade leaves the node's boot loader as it is.
 
@@ -172,7 +172,7 @@ The lines follow each node through its steps:
 3. The drain cordons the node and evicts its pods through the eviction API, so
    PodDisruptionBudgets apply. DaemonSet pods, static pods, finished pods and pods without a
    controller are kept; chalkctl names the last kind, because nothing restarts them elsewhere.
-4. The node reboots. The new image's [health check](../reference/glossary.md#health-check)
+4. The node reboots. The new image's health check
    decides whether the boot is healthy; chalkctl waits until it was found healthy and, on a
    Kubernetes node, its Node is Ready.
 5. chalkctl uncordons the node, if it cordoned it.
@@ -294,7 +294,7 @@ A new image that does not become healthy within
 [`chalkos.upgrade.healthTimeout`](../reference/options.md#chalkosupgradehealthtimeout), 300
 seconds by default, is rebooted; after its last try, systemd-boot boots the previous image. The
 health check wrote the last 30 lines that chalkd and the check logged during the failed boot to
-[VAR](../reference/glossary.md#var), and the previous image shows them. The run stops at that node:
+VAR, and the previous image shows them. The run stops at that node:
 
 ```text
 chalkctl: w2: upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) failed: rolled back to 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a); it stays cordoned; its boots logged:
@@ -308,8 +308,8 @@ The node runs its previous image, healthy, and stays cordoned so you can look at
 for as long as the failed image stays on the disk. With them:
 
 1. Find the cause. The journal lines name what the health check found missing: a failed unit on a
-   node without Kubernetes, the kubelet, the Node's registration, the API server or the [etcd
-   member](../reference/glossary.md#etcd-member). [Troubleshooting](troubleshooting.md) helps from
+   node without Kubernetes, the kubelet, the Node's registration, the API server or the etcd
+   member. [Troubleshooting](troubleshooting.md) helps from
    there.
 2. Fix the image's modules, build the image again and run `chalkctl upgrade` again: the fix
    changes the store, so the new build has a new root hash. chalkctl refuses to install
@@ -382,7 +382,7 @@ such as etcd's data after a Kubernetes upgrade, is for you to check.
 ## What next
 
 - [Upgrades](../how-it-works/node/upgrades.md) and [Boot, health and
-  rollback](../how-it-works/node/boot-and-rollback.md) explain the slots, [boot
-  counting](../reference/glossary.md#boot-counting) and the health check.
+  rollback](../how-it-works/node/boot-and-rollback.md) explain the slots, boot
+  counting and the health check.
 - [Troubleshooting](troubleshooting.md) starts from the symptoms of a failed boot.
 - [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) lists every flag.

@@ -6,17 +6,17 @@ description: "Add packages, services, kernel modules, variants, config kinds and
 # Customise an image
 
 A cluster's images are built by `chalkos.lib.mkImages` from chalkos's node modules, each
-[platform](../reference/glossary.md#platform)'s modules and NixOS modules of your own, which you
-give every [variant](../reference/glossary.md#variant) with
+platform's modules and NixOS modules of your own, which you
+give every variant with
 [`modules`](../reference/options.md#modules) or one variant with
 [`variants.<name>.modules`](../reference/options.md#variantsmodules). They can add packages,
 services, kernel modules and anything else a NixOS module sets, within the limits an image-based
-node sets, and they can declare [config kinds](../reference/glossary.md#kind) whose documents give
+node sets, and they can declare config kinds whose documents give
 each node its own values. Every node of a variant and platform runs the same image, so a value that
-differs between nodes travels in the node's YAML [config](../reference/glossary.md#config), never in
+differs between nodes travels in the node's YAML config, never in
 the image. A change to the modules reaches running nodes as an
-[upgrade](../reference/glossary.md#upgrade) to the new image, which a new
-[root hash](../reference/glossary.md#root-hash) identifies. Kubernetes objects for the cluster are
+upgrade to the new image, which a new
+root hash identifies. Kubernetes objects for the cluster are
 `Addon` documents in the YAML and need no image change;
 [Kubernetes on chalkos](../how-it-works/kubernetes/kubernetes.md) describes them.
 
@@ -29,10 +29,10 @@ changes.
 
 You need a flake that builds the cluster's images with `mkImages`, such as the lab template's or the
 [homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab)'s, and its
-[inventory](../reference/glossary.md#inventory), `chalkos.yaml`, with the nodes' config files. To
-roll the change out you need a running cluster and an operator [client
-file](../reference/glossary.md#client-file) or the [secrets
-file](../reference/glossary.md#secrets-file) for the upgrade, and the secrets file to deliver
+inventory, `chalkos.yaml`, with the nodes' config files. To
+roll the change out you need a running cluster and an operator client
+file or the secrets
+file for the upgrade, and the secrets file to deliver
 changed YAML. [Variants and platforms](../how-it-works/node/variants.md) explains how `mkImages` builds the
 images, [Config and the inventory](../how-it-works/node/config.md) how the YAML reaches the nodes, and [The
 image](../how-it-works/node/image.md) what an image holds.
@@ -84,7 +84,7 @@ guest agent, with `lib.mkOverride` below 50, for example `lib.mkOverride 40`.
 
 ## Add kernel modules and debug tools
 
-A module adds [module groups](../reference/glossary.md#module-group) and single kernel modules
+A module adds module groups and single kernel modules
 with [`chalkos.kernel.moduleGroups`](../reference/options.md#chalkoskernelmodulegroups) and
 [`chalkos.kernel.extraModules`](../reference/options.md#chalkoskernelextramodules):
 
@@ -181,7 +181,7 @@ they are.
 ## Add a config kind of your own
 
 A value of your own per node needs a config kind of its own: an
-[extension](../reference/glossary.md#extension) declares the kind in a module of the images, and
+extension declares the kind in a module of the images, and
 each node's YAML holds documents of it. This guide builds one extension from here on: bird, a
 BGP daemon, with its neighbours in a `Peer` kind, its config file rendered from the `Peer`
 documents, and a reload when that file changes. Create `extensions/bird/default.nix` with the
@@ -237,7 +237,7 @@ an extension's kind reaches the image and the node.
 ## Render the service's config from the documents
 
 bird reads one config file, which an output renders from the node's `Peer` documents. An
-[output](../reference/glossary.md#output) is a set of files that a program of the image renders
+output is a set of files that a program of the image renders
 and checks before a delivery changes the node, so a `Peer` that would give bird a config it
 rejects is refused, and the node keeps the config bird runs.
 [Outputs and effects](../how-it-works/node/outputs-and-effects.md) describes the mechanism.
@@ -311,7 +311,7 @@ needs a password names the credential the service reads instead, as
 
 The service reads its config at the output's `dir`, `/run/chalkos/outputs/bird-conf` by default,
 which the module names as `config.chalkos.outputs.bird-conf.dir`, so a misspelled output fails
-the evaluation. An [effect](../reference/glossary.md#effect) reloads bird when the output changes.
+the evaluation. An effect reloads bird when the output changes.
 The whole module:
 
 ```nix title="extensions/bird/default.nix"
@@ -401,9 +401,9 @@ shows both. The message itself leaves it out, as a program may echo the document
 
 A unit that reads documents while it runs, or a secret, is granted their kinds. A grant,
 [`systemd.services.<unit>.chalkos.kinds`](../reference/options.md#systemdserviceschalkoskinds),
-makes [chalkd](../reference/glossary.md#chalkd) write the documents of the kinds to
+makes chalkd write the documents of the kinds to
 `/run/chalkos/config/<group>/<Kind>/<name>.json`, put
-[chalkcfg](../reference/glossary.md#chalkcfg) on the unit's `PATH`, and load the values the
+chalkcfg on the unit's `PATH`, and load the values the
 documents' `secretRef` fields name as the unit's credentials. A grant restarts nothing; an effect
 does. The node's `Node` document gives its type, for example:
 
@@ -542,8 +542,8 @@ lists the options and the order chalkd takes effects in.
 
 The image is an appliance: the root file system is a tmpfs, `/etc` is read-only, users are fixed
 at build time, and there is no Nix and no `nixos-rebuild` on the node. A service keeps its data
-below `/var`, which is [VAR](../reference/glossary.md#var), or on a
-[volume](../reference/glossary.md#volume). Within that, a module can set anything, and a few
+below `/var`, which is VAR, or on a
+volume. Within that, a module can set anything, and a few
 settings break the node:
 
 - chalkd, `chalkos-config.service`, `chalkos-health.service` and systemd-networkd are what
@@ -558,7 +558,7 @@ settings break the node:
   [`osCA`](../reference/options.md#osca); set those arguments instead.
 - The partition sizes under `chalkos.disk` are laid out when a node is installed. A changed size
   applies only to nodes installed afterwards, and an upgrade whose store does not fit a node's
-  [slot](../reference/glossary.md#slot) is refused.
+  slot is refused.
 - On a variant without Kubernetes, a boot is healthy only when no unit that `multi-user.target`
   or `sysinit.target` pulls in failed, so such a unit of yours that fails makes the next upgrade
   roll back. Jobs that timers and sockets start never count.
@@ -570,8 +570,8 @@ settings break the node:
 Every package and module adds to the store, which each upgrade sends to every node. The image
 build fails when the store's data takes more than 80% of its slot (3 GiB by default,
 [`chalkos.disk.storeSize`](../reference/options.md#chalkosdiskstoresize)), its hash tree more than
-80% of its partition, or the [UKIs](../reference/glossary.md#uki) more than 80% of the
-[ESP](../reference/glossary.md#esp), so the next image always fits beside the running one.
+80% of its partition, or the UKIs more than 80% of the
+ESP, so the next image always fits beside the running one.
 [Support additional hardware](additional-hardware.md#keep-the-image-within-its-slot) shows the
 message and what to do.
 

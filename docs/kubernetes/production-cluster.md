@@ -7,8 +7,8 @@ description: "Decide the variants, addresses, storage, keys and time sources of 
 
 A production cluster needs decisions that the [quick start](../get-started/quick-start.md)'s lab
 makes for you. A few of them cannot change once the cluster runs: the IP families, the control
-planes' addresses, the [secrets file](../reference/glossary.md#secrets-file) and the
-[Secure Boot](../reference/glossary.md#secure-boot) signing key. This page lays out the
+planes' addresses, the secrets file and the
+Secure Boot signing key. This page lays out the
 cluster's repository, then takes the decisions in the order you meet them while writing its
 files, each with a recommendation and what it costs.
 
@@ -20,13 +20,13 @@ files, each with a recommendation and what it costs.
   your own Secure Boot keys.
 - Read [Variants and platforms](../how-it-works/node/variants.md) for how the flake builds images, and
   [Config and the inventory](../how-it-works/node/config.md) for how the YAML files become each node's
-  [config](../reference/glossary.md#config).
+  config.
 
 ## Lay out the repository
 
 A cluster lives in one repository with two halves. The flake builds the images with
-`chalkos.lib.mkImages`; the [inventory](../reference/glossary.md#inventory), `chalkos.yaml`,
-names the nodes and the YAML files each one gets. [chalkctl](../reference/glossary.md#chalkctl)
+`chalkos.lib.mkImages`; the inventory, `chalkos.yaml`,
+names the nodes and the YAML files each one gets. chalkctl
 reads the inventory and the YAML and never runs Nix, so the machine that installs and upgrades
 nodes needs the signed image directories, not Nix.
 
@@ -53,7 +53,7 @@ prod/
 ```
 
 The flake builds one image per platform of the variant `node`, which serves control planes and
-workers alike, and exposes the images and the [installer](../reference/glossary.md#installer)
+workers alike, and exposes the images and the installer
 as packages:
 
 ```nix title="flake.nix"
@@ -130,11 +130,11 @@ and `Node`, so each document lives in the one place that fits it: what every nod
 ## Choose the variants
 
 Use one variant, `node`, for control planes and workers. Each node's `Node` document makes it a
-[control plane](../reference/glossary.md#control-plane) or a
-[worker](../reference/glossary.md#worker), so one image per platform serves the whole cluster
+control plane or a
+worker, so one image per platform serves the whole cluster
 and an upgrade builds and signs one image.
 
-Add a [variant](../reference/glossary.md#variant) only for nodes that need other software in their
+Add a variant only for nodes that need other software in their
 image, such as GPU drivers or an extension's service, and name every variant the flake builds:
 `variants` replaces the default `node` variant, so `variants.gpu.modules` alone builds no `node`
 images. With `node = { };` beside `gpu`, the flake builds `node-<platform>` and `gpu-<platform>`
@@ -190,17 +190,17 @@ spec:
 
 ## Decide how clients reach the API server
 
-The [cluster endpoint](../reference/glossary.md#cluster-endpoint), `spec.endpoint` of the
+The cluster endpoint, `spec.endpoint` of the
 [`Cluster`](../reference/kinds.md#cluster) document, is the URL kubelets, kubeconfigs and
 workers use to reach the control planes. Workers also renew their
-[node certificates](../reference/glossary.md#node-certificate) through it:
-[chalkd](../reference/glossary.md#chalkd) on a worker connects to the endpoint's host on port
+node certificates through it:
+chalkd on a worker connects to the endpoint's host on port
 50000, where a control plane's chalkd answers. So whatever the endpoint points at must reach
 chalkd on 50000 as well as the API server on 6443.
 
 Two ways make the endpoint survive a control plane's failure:
 
-- A [VIP](../reference/glossary.md#vip), which chalkd holds on one healthy control plane. It
+- A VIP, which chalkd holds on one healthy control plane. It
   needs the control planes on one layer-2 segment, because the holder announces the address
   with gratuitous ARP and unsolicited neighbour advertisements. This is the default choice for
   machines in one rack or VLAN. The endpoint is the VIP, or a host name that resolves to it.
@@ -274,8 +274,8 @@ Give every node a static address in a [`Network`](../reference/kinds.md#network)
 own file, as `nodes/cp1.yaml` above does, and the same address as its `address` in the
 inventory. Two things depend on it:
 
-- A control plane's addresses are pinned on [STATE](../reference/glossary.md#state) when it
-  becomes an [etcd member](../reference/glossary.md#etcd-member), and every later boot waits for
+- A control plane's addresses are pinned on STATE when it
+  becomes an etcd member, and every later boot waits for
   exactly those addresses. A control plane cannot change its address while it runs; it leaves
   etcd and is reinstalled.
 - chalkctl reaches a node at the address the inventory names for it, or at `--address`. It does
@@ -297,20 +297,20 @@ documents, or whose `nodeIP.validSubnets` lie outside these ranges.
 
 Name the system disk in the node's [`SystemDisk`](../reference/kinds.md#systemdisk) document by a
 path that survives a reordering of the disks, such as `/dev/disk/by-id/...`, not `/dev/sda`.
-[VAR](../reference/glossary.md#var), which holds etcd, containerd's images and the logs, fills the
+VAR, which holds etcd, containerd's images and the logs, fills the
 rest of the system disk unless `spec.var.size` limits it. Volumes for local persistent volumes or
 a storage system are [`Volume`](../reference/kinds.md#volume) documents on the system disk or on
 disks of their own, picked by path or by a selector of model, serial number, WWN, size and type.
 [Add storage volumes](../operate/storage-volumes.md) has the details.
 
 Encryption is on by default: STATE, VAR and every volume are LUKS2 volumes whose key the
-[TPM](../reference/glossary.md#tpm) seals to [PCR 7](../reference/glossary.md#pcr-7). The
+TPM seals to PCR 7. The
 fallback, `spec.encryption.fallback` of the `SystemDisk`, decides what unlocks a volume when the
 TPM does not:
 
 | Fallback | What unlocks it | Cost |
 | --- | --- | --- |
-| `recovery-key` (default) | The node's [recovery key](../reference/glossary.md#recovery-key), derived from the secrets file and printed by `chalkctl recovery-key` | Someone types the 64-letter key at the console, through a BMC or in person. |
+| `recovery-key` (default) | The node's recovery key, derived from the secrets file and printed by `chalkctl recovery-key` | Someone types the 64-letter key at the console, through a BMC or in person. |
 | `password` | A password you give at install | You keep one more secret per node, outside the secrets file. |
 | `none` | Nothing | A volume the TPM does not unseal stays locked until `chalkctl storage reset` recreates it empty; STATE and VAR cannot be reset that way, so for them it means reinstalling the node. |
 
@@ -319,7 +319,7 @@ Set `spec.encryption.mode: none` only for machines in a place you trust physical
 
 ## Decide who holds the Secure Boot key
 
-Every image a node boots is signed with a Secure Boot [db](../reference/glossary.md#db-and-dbx)
+Every image a node boots is signed with a Secure Boot db
 key, and the firmware boots it only when the key's certificate is in db. chalkos does not enrol
 keys in the firmware: you enrol the certificate yourself, through the firmware's setup or your
 vendor's tools, before the first install. [Sign images for Secure Boot](../build/secure-boot-signing.md)
@@ -339,7 +339,7 @@ signatures against its firmware's db and dbx and refuses an image the key did no
 ## Protect the secrets file
 
 [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md) writes the secrets file once.
-It holds the [OS CA](../reference/glossary.md#os-ca) and [node CA](../reference/glossary.md#node-ca)
+It holds the OS CA and node CA
 with their keys, the Kubernetes CAs and keys, and the secret every node's recovery key derives
 from. Whoever holds it can install a node into the cluster, issue themselves any client
 certificate and decrypt every node's disks with physical access.
@@ -389,8 +389,8 @@ what still works.
 ## Give each person a client file
 
 Status, logs, reboots, upgrades and the etcd commands do not need the secrets file; installs and
-config changes do. A [client file](../reference/glossary.md#client-file) holds a certificate of one
-[client role](../reference/glossary.md#client-role) for one person:
+config changes do. A client file holds a certificate of one
+client role for one person:
 
 ```sh
 chalkctl config new --name=alice --role=operator --out=alice.json --secrets=secrets.age
@@ -398,9 +398,9 @@ chalkctl config new --name=alice --role=operator --out=alice.json --secrets=secr
 
 | Client role | May |
 | --- | --- |
-| [reader](../reference/glossary.md#reader) | read node information, disks, status, logs and etcd's members |
-| [operator](../reference/glossary.md#operator) | also reboot, upgrade, drain and uncordon nodes |
-| [admin](../reference/glossary.md#admin) | call every method but the one nodes renew their certificates with, including bootstrap, volume resets and etcd membership changes |
+| reader | read node information, disks, status, logs and etcd's members |
+| operator | also reboot, upgrade, drain and uncordon nodes |
+| admin | call every method but the one nodes renew their certificates with, including bootstrap, volume resets and etcd membership changes |
 
 chalkctl reads a client file from `--config`, else from the file `$CHALKOSCONFIG` names, else
 from `~/.config/chalkos/config`, whenever a command names no `--secrets`.
@@ -408,7 +408,7 @@ from `~/.config/chalkos/config`, whenever a command names no `--secrets`.
 role may call. A client file is valid for a year unless `--ttl` says otherwise, and nothing
 revokes a single one: taking access away means [rotating the OS CA](../operate/rotate-certificates.md).
 Issue them per person, with the shortest validity your routine tolerates, so a departure is a
-[rotation](../reference/glossary.md#rotation) you plan rather than one you rush.
+rotation you plan rather than one you rush.
 
 Kubeconfigs from [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md) are the same
 for the Kubernetes API: one per person with `--name`, all in the group bound to
@@ -478,7 +478,7 @@ instead.
 
 ## Plan provenance and upgrades
 
-An image carries no version: its store's [root hash](../reference/glossary.md#root-hash) is what
+An image carries no version: its store's root hash is what
 it is, so any change to an image, from a new chalkos input to a new Kubernetes release, makes a
 new image that `chalkctl upgrade` installs without anything raised. The `revision` that
 `flake.nix` above passes to `mkImages` records the commit each image was built from; a clean

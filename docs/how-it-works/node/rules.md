@@ -5,14 +5,14 @@ description: "How an image's CEL rules decide which config changes a node accept
 
 # Change rules and facts
 
-A [change rule](../../reference/glossary.md#change-rule) is a CEL expression in an image's schemas
+A change rule is a CEL expression in an image's schemas
 that every config the image accepts makes true. A rule decides whether a change of a node's
-[config](../../reference/glossary.md#config) can be made, or needs `chalkctl storage reset` or a
+config can be made, or needs `chalkctl storage reset` or a
 reinstall instead, and says so in its message. The image's own kinds and the kinds of its
-[extensions](../../reference/glossary.md#extension) declare rules the same way, in their NixOS
+extensions declare rules the same way, in their NixOS
 modules, so what a node accepts is part of the image and changes with an upgrade. A rule that
 needs the node's state, such as what its disks hold, reads it from a
-[fact](../../reference/glossary.md#fact): the JSON of a file, or of a program of the image's store.
+fact: the JSON of a file, or of a program of the image's store.
 The effects that restart or reload the node's services, chalkos's own among them, declare in
 rules of the same kind which changes fire them.
 

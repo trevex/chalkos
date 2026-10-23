@@ -5,26 +5,26 @@ description: "Run three control planes behind a VIP, and add, replace or remove 
 
 # Run a highly available control plane
 
-Three [control planes](../reference/glossary.md#control-plane) keep the Kubernetes API and etcd
+Three control planes keep the Kubernetes API and etcd
 available while one of them reboots or fails. This guide defines three control planes behind a
-[VIP](../reference/glossary.md#vip), installs them, bootstraps one and lets the other two join on
+VIP, installs them, bootstraps one and lets the other two join on
 their own. It then covers the changes a running control plane needs over its life: adding a
 member, removing one and replacing a failed machine.
 
 ## Before you begin
 
-- The cluster's repository, with its [inventory](../reference/glossary.md#inventory), the YAML
+- The cluster's repository, with its inventory, the YAML
   files of its nodes and a flake that builds their image, and the cluster's
-  [secrets file](../reference/glossary.md#secrets-file), `secrets.age`, as in
+  secrets file, `secrets.age`, as in
   [Plan a production cluster](production-cluster.md). The commands below run in the repository's
   directory.
 - Three machines on one layer-2 segment, each with a static address, and one free address on
   that segment for the VIP. The VIP is announced with gratuitous ARP and unsolicited neighbour
   advertisements, so it cannot cross a router.
-- Each machine booted into the [installer](../reference/glossary.md#installer), or into its
-  image, in [maintenance mode](../reference/glossary.md#maintenance-mode), as
+- Each machine booted into the installer, or into its
+  image, in maintenance mode, as
   [Install on bare metal](../operate/install-bare-metal.md) describes.
-- The control planes' image signed with the Secure Boot [db](../reference/glossary.md#db-and-dbx)
+- The control planes' image signed with the Secure Boot db
   key the machines' firmware trusts, in the directory the inventory names, as
   [Sign images for Secure Boot](../build/secure-boot-signing.md) describes.
 
@@ -32,7 +32,7 @@ member, removing one and replacing a failed machine.
 
 Put the VIP in `spec.vip.addresses` of the [`Cluster`](../reference/kinds.md#cluster)
 document every node gets, and make the
-[cluster endpoint](../reference/glossary.md#cluster-endpoint), `spec.endpoint` of the same
+cluster endpoint, `spec.endpoint` of the same
 document, point at it. Every node and client reaches the API server at the endpoint, so the
 endpoint has to follow the VIP from one control plane to the next.
 
@@ -87,7 +87,7 @@ spec:
 ```
 
 A cluster takes at most one VIP per family, and an endpoint that is an IP address must be one of the
-VIPs. [chalkd](../reference/glossary.md#chalkd) adds the VIP to the interface that holds the node's
+VIPs. chalkd adds the VIP to the interface that holds the node's
 address of the VIP's family, unless `spec.vip.interface` of the node's `Node` document names
 another, while the VIP's addresses come from the `Cluster` document. Check the files with [`chalkctl
 validate`](../reference/cli/chalkctl_validate.md) once the image is built.
@@ -137,7 +137,7 @@ Once cp1's API server is ready, cp1 wins the VIP's election and holds the VIP.
 
 cp2 and cp3 find the cluster at the endpoint and join etcd on their own, one after the other:
 etcd accepts one learner at a time. Each node adds itself as a learner, starts its
-[etcd member](../reference/glossary.md#etcd-member), waits until the member caught up with the
+etcd member, waits until the member caught up with the
 leader, has it promoted to a voter and then starts the rest of the control plane. Its status
 names the step:
 
@@ -147,7 +147,7 @@ kubernetes controlplane: joining the cluster at https://10.0.0.10:6443: etcd mem
 ```
 
 Before the node adds itself as a learner, it pins its addresses on
-[STATE](../reference/glossary.md#state): from then on, every boot waits for exactly these
+STATE: from then on, every boot waits for exactly these
 addresses before it starts etcd. A joined control plane reports:
 
 ```text
@@ -163,7 +163,7 @@ node holds and the API server answers ready.
 
 [`chalkctl etcd members`](../reference/cli/chalkctl_etcd_members.md) lists etcd's members as
 one control plane's member sees them. It and the etcd commands below authenticate with a
-[client file](../reference/glossary.md#client-file), an admin one for the commands that change
+client file, an admin one for the commands that change
 members, or with `--secrets`. Three healthy voters is the goal:
 
 ```console

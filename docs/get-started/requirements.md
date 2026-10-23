@@ -7,25 +7,25 @@ description: "What chalkos needs from machines, firmware, disks and networks, an
 
 This page lists what chalkos needs from a node, from the network around it, from the machines an
 operator builds images and runs chalkctl on, and from a host that runs a
-[lab](../reference/glossary.md#lab). The sizes and defaults come from the image options and the
+lab. The sizes and defaults come from the image options and the
 [config kinds](../reference/kinds.md); the memory figures were measured in the end-to-end tests.
 
 ## Nodes
 
-A node is the machine that runs a chalkos [image](../reference/glossary.md#image), on bare metal
+A node is the machine that runs a chalkos image, on bare metal
 or as a virtual machine under KVM.
 
 | Requirement | What chalkos needs | Without it |
 | --- | --- | --- |
-| CPU architecture | x86-64. Images are built for [`system`](../reference/options.md#system), `x86_64-linux` by default. | [chalkd](../reference/glossary.md#chalkd) and the partition layout know arm64, but no arm64 image has been built or tested. |
-| Firmware | UEFI. systemd-boot and the [UKI](../reference/glossary.md#uki) are EFI binaries. | A BIOS-only machine does not boot an image. |
-| [Secure Boot](../reference/glossary.md#secure-boot) | On, with the certificate that signs the images in the firmware's [db](../reference/glossary.md#db-and-dbx). On a real machine chalkos does not enrol keys; the operator does, as [Sign images for Secure Boot](../build/secure-boot-signing.md) shows. chalklab enrols its own keys in the lab's virtual machines. | The image boots, but nothing verifies the UKI, so nothing verifies the store either. [PCR 7](../reference/glossary.md#pcr-7) then records Secure Boot as off, a state that any boot chain with Secure Boot off reproduces, so the [TPM](../reference/glossary.md#tpm) unseals STATE and VAR for whatever boots on the machine. chalkd checks the signatures of an upgrade's UKI and boot loader against db and dbx only while Secure Boot is enforced. |
-| TPM | TPM 2.0, for the default encryption mode `tpm2`, which seals the keys of [STATE](../reference/glossary.md#state), [VAR](../reference/glossary.md#var) and encrypted volumes to PCR 7. | Install fails with mode `tpm2`. Set `spec.encryption.mode` of the node's [`SystemDisk`](../reference/kinds.md#systemdisk) document to `none`, which leaves STATE and the node's secrets unencrypted on the disk. |
+| CPU architecture | x86-64. Images are built for [`system`](../reference/options.md#system), `x86_64-linux` by default. | chalkd and the partition layout know arm64, but no arm64 image has been built or tested. |
+| Firmware | UEFI. systemd-boot and the UKI are EFI binaries. | A BIOS-only machine does not boot an image. |
+| Secure Boot | On, with the certificate that signs the images in the firmware's db. On a real machine chalkos does not enrol keys; the operator does, as [Sign images for Secure Boot](../build/secure-boot-signing.md) shows. chalklab enrols its own keys in the lab's virtual machines. | The image boots, but nothing verifies the UKI, so nothing verifies the store either. PCR 7 then records Secure Boot as off, a state that any boot chain with Secure Boot off reproduces, so the TPM unseals STATE and VAR for whatever boots on the machine. chalkd checks the signatures of an upgrade's UKI and boot loader against db and dbx only while Secure Boot is enforced. |
+| TPM | TPM 2.0, for the default encryption mode `tpm2`, which seals the keys of STATE, VAR and encrypted volumes to PCR 7. | Install fails with mode `tpm2`. Set `spec.encryption.mode` of the node's [`SystemDisk`](../reference/kinds.md#systemdisk) document to `none`, which leaves STATE and the node's secrets unencrypted on the disk. |
 
-A node's memory follows mostly from its workloads. Measured before any workload, a single [control
-plane](../reference/glossary.md#control-plane) uses about 0.7 GiB after its bootstrap and 1.1 GiB
+A node's memory follows mostly from its workloads. Measured before any workload, a single control
+plane uses about 0.7 GiB after its bootstrap and 1.1 GiB
 after a reboot, each control plane of three about 860 MiB, and a
-[worker](../reference/glossary.md#worker) about 0.3 GiB. The end-to-end tests run control planes in
+worker about 0.3 GiB. The end-to-end tests run control planes in
 1.5 to 2 GiB and a worker in 1 GiB.
 
 The system disk holds a fixed system region and VAR, which takes the rest of the disk by default.
@@ -33,8 +33,8 @@ The sizes of the system region are options of a variant's NixOS modules; VAR's i
 
 | Partition | Default size | Option |
 | --- | --- | --- |
-| [ESP](../reference/glossary.md#esp) | 1 GiB | [`chalkos.disk.espSize`](../reference/options.md#chalkosdiskespsize) |
-| Store, [slot](../reference/glossary.md#slot) A and slot B | 3 GiB each | [`chalkos.disk.storeSize`](../reference/options.md#chalkosdiskstoresize) |
+| ESP | 1 GiB | [`chalkos.disk.espSize`](../reference/options.md#chalkosdiskespsize) |
+| Store, slot A and slot B | 3 GiB each | [`chalkos.disk.storeSize`](../reference/options.md#chalkosdiskstoresize) |
 | Store hash tree, slot A and slot B | 128 MiB each | [`chalkos.disk.storeVeritySize`](../reference/options.md#chalkosdiskstoreveritysize) |
 | STATE | 128 MiB | [`chalkos.disk.stateSize`](../reference/options.md#chalkosdiskstatesize) |
 | VAR | the rest of the disk | `spec.var.size` of the node's [`SystemDisk`](../reference/kinds.md#systemdisk) |
@@ -56,7 +56,7 @@ chalkos. [Storage and encryption](../how-it-works/node/storage.md) explains the 
 
 Building images and operating nodes are separate, and may happen on separate machines: Nix builds
 the image directories, and chalkctl, which never runs Nix, reads them with the
-[inventory](../reference/glossary.md#inventory) and its YAML files.
+inventory and its YAML files.
 
 The machine that builds the images:
 
@@ -70,13 +70,13 @@ The machine that runs chalkctl and kubectl:
 | Requirement | What chalkos needs |
 | --- | --- |
 | chalkctl and kubectl | From the chalkos flake's packages or the `lab` template's development shell. chalkctl is a static binary and needs no Nix to run, so it can be copied to a machine without Nix, an airgapped one included. |
-| Files | The inventory, `chalkos.yaml`, the YAML files it names, and the [image directories](../reference/glossary.md#image-directory) the inventory names for the nodes, for installs, upgrades and `chalkctl validate`. |
-| age identity | To decrypt `secrets.age`: an age key in `~/.config/chalkos/age.key`, or the SSH key `~/.ssh/id_ed25519` or `~/.ssh/id_rsa` the file was encrypted to, or a file named with `--identity`. A [client file](../reference/glossary.md#client-file) needs none. |
+| Files | The inventory, `chalkos.yaml`, the YAML files it names, and the image directories the inventory names for the nodes, for installs, upgrades and `chalkctl validate`. |
+| age identity | To decrypt `secrets.age`: an age key in `~/.config/chalkos/age.key`, or the SSH key `~/.ssh/id_ed25519` or `~/.ssh/id_rsa` the file was encrypted to, or a file named with `--identity`. A client file needs none. |
 | Network | Reach to each node's TCP 50000 and to the API server's TCP 6443. |
 
 ## Lab host
 
-[chalklab](../reference/glossary.md#chalklab) runs a cluster's `kvm` nodes as QEMU virtual
+chalklab runs a cluster's `kvm` nodes as QEMU virtual
 machines on one machine, without root.
 
 | Requirement | What chalklab needs |
@@ -91,6 +91,6 @@ machines on one machine, without root.
 
 chalkos is tested on x86-64 only: on QEMU with KVM in the end-to-end tests and the lab, and with the
 `metal` platform's images in QEMU. arm64, VMware ESXi, Hyper-V and the cloud platforms have no
-platform definition and no tests; the `virtualisation` [module
-group](../reference/glossary.md#module-group) carries their drivers, so a custom platform can start
+platform definition and no tests; the `virtualisation` module
+group carries their drivers, so a custom platform can start
 from it.

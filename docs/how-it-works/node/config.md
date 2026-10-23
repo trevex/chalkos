@@ -5,21 +5,21 @@ description: "How YAML config documents describe each node, how the inventory gi
 
 # Config and the inventory
 
-A node's [config](../../reference/glossary.md#config) is the set of YAML documents that makes it this
+A node's config is the set of YAML documents that makes it this
 node: its type, host name, disks, network, time servers, Kubernetes settings and the values of
-[extensions](../../reference/glossary.md#extension). The image is the same on many nodes; the config
-is what differs. An [inventory](../../reference/glossary.md#inventory) names the cluster's nodes, the
-address [chalkctl](../../reference/glossary.md#chalkctl) reaches each at, the image each runs and the
+extensions. The image is the same on many nodes; the config
+is what differs. An inventory names the cluster's nodes, the
+address chalkctl reaches each at, the image each runs and the
 files whose documents form each node's config. chalkctl checks the config against the node's image
-and delivers it; [chalkd](../../reference/glossary.md#chalkd) checks it again, keeps it on
-[STATE](../../reference/glossary.md#state) for the image it is for and applies it at every boot of
+and delivers it; chalkd checks it again, keeps it on
+STATE for the image it is for and applies it at every boot of
 that image.
 
 ## What is a config document?
 
-A [config document](../../reference/glossary.md#config-document) is one object in the style of a
+A config document is one object in the style of a
 Kubernetes object: an `apiVersion` of a group and a version, a `kind`, a `metadata.name` and a
-`spec`. The [kind](../../reference/glossary.md#kind)'s JSON Schema, which the image carries, defines
+`spec`. The kind's JSON Schema, which the image carries, defines
 the `spec`, its defaults and what it refuses, so a misspelled field is an error and not a value
 that nothing reads. A file holds any number of documents, separated by `---`.
 
@@ -76,12 +76,12 @@ schemas.
 | [`Host`](../../reference/kinds.md#host) | `chalkos.dev` | at most one | The node's hostname, which defaults to the node's name |
 | [`Secret`](../../reference/kinds.md#secret) | `chalkos.dev` | any | Secret values by key, for the fields that reference them |
 | [`Registry`](../../reference/kinds.md#registry) | `oci.chalkos.dev` | any | Credentials of one registry or mirror host, for chalkd's pulls and those of the kubelet, and whether chalkd and containerd reach that host over plain HTTP |
-| [`SystemDisk`](../../reference/kinds.md#systemdisk) | `storage.chalkos.dev` | exactly one | The system disk, the size of [VAR](../../reference/glossary.md#var) and the encryption of the node's partitions |
-| [`Volume`](../../reference/kinds.md#volume) | `storage.chalkos.dev` | any | A further [volume](../../reference/glossary.md#volume): its disk, size, format, mount point and encryption |
+| [`SystemDisk`](../../reference/kinds.md#systemdisk) | `storage.chalkos.dev` | exactly one | The system disk, the size of VAR and the encryption of the node's partitions |
+| [`Volume`](../../reference/kinds.md#volume) | `storage.chalkos.dev` | any | A further volume: its disk, size, format, mount point and encryption |
 | [`TimeSync`](../../reference/kinds.md#timesync) | `time.chalkos.dev` | at most one | Time servers, and whether those DHCP announces are used too |
 | [`Network`](../../reference/kinds.md#network), [`NetDev`](../../reference/kinds.md#netdev), [`Link`](../../reference/kinds.md#link) | `networkd.chalkos.dev` | any | systemd-networkd's `.network`, `.netdev` and `.link` files, one document per file |
-| [`Cluster`](../../reference/kinds.md#cluster) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The URL of the cluster's API server, IP families, pod and service ranges, DNS addresses, how nodes pick their addresses, the [VIP](../../reference/glossary.md#vip), scheduling on [control planes](../../reference/glossary.md#control-plane) and extra flags of the control plane's components |
-| [`Node`](../../reference/kinds.md#node) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The node's type, `controlplane` or `worker`, and its labels, taints, Kubernetes addresses, extra flags of its kubelet and the interface it holds the [VIP](../../reference/glossary.md#vip) on |
+| [`Cluster`](../../reference/kinds.md#cluster) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The URL of the cluster's API server, IP families, pod and service ranges, DNS addresses, how nodes pick their addresses, the VIP, scheduling on control planes and extra flags of the control plane's components |
+| [`Node`](../../reference/kinds.md#node) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The node's type, `controlplane` or `worker`, and its labels, taints, Kubernetes addresses, extra flags of its kubelet and the interface it holds the VIP on |
 | [`Mirror`](../../reference/kinds.md#mirror) | `oci.chalkos.dev` | any | The mirrors of one registry |
 | [`Flannel`](../../reference/kinds.md#flannel) | `kubernetes.chalkos.dev` | at most one, on images with flannel | flannel's MTU and the ranges its VXLAN must come from |
 | [`Addon`](../../reference/kinds.md#addon) | `kubernetes.chalkos.dev` | any | Kubernetes objects the control planes apply |
@@ -109,10 +109,10 @@ Some kinds depend on the image or the node:
   is a list.
 - An `Addon`'s objects go to the cluster's API, so chalkctl delivers `Addon` documents to control
   planes alone, the nodes whose `Node` has the type `controlplane`. A shared file may hold them;
-  a [worker](../../reference/glossary.md#worker)'s set leaves them out.
+  a worker's set leaves them out.
 
 An extension adds kinds of its own in a group outside `chalkos.dev`, declared in the NixOS modules
-of a [variant](../../reference/glossary.md#variant), as
+of a variant, as
 [Variants and platforms](variants.md#how-does-an-extension-add-a-kind) shows. Their documents go
 into the same files as chalkos's. The homelab example's `Rack` kind records where a node is
 mounted, and each node's file holds one:
@@ -191,22 +191,22 @@ spec:
 ```
 
 `address` is where chalkctl connects to the node's chalkd, as a host or `host:port`, also in
-[maintenance mode](../../reference/glossary.md#maintenance-mode) before the node has its config.
+maintenance mode before the node has its config.
 chalkctl never derives it from the node's `Network` documents, so a node that installs with a DHCP
 address and receives a static one names the static one here; `--address` overrides it for one
 command.
 
 The inventory names no secrets file. The commands that issue certificates or deliver config read
-the [secrets file](../../reference/glossary.md#secrets-file) from `--secrets FILE`, or from standard
+the secrets file from `--secrets FILE`, or from standard
 input with `--secrets -`. The others authenticate with the secrets file when `--secrets` is given,
-and otherwise with a [client file](../../reference/glossary.md#client-file): the one `--config`
+and otherwise with a client file: the one `--config`
 names, else the one `$CHALKOSCONFIG` names, else `~/.config/chalkos/config`.
 
 ## What names a node?
 
-A node's [name](../../reference/glossary.md#node-name) is its key in the inventory's `spec.nodes`,
+A node's name is its key in the inventory's `spec.nodes`,
 such as `cp1`. At install, chalkctl issues the node's
-[node certificate](../../reference/glossary.md#node-certificate) with the name as its subject's common
+node certificate with the name as its subject's common
 name. chalkd reads the name from that certificate whenever it needs it and has no other
 source for it: no config document names the node, and a kind a node holds once takes any
 `metadata.name`, which the examples set to `default`.
@@ -216,7 +216,7 @@ The name feeds:
 - the hostname, unless a [`Host`](../../reference/kinds.md#host) document's `hostname` gives another;
 - the Kubernetes node name, by which the kubelet registers and the node's etcd member is called;
 - the seed of the node's partition UUIDs, as [Storage and encryption](storage.md) describes;
-- the node's [recovery key](../../reference/glossary.md#recovery-key), derived from the secrets file
+- the node's recovery key, derived from the secrets file
   and the name;
 - the `node.name` of the [change rules](rules.md), the effects and the renderers of outputs.
 
@@ -273,12 +273,12 @@ node goes into each node's `Node` document instead, which chalkctl does not comp
 ## How does the inventory name images?
 
 The inventory's `spec.images` names each image the nodes run and the
-[image directory](../../reference/glossary.md#image-directory) of its build in
+image directory of its build in
 `source.directory`, relative to the inventory's directory. The directory is what `nix build` writes
 for one variant on one platform, such as `images/node-kvm` in the lab template. Where nodes enforce
 Secure Boot, it is the copy of the build that
 [`chalkbuild sign`](../../reference/cli/chalkbuild_sign.md) signed. Its `metadata.json` names the
-image's variant, platform and [root hash](../../reference/glossary.md#root-hash), and its `schemas/`
+image's variant, platform and root hash, and its `schemas/`
 holds the schemas of the kinds the image accepts.
 
 An image published to a registry is named by its reference in `source.oci` instead, as
@@ -325,7 +325,7 @@ spec:
 The image stays out of the node's config. chalkctl reads the root hash from `metadata.json` when
 it needs it and never puts it, or the image's name, into the config it delivers, so a new build of
 an image or a node's move to another image changes no node's config, and an
-[upgrade](../../reference/glossary.md#upgrade) needs no `apply-config` after it.
+upgrade needs no `apply-config` after it.
 
 ## How is config checked?
 
@@ -356,9 +356,9 @@ that deliver config run the same check first, each against the image the config 
 - [`chalkctl install`](../../reference/cli/chalkctl_install.md) against the image it installs: the
   directory of the node's image in the inventory, or the one `--image` gives;
 - [`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md) against the image the node
-  runs, whose schemas and [contract](../../reference/glossary.md#contract) the node returns through the
+  runs, whose schemas and contract the node returns through the
   [Contract](../../reference/api.md#method-contract) method, refusing an image of another
-  [platform](../../reference/glossary.md#platform) than the node's image in the inventory. With
+  platform than the node's image in the inventory. With
   `--staged`, against the node's image in the inventory, which the staged image is;
 - [`chalkctl upgrade`](../../reference/cli/chalkctl_upgrade.md) against the image each node gets,
   before it drains any node.
@@ -403,9 +403,9 @@ an `Addon`, as its SHA-256, and chalkctl compares the inventory's values by the 
 ## Where does a node keep its config?
 
 A node keeps a config slot on STATE for each image it holds, `/state/config/<root-hash>`, named by
-the [root hash](../../reference/glossary.md#root-hash) of the image's store. A slot holds the
+the root hash of the image's store. A slot holds the
 documents as they were delivered, the same documents with the schemas' defaults filled in, the
-config's version and the node's [identity](../../reference/glossary.md#identity), translated with
+config's version and the node's identity, translated with
 that image's schemas. chalkd writes a slot to a new directory and renames a symbolic link to it
 over the old one, so a power cut leaves either the old slot or the new one, documents and identity
 together, never a mix.
@@ -422,7 +422,7 @@ At every boot, `chalkos-config.service` loads the slot of the image the kernel c
   most two slots, one for each of its images.
 
 An image whose slot is missing boots without config: `chalkos-config` fails, the
-[health check](../../reference/glossary.md#health-check) fails with it, and a counted boot falls back.
+health check fails with it, and a counted boot falls back.
 `chalkctl apply-config` on the running image warns when an image is staged, whose slot keeps its
 own config:
 
@@ -471,7 +471,7 @@ upgrade or `apply-config --staged`, does not check the running image's slot: the
 mounts the new volume, and the next `apply-config` to it must name the volume.
 
 A control plane's addresses are not refused, but they are pinned once it becomes an
-[etcd member](../../reference/glossary.md#etcd-member): every later boot waits for exactly those
+etcd member: every later boot waits for exactly those
 addresses, so a `Network` change that drops one keeps the control plane from starting etcd.
 
 ## What does a node do with its config?
@@ -496,7 +496,7 @@ changes the storage is delivered, and every boot sets up the volumes it records.
 A service reads the node's config in one of two ways. A grant,
 [`systemd.services.<unit>.chalkos.kinds`](../../reference/options.md#systemdserviceschalkoskinds) in
 its image's modules, gives the unit the documents of the kinds it names, as files below
-`/run/chalkos/config` or through [chalkcfg](../../reference/glossary.md#chalkcfg), whose commands
+`/run/chalkos/config` or through chalkcfg, whose commands
 [`chalkos.kinds.<Kind>.get`](../../reference/options.md#chalkoskindsget) builds with a path the
 image's evaluation checks:
 

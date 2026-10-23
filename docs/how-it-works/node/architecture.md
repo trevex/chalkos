@@ -12,18 +12,18 @@ runs and follows a node from its first boot to its first upgrade.
 The parts fall into four groups:
 
 - On the operator's machine, a flake calls `chalkos.lib.mkImages`, which Nix evaluates into the
-  images of the cluster's [variants](../../reference/glossary.md#variant), one per
-  [platform](../../reference/glossary.md#platform), and an
-  [installer](../../reference/glossary.md#installer).
-- Also on the operator's machine, [chalkctl](../../reference/glossary.md#chalkctl) reads an
-  [inventory](../../reference/glossary.md#inventory) of the cluster's nodes and their YAML
-  [config](../../reference/glossary.md#config) files and drives the nodes; it never builds or
-  signs images and never runs Nix. [chalklab](../../reference/glossary.md#chalklab) runs a whole
+  images of the cluster's variants, one per
+  platform, and an
+  installer.
+- Also on the operator's machine, chalkctl reads an
+  inventory of the cluster's nodes and their YAML
+  config files and drives the nodes; it never builds or
+  signs images and never runs Nix. chalklab runs a whole
   cluster as local virtual machines.
 - On the machine that holds the Secure Boot db key, the operator's or a build machine,
-  [chalkbuild](../../reference/glossary.md#chalkbuild) signs a copy of each image directory Nix
+  chalkbuild signs a copy of each image directory Nix
   builds, so the key never enters the Nix store.
-- On every node, [chalkd](../../reference/glossary.md#chalkd) serves the node API, installs and
+- On every node, chalkd serves the node API, installs and
   upgrades the node, applies its config and runs the Kubernetes control plane.
 
 The diagram shows how they connect.
@@ -50,12 +50,12 @@ Nix builds the software a node runs: the operating system, Kubernetes and chalkd
 [`chalkos.lib.mkImages`](../../reference/options.md#mkimages-arguments) evaluates one NixOS system
 per variant and platform, each from chalkos's node modules, the platform's modules, the modules
 every variant shares and the variant's own, and builds each into an unsigned raw disk
-[image](../../reference/glossary.md#image) in an
-[image directory](../../reference/glossary.md#image-directory). It also builds one installer, which
+image in an
+image directory. It also builds one installer, which
 installs images of every platform. mkImages takes no node, address or cluster setting; its only
 input of a cluster is the optional public part of its secrets, for the OS CA. So one image serves
 every node the [inventory](../../reference/kinds.md#inventory) runs on it, control planes and
-[workers](../../reference/glossary.md#worker) alike.
+workers alike.
 [Variants and platforms](variants.md) explains variants, platforms and the order of their modules.
 
 What an image fixes when it is built and what reaches a node at runtime:
@@ -63,12 +63,12 @@ What an image fixes when it is built and what reaches a node at runtime:
 | Fixed when the image is built | Delivered at runtime, in the config |
 | --- | --- |
 | Kernel, kernel modules and initrd | Hostname, in [`Host`](../../reference/kinds.md#host), and whether the node is a control plane or a worker, in [`Node`](../../reference/kinds.md#node) |
-| NixOS services and the variant's modules, the services of [extensions](../../reference/glossary.md#extension) among them | systemd-networkd units, in [`Network`](../../reference/kinds.md#network), [`NetDev`](../../reference/kinds.md#netdev) and [`Link`](../../reference/kinds.md#link) |
-| Kubernetes release, the images of its components and the CNI provider | The cluster's endpoint and its Kubernetes settings: ranges, [VIP](../../reference/glossary.md#vip), extra flags and addons, in [`Cluster`](../../reference/kinds.md#cluster), [`Flannel`](../../reference/kinds.md#flannel) and [`Addon`](../../reference/kinds.md#addon), and registry mirrors in [`Mirror`](../../reference/kinds.md#mirror) |
-| The [OS CA](../../reference/glossary.md#os-ca) for maintenance mode, from mkImages' [`osCA`](../../reference/options.md#osca) | The kubelet's addresses, labels and taints, in [`Node`](../../reference/kinds.md#node) too |
+| NixOS services and the variant's modules, the services of extensions among them | systemd-networkd units, in [`Network`](../../reference/kinds.md#network), [`NetDev`](../../reference/kinds.md#netdev) and [`Link`](../../reference/kinds.md#link) |
+| Kubernetes release, the images of its components and the CNI provider | The cluster's endpoint and its Kubernetes settings: ranges, VIP, extra flags and addons, in [`Cluster`](../../reference/kinds.md#cluster), [`Flannel`](../../reference/kinds.md#flannel) and [`Addon`](../../reference/kinds.md#addon), and registry mirrors in [`Mirror`](../../reference/kinds.md#mirror) |
+| The OS CA for maintenance mode, from mkImages' [`osCA`](../../reference/options.md#osca) | The kubelet's addresses, labels and taints, in [`Node`](../../reference/kinds.md#node) too |
 | Partition sizes of the system region | Storage: system disk, VAR, volumes and encryption, in [`SystemDisk`](../../reference/kinds.md#systemdisk) and [`Volume`](../../reference/kinds.md#volume) |
 | Boot tries and health timeout | Time servers, in [`TimeSync`](../../reference/kinds.md#timesync) |
-| The config [kinds](../../reference/glossary.md#kind) the image accepts and their schemas | Documents of the kinds extensions declare, and the `Secret`s they reference |
+| The config kinds the image accepts and their schemas | Documents of the kinds extensions declare, and the `Secret`s they reference |
 
 [Variants and platforms](variants.md#what-does-an-image-fix-and-what-does-config-set) draws the
 line in detail; [Config and the inventory](config.md) explains the right column.
@@ -92,27 +92,27 @@ Without an inventory, a command that only reaches a node works with a client fil
 
 chalkctl authenticates in one of two ways:
 
-- With the [secrets file](../../reference/glossary.md#secrets-file), which holds every CA key of the
+- With the secrets file, which holds every CA key of the
   cluster. chalkctl signs itself a short-lived admin certificate from it for each run. Installs,
-  config changes and [rotations](../../reference/glossary.md#rotation) need it.
-- With a [client file](../../reference/glossary.md#client-file), which holds one certificate of the
-  [reader](../../reference/glossary.md#reader), [operator](../../reference/glossary.md#operator) or
-  [admin](../../reference/glossary.md#admin) role. Upgrades, reboots, status and logs work with one,
+  config changes and rotations need it.
+- With a client file, which holds one certificate of the
+  reader, operator or
+  admin role. Upgrades, reboots, status and logs work with one,
   so the people who operate a cluster need not hold its CA keys.
 
 chalklab runs the nodes a lab file names as QEMU virtual machines on one machine, each with
-[Secure Boot](../../reference/glossary.md#secure-boot) and a [TPM](../../reference/glossary.md#tpm).
+Secure Boot and a TPM.
 It never builds images: it copies the `kvm` image the inventory names for each node, signs the
 copy with lab keys it enrols in the VMs' firmware, boots each node and installs it with chalkctl.
-A [lab](../../reference/glossary.md#lab) is how the [quick start](../../get-started/quick-start.md) runs.
+A lab is how the [quick start](../../get-started/quick-start.md) runs.
 
 ## What runs on a node?
 
 A node runs its image from a read-only store checked by
-[dm-verity](../../reference/glossary.md#dm-verity), with its root file system in memory. What it
+dm-verity, with its root file system in memory. What it
 writes goes to two encrypted partitions:
-[STATE](../../reference/glossary.md#state), 128 MiB by default, which holds the node's config,
-certificates and Kubernetes secrets, and [VAR](../../reference/glossary.md#var), mounted at `/var`,
+STATE, 128 MiB by default, which holds the node's config,
+certificates and Kubernetes secrets, and VAR, mounted at `/var`,
 which holds etcd, containerd, the kubelet and logs. [The image](image.md) describes the disk;
 [Storage and encryption](storage.md) describes STATE and VAR.
 
@@ -135,16 +135,16 @@ new privileges, fixes the system call architecture and protects the clock. chalk
 whenever it stops, with no limit, because it is the only way to reach the node: nodes have no SSH
 and no login.
 
-On a [control plane](../../reference/glossary.md#control-plane), chalkd also renders the static pods
+On a control plane, chalkd also renders the static pods
 of etcd, the API server, the controller-manager and the scheduler, holds the
-[VIP](../../reference/glossary.md#vip) when elected, renews the node certificates of the cluster and
+VIP when elected, renews the node certificates of the cluster and
 drains nodes for upgrades. [Kubernetes on chalkos](../kubernetes/kubernetes.md) covers that side.
 
 ## Which mode is chalkd in?
 
 chalkd runs in one of two modes, and the file `installed` on STATE decides which.
 
-In [maintenance mode](../../reference/glossary.md#maintenance-mode), on a node that is not
+In maintenance mode, on a node that is not
 installed, chalkd serves a self-signed certificate and prints its SHA-256 fingerprint and the
 node's addresses on the console:
 
@@ -158,10 +158,10 @@ with [`osCA`](../../reference/options.md#osca) carries that OS CA and accepts on
 clients with a certificate from it. An image built without one prints `accepting any client`
 and accepts anyone until it is installed.
 
-In [normal mode](../../reference/glossary.md#normal-mode), on an installed node, chalkd serves its
-[node certificate](../../reference/glossary.md#node-certificate) and accepts only clients whose
+In normal mode, on an installed node, chalkd serves its
+node certificate and accepts only clients whose
 certificate chains to the OS CAs on STATE. Each method is open to the
-[client roles](../../reference/glossary.md#client-role) allowed to call it, and the install method
+client roles allowed to call it, and the install method
 is closed.
 
 When chalkd cannot read STATE well enough to tell whether the node is installed, it fails and
@@ -190,7 +190,7 @@ A machine reaches maintenance mode in one of two ways:
 - It boots the installer, from a USB disk, an ISO or a network boot. The installer never touches
   the medium it boots from; it writes the node's image to another disk.
 - It boots its image directly, written to its disk with `dd`, used as a VM's disk or created
-  by chalklab. On the first boot, systemd-repart adds [slot](../../reference/glossary.md#slot) B
+  by chalklab. On the first boot, systemd-repart adds slot B
   and an empty STATE behind the partitions the image ships with. STATE has no `installed` file,
   so chalkd starts in maintenance mode.
 
@@ -211,7 +211,7 @@ that fingerprint. With `--fingerprint` the first connection is pinned already an
 On a node that runs its image already, the install happens in place: chalkctl sends no image.
 chalkd recreates STATE if its encryption differs from the node's `SystemDisk`, opens it, creates
 VAR and the volumes, enrols the second keyslot of every encrypted volume unless the fallback is
-`none`, writes the config and certificates, gives the [ESP](../../reference/glossary.md#esp) a random
+`none`, writes the config and certificates, gives the ESP a random
 partition UUID and writes the `installed` marker.
 
 On a node that runs the installer, chalkctl also sends the image the inventory names for the node,
@@ -245,9 +245,9 @@ sequenceDiagram
 
 Before anything is written, the installer checks the config against the image's schemas,
 translates it for the image's platform, and checks that the image is built for the machine's
-architecture. With Secure Boot enforced, it checks the [UKI](../../reference/glossary.md#uki)'s and
+architecture. With Secure Boot enforced, it checks the UKI's and
 the boot loader's signatures against the firmware's
-[db and dbx](../../reference/glossary.md#db-and-dbx), as the firmware will at the next boot, when it
+db and dbx, as the firmware will at the next boot, when it
 receives them: after slot A is written and before the boot loader is. The
 installer takes the disk the node's `SystemDisk` names when blkid finds nothing on it but at
 most an empty GPT, or when it holds an unfinished install of the node, which it continues; any
@@ -268,7 +268,7 @@ starts in normal mode with the node certificate from STATE.
 
 The first control plane waits for [`chalkctl bootstrap`](../../reference/cli/chalkctl_bootstrap.md),
 which starts etcd as its first member and the control plane with it; the
-[bootstrap](../../reference/glossary.md#bootstrap) runs once per cluster. Further control planes
+bootstrap runs once per cluster. Further control planes
 join the existing etcd on their own, and workers join the API server with the kubelet certificate
 chalkctl issued them at install. [Kubernetes on chalkos](../kubernetes/kubernetes.md) describes the joins.
 
@@ -278,7 +278,7 @@ An upgrade replaces the whole image at once.
 [`chalkctl upgrade`](../../reference/cli/chalkctl_upgrade.md) gives each node the image the inventory
 names for it, or the one `--image` gives: it streams an image from a directory, and has the node
 pull an image the inventory names in a registry. chalkd writes the image into the inactive slot,
-and the node boots it with [boot counting](../../reference/glossary.md#boot-counting). If the new image does not
+and the node boots it with boot counting. If the new image does not
 become healthy within its tries, the node falls back to the image it ran before.
 [Upgrades](upgrades.md) and [Boot, health and rollback](boot-and-rollback.md) explain both halves.
 

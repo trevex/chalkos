@@ -5,8 +5,8 @@ description: "The partitions of an installed node and the files of an image"
 
 # Image and partition layout
 
-This page lists the partitions of a node's disks, the files on the [ESP](glossary.md#esp) and on
-[STATE](glossary.md#state), the outputs of an image build and the paths a running node uses. The
+This page lists the partitions of a node's disks, the files on the ESP and on
+STATE, the outputs of an image build and the paths a running node uses. The
 system region comes from `modules/node/base/disk.nix`, VAR and volumes from the node's
 `SystemDisk` and `Volume` documents through `pkg/config/storage.go`, and the file names from
 `pkg/upgrade`, `pkg/install`, `pkg/storage` and `pkg/chalkd`. [The image](../how-it-works/node/image.md)
@@ -14,10 +14,10 @@ and [Storage and encryption](../how-it-works/node/storage.md) explain why the la
 
 ## Partition map
 
-The system disk holds the system region (the ESP, two [slots](glossary.md#slot) and STATE)
-followed by [VAR](glossary.md#var) and the [volumes](glossary.md#volume) placed on it. A slot
-is a pair of partitions: the [dm-verity](glossary.md#dm-verity) hash tree first, then the erofs
-data of the [store](glossary.md#store).
+The system disk holds the system region (the ESP, two slots and STATE)
+followed by VAR and the volumes placed on it. A slot
+is a pair of partitions: the dm-verity hash tree first, then the erofs
+data of the store.
 
 ```mermaid
 flowchart LR
@@ -48,14 +48,14 @@ the same system region.
 | `20-store-a` | `store_<hash16>` | [`storeSize`](options.md#chalkosdiskstoresize), `3G` | erofs, zstd | none | image build |
 | `30-store-verity-b` | `_empty` | `storeVeritySize`, `128M` | none until an upgrade | none | first boot, or install from the installer |
 | `40-store-b` | `_empty` | `storeSize`, `3G` | none until an upgrade | none | first boot, or install from the installer |
-| `50-state` | `state` | [`stateSize`](options.md#chalkosdiskstatesize), `128M` | ext4 | node's policy, LUKS2 sealed to the [TPM](glossary.md#tpm) by default | first boot, install |
+| `50-state` | `state` | [`stateSize`](options.md#chalkosdiskstatesize), `128M` | ext4 | node's policy, LUKS2 sealed to the TPM by default | first boot, install |
 | `50-var` | `var` | the `SystemDisk`'s `spec.var.size`, rest of the disk | ext4 | node's policy | install |
 | `60-<name>` | `<name>` | the volume's `size` | the volume's `format` | node's policy | install, later config |
 
 A volume with a disk of its own is the only partition on that disk, from the definition
 `10-<name>`. The system region's definitions are the same files the image ships in
 `/etc/chalkos/repart.d`; VAR's and the volumes' come from the node's
-[config](glossary.md#config) and are kept on STATE.
+config and are kept on STATE.
 
 The "Created by" column names the first writer of each partition:
 
@@ -64,7 +64,7 @@ The "Created by" column names the first writer of each partition:
 - First boot: systemd-repart in the initrd runs the system region's definitions against the
   disk systemd-boot was loaded from, so it adds slot B and STATE behind the partitions the image
   shipped with. It runs at every boot and changes nothing once they exist.
-- Install: from the [installer](glossary.md#installer), [chalkd](glossary.md#chalkd) lays out the
+- Install: from the installer, chalkd lays out the
   whole system region on the target disk with one systemd-repart run of the image's definitions and
   writes slot A itself. In place, chalkd recreates STATE when its contents do not match the node's
   encryption policy (an unencrypted STATE for a `SystemDisk` with `encryption: {mode: none}`). In
@@ -102,8 +102,8 @@ volumes have chalkos's own types.
 
 ## Partition UUIDs
 
-The [UKI](glossary.md#uki)'s kernel command line carries the store's
-[root hash](glossary.md#root-hash) as `usrhash=`, and systemd finds the store's partitions by
+The UKI's kernel command line carries the store's
+root hash as `usrhash=`, and systemd finds the store's partitions by
 UUIDs derived from it: the data partition's UUID is the root hash's first 128 bits, the hash
 tree's its last 128 bits. A store
 built with the root hash `2ece03b0fa094b775ee5bf2e1f6f9eb66d6f0dc06f30f49f2f978f00e1173942`
@@ -139,8 +139,8 @@ idle, so a power cut rarely finds its FAT file system in use.
 | Path | What it is |
 | --- | --- |
 | `/EFI/BOOT/BOOTX64.EFI` | systemd-boot, at the removable-media path, so firmware finds it without a boot entry. `BOOTAA64.EFI` on arm64. |
-| `/EFI/Linux/chalkos_<generation>.efi` | A UKI without a boot counter: `chalkos_1.efi` as the image holds it and an install from the installer writes it, or one whose boot was [blessed](glossary.md#blessed-boot). |
-| `/EFI/Linux/chalkos_<generation>+<left>.efi` | A UKI an [upgrade](glossary.md#upgrade) installed, one [generation](glossary.md#generation) above the highest on the ESP, with [`chalkos.upgrade.bootTries`](options.md#chalkosupgradeboottries) tries left, such as `chalkos_2+3.efi`. |
+| `/EFI/Linux/chalkos_<generation>.efi` | A UKI without a boot counter: `chalkos_1.efi` as the image holds it and an install from the installer writes it, or one whose boot was blessed. |
+| `/EFI/Linux/chalkos_<generation>+<left>.efi` | A UKI an upgrade installed, one generation above the highest on the ESP, with [`chalkos.upgrade.bootTries`](options.md#chalkosupgradeboottries) tries left, such as `chalkos_2+3.efi`. |
 | `/EFI/Linux/chalkos_<generation>+<left>-<done>.efi` | The same UKI after systemd-boot counted a boot that was not blessed, such as `chalkos_2+2-1.efi`. `+0-3` means no tries left: systemd-boot boots another entry. |
 | `/EFI/Linux/.upgrade-<root-hash>.efi` | A UKI an upgrade is receiving, named by the image's full root hash. systemd-boot ignores names starting with a dot. |
 | `/EFI/Linux/.install-<root-hash>.efi` | A UKI an install from the installer is receiving. |
@@ -184,14 +184,14 @@ readable by root alone.
 | Path | Written by | What it holds |
 | --- | --- | --- |
 | `config/<root-hash>/` | install, Upgrade, ApplyConfig | The config slot of the image whose store has the root hash, which its boot loads: a symbolic link to a directory beside it, which a new set replaces as a whole. An Upgrade forgets the slots of the images no UKI on the ESP boots, and with them a slot an upgrade wrote before a crash kept its image from being activated. |
-| `config/<root-hash>/identity.json` | install, Upgrade, ApplyConfig | The node's [identity](glossary.md#identity) on that image, which its config translates to and the boot applies: hostname, static addresses, storage and Kubernetes settings. |
+| `config/<root-hash>/identity.json` | install, Upgrade, ApplyConfig | The node's identity on that image, which its config translates to and the boot applies: hostname, static addresses, storage and Kubernetes settings. |
 | `config/<root-hash>/delivered/<group>/<Kind>/<name>.json` | install, Upgrade, ApplyConfig | The slot's config documents as delivered, which GetConfig returns with secrets hashed; `Secret` documents in `delivered/secrets/<name>.json`. |
 | `config/<root-hash>/documents/<group>/<Kind>/<name>.json` | install, Upgrade, ApplyConfig | The same documents with their schemas' defaults filled in, which the node's services read; `Secret` documents in `documents/secrets/<name>.json`. |
 | `config/<root-hash>/version` | install, Upgrade, ApplyConfig | The SHA-256 of the slot's config as delivered, which Status reports. |
-| `chalkd/node.pem` | install, renewal | The [node certificate](glossary.md#node-certificate)'s chain and its key in one file, so both are replaced together. |
-| `chalkd/ca.crt` | install, [rotation](glossary.md#rotation) | The certificates of the [OS CAs](glossary.md#os-ca) the node trusts, a bundle. |
-| `kubernetes/share.json` | install, rotation | The node's [Kubernetes share](glossary.md#kubernetes-share). |
-| `kubernetes/node-ip` | chalkd | A [control plane](glossary.md#control-plane)'s addresses, pinned when it became an [etcd member](glossary.md#etcd-member), one per line. |
+| `chalkd/node.pem` | install, renewal | The node certificate's chain and its key in one file, so both are replaced together. |
+| `chalkd/ca.crt` | install, rotation | The certificates of the OS CAs the node trusts, a bundle. |
+| `kubernetes/share.json` | install, rotation | The node's Kubernetes share. |
+| `kubernetes/node-ip` | chalkd | A control plane's addresses, pinned when it became an etcd member, one per line. |
 | `kubernetes/joining` | chalkd | The node started joining the cluster, so it never bootstraps a cluster of its own. |
 | `kubernetes/bootstrapped` | Bootstrap | The node bootstrapped the cluster. |
 | `kubernetes/etcd-initialised` | chalkd | etcd answered ready after the bootstrap, so its data exists. |
@@ -203,11 +203,11 @@ readable by root alone.
 | `installed` | install | The marker that the node is installed, written last. |
 
 A node whose STATE has no `installed` marker starts chalkd in
-[maintenance mode](glossary.md#maintenance-mode).
+maintenance mode.
 
 ## Outputs of an image build
 
-An [image directory](glossary.md#image-directory) is what
+An image directory is what
 [`mkImages`](options.md) builds as `images.<variant>-<platform>`, such as `nix build .#node-kvm`
 in the lab template, whose flake exposes `images.node-kvm`. It holds five entries, six for an
 image with Kubernetes:
@@ -217,9 +217,9 @@ image with Kubernetes:
 | `chalkos.raw` | The raw disk image: the ESP, with the UKI as `/EFI/Linux/chalkos_1.efi`, and slot A labelled with its root hash, with no slot B and no STATE. |
 | `repart-output.json` | systemd-repart's description of the raw image's partitions: type, label, UUID, offset, size and the store's root hash, with slot A's labels as the raw image carries them. `chalkbuild sign` and `chalkctl install` find the partitions with it. |
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
-| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, [variant](glossary.md#variant), platform and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
+| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, variant, platform and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. [Config kinds](kinds.md) lists the fields of the default image's kinds. |
-| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only on an image with Kubernetes. An install from the installer sends it with `schemas`, or the installer reads both from the contract layer of an image it pulls, so chalkd translates the node's config for the image it writes; an upgrade checks each node's config from the [inventory](glossary.md#inventory) against both before it drains a node, and chalkd checks the config it carries against those of the image it wrote. |
+| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only on an image with Kubernetes. An install from the installer sends it with `schemas`, or the installer reads both from the contract layer of an image it pulls, so chalkd translates the node's config for the image it writes; an upgrade checks each node's config from the inventory against both before it drains a node, and chalkd checks the config it carries against those of the image it wrote. |
 
 The definitions of an image with the default sizes read:
 
@@ -315,7 +315,7 @@ another disk carrying the same image or the same labels for its own.
 | `/state` | STATE. |
 | `/var` | VAR; tmpfs until the node is installed. |
 | `/etc/chalkos/repart.d` | The system region's definitions. |
-| `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; [chalkcfg](glossary.md#chalkcfg) reads their names to know the kinds. |
+| `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; chalkcfg reads their names to know the kinds. |
 | `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the image is built with [`osCA`](options.md#osca). |
 | `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
 | `/etc/chalkos/services.json` | The units granted config kinds, from [`systemd.services.<unit>.chalkos.kinds`](options.md#systemdserviceschalkoskinds). |

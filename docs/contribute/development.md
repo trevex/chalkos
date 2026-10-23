@@ -7,7 +7,7 @@ description: "The development shell, the repository layout and the commands of a
 
 This page sets up a chalkos checkout for development and lists the commands of a development
 loop: building the tools and images, running the Go tests, regenerating code and pages,
-formatting, and running a [lab](../reference/glossary.md#lab) from the checkout. Everything
+formatting, and running a lab from the checkout. Everything
 runs through Nix, so the only requirements are an x86-64 Linux machine with Nix and flakes
 enabled, and `/dev/kvm` for anything that boots a virtual machine.
 
@@ -29,7 +29,7 @@ The shell, defined in `nix/shell.nix`, provides:
   util-linux, e2fsprogs, vde2, socat and iproute2;
 - the variables the tests read: `CHALKLAB_OVMF_CODE`, `CHALKLAB_OVMF_VARS` and
   `CHALKLAB_OVMF_VARS_ENROLLED` (OVMF firmware, blank and with test
-  [Secure Boot](../reference/glossary.md#secure-boot) keys enrolled),
+  Secure Boot keys enrolled),
   `CHALKLAB_SB_KEYS` (those keys), `CHALKOS_TEST_EFI`, `CHALKOS_TEST_REPART` and
   `CHALKOS_TEST_IMAGE_DEFINITIONS`.
 
@@ -43,9 +43,9 @@ use the same tools and variables from `nix/testing/env.nix`.
 | `api/` | The node API's protobuf definition, `api/chalkos/node/v1/node.proto`, and the template of its reference page. |
 | `cmd/` | Thin mains: `chalkctl`, `chalkd`, `chalklab`, `chalkbuild`, `chalkos-storage` and `docgen`. |
 | `pkg/` | The Go packages, including `pkg/api`, the code `buf generate` writes. |
-| `modules/node/` | The NixOS modules every [image](../reference/glossary.md#image) is built from. |
-| `modules/platforms/` | The `metal` and `kvm` [platforms](../reference/glossary.md#platform). |
-| `modules/installer/` | The [installer](../reference/glossary.md#installer) image and its ISO. |
+| `modules/node/` | The NixOS modules every image is built from. |
+| `modules/platforms/` | The `metal` and `kvm` platforms. |
+| `modules/installer/` | The installer image and its ISO. |
 | `modules/testing/` | The test probe and the test image's small partitions. |
 | `lib/` | `mkImages` and the module of its arguments. |
 | `nix/` | Tooling: packages, apps, checks, the development shell, the docs build, and the test images and their secrets in `nix/testing/`. |
@@ -80,7 +80,7 @@ go run ./cmd/chalklab --help
 go run ./cmd/chalkbuild --help
 ```
 
-[chalkd](../reference/glossary.md#chalkd) only does useful work on a node; the end-to-end tests and
+chalkd only does useful work on a node; the end-to-end tests and
 a lab run it there.
 
 ## Build images
@@ -96,8 +96,8 @@ it exposes as packages. The repository's own flake exposes its test images, whic
 | `test-installer` | The test images' installer. |
 | `test-kubernetes-image` | The `k8s` variant on `kvm`, which the Kubernetes test's control plane and worker boot. |
 | `test-kubernetes-ha-image` | The `k8s` variant on `metal`, which the HA test's control planes boot. |
-| `test-upgrade-image`, `test-unhealthy-image`, `test-kubernetes-ha-upgrade-image` | Images the [upgrade](../reference/glossary.md#upgrade) tests install. |
-| `installer` | An installer of a cluster without an [OS CA](../reference/glossary.md#os-ca), which accepts any client until it installs a node. |
+| `test-upgrade-image`, `test-unhealthy-image`, `test-kubernetes-ha-upgrade-image` | Images the upgrade tests install. |
+| `installer` | An installer of a cluster without an OS CA, which accepts any client until it installs a node. |
 
 ```sh
 nix build .#test-image
@@ -119,7 +119,7 @@ None of them needs root. The tests of `pkg/kubernetes/vip` and `pkg/kubernetes/n
 themselves again in a new user and network namespace, and a test of `pkg/kubernetes/node` in a new
 user and mount namespace, so the kernel must allow unprivileged user namespaces. The install and
 upgrade tests lay out disk image files with the real sfdisk and systemd-repart and emulate
-mounts, LUKS, the [TPM](../reference/glossary.md#tpm) and the firmware, so they need no loop
+mounts, LUKS, the TPM and the firmware, so they need no loop
 devices.
 
 `go test ./...` also runs the end-to-end tests in `test/e2e`, which boot VMs as soon as the
@@ -171,7 +171,7 @@ input's URL:
 inputs.chalkos.url = "git+file://<checkout>";
 ```
 
-Then follow the template's README, with [chalklab](../reference/glossary.md#chalklab) and chalkctl
+Then follow the template's README, with chalklab and chalkctl
 now built from the checkout:
 
 ```sh

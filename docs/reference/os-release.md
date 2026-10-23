@@ -16,20 +16,20 @@ read through `pkg/uki/uki.go` and `pkg/chalkd/info.go`.
 An image carries one os-release file in two places with the same content:
 
 - `/etc/os-release` on the running node, in the read-only `/etc` the image assembles at boot;
-- the `.osrel` section of the image's [UKI](glossary.md#uki), next to the kernel command line
-  that names the store's [root hash](glossary.md#root-hash).
+- the `.osrel` section of the image's UKI, next to the kernel command line
+  that names the store's root hash.
 
 The UKI's Secure Boot signature covers its `.osrel` section, so on a node with
-[Secure Boot](glossary.md#secure-boot) enforced, an image cannot claim another
-[variant](glossary.md#variant) or [platform](glossary.md#platform) than the one it was signed
-with. chalkctl and [chalkd](glossary.md#chalkd) read the UKI's copy of an image they are
+Secure Boot enforced, an image cannot claim another
+variant or platform than the one it was signed
+with. chalkctl and chalkd read the UKI's copy of an image they are
 about to install, and `/etc/os-release` for the image a node runs.
 
 ## Fields chalkos sets
 
 | Field | Value | Source | Images |
 | --- | --- | --- | --- |
-| `IMAGE_ID` | `chalkos`; `chalkos-installer` on the [installer](glossary.md#installer) | `system.image.id` | every image |
+| `IMAGE_ID` | `chalkos`; `chalkos-installer` on the installer | `system.image.id` | every image |
 | `IMAGE_VERSION` | empty | `modules/node/upgrade.nix`; `system.image.version` must stay unset | every image |
 | `CHALKOS_VARIANT` | the name of the [`mkImages` variant](options.md#variants) the image is built as, such as `node` | [`chalkos.variant.name`](options.md#chalkosvariantname) | node images; not the installer |
 | `CHALKOS_PLATFORM` | the platform's name, such as `metal` or `kvm` | [`chalkos.platform.name`](options.md#chalkosplatformname) | node images; not the installer |
@@ -37,7 +37,7 @@ about to install, and `/etc/os-release` for the image a node runs.
 
 `IMAGE_VERSION` is empty in every image. systemd-boot orders the UKIs of one image ID by
 `IMAGE_VERSION` before their file names, and without the field by `VERSION`, which NixOS sets to
-its release; an empty one leaves the order to the [generation](glossary.md#generation) in the file
+its release; an empty one leaves the order to the generation in the file
 name. The build fails when `system.image.version` is set, with the message
 `chalkos orders boot entries by generation; pass revision and tag to mkImages for provenance`. The
 image ID matches `[a-z0-9._-]+`: it starts the UKIs' file names, systemd-boot lowercases only
@@ -82,7 +82,7 @@ The installer's carries `IMAGE_ID="chalkos-installer"` and `CHALKOS_BOOT_TRIES`,
 | Field | Read by | Check |
 | --- | --- | --- |
 | `IMAGE_ID` | chalkd's [Upgrade](api.md#method-upgrade) | The new image's ID equals the running image's. |
-| `IMAGE_ID` | chalkd's upgrade and install, on the UKI | The UKI's ID equals the image header's. The UKI's file name on the [ESP](glossary.md#esp) is `<IMAGE_ID>_<generation>.efi`. |
+| `IMAGE_ID` | chalkd's upgrade and install, on the UKI | The UKI's ID equals the image header's. The UKI's file name on the ESP is `<IMAGE_ID>_<generation>.efi`. |
 | `IMAGE_ID` | chalkd's upgrade, on the ESP | Only UKIs of the running image's ID, and files that are no UKI whose names give a generation of it, are removed; other UKIs on the ESP stay. Every name `<IMAGE_ID>_<n>.efi` counts for the highest generation, whatever its UKI holds. |
 | `IMAGE_VERSION` | chalkctl, reading an image | Set and empty; an image without it or with a value is refused. |
 | `IMAGE_VERSION` | chalkd's upgrade and install, on the UKI | Set and empty, as for chalkctl. |
@@ -100,7 +100,7 @@ No check compares `CHALKOS_VARIANT`: a node may change its variant through an up
 check of its config against the new image's schemas decides whether the image suits it.
 
 No check reads the image's version, because it has none: chalkd's Info and Status name the running
-image by the [root hash](glossary.md#root-hash) on the kernel command line, and the record of a
+image by the root hash on the kernel command line, and the record of a
 boot that was not found healthy by that root hash and the entry's generation.
 
 [The image](../how-it-works/node/image.md) explains what an image is and [Upgrades](../how-it-works/node/upgrades.md)
