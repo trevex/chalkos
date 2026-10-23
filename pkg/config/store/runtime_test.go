@@ -192,3 +192,19 @@ func TestCredentialSecrets(t *testing.T) {
 		t.Error("no directory gave a value")
 	}
 }
+
+// TestCredentialSecretsStaysInTheDirectory gives no value for a reference that would name a file
+// outside the directory.
+func TestCredentialSecretsStaysInTheDirectory(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "credentials")
+	if err := os.MkdirAll(filepath.Join(dir, "secret_hub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "outside.token"), []byte("s3cret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := CredentialSecrets(dir)(config.SecretRef{Name: "hub/../../outside", Key: "token"}); ok {
+		t.Errorf("a reference with / read %q", v)
+	}
+}

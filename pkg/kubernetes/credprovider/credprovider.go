@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
 
@@ -61,7 +62,9 @@ func kubeletHost(host string) (string, error) {
 // each host of logins with a user. credentials.json holds their users and passwords and nothing
 // else, so a host whose user went is gone from it. dir and credentials.json are readable by root
 // alone. The flags name the config and bin, or are empty without such a host, since the kubelet
-// refuses a config without providers. The kubelet reads the config when it starts.
+// refuses a config without providers. The kubelet reads the config when it starts. Write refuses
+// an IPv6 host without a port: the kubelet strips the brackets of an IPv6 address only together
+// with a port, and otherwise reads them as a character class of its glob.
 func Write(dir, bin string, logins []config.RegistryCredentials) error {
 	creds := map[string]login{}
 	for _, l := range logins {
@@ -72,7 +75,13 @@ func Write(dir, bin string, logins []config.RegistryCredentials) error {
 		if err != nil {
 			return fmt.Errorf("registry %q: %w", l.Host, err)
 		}
+		if strings.HasPrefix(h, "[") && !strings.Contains(h, "]:") {
+			return fmt.Errorf("registry %q: the kubelet matches an IPv6 host only with its port; give the port, such as %s:443", l.Host, h)
+		}
 		creds[h] = login{l.Username, l.Password}
+	}
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -85,11 +94,13 @@ func Write(dir, bin string, logins []config.RegistryCredentials) error {
 	if len(creds) > 0 {
 		flags = fmt.Sprintf("KUBELET_CREDENTIAL_PROVIDER_ARGS=--image-credential-provider-config=%s --image-credential-provider-bin-dir=%s\n", cfgPath, bin)
 	}
+	// [] rather than null, as the kubelet's config declares a list.
+	matches := append([]string{}, slices.Sorted(maps.Keys(creds))...)
 	cfg, err := json.Marshal(map[string]any{
 		"apiVersion": "kubelet.config.k8s.io/v1",
 		"kind":       "CredentialProviderConfig",
 		"providers": []provider{{
-			Name: "chalkd", MatchImages: slices.Sorted(maps.Keys(creds)), DefaultCacheDuration: cacheDuration,
+			Name: "chalkd", MatchImages: matches, DefaultCacheDuration: cacheDuration,
 			APIVersion: apiVersion, Args: []string{"credential-provider"},
 		}},
 	})

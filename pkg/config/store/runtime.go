@@ -186,10 +186,12 @@ func syncFiles(dir string, files map[string][]byte) error {
 }
 
 // CredentialSecrets returns the value a secretRef names among the credentials of a granted unit,
-// as systemd loads them into dir, the unit's $CREDENTIALS_DIRECTORY, and whether dir holds it.
+// as systemd loads them into dir, the unit's $CREDENTIALS_DIRECTORY, and whether dir holds it. A
+// reference that could not name a credential file, such as one holding /, holds no value, so no
+// reference reads a file outside dir.
 func CredentialSecrets(dir string) func(config.SecretRef) (string, bool) {
 	return func(ref config.SecretRef) (string, bool) {
-		if dir == "" {
+		if dir == "" || checkCredential(ref) != nil {
 			return "", false
 		}
 		data, err := os.ReadFile(filepath.Join(dir, CredentialPrefix+"_"+credentialFile(ref)))

@@ -261,7 +261,7 @@ in
         host = mkOption {
           type = types.strMatching "${host}(:[0-9]+)?";
           example = "ghcr.io";
-          description = "Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials, over plain HTTP when insecure is set. On images that run Kubernetes, the kubelet hands these credentials to containerd for the container images of this host, and containerd also sends them to the endpoints of the host's Mirror.";
+          description = "Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials, over plain HTTP when insecure is set. On images that run Kubernetes, the kubelet hands these credentials to containerd for the container images of this host, and containerd sends them to every endpoint of the host's Mirror too, over plain HTTP to an endpoint whose host is insecure. The kubelet compares the host, in lower case and with its port, case-sensitively with the image's host as the pod spec writes it, so pods name the host in lower case. An IPv6 host with credentials needs its port, 443 included, for the kubelet to match it.";
         };
         username = mkOption {
           type = types.nullOr types.nonEmptyStr;

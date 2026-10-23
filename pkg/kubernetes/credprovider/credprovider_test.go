@@ -16,13 +16,14 @@ var logins = []config.RegistryCredentials{
 	{Host: "Index.Docker.io", Username: "hub-bot", Password: "hub-s3cret"},
 	{Host: "10.0.0.5:5000", Insecure: true},
 	{Host: "[fd00::1]:5000", Username: "lan", Password: "lan-s3cret"},
+	{Host: "quay.io", Username: "robot"},
 }
 
 // TestWrite writes the provider's config, matching the hosts of the Registry documents with a
 // user as the kubelet names them, the credentials readable by root alone, and flags naming
 // both; without a user, no flags and no credentials.
 func TestWrite(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "credential-provider")
+	dir := filepath.Join(t.TempDir(), "kubernetes", "credential-provider")
 	if err := Write(dir, "/nix/store/x-chalkd/bin", logins); err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +36,7 @@ func TestWrite(t *testing.T) {
 		"apiVersion": "kubelet.config.k8s.io/v1", "kind": "CredentialProviderConfig",
 		"providers": []any{map[string]any{
 			"name": "chalkd", "args": []any{"credential-provider"}, "apiVersion": "credentialprovider.kubelet.k8s.io/v1",
-			"defaultCacheDuration": "5m", "matchImages": []any{"[fd00::1]:5000", "docker.io"},
+			"defaultCacheDuration": "5m", "matchImages": []any{"[fd00::1]:5000", "docker.io", "quay.io"},
 		}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
@@ -43,6 +44,9 @@ func TestWrite(t *testing.T) {
 	}
 	if strings.Contains(string(data), "s3cret") {
 		t.Errorf("config.json holds a password: %s", data)
+	}
+	if fi, err := os.Stat(filepath.Dir(dir)); err != nil || fi.Mode().Perm() != 0o755 {
+		t.Errorf("%s: %v, %v", filepath.Dir(dir), fi, err)
 	}
 	if fi, err := os.Stat(dir); err != nil || fi.Mode().Perm() != 0o700 {
 		t.Errorf("%s: %v, %v", dir, fi, err)
@@ -62,6 +66,15 @@ func TestWrite(t *testing.T) {
 	}
 	if creds, _ := os.ReadFile(filepath.Join(dir, "credentials.json")); string(creds) != "{}" {
 		t.Errorf("credentials.json without credentials = %s", creds)
+	}
+	if fi, err := os.Stat(filepath.Join(dir, "credentials.json")); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("credentials.json rewritten: %v, %v", fi, err)
+	}
+	if fi, err := os.Stat(dir); err != nil || fi.Mode().Perm() != 0o700 {
+		t.Errorf("%s without credentials: %v, %v", dir, fi, err)
+	}
+	if cfg, _ := os.ReadFile(filepath.Join(dir, "config.json")); !strings.Contains(string(cfg), `"matchImages":[]`) {
+		t.Errorf("config.json without credentials = %s", cfg)
 	}
 }
 
@@ -104,6 +117,7 @@ func TestProvide(t *testing.T) {
 		"[fd00::1]/e2e/x:v1":                                      none,
 		"10.0.0.5:5000/e2e/x:v1":                                  none,
 		"ghcr.io/x/y:v1":                                          none,
+		"quay.io/x/y:v1":                                          `{"apiVersion":"credentialprovider.kubelet.k8s.io/v1","kind":"CredentialProviderResponse","cacheKeyType":"Registry","auth":{"quay.io":{"username":"robot","password":""}}}`,
 		"not a reference":                                         none,
 	} {
 		if got, err := provide(t, dir, image); err != nil || got != want {
@@ -120,5 +134,30 @@ func TestProvideWithoutCredentials(t *testing.T) {
 	got, err := provide(t, filepath.Join(t.TempDir(), "missing"), "docker.io/library/busybox:1.37.0")
 	if want := `{"apiVersion":"credentialprovider.kubelet.k8s.io/v1","kind":"CredentialProviderResponse","cacheKeyType":"Registry"}`; err != nil || got != want {
 		t.Errorf("%s, %v; want %s", got, err, want)
+	}
+}
+
+// TestWriteRefusesIPv6WithoutPort refuses an IPv6 host the kubelet could not match.
+func TestWriteRefusesIPv6WithoutPort(t *testing.T) {
+	err := Write(t.TempDir(), "/bin", []config.RegistryCredentials{{Host: "[fd00::1]", Username: "lan", Password: "p"}})
+	if err == nil || !strings.Contains(err.Error(), "only with its port") {
+		t.Errorf("err = %v", err)
+	}
+	if err := Write(t.TempDir(), "/bin", []config.RegistryCredentials{{Host: "[fd00::1]"}}); err != nil {
+		t.Errorf("an IPv6 host without a user: %v", err)
+	}
+	if err := Write(t.TempDir(), "/bin", []config.RegistryCredentials{{Host: "[fd00::1]:443", Username: "lan", Password: "p"}}); err != nil {
+		t.Errorf("an IPv6 host with port 443: %v", err)
+	}
+}
+
+// TestProvideRefusesCorruptCredentials fails rather than answer from a file it cannot read.
+func TestProvideRefusesCorruptCredentials(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "credentials.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := provide(t, dir, "docker.io/library/busybox:1.37.0"); err == nil {
+		t.Errorf("answered %s", got)
 	}
 }

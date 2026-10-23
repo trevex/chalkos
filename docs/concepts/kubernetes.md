@@ -163,11 +163,15 @@ spec:
   password: {secretRef: {name: registry, key: token}}
 ```
 
-The kubelet matches the `host` against the image reference as written, port included, and names
-Docker Hub `docker.io`. `chalkos-registry-credentials.service` writes the provider's configuration
-and the credentials to `/run/chalkos/kubernetes/credential-provider/`, whose `credentials.json`
-only root reads. A node without a `Registry` that has credentials runs the kubelet without a
-credential provider.
+The kubelet matches the `host`, in lower case and port included, against the image's host as the
+pod spec writes it, and names Docker Hub `docker.io`. The comparison is case-sensitive, so
+`GHCR.io/org/app` gets no credentials; write image hosts in lower case. An IPv6 host needs its
+port, `443` included, in both the `Registry` and the image: the kubelet reads a bracketed address
+without a port as a glob character class, so chalkd refuses such a `Registry` with credentials.
+`chalkos-registry-credentials.service` writes the provider's configuration and the credentials to
+`/run/chalkos/kubernetes/credential-provider/`, whose `credentials.json` only root reads. A node
+without a `Registry` that has credentials runs the kubelet without a credential provider. When the
+unit fails, the kubelet still starts and pulls without the node's credentials.
 
 The kubelet reads the provider's configuration when it starts and keeps each answer for 5
 minutes. A change of a `Registry`, or of a password it references, therefore restarts both
@@ -184,7 +188,8 @@ such an endpoint names, the credentials the kubelet gives it for the image's reg
 node's `Registry` or from an `imagePullSecret` alike. The kubelet passes them without the host
 they belong to, so containerd 2.4 cannot tell a mirror from the registry. In other words, a mirror
 of an authenticated registry receives that registry's credentials, so give its endpoints the
-trust the registry has. The credentials of an endpoint's own `Registry` do not reach containerd.
+trust the registry has. An `http://` endpoint, allowed by an `insecure` `Registry` of its host,
+receives them over plain HTTP. The credentials of an endpoint's own `Registry` do not reach containerd.
 chalkd, which pulls OS images through the same `Mirror` documents, authenticates each endpoint
 with the `Registry` of the endpoint's host instead, and sends each host only its own credentials,
 as [Pull through a mirror](../guides/publish-images.md#pull-through-a-mirror) describes. The
