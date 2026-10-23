@@ -9,6 +9,7 @@ let
     fileset = lib.fileset.unions [
       ../zensical.toml
       ../docs
+      ../includes
     ];
   };
 
@@ -190,7 +191,8 @@ rec {
 
   # The generated pages of docs/reference and zensical.toml with their navigation, laid out as
   # in the repository: a page per command of chalkctl, chalklab and chalkbuild, the config kinds,
-  # the arguments of mkImages and the image options, and the node API.
+  # the arguments of mkImages and the image options, the node API, and the glossary's terms as
+  # abbreviations, which every page appends.
   reference =
     pkgs.runCommand "chalkos-docs-reference"
       {
@@ -212,7 +214,7 @@ rec {
       }
       ''
         export HOME=$TMPDIR
-        mkdir -p $out/docs/reference
+        mkdir -p $out/docs/reference $out/includes
         install -m 644 ${../zensical.toml} $out/zensical.toml
         docgen cli $out/docs/reference/cli $out/zensical.toml
         docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${inventorySchema} ${labSchema}
@@ -226,6 +228,7 @@ rec {
         chmod -R u+w proto
         (cd proto && buf generate)
         cp proto/docs/reference/api.md $out/docs/reference/api.md
+        docgen abbr ${../docs/reference/glossary.md} $out/includes/abbreviations.md
       '';
 
   # The site builds strictly; the chalkctl, chalklab, chalkbuild and chalkcfg commands its pages
@@ -266,7 +269,7 @@ rec {
   # Fails when the generated pages in the repository differ from what the code generates.
   generated = pkgs.runCommand "chalkos-docs-generated" { } ''
     status=0
-    for path in docs/reference/cli docs/reference/kinds.md docs/reference/options.md docs/reference/api.md zensical.toml; do
+    for path in docs/reference/cli docs/reference/kinds.md docs/reference/options.md docs/reference/api.md includes/abbreviations.md zensical.toml; do
       diff -ru ${src}/$path ${reference}/$path || status=1
     done
     if [ $status != 0 ]; then
@@ -289,6 +292,8 @@ rec {
       cp -r --no-preserve=mode ${reference}/docs/reference/cli docs/reference/cli
       cp --no-preserve=mode ${reference}/docs/reference/kinds.md ${reference}/docs/reference/options.md ${reference}/docs/reference/api.md docs/reference/
       cp --no-preserve=mode ${reference}/zensical.toml zensical.toml
+      mkdir -p includes
+      cp --no-preserve=mode ${reference}/includes/abbreviations.md includes/
     '';
   };
 
@@ -312,6 +317,7 @@ rec {
       copy() {
         rsync -a --delete --exclude /superpowers/ docs/ "$work/docs/"
         rsync -a zensical.toml "$work/zensical.toml"
+        rsync -a includes/ "$work/includes/"
       }
       copy
       while sleep 1; do copy; done &

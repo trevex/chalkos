@@ -1,6 +1,5 @@
 # The chalkos documentation site, built with Zensical: nix build .#docs builds it, nix run
-# .#docs-serve serves it while it is edited. Zensical's default Markdown extensions stay on; they
-# give admonitions, content tabs, Mermaid diagrams in superfences and code highlighting.
+# .#docs-serve serves it while it is edited.
 [project]
 site_name = "chalkos"
 site_description = "An image-based NixOS for Kubernetes nodes, with Secure Boot, a TPM and A/B upgrades"
@@ -174,6 +173,7 @@ logo = "assets/logo.svg"
 favicon = "assets/logo.svg"
 features = [
   "content.code.copy",
+  "content.tooltips",
   "content.tabs.link",
   "navigation.indexes",
   "navigation.sections",
@@ -181,6 +181,41 @@ features = [
   "navigation.top",
   "search.highlight",
 ]
+
+# Zensical's default Markdown extensions, which setting any replaces, and snippets, which append
+# the glossary's terms as abbreviations to every page: nix run .#docgen writes them to
+# includes/abbreviations.md from docs/reference/glossary.md.
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.arithmatex.generic = true
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.snippets.auto_append = ["includes/abbreviations.md"]
+pymdownx.snippets.check_paths = true
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}
 
 [[project.theme.palette]]
 scheme = "default"

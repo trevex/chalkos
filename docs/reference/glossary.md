@@ -81,6 +81,7 @@ with Secure Boot and a TPM, and installs and bootstraps them. See [its commands]
 and the [quick start](../get-started/quick-start.md).
 
 ## Change rule { #change-rule }
+<!-- abbr: change rules, Change rules -->
 
 A CEL expression an image's schemas declare on a [kind](#kind) or on one of its fields, which every
 config the image accepts makes true. A rule that is false refuses the config, or says it takes
@@ -88,6 +89,7 @@ config the image accepts makes true. A rule that is false refuses the config, or
 [Change rules and facts](../how-it-works/node/rules.md).
 
 ## Client file { #client-file }
+<!-- abbr: client files, Client files -->
 
 A JSON file holding a client certificate of one [client role](#client-role), its key and the
 [OS CA](#os-ca) certificate, issued with
@@ -96,6 +98,7 @@ A JSON file holding a client certificate of one [client role](#client-role), its
 cluster fails the TLS handshake with it. See [Security model](../how-it-works/node/security.md).
 
 ## Client role { #client-role }
+<!-- abbr: client roles, Client roles -->
 
 The permission a client certificate grants on the node API, taken from its Organization:
 [reader](#reader), [operator](#operator) or [admin](#admin), each allowed what the roles before
@@ -111,6 +114,7 @@ plane, a [VIP](#vip) or a load balancer that forwards both ports. See
 [Networking](../how-it-works/node/networking.md).
 
 ## Config { #config }
+<!-- abbr: none -->
 
 A node's configuration at runtime: a set of [config documents](#config-document), each of a
 [kind](#kind) its image accepts, such as `Node`, `Network`, `SystemDisk`, `Cluster` or an
@@ -122,6 +126,7 @@ whole. Secrets travel as `Secret` documents and reach only the services that rea
 referencing them. See [Config and the inventory](../how-it-works/node/config.md).
 
 ## Config document { #config-document }
+<!-- abbr: config documents, Config documents -->
 
 One object of a node's [config](#config), written in YAML in the style of a Kubernetes object: an
 `apiVersion` of a group and a version, a `kind`, a `metadata.name` and a `spec`. The schema of
@@ -142,6 +147,7 @@ contract from the image directory when it validates config, installs from the
 it from the image it wrote. See [Image and partition layout](image-layout.md).
 
 ## Control plane { #control-plane }
+<!-- abbr: control planes, Control planes -->
 
 A node whose `Node` document sets `spec.type: controlplane`. It runs etcd, the API server, the
 controller-manager and the scheduler as static pods that chalkd renders, besides containerd and
@@ -161,6 +167,7 @@ hash tree whose top is the [root hash](#root-hash), and a block that does not ma
 read. See [The image](../how-it-works/node/image.md).
 
 ## Effect { #effect }
+<!-- abbr: effects, Effects -->
 
 What a delivery does to the node's services once it is applied: restart or reload units, run a
 command or act on chalkd's loops, as [`chalkos.effects`](options.md#chalkoseffects) declares it.
@@ -175,6 +182,7 @@ systemd-boot and the [UKIs](#uki) of both [slots](#slot), and is 1 GiB by defaul
 [Image and partition layout](image-layout.md).
 
 ## etcd member { #etcd-member }
+<!-- abbr: etcd members -->
 
 A control plane that belongs to the cluster's etcd, as a learner while it catches up and as a voter
 after. A control plane pins its addresses on [STATE](#state) when it bootstraps, or before it adds
@@ -183,6 +191,7 @@ itself as a learner, and every later boot waits for exactly them;
 chalkos](../how-it-works/kubernetes/kubernetes.md).
 
 ## Extension { #extension }
+<!-- abbr: extensions, Extensions -->
 
 NixOS modules outside chalkos, in a [variant](#variant)'s modules, that add services to its images
 and may declare config [kinds](#kind) under [`chalkos.kinds`](options.md#chalkoskinds), whose
@@ -192,6 +201,7 @@ when they change. chalkos's own Kubernetes support declares its kinds and effect
 [Variants and platforms](../how-it-works/node/variants.md#how-does-an-extension-add-a-kind).
 
 ## Fact { #fact }
+<!-- abbr: facts, Facts -->
 
 Node state a [change rule](#change-rule) reads, declared in
 [`chalkos.facts`](options.md#chalkosfacts): the JSON of a file, such as the
@@ -214,6 +224,7 @@ boots the image installed last first, older or newer. See
 [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md#how-does-systemd-boot-choose-an-entry).
 
 ## Grant { #grant }
+<!-- abbr: grants, Grants -->
 
 The [config](#config) kinds a unit reads at runtime, as
 [`systemd.services.<unit>.chalkos.kinds`](options.md#systemdserviceschalkoskinds) declares them:
@@ -241,6 +252,7 @@ schemas, and the image's boot applies it.
 [Image and partition layout](image-layout.md#files-on-state).
 
 ## Image { #image }
+<!-- abbr: none -->
 
 The whole operating system of a node as one unsigned raw disk image, with the ESP and slot A
 filled, built by `chalkos.lib.mkImages` for one [variant](#variant) on one
@@ -249,6 +261,7 @@ travels in their [config](#config). Its build output is an [image directory](#im
 See [The image](../how-it-works/node/image.md).
 
 ## Image directory { #image-directory }
+<!-- abbr: image directories, Image directories -->
 
 The build output of an [image](#image), `images.<variant>-<platform>` of `chalkos.lib.mkImages`: the
 raw image, systemd-repart's report of its partitions, the definitions of the system region,
@@ -281,6 +294,7 @@ its `metadata.name` is a label for messages and the default kubeconfig context. 
 its fields in [Config kinds](kinds.md#inventory).
 
 ## Kind { #kind }
+<!-- abbr: none -->
 
 The type of a [config document](#config-document), named by its `kind` and the group and version
 of its `apiVersion`. chalkos declares its own kinds in `chalkos.dev` and its subdomains; an
@@ -313,6 +327,7 @@ prints its fingerprint and the node's addresses on the console, and accepts only
 reboots and an install. See [Architecture](../how-it-works/node/architecture.md).
 
 ## Module group { #module-group }
+<!-- abbr: module groups, Module groups -->
 
 A named set of kernel modules an [image](#image) carries, listed in
 [`chalkos.kernel.moduleGroups`](options.md#chalkoskernelmodulegroups). The base groups
@@ -321,6 +336,7 @@ default; `gpu`, `sound`, `media`, `wireless`, `infiniband`, `can` and `industria
 variant's or platform's modules. See [The image](../how-it-works/node/image.md).
 
 ## Node { #node }
+<!-- abbr: none -->
 
 A machine of the cluster, named in the [inventory](#inventory), which also names the [image](#image)
 it runs. On an image with Kubernetes, its `Node` document of the group `kubernetes.chalkos.dev`
@@ -335,6 +351,7 @@ certificates. Control planes hold it and renew every node's certificate with it,
 hold the OS CA's key. See [Certificates](../how-it-works/node/certificates.md).
 
 ## Node certificate { #node-certificate }
+<!-- abbr: node certificates, Node certificates -->
 
 The certificate chalkd serves and authenticates with, issued by the [node CA](#node-ca) for the
 node's name, host name and addresses and valid for one year. chalkd takes the node's name from its
@@ -342,6 +359,7 @@ subject and renews it through a control plane once two thirds of its lifetime ha
 [Certificates](../how-it-works/node/certificates.md).
 
 ## Node name { #node-name }
+<!-- abbr: node names, Node names -->
 
 A [node](#node)'s key in the [inventory](#inventory)'s `spec.nodes`, such as `cp1`. chalkctl puts it
 into the [node certificate](#node-certificate) at install, and chalkd reads it from there. The
@@ -364,6 +382,7 @@ nodes pull in an install from the [installer](#installer) or an [upgrade](#upgra
 [Publish images to a registry](../build/publish-images.md).
 
 ## Operator { #operator }
+<!-- abbr: none -->
 
 The [client role](#client-role) that may do what a [reader](#reader) may, and also reboot,
 upgrade, drain and uncordon nodes; an upgrade that delivers config needs an [admin](#admin). See
@@ -377,6 +396,7 @@ years and signs the [node CA](#node-ca) and client certificates. See
 [Certificates](../how-it-works/node/certificates.md).
 
 ## Output { #output }
+<!-- abbr: none -->
 
 A set of config files for a service, rendered from documents by a program of the image's store
 and checked before a delivery changes the node, as [`chalkos.outputs`](options.md#chalkosoutputs)
@@ -391,6 +411,7 @@ encrypted partitions to it, so they unseal after an upgrade signed with the same
 after a change to Secure Boot. See [Security model](../how-it-works/node/security.md).
 
 ## Platform { #platform }
+<!-- abbr: platforms, Platforms -->
 
 The kind of machine an [image](#image) is built for, such as `metal` or `kvm`, named in the
 [`platforms`](options.md#platforms) argument of `chalkos.lib.mkImages` with NixOS modules of its
@@ -407,11 +428,13 @@ the [root hash](#root-hash), as in `3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)`, and a 
 them. See [The image](../how-it-works/node/image.md#what-identifies-an-image).
 
 ## Reader { #reader }
+<!-- abbr: none -->
 
 The [client role](#client-role) that may read: node information, disks, status, logs and etcd
 members. See [Security model](../how-it-works/node/security.md).
 
 ## Recovery key { #recovery-key }
+<!-- abbr: recovery keys, Recovery keys -->
 
 The default [fallback keyslot](#fallback-keyslot) of every encrypted partition, used when the
 TPM does not unseal. chalkos derives it from the [secrets file](#secrets-file) and the
@@ -434,6 +457,7 @@ image: chalkd and chalkctl tell images apart by it alone, and chalkctl shows its
 characters. See [The image](../how-it-works/node/image.md#what-identifies-an-image).
 
 ## Rotation { #rotation }
+<!-- abbr: rotations, Rotations -->
 
 The replacement of a CA or key with [`chalkctl rotate`](cli/chalkctl_rotate.md), in phases that
 first trust the new value everywhere, then use it, then re-issue, and last remove the old value.
@@ -454,6 +478,7 @@ chalkos signs systemd-boot and the [UKI](#uki), whose signature covers the store
 [root hash](#root-hash). See [Security model](../how-it-works/node/security.md).
 
 ## Slot { #slot }
+<!-- abbr: slots, Slots -->
 
 A pair of partitions that holds one image's [store](#store): the erofs data and its dm-verity
 hash tree, labelled `store_<hash16>` and `store-verity_<hash16>` from the first 16 hex characters
@@ -478,12 +503,14 @@ The machine's Trusted Platform Module 2.0, which seals the keys of [STATE](#stat
 under the same Secure Boot state. See [Security model](../how-it-works/node/security.md).
 
 ## UKI { #uki }
+<!-- abbr: UKIs -->
 
 A unified kernel image: the kernel, initrd, kernel command line and os-release in one EFI
 binary, which systemd-boot loads and Secure Boot verifies. chalkos keeps one per slot on the
 ESP as `chalkos_<generation>.efi`. See [The image](../how-it-works/node/image.md).
 
 ## Upgrade { #upgrade }
+<!-- abbr: none -->
 
 The installation of another image into a node's inactive [slot](#slot), from which it
 boots next with [boot counting](#boot-counting). [`chalkctl upgrade`](cli/chalkctl_upgrade.md)
@@ -498,6 +525,7 @@ rest of the system disk, and it is encrypted like [STATE](#state). See
 [Storage and encryption](../how-it-works/node/storage.md).
 
 ## Variant { #variant }
+<!-- abbr: variants, Variants -->
 
 A named set of NixOS modules that `chalkos.lib.mkImages` builds into one [image](#image) per
 [platform](#platform), `images.<variant>-<platform>`, given in its
@@ -509,18 +537,21 @@ change its variant through an [upgrade](#upgrade), and the new image's schemas d
 [Variants and platforms](../how-it-works/node/variants.md#what-is-a-variant).
 
 ## VIP { #vip }
+<!-- abbr: VIPs -->
 
 A virtual IP address of the API server, one per IP family, that one healthy control plane
 holds. chalkd elects the holder through etcd and announces the address on the local network.
 See [Networking](../how-it-works/node/networking.md).
 
 ## Volume { #volume }
+<!-- abbr: volumes, Volumes -->
 
 A partition beyond [VAR](#var), declared by a [`Volume`](kinds.md#volume) document in a node's
 config, on the system disk or a disk of its own, encrypted or not, formatted and mounted or left
 raw. See [Storage and encryption](../how-it-works/node/storage.md).
 
 ## Worker { #worker }
+<!-- abbr: workers, Workers -->
 
 A node whose `Node` document sets `spec.type: worker`. It runs containerd and the kubelet, which
 joins the cluster at the [cluster endpoint](#cluster-endpoint) with the certificate in its

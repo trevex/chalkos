@@ -28,6 +28,11 @@
 //
 // writes the Nix blocks of those files that are whole files, titled with a .nix file name, to
 // OUT_DIR, for a Nix parser to check.
+//
+//	docgen abbr GLOSSARY OUT
+//
+// writes the terms of the glossary page GLOSSARY to OUT as Markdown abbreviations, which the site
+// appends to every page, so a term shows its definition when the pointer rests on it.
 package main
 
 import (
@@ -62,8 +67,10 @@ func run(args []string) error {
 		return checkYAML(args[1], args[2])
 	case len(args) == 3 && args[0] == "nix":
 		return writeNix(args[1], args[2])
+	case len(args) == 3 && args[0] == "abbr":
+		return writeAbbr(args[1], args[2])
 	}
-	return errors.New("usage: docgen cli DIR ZENSICAL_TOML | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR")
+	return errors.New("usage: docgen cli DIR ZENSICAL_TOML | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen abbr GLOSSARY OUT")
 }
 
 // programs are the command trees of chalkctl, chalklab, chalkbuild and chalkcfg, with the help and
