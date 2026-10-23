@@ -64,12 +64,16 @@ for bare metal, with two extensions that add config kinds:
 | [`nixpkgs`](../../reference/options.md#nixpkgs) | the nixpkgs chalkos is tested against | The nixpkgs the images are evaluated and built from |
 | [`system`](../../reference/options.md#system) | `x86_64-linux` | The platform the images are built for, as Nix names it |
 | [`specialArgs`](../../reference/options.md#specialargs) | `{ }` | Extra arguments for every image's modules, such as a flake's inputs |
+| [`revision`](../../reference/options.md#revision) | `null` | The git revision the images are built from, which `metadata.json` records and chalkctl shows beside the root hash; it changes no root hash |
+| [`tag`](../../reference/options.md#tag) | `null` | The git tag the images are built from, such as a release's, recorded and shown like `revision`; whatever builds a release passes it, because Nix cannot read git tags |
 
 The arguments are checked as module options, so a misspelled argument fails the evaluation with
-its name. `mkImages` returns three attribute sets:
+its name. `mkImages` returns four attribute sets:
 
 - `images.<variant>-<platform>`, the image directory
   of a variant on a platform, such as `images.node-metal`, each built only when asked for;
+- `oci.<variant>-<platform>`, the OCI image layout of each image directory, which
+  `chalkbuild oci` builds, each built only when asked for;
 - `installer`, a raw image and a hybrid ISO in one directory, which installs images of every
   platform;
 - `nixos.<variant>-<platform>` and `nixos.installer`, the evaluated NixOS systems, to read an
@@ -358,7 +362,7 @@ on them fails the image's build.
 An extension's own image options live under a namespace of its own, such as `rack.*` or
 `chalkos.rack.*`. Under `chalkos`, the names chalkos declares are taken: `cni`, `debug`,
 `disk`, `effects`, `facts`, `kernel`, `kinds`, `kubernetes`, `maintenance`, `outputs`,
-`platform`, `upgrade` and `variant`.
+`platform`, `provenance`, `upgrade` and `variant`.
 
 ## Where does the OS CA come from?
 

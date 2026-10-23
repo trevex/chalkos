@@ -48,7 +48,8 @@ kind such as `Node`, `Network`, `SystemDisk`, `Cluster` or
 an extension's own. The inventory,
 `chalkos.yaml`, names each node, the address chalkctl reaches it at, the image it runs and the files
 of its documents: files every node gets, files of groups and the node's own. Its `images` name the
-image directories, and `image` on a node, on a group or for every node says which one a node runs.
+image directories or registry references. `imageName` says which image a node runs: the node's own,
+else that of its groups, else `spec.all.imageName`.
 A node's name in the inventory goes into its node certificate at install and stays its name: its
 Kubernetes node name, its partition UUIDs, its recovery key and by default its hostname derive from
 it. `chalkctl validate` checks every node's documents against its image's schemas without reaching

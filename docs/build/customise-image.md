@@ -552,10 +552,11 @@ settings break the node:
 - The outputs `networkd` and `chrony` render the node's network and time servers, and own
   `/run/systemd/network` and `/run/chalkos/outputs/chrony`, so your outputs take other names and
   directories; the image's evaluation refuses a directory that two outputs share.
-- `mkImages` sets `chalkos.variant.name`, `chalkos.platform.name`, `chalkos.kubernetes.enable`
-  and `chalkos.maintenance.osCA` from the variant's and platform's names,
-  [`variants.<name>.kubernetes`](../reference/options.md#variantskubernetes) and
-  [`osCA`](../reference/options.md#osca); set those arguments instead.
+- `mkImages` sets `chalkos.variant.name`, `chalkos.platform.name`, `chalkos.kubernetes.enable`,
+  `chalkos.maintenance.osCA` and `chalkos.provenance` from the variant's and platform's names,
+  [`variants.<name>.kubernetes`](../reference/options.md#variantskubernetes),
+  [`osCA`](../reference/options.md#osca), [`revision`](../reference/options.md#revision) and
+  [`tag`](../reference/options.md#tag); set those arguments instead.
 - The partition sizes under `chalkos.disk` are laid out when a node is installed. A changed size
   applies only to nodes installed afterwards, and an upgrade whose store does not fit a node's
   slot is refused.
