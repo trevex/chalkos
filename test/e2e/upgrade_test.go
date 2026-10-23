@@ -162,7 +162,7 @@ func publish(t *testing.T, reg *imageRegistry, imageDir string, o ociInventory) 
 	}
 	t.Setenv("DOCKER_CONFIG", docker)
 	t.Setenv("HTTP_PROXY", "http://"+reg.host)
-	registryDocs := `apiVersion: chalkos.dev/v1alpha1
+	registryDocs := `apiVersion: oci.chalkos.dev/v1alpha1
 kind: Registry
 metadata: {name: e2e}
 spec: {host: "` + registryGuest + `", insecure: true, username: e2e, password: {secretRef: {name: registry, key: password}}}

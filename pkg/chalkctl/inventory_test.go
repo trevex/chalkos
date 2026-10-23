@@ -175,11 +175,11 @@ func TestValidateKubernetes(t *testing.T) {
 	if !strings.Contains(ta.stdout.String(), "cp1: valid for the image k8s-metal (k8s on metal") {
 		t.Errorf("stdout = %q, want cp1 valid", ta.stdout)
 	}
-	// A mirror over plain HTTP is refused where the node reads the cluster's Kubernetes settings.
-	mirror := "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: RegistryMirror\nmetadata: {name: local}\nspec: {registry: \"localhost:5000\", mirrors: [\"http://10.0.2.100:5000\"]}\n"
+	// A plain HTTP mirror endpoint whose host has no Registry that allows it is refused.
+	mirror := "apiVersion: oci.chalkos.dev/v1alpha1\nkind: Mirror\nmetadata: {name: local}\nspec: {registry: \"localhost:5000\", endpoints: [\"http://10.0.2.100:5000\"]}\n"
 	data, _ := os.ReadFile(filepath.Join(ta.dir, "nodes", "cp1.yaml"))
 	writeFile(t, filepath.Join(ta.dir, "nodes", "cp1.yaml"), string(data)+"---\n"+mirror)
-	if err := ta.run(context.Background(), []string{"validate", "cp1", "--inventory", path}); err == nil || !strings.Contains(err.Error(), "node cp1: ") || !strings.Contains(err.Error(), "is not an https:// URL") {
+	if err := ta.run(context.Background(), []string{"validate", "cp1", "--inventory", path}); err == nil || !strings.Contains(err.Error(), "node cp1: ") || !strings.Contains(err.Error(), "is plain HTTP, which nothing authenticates; give 10.0.2.100:5000 a Registry with insecure: true") {
 		t.Errorf("validate of a plain HTTP mirror = %v", err)
 	}
 }

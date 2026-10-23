@@ -75,14 +75,14 @@ schemas.
 | --- | --- | --- | --- |
 | [`Host`](../reference/kinds.md#host) | `chalkos.dev` | at most one | The node's hostname, which defaults to the node's name |
 | [`Secret`](../reference/kinds.md#secret) | `chalkos.dev` | any | Secret values by key, for the fields that reference them |
-| [`Registry`](../reference/kinds.md#registry) | `chalkos.dev` | any | Credentials chalkd pulls images of one registry host with |
+| [`Registry`](../reference/kinds.md#registry) | `oci.chalkos.dev` | any | Credentials chalkd pulls images of one registry host with |
 | [`SystemDisk`](../reference/kinds.md#systemdisk) | `storage.chalkos.dev` | exactly one | The system disk, the size of [VAR](../reference/glossary.md#var) and the encryption of the node's partitions |
 | [`Volume`](../reference/kinds.md#volume) | `storage.chalkos.dev` | any | A further [volume](../reference/glossary.md#volume): its disk, size, format, mount point and encryption |
 | [`TimeSync`](../reference/kinds.md#timesync) | `time.chalkos.dev` | at most one | Time servers, and whether those DHCP announces are used too |
 | [`Network`](../reference/kinds.md#network), [`NetDev`](../reference/kinds.md#netdev), [`Link`](../reference/kinds.md#link) | `networkd.chalkos.dev` | any | systemd-networkd's `.network`, `.netdev` and `.link` files, one document per file |
 | [`Cluster`](../reference/kinds.md#cluster) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The URL of the cluster's API server, IP families, pod and service ranges, DNS addresses, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on [control planes](../reference/glossary.md#control-plane) and extra flags of the control plane's components |
 | [`Node`](../reference/kinds.md#node) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The node's type, `controlplane` or `worker`, and its labels, taints, Kubernetes addresses, extra flags of its kubelet and the interface it holds the [VIP](../reference/glossary.md#vip) on |
-| [`RegistryMirror`](../reference/kinds.md#registrymirror) | `kubernetes.chalkos.dev` | any | The mirrors of one container registry |
+| [`Mirror`](../reference/kinds.md#mirror) | `oci.chalkos.dev` | any | The mirrors of one registry |
 | [`Flannel`](../reference/kinds.md#flannel) | `kubernetes.chalkos.dev` | at most one, on images with flannel | flannel's MTU and the ranges its VXLAN must come from |
 | [`Addon`](../reference/kinds.md#addon) | `kubernetes.chalkos.dev` | any | Kubernetes objects the control planes apply |
 
@@ -92,13 +92,13 @@ volume; without it, a node holds at most one, and chalkctl and chalkd refuse a s
 
 Some kinds depend on the image or the node:
 
-- An image declares only the kinds its modules bring. `Cluster`, `Node`, `RegistryMirror` and
-  `Addon` exist on images with Kubernetes, and `Flannel` only on those built with flannel as their
-  pod network, so a document of one of them is an unknown kind on any other image. A node without
-  Kubernetes has no type.
-- A `Registry` authenticates chalkd's pull of an install's or an upgrade's image, so it exists on every image.
-  containerd does not use it; `RegistryMirror` configures the mirrors of the container images
-  containerd pulls.
+- An image declares only the kinds its modules bring. `Cluster`, `Node` and `Addon` exist on
+  images with Kubernetes, and `Flannel` only on those built with flannel as their pod network, so
+  a document of one of them is an unknown kind on any other image. A node without Kubernetes has
+  no type.
+- A `Registry` authenticates chalkd's pull of an install's or an upgrade's image, so it exists on
+  every image; a `Mirror` names the endpoints containerd and chalkd try before a registry itself,
+  and exists on every image too.
 - A `Network`, `NetDev` or `Link` document's `metadata.name` is the unit file's name without its
   suffix, so `10-uplink` becomes `/run/systemd/network/10-uplink.network` and networkd's order by
   file name holds. Sections and keys are networkd's own in camelCase: `[Match]` with `MACAddress=`
@@ -232,7 +232,7 @@ A node's set is valid when:
 - it holds exactly one `SystemDisk`, and on an image with Kubernetes one `Cluster`, which
   names the cluster's `endpoint` and whose defaults fill in its other fields, and one `Node`;
 - every other kind appears at most once, unless the kind allows several (`Secret`, `Volume`,
-  `RegistryMirror`, `Addon`, `Network`, `NetDev`, `Link` and extension kinds declared with
+  `Addon`, `Network`, `NetDev`, `Link` and extension kinds declared with
   `multiple = true`);
 - every document's `apiVersion` and `kind` is one the node's image declares;
 - no two documents of a kind share a `metadata.name`;

@@ -1,7 +1,7 @@
-# The kinds every image accepts: the node's host name, secrets, registry credentials, storage,
-# time and, on images with Kubernetes, the cluster's Kubernetes settings with its API server's
-# endpoint, registry mirrors and manifests and the node's type and its kubelet's settings. chalkd
-# translates them into the node's identity and its Kubernetes cluster.
+# The kinds every image accepts: the node's host name, secrets, OCI registries with their
+# credentials and mirrors, storage, time and, on images with Kubernetes, the cluster's Kubernetes
+# settings with its API server's endpoint and manifests and the node's type and its kubelet's
+# settings. chalkd translates them into the node's identity and its Kubernetes cluster.
 {
   config,
   lib,
@@ -243,7 +243,7 @@ in
         description = "Secret values by key, which secretRef fields of other documents name.";
       };
     };
-    Registry = builtin "chalkos.dev" // {
+    Registry = builtin "oci.chalkos.dev" // {
       multiple = true;
       # chalkd authenticates a pull with the Registry of the image's host, so a host has one; it
       # sends a user and a password together, so a Registry gives both or neither.
@@ -261,12 +261,12 @@ in
         host = mkOption {
           type = types.strMatching "${host}(:[0-9]+)?";
           example = "ghcr.io";
-          description = "Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls the images of this host with the Registry's credentials.";
+          description = "Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials and leave for plain HTTP, and the kubelet gives containerd its credentials for the container images of this host.";
         };
         username = mkOption {
           type = types.nullOr types.nonEmptyStr;
           default = null;
-          description = "User chalkd authenticates to the registry as, with the password; null pulls anonymously.";
+          description = "User chalkd and containerd authenticate to the host as, with the password; null pulls anonymously.";
         };
         password = mkOption {
           type = types.nullOr lib.chalkos.types.secretRef;
@@ -276,7 +276,29 @@ in
         insecure = mkOption {
           type = types.bool;
           default = false;
-          description = "Allow plain HTTP to this host; chalkd otherwise pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab.";
+          description = "Allow plain HTTP to this host: chalkd and containerd reach it over HTTP, and a Mirror may name an http:// endpoint on it. Otherwise chalkd pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab.";
+        };
+      };
+    };
+    Mirror = builtin "oci.chalkos.dev" // {
+      multiple = true;
+      # chalkd and containerd try one list of endpoints for a registry, so a registry has one.
+      rules = [
+        {
+          rule = "documents.all(n, documents.all(m, n == m || documents[n].spec.registry != documents[m].spec.registry))";
+          messageExpression = ''"the Mirror documents " + documents.filter(n, documents.exists(m, m != n && documents[m].spec.registry == documents[n].spec.registry)).join(", ") + " mirror the same registry; give one Mirror per registry"'';
+        }
+      ];
+      spec = {
+        registry = mkOption {
+          type = types.strMatching "${host}(:[0-9]+)?";
+          example = "docker.io";
+          description = "Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets.";
+        };
+        endpoints = mkOption {
+          type = types.nonEmptyListOf (types.strMatching "https?://${host}(:[0-9]+)?(/[A-Za-z0-9._~%/-]*)?");
+          example = [ "https://mirror.example.com" ];
+          description = "URLs of the mirror's endpoints, which chalkd and containerd try in order before the registry itself. A path is where the endpoint serves the registry API, below <path>/v2 as containerd takes it. chalkd authenticates to an endpoint with the Registry of the endpoint's host, and an http:// endpoint needs that Registry to set insecure.";
         };
       };
     };
@@ -586,28 +608,6 @@ in
           kube-apiserver = flags "the API server";
           kube-controller-manager = flags "the controller-manager";
           kube-scheduler = flags "the scheduler";
-        };
-      };
-    };
-    RegistryMirror = builtin "kubernetes.chalkos.dev" // {
-      multiple = true;
-      spec = {
-        registry = mkOption {
-          type = types.strMatching "${host}(:[0-9]+)?";
-          example = "docker.io";
-          description = "Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets.";
-        };
-        mirrors = mkOption {
-          type = types.nonEmptyListOf (
-            types.strMatching "(https?://)?${host}(:[0-9]+)?(/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]*)?"
-          );
-          example = [ "https://mirror.example.com" ];
-          description = "Mirrors of the registry, which containerd tries in order before the registry itself: https:// URLs, or with allowPlainHTTP also http:// URLs and hosts with an optional port, which containerd reaches with HTTPS.";
-        };
-        allowPlainHTTP = mkOption {
-          type = types.bool;
-          default = false;
-          description = "Allow mirrors that are not https:// URLs: http:// URLs and hosts without a scheme. It exists for test registries: nothing authenticates what a plain HTTP mirror serves.";
         };
       };
     };

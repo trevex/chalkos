@@ -101,12 +101,6 @@ type flannelSpec struct {
 	VXLANSourceSubnets []string `json:"vxlanSourceSubnets"`
 }
 
-type registryMirrorSpec struct {
-	Registry       string   `json:"registry"`
-	Mirrors        []string `json:"mirrors"`
-	AllowPlainHTTP bool     `json:"allowPlainHTTP"`
-}
-
 type addonSpec struct {
 	Objects []map[string]any `json:"objects"`
 }

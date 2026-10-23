@@ -7,7 +7,6 @@ import (
 	"maps"
 	"net/netip"
 	"slices"
-	"strings"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
@@ -156,39 +155,6 @@ func (s *Set) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) {
 	return ClusterOf(s.docs, img)
 }
 
-// Registry is what a RegistryMirror says of its registry.
-type Registry struct {
-	Mirrors        []string
-	AllowPlainHTTP bool
-}
-
-// RegistryMirrorsOf returns the mirrors of each registry the documents name. A registry named by
-// two documents and an http:// mirror without allowPlainHTTP are refused.
-func RegistryMirrorsOf(docs []Document) (map[string]Registry, error) {
-	out := map[string]Registry{}
-	by := map[string]Document{}
-	for _, d := range docsOf(docs, KubernetesAPI, "RegistryMirror") {
-		var spec registryMirrorSpec
-		if err := d.decodeSpec(&spec); err != nil {
-			return nil, err
-		}
-		if other, ok := by[spec.Registry]; ok {
-			return nil, fmt.Errorf("%s and %s both mirror %s; give one document per registry", other, d, spec.Registry)
-		}
-		by[spec.Registry] = d
-		for _, m := range spec.Mirrors {
-			if !strings.HasPrefix(m, "https://") && !spec.AllowPlainHTTP {
-				return nil, fmt.Errorf("%s: the mirror %s is not an https:// URL; set allowPlainHTTP for a test registry, since nothing authenticates what a plain HTTP mirror serves", d, m)
-			}
-		}
-		out[spec.Registry] = Registry{Mirrors: spec.Mirrors, AllowPlainHTTP: spec.AllowPlainHTTP}
-	}
-	return out, nil
-}
-
-// RegistryMirrors returns the set's registry mirrors by registry.
-func (s *Set) RegistryMirrors() (map[string]Registry, error) { return RegistryMirrorsOf(s.docs) }
-
 // AddonObjectsOf returns the objects of the Addon documents, in the order of the documents' names
 // and each document's own order: the objects the control planes apply after chalkos's.
 func AddonObjectsOf(docs []Document) ([]map[string]any, error) {
@@ -208,15 +174,11 @@ func AddonObjectsOf(docs []Document) ([]map[string]any, error) {
 // AddonObjects returns the objects of the set's Addon documents in the order they apply.
 func (s *Set) AddonObjects() ([]map[string]any, error) { return AddonObjectsOf(s.docs) }
 
-// CheckKubernetes refuses a set whose Node, Cluster, Flannel, RegistryMirror and Addon documents
-// a node of an image with the facts img could not run on: a cluster the Node, Cluster and Flannel
-// documents do not build, registry mirrors that conflict or are plain HTTP without leave, and
-// Addon documents that do not decode.
+// CheckKubernetes refuses a set whose Node, Cluster, Flannel and Addon documents a node of an
+// image with the facts img could not run on: a cluster the Node, Cluster and Flannel documents do
+// not build, and Addon documents that do not decode.
 func (s *Set) CheckKubernetes(img kubernetes.Image) error {
 	if _, err := s.Cluster(img); err != nil {
-		return err
-	}
-	if _, err := s.RegistryMirrors(); err != nil {
 		return err
 	}
 	_, err := s.AddonObjects()

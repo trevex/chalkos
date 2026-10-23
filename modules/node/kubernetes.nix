@@ -25,6 +25,7 @@ let
   cel = import ./runtime/cel.nix { inherit lib; };
   core = "chalkos.dev/v1alpha1";
   kubernetesAPI = "kubernetes.chalkos.dev/v1alpha1";
+  ociAPI = "oci.chalkos.dev/v1alpha1";
   # The Address= values of each Network's [Network] sections, as written and in the order of the
   # networks' names, which the identity takes the node's static addresses from. They are compared
   # with their prefix lengths: taking those off loops over the addresses of each section of each
@@ -127,19 +128,10 @@ let
     };
   };
 
-  # containerd tries the mirrors in order, then the registry itself; docker.io's registry is
-  # registry-1.docker.io.
-  mirrorsTemplate = ''
-    === {{.spec.registry}}
-    server = "https://{{if eq .spec.registry "docker.io"}}registry-1.docker.io{{else}}{{.spec.registry}}{{end}}"
-    {{range .spec.mirrors}}
-    [host."{{.}}"]
-      capabilities = ["pull", "resolve"]
-    {{end}}'';
+  # chalkd renders each registry's hosts.toml from the Mirror and Registry documents, so a
+  # Registry's leave for plain HTTP reaches containerd too.
   registryMirrors = pkgs.callPackage ./registry-mirrors.nix {
-    mirrorsCommand = config.chalkos.kinds.RegistryMirror.get {
-      output = "go-template=${mirrorsTemplate}";
-    };
+    mirrorsCommand = "${lib.getExe chalkd} containerd-hosts";
   };
 
   # A packet mark bit of the control plane's ports, which chalkos-controlplane sets; kube-proxy
@@ -202,12 +194,14 @@ in
     # not a definition of chalkos as a whole.
     {
       chalkos.effects = lib.mkIf enable {
-        # The registry mirrors and the control plane's ports read their kinds' documents when
-        # they start; neither kind references a Secret.
+        # The registry mirrors read the Mirror and Registry documents when they start; no
+        # password reaches hosts.toml, so a changed Secret alone restarts nothing.
         registry-mirrors = {
-          when = cel.specsChanged kubernetesAPI "RegistryMirror";
+          when = "${cel.specsChanged ociAPI "Mirror"} || ${cel.specsChanged ociAPI "Registry"}";
           restart = [ "chalkos-registry-mirrors.service" ];
         };
+        # The control plane's ports read the Node document when they start; it references no
+        # Secret.
         controlplane-ports = {
           when = cel.specsChanged kubernetesAPI "Node";
           restart = [ "chalkos-controlplane.service" ];
@@ -303,7 +297,8 @@ in
         settings = lib.mkForce {
           version = 4;
           plugins."io.containerd.cri.v1.images" = {
-            # The RegistryMirror documents' hosts.toml files, which containerd reads on every pull.
+            # The hosts.toml files of the Mirror and Registry documents, which containerd reads on
+            # every pull.
             registry.config_path = "/run/containerd/certs.d";
             pinned_images.sandbox = k.images.pause;
           };
@@ -323,8 +318,11 @@ in
       };
 
       systemd.services.chalkos-registry-mirrors = {
-        description = "Write containerd's registry mirrors from the config";
-        chalkos.kinds = [ "RegistryMirror" ];
+        description = "Write containerd's registry hosts from the config";
+        chalkos.kinds = [
+          "Mirror"
+          "Registry"
+        ];
         wantedBy = [ "containerd.service" ];
         before = [ "containerd.service" ];
         after = [ "chalkos-config.service" ];

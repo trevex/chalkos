@@ -1,7 +1,7 @@
-# Writes containerd's hosts.toml files from the output of mirrorsCommand: for each registry a
-# line "=== <registry>" and then its hosts.toml. The files go to a new directory that is swapped
-# in for certsDir in one rename, so containerd never reads a mix of two configs nor finds none; a
-# failing command leaves certsDir as it was.
+# Writes containerd's hosts.toml files from the output of mirrorsCommand, chalkd containerd-hosts:
+# for each registry a line "=== <directory>" and then its hosts.toml. The files go to a new
+# directory that is swapped in for certsDir in one rename, so containerd never reads a mix of two
+# configs nor finds none; a failing command leaves certsDir as it was.
 {
   lib,
   writeShellApplication,

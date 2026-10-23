@@ -510,11 +510,11 @@ lib.runTests {
       "Flannel"
       "Host"
       "Link"
+      "Mirror"
       "NetDev"
       "Network"
       "Node"
       "Registry"
-      "RegistryMirror"
       "Secret"
       "SystemDisk"
       "TimeSync"
@@ -530,22 +530,24 @@ lib.runTests {
       "Addon"
       "Cluster"
       "Flannel"
-      "RegistryMirror"
     ] (kindNames plainImage);
     expected = [ ];
   };
-  testImageWithoutKubernetesHasRegistry = {
-    expr = lib.elem "Registry" (kindNames plainImage);
-    expected = true;
+  testImageWithoutKubernetesHasRegistryAndMirror = {
+    expr = lib.subtractLists (kindNames plainImage) [
+      "Registry"
+      "Mirror"
+    ];
+    expected = [ ];
   };
   # Flannel is a kind only where flannel is the pod network.
-  # Registries and mirrors as containerd takes them: IPv6 hosts in brackets, and mirrors without a
-  # scheme, which containerd reaches with https.
-  testRegistryMirrorHosts =
+  # Registries and endpoints as containerd takes them: IPv6 hosts in brackets, endpoints with a
+  # scheme and an optional path.
+  testMirrorEndpoints =
     let
-      spec = kubernetesImage.chalkos.kinds.RegistryMirror.spec;
+      spec = kubernetesImage.chalkos.kinds.Mirror.spec;
       registry = spec.registry.type.check;
-      mirror = spec.mirrors.type.nestedTypes.elemType.check;
+      endpoint = spec.endpoints.type.nestedTypes.elemType.check;
     in
     {
       expr = {
@@ -560,14 +562,16 @@ lib.runTests {
           "[fd00::1"
           "docker.io/library"
         ];
-        mirrors = map mirror [
+        endpoints = map endpoint [
           "https://mirror.example.com"
           "http://[fd00::1]:5000"
+          "https://mirror.lan:5000/cache"
+        ];
+        badEndpoints = map endpoint [
+          "ftp://mirror.example.com"
           "mirror.lan:5000"
           "[fd00::1]:5000"
-        ];
-        badMirrors = map mirror [
-          "ftp://mirror.example.com"
+          "https://m.example/?x=1"
           "mirror lan"
         ];
       };
@@ -583,13 +587,15 @@ lib.runTests {
           false
           false
         ];
-        mirrors = [
-          true
+        endpoints = [
           true
           true
           true
         ];
-        badMirrors = [
+        badEndpoints = [
+          false
+          false
+          false
           false
           false
         ];
@@ -648,7 +654,7 @@ lib.runTests {
       "Addon"
       "Node"
       "Registry"
-      "RegistryMirror"
+      "Mirror"
       "Secret"
       "SystemDisk"
       "TimeSync"
@@ -660,8 +666,8 @@ lib.runTests {
       "kubernetes.chalkos.dev_v1alpha1_Cluster.json"
       "kubernetes.chalkos.dev_v1alpha1_Addon.json"
       "kubernetes.chalkos.dev_v1alpha1_Node.json"
-      "chalkos.dev_v1alpha1_Registry.json"
-      "kubernetes.chalkos.dev_v1alpha1_RegistryMirror.json"
+      "oci.chalkos.dev_v1alpha1_Registry.json"
+      "oci.chalkos.dev_v1alpha1_Mirror.json"
       "chalkos.dev_v1alpha1_Secret.json"
       "storage.chalkos.dev_v1alpha1_SystemDisk.json"
       "time.chalkos.dev_v1alpha1_TimeSync.json"

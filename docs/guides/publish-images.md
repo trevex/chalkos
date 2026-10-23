@@ -117,7 +117,7 @@ that serves the image anonymously needs no `Registry`. The password comes from a
 both documents to a file every node gets:
 
 ```yaml title="cluster/registry.yaml"
-apiVersion: chalkos.dev/v1alpha1
+apiVersion: oci.chalkos.dev/v1alpha1
 kind: Registry
 metadata: {name: ghcr}
 spec:

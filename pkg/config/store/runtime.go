@@ -43,6 +43,19 @@ func WriteRuntime(runDir string, docs []config.Document, schemas *schema.Schemas
 	return nil
 }
 
+// ReadRuntime returns the documents WriteRuntime wrote below runDir/config, ordered by apiVersion,
+// kind and name; none when there are none.
+func ReadRuntime(runDir string) ([]config.Document, error) {
+	root, err := filepath.EvalSymlinks(filepath.Join(runDir, "config"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return readDocuments(root)
+}
+
 // CheckCredentials refuses a set whose secretRefs could not all become credential files: a key
 // that is no file name, or two references that would share a file name. It checks every
 // reference in the set, whichever units read them, so it needs no map of units.

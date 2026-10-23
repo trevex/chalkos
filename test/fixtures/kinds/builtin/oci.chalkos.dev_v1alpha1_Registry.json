@@ -3,7 +3,7 @@
   "additionalProperties": false,
   "properties": {
     "apiVersion": {
-      "const": "chalkos.dev/v1alpha1"
+      "const": "oci.chalkos.dev/v1alpha1"
     },
     "kind": {
       "const": "Registry"
@@ -25,7 +25,7 @@
       "additionalProperties": false,
       "properties": {
         "host": {
-          "description": "Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls the images of this host with the Registry's credentials.",
+          "description": "Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials and leave for plain HTTP, and the kubelet gives containerd its credentials for the container images of this host.",
           "examples": [
             "ghcr.io"
           ],
@@ -34,7 +34,7 @@
         },
         "insecure": {
           "default": false,
-          "description": "Allow plain HTTP to this host; chalkd otherwise pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab.",
+          "description": "Allow plain HTTP to this host: chalkd and containerd reach it over HTTP, and a Mirror may name an http:// endpoint on it. Otherwise chalkd pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab.",
           "type": "boolean"
         },
         "password": {
@@ -85,7 +85,7 @@
             }
           ],
           "default": null,
-          "description": "User chalkd authenticates to the registry as, with the password; null pulls anonymously."
+          "description": "User chalkd and containerd authenticate to the host as, with the password; null pulls anonymously."
         }
       },
       "required": [
@@ -103,7 +103,7 @@
   "title": "Registry",
   "type": "object",
   "x-chalkos-kind": {
-    "group": "chalkos.dev",
+    "group": "oci.chalkos.dev",
     "kind": "Registry",
     "multiple": true,
     "rules": [

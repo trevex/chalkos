@@ -445,26 +445,26 @@ new image.
 
 Nodes pull the control plane's images, etcd, CoreDNS and the pause image from `registry.k8s.io`,
 and flannel from `ghcr.io`. A
-[`RegistryMirror`](../reference/kinds.md#registrymirror) document puts HTTPS mirrors in front of
-one registry host; containerd tries them in order and falls back to the registry. A cluster
-without internet access needs every image in a mirror, including those the image options
+[`Mirror`](../reference/kinds.md#mirror) document puts endpoints in front of one registry host;
+containerd tries them in order and falls back to the registry. A cluster without internet access
+needs every image in a mirror, including those the image options
 [`chalkos.kubernetes.images`](../reference/options.md#chalkoskubernetesimagesetcd) and
 [`chalkos.cni.flannel.image`](../reference/options.md#chalkoscniflannelimage) name.
 
 ```yaml title="cluster/registries.yaml"
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: RegistryMirror
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Mirror
 metadata: {name: registry.k8s.io}
 spec:
   registry: registry.k8s.io
-  mirrors: [https://mirror.example.internal]
+  endpoints: [https://mirror.example.internal]
 ---
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: RegistryMirror
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Mirror
 metadata: {name: ghcr.io}
 spec:
   registry: ghcr.io
-  mirrors: [https://mirror.example.internal]
+  endpoints: [https://mirror.example.internal]
 ```
 
 ## Plan provenance and upgrades

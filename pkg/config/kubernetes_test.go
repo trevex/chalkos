@@ -140,32 +140,6 @@ func TestClusterRejects(t *testing.T) {
 	}
 }
 
-func TestRegistryMirrors(t *testing.T) {
-	mirror := func(name, registry, mirrors string, plain bool) string {
-		return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: RegistryMirror\nmetadata: {name: " + name + "}\n" +
-			"spec: {registry: \"" + registry + "\", mirrors: " + mirrors + ", allowPlainHTTP: " + map[bool]string{true: "true", false: "false"}[plain] + "}\n"
-	}
-	s := kubernetesSet(t, "{}", mirror("docker.io", "docker.io", "[https://a.example, https://b.example]", false)+
-		mirror("local", "localhost:5000", "[http://10.0.2.100:5000]", true))
-	got, err := s.RegistryMirrors()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 || got["docker.io"].Mirrors[1] != "https://b.example" || !got["localhost:5000"].AllowPlainHTTP {
-		t.Errorf("mirrors = %+v", got)
-	}
-	for name, tc := range map[string]struct{ more, want string }{
-		"plain HTTP": {mirror("local", "localhost:5000", "[http://10.0.2.100:5000]", false),
-			`RegistryMirror "local": the mirror http://10.0.2.100:5000 is not an https:// URL`},
-		"twice": {mirror("a", "docker.io", "[https://a.example]", false) + mirror("b", "docker.io", "[https://b.example]", false),
-			`RegistryMirror "a" and RegistryMirror "b" both mirror docker.io`},
-	} {
-		if _, err := kubernetesSet(t, "{}", tc.more).RegistryMirrors(); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("%s: err = %v, want %q", name, err, tc.want)
-		}
-	}
-}
-
 func TestAddonObjectsInNameOrder(t *testing.T) {
 	addon := func(name string, objects ...string) string {
 		var list []string

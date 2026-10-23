@@ -51,7 +51,6 @@ network, recorded in `/etc/chalkos/kubernetes/image.json`. Everything else is
 | --- | --- | --- |
 | [`Cluster`](../reference/kinds.md#cluster) | one, required | The URL of the cluster's API server, its address families and ranges, DNS domain and address, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on control planes and extra flags of the control plane's components |
 | [`Node`](../reference/kinds.md#node) | one, required | The node's type and its own labels, taints, addresses, extra flags of its kubelet and the interface it holds the VIP on |
-| [`RegistryMirror`](../reference/kinds.md#registrymirror) | one per registry | The mirrors containerd tries before a registry |
 | [`Flannel`](../reference/kinds.md#flannel) | at most one, on images with flannel | The MTU flannel assumes and the ranges its VXLAN must come from |
 | [`Addon`](../reference/kinds.md#addon) | any | Kubernetes objects the control planes apply |
 
@@ -125,24 +124,23 @@ A control plane is tainted `node-role.kubernetes.io/control-plane:NoSchedule` un
 document sets `allowSchedulingOnControlPlanes: true`. `kubeletExtraArgs` of a node's `Node` document
 adds flags to its kubelet.
 
-containerd pulls through the mirrors of the `RegistryMirror` documents, tried in order before the
+containerd pulls through the endpoints of the `Mirror` documents, tried in order before the
 registry itself. Each document names one registry as image references name it, in
 `spec.registry`:
 
 ```yaml
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: RegistryMirror
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Mirror
 metadata: {name: docker.io}
 spec:
   registry: docker.io
-  mirrors: [https://mirror.example.com]
+  endpoints: [https://mirror.example.com]
 ```
 
 `chalkos-registry-mirrors.service` writes containerd's
 `/run/containerd/certs.d/<registry>/hosts.toml` from them before containerd starts and whenever
-they change; containerd reads those files on every pull. Every mirror must be an `https://` URL,
-because nothing authenticates what a plain HTTP mirror serves; `allowPlainHTTP: true`, meant for
-test registries, also accepts `http://` URLs and bare hosts.
+they change; containerd reads those files on every pull. An `http://` endpoint needs a `Registry`
+of its host with `insecure: true`, since nothing authenticates what a plain HTTP endpoint serves.
 
 ## How does the control plane run?
 
@@ -380,8 +378,8 @@ Other states name what the node waits for or why it stopped:
 - [Install on bare metal](../guides/install-bare-metal.md#bootstrap-the-first-control-plane) for
   the bootstrap, and [Run a highly available control plane](../guides/ha-control-plane.md) for
   joins and membership changes.
-- [Config kinds](../reference/kinds.md#cluster) for every field of `Cluster`, `Node`,
-  `RegistryMirror`, `Flannel` and `Addon`.
+- [Config kinds](../reference/kinds.md#cluster) for every field of `Cluster`, `Node`, `Flannel`
+  and `Addon`.
 - [`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md),
   [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md) and
   [`chalkctl etcd`](../reference/cli/chalkctl_etcd.md).

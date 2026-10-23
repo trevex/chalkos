@@ -35,7 +35,7 @@ import (
 // registryConfig is a Registry of the host with the user ci-bot and the token s3cret, which
 // allows plain HTTP, as the test registries serve it, and its Secret.
 func registryConfig(host string) string {
-	return fmt.Sprintf(`apiVersion: chalkos.dev/v1alpha1
+	return fmt.Sprintf(`apiVersion: oci.chalkos.dev/v1alpha1
 kind: Registry
 metadata: {name: lab}
 spec: {host: %q, insecure: true, username: ci-bot, password: {secretRef: {name: lab, key: token}}}
@@ -83,7 +83,7 @@ func TestUpgradePullsTheImage(t *testing.T) {
 		{name: "with the delivered config's Registry", config: registryConfig(host)},
 		{name: "with the delivered config's Registry over the running one's", running: registryConfig("other.example"), config: registryConfig(host)},
 		{name: "not with the running config's Registry when the upgrade delivers config", running: registryConfig(host), config: registryConfig("other.example"), want: "plain HTTP to " + host + " is refused"},
-		{name: "anonymously", running: fmt.Sprintf("apiVersion: chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lab}\nspec: {host: %q, insecure: true}\n", host), want: "UNAUTHORIZED"},
+		{name: "anonymously", running: fmt.Sprintf("apiVersion: oci.chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lab}\nspec: {host: %q, insecure: true}\n", host), want: "UNAUTHORIZED"},
 		{name: "over HTTPS alone without a Registry", want: "plain HTTP to " + host + " is refused: set insecure: true"},
 		{name: "over HTTPS alone without insecure", running: strings.Replace(registryConfig(host), "insecure: true, ", "", 1), want: "plain HTTP to " + host + " is refused: set insecure: true"},
 		{name: "another header", running: registryConfig(host), platform: "kvm", want: "its header describes"},
@@ -308,7 +308,7 @@ func TestInstallPassesOverAStoreItHolds(t *testing.T) {
 		rest, err = io.ReadAll(req.Parts)
 		return err
 	}
-	if err := sendInstall(t, s, pulledInstall(t, host, fmt.Sprintf("apiVersion: chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lab}\nspec: {host: %q, insecure: true}\n", host)), nil); err != nil {
+	if err := sendInstall(t, s, pulledInstall(t, host, fmt.Sprintf("apiVersion: oci.chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lab}\nspec: {host: %q, insecure: true}\n", host)), nil); err != nil {
 		t.Fatal(err)
 	}
 	if string(rest) != "ukiboot loader" {
@@ -351,7 +351,7 @@ func TestInstallRefusesAPull(t *testing.T) {
 		"with a reference by tag": {edit: func(h *nodev1.InstallHeader) { h.Source.GetOci().Reference = host + "/lab/worker-metal:v1" }, code: connect.CodeInvalidArgument, want: "is no image reference by digest"},
 		"with bad Registry documents": {edit: func(h *nodev1.InstallHeader) {
 			h.Config = workerConfig + "---\n" + strings.Replace(registryConfig(host), "key: token", "key: other", 1)
-		}, code: connect.CodeInvalidArgument, want: "the Registry documents"},
+		}, code: connect.CodeInvalidArgument, want: "the Registry and Mirror documents"},
 		"without credentials": {edit: func(h *nodev1.InstallHeader) {
 			h.Config = workerConfig + "---\n" + strings.Replace(registryConfig(host), "s3cret", "wrong", 1)
 		}, code: connect.CodeFailedPrecondition, want: "install: pull "},

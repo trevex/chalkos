@@ -29,21 +29,6 @@ A node's config holds at most one.
 | --- | --- | --- | --- |
 | `spec.hostname` | string or null | `null` | Host name set at boot; null takes the node's name in the inventory. |
 
-## Registry { #registry }
-
-`apiVersion: chalkos.dev/v1alpha1`
-
-A node's config may hold several, each with a name of its own.
-
-It has 2 [change rules](../concepts/rules.md).
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `spec.host` | string | required | Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls the images of this host with the Registry's credentials. |
-| `spec.insecure` | boolean | `false` | Allow plain HTTP to this host; chalkd otherwise pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab. |
-| `spec.password` | secret reference or null | `null` | Password or token of the user, from a Secret; null pulls anonymously. |
-| `spec.username` | string or null | `null` | User chalkd authenticates to the registry as, with the password; null pulls anonymously. |
-
 ## Secret { #secret }
 
 `apiVersion: chalkos.dev/v1alpha1`
@@ -135,18 +120,6 @@ It has a [change rule](../concepts/rules.md).
 | `spec.type` | one of `controlplane`, `worker` | required | What the node is in the cluster; it is fixed once the node holds a Kubernetes share. |
 | `spec.vip` | object | see below |  |
 | `spec.vip.interface` | string or null | `null` | Interface the node adds the Cluster's VIP addresses to while it holds them; null means the one holding the node's address of their family. Only control planes hold the VIP, so a worker's stays null. |
-
-## RegistryMirror { #registrymirror }
-
-`apiVersion: kubernetes.chalkos.dev/v1alpha1`
-
-A node's config may hold several, each with a name of its own.
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `spec.allowPlainHTTP` | boolean | `false` | Allow mirrors that are not https:// URLs: http:// URLs and hosts without a scheme. It exists for test registries: nothing authenticates what a plain HTTP mirror serves. |
-| `spec.mirrors` | list of string | required | Mirrors of the registry, which containerd tries in order before the registry itself: https:// URLs, or with allowPlainHTTP also http:// URLs and hosts with an optional port, which containerd reaches with HTTPS. |
-| `spec.registry` | string | required | Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. |
 
 ## Link { #link }
 
@@ -285,6 +258,34 @@ networkd spells it.
 | `spec.tokenBucketFilter` | TokenBucketFilter | `burst` (Burst), `burstBytes` (BurstBytes), `handle` (Handle), `latencySec` (LatencySec), `limitBytes` (LimitBytes), `limitSize` (LimitSize), `mpuBytes` (MPUBytes), `mtuBytes` (MTUBytes), `parent` (Parent), `peakRate` (PeakRate), `rate` (Rate) |
 | `spec.trafficControlQueueingDiscipline` | TrafficControlQueueingDiscipline | `networkEmulatorDelayJitterSec` (NetworkEmulatorDelayJitterSec), `networkEmulatorDelaySec` (NetworkEmulatorDelaySec), `networkEmulatorDuplicateRate` (NetworkEmulatorDuplicateRate), `networkEmulatorLossRate` (NetworkEmulatorLossRate), `networkEmulatorPacketLimit` (NetworkEmulatorPacketLimit), `parent` (Parent) |
 | `spec.trivialLinkEqualizer` | TrivialLinkEqualizer | `handle` (Handle), `id` (Id), `parent` (Parent) |
+
+## Mirror { #mirror }
+
+`apiVersion: oci.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own.
+
+It has a [change rule](../concepts/rules.md).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.endpoints` | list of string | required | URLs of the mirror's endpoints, which chalkd and containerd try in order before the registry itself. A path is where the endpoint serves the registry API, below <path>/v2 as containerd takes it. chalkd authenticates to an endpoint with the Registry of the endpoint's host, and an http:// endpoint needs that Registry to set insecure. |
+| `spec.registry` | string | required | Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. |
+
+## Registry { #registry }
+
+`apiVersion: oci.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own.
+
+It has 2 [change rules](../concepts/rules.md).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.host` | string | required | Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials and leave for plain HTTP, and the kubelet gives containerd its credentials for the container images of this host. |
+| `spec.insecure` | boolean | `false` | Allow plain HTTP to this host: chalkd and containerd reach it over HTTP, and a Mirror may name an http:// endpoint on it. Otherwise chalkd pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab. |
+| `spec.password` | secret reference or null | `null` | Password or token of the user, from a Secret; null pulls anonymously. |
+| `spec.username` | string or null | `null` | User chalkd and containerd authenticate to the host as, with the password; null pulls anonymously. |
 
 ## SystemDisk { #systemdisk }
 

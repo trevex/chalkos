@@ -181,13 +181,13 @@ and `Node` documents.
 
 ### Image pulls fail
 
-Pods stay in `ErrImagePull` or `ImagePullBackOff`. containerd pulls through the mirrors of the
-node's [`RegistryMirror`](../reference/kinds.md#registrymirror) documents and then the registry
-itself. Read `containerd.service`'s log on the node for the URL that failed.
-`chalkos-registry-mirrors.service` writes the mirrors to
-`/run/containerd/certs.d/<registry>/hosts.toml`; its log shows when it could not. Mirrors must be
-`https://` unless `allowPlainHTTP` is set, and a cluster without internet access needs every
-image in a mirror.
+Pods stay in `ErrImagePull` or `ImagePullBackOff`. containerd pulls through the endpoints of the
+node's [`Mirror`](../reference/kinds.md#mirror) documents and then the registry itself. Read
+`containerd.service`'s log on the node for the URL that failed.
+`chalkos-registry-mirrors.service` writes the endpoints to
+`/run/containerd/certs.d/<registry>/hosts.toml`; its log shows when it could not. An `http://`
+endpoint needs a `Registry` of its host with `insecure: true`, and a cluster without internet
+access needs every image in a mirror.
 
 ### Pods on different nodes cannot reach each other
 

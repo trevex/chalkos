@@ -985,7 +985,7 @@ lib.runTests {
       scrubUnit = true;
     };
   };
-  # Mirrors come from the RegistryMirror documents, written to /run before containerd starts.
+  # Mirrors come from the Mirror and Registry documents, written to /run before containerd starts.
   testRegistryMirrorsFromConfig =
     let
       config = worker [ ];
@@ -1005,7 +1005,10 @@ lib.runTests {
       expected = {
         baked = false;
         configPath = "/run/containerd/certs.d";
-        grant = [ "RegistryMirror" ];
+        grant = [
+          "Mirror"
+          "Registry"
+        ];
         beforeContainerd = true;
         afterConfig = true;
       };

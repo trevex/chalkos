@@ -333,7 +333,7 @@ another disk carrying the same image or the same labels for its own.
 | `/run/chalkos/outputs/chrony/servers.sources` | The time servers of the config, for chrony, which the built-in output `chrony` renders. |
 | `/run/systemd/network` | The networkd units of the config, which the built-in output `networkd` renders, a link below `/run/chalkos/outputs/.rendered`. |
 | `/run/chalkos/chrony-dhcp/dhcp.sources` | The time servers DHCP announced, for chrony, when the node's `TimeSync` takes them with `spec.dhcp`; empty otherwise. |
-| `/run/containerd/certs.d/<registry>/hosts.toml` | The mirrors of a registry, which containerd reads on every pull, from the node's `RegistryMirror` documents. |
+| `/run/containerd/certs.d/<registry>/hosts.toml` | The mirrors of a registry, which containerd reads on every pull, from the node's `Mirror` and `Registry` documents. |
 | `/run/chalkos/kubernetes/manifests` | The static pods chalkd renders on a control plane. |
 | `/run/chalkos/kubernetes/pki` | The control plane's certificates and kubeconfigs. |
 | `/run/chalkos/kubernetes/kubelet` | The kubelet's `kubeconfig`, `config.json`, `flags` and `ca.crt`. |

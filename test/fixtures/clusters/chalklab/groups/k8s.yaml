@@ -47,29 +47,33 @@ spec:
     - fd00:200::/64
 ---
 # The nodes pull every image through the test's registry, which serves plain HTTP.
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: RegistryMirror
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Registry
+metadata: {name: e2e}
+spec:
+  host: "10.0.2.100:5000"
+  insecure: true
+---
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Mirror
 metadata: {name: docker.io}
 spec:
-  allowPlainHTTP: true
-  mirrors:
+  endpoints:
     - http://10.0.2.100:5000
   registry: docker.io
 ---
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: RegistryMirror
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Mirror
 metadata: {name: ghcr.io}
 spec:
-  allowPlainHTTP: true
-  mirrors:
+  endpoints:
     - http://10.0.2.100:5000
   registry: ghcr.io
 ---
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: RegistryMirror
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Mirror
 metadata: {name: registry.k8s.io}
 spec:
-  allowPlainHTTP: true
-  mirrors:
+  endpoints:
     - http://10.0.2.100:5000
   registry: registry.k8s.io

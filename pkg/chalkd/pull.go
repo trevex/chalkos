@@ -81,23 +81,20 @@ func registryAuth(ref string, docs []config.Document) (authn.Authenticator, bool
 	if err != nil {
 		return nil, false, fmt.Errorf("%q is no image reference by digest, repository@sha256:…: %w", ref, err)
 	}
-	host, err := config.RegistryHost(r.Context().RegistryStr())
+	secrets, err := config.SecretsOf(docs)
 	if err != nil {
-		return nil, false, fmt.Errorf("pull %s: %w", ref, err)
+		return nil, false, fmt.Errorf("pull %s: the Secrets: %w", ref, err)
 	}
-	creds, err := config.RegistryCredentialsOf(docs)
+	regs, err := config.RegistriesOf(docs, secrets)
 	if err != nil {
-		return nil, false, fmt.Errorf("pull %s: the Registry documents: %w", ref, err)
+		return nil, false, fmt.Errorf("pull %s: the Registry and Mirror documents: %w", ref, err)
 	}
-	for _, c := range creds {
-		// RegistryCredentialsOf checked the host.
-		if reg, _ := config.RegistryHost(c.Host); reg != host {
-			continue
-		}
-		if c.Username == "" {
-			return authn.Anonymous, c.Insecure, nil
-		}
-		return &authn.Basic{Username: c.Username, Password: c.Password}, c.Insecure, nil
+	l, ok := regs.Login(r.Context().RegistryStr())
+	switch {
+	case !ok:
+		return authn.Anonymous, false, nil
+	case l.Username == "":
+		return authn.Anonymous, l.Insecure, nil
 	}
-	return authn.Anonymous, false, nil
+	return &authn.Basic{Username: l.Username, Password: l.Password}, l.Insecure, nil
 }

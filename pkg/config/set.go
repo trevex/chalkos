@@ -106,6 +106,13 @@ func (s *Set) One(kind string) (Document, bool) {
 	return Document{}, false
 }
 
+// CheckRegistries refuses a set whose Registry and Mirror documents RegistriesOf refuses: two of
+// one registry, or an http:// endpoint whose host has no Registry that allows plain HTTP.
+func (s *Set) CheckRegistries() error {
+	_, err := RegistriesOf(s.docs, nil)
+	return err
+}
+
 // ResolveSecret returns the value a secretRef names.
 func (s *Set) ResolveSecret(ref SecretRef) (string, error) {
 	data, ok := s.secrets[ref.Name]

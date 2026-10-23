@@ -3,10 +3,10 @@
   "additionalProperties": false,
   "properties": {
     "apiVersion": {
-      "const": "kubernetes.chalkos.dev/v1alpha1"
+      "const": "oci.chalkos.dev/v1alpha1"
     },
     "kind": {
-      "const": "RegistryMirror"
+      "const": "Mirror"
     },
     "metadata": {
       "additionalProperties": false,
@@ -24,20 +24,15 @@
     "spec": {
       "additionalProperties": false,
       "properties": {
-        "allowPlainHTTP": {
-          "default": false,
-          "description": "Allow mirrors that are not https:// URLs: http:// URLs and hosts without a scheme. It exists for test registries: nothing authenticates what a plain HTTP mirror serves.",
-          "type": "boolean"
-        },
-        "mirrors": {
-          "description": "Mirrors of the registry, which containerd tries in order before the registry itself: https:// URLs, or with allowPlainHTTP also http:// URLs and hosts with an optional port, which containerd reaches with HTTPS.",
+        "endpoints": {
+          "description": "URLs of the mirror's endpoints, which chalkd and containerd try in order before the registry itself. A path is where the endpoint serves the registry API, below <path>/v2 as containerd takes it. chalkd authenticates to an endpoint with the Registry of the endpoint's host, and an http:// endpoint needs that Registry to set insecure.",
           "examples": [
             [
               "https://mirror.example.com"
             ]
           ],
           "items": {
-            "pattern": "^(?:(https?://)?([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\\[[0-9A-Fa-f:.]+])(:[0-9]+)?(/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]*)?)$",
+            "pattern": "^(?:https?://([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\\[[0-9A-Fa-f:.]+])(:[0-9]+)?(/[A-Za-z0-9._~%/-]*)?)$",
             "type": "string"
           },
           "minItems": 1,
@@ -53,7 +48,7 @@
         }
       },
       "required": [
-        "mirrors",
+        "endpoints",
         "registry"
       ],
       "type": "object"
@@ -65,12 +60,19 @@
     "metadata",
     "spec"
   ],
-  "title": "RegistryMirror",
+  "title": "Mirror",
   "type": "object",
   "x-chalkos-kind": {
-    "group": "kubernetes.chalkos.dev",
-    "kind": "RegistryMirror",
+    "group": "oci.chalkos.dev",
+    "kind": "Mirror",
     "multiple": true,
+    "rules": [
+      {
+        "messageExpression": "\"the Mirror documents \" + documents.filter(n, documents.exists(m, m != n && documents[m].spec.registry == documents[n].spec.registry)).join(\", \") + \" mirror the same registry; give one Mirror per registry\"",
+        "rule": "documents.all(n, documents.all(m, n == m || documents[n].spec.registry != documents[m].spec.registry))",
+        "takes": "refuse"
+      }
+    ],
     "version": "v1alpha1"
   }
 }

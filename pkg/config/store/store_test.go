@@ -283,3 +283,23 @@ func TestRetireRefusesADirectory(t *testing.T) {
 		t.Errorf("the directory went: %v", err)
 	}
 }
+
+// TestReadRuntime reads the documents WriteRuntime wrote for the node's services, Secrets
+// excepted, and none from a directory without them.
+func TestReadRuntime(t *testing.T) {
+	dir := t.TempDir()
+	if docs, err := ReadRuntime(dir); err != nil || docs != nil {
+		t.Errorf("without documents: %v, %v", docs, err)
+	}
+	docs, err := config.Parse(strings.NewReader("apiVersion: oci.chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lan}\nspec: {host: \"10.0.0.5:5000\", insecure: true}\n---\napiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: s}\nspec: {data: {k: v}}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteRuntime(dir, docs, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadRuntime(dir)
+	if err != nil || len(got) != 1 || got[0].Kind != "Registry" || got[0].Name != "lan" {
+		t.Errorf("ReadRuntime = %v, %v; want the Registry alone", got, err)
+	}
+}

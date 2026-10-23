@@ -71,7 +71,7 @@ func TestInstallPullsTheImageFromTheRegistry(t *testing.T) {
 	ref, pinned := pushTestImage(t, filepath.Join(ta.dir, "images", "test-metal"))
 	useOCIImage(t, ta, ref)
 	host, _, _ := strings.Cut(ref, "/")
-	ta.writeNode(t, n1SystemDisk, n1Network, fmt.Sprintf("apiVersion: chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lab}\nspec: {host: %q, insecure: true}\n", host))
+	ta.writeNode(t, n1SystemDisk, n1Network, fmt.Sprintf("apiVersion: oci.chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lab}\nspec: {host: %q, insecure: true}\n", host))
 	s := maintenanceNode()
 	s.Installer = true
 	var got install.PartsRequest

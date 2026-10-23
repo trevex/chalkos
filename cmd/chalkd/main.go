@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -26,6 +27,8 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/install"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
@@ -47,7 +50,10 @@ commands:
                                    record the boot and reboot when that leads on
   prepare-kubernetes [vxlan-rule]  pick the node's addresses and write its Kubernetes
                                    certificates and configuration, then run vxlan-rule with the
-                                   file saying where VXLAN may arrive`
+                                   file saying where VXLAN may arrive
+  containerd-hosts                 print containerd's hosts.toml of each registry the node's
+                                   Mirror and Registry documents name, each after a line
+                                   "=== <directory>"`
 
 func main() {
 	log.SetFlags(0)
@@ -70,6 +76,8 @@ func main() {
 			firewall = knode.VXLANRule(os.Args[2])
 		}
 		err = knode.Prepare(knode.DefaultPaths(), time.Now(), knode.WaitForAddresses, firewall)
+	case "containerd-hosts":
+		err = containerdHosts(os.Stdout, "/run/chalkos")
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
@@ -155,6 +163,27 @@ func health(args []string) error {
 		return fmt.Errorf("not healthy: %w", err)
 	}
 	log.Print("healthy")
+	return nil
+}
+
+// containerdHosts prints containerd's hosts.toml of each registry the node's Mirror and Registry
+// documents below runDir name, by its directory below containerd's config_path, each after a line
+// "=== <directory>", for chalkos-registry-mirrors to write.
+func containerdHosts(w io.Writer, runDir string) error {
+	docs, err := store.ReadRuntime(runDir)
+	if err != nil {
+		return err
+	}
+	r, err := config.RegistriesOf(docs, nil)
+	if err != nil {
+		return err
+	}
+	files := r.HostsTOML()
+	for _, dir := range slices.Sorted(maps.Keys(files)) {
+		if _, err := fmt.Fprintf(w, "=== %s\n%s", dir, files[dir]); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

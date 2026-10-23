@@ -58,14 +58,17 @@ func translateSlot(name string, docs []config.Document, schemas *schema.Schemas,
 
 // translate checks docs as a set against schemas and translates them into the identity of the node
 // called name on the image t describes: the set rules, each document's schema, the Secrets their
-// secretRefs name and, on an image with Kubernetes, the cluster, registry mirrors and manifests
-// they give.
+// secretRefs name, the Registry and Mirror documents and, on an image with Kubernetes, the
+// cluster and manifests they give.
 func translate(name string, docs []config.Document, schemas *schema.Schemas, t config.Target) (*config.Set, identity.Identity, error) {
 	set, err := config.NewSet(docs, schemas)
 	if err != nil {
 		return nil, identity.Identity{}, err
 	}
 	if err := store.CheckCredentials(set.Documents(), schemas); err != nil {
+		return nil, identity.Identity{}, err
+	}
+	if err := set.CheckRegistries(); err != nil {
 		return nil, identity.Identity{}, err
 	}
 	id, err := set.Identity(name, t)

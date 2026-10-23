@@ -11,6 +11,8 @@ import (
 	"time"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -217,5 +219,35 @@ func TestHealthArgs(t *testing.T) {
 		if (err == nil) != tc.ok || tc.ok && (got.wait != tc.want.wait || got.stopped != tc.want.stopped || !slices.Equal(got.ignore, tc.want.ignore)) {
 			t.Errorf("parseHealthArgs(%q) = %+v, %v", tc.args, got, err)
 		}
+	}
+}
+
+// TestContainerdHosts prints each registry's hosts.toml from the node's documents, in order of
+// the directories, each after the line naming it.
+func TestContainerdHosts(t *testing.T) {
+	dir := t.TempDir()
+	docs, err := config.Parse(strings.NewReader(`apiVersion: oci.chalkos.dev/v1alpha1
+kind: Registry
+metadata: {name: lan}
+spec: {host: "10.0.0.5:5000", insecure: true}
+---
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Mirror
+metadata: {name: hub}
+spec: {registry: docker.io, endpoints: ["http://10.0.0.5:5000"]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteRuntime(dir, docs, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := containerdHosts(&out, dir); err != nil {
+		t.Fatal(err)
+	}
+	want := "=== 10.0.0.5:5000\nserver = \"http://10.0.0.5:5000\"\n=== docker.io\nserver = \"https://registry-1.docker.io\"\n\n[host.\"http://10.0.0.5:5000\"]\n  capabilities = [\"pull\", \"resolve\"]\n"
+	if out.String() != want {
+		t.Errorf("containerd-hosts printed %q, want %q", out.String(), want)
 	}
 }
