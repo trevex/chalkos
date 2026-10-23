@@ -216,7 +216,11 @@ partition UUID and writes the `installed` marker.
 
 On a node that runs the installer, chalkctl also sends the image the inventory names for the node,
 or the one `--image` gives, in the same parts an upgrade sends, plus the boot loader. The sequence
-shows what the installer does with them.
+shows what the installer does with them. When the inventory names the image in a registry, the
+header carries the image's reference by digest in place of the schemas, `image.json` and repart
+definitions, and no parts follow it. The installer then reads those from the artifact's contract
+layer before it touches the disk, and pulls the store, hash tree, UKI and boot loader from the
+registry in the steps where the sequence receives them from chalkctl.
 
 ```mermaid
 sequenceDiagram
@@ -283,9 +287,8 @@ become healthy within its tries, the node falls back to the image it ran before.
 - chalkos does not enrol Secure Boot keys on nodes. The firmware must trust the signer of the
   images before the install; only chalklab enrols keys, its own, in its VMs. Installing does not
   check that Secure Boot is on.
-- An install reaches a node only through chalkctl's stream over the node API. An upgrade is
-  streamed or pulled from a registry, and only when chalkctl starts it; there is no update
-  server.
+- An install or an upgrade reaches a node only when chalkctl starts it, streamed over the node
+  API or pulled from a registry; there is no update server.
 - Nodes have no shell access. Debugging goes through the node API's logs and status, or a
   privileged pod with [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools).
 - An image without an OS CA accepts any client in maintenance mode. Build images with mkImages'

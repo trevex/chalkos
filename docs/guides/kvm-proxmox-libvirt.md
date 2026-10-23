@@ -338,7 +338,9 @@ then install the other nodes.
 The [installer](../reference/glossary.md#installer) works in a VM too: attach the signed
 installer ISO from [Install on bare metal](install-bare-metal.md#sign-the-installer) as a CD-ROM
 next to an empty virtio disk, and install as on a physical machine. chalkctl then sends the
-node's `kvm` image, the signed copy the inventory names, to the installer. This takes one
+node's `kvm` image, the signed copy the inventory names, to the installer. When the inventory
+names the image in a registry, the installer pulls it from there instead, as
+[Install from the registry](publish-images.md#install-from-the-registry) describes. This takes one
 image download per node instead of one disk copy, which suits a hypervisor you cannot copy disk
 images to.
 

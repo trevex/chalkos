@@ -213,6 +213,12 @@ chalkctl recovery-key cp1 prints the key that unlocks it when its TPM fails
 `revision` the flake passes to `mkImages`. The installer writes the image's UKI as
 `chalkos_1.efi`, the node's first boot entry.
 
+When the inventory names the node's image in a registry, by `source.oci`, chalkctl sends the
+image's reference by digest in place of its parts, and the installer pulls the image from the
+registry itself. The machine then needs a route and DNS to the registry, and the config needs the
+registry's credentials unless the registry serves the image anonymously.
+[Install from the registry](publish-images.md#install-from-the-registry) covers the details.
+
 On the machine, the installer:
 
 1. refuses the disk it runs from, and any disk that holds data (see below);
@@ -243,7 +249,9 @@ With `--fingerprint`, the one connection is pinned from the start.
 
 An install that stops halfway, because chalkctl was interrupted, the network dropped or the
 machine lost power, continues where it stopped: run the same `chalkctl install` command again,
-with the fingerprint the installer prints now. The installer recognises a disk laid out by an
+with the fingerprint the installer prints now. This holds for an image the installer pulls from
+a registry too, and an install that streamed its image can continue by a pull, or the reverse
+with `--image`. The installer recognises a disk laid out by an
 earlier attempt with the same image's partition definitions, skips a slot that holds the image
 already, and logs `continuing the install on <disk>` on the console. Until the boot loader is
 written, the disk has nothing the firmware boots, so a machine never boots a half-installed node.

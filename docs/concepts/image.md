@@ -293,7 +293,8 @@ trusts in [db](../reference/glossary.md#db-and-dbx).
 `mkImages` also builds each image as an OCI artifact, `oci.<variant>-<platform>`: an OCI image
 layout that holds the store, the hash tree, the UKI, the boot loader and the contract as layers.
 [`chalkbuild push`](../reference/cli/chalkbuild_push.md) pushes it to a registry, and an inventory
-names the pushed reference in place of a directory; `chalkctl upgrade` then has each node pull it.
+names the pushed reference in place of a directory; `chalkctl install` and `chalkctl upgrade`
+then have the node pull it.
 [Publish images to a registry](../guides/publish-images.md) covers the steps.
 
 chalkos does not wrap image conversion. `qemu-img convert -f raw -O qcow2` makes a qcow2 disk for
@@ -308,8 +309,6 @@ KVM, `zstd` compresses an image for transport and `dd` or a USB writer puts it o
   installed on them.
 - The image carries no firmware unless a variant or platform adds it with NixOS's
   `hardware.firmware`.
-- An install takes an image only from its directory, through chalkctl's stream; only an upgrade
-  pulls an image from a registry.
 
 ## Related pages
 

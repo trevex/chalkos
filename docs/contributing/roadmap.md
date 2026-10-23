@@ -31,11 +31,10 @@ without Secure Boot.
 
 ### OCI publishing and pulls
 
-Today chalkbuild publishes an image as an OCI artefact, and `chalkctl upgrade` has each node pull
-an image the inventory names in a registry, authenticated by a
-[`Registry`](../reference/kinds.md#registry) document. An install still sends the image over the
-node API from a directory. The plan has installs pull from a registry too, and checks a signature
-of the artefact itself.
+Today chalkbuild publishes an image as an OCI artefact, and `chalkctl install` on the installer
+and `chalkctl upgrade` both have the node pull an image the inventory names in a registry,
+authenticated by a [`Registry`](../reference/kinds.md#registry) document. The plan adds a check
+of a signature of the artefact itself.
 
 ### An in-cluster upgrade controller
 

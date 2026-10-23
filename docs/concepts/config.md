@@ -96,7 +96,7 @@ Some kinds depend on the image or the node:
   `Addon` exist on images with Kubernetes, and `Flannel` only on those built with flannel as their
   pod network, so a document of one of them is an unknown kind on any other image. A node without
   Kubernetes has no type.
-- A `Registry` authenticates chalkd's pull of an upgrade's image, so it exists on every image.
+- A `Registry` authenticates chalkd's pull of an install's or an upgrade's image, so it exists on every image.
   containerd does not use it; `RegistryMirror` configures the mirrors of the container images
   containerd pulls.
 - A `Network`, `NetDev` or `Link` document's `metadata.name` is the unit file's name without its
@@ -282,10 +282,9 @@ An image published to a registry is named by its reference in `source.oci` inste
 [`chalkbuild push`](../reference/cli/chalkbuild_push.md) prints it. Each image sets exactly one of
 `directory` and `oci`. A reference by tag is resolved to a digest once per command, so one command
 reads one image. `chalkctl validate`, `apply-config` and `status` read the image's header and
-contract from the registry. `chalkctl upgrade` has each node pull the image by its digest, with
-the credentials of the node's [`Registry`](../reference/kinds.md#registry) for the registry's
-host. An install on a node that runs the installer sends only an image from a directory, so it
-refuses a node whose image has an `oci` source.
+contract from the registry. `chalkctl install` on a node that runs the installer and
+`chalkctl upgrade` each have the node pull the image by its digest, with the credentials of the
+node's [`Registry`](../reference/kinds.md#registry) for the registry's host.
 
 ```yaml
 node-metal: {source: {oci: ghcr.io/example/node-metal@sha256:<digest>}}

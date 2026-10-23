@@ -403,8 +403,8 @@ later.
 
 - Every node receives the whole compressed store, about 300 MiB with the hash tree and UKI. There
   are no delta updates, and nodes do not share a download.
-- Installs take an image only through chalkctl's stream; upgrades pull from a registry or
-  stream.
+- An image reaches a node only when chalkctl starts an install or an upgrade: streamed from a
+  directory, or pulled from a registry.
 - An upgrade never updates systemd-boot.
 - chalkctl does not check Kubernetes's
   [version skew policy](https://kubernetes.io/releases/version-skew-policy/) beyond upgrading

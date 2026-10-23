@@ -219,7 +219,7 @@ image with Kubernetes:
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
 | `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, [variant](glossary.md#variant), platform and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. [Config kinds](kinds.md) lists the fields of the default image's kinds. |
-| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only on an image with Kubernetes. An install from the installer sends it with `schemas`, so chalkd translates the node's config for the image it writes; an upgrade checks each node's config from the [inventory](glossary.md#inventory) against both before it drains a node, and chalkd checks the config it carries against those of the image it wrote. |
+| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only on an image with Kubernetes. An install from the installer sends it with `schemas`, or the installer reads both from the contract layer of an image it pulls, so chalkd translates the node's config for the image it writes; an upgrade checks each node's config from the [inventory](glossary.md#inventory) against both before it drains a node, and chalkd checks the config it carries against those of the image it wrote. |
 
 The definitions of an image with the default sizes read:
 
@@ -232,6 +232,22 @@ SizeMaxBytes=128M
 SizeMinBytes=128M
 Type=480b7842-1236-1abb-0339-e5503b43122a
 ```
+
+An install from the installer refuses definitions that lay out more than the system region,
+whether chalkctl sends them or the installer reads them from a pulled image's contract. The
+definitions must describe six partitions: one ESP formatted as vfat, the store's data and
+hash-tree partitions of two slots for the image's architecture, and STATE labelled `state` and
+formatted as ext4. Each file holds one `[Partition]` section and sets each key at most once, and
+only these keys:
+
+| Partition | Keys |
+| --- | --- |
+| ESP | `Type`, `Label`, `Format`, `SizeMinBytes`, `SizeMaxBytes` |
+| Store data and hash tree | `Type`, `Label`, `SizeMinBytes`, `SizeMaxBytes` |
+| STATE | `Type`, `Label`, `Format`, `Encrypt`, `AddValidateFS`, `SizeMinBytes`, `SizeMaxBytes` |
+
+The `chalkos.disk` options produce such definitions, so the restriction matters only for an image
+whose `repart.d` was changed by other means.
 
 The installer's directory holds `chalkos-installer.raw` and its `repart-output.json`, the hybrid
 ISO `chalkos-installer.iso`, `chalkos-installer.iso.json`, which describes the ISO's partitions

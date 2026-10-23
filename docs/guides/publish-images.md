@@ -12,17 +12,11 @@ the [UKI](../reference/glossary.md#uki), the boot loader and the contract, which
 config the image accepts. [`chalkctl validate`](../reference/cli/chalkctl_validate.md),
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) and
 [`chalkctl status`](../reference/cli/chalkctl_status.md) read the image's header and contract from
-the registry, and [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) has each node pull
-the image from it. This guide builds the artifact with `mkImages`, signs it, pushes it with
+the registry. [`chalkctl install`](../reference/cli/chalkctl_install.md) on a machine that runs
+the installer and [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) both have the node
+pull the image from it. This guide builds the artifact with `mkImages`, signs it, pushes it with
 [chalkbuild](../reference/glossary.md#chalkbuild), names it in the inventory, gives the nodes the
-registry's credentials and upgrades them from it.
-
-!!! note "Install takes a directory"
-
-    An install from the installer sends the image from its directory, so it refuses a node whose
-    image the inventory names in a registry. A node that runs its image already installs in place
-    either way. Keep a directory source for the image, or pass `--image` with its directory, for
-    an install.
+registry's credentials, and installs and upgrades them from it.
 
 ## Before you begin
 
@@ -140,9 +134,11 @@ spec:
 
 The config holds one `Registry` per host. A `Registry` gives `username` and `password` together,
 or neither to pull from the host anonymously. chalkd matches the host in any case and as image
-references name registries, so `docker.io` matches `index.docker.io`. It takes the `Registry`
-documents of the config the upgrade delivers, or, when the upgrade carries no config, those of
-the config the node runs.
+references name registries, so `docker.io` matches `index.docker.io`. For an upgrade, it takes
+the `Registry` documents of the config the upgrade delivers, or, when the upgrade carries no
+config, those of the config the node runs. For an install, it takes only those of the config the
+install delivers, because the installer has no config of its own. Keep the file in a list every
+node gets, so installs and upgrades both find the credentials.
 
 chalkd pulls over HTTPS only and trusts the certificate authorities of the image's system trust
 store; a `Registry` adds no CA of its own. A registry that serves only plain HTTP, such as one in
@@ -151,6 +147,34 @@ address. With it, the credentials and the image travel unencrypted, so anyone on
 can read the credentials. The image stays protected, because the node checks every byte against
 the digests chalkctl read and against the root hash. Set `insecure` only for a registry on a
 trusted network, such as a lab.
+
+## Install from the registry
+
+`chalkctl install` without `--image`, on a machine that runs the
+[installer](../reference/glossary.md#installer), sends the installer the image's reference by
+digest in place of the image:
+
+```sh
+chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
+```
+
+It prints a line such as `installing cp1 onto serial "S7KHNJ0W100001": chalkos 81bd02c4a9e1
+(0f1e2d3c4b5a), which the installer pulls from ghcr.io/example/node-metal@sha256:<digest>`. The
+installer pulls the store, the hash tree, the UKI and the boot loader, and takes the image's
+schemas, `image.json` and partition definitions from the artifact's contract layer. The machine
+that runs the installer therefore needs a route and DNS to the registry, as
+[Ports and firewall](../reference/ports-and-firewall.md#connections-a-node-makes) lists.
+
+The installer checks the pulled layers as it checks a streamed image: their digests, the store
+against the root hash, and the UKI and boot loader against the firmware's db and dbx when Secure
+Boot is enforced. It reads the manifest and the contract before it touches the disk, so a registry
+that is unreachable, refuses the credentials or lacks the digest fails the install with an error
+that names the reference, and the disk stays as it was. An install that stops partway continues
+when the command runs again, by a pull or with `--image`.
+
+chalkctl refuses an installer built before installs could pull, before it reads the registry, and
+names the fix: boot an installer built from the current chalkos, or pass `--image` with the
+image's directory. `--image` always streams the image it names.
 
 ## Upgrade from the registry
 
@@ -177,6 +201,8 @@ the inventory, then run the upgrade from the registry again.
 
 ## What next
 
+- [Install on bare metal](install-bare-metal.md) boots the installer and installs a machine from
+  it.
 - [Sign images for Secure Boot](secure-boot-signing.md) creates the db key and gets the firmware
   to trust it.
 - [`chalkbuild oci`](../reference/cli/chalkbuild_oci.md) writes a layout from an image directory

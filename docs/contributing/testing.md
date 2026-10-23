@@ -95,7 +95,7 @@ the nodes with the real chalkctl. Each check runs one test or a group of them:
 | `e2e-secureboot` | A signed image boots under Secure Boot and an unsigned one is refused. | 1 per test |
 | `e2e-verity` | A tampered store fails to read. | 1 |
 | `e2e-install` | An install in place, with a second disk. | 1 |
-| `e2e-installer` | The [installer](../reference/glossary.md#installer) installs a node onto a blank disk. | 1 |
+| `e2e-installer` | The [installer](../reference/glossary.md#installer) installs a node onto a blank disk under Secure Boot: an install streamed from a directory and cancelled while it writes slot A, continued by one the installer pulls from a registry the test serves, with credentials. | 1 |
 | `e2e-iso` | The installer's ISO, signed as chalkbuild signs it, boots. | 1 |
 | `e2e-storage` | Volumes on the system disk and a data disk. | 1 |
 | `e2e-upgrade` | Under Secure Boot, an [upgrade](../reference/glossary.md#upgrade) that the node pulls from a registry the test serves, with credentials, that boots from [slot](../reference/glossary.md#slot) B and is found healthy, then one streamed from a directory that never becomes healthy and falls back. | 1 |
