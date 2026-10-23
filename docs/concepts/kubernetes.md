@@ -146,13 +146,51 @@ reached over HTTP, and gets a file even without a `Mirror`. An `http://` endpoin
 `Registry` of its host with `insecure: true`, since nothing authenticates what a plain HTTP
 endpoint serves.
 
-containerd sends every endpoint that asks for credentials, and the token service such an endpoint
-names, the credentials the kubelet gives it for the image's registry, such as those of an
-`imagePullSecret`. A mirror of an authenticated registry therefore receives that registry's
-credentials, so give its endpoints the trust the registry has. The credentials of an endpoint's
-own `Registry` do not reach containerd. chalkd, which pulls OS images through the same `Mirror`
-documents, authenticates each endpoint with the `Registry` of the endpoint's host instead, as
-[Pull through a mirror](../guides/publish-images.md#pull-through-a-mirror) describes.
+### How do pods pull images from a private registry?
+
+A [`Registry`](../reference/kinds.md#registry) with `username` and `password` gives every pod on
+the node the images of its host, without `imagePullSecrets`. The kubelet asks chalkd, which it
+runs as its image credential provider, for the credentials of an image's host, and hands them to
+containerd as it hands over those of a pull secret:
+
+```yaml
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Registry
+metadata: {name: ghcr}
+spec:
+  host: ghcr.io
+  username: robot
+  password: {secretRef: {name: registry, key: token}}
+```
+
+The kubelet matches the `host` against the image reference as written, port included, and names
+Docker Hub `docker.io`. `chalkos-registry-credentials.service` writes the provider's configuration
+and the credentials to `/run/chalkos/kubernetes/credential-provider/`, whose `credentials.json`
+only root reads. A node without a `Registry` that has credentials runs the kubelet without a
+credential provider.
+
+The kubelet reads the provider's configuration when it starts and keeps each answer for 5
+minutes. A change of a `Registry`, or of a password it references, therefore restarts both
+`chalkos-registry-credentials.service` and `kubelet.service`, which empties that cache; running
+pods keep running.
+
+Node credentials hold for every pod on the node, in every namespace. Any pod scheduled there can
+pull every image those credentials read, so give a node only credentials that every workload on
+it may use, and keep images that only some workloads may read behind an `imagePullSecret` in
+their namespace.
+
+containerd sends every endpoint of a `Mirror` that asks for credentials, and the token service
+such an endpoint names, the credentials the kubelet gives it for the image's registry, from the
+node's `Registry` or from an `imagePullSecret` alike. The kubelet passes them without the host
+they belong to, so containerd 2.4 cannot tell a mirror from the registry. In other words, a mirror
+of an authenticated registry receives that registry's credentials, so give its endpoints the
+trust the registry has. The credentials of an endpoint's own `Registry` do not reach containerd.
+chalkd, which pulls OS images through the same `Mirror` documents, authenticates each endpoint
+with the `Registry` of the endpoint's host instead, and sends each host only its own credentials,
+as [Pull through a mirror](../guides/publish-images.md#pull-through-a-mirror) describes. The
+[`e2e-kubernetes`](../contributing/testing.md#end-to-end-tests) check pins this behaviour: its
+worker pulls a private image through a mirror endpoint that accepts only the credentials of the
+image's registry.
 
 ## How does the control plane run?
 

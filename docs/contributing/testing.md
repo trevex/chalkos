@@ -99,7 +99,7 @@ the nodes with the real chalkctl. Each check runs one test or a group of them:
 | `e2e-iso` | The installer's ISO, signed as chalkbuild signs it, boots. | 1 |
 | `e2e-storage` | Volumes on the system disk and a data disk. | 1 |
 | `e2e-upgrade` | Under Secure Boot, an [upgrade](../reference/glossary.md#upgrade) that the node pulls through a mirror endpoint, a registry the test serves, with the endpoint's credentials, that boots from [slot](../reference/glossary.md#slot) B and is found healthy, then one streamed from a directory that never becomes healthy and falls back. | 1 |
-| `e2e-kubernetes` | A dual-stack cluster of a [control plane](../reference/glossary.md#control-plane) and a worker through chalklab: networking, DNS, renewals and [rotations](../reference/glossary.md#rotation), a reboot. | 2 |
+| `e2e-kubernetes` | A dual-stack cluster of a [control plane](../reference/glossary.md#control-plane) and a worker through chalklab: networking, DNS, a private image pulled through a mirror with the node's credentials, renewals and [rotations](../reference/glossary.md#rotation), a reboot. | 2 |
 | `e2e-kubernetes-ha` | Three control planes of an IPv6-only cluster behind a VIP: joins, failover, reinstalls and a rolling upgrade. | 3 |
 
 A VM gets 2 CPUs and 2 GiB of memory unless its test asks for less, on a 16 GiB sparse disk.

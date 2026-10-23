@@ -468,6 +468,14 @@ spec:
   endpoints: [https://mirror.example.internal]
 ```
 
+Workloads from a private registry need a [`Registry`](../reference/kinds.md#registry) with that
+registry's credentials in the same file. The kubelet then pulls the registry's images for every
+pod on the node without `imagePullSecrets`, and containerd sends the credentials to the endpoints
+of the registry's `Mirror` as well, as
+[How do pods pull images from a private registry?](../concepts/kubernetes.md#how-do-pods-pull-images-from-a-private-registry)
+describes. Keep credentials that only some workloads may use in their namespaces' pull secrets
+instead.
+
 ## Plan provenance and upgrades
 
 An image carries no version: its store's [root hash](../reference/glossary.md#root-hash) is what

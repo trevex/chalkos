@@ -85,6 +85,7 @@ The units that matter most:
 | `chalkos-health.service` | Decides whether a boot after an upgrade is healthy. |
 | `kubelet.service` | The kubelet, which runs the static pods of etcd and the control plane, and every pod. |
 | `containerd.service` | The container runtime: image pulls and mirrors. |
+| `chalkos-registry-credentials.service` | Writes the registry credentials the kubelet hands to containerd for pods' image pulls. |
 
 `chalkctl logs` shows the current boot only. For a boot that fell back after an upgrade, the health
 check keeps the last 30 lines that chalkd and the check logged on
@@ -189,6 +190,14 @@ node's [`Mirror`](../reference/kinds.md#mirror) documents and then the registry 
 [`Registry`](../reference/kinds.md#registry) documents; its log shows when it could not. An
 `http://` endpoint needs a `Registry` of its host with `insecure: true`, and a cluster without
 internet access needs every image in a mirror.
+
+A private image that fails with `401 Unauthorized` or `ErrImagePull` takes its credentials from
+the node's `Registry` of the image's host. Read
+`chalkctl logs <node> --unit=chalkos-registry-credentials` for whether the unit wrote them, and
+compare the `Registry`'s `host` with the host as the image reference names it, port included:
+the kubelet asks for `registry.example.com:5000/app` only with a `Registry` of
+`registry.example.com:5000`. A mirror endpoint receives the credentials of the image's host, not
+those of its own `Registry`.
 
 chalkd pulls an install's or an upgrade's image through the same endpoints. When the pull fails,
 its error names the source it ended at, followed by `after the mirror <endpoint>: <error>` for

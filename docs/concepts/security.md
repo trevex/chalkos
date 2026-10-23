@@ -269,6 +269,11 @@ tools to an image for that.
 - The approver of kubelet serving certificates checks a request against the addresses the Node
   object lists. A kubelet reports those addresses itself, so the check stops a node from claiming
   another node's name, not from claiming an address it does not own.
+- A `Registry`'s credentials serve the image pulls of every pod on the node. chalkd keeps them in
+  a `credentials.json` that only root reads, but the kubelet hands them to containerd for any pod
+  whose image names the `Registry`'s host, and containerd sends them to that host's mirror
+  endpoints as well, as
+  [Kubernetes](kubernetes.md#how-do-pods-pull-images-from-a-private-registry) describes.
 - A node's clock decides whether certificates are valid. A node whose clock is far off refuses
   valid certificates and accepts expired ones until chrony sets it.
 

@@ -75,7 +75,7 @@ schemas.
 | --- | --- | --- | --- |
 | [`Host`](../reference/kinds.md#host) | `chalkos.dev` | at most one | The node's hostname, which defaults to the node's name |
 | [`Secret`](../reference/kinds.md#secret) | `chalkos.dev` | any | Secret values by key, for the fields that reference them |
-| [`Registry`](../reference/kinds.md#registry) | `oci.chalkos.dev` | any | Credentials chalkd pulls images of one registry or mirror host with, and whether chalkd and containerd reach that host over plain HTTP |
+| [`Registry`](../reference/kinds.md#registry) | `oci.chalkos.dev` | any | Credentials of one registry or mirror host, for chalkd's pulls and those of the kubelet, and whether chalkd and containerd reach that host over plain HTTP |
 | [`SystemDisk`](../reference/kinds.md#systemdisk) | `storage.chalkos.dev` | exactly one | The system disk, the size of [VAR](../reference/glossary.md#var) and the encryption of the node's partitions |
 | [`Volume`](../reference/kinds.md#volume) | `storage.chalkos.dev` | any | A further [volume](../reference/glossary.md#volume): its disk, size, format, mount point and encryption |
 | [`TimeSync`](../reference/kinds.md#timesync) | `time.chalkos.dev` | at most one | Time servers, and whether those DHCP announces are used too |
@@ -99,7 +99,9 @@ Some kinds depend on the image or the node:
 - `Registry` and `Mirror` exist on every image, because chalkd reads them for the pull of an
   install's or an upgrade's image, and containerd's mirror configuration is written from them. A
   `Registry` gives a host's credentials and allows plain HTTP to it; a `Mirror` names the
-  endpoints chalkd and containerd try before a registry itself.
+  endpoints chalkd and containerd try before a registry itself. On images with Kubernetes, the
+  kubelet takes a `Registry`'s credentials for every pod's pulls from its host, as
+  [Kubernetes](kubernetes.md#how-do-pods-pull-images-from-a-private-registry) describes.
 - A `Network`, `NetDev` or `Link` document's `metadata.name` is the unit file's name without its
   suffix, so `10-uplink` becomes `/run/systemd/network/10-uplink.network` and networkd's order by
   file name holds. Sections and keys are networkd's own in camelCase: `[Match]` with `MACAddress=`
@@ -538,9 +540,11 @@ reference names a `Secret` or key the set lacks.
 On the node, chalkd keeps `Secret` documents in a directory of STATE readable by root alone and
 never writes them below `/run/chalkos/config`. A unit granted a kind with a reference gets the
 value as its systemd credential `secret_<secret>.<key>`, here `secret_bgp.password`, and no
-other service sees it. An output's renderer sees the reference alone, so a rendered file that
-needs the value names the credential. Status, chalkcfg and the config's hash never show a secret
-value.
+other service sees it. A `Registry`'s password also reaches the kubelet:
+`chalkos-registry-credentials.service` writes it to a file only root reads, and the kubelet uses
+it for every pod's pulls from the `Registry`'s host. An output's renderer sees the reference
+alone, so a rendered file that needs the value names the credential. Status, chalkcfg and the
+config's hash never show a secret value.
 
 ## How does status compare a node with its config?
 

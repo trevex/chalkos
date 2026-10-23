@@ -34,8 +34,9 @@ without Secure Boot.
 Today chalkbuild publishes an image as an OCI artefact, and `chalkctl install` on the installer
 and `chalkctl upgrade` both have the node pull an image the inventory names in a registry,
 through the endpoints of a [`Mirror`](../reference/kinds.md#mirror) when the node has one, and
-authenticated by a [`Registry`](../reference/kinds.md#registry) document for each host. The plan adds a check
-of a signature of the artefact itself.
+authenticated by a [`Registry`](../reference/kinds.md#registry) document for each host. The same
+`Registry` documents give the kubelet the credentials of pods' container images, without
+`imagePullSecrets`. The plan adds a check of a signature of the artefact itself.
 
 ### An in-cluster upgrade controller
 

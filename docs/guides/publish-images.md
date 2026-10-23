@@ -140,6 +140,11 @@ config, those of the config the node runs. For an install, it takes only those o
 install delivers, because the installer has no config of its own. Keep the file in a list every
 node gets, so installs and upgrades both find the credentials.
 
+On an image with Kubernetes, the same `Registry` also gives every pod on the node the container
+images of its host, without `imagePullSecrets`.
+[How do pods pull images from a private registry?](../concepts/kubernetes.md#how-do-pods-pull-images-from-a-private-registry)
+describes how the kubelet gets the credentials and why every pod on the node can use them.
+
 chalkd pulls over HTTPS only and trusts the certificate authorities of the image's system trust
 store; a `Registry` adds no CA of its own. A registry that serves only plain HTTP, such as one in
 a lab, needs `insecure: true` in its `Registry`, also when the registry has a private or loopback
@@ -197,7 +202,9 @@ containerd authenticates endpoints differently. It sends every endpoint that ask
 and the token service such an endpoint names, the credentials the kubelet gives it for the image's
 registry, because the kubelet passes them without the host they belong to. A mirror of an
 authenticated registry therefore receives that registry's credentials on container pulls, so give
-its endpoints the trust the registry has.
+its endpoints the trust the registry has, as
+[How do pods pull images from a private registry?](../concepts/kubernetes.md#how-do-pods-pull-images-from-a-private-registry)
+describes.
 
 ## Install from the registry
 

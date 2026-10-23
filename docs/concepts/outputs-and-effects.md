@@ -310,6 +310,7 @@ chalkos's own units take effects of their own, on the built-in outputs or on `wh
 | `chrony` | The output `chrony` changed: the `TimeSync`'s servers changed, or the file chrony reads differs from the one the delivery renders. | Runs `chronyc reload sources` while `chronyd.service` is active. |
 | `chrony-dhcp` | The `TimeSync`'s spec changes. | Restarts `chalkos-chrony-dhcp.service`. |
 | `registry-mirrors` | A `Mirror` or `Registry` spec changes. | Restarts `chalkos-registry-mirrors.service`. |
+| `registry-credentials` | A `Registry` document, or a value of a Secret one references, changes. | Restarts `chalkos-registry-credentials.service` and `kubelet.service`. |
 | `controlplane-ports` | A `Node` changes. | Restarts `chalkos-controlplane.service`. |
 | `kubernetes` | The `Node`, the `Host`, the `Address=` values of the `Network` documents' `[Network]` sections, the `Cluster` or `Flannel` document, the cluster file or the share changes, but not for a share that differs in its node CA alone. | Restarts and starts `chalkos-kubernetes.service` and `kubelet.service`. |
 | `chalkd-cluster` | The cluster changes. | Restarts chalkd's Kubernetes loops. |

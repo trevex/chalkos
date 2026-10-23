@@ -337,6 +337,7 @@ another disk carrying the same image or the same labels for its own.
 | `/run/chalkos/kubernetes/manifests` | The static pods chalkd renders on a control plane. |
 | `/run/chalkos/kubernetes/pki` | The control plane's certificates and kubeconfigs. |
 | `/run/chalkos/kubernetes/kubelet` | The kubelet's `kubeconfig`, `config.json`, `flags` and `ca.crt`. |
+| `/run/chalkos/kubernetes/credential-provider` | The kubelet's image credential provider, from the node's `Registry` documents: its `config.json`, the credentials in `credentials.json`, readable by root alone, and the `flags` that point the kubelet at the configuration and at chalkd. |
 | `/run/chalkos/kubernetes/node-ip` | The addresses the node picked this boot, the primary family's first. |
 | `/run/chalkos/kubernetes/vxlan` | The addresses and source ranges the firewall's VXLAN rule accepts. |
 | `/var/lib/etcd` | etcd's data on a control plane, whose directory `chalkos-controlplane.service` makes when the node's `Node.spec.type` is `controlplane`. |
