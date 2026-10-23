@@ -57,7 +57,7 @@ metadata: {name: prod}
 spec:
   images:
     # chalkbuild sign signs a copy of the build into this directory.
-    node-kvm: {source: {directory: images/node-kvm}}
+    node-kvm: {source: {directory: images/node-kvm-signed}}
   all: {imageName: node-kvm, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
@@ -94,17 +94,18 @@ reinstall.
 
 ## Build and sign the image
 
-Build the `kvm` image, sign a copy of it with
-[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) into the directory the inventory names,
+Build the `kvm` image into `images/node-kvm`, sign a copy of it with
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) into `images/node-kvm-signed`, the
+directory the inventory names,
 so the VM's firmware boots it, and check the nodes' config against it. A VM writes to its disk,
 so take a writable copy of the signed raw image for the disks:
 
 ```sh
-nix build .#node-kvm -o build/node-kvm
-rm -rf images/node-kvm
-chalkbuild sign --key=db.key --cert=db.crt build/node-kvm images/node-kvm
+nix build .#node-kvm -o images/node-kvm
+rm -rf images/node-kvm-signed
+chalkbuild sign --key db.key --cert db.crt images/node-kvm images/node-kvm-signed
 chalkctl validate
-cp --sparse=always images/node-kvm/chalkos.raw node.raw
+cp --sparse=always images/node-kvm-signed/chalkos.raw node.raw
 ```
 
 The output directory of `chalkbuild sign` must not exist, so `rm -rf` removes the signed copy
@@ -363,7 +364,7 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
 | The firmware reports `Access Denied` and boots nothing | The image is unsigned or signed with a key whose certificate is not in the VM's db. Sign the image, or enrol `db.crt`. |
 | Nothing appears on the console after the firmware | The VM has no serial port, or the console shows the screen; the kvm image writes to `ttyS0` only. |
 | `the config places the system on /dev/sda (model "...", size ...), but the node runs from /dev/vda (model "...", size ...); install it with the installer instead` | The node's `SystemDisk` names another disk than the one the VM booted from. Fix `spec.disk` in the node's file. |
-| `cp1 runs an image built for metal, but its image node-kvm is built for kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Make its disk from the signed `images/node-kvm`. |
+| `cp1 runs an image built for metal, but its image node-kvm is built for kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Make its disk from the signed `images/node-kvm-signed`. |
 | The node asks for its recovery key after a hypervisor change | The UEFI variables file or the TPM state was reset or replaced. Type the key `chalkctl recovery-key cp1` prints; see [Recover a node](recover-node.md). |
 
 ## What next

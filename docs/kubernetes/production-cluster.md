@@ -71,7 +71,7 @@ as packages:
       };
     in
     {
-      # nix build .#node-metal -o build/node-metal, nix build .#installer -o installer
+      # nix build .#node-metal -o images/node-metal, nix build .#installer -o installer
       packages.x86_64-linux = images.images // {
         inherit (images) installer;
       };
@@ -82,7 +82,8 @@ as packages:
 The inventory gives every node the files of `cluster/` through `spec.all`, the nodes of a group
 the group's files, and each node its own file, in that order. Each node's `address` is where
 chalkctl reaches it. `spec.images` names the image directories, relative to the inventory's
-directory, here `images/`, where `chalkbuild sign` writes the signed copies. `spec.all.imageName`
+directory, here `images/node-metal-signed`, where `chalkbuild sign` writes the signed copy of
+the build in `images/node-metal`. `spec.all.imageName`
 names the image every node runs unless the node or one of its groups names another:
 
 ```yaml title="chalkos.yaml"
@@ -92,7 +93,7 @@ metadata: {name: prod}
 spec:
   images:
     # chalkbuild sign signs a copy of the build into this directory.
-    node-metal: {source: {directory: images/node-metal}}
+    node-metal: {source: {directory: images/node-metal-signed}}
   all: {imageName: node-metal, files: [cluster/*.yaml]}
   groups:
     storage: {files: [groups/storage.yaml]}
@@ -491,8 +492,8 @@ Each node numbers the boot entries it installs and boots the one installed last 
 to an earlier image is therefore an upgrade like any other, which boots first as the highest
 generation; it is allowed, at your own risk, and nothing warns of it.
 
-A routine that works: change the flake, build the images into `build/` again, sign copies of them
-into `images/` with `chalkbuild sign`, run `chalkctl validate`, upgrade a lab of the same variants
+A routine that works: change the flake, build the images into `images/` again, sign copies of them
+into `-signed` directories with `chalkbuild sign`, run `chalkctl validate`, upgrade a lab of the same variants
 with copies `chalklab sign` signed, then run `chalkctl upgrade` on the cluster, which gives each
 node the image the inventory names for it. Kubernetes moves one
 minor release at a time, as upstream requires. [Upgrade a cluster](../operate/upgrade-cluster.md) describes
@@ -536,9 +537,9 @@ node's config against it.
 file:
 
 ```sh
-nix build .#node-metal -o build/node-metal
-rm -rf images/node-metal
-chalkbuild sign --key=db.key --cert=db.crt build/node-metal images/node-metal
+nix build .#node-metal -o images/node-metal
+rm -rf images/node-metal-signed
+chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
 chalkctl validate
 ```
 
@@ -548,7 +549,8 @@ prints a line for each valid node, such as
 names each node whose config is not valid with the reason, and warns of a node whose STATE is
 unencrypted. Run both in CI, so a change to the flake or a YAML file never reaches a node
 unchecked. CI needs no db key for that: `chalkctl validate` checks no signature, so CI links the
-unsigned build to `images/node-metal` with `nix build .#node-metal -o images/node-metal`.
+unsigned build to `images/node-metal-signed` with
+`nix build .#node-metal -o images/node-metal-signed`.
 
 ## What next
 

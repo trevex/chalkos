@@ -84,18 +84,20 @@ as `tag = "v1.5.0";`. Both are for display only. Make the change itself:
 ## Decide how the images are built and signed
 
 Without `--image`, `chalkctl upgrade` gives each node the image the inventory names for it, the
-image directory of a build. Build the images first,
-sign a copy of each with [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) where the
-inventory's images point, and check the nodes' config against them with
+image directory of a build. Build the images first into
+`images/`. Where the nodes enforce Secure Boot, sign a copy of each with
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) into a directory ending in `-signed`,
+which the inventory names, and check the nodes' config against them with
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md). The output directory of
 `chalkbuild sign` must not exist, so remove the copy of the previous build first. The homelab
-example's inventory names the image `node-metal` at `images/node-metal`, relative to
-`chalkos.yaml`, and makes it every node's with `spec.all.imageName`:
+example's inventory names the unsigned build `images/node-metal`, relative to `chalkos.yaml`, and
+makes it every node's image with `spec.all.imageName`; with Secure Boot enforced it names
+`images/node-metal-signed` instead:
 
 ```sh
-nix build .#node-metal -o build/node-metal
-rm -rf images/node-metal
-chalkbuild sign --key=db.key --cert=db.crt build/node-metal images/node-metal
+nix build .#node-metal -o images/node-metal
+rm -rf images/node-metal-signed
+chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
 chalkctl validate
 ```
 
@@ -112,7 +114,7 @@ next to it or an image directory, on the nodes that run that image's variant, or
 `--nodes` names. Nodes on another platform are skipped and named.
 
 ```sh
-chalkctl upgrade --image=images/node-metal
+chalkctl upgrade --image=images/node-metal-signed
 ```
 
 On nodes that enforce Secure Boot, each image's UKI must be signed by a key in the firmware's db,

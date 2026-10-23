@@ -32,13 +32,13 @@ chalkbuild sign <image dir or layout> <out dir> [flags]
 
 ```
   # Sign the build of the node-metal image into the directory the inventory names.
-  chalkbuild sign --key db.key --cert db.crt build/node-metal images/node-metal
+  chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
 
   # Sign the installer, raw image and ISO.
   chalkbuild sign --key db.key --cert db.crt installer installer-signed
 
   # Sign an OCI image layout.
-  chalkbuild sign --key db.key --cert db.crt build/node-metal-oci oci/node-metal
+  chalkbuild sign --key db.key --cert db.crt oci/node-metal oci/node-metal-signed
 ```
 
 ## Options

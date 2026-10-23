@@ -19,13 +19,13 @@ never talks to nodes, and its commands need no secrets file or client file.
 ## Examples
 
 ```
-  nix build .#node-metal -o build/node-metal
-  chalkbuild sign --key db.key --cert db.crt build/node-metal images/node-metal
+  nix build .#node-metal -o images/node-metal
+  chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
 
   # Publish the image to a registry.
-  nix build .#node-metal-oci -o build/node-metal-oci
-  chalkbuild sign --key db.key --cert db.crt build/node-metal-oci oci/node-metal
-  chalkbuild push oci/node-metal ghcr.io/example/node-metal:v1
+  nix build .#node-metal-oci -o oci/node-metal
+  chalkbuild sign --key db.key --cert db.crt oci/node-metal oci/node-metal-signed
+  chalkbuild push oci/node-metal-signed ghcr.io/example/node-metal:v1
 ```
 
 ## Options

@@ -75,14 +75,14 @@ installer where you can.
 
 ## Build and sign the image and check the config
 
-Build the image the nodes run, and sign a copy of it into the directory the inventory names for
-it, here `images/node-metal` for `node-metal: {source: {directory: images/node-metal}}` in the
-inventory's `spec.images`:
+Build the image the nodes run into `images/node-metal`, and sign a copy of it into
+`images/node-metal-signed`, the directory the inventory names for it with
+`node-metal: {source: {directory: images/node-metal-signed}}` in `spec.images`:
 
 ```sh
-nix build .#node-metal -o build/node-metal
-rm -rf images/node-metal
-chalkbuild sign --key=db.key --cert=db.crt build/node-metal images/node-metal
+nix build .#node-metal -o images/node-metal
+rm -rf images/node-metal-signed
+chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
 chalkctl validate
 ```
 
@@ -100,7 +100,7 @@ db. `chalkbuild sign` signs a copy of the installer's directory, its raw image a
 
 ```sh
 rm -rf installer-signed
-chalkbuild sign --key=db.key --cert=db.crt installer installer-signed
+chalkbuild sign --key db.key --cert db.crt installer installer-signed
 ```
 
 Sign the installer with the same key as the images. The installer seals the node's
@@ -204,7 +204,7 @@ hash tree, UKI and boot loader. It does not send the whole raw image, only the c
 and what boots it. chalkctl prints:
 
 ```text
-installing cp1 onto serial "S7KHNJ0W100001" from /home/alice/prod/images/node-metal: chalkos 81bd02c4a9e1 (0f1e2d3c4b5a), sending 308281344 bytes of store, hash tree, UKI and boot loader
+installing cp1 onto serial "S7KHNJ0W100001" from /home/alice/prod/images/node-metal-signed: chalkos 81bd02c4a9e1 (0f1e2d3c4b5a), sending 308281344 bytes of store, hash tree, UKI and boot loader
 cp1 is installed and reboots
 chalkctl recovery-key cp1 prints the key that unlocks it when its TPM fails
 ```

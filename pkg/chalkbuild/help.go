@@ -10,13 +10,13 @@ chalkbuild oci and mkImages's oci outputs write, and chalkbuild push pushes a si
 registry. The inventory names a signed image directory, or the reference push prints. chalkbuild
 never talks to nodes, and its commands need no secrets file or client file.`
 
-const rootExample = `  nix build .#node-metal -o build/node-metal
-  chalkbuild sign --key db.key --cert db.crt build/node-metal images/node-metal
+const rootExample = `  nix build .#node-metal -o images/node-metal
+  chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
 
   # Publish the image to a registry.
-  nix build .#node-metal-oci -o build/node-metal-oci
-  chalkbuild sign --key db.key --cert db.crt build/node-metal-oci oci/node-metal
-  chalkbuild push oci/node-metal ghcr.io/example/node-metal:v1`
+  nix build .#node-metal-oci -o oci/node-metal
+  chalkbuild sign --key db.key --cert db.crt oci/node-metal oci/node-metal-signed
+  chalkbuild push oci/node-metal-signed ghcr.io/example/node-metal:v1`
 
 const ociLong = `Writes an image directory, as nix build makes it, as an OCI image layout: one manifest of the
 artifact type application/vnd.chalkos.image.v1. Its config is the image's header: its ID, root
@@ -27,7 +27,7 @@ mkImages's oci outputs run this command. The layout directory must not exist; wh
 fails, or Ctrl-C stops the command, it is removed again. The command needs no secrets file or
 client file.`
 
-const ociExample = `  chalkbuild oci build/node-metal oci/node-metal`
+const ociExample = `  chalkbuild oci images/node-metal oci/node-metal`
 
 const pushLong = `Pushes the chalkos image of an OCI image layout, as chalkbuild oci or chalkbuild sign writes
 it, to a registry, and prints the reference of its manifest by digest,
@@ -57,10 +57,10 @@ and a new manifest; the store, hash tree and contract layers are copied as they 
 new manifest's digest.`
 
 const signExample = `  # Sign the build of the node-metal image into the directory the inventory names.
-  chalkbuild sign --key db.key --cert db.crt build/node-metal images/node-metal
+  chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
 
   # Sign the installer, raw image and ISO.
   chalkbuild sign --key db.key --cert db.crt installer installer-signed
 
   # Sign an OCI image layout.
-  chalkbuild sign --key db.key --cert db.crt build/node-metal-oci oci/node-metal`
+  chalkbuild sign --key db.key --cert db.crt oci/node-metal oci/node-metal-signed`

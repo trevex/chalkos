@@ -25,7 +25,7 @@ chalkbuild oci <image dir> <layout dir> [flags]
 ## Examples
 
 ```
-  chalkbuild oci build/node-metal oci/node-metal
+  chalkbuild oci images/node-metal oci/node-metal
 ```
 
 ## Options

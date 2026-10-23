@@ -78,7 +78,7 @@ kind: Inventory
 metadata: {name: prod}
 spec:
   images:
-    node-metal: {source: {directory: images/node-metal}}
+    node-metal: {source: {directory: images/node-metal-signed}}
   all: {imageName: node-metal, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
