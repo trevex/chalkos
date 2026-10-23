@@ -273,6 +273,11 @@ in
           default = null;
           description = "Password or token of the user, from a Secret; null pulls anonymously.";
         };
+        insecure = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Allow plain HTTP to this host; chalkd otherwise pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab.";
+        };
       };
     };
     SystemDisk = builtin "storage.chalkos.dev" // {

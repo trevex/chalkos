@@ -40,6 +40,7 @@ It has 2 [change rules](../concepts/rules.md).
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.host` | string | required | Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls the images of this host with the Registry's credentials. |
+| `spec.insecure` | boolean | `false` | Allow plain HTTP to this host; chalkd otherwise pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab. |
 | `spec.password` | secret reference or null | `null` | Password or token of the user, from a Secret; null pulls anonymously. |
 | `spec.username` | string or null | `null` | User chalkd authenticates to the registry as, with the password; null pulls anonymously. |
 

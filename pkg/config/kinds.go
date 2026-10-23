@@ -112,6 +112,7 @@ type addonSpec struct {
 
 type registrySpec struct {
 	Host     string  `json:"host"`
+	Insecure bool    `json:"insecure"`
 	Username *string `json:"username"`
 	Password *struct {
 		SecretRef SecretRef `json:"secretRef"`
