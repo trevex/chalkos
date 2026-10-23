@@ -39,6 +39,8 @@ nodes call RenewNodeCertificate, with the node role.
 | [Upgrade](#method-upgrade) | [stream UpgradeRequest](#message-upgraderequest) | [UpgradeResponse](#message-upgraderesponse) |
 | [DrainNode](#method-drainnode) | [DrainNodeRequest](#message-drainnoderequest) | [DrainNodeResponse](#message-drainnoderesponse) |
 | [UncordonNode](#method-uncordonnode) | [UncordonNodeRequest](#message-uncordonnoderequest) | [UncordonNodeResponse](#message-uncordonnoderesponse) |
+| [RevokeNode](#method-revokenode) | [RevokeNodeRequest](#message-revokenoderequest) | [RevokeNodeResponse](#message-revokenoderesponse) |
+| [UnrevokeNode](#method-unrevokenode) | [UnrevokeNodeRequest](#message-unrevokenoderequest) | [UnrevokeNodeResponse](#message-unrevokenoderesponse) |
 
 ### Info { #method-info }
 
@@ -156,6 +158,20 @@ failing, with DEADLINE_EXCEEDED.
 
 UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
 a node cordoned otherwise as it is.
+
+### RevokeNode { #method-revokenode }
+
+RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
+kube-system/chalkos-revoked-nodes and deletes its Node object. Control planes then refuse to
+renew its node certificate. A node revoked already keeps the time of its first revocation.
+Available on bootstrapped control-plane nodes, to admins.
+
+### UnrevokeNode { #method-unrevokenode }
+
+UnrevokeNode removes a node from the revoked nodes, so a node of that name may join again.
+The old node's certificates work again too, unless the CAs they chain to were rotated after
+the revocation: the call is refused with FAILED_PRECONDITION while the OS CA or the Kubernetes
+CA predates it, unless forced. Available on bootstrapped control-plane nodes, to admins.
 
 ## Messages
 
@@ -654,6 +670,23 @@ A chalkos image in an OCI registry.
 
 No fields.
 
+### RevokeNodeRequest { #message-revokenoderequest }
+
+
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `node` | `string` | The node's name in Kubernetes, which its node certificate carries too. |
+
+### RevokeNodeResponse { #message-revokenoderesponse }
+
+
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `revoked_at` | `google.protobuf.Timestamp` | When the node was revoked: now, or at an earlier revocation. |
+| `node_deleted` | `bool` | Whether the call deleted the node's Node object; false when the cluster had none. |
+
 ### RotationStepRequest { #message-rotationsteprequest }
 
 
@@ -745,6 +778,24 @@ No fields.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `uncordoned` | `bool` | Whether the node was cordoned for an upgrade and is schedulable again. |
+
+### UnrevokeNodeRequest { #message-unrevokenoderequest }
+
+
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `node` | `string` | The node's name in Kubernetes. |
+| `force` | `bool` | Unrevoke the node although the CAs its old certificates chain to predate the revocation. |
+
+### UnrevokeNodeResponse { #message-unrevokenoderesponse }
+
+
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `revoked_at` | `google.protobuf.Timestamp` | When the node was revoked. |
+| `stale_cas` | repeated `string` | The CAs issued before the revocation, by the names chalkctl rotate takes: os-ca, kubernetes-ca. The old node's certificates work again until they expire or these CAs are rotated. Empty when both were rotated after the revocation. |
 
 ### UpgradeHeader { #message-upgradeheader }
 

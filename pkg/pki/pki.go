@@ -332,6 +332,11 @@ func RenewAt(cert *x509.Certificate) time.Time {
 	return cert.NotBefore.Add(cert.NotAfter.Sub(cert.NotBefore) * 2 / 3)
 }
 
+// IssuedAt is when a CA chalkos made was made: its NotBefore is backdated by the clock skew.
+func IssuedAt(ca *x509.Certificate) time.Time {
+	return ca.NotBefore.Add(clockSkew)
+}
+
 // Leaf describes a certificate IssueLeaf issues.
 type Leaf struct {
 	CommonName   string

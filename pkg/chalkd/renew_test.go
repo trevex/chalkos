@@ -27,10 +27,12 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// controlPlaneOf is a control-plane node whose share holds the node CA of c.
+// controlPlaneOf is a control-plane node whose share holds the node CA of c, in a cluster that
+// revoked no node.
 func controlPlaneOf(t *testing.T, c creds) *Server {
 	t.Helper()
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
@@ -43,6 +45,7 @@ func controlPlaneOf(t *testing.T, c creds) *Server {
 		t.Fatal(err)
 	}
 	write(t, s.Kubernetes.Paths.Share(), string(data))
+	s.RevokedNodes = func(context.Context) (revoked.List, error) { return revoked.List{}, nil }
 	return s
 }
 
@@ -143,6 +146,40 @@ func TestRenewNodeCertificateOnControlPlanesOnly(t *testing.T) {
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "not a control plane") {
 			t.Errorf("%s: %v, want a refusal", name, err)
 		}
+	}
+}
+
+// TestRenewNodeCertificateOfRevokedNode refuses to renew the certificate of a revoked node, and
+// every certificate while the revoked nodes cannot be read.
+func TestRenewNodeCertificateOfRevokedNode(t *testing.T) {
+	c := newCreds(t)
+	s := controlPlaneOf(t, c)
+	revokedAt := time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC)
+	var loadErr error
+	s.RevokedNodes = func(context.Context) (revoked.List, error) {
+		return revoked.List{"w1": revokedAt}, loadErr
+	}
+	addr := serve(t, s, c, c.pool)
+	renew := func(name string) error {
+		t.Helper()
+		cert, err := pki.IssueNode(c.nodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		request, _ := certificateRequest(t, name)
+		_, err = dial(t, addr, pair(t, cert)).RenewNodeCertificate(context.Background(), connect.NewRequest(&nodev1.RenewNodeCertificateRequest{CertificateRequest: request}))
+		return err
+	}
+	want := "node w1 is revoked since 2026-10-23T08:00:00Z; chalkctl node unrevoke w1 lets it renew again"
+	if err := renew("w1"); connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), want) {
+		t.Errorf("renewing w1: %v, want %q", err, want)
+	}
+	if err := renew("w2"); err != nil {
+		t.Errorf("renewing w2: %v", err)
+	}
+	loadErr = errors.New("connection refused")
+	if err := renew("w2"); connect.CodeOf(err) != connect.CodeUnavailable || !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("renewing w2 without the revoked nodes: %v, want a refusal", err)
 	}
 }
 

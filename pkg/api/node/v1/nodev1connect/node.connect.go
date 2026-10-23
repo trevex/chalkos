@@ -77,6 +77,11 @@ const (
 	// NodeServiceUncordonNodeProcedure is the fully-qualified name of the NodeService's UncordonNode
 	// RPC.
 	NodeServiceUncordonNodeProcedure = "/chalkos.node.v1.NodeService/UncordonNode"
+	// NodeServiceRevokeNodeProcedure is the fully-qualified name of the NodeService's RevokeNode RPC.
+	NodeServiceRevokeNodeProcedure = "/chalkos.node.v1.NodeService/RevokeNode"
+	// NodeServiceUnrevokeNodeProcedure is the fully-qualified name of the NodeService's UnrevokeNode
+	// RPC.
+	NodeServiceUnrevokeNodeProcedure = "/chalkos.node.v1.NodeService/UnrevokeNode"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -160,6 +165,16 @@ type NodeServiceClient interface {
 	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
 	// a node cordoned otherwise as it is.
 	UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error)
+	// RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
+	// kube-system/chalkos-revoked-nodes and deletes its Node object. Control planes then refuse to
+	// renew its node certificate. A node revoked already keeps the time of its first revocation.
+	// Available on bootstrapped control-plane nodes, to admins.
+	RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error)
+	// UnrevokeNode removes a node from the revoked nodes, so a node of that name may join again.
+	// The old node's certificates work again too, unless the CAs they chain to were rotated after
+	// the revocation: the call is refused with FAILED_PRECONDITION while the OS CA or the Kubernetes
+	// CA predates it, unless forced. Available on bootstrapped control-plane nodes, to admins.
+	UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -287,6 +302,18 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("UncordonNode")),
 			connect.WithClientOptions(opts...),
 		),
+		revokeNode: connect.NewClient[v1.RevokeNodeRequest, v1.RevokeNodeResponse](
+			httpClient,
+			baseURL+NodeServiceRevokeNodeProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("RevokeNode")),
+			connect.WithClientOptions(opts...),
+		),
+		unrevokeNode: connect.NewClient[v1.UnrevokeNodeRequest, v1.UnrevokeNodeResponse](
+			httpClient,
+			baseURL+NodeServiceUnrevokeNodeProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("UnrevokeNode")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -311,6 +338,8 @@ type nodeServiceClient struct {
 	upgrade              *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
 	drainNode            *connect.Client[v1.DrainNodeRequest, v1.DrainNodeResponse]
 	uncordonNode         *connect.Client[v1.UncordonNodeRequest, v1.UncordonNodeResponse]
+	revokeNode           *connect.Client[v1.RevokeNodeRequest, v1.RevokeNodeResponse]
+	unrevokeNode         *connect.Client[v1.UnrevokeNodeRequest, v1.UnrevokeNodeResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -408,6 +437,16 @@ func (c *nodeServiceClient) UncordonNode(ctx context.Context, req *connect.Reque
 	return c.uncordonNode.CallUnary(ctx, req)
 }
 
+// RevokeNode calls chalkos.node.v1.NodeService.RevokeNode.
+func (c *nodeServiceClient) RevokeNode(ctx context.Context, req *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error) {
+	return c.revokeNode.CallUnary(ctx, req)
+}
+
+// UnrevokeNode calls chalkos.node.v1.NodeService.UnrevokeNode.
+func (c *nodeServiceClient) UnrevokeNode(ctx context.Context, req *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error) {
+	return c.unrevokeNode.CallUnary(ctx, req)
+}
+
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in both modes to readers.
@@ -489,6 +528,16 @@ type NodeServiceHandler interface {
 	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
 	// a node cordoned otherwise as it is.
 	UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error)
+	// RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
+	// kube-system/chalkos-revoked-nodes and deletes its Node object. Control planes then refuse to
+	// renew its node certificate. A node revoked already keeps the time of its first revocation.
+	// Available on bootstrapped control-plane nodes, to admins.
+	RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error)
+	// UnrevokeNode removes a node from the revoked nodes, so a node of that name may join again.
+	// The old node's certificates work again too, unless the CAs they chain to were rotated after
+	// the revocation: the call is refused with FAILED_PRECONDITION while the OS CA or the Kubernetes
+	// CA predates it, unless forced. Available on bootstrapped control-plane nodes, to admins.
+	UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -612,6 +661,18 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("UncordonNode")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceRevokeNodeHandler := connect.NewUnaryHandler(
+		NodeServiceRevokeNodeProcedure,
+		svc.RevokeNode,
+		connect.WithSchema(nodeServiceMethods.ByName("RevokeNode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nodeServiceUnrevokeNodeHandler := connect.NewUnaryHandler(
+		NodeServiceUnrevokeNodeProcedure,
+		svc.UnrevokeNode,
+		connect.WithSchema(nodeServiceMethods.ByName("UnrevokeNode")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -652,6 +713,10 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceDrainNodeHandler.ServeHTTP(w, r)
 		case NodeServiceUncordonNodeProcedure:
 			nodeServiceUncordonNodeHandler.ServeHTTP(w, r)
+		case NodeServiceRevokeNodeProcedure:
+			nodeServiceRevokeNodeHandler.ServeHTTP(w, r)
+		case NodeServiceUnrevokeNodeProcedure:
+			nodeServiceUnrevokeNodeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -735,4 +800,12 @@ func (UnimplementedNodeServiceHandler) DrainNode(context.Context, *connect.Reque
 
 func (UnimplementedNodeServiceHandler) UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.UncordonNode is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RevokeNode is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.UnrevokeNode is not implemented"))
 }

@@ -33,7 +33,16 @@ func (s *Server) RenewNodeCertificate(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	chain, err := signRequest(nodeCA, pki.NamesOf(peer), req.Msg.CertificateRequest, time.Now())
+	names := pki.NamesOf(peer)
+	// Without the list, the peer may be revoked: nothing is renewed until it can be read.
+	list, err := s.revokedNodes(ctx)
+	if err != nil {
+		return nil, failed(connect.CodeUnavailable, "%v; no node certificate is renewed until they can be read", err)
+	}
+	if at, ok := list[names.CommonName]; ok {
+		return nil, failed(connect.CodePermissionDenied, "node %s is revoked since %s; chalkctl node unrevoke %s lets it renew again", names.CommonName, at.UTC().Format(time.RFC3339), names.CommonName)
+	}
+	chain, err := signRequest(nodeCA, names, req.Msg.CertificateRequest, time.Now())
 	if err != nil {
 		return nil, err
 	}

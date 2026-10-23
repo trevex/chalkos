@@ -23,6 +23,7 @@ import (
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -136,6 +137,9 @@ type Server struct {
 	// each ApplyConfig that delivers config, due or not. Only test images set it, to renew within
 	// a test's time.
 	RenewOnApplyConfig bool
+	// RevokedNodes returns the nodes revoked in the cluster, whose node certificates a control
+	// plane does not renew; nil reads them through the node's own API server. Tests replace it.
+	RevokedNodes func(context.Context) (revoked.List, error)
 
 	// clock is the time client certificates are verified at; nil is the system clock.
 	clock func() time.Time
@@ -177,6 +181,8 @@ var permissions = map[string]permission{
 	nodev1connect.NodeServiceUpgradeProcedure:              {[]nodev1.Mode{normal}, pki.RoleOperator},
 	nodev1connect.NodeServiceDrainNodeProcedure:            {[]nodev1.Mode{normal}, pki.RoleOperator},
 	nodev1connect.NodeServiceUncordonNodeProcedure:         {[]nodev1.Mode{normal}, pki.RoleOperator},
+	nodev1connect.NodeServiceRevokeNodeProcedure:           {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceUnrevokeNodeProcedure:         {[]nodev1.Mode{normal}, pki.RoleAdmin},
 }
 
 type roleKey struct{}
