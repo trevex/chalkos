@@ -69,13 +69,12 @@ $ chalkctl validate w2
 w2: valid for the image node-metal (node on metal, root hash d871203debfe), config a4bca06aaaed7a77a58ee95c8d576c74331c47feb48ced26acd9c97b15ee0615
 ```
 
-Adding a node changes no other node's config. The other nodes need no `apply-config`.
+Adding a node changes no other node's config, so the other nodes need no `apply-config`.
 
-!!! note "On the shipped variant, the Node document sets the node's type"
-
-    `type: worker` makes `w2` a worker. A node with `type: controlplane` joins etcd and the
-    control plane. Grow the control planes to an odd number, as
-    [Add a control plane](../kubernetes/ha-control-plane.md#add-a-control-plane) explains.
+On the shipped variant, the `Node` document sets the node's type. `type: worker` makes `w2` a
+worker. A node with `type: controlplane` joins etcd and the control plane. Grow the control planes
+to an odd number, as [Add a control plane](../kubernetes/ha-control-plane.md#add-a-control-plane)
+explains.
 
 ## Install the new node
 
@@ -99,7 +98,18 @@ chalkctl install w2 --secrets=secrets.age --address=<address> --fingerprint=<fin
 A reinstall gives a node a new disk layout, new keys sealed to its TPM and a fresh VAR, from the
 node's config in the inventory's files. Everything on its disks is lost. chalkctl has no command
 that wipes or resets a whole node. An installed node runs no maintenance mode, so chalkctl
-cannot reach it for an install until it boots the installer again:
+cannot reach it for an install until it boots the installer again.
+
+!!! note "On the shipped variant, take the node out of Kubernetes before step 1"
+
+    Drain a worker with `kubectl drain w1`, and uncordon it with `kubectl uncordon w1` once it is
+    `Ready` again. Its kubelet registers its Node again. Take a control plane out of etcd with
+    `chalkctl etcd leave` before the reinstall, so that the others keep a correct membership. It
+    joins etcd as a new member.
+    [Reinstall a control plane](../kubernetes/ha-control-plane.md#reinstall-a-control-plane)
+    shows the commands.
+
+To reinstall `w1`:
 
 1. Boot the machine into the installer, through its BMC or its boot menu.
 2. Install the node, and let the installer replace what the disk holds:
@@ -117,18 +127,21 @@ A VM installed in place can boot the installer as a CD-ROM in the same way.
 [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) wipes and recreates one
 volume, not the node. [Reset a volume](storage-volumes.md#reset-a-volume) covers it.
 
-!!! note "On the shipped variant, take the node out of Kubernetes first"
-
-    Drain a worker with `kubectl drain w1`, and uncordon it with `kubectl uncordon w1` once it is
-    `Ready` again. Its kubelet registers its Node again. Take a control plane out of etcd with
-    `chalkctl etcd leave` before the reinstall, so that the others keep a correct membership. It
-    joins etcd as a new member.
-    [Reinstall a control plane](../kubernetes/ha-control-plane.md#reinstall-a-control-plane)
-    shows the commands.
-
 ## Remove a node from the cluster
 
-Removing a node takes it out of the inventory and the repository. Remove `w1` like this:
+Removing a node takes it out of the inventory and the repository.
+
+!!! note "On the shipped variant, remove the node from Kubernetes before step 1"
+
+    Drain a worker with `kubectl drain w1`. Take a control plane out of etcd with
+    `chalkctl etcd leave`, which refuses when the remaining voters would lose their quorum. Then
+    delete the Node with `kubectl delete node w1`.
+    [Remove a control plane](../kubernetes/ha-control-plane.md#remove-a-control-plane) covers the
+    control plane. A control plane whose machine is gone leaves through the others, as
+    [Replace a failed machine](../kubernetes/ha-control-plane.md#replace-a-failed-machine)
+    describes.
+
+To remove `w1`:
 
 1. Power the machine off.
 2. Delete its entry from `spec.nodes` in `chalkos.yaml`.
@@ -147,15 +160,13 @@ still derives from the secrets file and the node's name, so whoever holds the se
 still unlock that disk. chalkos has no command that erases a disk. To use the machine for another
 node, install that node with `--wipe-disk`.
 
-!!! note "On the shipped variant, remove the node from Kubernetes before you power it off"
-
-    Drain a worker with `kubectl drain w1`. Take a control plane out of etcd with
-    `chalkctl etcd leave`, which refuses when the remaining voters would lose their quorum. Then
-    delete the Node with `kubectl delete node w1`.
-    [Remove a control plane](../kubernetes/ha-control-plane.md#remove-a-control-plane) covers the
-    control plane. A control plane whose machine is gone leaves through the others, as
-    [Replace a failed machine](../kubernetes/ha-control-plane.md#replace-a-failed-machine)
-    describes.
+The removed node's node certificate also stays valid until it expires, a year after it was issued
+or last renewed. Nothing revokes it, and a control plane renews any node certificate of its node
+CA, so the node renews it again should the machine run and reach a control plane. On the shipped
+variant, the node's kubelet client certificate stays valid until it expires too. To cut the node
+off, rotate the OS CA, which gives every remaining node a certificate of a new node CA, and on the
+shipped variant the Kubernetes CA.
+[Choose what to rotate](access.md#choose-what-to-rotate) describes both rotations.
 
 ## Check that it worked
 
@@ -168,7 +179,8 @@ cp1: valid for the image node-metal (node on metal, root hash d871203debfe), con
 w2: valid for the image node-metal (node on metal, root hash d871203debfe), config a4bca06aaaed7a77a58ee95c8d576c74331c47feb48ced26acd9c97b15ee0615
 ```
 
-`chalkctl status w2` shows the new node's config, image and volumes, as [Install a node](install.md#check-that-it-worked) describes.
+`chalkctl status w2` shows the new node's config, image and volumes, as
+[Install a node](install.md#check-that-it-worked) describes.
 
 ## What next
 

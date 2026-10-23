@@ -48,7 +48,7 @@ The next run that upgrades the node uncordons it. To give the node back to the s
 that, uncordon it yourself:
 
 ```sh
-kubectl uncordon w2
+kubectl uncordon w1
 ```
 
 ## If something goes wrong

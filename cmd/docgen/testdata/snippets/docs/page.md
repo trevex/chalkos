@@ -109,5 +109,5 @@ YAML blocks that only include files, whose documents the homelab's check validat
 ```yaml
 --8<-- "examples/homelab/chalkos.yaml"
 
---8<-- "examples/homelab/cluster/bgp.yaml:peers"
+--8<-- "examples/homelab/cluster/bgp.yaml"
 ```

@@ -41,10 +41,13 @@ fixes.
 ## The node stops in the initrd, or a NIC or disk is missing
 
 The console shows the node stopping in the initrd because it finds no system disk. Or a network
-card or disk is missing from `ip link` or `lsblk` in a shell on the node. The image lacks the
-device's driver, or the firmware the driver loads, and `dmesg` names a firmware file that failed
-to load. A disk controller's driver must also be in the initrd. The image author adds it, as
-[Add software, drivers and kernel modules](../build/add-software.md) describes.
+card or disk is missing from `ip link` or `lsblk` in a shell on the node. `ip`, `lsblk` and
+`dmesg` are on images built with `chalkos.debug.tools`, as
+[Debug tools reach the node through kubectl debug](status-and-logs.md#debug-tools-reach-the-node-through-kubectl-debug)
+describes. The image lacks the device's driver, or the firmware the driver loads, and `dmesg`
+names a firmware file that failed to load. A disk controller's driver must also be in the initrd.
+The image author adds it, as [Add software, drivers and kernel modules](../build/add-software.md)
+describes.
 
 ## A volume is missing or not mounted
 
@@ -53,7 +56,7 @@ The volume table of `chalkctl status` shows `missing` or `not mounted`, and a li
 a controller without a driver. [Add storage volumes](storage-volumes.md#if-something-goes-wrong)
 covers each case.
 
-## apply-config refuses a storage change
+## The node refuses a storage change
 
 `chalkctl apply-config` fails with `the config takes chalkctl storage reset: ...` or
 `the config takes a reinstall of w1: ...`, and the node keeps its previous config. The change

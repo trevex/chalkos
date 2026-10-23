@@ -67,7 +67,7 @@ physical access for good, so keep the console session private.
 ### Make the prompt go away
 
 The prompt comes back at every boot until PCR 7 matches the sealed keys again. chalkos has no
-command that seals the keys to the new PCR 7, so two ways lead out:
+command that seals the keys to the new PCR 7. The prompt stops after one of these:
 
 - Undo the change: turn Secure Boot back on, restore the previous keys, or boot an image signed
   with the original db key. The keys unseal again at the next boot.
@@ -145,8 +145,12 @@ A node in maintenance mode answers `chalkctl logs` and `chalkctl reboot` with `-
 `--insecure`, so you can read why an install failed:
 
 ```sh
-chalkctl logs w1 --insecure --unit=chalkd.service
+chalkctl logs w1 --address=<address> --insecure --unit=chalkd.service
 ```
+
+`<address>` is the address the console shows. Without `--address`, chalkctl reaches the address
+the inventory names, which a node in maintenance mode may not have, because it runs without its
+config.
 
 ## Reinstall the node as the last resort
 
@@ -173,7 +177,9 @@ These are gone:
 
 The client files expire within their validity, a year by default, and nothing can issue new ones.
 Plan a move to a new cluster before then. Generate new secrets, build new images, install new
-nodes and move the workloads across. Back up the secrets file so this never happens.
+nodes and move the workloads across.
+[Back up what you cannot rebuild](workstation.md#back-up-what-you-cannot-rebuild) lists the
+secrets file among the files to keep in a second place.
 
 !!! note "On the shipped variant, Kubernetes access runs out too"
 

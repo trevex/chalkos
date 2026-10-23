@@ -98,7 +98,7 @@ storage and registries.
 
 </div>
 
-## When things go wrong
+## Diagnose and recover
 
 These pages read what a node does and bring back a node that fails.
 

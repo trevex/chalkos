@@ -39,10 +39,14 @@ kubectl --kubeconfig kubeconfig get nodes
 certificate puts its holder in `chalkos:cluster-admins`, which is bound to `cluster-admin`:
 
 ```console
-$ chalkctl kubeconfig --name=alice --ttl=2160h --out=alice.kubeconfig
+$ chalkctl kubeconfig --name=alice --ttl=2160h --out=alice.kubeconfig --secrets=secrets.age
 wrote alice.kubeconfig; its certificate is valid for 2160h0m0s
 ```
 
 `--name` becomes the Kubernetes user name, which authorisation and audit logs see. Every
 kubeconfig chalkctl issues grants full access; narrower roles need an authenticator you add to
 the API server.
+
+Nothing revokes a single kubeconfig. It works until its certificate expires or the Kubernetes CA
+is rotated, so a short `--ttl` makes it lapse without a rotation.
+[Revoke Kubernetes access](rotate-kubernetes-cas.md#revoke-kubernetes-access) covers the rotation.
