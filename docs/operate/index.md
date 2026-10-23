@@ -5,11 +5,13 @@ description: "Install, upgrade, recover and troubleshoot chalkos nodes"
 
 # Operate nodes
 
-These pages are for operators who run nodes with chalkctl and YAML files. They cover setting up
-a workstation, writing nodes' config, installing nodes, changing their config, adding and
-removing nodes, upgrading, managing access and certificates, adding storage, pulling images from
-registries, reading a node's status and logs, recovering a node and troubleshooting.
-Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernetes/index.md).
+These pages are for operators who install and run chalkos nodes with chalkctl, YAML files and
+signed images. They assume the shipped variant, which runs Kubernetes on each node;
+[Run Kubernetes](../kubernetes/index.md) adds the steps that set up and run the cluster.
+
+## Set up
+
+These pages go from a new workstation to the first installed node.
 
 <div class="grid cards" markdown>
 
@@ -36,6 +38,15 @@ Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernete
     Boot a physical machine or a VM into maintenance mode and install a node on it.
 
     [:octicons-arrow-right-24: Read](install.md)
+
+</div>
+
+## Day 2
+
+These pages cover nodes that run: config changes, new and removed nodes, upgrades, access,
+storage and registries.
+
+<div class="grid cards" markdown>
 
 -   :material-file-edit: __Change a node's config__
 
@@ -84,6 +95,14 @@ Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernete
     Give nodes the credentials of a private registry, and pull images through a mirror.
 
     [:octicons-arrow-right-24: Read](registries.md)
+
+</div>
+
+## When things go wrong
+
+These pages read what a node does and bring back a node that fails.
+
+<div class="grid cards" markdown>
 
 -   :material-text-box-search: __Status, logs and the console__
 
