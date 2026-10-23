@@ -5,9 +5,18 @@ description: "Build, customise, sign and publish chalkos images"
 
 # Build images
 
-These pages are for image authors who build a cluster's images in Nix. They start with a first
-flake, then cover variants and platforms, added software and drivers, the installer, signing for
-Secure Boot and publishing to a registry.
+These pages are for image authors who build a cluster's images in Nix with
+`chalkos.lib.mkImages`. They assume some Nix and NixOS modules, and no earlier knowledge of chalkos.
+
+Start here: [Your first image flake](first-image.md), then
+[Variants and platforms](variants-and-platforms.md), then
+[Add software, drivers and kernel modules](add-software.md). Every later page builds on the
+flake from these three.
+
+## Build
+
+These pages build an image a node can install: the flake, its variants and platforms, and the
+software it carries.
 
 <div class="grid cards" markdown>
 
@@ -36,6 +45,16 @@ Secure Boot and publishing to a registry.
     Add packages, services, kernel modules, firmware and debug tools within an appliance's limits.
 
     [:octicons-arrow-right-24: Read](add-software.md)
+
+</div>
+
+## Configure services
+
+These pages give the services in an image their configuration: a config kind for each node's
+YAML, the files and secrets a unit reads, and the effects and rules that apply when a delivery
+changes them.
+
+<div class="grid cards" markdown>
 
 -   :material-shape-plus: __Declare a config kind__
 
@@ -88,6 +107,15 @@ Secure Boot and publishing to a registry.
     node.
 
     [:octicons-arrow-right-24: Read](guard-changes.md)
+
+</div>
+
+## Ship
+
+These pages take an image to the nodes: the installer, signing for Secure Boot, publishing to a
+registry, and testing and rolling out an upgrade.
+
+<div class="grid cards" markdown>
 
 -   :material-disc: __Customise the installer__
 
