@@ -99,3 +99,15 @@ A block that only includes a section of a file, which the image build evaluates:
 ```nix
 --8<-- "examples/homelab/extensions/bgp.nix:kind"
 ```
+
+YAML blocks that only include files, whose documents the homelab's check validates:
+
+```yaml title="nodes/cp1.yaml"
+--8<-- "examples/homelab/nodes/cp1.yaml"
+```
+
+```yaml
+--8<-- "examples/homelab/chalkos.yaml"
+
+--8<-- "examples/homelab/cluster/bgp.yaml:peers"
+```

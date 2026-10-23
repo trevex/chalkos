@@ -42,8 +42,10 @@ func markdownFiles(dir string) ([]string, error) {
 // validation chalkctl uses for a node's files. A document is checked when its group is chalkos's
 // own, chalkos.dev or a subdomain of it, or one the schemas declare, so a kind that no image
 // declares fails. Other documents, such as Kubernetes objects, fragments without an apiVersion
-// and documents that are not objects pass unchecked. A block that is not YAML fails. Each problem
-// names the page's line its document starts on, or the line of a syntax error.
+// and documents that are not objects pass unchecked. A block of snippet includes alone reads as a
+// string, so it passes too: the example's own check validates the included files. A block that
+// is not YAML fails. Each problem names the page's line its document starts on, or the line of a
+// syntax error.
 func checkYAML(dir, schemasDir string) error {
 	schemas, err := schema.LoadSchemas(schemasDir)
 	if err != nil {

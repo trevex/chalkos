@@ -75,8 +75,8 @@ func TestCodeBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(blocks) != 9 {
-		t.Fatalf("%d yaml blocks, want 9", len(blocks))
+	if len(blocks) != 11 {
+		t.Fatalf("%d yaml blocks, want 11", len(blocks))
 	}
 	if blocks[0].title != "nodes/w1.yaml" || blocks[0].first != 6 {
 		t.Errorf("first block: title %q, first line %d", blocks[0].title, blocks[0].first)
