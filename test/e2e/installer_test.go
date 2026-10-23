@@ -6,13 +6,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/lab"
+	"github.com/trevex/chalkos/pkg/ociimage"
 )
 
 // consoleFingerprint waits for chalkd to print its certificate's fingerprint on the console.
@@ -28,53 +31,68 @@ func consoleFingerprint(t *testing.T, vm *lab.VM) string {
 }
 
 // TestInstallerInstallsOntoBlankDisk boots the test cluster's signed installer under Secure Boot
-// next to a blank disk, installs a node onto that disk from the parts of its image, signed
-// beforehand as chalkbuild signs it, which chalkctl sends from the host, cancels that install
-// while slot A is written and runs it again without --wipe-disk, and checks the node boots from
-// the disk installed: slot A holding the image under labels of its root hash, its UKI as
-// chalkos_1.efi, slot B empty, VAR mounted, STATE and VAR with two keyslots, chalkd over mTLS.
+// next to a blank disk and installs a node onto that disk from its image, signed beforehand as
+// chalkbuild signs it. The first install streams the image's parts from the host and is cancelled
+// while slot A is written. The install run again without --wipe-disk continues it, with the image
+// pulled from a registry on the host with the credentials of a Registry in the node's config. The
+// node then boots from the disk installed: slot A holding the image under labels of its root
+// hash, its UKI as chalkos_1.efi, slot B empty, VAR mounted, STATE and VAR with two keyslots,
+// chalkd over mTLS.
 func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS_ENROLLED", "CHALKLAB_SB_KEYS", "CHALKLAB_INSTALLER_DIR", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	root := rootHash(t, "CHALKLAB_IMAGE_DIR")
+	start := time.Now()
 	dir := vmDir(t)
+	reg := startImageRegistry(t, filepath.Join(dir, "registry"), "pull-s3cret")
 	installer := prepareDisk(t, dir, diskOpts{imageEnv: "CHALKLAB_INSTALLER_DIR", sign: true})
 	targetPath := filepath.Join(dir, "target.qcow2")
 	if err := lab.CreateDisk(context.Background(), targetPath, "16G"); err != nil {
 		t.Fatal(err)
 	}
 	n := startNode(t, lab.VMConfig{
-		Dir:          dir,
-		FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"),
-		Disks:        []lab.Disk{installer, {Path: targetPath, Serial: "chalk-target"}},
+		Dir:           dir,
+		FirmwareVars:  os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"),
+		Disks:         []lab.Disk{installer, {Path: targetPath, Serial: "chalk-target"}},
+		GuestForwards: []lab.GuestForward{{Guest: registryGuest, Host: reg.host}},
 	})
 
 	fingerprint := consoleFingerprint(t, n.vm)
-	if info := waitForChalkd(t, n, 5*time.Minute); !info.Installer || info.ImageId != "chalkos-installer" {
-		t.Fatalf("info = %+v, want the installer", info)
+	if info := waitForChalkd(t, n, 5*time.Minute); !info.Installer || info.ImageId != "chalkos-installer" || !info.PullsInstallImages {
+		t.Fatalf("info = %+v, want the installer, which pulls images", info)
 	}
-	install := []string{"install", "chalklab-target", "--fingerprint", fingerprint, "--image", signedImage(t, dir, "CHALKLAB_IMAGE_DIR")}
-	// An install cancelled while chalkd writes slot A of the laid-out target continues without
-	// --wipe-disk.
-	interrupted := cancelledInstall(t, n, install)
-	out, err := chalkctl(t, n, "base", install...)
-	if err != nil {
+	image := signedImage(t, dir, "CHALKLAB_IMAGE_DIR")
+	inv, layers := publish(t, reg, image, ociInventory{
+		base: "base", out: "install-oci.yaml", directory: "images/test-metal", repo: "chalkos/test",
+		files: "nodes/chalklab-target.yaml", registry: "nodes/chalklab-target-registry.yaml",
+	})
+	install := []string{"install", "chalklab-target", "--fingerprint", fingerprint, "--inventory", inv}
+	// An install streamed from the image's directory and cancelled while chalkd writes slot A of
+	// the laid-out target continues without --wipe-disk from the registry.
+	interrupted := cancelledInstall(t, n, "", append(slices.Clone(install), "--image", image))
+	// The store data, hash tree, UKI and boot loader, not the whole raw image.
+	m := regexp.MustCompile(`sending (\d+) bytes`).FindStringSubmatch(interrupted)
+	if m == nil {
+		t.Fatal("chalkctl did not say how many bytes it sends")
+	}
+	if sent, _ := strconv.ParseInt(m[1], 10, 64); sent >= 400<<20 {
+		t.Errorf("chalkctl sent %d bytes, want less than 400 MiB", sent)
+	}
+	pulled := time.Now()
+	out, err := chalkctl(t, n, "", install...)
+	if err != nil || !strings.Contains(out, "which the installer pulls from "+registryGuest+"/chalkos/test@sha256:") {
 		t.Fatalf("install: %v", err)
+	}
+	t.Logf("pulled and installed in %v", time.Since(pulled).Round(time.Second))
+	for _, mt := range []types.MediaType{ociimage.StoreType, ociimage.BootLoaderType} {
+		if _, ok := reg.served.Load(layers[mt]); !ok {
+			t.Errorf("the installer did not pull the %s layer from the registry", mt)
+		}
 	}
 	// The second run took the disk up where the first left it, not laid out anew.
 	logged, cancelLogged := context.WithTimeout(context.Background(), time.Minute)
 	defer cancelLogged()
 	if _, err := n.vm.Console.WaitFor(logged, regexp.MustCompile(`continuing the install on `)); err != nil {
 		t.Fatalf("the second install did not continue the first: %v", err)
-	}
-	for _, out := range []string{interrupted, out} {
-		// The store data, hash tree, UKI and boot loader, not the whole raw image.
-		m := regexp.MustCompile(`sending (\d+) bytes`).FindStringSubmatch(out)
-		if m == nil {
-			t.Fatal("chalkctl did not say how many bytes it sends")
-		}
-		if sent, _ := strconv.ParseInt(m[1], 10, 64); sent >= 400<<20 {
-			t.Errorf("chalkctl sent %d bytes, want less than 400 MiB", sent)
-		}
 	}
 
 	// The boot entry the installer added makes the VM boot the target.
@@ -94,16 +112,18 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 		"var_boots":       "1",
 	})
 	waitForNode(t, n, "chalklab-target")
-	if out, err := chalkctl(t, n, "base", "status", "chalklab-target"); err != nil || !strings.Contains(out, "(the inventory's)") ||
+	if out, err := chalkctl(t, n, "", "status", "chalklab-target", "--inventory", inv); err != nil || !strings.Contains(out, "(the inventory's)") ||
 		!strings.Contains(out, "image "+root[:12]+", booted from chalkos_1.efi\n") {
 		t.Errorf("status: %v", err)
 	}
+	t.Logf("the test took %v", time.Since(start).Round(time.Second))
 }
 
-// cancelledInstall runs chalkctl with the arguments until chalkd retires slot A of the target, before
-// it writes the store there, then kills it, and waits for chalkd to give the install up while it
-// receives the store. It returns what chalkctl printed.
-func cancelledInstall(t *testing.T, n *node, args []string) string {
+// cancelledInstall runs chalkctl with the inventory given, as chalkctl takes it, and the arguments
+// until chalkd retires slot A of the target, before it writes the store there, then kills it, and
+// waits for chalkd to give the install up while it receives the store. It returns what chalkctl
+// printed.
+func cancelledInstall(t *testing.T, n *node, inventory string, args []string) string {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -113,7 +133,7 @@ func cancelledInstall(t *testing.T, n *node, args []string) string {
 	}
 	done := make(chan result, 1)
 	go func() {
-		out, err := chalkctlContext(ctx, t, n, "base", args...)
+		out, err := chalkctlContext(ctx, t, n, inventory, args...)
 		done <- result{out, err}
 	}()
 	wait, stop := context.WithTimeout(context.Background(), 10*time.Minute)

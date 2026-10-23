@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/ociimage"
 )
@@ -50,7 +51,10 @@ func TestUpgrade(t *testing.T) {
 	t.Logf("installed after %v", time.Since(start).Round(time.Second))
 
 	nextImage, badImage := signedImage(t, dir, "CHALKLAB_UPGRADE_IMAGE_DIR"), signedImage(t, dir, "CHALKLAB_UNHEALTHY_IMAGE_DIR")
-	pullInventory, storeDigest := publish(t, reg, nextImage)
+	pullInventory, layers := publish(t, reg, nextImage, ociInventory{
+		base: "upgrade", out: "upgrade-oci.yaml", directory: "images/test-upgrade-metal", repo: "chalkos/test-upgrade",
+		files: "nodes/chalklab/farewell.yaml", registry: "nodes/chalklab/registry.yaml",
+	})
 	pinnedPrefix := registryGuest + "/chalkos/test-upgrade@sha256:"
 	upgraded := time.Now()
 	out, err := chalkctl(t, nil, "", "upgrade", "--inventory", pullInventory, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
@@ -60,7 +64,7 @@ func TestUpgrade(t *testing.T) {
 		!strings.Contains(out, "upgraded 1 node to "+nextHash[:12]) {
 		t.Fatalf("upgrade to %s: %v", nextHash[:12], err)
 	}
-	if _, ok := reg.served.Load(storeDigest); !ok {
+	if _, ok := reg.served.Load(layers[ociimage.StoreType]); !ok {
 		t.Error("the node did not pull the store from the registry")
 	}
 	t.Logf("pulled and upgraded to %s in %v", nextHash[:12], time.Since(upgraded).Round(time.Second))
@@ -112,27 +116,44 @@ func replaceOnce(t *testing.T, s, old, new string) string {
 	return strings.Replace(s, old, new, 1)
 }
 
-// publish pushes the image directory to the registry as chalkos/test-upgrade:v1 and writes an
-// inventory beside the fixtures' upgrade inventory that names the image there by tag. The node
-// gets a Registry with the registry's credentials, which the upgrade delivers, and which allows
-// plain HTTP to it. chalkctl on the host reaches the registry at the node's address of it through
-// the registry itself as its HTTP proxy, as the host has no route to 10.0.2.100, and authenticates
-// with a docker config. It returns the inventory and the digest of the image's store layer.
-func publish(t *testing.T, reg *imageRegistry, imageDir string) (string, string) {
+// ociInventory says how publish derives, from one of the fixtures' inventories, an inventory that
+// names an image in the registry.
+type ociInventory struct {
+	// base names the fixtures' inventory, as inventories names it, and out the file publish writes
+	// beside it.
+	base, out string
+	// directory is the image directory whose source the image in the registry replaces, and repo
+	// the repository the image is pushed to, as repo:v1.
+	directory, repo string
+	// files is the last file of the node's list, which registry, the file publish writes the
+	// Registry and its Secret to, follows; both are relative to the inventory.
+	files, registry string
+}
+
+// publish pushes the image directory to the registry and writes the inventory o describes. The
+// node gets a Registry with the registry's credentials, which allows plain HTTP to it. chalkctl on
+// the host reaches the registry at the node's address of it through the registry itself as its
+// HTTP proxy, as the host has no route to 10.0.2.100, and authenticates with a docker config. It
+// returns the inventory and the digests of the image's store and boot-loader layers.
+func publish(t *testing.T, reg *imageRegistry, imageDir string, o ociInventory) (string, map[types.MediaType]string) {
 	t.Helper()
 	img, closeImage, err := ociimage.FromDirectory(context.Background(), imageDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closeImage()
-	reg.push(t, img, "chalkos/test-upgrade", "v1")
-	l, err := ociimage.Layer(img, ociimage.StoreType)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := l.Digest()
-	if err != nil {
-		t.Fatal(err)
+	reg.push(t, img, o.repo, "v1")
+	layers := map[types.MediaType]string{}
+	for _, mt := range []types.MediaType{ociimage.StoreType, ociimage.BootLoaderType} {
+		l, err := ociimage.Layer(img, mt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := l.Digest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		layers[mt] = d.String()
 	}
 	docker := t.TempDir()
 	auth := base64.StdEncoding.EncodeToString([]byte("e2e:" + reg.password))
@@ -151,18 +172,20 @@ kind: Secret
 metadata: {name: registry}
 spec: {data: {password: "` + reg.password + `"}}
 `
-	if err := os.WriteFile(filepath.Join(fixtures, "chalklab", "nodes", "chalklab", "registry.yaml"), []byte(registryDocs), 0o644); err != nil {
+	base := inventoryPath(o.base)
+	dir := filepath.Dir(base)
+	if err := os.WriteFile(filepath.Join(dir, o.registry), []byte(registryDocs), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(inventoryPath("upgrade"))
+	data, err := os.ReadFile(base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	inv := replaceOnce(t, string(data), "{source: {directory: images/test-upgrade-metal}}", `{source: {oci: "`+registryGuest+`/chalkos/test-upgrade:v1"}}`)
-	inv = replaceOnce(t, inv, "nodes/chalklab/farewell.yaml]", "nodes/chalklab/farewell.yaml, nodes/chalklab/registry.yaml]")
-	path := filepath.Join(fixtures, "chalklab", "upgrade-oci.yaml")
+	inv := replaceOnce(t, string(data), "{source: {directory: "+o.directory+"}}", `{source: {oci: "`+registryGuest+"/"+o.repo+`:v1"}}`)
+	inv = replaceOnce(t, inv, o.files+"]", o.files+", "+o.registry+"]")
+	path := filepath.Join(dir, o.out)
 	if err := os.WriteFile(path, []byte(inv), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return path, store.String()
+	return path, layers
 }
