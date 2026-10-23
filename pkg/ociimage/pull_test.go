@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -341,6 +342,66 @@ func TestPullRefusesALongerLayer(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), "layer is longer than "+fmt.Sprint(len(data))+" bytes") || !strings.Contains(err.Error(), ref) {
 				t.Errorf("longer layer: %v", err)
+			}
+		})
+	}
+}
+
+// metadataOf is the metadata.json of a node image on metal of the root hash.
+func metadataOf(rootHash string) []byte {
+	return []byte(`{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "metal", "rootHash": "` + rootHash + `", "kinds": []}`)
+}
+
+// TestPullContract fetches the manifest, the header and the contract layer before any part, and
+// then reads the parts, the boot loader last as an install pulls it, without fetching the
+// manifest again.
+func TestPullContract(t *testing.T) {
+	host, manifests := ocitest.CountingRegistry(t)
+	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
+	c := ociimage.Contract{
+		Metadata: metadataOf(h.RootHash), Schemas: map[string][]byte{"a.json": []byte("{}")},
+		Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}, ImageJSON: []byte(`{"version": "1.37.1"}`),
+	}
+	ref := ocitest.Push(t, ocitest.Image(t, h, c), host+"/lab/node-metal:v1")
+	loader := sha256.Sum256([]byte("boot loader"))
+	parts := append(testParts(), ociimage.Part{MediaType: ociimage.BootLoaderType, Size: int64(len("boot loader")), SHA256: loader[:]})
+	before := manifests.Load()
+	p, err := ociimage.NewPull(context.Background(), ref, authn.Anonymous, true, h, parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.Contract()
+	if err != nil || !reflect.DeepEqual(got, c) {
+		t.Errorf("Contract = %+v, %v; want %+v", got, err, c)
+	}
+	if all, err := io.ReadAll(p); err != nil || string(all) != "storehash treeukiboot loader" {
+		t.Errorf("the parts = %q, %v", all, err)
+	}
+	if n := manifests.Load() - before; n != 1 {
+		t.Errorf("fetched %d manifests, want 1", n)
+	}
+}
+
+// TestPullContractRefuses refuses an image whose header is not the one wanted, and one whose
+// contract's metadata.json describes another image than its header, naming the reference.
+func TestPullContractRefuses(t *testing.T) {
+	host := ocitest.Registry(t)
+	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
+	for name, tc := range map[string]struct{ metadataRoot, wantPlatform, want string }{
+		"another-header":   {strings.Repeat("ab", 32), "kvm", "its header describes"},
+		"another-metadata": {strings.Repeat("cd", 32), "metal", `the contract layer's metadata.json names the root hash "cdcd`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := ociimage.Contract{Metadata: metadataOf(tc.metadataRoot), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
+			ref := ocitest.Push(t, ocitest.Image(t, h, c), host+"/lab/"+name+":v1")
+			want := h
+			want.Platform = tc.wantPlatform
+			p, err := ociimage.NewPull(context.Background(), ref, authn.Anonymous, true, want, testParts())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.Contract(); err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), ref) {
+				t.Errorf("Contract = %v, want an error naming %s and %q", err, ref, tc.want)
 			}
 		})
 	}

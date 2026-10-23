@@ -11,8 +11,11 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // manifestTimeout bounds the fetch of a pulled image's manifest and header; its layers take as
@@ -37,6 +40,9 @@ type Part struct {
 // and SHA-256 as its digest. A layer is fetched once the one before it was read to its end, and
 // ends after exactly its part's size, once go-containerregistry checked its digest. A layer whose
 // registry sends no data for two minutes is canceled. Every error names the reference.
+//
+// Contract fetches the manifest, the header and the contract layer up front, as an install needs
+// them before it reads a part.
 type Pull struct {
 	ctx    context.Context
 	ref    name.Digest
@@ -216,42 +222,76 @@ func (p *Pull) open() error {
 	return nil
 }
 
-// check fetches the manifest, by its digest, and the header, and refuses an image of another
-// header than the one wanted, or whose layer of a part's media type has another size or digest
-// than the part.
+// check fetches the manifest and the header and refuses them as image does, within
+// manifestTimeout.
 func (p *Pull) check() error {
 	ctx, cancel := context.WithTimeout(p.ctx, manifestTimeout)
 	defer cancel()
+	_, err := p.image(ctx)
+	return err
+}
+
+// image fetches the manifest, by its digest, and the header with ctx, and refuses an image of
+// another header than the one wanted, or whose layer of a part's media type has another size or
+// digest than the part. Its layers are fetched with ctx too.
+func (p *Pull) image(ctx context.Context) (v1.Image, error) {
 	desc, err := p.puller.Get(ctx, p.ref)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !desc.MediaType.IsImage() {
-		return fmt.Errorf("it is a %s, not an image manifest; a chalkos image is one manifest", desc.MediaType)
+		return nil, fmt.Errorf("it is a %s, not an image manifest; a chalkos image is one manifest", desc.MediaType)
 	}
 	img, err := desc.Image()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	h, err := ReadHeader(img)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if h != p.want {
-		return fmt.Errorf("its header describes %+v, but the image to install is %+v", h, p.want)
+		return nil, fmt.Errorf("its header describes %+v, but the image to install is %+v", h, p.want)
 	}
 	m, err := img.Manifest()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, part := range p.parts {
 		d, err := find(m, part.MediaType)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if want := "sha256:" + hex.EncodeToString(part.SHA256); d.Digest.String() != want || d.Size != part.Size {
-			return fmt.Errorf("its %s layer is %s of %d bytes, but the image to install has %s of %d", part.MediaType, d.Digest, d.Size, want, part.Size)
+			return nil, fmt.Errorf("its %s layer is %s of %d bytes, but the image to install has %s of %d", part.MediaType, d.Digest, d.Size, want, part.Size)
 		}
 	}
-	return nil
+	return img, nil
+}
+
+// Contract fetches the manifest and the header, refusing them as the first read does, and reads
+// the image's contract layer, refusing one whose metadata.json describes another image than the
+// header. Reads after it fetch the manifest no more.
+func (p *Pull) Contract() (Contract, error) {
+	ctx, cancel := context.WithTimeout(p.ctx, manifestTimeout)
+	defer cancel()
+	img, err := p.image(ctx)
+	if err != nil {
+		return Contract{}, fmt.Errorf("pull %s: %w", p.ref, err)
+	}
+	p.checked = true
+	// The remote image fetches its layers with the context of the manifest's fetch, so the
+	// contract layer is read before that context ends.
+	c, err := ReadContract(img)
+	if err != nil {
+		return Contract{}, fmt.Errorf("pull %s: %w", p.ref, err)
+	}
+	md, err := schema.ParseMetadata(c.Metadata)
+	if err != nil {
+		return Contract{}, fmt.Errorf("pull %s: the contract layer's %w", p.ref, err)
+	}
+	if err := describes(md, p.want); err != nil {
+		return Contract{}, fmt.Errorf("pull %s: the contract layer's %w", p.ref, err)
+	}
+	return c, nil
 }
