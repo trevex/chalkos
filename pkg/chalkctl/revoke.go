@@ -291,7 +291,7 @@ func revokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx
 	for _, name := range controlPlanes {
 		st, err := status(ctx, name)
 		if err != nil {
-			bootstrapped = true
+			bootstrapped = bootstrapped || !errors.As(err, new(notInstalledYet))
 			why = append(why, fmt.Sprintf("%s: %v", name, err))
 			continue
 		}
@@ -320,6 +320,50 @@ func revokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx
 		return map[string]*nodev1.RevokedNode{}, nil
 	}
 	return nil, fmt.Errorf("no control-plane node said which nodes are revoked (%s)", strings.Join(why, "; "))
+}
+
+// notInstalledYet is the error of a control plane that did not answer as an installed node, as
+// before it is installed: revokedNodesOf counts it among those not bootstrapped.
+type notInstalledYet struct{ error }
+
+func (n notInstalledYet) Unwrap() error { return n.error }
+
+// installNotRevoked refuses to install a node under a name a control plane lists as revoked, or
+// while control planes were bootstrapped and none says which nodes are revoked. A control plane
+// that does not answer as an installed node counts as not installed yet, so the cluster's first
+// nodes install while the others wait in maintenance mode or are off.
+func installNotRevoked(ctx context.Context, t *target) error {
+	controlPlanes, err := t.cluster.nodesOf(identity.KindControlPlane, t.name)
+	if err != nil {
+		return err
+	}
+	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
+		ct, err := targetIn(t.cluster, nodeCommand{}, name, t.creds)
+		if err != nil {
+			return nil, err
+		}
+		conn, err := dialInstalled(ct)
+		if err != nil {
+			return nil, notInstalledYet{err}
+		}
+		defer conn.Close()
+		resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		switch connect.CodeOf(err) {
+		case connect.CodeUnavailable, connect.CodeDeadlineExceeded:
+			return nil, notInstalledYet{nodeError(err, name)}
+		}
+		if err != nil {
+			return nil, nodeError(err, name)
+		}
+		return resp.Msg, nil
+	})
+	if err != nil {
+		return fmt.Errorf("%w; install installs %s only once one does, or with --force", err, t.name)
+	}
+	if n, ok := list[t.name]; ok {
+		return fmt.Errorf("%s is revoked %s, and install installs it only once chalkctl node unrevoke %s lets it back in, or with --force", t.name, revokedSince(n), t.name)
+	}
+	return nil
 }
 
 // everBootstrapped reports whether a control plane in the Kubernetes state was bootstrapped,

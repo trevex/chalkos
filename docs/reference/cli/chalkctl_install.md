@@ -31,7 +31,13 @@ and dbx. It writes the image to the disk the node's SystemDisk names: a disk on 
 no signature, or one holding an unfinished install of the node, which it continues; any other
 disk only with --wipe-disk. The node reboots into the installed image. The node certificate
 carries the node's name in the inventory, which stays the node's name until it is reinstalled.
-The command needs the secrets file.
+
+A name revoked with chalkctl node revoke is refused until chalkctl node unrevoke lets it back in:
+chalkctl first asks the other control planes of the inventory for the revoked nodes. It also
+refuses while control planes were bootstrapped and none says which nodes are revoked. A control
+plane that does not answer as an installed node counts as not installed yet, so the cluster's
+first nodes install while the others wait. --force installs without asking. The command needs the
+secrets file.
 
 ```
 chalkctl install <node> [flags]
@@ -54,6 +60,7 @@ chalkctl install <node> [flags]
 ```
       --address string         address of the node's chalkd, host or host:port (default the node's address in the inventory)
       --fingerprint string     SHA-256 fingerprint the node prints on its console in maintenance mode
+      --force                  install the node without asking the control planes whether its name is revoked
   -h, --help                   help for install
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --image string           image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory, which chalkctl sends (default the node's image in the inventory: from its directory, or from a registry, which the installer pulls)

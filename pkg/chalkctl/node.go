@@ -283,7 +283,7 @@ type installFlags struct {
 	node                nodeCommand
 	pin                 pinning
 	image, passwordFile string
-	wipeDisk            bool
+	wipeDisk, force     bool
 }
 
 func (a *app) installCommand() *cobra.Command {
@@ -300,6 +300,7 @@ func (a *app) installCommand() *cobra.Command {
 	fs.StringVar(&f.image, "image", "", "image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory, which chalkctl sends (default the node's image in the inventory: from its directory, or from a registry, which the installer pulls)")
 	fs.BoolVar(&f.wipeDisk, "wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
 	fs.StringVar(&f.passwordFile, "password-file", "", "file holding the password of a node whose fallback is a password")
+	fs.BoolVar(&f.force, "force", false, "install the node without asking the control planes whether its name is revoked")
 	return cmd
 }
 
@@ -336,6 +337,11 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	}
 	if info.Msg.Mode != nodev1.Mode_MODE_MAINTENANCE {
 		return fmt.Errorf("%s at %s is installed already", t.name, t.addr)
+	}
+	if !f.force {
+		if err := installNotRevoked(ctx, t); err != nil {
+			return err
+		}
 	}
 
 	header := &nodev1.InstallHeader{CaCertificate: []byte(t.secrets.OSCABundle()), WipeDisk: f.wipeDisk}

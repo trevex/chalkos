@@ -256,7 +256,13 @@ and dbx. It writes the image to the disk the node's SystemDisk names: a disk on 
 no signature, or one holding an unfinished install of the node, which it continues; any other
 disk only with --wipe-disk. The node reboots into the installed image. The node certificate
 carries the node's name in the inventory, which stays the node's name until it is reinstalled.
-The command needs the secrets file.`
+
+A name revoked with chalkctl node revoke is refused until chalkctl node unrevoke lets it back in:
+chalkctl first asks the other control planes of the inventory for the revoked nodes. It also
+refuses while control planes were bootstrapped and none says which nodes are revoked. A control
+plane that does not answer as an installed node counts as not installed yet, so the cluster's
+first nodes install while the others wait. --force installs without asking. The command needs the
+secrets file.`
 
 const installExample = `  # Install cp1, comparing the certificate with the fingerprint on its console.
   chalkctl install cp1 --secrets secrets.age \

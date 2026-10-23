@@ -3,11 +3,14 @@ package chalkctl
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -17,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
@@ -333,5 +337,62 @@ func TestEveryControlPlaneReadsRevoked(t *testing.T) {
 				t.Errorf("%v: %v, want %q", tc.controlPlanes, err, w)
 			}
 		}
+	}
+}
+
+// installLab is the rotation lab whose inventory reaches the control planes where they serve,
+// for installs of n1.
+func installLab(t *testing.T) *rotationLab {
+	t.Helper()
+	l := newRotationLab(t)
+	data, err := os.ReadFile(l.ta.inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := strings.NewReplacer("address: 10.0.0.11,", "address: "+l.addrs["cp1"]+",", "address: 10.0.0.12,", "address: "+l.addrs["cp2"]+",").Replace(string(data))
+	writeFile(t, l.ta.inventory, inv)
+	writeImageDir(t, filepath.Join(l.ta.dir, "images", "plain-metal"), "plain", "metal", testRootHash, false)
+	return l
+}
+
+// install installs n1 in the lab, on a node in maintenance mode started for it.
+func (l *rotationLab) install(args ...string) error {
+	s := maintenanceNode()
+	s.InPlace = func(context.Context, install.Request) error { return nil }
+	addr := l.ta.startNode(l.t, s)
+	return l.ta.run(context.Background(), append([]string{"install", "n1", "--insecure", "--inventory", l.ta.inventory, "--address", addr}, args...))
+}
+
+// install refuses a name a control plane lists as revoked, and installs while bootstrapped control
+// planes cannot say which are revoked only with --force. A control plane that does not answer
+// counts as one not installed yet, as while a cluster's nodes are installed one by one.
+func TestInstallRefusesRevokedNames(t *testing.T) {
+	l := installLab(t)
+	l.revoked = []*nodev1.RevokedNode{{Name: "n1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}}
+	err := l.install()
+	if err == nil || !strings.Contains(err.Error(), "n1 is revoked since 2026-10-23T12:00:00Z") || !strings.Contains(err.Error(), "chalkctl node unrevoke n1") || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("installing a revoked name: %v", err)
+	}
+	if err := l.install("--force"); err != nil {
+		t.Errorf("--force: %v", err)
+	}
+
+	l.revoked = nil
+	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused"}
+	l.unreported = map[string]bool{"cp2": true}
+	if err := l.install(); err == nil || !strings.Contains(err.Error(), "no control-plane node said which nodes are revoked") || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("installing without the list: %v", err)
+	}
+
+	l.revokedErr = nil
+	l.unreported = nil
+	if err := l.install(); err != nil {
+		t.Errorf("installing a name that is not revoked: %v", err)
+	}
+	// The cluster's first nodes: one control plane is not installed yet, the other not bootstrapped.
+	l.nodes["cp1"].down = true
+	l.states = map[string]string{"cp2": "waiting for bootstrap"}
+	if err := l.install(); err != nil {
+		t.Errorf("installing before any control plane was bootstrapped: %v", err)
 	}
 }
