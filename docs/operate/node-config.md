@@ -340,6 +340,10 @@ config the node runs. `chalkctl validate w1` checks `w1` alone.
 It also runs the change rules of the image that read no facts about the node. It warns of a node
 whose `SystemDisk` leaves STATE unencrypted.
 
+`validate` checks no signature, so CI needs no db key. When the inventory names a signed copy, a CI
+job links the unsigned build to that directory instead, as with
+`nix build .#node-metal -o images/node-metal-signed`.
+
 ## When validate refuses the config
 
 `validate` names each node whose config is invalid and exits with status 1. A misspelled field

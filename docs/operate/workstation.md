@@ -297,8 +297,10 @@ Back up these files to a place apart from the workstation:
   it.
 - The password of each node whose encryption fallback is a password. Nothing else holds it.
 
-On the shipped variant, the cluster's state lives in etcd on the control planes.
-[Plan backups](../kubernetes/production-cluster.md#plan-backups) covers etcd and the workloads.
+On the shipped variant, the cluster's state lives in etcd on the control planes. chalkos has no
+etcd backup or restore yet; the [roadmap](../contribute/roadmap.md#smaller-items) lists it. Three
+control planes survive the loss of a machine, but they do not bring back an object that someone
+deleted. Back up what the workloads keep with a tool that works at the Kubernetes level.
 
 ## Check that it worked
 

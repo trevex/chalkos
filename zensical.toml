@@ -41,7 +41,6 @@ nav = [
     "kubernetes/upgrade-kubernetes.md",
     "kubernetes/rotate-kubernetes-cas.md",
     "kubernetes/troubleshooting.md",
-    "kubernetes/production-cluster.md",
   ] },
   { "Build images" = [
     "build/index.md",
