@@ -54,6 +54,9 @@ The diagram shows one node's upgrade:
 5. A boot that is not healthy within the image's health timeout, 300 seconds by default, reboots.
    Each boot uses a try. After the last try, systemd-boot boots the previous image.
 
+An upgrade leaves the node's boot loader as it is. Only an install writes systemd-boot, and chalkd
+refuses an upgrade that carries a boot loader.
+
 [Upgrades](../how-it-works/node/upgrades.md) and
 [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md) explain the mechanism.
 
@@ -211,6 +214,16 @@ it too. With an operator client file the upgrade runs, prints
 `config not delivered: the operator role cannot deliver config; each node carries its own over`,
 and each node checks the config it runs against the new image and keeps it for that image. A
 reader client file cannot upgrade.
+
+Before it asks for any password or drains a node, chalkctl asks the first node it upgrades for its
+config. A node that refuses to show its config to the credentials would refuse config with the
+upgrade too. The run then delivers no config to any node and prints
+`<node> refuses to show its config to these credentials; config not delivered, each node carries
+its own over`.
+
+Without an inventory, chalkctl has no config to send. An upgrade with `--image` and
+`--address <node>=<address>`, run outside the inventory's directory, prints
+`<node>: no inventory to compare the config with; the node carries its own over` for each node.
 
 An image the run leaves staged, with `--no-reboot`, keeps its own config until the node boots it.
 [Deliver config to a staged image with

@@ -556,6 +556,23 @@ not start by themselves;
 [`chalklab start`](../reference/cli/chalklab_start.md) starts them again with their disks, TPM
 state and ports.
 
+## Fix a lab that does not start
+
+`chalklab create` and `chalklab start` run each node as a QEMU virtual machine on KVM. Their
+errors name the cause:
+
+- `/dev/kvm does not exist: ...`: the machine has no hardware virtualisation, it is disabled in
+  the firmware, or the kvm module is not loaded. chalklab needs an x86-64 machine with KVM.
+- `you may not open /dev/kvm: ...`: join the `kvm` group and log in again. On NixOS, add the group
+  to `users.users.<you>.extraGroups`.
+- `<node> did not come up in maintenance mode: ...`: the VM booted, but chalkd did not print its
+  fingerprint. The error names the console log, and `chalklab console <node>` shows it.
+- `the lab <name> exists in ...; chalklab destroy removes it`: a lab of the lab file's name
+  exists. `chalklab start` starts it again, and `chalklab destroy` removes it.
+
+VMs that start but run slowly, or stop, usually lack memory. A lab gives a control plane 3072 MiB
+and each other node 2048 MiB. `chalklab status` shows which VMs run.
+
 ## What next
 
 - [What is chalkos](what-is-chalkos.md) puts what this tutorial showed into one model.

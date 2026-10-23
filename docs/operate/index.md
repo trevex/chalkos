@@ -8,7 +8,7 @@ description: "Install, upgrade, recover and troubleshoot chalkos nodes"
 These pages are for operators who run nodes with chalkctl and YAML files. They cover setting up
 a workstation, writing nodes' config, installing nodes, changing their config, adding and
 removing nodes, upgrading, managing access and certificates, adding storage, pulling images from
-registries, recovering a node and troubleshooting.
+registries, reading a node's status and logs, recovering a node and troubleshooting.
 Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernetes/index.md).
 
 <div class="grid cards" markdown>
@@ -85,11 +85,19 @@ Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernete
 
     [:octicons-arrow-right-24: Read](registries.md)
 
+-   :material-text-box-search: __Status, logs and the console__
+
+    ---
+
+    Read what `chalkctl status` reports, follow a unit's journal and reach a node's tools.
+
+    [:octicons-arrow-right-24: Read](status-and-logs.md)
+
 -   :material-lifebuoy: __Recover a node__
 
     ---
 
-    Bring back a node that does not unlock, boot, renew its certificate or rejoin.
+    Bring back a node that does not unlock, boot or renew, or whose secrets file is lost.
 
     [:octicons-arrow-right-24: Read](recover-node.md)
 
@@ -97,7 +105,7 @@ Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernete
 
     ---
 
-    Find out why a node or the cluster misbehaves, starting from `chalkctl status`.
+    Find the cause of a node's symptom and the page that fixes it.
 
     [:octicons-arrow-right-24: Read](troubleshooting.md)
 

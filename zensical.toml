@@ -28,6 +28,7 @@ nav = [
     "operate/access.md",
     "operate/storage-volumes.md",
     "operate/registries.md",
+    "operate/status-and-logs.md",
     "operate/recover-node.md",
     "operate/troubleshooting.md",
   ] },

@@ -1,239 +1,134 @@
 ---
 title: "Troubleshooting"
-description: "Find out why a node or the cluster misbehaves, starting from chalkctl status"
+description: "Find the cause of a node's symptom and the page that fixes it"
 ---
 
 # Troubleshooting
 
-Most problems on a chalkos node show up in one of four places: the node's status, the journal of
-one of its units, its console, or a shell inside it. This page explains how to read each of
-them, then lists common symptoms with their cause and fix. When a symptom points at a node that
-does not unlock, boot, renew or rejoin, [Recover a node](recover-node.md) has the fix.
+This page is for an operator who sees a node misbehave and does not know why yet. Each section
+starts from a symptom, names the likely cause and links the page with the fix. Most symptoms show
+in `chalkctl status` first. [Status, logs and the console](status-and-logs.md) explains each of its
+lines.
 
 ## Before you begin
 
-- A reader client file or the
-  secrets file, for `chalkctl status` and
-  `chalkctl logs`.
-- The node's console, through its BMC, in person, or with `chalklab console` in a
-  lab.
-- A kubeconfig, for the shell inside a node.
+You need a reader client file or the secrets file, for `chalkctl status` and `chalkctl logs`. For
+a symptom that shows before chalkd serves, you need the node's console: its BMC, a screen, or
+`chalklab console` in a lab.
 
-## Read the node's status
-
-[`chalkctl status`](../reference/cli/chalkctl_status.md) is the first command to run. It asks the
-node's chalkd for everything chalkd checks, and compares the
-node's config and image with the inventory. A healthy worker:
-
-```console
-$ chalkctl status w1
-config b02445f30a5a8197dac34ce49e8af8c62f9974d2c7b8dbf02ffb1d54cd620a65 (the inventory's)
-platform metal (the inventory's)
-image 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), booted from chalkos_2.efi
-VOLUME    DISK      MOUNT POINT        STATE
-longhorn  longhorn  /var/lib/longhorn  mounted
-var       system    /var               mounted
-kubernetes worker: joined, node ready: True
-certificates:
-  node             expires 2027-10-10
-  OS CA            expires 2035-09-15
-  Kubernetes CA    expires 2035-09-15
-  kubelet client   expires 2027-08-21
-  kubelet serving  expires 2027-08-21
-trust:
-  OS CA          e7b462f19ed536c1
-  Kubernetes CA  980328b6f68680b0
-time: synchronised to 192.53.103.108, offset +0.000214 s
-```
-
-Read it from the top:
-
-| Line | Says | When it is wrong |
-| --- | --- | --- |
-| `config` | The version of the config the node runs, the SHA-256 of its documents, and whether it is the inventory's; `none` on a node installed before config documents. | `not the inventory's; chalkctl apply-config w1 delivers it`: the node's files changed since the last delivery. `cannot read the config the inventory gives it: ...`: chalkctl could not build the node's documents from the inventory, for the reason it names. |
-| `platform` | The platform the image was built for. | A mismatch with the platform of the node's image in the inventory: changing a node's platform is a reinstall. |
-| `image` | The image booted, by the first 12 hex characters of its root hash with the tag and revision it was built from when the node's record knows them, its boot entry, and `not found healthy yet` while the health check runs. | `upgrade to ... failed: rolled back to ...`, followed by the failed boot's log lines: see [Upgrade nodes](upgrade.md#a-node-that-fails-its-health-check-rolls-back). |
-| `its store's root hash is ...` | Shown only when the node runs another build than the directory of its image in the inventory, whose `metadata.json` names the root hash. | `chalkctl upgrade --nodes w1 installs that image`: the image was rebuilt since the node's upgrade. `it has ... staged`: the node boots that build with its next reboot. |
-| `VOLUME` table | Each volume, its disk, mount point and state. | `missing` or `not mounted`; a `disk <name>: ...` line after the table names the disk's problem. |
-| `kubernetes` | The node's kind and state, whether its Node is Ready, its part in the VIP and its control plane's state. | Any state other than `bootstrapped` or `joined`, or one of them followed by `: <problem>`; the table of symptoms below lists them. |
-| `certificates:` | Every certificate the node holds or issues, with its expiry. | A third column names what needs doing. |
-| `trust:` | The CAs and keys the node trusts, by fingerprint; `(issues)` marks the one that issues. | Two fingerprints outside a rotation. |
-| `time` | Whether chrony synchronised the clock, to which source and with what offset. | `not synchronised`. |
-| `failed unit` | Each systemd unit that failed in this boot. | Any line: read that unit's log. |
-
-A control plane's Kubernetes line adds `vip holder` or `vip standby` when
-`vip.addresses` is set, and the
-control plane's state, `current` when its API server and etcd serve the node's certificates and the
-API server answers ready.
-
-## Read a unit's log
-
-[`chalkctl logs`](../reference/cli/chalkctl_logs.md) prints a node's journal of the current
-boot, of every unit or of `--unit` alone; `-f` follows it:
+Run `chalkctl status` on the node first:
 
 ```sh
-chalkctl logs <node> --unit=<unit> -f
+chalkctl status w1
 ```
 
-The units that matter most:
+Then find the symptom below.
 
-| Unit | Does |
-| --- | --- |
-| `chalkd.service` | The node agent: installs, upgrades, config, certificates, joining etcd, the VIP. |
-| `chalkos-config.service` | Applies the node's config at boot: hostname, network, time servers, the documents services read. |
-| `chalkos-kubernetes.service` | Picks the node's addresses and writes the Kubernetes certificates and configuration before the kubelet starts. |
-| `chalkos-health.service` | Decides whether a boot after an upgrade is healthy. |
-| `kubelet.service` | The kubelet, which runs the static pods of etcd and the control plane, and every pod. |
-| `containerd.service` | The container runtime: image pulls and mirrors. |
-| `chalkos-registry-credentials.service` | Writes the registry credentials the kubelet hands to containerd for pods' image pulls. |
+## The console asks for a passphrase
 
-`chalkctl logs` shows the current boot only. For a boot that fell back after an upgrade, the health
-check keeps the last 30 lines that chalkd and the check logged on
-VAR, and `chalkctl status` shows them.
+The TPM did not unseal the keys of STATE, usually after a change to Secure Boot or the firmware.
+Type the node's recovery key from `chalkctl recovery-key`.
+[The console asks for a passphrase at boot](recover-node.md#the-console-asks-for-a-passphrase-at-boot)
+explains the causes and how to make the prompt go away.
 
-## Watch the console
-
-The console shows what happens before chalkd serves: the boot loader, the initrd, a prompt for a
-disk's passphrase, and chalkd's own output, which includes the certificate fingerprint and the
-node's addresses in maintenance mode. On hardware
-the console is the BMC's serial-over-LAN or a screen. In a lab,
-[`chalklab console`](../reference/cli/chalklab_console.md) prints a VM's serial console and
-follows it; it is read-only, so a lab node cannot answer a passphrase prompt.
-
-## Open a shell on a node
-
-Nodes have no logins and no SSH. With
-[`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) in a variant's NixOS modules,
-its images carry coreutils, grep, sed, findutils, procps, iproute2, util-linux and, on images
-with Kubernetes, crictl; systemd, bash, less, nftables and kmod are always there. A privileged
-pod on the node then reaches them through the host's root:
-
-```sh
-kubectl debug node/<node> -it --profile=sysadmin --image=busybox -- \
-  chroot /host /run/current-system/sw/bin/bash
-```
-
-The option changes the image, so it reaches running nodes with an upgrade to the new image. It
-needs the node's kubelet and the API server to work; a node that is not in Kubernetes has only
-`chalkctl logs` and its console.
-
-## Common problems
-
-Each problem starts from what the status, the console or kubectl shows.
-
-### The node is in maintenance mode after the install
+## The node is in maintenance mode after the install
 
 The console shows a fingerprint again, and `chalkctl status` cannot verify the node. The machine
-booted the installer medium again, or the install did not
-finish. [Recover a node](recover-node.md#the-node-is-in-maintenance-mode) has both fixes.
+booted the installer medium again, or the install did not finish.
+[The node is in maintenance mode](recover-node.md#the-node-is-in-maintenance-mode) has both
+fixes.
 
-### The console asks for a passphrase
+## The node stops in the initrd, or a NIC or disk is missing
 
-The TPM did not unseal STATE,
-usually after a change to Secure Boot or the firmware. Type
-the node's recovery key; [Recover a
-node](recover-node.md#the-console-asks-for-a-passphrase-at-boot) explains the causes and what comes
-after.
+The console shows the node stopping in the initrd because it finds no system disk. Or a network
+card or disk is missing from `ip link` or `lsblk` in a shell on the node. The image lacks the
+device's driver, or the firmware the driver loads, and `dmesg` names a firmware file that failed
+to load. A disk controller's driver must also be in the initrd. The image author adds it, as
+[Add software, drivers and kernel modules](../build/add-software.md) describes.
 
-### The node has no address
+## A volume is missing or not mounted
 
-See [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md#the-node-has-no-address).
+The volume table of `chalkctl status` shows `missing` or `not mounted`, and a line
+`disk <name>: <problem>` names the disk. A pinned disk is gone, carries other data, or sits behind
+a controller without a driver. [Add storage volumes](storage-volumes.md#if-something-goes-wrong)
+covers each case.
 
-### A NIC or disk is not found
+## apply-config refuses a storage change
 
-The node stops in the initrd because it finds no system disk, which the console shows, or a
-network card or disk is missing from `ip link` or `lsblk` in a shell on the node. The image lacks
-the device's driver, or the firmware the driver loads, and `dmesg` names a firmware file that
-failed to load. A disk controller's driver must also be in the initrd.
-[Add software, drivers and kernel modules](../build/add-software.md) finds the module and adds it
-with its firmware.
+`chalkctl apply-config` fails with `the config takes chalkctl storage reset: ...` or
+`the config takes a reinstall of w1: ...`, and the node keeps its previous config. The change
+shrinks, reformats, re-encrypts, moves or removes a volume.
+[A refusal names what the change takes](change-config.md#a-refusal-names-what-the-change-takes)
+lists what to do.
 
-### A control plane waits for bootstrap
+## An upgrade rolled back or stopped
 
-See [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md#a-control-plane-waits-for-bootstrap).
+`chalkctl upgrade` stops at a node whose new image did not become healthy. The status shows
+`upgrade to <new> failed: rolled back to <old>` and the failed boot's journal lines.
+[If something goes wrong](upgrade.md#if-something-goes-wrong) on the upgrade page lists the
+messages and their fixes.
 
-### A control plane does not finish joining
+On the shipped variant, the run also stops at a control plane whose reboot would cost etcd its
+quorum, and at a drain that does not finish.
+[Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md#if-something-goes-wrong) covers those.
 
-See [Troubleshoot
-Kubernetes](../kubernetes/troubleshooting.md#a-control-plane-does-not-finish-joining).
+## The config line says not the inventory's
 
-### kubectl logs and exec fail on a node
+`not the inventory's; chalkctl apply-config w1 delivers it` means the node's files changed since
+the last delivery. Preview and deliver the change, as
+[Change a node's config](change-config.md) describes.
 
-See [Troubleshoot
-Kubernetes](../kubernetes/troubleshooting.md#kubectl-logs-and-exec-fail-on-a-node).
+## Status warns about a certificate
 
-### Image pulls fail
+The certificates section has a third column, such as `less than a third of its lifetime remains`
+or `renewal failing: ...`.
+[The certificates section warns before an expiry](status-and-logs.md#the-certificates-section-warns-before-an-expiry)
+says what each warning asks for. An expired node certificate makes every command against the node
+fail. [The node certificate expired](recover-node.md#the-node-certificate-expired) brings it back.
 
-Pods stay in `ErrImagePull` or `ImagePullBackOff`. containerd pulls through the endpoints of the
-node's [`Mirror`](../reference/kinds.md#mirror) documents and then the registry itself. Read
-`containerd.service`'s log on the node for the URL that failed.
-`chalkos-registry-mirrors.service` writes the endpoints to
-`/run/containerd/certs.d/<registry>/hosts.toml` from the `Mirror` and
-[`Registry`](../reference/kinds.md#registry) documents; its log shows when it could not. An
-`http://` endpoint needs a `Registry` of its host with `insecure: true`, and a cluster without
-internet access needs every image in a mirror.
+## The clock is not synchronised
 
-A private image that fails with `401 Unauthorized` or `ErrImagePull` takes its credentials from
-the node's `Registry` of the image's host. Read
-`chalkctl logs <node> --unit=chalkos-registry-credentials` for whether the unit wrote them, and
-compare the `Registry`'s `host` with the host as the image reference names it, port included:
-the kubelet asks for `registry.example.com:5000/app` only with a `Registry` of
-`registry.example.com:5000`. A mirror endpoint receives the credentials of the image's host, not
-those of its own `Registry`.
+The status says `time: not synchronised; certificates are checked against this clock`. chrony
+reached none of its servers. With the default servers, NTS needs the node to reach them on TCP
+port 4460 and UDP port 123. A network that blocks both needs internal servers in the node's
+`TimeSync` document, as
+[TimeSync names the time servers](node-config.md#timesync-names-the-time-servers) shows.
 
-chalkd pulls an install's or an upgrade's image through the same endpoints. When the pull fails,
-its error names the source it ended at, followed by `after the mirror <endpoint>: <error>` for
-each endpoint it passed over.
+## A unit failed
 
-### Pods on different nodes cannot reach each other
+The status ends with `failed unit <unit>`. Read the unit's journal:
 
-See [Troubleshoot
-Kubernetes](../kubernetes/troubleshooting.md#pods-on-different-nodes-cannot-reach-each-other).
+```sh
+chalkctl logs w1 --unit=<unit>
+```
 
-### A Node has no pod range
+`<unit>` is the unit the status names.
+[chalkctl logs prints a unit's journal](status-and-logs.md#chalkctl-logs-prints-a-units-journal)
+lists the units of chalkos.
 
-See [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md#a-node-has-no-pod-range).
+## Image pulls fail
 
-### An upgrade rolled back or stopped
+An install or upgrade from a registry fails, with an error that names the source the pull ended at.
+`after the mirror <endpoint>: <error>` follows for each endpoint chalkd passed over. Compare the
+`Registry`'s `host` with the host as the image reference names it, port included. An `http://`
+endpoint needs a `Registry` of its host with `insecure: true`.
+[Registries and mirrors](registries.md) covers credentials and mirrors.
 
-`chalkctl upgrade` stops at a node whose new image did not become healthy, at a control plane
-whose reboot would cost etcd its quorum, or at a drain that does not finish.
-[Upgrade nodes](upgrade.md#if-something-goes-wrong) lists the messages and fixes.
+!!! note "On the shipped variant, pods pull with the same documents"
 
-### Status warns about a certificate
+    Pods that stay in `ErrImagePull` or `ImagePullBackOff` pull through containerd. Read
+    `containerd.service`'s log for the URL that failed. `chalkos-registry-mirrors.service` writes
+    the endpoints to `/run/containerd/certs.d/<registry>/hosts.toml`, and
+    `chalkos-registry-credentials.service` writes the credentials. Their logs show when they could
+    not. The kubelet asks for `registry.example.com:5000/app` only with a `Registry` of
+    `registry.example.com:5000`. A cluster without internet access needs every image in a mirror.
 
-| Third column | Means | Do |
-| --- | --- | --- |
-| `less than a third of its lifetime remains` | The node certificate is due for renewal. | Nothing on a node with Kubernetes, which renews it; `chalkctl node renew <node>` on one without. |
-| `renewal failing: ...; expires ...` | The node could not renew through a control plane. | Fix what the message names, usually the endpoint not reaching chalkd on port 50000. |
-| `expired` | The certificate expired. | [Recover a node](recover-node.md#the-node-certificate-expired). |
-| `node CA expires ...; run chalkctl node-ca rotate` | The node CA has less than 18 months left. | `chalkctl node-ca rotate`. |
-| `OS CA expires ...`, `Kubernetes CA expires ...` | A CA has less than a year left. | [Rotate it](access.md#choose-what-to-rotate). |
-| `less than a tenth of its lifetime remains, though the kubelet renews it itself` | The kubelet did not renew its certificate. | Read `kubelet.service`'s log; look for pending CertificateSigningRequests. |
+## A Kubernetes symptom
 
-### The clock is not synchronised
-
-`time: not synchronised; certificates are checked against this clock`. chrony reached none of
-its servers. With the default servers, NTS needs the node to reach them on TCP port 4460 and UDP
-port 123. A network that blocks both needs internal servers in `spec.servers` of the node's
-[`TimeSync`](../reference/kinds.md#timesync) document. Certificates start an hour before they are
-issued, so a small offset does no harm, but a clock that is days off rejects valid certificates.
-
-### The lab does not start
-
-`chalklab create` and `chalklab start` run each node as a QEMU virtual machine on KVM.
-
-- `/dev/kvm does not exist`: the machine has no hardware virtualisation, it is disabled in the
-  firmware, or the kvm module is not loaded. chalklab needs an
-  x86-64 machine with KVM.
-- `you may not open /dev/kvm`: join the `kvm` group (on NixOS, add it to
-  `users.users.<you>.extraGroups`) and log in again.
-- `<node> did not come up in maintenance mode`: the VM booted but chalkd did not print its
-  fingerprint. The error names the console log; `chalklab console <node>` shows it.
-- `the lab <name> exists in ...; chalklab destroy removes it`: a lab of the lab file's name
-  exists. `chalklab start` starts it again; `chalklab destroy` removes it.
-- The VMs start but are slow, or one stops: the lab needs about 3 GiB of memory for a control
-  plane and 2 GiB for each other node. `chalklab status` shows which VMs run.
+On the shipped variant, symptoms of Kubernetes show in the status's Kubernetes line or in
+kubectl: a node with no address, a control plane that waits for bootstrap or does not finish
+joining, failing `kubectl logs`, pods that cannot reach each other, and a Node without a pod
+range. [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md) covers each one.
 
 ## What to put in a bug report
 
@@ -241,22 +136,18 @@ A report someone can act on holds:
 
 - the chalkos version, from `flake.lock`, and the image line of `chalkctl status`, which names the
   image's root hash and the revision it was built from;
-- the full output of `chalkctl status <node>` for the nodes involved;
+- the full output of `chalkctl status` for the nodes involved;
 - the logs of the units involved, from `chalkctl logs <node> --unit=<unit>`;
 - for a boot problem, the console output, from the BMC or `chalklab console <node> -f=false`;
-- the config documents and `mkImages` modules that concern the problem, without `Secret`
-  documents;
+- the config documents and image modules that concern the problem, without `Secret` documents;
 - the commands you ran and their full output.
 
-Leave out the secrets file, client files, kubeconfigs and recovery keys: each grants access to
-the cluster.
+Leave out the secrets file, client files, kubeconfigs and recovery keys. Each grants access to the
+cluster.
 
 ## What next
 
-- [Recover a node](recover-node.md) fixes nodes that do not unlock, boot, renew or rejoin.
-- [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md) explains what the health check
-  looks at.
-- [Networking](../how-it-works/node/networking.md) explains address selection, the VIP and the pod
-  network.
-- [`chalkctl status`](../reference/cli/chalkctl_status.md) and
-  [`chalkctl logs`](../reference/cli/chalkctl_logs.md) list their flags.
+- [Status, logs and the console](status-and-logs.md) explains what a node reports.
+- [Recover a node](recover-node.md) fixes nodes that do not unlock, boot or renew.
+- [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md) explains what the health
+  check looks at.

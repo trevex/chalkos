@@ -1,234 +1,190 @@
 ---
 title: "Recover a node"
-description: "Bring back a node that does not unlock, boot, renew or rejoin"
+description: "Bring back a node that does not unlock, boot or renew, or whose secrets file is lost"
 ---
 
 # Recover a node
 
-This guide brings back a node that is stuck: its disks do not unlock, its new image fell back,
-its certificate expired, or it cannot rejoin etcd. Each section starts from what you see, on
-the console or in [`chalkctl status`](../reference/cli/chalkctl_status.md), names the cause and
-gives the fix. The last resort, reinstalling the node, has its own section, and so has the loss
-of the secrets file.
+This page is for an operator whose node is stuck: its disks do not unlock, its new image fell
+back, its certificate expired, or it sits in maintenance mode. Each section starts from what the
+console or `chalkctl status` shows, names the cause and gives the fix. Reinstalling the node is
+the last resort, and the loss of the secrets file closes the page.
 
 ## Before you begin
 
-- The secrets file, for most fixes here. A section says when a
-  client file is enough.
-- Access to the node's console, through its BMC or in person, for the sections that start there.
-- [Troubleshooting](troubleshooting.md), when you do not yet know which of these situations you
-  are in.
+You need the workstation that [Set up your workstation](workstation.md) describes, with the secrets
+file `secrets.age`. Most fixes here need it.
+
+You also need the node's console, through its BMC or in person, for the sections that start
+there. When you do not know yet what is wrong, start at [Troubleshooting](troubleshooting.md).
 
 ## The console asks for a passphrase at boot
 
-The node stops early in the boot and systemd-cryptsetup asks on the console for the passphrase
-of `state`, and later of `var` and of each encrypted volume. The
-TPM did not unseal the keys of
-STATE and VAR, because
-PCR 7, which the keys are sealed to, changed. Common causes:
+The node stops early in the boot. systemd-cryptsetup asks on the console for the passphrase of
+`state`, then of `var` and of each encrypted volume. The TPM refused to unseal their keys, because
+PCR 7 changed since the keys were sealed to it:
 
-- Secure Boot was turned off, or its keys changed: a new PK,
-  KEK or db, or a dbx update that came with a firmware
-  update.
-- The image was signed with another db key than the one the node was installed with.
-- The TPM was cleared, or the disk moved to another machine.
-
-The node stays at the prompt; it does not fall back to maintenance
-mode, because that would let anyone with physical access
-give it a new config. A boot that waits at the prompt also never
-reaches the health check: after an upgrade, the node stays
-in that boot until you unlock it or reset the machine, and only then does the boot loader try the
-new image again or fall back.
-
-Get the node's recovery key:
-
-```sh
-chalkctl recovery-key <node>
+```mermaid
+flowchart LR
+    keys["Secure Boot keys or state change"] --> pcr["PCR 7 holds a new value"]
+    firmware["Firmware update brings a new dbx"] --> pcr
+    pcr --> tpm["TPM refuses to unseal the keys"]
+    cleared["TPM cleared, or disk in another machine"] --> tpm
+    tpm --> prompt["Console asks for a passphrase"]
+    prompt --> unlock["Recovery key or password unlocks"]
 ```
 
-`<node>` is the node's name. The key is eight groups of eight letters, separated by dashes. Type
-it at each prompt; the node then boots on. A node whose fallback is a password takes that
-password instead.
+The diagram shows the chain from a change to the prompt. PCR 7 measures the Secure Boot state
+and the PK, KEK, db and dbx. Any of these causes changes it:
 
-The recovery key is derived from the secrets file and the node's name, so it is the same for the
-node's whole life, also across reinstalls. Whoever has read it can unlock that node's disks with
-physical access for good. Keep the console session private.
+- Secure Boot was turned off, or its keys changed: a new PK, KEK or db.
+- A firmware update brought a new dbx.
+- The image was signed with another db key than the one the node was installed with.
 
-Recovery keys derived before this release took the cluster's name as well. A node installed before
-keeps the key it was enrolled with, which `chalkctl recovery-key` no longer prints: unlock it with
-the old key you noted, or reinstall the node to enroll the new one.
+A cleared TPM, or a disk moved to another machine, has no sealed keys at all, with the same
+result.
 
-Such a node also refuses a delivery that adds an encrypted volume, because chalkctl sends the new
-key and the node checks it against the existing fallback keyslot. chalkctl never reads a recovery
-key from `--password-file`, so to add the volume without a reinstall, set `encryption.fallback` to
-`password` in the node's [`SystemDisk`](../reference/kinds.md#systemdisk) document and pass the
-old key in a file with `--password-file`. The new volume is enrolled with the old key too. Keep
-`password` in the config until you reinstall the node, which enrolls the new key and lets the
-config go back to `recovery-key`. Without the old key, only a reinstall adds the volume.
+The node stays at the prompt. It does not fall back to maintenance mode, because that would let
+anyone with physical access give it a new config. A boot that waits at the prompt never reaches
+the health check either. After an upgrade, the node stays in that boot until you unlock it or
+reset the machine. Only then does the boot loader try the new image again or fall back.
+
+### Unlock the node with its recovery key
+
+Print the node's recovery key on the workstation:
+
+```sh
+chalkctl recovery-key w1 --secrets secrets.age
+```
+
+The key is eight groups of eight letters, separated by dashes. Type it at each prompt, and the
+node boots on. A node whose fallback is a password takes that password instead.
+
+chalkctl derives the key from the secrets file and the node's name. It stays the same for the
+node's whole life, also across reinstalls. Whoever reads it can unlock that node's disks with
+physical access for good, so keep the console session private.
+
+### Make the prompt go away
 
 The prompt comes back at every boot until PCR 7 matches the sealed keys again. chalkos has no
-command that seals the keys to the new PCR 7, so there are two ways out:
+command that seals the keys to the new PCR 7, so two ways lead out:
 
-- Undo the change: turn Secure Boot back on, restore the previous keys or boot an image signed
+- Undo the change: turn Secure Boot back on, restore the previous keys, or boot an image signed
   with the original db key. The keys unseal again at the next boot.
-- Accept the change and reinstall the node, as in [Reinstall a node](#reinstall-a-node). The
+- Accept the change and reinstall the node, as
+  [Reinstall the node as the last resort](#reinstall-the-node-as-the-last-resort) describes. The
   installer seals the new keys to the PCR 7 the node has now.
 
-A node whose fallback is `none` has no second key. STATE and VAR stay locked, so the only way
-back is to undo the change or reinstall. An extra volume that does not unlock stays unmounted
-while the rest of the node runs, and
-[`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) recreates it empty.
+A node whose fallback is `none` has no second key. STATE and VAR stay locked, so the only ways
+back are to undo the change or to reinstall. An extra volume that does not unlock stays unmounted
+while the rest of the node runs. [Reset a volume](storage-volumes.md#reset-a-volume) creates it
+again, empty.
 
 ## The node fell back after an upgrade
 
 `chalkctl status` shows the node running its previous image, with the failed boot's log:
 
 ```text
-image 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a), booted from chalkos_1.efi
-upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) failed: rolled back to 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a)
-  ...
+image <old>, booted from chalkos_1.efi
+upgrade to <new> failed: rolled back to <old>
+  <journal lines>
 ```
 
-The new image did not become healthy within its tries, and systemd-boot booted the previous one.
-The node is healthy on the old image and stays cordoned. Find the cause in the logged lines, fix
-it in a new build and upgrade again, as in
-[Upgrade nodes](upgrade.md#a-node-that-fails-its-health-check-rolls-back).
-[Boot, health and rollback](../how-it-works/node/boot-and-rollback.md) explains the mechanism.
+`<old>` and `<new>` stand for the images' names, and `<journal lines>` for the last 30 lines that
+chalkd and the health check logged in the failed boot. The new image did not become healthy within
+its tries, and systemd-boot booted the previous one. The node runs healthy on the old image.
+Find the cause in the journal lines, fix it in a new build and upgrade again, as
+[A node that fails its health check rolls back](upgrade.md#a-node-that-fails-its-health-check-rolls-back)
+describes.
 
 ## The node certificate expired
 
-chalkctl refuses the node's certificate as expired, so every command against the node fails, while
-the node itself still runs. A node renews its
-node certificate once two thirds of its year have
-passed: a control plane signs its own with its node CA,
-and a worker asks a control plane at the
-cluster endpoint on port 50000. A certificate therefore
-expires only when the node could not renew for four months: it was switched off, a worker could not
-reach the endpoint, or the node has no Kubernetes and nobody renewed it by hand. Before the expiry,
-its status showed why:
+chalkctl refuses the node's certificate as expired, so every command against the node fails. The
+node itself still runs. A node renews its node certificate once two thirds of its year have
+passed, so a certificate expires only when the node could not renew for four months. It was
+switched off, could not reach a control plane, or has no Kubernetes and nobody renewed it by
+hand. Before the expiry, its status showed why:
 
 ```text
 certificates:
-  node  expires 2027-03-02  renewal failing: ...; expires 2027-03-02T10:00:00Z
+  node  expires <date>  renewal failing: <reason>; expires <time>
 ```
 
-[`chalkctl node renew`](../reference/cli/chalkctl_node_renew.md) issues and delivers a new
-certificate, also to a node whose certificate expired:
+`chalkctl node renew` issues and delivers a new certificate, also to a node whose certificate
+expired:
 
 ```console
-$ chalkctl node renew w1
-w1 serves a new node certificate; it expires 2027-10-10T09:12:44Z
+$ chalkctl node renew w1 --secrets secrets.age
+w1 serves a new node certificate; it expires <time>
 ```
 
-For this command alone, chalkctl verifies the node's expired certificate as of its start date, so it
-trusts the node's old key; [Certificates](../how-it-works/node/certificates.md#what-if-a-certificate-expired)
-explains what that risks. Fix the reason the renewal failed too, or the node expires again next
+`<time>` stands for the new expiry, such as `2027-10-10T09:12:44Z`. For this command alone,
+chalkctl verifies the expired certificate as of its start date, so it trusts the node's old key.
+[What if a certificate expired?](../how-it-works/node/certificates.md#what-if-a-certificate-expired)
+explains the risk. Fix the reason the renewal failed too, or the certificate expires again next
 year.
 
-## The kubelet certificate was lost with VAR
+!!! note "On the shipped variant, two more recoveries concern Kubernetes"
 
-[Troubleshoot
-Kubernetes](../kubernetes/troubleshooting.md#the-kubelet-certificate-was-lost-with-var) delivers a
-new one.
-
-## A control plane cannot rejoin etcd
-
-[Run a highly available control
-plane](../kubernetes/ha-control-plane.md#a-control-plane-cannot-rejoin-etcd) lists the causes and
-fixes.
-
-## A storage change is refused
-
-`chalkctl apply-config` fails with `the config takes chalkctl storage reset: ...` or
-`the config takes a reinstall of <node>: ...`, and the node keeps its previous config in full.
-The change shrinks, reformats, re-encrypts, moves or removes a volume, which would lose its data.
-Reset that one volume with `chalkctl storage reset <node> <volume>`, which deletes its data, then
-deliver the config again. VAR, a removed volume and a volume that moves to another disk cannot be
-reset; those changes need a reinstall. [Add storage volumes](storage-volumes.md#reset-a-volume) has
-the details.
-
-## An extra disk is missing
-
-The node boots and runs, but `chalkctl status` lists a volume as `not mounted` and names the
-disk:
-
-```text
-VOLUME    DISK      MOUNT POINT        STATE
-longhorn  longhorn  /var/lib/longhorn  not mounted
-var       system    /var               mounted
-disk longhorn: pinned disk ... is missing
-```
-
-The disk the volume was created on is gone: removed, dead or behind a controller that did not come
-up. chalkd finds a disk by its pinned WWN, serial number and
-path, so another disk in its place is not used, even if it is empty. Put the disk back, or fix its
-controller, and reboot. A replacement disk needs the node reinstalled.
+    A worker whose VAR lost its data may hold an expired kubelet certificate.
+    [The kubelet certificate was lost with VAR](../kubernetes/troubleshooting.md#the-kubelet-certificate-was-lost-with-var)
+    delivers a new one. A control plane that cannot rejoin etcd is covered by
+    [Run a highly available control plane](../kubernetes/ha-control-plane.md#a-control-plane-cannot-rejoin-etcd).
 
 ## The node is in maintenance mode
 
 The console shows chalkd's certificate fingerprint and the node's addresses, and
-`chalkctl status` fails to verify the node. The node boots an image that has no installation to
-load:
+`chalkctl status` fails to verify the node. The node boots an image with no installation to load:
 
-- It booted the installer again because the installer
-  medium is still attached and comes first in the boot order. Remove the medium or fix the
-  boot order, and reboot.
-- The install did not finish. Run `chalkctl install` again; it continues an unfinished install
-  of the node on the same disk.
+- The installer medium is still attached and comes first in the boot order. Remove the medium or
+  fix the boot order, and reboot.
+- The install did not finish. Run `chalkctl install` again. It continues an unfinished install of
+  the node on the same disk.
 
-A node in maintenance mode answers `chalkctl logs` and `chalkctl reboot` with `--fingerprint`
-or `--insecure`, so you can read why an install failed:
+A node in maintenance mode answers `chalkctl logs` and `chalkctl reboot` with `--fingerprint` or
+`--insecure`, so you can read why an install failed:
 
 ```sh
-chalkctl logs <node> --insecure --unit=chalkd.service
+chalkctl logs w1 --insecure --unit=chalkd.service
 ```
 
-## Reinstall a node
+## Reinstall the node as the last resort
 
-Reinstalling gives a node a new disk layout, new keys sealed to its TPM and a fresh VAR, from
-the node's config in the inventory's files. Everything on
-its disks is lost, so move workloads off first.
-
-1. For a control plane, take it out of etcd first, with `chalkctl etcd leave <node>`, so the
-   others keep a correct membership. For a worker, drain it with `kubectl drain <node>`.
-2. Boot the machine into the installer through its BMC or boot menu. An installed node runs no
-   maintenance mode, so chalkctl cannot reach it for an install until it does.
-3. Install it, letting the installer replace what the disk holds:
-
-    ```sh
-    chalkctl install <node> --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
-      --wipe-disk
-    ```
-
-    `<address>` is the address the installer took, which the console shows with
-    `<fingerprint>`.
-
-The node gets the same name, the same recovery key and new certificates. A control plane joins
-etcd as a new member; a worker's kubelet registers its Node again. Uncordon a drained worker with
-`kubectl uncordon <node>` once it is Ready.
+A reinstall gives the node a new disk layout, new keys sealed to its TPM and a fresh VAR, from its
+config in the inventory's files. Everything on its disks is lost. The node keeps its name and its
+recovery key, and gets new certificates.
+[Reinstall a node on its machine](add-remove-nodes.md#reinstall-a-node-on-its-machine) gives the
+steps, including the Kubernetes steps of the shipped variant.
 
 ## The secrets file is lost
 
-Without the secrets file, and without a backup of it, the cluster keeps running, but much of
-its management is gone for good:
+Without the secrets file or a backup of it, the nodes keep running, but much of their management
+is gone for good. Commands with existing client files still work within their roles: `status`,
+`logs`, `disks`, `reboot` and `upgrade`. `storage reset` still works where it creates no volume
+whose fallback is the recovery key. Control planes keep renewing the nodes' certificates until the
+node CA expires.
 
-| Still works | Gone |
-| --- | --- |
-| Commands with existing client files, within their roles: status, logs, disks, reboot, upgrade, bootstrap, the etcd commands, and storage reset where no TPM-encrypted volume is created: on nodes whose fallback is not the recovery key, or of a volume without encryption | Installing or reinstalling a node, `apply-config` |
-| Node certificate renewal by the control planes, until the node CA expires | `chalkctl node renew`, `node-ca rotate` and every `rotate` |
-| Kubelet certificate renewal | New client files and kubeconfigs |
-| Existing kubeconfigs, until they expire | Recovery keys: a node whose TPM stops unsealing cannot be unlocked |
+These are gone:
 
-The client files and kubeconfigs expire within their validity, a year by default, and nothing
-can issue new ones. Plan a move to a new cluster before then: generate new secrets, build new
-images and install new nodes, and move the workloads across. Back up the secrets file so this
-never happens; [Plan a production cluster](../kubernetes/production-cluster.md#protect-the-secrets-file) says
-how.
+- installing or reinstalling a node, and `apply-config`;
+- `chalkctl node renew`, `node-ca rotate` and every `rotate`;
+- new client files;
+- recovery keys, so a node whose TPM stops unsealing cannot be unlocked.
+
+The client files expire within their validity, a year by default, and nothing can issue new ones.
+Plan a move to a new cluster before then. Generate new secrets, build new images, install new
+nodes and move the workloads across. Back up the secrets file so this never happens.
+
+!!! note "On the shipped variant, Kubernetes access runs out too"
+
+    `bootstrap` and the etcd commands keep working with client files, and the kubelets keep
+    renewing their certificates. Existing kubeconfigs work until they expire, and no new ones can
+    be issued. [Protect the secrets file](../kubernetes/production-cluster.md#protect-the-secrets-file)
+    covers backups.
 
 ## What next
 
-- [Troubleshooting](troubleshooting.md) starts from symptoms.
-- [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md),
-  [Certificates](../how-it-works/node/certificates.md) and [Storage and encryption](../how-it-works/node/storage.md)
-  explain the mechanisms these fixes act on.
-- [Run a highly available control plane](../kubernetes/ha-control-plane.md) covers etcd membership.
+- [Troubleshooting](troubleshooting.md) starts from a symptom.
+- [Status, logs and the console](status-and-logs.md) reads what the node reports.
+- [Storage and encryption](../how-it-works/node/storage.md) explains the sealed keys and the
+  fallback.

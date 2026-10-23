@@ -85,7 +85,7 @@ opens no port on the node.
 ## What a node does not listen on
 
 A node runs no SSH server, so port 22 is closed, and there are no logins on the console.
-[Troubleshooting](../operate/troubleshooting.md) shows how to debug a node through
+[Status, logs and the console](../operate/status-and-logs.md) shows how to debug a node through
 `kubectl debug node/<node>` and the node API. chrony keeps the clock and serves no NTP clients.
 
 ## Firewall tables
