@@ -906,3 +906,35 @@ func TestRotateReadsRevokedNodesBeforeEachPhase(t *testing.T) {
 		}
 	}
 }
+
+// TestRotateIgnoreRevoked rotates every node without reading the revoked nodes, as while no
+// control plane can say which are, and warns that revoked nodes in the inventory take part.
+func TestRotateIgnoreRevoked(t *testing.T) {
+	l := newRotationLab(t)
+	l.revoked = []*nodev1.RevokedNode{{Name: "w1"}}
+	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused"}
+	l.unreported = map[string]bool{"cp2": true}
+	if err := l.rotate("os-ca", "--ignore-revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.rotate("os-ca", "--resume", "--ignore-revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if l.phase() != "refresh applied" {
+		t.Fatalf("the secrets file records %q, want the refresh applied", l.phase())
+	}
+	if out := l.ta.stdout.String(); strings.Contains(out, "skipping") {
+		t.Errorf("stdout skips a node:\n%s", out)
+	}
+	if fps, _ := pki.Fingerprints(l.nodes["w1"].cert.OSCA()); len(fps) != 2 {
+		t.Errorf("w1 trusts %d OS CAs, want both", len(fps))
+	}
+	warning := "chalkctl: warning: --ignore-revoked: rotate reads no revoked nodes, so a revoked node still in the inventory receives"
+	if got := l.ta.stderr.String(); strings.Count(got, warning) != 2 || !strings.Contains(got, "remove revoked nodes from the inventory first") {
+		t.Errorf("stderr = %q, want the warning once a run", got)
+	}
+	// Without it, the rotation stops and names the flag.
+	if err := l.rotate("os-ca", "--finish"); err == nil || !strings.Contains(err.Error(), "--ignore-revoked") {
+		t.Errorf("err = %v, want a refusal naming --ignore-revoked", err)
+	}
+}

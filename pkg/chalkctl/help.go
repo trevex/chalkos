@@ -412,7 +412,12 @@ runs at a time, and one chalkctl command at a time changes the secrets file, hol
 Nodes revoked with chalkctl node revoke are skipped and named: before each phase, rotate reads
 them from the first control plane that says which nodes are revoked, and it stops while none
 does. A cluster none of whose control planes was bootstrapped yet has revoked no node.
-The command needs the secrets file.`
+--ignore-revoked rotates without the list, as while the API server is down or the control planes
+run a chalkd from before node revocation: every node of the inventory takes part, so remove
+revoked nodes from the inventory first, or they receive the new value too. A node unrevoked
+between two runs of a rotation takes part from the next run on, but it missed the phases it was
+skipped in, and the rotation may stop at it; unrevoke nodes before or after a rotation, not while
+one is paused. The command needs the secrets file.`
 
 const nodeRenewLong = `Issues the node a new node certificate and key from the node CA and delivers them, also once the
 node's own certificate expired. Such a node is verified by the OS CA as of its certificate's

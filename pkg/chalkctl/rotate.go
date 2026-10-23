@@ -47,6 +47,7 @@ type rotateFlags struct {
 	change                changeFlags
 	addresses             addressList
 	resume, finish, force bool
+	ignoreRevoked         bool
 	timeout               time.Duration
 }
 
@@ -66,6 +67,7 @@ func (a *app) rotateCommand() *cobra.Command {
 	fs.BoolVar(&f.resume, "resume", false, "continue the rotation the secrets file records")
 	fs.BoolVar(&f.finish, "finish", false, "remove the old value from every node and the secrets file")
 	fs.BoolVar(&f.force, "force", false, "with --finish, finish the service-account key's rotation within the hour after its switch")
+	fs.BoolVar(&f.ignoreRevoked, "ignore-revoked", false, "rotate every node of the inventory, revoked ones included, without reading the revoked nodes, as while no control plane can say which are")
 	fs.DurationVar(&f.timeout, "timeout", 10*time.Minute, "how long to wait for each node to apply a phase")
 	return cmd
 }
@@ -73,7 +75,7 @@ func (a *app) rotateCommand() *cobra.Command {
 func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	cf, sf, change, addresses := f.cluster, f.secrets, f.change, f.addresses
 	if len(pos) != 1 || f.resume && f.finish || f.force && !f.finish {
-		return errors.New("usage: chalkctl rotate " + strings.Join(pki.RotationKinds, "|") + " [--resume | --finish [--force]]")
+		return errors.New("usage: chalkctl rotate " + strings.Join(pki.RotationKinds, "|") + " [--resume | --finish [--force]] [--ignore-revoked]")
 	}
 	kind := pos[0]
 	if !slices.Contains(pki.RotationKinds, kind) {
@@ -100,7 +102,11 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 		return err
 	}
 	defer file.Close()
-	r := &rotation{a: a, cluster: c, file: file, addresses: addresses, timeout: f.timeout, poll: a.poll()}
+	r := &rotation{a: a, cluster: c, file: file, addresses: addresses, timeout: f.timeout, poll: a.poll(), ignoreRevoked: f.ignoreRevoked}
+	if f.ignoreRevoked {
+		fmt.Fprintln(a.stderr, "chalkctl: warning: --ignore-revoked: rotate reads no revoked nodes, so a revoked node still in the inventory "+
+			"receives the new value and certificates of it like any other; remove revoked nodes from the inventory first")
+	}
 	if err := r.skipRevoked(ctx); err != nil {
 		return err
 	}
@@ -140,7 +146,9 @@ type rotation struct {
 	// timeout bounds each wait for a node; poll is the time between two looks.
 	timeout, poll time.Duration
 	// revoked are the nodes the rotation skips, because a control plane lists them as revoked.
-	revoked map[string]bool
+	// With ignoreRevoked, the list is not read and no node is skipped.
+	revoked       map[string]bool
+	ignoreRevoked bool
 }
 
 // say prints a line of the rotation's progress.
@@ -291,10 +299,13 @@ func (r *rotation) nodesOf(kind string) []string {
 // list no phase runs, so none hands a certificate to a revoked node. A node stays skipped for the
 // rest of the run once it is: it missed the phases before.
 func (r *rotation) skipRevoked(ctx context.Context) error {
+	if r.ignoreRevoked {
+		return nil
+	}
 	nodes := r.allNodes()
 	list, err := revokedNodesOf(ctx, r.nodesOf(identity.KindControlPlane), r.status)
 	if err != nil {
-		return fmt.Errorf("%w; rotate runs only once one does, so it never hands a certificate to a revoked node", err)
+		return fmt.Errorf("%w; rotate runs only once one does, so it never hands a certificate to a revoked node, or with --ignore-revoked", err)
 	}
 	if r.revoked == nil {
 		r.revoked = map[string]bool{}

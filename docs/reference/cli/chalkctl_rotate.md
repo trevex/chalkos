@@ -21,7 +21,12 @@ runs at a time, and one chalkctl command at a time changes the secrets file, hol
 Nodes revoked with chalkctl node revoke are skipped and named: before each phase, rotate reads
 them from the first control plane that says which nodes are revoked, and it stops while none
 does. A cluster none of whose control planes was bootstrapped yet has revoked no node.
-The command needs the secrets file.
+--ignore-revoked rotates without the list, as while the API server is down or the control planes
+run a chalkd from before node revocation: every node of the inventory takes part, so remove
+revoked nodes from the inventory first, or they receive the new value too. A node unrevoked
+between two runs of a rotation takes part from the next run on, but it missed the phases it was
+skipped in, and the rotation may stop at it; unrevoke nodes before or after a rotation, not while
+one is paused. The command needs the secrets file.
 
 ```
 chalkctl rotate <kind> [flags]
@@ -45,6 +50,7 @@ chalkctl rotate <kind> [flags]
       --force               with --finish, finish the service-account key's rotation within the hour after its switch
   -h, --help                help for rotate
       --identity strings    age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
+      --ignore-revoked      rotate every node of the inventory, revoked ones included, without reading the revoked nodes, as while no control plane can say which are
       --inventory string    inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
       --out string          write the changed secrets file to this new file instead of updating the secrets file in place
       --public-out string   write the public half to this new file instead of updating secrets.pub.json beside the secrets file in place
