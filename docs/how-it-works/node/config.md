@@ -150,18 +150,10 @@ spec:
     w1: {address: 192.168.123.12, files: [nodes/w1.yaml]}
 ```
 
-[Config kinds](../../reference/kinds.md#inventory) lists its fields:
-
-- `metadata.name` is a label: it names the cluster in chalkctl's messages and the kubeconfig
-  `chalkctl kubeconfig` writes, as [What names a node?](#what-names-a-node) describes.
-- `spec.images` are the images the nodes run, by name, as
-  [How does the inventory name images?](#how-does-the-inventory-name-images) describes.
-- `spec.all` is what every node gets: its `imageName`, the image of every node that names none
-  itself or through a group, and its `files`, which come first in every node's set.
-- `spec.groups.<group>` is a group, which a node joins by naming the group in its `groups`: its
-  `files` and its `imageName`.
-- `spec.nodes.<node>` is each node by its name, with its `address`, its `imageName`, its `groups`
-  and its own `files`.
+Its `spec.all` is what every node gets, `spec.groups` what the nodes of each group get, and
+`spec.nodes` each node by its name with the address chalkctl reaches it at and its own files.
+[Write a node's config](../../operate/node-config.md) walks through the fields, with a group,
+and [Config kinds](../../reference/kinds.md#inventory) lists them.
 
 A node's set is the documents of the files of `spec.all`, then of its groups' files in the order
 the node names the groups, then of its own files. Paths are relative to the inventory's
@@ -171,36 +163,12 @@ counts once.
 
 The order decides nothing about values, because documents never merge: two documents of the same
 kind and name in one node's set are an error that names both files. A group is the place for what
-a subset of nodes shares, such as the `Node` of GPU workers with their type and labels. This
-inventory extends the homelab example's with a group `gpu` and a GPU worker `w2` in it:
+a subset of nodes shares, such as the `Node` of GPU workers with their type and labels.
 
-```yaml title="chalkos.yaml"
-apiVersion: chalkctl.chalkos.dev/v1alpha1
-kind: Inventory
-metadata: {name: homelab}
-spec:
-  images:
-    node-metal: {source: {directory: images/node-metal}}
-  all: {imageName: node-metal, files: [cluster/*.yaml]}
-  groups:
-    gpu: {files: [groups/gpu.yaml]}
-  nodes:
-    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
-    w1: {address: 10.0.0.21, files: [nodes/w1.yaml]}
-    w2: {address: 10.0.0.22, groups: [gpu], files: [nodes/w2.yaml]}
-```
-
-`address` is where chalkctl connects to the node's chalkd, as a host or `host:port`, also in
-maintenance mode before the node has its config.
-chalkctl never derives it from the node's `Network` documents, so a node that installs with a DHCP
-address and receives a static one names the static one here; `--address` overrides it for one
-command.
-
-The inventory names no secrets file. The commands that issue certificates or deliver config read
-the secrets file from `--secrets FILE`, or from standard
-input with `--secrets -`. The others authenticate with the secrets file when `--secrets` is given,
-and otherwise with a client file: the one `--config`
-names, else the one `$CHALKOSCONFIG` names, else `~/.config/chalkos/config`.
+The inventory names no secrets file and no client file. chalkctl reads them from its flags and
+its environment, as
+[chalkctl looks for credentials in a fixed order](../../operate/workstation.md#chalkctl-looks-for-credentials-in-a-fixed-order)
+describes.
 
 ## What names a node?
 
@@ -295,32 +263,11 @@ node-metal: {source: {oci: ghcr.io/example/node-metal@sha256:<digest>}}
 
 [Publish images to a registry](../../build/publish-images.md) builds, signs and pushes such an image.
 
-A node runs one image, named in one of three places:
-
-- the node's own `imageName`, which wins;
-- else the `imageName` of its groups;
-- else `spec.all.imageName`.
-
-Two groups of a node that name different images refuse the inventory, also when the node names its
-own. A node that gets no image from any of them is refused, as is an `imageName` that names no
-image of `spec.images`. This inventory runs every node on `node-metal` and the GPU workers of the
-group `gpu` on `gpu-metal`:
-
-```yaml title="chalkos.yaml"
-apiVersion: chalkctl.chalkos.dev/v1alpha1
-kind: Inventory
-metadata: {name: homelab}
-spec:
-  images:
-    node-metal: {source: {directory: images/node-metal}}
-    gpu-metal: {source: {directory: images/gpu-metal}}
-  all: {imageName: node-metal, files: [cluster/*.yaml]}
-  groups:
-    gpu: {imageName: gpu-metal, files: [groups/gpu.yaml]}
-  nodes:
-    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
-    w2: {address: 10.0.0.22, groups: [gpu], files: [nodes/w2.yaml]}
-```
+A node runs the image of its own `imageName`, else that of its groups, else `spec.all.imageName`,
+and chalkctl refuses an inventory that leaves a node without an image, or whose groups give a node
+two different images.
+[Groups share files and an image among some nodes](../../operate/node-config.md#groups-share-files-and-an-image-among-some-nodes)
+shows an inventory whose GPU workers run an image of their own.
 
 The image stays out of the node's config. chalkctl reads the root hash from `metadata.json` when
 it needs it and never puts it, or the image's name, into the config it delivers, so a new build of
@@ -576,5 +523,8 @@ image with other defaults does not change it.
 - [Config kinds](../../reference/kinds.md) for every field of every kind, the inventory's included.
 - [`chalkctl validate`](../../reference/cli/chalkctl_validate.md) and
   [`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md) for the commands.
+- [Write a node's config](../../operate/node-config.md) for writing the inventory and the
+  documents, and [Set up your workstation](../../operate/workstation.md) for the secrets file and
+  the client files.
 - The [quick start](../../get-started/quick-start.md) and
   [Install on bare metal](../../operate/install-bare-metal.md) for config files in use.

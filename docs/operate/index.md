@@ -5,12 +5,28 @@ description: "Install, upgrade, recover and troubleshoot chalkos nodes"
 
 # Operate nodes
 
-These pages are for operators who run nodes with chalkctl and YAML files. They cover installing
-nodes, adding storage, upgrading, pulling images from registries, rotating certificates,
-recovering a node and troubleshooting.
+These pages are for operators who run nodes with chalkctl and YAML files. They cover setting up
+a workstation, writing nodes' config, installing nodes, adding storage, upgrading, pulling images
+from registries, rotating certificates, recovering a node and troubleshooting.
 Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernetes/index.md).
 
 <div class="grid cards" markdown>
+
+-   :material-laptop: __Set up your workstation__
+
+    ---
+
+    Get chalkctl, generate the cluster's secrets and choose the credentials each command needs.
+
+    [:octicons-arrow-right-24: Read](workstation.md)
+
+-   :material-file-cog: __Write a node's config__
+
+    ---
+
+    Give each node its files and image in the inventory, and check its documents.
+
+    [:octicons-arrow-right-24: Read](node-config.md)
 
 -   :material-server-network: __Install on bare metal__
 

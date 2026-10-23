@@ -97,6 +97,7 @@ A JSON file that lets someone operate nodes without the [secrets file](#secrets-
 client certificate of one [client role](#client-role), its key and the [OS CA](#os-ca)
 certificate, and [`chalkctl config new`](cli/chalkctl_config_new.md) issues it. It names no cluster: its OS CA ties it to one,
 and a node of another cluster fails the TLS handshake with it. See
+[Set up your workstation](../operate/workstation.md) and
 [Security model](../how-it-works/node/security.md).
 
 ## Client role { #client-role }
@@ -317,8 +318,9 @@ holds a `Cluster` document holds the same `Cluster` and `Flannel` specs. chalkct
 `chalkos.yaml` in the current directory, or the file `--inventory` names. It stays on the
 operator's machine and names no secrets. Its keys of `spec.nodes` are the [node names](#node-name);
 its `metadata.name` is a label for messages and the default kubeconfig context. See
-[Config and the inventory](../how-it-works/node/config.md#how-does-the-inventory-assign-files-to-nodes) and
-its fields in [Config kinds](kinds.md#inventory).
+[Write a node's config](../operate/node-config.md),
+[Config and the inventory](../how-it-works/node/config.md#how-does-the-inventory-assign-files-to-nodes)
+and its fields in [Config kinds](kinds.md#inventory).
 
 ## Kind { #kind }
 <!-- abbr: none -->
@@ -502,6 +504,7 @@ The file that holds every secret of a cluster, written once by
 Kubernetes CAs and keys, and the secret recovery keys derive from. It is `secrets.age`, encrypted
 with age, or `secrets.json`; its public part is `secrets.pub.json`. chalkctl reads it only where
 `--secrets` names it, or from standard input with `--secrets -`; an inventory names none. See
+[Set up your workstation](../operate/workstation.md) and
 [Security model](../how-it-works/node/security.md).
 
 ## Secure Boot { #secure-boot }

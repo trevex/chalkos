@@ -10,9 +10,13 @@ let
       ../zensical.toml
       ../docs
       ../includes
-      # The homelab's flake and extensions, which the pages include as snippets.
+      # The homelab's flake, extensions, inventory and config files, which the pages include as
+      # snippets.
       ../examples/homelab/flake.nix
       ../examples/homelab/extensions
+      ../examples/homelab/chalkos.yaml
+      ../examples/homelab/nodes
+      ../examples/homelab/cluster
     ];
   };
 
@@ -325,6 +329,9 @@ rec {
         mkdir -p "$work/examples/homelab"
         rsync -a examples/homelab/flake.nix "$work/examples/homelab/flake.nix"
         rsync -a --delete examples/homelab/extensions/ "$work/examples/homelab/extensions/"
+        rsync -a examples/homelab/chalkos.yaml "$work/examples/homelab/chalkos.yaml"
+        rsync -a --delete examples/homelab/nodes/ "$work/examples/homelab/nodes/"
+        rsync -a --delete examples/homelab/cluster/ "$work/examples/homelab/cluster/"
       }
       copy
       while sleep 1; do copy; done &
