@@ -69,6 +69,11 @@ that every machine of the cluster accepts, and any image signed with it unlocks 
 Keep it out of the repository and out of `/nix/store`: in a secrets manager, or on the machine
 that signs, readable by you alone.
 
+Decide who signs. Whoever holds `db.key` runs `chalkbuild sign` on a build machine and hands out
+the signed image directories, so the key stays in one place. The people who install and upgrade
+nodes need no key. chalkctl sends the signed directories as they are, and each node checks the
+signatures against its firmware's db and dbx and refuses an image the key did not sign.
+
 ## Enrol the certificate in the firmware
 
 chalkos does not enrol keys today. Each machine's firmware must hold `db.crt` in db, with Secure

@@ -110,6 +110,20 @@ image's reference by digest. The node pulls the image itself.
 [Publish images to a registry](../build/publish-images.md) covers the upgrade from a registry, and
 [Registries and mirrors](registries.md) the credentials and mirrors.
 
+## Upgrade a lab before the cluster
+
+A lab catches a broken image before it reaches the cluster. This routine works for each release:
+
+1. Change the flake and build the images into `images/` again.
+2. Sign copies of them into the `-signed` directories with `chalkbuild sign`.
+3. Run `chalkctl validate`.
+4. Upgrade a lab that runs the same variants, with copies that `chalklab sign` signed.
+5. Run `chalkctl upgrade` on the cluster, which gives each node its image in the inventory.
+
+A lab runs the kvm platform's build of each variant. It tests the variant's modules, config and
+Kubernetes, but not the drivers and firmware of the cluster's machines.
+[Sign images for a lab](../build/sign-images.md#sign-images-for-a-lab) shows the lab's upgrade.
+
 ## Run the upgrade
 
 Run the command in the inventory's directory, or name the inventory with `--inventory`:
