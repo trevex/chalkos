@@ -252,6 +252,12 @@ privileged pod, started with `kubectl debug node/<node>`, which sees the node's 
 [`chalkos.debug.tools`](../../reference/options.md#chalkosdebugtools) adds the usual command-line
 tools to an image for that.
 
+The `kvm` platform's images run the QEMU guest agent, which a hypervisor reaches through a
+virtio-serial channel. It answers only `guest-sync-delimited`, `guest-sync`, `guest-ping`,
+`guest-info`, `guest-get-osinfo`, `guest-get-host-name`, `guest-get-time`, `guest-get-timezone`,
+`guest-network-get-interfaces` and `guest-shutdown`. It never runs commands, or reads or writes
+files, for the host, so the hypervisor's admin gets no shell on the node through it.
+
 ## Limits
 
 - chalkos does not enrol Secure Boot keys. The operator enrols the db certificate in each
