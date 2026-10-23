@@ -20,8 +20,9 @@ import (
 // STATE and VAR unlocked by the TPM and is found healthy, and then to the unhealthy image,
 // installed as chalkos_3, which never becomes healthy: after its one try the node falls back to
 // chalkos_2.efi and says so. Each image is named by its root hash. The node pulls the upgrade image
-// from a registry on the host with the credentials of a Registry the upgrade delivers; the upgrade
-// to the unhealthy image still streams it from its directory. The upgrade carries config only the
+// through a Mirror of a registry host it cannot reach, whose endpoint is a registry on the host
+// that asks for the credentials of the endpoint's own Registry; the upgrade delivers the Mirror and
+// the Registry. The upgrade to the unhealthy image still streams it from its directory. The upgrade carries config only the
 // upgrade image accepts, a Farewell, and the upgrade to the unhealthy image the test image's config
 // again: the fallback boots the upgrade image with its own config, Farewell included.
 func TestUpgrade(t *testing.T) {
@@ -54,11 +55,12 @@ func TestUpgrade(t *testing.T) {
 	pullInventory, layers := publish(t, reg, nextImage, ociInventory{
 		base: "upgrade", out: "upgrade-oci.yaml", directory: "images/test-upgrade-metal", repo: "chalkos/test-upgrade",
 		files: "nodes/chalklab/farewell.yaml", registry: "nodes/chalklab/registry.yaml",
+		mirror: mirroredGuest,
 	})
-	pinnedPrefix := registryGuest + "/chalkos/test-upgrade@sha256:"
+	pinnedPrefix := mirroredGuest + "/chalkos/test-upgrade@sha256:"
 	upgraded := time.Now()
 	out, err := chalkctl(t, nil, "", "upgrade", "--inventory", pullInventory, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
-	if err != nil || !strings.Contains(out, "chalklab: config 3 added, 0 removed, 0 changed\n") ||
+	if err != nil || !strings.Contains(out, "chalklab: config 4 added, 0 removed, 0 changed\n") ||
 		!strings.Contains(out, "chalklab: installing "+nextHash[:12]+", which it pulls from "+pinnedPrefix) ||
 		!strings.Contains(out, "chalklab: installed "+nextHash[:12]+", which boots next as chalkos_2+3.efi") ||
 		!strings.Contains(out, "upgraded 1 node to "+nextHash[:12]) {
@@ -86,7 +88,7 @@ func TestUpgrade(t *testing.T) {
 
 	failed := time.Now()
 	out, err = chalkctl(t, nil, "base", "upgrade", "--image", badImage, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
-	if err == nil || !strings.Contains(out, `chalklab: config 0 added, 3 removed (Registry "e2e", Secret "registry", Farewell "bye"), 0 changed`+"\n") ||
+	if err == nil || !strings.Contains(out, `chalklab: config 0 added, 4 removed (Secret "registry", Farewell "bye", Mirror "e2e", Registry "e2e"), 0 changed`+"\n") ||
 		!strings.Contains(out, "chalklab: installed "+badHash[:12]+", which boots next as chalkos_3+1.efi") ||
 		!strings.Contains(out, "chalklab: upgrade to "+badHash[:12]+" failed: rolled back to "+nextHash[:12]) || !strings.Contains(out, "units failed: chalktest-broken.service") {
 		t.Fatalf("upgrade to %s: %v", badHash[:12], err)
@@ -128,10 +130,19 @@ type ociInventory struct {
 	// files is the last file of the node's list, which registry, the file publish writes the
 	// Registry and its Secret to, follows; both are relative to the inventory.
 	files, registry string
+	// mirror, when set, is the registry host the inventory names the image by, which the node
+	// reaches only through a Mirror whose endpoint is the registry; empty names the registry.
+	mirror string
 }
 
+// mirroredGuest is a registry host no guest forward serves: a node reaches its images only
+// through a Mirror. chalkctl on the host reaches it through the proxy, as it reaches
+// registryGuest.
+const mirroredGuest = "10.0.2.101:5000"
+
 // publish pushes the image directory to the registry and writes the inventory o describes. The
-// node gets a Registry with the registry's credentials, which allows plain HTTP to it. chalkctl on
+// node gets a Registry with the registry's credentials, which allows plain HTTP to it, and, for
+// o.mirror, a Mirror of that host whose endpoint is the registry. chalkctl on
 // the host reaches the registry at the node's address of it through the registry itself as its
 // HTTP proxy, as the host has no route to 10.0.2.100, and authenticates with a docker config. It
 // returns the inventory and the digests of the image's store and boot-loader layers.
@@ -155,9 +166,13 @@ func publish(t *testing.T, reg *imageRegistry, imageDir string, o ociInventory) 
 		}
 		layers[mt] = d.String()
 	}
+	host := registryGuest
+	if o.mirror != "" {
+		host = o.mirror
+	}
 	docker := t.TempDir()
 	auth := base64.StdEncoding.EncodeToString([]byte("e2e:" + reg.password))
-	if err := os.WriteFile(filepath.Join(docker, "config.json"), []byte(`{"auths": {"`+registryGuest+`": {"auth": "`+auth+`"}}}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(docker, "config.json"), []byte(`{"auths": {"`+host+`": {"auth": "`+auth+`"}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("DOCKER_CONFIG", docker)
@@ -172,6 +187,9 @@ kind: Secret
 metadata: {name: registry}
 spec: {data: {password: "` + reg.password + `"}}
 `
+	if o.mirror != "" {
+		registryDocs += "---\napiVersion: oci.chalkos.dev/v1alpha1\nkind: Mirror\nmetadata: {name: e2e}\nspec: {registry: \"" + o.mirror + "\", endpoints: [\"http://" + registryGuest + "\"]}\n"
+	}
 	base := inventoryPath(o.base)
 	dir := filepath.Dir(base)
 	if err := os.WriteFile(filepath.Join(dir, o.registry), []byte(registryDocs), 0o644); err != nil {
@@ -181,7 +199,7 @@ spec: {data: {password: "` + reg.password + `"}}
 	if err != nil {
 		t.Fatal(err)
 	}
-	inv := replaceOnce(t, string(data), "{source: {directory: "+o.directory+"}}", `{source: {oci: "`+registryGuest+"/"+o.repo+`:v1"}}`)
+	inv := replaceOnce(t, string(data), "{source: {directory: "+o.directory+"}}", `{source: {oci: "`+host+"/"+o.repo+`:v1"}}`)
 	inv = replaceOnce(t, inv, o.files+"]", o.files+", "+o.registry+"]")
 	path := filepath.Join(dir, o.out)
 	if err := os.WriteFile(path, []byte(inv), 0o644); err != nil {
