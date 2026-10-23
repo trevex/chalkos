@@ -8,7 +8,8 @@
     let
       # One image for every node, on bare metal; cp1's Node document makes it the control plane.
       # The Rack extension adds the Rack kind and the unit that reads it; the Hardware extension a
-      # kind rendered into a file a unit reads.
+      # kind rendered into a file a unit reads; the BGP extension bird, its Peer kind and the
+      # config rendered from it.
       images = chalkos.lib.mkImages {
         # The commit the images are built from, which chalkctl shows beside an image's root hash.
         revision = self.rev or self.dirtyRev or null;
@@ -16,6 +17,7 @@
         variants.node.modules = [
           ./extensions/rack.nix
           ./extensions/hardware.nix
+          ./extensions/bgp.nix
         ];
       };
     in

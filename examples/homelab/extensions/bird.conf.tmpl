@@ -1,0 +1,19 @@
+# bird's config for {{ .node.name }}, rendered by chalkos from its Peer documents.
+router id from "*";
+
+protocol device {
+}
+{{ range .documents.Peer }}
+protocol bgp '{{ .metadata.name }}' {
+  local as 64512;
+  neighbor {{ .spec.address }} as {{ .spec.asn }};
+{{- with .spec.password }}
+  authentication md5;
+  password 'secret_{{ .secretRef.name }}.{{ .secretRef.key }}';
+{{- end }}
+  ipv4 {
+    import all;
+    export none;
+  };
+}
+{{ end -}}

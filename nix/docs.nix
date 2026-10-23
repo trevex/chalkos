@@ -10,6 +10,8 @@ let
       ../zensical.toml
       ../docs
       ../includes
+      # The homelab's extensions, whose sections the pages include as snippets.
+      ../examples/homelab/extensions
     ];
   };
 
@@ -67,6 +69,7 @@ let
       rack.modules = [
         ../examples/homelab/extensions/rack.nix
         ../examples/homelab/extensions/hardware.nix
+        ../examples/homelab/extensions/bgp.nix
       ];
     };
   };
@@ -76,7 +79,7 @@ let
   inventorySchema = ../pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json;
   labSchema = ../pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json;
   # The schemas the pages' config documents are checked against: the kinds of the image with the
-  # Rack and Hardware extensions, the inventory and the lab file.
+  # Rack, Hardware and BGP extensions, the inventory and the lab file.
   snippetSchemas = pkgs.runCommand "chalkos-docs-schemas" { } ''
     mkdir $out
     ln -s ${docsImages.nixos.rack-metal.config.system.build.chalkosSchemas}/*.json $out/
@@ -318,6 +321,8 @@ rec {
         rsync -a --delete --exclude /superpowers/ docs/ "$work/docs/"
         rsync -a zensical.toml "$work/zensical.toml"
         rsync -a includes/ "$work/includes/"
+        mkdir -p "$work/examples/homelab"
+        rsync -a --delete examples/homelab/extensions/ "$work/examples/homelab/extensions/"
       }
       copy
       while sleep 1; do copy; done &

@@ -184,7 +184,8 @@ features = [
 
 # Zensical's default Markdown extensions, which setting any replaces, and snippets, which append
 # the glossary's terms as abbreviations to every page: nix run .#docgen writes them to
-# includes/abbreviations.md from docs/reference/glossary.md.
+# includes/abbreviations.md from docs/reference/glossary.md. Snippets also include the sections of
+# the homelab's extensions that pages show, without the indentation they have in their file.
 [project.markdown_extensions]
 abbr = {}
 admonition = {}
@@ -209,6 +210,7 @@ pymdownx.mark = {}
 pymdownx.smartsymbols = {}
 pymdownx.snippets.auto_append = ["includes/abbreviations.md"]
 pymdownx.snippets.check_paths = true
+pymdownx.snippets.dedent_subsections = true
 pymdownx.superfences.custom_fences = [
   { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
 ]

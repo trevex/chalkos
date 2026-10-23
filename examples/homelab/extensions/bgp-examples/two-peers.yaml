@@ -1,0 +1,19 @@
+# Two neighbours, one with a password.
+apiVersion: bgp.example.org/v1alpha1
+kind: Peer
+metadata: {name: router-a}
+spec:
+  address: 10.0.0.1
+  asn: 64513
+  password: {secretRef: {name: bgp, key: password}}
+---
+apiVersion: bgp.example.org/v1alpha1
+kind: Peer
+metadata: {name: router-b}
+spec: {address: 10.0.0.2, asn: 64514}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: bgp}
+spec:
+  data: {password: example-password}

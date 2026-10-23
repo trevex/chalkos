@@ -1044,8 +1044,8 @@ in
       touch $out
     '';
 
-  # The homelab example: its flake builds the nodes' metal image with the Rack and Hardware
-  # extensions, and chalkctl validate accepts its nodes' YAML, Rack and Hardware documents
+  # The homelab example: its flake builds the nodes' metal image with the Rack, Hardware and BGP
+  # extensions, and chalkctl validate accepts its nodes' YAML, Rack, Hardware and Peer documents
   # included, with that image where their Image points.
   example-homelab =
     let
@@ -1065,11 +1065,12 @@ in
     '';
 
   # An image builds only when its rules compile and read the facts it declares, and its effects
-  # act on units it defines. The test image's Greeting and the homelab example's Rack and Hardware
-  # bring extension kinds with their own rules, facts, effects and outputs; a rule that does not
-  # compile, one that reads a fact no module declares, an effect's rule that does not compile, an
-  # effect on a unit the image lacks and an output whose check refuses an example fail the check
-  # of their image. The homelab's Hardware output renders hardware-examples/server.yaml.
+  # act on units it defines. The test image's Greeting and the homelab example's Rack, Hardware and
+  # Peer bring extension kinds with their own rules, facts, effects and outputs; a rule that does
+  # not compile, one that reads a fact no module declares, an effect's rule that does not compile,
+  # an effect on a unit the image lacks and an output whose check refuses an example fail the check
+  # of their image. The homelab's Hardware output renders hardware-examples/server.yaml, and its
+  # bird-conf output renders bgp-examples/two-peers.yaml, which bird -p parses.
   rules =
     let
       build =
@@ -1078,6 +1079,7 @@ in
       homelab = build [
         ../examples/homelab/extensions/rack.nix
         ../examples/homelab/extensions/hardware.nix
+        ../examples/homelab/extensions/bgp.nix
       ];
       demo = rule: {
         chalkos.kinds.Demo = {
