@@ -261,12 +261,12 @@ in
         host = mkOption {
           type = types.strMatching "${host}(:[0-9]+)?";
           example = "ghcr.io";
-          description = "Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials and leave for plain HTTP, and the kubelet gives containerd its credentials for the container images of this host.";
+          description = "Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials, over plain HTTP when insecure is set. On images that run Kubernetes, the kubelet hands these credentials to containerd for the container images of this host, and containerd also sends them to the endpoints of the host's Mirror.";
         };
         username = mkOption {
           type = types.nullOr types.nonEmptyStr;
           default = null;
-          description = "User chalkd and containerd authenticate to the host as, with the password; null pulls anonymously.";
+          description = "User chalkd authenticates to the host as, with the password, and containerd too on images that run Kubernetes; null pulls anonymously.";
         };
         password = mkOption {
           type = types.nullOr lib.chalkos.types.secretRef;

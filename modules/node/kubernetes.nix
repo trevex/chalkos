@@ -130,8 +130,8 @@ let
     };
   };
 
-  # chalkd renders each registry's hosts.toml from the Mirror and Registry documents, so a
-  # Registry's leave for plain HTTP reaches containerd too.
+  # chalkd renders each registry's hosts.toml from the Mirror and Registry documents, so
+  # containerd also reaches a registry over plain HTTP when its Registry allows it.
   registryMirrors = pkgs.callPackage ./registry-mirrors.nix {
     mirrorsCommand = "${lib.getExe chalkd} containerd-hosts";
   };

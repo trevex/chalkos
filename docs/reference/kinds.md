@@ -282,10 +282,10 @@ It has 2 [change rules](../concepts/rules.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.host` | string | required | Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials and leave for plain HTTP, and the kubelet gives containerd its credentials for the container images of this host. |
+| `spec.host` | string | required | Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials, over plain HTTP when insecure is set. On images that run Kubernetes, the kubelet hands these credentials to containerd for the container images of this host, and containerd also sends them to the endpoints of the host's Mirror. |
 | `spec.insecure` | boolean | `false` | Allow plain HTTP to this host: chalkd and containerd reach it over HTTP, and a Mirror may name an http:// endpoint on it. Otherwise chalkd pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab. |
 | `spec.password` | secret reference or null | `null` | Password or token of the user, from a Secret; null pulls anonymously. |
-| `spec.username` | string or null | `null` | User chalkd and containerd authenticate to the host as, with the password; null pulls anonymously. |
+| `spec.username` | string or null | `null` | User chalkd authenticates to the host as, with the password, and containerd too on images that run Kubernetes; null pulls anonymously. |
 
 ## SystemDisk { #systemdisk }
 
