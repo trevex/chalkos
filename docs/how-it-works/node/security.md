@@ -54,7 +54,7 @@ Images are built unsigned by Nix and signed afterwards, before an install or upg
 [`chalkbuild sign`](../../reference/cli/chalkbuild_sign.md) on the machine that holds the db key. It
 signs a copy of the image directory and checks the copy against the db certificate, as firmware
 with that certificate in db would. Keeping the key out of the build
-keeps it out of the Nix store, which any user of the build machine can read, and out of every
+keeps it out of `/nix/store`, which any user of the build machine can read, and out of every
 binary cache the store is pushed to. Nodes never hold the db key and never sign anything.
 
 Before a node writes an image's UKI or boot loader, chalkd

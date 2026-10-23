@@ -17,6 +17,7 @@ image it ran before stays on disk for a [rollback](#rollback). See
 [The image](../how-it-works/node/image.md).
 
 ## Admin { #admin }
+<!-- abbr: none -->
 
 The [client role](#client-role) that may call almost every method of the node API. It may call
 every method but the one nodes renew their certificates with, which needs the role `node`:
@@ -137,6 +138,18 @@ fields of the built-in kinds. On the node, chalkd writes each document except `S
 `Addon`s to `/run/chalkos/config/<group>/<Kind>/<name>.json`. See
 [Config and the inventory](../how-it-works/node/config.md#what-is-a-config-document).
 
+## Config slot { #config-slot }
+<!-- abbr: config slots, Config slots -->
+
+The directory on STATE that holds a node's config for one image, named by the image's root hash.
+It is `/state/config/<root-hash>` on [STATE](#state), and holds the documents as delivered, the
+same documents with the schemas' defaults filled in, the config's version and the node's
+[identity](#identity). Each image's boot loads its own slot, so a [rollback](#rollback) boots the
+previous image with the config it ran. An install or an [upgrade](#upgrade) writes the slot of the
+image it writes, and `chalkctl apply-config` that of the running image. An upgrade removes the
+slots of images no UKI on the ESP boots any more, so a node holds at most two. See
+[Config and the inventory](../how-it-works/node/config.md#where-does-a-node-keep-its-config).
+
 ## Contract { #contract }
 
 What an image accepts as [config](#config): its variant, platform, kind schemas and what it fixes
@@ -225,8 +238,9 @@ See
 
 ## Generation { #generation }
 
-The number in a [UKI](#uki)'s file name on the [ESP](#esp), which a node counts itself. The file
-name is `chalkos_<generation>.efi`. The image and an install write
+The number in a UKI's file name that orders a node's boot entries, the highest first. A node
+counts it itself: the file name of a [UKI](#uki) on the [ESP](#esp) is `chalkos_<generation>.efi`.
+The image and an install write
 generation 1; each [upgrade](#upgrade) writes the one above the highest on the ESP, so
 systemd-boot, which orders a node's UKIs by file name, boots the image installed last first,
 older or newer. See
@@ -253,6 +267,7 @@ of the boot failed. A boot that passes within
 [blessed](#blessed-boot). See [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md).
 
 ## Identity { #identity }
+<!-- abbr: none -->
 
 The secret-free form that chalkd translates a node's [config](#config) into before applying it.
 It holds the node's hostname, static addresses, labels, taints, storage and Kubernetes
@@ -324,6 +339,7 @@ node CA; on a worker, the cluster CA certificate and a kubelet client certificat
 on [STATE](#state). See [Certificates](../how-it-works/node/certificates.md).
 
 ## Lab { #lab }
+<!-- abbr: none -->
 
 A cluster that [chalklab](#chalklab) runs as virtual machines, described by a lab file. The lab
 file, `chalklab.yaml`, names the cluster's [inventory](#inventory) and each

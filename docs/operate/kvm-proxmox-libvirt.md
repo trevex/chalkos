@@ -31,7 +31,7 @@ You need:
 - A Secure Boot db key and certificate, `db.key` and
   `db.crt`, from [Sign images for Secure Boot](../build/secure-boot-signing.md), and
   chalkbuild, which signs images with them. On a VM you own
-  the firmware's variable store, so you enrol the certificate yourself, as shown below.
+  the firmware's UEFI variables, so you enrol the certificate yourself, as shown below.
 - A KVM host with QEMU, OVMF built with Secure Boot and SMM support, and swtpm. libvirt and
   Proxmox bring all three. `qemu-img` on the machine where you prepare the disk.
 - 2 vCPUs and about 3 GiB of memory per control plane
@@ -152,16 +152,16 @@ The guest agent answers only `guest-sync-delimited`, `guest-sync`, `guest-ping`,
 files for the host, which the agent would otherwise allow, so the hypervisor's admin gets no shell
 on the node through it.
 
-Keep the VM's variable store and TPM state for the node's life. The node's disk keys are sealed to
+Keep the VM's UEFI variables file and TPM state for the node's life. The node's disk keys are sealed to
 PCR 7, which measures the Secure Boot variables, so a reset
-variable store or a new TPM state stops the node from unlocking without its
+UEFI variables file or a new TPM state stops the node from unlocking without its
 recovery key.
 
 ### Plain QEMU
 
-Prepare a variable store with Secure Boot on and your db certificate enrolled with
+Prepare a UEFI variables file with Secure Boot on and your db certificate enrolled with
 `virt-fw-vars` from virt-firmware. `--enroll-generate` creates a platform key and KEK for the
-store. `--no-microsoft` leaves Microsoft's certificates out of db, and `--microsoft-kek none` out
+file. `--no-microsoft` leaves Microsoft's certificates out of db, and `--microsoft-kek none` out
 of KEK, so the VM boots only what you signed and accepts no db update that Microsoft signed:
 
 ```sh
@@ -249,7 +249,7 @@ libvirt starts itself:
 ```
 
 With `enrolled-keys`, libvirt copies a variable template that holds the distribution's and
-Microsoft's certificates, but not yours. libvirt creates the VM's variable store when the VM
+Microsoft's certificates, but not yours. libvirt creates the VM's UEFI variables file when the VM
 first starts, so start it paused, stop it, and add your certificate to db in that file:
 
 ```sh
@@ -263,7 +263,7 @@ virsh console cp1
 ```
 
 `<nvram-file>` is the path `virsh dumpxml` prints, such as
-`/var/lib/libvirt/qemu/nvram/cp1_VARS.fd`. virt-fw-vars edits raw edk2 variable stores; where a
+`/var/lib/libvirt/qemu/nvram/cp1_VARS.fd`. virt-fw-vars edits raw edk2 variables files; where a
 distribution keeps them as qcow2, enrol the certificate in the firmware's setup screen instead,
 as described for Proxmox below.
 
@@ -299,7 +299,7 @@ Press Esc while the firmware starts, then go to Device Manager, Secure Boot Conf
 Secure Boot Mode to Custom Mode, and open Custom Secure Boot Options, DB Options, Enroll
 Signature, Enroll Signature Using File. Pick `db.cer` on the small disk, commit the change, leave
 the setup and reset the VM. Detach and delete the small disk once the node runs. An alternative
-is a variable store you prepare with `virt-fw-vars` from a 4m OVMF template and import with the
+is a UEFI variables file you prepare with `virt-fw-vars` from a 4m OVMF template and import with the
 `import-from` option of `efidisk0`.
 
 ## Install the node in place
@@ -364,7 +364,7 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
 | Nothing appears on the console after the firmware | The VM has no serial port, or the console shows the screen; the kvm image writes to `ttyS0` only. |
 | `the config places the system on /dev/sda (model "...", size ...), but the node runs from /dev/vda (model "...", size ...); install it with the installer instead` | The node's `SystemDisk` names another disk than the one the VM booted from. Fix `spec.disk` in the node's file. |
 | `cp1 runs an image built for metal, but its image node-kvm is built for kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Make its disk from the signed `images/node-kvm`. |
-| The node asks for its recovery key after a hypervisor change | The variable store or the TPM state was reset or replaced. Type the key `chalkctl recovery-key cp1` prints; see [Recover a node](recover-node.md). |
+| The node asks for its recovery key after a hypervisor change | The UEFI variables file or the TPM state was reset or replaced. Type the key `chalkctl recovery-key cp1` prints; see [Recover a node](recover-node.md). |
 
 ## What next
 

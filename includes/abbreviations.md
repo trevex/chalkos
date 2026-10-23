@@ -32,6 +32,7 @@
 *[Change rules]: A CEL expression that a config must make true for the image to accept it.
 *[Client files]: A JSON file that lets someone operate nodes without the secrets file.
 *[Client roles]: The permission a client certificate grants on the node API: reader, operator or admin.
+*[Config slots]: The directory on STATE that holds a node's config for one image, named by the image's root hash.
 *[Health check]: The check that decides whether a counted boot is healthy.
 *[Module group]: A named set of kernel modules an image carries.
 *[Recovery key]: The default fallback keyslot of every encrypted partition, used when the TPM does not unseal.
@@ -40,6 +41,7 @@
 *[change rules]: A CEL expression that a config must make true for the image to accept it.
 *[client files]: A JSON file that lets someone operate nodes without the secrets file.
 *[client roles]: The permission a client certificate grants on the node API: reader, operator or admin.
+*[config slots]: The directory on STATE that holds a node's config for one image, named by the image's root hash.
 *[etcd members]: A control plane that belongs to the cluster's etcd.
 *[health check]: The check that decides whether a counted boot is healthy.
 *[module group]: A named set of kernel modules an image carries.
@@ -48,21 +50,23 @@
 *[Change rule]: A CEL expression that a config must make true for the image to accept it.
 *[Client file]: A JSON file that lets someone operate nodes without the secrets file.
 *[Client role]: The permission a client certificate grants on the node API: reader, operator or admin.
+*[Config slot]: The directory on STATE that holds a node's config for one image, named by the image's root hash.
 *[Normal mode]: The mode chalkd runs in on an installed node.
 *[Secure Boot]: The UEFI firmware's check that a boot binary is signed by a certificate in db.
 *[change rule]: A CEL expression that a config must make true for the image to accept it.
 *[client file]: A JSON file that lets someone operate nodes without the secrets file.
 *[client role]: The permission a client certificate grants on the node API: reader, operator or admin.
+*[config slot]: The directory on STATE that holds a node's config for one image, named by the image's root hash.
 *[etcd member]: A control plane that belongs to the cluster's etcd.
 *[normal mode]: The mode chalkd runs in on an installed node.
 *[Extensions]: NixOS modules outside chalkos that add services to a variant's images and may declare config kinds.
-*[Generation]: The number in a UKI's file name on the ESP, which a node counts itself.
+*[Generation]: The number in a UKI's file name that orders a node's boot entries, the highest first.
 *[Node names]: A node's key in the inventory's spec.nodes, such as cp1.
 *[Provenance]: The git revision and tag an image was built from.
 *[chalkbuild]: The command that prepares the images Nix builds for a cluster's nodes.
 *[db and dbx]: The UEFI firmware's Secure Boot databases: db lists what the firmware boots, dbx what it refuses.
 *[extensions]: NixOS modules outside chalkos that add services to a variant's images and may declare config kinds.
-*[generation]: The number in a UKI's file name on the ESP, which a node counts itself.
+*[generation]: The number in a UKI's file name that orders a node's boot entries, the highest first.
 *[node names]: A node's key in the inventory's spec.nodes, such as cp1.
 *[provenance]: The git revision and tag an image was built from.
 *[Bootstrap]: The one-time start of a cluster's etcd on its first control plane.
@@ -84,7 +88,6 @@
 *[root hash]: The top hash of the store's dm-verity hash tree.
 *[rotations]: The replacement of a CA or key, in phases, with chalkctl rotate.
 *[Contract]: What an image accepts as config: its variant, platform, kind schemas and what it fixes about Kubernetes.
-*[Identity]: The secret-free form that chalkd translates a node's config into before applying it.
 *[Platform]: The kind of machine an image is built for, such as metal or kvm.
 *[Rollback]: The return to the previous image after a new one used up its boot tries without a blessed boot.
 *[Rotation]: The replacement of a CA or key, in phases, with chalkctl rotate.
@@ -93,7 +96,6 @@
 *[chalkctl]: The command-line client of chalkos.
 *[chalklab]: The command that runs a cluster's kvm nodes as QEMU virtual machines on one machine.
 *[contract]: What an image accepts as config: its variant, platform, kind schemas and what it fixes about Kubernetes.
-*[identity]: The secret-free form that chalkd translates a node's config into before applying it.
 *[platform]: The kind of machine an image is built for, such as metal or kvm.
 *[rollback]: The return to the previous image after a new one used up its boot tries without a blessed boot.
 *[rotation]: The replacement of a CA or key, in phases, with chalkctl rotate.
@@ -116,7 +118,6 @@
 *[grants]: The config kinds a unit may read at runtime.
 *[volume]: A partition beyond VAR, declared by a Volume document in a node's config.
 *[worker]: A node that runs containerd and the kubelet but no control plane components.
-*[Admin]: The client role that may call almost every method of the node API.
 *[Facts]: Node state that a change rule reads.
 *[Grant]: The config kinds a unit may read at runtime.
 *[OS CA]: The root certificate authority of a cluster's node API: chalkd and chalkctl trust only certificates that chain to it.
@@ -124,7 +125,6 @@
 *[STATE]: A small partition that holds a node's config, certificates and keys.
 *[Slots]: A pair of partitions that holds one image's store: the erofs data and its dm-verity hash tree.
 *[Store]: The read-only Nix store of an image: an erofs file system compressed with zstd, checked by dm-verity on every read.
-*[admin]: The client role that may call almost every method of the node API.
 *[facts]: Node state that a change rule reads.
 *[grant]: The config kinds a unit may read at runtime.
 *[slots]: A pair of partitions that holds one image's store: the erofs data and its dm-verity hash tree.
@@ -137,9 +137,7 @@
 *[slot]: A pair of partitions that holds one image's store: the erofs data and its dm-verity hash tree.
 *[A/B]: The update scheme of a node's disk, with two slots, A and B, that each hold an image.
 *[ESP]: The EFI system partition, a FAT file system at the start of the system disk.
-*[Lab]: A cluster that chalklab runs as virtual machines, described by a lab file.
 *[TPM]: The machine's Trusted Platform Module 2.0, which seals disk keys to the Secure Boot state.
 *[UKI]: A unified kernel image: the kernel, initrd, kernel command line and os-release in one EFI binary.
 *[VAR]: The partition mounted at /var that holds what a node writes.
 *[VIP]: A virtual IP address of the API server, one per IP family, that one healthy control plane holds.
-*[lab]: A cluster that chalklab runs as virtual machines, described by a lab file.

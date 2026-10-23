@@ -22,7 +22,7 @@ You need:
 - read and write access to `/dev/kvm`, which most distributions give to members of the `kvm`
   group;
 - about 5 GiB of free memory, 3 GiB for the control plane and 2 GiB for the worker, and about
-  10 GiB of free disk for the Nix store and the lab;
+  10 GiB of free disk for `/nix/store` and the lab;
 - git.
 
 You do not need root. [Requirements](requirements.md#lab-host) lists the details.

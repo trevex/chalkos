@@ -124,8 +124,10 @@ Glossary terms show their definition as a tooltip on every page. Do not link the
 - `docs/reference/glossary.md` is the source. The first sentence of an entry is the tooltip, so
   it is a short definition that stands alone, without "See ...".
 - `<!-- abbr: slots, Slots -->` under a heading adds other forms of the term.
-- `<!-- abbr: none -->` gives a term no tooltip. Use it when the term is mostly an ordinary word.
-  Node, Image, Config, Upgrade, Operator, Reader, Kind and Output are skipped this way.
+- `<!-- abbr: nolower -->` drops the automatic lower-case form, where it is an ordinary word,
+  as "effect" is in "take effect".
+- `<!-- abbr: none -->` gives a term no tooltip. Use it when the term is mostly an ordinary word,
+  such as Node, Image or Lab.
 - A new term goes into the glossary. Then `nix run .#docgen` regenerates the tooltips.
 
 Link a page only where the reader needs it to go on. Never link inside a table or a tutorial

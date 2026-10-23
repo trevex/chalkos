@@ -14,7 +14,7 @@ This guide creates the key and certificate, gets the firmware of your machines t
 certificate, and signs the installer and the node images with
 the key. Nix builds images unsigned; you sign them with
 chalkbuild on the machine that holds the key, so the key
-never enters the Nix store or a binary cache, and nodes never hold it.
+never enters `/nix/store` or a binary cache, and nodes never hold it.
 
 !!! note "chalkos does not enrol keys"
 
@@ -55,7 +55,7 @@ short-lived one, at the cost of one more key to manage.
 `db.crt` is public; commit it to the cluster's repository, from where you pass it to the `--cert`
 flag of `chalkbuild sign`.
 `db.key` lets anyone sign a boot image every machine of the cluster accepts, and any image signed
-with it unlocks the nodes' disks. Keep it out of the repository and out of the Nix store: in a
+with it unlocks the nodes' disks. Keep it out of the repository and out of `/nix/store`: in a
 secrets manager or on the machine that signs, readable by you alone.
 
 ## Enrol the certificate in the firmware
@@ -79,7 +79,7 @@ Pick the way your hardware offers:
   Secure Boot variables from any operating system, for example with efitools' `efi-updatevar` or
   sbctl from a live Linux. Writing your own platform key and KEK this way makes you the owner of
   the machine's keys; keep Microsoft's KEK and db entries unless the machine needs none of them.
-- Virtual machines. Their variable store is a file you prepare; [Run on KVM, Proxmox or
+- Virtual machines. Their UEFI variables are a file you prepare; [Run on KVM, Proxmox or
   libvirt](../operate/kvm-proxmox-libvirt.md#what-the-vm-needs) shows how for QEMU, libvirt and Proxmox.
 
 Enrol the certificate before the node is installed. Changing db, KEK or dbx changes
@@ -93,7 +93,7 @@ image's when a machine boots it directly, and each new UKI an upgrade brings.
 [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs a copy of an image directory as
 `nix build` links it: the boot loader (`/EFI/BOOT/BOOT*.EFI`) and the UKIs (`/EFI/Linux/*.efi`)
 on the ESP of its raw image, and nothing else, so no other file on
-the ESP gains the cluster's signature. The build in the Nix store stays as it is, and the copy
+the ESP gains the cluster's signature. The build in `/nix/store` stays as it is, and the copy
 holds no link into the store.
 
 Build each image into a directory of its own, and sign it into the directory the inventory names

@@ -275,7 +275,7 @@ schemas
   validates, installs or upgrades a node whose image in the inventory is the directory.
   [Image and partition layout](../../reference/image-layout.md#outputs-of-an-image-build) lists them.
 
-The image is unsigned, and the signing key never enters the Nix store.
+The image is unsigned, and the signing key never enters `/nix/store`.
 [`chalkbuild sign`](../../reference/cli/chalkbuild_sign.md) signs a copy of the image directory: the
 boot loader and the UKIs on the raw image's ESP. chalkctl installs and upgrades nodes with the
 signed copy, `dd` writes its raw image to a disk, and a VM's disk is a writable copy of that

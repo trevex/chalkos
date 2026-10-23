@@ -168,8 +168,8 @@ election. It differs where Nix changes the trade-offs:
 
 ## Compared with NixOS
 
-A NixOS machine changes in place: `nixos-rebuild` builds a new generation into a writable Nix
-store on the machine and switches to it. A chalkos node has neither a Nix daemon nor
+A NixOS machine changes in place: `nixos-rebuild` builds a new generation into the writable
+`/nix/store` on the machine and switches to it. A chalkos node has neither a Nix daemon nor
 `switch-to-configuration`. Its store is a read-only erofs file system that dm-verity checks block
 by block. Its root is a tmpfs and its `/etc` is read-only, so the running system is exactly the
 image that was built and signed. A change to its software becomes a new image. chalkd writes it

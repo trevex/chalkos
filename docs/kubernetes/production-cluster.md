@@ -519,7 +519,7 @@ A node whose image runs no Kubernetes has no control plane to renew its node cer
 ## Plan backups
 
 chalkos has no etcd backup or restore command yet. Three control planes protect against losing a
-machine; they do not bring back an object someone deleted. Back up what your workloads store with
+machine; they do not bring back an object someone deleted. Back up what your workloads keep with
 tools that work at the Kubernetes level, and back up these yourself:
 
 - the secrets file and its backup recipient's key;

@@ -213,9 +213,9 @@ document changes, as [Ports and firewall](../../reference/ports-and-firewall.md)
 The flags are close to kubeadm's, with a few chalkos choices: the API server talks to its node's own
 etcd member only, authorises with `Node,RBAC` and admits
 with `NodeRestriction`, allows anonymous requests only to `/livez`, `/readyz` and `/healthz`, has
-bootstrap-token authentication off, and encrypts Secrets in etcd with the cluster's encryption key.
-The controller-manager runs without the bootstrap-signer and token-cleaner controllers, since
-nothing uses bootstrap tokens.
+`--enable-bootstrap-token-auth=false`, and encrypts Secrets in etcd with the cluster's encryption
+key. The controller-manager runs without the `bootstrapsigner` and `tokencleaner` controllers,
+since no node joins with a token.
 
 `extraArgs` of the `Cluster` document adds or overrides flags per component of the control plane,
 `etcd`, `kube-apiserver`, `kube-controller-manager` and `kube-scheduler`, and `kubeletExtraArgs` of
@@ -317,7 +317,7 @@ after a reinstall.
 
 A worker receives a kubelet client certificate for its own node
 name in its share at install, and its kubelet registers at the cluster
-endpoint with it. There is no bootstrap token and no
+endpoint with it. The worker needs no token and no
 join step. The kubelet renews the certificate itself through a certificate request, which the
 controller-manager approves for nodes renewing their own.
 

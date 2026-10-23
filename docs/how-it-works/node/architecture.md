@@ -22,7 +22,7 @@ The parts fall into four groups:
   cluster as local virtual machines.
 - On the machine that holds the Secure Boot db key, the operator's or a build machine,
   chalkbuild signs a copy of each image directory Nix
-  builds, so the key never enters the Nix store.
+  builds, so the key never enters `/nix/store`.
 - On every node, chalkd serves the node API, installs and
   upgrades the node, applies its config and runs the Kubernetes control plane.
 

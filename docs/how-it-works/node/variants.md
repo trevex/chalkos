@@ -379,7 +379,7 @@ Left `null`, images accept any client until they are installed, which suits a la
 network and nothing else. The OS CA is the only value of a cluster an image carries, so images
 built with one serve that cluster alone; images built without one serve any. No module reads the
 secrets file itself: chalkctl reads it where `--secrets` names it, and the lab template's
-`.gitignore` keeps the plaintext `secrets.json` out of git, and so out of the Nix store, which
+`.gitignore` keeps the plaintext `secrets.json` out of git, and so out of `/nix/store`, which
 copies a flake's tracked files.
 
 ## Limits

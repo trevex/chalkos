@@ -94,19 +94,33 @@ A pair of partitions that holds one image's store: the erofs data and its dm-ver
 They are labelled ...
 ```
 
-This entry produces one line for each form of the term, with the first sentence as the
-definition and links and backticks removed:
+This entry produces one line for each form of the term. The definition is the first sentence,
+with links and backticks removed:
 
 ```text
+*[Slots]: A pair of partitions that holds one image's store: the erofs data and its dm-verity hash tree.
+*[slots]: A pair of partitions that holds one image's store: the erofs data and its dm-verity hash tree.
 *[Slot]: A pair of partitions that holds one image's store: the erofs data and its dm-verity hash tree.
 *[slot]: A pair of partitions that holds one image's store: the erofs data and its dm-verity hash tree.
 ```
 
-The forms are the heading, the heading with a lower-case first letter when it starts with a
-capitalised word, and the forms in the `<!-- abbr: ... -->` comment. A longer form wins over a
-shorter one, so "boot counting" is matched before "boot". `<!-- abbr: none -->` skips a term that
-is mostly an ordinary word: Node, Image, Config, Upgrade, Operator, Reader, Kind and Output have
-it. After changing the glossary, run `nix run .#docgen` and commit both files.
+A term's forms are its heading, the forms its `<!-- abbr: ... -->` comment lists, and the heading
+with a lower-case first letter. The lower-case form exists only when the heading's first word is
+capitalised and no later word is, so Secure Boot gets no "secure Boot". The comment takes two
+keywords:
+
+- `nolower` drops the lower-case form. Effect has `<!-- abbr: nolower, Effects, effects -->`, so
+  "take effect" gets no tooltip.
+- `none` gives the term no tooltip. Use it for a term that is mostly an ordinary word: Admin,
+  Config, Identity, Image, Kind, Lab, Node, Operator, Output, Reader and Upgrade have it.
+
+The longer form wins where two overlap, so "client files" is matched before "client file", and
+"config slot" before "slot". Tooltips have no underline until the pointer is over them, so they
+do not clutter the text. Readers on touch screens do not see them, which is acceptable because
+every term is also in the glossary.
+
+`nix run .#docs-serve` does not regenerate the tooltips. After changing the glossary, run
+`nix run .#docgen`, reload the page, and commit both files.
 
 ## Code blocks
 
