@@ -1808,3 +1808,22 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.calls)
 	}
 }
+
+// The add-ons are applied whether or not the revoked nodes' admission policy can be: the
+// approver applies the policy and reports its failures apart, so an API server that refuses the
+// policy, here by answering nothing but its readiness, still gets the add-ons.
+func TestApplyOnceLeavesTheRevokedNodesToTheApprover(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	k := s.Kubernetes
+	var ready atomic.Bool
+	ready.Store(true)
+	cfg := readyServer(t, &ready)
+	c, err := k8s.ReadCluster(k.Paths.Cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k.Objects = func(k8s.Cluster) ([]map[string]any, error) { return nil, nil }
+	if n, err := k.applyOnce(context.Background(), c, cfg); err != nil || n != 0 {
+		t.Errorf("applyOnce = %d, %v", n, err)
+	}
+}
