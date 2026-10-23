@@ -403,14 +403,14 @@ in
       systemd.services.kubelet = {
         description = "Kubernetes kubelet";
         wantedBy = [ "multi-user.target" ];
+        # Without the credential provider's files the kubelet pulls anonymously, so a failure to
+        # write them leaves the node running pods.
         wants = [
           "containerd.service"
           "network-online.target"
-        ];
-        requires = [
-          "chalkos-kubernetes.service"
           "chalkos-registry-credentials.service"
         ];
+        requires = [ "chalkos-kubernetes.service" ];
         after = [
           "containerd.service"
           "chalkos-kubernetes.service"
@@ -431,7 +431,7 @@ in
         serviceConfig = {
           EnvironmentFile = [
             "${run}/kubelet/flags"
-            "${run}/credential-provider/flags"
+            "-${run}/credential-provider/flags"
           ];
           # chalkd's preparation writes the configuration and the flags, the cluster's extra flags
           # of the kubelet last; chalkos-registry-credentials the credential provider's flags.

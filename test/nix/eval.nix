@@ -1089,7 +1089,8 @@ lib.runTests {
     };
   };
   # The kubelet's credential provider: a unit granted the Registry kind writes its files before the
-  # kubelet, which reads its flags, and a Registry change starts both again.
+  # kubelet, which reads its flags, and a Registry change starts both again. The kubelet only wants
+  # the unit and its flags file may be missing, so a failure to write them leaves anonymous pulls.
   testRegistryCredentialsUnit =
     let
       config = worker [ ];
@@ -1105,11 +1106,12 @@ lib.runTests {
         command = lib.hasSuffix "/bin/chalkd registry-credentials" unit.serviceConfig.ExecStart;
         beforeKubelet =
           lib.elem "kubelet.service" unit.before
-          && lib.elem "chalkos-registry-credentials.service" kubelet.requires
+          && lib.elem "chalkos-registry-credentials.service" kubelet.wants
+          && !(lib.elem "chalkos-registry-credentials.service" kubelet.requires)
           && lib.elem "chalkos-registry-credentials.service" kubelet.after;
         afterConfig = lib.elem "chalkos-config.service" unit.after;
         flags =
-          lib.elem "/run/chalkos/kubernetes/credential-provider/flags" kubelet.serviceConfig.EnvironmentFile
+          lib.elem "-/run/chalkos/kubernetes/credential-provider/flags" kubelet.serviceConfig.EnvironmentFile
           && lib.hasInfix "$KUBELET_CREDENTIAL_PROVIDER_ARGS $KUBELET_ARGS" kubelet.serviceConfig.ExecStart;
         effect = {
           inherit (effects.registry-credentials) kinds restart;
