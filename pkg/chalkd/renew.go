@@ -34,13 +34,8 @@ func (s *Server) RenewNodeCertificate(ctx context.Context, req *connect.Request[
 		return nil, err
 	}
 	names := pki.NamesOf(peer)
-	// Without the list, the peer may be revoked: nothing is renewed until it can be read.
-	list, err := s.revokedNodes(ctx)
-	if err != nil {
-		return nil, failed(connect.CodeUnavailable, "%v; no node certificate is renewed until they can be read", err)
-	}
-	if at, ok := list[names.CommonName]; ok {
-		return nil, failed(connect.CodePermissionDenied, "node %s is revoked since %s; chalkctl node unrevoke %s lets it renew again", names.CommonName, at.UTC().Format(time.RFC3339), names.CommonName)
+	if err := s.notRevoked(ctx, names.CommonName); err != nil {
+		return nil, err
 	}
 	chain, err := signRequest(nodeCA, names, req.Msg.CertificateRequest, time.Now())
 	if err != nil {
@@ -113,7 +108,13 @@ func (s *Server) IssueNodeCertificate(ctx context.Context, request []byte) (stri
 		if err != nil {
 			return "", err
 		}
-		return signRequest(nodeCA, pki.NamesOf(s.Certificate.Current().Leaf), request, time.Now())
+		// A control plane removed from etcd without leaving it still holds the node CA; once it
+		// is revoked, it renews its own certificate no more than another node's.
+		names := pki.NamesOf(s.Certificate.Current().Leaf)
+		if err := s.notRevoked(ctx, names.CommonName); err != nil {
+			return "", err
+		}
+		return signRequest(nodeCA, names, request, time.Now())
 	}
 	host, err := c.EndpointHost()
 	if err != nil {

@@ -779,7 +779,8 @@ message UnrevokeNodeRequest {
 }
 
 message UnrevokeNodeResponse {
-  // When the node was revoked.
+  // When the node was revoked; unset when the time it is listed with cannot be read, which counts
+  // every CA as made before the revocation.
   google.protobuf.Timestamp revoked_at = 1;
   // The CAs issued before the revocation, by the names chalkctl rotate takes: os-ca, kubernetes-ca.
   // The old node's certificates work again until they expire or these CAs are rotated. Empty when

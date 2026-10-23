@@ -2,6 +2,7 @@ package revoked
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -34,13 +35,78 @@ func TestLoadWithoutConfigMap(t *testing.T) {
 	}
 }
 
-func TestLoadRefusesABadTime(t *testing.T) {
-	cs := fake.NewClientset(&corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: Namespace, Name: Name},
-		Data:       map[string]string{"w1": "yesterday"},
+// TestBadTime keeps a node whose time is no RFC 3339 revoked, at an unknown time, without
+// failing the rest of the list. Revoking it again records a time; unrevoking it removes it.
+func TestBadTime(t *testing.T) {
+	ctx := context.Background()
+	bad := func() *fake.Clientset {
+		return fake.NewClientset(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: Namespace, Name: Name},
+			Data:       map[string]string{"w1": "yesterday", "w2": first.Format(TimeFormat)},
+		})
+	}
+	cs := bad()
+	l := load(t, cs)
+	if at, ok := l["w1"]; !ok || !at.IsZero() || !l["w2"].Equal(first) {
+		t.Errorf("list %v, want w1 at an unknown time and w2 at %v", l, first)
+	}
+	if at, err := Revoke(ctx, cs, "w1", second); err != nil || !at.Equal(second) {
+		t.Errorf("revoking w1 again: %v, %v; want %v", at, err, second)
+	}
+	if l := load(t, cs); !l["w1"].Equal(second) {
+		t.Errorf("list %v, want w1 at %v", l, second)
+	}
+	cs = bad()
+	if at, listed, err := Unrevoke(ctx, cs, "w1", nil); err != nil || !listed || !at.IsZero() {
+		t.Errorf("unrevoking w1: %v, listed %v, %v", at, listed, err)
+	}
+	if l := load(t, cs); len(l) != 1 {
+		t.Errorf("list %v, want w2 alone", l)
+	}
+}
+
+// TestUnrevokeAllows removes a node only when allow accepts the time it is listed with when it
+// is removed, though another control plane changed it since the first read.
+func TestUnrevokeAllows(t *testing.T) {
+	ctx := context.Background()
+	cs := fake.NewClientset()
+	if _, err := Revoke(ctx, cs, "w1", first); err != nil {
+		t.Fatal(err)
+	}
+	refusal := errors.New("refused")
+	if _, _, err := Unrevoke(ctx, cs, "w1", func(time.Time) error { return refusal }); !errors.Is(err, refusal) {
+		t.Fatalf("unrevoke refused: %v", err)
+	}
+	if _, ok := load(t, cs)["w1"]; !ok {
+		t.Fatal("a refused unrevoke removed w1")
+	}
+	changed := false
+	cs.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if changed {
+			return false, nil, nil
+		}
+		changed = true
+		cm, err := cs.Tracker().Get(corev1.SchemeGroupVersion.WithResource("configmaps"), Namespace, Name)
+		if err != nil {
+			return true, nil, err
+		}
+		other := cm.(*corev1.ConfigMap).DeepCopy()
+		other.Data["w1"] = second.Format(TimeFormat)
+		if err := cs.Tracker().Update(corev1.SchemeGroupVersion.WithResource("configmaps"), other, Namespace); err != nil {
+			return true, nil, err
+		}
+		return true, nil, apierrors.NewConflict(schema.GroupResource{Resource: "configmaps"}, Name, nil)
 	})
-	if _, err := Load(context.Background(), cs); err == nil {
-		t.Error("loaded a list with a time that is no RFC 3339")
+	var allowed []time.Time
+	at, listed, err := Unrevoke(ctx, cs, "w1", func(at time.Time) error {
+		allowed = append(allowed, at)
+		return nil
+	})
+	if err != nil || !listed || !at.Equal(second) {
+		t.Fatalf("unrevoke: %v, listed %v, %v; want %v", at, listed, err, second)
+	}
+	if len(allowed) != 2 || !allowed[1].Equal(second) {
+		t.Errorf("allow saw %v, want %v last", allowed, second)
 	}
 }
 
@@ -74,7 +140,7 @@ func TestRevoke(t *testing.T) {
 func TestUnrevoke(t *testing.T) {
 	cs := fake.NewClientset()
 	ctx := context.Background()
-	if _, listed, err := Unrevoke(ctx, cs, "w1"); err != nil || listed {
+	if _, listed, err := Unrevoke(ctx, cs, "w1", nil); err != nil || listed {
 		t.Fatalf("unrevoke without a list: listed %v, %v", listed, err)
 	}
 	for _, name := range []string{"w1", "w2"} {
@@ -82,10 +148,10 @@ func TestUnrevoke(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, listed, err := Unrevoke(ctx, cs, "w3"); err != nil || listed {
+	if _, listed, err := Unrevoke(ctx, cs, "w3", nil); err != nil || listed {
 		t.Fatalf("unrevoke an unknown name: listed %v, %v", listed, err)
 	}
-	at, listed, err := Unrevoke(ctx, cs, "w1")
+	at, listed, err := Unrevoke(ctx, cs, "w1", nil)
 	if err != nil || !listed || !at.Equal(first) {
 		t.Fatalf("unrevoke w1: %v, listed %v, %v", at, listed, err)
 	}

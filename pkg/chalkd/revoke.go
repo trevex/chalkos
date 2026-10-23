@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -23,8 +24,8 @@ import (
 
 func (s *Server) RevokeNode(ctx context.Context, req *connect.Request[nodev1.RevokeNodeRequest]) (*connect.Response[nodev1.RevokeNodeResponse], error) {
 	name := req.Msg.Node
-	if name == "" {
-		return nil, failed(connect.CodeInvalidArgument, "name the node to revoke")
+	if err := checkNodeName(name); err != nil {
+		return nil, err
 	}
 	cs, _, err := s.Kubernetes.revokedClient()
 	if err != nil {
@@ -47,37 +48,75 @@ func (s *Server) RevokeNode(ctx context.Context, req *connect.Request[nodev1.Rev
 
 func (s *Server) UnrevokeNode(ctx context.Context, req *connect.Request[nodev1.UnrevokeNodeRequest]) (*connect.Response[nodev1.UnrevokeNodeResponse], error) {
 	name := req.Msg.Node
-	if name == "" {
-		return nil, failed(connect.CodeInvalidArgument, "name the node to unrevoke")
+	if err := checkNodeName(name); err != nil {
+		return nil, err
 	}
 	cs, share, err := s.Kubernetes.revokedClient()
 	if err != nil {
 		return nil, err
 	}
-	list, err := revoked.Load(ctx, cs)
+	// The CAs are checked against the time the node is listed with when it is removed, which
+	// another control plane may have changed since a first read.
+	var stale []string
+	at, listed, err := revoked.Unrevoke(ctx, cs, name, func(at time.Time) error {
+		var err error
+		if stale, err = s.staleCAs(share, at); err != nil {
+			return failed(connect.CodeInternal, "%v", err)
+		}
+		if len(stale) > 0 && !req.Msg.Force {
+			return failed(connect.CodeFailedPrecondition, "%s; rotate them first, or pass --force to unrevoke %s anyway", staleWarning(name, at, stale), name)
+		}
+		return nil
+	})
+	if connectErr := (*connect.Error)(nil); errors.As(err, &connectErr) {
+		return nil, connectErr
+	}
 	if err != nil {
 		return nil, failed(connect.CodeUnavailable, "%v", err)
 	}
-	at, ok := list[name]
-	if !ok {
+	if !listed {
 		return nil, failed(connect.CodeNotFound, "node %s is not revoked", name)
-	}
-	stale, err := s.staleCAs(share, at)
-	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
-	}
-	if len(stale) > 0 && !req.Msg.Force {
-		return nil, failed(connect.CodeFailedPrecondition, "%s; rotate them first, or pass --force to unrevoke %s anyway", staleWarning(name, at, stale), name)
-	}
-	if _, _, err := revoked.Unrevoke(ctx, cs, name); err != nil {
-		return nil, failed(connect.CodeUnavailable, "%v", err)
 	}
 	if len(stale) > 0 {
 		log.Printf("kubernetes: unrevoked node %s, forced: %s", name, staleWarning(name, at, stale))
 	} else {
 		log.Printf("kubernetes: unrevoked node %s", name)
 	}
-	return connect.NewResponse(&nodev1.UnrevokeNodeResponse{RevokedAt: timestamppb.New(at), StaleCas: stale}), nil
+	resp := &nodev1.UnrevokeNodeResponse{StaleCas: stale}
+	if !at.IsZero() {
+		resp.RevokedAt = timestamppb.New(at)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// checkNodeName refuses what is no Kubernetes node name, which the revoked nodes would never
+// match, such as W1 for w1.
+func checkNodeName(name string) error {
+	if errs := validation.IsDNS1123Subdomain(name); len(errs) > 0 {
+		return failed(connect.CodeInvalidArgument, "the node name %q is invalid: %s", name, strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// notRevoked refuses to renew the node certificate of a revoked node. Without the revoked nodes,
+// the node may be among them: nothing is renewed until they can be read.
+func (s *Server) notRevoked(ctx context.Context, name string) error {
+	list, err := s.revokedNodes(ctx)
+	if connectErr := (*connect.Error)(nil); errors.As(err, &connectErr) {
+		return connectErr
+	}
+	if err != nil {
+		return failed(connect.CodeUnavailable, "%v; no node certificate is renewed until they can be read", err)
+	}
+	at, ok := list[name]
+	if !ok {
+		return nil
+	}
+	since := ""
+	if !at.IsZero() {
+		since = " since " + at.UTC().Format(time.RFC3339)
+	}
+	return failed(connect.CodePermissionDenied, "node %s is revoked%s; chalkctl node unrevoke %s lets it renew again", name, since, name)
 }
 
 // revokedClient reaches the API server of a bootstrapped control-plane node, which keeps the
@@ -144,8 +183,12 @@ func (s *Server) staleCAs(share kpki.Share, at time.Time) ([]string, error) {
 	return stale, nil
 }
 
-// madeBefore reports whether any of the CAs was made no later than at.
+// madeBefore reports whether any of the CAs was made no later than at; every CA was when at is
+// unknown, the zero time.
 func madeBefore(cas []*x509.Certificate, at time.Time) bool {
+	if at.IsZero() {
+		return len(cas) > 0
+	}
 	for _, ca := range cas {
 		if !pki.IssuedAt(ca).After(at) {
 			return true
@@ -161,6 +204,10 @@ func staleWarning(name string, at time.Time, stale []string) string {
 	for _, ca := range stale {
 		cas = append(cas, fmt.Sprintf("%s (chalkctl rotate %s)", described[ca], ca))
 	}
-	return fmt.Sprintf("%s was revoked at %s, but %s predate the revocation: the old node's certificates would work again until they expire",
-		name, at.UTC().Format(time.RFC3339), strings.Join(cas, " and "))
+	when := "at an unknown time"
+	if !at.IsZero() {
+		when = "at " + at.UTC().Format(time.RFC3339)
+	}
+	return fmt.Sprintf("%s was revoked %s, but %s may predate the revocation: the old node's certificates would work again until they expire",
+		name, when, strings.Join(cas, " and "))
 }

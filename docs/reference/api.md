@@ -794,7 +794,7 @@ No fields.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `revoked_at` | `google.protobuf.Timestamp` | When the node was revoked. |
+| `revoked_at` | `google.protobuf.Timestamp` | When the node was revoked; unset when the time it is listed with cannot be read, which counts every CA as made before the revocation. |
 | `stale_cas` | repeated `string` | The CAs issued before the revocation, by the names chalkctl rotate takes: os-ca, kubernetes-ca. The old node's certificates work again until they expire or these CAs are rotated. Empty when both were rotated after the revocation. |
 
 ### UpgradeHeader { #message-upgradeheader }

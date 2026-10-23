@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -149,6 +151,18 @@ func TestRenewNodeCertificateOnControlPlanesOnly(t *testing.T) {
 	}
 }
 
+// renewAs asks the chalkd at addr to renew a node certificate of the node CA of c for name.
+func renewAs(t *testing.T, c creds, addr, name string) error {
+	t.Helper()
+	cert, err := pki.IssueNode(c.nodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, _ := certificateRequest(t, name)
+	_, err = dial(t, addr, pair(t, cert)).RenewNodeCertificate(context.Background(), connect.NewRequest(&nodev1.RenewNodeCertificateRequest{CertificateRequest: request}))
+	return err
+}
+
 // TestRenewNodeCertificateOfRevokedNode refuses to renew the certificate of a revoked node, and
 // every certificate while the revoked nodes cannot be read.
 func TestRenewNodeCertificateOfRevokedNode(t *testing.T) {
@@ -157,29 +171,78 @@ func TestRenewNodeCertificateOfRevokedNode(t *testing.T) {
 	revokedAt := time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC)
 	var loadErr error
 	s.RevokedNodes = func(context.Context) (revoked.List, error) {
-		return revoked.List{"w1": revokedAt}, loadErr
+		return revoked.List{"w1": revokedAt, "w3": {}}, loadErr
 	}
 	addr := serve(t, s, c, c.pool)
-	renew := func(name string) error {
-		t.Helper()
-		cert, err := pki.IssueNode(c.nodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
-		if err != nil {
-			t.Fatal(err)
+	for name, want := range map[string]string{
+		"w1": "node w1 is revoked since 2026-10-23T08:00:00Z; chalkctl node unrevoke w1 lets it renew again",
+		"w3": "node w3 is revoked; chalkctl node unrevoke w3 lets it renew again",
+	} {
+		if err := renewAs(t, c, addr, name); connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), want) {
+			t.Errorf("renewing %s: %v, want %q", name, err, want)
 		}
-		request, _ := certificateRequest(t, name)
-		_, err = dial(t, addr, pair(t, cert)).RenewNodeCertificate(context.Background(), connect.NewRequest(&nodev1.RenewNodeCertificateRequest{CertificateRequest: request}))
-		return err
 	}
-	want := "node w1 is revoked since 2026-10-23T08:00:00Z; chalkctl node unrevoke w1 lets it renew again"
-	if err := renew("w1"); connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), want) {
-		t.Errorf("renewing w1: %v, want %q", err, want)
-	}
-	if err := renew("w2"); err != nil {
+	if err := renewAs(t, c, addr, "w2"); err != nil {
 		t.Errorf("renewing w2: %v", err)
 	}
 	loadErr = errors.New("connection refused")
-	if err := renew("w2"); connect.CodeOf(err) != connect.CodeUnavailable || !strings.Contains(err.Error(), "connection refused") {
+	if err := renewAs(t, c, addr, "w2"); connect.CodeOf(err) != connect.CodeUnavailable || !strings.Contains(err.Error(), "connection refused") {
 		t.Errorf("renewing w2 without the revoked nodes: %v, want a refusal", err)
+	}
+}
+
+// TestRenewNodeCertificateReadsRevokedNodes reads the revoked nodes through the control plane's
+// own API server, where RevokeNode lists them.
+func TestRenewNodeCertificateReadsRevokedNodes(t *testing.T) {
+	c := newCreds(t)
+	s := controlPlaneOf(t, c)
+	s.RevokedNodes = nil
+	write(t, s.Kubernetes.Paths.Bootstrapped(), "")
+	cs := fake.NewClientset()
+	s.Kubernetes.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return cs, nil }
+	if _, err := s.RevokeNode(context.Background(), connect.NewRequest(&nodev1.RevokeNodeRequest{Node: "w1"})); err != nil {
+		t.Fatal(err)
+	}
+	addr := serve(t, s, c, c.pool)
+	if err := renewAs(t, c, addr, "w1"); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("renewing w1: %v, want PermissionDenied", err)
+	}
+	if err := renewAs(t, c, addr, "w2"); err != nil {
+		t.Errorf("renewing w2: %v", err)
+	}
+	// Without its node file, the node cannot reach its API server; the refusal keeps its own code.
+	if err := os.Remove(s.Kubernetes.Paths.NodeFile); err != nil {
+		t.Fatal(err)
+	}
+	err := renewAs(t, c, addr, "w2")
+	if connect.CodeOf(err) != connect.CodeInternal || strings.Contains(err.Error(), "unavailable") {
+		t.Errorf("renewing w2 without the node file: %v, want an internal error alone", err)
+	}
+}
+
+// TestIssueNodeCertificateOfRevokedControlPlane refuses a control plane its own certificate once
+// it is revoked, as one removed from etcd without leaving it would be.
+func TestIssueNodeCertificateOfRevokedControlPlane(t *testing.T) {
+	c := newCreds(t)
+	s := controlPlaneOf(t, c)
+	issued, err := pki.IssueNode(c.nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now().Add(-30*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Certificate = loadedCertificate(t, c, issued)
+	var loadErr error
+	s.RevokedNodes = func(context.Context) (revoked.List, error) { return revoked.List{"n1": time.Now()}, loadErr }
+	r := NewNodeRenewal(s.Certificate, s.IssueNodeCertificate)
+	before := s.Certificate.Fingerprint()
+	if err := r.Renew(context.Background(), time.Now()); connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "node n1 is revoked") {
+		t.Errorf("renewing n1: %v, want a refusal", err)
+	}
+	loadErr = errors.New("connection refused")
+	if err := r.Renew(context.Background(), time.Now()); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Errorf("renewing n1 without the revoked nodes: %v, want Unavailable", err)
+	}
+	if s.Certificate.Fingerprint() != before {
+		t.Error("the refused renewals replaced the certificate")
 	}
 }
 

@@ -4394,7 +4394,8 @@ func (x *UnrevokeNodeRequest) GetForce() bool {
 
 type UnrevokeNodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// When the node was revoked.
+	// When the node was revoked; unset when the time it is listed with cannot be read, which counts
+	// every CA as made before the revocation.
 	RevokedAt *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
 	// The CAs issued before the revocation, by the names chalkctl rotate takes: os-ca, kubernetes-ca.
 	// The old node's certificates work again until they expire or these CAs are rotated. Empty when

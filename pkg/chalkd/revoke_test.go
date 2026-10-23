@@ -126,8 +126,13 @@ func TestRevokeNode(t *testing.T) {
 	if again.NodeDeleted || !again.RevokedAt.AsTime().Equal(at) {
 		t.Errorf("revoking again: at %v, Node deleted %v; want %v and nothing deleted", again.RevokedAt.AsTime(), again.NodeDeleted, at)
 	}
-	if _, err := l.revoke(""); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("revoking no name: %v, want InvalidArgument", err)
+	for _, name := range []string{"", "W1", "w_1", "w1/x"} {
+		if _, err := l.revoke(name); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("revoking %q: %v, want InvalidArgument", name, err)
+		}
+		if _, err := l.unrevoke(name, true); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("unrevoking %q: %v, want InvalidArgument", name, err)
+		}
 	}
 }
 
@@ -223,5 +228,26 @@ func TestUnrevokeNodeNotRevoked(t *testing.T) {
 	l := newRevokeLab(t)
 	if _, err := l.unrevoke("w1", true); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("unrevoking w1: %v, want NotFound", err)
+	}
+}
+
+// TestUnrevokeNodeRevokedAtAnUnknownTime counts every CA as made before a revocation whose time
+// cannot be read.
+func TestUnrevokeNodeRevokedAtAnUnknownTime(t *testing.T) {
+	l := newRevokeLab(t)
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: revoked.Namespace, Name: revoked.Name}, Data: map[string]string{"w1": "yesterday"}}
+	if _, err := l.cs.CoreV1().ConfigMaps(revoked.Namespace).Create(context.Background(), cm, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := l.unrevoke("w1", false)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl rotate os-ca") || !strings.Contains(err.Error(), "chalkctl rotate kubernetes-ca") {
+		t.Fatalf("unrevoke: %v, want a refusal naming both CAs", err)
+	}
+	got, err := l.unrevoke("w1", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RevokedAt != nil || !slices.Equal(got.StaleCas, []string{"os-ca", "kubernetes-ca"}) {
+		t.Errorf("revoked at %v, stale CAs %q; want no time and both CAs", got.RevokedAt, got.StaleCas)
 	}
 }
