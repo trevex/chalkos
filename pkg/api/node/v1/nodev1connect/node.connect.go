@@ -92,8 +92,9 @@ type NodeServiceClient interface {
 	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
-	// tree, UKI and boot loader follow as chunks. An install the installer did not finish
-	// continues when run again.
+	// tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
+	// registry, which the installer pulls. An install the installer did not finish continues when
+	// run again, from either.
 	Install(context.Context) *connect.ClientStreamForClient[v1.InstallRequest, v1.InstallResponse]
 	// ApplyConfig replaces the config of an installed node, or delivers it a Kubernetes share, a
 	// node certificate or OS CAs. Destructive storage changes are refused; additive ones are
@@ -420,8 +421,9 @@ type NodeServiceHandler interface {
 	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
-	// tree, UKI and boot loader follow as chunks. An install the installer did not finish
-	// continues when run again.
+	// tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
+	// registry, which the installer pulls. An install the installer did not finish continues when
+	// run again, from either.
 	Install(context.Context, *connect.ClientStream[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
 	// ApplyConfig replaces the config of an installed node, or delivers it a Kubernetes share, a
 	// node certificate or OS CAs. Destructive storage changes are refused; additive ones are

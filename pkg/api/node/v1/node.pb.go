@@ -263,6 +263,9 @@ type InfoResponse struct {
 	// Whether chalkd pulls an upgrade's image from a registry when UpgradeHeader.source names one;
 	// a node without it takes an upgrade's image only as chunks.
 	PullsUpgradeImages bool `protobuf:"varint,16,opt,name=pulls_upgrade_images,json=pullsUpgradeImages,proto3" json:"pulls_upgrade_images,omitempty"`
+	// Whether chalkd pulls an install's image from a registry when InstallHeader.source names one;
+	// an installer without it takes an install's image only as chunks.
+	PullsInstallImages bool `protobuf:"varint,17,opt,name=pulls_install_images,json=pullsInstallImages,proto3" json:"pulls_install_images,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -391,6 +394,13 @@ func (x *InfoResponse) GetTag() string {
 func (x *InfoResponse) GetPullsUpgradeImages() bool {
 	if x != nil {
 		return x.PullsUpgradeImages
+	}
+	return false
+}
+
+func (x *InfoResponse) GetPullsInstallImages() bool {
+	if x != nil {
+		return x.PullsInstallImages
 	}
 	return false
 }
@@ -896,14 +906,15 @@ type InstallHeader struct {
 	//	*InstallHeader_InPlace
 	//	*InstallHeader_Disk
 	Target isInstallHeader_Target `protobuf_oneof:"target"`
-	// The image the installer writes to the target disk, whose parts follow as chunks; it must
-	// name the boot loader. Installer only.
+	// The image the installer writes to the target disk; it must name the boot loader. Its parts
+	// follow as chunks unless source names where the installer pulls them from. Installer only.
 	Image *ImageHeader `protobuf:"bytes,8,opt,name=image,proto3" json:"image,omitempty"`
 	// Let the installer replace whatever the target disk holds, including an installed node.
 	WipeDisk bool `protobuf:"varint,9,opt,name=wipe_disk,json=wipeDisk,proto3" json:"wipe_disk,omitempty"`
 	// The image's repart definitions of the system region (ESP, slots A and B, STATE) by file
 	// name, which the installer lays out the target disk with; installer only. Each image chooses
-	// its partition sizes, so the installer's own may not fit.
+	// its partition sizes, so the installer's own may not fit; absent when source names an image in
+	// a registry, whose contract layer holds them.
 	SystemDefinitions map[string]string `protobuf:"bytes,10,rep,name=system_definitions,json=systemDefinitions,proto3" json:"system_definitions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA
 	// certificate and a kubelet client certificate for a worker. Empty for an image without
@@ -915,13 +926,21 @@ type InstallHeader struct {
 	Config string `protobuf:"bytes,12,opt,name=config,proto3" json:"config,omitempty"`
 	// The schemas of the image the installer writes, by file name, as its image directory's
 	// schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses
-	// the running image's.
+	// the running image's; absent when source names an image in a registry, whose contract layer
+	// holds them.
 	Schemas map[string][]byte `protobuf:"bytes,13,rep,name=schemas,proto3" json:"schemas,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// The image.json of the image the installer writes, as its image directory holds it; empty for
-	// an image without Kubernetes. Installer only.
+	// an image without Kubernetes. Installer only; absent when source names an image in a
+	// registry, whose contract layer holds them.
 	KubernetesImage []byte `protobuf:"bytes,15,opt,name=kubernetes_image,json=kubernetesImage,proto3" json:"kubernetes_image,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Where the installer takes the image's parts from. Absent, they follow the header as chunks.
+	// For an image in a registry, the installer pulls them and takes the image's schemas,
+	// image.json and repart definitions from its contract layer; the request then carries nothing
+	// after the header, and the header no schemas, kubernetes_image or system_definitions.
+	// Installer only.
+	Source        *ImageSource `protobuf:"bytes,16,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InstallHeader) Reset() {
@@ -1052,6 +1071,13 @@ func (x *InstallHeader) GetSchemas() map[string][]byte {
 func (x *InstallHeader) GetKubernetesImage() []byte {
 	if x != nil {
 		return x.KubernetesImage
+	}
+	return nil
+}
+
+func (x *InstallHeader) GetSource() *ImageSource {
+	if x != nil {
+		return x.Source
 	}
 	return nil
 }
@@ -1452,10 +1478,11 @@ type RegistryImage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The image's repository and manifest digest, repository@sha256:…, as chalkctl resolved the
 	// inventory's reference. The node pulls that manifest and refuses it unless its config is the
-	// image the header describes and its store, hash-tree and UKI layers have the header's sizes and
-	// SHA-256 sums. It authenticates with the Registry document of the reference's host in the
-	// config the request delivers, or without one in the running config, and pulls anonymously
-	// without a Registry of the host.
+	// image the header describes and its store, hash-tree, UKI and, for an install, boot-loader
+	// layers have the header's sizes and SHA-256 sums. An upgrade authenticates with the Registry
+	// document of the reference's host in the config the request delivers, or without one in the
+	// running config; an install with that of the config the request delivers. Without a Registry
+	// of the host, the node pulls anonymously.
 	Reference     string `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4236,7 +4263,7 @@ var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x1achalkos/node/v1/node.proto\x12\x0fchalkos.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\r\n" +
-	"\vInfoRequest\"\xd0\x03\n" +
+	"\vInfoRequest\"\x82\x04\n" +
 	"\fInfoResponse\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.chalkos.node.v1.ModeR\x04mode\x12\x19\n" +
 	"\bimage_id\x18\x03 \x01(\tR\aimageId\x12\x1c\n" +
@@ -4252,7 +4279,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\troot_hash\x18\r \x01(\fR\brootHash\x12\x1a\n" +
 	"\brevision\x18\x0e \x01(\tR\brevision\x12\x10\n" +
 	"\x03tag\x18\x0f \x01(\tR\x03tag\x120\n" +
-	"\x14pulls_upgrade_images\x18\x10 \x01(\bR\x12pullsUpgradeImages\"\x0e\n" +
+	"\x14pulls_upgrade_images\x18\x10 \x01(\bR\x12pullsUpgradeImages\x120\n" +
+	"\x14pulls_install_images\x18\x11 \x01(\bR\x12pullsInstallImages\"\x0e\n" +
 	"\fDisksRequest\"<\n" +
 	"\rDisksResponse\x12+\n" +
 	"\x05disks\x18\x01 \x03(\v2\x15.chalkos.node.v1.DiskR\x05disks\"\x80\x02\n" +
@@ -4290,7 +4318,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x0eInstallRequest\x128\n" +
 	"\x06header\x18\x01 \x01(\v2\x1e.chalkos.node.v1.InstallHeaderH\x00R\x06header\x123\n" +
 	"\x05chunk\x18\x02 \x01(\v2\x1b.chalkos.node.v1.ImageChunkH\x00R\x05chunkB\t\n" +
-	"\amessage\"\xb4\x06\n" +
+	"\amessage\"\xea\x06\n" +
 	"\rInstallHeader\x12)\n" +
 	"\x10node_certificate\x18\x02 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
 	"\bnode_key\x18\x03 \x01(\fR\anodeKey\x12%\n" +
@@ -4305,7 +4333,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x10kubernetes_share\x18\v \x01(\fR\x0fkubernetesShare\x12\x16\n" +
 	"\x06config\x18\f \x01(\tR\x06config\x12E\n" +
 	"\aschemas\x18\r \x03(\v2+.chalkos.node.v1.InstallHeader.SchemasEntryR\aschemas\x12)\n" +
-	"\x10kubernetes_image\x18\x0f \x01(\fR\x0fkubernetesImage\x1aD\n" +
+	"\x10kubernetes_image\x18\x0f \x01(\fR\x0fkubernetesImage\x124\n" +
+	"\x06source\x18\x10 \x01(\v2\x1c.chalkos.node.v1.ImageSourceR\x06source\x1aD\n" +
 	"\x16SystemDefinitionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
@@ -4654,75 +4683,76 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	15, // 9: chalkos.node.v1.InstallHeader.image:type_name -> chalkos.node.v1.ImageHeader
 	65, // 10: chalkos.node.v1.InstallHeader.system_definitions:type_name -> chalkos.node.v1.InstallHeader.SystemDefinitionsEntry
 	66, // 11: chalkos.node.v1.InstallHeader.schemas:type_name -> chalkos.node.v1.InstallHeader.SchemasEntry
-	16, // 12: chalkos.node.v1.ImageHeader.store:type_name -> chalkos.node.v1.ImagePart
-	16, // 13: chalkos.node.v1.ImageHeader.hash_tree:type_name -> chalkos.node.v1.ImagePart
-	16, // 14: chalkos.node.v1.ImageHeader.uki:type_name -> chalkos.node.v1.ImagePart
-	16, // 15: chalkos.node.v1.ImageHeader.boot_loader:type_name -> chalkos.node.v1.ImagePart
-	18, // 16: chalkos.node.v1.ImageSource.oci:type_name -> chalkos.node.v1.RegistryImage
-	25, // 17: chalkos.node.v1.ApplyConfigResponse.changes:type_name -> chalkos.node.v1.StorageChange
-	37, // 18: chalkos.node.v1.StatusResponse.disks:type_name -> chalkos.node.v1.DiskStatus
-	38, // 19: chalkos.node.v1.StatusResponse.volumes:type_name -> chalkos.node.v1.VolumeStatus
-	36, // 20: chalkos.node.v1.StatusResponse.kubernetes:type_name -> chalkos.node.v1.KubernetesStatus
-	34, // 21: chalkos.node.v1.StatusResponse.certificates:type_name -> chalkos.node.v1.CertificateStatus
-	35, // 22: chalkos.node.v1.StatusResponse.time:type_name -> chalkos.node.v1.TimeStatus
-	33, // 23: chalkos.node.v1.StatusResponse.trust:type_name -> chalkos.node.v1.TrustStatus
-	31, // 24: chalkos.node.v1.StatusResponse.boot:type_name -> chalkos.node.v1.BootStatus
-	30, // 25: chalkos.node.v1.StatusResponse.outputs:type_name -> chalkos.node.v1.OutputStatus
-	32, // 26: chalkos.node.v1.BootStatus.running:type_name -> chalkos.node.v1.BootImage
-	32, // 27: chalkos.node.v1.BootStatus.staged:type_name -> chalkos.node.v1.BootImage
-	32, // 28: chalkos.node.v1.BootStatus.failed:type_name -> chalkos.node.v1.BootImage
-	67, // 29: chalkos.node.v1.CertificateStatus.not_after:type_name -> google.protobuf.Timestamp
-	45, // 30: chalkos.node.v1.EtcdMembersResponse.members:type_name -> chalkos.node.v1.EtcdMember
-	45, // 31: chalkos.node.v1.EtcdRemoveMemberResponse.removed:type_name -> chalkos.node.v1.EtcdMember
-	2,  // 32: chalkos.node.v1.RotationStepRequest.step:type_name -> chalkos.node.v1.RotationStep
-	56, // 33: chalkos.node.v1.RotationStepResponse.encrypted:type_name -> chalkos.node.v1.EncryptedObjects
-	58, // 34: chalkos.node.v1.UpgradeRequest.header:type_name -> chalkos.node.v1.UpgradeHeader
-	19, // 35: chalkos.node.v1.UpgradeRequest.chunk:type_name -> chalkos.node.v1.ImageChunk
-	15, // 36: chalkos.node.v1.UpgradeHeader.image:type_name -> chalkos.node.v1.ImageHeader
-	17, // 37: chalkos.node.v1.UpgradeHeader.source:type_name -> chalkos.node.v1.ImageSource
-	3,  // 38: chalkos.node.v1.NodeService.Info:input_type -> chalkos.node.v1.InfoRequest
-	5,  // 39: chalkos.node.v1.NodeService.Disks:input_type -> chalkos.node.v1.DisksRequest
-	9,  // 40: chalkos.node.v1.NodeService.Contract:input_type -> chalkos.node.v1.ContractRequest
-	11, // 41: chalkos.node.v1.NodeService.Install:input_type -> chalkos.node.v1.InstallRequest
-	21, // 42: chalkos.node.v1.NodeService.ApplyConfig:input_type -> chalkos.node.v1.ApplyConfigRequest
-	22, // 43: chalkos.node.v1.NodeService.GetConfig:input_type -> chalkos.node.v1.GetConfigRequest
-	26, // 44: chalkos.node.v1.NodeService.ResetVolume:input_type -> chalkos.node.v1.ResetVolumeRequest
-	28, // 45: chalkos.node.v1.NodeService.Status:input_type -> chalkos.node.v1.StatusRequest
-	39, // 46: chalkos.node.v1.NodeService.Logs:input_type -> chalkos.node.v1.LogsRequest
-	41, // 47: chalkos.node.v1.NodeService.Reboot:input_type -> chalkos.node.v1.RebootRequest
-	43, // 48: chalkos.node.v1.NodeService.Bootstrap:input_type -> chalkos.node.v1.BootstrapRequest
-	46, // 49: chalkos.node.v1.NodeService.EtcdMembers:input_type -> chalkos.node.v1.EtcdMembersRequest
-	48, // 50: chalkos.node.v1.NodeService.EtcdRemoveMember:input_type -> chalkos.node.v1.EtcdRemoveMemberRequest
-	50, // 51: chalkos.node.v1.NodeService.EtcdLeave:input_type -> chalkos.node.v1.EtcdLeaveRequest
-	52, // 52: chalkos.node.v1.NodeService.RenewNodeCertificate:input_type -> chalkos.node.v1.RenewNodeCertificateRequest
-	54, // 53: chalkos.node.v1.NodeService.RotationStep:input_type -> chalkos.node.v1.RotationStepRequest
-	57, // 54: chalkos.node.v1.NodeService.Upgrade:input_type -> chalkos.node.v1.UpgradeRequest
-	60, // 55: chalkos.node.v1.NodeService.DrainNode:input_type -> chalkos.node.v1.DrainNodeRequest
-	62, // 56: chalkos.node.v1.NodeService.UncordonNode:input_type -> chalkos.node.v1.UncordonNodeRequest
-	4,  // 57: chalkos.node.v1.NodeService.Info:output_type -> chalkos.node.v1.InfoResponse
-	6,  // 58: chalkos.node.v1.NodeService.Disks:output_type -> chalkos.node.v1.DisksResponse
-	10, // 59: chalkos.node.v1.NodeService.Contract:output_type -> chalkos.node.v1.ContractResponse
-	20, // 60: chalkos.node.v1.NodeService.Install:output_type -> chalkos.node.v1.InstallResponse
-	24, // 61: chalkos.node.v1.NodeService.ApplyConfig:output_type -> chalkos.node.v1.ApplyConfigResponse
-	23, // 62: chalkos.node.v1.NodeService.GetConfig:output_type -> chalkos.node.v1.GetConfigResponse
-	27, // 63: chalkos.node.v1.NodeService.ResetVolume:output_type -> chalkos.node.v1.ResetVolumeResponse
-	29, // 64: chalkos.node.v1.NodeService.Status:output_type -> chalkos.node.v1.StatusResponse
-	40, // 65: chalkos.node.v1.NodeService.Logs:output_type -> chalkos.node.v1.LogsResponse
-	42, // 66: chalkos.node.v1.NodeService.Reboot:output_type -> chalkos.node.v1.RebootResponse
-	44, // 67: chalkos.node.v1.NodeService.Bootstrap:output_type -> chalkos.node.v1.BootstrapResponse
-	47, // 68: chalkos.node.v1.NodeService.EtcdMembers:output_type -> chalkos.node.v1.EtcdMembersResponse
-	49, // 69: chalkos.node.v1.NodeService.EtcdRemoveMember:output_type -> chalkos.node.v1.EtcdRemoveMemberResponse
-	51, // 70: chalkos.node.v1.NodeService.EtcdLeave:output_type -> chalkos.node.v1.EtcdLeaveResponse
-	53, // 71: chalkos.node.v1.NodeService.RenewNodeCertificate:output_type -> chalkos.node.v1.RenewNodeCertificateResponse
-	55, // 72: chalkos.node.v1.NodeService.RotationStep:output_type -> chalkos.node.v1.RotationStepResponse
-	59, // 73: chalkos.node.v1.NodeService.Upgrade:output_type -> chalkos.node.v1.UpgradeResponse
-	61, // 74: chalkos.node.v1.NodeService.DrainNode:output_type -> chalkos.node.v1.DrainNodeResponse
-	63, // 75: chalkos.node.v1.NodeService.UncordonNode:output_type -> chalkos.node.v1.UncordonNodeResponse
-	57, // [57:76] is the sub-list for method output_type
-	38, // [38:57] is the sub-list for method input_type
-	38, // [38:38] is the sub-list for extension type_name
-	38, // [38:38] is the sub-list for extension extendee
-	0,  // [0:38] is the sub-list for field type_name
+	17, // 12: chalkos.node.v1.InstallHeader.source:type_name -> chalkos.node.v1.ImageSource
+	16, // 13: chalkos.node.v1.ImageHeader.store:type_name -> chalkos.node.v1.ImagePart
+	16, // 14: chalkos.node.v1.ImageHeader.hash_tree:type_name -> chalkos.node.v1.ImagePart
+	16, // 15: chalkos.node.v1.ImageHeader.uki:type_name -> chalkos.node.v1.ImagePart
+	16, // 16: chalkos.node.v1.ImageHeader.boot_loader:type_name -> chalkos.node.v1.ImagePart
+	18, // 17: chalkos.node.v1.ImageSource.oci:type_name -> chalkos.node.v1.RegistryImage
+	25, // 18: chalkos.node.v1.ApplyConfigResponse.changes:type_name -> chalkos.node.v1.StorageChange
+	37, // 19: chalkos.node.v1.StatusResponse.disks:type_name -> chalkos.node.v1.DiskStatus
+	38, // 20: chalkos.node.v1.StatusResponse.volumes:type_name -> chalkos.node.v1.VolumeStatus
+	36, // 21: chalkos.node.v1.StatusResponse.kubernetes:type_name -> chalkos.node.v1.KubernetesStatus
+	34, // 22: chalkos.node.v1.StatusResponse.certificates:type_name -> chalkos.node.v1.CertificateStatus
+	35, // 23: chalkos.node.v1.StatusResponse.time:type_name -> chalkos.node.v1.TimeStatus
+	33, // 24: chalkos.node.v1.StatusResponse.trust:type_name -> chalkos.node.v1.TrustStatus
+	31, // 25: chalkos.node.v1.StatusResponse.boot:type_name -> chalkos.node.v1.BootStatus
+	30, // 26: chalkos.node.v1.StatusResponse.outputs:type_name -> chalkos.node.v1.OutputStatus
+	32, // 27: chalkos.node.v1.BootStatus.running:type_name -> chalkos.node.v1.BootImage
+	32, // 28: chalkos.node.v1.BootStatus.staged:type_name -> chalkos.node.v1.BootImage
+	32, // 29: chalkos.node.v1.BootStatus.failed:type_name -> chalkos.node.v1.BootImage
+	67, // 30: chalkos.node.v1.CertificateStatus.not_after:type_name -> google.protobuf.Timestamp
+	45, // 31: chalkos.node.v1.EtcdMembersResponse.members:type_name -> chalkos.node.v1.EtcdMember
+	45, // 32: chalkos.node.v1.EtcdRemoveMemberResponse.removed:type_name -> chalkos.node.v1.EtcdMember
+	2,  // 33: chalkos.node.v1.RotationStepRequest.step:type_name -> chalkos.node.v1.RotationStep
+	56, // 34: chalkos.node.v1.RotationStepResponse.encrypted:type_name -> chalkos.node.v1.EncryptedObjects
+	58, // 35: chalkos.node.v1.UpgradeRequest.header:type_name -> chalkos.node.v1.UpgradeHeader
+	19, // 36: chalkos.node.v1.UpgradeRequest.chunk:type_name -> chalkos.node.v1.ImageChunk
+	15, // 37: chalkos.node.v1.UpgradeHeader.image:type_name -> chalkos.node.v1.ImageHeader
+	17, // 38: chalkos.node.v1.UpgradeHeader.source:type_name -> chalkos.node.v1.ImageSource
+	3,  // 39: chalkos.node.v1.NodeService.Info:input_type -> chalkos.node.v1.InfoRequest
+	5,  // 40: chalkos.node.v1.NodeService.Disks:input_type -> chalkos.node.v1.DisksRequest
+	9,  // 41: chalkos.node.v1.NodeService.Contract:input_type -> chalkos.node.v1.ContractRequest
+	11, // 42: chalkos.node.v1.NodeService.Install:input_type -> chalkos.node.v1.InstallRequest
+	21, // 43: chalkos.node.v1.NodeService.ApplyConfig:input_type -> chalkos.node.v1.ApplyConfigRequest
+	22, // 44: chalkos.node.v1.NodeService.GetConfig:input_type -> chalkos.node.v1.GetConfigRequest
+	26, // 45: chalkos.node.v1.NodeService.ResetVolume:input_type -> chalkos.node.v1.ResetVolumeRequest
+	28, // 46: chalkos.node.v1.NodeService.Status:input_type -> chalkos.node.v1.StatusRequest
+	39, // 47: chalkos.node.v1.NodeService.Logs:input_type -> chalkos.node.v1.LogsRequest
+	41, // 48: chalkos.node.v1.NodeService.Reboot:input_type -> chalkos.node.v1.RebootRequest
+	43, // 49: chalkos.node.v1.NodeService.Bootstrap:input_type -> chalkos.node.v1.BootstrapRequest
+	46, // 50: chalkos.node.v1.NodeService.EtcdMembers:input_type -> chalkos.node.v1.EtcdMembersRequest
+	48, // 51: chalkos.node.v1.NodeService.EtcdRemoveMember:input_type -> chalkos.node.v1.EtcdRemoveMemberRequest
+	50, // 52: chalkos.node.v1.NodeService.EtcdLeave:input_type -> chalkos.node.v1.EtcdLeaveRequest
+	52, // 53: chalkos.node.v1.NodeService.RenewNodeCertificate:input_type -> chalkos.node.v1.RenewNodeCertificateRequest
+	54, // 54: chalkos.node.v1.NodeService.RotationStep:input_type -> chalkos.node.v1.RotationStepRequest
+	57, // 55: chalkos.node.v1.NodeService.Upgrade:input_type -> chalkos.node.v1.UpgradeRequest
+	60, // 56: chalkos.node.v1.NodeService.DrainNode:input_type -> chalkos.node.v1.DrainNodeRequest
+	62, // 57: chalkos.node.v1.NodeService.UncordonNode:input_type -> chalkos.node.v1.UncordonNodeRequest
+	4,  // 58: chalkos.node.v1.NodeService.Info:output_type -> chalkos.node.v1.InfoResponse
+	6,  // 59: chalkos.node.v1.NodeService.Disks:output_type -> chalkos.node.v1.DisksResponse
+	10, // 60: chalkos.node.v1.NodeService.Contract:output_type -> chalkos.node.v1.ContractResponse
+	20, // 61: chalkos.node.v1.NodeService.Install:output_type -> chalkos.node.v1.InstallResponse
+	24, // 62: chalkos.node.v1.NodeService.ApplyConfig:output_type -> chalkos.node.v1.ApplyConfigResponse
+	23, // 63: chalkos.node.v1.NodeService.GetConfig:output_type -> chalkos.node.v1.GetConfigResponse
+	27, // 64: chalkos.node.v1.NodeService.ResetVolume:output_type -> chalkos.node.v1.ResetVolumeResponse
+	29, // 65: chalkos.node.v1.NodeService.Status:output_type -> chalkos.node.v1.StatusResponse
+	40, // 66: chalkos.node.v1.NodeService.Logs:output_type -> chalkos.node.v1.LogsResponse
+	42, // 67: chalkos.node.v1.NodeService.Reboot:output_type -> chalkos.node.v1.RebootResponse
+	44, // 68: chalkos.node.v1.NodeService.Bootstrap:output_type -> chalkos.node.v1.BootstrapResponse
+	47, // 69: chalkos.node.v1.NodeService.EtcdMembers:output_type -> chalkos.node.v1.EtcdMembersResponse
+	49, // 70: chalkos.node.v1.NodeService.EtcdRemoveMember:output_type -> chalkos.node.v1.EtcdRemoveMemberResponse
+	51, // 71: chalkos.node.v1.NodeService.EtcdLeave:output_type -> chalkos.node.v1.EtcdLeaveResponse
+	53, // 72: chalkos.node.v1.NodeService.RenewNodeCertificate:output_type -> chalkos.node.v1.RenewNodeCertificateResponse
+	55, // 73: chalkos.node.v1.NodeService.RotationStep:output_type -> chalkos.node.v1.RotationStepResponse
+	59, // 74: chalkos.node.v1.NodeService.Upgrade:output_type -> chalkos.node.v1.UpgradeResponse
+	61, // 75: chalkos.node.v1.NodeService.DrainNode:output_type -> chalkos.node.v1.DrainNodeResponse
+	63, // 76: chalkos.node.v1.NodeService.UncordonNode:output_type -> chalkos.node.v1.UncordonNodeResponse
+	58, // [58:77] is the sub-list for method output_type
+	39, // [39:58] is the sub-list for method input_type
+	39, // [39:39] is the sub-list for extension type_name
+	39, // [39:39] is the sub-list for extension extendee
+	0,  // [0:39] is the sub-list for field type_name
 }
 
 func init() { file_chalkos_node_v1_node_proto_init() }

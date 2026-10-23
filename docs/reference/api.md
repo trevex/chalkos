@@ -59,8 +59,9 @@ image it installs, whose contract comes with that image. Available in both modes
 
 Install turns a node in maintenance mode into an installed node and reboots it. The first
 message carries the header; when the node is the installer, the image's store data, hash
-tree, UKI and boot loader follow as chunks. An install the installer did not finish
-continues when run again.
+tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
+registry, which the installer pulls. An install the installer did not finish continues when
+run again, from either.
 
 ### ApplyConfig { #method-applyconfig }
 
@@ -494,6 +495,7 @@ No fields.
 | `revision` | `string` | The git revision and tag the running image was built from, as the node's record of the images it installed names them; empty when it does not know them. |
 | `tag` | `string` |  |
 | `pulls_upgrade_images` | `bool` | Whether chalkd pulls an upgrade's image from a registry when UpgradeHeader.source names one; a node without it takes an upgrade's image only as chunks. |
+| `pulls_install_images` | `bool` | Whether chalkd pulls an install's image from a registry when InstallHeader.source names one; an installer without it takes an install's image only as chunks. |
 
 ### InstallHeader { #message-installheader }
 
@@ -507,13 +509,14 @@ No fields.
 | `fallback_secret` | `string` | Recovery key or password enrolled as the second keyslot of every encrypted volume; empty when the node's fallback is none. |
 | `in_place` | [`InPlace`](#message-inplace) | The node's image already runs from the boot disk. |
 | `disk` | [`DiskReference`](#message-diskreference) | The installer lays out this disk and writes the streamed image to it. |
-| `image` | [`ImageHeader`](#message-imageheader) | The image the installer writes to the target disk, whose parts follow as chunks; it must name the boot loader. Installer only. |
+| `image` | [`ImageHeader`](#message-imageheader) | The image the installer writes to the target disk; it must name the boot loader. Its parts follow as chunks unless source names where the installer pulls them from. Installer only. |
 | `wipe_disk` | `bool` | Let the installer replace whatever the target disk holds, including an installed node. |
-| `system_definitions` | repeated [`InstallHeader.SystemDefinitionsEntry`](#message-installheadersystemdefinitionsentry) | The image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with; installer only. Each image chooses its partition sizes, so the installer's own may not fit. |
+| `system_definitions` | repeated [`InstallHeader.SystemDefinitionsEntry`](#message-installheadersystemdefinitionsentry) | The image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with; installer only. Each image chooses its partition sizes, so the installer's own may not fit; absent when source names an image in a registry, whose contract layer holds them. |
 | `kubernetes_share` | `bytes` | The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA certificate and a kubelet client certificate for a worker. Empty for an image without Kubernetes. |
 | `config` | `string` | The node's config: YAML documents separated by ---. chalkd checks them as a set against the schemas of the image it installs, fills in their defaults, keeps them on STATE and translates them into what the node applies at boot. Required. |
-| `schemas` | repeated [`InstallHeader.SchemasEntry`](#message-installheaderschemasentry) | The schemas of the image the installer writes, by file name, as its image directory's schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses the running image's. |
-| `kubernetes_image` | `bytes` | The image.json of the image the installer writes, as its image directory holds it; empty for an image without Kubernetes. Installer only. |
+| `schemas` | repeated [`InstallHeader.SchemasEntry`](#message-installheaderschemasentry) | The schemas of the image the installer writes, by file name, as its image directory's schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses the running image's; absent when source names an image in a registry, whose contract layer holds them. |
+| `kubernetes_image` | `bytes` | The image.json of the image the installer writes, as its image directory holds it; empty for an image without Kubernetes. Installer only; absent when source names an image in a registry, whose contract layer holds them. |
+| `source` | [`ImageSource`](#message-imagesource) | Where the installer takes the image's parts from. Absent, they follow the header as chunks. For an image in a registry, the installer pulls them and takes the image's schemas, image.json and repart definitions from its contract layer; the request then carries nothing after the header, and the header no schemas, kubernetes_image or system_definitions. Installer only. |
 
 ### InstallHeader.SchemasEntry { #message-installheaderschemasentry }
 
@@ -619,7 +622,7 @@ A chalkos image in an OCI registry.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `reference` | `string` | The image's repository and manifest digest, repository@sha256:…, as chalkctl resolved the inventory's reference. The node pulls that manifest and refuses it unless its config is the image the header describes and its store, hash-tree and UKI layers have the header's sizes and SHA-256 sums. It authenticates with the Registry document of the reference's host in the config the request delivers, or without one in the running config, and pulls anonymously without a Registry of the host. |
+| `reference` | `string` | The image's repository and manifest digest, repository@sha256:…, as chalkctl resolved the inventory's reference. The node pulls that manifest and refuses it unless its config is the image the header describes and its store, hash-tree, UKI and, for an install, boot-loader layers have the header's sizes and SHA-256 sums. An upgrade authenticates with the Registry document of the reference's host in the config the request delivers, or without one in the running config; an install with that of the config the request delivers. Without a Registry of the host, the node pulls anonymously. |
 
 ### RenewNodeCertificateRequest { #message-renewnodecertificaterequest }
 

@@ -26,6 +26,7 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 		Variant:            release["CHALKOS_VARIANT"],
 		Platform:           release["CHALKOS_PLATFORM"],
 		PullsUpgradeImages: true,
+		PullsInstallImages: true,
 	}
 	// An image is its store's root hash; the record of installed images gives its provenance.
 	if cmdline, err := os.ReadFile(s.Paths.Cmdline); err == nil {
