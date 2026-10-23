@@ -170,7 +170,9 @@ type NodeServiceClient interface {
 	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
 	// time of its first revocation. A call that fails after listing the node says so; calling again
-	// finishes it. Available on bootstrapped control-plane nodes, to admins.
+	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
+	// map of revoked nodes would grow too long for the API server to compile with it. Available on
+	// bootstrapped control-plane nodes, to admins.
 	RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error)
 	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
 	// it, so a node of that name may join again. The old node's certificates work again too, unless
@@ -537,7 +539,9 @@ type NodeServiceHandler interface {
 	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
 	// time of its first revocation. A call that fails after listing the node says so; calling again
-	// finishes it. Available on bootstrapped control-plane nodes, to admins.
+	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
+	// map of revoked nodes would grow too long for the API server to compile with it. Available on
+	// bootstrapped control-plane nodes, to admins.
 	RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error)
 	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
 	// it, so a node of that name may join again. The old node's certificates work again too, unless

@@ -166,7 +166,9 @@ kube-system/chalkos-revoked-nodes, applies the API server's admission policy
 chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 Control planes then refuse to renew its node certificate. A node revoked already keeps the
 time of its first revocation. A call that fails after listing the node says so; calling again
-finishes it. Available on bootstrapped control-plane nodes, to admins.
+finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
+map of revoked nodes would grow too long for the API server to compile with it. Available on
+bootstrapped control-plane nodes, to admins.
 
 ### UnrevokeNode { #method-unrevokenode }
 
