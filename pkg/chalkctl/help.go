@@ -272,7 +272,8 @@ reference that finds no disk needs fixing or its disk plugged in, and one that c
 resolved, as it finds more than one disk or names something other than a whole disk, needs fixing.
 Otherwise the node restarts the units that read what changed, and chalkctl prints the changes and
 the units. --kubernetes-share also delivers a new Kubernetes share: for example a worker's new
-kubelet certificate.
+kubelet certificate. It is refused to a node revoked with chalkctl node revoke, and while no
+control plane says which nodes are revoked; --force delivers it without asking.
 
 Each image on a node keeps its own config. --staged delivers the config for the image staged to
 boot next, as an upgrade with --no-reboot leaves it, instead of the running image: chalkctl checks
@@ -401,8 +402,12 @@ const nodeRenewLong = `Issues the node a new node certificate and key from the n
 node's own certificate expired. Such a node is verified by the OS CA as of its certificate's
 start, so chalkctl trusts the node's old key: someone holding a leaked, expired key of the node
 and sitting in its network path could receive the new certificate in its place. That is inherent
-to recovering a node; renewing node certificates before they expire avoids it. The command needs
-the secrets file.`
+to recovering a node; renewing node certificates before they expire avoids it.
+
+A node revoked with chalkctl node revoke is refused, as is any node while no control plane says
+which nodes are revoked: the control planes are asked first. A control plane whose own
+certificate expired cannot answer; --force renews without asking. The command needs the secrets
+file.`
 
 const validateLong = `Checks the config of the nodes named, or of every node of the inventory, as each node would
 check it on its image: the files the inventory gives the node form its set, every document is

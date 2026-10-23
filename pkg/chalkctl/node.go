@@ -585,7 +585,7 @@ func size(bytes uint64) string {
 type applyConfigFlags struct {
 	node                          nodeCommand
 	passwordFile                  string
-	kubernetesShare, staged, diff bool
+	kubernetesShare, staged, diff, force bool
 }
 
 func (a *app) applyConfigCommand() *cobra.Command {
@@ -600,6 +600,7 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	f.node.register(fs)
 	registerPasswordFile(fs, &f.passwordFile)
 	fs.BoolVar(&f.kubernetesShare, "kubernetes-share", false, "also deliver a new Kubernetes share, such as a new kubelet certificate for a worker")
+	fs.BoolVar(&f.force, "force", false, "with --kubernetes-share, deliver the share without asking the control planes whether the node is revoked")
 	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the node's image in the inventory")
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing")
 	return cmd
@@ -613,15 +614,23 @@ func registerPasswordFile(fs *pflag.FlagSet, p *string) {
 func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
 	n := f.node
 	if len(pos) != 1 {
-		return errors.New("usage: chalkctl apply-config <node> [--kubernetes-share | --staged]")
+		return errors.New("usage: chalkctl apply-config <node> [--kubernetes-share [--force] | --staged]")
 	}
 	if f.staged && f.kubernetesShare {
 		return errors.New("--staged delivers config alone; deliver the Kubernetes share to the running image")
+	}
+	if f.force && !f.kubernetesShare {
+		return errors.New("--force goes with --kubernetes-share")
 	}
 	n.needs = "apply-config"
 	t, err := a.target(ctx, n, pos[0])
 	if err != nil {
 		return err
+	}
+	if f.kubernetesShare && !f.diff && !f.force {
+		if err := notRevoked(ctx, t, "apply-config delivers it a Kubernetes share"); err != nil {
+			return err
+		}
 	}
 	conn, err := dialInstalled(t)
 	if err != nil {

@@ -21,25 +21,32 @@ import (
 // this command does. The node still verifies chalkctl's certificate as usual.
 func (a *app) nodeRenewCommand() *cobra.Command {
 	var n nodeCommand
+	var force bool
 	cmd := a.command(&cobra.Command{
 		Use:     "renew <node>",
 		Short:   "Issue a node a new node certificate, also once its own expired",
 		Long:    nodeRenewLong,
 		Example: nodeRenewExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeRenew(ctx, n, pos) })
+	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeRenew(ctx, n, force, pos) })
 	n.register(cmd.Flags())
+	cmd.Flags().BoolVar(&force, "force", false, "renew without asking the control planes whether the node is revoked")
 	return cmd
 }
 
-func (a *app) nodeRenew(ctx context.Context, n nodeCommand, pos []string) error {
+func (a *app) nodeRenew(ctx context.Context, n nodeCommand, force bool, pos []string) error {
 	if len(pos) != 1 {
-		return errors.New("usage: chalkctl node renew <node>")
+		return errors.New("usage: chalkctl node renew <node> [--force]")
 	}
 	// The certificate names the node's addresses, which only its config gives.
 	n.needs = "node renew"
 	t, err := a.target(ctx, n, pos[0])
 	if err != nil {
 		return err
+	}
+	if !force {
+		if err := notRevoked(ctx, t, "node renew issues it a node certificate"); err != nil {
+			return err
+		}
 	}
 	names, err := t.cluster.certNames(t.name)
 	if err != nil {

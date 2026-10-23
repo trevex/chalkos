@@ -2,6 +2,7 @@ package chalkctl
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -9,10 +10,13 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
@@ -156,5 +160,58 @@ func TestRevokedLines(t *testing.T) {
 	got := revokedLines(&nodev1.KubernetesStatus{RevokedNodesError: "read the revoked nodes: connection refused"})
 	if want := []string{"revoked nodes unknown: read the revoked nodes: connection refused"}; !slices.Equal(got, want) {
 		t.Errorf("lines = %q, want %q", got, want)
+	}
+}
+
+// node renew and apply-config --kubernetes-share issue no certificate to a node a control plane
+// lists as revoked, nor while no control plane says which nodes are, unless forced.
+func TestCertificatesRefusedToRevokedNodes(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	if _, err := revoked.Revoke(ctx, cs, "n1", time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range [][]string{{"node", "renew", "n1"}, {"apply-config", "n1", "--kubernetes-share"}} {
+		err := ta.run(ctx, ta.args(cmd, addr))
+		if err == nil || !strings.Contains(err.Error(), "n1 is revoked since 2026-10-23T12:00:00Z") ||
+			!strings.Contains(err.Error(), "chalkctl node unrevoke n1") || !strings.Contains(err.Error(), "--force") {
+			t.Errorf("%v: %v, want refused as revoked", cmd, err)
+		}
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "renew", "n1", "--force"}, addr)); err != nil {
+		t.Errorf("node renew --force: %v", err)
+	}
+	// apply-config without a share delivers no certificate.
+	if err := ta.run(ctx, ta.args([]string{"apply-config", "n1", "--diff"}, addr)); err != nil {
+		t.Errorf("apply-config --diff: %v", err)
+	}
+	if err := ta.run(ctx, ta.args([]string{"apply-config", "n1", "--force"}, addr)); err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("apply-config --force without --kubernetes-share: %v", err)
+	}
+	if err := ta.run(ctx, ta.args([]string{"apply-config", "n1", "--kubernetes-share", "--force"}, addr)); err != nil && strings.Contains(err.Error(), "revoked") {
+		t.Errorf("apply-config --kubernetes-share --force: %v", err)
+	}
+
+	if _, _, err := revoked.Unrevoke(ctx, cs, "n1", nil); err != nil {
+		t.Fatal(err)
+	}
+	cs.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("connection refused")
+	})
+	err := ta.run(ctx, ta.args([]string{"node", "renew", "n1"}, addr))
+	if err == nil || !strings.Contains(err.Error(), "no control-plane node said which nodes are revoked") || !strings.Contains(err.Error(), "connection refused") || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("node renew without the list: %v", err)
+	}
+}
+
+// node renew renews a node of a cluster without control planes, which keeps no revoked nodes.
+func TestNodeRenewWithoutControlPlanes(t *testing.T) {
+	ta := newTestApp(t)
+	withKind(t, ta, identity.KindWorker)
+	s, _ := kubernetesNode(t, ta)
+	addr := ta.startNode(t, s)
+	if err := ta.run(context.Background(), ta.args([]string{"node", "renew", "n1"}, addr)); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -22,7 +22,8 @@ reference that finds no disk needs fixing or its disk plugged in, and one that c
 resolved, as it finds more than one disk or names something other than a whole disk, needs fixing.
 Otherwise the node restarts the units that read what changed, and chalkctl prints the changes and
 the units. --kubernetes-share also delivers a new Kubernetes share: for example a worker's new
-kubelet certificate.
+kubelet certificate. It is refused to a node revoked with chalkctl node revoke, and while no
+control plane says which nodes are revoked; --force delivers it without asking.
 
 Each image on a node keeps its own config. --staged delivers the config for the image staged to
 boot next, as an upgrade with --no-reboot leaves it, instead of the running image: chalkctl checks
@@ -60,6 +61,7 @@ chalkctl apply-config <node> [flags]
 ```
       --address string         address of the node's chalkd, host or host:port (default the node's address in the inventory)
       --diff                   print what the config changes in the node's config, document by document and field by field, and change nothing
+      --force                  with --kubernetes-share, deliver the share without asking the control planes whether the node is revoked
   -h, --help                   help for apply-config
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --inventory string       inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)

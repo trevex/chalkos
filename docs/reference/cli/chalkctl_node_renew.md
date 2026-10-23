@@ -13,8 +13,12 @@ Issues the node a new node certificate and key from the node CA and delivers the
 node's own certificate expired. Such a node is verified by the OS CA as of its certificate's
 start, so chalkctl trusts the node's old key: someone holding a leaked, expired key of the node
 and sitting in its network path could receive the new certificate in its place. That is inherent
-to recovering a node; renewing node certificates before they expire avoids it. The command needs
-the secrets file.
+to recovering a node; renewing node certificates before they expire avoids it.
+
+A node revoked with chalkctl node revoke is refused, as is any node while no control plane says
+which nodes are revoked: the control planes are asked first. A control plane whose own
+certificate expired cannot answer; --force renews without asking. The command needs the secrets
+file.
 
 ```
 chalkctl node renew <node> [flags]
@@ -30,6 +34,7 @@ chalkctl node renew <node> [flags]
 
 ```
       --address string     address of the node's chalkd, host or host:port (default the node's address in the inventory)
+      --force              renew without asking the control planes whether the node is revoked
   -h, --help               help for renew
       --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --inventory string   inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)

@@ -12,6 +12,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/identity"
 )
 
 // revokeFlags are the flags of node revoke and node unrevoke.
@@ -189,4 +190,39 @@ func everBootstrapped(state string) bool {
 		}
 	}
 	return false
+}
+
+// notRevoked refuses to deliver the target what the secrets file issues it, which does, while a
+// control plane lists it as revoked or while no control plane says which nodes are.
+func notRevoked(ctx context.Context, t *target, does string) error {
+	controlPlanes, err := t.cluster.nodesOf(identity.KindControlPlane, "")
+	if err != nil {
+		return err
+	}
+	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
+		// The target is reached where the command reaches it, the others where the inventory says.
+		ct := t
+		if name != t.name {
+			if ct, err = targetIn(t.cluster, nodeCommand{}, name, t.creds); err != nil {
+				return nil, err
+			}
+		}
+		conn, err := dialInstalled(ct)
+		if err != nil {
+			return nil, err
+		}
+		defer conn.Close()
+		resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		if err != nil {
+			return nil, nodeError(err, name)
+		}
+		return resp.Msg, nil
+	})
+	if err != nil {
+		return fmt.Errorf("%w; %s only once one does, or with --force", err, does)
+	}
+	if n, ok := list[t.name]; ok {
+		return fmt.Errorf("%s is revoked %s, and %s only once chalkctl node unrevoke %s lets it back in, or with --force", t.name, revokedSince(n), does, t.name)
+	}
+	return nil
 }
