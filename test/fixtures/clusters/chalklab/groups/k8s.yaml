@@ -77,3 +77,28 @@ spec:
   endpoints:
     - http://10.0.2.100:5000
   registry: registry.k8s.io
+---
+# A private registry the nodes reach only through the test's registry, which asks for these
+# credentials. The kubelet gives them to containerd, which sends them to the mirror endpoint;
+# no pod names a pull secret.
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Mirror
+metadata: {name: private}
+spec:
+  endpoints:
+    - http://10.0.2.100:5000
+  registry: private.chalkos.test
+---
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Registry
+metadata: {name: private}
+spec:
+  host: private.chalkos.test
+  username: e2e
+  password: {secretRef: {name: registry, key: password}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: registry}
+spec:
+  data: {password: pull-s3cret}

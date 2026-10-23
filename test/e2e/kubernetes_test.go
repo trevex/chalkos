@@ -72,7 +72,9 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 // and accepts VXLAN on those addresses only, that pods on both nodes have addresses of both
 // families and reach each other over both, directly, through a dual-stack service and at a host
 // port, and resolve the API server's service and other names through the IPv4 DNS address, all of
-// it again after the control plane rebooted with newly issued certificates. It checks that both
+// it again after the control plane rebooted with newly issued certificates. It checks that a
+// worker pulls a private image with the node's registry credentials through a mirror, without a
+// pull secret. It checks that both
 // nodes keep their clocks with the test's NTP server, that a reader's client file reads a node's
 // status but cannot reboot it, that the worker renews its node certificate through the control
 // plane, that the control plane renews its node certificate and its own certificates in place,
@@ -139,6 +141,9 @@ func TestKubernetesCluster(t *testing.T) {
 		dnsService(t, ctx, cs)
 	}
 	checkNetworking()
+	if !online {
+		privatePull(t, ctx, cs)
+	}
 
 	p := peers{
 		nodes:        [2]string{"cp1", "w1"},
@@ -234,6 +239,39 @@ func TestKubernetesCluster(t *testing.T) {
 	if !lab.Running(w1.vm.Config) || !lab.Running(nodes["cp1"].vm.Config) {
 		t.Error("the VMs of cp1 and w1 do not both run after chalklab start")
 	}
+}
+
+// privatePull runs on w1 a pod of privateImage without imagePullSecrets, which only the node's
+// credentials from its Registry pull: the image's host resolves nowhere, and its Mirror's
+// endpoint asks for credentials and has no Registry credentials of its own. The pod succeeds
+// only if the kubelet's credential provider answers and containerd sends the image host's
+// credentials to the mirror endpoint, as containerd 2.4 does.
+func privatePull(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
+	t.Helper()
+	_, err := cs.CoreV1().Pods("default").Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "private"},
+		Spec: corev1.PodSpec{
+			NodeSelector:  map[string]string{"kubernetes.io/hostname": "w1"},
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers:    []corev1.Container{{Name: "private", Image: privateImage, Command: []string{"true"}}},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 5*time.Minute, "the pod of the private image", func() error {
+		pod, err := cs.CoreV1().Pods("default").Get(ctx, "private", metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if len(pod.Spec.ImagePullSecrets) > 0 {
+			t.Fatalf("the pod has pull secrets %v", pod.Spec.ImagePullSecrets)
+		}
+		if pod.Status.Phase != corev1.PodSucceeded {
+			return fmt.Errorf("the pod is %s: %v", pod.Status.Phase, pod.Status.ContainerStatuses)
+		}
+		return nil
+	})
 }
 
 // anonymousOnlyHealth checks that a request without credentials reaches the health endpoints

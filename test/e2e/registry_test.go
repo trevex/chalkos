@@ -21,9 +21,19 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
-// startRegistry serves the images CHALKLAB_K8S_IMAGES lists from memory and returns the host
-// address it listens on. Each image is served under its repository without the registry's
-// host, as containerd asks a mirror for it.
+// The private repository of startRegistry's registry, which answers only the user e2e with
+// privatePassword. The chalklab cluster's nodes reach it as privateImage through a Mirror of
+// private.chalkos.test, whose Registry in groups/k8s.yaml holds the password.
+const (
+	privateRepo     = "e2e/busybox"
+	privatePassword = "pull-s3cret"
+	privateImage    = "private.chalkos.test/" + privateRepo + ":1.37.0"
+)
+
+// startRegistry serves the images CHALKLAB_K8S_IMAGES lists from memory, and busybox again as
+// privateRepo, which asks for credentials, and returns the host address it listens on. Each
+// image is served under its repository without the registry's host, as containerd asks a mirror
+// for it.
 func startRegistry(t *testing.T) string {
 	t.Helper()
 	data, err := os.ReadFile(os.Getenv("CHALKLAB_K8S_IMAGES"))
@@ -34,7 +44,16 @@ func startRegistry(t *testing.T) string {
 	if err := json.Unmarshal(data, &images); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
+	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if strings.HasPrefix(req.URL.Path, "/v2/"+privateRepo+"/") {
+			if user, pass, ok := req.BasicAuth(); !ok || user != "e2e" || pass != privatePassword {
+				unauthorized(w)
+				return
+			}
+		}
+		reg.ServeHTTP(w, req)
+	}))
 	t.Cleanup(srv.Close)
 	host := strings.TrimPrefix(srv.URL, "http://")
 	for ref, archive := range images {
@@ -54,7 +73,31 @@ func startRegistry(t *testing.T) string {
 			t.Fatalf("push %s: %v", ref, err)
 		}
 	}
+	busybox, ok := images["docker.io/library/busybox:1.37.0"]
+	if !ok {
+		t.Fatal("CHALKLAB_K8S_IMAGES holds no busybox, which the private repository serves")
+	}
+	img, err := tarball.ImageFromPath(busybox, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst, err := name.NewTag(host+"/"+privateRepo+":1.37.0", name.Insecure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.Write(dst, img, remote.WithAuth(&authn.Basic{Username: "e2e", Password: privatePassword})); err != nil {
+		t.Fatalf("push %s: %v", privateRepo, err)
+	}
 	return host
+}
+
+// unauthorized answers a request that lacks the right credentials as a registry with Basic
+// authentication does.
+func unauthorized(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", `Basic realm="e2e"`)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	io.WriteString(w, `{"errors": [{"code": "UNAUTHORIZED", "message": "authentication required"}]}`)
 }
 
 // registryGuest is where a node reaches a registry on the host, as the Kubernetes tests' nodes
@@ -81,10 +124,7 @@ func startImageRegistry(t *testing.T, dir, password string) *imageRegistry {
 	reg := registry.New(registry.WithBlobHandler(blobs), registry.Logger(log.New(io.Discard, "", 0)))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if user, pass, ok := req.BasicAuth(); !ok || user != "e2e" || pass != password {
-			w.Header().Set("WWW-Authenticate", `Basic realm="e2e"`)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			io.WriteString(w, `{"errors": [{"code": "UNAUTHORIZED", "message": "authentication required"}]}`)
+			unauthorized(w)
 			return
 		}
 		if _, digest, ok := strings.Cut(req.URL.Path, "/blobs/"); ok && req.Method == http.MethodGet {
