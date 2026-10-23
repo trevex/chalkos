@@ -198,6 +198,11 @@ func StartVM(ctx context.Context, c VMConfig) (*VM, error) {
 		return nil, err
 	}
 	vm.log = log
+	// What QEMU writes from here on is this start's; the log keeps the earlier starts' too.
+	var logStart int64
+	if info, err := log.Stat(); err == nil {
+		logStart = info.Size()
+	}
 
 	os.Remove(c.qmpPath())
 	cmd := exec.Command("qemu-system-x86_64", c.qemuArgs(tpmSocket)...)
@@ -225,7 +230,8 @@ func StartVM(ctx context.Context, c VMConfig) (*VM, error) {
 	qmp, err := DialQMP(qmpCtx, c.qmpPath())
 	if err != nil {
 		vm.Stop()
-		if out, _ := os.ReadFile(log.Name()); len(out) > 0 {
+		if out, _ := os.ReadFile(log.Name()); int64(len(out)) > logStart {
+			out = out[logStart:]
 			return nil, fmt.Errorf("%w; qemu: %s", err, out)
 		}
 		return nil, err

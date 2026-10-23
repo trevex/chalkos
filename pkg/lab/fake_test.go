@@ -3,6 +3,7 @@ package lab
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -108,6 +109,9 @@ var beforeExit = func() {}
 // SIGTERM and exit only that long after, as QEMU removes its PID file before it exits.
 const fakeQEMULinger = "FAKE_QEMU_LINGER"
 
+// fakeQEMUFail is the variable that, set, has fake QEMU fail at once with its value as the error.
+const fakeQEMUFail = "FAKE_QEMU_FAIL"
+
 // listenUnix listens on a Unix socket and exits on SIGTERM, as the tools do.
 func listenUnix(path string) net.Listener {
 	os.Remove(path)
@@ -126,6 +130,9 @@ func listenUnix(path string) net.Listener {
 }
 
 func fakeQEMU(args []string) {
+	if msg := os.Getenv(fakeQEMUFail); msg != "" {
+		fakeFail(errors.New(msg))
+	}
 	var console string
 	for i, a := range args {
 		if a == "-chardev" && i+1 < len(args) && strings.HasPrefix(args[i+1], "file,id=console") {

@@ -117,6 +117,8 @@ func Supervise(ctx context.Context, dir string, log io.Writer) error {
 	if err := os.WriteFile(ready, nil, 0o600); err != nil {
 		return err
 	}
+	// failed is the error each VM's last start failed with, by node, until one works.
+	failed := map[string]string{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -137,9 +139,15 @@ func Supervise(ctx context.Context, dir string, log io.Writer) error {
 					continue
 				}
 				if err := startVM(n); err != nil {
-					fmt.Fprintf(log, "%s %v\n", time.Now().Format(time.RFC3339), err)
+					// StartStopped asks every second while it waits: a VM that fails alike each
+					// time is logged once.
+					if failed[n.Name] != err.Error() {
+						fmt.Fprintf(log, "%s %v\n", time.Now().Format(time.RFC3339), err)
+						failed[n.Name] = err.Error()
+					}
 					continue
 				}
+				delete(failed, n.Name)
 				fmt.Fprintf(log, "%s started the VM of %s again\n", time.Now().Format(time.RFC3339), n.Name)
 			}
 			if len(vms) == len(l.Nodes) {

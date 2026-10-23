@@ -594,3 +594,53 @@ func TestShutdownGuest(t *testing.T) {
 		}
 	}
 }
+
+// TestStartErrorLoggedOnce logs a VM's start that keeps failing alike once, however often it is
+// asked to start, and again once it failed after a start that worked.
+func TestStartErrorLoggedOnce(t *testing.T) {
+	dir, l := testLab(t)
+	t.Setenv(fakeQEMUFail, "")
+	var log syncBuffer
+	supervise(t, dir, &log)
+	w1 := l.VMConfig(dir, l.Nodes[1])
+	stopW1 := func() {
+		t.Helper()
+		pid, ok := runningPID(w1.pidPath(), w1.Dir)
+		if !ok {
+			t.Fatal("w1 does not run")
+		}
+		syscall.Kill(pid, syscall.SIGTERM)
+		for Ready(dir) || Running(w1) {
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	// StartStopped asks every second while w1, whose QEMU fails, fails to start.
+	failingStarts := func() {
+		t.Helper()
+		os.Setenv(fakeQEMUFail, "no firmware")
+		ctx, cancel := context.WithTimeout(context.Background(), 3500*time.Millisecond)
+		defer cancel()
+		if err := StartStopped(ctx, dir); err == nil {
+			t.Fatal("w1 started with a failing QEMU")
+		}
+		os.Unsetenv(fakeQEMUFail)
+	}
+	stopW1()
+	failingStarts()
+	if got := strings.Count(log.String(), "start the VM of w1"); got != 1 {
+		t.Errorf("logged the failed start %d times, want once:\n%s", got, log.String())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := StartStopped(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	stopW1()
+	failingStarts()
+	if got := strings.Count(log.String(), "start the VM of w1"); got != 2 {
+		t.Errorf("logged the failed start %d times, want once after each start that worked:\n%s", got, log.String())
+	}
+	if err := StartStopped(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+}
