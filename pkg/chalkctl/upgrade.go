@@ -558,7 +558,7 @@ func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error)
 		return nil, err
 	}
 	if nc.ImageOCI != "" {
-		img, err := ociUpgradeImage(nc)
+		img, err := ociImage(nc, false)
 		if err != nil {
 			return nil, err
 		}

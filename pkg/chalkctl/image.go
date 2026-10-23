@@ -26,13 +26,16 @@ type diskImage struct {
 	// header describes the image to the nodes.
 	header *nodev1.ImageHeader
 	// contract is what an upgrade's image directory says the image accepts as config, which
-	// chalkctl checks the inventory's config against; nil for an install's image.
+	// chalkctl checks the inventory's config against; nil for an install's image from a directory.
 	contract *contract
 	// definitions is the directory of the image's repart definitions of its system region.
 	definitions string
 	// source is where the node takes the image's parts from: nil when chalkctl streams them,
 	// an image in a registry when the node pulls them.
 	source *nodev1.ImageSource
+	// path is the image directory or raw image the image was read from; empty for an image in a
+	// registry.
+	path string
 }
 
 // openImage reads an image for an install, with its boot loader, or an upgrade: a raw image with
@@ -50,7 +53,7 @@ func openImage(ctx context.Context, path string, bootLoader bool, stderr io.Writ
 	if err != nil {
 		return nil, err
 	}
-	img := &diskImage{Parts: p, definitions: definitions}
+	img := &diskImage{Parts: p, definitions: definitions, path: path}
 	defer func() {
 		if err != nil {
 			img.Close()
@@ -133,11 +136,11 @@ func (img *diskImage) Close() error {
 	return img.Parts.Close()
 }
 
-// ociUpgradeImage is an upgrade's image in a registry, which each node pulls: the header that its
-// artifact's config and its store, hash-tree and UKI layers give, as openImage gives it of a
-// directory, and the contract of its contract layer, which chalkctl checks the inventory's config
-// against.
-func ociUpgradeImage(nc *inventory.NodeConfig) (*diskImage, error) {
+// ociImage is an install's or an upgrade's image in a registry, which the node pulls: the header
+// that its artifact's config and its store, hash-tree, UKI and, with bootLoader, boot-loader
+// layers give, as openImage gives it of a directory, and the contract of its contract layer,
+// which chalkctl checks the inventory's config against.
+func ociImage(nc *inventory.NodeConfig, bootLoader bool) (*diskImage, error) {
 	a, err := nc.Artifact()
 	if err != nil {
 		return nil, err
@@ -150,10 +153,15 @@ func ociUpgradeImage(nc *inventory.NodeConfig) (*diskImage, error) {
 		ImageId: a.Header.ImageID, Platform: a.Header.Platform, Architecture: a.Header.Architecture,
 		RootHash: root, Revision: a.Header.Revision, Tag: a.Header.Tag,
 	}
-	for _, p := range []struct {
+	type layer struct {
 		mediaType types.MediaType
 		part      **nodev1.ImagePart
-	}{{ociimage.StoreType, &h.Store}, {ociimage.HashTreeType, &h.HashTree}, {ociimage.UKIType, &h.Uki}} {
+	}
+	layers := []layer{{ociimage.StoreType, &h.Store}, {ociimage.HashTreeType, &h.HashTree}, {ociimage.UKIType, &h.Uki}}
+	if bootLoader {
+		layers = append(layers, layer{ociimage.BootLoaderType, &h.BootLoader})
+	}
+	for _, p := range layers {
 		d, err := a.Descriptor(p.mediaType)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", a.Reference, err)
@@ -170,6 +178,15 @@ func ociUpgradeImage(nc *inventory.NodeConfig) (*diskImage, error) {
 	}
 	c.platform = a.Header.Platform
 	return &diskImage{header: h, contract: &c, source: &nodev1.ImageSource{Source: &nodev1.ImageSource_Oci{Oci: &nodev1.RegistryImage{Reference: a.Reference}}}}, nil
+}
+
+// pullsInstall refuses to have an installer that cannot pull an image from a registry install
+// the node's image in one, before chalkctl reads the image.
+func pullsInstall(nc *inventory.NodeConfig, info *nodev1.InfoResponse) error {
+	if nc.ImageOCI == "" || info.GetPullsInstallImages() {
+		return nil
+	}
+	return fmt.Errorf("%s runs an installer that cannot pull an image from a registry, so it cannot install the image %s from %s; boot an installer built from this chalkos, or pass --image with the image's directory", nc.Name, nc.ImageName, nc.ImageOCI)
 }
 
 // size is how many bytes of the image follow its header.
@@ -210,7 +227,7 @@ func checkInstallImage(t *target, img *diskImage) error {
 	if err != nil {
 		return err
 	}
-	if got := img.Info.Platform(); got != want {
+	if got := img.header.GetPlatform(); got != want {
 		return fmt.Errorf("%s runs on %s; the image is built for %s", t.name, want, got)
 	}
 	return nil

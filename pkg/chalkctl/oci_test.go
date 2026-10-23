@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -58,18 +62,64 @@ func TestValidateOCIImage(t *testing.T) {
 	}
 }
 
-// TestOCIImageIsNotInstalled refuses to install a node from its image in a registry, which
-// install cannot send, before it reaches the node or the registry.
-func TestOCIImageIsNotInstalled(t *testing.T) {
+// TestInstallPullsTheImageFromTheRegistry has an installer pull the node's image in a registry:
+// chalkctl sends the header the artifact gives, the boot loader included, and the reference by
+// digest. It sends no chunks, schemas or repart definitions; the installer takes those from the
+// contract layer and authenticates with the Registry of the node's config.
+func TestInstallPullsTheImageFromTheRegistry(t *testing.T) {
+	ta := newTestApp(t)
+	ref, pinned := pushTestImage(t, filepath.Join(ta.dir, "images", "test-metal"))
+	useOCIImage(t, ta, ref)
+	host, _, _ := strings.Cut(ref, "/")
+	ta.writeNode(t, n1SystemDisk, n1Network, fmt.Sprintf("apiVersion: chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lab}\nspec: {host: %q, insecure: true}\n", host))
+	s := maintenanceNode()
+	s.Installer = true
+	var got install.PartsRequest
+	var pulled []byte
+	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
+		got = req
+		var err error
+		pulled, err = io.ReadAll(req.Parts)
+		return err
+	}
+	addr := ta.startNode(t, s)
+	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if string(pulled) != "storehash treeukiboot loader" || got.Image.BootLoaderSize != int64(len("boot loader")) {
+		t.Errorf("pulled %q for %+v", pulled, got.Image)
+	}
+	if !reflect.DeepEqual(got.SystemDefinitions, map[string]string{"00-esp.conf": "[Partition]\nType=esp\n"}) {
+		t.Errorf("definitions = %v", got.SystemDefinitions)
+	}
+	if got.Config.Version != ta.configVersion(t) {
+		t.Errorf("config = %+v, want the inventory's", got.Config)
+	}
+	if want := ", which the installer pulls from " + pinned + "\n"; !strings.Contains(ta.stdout.String(), want) {
+		t.Errorf("stdout = %q, want %q", ta.stdout, want)
+	}
+}
+
+// TestOCIImageNeedsAnInstallerThatPulls refuses to install a node from its image in a registry
+// onto an installer that cannot pull it, before chalkctl reads the registry, and accepts one that
+// can.
+func TestOCIImageNeedsAnInstallerThatPulls(t *testing.T) {
 	ta := newTestApp(t)
 	useOCIImage(t, ta, "registry.example/lab/test-metal:v1")
 	c, err := loadInventory(context.Background(), ta.inventory)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "the image test-metal of n1 comes from the registry, registry.example/lab/test-metal:v1, but chalkctl install sends only an image from a directory"
-	if _, err := c.imageDir("n1"); err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("imageDir = %v", err)
+	nc, err := c.inventoryImage("n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "n1 runs an installer that cannot pull an image from a registry, so it cannot install the image test-metal from registry.example/lab/test-metal:v1"
+	if err := pullsInstall(nc, &nodev1.InfoResponse{Installer: true}); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("pullsInstall = %v", err)
+	}
+	if err := pullsInstall(nc, &nodev1.InfoResponse{Installer: true, PullsInstallImages: true}); err != nil {
+		t.Errorf("pullsInstall of an installer that pulls = %v", err)
 	}
 }
 

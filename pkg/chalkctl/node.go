@@ -297,7 +297,7 @@ func (a *app) installCommand() *cobra.Command {
 	fs := cmd.Flags()
 	f.node.register(fs)
 	f.pin.register(fs)
-	fs.StringVar(&f.image, "image", "", "image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory (default the directory of the node's image in the inventory)")
+	fs.StringVar(&f.image, "image", "", "image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory, which chalkctl sends (default the node's image in the inventory: from its directory, or from a registry, which the installer pulls)")
 	fs.BoolVar(&f.wipeDisk, "wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
 	fs.StringVar(&f.passwordFile, "password-file", "", "file holding the password of a node whose fallback is a password")
 	return cmd
@@ -341,7 +341,6 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	header := &nodev1.InstallHeader{CaCertificate: []byte(t.secrets.OSCABundle()), WipeDisk: f.wipeDisk}
 	var img *diskImage
 	var c contract
-	path := f.image
 	if !info.Msg.Installer {
 		// The node runs its image already, which must be of the node's platform.
 		if err := t.cluster.samePlatform(t.name, info.Msg.Platform); err != nil {
@@ -352,34 +351,22 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		}
 		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
 	} else {
-		fromInventory := path == ""
-		if fromInventory {
-			if path, err = t.cluster.imageDir(t.name); err != nil {
-				return err
-			}
-		}
-		if img, err = openImage(ctx, path, true, a.stderr); err != nil {
+		if img, c, err = a.installerImage(ctx, t, f.image, info.Msg); err != nil {
 			return err
 		}
 		defer img.Close()
-		if fromInventory {
-			if err := t.cluster.sameBuild(t.name, img); err != nil {
-				return err
-			}
-		}
-		if header.SystemDefinitions, err = readDefinitions(img.definitions); err != nil {
-			return err
-		}
 		if err := checkInstallImage(t, img); err != nil {
 			return err
 		}
+		header.Image, header.Source = img.header, img.source
 		// The installer runs another image than the one it installs, so it gets that image's
-		// contract with the config.
-		if c, err = imageContract(filepath.Dir(img.definitions)); err != nil {
-			return err
+		// contract with the config; an image it pulls brings its contract along.
+		if img.source == nil {
+			header.Schemas, header.KubernetesImage = c.files, c.kubernetesImage
+			if header.SystemDefinitions, err = readDefinitions(img.definitions); err != nil {
+				return err
+			}
 		}
-		c.platform = img.Info.Platform()
-		header.Image, header.Schemas, header.KubernetesImage = img.header, c.files, c.kubernetesImage
 	}
 	d, err := t.cluster.deliveryFor(t.name, c)
 	if err != nil {
@@ -410,14 +397,18 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 			Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
 			Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,
 		}}
-		fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %d bytes of store, hash tree, UKI and boot loader\n", t.name, ref, path, img.Info.ID(), img.name(), img.size())
+		if src := img.source.GetOci().GetReference(); src != "" {
+			fmt.Fprintf(a.stdout, "installing %s onto %s: %s %s, which the installer pulls from %s\n", t.name, ref, img.header.GetImageId(), img.name(), src)
+		} else {
+			fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %d bytes of store, hash tree, UKI and boot loader\n", t.name, ref, img.path, img.header.GetImageId(), img.name(), img.size())
+		}
 	}
 
 	stream := conn.Install(ctx)
 	if err := stream.Send(&nodev1.InstallRequest{Message: &nodev1.InstallRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
-	if img != nil {
+	if img != nil && img.source == nil {
 		parts, done, err := img.stream()
 		if err != nil {
 			return err
@@ -437,6 +428,48 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		fmt.Fprintf(a.stdout, "chalkctl recovery-key %s prints the key that unlocks it when its TPM fails\n", t.name)
 	}
 	return nil
+}
+
+// installerImage is the image an installer writes and its contract: the image the path names,
+// or without one the node's image in the inventory. That image comes from its directory, which
+// must hold the build its metadata.json names, or from a registry, which the installer pulls by
+// the digest chalkctl resolved. An installer that cannot pull is refused an image in a registry.
+func (a *app) installerImage(ctx context.Context, t *target, path string, info *nodev1.InfoResponse) (*diskImage, contract, error) {
+	fromInventory := path == ""
+	if fromInventory {
+		nc, err := t.cluster.inventoryImage(t.name)
+		if err != nil {
+			return nil, contract{}, err
+		}
+		if nc.ImageOCI != "" {
+			if err := pullsInstall(nc, info); err != nil {
+				return nil, contract{}, err
+			}
+			img, err := ociImage(nc, true)
+			if err != nil {
+				return nil, contract{}, err
+			}
+			return img, *img.contract, nil
+		}
+		path = nc.ImageDir
+	}
+	img, err := openImage(ctx, path, true, a.stderr)
+	if err != nil {
+		return nil, contract{}, err
+	}
+	if fromInventory {
+		if err := t.cluster.sameBuild(t.name, img); err != nil {
+			img.Close()
+			return nil, contract{}, err
+		}
+	}
+	c, err := imageContract(filepath.Dir(img.definitions))
+	if err != nil {
+		img.Close()
+		return nil, contract{}, err
+	}
+	c.platform = img.Info.Platform()
+	return img, c, nil
 }
 
 // maintenanceError explains why a node in maintenance mode did not answer. A node in maintenance
