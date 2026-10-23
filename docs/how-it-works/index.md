@@ -8,7 +8,7 @@ description: "How chalkos works and why it works that way"
 These pages are for operators, image authors and contributors who want the mechanism behind a
 task. They explain how a node is built, configured, booted, secured and upgraded, and where each
 protection stops. For the whole model on one page first, read
-[chalkos in five minutes](../get-started/what-is-chalkos.md).
+[What is chalkos](../get-started/what-is-chalkos.md).
 
 ## The node OS
 

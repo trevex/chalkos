@@ -558,7 +558,7 @@ state and ports.
 
 ## What next
 
-- [chalkos in five minutes](what-is-chalkos.md) puts what this tutorial showed into one model.
+- [What is chalkos](what-is-chalkos.md) puts what this tutorial showed into one model.
 - [Architecture](../how-it-works/node/architecture.md) explains the parts and how a node is installed.
 - [Upgrades](../how-it-works/node/upgrades.md) explains slots, boot counting and
   rollback, and [Upgrade a

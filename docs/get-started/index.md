@@ -10,7 +10,7 @@ cluster on one machine, and list what real machines need.
 
 <div class="grid cards" markdown>
 
--   :material-lightbulb-on-outline: __chalkos in five minutes__
+-   :material-lightbulb-on-outline: __What is chalkos__
 
     ---
 

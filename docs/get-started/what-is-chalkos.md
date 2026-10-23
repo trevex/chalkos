@@ -1,9 +1,9 @@
 ---
-title: "chalkos in five minutes"
+title: "What is chalkos"
 description: "The model of a chalkos cluster on one page, from images and config documents to an upgrade"
 ---
 
-# chalkos in five minutes
+# What is chalkos
 
 A chalkos cluster's nodes boot read-only images that Nix builds, take every setting of the
 cluster from YAML documents, run a node agent instead of logins, and are upgraded by replacing the
