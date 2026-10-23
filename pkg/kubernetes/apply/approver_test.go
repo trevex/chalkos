@@ -300,3 +300,88 @@ func TestApproverReadsRevokedNodesFromTheCluster(t *testing.T) {
 		t.Errorf("approved the revoked node's request: %v", got.Status.Conditions)
 	}
 }
+
+// The approver applies the revoked nodes' admission policy at its first pass and again whenever
+// the ConfigMap changed since, as by hand or after an apply that was cancelled; a pass whose
+// apply failed is retried at the next.
+func TestApproverEnforcesRevokedNodes(t *testing.T) {
+	ctx := context.Background()
+	cs := fake.NewClientset()
+	applies, failing := 0, false
+	cs.PrependReactor("patch", "validatingadmissionpolicies", func(k8stesting.Action) (bool, runtime.Object, error) {
+		applies++
+		if failing {
+			return true, nil, errors.New("connection refused")
+		}
+		return false, nil, nil
+	})
+	a := &Approver{Client: cs}
+	if err := a.Enforce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := policyList(t, cs); got != "{}" {
+		t.Errorf("the policy names %s, want none", got)
+	}
+	if err := a.Enforce(ctx); err != nil || applies != 1 {
+		t.Errorf("unchanged: %v, %d applies, want 1", err, applies)
+	}
+	// The ConfigMap is changed by hand, past chalkctl.
+	if _, err := cs.CoreV1().ConfigMaps(revoked.Namespace).Create(ctx, &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Namespace: revoked.Namespace, Name: revoked.Name, ResourceVersion: "1"},
+		Data:       map[string]string{"w1": "2026-10-23T10:00:00Z"},
+	}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	failing = true
+	if err := a.Enforce(ctx); err == nil || !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("err = %v, want the apply's", err)
+	}
+	failing = false
+	if err := a.Enforce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := policyList(t, cs), `{"w1": "since 2026-10-23T10:00:00Z"}`; got != want {
+		t.Errorf("the policy names %s, want %s", got, want)
+	}
+	cm, _ := cs.CoreV1().ConfigMaps(revoked.Namespace).Get(ctx, revoked.Name, metav1.GetOptions{})
+	cm.Data = nil
+	cm.ResourceVersion = "2"
+	if _, err := cs.CoreV1().ConfigMaps(revoked.Namespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	applies = 0
+	for range 2 {
+		if err := a.Enforce(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := policyList(t, cs); got != "{}" || applies != 1 {
+		t.Errorf("after the change the policy names %s after %d applies, want none after 1", got, applies)
+	}
+}
+
+// Run enforces the revoked nodes' admission policy besides approving requests.
+func TestApproverRunEnforcesRevokedNodes(t *testing.T) {
+	cs := fake.NewClientset()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		(&Approver{Client: cs}).Run(ctx, 10*time.Millisecond)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+	deadline := time.Now().Add(time.Minute)
+	for {
+		_, err := cs.AdmissionregistrationV1().ValidatingAdmissionPolicies().Get(ctx, revoked.Name, metav1.GetOptions{})
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no policy applied: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

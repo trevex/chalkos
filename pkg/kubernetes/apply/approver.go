@@ -93,20 +93,28 @@ func Approvable(csr *certificatesv1.CertificateSigningRequest, node *corev1.Node
 }
 
 // Approver approves kubelet serving certificate requests that Approvable accepts and leaves
-// the others pending, as it does those of revoked nodes.
+// the others pending, as it does those of revoked nodes. It also keeps the revoked nodes'
+// admission policy in step with their ConfigMap.
 type Approver struct {
 	Client kubernetes.Interface
 	// Revoked returns the revoked nodes; nil reads them through Client. Tests replace it.
 	Revoked func(context.Context) (revoked.List, error)
 	// refused remembers the requests already logged as refused.
 	refused map[string]bool
+	// enforced is the resource version of the revoked nodes' ConfigMap the admission policy was
+	// last applied from, "" without the ConfigMap; nil before the first apply.
+	enforced *string
 }
 
-// Run approves requests every interval until ctx ends.
+// Run approves requests and enforces the revoked nodes' admission policy every interval until
+// ctx ends.
 func (a *Approver) Run(ctx context.Context, interval time.Duration) {
 	for {
 		if err := a.Once(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("approve kubelet serving certificates: %v", err)
+		}
+		if err := a.Enforce(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("enforce the revoked nodes' admission policy: %v", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -231,3 +239,25 @@ func revokedError(name string, at time.Time) error {
 type unreadRevoked struct{ error }
 
 func (u unreadRevoked) Unwrap() error { return u.error }
+
+// Enforce applies the revoked nodes' admission policy when the ConfigMap of the revoked nodes
+// changed since the policy was last applied from it, or at the first pass: so the policy follows
+// a change made past chalkctl, as with kubectl, or one whose apply was cancelled. A failed apply
+// is retried at the next pass.
+func (a *Approver) Enforce(ctx context.Context) error {
+	version := ""
+	switch cm, err := a.Client.CoreV1().ConfigMaps(revoked.Namespace).Get(ctx, revoked.Name, metav1.GetOptions{}); {
+	case err == nil:
+		version = cm.ResourceVersion
+	case !apierrors.IsNotFound(err):
+		return fmt.Errorf("read the revoked nodes: %w", err)
+	}
+	if a.enforced != nil && *a.enforced == version {
+		return nil
+	}
+	if err := EnforceRevoked(ctx, a.Client); err != nil {
+		return err
+	}
+	a.enforced = &version
+	return nil
+}
