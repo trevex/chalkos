@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
@@ -144,6 +145,9 @@ func (n *fakeNode) Status(ctx context.Context, _ *connect.Request[nodev1.StatusR
 				state = "stale"
 			}
 			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", ControlPlane: state}
+			n.lab.mu.Lock()
+			st.Kubernetes.RevokedNodes, st.Kubernetes.RevokedNodesError = n.lab.revoked, n.lab.revokedErr[n.name]
+			n.lab.mu.Unlock()
 		} else {
 			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined"}
 		}
@@ -263,6 +267,10 @@ type rotationLab struct {
 	encrypted map[string]uint64
 	// slowRewrite makes the rewrite of encrypted objects last until the call times out.
 	slowRewrite bool
+	// revoked are the nodes the control planes list as revoked; revokedErr says, by control plane,
+	// why one could not read them.
+	revoked    []*nodev1.RevokedNode
+	revokedErr map[string]string
 }
 
 func (l *rotationLab) record(event string) {
@@ -759,5 +767,67 @@ func TestSecretsChangedMeanwhileNotOverwritten(t *testing.T) {
 	}
 	if data, _ := os.ReadFile(path); !bytes.Equal(data, changed) {
 		t.Errorf("%s was overwritten after it changed", path)
+	}
+}
+
+// TestRotateSkipsRevokedNodes leaves the nodes the first control plane that answers lists as
+// revoked out of every phase, and names them.
+func TestRotateSkipsRevokedNodes(t *testing.T) {
+	l := newRotationLab(t)
+	l.revoked = []*nodev1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}, {Name: "gone"}}
+	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused"}
+	if err := l.rotate("os-ca"); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.rotate("os-ca", "--resume"); err != nil {
+		t.Fatal(err)
+	}
+	if l.phase() != "refresh applied" {
+		t.Fatalf("the secrets file records %q, want the refresh applied", l.phase())
+	}
+	out := l.ta.stdout.String()
+	if strings.Count(out, "skipping w1: revoked since 2026-10-23T12:00:00Z\n") != 2 || strings.Contains(out, "gone") {
+		t.Errorf("stdout does not skip w1 alone in each run:\n%s", out)
+	}
+	for _, e := range l.takeEvents() {
+		if strings.HasPrefix(e, "w1 ") {
+			t.Errorf("the rotation asked w1: %s", e)
+		}
+	}
+	if fps, _ := pki.Fingerprints(l.nodes["w1"].cert.OSCA()); len(fps) != 1 {
+		t.Errorf("w1 trusts %d OS CAs, want the old one alone", len(fps))
+	}
+}
+
+// TestRotateRefusesWithoutRevokedNodes starts no rotation while no control plane says which
+// nodes are revoked, and needs no control plane on a cluster without Kubernetes.
+func TestRotateRefusesWithoutRevokedNodes(t *testing.T) {
+	l := newRotationLab(t)
+	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused"}
+	l.nodes["cp2"].down = true
+	err := l.rotate("os-ca")
+	if err == nil || !strings.Contains(err.Error(), "revoked nodes") || !strings.Contains(err.Error(), "cp1: ") || !strings.Contains(err.Error(), "connection refused") || !strings.Contains(err.Error(), "cp2: ") {
+		t.Errorf("err = %v, want a refusal naming both control planes", err)
+	}
+	if l.phase() != "" {
+		t.Errorf("the secrets file records %q, want no rotation", l.phase())
+	}
+	if events := l.takeEvents(); len(events) != 0 {
+		t.Errorf("the refused rotation asked the nodes %v", events)
+	}
+
+	plain := newRotationLab(t)
+	plain.ta.inventory = writeNodes(t, plain.ta.dir, []testNode{{"n1", "", "plain"}}, nil)
+	for name := range plain.nodes {
+		if name != "n1" {
+			plain.nodes[name].down = true
+			delete(plain.addrs, name)
+		}
+	}
+	if err := plain.rotate("os-ca"); err != nil {
+		t.Fatal(err)
+	}
+	if plain.phase() != "accept applied" || strings.Contains(plain.ta.stdout.String(), "skipping") {
+		t.Errorf("without Kubernetes the secrets file records %q:\n%s", plain.phase(), plain.ta.stdout)
 	}
 }

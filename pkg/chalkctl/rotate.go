@@ -101,6 +101,9 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	}
 	defer file.Close()
 	r := &rotation{a: a, cluster: c, file: file, addresses: addresses, timeout: f.timeout, poll: a.poll()}
+	if err := r.skipRevoked(ctx); err != nil {
+		return err
+	}
 	switch {
 	case f.finish:
 		return r.finish(ctx, kind, f.force)
@@ -136,6 +139,8 @@ type rotation struct {
 	addresses map[string]string
 	// timeout bounds each wait for a node; poll is the time between two looks.
 	timeout, poll time.Duration
+	// revoked are the nodes the rotation skips, because a control plane lists them as revoked.
+	revoked map[string]bool
 }
 
 // say prints a line of the rotation's progress.
@@ -264,12 +269,58 @@ func (r *rotation) apply(ctx context.Context, kind, phase string) error {
 	return r.applyKubernetes(ctx, kind, phase)
 }
 
-// nodesOf lists the cluster's nodes of a Kubernetes kind in name order: control planes,
-// workers, or with kind "" those without Kubernetes.
+// nodesOf lists the cluster's nodes of a Kubernetes kind in name order, but the revoked ones:
+// control planes, workers, or with kind "" those without Kubernetes.
 func (r *rotation) nodesOf(kind string) []string {
 	// rotate read every node's kind before it started, so no error is left to report.
 	names, _ := r.cluster.nodesOf(kind, "")
-	return names
+	return slices.DeleteFunc(names, func(name string) bool { return r.revoked[name] })
+}
+
+// skipRevoked reads the revoked nodes from the first control plane that answers with them and
+// leaves those of the cluster out of the rotation, naming each. Without the list no rotation
+// runs, so none hands a certificate to a revoked node. A cluster without control planes keeps no
+// revoked nodes.
+func (r *rotation) skipRevoked(ctx context.Context) error {
+	nodes := r.allNodes()
+	var failed []string
+	for _, name := range r.nodesOf(identity.KindControlPlane) {
+		list, err := r.revokedNodes(ctx, name)
+		if err != nil {
+			failed = append(failed, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		r.revoked = map[string]bool{}
+		for _, n := range list {
+			if slices.Contains(nodes, n.Name) {
+				r.revoked[n.Name] = true
+				r.say("skipping %s: revoked %s", n.Name, revokedSince(n))
+			}
+		}
+		return nil
+	}
+	if len(failed) == 0 {
+		return nil
+	}
+	return fmt.Errorf("no control-plane node said which nodes are revoked (%s); rotate runs only once one does, so it never hands a certificate to a revoked node", strings.Join(failed, "; "))
+}
+
+// revokedNodes reads the revoked nodes from a control plane's status.
+func (r *rotation) revokedNodes(ctx context.Context, name string) ([]*nodev1.RevokedNode, error) {
+	st, err := r.status(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	switch k := st.Kubernetes; {
+	case k == nil:
+		return nil, errors.New("reports no Kubernetes")
+	case !strings.HasPrefix(k.State, "bootstrapped"):
+		return nil, fmt.Errorf("is not bootstrapped: %s", k.State)
+	case k.RevokedNodesError != "":
+		return nil, errors.New(k.RevokedNodesError)
+	default:
+		return k.RevokedNodes, nil
+	}
 }
 
 // allNodes lists every node, control planes first.

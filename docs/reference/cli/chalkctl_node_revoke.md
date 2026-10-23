@@ -13,8 +13,9 @@ Cuts a node off the cluster by name, at once and without a rotation. A control p
 node in the ConfigMap kube-system/chalkos-revoked-nodes with the time of its revocation and
 deletes the node's Node object; a node revoked already keeps its first time. From then on, control
 planes refuse to renew the node's node certificate, chalkd approves none of its kubelet serving
-certificates, and the API server denies every write by its kubelet (system:node:&lt;node>), which keeps
-it from registering its Node again and from renewing its kubelet client certificate.
+certificates, the API server denies every write by its kubelet (system:node:&lt;node>), which keeps
+it from registering its Node again and from renewing its kubelet client certificate, and chalkctl
+rotate skips it.
 
 The node's certificates stay valid until they expire. Its kubelet can still read from the API
 server, which grants a node with no Node and no pods almost nothing. A control plane's disk holds

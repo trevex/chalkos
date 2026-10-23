@@ -18,6 +18,8 @@ as &lt;file>.prev, unless --out names a new file; an encrypted file is encrypted
 recipients it records inside, which --recipient replaces. A rotation that stopped (at an
 unreachable node, for example) or paused for the operator continues with --resume. One rotation
 runs at a time, and one chalkctl command at a time changes the secrets file, holding &lt;file>.lock.
+Nodes revoked with chalkctl node revoke are skipped and named: before it runs, rotate reads them
+from the first control plane that answers, and it refuses to run while none does.
 The command needs the secrets file.
 
 ```

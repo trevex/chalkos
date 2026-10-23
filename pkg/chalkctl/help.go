@@ -93,8 +93,9 @@ const nodeRevokeLong = `Cuts a node off the cluster by name, at once and without
 node in the ConfigMap kube-system/chalkos-revoked-nodes with the time of its revocation and
 deletes the node's Node object; a node revoked already keeps its first time. From then on, control
 planes refuse to renew the node's node certificate, chalkd approves none of its kubelet serving
-certificates, and the API server denies every write by its kubelet (system:node:<node>), which keeps
-it from registering its Node again and from renewing its kubelet client certificate.
+certificates, the API server denies every write by its kubelet (system:node:<node>), which keeps
+it from registering its Node again and from renewing its kubelet client certificate, and chalkctl
+rotate skips it.
 
 The node's certificates stay valid until they expire. Its kubelet can still read from the API
 server, which grants a node with no Node and no pods almost nothing. A control plane's disk holds
@@ -391,6 +392,8 @@ as <file>.prev, unless --out names a new file; an encrypted file is encrypted ag
 recipients it records inside, which --recipient replaces. A rotation that stopped (at an
 unreachable node, for example) or paused for the operator continues with --resume. One rotation
 runs at a time, and one chalkctl command at a time changes the secrets file, holding <file>.lock.
+Nodes revoked with chalkctl node revoke are skipped and named: before it runs, rotate reads them
+from the first control plane that answers, and it refuses to run while none does.
 The command needs the secrets file.`
 
 const nodeRenewLong = `Issues the node a new node certificate and key from the node CA and delivers them, also once the
