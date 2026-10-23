@@ -33,7 +33,7 @@ func (a *app) nodeRevokeCommand() *cobra.Command {
 	f.node.registerClient(cmd.Flags())
 	fs := cmd.Flags()
 	fs.StringVar(&f.via, "via", "", "control plane that revokes the node (default the first other one that answers)")
-	fs.BoolVar(&f.force, "force", false, "revoke the node although it is a control plane: an etcd member, or the one --via names")
+	fs.BoolVar(&f.force, "force", false, "revoke the node although it is a control plane, an etcd member or the one --via names, or although a control plane does not say it reads the revoked nodes")
 	return cmd
 }
 
@@ -47,6 +47,11 @@ func (a *app) nodeRevoke(ctx context.Context, f revokeFlags, pos []string) error
 	}
 	if f.via == name && !f.force {
 		return fmt.Errorf("%s is the control plane asked to revoke it; %s", name, controlPlaneRevocation(name))
+	}
+	if !f.force {
+		if err := a.controlPlanesRead(ctx, f, name); err != nil {
+			return err
+		}
 	}
 	var resp *nodev1.RevokeNodeResponse
 	// A control plane is not asked to revoke itself.
@@ -75,6 +80,79 @@ func (a *app) nodeRevoke(ctx context.Context, f revokeFlags, pos []string) error
 	}
 	fmt.Fprintf(a.stdout, "revoked node %s (since %s); %s\n", name, resp.RevokedAt.AsTime().UTC().Format(time.RFC3339), deleted)
 	return nil
+}
+
+// controlPlanesRead asks the control planes, but the node revoked, whether they read the revoked
+// nodes: --via where the command reaches it, the others where the inventory says, or --via alone
+// without an inventory.
+func (a *app) controlPlanesRead(ctx context.Context, f revokeFlags, name string) error {
+	c, err := loadCluster(ctx, f.node.cluster)
+	if err != nil {
+		return err
+	}
+	if f.via == "" && (c.partial || f.node.address != "") {
+		// node revoke asks for --via, which names the node --address reaches and the control
+		// plane to ask without an inventory.
+		return nil
+	}
+	controlPlanes := []string{f.via}
+	if !c.partial {
+		if controlPlanes, err = c.nodesOf(identity.KindControlPlane, name); err != nil {
+			return err
+		}
+	}
+	creds, err := a.loadCredentials(ctx, f.node.secrets, f.node.config)
+	if err != nil {
+		return err
+	}
+	return everyControlPlaneReads(ctx, controlPlanes, name, func(ctx context.Context, cp string) (*nodev1.StatusResponse, error) {
+		var n nodeCommand
+		if cp == f.via {
+			n = f.node
+		}
+		t, err := targetIn(c, n, cp, creds)
+		if err != nil {
+			return nil, err
+		}
+		conn, err := dialInstalled(t)
+		if err != nil {
+			return nil, err
+		}
+		defer conn.Close()
+		resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		if err != nil {
+			return nil, nodeError(err, cp)
+		}
+		return resp.Msg, nil
+	})
+}
+
+// everyControlPlaneReads refuses to revoke the node while a control plane may renew its node
+// certificate unaware of the revocation: one that does not answer, cannot read the revoked
+// nodes, or does not say it read them, as a chalkd from before node revocation, which renews
+// node certificates without asking. A control plane that is not bootstrapped, or that left etcd,
+// renews none.
+func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name string, status func(ctx context.Context, name string) (*nodev1.StatusResponse, error)) error {
+	var why []string
+	for _, cp := range controlPlanes {
+		st, err := status(ctx, cp)
+		if err != nil {
+			why = append(why, fmt.Sprintf("%s: %v", cp, err))
+			continue
+		}
+		switch k := st.Kubernetes; {
+		case k == nil || !everBootstrapped(k.State) || strings.HasPrefix(k.State, "left etcd"):
+		case k.RevokedNodesError != "":
+			why = append(why, fmt.Sprintf("%s: cannot read the revoked nodes: %s", cp, k.RevokedNodesError))
+		case !k.RevokedNodesRead:
+			why = append(why, fmt.Sprintf("%s: its chalkd predates node revocation and renews %s's node certificate until it is upgraded", cp, name))
+		}
+	}
+	if len(why) == 0 {
+		return nil
+	}
+	return fmt.Errorf("not every control-plane node says it reads the revoked nodes, and one that does not may go on renewing %s's node certificate (%s); "+
+		"upgrade or repair those, or pass --force to revoke %s anyway", name, strings.Join(why, "; "), name)
 }
 
 // etcdMemberRefusal refuses to revoke a node that is still an etcd member, a control plane.

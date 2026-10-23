@@ -31,8 +31,12 @@ The same rotations cut off whoever stole a control plane's disk. A cluster witho
 keeps no revoked nodes: there, revoking a node means not renewing its node certificate, and
 chalkctl rotate os-ca cuts it off at once.
 
-A control plane revokes the node: --via, or the first other one that answers. The command needs
-an admin client file or the secrets file.
+Before it revokes the node, the command asks every other control plane of the inventory, or the
+one --via names without an inventory, whether it reads the revoked nodes. A control plane whose
+chalkd predates node revocation renews the node's node certificate until it is upgraded, so the
+command refuses while one does not answer, cannot read the revoked nodes, or does not say it read
+them; --force revokes the node anyway. A control plane revokes the node: --via, or the first other
+one that answers. The command needs an admin client file or the secrets file.
 
 ```
 chalkctl node revoke <node> [flags]
@@ -50,7 +54,7 @@ chalkctl node revoke <node> [flags]
 ```
       --address string     address of the node's chalkd, host or host:port (default the node's address in the inventory)
       --config string      client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)
-      --force              revoke the node although it is a control plane: an etcd member, or the one --via names
+      --force              revoke the node although it is a control plane, an etcd member or the one --via names, or although a control plane does not say it reads the revoked nodes
   -h, --help               help for revoke
       --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --inventory string   inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)

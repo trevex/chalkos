@@ -111,8 +111,12 @@ The same rotations cut off whoever stole a control plane's disk. A cluster witho
 keeps no revoked nodes: there, revoking a node means not renewing its node certificate, and
 chalkctl rotate os-ca cuts it off at once.
 
-A control plane revokes the node: --via, or the first other one that answers. The command needs
-an admin client file or the secrets file.`
+Before it revokes the node, the command asks every other control plane of the inventory, or the
+one --via names without an inventory, whether it reads the revoked nodes. A control plane whose
+chalkd predates node revocation renews the node's node certificate until it is upgraded, so the
+command refuses while one does not answer, cannot read the revoked nodes, or does not say it read
+them; --force revokes the node anyway. A control plane revokes the node: --via, or the first other
+one that answers. The command needs an admin client file or the secrets file.`
 
 const nodeRevokeExample = `  # Cut off w1, which was removed from the cluster.
   chalkctl node revoke w1`

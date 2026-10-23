@@ -266,3 +266,72 @@ func reregister(name string) string {
 	return "the old " + name + "'s kubelet does not register its Node again by itself: reboot it with chalkctl reboot " + name +
 		", or restart its kubelet; a node installed afresh as " + name + " registers as usual"
 }
+
+// node revoke refuses while a control plane may renew the node's certificate unaware of the
+// revocation: one that cannot say which nodes are revoked, unless forced.
+func TestNodeRevokeRefusesUnlessEveryControlPlaneReads(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	reads := 0
+	cs.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		reads++
+		return reads == 1, nil, errors.New("connection refused")
+	})
+	err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1"}, addr))
+	if err == nil || !strings.Contains(err.Error(), "n1: cannot read the revoked nodes") || !strings.Contains(err.Error(), "connection refused") ||
+		!strings.Contains(err.Error(), "--force") {
+		t.Errorf("revoking w1: %v, want a refusal naming n1", err)
+	}
+	if list, _ := revoked.Load(ctx, cs); len(list) != 0 {
+		t.Errorf("the refusal revoked %v", list)
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--force"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := revoked.Load(ctx, cs); len(list) != 1 {
+		t.Errorf("revoked nodes %v, want w1", list)
+	}
+}
+
+func TestEveryControlPlaneReadsRevoked(t *testing.T) {
+	statuses := map[string]*nodev1.StatusResponse{
+		"read":     {Kubernetes: &nodev1.KubernetesStatus{State: "bootstrapped", RevokedNodesRead: true}},
+		"old":      {Kubernetes: &nodev1.KubernetesStatus{State: "bootstrapped"}},
+		"unread":   {Kubernetes: &nodev1.KubernetesStatus{State: "etcd data missing: restore etcd", RevokedNodesError: "read the revoked nodes: connection refused"}},
+		"waiting":  {Kubernetes: &nodev1.KubernetesStatus{State: "waiting for bootstrap"}},
+		"left":     {Kubernetes: &nodev1.KubernetesStatus{State: "left etcd: reinstall the node"}},
+		"no share": {Kubernetes: &nodev1.KubernetesStatus{State: "no share"}},
+	}
+	status := func(_ context.Context, name string) (*nodev1.StatusResponse, error) {
+		if st, ok := statuses[name]; ok {
+			return st, nil
+		}
+		return nil, errors.New("connection refused")
+	}
+	for _, tc := range []struct {
+		controlPlanes []string
+		want          []string
+	}{
+		{[]string{"read", "waiting", "left", "no share"}, nil},
+		{[]string{"read", "old"}, []string{"old: its chalkd predates node revocation and renews w1's node certificate until it is upgraded"}},
+		{[]string{"unread", "down"}, []string{"unread: cannot read the revoked nodes: read the revoked nodes: connection refused", "down: connection refused"}},
+	} {
+		err := everyControlPlaneReads(context.Background(), tc.controlPlanes, "w1", status)
+		if tc.want == nil {
+			if err != nil {
+				t.Errorf("%v: %v", tc.controlPlanes, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), "pass --force to revoke w1 anyway") {
+			t.Errorf("%v: %v, want a refusal", tc.controlPlanes, err)
+			continue
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(err.Error(), w) {
+				t.Errorf("%v: %v, want %q", tc.controlPlanes, err, w)
+			}
+		}
+	}
+}
