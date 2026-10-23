@@ -185,7 +185,7 @@ disks hold nothing that a reinstall would lose.
 ## How does storage change after install?
 
 [`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md) delivers changed `SystemDisk`
-and `Volume` documents to the running node. The storage kinds' [change rules](rules.md) compare
+and `Volume` documents to the running node. The storage kinds' [change rules](../../build/guard-changes.md) compare
 them with the section STATE records, volume by volume, and the node translates them into a storage
 section, whose additions it makes. Additive changes keep every byte of existing data, and the node
 applies them while it runs:

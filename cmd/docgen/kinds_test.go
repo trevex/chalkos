@@ -31,7 +31,7 @@ func TestWriteKinds(t *testing.T) {
 		last = i
 	}
 	for _, want := range []string{
-		"## Node { #node }\n\n`apiVersion: chalkos.dev/v1alpha1`\n\nA node's config holds at most one.\n\nIt has 2 [change rules](../how-it-works/node/rules.md).\n\n| Field | Type | Default | Description |\n| --- | --- | --- | --- |\n",
+		"## Node { #node }\n\n`apiVersion: chalkos.dev/v1alpha1`\n\nA node's config holds at most one.\n\nIt has 2 [change rules](../build/guard-changes.md).\n\n| Field | Type | Default | Description |\n| --- | --- | --- | --- |\n",
 		"| `spec.hostname` | string | required | Host name set at boot. |\n",
 		"| `spec.type` | one of `controlplane`, `worker` or null | `null` | What the node is in Kubernetes. |\n",
 		"`apiVersion: storage.chalkos.dev/v1alpha1`\n\nA node's config may hold several, each with a name of its own.\n\n",

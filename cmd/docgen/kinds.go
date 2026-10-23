@@ -141,9 +141,9 @@ func writeKind(b *strings.Builder, k kindSchema) {
 	// reference; the How chalkos works page on rules describes what the built-in kinds' rules
 	// decide.
 	if n := countRules(k.root); n == 1 {
-		b.WriteString("It has a [change rule](../how-it-works/node/rules.md).\n\n")
+		b.WriteString("It has a [change rule](../build/guard-changes.md).\n\n")
 	} else if n > 1 {
-		fmt.Fprintf(b, "It has %d [change rules](../how-it-works/node/rules.md).\n\n", n)
+		fmt.Fprintf(b, "It has %d [change rules](../build/guard-changes.md).\n\n", n)
 	}
 	spec := resolve(k.root, asMap(props(k.root)["spec"]))
 	if isNetworkd(spec) {

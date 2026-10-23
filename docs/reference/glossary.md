@@ -88,7 +88,7 @@ virtual machine has Secure Boot and a TPM, and chalklab installs and bootstraps 
 A CEL expression that a config must make true for the image to accept it. An image's schemas
 declare it on a [kind](#kind) or on one of its fields. A rule that is false refuses the config,
 or says it takes [`chalkctl storage reset`](cli/chalkctl_storage_reset.md) or a reinstall. See
-[Change rules and facts](../how-it-works/node/rules.md).
+[Guard changes with rules and facts](../build/guard-changes.md).
 
 ## Client file { #client-file }
 <!-- abbr: client files, Client files -->
@@ -192,7 +192,7 @@ restarts or reloads units, runs a command or acts on chalkd's loops, as
 [`chalkos.effects`](options.md#chalkoseffects) declares it. It fires when one of its
 [outputs](#output) or the documents of one of its kinds changed, or when its CEL rule, like a
 [change rule](#change-rule), holds. See
-[Outputs and effects](../how-it-works/node/outputs-and-effects.md#what-is-an-effect).
+[React to changes](../build/react-to-changes.md).
 
 ## ESP { #esp }
 
@@ -226,7 +226,8 @@ declares its kinds and effects the same way. See
 Node state that a [change rule](#change-rule) reads. Facts are declared in
 [`chalkos.facts`](options.md#chalkosfacts): the JSON of a file, such as the
 [Kubernetes share](#kubernetes-share), or of a program of the image's store, which chalkd runs in
-a sandbox. See [Change rules and facts](../how-it-works/node/rules.md#what-is-a-fact).
+a sandbox. See
+[Guard changes with rules and facts](../build/guard-changes.md#facts-give-a-rule-node-state).
 
 ## Fallback keyslot { #fallback-keyslot }
 
@@ -429,7 +430,8 @@ years and signs the [node CA](#node-ca) and client certificates. See
 A set of config files for a service, rendered from config documents. A program of the image's
 store renders them, and they are checked before a delivery changes the node, as
 [`chalkos.outputs`](options.md#chalkosoutputs) declares it. chalkd renders every output again at
-boot. See [Outputs and effects](../how-it-works/node/outputs-and-effects.md#what-is-an-output).
+boot. See
+[Render config files](../build/render-config.md).
 
 ## PCR 7 { #pcr-7 }
 

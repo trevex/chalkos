@@ -137,8 +137,7 @@ chalkos.effects.rack-location = lib.chalkos.restartOn { kinds = [ "Rack" ]; } [
 The unit is a oneshot with `RemainAfterExit = true`, so it stays active and chalkd's restart runs
 it again. The effect fires when a document of the kind is added, removed or changed, and when a
 value of a `Secret` one of them references changes.
-[Outputs and effects](../how-it-works/node/outputs-and-effects.md#what-is-an-effect) describes
-when effects fire and in which order.
+[React to changes](react-to-changes.md) describes when effects fire and in which order.
 
 ## A service that reads its own file format gets an output
 
@@ -150,8 +149,7 @@ environment file that its unit reads with `EnvironmentFile=`.
 
 A unit that reads only its rendered output needs no grant, unless the output names a secret. A
 renderer never sees secret values, so the unit receives them as credentials through a grant.
-[Outputs and effects](../how-it-works/node/outputs-and-effects.md#what-is-an-output) describes
-outputs.
+[Render config files](render-config.md) describes outputs.
 
 ## Check that it worked
 

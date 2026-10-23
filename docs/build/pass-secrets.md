@@ -207,7 +207,7 @@ line break" needs a value without those characters.
 ## What next
 
 - [Read config in a service](read-config.md) for the other documents a grant gives a unit.
-- [Outputs and effects](../how-it-works/node/outputs-and-effects.md) for how outputs are rendered
-  and checked, and when effects fire.
+- [Render config files](render-config.md) for an output that names the credential, and
+  [React to changes](react-to-changes.md) for the effects a rotated value fires.
 - [Config and the inventory](../how-it-works/node/config.md) for where the operator keeps the
   files.

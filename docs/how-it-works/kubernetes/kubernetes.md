@@ -83,7 +83,7 @@ cluster from its `Node`, `Cluster` and `Flannel` documents and `image.json` into
 `/run/chalkos/kubernetes/cluster.json`, at boot and on every apply.
 
 A changed cluster restarts `chalkos-kubernetes` and the kubelet, as their
-[effect](../node/outputs-and-effects.md#which-effects-does-chalkos-declare) says,
+[effect](../../build/react-to-changes.md#chalkos-declares-outputs-and-effects-of-its-own) says,
 and chalkd on a control plane starts its Kubernetes work again, so the static pods and add-ons
 follow the new settings. Some settings are fixed once the cluster exists: `ipFamilies`, the pod
 ranges of `podCIDRs`, the service ranges of `serviceCIDRs` and the addresses of `dnsIPs`, because
@@ -91,7 +91,7 @@ the certificates, etcd and the ranges the control plane allocated were made for 
 that holds a Kubernetes share, `chalkctl apply-config` is refused when it changes them, with a
 message such as `the config changes the cluster's podCIDRs from ipv4 10.244.0.0/16 to ipv4
 10.245.0.0/16; they are fixed once the cluster exists, so keep them, or reinstall the node into a
-new cluster`. The [change rules](../node/rules.md) of the `Cluster` kind decide this.
+new cluster`. The [change rules](../../build/guard-changes.md) of the `Cluster` kind decide this.
 
 ## What runs on every node?
 

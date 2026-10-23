@@ -240,7 +240,7 @@ bird reads one config file, which an output renders from the node's `Peer` docum
 output is a set of files that a program of the image renders
 and checks before a delivery changes the node, so a `Peer` that would give bird a config it
 rejects is refused, and the node keeps the config bird runs.
-[Outputs and effects](../how-it-works/node/outputs-and-effects.md) describes the mechanism.
+[Render config files](render-config.md) describes the mechanism.
 
 Write the config as a Go template, `extensions/bird/bird.conf.tmpl`:
 
@@ -283,7 +283,7 @@ chalkos.outputs.bird-conf = {
 
 - `inputs` names the kinds the renderer reads.
 - `render` is the renderer that writes the files into `$OUT`.
-  [`lib.chalkos.render.template`](../how-it-works/node/outputs-and-effects.md#which-renderers-does-libchalkos-offer)
+  [`lib.chalkos.render.template`](render-config.md#a-template-renders-one-file)
   renders a template into a file named as the template less `.tmpl`, here `bird.conf`.
 - `check` runs in the renderer's sandbox against the rendered files. `bird -p` parses the config
   and exits with status 1 on an error, which refuses the delivery.
@@ -515,7 +515,7 @@ The survey and the document disagree, so the node refuses its config until they 
 where the document is.
 
 `chalkctl validate` runs the rules that read no facts, such as the `Peer` rule; the rack rule
-runs on the node. [Change rules and facts](../how-it-works/node/rules.md) explains the variables, the
+runs on the node. [Guard changes with rules and facts](guard-changes.md) explains the variables, the
 functions and where rules run.
 
 ## Act on a change that no output renders
@@ -535,7 +535,7 @@ name as `node.name`, and the facts before and after it as `oldFacts.<name>` and 
 Only images with Kubernetes declare the `share` fact, so on an image without Kubernetes the build
 refuses this rule as one that reads an undeclared fact. Besides `restart` and `reload`, an effect
 takes `run`, a command such as `chronyc reload sources`, and `start`, which starts the units of
-`restart` that do not run. [Outputs and effects](../how-it-works/node/outputs-and-effects.md#what-is-an-effect)
+`restart` that do not run. [React to changes](react-to-changes.md)
 lists the options and the order chalkd takes effects in.
 
 ## Know what an image may not change
@@ -648,7 +648,7 @@ The status of `cp1` lists the output `bird-conf` as `rendered`, and the journal 
 - [Variants and platforms](variants-and-platforms.md) explains how `mkImages` builds variants, and
   [Declare a config kind](declare-a-kind.md) how an extension adds a kind.
 - [Config and the inventory](../how-it-works/node/config.md) explains how the YAML reaches the nodes.
-- [Outputs and effects](../how-it-works/node/outputs-and-effects.md) explains how outputs are rendered,
-  checked and swapped in, and when effects fire.
+- [Render config files](render-config.md) explains how outputs are rendered, checked and
+  swapped in, and [React to changes](react-to-changes.md) when effects fire.
 - [Add software, drivers and kernel modules](add-software.md) adds drivers and firmware.
 - [Upgrade a cluster](../operate/upgrade-cluster.md) rolls the new images out.

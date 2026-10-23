@@ -294,7 +294,7 @@ naming the volume and what carries the change out:
 the config takes chalkctl storage reset: Volume scratch: format xfs instead of ext4; reset it with chalkctl storage reset w1 scratch
 ```
 
-The image's storage [change rules](../how-it-works/node/rules.md) decide which changes the node refuses.
+The image's storage [change rules](../build/guard-changes.md) decide which changes the node refuses.
 
 ## Reset a volume
 

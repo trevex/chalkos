@@ -51,23 +51,14 @@ chalkos adds to run Kubernetes on it.
 
     [:octicons-arrow-right-24: Read](node/config.md)
 
--   :material-check-decagram: __Change rules and facts__
+-   :material-file-document-edit: __The config pipeline__
 
     ---
 
-    How an image's CEL rules decide which config changes a node accepts, and the node state they
-    read.
+    How a delivery passes a node's documents through rules, outputs and effects, and what happens
+    at boot and after an upgrade.
 
-    [:octicons-arrow-right-24: Read](node/rules.md)
-
--   :material-file-document-edit: __Outputs and effects__
-
-    ---
-
-    How a node renders and checks its services' config files before a delivery changes anything,
-    and which deliveries reload or restart a service.
-
-    [:octicons-arrow-right-24: Read](node/outputs-and-effects.md)
+    [:octicons-arrow-right-24: Read](node/config-pipeline.md)
 
 -   :material-database: __Storage and encryption__
 

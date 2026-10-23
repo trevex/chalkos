@@ -38,7 +38,7 @@ The schemas of these kinds are generated from the gperf tables of the image's ow
 they accept exactly the sections and keys its networkd accepts, and
 [`chalkctl validate`](../../reference/cli/chalkctl_validate.md) refuses a misspelled key, or a
 value that spans lines, before the node sees it. Each key records its networkd spelling, from
-which the built-in [output](outputs-and-effects.md#which-outputs-does-chalkos-declare) `networkd`
+which the built-in [output](../../build/react-to-changes.md#chalkos-declares-outputs-and-effects-of-its-own) `networkd`
 renders the units into `/run/systemd/network`, where they take precedence over the image's.
 chalkd renders them for every delivery before it changes anything, and `chalkos-config.service`
 renders them at every boot before networkd starts. [Config kinds](../../reference/kinds.md#network)

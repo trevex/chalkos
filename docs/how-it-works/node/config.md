@@ -218,7 +218,7 @@ The name feeds:
 - the seed of the node's partition UUIDs, as [Storage and encryption](storage.md) describes;
 - the node's recovery key, derived from the secrets file
   and the name;
-- the `node.name` of the [change rules](rules.md), the effects and the renderers of outputs.
+- the `node.name` of the [change rules](../../build/guard-changes.md), the effects and the renderers of outputs.
 
 A node keeps its name for its whole life. Renaming one takes a reinstall, because its etcd member,
 its certificates and its recovery key carry the old name.
@@ -368,7 +368,7 @@ refuses an invalid set as a whole. chalkd, not chalkctl, fills in the schemas' d
 it keeps, so the slot on STATE holds the complete set while the files stay as short as their
 authors wrote them.
 
-Both also check the image's [change rules](rules.md). chalkd runs every rule; chalkctl runs those
+Both also check the image's [change rules](../../build/guard-changes.md). chalkd runs every rule; chalkctl runs those
 that read no facts about the node, `validate` without the node's config and `apply-config` with
 the config the node serves, so a change a rule refuses fails before it is sent.
 
@@ -439,7 +439,7 @@ trusts. The Kubernetes cluster file, `/run/chalkos/kubernetes/cluster.json`, is 
 `chalkos-config` writes it from the slot of the image that boots, and chalkd writes it again when
 `apply-config` changes the running image's config. Every write of a slot (install, upgrade,
 `apply-config` and `apply-config --staged`) checks its config against the
-[change rules](rules.md) of the image the slot is for, which compare it with the running image's
+[change rules](../../build/guard-changes.md) of the image the slot is for, which compare it with the running image's
 config and read the machine state from facts. The built-in kinds' rules take:
 
 | Change | Takes | What carries it out |
@@ -451,7 +451,7 @@ config and read the machine state from facts. The built-in kinds' rules take:
 | The cluster's IP families, pod or service ranges or DNS addresses, once the node holds its Kubernetes share | refuse | Nothing: they stay for the cluster's life. |
 
 A node refuses the whole set when one of its rules fails, applies none of it, and names what the
-change needs, as [Change rules and facts](rules.md) shows. The changes that take nothing are made
+change needs, as [Guard changes with rules and facts](../../build/guard-changes.md) shows. The changes that take nothing are made
 whichever image the slot is for: an upgrade or `apply-config --staged` that adds a volume creates
 it while the running image runs, enrolled with the fallback secret chalkctl sends, and
 `storage.json` gains it. Every boot sets up the volumes `storage.json` records, so the running
@@ -486,7 +486,7 @@ starts, and chalkd applies a new set the same way after every `apply-config` to 
 - it writes, for each unit granted kinds, the values that the `secretRef` fields of those kinds
   name into the unit's credentials;
 - it renders the image's outputs, which a delivery checks before it changes anything, as
-  [Outputs and effects](outputs-and-effects.md#what-happens-on-a-delivery) describes; the
+  [The config pipeline](config-pipeline.md#a-delivery-passes-four-stages) describes; the
   built-in outputs write the networkd units to `/run/systemd/network`, where they take
   precedence over the image's own, and the time servers for chrony.
 
@@ -499,7 +499,7 @@ kind reads the documents of that kind below `/run/chalkos/config` or through cha
 own config files from the documents instead, and chalkd checks them before a delivery changes
 anything, so a document the service would reject is refused with the delivery. An effect restarts
 or reloads the service when its outputs or the documents of its kinds change, or when a CEL rule
-holds; [Outputs and effects](outputs-and-effects.md) describes both. `apply-config` prints the
+holds; [The config pipeline](config-pipeline.md) describes both. `apply-config` prints the
 units it restarted.
 
 chalkcfg runs on the node, from a granted unit or a privileged pod. It prints no `Secret` and no
@@ -562,7 +562,7 @@ image with other defaults does not change it.
 - A kind has one version per image, and there is no conversion between versions. A new version of
   a kind is a new set of documents.
 - A rule compares a config with the running image's config alone, and chalkctl runs only the
-  rules that read no facts; see [Change rules and facts](rules.md#limits).
+  rules that read no facts; see [Guard changes with rules and facts](../../build/guard-changes.md#rules-compare-with-the-running-config-alone).
 
 ## Related pages
 
@@ -570,7 +570,7 @@ image with other defaults does not change it.
   [Variants and platforms](../../build/variants-and-platforms.md) for the images that accept the
   config.
 - [Architecture](architecture.md) for where the inventory and the image directories meet chalkctl.
-- [Change rules and facts](rules.md) for how an image decides which changes a node accepts.
+- [Guard changes with rules and facts](../../build/guard-changes.md) for how an image decides which changes a node accepts.
 - [Storage and encryption](storage.md) and [Networking](networking.md) for what the storage and
   network kinds do on the node.
 - [Config kinds](../../reference/kinds.md) for every field of every kind, the inventory's included.

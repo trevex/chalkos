@@ -62,6 +62,33 @@ Secure Boot and publishing to a registry.
 
     [:octicons-arrow-right-24: Read](pass-secrets.md)
 
+-   :material-file-code: __Render config files__
+
+    ---
+
+    Render a service's config file from the node's documents, checked before a delivery changes
+    anything.
+
+    [:octicons-arrow-right-24: Read](render-config.md)
+
+-   :material-refresh: __React to changes__
+
+    ---
+
+    Restart, reload or run a command when a delivery changes an output, a kind's documents or a
+    condition.
+
+    [:octicons-arrow-right-24: Read](react-to-changes.md)
+
+-   :material-shield-check: __Guard changes with rules and facts__
+
+    ---
+
+    Refuse a config change a node cannot make, with CEL rules on your kind and facts about the
+    node.
+
+    [:octicons-arrow-right-24: Read](guard-changes.md)
+
 -   :material-wrench: __Customise an image__
 
     ---

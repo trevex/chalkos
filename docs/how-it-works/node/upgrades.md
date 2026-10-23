@@ -119,7 +119,7 @@ instead of a line per node:
 config not delivered: the operator role cannot deliver config; each node carries its own over
 ```
 
-The config meets the new image's [change rules](rules.md) as `apply-config`'s config meets the
+The config meets the new image's [change rules](../../build/guard-changes.md) as `apply-config`'s config meets the
 running image's: compared with the running slot's config and the storage STATE records, a storage
 change that takes a reset or a reinstall, or a change of a fixed Kubernetes setting, is refused,
 and a new volume is created before the image boots, while the running image runs. chalkctl sends
