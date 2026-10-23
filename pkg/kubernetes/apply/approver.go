@@ -135,12 +135,21 @@ func (a *Approver) Once(ctx context.Context) error {
 	})
 	exists := map[string]bool{}
 	var errs []error
+	// Requests left pending because the revoked nodes could not be read share one error.
+	unread := 0
 	for i := range list.Items {
 		csr := &list.Items[i]
 		exists[csr.Name] = true
-		if err := a.review(ctx, csr, revokedNodes); err != nil {
+		switch err := a.review(ctx, csr, revokedNodes); {
+		case errors.As(err, new(unreadRevoked)):
+			unread++
+		case err != nil:
 			errs = append(errs, fmt.Errorf("certificate request %s: %w", csr.Name, err))
 		}
+	}
+	if unread > 0 {
+		_, err := revokedNodes()
+		errs = append(errs, fmt.Errorf("left %d certificate requests pending: %w", unread, err))
 	}
 	for name := range a.refused {
 		if !exists[name] {
@@ -151,7 +160,7 @@ func (a *Approver) Once(ctx context.Context) error {
 }
 
 // review approves one request if Approvable accepts it and its node is not revoked. While the
-// revoked nodes cannot be read, it leaves the request pending and returns the error.
+// revoked nodes cannot be read, it leaves the request pending and returns unreadRevoked.
 func (a *Approver) review(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, revokedNodes func() (revoked.List, error)) error {
 	if csr.Spec.SignerName != certificatesv1.KubeletServingSignerName || decided(csr) {
 		return nil
@@ -160,7 +169,7 @@ func (a *Approver) review(ctx context.Context, csr *certificatesv1.CertificateSi
 	if name, ok := strings.CutPrefix(csr.Spec.Username, nodeUserPrefix); ok && name != "" {
 		list, err := revokedNodes()
 		if err != nil {
-			return fmt.Errorf("left pending: %w", err)
+			return unreadRevoked{err}
 		}
 		if at, ok := list[name]; ok {
 			a.leavePending(csr, revokedError(name, at))
@@ -216,3 +225,9 @@ func revokedError(name string, at time.Time) error {
 	}
 	return fmt.Errorf("node %s is revoked since %s", name, at.Format(revoked.TimeFormat))
 }
+
+// unreadRevoked is review's error for a request it left pending because the revoked nodes could
+// not be read.
+type unreadRevoked struct{ error }
+
+func (u unreadRevoked) Unwrap() error { return u.error }

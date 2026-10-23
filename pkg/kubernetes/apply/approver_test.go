@@ -216,7 +216,8 @@ func TestApproverForgetsDeletedRequests(t *testing.T) {
 }
 
 // A revoked node's serving certificate requests stay pending, whatever the time it is listed
-// with; the other nodes' are approved. A list that cannot be read approves nothing.
+// with; the other nodes' are approved. A list that cannot be read approves nothing, and its
+// error is reported once a pass.
 func TestApproverLeavesRevokedNodesPending(t *testing.T) {
 	w2 := testNode("w2",
 		corev1.NodeAddress{Type: corev1.NodeInternalIP, Address: "192.168.100.13"},
@@ -257,8 +258,11 @@ func TestApproverLeavesRevokedNodesPending(t *testing.T) {
 			t.Cleanup(func() { log.SetOutput(os.Stderr) })
 			a := &Approver{Client: cs, Revoked: func(context.Context) (revoked.List, error) { return tc.list, tc.err }}
 			err := a.Once(context.Background())
-			if (err != nil) != (tc.err != nil) || (err != nil && !strings.Contains(err.Error(), "timeout")) {
-				t.Errorf("err = %v, want %v", err, tc.err)
+			if (err != nil) != (tc.err != nil) || (err != nil && strings.Count(err.Error(), "timeout") != 1) {
+				t.Errorf("err = %v, want %v once", err, tc.err)
+			}
+			if tc.err != nil && !strings.Contains(err.Error(), "left 3 certificate requests pending") {
+				t.Errorf("err = %v, want the requests counted", err)
 			}
 			for csr, want := range tc.want {
 				got, err := cs.CertificatesV1().CertificateSigningRequests().Get(context.Background(), csr, metav1.GetOptions{})
