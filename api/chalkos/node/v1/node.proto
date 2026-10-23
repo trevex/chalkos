@@ -556,12 +556,16 @@ message KubernetesStatus {
   // such as "the API server serves certificates the node replaced". Empty on other nodes.
   string control_plane = 5;
   // On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the
-  // ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty on other nodes and when
-  // revoked_nodes_error is set.
+  // ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty when none is revoked, and when
+  // the list was not reported; revoked_nodes_read tells the two apart.
   repeated RevokedNode revoked_nodes = 6;
   // On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when
   // they were.
   string revoked_nodes_error = 7;
+  // Whether the node read the revoked nodes, so that an empty revoked_nodes means none is
+  // revoked. False on other nodes, when revoked_nodes_error is set, and from a chalkd that
+  // predates node revocation.
+  bool revoked_nodes_read = 8;
 }
 
 message RevokedNode {

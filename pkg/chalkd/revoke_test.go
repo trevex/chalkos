@@ -275,7 +275,7 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := st.RevokedNodes
-	if len(got) != 2 || got[0].Name != "w1" || got[0].RevokedAt != nil || got[1].Name != "w2" || got[1].RevokedAt.AsTime().Format(revoked.TimeFormat) != cm.Data["w2"] || st.RevokedNodesError != "" {
+	if len(got) != 2 || got[0].Name != "w1" || got[0].RevokedAt != nil || got[1].Name != "w2" || got[1].RevokedAt.AsTime().Format(revoked.TimeFormat) != cm.Data["w2"] || st.RevokedNodesError != "" || !st.RevokedNodesRead {
 		t.Errorf("revoked nodes %v, error %q; want w1 at an unknown time and w2 at %s", got, st.RevokedNodesError, cm.Data["w2"])
 	}
 
@@ -285,12 +285,12 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 	if st, err = l.s.Kubernetes.status(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(st.RevokedNodes) != 0 || !strings.Contains(st.RevokedNodesError, "connection refused") || !strings.HasPrefix(st.State, "bootstrapped") {
+	if len(st.RevokedNodes) != 0 || st.RevokedNodesRead || !strings.Contains(st.RevokedNodesError, "connection refused") || !strings.HasPrefix(st.State, "bootstrapped") {
 		t.Errorf("without the API server: revoked nodes %v, error %q, state %q", st.RevokedNodes, st.RevokedNodesError, st.State)
 	}
 
 	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
-	if st, err := worker.Kubernetes.status(context.Background()); err != nil || st.RevokedNodes != nil || st.RevokedNodesError != "" {
+	if st, err := worker.Kubernetes.status(context.Background()); err != nil || st.RevokedNodes != nil || st.RevokedNodesError != "" || st.RevokedNodesRead {
 		t.Errorf("a worker's status: %v, %v", st, err)
 	}
 }

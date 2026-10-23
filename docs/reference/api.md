@@ -580,8 +580,9 @@ No fields.
 | `node_ready` | `string` | The status of the Node's Ready condition (True, False or Unknown), or why it could not be read. |
 | `vip` | `string` | On a bootstrapped control-plane node of a cluster with VIPs: "holder" while the node holds them, "standby" otherwise. Empty on other nodes. |
 | `control_plane` | `string` | On a bootstrapped control-plane node: "current" once its API server and etcd serve the certificates the node holds now and the API server answers ready, otherwise what is not so, such as "the API server serves certificates the node replaced". Empty on other nodes. |
-| `revoked_nodes` | repeated [`RevokedNode`](#message-revokednode) | On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty on other nodes and when revoked_nodes_error is set. |
+| `revoked_nodes` | repeated [`RevokedNode`](#message-revokednode) | On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty when none is revoked, and when the list was not reported; revoked_nodes_read tells the two apart. |
 | `revoked_nodes_error` | `string` | On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when they were. |
+| `revoked_nodes_read` | `bool` | Whether the node read the revoked nodes, so that an empty revoked_nodes means none is revoked. False on other nodes, when revoked_nodes_error is set, and from a chalkd that predates node revocation. |
 
 ### LogsRequest { #message-logsrequest }
 

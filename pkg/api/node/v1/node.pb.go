@@ -2692,14 +2692,18 @@ type KubernetesStatus struct {
 	// such as "the API server serves certificates the node replaced". Empty on other nodes.
 	ControlPlane string `protobuf:"bytes,5,opt,name=control_plane,json=controlPlane,proto3" json:"control_plane,omitempty"`
 	// On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the
-	// ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty on other nodes and when
-	// revoked_nodes_error is set.
+	// ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty when none is revoked, and when
+	// the list was not reported; revoked_nodes_read tells the two apart.
 	RevokedNodes []*RevokedNode `protobuf:"bytes,6,rep,name=revoked_nodes,json=revokedNodes,proto3" json:"revoked_nodes,omitempty"`
 	// On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when
 	// they were.
 	RevokedNodesError string `protobuf:"bytes,7,opt,name=revoked_nodes_error,json=revokedNodesError,proto3" json:"revoked_nodes_error,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Whether the node read the revoked nodes, so that an empty revoked_nodes means none is
+	// revoked. False on other nodes, when revoked_nodes_error is set, and from a chalkd that
+	// predates node revocation.
+	RevokedNodesRead bool `protobuf:"varint,8,opt,name=revoked_nodes_read,json=revokedNodesRead,proto3" json:"revoked_nodes_read,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *KubernetesStatus) Reset() {
@@ -2779,6 +2783,13 @@ func (x *KubernetesStatus) GetRevokedNodesError() string {
 		return x.RevokedNodesError
 	}
 	return ""
+}
+
+func (x *KubernetesStatus) GetRevokedNodesRead() bool {
+	if x != nil {
+		return x.RevokedNodesRead
+	}
+	return false
 }
 
 type RevokedNode struct {
@@ -4717,7 +4728,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fsynchronised\x18\x01 \x01(\bR\fsynchronised\x12\x16\n" +
 	"\x06source\x18\x02 \x01(\tR\x06source\x12%\n" +
 	"\x0eoffset_seconds\x18\x03 \x01(\x01R\roffsetSeconds\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error\"\x85\x02\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"\xb3\x02\n" +
 	"\x10KubernetesStatus\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x1d\n" +
@@ -4726,7 +4737,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x03vip\x18\x04 \x01(\tR\x03vip\x12#\n" +
 	"\rcontrol_plane\x18\x05 \x01(\tR\fcontrolPlane\x12A\n" +
 	"\rrevoked_nodes\x18\x06 \x03(\v2\x1c.chalkos.node.v1.RevokedNodeR\frevokedNodes\x12.\n" +
-	"\x13revoked_nodes_error\x18\a \x01(\tR\x11revokedNodesError\"\\\n" +
+	"\x13revoked_nodes_error\x18\a \x01(\tR\x11revokedNodesError\x12,\n" +
+	"\x12revoked_nodes_read\x18\b \x01(\bR\x10revokedNodesRead\"\\\n" +
 	"\vRevokedNode\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x129\n" +
 	"\n" +
