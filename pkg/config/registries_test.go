@@ -36,7 +36,7 @@ func parseRegistries(t *testing.T, text string) []Document {
 	return docs
 }
 
-// TestRegistriesOf gives each Registry's host, user, password and leave for plain HTTP and each
+// TestRegistriesOf gives each Registry's host, user, password and insecure flag, and each
 // Mirror's endpoints, finds them by any name of their host, and leaves passwords empty without
 // Secrets to take them from.
 func TestRegistriesOf(t *testing.T) {

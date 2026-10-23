@@ -228,7 +228,7 @@ func TestUpgradeRefusesChunksOfAPull(t *testing.T) {
 }
 
 // TestPullSources sends a pull through each endpoint of the Mirror of the reference's registry,
-// in order, then to the registry, each with the credentials and leave for plain HTTP of the
+// in order, then to the registry, each with the credentials and insecure flag of the
 // Registry of its own host, found by any name of it; a registry without a Mirror is pulled
 // from alone, anonymously and over HTTPS without a Registry.
 func TestPullSources(t *testing.T) {

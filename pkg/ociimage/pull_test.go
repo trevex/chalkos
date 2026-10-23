@@ -581,7 +581,7 @@ func TestPullDoesNotPassOverAMismatch(t *testing.T) {
 	}
 }
 
-// TestPullRefusesAPlainHTTPMirror refuses an http:// endpoint without leave for plain HTTP, and
+// TestPullRefusesAPlainHTTPMirror refuses an http:// endpoint without Insecure, and
 // an endpoint that is no URL.
 func TestPullRefusesAPlainHTTPMirror(t *testing.T) {
 	ref, h, parts := pushSmall(t, ocitest.Registry(t))
@@ -849,7 +849,7 @@ func TestPullCutsAPassedOverError(t *testing.T) {
 }
 
 // TestPullOverHTTPSToAnHTTPSMirror reaches an https:// endpoint over HTTPS alone, even on
-// loopback and with leave for plain HTTP.
+// loopback and with Insecure set.
 func TestPullOverHTTPSToAnHTTPSMirror(t *testing.T) {
 	host, manifests := ocitest.CountingRegistry(t)
 	ref, h, parts := pushSmall(t, host)
