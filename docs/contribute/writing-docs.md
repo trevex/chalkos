@@ -12,21 +12,23 @@ drift from what chalkos does. This page explains how the site is organised, buil
 checked and published. What goes into a page, and how it is worded, is the
 [style guide](style.md)'s subject.
 
-## How is the site organised?
+## Site sections
 
-The navigation follows the four kinds of page the style guide defines, each with its own
-section and template:
+The navigation has one section per reader and two that every reader shares:
 
-| Section | Kind | Reader's question |
-| --- | --- | --- |
-| Getting started | tutorial | How do I get a cluster running? |
-| Concepts | concept | How does this work, and why? |
-| Guides | guide | How do I do this task? |
-| Reference | reference | What exactly is this value, port or field? |
+| Section | Directory | Reader | Kinds of page |
+| --- | --- | --- | --- |
+| Get started | `get-started/` | a reader new to chalkos | explanation, tutorial |
+| Operate nodes | `operate/` | operator | how-to |
+| Run Kubernetes | `kubernetes/` | operator running Kubernetes | how-to |
+| Build images | `build/` | image author | how-to |
+| How chalkos works | `how-it-works/node/`, `how-it-works/kubernetes/` | everyone | explanation |
+| Reference | `reference/` | everyone | reference |
+| Contribute | `contribute/` | contributor | how-to, explanation |
 
-Contributing, this section, holds the pages for developers. Each section starts with an index
-page that lists its pages. The glossary defines the terms every page
-links on first use.
+Each section starts with an index page with a card for each of its pages. The
+[style guide](style.md#audiences) describes the readers, and the
+[page templates](style.md#page-templates) describe the kinds of page.
 
 `zensical.toml` sets the site's name, theme and navigation. The navigation lists every page;
 the region between `# BEGIN docgen cli` and `# END docgen cli` is generated, and the rest is
@@ -64,6 +66,7 @@ These pages are generated and never edited by hand:
 | `docs/reference/options.md` | the arguments of `mkImages` in `lib/images-arguments.nix` and the option declarations of the node modules | nixosOptionsDoc |
 | `docs/reference/api.md` | `api/chalkos/node/v1/node.proto`, through the template `api/markdown.tmpl` | protoc-gen-doc in `buf.gen.yaml` |
 | the navigation region of `zensical.toml` | the command trees | `docgen cli` |
+| `includes/abbreviations.md` | the first sentence of each entry of `docs/reference/glossary.md` | `docgen abbr` |
 
 To change one, change its source and regenerate all of them:
 
@@ -75,6 +78,86 @@ The `docgen` app runs the script `docs.write` of `nix/docs.nix`, which copies th
 derivation `docs.reference` into the working tree, so it writes exactly what the check compares.
 Run it in the repository's root, where `zensical.toml` is; elsewhere it refuses. Commit the source
 and the generated pages together.
+
+## Glossary tooltips
+
+Every page shows a glossary term's definition as a tooltip when the reader hovers over the term.
+`docgen abbr` turns each entry of `docs/reference/glossary.md` into lines of Python-Markdown's
+`abbr` syntax in `includes/abbreviations.md`, and `pymdownx.snippets` appends that file to every
+page. Terms in code get no tooltip; terms in headings and link text do.
+
+```markdown title="docs/reference/glossary.md"
+## Slot { #slot }
+<!-- abbr: slots, Slots -->
+
+A pair of partitions that holds one image's store: the erofs data and its dm-verity hash tree.
+They are labelled ...
+```
+
+This entry produces one line for each form of the term, with the first sentence as the
+definition and links and backticks removed:
+
+```text
+*[Slot]: A pair of partitions that holds one image's store: the erofs data and its dm-verity hash tree.
+*[slot]: A pair of partitions that holds one image's store: the erofs data and its dm-verity hash tree.
+```
+
+The forms are the heading, the heading with a lower-case first letter when it starts with a
+capitalised word, and the forms in the `<!-- abbr: ... -->` comment. A longer form wins over a
+shorter one, so "boot counting" is matched before "boot". `<!-- abbr: none -->` skips a term that
+is mostly an ordinary word: Node, Image, Config, Upgrade, Operator, Reader, Kind and Output have
+it. After changing the glossary, run `nix run .#docgen` and commit both files.
+
+## Code blocks
+
+Pick the fence by what the block holds:
+
+| Content | Fence | Prompt |
+| --- | --- | --- |
+| A command with its output | `console` | `$ ` before each command; output lines without one |
+| Commands without output, to run or copy | `sh` | none |
+| A script file | `sh` with `title="name.sh"` | none |
+| Output alone, logs, console text | `text` | none |
+| Nix, JSON, YAML, TOML | `nix`, `json`, `yaml`, `toml` | none |
+
+````markdown
+```console
+$ chalkctl status cp1
+```
+````
+
+Output comes from a real run. Shorten long output with a line holding only `...`, and leave the
+rest unchanged. Break a command longer than about 100 characters with ` \` and indent the
+continuation by two spaces.
+
+A block that is a file names it in its `title`, such as `title="nodes/w1.yaml"`. Show whole config
+documents, with `apiVersion`, `kind`, `metadata.name` and `spec`, so `docgen yaml` checks them.
+
+A value the reader replaces is a placeholder in angle brackets, such as `<node>` or `<db-key>`.
+Explain each one next to the block. Tutorials use the lab's real names, `cp1` and `w1`, instead.
+A whole config document uses concrete names, because `docgen yaml` refuses `<node>` as a name.
+Write a placeholder flag value with `=`, as in `--fingerprint=<fingerprint>`. Without it, the
+shell and `docgen check` read the `<` as a redirection and report the flag as missing its value.
+
+```sh
+chalkctl install <node> --fingerprint=<fingerprint>
+```
+
+A comment in a block explains a decision, not the next line:
+`# A single control plane has no API server while it reboots.`
+
+## Links
+
+Links between pages use relative paths to the Markdown file, such as
+`[the image](../how-it-works/node/image.md#what-identifies-an-image)`. The strict build fails on a missing page or
+anchor. The generated reference has predictable anchors:
+
+| Target | Path and anchor |
+| --- | --- |
+| A command | `reference/cli/` and the command path joined with underscores: `cli/chalkctl_etcd_leave.md`; its flags are under `#options` |
+| An option | its name in lower case, keeping only letters, digits, `-` and `_`, with `<name>` and `*` dropped: `options.md#variantsmodules` |
+| An API method, message or enum | `method-`, `message-` or `enum-` and the name in lower case without dots: `api.md#method-upgrade` |
+| A kind | its name in lower case: `kinds.md#systemdisk` |
 
 ## Checks
 
@@ -130,7 +213,7 @@ builds the image's schemas and provides nixfmt.
 
 1. Create the Markdown file in its section's directory, starting with front matter of a `title`
    and a `description` and an H1 equal to the title, as the
-   [style guide](style.md#front-matter) shows.
+   [style guide](style.md#front-matter-and-file-names) shows.
 2. Write it from the template of its kind in the [style guide](style.md#page-templates).
 3. Add it to the navigation in `zensical.toml`, outside the generated region, and to its
    section's index page.
