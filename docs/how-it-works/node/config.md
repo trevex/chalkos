@@ -113,7 +113,7 @@ Some kinds depend on the image or the node:
 
 An extension adds kinds of its own in a group outside `chalkos.dev`, declared in the NixOS modules
 of a variant, as
-[Extensions](variants.md#how-does-an-extension-add-a-kind) shows. Their documents go
+[Declare a config kind](../../build/declare-a-kind.md) shows. Their documents go
 into the same files as chalkos's. The homelab example's `Rack` kind records where a node is
 mounted, and each node's file holds one:
 
@@ -493,31 +493,18 @@ starts, and chalkd applies a new set the same way after every `apply-config` to 
 The storage section is machine state: only chalkd writes `storage.json`, when a config that
 changes the storage is delivered, and every boot sets up the volumes it records.
 
-A service reads the node's config in one of two ways. A grant,
-[`systemd.services.<unit>.chalkos.kinds`](../../reference/options.md#systemdserviceschalkoskinds) in
-its image's modules, gives the unit the documents of the kinds it names, as files below
-`/run/chalkos/config` or through chalkcfg, whose commands
-[`chalkos.kinds.<Kind>.get`](../../reference/options.md#chalkoskindsget) builds with a path the
-image's evaluation checks:
-
-```console
-$ chalkcfg get Rack rack -o jsonpath='{.spec.location}'
-rack-a/u12
-```
+A service reads the node's config in one of two ways, which its image decides. A unit granted a
+kind reads the documents of that kind below `/run/chalkos/config` or through chalkcfg, as
+[Read config in a service](../../build/read-config.md) describes. An output renders the service's
+own config files from the documents instead, and chalkd checks them before a delivery changes
+anything, so a document the service would reject is refused with the delivery. An effect restarts
+or reloads the service when its outputs or the documents of its kinds change, or when a CEL rule
+holds; [Outputs and effects](outputs-and-effects.md) describes both. `apply-config` prints the
+units it restarted.
 
 chalkcfg runs on the node, from a granted unit or a privileged pod. It prints no `Secret` and no
 `Addon` document: `Addon` documents stay in the stored set, readable by root alone, and only a
 control plane's chalkd applies their objects.
-
-An output, [`chalkos.outputs`](../../reference/options.md#chalkosoutputs), renders the service's
-config files from the documents instead, and chalkd checks them before a delivery changes
-anything, so a document the service would reject is refused with the delivery. An effect,
-[`chalkos.effects`](../../reference/options.md#chalkoseffects), restarts or reloads the service
-when its outputs or the documents of its kinds change, or when a CEL rule holds; a grant restarts
-nothing.
-[Outputs and effects](outputs-and-effects.md) describes both, the outputs chalkos declares for
-networkd and chrony and its effects for them and the kubelet among them. `apply-config` prints
-the units it restarted.
 
 ## How do secrets reach a service?
 
@@ -537,13 +524,12 @@ its keys instead of holding the value, written as
 `password: {secretRef: {name: bgp, key: password}}`. chalkctl and chalkd refuse a set in which a
 reference names a `Secret` or key the set lacks.
 
-On the node, chalkd keeps `Secret` documents in a directory of STATE readable by root alone and
-never writes them below `/run/chalkos/config`. A unit granted a kind with a reference gets the
-value as its systemd credential `secret_<secret>.<key>`, here `secret_bgp.password`, and no
-other service sees it. A `Registry`'s password also reaches the kubelet:
-`chalkos-registry-credentials.service` writes it to a file only root reads, and the kubelet uses
-it for every pod's pulls from the `Registry`'s host. An output's renderer sees the reference
-alone, so a rendered file that needs the value names the credential. Status, chalkcfg and the
+On the node, chalkd keeps `Secret` documents in the config slot on STATE, readable by root alone,
+and never writes them below `/run/chalkos/config`. A unit granted a kind with a reference gets the
+value as a systemd credential, and no other service sees it, as
+[Pass secrets to a service](../../build/pass-secrets.md) describes. A `Registry`'s password also
+reaches the kubelet: `chalkos-registry-credentials.service` writes it to a file only root reads,
+and the kubelet uses it for every pod's pulls from the `Registry`'s host. Status, chalkcfg and the
 config's hash never show a secret value.
 
 ## How does status compare a node with its config?
@@ -580,7 +566,7 @@ image with other defaults does not change it.
 
 ## Related pages
 
-- [Extensions](variants.md) for how an extension declares a kind, and
+- [Declare a config kind](../../build/declare-a-kind.md) for how an extension declares a kind, and
   [Variants and platforms](../../build/variants-and-platforms.md) for the images that accept the
   config.
 - [Architecture](architecture.md) for where the inventory and the image directories meet chalkctl.

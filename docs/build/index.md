@@ -37,6 +37,31 @@ Secure Boot and publishing to a registry.
 
     [:octicons-arrow-right-24: Read](add-software.md)
 
+-   :material-shape-plus: __Declare a config kind__
+
+    ---
+
+    Declare a config kind in a NixOS module, so each node's YAML carries values the image checks.
+
+    [:octicons-arrow-right-24: Read](declare-a-kind.md)
+
+-   :material-file-search: __Read config in a service__
+
+    ---
+
+    Grant a unit the config kinds it reads, and read their documents as files or with chalkcfg.
+
+    [:octicons-arrow-right-24: Read](read-config.md)
+
+-   :material-key-chain: __Pass secrets to a service__
+
+    ---
+
+    Reference a Secret from a field of your kind, so a granted unit gets its value as a systemd
+    credential.
+
+    [:octicons-arrow-right-24: Read](pass-secrets.md)
+
 -   :material-wrench: __Customise an image__
 
     ---

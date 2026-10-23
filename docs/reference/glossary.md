@@ -218,7 +218,7 @@ kinds. An extension sits in a [variant](#variant)'s modules and declares its [ki
 services read those documents through a [grant](#grant) or as [outputs](#output) rendered from
 them, and [effects](#effect) restart them when they change. chalkos's own Kubernetes support
 declares its kinds and effects the same way. See
-[Extensions](../how-it-works/node/variants.md#how-does-an-extension-add-a-kind).
+[Declare a config kind](../build/declare-a-kind.md).
 
 ## Fact { #fact }
 <!-- abbr: facts, Facts -->
@@ -254,7 +254,7 @@ The [config](#config) kinds a unit may read at runtime. A unit's grant is declar
 the documents of those kinds below `/run/chalkos/config` and the values their
 `secretRef` fields name into the unit's credentials. A grant restarts nothing; an
 [effect](#effect) does. See
-[Outputs and effects](../how-it-works/node/outputs-and-effects.md#what-does-a-grant-give-a-unit).
+[Read config in a service](../build/read-config.md).
 
 ## Health check { #health-check }
 

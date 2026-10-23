@@ -231,7 +231,7 @@ spec: {address: 10.0.0.2, asn: 64514}
 Put the module where the nodes that carry the kind's documents get it: in `modules` when every
 variant accepts it, or in one variant's `modules`. A node whose image lacks the kind refuses a
 config that holds a document of it.
-[Extensions](../how-it-works/node/variants.md#how-does-an-extension-add-a-kind) explains how
+[Declare a config kind](declare-a-kind.md) explains how
 an extension's kind reaches the image and the node.
 
 ## Render the service's config from the documents
@@ -646,7 +646,7 @@ The status of `cp1` lists the output `bird-conf` as `rendered`, and the journal 
 ## What next
 
 - [Variants and platforms](variants-and-platforms.md) explains how `mkImages` builds variants, and
-  [Extensions](../how-it-works/node/variants.md) how an extension adds a kind.
+  [Declare a config kind](declare-a-kind.md) how an extension adds a kind.
 - [Config and the inventory](../how-it-works/node/config.md) explains how the YAML reaches the nodes.
 - [Outputs and effects](../how-it-works/node/outputs-and-effects.md) explains how outputs are rendered,
   checked and swapped in, and when effects fire.

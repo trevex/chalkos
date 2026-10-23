@@ -26,15 +26,6 @@ chalkos adds to run Kubernetes on it.
 
     [:octicons-arrow-right-24: Read](node/architecture.md)
 
--   :material-layers-triple: __Extensions__
-
-    ---
-
-    How an extension adds a config kind and the services that read its documents to a variant's
-    images.
-
-    [:octicons-arrow-right-24: Read](node/variants.md)
-
 -   :material-harddisk: __The image__
 
     ---
