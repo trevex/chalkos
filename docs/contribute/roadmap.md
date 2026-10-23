@@ -7,7 +7,7 @@ description: "What chalkos does not do yet, and what is planned"
 
 This page lists the work planned for chalkos and the limits of the current code. Nothing here
 has a date; the plans are ordered roughly by how much else depends on them. Each limit says what
-happens today, so a cluster can be planned around it. [Contributing](index.md) says what a
+happens today, so a cluster can be planned around it. [Contribute](index.md) says what a
 change that takes one up needs.
 
 ## Planned work

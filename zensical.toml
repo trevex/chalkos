@@ -2,7 +2,7 @@
 # .#docs-serve serves it while it is edited.
 [project]
 site_name = "chalkos"
-site_description = "An image-based NixOS for Kubernetes nodes, with Secure Boot, a TPM and A/B upgrades"
+site_description = "An image-based NixOS for nodes that run as appliances, with Secure Boot, a TPM and A/B upgrades"
 site_url = "https://trevex.github.io/chalkos/"
 repo_url = "https://github.com/trevex/chalkos"
 repo_name = "trevex/chalkos"

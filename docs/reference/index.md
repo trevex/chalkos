@@ -6,8 +6,7 @@ description: "Commands, config kinds, mkImages and image options, the node API a
 # Reference
 
 These pages are for anyone who needs an exact name, field, default or port while working with
-chalkos. `nix run .#docgen` generates the command line, config kinds, options and node API pages
-from the code, and the `docs-generated` check fails when they are out of date.
+chalkos.
 
 <div class="grid cards" markdown>
 
@@ -15,7 +14,7 @@ from the code, and the `docs-generated` check fails when they are out of date.
 
     ---
 
-    Every command of `chalkctl`, `chalklab`, `chalkbuild` and `chalkcfg`, from their help.
+    Every command of chalkctl, chalklab, chalkbuild and chalkcfg, from their help.
 
     [:octicons-arrow-right-24: Read](cli/index.md)
 
@@ -76,3 +75,6 @@ from the code, and the `docs-generated` check fails when they are out of date.
     [:octicons-arrow-right-24: Read](glossary.md)
 
 </div>
+
+Sources: the command line, config kinds, options and node API pages are generated from the code,
+as [Writing documentation](../contribute/writing-docs.md#generated-pages) describes.

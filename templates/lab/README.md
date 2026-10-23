@@ -1,7 +1,7 @@
 # A chalkos lab
 
 A cluster of one control plane and one worker, run by `chalklab` as QEMU virtual machines on this
-machine, with Secure Boot and a TPM each. The getting-started tutorial of the chalkos
+machine, with Secure Boot and a TPM each. The quick start of the chalkos
 documentation, https://trevex.github.io/chalkos/, walks through it.
 
 You need an x86-64 Linux machine with Nix and flakes, about 5 GiB of free memory (3 GiB for the

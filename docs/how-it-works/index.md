@@ -12,7 +12,8 @@ protection stops. For the whole model on one page first, read
 
 ## The node OS
 
-Pages here hold for every node; the Kubernetes layer below adds what a Kubernetes cluster needs.
+These pages describe the operating system of a node. The Kubernetes layer below describes what
+chalkos adds to run Kubernetes on it.
 
 <div class="grid cards" markdown>
 

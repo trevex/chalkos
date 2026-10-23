@@ -24,7 +24,7 @@ cluster on one machine, and list what real machines need.
     ---
 
     Run a cluster of two QEMU virtual machines on one machine with chalklab, upgrade it and
-    remove it.
+    remove it, in about 15 minutes.
 
     [:octicons-arrow-right-24: Start](quick-start.md)
 

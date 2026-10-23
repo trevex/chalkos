@@ -8,8 +8,8 @@ description: "The model of a chalkos cluster on one page, from images and config
 A chalkos cluster's nodes boot read-only images that Nix builds, take every setting of the
 cluster from YAML documents, run a node agent instead of logins, and are upgraded by replacing the
 whole image. Nix builds the images and nothing else; chalkctl delivers the images and the
-documents to the nodes and never runs Nix. Each section below ends with the concept page that
-explains its part; the glossary defines the terms.
+documents to the nodes and never runs Nix. Most sections below link the How chalkos works page
+that explains their part, and the glossary defines the terms.
 
 The flowchart shows how the parts connect, from the flake and the YAML files to a running node.
 
@@ -139,8 +139,8 @@ also how access is revoked. See [Certificates](../how-it-works/node/certificates
 
 ## Where chalkos fits
 
-chalkos suits machines that should run as appliances: bare metal or virtual machines under KVM,
-where every node of a variant boots the same verified image, nobody logs in to change it, and an
+chalkos suits machines that should run as appliances, on bare metal or as virtual machines under
+KVM. Every node of a variant boots the same verified image, and nobody logs in to change it. An
 upgrade either becomes healthy or rolls back by itself. Today its nodes run Kubernetes. It suits
 teams that already describe systems in Nix, because a variant can use any NixOS module. Only the
 images need Nix. chalkctl reads the YAML files and the image directories a build produced, so the

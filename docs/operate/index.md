@@ -7,8 +7,7 @@ description: "Install, upgrade, recover and troubleshoot chalkos nodes"
 
 These pages are for operators who run nodes with chalkctl and YAML files. They cover installing
 nodes, adding storage, upgrading, rotating certificates, recovering a node and troubleshooting.
-Pages here hold for every node; [Run Kubernetes](../kubernetes/index.md) adds what a Kubernetes
-cluster needs.
+Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernetes/index.md).
 
 <div class="grid cards" markdown>
 

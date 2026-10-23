@@ -6,10 +6,10 @@ description: "How to write, build, check and preview the documentation"
 # Writing documentation
 
 The documentation is a [Zensical](https://zensical.org/) site built from `zensical.toml` and
-the Markdown pages in `docs/`. Part of the reference is generated from the code, and checks fail
-when it is out of date or when a page shows a command that does not exist, so the pages cannot
-drift from what chalkos does. This page explains how the site is organised, built, generated,
-checked and published. What goes into a page, and how it is worded, is the
+the Markdown pages in `docs/`. Part of the reference is generated from the code. Checks fail when
+it is out of date or when a page shows a command that does not exist, so the pages cannot drift
+from what chalkos does. This page explains how the site is organised, built, generated, checked
+and published. What goes into a page, and how it is worded, is the
 [style guide](style.md)'s subject.
 
 ## Site sections

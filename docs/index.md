@@ -127,5 +127,7 @@ from it, and reload or restart the service when those files change.
 
 !!! note "Status"
 
-    chalkos is unreleased. Config kinds, `mkImages` arguments, image options, commands and the
-    node API change without migrations until a first release. Run it in labs and test clusters.
+    chalkos is unreleased. Until a first release, the config kinds, all at `v1alpha1`, the
+    `mkImages` arguments, the image options, the commands and the node API change without
+    migrations. A cluster may need its YAML or flake edited, or its nodes reinstalled, when it
+    moves to a newer chalkos. Run it in labs and test clusters.
