@@ -33,6 +33,10 @@ some Nix but has not met chalkos. An operator does not need Nix, so operator pag
 - Use the present tense, also for what happens next: "the node reboots".
 - Use the active voice: "chalkd writes the inactive slot".
 - Say "chalkos" or name the component. Never "we".
+- Describe chalkos as it is today. Plans go on the [roadmap](roadmap.md).
+- Quote the exact text the reader sees, such as an error or a status line, and say what it means.
+- Say when something happens instead of hedging: "fails when the disk holds another node's STATE".
+- Keep chumminess out: no "let's", no "don't worry", no exclamation marks.
 - Explain a mechanism on a How chalkos works page. A task page links to it.
 - Reference pages and help text say what a thing is and its default. They give no advice.
 - No italics or bold for emphasis. Italics are for titles of works.
@@ -41,14 +45,12 @@ some Nix but has not met chalkos. An operator does not need Nix, so operator pag
 
 | Word | Instead |
 | --- | --- |
-| simply, just, easily, obviously | Delete it. |
+| simply, just, easily, obviously, basically, actually, really, very | Delete it. |
 | leverage, utilise | use |
 | robust, powerful, seamless, blazing fast | Name the property: "rolls back after 3 failed boots". |
 | secure, safe (alone) | Name the threat and what stops it. |
 | in order to, it should be noted that | to; delete |
-| basically, actually, really, very | Delete it. |
 | etc., and so on | Finish the list, or write "for example". |
-| click here | Link the name of the target. |
 | master, slave, whitelist, blacklist | primary, replica, allow list, deny list |
 
 ### AI tells
@@ -58,7 +60,6 @@ some Nix but has not met chalkos. An operator does not need Nix, so operator pag
 | "Not just X, but Y" | Delete the negated half. |
 | Em dashes | Use a colon, a comma or a new sentence. |
 | Punchy reveal: "Slow: every node, every time." | State it plainly. |
-| Filler opener: "Let's take a look at ..." | Start with the point. |
 | Rhetorical question in prose | Answer it instead. |
 | Forced triad: "fast, safe and simple" | List what is true. |
 | One-line closer: "That's all there is to it." | Delete it. |
@@ -73,27 +74,21 @@ some Nix but has not met chalkos. An operator does not need Nix, so operator pag
   chalkbuild and chalkcfg are names in prose. Use code font for them only in a command or path.
 - Keep upstream spelling: Kubernetes, etcd, containerd, kubelet, systemd-boot, NixOS, erofs,
   dm-verity, Secure Boot, TPM, UEFI.
-- chalkos terms: STATE and VAR in capitals, A/B, UKI, OS CA, node CA, db and dbx, PCR 7.
-- Sizes use binary units with a space: 128 MiB.
+- chalkos terms: STATE and VAR in capitals, A/B, UKI, OS CA, node CA, db and dbx, PCR 7. Sizes
+  use binary units with a space: 128 MiB.
 
 ## Headings
 
 - Name the thing or the stage: "Rollback after a failed boot", "Install the first control
-  plane". Use sentence case and no full stop.
+  plane". Use sentence case, without a full stop, parentheses, code font or "you".
 - Question headings belong only in Troubleshooting, where the reader arrives with a symptom.
-- No parentheses, no code font and no "you" in headings.
 - One H1, equal to the front matter's `title`. Go no deeper than H3 on task pages.
 - Put text under every heading. Drop "Overview" and "Introduction" headings.
 
 ## Examples first
 
-Show the thing before the rules about it.
-
-- A YAML document comes before its field table.
-- A command and its output come before its flags.
-- A whole Nix file comes before the options it sets.
-
-Examples are real: output comes from a run, and documents pass the checks. The mechanics of
+Show the thing before the rules about it: a YAML document before its field table, a command and
+its output before its flags, a whole Nix file before the options it sets. Examples are real: output comes from a run, and documents pass the checks. The mechanics of
 code blocks and placeholders are in [Writing documentation](writing-docs.md#code-blocks).
 
 ## Diagrams
@@ -114,10 +109,12 @@ stateDiagram-v2
 
 A chalkos node does not need Kubernetes. First say how a node behaves on its own. Then say what
 Kubernetes adds. Material that only applies to Kubernetes goes in Run Kubernetes or in the
-Kubernetes layer of How chalkos works. Another variant can then add its own section without
-changing the node pages.
+Kubernetes layer of How chalkos works, so another variant can add a section of its own.
 
 ## Terms and links
+
+Define a term before an argument depends on it; a short clause is enough. Then keep the term: a
+slot stays a slot for the whole page and never becomes a "partition set".
 
 Glossary terms show their definition as a tooltip on every page. Do not link them.
 
@@ -157,7 +154,7 @@ description: "Roll a new chalkos or Kubernetes version through a cluster, node b
 
 - `title` is the name in sentence case, short enough for the navigation, and equal to the H1.
 - `description` is one sentence of at most about 120 characters, without a full stop.
-- No other keys. `zensical.toml` sets the navigation.
+- No other keys, except `icon` on the home page. `zensical.toml` sets the navigation.
 - File names are lower case with dashes, after the title: `upgrade-cluster.md`.
 
 ## Page templates
@@ -193,3 +190,11 @@ as a status line or a file. Then explain how it works, with the diagram the page
 For a reader who looks up one fact. Open with who uses the page and when. Give one entry per
 row, in the order the reader looks things up. Close with a "Sources" line naming the code the
 facts come from.
+
+## Before you hand in a page
+
+- The page follows its template, and its first sentence states its point.
+- Every fact was checked against the code: names, defaults, flags, paths, messages, ports, sizes.
+- No word from the avoid list, no em dash, no emphasis and no AI tell. Read the page aloud once.
+- The `docs` and `docs-generated` checks pass, so every command and config document is valid.
+- The page reads well in `nix run .#docs-serve`, in both colour schemes.
