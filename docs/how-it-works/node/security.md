@@ -283,6 +283,6 @@ tools to an image for that.
 - [Storage and encryption](storage.md): the encrypted volumes and their keyslots.
 - [The image](image.md): the store, dm-verity and the UKI.
 - [Sign images for Secure Boot](../../build/sign-images.md).
-- [Rotate certificates and CAs](../../operate/rotate-certificates.md).
+- [Manage access and certificates](../../operate/access.md).
 - [Node API](../../reference/api.md), [`chalkctl config new`](../../reference/cli/chalkctl_config_new.md)
   and [`chalkctl gen secrets`](../../reference/cli/chalkctl_gen_secrets.md).

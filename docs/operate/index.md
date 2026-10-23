@@ -6,9 +6,9 @@ description: "Install, upgrade, recover and troubleshoot chalkos nodes"
 # Operate nodes
 
 These pages are for operators who run nodes with chalkctl and YAML files. They cover setting up
-a workstation, writing nodes' config, installing, adding and removing nodes, adding storage,
-upgrading, pulling images from registries, rotating certificates, recovering a node and
-troubleshooting.
+a workstation, writing nodes' config, installing nodes, changing their config, adding and
+removing nodes, upgrading, managing access and certificates, adding storage, pulling images from
+registries, recovering a node and troubleshooting.
 Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernetes/index.md).
 
 <div class="grid cards" markdown>
@@ -37,6 +37,14 @@ Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernete
 
     [:octicons-arrow-right-24: Read](install.md)
 
+-   :material-file-edit: __Change a node's config__
+
+    ---
+
+    Deliver changed YAML to a running node, preview it, and act on a refusal.
+
+    [:octicons-arrow-right-24: Read](change-config.md)
+
 -   :material-server-plus: __Add and remove nodes__
 
     ---
@@ -44,6 +52,22 @@ Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernete
     Add a node to a running cluster, reinstall one, or take one out for good.
 
     [:octicons-arrow-right-24: Read](add-remove-nodes.md)
+
+-   :material-update: __Upgrade nodes__
+
+    ---
+
+    Roll a new image through the nodes, and act on a node that rolls back.
+
+    [:octicons-arrow-right-24: Read](upgrade.md)
+
+-   :material-certificate: __Manage access and certificates__
+
+    ---
+
+    Give and revoke access, renew node certificates, and rotate the OS CA and the node CA.
+
+    [:octicons-arrow-right-24: Read](access.md)
 
 -   :material-harddisk: __Add storage volumes__
 
@@ -53,14 +77,6 @@ Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernete
 
     [:octicons-arrow-right-24: Read](storage-volumes.md)
 
--   :material-update: __Upgrade a cluster__
-
-    ---
-
-    Roll a new image through a cluster node by node, including a new Kubernetes version.
-
-    [:octicons-arrow-right-24: Read](upgrade-cluster.md)
-
 -   :material-database-arrow-down: __Registries and mirrors__
 
     ---
@@ -68,14 +84,6 @@ Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernete
     Give nodes the credentials of a private registry, and pull images through a mirror.
 
     [:octicons-arrow-right-24: Read](registries.md)
-
--   :material-certificate: __Rotate certificates and CAs__
-
-    ---
-
-    Issue client files, renew node certificates, and rotate the cluster's CAs and keys.
-
-    [:octicons-arrow-right-24: Read](rotate-certificates.md)
 
 -   :material-lifebuoy: __Recover a node__
 

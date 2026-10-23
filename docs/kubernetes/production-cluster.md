@@ -407,7 +407,7 @@ chalkctl reads a client file from `--config`, else from the file `$CHALKOSCONFIG
 from `~/.config/chalkos/config`, whenever a command names no `--secrets`.
 [Security model](../how-it-works/node/security.md#who-may-call-the-node-api) lists the methods each client
 role may call. A client file is valid for a year unless `--ttl` says otherwise, and nothing
-revokes a single one: taking access away means [rotating the OS CA](../operate/rotate-certificates.md).
+revokes a single one: taking access away means [rotating the OS CA](../operate/access.md#rotate-the-os-ca).
 Issue them per person, with the shortest validity your routine tolerates, so a departure is a
 rotation you plan rather than one you rush.
 
@@ -496,7 +496,7 @@ A routine that works: change the flake, build the images into `images/` again, s
 into `-signed` directories with `chalkbuild sign`, run `chalkctl validate`, upgrade a lab of the same variants
 with copies `chalklab sign` signed, then run `chalkctl upgrade` on the cluster, which gives each
 node the image the inventory names for it. Kubernetes moves one
-minor release at a time, as upstream requires. [Upgrade a cluster](../operate/upgrade-cluster.md) describes
+minor release at a time, as upstream requires. [Upgrade nodes](../operate/upgrade.md) describes
 a run.
 
 ## Note when certificates expire
@@ -506,7 +506,7 @@ expires.
 
 | What | Lifetime | Renewed by |
 | --- | --- | --- |
-| OS CA | 10 years | [`chalkctl rotate os-ca`](../operate/rotate-certificates.md); status warns a year ahead |
+| OS CA | 10 years | [`chalkctl rotate os-ca`](../operate/access.md#rotate-the-os-ca); status warns a year ahead |
 | Node CA | 5 years | `chalkctl node-ca rotate`; status warns 18 months ahead |
 | Kubernetes CAs | 10 years | `chalkctl rotate kubernetes-ca`; status warns a year ahead |
 | Node certificates | 1 year | chalkd, after two thirds of the lifetime; nodes without Kubernetes need `chalkctl node renew` |

@@ -317,6 +317,6 @@ in [Reinstall a control plane](#reinstall-a-control-plane).
   pods.
 - [Networking](../how-it-works/node/networking.md) shows the HA network layout and how nodes pick their
   addresses.
-- [Upgrade a cluster](../operate/upgrade-cluster.md) rolls a new image through the control planes one at a
+- [Upgrade nodes](../operate/upgrade.md) rolls a new image through the control planes one at a
   time.
 - [`chalkctl etcd`](../reference/cli/chalkctl_etcd.md) lists the etcd commands and their flags.

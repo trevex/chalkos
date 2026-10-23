@@ -95,7 +95,7 @@ it first boots; if one fails, the node falls back to the image it runs`. An outp
 fails the boot's health check, and the node falls back to the image it ran. The run stops at that
 node and shows what the failed boot logged.
 
-[Upgrade a cluster](../operate/upgrade-cluster.md) covers the run's order, downtime and
+[Upgrade nodes](../operate/upgrade.md) covers the run's order, downtime and
 rollbacks.
 
 ## Deliver changed YAML with chalkctl apply-config
@@ -155,7 +155,7 @@ chalkctl logs cp1 --unit=chalkos-render-<n>.service
 
 ## What next
 
-- [Upgrade a cluster](../operate/upgrade-cluster.md) rolls an image through a cluster node by node.
+- [Upgrade nodes](../operate/upgrade.md) rolls an image through a cluster node by node.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) explains what a node does with a
   delivery, at boot and after an upgrade.
 - [Troubleshooting](../operate/troubleshooting.md) starts from `chalkctl status` when a node

@@ -532,8 +532,9 @@ chalkctl recovery-key cp1 prints the key that unlocks it when its TPM fails
 
 The first line names the disk, the image directory, the image's ID `chalkos` and the first 12 hex
 characters of its root hash. A build from a flake with a git revision adds the revision in
-parentheses, such as `d871203debfe (0f1e2d3c4b5a)`: the `revision` that the flake passes to
-`mkImages`.
+parentheses, as `d871203debfe (<revision>)`, where `<revision>` is the first 12 characters of the
+`revision` that the flake passes to `mkImages`. The build above has no revision, because it was
+built from a copy of the homelab outside git.
 
 chalkctl checks no signature. When Secure Boot is enforced, the installer checks the UKI and the
 boot loader against the machine's db and dbx. It refuses an unsigned or wrongly signed image, so

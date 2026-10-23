@@ -52,7 +52,7 @@ Read it from the top:
 | --- | --- | --- |
 | `config` | The version of the config the node runs, the SHA-256 of its documents, and whether it is the inventory's; `none` on a node installed before config documents. | `not the inventory's; chalkctl apply-config w1 delivers it`: the node's files changed since the last delivery. `cannot read the config the inventory gives it: ...`: chalkctl could not build the node's documents from the inventory, for the reason it names. |
 | `platform` | The platform the image was built for. | A mismatch with the platform of the node's image in the inventory: changing a node's platform is a reinstall. |
-| `image` | The image booted, by the first 12 hex characters of its root hash with the tag and revision it was built from when the node's record knows them, its boot entry, and `not found healthy yet` while the health check runs. | `upgrade to ... failed: rolled back to ...`, followed by the failed boot's log lines: see [Upgrade a cluster](upgrade-cluster.md#if-a-node-rolls-back). |
+| `image` | The image booted, by the first 12 hex characters of its root hash with the tag and revision it was built from when the node's record knows them, its boot entry, and `not found healthy yet` while the health check runs. | `upgrade to ... failed: rolled back to ...`, followed by the failed boot's log lines: see [Upgrade nodes](upgrade.md#a-node-that-fails-its-health-check-rolls-back). |
 | `its store's root hash is ...` | Shown only when the node runs another build than the directory of its image in the inventory, whose `metadata.json` names the root hash. | `chalkctl upgrade --nodes w1 installs that image`: the image was rebuilt since the node's upgrade. `it has ... staged`: the node boots that build with its next reboot. |
 | `VOLUME` table | Each volume, its disk, mount point and state. | `missing` or `not mounted`; a `disk <name>: ...` line after the table names the disk's problem. |
 | `kubernetes` | The node's kind and state, whether its Node is Ready, its part in the VIP and its control plane's state. | Any state other than `bootstrapped` or `joined`, or one of them followed by `: <problem>`; the table of symptoms below lists them. |
@@ -198,7 +198,7 @@ See [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md#a-node-has-no-pod
 
 `chalkctl upgrade` stops at a node whose new image did not become healthy, at a control plane
 whose reboot would cost etcd its quorum, or at a drain that does not finish.
-[Upgrade a cluster](upgrade-cluster.md#if-something-goes-wrong) lists the messages and fixes.
+[Upgrade nodes](upgrade.md#if-something-goes-wrong) lists the messages and fixes.
 
 ### Status warns about a certificate
 
@@ -208,7 +208,7 @@ whose reboot would cost etcd its quorum, or at a drain that does not finish.
 | `renewal failing: ...; expires ...` | The node could not renew through a control plane. | Fix what the message names, usually the endpoint not reaching chalkd on port 50000. |
 | `expired` | The certificate expired. | [Recover a node](recover-node.md#the-node-certificate-expired). |
 | `node CA expires ...; run chalkctl node-ca rotate` | The node CA has less than 18 months left. | `chalkctl node-ca rotate`. |
-| `OS CA expires ...`, `Kubernetes CA expires ...` | A CA has less than a year left. | [Rotate it](rotate-certificates.md). |
+| `OS CA expires ...`, `Kubernetes CA expires ...` | A CA has less than a year left. | [Rotate it](access.md#choose-what-to-rotate). |
 | `less than a tenth of its lifetime remains, though the kubelet renews it itself` | The kubelet did not renew its certificate. | Read `kubelet.service`'s log; look for pending CertificateSigningRequests. |
 
 ### The clock is not synchronised

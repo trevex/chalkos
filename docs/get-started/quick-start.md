@@ -561,6 +561,6 @@ state and ports.
 - [What is chalkos](what-is-chalkos.md) puts what this tutorial showed into one model.
 - [Architecture](../how-it-works/node/architecture.md) explains the parts and how a node is installed.
 - [Upgrades](../how-it-works/node/upgrades.md) explains slots, boot counting and
-  rollback, and [Upgrade a
-  cluster](../operate/upgrade-cluster.md) upgrades a real one.
+  rollback, and [Upgrade
+  nodes](../operate/upgrade.md) upgrades a real one.
 - [Install a node](../operate/install.md) installs chalkos on a physical machine or a VM.

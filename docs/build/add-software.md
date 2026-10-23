@@ -313,7 +313,7 @@ whose store does not fit its slot.
 
 Build the image and check the nodes' config against it, as in
 [Your first image flake](first-image.md#build-the-image). Then roll it out with
-[Upgrade a cluster](../operate/upgrade-cluster.md), or install new machines with it. Machines
+[Upgrade nodes](../operate/upgrade.md), or install new machines with it. Machines
 that are not installed yet may need the same driver in the installer, which
 [Customise the installer](customise-installer.md) adds.
 

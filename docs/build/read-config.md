@@ -154,7 +154,7 @@ renderer never sees secret values, so the unit receives them as credentials thro
 ## Check that it worked
 
 Build the image. A grant of a kind the image lacks, or a `get` path the kind lacks, fails here and
-names the option. Roll the image out with [Upgrade a cluster](../operate/upgrade-cluster.md),
+names the option. Roll the image out with [Upgrade nodes](../operate/upgrade.md),
 then read the unit's journal:
 
 ```sh

@@ -6,8 +6,8 @@ description: "Move a cluster to a new Kubernetes release while etcd keeps its qu
 # Upgrade Kubernetes
 
 On a cluster with Kubernetes, [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) also keeps
-the version skew, guards etcd's quorum and drains each node; [Upgrade a
-cluster](../operate/upgrade-cluster.md) covers the rest of the upgrade.
+the version skew, guards etcd's quorum and drains each node; [Upgrade
+nodes](../operate/upgrade.md) covers the rest of the upgrade.
 
 ## Before you begin
 

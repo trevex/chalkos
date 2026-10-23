@@ -92,7 +92,7 @@ upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) failed: rolled back to 81bd02c4a9
 The new image did not become healthy within its tries, and systemd-boot booted the previous one.
 The node is healthy on the old image and stays cordoned. Find the cause in the logged lines, fix
 it in a new build and upgrade again, as in
-[Upgrade a cluster](upgrade-cluster.md#if-a-node-rolls-back).
+[Upgrade nodes](upgrade.md#a-node-that-fails-its-health-check-rolls-back).
 [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md) explains the mechanism.
 
 ## The node certificate expired

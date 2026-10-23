@@ -6,8 +6,8 @@ description: "Replace the Kubernetes CAs, the service-account key and the encryp
 # Rotate the Kubernetes CAs and keys
 
 [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md) replaces what the API server and etcd trust
-in the phases [Rotate certificates and
-CAs](../operate/rotate-certificates.md#run-a-rotation-phase-by-phase) describes.
+in the phases [Manage access and
+certificates](../operate/access.md#a-rotation-runs-in-four-phases-with-pauses) describes.
 
 ## Rotate the Kubernetes CAs
 

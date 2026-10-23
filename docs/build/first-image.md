@@ -204,7 +204,7 @@ w1: valid for the image node-metal (node on metal, root hash d871203debfe), conf
 A document of a kind the image does not declare, or a misspelled field, fails here. The image is
 then ready to install on a machine with
 [Install a node](../operate/install.md), or to roll out to running
-nodes with [Upgrade a cluster](../operate/upgrade-cluster.md).
+nodes with [Upgrade nodes](../operate/upgrade.md).
 
 ## What next
 

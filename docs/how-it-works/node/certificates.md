@@ -260,7 +260,7 @@ kubeconfigs limit how long a leak matters.
 
 - [Security model](security.md): client roles, the secrets file and client files.
 - [Kubernetes on chalkos](../kubernetes/kubernetes.md): what the control plane runs with these certificates.
-- [Rotate certificates and CAs](../../operate/rotate-certificates.md) and
+- [Manage access and certificates](../../operate/access.md) and
   [Recover a node](../../operate/recover-node.md).
 - [`chalkctl rotate`](../../reference/cli/chalkctl_rotate.md),
   [`chalkctl node-ca rotate`](../../reference/cli/chalkctl_node-ca_rotate.md),

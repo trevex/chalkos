@@ -418,6 +418,6 @@ later.
   counting and the health check.
 - [The image](image.md) for what an image holds and how its root hash identifies it.
 - [Kubernetes on chalkos](../kubernetes/kubernetes.md) for etcd membership and the control plane.
-- [Upgrade a cluster](../../operate/upgrade-cluster.md) for the task, step by step.
+- [Upgrade nodes](../../operate/upgrade.md) for the task, step by step.
 - [`chalkctl upgrade`](../../reference/cli/chalkctl_upgrade.md) and the
   [Upgrade](../../reference/api.md#method-upgrade) method for the details.

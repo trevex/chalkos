@@ -147,15 +147,15 @@ Every hand-written page starts with two keys in double quotes:
 
 ```yaml
 ---
-title: "Upgrade a cluster"
-description: "Roll a new chalkos or Kubernetes version through a cluster, node by node"
+title: "Upgrade nodes"
+description: "Roll a new image through the nodes with chalkctl upgrade, and act on a node that rolls back"
 ---
 ```
 
 - `title` is the name in sentence case, short enough for the navigation, and equal to the H1.
 - `description` is one sentence of at most about 120 characters, without a full stop.
 - No other keys, except `icon` on the home page. `zensical.toml` sets the navigation.
-- File names are lower case with dashes, after the title: `upgrade-cluster.md`.
+- File names are lower case with dashes, after the title: `add-remove-nodes.md`.
 
 ## Page templates
 
