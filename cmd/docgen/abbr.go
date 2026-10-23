@@ -16,13 +16,16 @@ var (
 	// first group.
 	glossaryHeading = regexp.MustCompile(`^## (.+?)(?:\s*\{\s*#[^}]*\})?\s*$`)
 	// abbrComment lists the forms of a term besides its heading, directly under the heading:
-	// <!-- abbr: slots, Slots -->, or <!-- abbr: none --> for none at all.
+	// <!-- abbr: slots, Slots -->. The word none instead gives the term no form at all, and the
+	// word nolower among the forms drops the heading's lower-case form.
 	abbrComment = regexp.MustCompile(`^<!--\s*abbr:(.*?)-->$`)
 	// link is a Markdown link, with its text as the first group.
 	link = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
 	// capitalized is a word that is a capital followed by lower-case letters, such as Slot, but
 	// not UKI or A/B.
 	capitalized = regexp.MustCompile(`^\p{Lu}\p{Ll}+$`)
+	// abbreviated is a Latin abbreviation whose full stop ends no sentence.
+	abbreviated = regexp.MustCompile(`\b(?:e\.g|i\.e)\.$`)
 )
 
 // writeAbbr writes the abbreviations of the glossary at glossary to out, for pymdownx.snippets to
@@ -43,9 +46,9 @@ func writeAbbr(glossary, out string) error {
 // abbreviations are Python-Markdown's abbreviations of the entries of a glossary page, a line
 // *[Term]: Definition per form of a term, whose definition is the first sentence of its entry
 // without links and code spans. A term's forms are its heading, the heading with a lower-case
-// first letter when its first word is capitalized, and those its abbr comment lists. The forms
-// are sorted longest first, so a longer form such as "boot counting" wins over "boot", and a
-// form that two entries share keeps the first entry's definition.
+// first letter when its first word is capitalized and no later word is, and those its abbr
+// comment lists. The forms are sorted longest first, so a longer form such as "client files"
+// wins over "client file", and a form that two entries share keeps the first entry's definition.
 func abbreviations(src []byte) ([]byte, error) {
 	lines := strings.Split(string(src), "\n")
 	definitions := map[string]string{}
@@ -57,10 +60,7 @@ func abbreviations(src []byte) ([]byte, error) {
 		}
 		term := m[1]
 		entry := []string{term}
-		if first, _, _ := strings.Cut(term, " "); capitalized.MatchString(first) {
-			r, size := utf8.DecodeRuneInString(term)
-			entry = append(entry, string(unicode.ToLower(r))+term[size:])
-		}
+		lower := lowerForm(term)
 		j := i + 1
 		for j < len(lines) && strings.TrimSpace(lines[j]) == "" {
 			j++
@@ -73,12 +73,17 @@ func abbreviations(src []byte) ([]byte, error) {
 					case "":
 					case "none":
 						skip = true
+					case "nolower":
+						lower = ""
 					default:
 						entry = append(entry, form)
 					}
 				}
 				j++
 			}
+		}
+		if lower != "" {
+			entry = append(entry, lower)
 		}
 		for j < len(lines) && strings.TrimSpace(lines[j]) == "" {
 			j++
@@ -115,14 +120,38 @@ func abbreviations(src []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// lowerForm is a heading with a lower-case first letter, such as "boot counting" for "Boot
+// counting" and "node CA" for "Node CA"; empty when its first word is not capitalized or a later
+// word is, since "secure Boot" is no form anyone writes.
+func lowerForm(term string) string {
+	words := strings.Fields(term)
+	if len(words) == 0 || !capitalized.MatchString(words[0]) {
+		return ""
+	}
+	for _, w := range words[1:] {
+		if capitalized.MatchString(w) {
+			return ""
+		}
+	}
+	r, size := utf8.DecodeRuneInString(term)
+	return string(unicode.ToLower(r)) + term[size:]
+}
+
 // firstSentence is the first sentence of a paragraph, up to the first full stop followed by a
-// space or to the paragraph's end, with links reduced to their text, backticks removed and runs
-// of whitespace collapsed.
+// space that ends no "e.g." or "i.e.", or to the paragraph's end, with links reduced to their
+// text, backticks removed and runs of whitespace collapsed.
 func firstSentence(paragraph string) string {
 	text := link.ReplaceAllString(paragraph, "$1")
 	text = strings.Join(strings.Fields(strings.ReplaceAll(text, "`", "")), " ")
-	if i := strings.Index(text, ". "); i >= 0 {
-		text = text[:i+1]
+	for from := 0; ; {
+		i := strings.Index(text[from:], ". ")
+		if i < 0 {
+			return text
+		}
+		end := from + i + 1
+		if !abbreviated.MatchString(text[:end]) {
+			return text[:end]
+		}
+		from = end
 	}
-	return text
 }

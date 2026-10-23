@@ -12,7 +12,6 @@
 *[cluster endpoint]: The URL of the cluster's API server, which kubelets, kubeconfigs and joining control planes use.
 *[config documents]: One object of a node's config, written in YAML like a Kubernetes object.
 *[fallback keyslot]: The second keyslot of every encrypted partition, which unlocks it when the TPM does not.
-*[kubernetes share]: The Kubernetes secrets a node receives at install.
 *[maintenance mode]: The mode chalkd runs in on a node that is not installed.
 *[node certificate]: The certificate chalkd serves and authenticates with.
 *[Config document]: One object of a node's config, written in YAML like a Kubernetes object.
@@ -56,7 +55,6 @@
 *[client role]: The permission a client certificate grants on the node API: reader, operator or admin.
 *[etcd member]: A control plane that belongs to the cluster's etcd.
 *[normal mode]: The mode chalkd runs in on an installed node.
-*[secure Boot]: The UEFI firmware's check that a boot binary is signed by a certificate in db.
 *[Extensions]: NixOS modules outside chalkos that add services to a variant's images and may declare config kinds.
 *[Generation]: The number in a UKI's file name on the ESP, which a node counts itself.
 *[Node names]: A node's key in the inventory's spec.nodes, such as cp1.
@@ -115,7 +113,6 @@
 *[Volume]: A partition beyond VAR, declared by a Volume document in a node's config.
 *[Worker]: A node that runs containerd and the kubelet but no control plane components.
 *[chalkd]: The agent on every node.
-*[effect]: An action on the node's services after a delivery is applied, such as a unit restart.
 *[grants]: The config kinds a unit may read at runtime.
 *[volume]: A partition beyond VAR, declared by a Volume document in a node's config.
 *[worker]: A node that runs containerd and the kubelet but no control plane components.

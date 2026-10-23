@@ -172,7 +172,7 @@ read. Each block of the [store](#store) is hashed into a hash tree whose top is 
 [The image](../how-it-works/node/image.md).
 
 ## Effect { #effect }
-<!-- abbr: effects, Effects -->
+<!-- abbr: nolower, Effects, effects -->
 
 An action on the node's services after a delivery is applied, such as a unit restart. An effect
 restarts or reloads units, runs a command or acts on chalkd's loops, as
@@ -316,6 +316,7 @@ of the kinds it is [granted](#grant). See
 [Config kinds](kinds.md).
 
 ## Kubernetes share { #kubernetes-share }
+<!-- abbr: nolower -->
 
 The Kubernetes secrets a node receives at install. On a control plane, these are the cluster,
 front-proxy and etcd CAs with their keys, the service-account key, the encryption key and the

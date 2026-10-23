@@ -19,3 +19,12 @@ One of the two partition pairs an `image` is written to.
 <!-- abbr: none -->
 
 A disk image.
+
+## Effect { #effect }
+<!-- abbr: nolower, Effects, effects -->
+
+What a delivery does, e.g. a restart. More text.
+
+## Secure Boot { #secure-boot }
+
+The firmware's check of a boot binary, i.e. its signature. More text.
