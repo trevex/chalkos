@@ -81,7 +81,9 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 // after which the API server serves the new ones and the controller-manager and the scheduler
 // take the lead again, that a worker whose link is cut turns NotReady, and that the OS CA, the
 // Kubernetes CAs, the service-account key and the encryption key rotate with the cluster working
-// throughout. At its end the host shuts the worker down through its guest agent, the control plane
+// throughout. It revokes the worker, whose renewal and kubelet's writes are refused then, and
+// unrevokes it, which only --force does before a rotation; the worker registers again once it
+// rebooted. At its end the host shuts the worker down through its guest agent, the control plane
 // runs on, chalklab start starts the worker's VM again, and chalklab destroy
 // removes the lab.
 // The images come from a registry the test serves; with CHALKLAB_K8S_ONLINE=1 the test does not
@@ -211,7 +213,9 @@ func TestKubernetesCluster(t *testing.T) {
 	}
 	waitFor(t, 5*time.Minute, "w1 Ready with its link back", func() error { return nodesReady(ctx, cs, "w1") })
 
-	rotations(t, ctx, nodes, p, dir, apiPort)
+	// Revoking w1 deletes its Node, and with it the pod the rotations' checks need: it comes after
+	// them.
+	revocation(t, ctx, nodes, rotations(t, ctx, nodes, p, dir, apiPort))
 
 	// The host shuts the worker down through its guest agent, and its VM exits.
 	w1 := nodes["w1"]
@@ -243,6 +247,79 @@ func TestKubernetesCluster(t *testing.T) {
 	if !lab.Running(w1.vm.Config) || !lab.Running(nodes["cp1"].vm.Config) {
 		t.Error("the VMs of cp1 and w1 do not both run after chalklab start")
 	}
+}
+
+// revocation revokes w1 through cp1, after which cp1 lists it as revoked, refuses to renew its
+// node certificate and the API server denies its kubelet's writes; the test impersonates the
+// kubelet as the kubeconfig's admin. Unrevoking w1 is refused, as the OS CA and the Kubernetes
+// CA predate the revocation, until --force. A kubelet registers its Node once, when it starts:
+// w1 reboots to register again, and turns Ready.
+func revocation(t *testing.T, ctx context.Context, nodes map[string]*node, kubeconfig string) {
+	t.Helper()
+	w1, cp1 := nodes["w1"], nodes["cp1"]
+	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if out, err := chalkctl(t, cp1, "base", "node", "revoke", "w1", "--via", "cp1"); err != nil || !strings.Contains(out, "deleted its Node object") {
+		t.Fatalf("revoke w1: %v", err)
+	}
+	if out, err := chalkctl(t, cp1, "base", "status", "cp1"); err != nil || !strings.Contains(out, "revoked nodes:\n  w1  since ") {
+		t.Errorf("status of cp1 does not list w1 as revoked: %v", err)
+	}
+	// The test image renews after each ApplyConfig.
+	if _, err := chalkctl(t, w1, "base", "apply-config", "w1"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 2*time.Minute, "w1's renewal refused as revoked", func() error {
+		out, err := chalkctl(t, w1, "base", "status", "w1")
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(out, "renewal failing: ") || !strings.Contains(out, "node w1 is revoked since ") {
+			return errors.New("w1 shows no refused renewal")
+		}
+		return nil
+	})
+
+	kubelet := rest.CopyConfig(cfg)
+	kubelet.Impersonate = rest.ImpersonationConfig{UserName: "system:node:w1", Groups: []string{"system:nodes", "system:authenticated"}}
+	kcs, err := kubernetes.NewForConfig(kubelet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = kcs.CoreV1().Nodes().Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "w1"}}, metav1.CreateOptions{})
+	t.Logf("w1's kubelet registering its Node: %s", describe(err))
+	if !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "node w1 is revoked since ") {
+		t.Errorf("w1's kubelet registering its Node: %s, want denied as revoked", describe(err))
+	}
+
+	out, err := chalkctl(t, cp1, "base", "node", "unrevoke", "w1", "--via", "cp1")
+	if err == nil || !strings.Contains(out, "chalkctl rotate os-ca") || !strings.Contains(out, "chalkctl rotate kubernetes-ca") {
+		t.Errorf("unrevoking w1 without --force: %v, want refused naming os-ca and kubernetes-ca", err)
+	}
+	if _, err := chalkctl(t, cp1, "base", "node", "unrevoke", "w1", "--via", "cp1", "--force"); err != nil {
+		t.Fatalf("unrevoke w1 --force: %v", err)
+	}
+	if _, err := cs.CoreV1().Nodes().Get(ctx, "w1", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Errorf("w1's Node after the unrevoke, before w1 rebooted: %s, want not found", describe(err))
+	}
+	w1.vm.Console.Skip()
+	if _, err := chalkctl(t, w1, "base", "reboot", "w1"); err != nil {
+		t.Fatal(err)
+	}
+	rebootCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	if _, err := w1.vm.Console.WaitFor(rebootCtx, probeDoneRE); err != nil {
+		t.Fatalf("w1 did not boot again: %v", err)
+	}
+	waitFor(t, 10*time.Minute, "w1 Ready after the unrevoke", func() error { return nodesReady(ctx, cs, "w1") })
+	t.Logf("w1 was revoked and Ready again after %v", time.Since(start).Round(time.Second))
 }
 
 // privatePull runs on w1 a pod of privateImage without imagePullSecrets, which only the node's

@@ -33,8 +33,9 @@ var rotationSecret = &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "de
 // key one after the other. After each finish the pods reach each other and resolve names, the
 // Secret reads back, and what the old value issued is refused: a client file of the old OS CA,
 // a kubeconfig of the old Kubernetes CA. The rotations update a copy of the test's secrets file,
-// which every later chalkctl call reads.
-func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peers, dir string, apiPort int) {
+// which every later chalkctl call reads. It returns the path of a kubeconfig of the new
+// Kubernetes CA.
+func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peers, dir string, apiPort int) string {
 	t.Helper()
 	secrets := copySecrets(t, dir)
 	t.Setenv("CHALKLAB_SECRETS", secrets)
@@ -54,6 +55,7 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 		return path, cs
 	}
 	oldKubeconfig, cs := kubeconfig("kubeconfig-before-rotations")
+	var newKubeconfig string
 	if _, err := cs.CoreV1().Secrets("default").Create(ctx, rotationSecret, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +137,7 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 		// A kubeconfig issued at the pause holds both CAs and a certificate of the new one.
 		atPause, _ := kubeconfig("kubeconfig-at-pause")
 		rotate("kubernetes-ca", "--resume")
-		_, cs = kubeconfig("kubeconfig-after-rotation")
+		newKubeconfig, cs = kubeconfig("kubeconfig-after-rotation")
 		// The old kubeconfig cannot verify the API server any more; its certificate still
 		// authenticates until the finish.
 		if err := verifies(ctx, oldKubeconfig); err == nil {
@@ -168,6 +170,7 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 		works(cs, "the encryption key's rotation", time.Now())
 	})
 	logMemory(t, ctx, cs)
+	return newKubeconfig
 }
 
 // copySecrets copies the test's secrets file and its public half to a directory of the test,
