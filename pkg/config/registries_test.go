@@ -89,6 +89,8 @@ func TestRegistriesOfRefuses(t *testing.T) {
 			`Mirror "hub": the endpoint http://10.0.0.5:5000 is plain HTTP, which nothing authenticates; give 10.0.0.5:5000 a Registry with insecure: true to allow it`},
 		{"a plain HTTP endpoint without a Registry", strings.Replace(registriesDocs, `"10.0.0.5:5000", insecure`, `"10.0.0.6:5000", insecure`, 1),
 			`Mirror "hub": the endpoint http://10.0.0.5:5000 is plain HTTP, which nothing authenticates; give 10.0.0.5:5000 a Registry with insecure: true to allow it`},
+		{"an endpoint with a user", strings.Replace(registriesDocs, "https://mirror.example/cache", "https://bot:s3cret@mirror.example/cache", 1),
+			`Mirror "hub": the endpoint "https://bot:xxxxx@mirror.example/cache" holds a user; give the credentials of mirror.example in its Registry instead`},
 		{"a missing key", strings.Replace(registriesDocs, "key: token", "key: nope", 1),
 			`Registry "hub" names key "nope" of Secret "hub", which the config does not hold`},
 	} {

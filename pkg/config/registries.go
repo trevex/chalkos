@@ -43,8 +43,8 @@ func SecretsOf(docs []Document) (func(SecretRef) (string, bool), error) {
 // from secret, or left empty when secret is nil. It reads documents as delivered, without the
 // image's defaults, as chalkd reads an upgrade's config before it checks it against the image.
 // It refuses two Registry or two Mirror documents of one registry, also when they name it
-// differently, such as docker.io and index.docker.io, and an http:// endpoint unless the Registry
-// of its host allows plain HTTP.
+// differently, such as docker.io and index.docker.io, an endpoint with a user in its URL, and an
+// http:// endpoint unless the Registry of its host allows plain HTTP.
 func RegistriesOf(docs []Document, secret func(SecretRef) (string, bool)) (Registries, error) {
 	var r Registries
 	type named struct {
@@ -103,6 +103,9 @@ func RegistriesOf(docs []Document, secret func(SecretRef) (string, bool)) (Regis
 			u, err := url.Parse(e)
 			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
 				return Registries{}, fmt.Errorf("%s: the endpoint %q is no http:// or https:// URL", d, e)
+			}
+			if u.User != nil {
+				return Registries{}, fmt.Errorf("%s: the endpoint %q holds a user; give the credentials of %s in its Registry instead", d, u.Redacted(), u.Host)
 			}
 			if _, err := RegistryHost(u.Host); err != nil {
 				return Registries{}, fmt.Errorf("%s: the endpoint %s: %w", d, e, err)
