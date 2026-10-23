@@ -24,10 +24,12 @@
 *[Control plane]: A node that runs etcd and the Kubernetes API server, controller-manager and scheduler.
 *[Module groups]: A named set of kernel modules an image carries.
 *[Recovery keys]: The default fallback keyslot of every encrypted partition, used when the TPM does not unseal.
+*[Revoked nodes]: A node shut out of the cluster by name with chalkctl node revoke.
 *[boot counting]: systemd-boot's count of the tries a newly installed image has left.
 *[control plane]: A node that runs etcd and the Kubernetes API server, controller-manager and scheduler.
 *[module groups]: A named set of kernel modules an image carries.
 *[recovery keys]: The default fallback keyslot of every encrypted partition, used when the TPM does not unseal.
+*[revoked nodes]: A node shut out of the cluster by name with chalkctl node revoke.
 *[Blessed boot]: A boot that the health check found healthy.
 *[Change rules]: A CEL expression that a config must make true for the image to accept it.
 *[Client files]: A JSON file that lets someone operate nodes without the secrets file.
@@ -36,6 +38,7 @@
 *[Health check]: The check that decides whether a counted boot is healthy.
 *[Module group]: A named set of kernel modules an image carries.
 *[Recovery key]: The default fallback keyslot of every encrypted partition, used when the TPM does not unseal.
+*[Revoked node]: A node shut out of the cluster by name with chalkctl node revoke.
 *[Secrets file]: The file that holds every secret of a cluster, written once by chalkctl gen secrets.
 *[blessed boot]: A boot that the health check found healthy.
 *[change rules]: A CEL expression that a config must make true for the image to accept it.
@@ -46,6 +49,7 @@
 *[health check]: The check that decides whether a counted boot is healthy.
 *[module group]: A named set of kernel modules an image carries.
 *[recovery key]: The default fallback keyslot of every encrypted partition, used when the TPM does not unseal.
+*[revoked node]: A node shut out of the cluster by name with chalkctl node revoke.
 *[secrets file]: The file that holds every secret of a cluster, written once by chalkctl gen secrets.
 *[Change rule]: A CEL expression that a config must make true for the image to accept it.
 *[Client file]: A JSON file that lets someone operate nodes without the secrets file.

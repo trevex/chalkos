@@ -238,15 +238,23 @@ them again once the rotation is finished.
 
 ## How is access revoked?
 
-Access is revoked by rotating the CA that granted it. chalkos keeps no revocation list, so a
-certificate stays valid until it expires or its CA is removed. A leaked client file is revoked by
-rotating `os-ca`, a leaked kubeconfig by rotating `kubernetes-ca`, and either rotation also
-retires every other client file or kubeconfig of that CA. Short `--ttl` values on client files and
-kubeconfigs limit how long a leak matters.
+Access is revoked by rotating the CA that granted it. chalkos keeps no list of revoked
+certificates, so a certificate stays valid until it expires or its CA is removed. A leaked client
+file is revoked by rotating `os-ca`, a leaked kubeconfig by rotating `kubernetes-ca`, and either
+rotation also retires every other client file or kubeconfig of that CA. Short `--ttl` values on
+client files and kubeconfigs limit how long a leak matters.
+
+On the shipped variant, a node is revoked by name as well, with `chalkctl node revoke`. Its
+certificates then renew no more, and the API server denies its kubelet every write. The
+certificates themselves stay valid until they expire.
+[Security model](security.md#revoking-a-node-cuts-off-its-writes-and-renewals) explains what that
+covers. `chalkctl node-ca rotate` revokes nothing: chalkd trusts every node CA the OS CA signed, so
+only an `os-ca` rotation retires the certificates of the old node CA.
 
 ## Limits
 
-- There is no revocation of a single certificate; revoking one revokes all of its CA.
+- There is no revocation of a single certificate; revoking one revokes all of its CA. Revoking a
+  node by name stops its renewals and its kubelet's writes; its certificates stay valid.
 - The CAs live ten years and are not renewed automatically. A CA in its last year shows in the
   status, and rotation replaces it.
 - Nodes whose image runs no Kubernetes renew their node certificates only through

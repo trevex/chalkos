@@ -40,8 +40,8 @@ client file's last 30 days. Hand the file over as you would a private key, becau
 
 ## Access ends when a certificate expires or its CA goes
 
-chalkd checks no revocation list. A client file keeps working until its certificate expires, or
-until the nodes no longer trust the OS CA it chains to. To take access away:
+chalkd checks no revocation list of client files. A client file keeps working until its certificate
+expires, or until the nodes no longer trust the OS CA it chains to. To take access away:
 
 - Let the file expire. A short `--ttl` limits how long a file works without a rotation.
 - Rotate the OS CA, as [Rotate the OS CA](#rotate-the-os-ca) describes. Every client file issued
@@ -99,8 +99,9 @@ cp1 renews node certificates with the new node CA
 
 `<date>` is five years from the rotation. The rotation runs in one step. Certificates of the old node
 CA stay valid until they expire, because both node CAs chain to the same OS CA. Nodes pick up
-certificates of the new one at their next renewal. A control plane that could not be reached fails
-the command, and the error names the command that delivers the new node CA later:
+certificates of the new one at their next renewal. The rotation therefore cuts off no node, not
+even a removed one: chalkd trusts every node CA the OS CA signed. A control plane that could not
+be reached fails the command, and the error names the command that delivers the new node CA later:
 `the new node CA did not reach every control-plane node; deliver it with
 chalkctl apply-config <node> --kubernetes-share --secrets secrets.age: ...`.
 
@@ -111,7 +112,7 @@ the shipped variant's Kubernetes:
 
 | Kind | What it replaces | What it revokes |
 | --- | --- | --- |
-| `os-ca` | The OS CA and the node CA, and every node certificate | Every client file issued before |
+| `os-ca` | The OS CA and the node CA, and every node certificate | Every client file issued before, and the node certificates of nodes outside the rotation |
 | `kubernetes-ca` (Kubernetes) | The Kubernetes, front-proxy and etcd CAs, and every certificate they issued | Every kubeconfig issued before |
 | `service-account-key` (Kubernetes) | The key that signs service-account tokens | Tokens signed with the old key |
 | `encryption-key` (Kubernetes) | The key that encrypts Secrets in etcd | Nothing; old data is encrypted again |
@@ -120,6 +121,31 @@ Rotate when a key may have leaked, when someone who held a client file should lo
 before a CA expires. The OS CA is valid for ten years, and status warns a year ahead.
 [Rotate the Kubernetes CAs and keys](../kubernetes/rotate-kubernetes-cas.md) covers the three
 Kubernetes kinds.
+
+## Revocation cuts off one node without a rotation
+
+On the shipped variant, `chalkctl node revoke` cuts off one node by name, at once. The cluster
+keeps running as it is, and no CA changes. A rotation replaces a CA and with it every certificate
+it issued, so it cuts off everyone who holds an old one. Choose by what was lost:
+
+| What was lost | What cuts it off |
+| --- | --- |
+| A worker that was removed, lost or stolen | `chalkctl node revoke` |
+| A control plane, or its disk | `chalkctl etcd leave` or `chalkctl etcd remove-member`, then `chalkctl rotate os-ca` and `chalkctl rotate kubernetes-ca` |
+| A node of a cluster without Kubernetes | `chalkctl rotate os-ca` |
+| A client file | `chalkctl rotate os-ca` |
+| A kubeconfig | `chalkctl rotate kubernetes-ca` |
+
+A control plane needs the rotations because its disk holds the node CA's and the Kubernetes CA's
+keys, with which it can issue itself new certificates. A cluster without Kubernetes keeps no list
+of revoked nodes. `chalkctl node-ca rotate` cuts off no node, because chalkd trusts every node CA
+the OS CA signed.
+
+A revoked name stays blocked until `chalkctl node unrevoke` lets it back in. Reusing the name
+takes both rotations first.
+[Add and remove nodes](add-remove-nodes.md#revoke-a-removed-node) shows both commands, and
+[Security model](../how-it-works/node/security.md#revoking-a-node-cuts-off-its-writes-and-renewals)
+lists what a revoked node can still do.
 
 ## A rotation runs in four phases with pauses
 
@@ -240,7 +266,8 @@ certificate's expiry, and a problem beside it when one needs doing, such as a re
   --resume or --finish`: a rotation started earlier is not finished. Finish it before you start
   another or run `chalkctl node-ca rotate`.
 - A node that stays unreachable blocks every phase. Remove it from the inventory, or reinstall it,
-  before you resume.
+  before you resume. A rotation skips a revoked node and says
+  `skipping w1: revoked since <time>`, where `<time>` is when the node was revoked.
 
 ## What next
 

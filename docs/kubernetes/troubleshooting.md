@@ -136,6 +136,8 @@ The line reads `leaving certificate request <name> pending: <reason>`. The most 
 - `node w1 does not report the address <address>`: the kubelet asks for an address the Node
   lacks. Compare `kubectl get node w1 -o wide` with the node's `Network` and `Node` documents.
 - `node w1 has no Node object`: the kubelet has not registered its Node yet.
+- `node w1 is revoked since <time>`: the node is revoked, as
+  [A node's writes are denied as revoked](#a-nodes-writes-are-denied-as-revoked) describes.
 
 chalkd looks at the pending requests every 10 seconds and checks each one again, so it approves a
 request once the Node reports what the request asks for. chalkd approves no client certificate
@@ -217,6 +219,33 @@ chalkctl apply-config w1 --kubernetes-share --secrets=secrets.age
 
 chalkctl issues the certificate from the Kubernetes CA in the secrets file.
 [Certificates](../how-it-works/node/certificates.md) lists every certificate and its lifetime.
+
+## A node's writes are denied as revoked
+
+The node's Node is gone, and its status shows a failing renewal that names a revocation:
+
+```text
+kubernetes worker: joined, node ready: unknown: nodes "w1" not found
+certificates:
+  node             expires 2027-10-23  renewal failing: the control plane at 192.168.100.11:50000: permission_denied: node w1 is revoked since 2026-10-23T22:42:25Z; chalkctl node unrevoke w1 lets it renew again; expires 2027-10-23T22:37:07Z
+```
+
+The API server answers every write by the node's kubelet, its Node registration included, with:
+
+```text
+nodes "w1" is forbidden: ValidatingAdmissionPolicy 'chalkos-revoked-nodes' with binding 'chalkos-revoked-nodes' denied request: node w1 is revoked since 2026-10-23T22:42:25Z
+```
+
+The name `w1` is in the cluster's revoked nodes, which `chalkctl status cp1` lists under
+`revoked nodes:`. Every machine of that name is shut out, a node installed afresh included.
+
+- A new node that reuses the name joins once the name is unrevoked. Rotate `os-ca` and
+  `kubernetes-ca`, then run `chalkctl node unrevoke w1`, as
+  [Reuse a removed node's name](../operate/add-remove-nodes.md#reuse-a-removed-nodes-name)
+  describes.
+- A node revoked by mistake comes back with `chalkctl node unrevoke w1 --force`, which lets its
+  old certificates work again. Then reboot it with `chalkctl reboot w1`, because its kubelet
+  registers its Node only as it starts.
 
 ## What next
 

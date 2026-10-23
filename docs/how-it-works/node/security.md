@@ -156,7 +156,7 @@ node CA, from issuing itself an admin certificate.
 | --- | --- |
 | reader | Info, Disks, Contract, Status, Logs, EtcdMembers |
 | operator | What a reader may, and Reboot, Upgrade without config, DrainNode, UncordonNode |
-| admin | Every method except RenewNodeCertificate: also Install, ApplyConfig, GetConfig, Upgrade with config, ResetVolume, Bootstrap, EtcdRemoveMember, EtcdLeave, RotationStep |
+| admin | Every method except RenewNodeCertificate: also Install, ApplyConfig, GetConfig, Upgrade with config, ResetVolume, Bootstrap, EtcdRemoveMember, EtcdLeave, RotationStep, RevokeNode, UnrevokeNode |
 | `node` | RenewNodeCertificate alone, on control planes |
 
 Each role allows what the roles above it in the table allow; `node` is apart and allows only its
@@ -215,6 +215,71 @@ refuses a client file whose certificate expired and warns during its last 30 day
 certificates or deliver keys. `chalkctl upgrade` delivers config
 with the secrets file or an admin client file, and none with an operator client file.
 
+## Revoking a node cuts off its writes and renewals
+
+On the shipped variant, a revoked node can no longer renew its certificates or change anything in
+the cluster. A control plane lists the revoked nodes in its status:
+
+```text
+revoked nodes:
+  w1  since 2026-10-23T22:42:25Z
+```
+
+[`chalkctl node revoke`](../../reference/cli/chalkctl_node_revoke.md) asks a control plane to add
+the node's name and the time to the ConfigMap `kube-system/chalkos-revoked-nodes`, and to delete
+the node's Node object. The list takes effect in three places:
+
+- A control plane's RenewNodeCertificate refuses a certificate that names a listed node. The
+  node's status shows the refusal on its node certificate:
+  `renewal failing: the control plane at 192.168.100.11:50000: permission_denied: node w1 is revoked since 2026-10-23T22:42:25Z; chalkctl node unrevoke w1 lets it renew again`.
+  The node's certificate has the role `node`, which allows that one method alone, so the node
+  can call nothing else.
+- chalkd's approver leaves the node's kubelet serving certificate requests pending.
+- The ValidatingAdmissionPolicy `chalkos-revoked-nodes` denies every create, update, delete and
+  connect by the user `system:node:<name>` of a listed node, on subresources too. The kubelet can
+  therefore neither register its Node again nor request a new client certificate:
+  `nodes "w1" is forbidden: ValidatingAdmissionPolicy 'chalkos-revoked-nodes' with binding 'chalkos-revoked-nodes' denied request: node w1 is revoked since 2026-10-23T22:42:25Z`.
+
+The policy names the listed nodes inline and fails closed. A control plane applies it again from
+the ConfigMap at each revoke and unrevoke, and each time it applies its add-ons.
+
+chalkctl reads the list as well. `chalkctl rotate` reads it before each phase and skips the listed
+nodes, so no rotation hands a revoked node a certificate. `chalkctl node renew` and
+`chalkctl apply-config --kubernetes-share` refuse a listed node unless `--force` is given. All three
+refuse to run while no control plane says which nodes are revoked.
+
+[`chalkctl node unrevoke`](../../reference/cli/chalkctl_node_unrevoke.md) removes the name and
+applies the policy again. A node's old certificates chain to the OS CA, which chalkd trusts with
+every node CA it signed, and to the Kubernetes CA. So the control plane unrevokes the node only
+when every OS CA and Kubernetes CA it trusts was made after the revocation, and refuses otherwise.
+`--force` unrevokes it anyway, and the old certificates work again until they expire. The check
+compares the revocation time, taken from the control plane's clock, with the time chalkctl made
+the CA, taken from the workstation's clock. The two clocks must agree: a workstation clock far
+ahead can make a CA from before the revocation pass the check.
+
+### Revocation leaves reads and the certificates valid
+
+A revocation shuts out a node's writes and renewals. It leaves these gaps:
+
+- The node's certificates stay valid until they expire, and the API server's admission sees
+  writes alone. The kubelet can still read what every kubelet may: Services, Endpoints and
+  EndpointSlices, and a few cluster-scoped kinds such as Nodes and RuntimeClasses. The Secrets and
+  ConfigMaps of the pods bound to the node stay readable until the pod garbage collector deletes
+  those pods, shortly after their Node is gone.
+- A control plane's disk holds the node CA's and the Kubernetes CA's keys. Revoking a control
+  plane, or a stolen copy of its disk, does not cut it off. Rotating `os-ca` and `kubernetes-ca`
+  does. A former control plane's etcd and front-proxy certificates stay valid until the
+  `kubernetes-ca` rotation has finished.
+- A cluster without Kubernetes keeps no list. A node there renews its certificate only through
+  `chalkctl node renew`, so not renewing it is how it is revoked. `chalkctl rotate os-ca` cuts it
+  off at once.
+- A renewal already in flight when the revoke lands can still complete, and the node then holds a
+  node certificate valid for a year. The policy still denies its kubelet's writes.
+- A cluster-admin can edit or delete the ConfigMap and the policy. Deleting the ConfigMap
+  unrevokes every node. A deleted policy denies nothing until a control plane applies it again.
+- A revoked node left in the inventory is skipped by every rotation, and other commands still
+  reach it. Remove it from the inventory.
+
 ## How is a node in maintenance mode trusted?
 
 A node that is not installed runs chalkd in maintenance
@@ -266,7 +331,9 @@ files, for the host, so the hypervisor's admin gets no shell on the node through
   Installing does not check that Secure Boot is on.
 - There is no certificate revocation list. A leaked client file or kubeconfig stays valid until it
   expires or its CA is rotated; rotation is how access is revoked, as
-  [Certificates](certificates.md) explains.
+  [Certificates](certificates.md) explains. Revoking a node shuts out that node alone, with the
+  gaps listed under
+  [Revocation leaves reads and the certificates valid](#revocation-leaves-reads-and-the-certificates-valid).
 - The TPM unseals without a PIN for every boot under the same Secure Boot state, so a machine
   decrypts its own disks whenever it boots. chalkos does not defend against an attacker with the
   machine in hand who attacks it while it runs, for example through its memory.

@@ -475,6 +475,15 @@ does not unseal. chalkos derives it from the
 [`chalkctl recovery-key`](cli/chalkctl_recovery-key.md) prints it. See
 [Storage and encryption](../how-it-works/node/storage.md).
 
+## Revoked node { #revoked-node }
+<!-- abbr: revoked nodes, Revoked nodes -->
+
+A node shut out of the cluster by name with [`chalkctl node revoke`](cli/chalkctl_node_revoke.md).
+Control planes list it in the ConfigMap `kube-system/chalkos-revoked-nodes` and refuse to renew
+its node certificate, and the API server denies every write by its kubelet. Its certificates stay valid
+until they expire. [`chalkctl node unrevoke`](cli/chalkctl_node_unrevoke.md) lets the name back in. See
+[Security model](../how-it-works/node/security.md#revoking-a-node-cuts-off-its-writes-and-renewals).
+
 ## Rollback { #rollback }
 
 The return to the previous image after a new one used up its boot tries without a
@@ -494,7 +503,8 @@ alone, and chalkctl shows its first 12 hex characters. See
 
 The replacement of a CA or key, in phases, with [`chalkctl rotate`](cli/chalkctl_rotate.md). The
 phases first trust the new value everywhere, then use it,
-then re-issue, and last remove the old value. Rotation is also how access is revoked. See
+then re-issue, and last remove the old value. Rotation also revokes what the old value issued.
+See
 [Certificates](../how-it-works/node/certificates.md).
 
 ## Secrets file { #secrets-file }
