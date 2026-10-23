@@ -5,11 +5,14 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/ext"
+	"cel.dev/cel-go/common/types/ref"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 )
 
 func testCluster(families ...string) kubernetes.Cluster {
@@ -54,9 +57,8 @@ func TestRenderOrder(t *testing.T) {
 	for _, o := range objects {
 		names = append(names, o["kind"].(string)+"/"+o["metadata"].(map[string]any)["name"].(string))
 	}
-	// RBAC, the revoked nodes' policy, kube-proxy, flannel, CoreDNS.
+	// RBAC, kube-proxy, flannel, CoreDNS.
 	want := "ClusterRoleBinding/chalkos:cluster-admins ClusterRoleBinding/chalkos:selfnodeclient ClusterRoleBinding/chalkos:apiserver-kubelet " +
-		"ValidatingAdmissionPolicy/chalkos-revoked-nodes ValidatingAdmissionPolicyBinding/chalkos-revoked-nodes " +
 		"ServiceAccount/kube-proxy ClusterRoleBinding/chalkos:node-proxier ConfigMap/kube-proxy DaemonSet/kube-proxy " +
 		"Namespace/kube-flannel ClusterRole/flannel ClusterRoleBinding/flannel ServiceAccount/flannel ConfigMap/kube-flannel-cfg DaemonSet/kube-flannel-ds " +
 		"ServiceAccount/coredns ClusterRole/system:coredns ClusterRoleBinding/system:coredns ConfigMap/coredns Deployment/coredns Service/kube-dns"
@@ -236,13 +238,16 @@ func TestRenderBindsChalkosIdentities(t *testing.T) {
 	}
 }
 
-// TestRenderRevokedNodesPolicy: the policy takes the revoked nodes' ConfigMap as its parameters,
-// looks at every write by a node, and fails closed; the binding admits everything while the
-// ConfigMap is missing. The ConfigMap itself is chalkd's to write, not an add-on.
-func TestRenderRevokedNodesPolicy(t *testing.T) {
-	objects, err := Render(testCluster("ipv4"))
-	if err != nil {
-		t.Fatal(err)
+// TestRevokedNodesPolicy: the policy names the revoked nodes inline and takes no parameters, so
+// it never waits for an informer; it looks at every write by a node and fails closed. The binding
+// has no parameters either.
+func TestRevokedNodesPolicy(t *testing.T) {
+	objects := RevokedNodes(revoked.List{
+		"w2": time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC),
+		"w1": {},
+	})
+	if len(objects) != 2 {
+		t.Fatalf("objects = %v", objects)
 	}
 	policy := asJSON(t, find(t, objects, "ValidatingAdmissionPolicy", "chalkos-revoked-nodes"))
 	if policy["apiVersion"] != "admissionregistration.k8s.io/v1" {
@@ -251,7 +256,6 @@ func TestRenderRevokedNodesPolicy(t *testing.T) {
 	spec := policy["spec"].(map[string]any)
 	wantSpec := map[string]any{
 		"failurePolicy": "Fail",
-		"paramKind":     map[string]any{"apiVersion": "v1", "kind": "ConfigMap"},
 		"matchConstraints": map[string]any{"resourceRules": []any{map[string]any{
 			"apiGroups":   []any{"*"},
 			"apiVersions": []any{"*"},
@@ -259,48 +263,49 @@ func TestRenderRevokedNodesPolicy(t *testing.T) {
 			"operations":  []any{"CREATE", "UPDATE", "DELETE", "CONNECT"},
 		}}},
 		"matchConditions": []any{map[string]any{"name": "node", "expression": `request.userInfo.username.startsWith("system:node:")`}},
-		"variables":       []any{map[string]any{"name": "node", "expression": "request.userInfo.username.substring(12)"}},
+		"variables": []any{
+			map[string]any{"name": "revoked", "expression": `{"w1": "at an unknown time", "w2": "since 2026-10-23T10:00:00Z"}`},
+			map[string]any{"name": "node", "expression": "request.userInfo.username.substring(12)"},
+		},
 	}
 	for field, want := range wantSpec {
 		if !reflect.DeepEqual(spec[field], want) {
 			t.Errorf("policy's %s = %v, want %v", field, spec[field], want)
 		}
 	}
+	if _, ok := spec["paramKind"]; ok {
+		t.Errorf("the policy takes parameters: %v", spec["paramKind"])
+	}
 	validations := spec["validations"].([]any)
 	if len(validations) != 1 || validations[0].(map[string]any)["reason"] != "Forbidden" {
 		t.Errorf("policy's validations = %v", validations)
 	}
 	binding := asJSON(t, find(t, objects, "ValidatingAdmissionPolicyBinding", "chalkos-revoked-nodes"))
-	wantBinding := map[string]any{
-		"policyName": "chalkos-revoked-nodes",
-		"paramRef": map[string]any{
-			"name": "chalkos-revoked-nodes", "namespace": "kube-system", "parameterNotFoundAction": "Allow",
-		},
-		"validationActions": []any{"Deny"},
-	}
+	wantBinding := map[string]any{"policyName": "chalkos-revoked-nodes", "validationActions": []any{"Deny"}}
 	if !reflect.DeepEqual(binding["spec"], wantBinding) {
 		t.Errorf("binding's spec = %v, want %v", binding["spec"], wantBinding)
 	}
-	for _, o := range objects {
-		if o["kind"] == "ConfigMap" && o["metadata"].(map[string]any)["name"] == "chalkos-revoked-nodes" {
-			t.Error("the add-ons apply the revoked nodes' ConfigMap, which chalkd writes")
-		}
+	// With no node revoked the map is empty and denies nothing.
+	empty := asJSON(t, find(t, RevokedNodes(nil), "ValidatingAdmissionPolicy", "chalkos-revoked-nodes"))
+	if got := empty["spec"].(map[string]any)["variables"].([]any)[0].(map[string]any)["expression"]; got != "{}" {
+		t.Errorf("no revoked nodes: %v, want {}", got)
 	}
 }
 
 // TestRevokedNodesPolicyEvaluates evaluates the policy's expressions as the API server does, in
 // CEL with the Kubernetes strings library and optional types: a revoked node is denied with its
-// revocation time, any other node is admitted, whatever the ConfigMap holds, and the message
-// never fails for a node that is admitted.
+// revocation time, any other node is admitted, and a name that needs escaping stays one string.
 func TestRevokedNodesPolicyEvaluates(t *testing.T) {
-	objects, err := Render(testCluster("ipv4"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	spec := asJSON(t, find(t, objects, "ValidatingAdmissionPolicy", "chalkos-revoked-nodes"))["spec"].(map[string]any)
+	odd := "w\"3\\\nä\x00} "
+	spec := asJSON(t, find(t, RevokedNodes(revoked.List{
+		"w1": time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC),
+		"w2": {},
+		odd:  time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC),
+	}), "ValidatingAdmissionPolicy", "chalkos-revoked-nodes"))["spec"].(map[string]any)
 	expr := func(list []any, i int, field string) string { return list[i].(map[string]any)[field].(string) }
 	match := expr(spec["matchConditions"].([]any), 0, "expression")
-	node := expr(spec["variables"].([]any), 0, "expression")
+	list := expr(spec["variables"].([]any), 0, "expression")
+	node := expr(spec["variables"].([]any), 1, "expression")
 	validation := expr(spec["validations"].([]any), 0, "expression")
 	message := expr(spec["validations"].([]any), 0, "messageExpression")
 
@@ -308,13 +313,12 @@ func TestRevokedNodesPolicyEvaluates(t *testing.T) {
 		ext.Strings(ext.StringsVersion(2)),
 		cel.OptionalTypes(),
 		cel.Variable("request", cel.DynType),
-		cel.Variable("params", cel.DynType),
 		cel.Variable("variables", cel.DynType),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	eval := func(t *testing.T, src string, vars map[string]any) (any, error) {
+	eval := func(t *testing.T, src string, vars map[string]any) (ref.Val, error) {
 		t.Helper()
 		ast, iss := env.Compile(src)
 		if iss.Err() != nil {
@@ -328,30 +332,31 @@ func TestRevokedNodesPolicyEvaluates(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		return out.Value(), nil
+		return out, nil
 	}
-	revokedData := map[string]any{"w1": "2026-10-23T10:00:00Z", "w2": "yesterday"}
+	revokedNodes, err := eval(t, list, map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, tc := range map[string]struct {
 		username string
-		params   map[string]any
 		matched  bool
 		admitted bool
 		message  string
 	}{
-		"revoked node":           {"system:node:w1", map[string]any{"data": revokedData}, true, false, "node w1 is revoked since 2026-10-23T10:00:00Z"},
-		"revoked at a bad time":  {"system:node:w2", map[string]any{"data": revokedData}, true, false, "node w2 is revoked since yesterday"},
-		"other node":             {"system:node:w3", map[string]any{"data": revokedData}, true, true, ""},
-		"node with a prefix":     {"system:node:w10", map[string]any{"data": map[string]any{"w1": "2026-10-23T10:00:00Z"}}, true, true, ""},
-		"no revocations left":    {"system:node:w1", map[string]any{}, true, true, ""},
-		"empty data":             {"system:node:w1", map[string]any{"data": map[string]any{}}, true, true, ""},
-		"not a node":             {"w1", map[string]any{"data": revokedData}, false, true, ""},
-		"service account":        {"system:serviceaccount:kube-system:w1", map[string]any{"data": revokedData}, false, true, ""},
-		"node prefix in a group": {"system:nodes", map[string]any{"data": revokedData}, false, true, ""},
+		"revoked node":           {"system:node:w1", true, false, "node w1 is revoked since 2026-10-23T10:00:00Z"},
+		"revoked at a bad time":  {"system:node:w2", true, false, "node w2 is revoked at an unknown time"},
+		"name that needs quotes": {"system:node:" + odd, true, false, "node " + odd + " is revoked since 2026-10-24T00:00:00Z"},
+		"other node":             {"system:node:w3", true, true, ""},
+		"node with a prefix":     {"system:node:w10", true, true, ""},
+		"not a node":             {"w1", false, true, ""},
+		"service account":        {"system:serviceaccount:kube-system:w1", false, true, ""},
+		"node prefix in a group": {"system:nodes", false, true, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
-			vars := map[string]any{"request": map[string]any{"userInfo": map[string]any{"username": tc.username}}, "params": tc.params}
+			vars := map[string]any{"request": map[string]any{"userInfo": map[string]any{"username": tc.username}}}
 			matched, err := eval(t, match, vars)
-			if err != nil || matched != tc.matched {
+			if err != nil || matched.Value() != tc.matched {
 				t.Fatalf("matched = %v, %v; want %v", matched, err, tc.matched)
 			}
 			if !tc.matched {
@@ -361,17 +366,17 @@ func TestRevokedNodesPolicyEvaluates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			vars["variables"] = map[string]any{"node": n}
+			vars["variables"] = map[string]any{"node": n, "revoked": revokedNodes}
 			admitted, err := eval(t, validation, vars)
-			if err != nil || admitted != tc.admitted {
+			if err != nil || admitted.Value() != tc.admitted {
 				t.Fatalf("admitted = %v, %v; want %v", admitted, err, tc.admitted)
 			}
-			msg, err := eval(t, message, vars)
-			if err != nil {
-				t.Fatalf("message: %v", err)
+			if tc.admitted {
+				return
 			}
-			if !tc.admitted && msg != tc.message {
-				t.Errorf("message = %q, want %q", msg, tc.message)
+			msg, err := eval(t, message, vars)
+			if err != nil || msg.Value() != tc.message {
+				t.Errorf("message = %v, %v; want %q", msg, err, tc.message)
 			}
 		})
 	}

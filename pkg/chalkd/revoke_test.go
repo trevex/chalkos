@@ -12,8 +12,10 @@ import (
 	"connectrpc.com/connect"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -290,5 +292,70 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
 	if st, err := worker.Kubernetes.status(context.Background()); err != nil || st.RevokedNodes != nil || st.RevokedNodesError != "" {
 		t.Errorf("a worker's status: %v, %v", st, err)
+	}
+}
+
+// policyNames is the map of revoked nodes the applied admission policy names.
+func (l *revokeLab) policyNames(t *testing.T) string {
+	t.Helper()
+	p, err := l.cs.AdmissionregistrationV1().ValidatingAdmissionPolicies().Get(context.Background(), revoked.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p.Spec.Variables[0].Expression
+}
+
+// TestRevokeNodeAppliesThePolicy applies the admission policy with the nodes listed after each
+// revoke and unrevoke. Where it cannot, the call fails, saying the list changed and that calling
+// again applies the policy.
+func TestRevokeNodeAppliesThePolicy(t *testing.T) {
+	l := newRevokeLab(t)
+	resp, err := l.revoke("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := l.policyNames(t), `{"w1": "since `+resp.RevokedAt.AsTime().UTC().Format(revoked.TimeFormat)+`"}`; got != want {
+		t.Errorf("after the revoke the policy names %s, want %s", got, want)
+	}
+	if _, err := l.unrevoke("w1", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.policyNames(t); got != "{}" {
+		t.Errorf("after the unrevoke the policy names %s", got)
+	}
+
+	failing := true
+	l.cs.PrependReactor("patch", "validatingadmissionpolicies", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if failing {
+			return true, nil, errors.New("connection reset")
+		}
+		return false, nil, nil
+	})
+	_, err = l.revoke("w2")
+	if err == nil || !strings.Contains(err.Error(), "connection reset") || !strings.Contains(err.Error(), "w2 is revoked") || !strings.Contains(err.Error(), "revoking it again") {
+		t.Errorf("revoke with the policy failing: %v", err)
+	}
+	if _, ok := l.list(t)["w2"]; !ok {
+		t.Error("w2 is not listed")
+	}
+	failing = false
+	if _, err := l.revoke("w2"); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.policyNames(t); !strings.Contains(got, `"w2"`) {
+		t.Errorf("revoking again: the policy names %s", got)
+	}
+
+	failing = true
+	_, err = l.unrevoke("w2", true)
+	if err == nil || !strings.Contains(err.Error(), "connection reset") || !strings.Contains(err.Error(), "w2 is unrevoked") || !strings.Contains(err.Error(), "unrevoking it again") {
+		t.Errorf("unrevoke with the policy failing: %v", err)
+	}
+	failing = false
+	if _, err := l.unrevoke("w2", true); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("unrevoking again: %v, want NotFound", err)
+	}
+	if got := l.policyNames(t); got != "{}" {
+		t.Errorf("unrevoking again: the policy names %s", got)
 	}
 }

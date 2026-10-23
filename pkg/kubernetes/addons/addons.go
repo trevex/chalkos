@@ -1,12 +1,16 @@
 // Package addons renders the Kubernetes objects chalkos applies to every cluster before the
-// cluster's own manifests: RBAC for chalkos's identities, the admission policy that shuts out
-// revoked nodes, kube-proxy, flannel when it is the pod network, and CoreDNS.
+// cluster's own manifests: RBAC for chalkos's identities, kube-proxy, flannel when it is the pod
+// network, and CoreDNS; and the admission policy that shuts out revoked nodes, which chalkd
+// applies from the revoked nodes as they are listed.
 package addons
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -16,14 +20,14 @@ import (
 
 type object = map[string]any
 
-// Render returns the objects in the order the control plane applies them: RBAC, the revoked
-// nodes' policy, kube-proxy, the pod network, the cluster DNS.
+// Render returns the objects in the order the control plane applies them: RBAC, kube-proxy, the
+// pod network, the cluster DNS.
 func Render(c kubernetes.Cluster) ([]map[string]any, error) {
 	families, err := c.Families()
 	if err != nil {
 		return nil, err
 	}
-	out := append(rbac(), revokedNodes()...)
+	out := rbac()
 	proxy, err := kubeProxy(c, families)
 	if err != nil {
 		return nil, err
@@ -86,13 +90,13 @@ func rbac() []object {
 	}
 }
 
-// revokedNodes denies every write by a revoked node: its kubelet can no longer update its Node
-// or its pods, renew its client certificate through a CSR or ask for a serving certificate. The
-// parameters are the revoked nodes' ConfigMap, which chalkd writes when it revokes a node; the
-// add-ons leave it out, so applying them never resets it. While it is missing, the binding admits
-// everything. The policy fails closed, so its expressions must not fail for a node that is not
-// revoked, whatever the ConfigMap holds.
-func revokedNodes() []object {
+// RevokedNodes renders the admission policy that denies every write by a revoked node, and its
+// binding: the node's kubelet can no longer update its Node or its pods, renew its client
+// certificate through a CSR or ask for a serving certificate. The policy names the nodes of the
+// list inline, so the API server evaluates it without parameters: with parameters it would deny
+// every request it matches, whoever made it, until its informer had read them. chalkd applies it
+// again whenever the list changes. It fails closed, which a map literal cannot make fail.
+func RevokedNodes(l revoked.List) []map[string]any {
 	return []object{
 		{
 			"apiVersion": "admissionregistration.k8s.io/v1",
@@ -100,7 +104,6 @@ func revokedNodes() []object {
 			"metadata":   object{"name": revoked.Name},
 			"spec": object{
 				"failurePolicy": "Fail",
-				"paramKind":     object{"apiVersion": "v1", "kind": "ConfigMap"},
 				// Subresources too: the kubelet writes nodes/status and pods/status.
 				"matchConstraints": object{"resourceRules": []any{object{
 					"apiGroups":   []any{"*"},
@@ -108,13 +111,15 @@ func revokedNodes() []object {
 					"resources":   []any{"*/*"},
 					"operations":  []any{"CREATE", "UPDATE", "DELETE", "CONNECT"},
 				}}},
+				// Requests by anyone but a node end here.
 				"matchConditions": []any{object{"name": "node", "expression": `request.userInfo.username.startsWith("system:node:")`}},
-				"variables":       []any{object{"name": "node", "expression": "request.userInfo.username.substring(12)"}},
+				"variables": []any{
+					object{"name": "revoked", "expression": revokedLiteral(l)},
+					object{"name": "node", "expression": "request.userInfo.username.substring(12)"},
+				},
 				"validations": []any{object{
-					// The ConfigMap has no data once the last node is unrevoked.
-					"expression": "!has(params.data) || !(variables.node in params.data)",
-					// The time is shown as it is stored, readable or not.
-					"messageExpression": `"node " + variables.node + " is revoked since " + params.?data[?variables.node].orValue("an unknown time")`,
+					"expression":        "!(variables.node in variables.revoked)",
+					"messageExpression": `"node " + variables.node + " is revoked " + variables.revoked[variables.node]`,
 					"message":           "the node is revoked",
 					"reason":            "Forbidden",
 				}},
@@ -126,11 +131,25 @@ func revokedNodes() []object {
 			"metadata":   object{"name": revoked.Name},
 			"spec": object{
 				"policyName":        revoked.Name,
-				"paramRef":          object{"name": revoked.Name, "namespace": revoked.Namespace, "parameterNotFoundAction": "Allow"},
 				"validationActions": []any{"Deny"},
 			},
 		},
 	}
+}
+
+// revokedLiteral is a CEL map from each revoked node's name to when it was revoked, in name
+// order. Go's quoting escapes no more than CEL's string literals unescape, so every name stays the
+// one string it is: ConfigMap keys are valid UTF-8.
+func revokedLiteral(l revoked.List) string {
+	var entries []string
+	for _, name := range slices.Sorted(maps.Keys(l)) {
+		when := "at an unknown time"
+		if at := l[name]; !at.IsZero() {
+			when = "since " + at.UTC().Format(revoked.TimeFormat)
+		}
+		entries = append(entries, strconv.Quote(name)+": "+strconv.Quote(when))
+	}
+	return "{" + strings.Join(entries, ", ") + "}"
 }
 
 func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]object, error) {

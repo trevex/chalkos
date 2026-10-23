@@ -588,6 +588,15 @@ func (k *Kubernetes) applyOnce(ctx context.Context, c k8s.Cluster, cfg *rest.Con
 	if err != nil {
 		return 0, err
 	}
+	// The admission policy names the revoked nodes as listed now, so it comes from the list
+	// rather than from the add-ons.
+	client, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return 0, err
+	}
+	if err := kapply.EnforceRevoked(ctx, client); err != nil {
+		return 0, err
+	}
 	a, err := kapply.NewApplier(cfg)
 	if err != nil {
 		return 0, err

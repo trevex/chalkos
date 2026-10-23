@@ -162,16 +162,20 @@ a node cordoned otherwise as it is.
 ### RevokeNode { #method-revokenode }
 
 RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
-kube-system/chalkos-revoked-nodes and deletes its Node object. Control planes then refuse to
-renew its node certificate. A node revoked already keeps the time of its first revocation.
-Available on bootstrapped control-plane nodes, to admins.
+kube-system/chalkos-revoked-nodes, applies the API server's admission policy
+chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
+Control planes then refuse to renew its node certificate. A node revoked already keeps the
+time of its first revocation. A call that fails after listing the node says so; calling again
+finishes it. Available on bootstrapped control-plane nodes, to admins.
 
 ### UnrevokeNode { #method-unrevokenode }
 
-UnrevokeNode removes a node from the revoked nodes, so a node of that name may join again.
-The old node's certificates work again too, unless the CAs they chain to were rotated after
-the revocation: the call is refused with FAILED_PRECONDITION while the OS CA or the Kubernetes
-CA predates it, unless forced. Available on bootstrapped control-plane nodes, to admins.
+UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
+it, so a node of that name may join again. The old node's certificates work again too, unless
+the CAs they chain to were rotated after the revocation: the call is refused with
+FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
+that fails after removing the node says so; calling again applies the policy. Available on
+bootstrapped control-plane nodes, to admins.
 
 ## Messages
 

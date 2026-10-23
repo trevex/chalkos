@@ -1,6 +1,6 @@
 // Package revoked keeps the cluster's revoked nodes in a ConfigMap: the names of nodes that are
 // cut off, with the time each was revoked. Control planes read it before they renew a node
-// certificate, and the admission policy reads it as its parameters.
+// certificate, and chalkd renders the admission policy that shuts the nodes out from it.
 package revoked
 
 import (

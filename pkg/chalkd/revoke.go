@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -36,6 +37,9 @@ func (s *Server) RevokeNode(ctx context.Context, req *connect.Request[nodev1.Rev
 	at, err := revoked.Revoke(ctx, cs, name, time.Now())
 	if err != nil {
 		return nil, failed(connect.CodeUnavailable, "%v", err)
+	}
+	if err := kapply.EnforceRevoked(ctx, cs); err != nil {
+		return nil, failed(connect.CodeUnavailable, "%s is revoked, but the API server's admission policy was not updated: %v; revoking it again applies it", name, err)
 	}
 	deleted := true
 	switch err := cs.CoreV1().Nodes().Delete(ctx, name, metav1.DeleteOptions{}); {
@@ -75,6 +79,13 @@ func (s *Server) UnrevokeNode(ctx context.Context, req *connect.Request[nodev1.U
 	}
 	if err != nil {
 		return nil, failed(connect.CodeUnavailable, "%v", err)
+	}
+	// A node unlisted already may be unrevoked again because the policy was not updated then.
+	if err := kapply.EnforceRevoked(ctx, cs); err != nil {
+		if !listed {
+			return nil, failed(connect.CodeUnavailable, "node %s is not revoked, but the API server's admission policy was not updated: %v", name, err)
+		}
+		return nil, failed(connect.CodeUnavailable, "%s is unrevoked, but the API server's admission policy was not updated and still denies its writes: %v; unrevoking it again applies it", name, err)
 	}
 	if !listed {
 		return nil, failed(connect.CodeNotFound, "node %s is not revoked", name)
