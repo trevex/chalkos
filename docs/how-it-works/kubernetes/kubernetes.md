@@ -431,7 +431,7 @@ Other states name what the node waits for or why it stopped:
 - [Networking](../node/networking.md): node addresses, the VIP and the pod network.
 - [Certificates](../node/certificates.md): the CAs and certificates the cluster runs on.
 - [Upgrades](../node/upgrades.md): how a new Kubernetes version reaches the nodes.
-- [Install on bare metal](../../operate/install-bare-metal.md#bootstrap-the-first-control-plane) for
+- [Bootstrap a cluster](../../kubernetes/bootstrap.md#bootstrap-the-first-control-plane) for
   the bootstrap, and [Run a highly available control plane](../../kubernetes/ha-control-plane.md) for
   joins and membership changes.
 - [Config kinds](../../reference/kinds.md#cluster) for every field of `Cluster`, `Node`, `Flannel`

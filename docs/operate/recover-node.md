@@ -127,37 +127,15 @@ year.
 
 ## The kubelet certificate was lost with VAR
 
-A worker whose VAR lost its data
-falls back to the kubelet certificate in its Kubernetes
-share on STATE, which it received at install. When that
-one expired too, the kubelet cannot join, and `chalkctl status w1` says:
-
-```text
-certificates:
-  ...
-  kubelet client  expires 2026-09-14  expired; deliver a new one with chalkctl apply-config w1 --kubernetes-share
-```
-
-Deliver a new share with a new kubelet certificate:
-
-```sh
-chalkctl apply-config w1 --kubernetes-share
-```
+[Troubleshoot
+Kubernetes](../kubernetes/troubleshooting.md#the-kubelet-certificate-was-lost-with-var) delivers a
+new one.
 
 ## A control plane cannot rejoin etcd
 
-A control plane's Kubernetes line in `chalkctl status` names what holds it back, and the fix:
-
-| Status | Cause | Fix |
-| --- | --- | --- |
-| `preparation failed: pinned address ... is not present` | The node booted without one of the addresses it was pinned to when it became an etcd member. | Restore the address and reboot. Or take the node out of etcd and reinstall it: `chalkctl etcd leave <node> --force` removes its member through the other members, as does `chalkctl etcd remove-member <node>`. |
-| `joining the cluster at ...: etcd has a member <node> already; remove it with chalkctl etcd remove-member <node>` | The node was reinstalled without leaving etcd, and its old member is still there. | Run the command the status names; the node joins on its own. |
-| `left etcd; reinstall the node to join the cluster again` | The node left etcd with `chalkctl etcd leave`. | Reinstall it. |
-| `etcd data missing: restore etcd or reinstall the node` | The node is an etcd member, but VAR holds no etcd data, because VAR lost its data. | chalkos cannot restore etcd. Remove its member with `chalkctl etcd remove-member <node>` and reinstall it. |
-| `joining the cluster at ...: the node's etcd member was removed while joining; run chalkctl etcd leave and reinstall the node` | An operator removed the member while the node was joining. | Run `chalkctl etcd leave <node>`, then reinstall it. |
-
-[Run a highly available control plane](../kubernetes/ha-control-plane.md) explains joining, leaving and the
-quorum guard on these commands. They need an admin client file or the secrets file.
+[Run a highly available control
+plane](../kubernetes/ha-control-plane.md#a-control-plane-cannot-rejoin-etcd) lists the causes and
+fixes.
 
 ## A storage change is refused
 

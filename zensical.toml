@@ -31,7 +31,11 @@ nav = [
   { "Run Kubernetes" = [
     "kubernetes/index.md",
     "kubernetes/production-cluster.md",
+    "kubernetes/bootstrap.md",
     "kubernetes/ha-control-plane.md",
+    "kubernetes/upgrade-kubernetes.md",
+    "kubernetes/rotate-kubernetes-cas.md",
+    "kubernetes/troubleshooting.md",
   ] },
   { "Build images" = [
     "build/index.md",

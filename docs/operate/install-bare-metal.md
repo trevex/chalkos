@@ -284,18 +284,8 @@ covers reinstalls.
 
 ## Bootstrap the first control plane
 
-A cluster starts once, on one control plane. When `cp1` is back up in normal mode, run
-[`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md):
-
-```sh
-chalkctl bootstrap cp1 --secrets=secrets.age
-```
-
-The node starts etcd as its first member, starts the API server, controller-manager and
-scheduler, and applies chalkos's addons and the objects of the cluster's `Addon` documents.
-chalkctl prints `bootstrapping cp1; the control plane pulls its images and starts`, waits, and
-ends with `cp1 is bootstrapped; applied <n> objects`. The node refuses a second bootstrap, so a
-cluster is never initialised twice.
+[Bootstrap a cluster](../kubernetes/bootstrap.md) starts the cluster on the first control plane once
+`cp1` is back up in normal mode.
 
 ## Install the other nodes
 
@@ -305,15 +295,10 @@ endpoint with the kubelet certificate chalkctl gave them, and further control pl
 and the control plane on their own; [Run a highly available control plane](../kubernetes/ha-control-plane.md)
 covers the second and third.
 
-## Get a kubeconfig and client files
+## Get client files
 
-[`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md) writes a kubeconfig with a
-cluster-admin certificate, valid for a year, to `./kubeconfig`:
-
-```sh
-chalkctl kubeconfig --secrets=secrets.age
-kubectl --kubeconfig kubeconfig get nodes
-```
+[Bootstrap a cluster](../kubernetes/bootstrap.md#get-a-kubeconfig) gets a kubeconfig for the
+Kubernetes API.
 
 Day-to-day commands such as `status`, `logs`, `reboot` and `upgrade` work without the secrets
 file. Give each person a client file of the

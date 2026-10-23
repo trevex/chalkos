@@ -15,8 +15,8 @@ until the new image is found healthy, control planes one
 at a time and the other nodes in batches. A node whose new image never becomes healthy boots its
 previous image again, and the run stops there.
 
-Each node reboots once. Workloads move off each node while it reboots, within their
-PodDisruptionBudgets.
+Each node reboots once. [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md) covers what
+an upgrade does on a cluster with Kubernetes.
 
 ## Before you begin
 
@@ -27,8 +27,9 @@ PodDisruptionBudgets.
 - The Secure Boot db
   key and certificate and chalkbuild, when your nodes
   enforce Secure Boot. [Sign images for Secure Boot](../build/sign-images.md) explains the keys.
-- Three control planes, for an upgrade without API downtime. A cluster with one or two needs
-  `--allow-downtime`, described below.
+- On a cluster with Kubernetes, [Upgrade
+  Kubernetes](../kubernetes/upgrade-kubernetes.md#before-you-begin) lists
+  what else it needs.
 - [Upgrades](../how-it-works/node/upgrades.md) explains the mechanism this guide drives.
 
 ## Change the image
@@ -73,13 +74,8 @@ as `tag = "v1.5.0";`. Both are for display only. Make the change itself:
     nix flake update chalkos
     ```
 
-- A new Kubernetes release: set
-  [`chalkos.kubernetes.package`](../reference/options.md#chalkoskubernetespackage) in the
-  variant's modules. Every image with Kubernetes carries the kubelet, so every such variant gets
-  a new image. Move one minor release at a time, as the Kubernetes version skew policy
-  requires; `chalkctl upgrade` upgrades the control planes before the
-  workers, which keeps the kubelets no newer than the API
-  server.
+- A new Kubernetes release: [Upgrade
+  Kubernetes](../kubernetes/upgrade-kubernetes.md#move-to-a-new-kubernetes-release) says how.
 
 ## Decide how the images are built and signed
 
@@ -164,16 +160,16 @@ next boot entry: one generation above the entry it booted, with three tries.
 
 The lines follow each node through its steps:
 
-1. Before a control plane is touched, chalkctl checks that etcd keeps its quorum without it:
-   the other voters must be healthy and enough for a quorum. After the previous control plane
-   came back, it retries this check for up to a minute while etcd settles.
+1. Before a control plane is touched, chalkctl checks etcd's quorum, as
+   [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md#keep-etcds-quorum-and-drain-each-node)
+   describes.
 2. chalkctl sends the image. The node writes it into its inactive slot, checks it, and makes it
    the next boot with three tries, the image's
    [`chalkos.upgrade.bootTries`](../reference/options.md#chalkosupgradeboottries). A worker is
    drained before it receives the image, a control plane after.
-3. The drain cordons the node and evicts its pods through the eviction API, so
-   PodDisruptionBudgets apply. DaemonSet pods, static pods, finished pods and pods without a
-   controller are kept; chalkctl names the last kind, because nothing restarts them elsewhere.
+3. On a Kubernetes node, the drain cordons the node and evicts its pods, as
+   [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md#keep-etcds-quorum-and-drain-each-node)
+   describes.
 4. The node reboots. The new image's health check
    decides whether the boot is healthy; chalkctl waits until it was found healthy and, on a
    Kubernetes node, its Node is Ready.
@@ -187,12 +183,13 @@ Control planes go first, one at a time. Workers and nodes without Kubernetes fol
 | --- | --- |
 | `--max-unavailable=<n>` | Upgrades `<n>` workers or nodes without Kubernetes at once; 1 by default. Control planes always go one at a time. |
 | `--nodes=<nodes>` | Upgrades only the comma-separated nodes named. |
-| `--allow-downtime` | Lets a cluster of one or two control planes upgrade, although etcd loses its quorum while one of them reboots. etcd and the API server are down until it is back. With three or more, the flag changes nothing: chalkctl still waits for the other voters to be healthy. |
 | `--no-reboot` | Installs the images without draining or rebooting; each node boots its image at its next reboot. |
-| `--delete-emptydir-data` | Also evicts pods with `emptyDir` volumes, whose data is lost. Without it, such a pod stops the drain. |
 | `--timeout=<duration>` | How long to wait for each drain and for each node to come back healthy; 30 minutes by default. |
 | `--diff` | Prints what each node's config changes and changes nothing. |
 | `--password-file=<file>` | Holds the password of nodes whose fallback is a password, for a new encrypted volume the config adds. |
+
+[Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md#choose-the-flags-for-kubernetes) lists
+`--allow-downtime` and `--delete-emptydir-data`.
 
 Raise `--max-unavailable` when the workloads have spare capacity: each batch takes its nodes'
 capacity away for one reboot.
@@ -320,12 +317,8 @@ for as long as the failed image stays on the disk. With them:
 3. When the cause was outside the image, a switch port that was down for example, install the
    same image once more with `--retry-failed`.
 
-The next run that upgrades the node uncordons it. To give the node back to the scheduler before
-that, uncordon it yourself:
-
-```sh
-kubectl uncordon w2
-```
+[Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md#uncordon-a-node-that-rolled-back) says when
+the node is uncordoned again.
 
 ### Keep a volume the new image's config added
 
@@ -359,16 +352,8 @@ such as etcd's data after a Kubernetes upgrade, is for you to check.
 
 ## If something goes wrong
 
-- `without cp2 etcd has 1 healthy voter of 3, fewer than the 2 its quorum needs`: another
-  control plane is down or unhealthy. chalkctl does not reboot cp2 until enough of the others are
-  healthy; `chalkctl etcd members` shows which one is not.
-- `etcd has 1 voter, and without cp1 fewer than the 1 its quorum needs: ...; pass --allow-downtime
-  to accept that`: the cluster has one or two control planes, so the API server is down while one
-  reboots. Pass `--allow-downtime` when that is acceptable.
-- `pods ... have emptyDir volumes, whose data an eviction deletes; pass --delete-emptydir-data to
-  evict them`: the drain refuses to delete those pods' scratch data unless you allow it.
-- `etcd member cp3 is a learner yet; upgrade once it joined`: a control plane is still joining;
-  run again once it finished.
+- etcd's quorum, the drain and PodDisruptionBudgets: [Upgrade
+  Kubernetes](../kubernetes/upgrade-kubernetes.md#if-something-goes-wrong) lists those messages.
 - `the boot of chalkos_2+2-1.efi has not been found healthy yet; upgrade once it is`: the node
   runs an image that is still being checked, and installing another would remove the image it
   falls back to. Wait for the check, at most `healthTimeout` per try.
@@ -377,9 +362,6 @@ such as etcd's data after a Kubernetes upgrade, is for you to check.
 - `w1 runs an image built for kvm, but its image node-metal is built for metal; changing a node's
   platform is a reinstall`: the inventory names a build of another platform for the node.
   Changing a node's platform is a reinstall, not an upgrade.
-- A drain that does not finish within `--timeout` leaves the node cordoned and stops the run.
-  A PodDisruptionBudget that allows no eviction is the usual cause; `kubectl get pdb -A` shows
-  it.
 
 ## What next
 

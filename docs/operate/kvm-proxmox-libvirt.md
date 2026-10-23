@@ -331,7 +331,7 @@ normal mode with the static address of its config; keep
 the inventory's `address` for the node the same, since chalkctl reaches the node there.
 
 From here a VM cluster continues as a bare-metal one:
-[bootstrap the first control plane](install-bare-metal.md#bootstrap-the-first-control-plane),
+[bootstrap the first control plane](../kubernetes/bootstrap.md#bootstrap-the-first-control-plane),
 then install the other nodes.
 
 ## Use the installer instead
@@ -375,7 +375,7 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
   place.
 - [Sign images for Secure Boot](../build/sign-images.md) covers the key's life and why it must
   not change for an installed node.
-- [Install on bare metal](install-bare-metal.md) continues with bootstrap, kubeconfigs and
-  recovery keys.
+- [Bootstrap a cluster](../kubernetes/bootstrap.md) continues with bootstrap and kubeconfigs, and
+  [Install on bare metal](install-bare-metal.md) with recovery keys.
 - [Upgrade a cluster](upgrade-cluster.md) rolls new images, signed with `chalkbuild sign`, to the
   VMs with `chalkctl upgrade`.

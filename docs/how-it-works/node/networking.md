@@ -304,7 +304,7 @@ interface lo, whose MTU flannel would take; set the Flannel document's spec.mtu`
 - [Config and the inventory](config.md): how the network and Kubernetes documents reach a node.
 - [Run a highly available control plane](../../kubernetes/ha-control-plane.md) and
   [Plan a production cluster](../../kubernetes/production-cluster.md).
-- [Troubleshooting](../../operate/troubleshooting.md#pods-on-different-nodes-cannot-reach-each-other)
+- [Troubleshoot Kubernetes](../../kubernetes/troubleshooting.md#pods-on-different-nodes-cannot-reach-each-other)
   for VXLAN and MTU problems.
 - [Ports and firewall](../../reference/ports-and-firewall.md).
 - [Config kinds](../../reference/kinds.md) for every field of `Network`, `NetDev`, `Link`,
