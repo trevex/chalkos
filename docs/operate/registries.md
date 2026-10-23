@@ -8,7 +8,9 @@ description: "Give nodes the credentials of a private registry, and pull images 
 This page is for an operator whose inventory names an image in a registry, as
 [Publish images to a registry](../build/publish-images.md) pushes one. At the end each node holds
 the credentials of a private registry in its config, and pulls through a mirror before it asks the
-registry itself. The homelab's nodes pull from `ghcr.io` through a mirror on the local network.
+registry itself. The examples on this page are for nodes that pull from `ghcr.io` through a mirror
+on the local network. Their documents go in a file such as `cluster/registry.yaml`, which the
+homelab example does not have.
 
 A node pulls its own image at an install and at an upgrade. chalkctl sends it the image's
 reference by digest, and chalkd pulls the image with the `Registry` and `Mirror` documents of its
@@ -28,7 +30,7 @@ config. The workstation needs a connection to the registry itself, because chalk
 A `Registry` document gives the credentials for one registry host. Its password comes from a
 `Secret`:
 
-```yaml title="cluster/registry.yaml"
+```yaml
 apiVersion: oci.chalkos.dev/v1alpha1
 kind: Registry
 metadata: {name: ghcr}
@@ -45,7 +47,7 @@ spec:
 ```
 
 `<token>` stands for the registry's access token. Put both documents in a file that every node
-gets, such as the homelab's `cluster/` directory.
+gets, such as a file in `cluster/`.
 
 The config holds one `Registry` per host. `host` is the registry's host as the image reference
 names it. chalkd matches it in any case and as image references name registries, so `docker.io`
@@ -61,11 +63,11 @@ chalkd reads the credentials from one config:
 
 ## Allow a registry that serves plain HTTP
 
-chalkd pulls over HTTPS and trusts the certificate authorities of the image's system trust store.
-A `Registry` adds no CA of its own. A registry that serves only plain HTTP, such as one in a lab,
-needs `insecure: true`:
+chalkd pulls over HTTPS only and trusts the certificate authorities of the image's system trust
+store. A `Registry` adds no CA of its own. A registry that serves only plain HTTP, such as one in a
+lab, needs `insecure: true`:
 
-```yaml title="cluster/registry.yaml"
+```yaml
 apiVersion: oci.chalkos.dev/v1alpha1
 kind: Registry
 metadata: {name: lab}
@@ -74,16 +76,19 @@ spec:
   insecure: true
 ```
 
-`insecure` is needed also when the registry has a private or loopback address. With it, the
-credentials and the image travel unencrypted, so anyone on the network path can read the
-credentials. The image stays protected, because the node checks every byte against the digests
-chalkctl read and against the root hash. Set `insecure` only for a registry on a trusted network.
+chalkd never falls back to plain HTTP by itself, also not for a registry at a private or loopback
+address. Without `insecure`, a request to such a registry over plain HTTP fails with
+`plain HTTP to <host> is refused: set insecure: true in the Registry of the host to allow it`.
+With `insecure`, the credentials and the image travel unencrypted, so anyone on the network path
+can read the credentials. The image stays protected, because the node checks every byte against
+the digests chalkctl read and against the root hash. Set `insecure` only for a registry on a
+trusted network.
 
 ## Pull through a mirror
 
 A `Mirror` document puts endpoints in front of one registry host:
 
-```yaml title="cluster/registry.yaml"
+```yaml
 apiVersion: oci.chalkos.dev/v1alpha1
 kind: Mirror
 metadata: {name: ghcr}
@@ -98,9 +103,9 @@ repository and digest below the endpoint's path, as containerd does. The image
 endpoint whose path ends in `/v2` serves the API at that path.
 
 Each endpoint authenticates with the `Registry` of its own host, here `mirror.lan`, or
-anonymously without one. The credentials of `ghcr.io` go to `ghcr.io` alone. An `http://`
-endpoint needs a `Registry` of its host with `insecure: true`, and chalkctl and chalkd refuse a
-config without it.
+anonymously without one. The credentials of `ghcr.io` go to `ghcr.io` alone. An `https://`
+endpoint is reached over HTTPS only. An `http://` endpoint needs a `Registry` of its host with
+`insecure: true`, and chalkctl and chalkd refuse a config without it.
 
 chalkd reads the `Mirror` documents from the same config as the `Registry` documents.
 

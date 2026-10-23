@@ -158,8 +158,8 @@ spec:
 Name the disk by a path below `/dev/disk/by-id`, which stays the same across boots, or by
 selectors such as `model`, `serial` or `size`. Without `var.size`, VAR fills the rest of the
 disk. By default STATE, VAR and every volume are encrypted with a key sealed to the TPM, with the
-node's recovery key as the second keyslot. [Add storage volumes](storage-volumes.md) covers the disk selectors,
-the encryption and the sizes.
+node's recovery key as the second keyslot. [Add storage volumes](storage-volumes.md) covers the
+disk selectors, the encryption and the sizes.
 
 ## Network documents configure the interfaces
 
@@ -180,14 +180,16 @@ spec:
   network: {address: [10.0.0.11/24], gateway: 10.0.0.1}
 ```
 
-A node whose config holds no `Network` document runs DHCP on every physical Ethernet interface,
-through the image's own default unit. The documents' units take precedence over the image's
-units.
+The image brings one unit of its own, `99-ethernet-default-dhcp`, which runs DHCP on every
+physical Ethernet interface that no `Network` document matches. A node whose config holds no
+`Network` document therefore runs DHCP on all of them. The documents' units take precedence over
+the image's units.
 
-A bond and a VLAN are `NetDev` documents, each with the `Network` documents that attach it. Here
-`w1`'s two ports form an LACP bond, and its address is on VLAN 20 of the bond:
+A bond and a VLAN are `NetDev` documents, each with the `Network` documents that attach it. In this
+variant of `w1`'s network, its two ports form an LACP bond, and its address is on VLAN 20 of the
+bond. The address stays the one the inventory names for `w1`:
 
-```yaml title="nodes/w1.yaml"
+```yaml
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: NetDev
 metadata: {name: 10-bond0}
@@ -223,7 +225,7 @@ kind: Network
 metadata: {name: 30-vlan20}
 spec:
   match: {name: vlan20}
-  network: {address: [10.0.20.21/24], gateway: 10.0.20.1, dns: [10.0.20.1]}
+  network: {address: [10.0.0.21/24], gateway: 10.0.0.1, dns: [10.0.0.1]}
 ```
 
 The `NetDev` documents create the devices `bond0` and `vlan20`. The `Network` documents attach

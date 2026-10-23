@@ -26,7 +26,8 @@ takes a reinstall.
 ## Find the disks
 
 `chalkctl disks` lists a node's disks, the properties a document selects a disk by, the
-partitions on each and what each disk is used for:
+partitions on each and what each disk is used for. The output below is illustrative: its columns
+are chalkctl's, and the disks, serials and WWNs are an example machine's.
 
 ```console
 $ chalkctl disks w1
@@ -67,8 +68,10 @@ Storage documents go in the node's own file, because they name that machine's di
 the same disks can share a `Volume` through an inventory group, as
 [Write a node's config](node-config.md#groups-share-files-and-an-image-among-some-nodes) shows.
 
-`disk` names the disk by `path`, a path below `/dev/disk/by-id`, or by selector keys: `model`,
-`serial`, `wwn`, `size` and `type`. The two forms exclude each other.
+`disk` names the disk by `path` or by selector keys: `model`, `serial`, `wwn`, `size` and `type`.
+The two forms exclude each other. `path` may be any path below `/dev` that leads to a whole disk.
+A path below `/dev/disk/by-id` stays the same across boots, where `/dev/sda` may not. `wwn`
+ignores case and a leading `0x`, so a WWN copied from another tool matches.
 [Config kinds](../reference/kinds.md#volume) lists what each key matches.
 
 A selector must match exactly one disk. When it matches none or several, the node creates no
@@ -76,6 +79,9 @@ volume, and the message names the disks it found: `no disk matches ...` or
 `2 disks match ..., refusing to choose: ...`. chalkd partitions a disk only when it is empty, so
 a wrong selector never overwrites data. A disk with other data is refused with
 `carries data (...); wipe it or reference another disk`. Wipe a disk you mean to reuse first.
+
+A volume whose disk is not found yet is left out at boot. The node boots without it,
+`chalkctl status` shows the disk's problem, and the next boot looks for the disk again.
 
 Once chalkd found the disk, it pins it on STATE by its WWN, serial number and path. From then on
 it finds the disk by the strongest of those, even when the device names change.
@@ -167,9 +173,10 @@ password, or none. A node whose fallback is a password needs it for each new enc
 chalkctl asks for it on the terminal, or reads it from the file `--password-file` names.
 
 `repart` passes further keys to the volume's systemd-repart definition, such as
-`repart: {Weight: "2000"}`. chalkd does not compare them when they change, so a changed key on an
-existing volume does what systemd-repart does with it on an existing partition, which for most
-keys is nothing.
+`repart: {Weight: "2000"}`. A key that the typed options set, such as `Format` or `MountPoint`, is
+refused. The message reads `repart must not set Format; it comes from the typed options`. chalkd
+does not compare the other keys when they change, so a changed key on an existing volume does what
+systemd-repart does with it on an existing partition, which for most keys is nothing.
 
 ## Apply the change
 
@@ -184,13 +191,15 @@ Then deliver the config:
 
 ```console
 $ chalkctl apply-config w1 --secrets secrets.age
+w1: config 1 added, 0 removed, 0 changed
 volume scratch: new volume
 w1 runs config 45095fb6414e5f6744a8bf134254107d7d943537457d513fc51e7440deace75f
 ```
 
-chalkd writes the new definitions and runs systemd-repart on each disk. It enrols the fallback
-keyslot on new encrypted volumes and starts their mount units. One line names each changed volume
-and why it changed.
+The first line counts the documents the config adds, removes and changes: here the `Volume`
+named `scratch`. chalkd writes the new definitions and runs systemd-repart on each disk. It enrols
+the fallback keyslot on new encrypted volumes and starts their mount units. One line names each
+changed volume and why it changed.
 
 A running node applies three kinds of storage change:
 
@@ -221,15 +230,15 @@ refusals. VAR, a removed volume and a volume that moves to another disk take a r
 `chalkctl storage reset` wipes one volume and creates it again, empty, as the node's `Volume`
 document now defines it:
 
-!!! danger "A reset deletes the volume's data"
-
-    The command wipes the partition before it creates the new one. Move the data away, or stop
-    the workloads that use it, first.
-
 ```console
 $ chalkctl storage reset w1 scratch --secrets secrets.age
 volume scratch of w1 was wiped and created again
 ```
+
+!!! danger "A reset deletes the volume's data"
+
+    The command wipes the partition before it creates the new one. Move the data away, or stop
+    the workloads that use it, first.
 
 An encrypted volume is sealed to the TPM again and gets its fallback keyslot back. The command
 needs the secrets file for a node whose fallback is its recovery key, and the password for one

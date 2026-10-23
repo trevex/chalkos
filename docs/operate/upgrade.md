@@ -11,6 +11,10 @@ its previous image again. Any change to what the image holds goes this way: a ne
 a new Kubernetes release or a change to the image's modules. The page upgrades the homelab's `cp1`
 and `w1`.
 
+A new chalkos release arrives through the image author, who updates the `chalkos` input in the
+flake's `flake.lock` and builds the images again. Take chalkctl from the same revision, as
+[Set up your workstation](workstation.md#chalkctl-comes-from-the-chalkos-flake) describes.
+
 ## Before you begin
 
 You need the workstation that [Set up your workstation](workstation.md) describes. The upgrade
@@ -88,7 +92,7 @@ the inventory. Changing a node's platform is a reinstall. chalkctl compares no v
 whose image in the inventory is another variant's build gets that image, and chalkctl prints the
 change.
 
-## Install a prebuilt image with --image
+## Install a prebuilt image
 
 `--image` names an image directory, or a raw image with `repart-output.json` next to it. chalkctl
 installs it on the nodes that run that image's variant, or on the nodes `--nodes` names. Nodes on
@@ -200,7 +204,7 @@ chalkctl upgrade --nodes=w1 --diff --secrets secrets.age
 ```
 
 `--diff` prints for each node what its config changes against the config of the image it runs,
-in the format of [`apply-config --diff`](change-config.md#preview-the-change-with-diff), and
+in the format of [`apply-config --diff`](change-config.md#preview-the-change), and
 changes nothing.
 
 The config counts against the node's storage as `apply-config` does. A destructive storage change
@@ -210,9 +214,9 @@ or the password in the file `--password-file` names. Without `--password-file`, 
 each node's password on the terminal before it drains the first node.
 
 Delivering config needs the admin role: the secrets file, or an admin client file. `--diff` needs
-it too. With an operator client file the upgrade runs, prints
-`config not delivered: the operator role cannot deliver config; each node carries its own over`,
-and each node checks the config it runs against the new image and keeps it for that image. A
+it too. With an operator client file the upgrade runs and prints
+`config not delivered: the operator role cannot deliver config; each node carries its own over`.
+Each node then checks the config it runs against the new image and keeps it for that image. A
 reader client file cannot upgrade.
 
 Before it asks for any password or drains a node, chalkctl asks the first node it upgrades for its
@@ -226,8 +230,8 @@ Without an inventory, chalkctl has no config to send. An upgrade with `--image` 
 `<node>: no inventory to compare the config with; the node carries its own over` for each node.
 
 An image the run leaves staged, with `--no-reboot`, keeps its own config until the node boots it.
-[Deliver config to a staged image with
---staged](change-config.md#deliver-config-to-a-staged-image-with-staged) changes that config.
+[Deliver config to a staged image](change-config.md#deliver-config-to-a-staged-image) changes that
+config.
 
 ## Check that it worked
 
@@ -261,7 +265,7 @@ health check logged during the failed boot, such as
 Kubernetes cluster alone. `chalkctl status w1` shows the same lines for as long as the failed image
 stays on the disk.
 
-The node runs its previous image, healthy. Then:
+The node runs its previous image, and that boot is healthy. To go on:
 
 1. Find the cause in the journal lines. They name what the health check found missing, such as a
    failed unit. [Troubleshooting](troubleshooting.md) helps from there.
@@ -272,13 +276,13 @@ The node runs its previous image, healthy. Then:
    image once more with `--retry-failed`.
 
 Without `--retry-failed`, chalkctl refuses to install an image again on a node that fell back from
-it, with the same error. A known-bad image never boots twice by accident.
+it, with the same error, so that an image known to fail does not boot a second time by accident.
 [Uncordon a node that rolled back](../kubernetes/upgrade-kubernetes.md#uncordon-a-node-that-rolled-back)
 gives a cordoned node back to the scheduler.
 
 A volume that the failed image's config added stays on the node. The upgrade created it before the
 image booted, and the previous image mounts it too. The next `chalkctl apply-config` for the
-previous image must name the volume, or the node refuses it with
+previous image must name the volume. Without it, the node refuses the config with
 `an earlier config of this image or another added it, with an upgrade or chalkctl apply-config
 --staged, and it stays on the node; name it in this config too`. Only a reinstall removes the
 volume.
@@ -289,7 +293,9 @@ An upgrade that stopped continues when you run the same command again. chalkctl:
 
 - skips nodes that run the new image and were found healthy;
 - waits for a node that booted the image and is still being checked;
-- does not send an image a node holds already;
+- does not send an image a node holds already, unless the image is staged with a config other than
+  the one the inventory gives the node. Then it sends the image again, and the node replaces the
+  config it keeps for that image;
 - uncordons only nodes it cordoned itself.
 
 An image whose transfer was interrupted leaves the inactive slot empty, and the node keeps booting

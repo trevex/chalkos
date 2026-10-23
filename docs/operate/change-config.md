@@ -46,7 +46,7 @@ w1: valid for the image node-metal (node on metal, root hash d871203debfe), conf
 Each node's config hash differs from the one before the change. That hash is the config's version,
 which `apply-config` and `chalkctl status` print too.
 
-## Preview the change with --diff
+## Preview the change
 
 `--diff` asks the node for the config it runs, compares it with the inventory's and changes
 nothing:
@@ -159,7 +159,7 @@ runs none that reads node facts, so neither shows those refusals.
 [Guard changes with rules and facts](../build/guard-changes.md) explains how image authors write
 them.
 
-## Deliver config to a staged image with --staged
+## Deliver config to a staged image
 
 Each image on a node keeps its own config. After `chalkctl upgrade --no-reboot`, the image staged
 to boot next has its own config until the node reboots into it. `--staged` delivers to that image:
