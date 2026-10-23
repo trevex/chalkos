@@ -14,6 +14,7 @@ const (
 	TimeAPI       = "time.chalkos.dev/v1alpha1"
 	KubernetesAPI = "kubernetes.chalkos.dev/v1alpha1"
 	NetworkdAPI   = "networkd.chalkos.dev/v1alpha1"
+	OCIAPI        = "oci.chalkos.dev/v1alpha1"
 )
 
 // SecretRef names a key of a Secret document.
@@ -108,6 +109,11 @@ type registryMirrorSpec struct {
 
 type addonSpec struct {
 	Objects []map[string]any `json:"objects"`
+}
+
+type mirrorSpec struct {
+	Registry  string   `json:"registry"`
+	Endpoints []string `json:"endpoints"`
 }
 
 type registrySpec struct {
