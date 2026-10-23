@@ -24,13 +24,22 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// manifestTimeout bounds the fetch of a pulled image's manifest and header; its layers take as
-// long as their reader reads them, as long as the registry sends data.
+// manifestTimeout bounds the fetch of a pulled image's manifest and header from all its sources;
+// its layers take as long as their reader reads them, as long as their source sends data.
 const manifestTimeout = 2 * time.Minute
 
-// stallTimeout is how long a layer's fetch may wait for data from the registry before it is
+// stallTimeout is how long a layer's fetch may wait for data from its source before it is
 // canceled.
 var stallTimeout = 2 * time.Minute
+
+// sourceTimeout bounds the fetch of the manifest, the header and, for Contract, the contract
+// layer from one source, after which the next source is asked; manifestTimeout bounds all
+// sources together.
+var sourceTimeout = 30 * time.Second
+
+// retryBackoff is how often, and after how long, a source's fetch is retried after a temporary
+// error or a 429 or 5xx answer, before the source is passed over: go-containerregistry's default.
+var retryBackoff = remote.Backoff{Duration: time.Second, Factor: 3, Jitter: 0.1, Steps: 3}
 
 // Part is a layer an image is pulled for: its media type, and the size and SHA-256 of its content.
 type Part struct {
@@ -45,12 +54,14 @@ type Part struct {
 // header is not the one wanted, or that has no layer of a part's media type with the part's size
 // and SHA-256 as its digest. A layer is fetched once the one before it was read to its end, and
 // ends after exactly its part's size, once go-containerregistry checked its digest. A layer whose
-// registry sends no data for two minutes is canceled. Every error names the reference.
+// source sends no data for two minutes is canceled. Every error names the reference.
 //
-// The image comes from the first of its sources that serves the manifest: mirror endpoints in
-// order, then the registry itself. A source that cannot be reached, or answers 401, 403 or 404, is
-// passed over, for the manifest and for each layer, which starts at the source of the manifest;
-// other errors, such as bytes that do not match the digest, fail the pull.
+// The image comes from the first of its sources that serves the manifest, the header and, for
+// Contract, the contract layer: mirror endpoints in order, then the registry itself. A source that
+// cannot be reached, answers 401, 403, 404, 429 or 5xx, or does not answer within sourceTimeout
+// is passed over, for the manifest and for each layer, which starts at the source of the manifest.
+// A layer that sends no data for stallTimeout as it is opened is too. Other errors, such as bytes
+// that do not match the digest, fail the pull.
 //
 // Contract fetches the manifest, the header and the contract layer up front, as an install needs
 // them before it reads a part.
@@ -153,7 +164,7 @@ func newSource(ref name.Digest, s Source) (source, error) {
 	if https {
 		t = httpsOnly{next: t}
 	}
-	pl, err := remote.NewPuller(remote.WithAuth(s.Auth), remote.WithTransport(t))
+	pl, err := remote.NewPuller(remote.WithAuth(s.Auth), remote.WithTransport(t), remote.WithRetryBackoff(retryBackoff))
 	if err != nil {
 		return source{}, err
 	}
@@ -177,17 +188,28 @@ func (t prefixed) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 // passable reports whether err says a source cannot serve the image, so a fetch tries the next
-// source: it could not be reached, or it answered 401, 403 or 404.
+// source: it could not be reached, the connection failed before a response, or it answered 401,
+// 403, 404, 429 or a 5xx status, as containerd passes over a host.
 func passable(err error) bool {
 	var te *transport.Error
 	if errors.As(err, &te) {
-		return te.StatusCode == http.StatusUnauthorized || te.StatusCode == http.StatusForbidden || te.StatusCode == http.StatusNotFound
+		c := te.StatusCode
+		return c == http.StatusUnauthorized || c == http.StatusForbidden || c == http.StatusNotFound ||
+			c == http.StatusTooManyRequests || c >= http.StatusInternalServerError
+	}
+	// The HTTP client wraps the errors of a request that got no response in a url.Error: a
+	// connection closed before or during the TLS handshake, a timeout, or a plain HTTP answer to
+	// HTTPS. A body cut short is no url.Error and fails the pull.
+	var ue *url.Error
+	if errors.As(err, &ue) && (ue.Timeout() || errors.Is(ue.Err, io.EOF) || errors.Is(ue.Err, io.ErrUnexpectedEOF)) {
+		return true
 	}
 	var op *net.OpError
 	var dns *net.DNSError
 	var cert *tls.CertificateVerificationError
-	var record tls.RecordHeaderError
-	return errors.As(err, &op) || errors.As(err, &dns) || errors.As(err, &cert) || errors.As(err, &record)
+	var alert tls.AlertError
+	return errors.As(err, &op) || errors.As(err, &dns) || errors.As(err, &cert) || errors.As(err, &alert) ||
+		errors.Is(err, http.ErrSchemeMismatch)
 }
 
 // after is err, the error of the source a fetch ended at, naming the sources passed over before
@@ -197,6 +219,16 @@ func after(err error, passed []string) error {
 		return err
 	}
 	return fmt.Errorf("%w, after %s", err, strings.Join(passed, "; "))
+}
+
+// passedOver is how after names a source passed over: its name and its error, cut to 512 bytes,
+// as a source may answer with any text.
+func passedOver(s source, err error) string {
+	msg := err.Error()
+	if len(msg) > 512 {
+		msg = strings.ToValidUTF8(msg[:512], "") + "…"
+	}
+	return s.name + ": " + msg
 }
 
 // httpsOnly refuses every request but one over HTTPS, as go-containerregistry falls back to plain
@@ -304,7 +336,7 @@ func (p *Pull) Close() error {
 }
 
 // open checks the image once and opens the layer of the next part, whose fetch is canceled once
-// the registry sends no data for stallTimeout.
+// its source sends no data for stallTimeout.
 func (p *Pull) open() error {
 	if !p.checked {
 		if err := p.check(); err != nil {
@@ -317,7 +349,7 @@ func (p *Pull) open() error {
 	for i := p.src; i < len(p.sources); i++ {
 		s := p.sources[i]
 		ctx, cancel := context.WithCancelCause(p.ctx)
-		stalled := fmt.Errorf("no data from the registry for %v while pulling the %s layer of %s", stallTimeout, part.MediaType, p.ref)
+		stalled := fmt.Errorf("no data from %s for %v while pulling the %s layer of %s", s.name, stallTimeout, part.MediaType, p.ref)
 		stall := time.AfterFunc(stallTimeout, func() { cancel(stalled) })
 		l, err := s.puller.Layer(ctx, s.ref.Context().Digest("sha256:"+hex.EncodeToString(part.SHA256)))
 		var rc io.ReadCloser
@@ -334,7 +366,7 @@ func (p *Pull) open() error {
 		}
 		cancel(nil)
 		if i < len(p.sources)-1 && p.ctx.Err() == nil && (err == stalled || passable(err)) {
-			passed = append(passed, s.name+": "+err.Error())
+			passed = append(passed, passedOver(s, err))
 			continue
 		}
 		if err == stalled {
@@ -345,93 +377,103 @@ func (p *Pull) open() error {
 	return fmt.Errorf("pull %s: no source to pull from", p.ref)
 }
 
-// check fetches the manifest and the header and refuses them as image does, within
-// manifestTimeout.
+// check fetches the manifest and the header and refuses them as image does.
 func (p *Pull) check() error {
-	ctx, cancel := context.WithTimeout(p.ctx, manifestTimeout)
-	defer cancel()
-	_, err := p.image(ctx)
-	return err
+	return p.image(nil)
 }
 
-// image fetches the manifest, by its digest, and the header with ctx, and refuses an image of
-// another header than the one wanted, or whose layer of a part's media type has another size or
-// digest than the part. Its layers are fetched with ctx too.
-func (p *Pull) image(ctx context.Context) (v1.Image, error) {
-	desc, err := p.manifest(ctx)
+// image fetches the manifest, by its digest, and the header from the first source that serves
+// them, within manifestTimeout and sourceTimeout per source, and refuses an image of another
+// header than the one wanted, or whose layer of a part's media type has another size or digest
+// than the part. It calls use, unless nil, with the image while that source's fetch lasts, as the
+// remote image fetches its layers with it. A source is passed over when a fetch, use's included,
+// fails as passable says or takes longer than sourceTimeout; a refusal fails at once. The layers
+// then start at the source the image came from.
+func (p *Pull) image(use func(v1.Image) error) error {
+	ctx, cancel := context.WithTimeout(p.ctx, manifestTimeout)
+	defer cancel()
+	var passed []string
+	for i, s := range p.sources {
+		sctx, scancel := context.WithTimeout(ctx, sourceTimeout)
+		err := p.imageFrom(sctx, s, use)
+		timedOut := err != nil && sctx.Err() != nil && ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded)
+		scancel()
+		if err == nil {
+			p.src = i
+			return nil
+		}
+		if timedOut {
+			err = fmt.Errorf("no answer from %s within %v: %w", s.name, sourceTimeout, err)
+		}
+		if i == len(p.sources)-1 || ctx.Err() != nil || !(timedOut || passable(err)) {
+			return after(err, passed)
+		}
+		passed = append(passed, passedOver(s, err))
+	}
+	return errors.New("no source to pull from")
+}
+
+// imageFrom is image of one source, fetched with ctx.
+func (p *Pull) imageFrom(ctx context.Context, s source, use func(v1.Image) error) error {
+	desc, err := s.puller.Get(ctx, s.ref)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if !desc.MediaType.IsImage() {
-		return nil, fmt.Errorf("it is a %s, not an image manifest; a chalkos image is one manifest", desc.MediaType)
+		return fmt.Errorf("it is a %s, not an image manifest; a chalkos image is one manifest", desc.MediaType)
 	}
 	img, err := desc.Image()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	h, err := ReadHeader(img)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if h != p.want {
-		return nil, fmt.Errorf("its header describes %+v, but the image to install is %+v", h, p.want)
+		return fmt.Errorf("its header describes %+v, but the image to install is %+v", h, p.want)
 	}
 	m, err := img.Manifest()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, part := range p.parts {
 		d, err := find(m, part.MediaType)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if want := "sha256:" + hex.EncodeToString(part.SHA256); d.Digest.String() != want || d.Size != part.Size {
-			return nil, fmt.Errorf("its %s layer is %s of %d bytes, but the image to install has %s of %d", part.MediaType, d.Digest, d.Size, want, part.Size)
+			return fmt.Errorf("its %s layer is %s of %d bytes, but the image to install has %s of %d", part.MediaType, d.Digest, d.Size, want, part.Size)
 		}
 	}
-	return img, nil
-}
-
-// manifest fetches the manifest from the first source that serves it, which the layers then
-// start at.
-func (p *Pull) manifest(ctx context.Context) (*remote.Descriptor, error) {
-	var passed []string
-	for i, s := range p.sources {
-		desc, err := s.puller.Get(ctx, s.ref)
-		if err == nil {
-			p.src = i
-			return desc, nil
-		}
-		if i == len(p.sources)-1 || ctx.Err() != nil || !passable(err) {
-			return nil, after(err, passed)
-		}
-		passed = append(passed, s.name+": "+err.Error())
+	if use == nil {
+		return nil
 	}
-	return nil, errors.New("no source to pull from")
+	return use(img)
 }
 
 // Contract fetches the manifest and the header, refusing them as the first read does, and reads
 // the image's contract layer, refusing one whose metadata.json describes another image than the
-// header. Reads after it succeeded fetch the manifest no more.
+// header. A source the contract layer cannot be fetched from is passed over as image says. Reads
+// after it succeeded fetch the manifest no more.
 func (p *Pull) Contract() (Contract, error) {
-	ctx, cancel := context.WithTimeout(p.ctx, manifestTimeout)
-	defer cancel()
-	img, err := p.image(ctx)
+	var c Contract
+	err := p.image(func(img v1.Image) error {
+		var err error
+		if c, err = ReadContract(img); err != nil {
+			return err
+		}
+		md, err := schema.ParseMetadata(c.Metadata)
+		if err != nil {
+			return fmt.Errorf("the contract layer's %w", err)
+		}
+		if err := describes(md, p.want); err != nil {
+			return fmt.Errorf("the contract layer's %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return Contract{}, fmt.Errorf("pull %s: %w", p.ref, err)
-	}
-	// The remote image fetches its layers with the context of the manifest's fetch, so the
-	// contract layer is read before that context ends.
-	c, err := ReadContract(img)
-	if err != nil {
-		return Contract{}, fmt.Errorf("pull %s: %w", p.ref, err)
-	}
-	md, err := schema.ParseMetadata(c.Metadata)
-	if err != nil {
-		return Contract{}, fmt.Errorf("pull %s: the contract layer's %w", p.ref, err)
-	}
-	if err := describes(md, p.want); err != nil {
-		return Contract{}, fmt.Errorf("pull %s: the contract layer's %w", p.ref, err)
 	}
 	p.checked = true
 	return c, nil

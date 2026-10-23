@@ -3,11 +3,13 @@ package ociimage_test
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -24,6 +26,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/trevex/chalkos/pkg/ociimage"
@@ -353,7 +356,7 @@ func TestPullCancelsAStalledLayer(t *testing.T) {
 	defer p.Close()
 	start := time.Now()
 	_, err = io.ReadAll(p)
-	want := "no data from the registry for 200ms while pulling the application/vnd.chalkos.image.store.v1 layer of " + ref
+	want := "no data from the registry " + host + " for 200ms while pulling the application/vnd.chalkos.image.store.v1 layer of " + ref
 	if err == nil || err.Error() != want {
 		t.Errorf("stalled layer: %v, want %q", err, want)
 	}
@@ -648,8 +651,250 @@ func TestPullPassesOverAStalledMirror(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "no data from the registry for 200ms while pulling the application/vnd.chalkos.image.store.v1 layer of " + ref + ", after the mirror http://" + mirror + ": no data"
+	want := "no data from the registry " + stalled + " for 200ms while pulling the application/vnd.chalkos.image.store.v1 layer of " + ref + ", after the mirror http://" + mirror + ": no data from the mirror http://" + mirror + " for 200ms"
 	if _, err := io.ReadAll(p); err == nil || !strings.HasPrefix(err.Error(), want) {
 		t.Errorf("stalled everywhere: %v, want %q", err, want)
+	}
+}
+
+// closingServer is an endpoint host that closes each connection as it accepts it.
+func closingServer(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	return l.Addr().String()
+}
+
+// alertServer is an endpoint host that answers each TLS handshake with a fatal
+// certificate_required alert, as a server that requires client certificates does.
+func alertServer(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				c.Read(make([]byte, 4096))
+				c.Write([]byte{0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 116})
+			}()
+		}
+	}()
+	return l.Addr().String()
+}
+
+// TestPullPassesOverAFailingMirror passes over an endpoint that closes the connection, one that
+// answers HTTPS with plain HTTP, one that ends the TLS handshake with an alert, one that answers
+// 503 and one that answers 429, and pulls from the registry.
+func TestPullPassesOverAFailingMirror(t *testing.T) {
+	ociimage.SetFastRetries(t)
+	status := func(code int) string {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(code) }))
+		t.Cleanup(srv.Close)
+		return strings.TrimPrefix(srv.URL, "http://")
+	}
+	ref, h, parts := pushSmall(t, ocitest.Registry(t))
+	for name, endpoint := range map[string]Source{
+		"closed":     {Endpoint: "https://" + closingServer(t)},
+		"plain HTTP": {Endpoint: "https://" + ocitest.Registry(t)},
+		"alert":      {Endpoint: "https://" + alertServer(t)},
+		"503":        {Endpoint: "http://" + status(http.StatusServiceUnavailable), Insecure: true},
+		"429":        {Endpoint: "http://" + status(http.StatusTooManyRequests), Insecure: true},
+	} {
+		endpoint.Auth = authn.Anonymous
+		p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{endpoint, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
+			t.Errorf("%s: read %q, %v", name, got, err)
+		}
+	}
+}
+
+// Source is ociimage.Source.
+type Source = ociimage.Source
+
+// TestPullPassesOverAHangingManifest asks the registry once a mirror does not answer for the
+// manifest within the source timeout.
+func TestPullPassesOverAHangingManifest(t *testing.T) {
+	ociimage.SetSourceTimeout(t, 200*time.Millisecond)
+	ref, h, parts := pushSmall(t, ocitest.Registry(t))
+	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/manifests/") && r.Method == http.MethodGet {
+			select {
+			case <-r.Context().Done():
+			case <-time.After(10 * time.Second):
+			}
+			return
+		}
+		reg.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	mirror := strings.TrimPrefix(srv.URL, "http://")
+	pushSmall(t, mirror)
+	start := time.Now()
+	p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
+		{Endpoint: "http://" + mirror, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
+		t.Errorf("read %q, %v", got, err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("the hanging mirror was passed over after %v", d)
+	}
+}
+
+// missingBlob is a registry that answers a GET of the blob of digest with 404.
+func missingBlob(t *testing.T, digest v1.Hash) string {
+	t.Helper()
+	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/blobs/"+digest.String()) {
+			http.NotFound(w, r)
+			return
+		}
+		reg.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return strings.TrimPrefix(srv.URL, "http://")
+}
+
+// TestPullPassesOverAMissingHeaderOrContract asks the registry for the image when a mirror serves
+// its manifest but not its header, or, for Contract, not its contract layer.
+func TestPullPassesOverAMissingHeaderOrContract(t *testing.T) {
+	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
+	c := ociimage.Contract{Metadata: metadataOf(h.RootHash), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
+	img := ocitest.Image(t, h, c)
+	config, err := img.ConfigName()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := img.Manifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contract v1.Hash
+	for _, l := range m.Layers {
+		if l.MediaType == ociimage.ContractType {
+			contract = l.Digest
+		}
+	}
+	host, manifests := ocitest.CountingRegistry(t)
+	ref := ocitest.Push(t, img, host+"/lab/node-metal:v1")
+	for name, digest := range map[string]v1.Hash{"header": config, "contract": contract} {
+		mirror := missingBlob(t, digest)
+		ocitest.Push(t, img, mirror+"/lab/node-metal:v1")
+		before := manifests.Load()
+		p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
+			{Endpoint: "http://" + mirror, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, testParts())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := p.Contract(); err != nil || !reflect.DeepEqual(got, c) {
+			t.Errorf("%s: Contract = %v", name, err)
+		}
+		if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
+			t.Errorf("%s: read %q, %v", name, got, err)
+		}
+		if manifests.Load() == before {
+			t.Errorf("%s: the registry was not asked", name)
+		}
+	}
+}
+
+// TestPullCutsAPassedOverError keeps an error a mirror answers with to a few hundred bytes.
+func TestPullCutsAPassedOverError(t *testing.T) {
+	long := strings.Repeat("x", 10000)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		io.WriteString(w, `{"errors": [{"code": "NAME_UNKNOWN", "message": "`+long+`"}]}`)
+	}))
+	t.Cleanup(srv.Close)
+	host := ocitest.Registry(t)
+	_, h, parts := pushSmall(t, host)
+	ref := host + "/lab/node-metal@sha256:" + strings.Repeat("0", 64)
+	p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
+		{Endpoint: srv.URL, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.ReadAll(p)
+	if err == nil || !strings.Contains(err.Error(), "after the mirror "+srv.URL+": ") || !strings.HasSuffix(err.Error(), "…") || len(err.Error()) > 1024 {
+		t.Errorf("pull = %.2000v (%d bytes)", err, len(fmt.Sprint(err)))
+	}
+}
+
+// TestPullOverHTTPSToAnHTTPSMirror reaches an https:// endpoint over HTTPS alone, even on
+// loopback and with leave for plain HTTP.
+func TestPullOverHTTPSToAnHTTPSMirror(t *testing.T) {
+	host, manifests := ocitest.CountingRegistry(t)
+	ref, h, parts := pushSmall(t, host)
+	before := manifests.Load()
+	p, err := ociimage.NewPull(context.Background(), elsewhere(ref, "registry.invalid"), []ociimage.Source{
+		{Endpoint: "https://" + host, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous}}, h, parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadAll(p); err == nil || !strings.Contains(err.Error(), "after the mirror https://"+host+": ") {
+		t.Errorf("pull = %v", err)
+	}
+	if manifests.Load() != before {
+		t.Error("the mirror was asked over plain HTTP")
+	}
+}
+
+// timeoutError is an error that says it timed out, as the HTTP client's TLS handshake timeout
+// does.
+type timeoutError struct{}
+
+func (timeoutError) Error() string { return "net/http: TLS handshake timeout" }
+func (timeoutError) Timeout() bool { return true }
+
+// TestPassable passes over a source for errors of reaching it and for statuses that say it
+// cannot serve the image now, never for bytes that do not match or a body cut short.
+func TestPassable(t *testing.T) {
+	get := func(err error) error { return &url.Error{Op: "Get", URL: "https://mirror.example/v2/", Err: err} }
+	for err, want := range map[error]bool{
+		get(io.EOF):                 true,
+		get(io.ErrUnexpectedEOF):    true,
+		get(timeoutError{}):         true,
+		get(http.ErrSchemeMismatch): true,
+		get(&net.OpError{Op: "remote error", Err: tls.AlertError(116)}): true,
+		get(tls.AlertError(116)):                      true,
+		&transport.Error{StatusCode: 404}:             true,
+		&transport.Error{StatusCode: 429}:             true,
+		&transport.Error{StatusCode: 502}:             true,
+		&transport.Error{StatusCode: 400}:             false,
+		io.ErrUnexpectedEOF:                           false,
+		errors.New("error verifying sha256 checksum"): false,
+		fmt.Errorf("the contract layer: %w", io.EOF):  false,
+	} {
+		if got := ociimage.Passable(err); got != want {
+			t.Errorf("passable(%v) = %v, want %v", err, got, want)
+		}
 	}
 }
