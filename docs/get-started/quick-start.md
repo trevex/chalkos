@@ -160,8 +160,8 @@ the image's schemas, without a node:
 ```console
 $ nix build .#node-kvm -o images/node-kvm
 $ chalkctl validate
-cp1: valid for the image node-kvm (node on kvm, root hash 2ece03b0fa09), config 9a7c16c9b2b0e6409c9353ac5551057be4f2cd205fe8fd43f1dbd0c90a4a512d
-w1: valid for the image node-kvm (node on kvm, root hash 2ece03b0fa09), config d4f933588f60a6da6b7b33edf93e421474b28d08f0b8dc3d9eed49ab9d2e4850
+cp1: valid for the image node-kvm (node on kvm, root hash c118f05709bc), config eca90aeb75db9d1ee363991f8e01e59fd04ffbb36823f8947a5ac8d938c12867
+w1: valid for the image node-kvm (node on kvm, root hash c118f05709bc), config bbb7e69c2ce5c5d34e483d16ca6b8ff9941c2065319684d8399dbfa818c31a4d
 ```
 
 The first build takes most of the tutorial's time. The template's `.gitignore` keeps `images/`
@@ -179,14 +179,14 @@ creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/lab/key
 copying the image of cp1 from /home/alice/lab/images/node-kvm
 copying the image of w1 from /home/alice/lab/images/node-kvm
 starting cp1, w1
-wrote /home/alice/.local/state/chalklab/lab/chalkctl.json for chalklab with the admin role; its certificate expires on 2027-10-10
+wrote /home/alice/.local/state/chalklab/lab/chalkctl.json for chalklab with the admin role; its certificate expires on 2027-10-23
 waiting for cp1 to come up in maintenance mode
-cp1 runs in maintenance mode with the certificate fingerprint 2db1ac1f7dd6f1088bb5588971225627d90013fbe2c11bc0b8e9713f0b1d8bb1
+cp1 runs in maintenance mode with the certificate fingerprint 1d3f7845a3931a0229c6b89a9455a9a57a6bd5d316aa7c2a2fd9d28d1ff668b3
 installing cp1 in place
 cp1 is installed and reboots
 chalkctl recovery-key cp1 prints the key that unlocks it when its TPM fails
 waiting for w1 to come up in maintenance mode
-w1 runs in maintenance mode with the certificate fingerprint a0e81810401c142fd8e3780865ed0b01dd17364283643ec1f11d8f9d5b0b9c0d
+w1 runs in maintenance mode with the certificate fingerprint fbe5aacd9da13beca31cb62acf9a08fcda6daf341ab6415a1d996ea86ea3b818
 installing w1 in place
 w1 is installed and reboots
 chalkctl recovery-key w1 prints the key that unlocks it when its TPM fails
@@ -216,8 +216,7 @@ The output follows the life of a node:
    config.
 2. chalklab creates Secure Boot keys for this lab, enrols them in the firmware of the virtual
    machines and signs a copy of the image for each node with them. It writes the lab's
-   inventory, `chalkos.yaml` in the lab's state, which names the nodes at the ports chalklab
-   forwards to them, and an admin client file,
+   inventory, `chalkos.yaml` in the lab's state, and an admin client file,
    `chalkctl.json`.
 3. Each virtual machine boots its image in
    maintenance mode, where
@@ -234,6 +233,11 @@ The output follows the life of a node:
 The commands chalklab prints last export the kubeconfig for kubectl and the client file for
 chalkctl: chalkctl reads the client file `$CHALKOSCONFIG` names when a command passes neither
 `--config` nor `--secrets`.
+
+The last lines are about upgrades. The nodes boot copies of the image that chalklab signed with
+the lab's key, but the inventory still names the unsigned build in `images/node-kvm`. The lab's
+firmware refuses to boot an unsigned image, so an upgrade must use a copy that `chalklab sign`
+signed. [Upgrade the cluster](#upgrade-the-cluster) does that.
 
 The lab keeps its state, disks, keys and logs in `~/.local/state/chalklab/lab`, after the lab
 file's `metadata.name`, or under `$XDG_STATE_HOME/chalklab` when that variable is set; the
@@ -264,6 +268,19 @@ flowchart LR
     w1 --- switch
 ```
 
+### The lab's two inventories
+
+The lab directory's `chalkos.yaml` names the nodes at their addresses on the lab network, such
+as `192.168.123.11`. Your machine is not on the lab network, so chalkctl cannot reach a node at
+that address. The lab's inventory, `~/.local/state/chalklab/lab/chalkos.yaml`, is a copy that
+names each node at its forwarded port on `127.0.0.1` instead. Its paths are absolute, so it reads
+the image and the YAML files of the lab directory: an edit there reaches both inventories.
+
+Commands that reach a node, such as `chalkctl status`, `apply-config` and `upgrade`, take the lab's
+inventory with `--inventory`. `chalkctl validate` reaches no node, so it reads `chalkos.yaml` in
+the current directory. On real machines, which chalkctl reaches at their own addresses, one
+inventory serves both.
+
 ## Use the cluster with kubectl
 
 The kubeconfig reaches the API server through its forwarded port. Export it and the client file,
@@ -274,8 +291,8 @@ $ export KUBECONFIG=~/.local/state/chalklab/lab/kubeconfig
 $ export CHALKOSCONFIG=~/.local/state/chalklab/lab/chalkctl.json
 $ kubectl get nodes
 NAME   STATUS   ROLES    AGE   VERSION
-cp1    Ready    <none>   28s   v1.37.1
-w1     Ready    <none>   28s   v1.37.1
+cp1    Ready    <none>   21s   v1.37.1
+w1     Ready    <none>   12s   v1.37.1
 ```
 
 The nodes may show `NotReady` for the first minute, until flannel, the network plugin, runs on
@@ -284,18 +301,21 @@ applied:
 
 ```console
 $ kubectl get pods -A
-NAMESPACE      NAME                          READY   STATUS    RESTARTS   AGE
-kube-flannel   kube-flannel-ds-56wr8         1/1     Running   0          2m9s
-kube-flannel   kube-flannel-ds-s6wb6         1/1     Running   0          2m9s
-kube-system    coredns-559f6c778d-6592l      1/1     Running   0          2m9s
-kube-system    coredns-559f6c778d-gx5sw      1/1     Running   0          2m9s
-kube-system    etcd-cp1                      1/1     Running   0          2m12s
-kube-system    kube-apiserver-cp1            1/1     Running   0          2m18s
-kube-system    kube-controller-manager-cp1   1/1     Running   0          2m12s
-kube-system    kube-proxy-99fgz              1/1     Running   0          2m9s
-kube-system    kube-proxy-pq4kt              1/1     Running   0          2m9s
-kube-system    kube-scheduler-cp1            1/1     Running   0          2m19s
+NAMESPACE      NAME                          READY   STATUS              RESTARTS   AGE
+kube-flannel   kube-flannel-ds-cggqw         0/1     Running             0          11s
+kube-flannel   kube-flannel-ds-hjmxx         0/1     Running             0          11s
+kube-system    coredns-559f6c778d-7n8w5      0/1     ContainerCreating   0          10s
+kube-system    coredns-559f6c778d-nll95      0/1     ContainerCreating   0          10s
+kube-system    etcd-cp1                      1/1     Running             0          16s
+kube-system    kube-apiserver-cp1            1/1     Running             0          16s
+kube-system    kube-controller-manager-cp1   1/1     Running             0          16s
+kube-system    kube-proxy-5hwr6              1/1     Running             0          11s
+kube-system    kube-proxy-qhpcq              1/1     Running             0          11s
+kube-system    kube-scheduler-cp1            1/1     Running             0          16s
 ```
+
+The flannel and CoreDNS pods show `0/1` until flannel has set up the pod network, within a minute
+or two of the bootstrap.
 
 ## Look at a node with chalkctl
 
@@ -305,49 +325,53 @@ inventory names. [`chalkctl status`](../reference/cli/chalkctl_status.md) shows 
 
 ```console
 $ chalkctl status cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
-config 9a7c16c9b2b0e6409c9353ac5551057be4f2cd205fe8fd43f1dbd0c90a4a512d (the inventory's)
+config eca90aeb75db9d1ee363991f8e01e59fd04ffbb36823f8947a5ac8d938c12867 (the inventory's)
 platform kvm (the inventory's)
-image 81bd02c4a9e1, booted from chalkos_1.efi
+image c118f05709bc, booted from chalkos_1.efi
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
+OUTPUT    HASH          STATE
+chrony    0af9b0bd41ca  rendered
+networkd  4cd3700df352  rendered
 kubernetes controlplane: bootstrapped, node ready: True, control plane current
 certificates:
-  node                      expires 2027-10-10
-  OS CA                     expires 2036-10-07
-  node CA                   expires 2031-10-09
-  Kubernetes CA             expires 2036-10-07
-  front-proxy CA            expires 2036-10-07
-  etcd CA                   expires 2036-10-07
-  Kubernetes control plane  expires 2027-10-10
-  kubelet client            expires 2027-10-10
-  kubelet serving           expires 2027-10-10
+  node                      expires 2027-10-23
+  OS CA                     expires 2036-10-20
+  node CA                   expires 2031-10-22
+  Kubernetes CA             expires 2036-10-20
+  front-proxy CA            expires 2036-10-20
+  etcd CA                   expires 2036-10-20
+  Kubernetes control plane  expires 2027-10-23
+  kubelet client            expires 2027-10-23
+  kubelet serving           expires 2027-10-23
 trust:
-  OS CA                 6c801dfa460f3c12
-  Kubernetes CA         03169729fc14b177 (issues)
-  front-proxy CA        aa6bf678236985fc (issues)
-  etcd CA               cfa2b3cf6ce8bd2c (issues)
-  service-account keys  f8dc2d5f576177e6 (issues)
-  encryption keys       2eca90c86582dd14 (issues)
-time: synchronised to 192.53.103.103, offset +0.000642 s
+  OS CA                 565e8681a31e67ad
+  Kubernetes CA         81a7160f3a9d281a (issues)
+  front-proxy CA        29251697e50c7f86 (issues)
+  etcd CA               5b1ce52b5c76d977 (issues)
+  service-account keys  253165238ca700d9 (issues)
+  encryption keys       7cb633a23852b26f (issues)
+time: synchronised to 192.53.103.108, offset -0.000000 s
 ```
 
 The first lines say that the node runs the config the inventory gives it and the image whose
-store's root hash begins with `81bd02c4a9e1`, from its first boot entry, `chalkos_1.efi`. The
-certificates section lists the node's certificates and CAs with their expiry
-dates; the control plane renews the node's certificates before they expire. The trust section
-lists the CAs and keys the node trusts by the start of their fingerprints; `(issues)` marks the
-one the control plane signs with, which matters during a
-rotation, when two are trusted.
+store's root hash begins with `c118f05709bc`, from its first boot entry, `chalkos_1.efi`. The
+output table lists the files the image renders from the config, chrony's time sources and
+systemd-networkd's network files, with the hash of each. The certificates section lists the
+node's certificates and CAs with their expiry dates; the control plane renews the node's
+certificates before they expire. The trust section lists the CAs and keys the node trusts by the
+start of their fingerprints; `(issues)` marks the one the control plane signs with, which matters
+during a rotation, when two are trusted.
 
 [`chalklab status`](../reference/cli/chalklab_status.md) shows the lab itself: the virtual
 machines, their forwarded ports and the lab's files.
 
 ```console
 $ chalklab status
-lab lab in /home/alice/.local/state/chalklab/lab; its supervisor runs as PID 1540233
+lab lab in /home/alice/.local/state/chalklab/lab; its supervisor runs as PID 2958683
 NODE  TYPE          VM       CHALKD           API SERVER       CONSOLE
-cp1   controlplane  running  127.0.0.1:46353  127.0.0.1:43323  /home/alice/.local/state/chalklab/lab/cp1/console.log
-w1    worker        running  127.0.0.1:44069  -                /home/alice/.local/state/chalklab/lab/w1/console.log
+cp1   controlplane  running  127.0.0.1:44061  127.0.0.1:41483  /home/alice/.local/state/chalklab/lab/cp1/console.log
+w1    worker        running  127.0.0.1:39137  -                /home/alice/.local/state/chalklab/lab/w1/console.log
 kubeconfig: /home/alice/.local/state/chalklab/lab/kubeconfig
 inventory: /home/alice/.local/state/chalklab/lab/chalkos.yaml
 client file: /home/alice/.local/state/chalklab/lab/chalkctl.json
@@ -363,16 +387,16 @@ mode after the reboot:
 ```console
 $ chalklab console cp1
 ...
-[    7.325509] chalkd[537]: chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint 2db1ac1f7dd6f1088bb5588971225627d90013fbe2c11bc0b8e9713f0b1d8bb1
+[    9.145982] chalkd[553]: chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint 1d3f7845a3931a0229c6b89a9455a9a57a6bd5d316aa7c2a2fd9d28d1ff668b3
 ...
-[    7.398444] chalkd[537]: chalkd: installing in place
+[    9.692829] chalkd[553]: chalkd: installing in place
 ...
-[   19.241571] chalkd[537]: chalkd: installed; rebooting
+[   21.822035] chalkd[553]: chalkd: installed; rebooting
 ...
-[    8.046725] chalkd[544]: chalkd: normal mode; certificate fingerprint c2855a14ec45b6ae2f5fb5bf66f5c480067b6e1484bb84b71e43278b65b6674b
-[    8.048971] chalkd[544]: chalkd: addresses 10.0.2.15 192.168.123.11; certificate fingerprint c2855a14ec45b6ae2f5fb5bf66f5c480067b6e1484bb84b71e43278b65b6674b
+[    8.127204] chalkd[598]: chalkd: normal mode; certificate fingerprint c95873d0249afc22bdb9b21b0654ba661b0aef09f4f48b8470d6269925d84ec1
+[    8.132998] chalkd[598]: chalkd: addresses 10.0.2.15 192.168.123.11; certificate fingerprint c95873d0249afc22bdb9b21b0654ba661b0aef09f4f48b8470d6269925d84ec1
 ...
-[   33.495178] chalkd[544]: chalkd: kubernetes: applied 19 objects
+[   27.297267] chalkd[598]: chalkd: kubernetes: applied 19 objects
 ```
 
 ## Change the nodes' config
@@ -396,16 +420,23 @@ the secrets file, which `--secrets` names; a client file does not suffice:
 
 ```console
 $ chalkctl validate
-cp1: valid for the image node-kvm (node on kvm, root hash 2ece03b0fa09), config fdf98e0f1ca7c61fb4eecd3e6bb260c5e8c343adee34d499a2b5407e7eedbc9c
-w1: valid for the image node-kvm (node on kvm, root hash 2ece03b0fa09), config 3731f10df5beb905747533b2726ac8727fe1073068fe705f73919a62663b288e
+cp1: valid for the image node-kvm (node on kvm, root hash c118f05709bc), config 536473926d2f73ff319ee4039268c45cc4a560fbed6c66ddea6fb302274bae8d
+w1: valid for the image node-kvm (node on kvm, root hash c118f05709bc), config b487fd854345430128ae7c6638e9397596502d2d2f430996daa528c1803a9615
 $ chalkctl apply-config cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
-cp1 runs config fdf98e0f1ca7c61fb4eecd3e6bb260c5e8c343adee34d499a2b5407e7eedbc9c
+cp1: config 1 added, 0 removed, 0 changed
+restarted chalkos-chrony-dhcp.service
+cp1 runs config 536473926d2f73ff319ee4039268c45cc4a560fbed6c66ddea6fb302274bae8d
 $ chalkctl apply-config w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
-w1 runs config 3731f10df5beb905747533b2726ac8727fe1073068fe705f73919a62663b288e
+w1: config 1 added, 0 removed, 0 changed
+restarted chalkos-chrony-dhcp.service
+w1 runs config b487fd854345430128ae7c6638e9397596502d2d2f430996daa528c1803a9615
 ```
 
-The lab's inventory takes the files of `cluster/` and `nodes/` from this directory, so it sees
-the new file. `chalkctl status` now shows each node's new config version as the inventory's.
+`chalkctl validate` read the local `chalkos.yaml`, and `apply-config` the lab's inventory; both
+take `cluster/time.yaml` from this directory. Each `apply-config` first counts the documents the
+delivery adds, removes and changes against the node's config: here the one `TimeSync`. The node
+then restarts the units the change affects, and the last line names the config version it runs.
+`chalkctl status` now shows that version as the inventory's.
 
 ## Upgrade the cluster
 
@@ -439,9 +470,10 @@ unsigned. [`chalklab sign`](../reference/cli/chalklab_sign.md) copies the image 
 signs the copy with the lab's db key. The copy's directory must not exist yet, so remove the copy
 from an earlier upgrade first:
 
-```sh
-rm -rf images/node-kvm-signed
-chalklab sign images/node-kvm --out images/node-kvm-signed
+```console
+$ rm -rf images/node-kvm-signed
+$ chalklab sign images/node-kvm --out images/node-kvm-signed
+signed images/node-kvm-signed/chalkos.raw with the db key of the lab lab
 ```
 
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) with `--image` gives the signed copy to
@@ -450,34 +482,37 @@ the nodes that run its variant and rolls it through the cluster, one node at a t
 ```console
 $ chalkctl upgrade --image images/node-kvm-signed \
   --inventory ~/.local/state/chalklab/lab/chalkos.yaml --allow-downtime
-upgrading node on kvm to 3fa9c1e2b7d0 (a1b2c3d4e5f6): cp1, w1
-cp1: installing 3fa9c1e2b7d0 (a1b2c3d4e5f6)
-cp1: installed 3fa9c1e2b7d0 (a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
-cp1: 3fa9c1e2b7d0 (a1b2c3d4e5f6) renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs
-cp1: cordoned, evicted 0 pods, kept 6
-cp1: rebooting into 3fa9c1e2b7d0 (a1b2c3d4e5f6)
-cp1: runs 3fa9c1e2b7d0 (a1b2c3d4e5f6), found healthy
+upgrading node on kvm to 7c25ff03dff7 (7fbd2b83f4b9): cp1, w1
+cp1: installing 7c25ff03dff7 (7fbd2b83f4b9)
+cp1: config unchanged
+cp1: installed 7c25ff03dff7 (7fbd2b83f4b9), which boots next as chalkos_2+3.efi
+cp1: 7c25ff03dff7 (7fbd2b83f4b9) renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs
+cp1: cordoned, evicted 2 pods, kept 6
+cp1: rebooting into 7c25ff03dff7 (7fbd2b83f4b9)
+cp1: runs 7c25ff03dff7 (7fbd2b83f4b9), found healthy
 cp1: uncordoned
 w1: cordoned, evicted 2 pods, kept 2
-w1: installing 3fa9c1e2b7d0 (a1b2c3d4e5f6)
-w1: installed 3fa9c1e2b7d0 (a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
-w1: 3fa9c1e2b7d0 (a1b2c3d4e5f6) renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs
-w1: rebooting into 3fa9c1e2b7d0 (a1b2c3d4e5f6)
-w1: runs 3fa9c1e2b7d0 (a1b2c3d4e5f6), found healthy
+w1: installing 7c25ff03dff7 (7fbd2b83f4b9)
+w1: config unchanged
+w1: installed 7c25ff03dff7 (7fbd2b83f4b9), which boots next as chalkos_2+3.efi
+w1: 7c25ff03dff7 (7fbd2b83f4b9) renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs
+w1: rebooting into 7c25ff03dff7 (7fbd2b83f4b9)
+w1: runs 7c25ff03dff7 (7fbd2b83f4b9), found healthy
 w1: uncordoned
-upgraded 2 nodes to 3fa9c1e2b7d0 (a1b2c3d4e5f6)
+upgraded 2 nodes to 7c25ff03dff7 (7fbd2b83f4b9)
 ```
 
-`3fa9c1e2b7d0` begins the new image's root hash, and `a1b2c3d4e5f6` the commit it was built from.
+`7c25ff03dff7` begins the new image's root hash, and `7fbd2b83f4b9` the commit it was built from.
 
 `--allow-downtime` is needed because the lab has a single control plane: while cp1 reboots, etcd
 has no quorum and the API server is down, and chalkctl refuses that unless told to accept it. In
 a cluster of three control planes, the other two keep etcd and the API server running while one
 reboots.
 
-The nodes' config is unchanged, so the upgrade needs no `chalkctl apply-config` after it.
-chalkctl reads the image's root hash from the image directory on this machine, and
-`chalkctl status` compares it with the root hash each node runs.
+An upgrade sends each node its config from the inventory together with the image. The
+`config unchanged` line compares that config with the one the node runs: `apply-config` delivered
+the `TimeSync` already, so nothing changes. chalkctl reads the image's root hash from the image
+directory on this machine, and `chalkctl status` compares it with the root hash each node runs.
 
 Each node goes through the same steps. chalkctl sends the image to chalkd, which writes it into
 the inactive slot and adds a boot entry with three tries, `chalkos_2+3.efi`, one generation above
@@ -496,40 +531,47 @@ image before again, and chalkctl stops there and shows what the failed boot logg
 
 ```console
 $ chalkctl status w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
-config 3731f10df5beb905747533b2726ac8727fe1073068fe705f73919a62663b288e (the inventory's)
+config b487fd854345430128ae7c6638e9397596502d2d2f430996daa528c1803a9615 (the inventory's)
 platform kvm (the inventory's)
-image 3fa9c1e2b7d0 (a1b2c3d4e5f6), booted from chalkos_2.efi
+image 7c25ff03dff7 (7fbd2b83f4b9), booted from chalkos_2.efi
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
+OUTPUT    HASH          STATE
+chrony    3b1ba1116223  rendered
+networkd  195ac3c4ec51  rendered
 kubernetes worker: joined, node ready: True
 certificates:
-  node             expires 2027-10-10
-  OS CA            expires 2036-10-07
-  Kubernetes CA    expires 2036-10-07
-  kubelet client   expires 2027-10-10
-  kubelet serving  expires 2027-10-10
+  node             expires 2027-10-23
+  OS CA            expires 2036-10-20
+  Kubernetes CA    expires 2036-10-20
+  kubelet client   expires 2027-10-23
+  kubelet serving  expires 2027-10-23
 trust:
-  OS CA          6c801dfa460f3c12
-  Kubernetes CA  03169729fc14b177
-time: synchronised to 162.159.200.1, offset -0.000031 s
+  OS CA          565e8681a31e67ad
+  Kubernetes CA  81a7160f3a9d281a
+time: synchronised to 162.159.200.123, offset -0.000004 s
 ```
+
+A worker holds fewer certificates than a control plane: it issues none, so it holds no node CA and
+no CA keys. Its time source is now `time.cloudflare.com`, at the address `162.159.200.123`.
 
 Both nodes are `Ready` in Kubernetes again:
 
 ```console
 $ kubectl get nodes
-NAME   STATUS   ROLES    AGE    VERSION
-cp1    Ready    <none>   6m2s   v1.37.1
-w1     Ready    <none>   6m2s   v1.37.1
+NAME   STATUS   ROLES    AGE     VERSION
+cp1    Ready    <none>   5m4s    v1.37.1
+w1     Ready    <none>   4m55s   v1.37.1
 ```
 
 The new image has the debugging tools, so a debugging pod can run the node's own `cat` on its
-files. `kubectl debug` starts one on w1 and prints the node's os-release, which names the image's
-variant and platform:
+files. `kubectl debug` starts one on w1, which prints the node's os-release and stops. The pod's
+log names the image's variant and platform:
 
 ```console
-$ kubectl debug node/w1 -i --image=busybox -- chroot /host /run/current-system/sw/bin/cat /etc/os-release
-Creating debugging pod node-debugger-w1-lw2hn with container debugger on node w1.
+$ kubectl debug node/w1 --image=busybox -- chroot /host /run/current-system/sw/bin/cat /etc/os-release
+Creating debugging pod node-debugger-w1-9f4z7 with container debugger on node w1.
+$ kubectl logs node-debugger-w1-9f4z7
 ...
 CHALKOS_BOOT_TRIES=3
 CHALKOS_PLATFORM=kvm
@@ -575,9 +617,12 @@ and each other node 2048 MiB. `chalklab status` shows which VMs run.
 
 ## What next
 
-- [What is chalkos](what-is-chalkos.md) puts what this tutorial showed into one model.
-- [Architecture](../how-it-works/node/architecture.md) explains the parts and how a node is installed.
-- [Upgrades](../how-it-works/node/upgrades.md) explains slots, boot counting and
-  rollback, and [Upgrade
-  nodes](../operate/upgrade.md) upgrades a real one.
-- [Install a node](../operate/install.md) installs chalkos on a physical machine or a VM.
+The lab ran the steps an operator runs on real machines. To run chalkos on your own machines,
+follow the operator guides in order:
+
+1. [Set up your workstation](../operate/workstation.md): get chalkctl, generate the cluster's
+   secrets and choose the credentials each command needs.
+2. [Write a node's config](../operate/node-config.md): name the nodes in an inventory and give
+   each its files and image.
+3. [Install a node](../operate/install.md): boot a physical machine or a VM into maintenance mode
+   and install it.
