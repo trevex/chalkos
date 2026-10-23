@@ -72,15 +72,6 @@ changes them.
 
     [:octicons-arrow-right-24: Read](read-config.md)
 
--   :material-key-chain: __Pass secrets to a service__
-
-    ---
-
-    Reference a Secret from a field of your kind, so a granted unit gets its value as a systemd
-    credential.
-
-    [:octicons-arrow-right-24: Read](pass-secrets.md)
-
 -   :material-file-code: __Render config files__
 
     ---
@@ -98,6 +89,15 @@ changes them.
     condition.
 
     [:octicons-arrow-right-24: Read](react-to-changes.md)
+
+-   :material-key-chain: __Pass secrets to a service__
+
+    ---
+
+    Reference a Secret from a field of your kind, so a granted unit gets its value as a systemd
+    credential.
+
+    [:octicons-arrow-right-24: Read](pass-secrets.md)
 
 -   :material-shield-check: __Guard changes with rules and facts__
 

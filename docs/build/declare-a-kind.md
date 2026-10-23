@@ -38,8 +38,12 @@ The declaration sets four things:
 - `spec` declares the document's fields as NixOS options, under the names the YAML uses.
 
 A field without a default is required. `password` has the default `null`, so a `Peer` may leave
-it out. A kind's name starts with a capital letter and holds letters and digits alone, as a
-Kubernetes kind does.
+it out. A kind's name starts with a capital letter and holds letters and digits alone.
+
+`address` is a `strMatching` string that accepts an IPv4 or IPv6 address alone. A field whose
+value lands in a config file needs a type that accepts valid values alone. Without the pattern,
+a value such as `10.0.0.2; import all` would add a statement of its own to `bird.conf`. With it,
+`chalkctl validate` refuses the document before it reaches a node.
 
 Put the module where the nodes that carry `Peer` documents get it. The homelab has one variant,
 so `bgp.nix` sits in `variants.node.modules`. A module in `modules` reaches every variant. A node
@@ -49,12 +53,15 @@ whose image lacks the kind refuses a config that holds a document of it.
 
 The image build converts the options into a JSON Schema, draft 2020-12. It writes the schema
 into the image directory's `schemas/` and into the image itself, at `/etc/chalkos/schemas`. Here
-is `images/node-metal/schemas/bgp.example.org_v1alpha1_Peer.json`, trimmed to the `spec`:
+is `images/node-metal/schemas/bgp.example.org_v1alpha1_Peer.json`, trimmed to the `spec` and the
+kind. The document's `required`, `additionalProperties` and `metadata`, the fields' `examples`
+and the `description` of `password` are left out:
 
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Peer",
+  "type": "object",
   "properties": {
     "apiVersion": {"const": "bgp.example.org/v1alpha1"},
     "kind": {"const": "Peer"},
@@ -63,17 +70,45 @@ is `images/node-metal/schemas/bgp.example.org_v1alpha1_Peer.json`, trimmed to th
       "additionalProperties": false,
       "required": ["address", "asn"],
       "properties": {
-        "address": {"type": "string", "minLength": 1, "description": "Address of the neighbour."},
+        "address": {
+          "type": "string",
+          "pattern": "^(?:([0-9]{1,3}\\.){3}[0-9]{1,3}|[0-9A-Fa-f]{0,4}(:[0-9A-Fa-f]{0,4}){2,7})$",
+          "description": "IPv4 or IPv6 address of the neighbour."
+        },
         "asn": {
           "type": "integer",
           "minimum": 1,
           "maximum": 4294967295,
+          "description": "AS number of the neighbour.",
           "x-chalkos-rules": [
-            {"rule": "self == oldSelf", "messageExpression": "...", "takes": "refuse"}
+            {
+              "rule": "self == oldSelf",
+              "messageExpression": "\"the AS number stays \" + string(oldSelf) + \"; add a Peer of another name for \" + string(self)",
+              "takes": "refuse"
+            }
           ]
         },
         "password": {
-          "anyOf": [{"type": "object", "x-chalkos-secret-ref": true, "...": "..."}, {"type": "null"}],
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["secretRef"],
+              "properties": {
+                "secretRef": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["key", "name"],
+                  "properties": {
+                    "key": {"type": "string", "minLength": 1},
+                    "name": {"type": "string", "minLength": 1}
+                  }
+                }
+              },
+              "x-chalkos-secret-ref": true
+            },
+            {"type": "null"}
+          ],
           "default": null
         }
       }
@@ -87,6 +122,7 @@ Each part of the schema comes from the options:
 
 - `additionalProperties: false` refuses a field the kind does not declare.
 - `required` lists the fields without a default.
+- `strMatching` becomes a `pattern` anchored at both ends.
 - `ints.between 1 4294967295` becomes `minimum` and `maximum`.
 - `description`, `default` and `example` carry over, the example as `examples`.
 - `x-chalkos-rules` holds the field's change rules, and `x-chalkos-kind` holds the kind's group,
@@ -249,8 +285,8 @@ chalkctl validate
 prints a line per node:
 
 ```text
-cp1: valid for the image node-metal (node on metal, root hash 0cf16be50a63), config 675850c48eaffe4a755dca41652dbf65a5b7959f1e70a3cdd2a94799136fd200
-w1: valid for the image node-metal (node on metal, root hash 0cf16be50a63), config 82ec5bbabd10ec79bf76ad892a0bcd7627c9db2ed4c9e252ad0657313359254c
+cp1: valid for the image node-metal (node on metal, root hash d871203debfe), config 675850c48eaffe4a755dca41652dbf65a5b7959f1e70a3cdd2a94799136fd200
+w1: valid for the image node-metal (node on metal, root hash d871203debfe), config 82ec5bbabd10ec79bf76ad892a0bcd7627c9db2ed4c9e252ad0657313359254c
 ```
 
 `chalkctl validate` refuses a document of a kind the image does not declare. If it names `Peer`
@@ -260,6 +296,6 @@ tracks the new file.
 ## What next
 
 - [Read config in a service](read-config.md) gives a unit the `Peer` documents.
-- [Pass secrets to a service](pass-secrets.md) delivers the `password` the `Peer` names.
+- [Render config files](render-config.md) renders bird's config from the `Peer` documents.
 - [Config and the inventory](../how-it-works/node/config.md) explains how the documents reach the
   nodes.

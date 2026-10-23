@@ -5,9 +5,10 @@ description: "Give nodes the credentials of a private registry, and pull images 
 
 # Registries and mirrors
 
-These sections give nodes the credentials of a registry that the inventory names an image in, as
-[Publish images to a registry](../build/publish-images.md) pushes it, and route their pulls through
-a mirror.
+This page is for an operator whose inventory names an image in a registry, as
+[Publish images to a registry](../build/publish-images.md) pushes one. At the end each node holds
+the credentials of a private registry in its config, and pulls images through a mirror, which it
+tries before the registry itself.
 
 ## Give the nodes the registry's credentials
 

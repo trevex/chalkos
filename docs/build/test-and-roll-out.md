@@ -1,6 +1,6 @@
 ---
 title: "Test and roll out an image"
-description: "Check an image and the nodes' config before any node gets them, upgrade the nodes, and confirm their outputs and services"
+description: "Check an image and the nodes' config, upgrade the nodes, and confirm their outputs and services"
 ---
 
 # Test and roll out an image
@@ -56,8 +56,8 @@ names for it. It also runs the image's rules that read no facts, and reaches no 
 
 ```console
 $ chalkctl validate
-cp1: valid for the image node-metal (node on metal, root hash 0cf16be50a63), config 675850c48eaffe4a755dca41652dbf65a5b7959f1e70a3cdd2a94799136fd200
-w1: valid for the image node-metal (node on metal, root hash 0cf16be50a63), config 82ec5bbabd10ec79bf76ad892a0bcd7627c9db2ed4c9e252ad0657313359254c
+cp1: valid for the image node-metal (node on metal, root hash d871203debfe), config 675850c48eaffe4a755dca41652dbf65a5b7959f1e70a3cdd2a94799136fd200
+w1: valid for the image node-metal (node on metal, root hash d871203debfe), config 82ec5bbabd10ec79bf76ad892a0bcd7627c9db2ed4c9e252ad0657313359254c
 ```
 
 Each line names the image, its variant and platform, the start of its root hash, and the hash of

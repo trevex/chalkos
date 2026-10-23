@@ -155,10 +155,10 @@ render.
 ## A jq program renders one file
 
 `lib.chalkos.render.jq` runs a jq program on the input and writes its result into one file, named
-as the program less `.jq`. Here is a program that turns the peers into a JSON list, for a tool
-that reads its neighbours from JSON:
+as the program less `.jq`, so `peers.json.jq` writes `peers.json`. Here is that program, which
+turns the peers into a JSON list for a tool that reads its neighbours from JSON:
 
-```text title="peers.jq"
+```text title="peers.json.jq"
 # One entry per Peer, for a tool that reads its neighbours from JSON.
 .documents.Peer | map({name: .metadata.name, address: .spec.address, asn: .spec.asn})
 ```
@@ -166,11 +166,11 @@ that reads its neighbours from JSON:
 ```nix
 chalkos.outputs.peers-json = {
   inputs = [ "Peer" ];
-  render = lib.chalkos.render.jq ./peers.jq;
+  render = lib.chalkos.render.jq ./peers.json.jq;
 };
 ```
 
-The output's `dir` then holds `peers.json`:
+For the homelab's two peers, the output's `dir` then holds `peers.json`:
 
 ```json title="peers.json"
 [
@@ -280,6 +280,9 @@ the image's evaluation refuses a `dir` that breaks these rules:
 - It is a clean path below `/run`, and no component starts with a dot.
 - It stays out of `/run/chalkos`, except for `/run/chalkos/outputs/<name>` and the paths below it.
 - It is neither another output's `dir` nor inside one.
+
+chalkd checks the same rules again when it reads the image's `/etc/chalkos/outputs.json`, and
+refuses an `outputs.json` with a `dir` that breaks one.
 
 ## Owner and mode default to root and 0644
 

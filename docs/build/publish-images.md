@@ -87,8 +87,9 @@ chalkbuild push oci/node-metal-signed ghcr.io/example/node-metal:v1.5.0
 Push `oci/node-metal` instead when you skipped signing. The command prints the reference of the
 pushed manifest by digest, `ghcr.io/example/node-metal@sha256:<digest>`.
 
-chalkbuild reaches a registry over plain HTTP at a loopback or private (RFC 1918) address, and
-any other registry over HTTPS. Some registries, Quay among them, reject a manifest of an artifact
+chalkbuild reaches a registry over plain HTTP at `localhost` with a port, at a name ending in
+`.localhost`, at `127.0.0.1`, at `::1`, or at a private (RFC 1918) address, and any other registry
+over HTTPS. Some registries, Quay among them, reject a manifest of an artifact
 type they do not recognise until an operator allow-lists `application/vnd.chalkos.image.v1`. The
 layout is a standard OCI image layout, so any tool that copies one, such as skopeo or oras, can
 push it too.
@@ -114,14 +115,16 @@ spec:
 A reference by digest pins the image, so the inventory changes only when you push a new one. The
 inventory may name a tag instead, such as `ghcr.io/example/node-metal:v1.5.0`. chalkctl resolves
 a tag to a digest once per command, so one command reads one image even when the tag moves while
-it runs. [Config and the inventory](../how-it-works/node/config.md#how-does-the-inventory-name-images)
+it runs.
+[Config and the inventory](../how-it-works/node/config.md#how-does-the-inventory-name-images)
 covers the rest of `spec.images`.
 
 ## The artifact holds the image and its contract
 
 The artifact is one manifest of the artifact type `application/vnd.chalkos.image.v1`. Its config
 is the image's header: its ID, root hash, architecture, platform, revision and tag. Its layers are
-the image's parts, uncompressed. [Image and partition layout](../reference/image-layout.md#oci-artifact)
+the image's parts, uncompressed.
+[Image and partition layout](../reference/image-layout.md#oci-artifact)
 lists the media types and the header's fields.
 
 ## Install from the registry
@@ -133,9 +136,15 @@ the image's reference by digest in place of the image:
 chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
 ```
 
-It prints a line such as `installing cp1 onto serial "S7KHNJ0W100001": chalkos 81bd02c4a9e1
-(0f1e2d3c4b5a), which the installer pulls from ghcr.io/example/node-metal@sha256:<digest>`. The
-installer pulls the store, the hash tree, the UKI and the boot loader, and takes the image's
+It prints a line of this form, where `<serial>` is the system disk's serial, `<root-hash>` and
+`<revision>` the first 12 hex digits of the image's root hash and git revision, and `<digest>` the
+manifest's digest:
+
+```text
+installing cp1 onto serial "<serial>": chalkos <root-hash> (<revision>), which the installer pulls from ghcr.io/example/node-metal@sha256:<digest>
+```
+
+The installer pulls the store, the hash tree, the UKI and the boot loader, and takes the image's
 schemas, `image.json` and partition definitions from the artifact's contract layer. The machine
 that runs the installer therefore needs a route and DNS to the registry or to an endpoint of its
 `Mirror`, as [Ports and firewall](../reference/ports-and-firewall.md#connections-a-node-makes)
@@ -180,9 +189,13 @@ against them:
 chalkctl validate
 ```
 
-It prints a line such as `cp1: valid for the image node-metal at
-ghcr.io/example/node-metal@sha256:<digest> (node on metal, root hash 2ece03b0fa09), config <hash>`
-for each node whose config is valid. The digest is that of the manifest chalkctl read, so it names
+For each node whose config is valid it prints a line of this form, where `<root-hash>` is the
+first 12 hex digits of the image's root hash and `<hash>` the hash of the node's config:
+
+```text
+cp1: valid for the image node-metal at ghcr.io/example/node-metal@sha256:<digest> (node on metal, root hash <root-hash>), config <hash>
+```
+ The digest is that of the manifest chalkctl read, so it names
 the image that was checked even when the inventory names a tag.
 
 ## What next

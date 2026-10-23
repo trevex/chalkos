@@ -1,6 +1,6 @@
 ---
 title: "Sign images for Secure Boot"
-description: "An optional step: create a db key, sign a copy of each image and the installer, and name the signed copy in the inventory"
+description: "Create a db key, sign a copy of each image and the installer, and name the signed copy in the inventory"
 ---
 
 # Sign images for Secure Boot
@@ -161,19 +161,9 @@ value PCR 7 has while the installer runs. An image signed with another key boots
 
 ## Sign an OCI layout
 
-`chalkbuild sign` also takes an OCI image layout, as `mkImages` builds it for a registry. It signs
-copies of the layout's UKI and boot-loader layers, checks them against `--cert` and writes a new
-layout with a new manifest. The store, hash tree and contract layers are copied as they are, and
-the output directory must not exist:
-
-```sh
-nix build .#node-metal-oci -o oci/node-metal
-rm -rf oci/node-metal-signed
-chalkbuild sign --key db.key --cert db.crt oci/node-metal oci/node-metal-signed
-```
-
-The command prints the new manifest's digest.
-[Publish images to a registry](publish-images.md) exposes the layout and pushes the signed copy.
+`chalkbuild sign` also signs an OCI image layout with the same key, for an image the nodes pull
+from a registry. [Publish images to a registry](publish-images.md#sign-the-layout) builds the
+layout and signs it.
 
 ## chalkbuild and the node check the signatures
 

@@ -177,7 +177,8 @@ The image directory is what the inventory names; the OCI layout goes to a regist
 - `nixos.<variant>-<platform>` and `nixos.installer` are the evaluated NixOS systems. They read an
   image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`.
 
-A flake exposes whichever it needs. This one exposes every image directory and the installer:
+A flake exposes whichever it needs. The homelab's exposes `node-metal` alone. A flake that also
+builds the installer can expose every image directory and the installer:
 
 ```nix
 packages.x86_64-linux = images.images // { inherit (images) installer; };
@@ -190,6 +191,14 @@ inventory names for it. It reaches no node and needs no secrets:
 
 ```sh
 chalkctl validate
+```
+
+For the homelab it prints a line per node, with the image's root hash and the hash of the node's
+config:
+
+```text
+cp1: valid for the image node-metal (node on metal, root hash d871203debfe), config 675850c48eaffe4a755dca41652dbf65a5b7959f1e70a3cdd2a94799136fd200
+w1: valid for the image node-metal (node on metal, root hash d871203debfe), config 82ec5bbabd10ec79bf76ad892a0bcd7627c9db2ed4c9e252ad0657313359254c
 ```
 
 A document of a kind the image does not declare, or a misspelled field, fails here. The image is

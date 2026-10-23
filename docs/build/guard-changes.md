@@ -35,16 +35,19 @@ in the document of the same name that the node runs. `self == oldSelf` holds whe
 the same. A rule that reads `oldSelf` runs only where the node's running config holds the field,
 so a new `Peer` takes any number.
 
-Say `nodes/cp1.yaml` changes `router-b`'s `asn` from 64514 to 64600. `chalkctl apply-config cp1`
-fetches the node's config, runs the rule against it, and stops before it sends anything. Its
-error names the node, then the refusal:
+Say `cluster/bgp.yaml` changes `router-b`'s `asn` from 64514 to 64600. `chalkctl apply-config cp1`
+fetches the node's config, prints what changed, runs the rule against the node's config, and
+stops before it sends anything:
 
-```text
-the config is refused: Peer "router-b" spec.asn: the AS number stays 64514; add a Peer of another name for 64600
+```console
+$ chalkctl apply-config cp1
+cp1: config 0 added, 0 removed, 1 changed
+chalkctl: cp1: the config is refused: Peer "router-b" spec.asn: the AS number stays 64514; add a Peer of another name for 64600
 ```
 
-A field rule's message starts with the kind, the document's name and the field. The rest comes
-from `messageExpression`, which builds the message from the same variables as the rule.
+The error names the node, then the refusal. A field rule's message starts with the kind, the
+document's name and the field. The rest comes from `messageExpression`, which builds the message
+from the same variables as the rule.
 
 ## A rule has four attributes
 
@@ -56,9 +59,9 @@ from `messageExpression`, which builds the message from the same variables as th
 | `takes` | What the refused change needs instead: `refuse`, the default, `reset` or `reinstall`. |
 
 A rule without either message says `the config does not meet a rule of` and the kind or field
-that declares it, such as `the config does not meet a rule of Kubernetes spec.ipFamilies`.
+that declares it, such as `the config does not meet a rule of Peer spec.asn`.
 
-## takes sorts a refusal
+## A refusal starts with what the change takes
 
 A config whose rules fail is refused as a whole. The refusal starts with the most that any failed
 rule takes, then lists every failed rule's message, separated by `;`:
@@ -67,10 +70,11 @@ rule takes, then lists every failed rule's message, separated by `;`:
 | --- | --- | --- |
 | `refuse` | `the config is refused:` | The change cannot be made. The message says what to do instead. |
 | `reinstall` | `the config takes a reinstall of <node>:` | Only a reinstall of the node carries the change out. |
-| `reset` | `the config takes chalkctl storage reset:` | [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) carries the change out. |
+| `reset` | `the config takes chalkctl storage reset:` | `chalkctl storage reset` carries the change out. |
 
 Your own kinds mostly use `refuse`. The storage kinds use `reset` and `reinstall`, because a
 volume's new format is possible once the volume is recreated.
+[`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) recreates one volume.
 
 ## A kind rule sees all of a kind's documents
 
@@ -114,14 +118,18 @@ config is the baseline also when the delivered config is for another image, as i
 | `node.name` | every | The node's name in the inventory, which its node certificate carries. |
 | `facts.<name>` | every | The fact of that name. |
 
-Every value of a `Secret` is its SHA-256 in these variables, and so is each `data` and
-`stringData` value of a Kubernetes Secret that an `Addon` applies. A rule can tell that a secret
+Every value of a `Secret` is its SHA-256 in these variables, so a rule can tell that a secret
 changed without reading it. Maps iterate in the order of their keys, so a list built from the
 names of `documents` is sorted.
 
 A rule binds `self` to a path through the properties of objects. It cannot sit on the items of a
 list or the values of a map. Declare it on the list or the map, which the rule then compares
 whole. Lists are not matched item by item by a key.
+
+!!! note "Kubernetes: an Addon's Secret values are hashes too"
+
+    On images with Kubernetes, each `data` and `stringData` value of a Kubernetes Secret that an
+    `Addon` applies is its SHA-256 in these variables as well.
 
 ## Facts give a rule node state
 
@@ -137,7 +145,9 @@ of `/var/lib/rack-survey/location.json`, or null while the file is missing. The 
 read `oldSelf`, so it checks every `Rack` a node is delivered, its first one too.
 
 Say the survey file on `cp1` holds `{"location": "rack-b/u3"}`, because the node moved, while
-`nodes/cp1.yaml` still says `rack-a/u12`. The node refuses the config with this message:
+`nodes/cp1.yaml` still says `rack-a/u12`. The rule reads a fact, so chalkctl cannot check it and
+the node refuses the delivery. chalkctl prints the node's error after `chalkctl:` and the error's
+code. The message part of it is:
 
 ```text
 the config is refused: Rack "rack" spec.location: the survey found the node at rack-b/u3, not at rack-a/u12; fix the location, or survey the node again
@@ -159,10 +169,12 @@ A fact is a file or a command:
   rules see, and prints the fact as JSON. A command with `inputs = [ "fallbackSecret" ];` also
   reads the fallback secret delivered with the config. No other command reads it.
 
-chalkd loads a fact when a rule first reads it, and keeps it for the rest of the delivery. A rule
-that does not reach a fact, such as one whose first operand of `||` holds, loads none. A fact is
-read by its name alone: `facts["rackSurvey"]`, `has(facts.rackSurvey)` or `facts` by itself fails
-the build.
+chalkd loads a fact when a rule first reads it, and keeps it for the rest of the delivery. A file
+is read once. A command runs once for each config it reads: a storage change of the running
+image's config also checks the staged image's slot, and gives the command that slot's config to
+read. A rule that does not reach a fact, such as one whose first operand of `||` holds, loads
+none. A fact is read by its name alone: `facts["rackSurvey"]`, `has(facts.rackSurvey)` or `facts`
+by itself fails the build.
 
 ## Null means the node does not know
 
@@ -236,11 +248,12 @@ error.
 A refusal must not leak a secret or a fact's content that the rule only compared:
 
 - A rule that cannot be evaluated refuses the delivery with the kind of error alone, such as
-  `cannot check: Cluster "default" spec.ipFamilies: a rule cannot be evaluated: no such key`. The
-  kind is one of `no such key`, `index out of bounds`, `no such overload`, `unknown time zone`,
+  `cannot check: Peer "router-a" spec.asn: a rule cannot be evaluated: no such key`. The kind is
+  one of `no such key`, `index out of bounds`, `no such overload`, `unknown time zone`,
   `invalid input to a function`, `cost limit exceeded`, `overflow`, `division by zero` and
-  `conversion error`, or an error of chalkos's functions such as `ip: the argument is not an
-  address`. Of any other error it says only `a rule cannot be evaluated`.
+  `conversion error`. An error of chalkos's functions names the function, such as
+  `ip: the argument is not an address`. Of any other error the refusal says only
+  `a rule cannot be evaluated`.
 - A `messageExpression` that fails gives the same kind of error after the message.
 - A rule that yields no bool says which type it yields.
 - A command fact that fails shows its exit status alone: `cannot check: fact disks: the command
@@ -250,12 +263,77 @@ A refusal must not leak a secret or a fact's content that the rule only compared
 A message itself can show what a fact holds, as the `Rack` message shows the survey's location.
 Keep what a rule does not need out of the fact with `fields`, or as hashes with `hashOthers`.
 
-A command fact runs as a transient unit with `systemd-run`, as root without `CAP_SYS_MODULE`. The
-file system is read-only apart from `/dev`, its own `/tmp` and `/var/tmp`, and cryptsetup's lock
-directory. It has no network and no socket beyond Unix sockets and the kernel crypto API's. Devices
-stay accessible, because the storage facts read block devices and test passphrases. It gains no
-privileges, and it must finish within 30 seconds and print at most 1 MiB, or it refuses
-the delivery.
+## A command fact runs in a sandbox
+
+chalkd runs a command fact through `systemd-run --pipe --wait` as a transient unit, as root
+without `CAP_SYS_MODULE`:
+
+- The file system is read-only, STATE among it, apart from `/dev`, the unit's own empty `/tmp`
+  and `/var/tmp`, and `/run/cryptsetup`, cryptsetup's lock directory, which the passphrase test
+  writes.
+- Home directories are hidden, and kernel tunables and control groups are read-only.
+- The unit cannot load a kernel module itself. The kernel still loads one on request, as for a
+  socket family or a cipher the unit uses.
+- It has no network and no socket beyond Unix sockets and the kernel crypto API's.
+- Devices stay accessible, because the storage facts resolve disks and test passphrases on block
+  devices. cryptsetup may set up a temporary device-mapper mapping for a cipher the kernel crypto
+  API lacks.
+- It gains no privileges.
+
+A command that exits with an error, takes longer than 30 seconds, prints more than 1 MiB or prints
+no JSON refuses the delivery.
+
+## Rules compare with the running config alone
+
+- Rules compare the config with the running image's config. The one check that reads another
+  slot is a storage change of the running image's config, which also evaluates the storage rules
+  against the staged image's slot.
+- A command fact runs with the running image's program, so a fact that a newer image adds is null
+  until that image runs.
+
+## Built into chalkos
+
+chalkos's own kinds guard changes the same way:
+
+| Kind | Rule | Takes |
+| --- | --- | --- |
+| `SystemDisk` | VAR keeps its format, encryption and size; a larger VAR, or one that fills the disk, is accepted. | reinstall |
+| `Volume` | A volume keeps its disk, and a changed disk reference finds the disk it lives on. | reinstall |
+| `Volume` | A volume keeps its format and encryption, also the encryption it inherits from the `SystemDisk`, and does not shrink or take a fixed size where it filled its disk. | reset |
+| `Volume` | A disk reference that differs from the one its disk was pinned by resolves, and the pinned disk of a volume the config creates or changes is plugged in. | refuse |
+| `Volume` | No volume the machine records is left out. | reinstall |
+| `Volume` | A new encrypted volume comes with the fallback secret, which opens the node's fallback keyslot. | refuse |
+
+They, and the `when` rules of the built-in effects, read these facts:
+
+| Fact | Source | Value |
+| --- | --- | --- |
+| `recorded` | `/state/storage/storage.json` | The storage section STATE records. |
+| `disks` | `chalkos-storage facts disks` | For each volume with a disk of its own, whether its disk is pinned and plugged in, and what a changed reference finds. |
+| `fallback` | `chalkos-storage facts fallback` | Whether a fallback secret was sent, and whether it opens the node's fallback keyslot. |
+
+The storage kinds' messages show what the `disks` fact found: a volume's disk reference, the
+identity of its pinned disk and of the disk a changed reference finds, and why a disk cannot be
+found.
+
+A reset recreates its volume like a new one, so a node with a fallback needs the fallback secret.
+`chalkos-storage facts fallback` checks it against the password keyslots of STATE and the volumes
+before the reset. The volume being reset may hold the node's only password keyslot. A secret that
+does not open that keyslot then refuses the reset, and so does a keyslot cryptsetup cannot read,
+as when its header is damaged, although the reset would wipe it.
+
+!!! note "Kubernetes: the Node and Cluster kinds keep the node's share"
+
+    Images with Kubernetes add two rules. The `Node`'s type stays the one the node's Kubernetes
+    share is for, read from `facts.share`. The `Cluster`'s `ipFamilies`, and the pod ranges,
+    service ranges and DNS addresses of the families both configs have, stay once the node holds
+    a share. Ranges and addresses compare as what they denote; an unset DNS address is the 10th
+    of its service range. Both take `refuse`.
+
+    Two facts come with them. `share` is `/state/kubernetes/share.json`: the kind of the node's
+    share and the SHA-256 of each of its other keys, so its certificates and private keys stay
+    out. `cluster` is `/run/chalkos/kubernetes/cluster.json`, the node's cluster as chalkd last
+    wrote it.
 
 ## Check that it worked
 
@@ -271,46 +349,9 @@ that read facts run on the node alone. A refusal that starts with `cannot check:
 rule that cannot be evaluated or a fact that cannot be loaded. The journal of `chalkd.service`
 holds what a failed command fact wrote.
 
-## Rules compare with the running config alone
-
-- Rules compare the config with the running image's config. The one check that reads another
-  slot is a storage change of the running image's config, which also evaluates the storage rules
-  against the staged image's slot.
-- A command fact runs with the running image's program, so a fact that a newer image adds is null
-  until that image runs.
-
-## The built-in kinds declare rules
-
-chalkos's own kinds guard changes the same way:
-
-| Kind | Rule | Takes |
-| --- | --- | --- |
-| `Node` | The type stays the one the node's Kubernetes share is for, read from `facts.share`. | refuse |
-| `Cluster` | `ipFamilies`, and the pod ranges, service ranges and DNS addresses of the families both configs have, stay once the node holds a share. Ranges and addresses compare as what they denote; an unset DNS address is the 10th of its service range. | refuse |
-| `SystemDisk` | VAR keeps its format, encryption and size; a larger VAR, or one that fills the disk, is accepted. | reinstall |
-| `Volume` | A volume keeps its disk, and a changed disk reference finds the disk it lives on. | reinstall |
-| `Volume` | A volume keeps its format and encryption, also the encryption it inherits from the `SystemDisk`, and does not shrink or take a fixed size where it filled its disk. | reset |
-| `Volume` | A disk reference that differs from the one its disk was pinned by resolves, and the pinned disk of a volume the config creates or changes is plugged in. | refuse |
-| `Volume` | No volume the machine records is left out. | reinstall |
-| `Volume` | A new encrypted volume comes with the fallback secret, which opens the node's fallback keyslot. | refuse |
-
-They, and the `when` rules of the built-in effects, read these facts:
-
-| Fact | Source | Value |
-| --- | --- | --- |
-| `share` | `/state/kubernetes/share.json` | The kind of the node's Kubernetes share and the SHA-256 of each of its other keys, so its certificates and private keys stay out; on images with Kubernetes. |
-| `recorded` | `/state/storage/storage.json` | The storage section STATE records. |
-| `disks` | `chalkos-storage facts disks` | For each volume with a disk of its own, whether its disk is pinned and plugged in, and what a changed reference finds. |
-| `fallback` | `chalkos-storage facts fallback` | Whether a fallback secret was sent, and whether it opens the node's fallback keyslot. |
-| `cluster` | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster as chalkd last wrote it; on images with Kubernetes. |
-
-The storage kinds' messages show what the `disks` fact found: a volume's disk reference, the
-identity of its pinned disk and of the disk a changed reference finds, and why a disk cannot be
-found. A reset recreates its volume like a new one, so a node with a fallback needs the fallback
-secret, which `chalkos-storage facts fallback` checks before the reset.
-
 ## What next
 
+- [Customise the installer](customise-installer.md) for what the installer image carries.
 - [React to changes](react-to-changes.md) for `when`, which uses the same CEL and facts.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) for where rules run in a
   delivery.

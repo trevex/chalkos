@@ -174,15 +174,16 @@ them:
 The build fails on a module name the kernel does not have, so a typo shows at build time.
 `linux-firmware` holds the firmware of every vendor and adds several hundred MiB.
 [Add software, drivers and kernel modules](add-software.md) shows how to find the right module and
-take only the firmware files a card needs. The installer only needs to reach the network and see the
-target disk. The image the node runs needs the same drivers, in its variant's or platform's
+take only the firmware files a card needs. The installer only needs to reach the network and see
+the target disk. The image the node runs needs the same drivers, in its variant's or platform's
 modules.
 
 ## Change the console
 
 The installer writes its console to the screen and to the first serial port, `ttyS0`. Linux sends
 kernel messages to every console on the command line. chalkd's lines, with the fingerprint and
-the addresses, go to the last one only. A machine whose BMC shows serial-over-LAN on the second port needs that port last:
+the addresses, go to the last one only. A machine whose BMC shows serial-over-LAN on the second
+port needs that port last:
 
 ```nix title="installer.nix"
 { lib, ... }:
@@ -259,8 +260,8 @@ A disk that is missing from the list needs its controller's driver. A machine wh
 ## What next
 
 - [Install on bare metal](../operate/install-bare-metal.md) continues with the install.
-- [Add software, drivers and kernel modules](add-software.md) adds the same drivers to the images the
-  installed nodes run.
+- [Add software, drivers and kernel modules](add-software.md) adds the same drivers to the images
+  the installed nodes run.
 - [Sign images for Secure Boot](sign-images.md) covers the db key.
-- [Architecture](../how-it-works/node/architecture.md#how-does-a-machine-become-a-node) explains what
-  the installer does during an install.
+- [Architecture](../how-it-works/node/architecture.md#how-does-a-machine-become-a-node) explains
+  what the installer does during an install.

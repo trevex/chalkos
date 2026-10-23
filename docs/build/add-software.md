@@ -298,10 +298,11 @@ fails when:
 - three UKIs, both slots' and an upgrade's temporary copy, take more than 80% of the ESP,
   `chalkos.disk.espSize`, 1 GiB by default.
 
-The message names the variant:
+The message names the variant. Here `<size>` stands for the store's size in bytes, and the slot
+is the default 3 GiB:
 
 ```text
-error: node: the store's data takes 2671771648 bytes, more than 80% of its slot of 3221225472 (chalkos.disk.storeSize)
+error: node: the store's data takes <size> bytes, more than 80% of its slot of 3221225472 (chalkos.disk.storeSize)
 ```
 
 Leave out what the variant does not need first. Raising `chalkos.disk.storeSize` helps only nodes

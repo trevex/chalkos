@@ -166,6 +166,7 @@ It shows a line `peer 10.0.0.1` and a line `peer 10.0.0.2`. A unit that logs not
 
 ## What next
 
+- [Render config files](render-config.md) renders `bird.conf` from the `Peer` documents.
 - [Pass secrets to a service](pass-secrets.md) gives bird the password `router-a` names.
 - [Declare a config kind](declare-a-kind.md) adds fields to the kind.
 - [Config and the inventory](../how-it-works/node/config.md) explains how the documents reach the

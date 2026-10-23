@@ -69,22 +69,25 @@ cluster, the node or its surroundings:
 | Partition sizes of the system region, from `chalkos.disk` | Time servers and whether DHCP may add more |
 | Boot tries and health timeout, from `chalkos.upgrade` | `Secret` documents and documents of the kinds extensions declare |
 | The image's revision and tag, which only `metadata.json` records | |
-| The Kubernetes release and the images of etcd, the pod sandbox and CoreDNS | Whether the node is a control plane or a worker, its labels, taints and addresses |
-| The pod network from `chalkos.cni.provider`: flannel or none, and the CNI plugins | The cluster's endpoint and its Kubernetes settings: ranges, VIP, extra flags, flannel's MTU, registry mirrors and addons |
 
-The last two rows apply to images with Kubernetes. A change in the left column is a new image and
-an upgrade. A change in the right column reaches the node with `chalkctl apply-config` and needs
-no reboot; a storage change that would destroy data is refused there and needs
-`chalkctl storage reset`.
+A change in the left column is a new image and an upgrade. A change in the right column reaches
+the node with `chalkctl apply-config` and needs no reboot; a storage change that would destroy
+data is refused there and needs `chalkctl storage reset`.
 
 So a cluster needs a second variant only for nodes that run other software, such as storage nodes
 with a daemon the others should not carry, or GPU nodes with drivers. A cluster whose nodes run
 the same software has one variant, and its nodes differ only in config. Because no cluster value
 is in the image, a cluster of fifty nodes on one platform builds one image.
 
-!!! note "Kubernetes: control planes and workers share a variant"
+!!! note "Kubernetes: what the image fixes and what config sets"
 
-    On a variant with Kubernetes, one image serves control planes and workers. Each node's
+    An image with Kubernetes also fixes the Kubernetes release, the images of etcd, the pod
+    sandbox and CoreDNS, and the pod network from `chalkos.cni.provider`: flannel or none, and
+    the CNI plugins. The node's config sets whether the node is a control plane or a worker,
+    its labels, taints and addresses, and the cluster's endpoint and Kubernetes settings:
+    ranges, VIP, extra flags, flannel's MTU, registry mirrors and addons.
+
+    So one image of a variant with Kubernetes serves control planes and workers. Each node's
     [`Node`](../reference/kinds.md#node) document makes it one or the other.
 
 ## The inventory gives each node its image

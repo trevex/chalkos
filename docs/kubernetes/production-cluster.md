@@ -550,7 +550,8 @@ names each node whose config is not valid with the reason, and warns of a node w
 unencrypted. Run both in CI, so a change to the flake or a YAML file never reaches a node
 unchecked. CI needs no db key for that: `chalkctl validate` checks no signature, so CI links the
 unsigned build to `images/node-metal-signed` with
-`nix build .#node-metal -o images/node-metal-signed`.
+`nix build .#node-metal -o images/node-metal-signed`. The unsigned build goes to the `-signed`
+path only so that `chalkctl validate` finds the directory the inventory names.
 
 ## What next
 

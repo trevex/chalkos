@@ -1,6 +1,6 @@
 ---
 title: "The config pipeline"
-description: "How a delivery passes a node's documents through rules, outputs and effects, and what happens at boot and after an upgrade"
+description: "How a delivery passes a node's documents through rules, outputs and effects, at boot and after an upgrade"
 ---
 
 # The config pipeline
@@ -102,7 +102,7 @@ cannot run the installed image's renderers, so that image renders its outputs at
   a delivery changes, not the rendered files.
 - chalkctl runs only the rules that read no facts. The others run on the node.
 - An effect's `when` compares documents as written, so a change that makes no difference to the
-  unit still counts: an `Address=` value whose prefix length alone changes restarts the kubelet.
+  unit still fires the effect, such as a value spelt another way that means the same.
 - An output of a staged image is checked at its first boot, after the upgrade wrote the image and
   its config.
 
