@@ -217,7 +217,7 @@ chalkos renews what it can by itself, and `chalkctl status` warns before anythin
 | Node CA | 5 years | `chalkctl node-ca rotate`; status warns 18 months ahead |
 | Kubernetes, front-proxy and etcd CAs | 10 years | `chalkctl rotate kubernetes-ca`; status warns a year ahead |
 | Node certificates | 1 year | chalkd, after two thirds of the lifetime; nodes without Kubernetes need `chalkctl node renew` |
-| Control-plane certificates | 1 year | chalkd, after two thirds of the lifetime |
+| Control-plane certificates | 1 year | chalkd, at every boot and after two thirds of the lifetime |
 | Kubelet certificates | 1 year | The kubelet |
 | Client files and kubeconfigs | `--ttl`, 1 year by default | Issuing new ones |
 

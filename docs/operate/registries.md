@@ -134,6 +134,16 @@ without `imagePullSecrets`.
 [How do pods pull images from a private registry?](../how-it-works/kubernetes/kubernetes.md#how-do-pods-pull-images-from-a-private-registry)
 describes how the kubelet gets the credentials.
 
+A cluster without internet access pulls every container image from a mirror, so the mirror must
+hold them all. Besides the workloads' images, these are the images chalkos runs:
+
+- `kube-apiserver`, `kube-controller-manager`, `kube-scheduler` and `kube-proxy` from
+  `registry.k8s.io`, tagged with the Kubernetes release of the node's image.
+- The images that the image options `chalkos.kubernetes.images.etcd`, `.coredns` and `.pause` and
+  `chalkos.cni.flannel.image` name. The
+  [options reference](../reference/options.md#chalkoskubernetesimagescoredns) lists their defaults;
+  the image's author knows whether the image changes them.
+
 !!! warning "On the shipped variant, a mirror receives the registry's credentials"
 
     The kubelet gives containerd the credentials for the image's registry without the host they

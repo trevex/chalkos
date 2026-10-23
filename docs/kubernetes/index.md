@@ -53,8 +53,8 @@ upgrade Kubernetes, rotate its CAs and keys, and find out why it misbehaves.
 
     ---
 
-    Move to a new Kubernetes release, and keep etcd's quorum and the workloads safe while nodes
-    reboot.
+    Move to a new Kubernetes release, and keep etcd's quorum and the workloads within their
+    PodDisruptionBudgets while nodes reboot.
 
     [:octicons-arrow-right-24: Read](upgrade-kubernetes.md)
 

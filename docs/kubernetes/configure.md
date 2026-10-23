@@ -47,8 +47,9 @@ below cover scheduling and the extra flags.
 
 ## The Node document gives a node its type, labels and taints
 
-Each node's own file holds one `Node` document. The homelab's `w1` is a worker for storage: its
-label attracts the storage system's replicas, and its taint keeps other workloads off.
+Each node's config holds one `Node` document, usually in the node's own file. The homelab's `w1`
+is a worker for storage: its label attracts the storage system's replicas, and its taint keeps
+other workloads off.
 
 ```yaml title="nodes/w1.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
@@ -161,8 +162,8 @@ spec:
 
 The kubelet's configuration is the same on every node and comes from the cluster. Its flags come
 last on the kubelet's command line, so they override that configuration. chalkos refuses the flags
-it sets itself, because they give the kubelet its configuration, credentials, certificates and
-static pods, the node's name, addresses, labels and taints, and who may use the kubelet's API:
+it sets itself. They give the kubelet its configuration, credentials, certificates and static pods.
+They also set the node's name, addresses, labels and taints, and who may use the kubelet's API:
 
 `anonymous-auth`, `authentication-token-webhook`, `authorization-mode`, `bootstrap-kubeconfig`,
 `cert-dir`, `client-ca-file`, `config`, `config-dir`, `hostname-override`,
@@ -191,8 +192,8 @@ tokens. Anonymous requests reach only `/livez`, `/readyz` and `/healthz`. chalko
 server's authentication configuration and protects the `authentication-config` flag that names it.
 
 chalkos has no way to add an OIDC issuer or another authenticator today. The API server refuses
-the `oidc-*` flags next to an authentication configuration, so `chalkctl validate` accepts a
-`Cluster` with `extraArgs.kube-apiserver.oidc-issuer-url`, but the API server stops at start with
+the `oidc-*` flags next to an authentication configuration. `chalkctl validate` accepts a `Cluster`
+with `extraArgs.kube-apiserver.oidc-issuer-url`, but the API server then stops at start with
 `authentication-config file and oidc-* flags are mutually exclusive`.
 
 For access narrower than `cluster-admin`, bind users and groups to roles with RBAC.
@@ -282,6 +283,8 @@ chalkctl apply-config w1 --secrets=secrets.age
 
 A changed `Cluster`, `Flannel` or `Node` document restarts `chalkos-kubernetes.service` and
 `kubelet.service` on the node, and chalkd on a control plane renders the control plane's pods again.
+A changed `Node` document also restarts `chalkos-controlplane.service`, which opens the control
+plane's ports by the node's type.
 A changed `Addon` document restarts nothing: the control planes apply its objects again.
 [React to changes](../build/react-to-changes.md#built-into-chalkos) lists these effects.
 

@@ -36,7 +36,8 @@ images = chalkos.lib.mkImages {
 ```
 
 It returns `images.node-metal`, `images.node-kvm`, `images.storage-metal` and
-`images.storage-kvm`. Expose each image the cluster runs as a package, as the first flake exposes
+`images.storage-kvm`. `variants` replaces the default, a single `node` variant, so the call names
+`node` to keep it. Expose each image the cluster runs as a package, as the first flake exposes
 `node-metal`, and build it the same way:
 
 ```sh

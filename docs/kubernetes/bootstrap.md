@@ -80,16 +80,18 @@ kube-proxy, flannel and CoreDNS. Last come the objects of the `Addon` documents.
 counts all of them; the homelab has no `Addon` documents, so all 19 are chalkos's.
 
 chalkctl waits until the objects are applied, up to `--timeout`, 20 minutes by default. Most of
-that time goes into pulling the control plane's images. A run that times out leaves the bootstrap
-in place and ends with `etcd is initialised and the control plane starts, but chalkos's add-ons
-and the objects of the Addon documents were not applied yet; chalkctl status shows its
-progress`. chalkd keeps applying, so wait and check the status. Do not bootstrap again.
+that time goes into pulling the control plane's images. When `--timeout` passes first, chalkctl
+stops with a `deadline_exceeded` error. The bootstrap stays in place and chalkd keeps applying, so
+wait and watch `chalkctl status cp1`. Do not bootstrap again: chalkd refuses the second run.
 
-Bootstrap one control plane only. A second bootstrap would start a second etcd cluster, so chalkd
-refuses it on a node that is bootstrapped already, with `the node is bootstrapped already`, and on
-a node whose cluster answers at the endpoint, with `the cluster's API server answers at
-https://10.0.0.11:6443; this node joins it on its own`. chalkctl refuses a worker before it sends
-anything: `w1 is not a control-plane node; bootstrap one of the cluster's control-plane nodes`.
+Bootstrap one control plane only. A second bootstrap would start a second etcd cluster, so chalkos
+refuses it in these cases:
+
+- On a node that is bootstrapped already, chalkd answers `the node is bootstrapped already`.
+- On a node whose cluster answers at the endpoint, chalkd answers `the cluster's API server answers
+  at https://10.0.0.11:6443; this node joins it on its own`.
+- On a worker, chalkctl refuses before it sends anything: `w1 is not a control-plane node;
+  bootstrap one of the cluster's control-plane nodes`.
 
 ## The other nodes join on their own
 
@@ -204,4 +206,5 @@ minute, until flannel runs on it.
 
 - [Configure Kubernetes](configure.md): labels, taints, extra flags and add-ons.
 - [Run a highly available control plane](ha-control-plane.md).
+- [Add and remove nodes](../operate/add-remove-nodes.md) to grow the cluster with more workers.
 - [Status, logs and the console](../operate/status-and-logs.md) for the rest of `chalkctl status`.

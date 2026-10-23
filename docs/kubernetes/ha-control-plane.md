@@ -118,10 +118,9 @@ bootstrapping cp1; the control plane pulls its images and starts
 cp1 is bootstrapped; applied 19 objects
 ```
 
-A second bootstrap would start a second etcd cluster with its own data. chalkd refuses it on a node
-that is bootstrapped already, on a node that holds etcd data, and on a node whose cluster answers at
-the endpoint. [Bootstrap and get a kubeconfig](bootstrap.md) covers the bootstrap and the
-kubeconfig. Once cp1's API server is ready, cp1 holds the VIP.
+[Bootstrap and get a kubeconfig](bootstrap.md#bootstrap-the-first-control-plane) covers the
+bootstrap, the kubeconfig and why a second bootstrap is refused. Once cp1's API server is ready,
+cp1 holds the VIP.
 
 ## The other control planes join etcd one at a time
 
@@ -153,7 +152,8 @@ holds, and its API server answers ready. Right after the join, the line can read
 
 When the holder's API server stops answering, or the holder fails, another healthy control plane
 takes the VIP through an election in etcd. The holder's lease lasts 10 seconds. The HA end-to-end
-test requires the VIP to move within 30 seconds of its holder's network link going down.
+test requires the VIP to move within 30 seconds of its holder's network link going down. When the
+old holder comes back, the VIP stays with its new holder.
 [Networking](../how-it-works/node/networking.md#how-does-the-vip-move-between-control-planes)
 explains the election. Clients with an open connection to the old holder notice only when the
 connection times out. A cluster without etcd quorum has no holder, because no node can win the
@@ -284,18 +284,9 @@ restore.
 
 ## Check that it worked
 
-`chalkctl etcd members` lists etcd's members as one control plane's member sees them. It needs a
-reader client file or the secrets file:
-
-```console
-$ chalkctl etcd members
-NAME  ID                PEER URLS                    MEMBER  HEALTH
-cp1   d9fb26556fe7b4a5  https://192.168.123.11:2380  voter   healthy
-cp2   7cd467b152867819  https://192.168.123.12:2380  voter   healthy
-cp3   af880a99b80b32b3  https://192.168.123.13:2380  voter   healthy
-```
-
-Expect three voters, each `healthy`. A member that joins shows `learner`, and an unhealthy one shows
+Run `chalkctl etcd members`, which lists etcd's members as one control plane's member sees them.
+It needs a reader client file or the secrets file. Expect three voters, each `healthy`, as at the
+top of this page. A member that joins shows `learner`, and an unhealthy one shows
 `unhealthy:` and the reason. `--via=<node>` asks a particular control plane, which helps when two of
 them disagree. Then check that the API server answers through the VIP:
 
@@ -318,7 +309,7 @@ A control plane's Kubernetes line in `chalkctl status` names what holds it back,
 
 | Status | Cause | Fix |
 | --- | --- | --- |
-| `preparation failed: pinned address ... is not present` | The node booted without one of the addresses it was pinned to when it became an etcd member. | Restore the address and reboot. Or run `chalkctl etcd leave <node> --force`, which removes its member through the others, and reinstall it. |
+| `preparation failed: pinned address ... is not present` | The node booted without one of the addresses it was pinned to when it became an etcd member. | Restore the address and reboot. Or remove its member with `chalkctl etcd remove-member <node>`, as the status suggests, or with `chalkctl etcd leave <node> --force`, which also cleans up the node; then reinstall it. |
 | `joining the cluster at ...: etcd has a member <node> already; remove it with chalkctl etcd remove-member <node>` | The node was reinstalled without leaving etcd, and its old member is still there. | Run the command the status names. The node tries again every 10 seconds and joins. |
 | `left etcd; reinstall the node to join the cluster again` | The node left etcd with `chalkctl etcd leave`. | Reinstall it. |
 | `etcd data missing: restore etcd or reinstall the node` | The node is an etcd member, but VAR lost its etcd data. | chalkos cannot restore etcd. Run `chalkctl etcd remove-member <node>`, then reinstall it. |

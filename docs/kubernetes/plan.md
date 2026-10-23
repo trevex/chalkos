@@ -51,7 +51,8 @@ number of control planes therefore decides how many machines the cluster can los
 
 Use three. One control plane suits a lab, or a cluster whose API may go away while the node
 reboots. An even number adds no tolerance: two control planes need both for a majority, and four
-tolerate the loss of one, like three.
+tolerate the loss of one, like three. Two are less available than one, because etcd stops when
+either of two machines fails.
 
 A node is a control plane when its `Node` document has `type: controlplane`, and a worker with
 `type: worker`. The type is fixed once the node holds a Kubernetes share; a node of the other type
@@ -150,20 +151,17 @@ an address of each family.
 
 ## Workloads stay off control planes by default
 
-Each control plane registers with the taint `node-role.kubernetes.io/control-plane:NoSchedule`, so
-only pods that tolerate it run there. `allowSchedulingOnControlPlanes: true` in the `Cluster`
-document leaves the taint off, which suits a cluster of one to three machines that has no workers.
-
-Decide before the control planes register. The kubelet applies taints when it registers its node,
-so a changed setting reaches only control planes that register later.
-[Configure Kubernetes](configure.md#run-workloads-on-control-planes) removes the taint from a
-running node.
+Each control plane registers with a `NoSchedule` taint, so only pods that tolerate it run there. A
+cluster of one to three machines without workers leaves the taint off. Decide before the control
+planes register, because the setting reaches only control planes that register later.
+[Run workloads on control planes](configure.md#run-workloads-on-control-planes) shows the setting.
 
 ## Check that it worked
 
-Put the `Cluster` document into the files every node gets, give each control plane a `Node`
-document with `type: controlplane`, then check every node's config against its image. `chalkctl
-validate` reaches no node and needs no secrets file:
+Put the `Cluster` document into the files every node gets. Give each control plane a `Node`
+document with `type: controlplane`, and each worker one with `type: worker`; `type` has no
+default. Then check every node's config against its image. `chalkctl validate` reaches no node and
+needs no secrets file:
 
 ```console
 $ chalkctl validate
@@ -181,3 +179,4 @@ node and the field, as in the VIP message above.
 - [Configure Kubernetes](configure.md) for labels, taints, extra flags and add-ons.
 - [Run a highly available control plane](ha-control-plane.md) for three control planes behind a
   VIP.
+- [Add and remove nodes](../operate/add-remove-nodes.md) to add workers to a running cluster.

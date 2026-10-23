@@ -39,10 +39,10 @@ kubernetes worker: preparation failed: no ipv4 node address matches <selector> (
 `<selector>` names what the node looked for: `validSubnets` with the subnets, `nodeIP` with a
 fixed address, or `the default filter`. `<addresses>` lists the node's addresses of that family,
 each with its interface. The line names `ipv6` when the IPv6 address is missing. The node waited
-`spec.nodeIP.timeout` of the `Cluster` document, 300 seconds by default and shown as `5m0s`, for an
-address that matches `nodeIP.addresses` or `nodeIP.validSubnets` of its
-`Node` document, or the cluster's `nodeIP.validSubnets`. It found none, so it runs neither the
-kubelet nor static pods.
+`spec.nodeIP.timeout` of the `Cluster` document, 300 seconds by default and shown as `5m0s`. It
+looked for an address that matches `nodeIP.addresses` or `nodeIP.validSubnets` of its `Node`
+document, or the cluster's `nodeIP.validSubnets`. It found none, so it runs neither the kubelet
+nor static pods.
 
 Check the node's `Network` documents and its DHCP lease, and that the subnets include the network
 the node is on. [Network documents configure the
@@ -112,9 +112,13 @@ next section describes.
 ## Kubelet certificate requests stay pending
 
 Each kubelet requests a serving certificate through a CertificateSigningRequest. chalkd on every
-control plane approves a request when the node asks for its own name, for server use only, and for
-addresses and names its Node object reports. It leaves every other request pending. List the
-requests:
+control plane approves a request that meets three conditions:
+
+- The node asks for its own name.
+- The request is for server use only.
+- It names only addresses and names that the node's Node object reports.
+
+chalkd leaves every other request pending. List the requests:
 
 ```sh
 kubectl get csr
@@ -149,7 +153,7 @@ Pod traffic between nodes travels in flannel's VXLAN, on UDP port 8472. Three ca
   inventory whose nodes hold different `Flannel` specs, so every node gets the same ranges.
 - Small packets pass and large ones hang, as with TLS handshakes or large responses. The VXLAN MTU
   is too large for the network. Set `spec.mtu` of the `Flannel` document to the network's MTU,
-  minus 20 when IPv6 is in use, because IPv6 VXLAN takes 70 bytes of each packet and IPv4 VXLAN 50.
+  minus 20 when IPv6 is in use. IPv6 VXLAN takes 70 bytes of each packet, and IPv4 VXLAN 50.
 - A firewall between the nodes drops UDP port 8472.
 
 [Flannel sets the pod network's MTU and VXLAN
@@ -157,20 +161,40 @@ sources](configure.md#flannel-sets-the-pod-networks-mtu-and-vxlan-sources) shows
 
 ## A Node has no pod range
 
-A worker's line ends in:
+A worker's Kubernetes line reads:
 
 ```text
-the Node has no ipv6 pod range; the control plane allocates ranges of the families the cluster was created with
+kubernetes worker: joined: the Node has no ipv6 pod range; the control plane allocates ranges of the families the cluster was created with, node ready: <ready>
 ```
 
-The controller-manager allocates pod ranges of the families the control planes run with. This
-worker's `Cluster` document names a family the cluster was not created with, which happens when a
-new worker is installed after `ipFamilies` changed in the inventory. Running nodes refuse that
-change, but an install has no running config to compare with. Restore the original `ipFamilies` and
-reinstall the worker, as [Reinstall a node on its
+`<ready>` is the Node's `Ready` condition, as in any worker's line. The controller-manager
+allocates pod ranges of the families the control planes run with. This worker's `Cluster`
+document names a family the cluster was not created with. That happens when a new worker is
+installed after `ipFamilies` changed in the inventory. Running nodes refuse that change, but an
+install has no running config to compare with. Restore the original `ipFamilies` and reinstall
+the worker, as [Reinstall a node on its
 machine](../operate/add-remove-nodes.md#reinstall-a-node-on-its-machine) describes. [IP families
 and ranges are fixed at creation](plan.md#ip-families-and-ranges-are-fixed-at-creation) explains
 why.
+
+## A control plane refuses the cluster's families
+
+A control plane's Kubernetes line reads:
+
+```text
+kubernetes controlplane: preparation failed: the cluster was created with families [ipv4]; ipFamilies is [ipv4 ipv6]; changing the families of a running cluster is not supported
+```
+
+When a control plane joins etcd, it pins an address of each family the cluster was created with,
+the primary one first. At every boot it compares them with `ipFamilies` of its `Cluster` document.
+This node's document lists other families, or the same ones in another order, so it runs neither
+etcd nor the kubelet.
+
+Set `ipFamilies` back to the families after `created with`, in that order, and deliver the config
+with `chalkctl apply-config cp1 --secrets=secrets.age`. A node whose running config holds the
+changed families already refuses that change too. Then take it out of etcd with
+`chalkctl etcd leave cp1 --force` and reinstall it, as [A control plane lost its pinned
+address](ha-control-plane.md#a-control-plane-lost-its-pinned-address) describes.
 
 ## The kubelet certificate was lost with VAR
 

@@ -69,7 +69,7 @@ without it. The workers follow in batches of `--max-unavailable`, one node by de
 
 ```mermaid
 flowchart TD
-    guard["Check etcd's quorum without the control plane"] --> cp["Install, drain and reboot the control plane"]
+    guard["Check etcd's quorum without the control plane"] -->|quorum kept| cp["Install, drain and reboot the control plane"]
     cp --> healthy{"Found healthy and Ready?"}
     healthy -->|yes| uncordon["Uncordon it"]
     uncordon -->|next control plane| guard
@@ -78,7 +78,8 @@ flowchart TD
     install --> ready{"Found healthy and Ready?"}
     ready -->|yes| next["Uncordon the batch"]
     next -->|next batch| batch
-    healthy -->|no| stop["Stop the run"]
+    guard -->|no quorum| stop["Stop the run"]
+    healthy -->|no| stop
     ready -->|no| stop
 ```
 
@@ -100,6 +101,7 @@ upgrading node on kvm to c3a9674a8c68: cp1
 chalkctl: without cp1 etcd has 1 healthy voter of 3, fewer than the 2 its quorum needs
 ```
 
+This output is from another lab run, which upgraded to the image `c3a9674a8c68`.
 `chalkctl etcd members` shows which voter is unhealthy. Bring it back, then run the same command
 again.
 

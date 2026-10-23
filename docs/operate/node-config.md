@@ -31,7 +31,10 @@ and each node its own file in `nodes/`:
 --8<-- "examples/homelab/chalkos.yaml"
 ```
 
-The inventory has four parts:
+The inventory's `metadata.name`, `homelab` here, is a label for the cluster. It reaches no node:
+chalkctl uses it in its messages and as the default name of a kubeconfig's context.
+
+The inventory's `spec` has four parts:
 
 - `spec.images` names each image and the directory of its build, relative to the inventory's
   directory.
@@ -341,8 +344,7 @@ It also runs the change rules of the image that read no facts about the node. It
 whose `SystemDisk` leaves STATE unencrypted.
 
 `validate` checks no signature, so CI needs no db key. When the inventory names a signed copy, a CI
-job links the unsigned build to that directory instead, as with
-`nix build .#node-metal -o images/node-metal-signed`.
+job puts the unsigned build of the same image in that directory instead.
 
 ## When validate refuses the config
 

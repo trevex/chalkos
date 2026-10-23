@@ -168,8 +168,9 @@ spec:
 ```
 
 `spec.encryption.mode: none` on the `SystemDisk` leaves STATE unencrypted, and VAR and every
-volume that does not override it. Set it only for machines in a place you trust physically, because STATE then holds the node's keys
-and secrets in plain form. `chalkctl validate` warns of each such node.
+volume that does not override it. Set it only for machines in a place you trust physically,
+because STATE then holds the node's keys and secrets in plain form. `chalkctl validate` warns of
+each such node.
 
 Every new encrypted volume also gets the node's fallback keyslot, which unlocks it when the TPM
 does not. `spec.encryption.fallback` of the `SystemDisk` sets it: the recovery key by default, a
