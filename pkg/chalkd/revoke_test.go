@@ -359,3 +359,28 @@ func TestRevokeNodeAppliesThePolicy(t *testing.T) {
 		t.Errorf("unrevoking again: the policy names %s", got)
 	}
 }
+
+// TestStatusReadsTheNodeWhileTheListHangs bounds the read of the revoked nodes and that of the
+// Node apart, so a read that hangs leaves the other its time.
+func TestStatusReadsTheNodeWhileTheListHangs(t *testing.T) {
+	l := newRevokeLab(t)
+	k := l.s.Kubernetes
+	k.StatusTimeout = 200 * time.Millisecond
+	l.cs.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		time.Sleep(k.StatusTimeout)
+		return true, nil, context.DeadlineExceeded
+	})
+	k.Node = func(ctx context.Context) (*corev1.Node, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return readyNode(), nil
+	}
+	st, err := k.status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.NodeReady != "True" || st.RevokedNodesError == "" {
+		t.Errorf("node ready %q, revoked nodes error %q; want the Node read and the list's error", st.NodeReady, st.RevokedNodesError)
+	}
+}

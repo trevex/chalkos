@@ -99,6 +99,9 @@ type Kubernetes struct {
 	// RotationPoll is the time between two looks at what a rotation step waits for; zero means
 	// two seconds.
 	RotationPoll time.Duration
+	// StatusTimeout bounds each read of the status from the API server, the revoked nodes and the
+	// Node apart; zero means five seconds.
+	StatusTimeout time.Duration
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -876,11 +879,13 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 		}
 		return st, nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 	if c.Kind == k8s.KindControlPlane {
-		k.revokedStatus(ctx, st)
+		rctx, cancel := context.WithTimeout(ctx, k.statusTimeout())
+		k.revokedStatus(rctx, st)
+		cancel()
 	}
+	ctx, cancel := context.WithTimeout(ctx, k.statusTimeout())
+	defer cancel()
 	node, err := k.Node(ctx)
 	if err != nil {
 		st.NodeReady = fmt.Sprintf("unknown: %v", err)
@@ -920,4 +925,12 @@ func (k *Kubernetes) localEtcd(c k8s.Cluster) string {
 		return k.LocalEtcd
 	}
 	return c.LocalEtcd()
+}
+
+// statusTimeout bounds each read of the status from the API server.
+func (k *Kubernetes) statusTimeout() time.Duration {
+	if k.StatusTimeout > 0 {
+		return k.StatusTimeout
+	}
+	return 5 * time.Second
 }
