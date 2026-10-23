@@ -289,6 +289,6 @@ the key the file was encrypted to with `--identity`.
 
 - [Write a node's config](node-config.md) describes the inventory and the config documents of
   each node.
-- [Install on bare metal](install-bare-metal.md) installs the first node.
+- [Install a node](install.md) installs the first node.
 - [Security model](../how-it-works/node/security.md) explains the CAs, the roles and how a node
   in maintenance mode is trusted.

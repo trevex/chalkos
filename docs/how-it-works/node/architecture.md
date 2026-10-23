@@ -299,7 +299,7 @@ become healthy within its tries, the node falls back to the image it ran before.
 - [Variants and platforms](../../build/variants-and-platforms.md), [Config and the inventory](config.md) and
   [The image](image.md) for what Nix builds and what a node receives.
 - [Security model](security.md) for the client roles and what Secure Boot and the TPM protect.
-- [Install on bare metal](../../operate/install-bare-metal.md) for the install as a task.
+- [Install a node](../../operate/install.md) for the install as a task.
 - [`chalkctl install`](../../reference/cli/chalkctl_install.md) and the [node API](../../reference/api.md)
   for the details.
 - [Architecture for developers](../../contribute/architecture.md) for the code's layout.

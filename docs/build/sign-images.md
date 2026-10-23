@@ -93,7 +93,7 @@ its display in the firmware or fail to boot from such a card. Use the way your h
   sbctl from a live Linux. Writing your own platform key and KEK this way makes you the owner of
   the machine's keys. Keep Microsoft's KEK and db entries unless the machine needs none of them.
 - Virtual machines. Their UEFI variables are a file you prepare.
-  [Run on KVM, Proxmox or libvirt](../operate/kvm-proxmox-libvirt.md#what-the-vm-needs) shows how
+  [Install a node](../operate/install.md#boot-the-machine-into-maintenance-mode) shows how
   for QEMU, libvirt and Proxmox.
 
 Enrol the certificate before the node is installed. A change to db, KEK or dbx changes PCR 7, so
@@ -231,5 +231,5 @@ boots.
 - [Test and roll out an image](test-and-roll-out.md) checks the config and upgrades the nodes.
 - [Security model](../how-it-works/node/security.md) explains the chain from the db certificate
   to every block of the store.
-- [Install on bare metal](../operate/install-bare-metal.md) installs a node from the signed
+- [Install a node](../operate/install.md) installs a node from the signed
   installer.

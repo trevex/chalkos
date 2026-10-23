@@ -527,4 +527,4 @@ image with other defaults does not change it.
   documents, and [Set up your workstation](../../operate/workstation.md) for the secrets file and
   the client files.
 - The [quick start](../../get-started/quick-start.md) and
-  [Install on bare metal](../../operate/install-bare-metal.md) for config files in use.
+  [Install a node](../../operate/install.md) for config files in use.

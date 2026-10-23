@@ -555,8 +555,7 @@ path only so that `chalkctl validate` finds the directory the inventory names.
 
 ## What next
 
-- [Install on bare metal](../operate/install-bare-metal.md) or [run on KVM, Proxmox or
-  libvirt](../operate/kvm-proxmox-libvirt.md).
+- [Install a node](../operate/install.md) on a physical machine or a VM.
 - [Run a highly available control plane](ha-control-plane.md).
 - [Security model](../how-it-works/node/security.md) and [Certificates](../how-it-works/node/certificates.md)
   explain what the keys protect.

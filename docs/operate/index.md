@@ -6,8 +6,9 @@ description: "Install, upgrade, recover and troubleshoot chalkos nodes"
 # Operate nodes
 
 These pages are for operators who run nodes with chalkctl and YAML files. They cover setting up
-a workstation, writing nodes' config, installing nodes, adding storage, upgrading, pulling images
-from registries, rotating certificates, recovering a node and troubleshooting.
+a workstation, writing nodes' config, installing, adding and removing nodes, adding storage,
+upgrading, pulling images from registries, rotating certificates, recovering a node and
+troubleshooting.
 Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernetes/index.md).
 
 <div class="grid cards" markdown>
@@ -28,21 +29,21 @@ Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernete
 
     [:octicons-arrow-right-24: Read](node-config.md)
 
--   :material-server-network: __Install on bare metal__
+-   :material-server-network: __Install a node__
 
     ---
 
-    Install chalkos on physical machines from the installer ISO.
+    Boot a physical machine or a VM into maintenance mode and install a node on it.
 
-    [:octicons-arrow-right-24: Read](install-bare-metal.md)
+    [:octicons-arrow-right-24: Read](install.md)
 
--   :material-monitor: __Run on KVM, Proxmox or libvirt__
+-   :material-server-plus: __Add and remove nodes__
 
     ---
 
-    Run chalkos nodes as virtual machines on a KVM hypervisor.
+    Add a node to a running cluster, reinstall one, or take one out for good.
 
-    [:octicons-arrow-right-24: Read](kvm-proxmox-libvirt.md)
+    [:octicons-arrow-right-24: Read](add-remove-nodes.md)
 
 -   :material-harddisk: __Add storage volumes__
 

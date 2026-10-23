@@ -563,4 +563,4 @@ state and ports.
 - [Upgrades](../how-it-works/node/upgrades.md) explains slots, boot counting and
   rollback, and [Upgrade a
   cluster](../operate/upgrade-cluster.md) upgrades a real one.
-- [Install on bare metal](../operate/install-bare-metal.md) installs chalkos on hardware.
+- [Install a node](../operate/install.md) installs chalkos on a physical machine or a VM.

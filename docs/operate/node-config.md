@@ -19,7 +19,7 @@ against that image, so the image author builds it first.
 
 You need to know each machine's disks and network interfaces. On a machine that runs the
 installer, `chalkctl disks` lists the disks, as
-[Choose the system disk](install-bare-metal.md#choose-the-system-disk) shows.
+[Choose the system disk](install.md#choose-the-system-disk) shows.
 
 ## The inventory gives each node its files
 
@@ -362,7 +362,7 @@ Here `mountpoint` should be `mountPoint`. The common refusals and their fixes:
 
 ## What next
 
-- [Install on bare metal](install-bare-metal.md) installs a node with its config.
+- [Install a node](install.md) installs a node with its config.
 - [Add storage volumes](storage-volumes.md) plans the disks and volumes in depth.
 - [Config and the inventory](../how-it-works/node/config.md) explains how a node checks, keeps
   and applies its config.

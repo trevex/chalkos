@@ -34,7 +34,7 @@ You need:
 - For machines that enforce Secure Boot, the db key and certificate of
   [Sign images for Secure Boot](sign-images.md).
 
-[Install on bare metal](../operate/install-bare-metal.md) builds the unchanged installer.
+[Install a node](../operate/install.md#boot-the-machine-into-maintenance-mode) builds the unchanged installer.
 
 ## Add a module to the installer
 
@@ -259,7 +259,7 @@ A disk that is missing from the list needs its controller's driver. A machine wh
 
 ## What next
 
-- [Install on bare metal](../operate/install-bare-metal.md) continues with the install.
+- [Install a node](../operate/install.md) continues with the install.
 - [Add software, drivers and kernel modules](add-software.md) adds the same drivers to the images
   the installed nodes run.
 - [Sign images for Secure Boot](sign-images.md) covers the db key.

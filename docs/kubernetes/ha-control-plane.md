@@ -23,7 +23,7 @@ member, removing one and replacing a failed machine.
   advertisements, so it cannot cross a router.
 - Each machine booted into the installer, or into its
   image, in maintenance mode, as
-  [Install on bare metal](../operate/install-bare-metal.md) describes.
+  [Install a node](../operate/install.md) describes.
 - The control planes' image signed with the Secure Boot db
   key the machines' firmware trusts, in the directory the inventory names, as
   [Sign images for Secure Boot](../build/sign-images.md) describes.
