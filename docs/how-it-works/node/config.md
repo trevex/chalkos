@@ -113,7 +113,7 @@ Some kinds depend on the image or the node:
 
 An extension adds kinds of its own in a group outside `chalkos.dev`, declared in the NixOS modules
 of a variant, as
-[Variants and platforms](variants.md#how-does-an-extension-add-a-kind) shows. Their documents go
+[Extensions](variants.md#how-does-an-extension-add-a-kind) shows. Their documents go
 into the same files as chalkos's. The homelab example's `Rack` kind records where a node is
 mounted, and each node's file holds one:
 
@@ -580,8 +580,9 @@ image with other defaults does not change it.
 
 ## Related pages
 
-- [Variants and platforms](variants.md) for the images that accept the config and how an extension
-  declares a kind.
+- [Extensions](variants.md) for how an extension declares a kind, and
+  [Variants and platforms](../../build/variants-and-platforms.md) for the images that accept the
+  config.
 - [Architecture](architecture.md) for where the inventory and the image directories meet chalkctl.
 - [Change rules and facts](rules.md) for how an image decides which changes a node accepts.
 - [Storage and encryption](storage.md) and [Networking](networking.md) for what the storage and

@@ -167,7 +167,7 @@ them:
 
 The build fails on a module name the kernel does not have, so a typo shows at build time, not at
 the machine. `linux-firmware` holds the firmware of every vendor and adds several hundred MiB;
-[Support additional hardware](additional-hardware.md) shows how to find the right module and take
+[Add software, drivers and kernel modules](add-software.md) shows how to find the right module and take
 only the firmware files a card needs. The installer only needs to reach the network and see the
 target disk. The image the node runs needs the same drivers, in its variant's or platform's
 modules.
@@ -252,7 +252,7 @@ A disk that is missing from the list needs its controller's driver; a machine wh
 ## What next
 
 - [Install on bare metal](../operate/install-bare-metal.md) continues with the install.
-- [Support additional hardware](additional-hardware.md) adds the same drivers to the images the
+- [Add software, drivers and kernel modules](add-software.md) adds the same drivers to the images the
   installed nodes run.
 - [Sign images for Secure Boot](secure-boot-signing.md) covers the db key.
 - [Architecture](../how-it-works/node/architecture.md#how-does-a-machine-become-a-node) explains what

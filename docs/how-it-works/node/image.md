@@ -178,7 +178,7 @@ shows it. Its `kvm` platform sets the console to the first serial port and adds 
 agent, about 6 MiB of store, limited to reporting on the node and shutting it down. A platform the
 flake names in mkImages' [`platforms`](../../reference/options.md#platforms) adds firmware, kernel
 module groups or agents to the images for that kind of machine alone.
-[Variants and platforms](variants.md#what-is-a-platform) explains platforms.
+[Variants and platforms](../../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine) explains platforms.
 
 ## Which kernel modules does an image carry?
 
@@ -202,7 +202,8 @@ tree. Out-of-tree modules from NixOS's `boot.extraModulePackages` are always inc
 The base groups keep about a third of the kernel's 7,300 modules, about 45 MiB of the full
 tree's 145 MiB. A missing module fails the build, not the boot: the build checks that every
 module the image loads by name, and every dependency of a module in the tree, is in the tree.
-[Support additional hardware](../../build/additional-hardware.md) adds drivers and firmware.
+[Add software, drivers and kernel modules](../../build/add-software.md) adds drivers and
+firmware.
 
 ## What is on the system path?
 
@@ -245,49 +246,17 @@ slot sizes it was installed with, and refuses a store that does not fit them.
 
 ## How is an image built?
 
-`nix build` builds one image directory: the image of
-one variant on one platform, `images.<variant>-<platform>` of the flake's mkImages call. The lab
-template's flake exposes `images.node-kvm` as the package `node-kvm`, the image both its
-control plane and its
-worker boot, and its inventory names the directory the build is
-linked to:
-
-```console
-$ nix build .#node-kvm -o images/node-kvm
-$ ls images/node-kvm
-chalkos.raw
-image.json
-metadata.json
-repart.d
-repart-output.json
-schemas
-```
-
-- `chalkos.raw` is the raw disk image. Its slot A carries the labels of its root hash, which the
-  build gives it once systemd-repart computed the hash.
-- `repart-output.json` is systemd-repart's report of its partitions, with their offsets, sizes
-  and the root hash. chalkctl reads the store, the hash tree and the UKI at those offsets.
-- `repart.d` holds the image's partition definitions of the system region, which the installer
-  lays out a target disk with.
-- `metadata.json`, `schemas` and `image.json` describe what the image is and what config it
-  accepts, and `metadata.json` names the image's root hash and the revision and tag it was built
-  from; `image.json` exists only on an image with Kubernetes. chalkctl reads them when it
-  validates, installs or upgrades a node whose image in the inventory is the directory.
-  [Image and partition layout](../../reference/image-layout.md#outputs-of-an-image-build) lists them.
+`nix build` builds one image directory: the image of one variant on one platform,
+`images.<variant>-<platform>` of the flake's mkImages call. The directory holds the raw disk
+image, systemd-repart's report of its partitions, the partition definitions the installer lays
+out, and the files that say what the image is and which config it accepts. The inventory names the
+directory, and chalkctl reads it when it validates, installs or upgrades a node.
+[Your first image flake](../../build/first-image.md) builds one and lists its files.
 
 The image is unsigned, and the signing key never enters `/nix/store`.
 [`chalkbuild sign`](../../reference/cli/chalkbuild_sign.md) signs a copy of the image directory: the
-boot loader and the UKIs on the raw image's ESP. chalkctl installs and upgrades nodes with the
-signed copy, `dd` writes its raw image to a disk, and a VM's disk is a writable copy of that
-signed raw image. A cluster whose nodes enforce Secure Boot builds into `build/` and signs into
-the directory its inventory names:
-
-```sh
-chalkbuild sign --key=<db-key> --cert=<db-cert> build/node-kvm images/node-kvm
-```
-
-`<db-key>` and `<db-cert>` are the PEM key and certificate of a signer the machines' firmware
-trusts in db.
+boot loader and the UKIs on the raw image's ESP. chalkctl installs and upgrades nodes that enforce
+Secure Boot with the signed copy.
 [Sign images for Secure Boot](../../build/secure-boot-signing.md) covers the keys.
 
 `mkImages` also builds each image as an OCI artifact, `oci.<variant>-<platform>`: an OCI image
@@ -296,9 +265,6 @@ layout that holds the store, the hash tree, the UKI, the boot loader and the con
 names the pushed reference in place of a directory; `chalkctl install` and `chalkctl upgrade`
 then have the node pull it.
 [Publish images to a registry](../../build/publish-images.md) covers the steps.
-
-chalkos does not wrap image conversion. `qemu-img convert -f raw -O qcow2` makes a qcow2 disk for
-KVM, `zstd` compresses an image for transport and `dd` or a USB writer puts it on a disk.
 
 ## Limits
 
@@ -312,12 +278,12 @@ KVM, `zstd` compresses an image for transport and `dd` or a USB writer puts it o
 
 ## Related pages
 
-- [Variants and platforms](variants.md) for how mkImages builds the images.
+- [Your first image flake](../../build/first-image.md) for how mkImages builds the images.
 - [Boot, health and rollback](boot-and-rollback.md) for how a node boots the image.
 - [Upgrades](upgrades.md) for how a new image reaches a node.
 - [Security model](security.md) for what Secure Boot and dm-verity protect against.
 - [Image and partition layout](../../reference/image-layout.md) and
   [os-release fields](../../reference/os-release.md) for the details.
 - [Customise an image](../../build/customise-image.md),
-  [Support additional hardware](../../build/additional-hardware.md) and
+  [Add software, drivers and kernel modules](../../build/add-software.md) and
   [Sign images for Secure Boot](../../build/secure-boot-signing.md) for the tasks.

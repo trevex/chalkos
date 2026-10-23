@@ -36,7 +36,7 @@ every node of a variant and platform boots the same bytes, so an image holds not
 particular cluster or node. An image has no version: its store's
 root hash identifies it, and the git revision the flake
 passes to `mkImages` says which commit it was built from. The flake's `flake.lock` pins the
-chalkos version. See [Variants and platforms](../how-it-works/node/variants.md) and
+chalkos version. See [Your first image flake](../build/first-image.md) and
 [The image](../how-it-works/node/image.md).
 
 ## YAML documents configure the nodes

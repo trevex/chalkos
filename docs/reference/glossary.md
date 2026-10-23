@@ -218,7 +218,7 @@ kinds. An extension sits in a [variant](#variant)'s modules and declares its [ki
 services read those documents through a [grant](#grant) or as [outputs](#output) rendered from
 them, and [effects](#effect) restart them when they change. chalkos's own Kubernetes support
 declares its kinds and effects the same way. See
-[Variants and platforms](../how-it-works/node/variants.md#how-does-an-extension-add-a-kind).
+[Extensions](../how-it-works/node/variants.md#how-does-an-extension-add-a-kind).
 
 ## Fact { #fact }
 <!-- abbr: facts, Facts -->
@@ -446,7 +446,7 @@ The kind of machine an image is built for, such as `metal` or `kvm`. Each platfo
 the [`platforms`](options.md#platforms) argument of `chalkos.lib.mkImages` with NixOS modules of
 its own. Every [variant](#variant) gets one [image](#image) per platform, so only that platform's
 images carry its drivers and agents. A node refuses an image of another platform than the one it
-runs. See [Variants and platforms](../how-it-works/node/variants.md#what-is-a-platform).
+runs. See [Variants and platforms](../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine).
 
 ## Provenance { #provenance }
 
@@ -567,7 +567,7 @@ and one with GPU drivers. Control planes and workers can run the same variant. I
 `CHALKOS_VARIANT` in the image's os-release and `variant` in its `metadata.json`. No check
 compares it: a node may change its variant through an [upgrade](#upgrade), and the new image's
 schemas decide which [config](#config) it takes. See
-[Variants and platforms](../how-it-works/node/variants.md#what-is-a-variant).
+[Variants and platforms](../build/variants-and-platforms.md#a-second-variant-builds-a-second-image).
 
 ## VIP { #vip }
 <!-- abbr: VIPs -->

@@ -33,7 +33,7 @@ inventory, `chalkos.yaml`, with the nodes' config files. To
 roll the change out you need a running cluster and an operator client
 file or the secrets
 file for the upgrade, and the secrets file to deliver
-changed YAML. [Variants and platforms](../how-it-works/node/variants.md) explains how `mkImages` builds the
+changed YAML. [Your first image flake](first-image.md) explains how `mkImages` builds the
 images, [Config and the inventory](../how-it-works/node/config.md) how the YAML reaches the nodes, and [The
 image](../how-it-works/node/image.md) what an image holds.
 
@@ -76,7 +76,7 @@ system and is the place for what other programs look up there, such as a mount h
 (`mount.nfs`) that a CSI driver runs.
 
 Modules that belong to a kind of machine go into a platform;
-[Support additional hardware](additional-hardware.md#define-a-platform-of-your-own) defines one. A
+[Variants and platforms](variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine) defines one. A
 platform's modules come before the others, but NixOS merges a value by priority, not by module
 order: a module of yours overrides a value its platform sets plainly with `lib.mkForce`, and one
 the platform sets with `lib.mkForce` itself, such as the `kvm` platform's `ExecStart` of the
@@ -95,7 +95,7 @@ with [`chalkos.kernel.moduleGroups`](../reference/options.md#chalkoskernelmodule
 }
 ```
 
-[Support additional hardware](additional-hardware.md) finds the module a device needs and adds
+[Add software, drivers and kernel modules](add-software.md) finds the module a device needs and adds
 firmware and out-of-tree modules.
 
 [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) adds the usual command-line
@@ -231,7 +231,7 @@ spec: {address: 10.0.0.2, asn: 64514}
 Put the module where the nodes that carry the kind's documents get it: in `modules` when every
 variant accepts it, or in one variant's `modules`. A node whose image lacks the kind refuses a
 config that holds a document of it.
-[Variants and platforms](../how-it-works/node/variants.md#how-does-an-extension-add-a-kind) explains how
+[Extensions](../how-it-works/node/variants.md#how-does-an-extension-add-a-kind) explains how
 an extension's kind reaches the image and the node.
 
 ## Render the service's config from the documents
@@ -573,7 +573,7 @@ build fails when the store's data takes more than 80% of its slot (3 GiB by defa
 [`chalkos.disk.storeSize`](../reference/options.md#chalkosdiskstoresize)), its hash tree more than
 80% of its partition, or the UKIs more than 80% of the
 ESP, so the next image always fits beside the running one.
-[Support additional hardware](additional-hardware.md#keep-the-image-within-its-slot) shows the
+[Add software, drivers and kernel modules](add-software.md#keep-the-image-within-its-slot) shows the
 message and what to do.
 
 ## Name the build
@@ -645,10 +645,10 @@ The status of `cp1` lists the output `bird-conf` as `rendered`, and the journal 
 
 ## What next
 
-- [Variants and platforms](../how-it-works/node/variants.md) explains how `mkImages` builds variants and
-  how an extension adds a kind.
+- [Variants and platforms](variants-and-platforms.md) explains how `mkImages` builds variants, and
+  [Extensions](../how-it-works/node/variants.md) how an extension adds a kind.
 - [Config and the inventory](../how-it-works/node/config.md) explains how the YAML reaches the nodes.
 - [Outputs and effects](../how-it-works/node/outputs-and-effects.md) explains how outputs are rendered,
   checked and swapped in, and when effects fire.
-- [Support additional hardware](additional-hardware.md) adds drivers, firmware and platforms.
+- [Add software, drivers and kernel modules](add-software.md) adds drivers and firmware.
 - [Upgrade a cluster](../operate/upgrade-cluster.md) rolls the new images out.

@@ -56,7 +56,7 @@ installs images of every platform. mkImages takes no node, address or cluster se
 input of a cluster is the optional public part of its secrets, for the OS CA. So one image serves
 every node the [inventory](../../reference/kinds.md#inventory) runs on it, control planes and
 workers alike.
-[Variants and platforms](variants.md) explains variants, platforms and the order of their modules.
+[Variants and platforms](../../build/variants-and-platforms.md) explains variants, platforms and the order of their modules.
 
 What an image fixes when it is built and what reaches a node at runtime:
 
@@ -70,7 +70,7 @@ What an image fixes when it is built and what reaches a node at runtime:
 | Boot tries and health timeout | Time servers, in [`TimeSync`](../../reference/kinds.md#timesync) |
 | The config kinds the image accepts and their schemas | Documents of the kinds extensions declare, and the `Secret`s they reference |
 
-[Variants and platforms](variants.md#what-does-an-image-fix-and-what-does-config-set) draws the
+[Variants and platforms](../../build/variants-and-platforms.md#add-a-variant-only-for-other-software) draws the
 line in detail; [Config and the inventory](config.md) explains the right column.
 
 The split keeps one image per variant and platform, so a cluster of three control planes and
@@ -296,7 +296,7 @@ become healthy within its tries, the node falls back to the image it ran before.
 
 ## Related pages
 
-- [Variants and platforms](variants.md), [Config and the inventory](config.md) and
+- [Variants and platforms](../../build/variants-and-platforms.md), [Config and the inventory](config.md) and
   [The image](image.md) for what Nix builds and what a node receives.
 - [Security model](security.md) for the client roles and what Secure Boot and the TPM protect.
 - [Install on bare metal](../../operate/install-bare-metal.md) for the install as a task.

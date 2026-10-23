@@ -34,9 +34,11 @@ nav = [
   ] },
   { "Build images" = [
     "build/index.md",
+    "build/first-image.md",
+    "build/variants-and-platforms.md",
+    "build/add-software.md",
     "build/customise-image.md",
     "build/customise-installer.md",
-    "build/additional-hardware.md",
     "build/secure-boot-signing.md",
     "build/publish-images.md",
   ] },

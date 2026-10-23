@@ -368,7 +368,7 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
 
 ## What next
 
-- [Variants and platforms](../how-it-works/node/variants.md#what-is-a-platform) explains platforms and
+- [Variants and platforms](../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine) explains platforms and
   how each variant's image is built for each, and
   [Architecture](../how-it-works/node/architecture.md#how-does-a-machine-become-a-node) the install in
   place.

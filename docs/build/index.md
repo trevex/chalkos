@@ -1,15 +1,41 @@
 ---
 title: "Build images"
-description: "Customise, sign and publish chalkos images"
+description: "Build, customise, sign and publish chalkos images"
 ---
 
 # Build images
 
-These pages are for image authors who build a cluster's images in Nix. They cover customising the
-images and the installer, adding hardware support, signing for Secure Boot and publishing to a
-registry.
+These pages are for image authors who build a cluster's images in Nix. They start with a first
+flake, then cover variants and platforms, added software and drivers, the installer, signing for
+Secure Boot and publishing to a registry.
 
 <div class="grid cards" markdown>
+
+-   :material-rocket-launch: __Your first image flake__
+
+    ---
+
+    Write a flake that builds a cluster's image with mkImages, into the directory the inventory
+    names.
+
+    [:octicons-arrow-right-24: Read](first-image.md)
+
+-   :material-layers: __Variants and platforms__
+
+    ---
+
+    Build images for nodes that run other software or other machines, and set the order of their
+    modules.
+
+    [:octicons-arrow-right-24: Read](variants-and-platforms.md)
+
+-   :material-expansion-card: __Add software, drivers and kernel modules__
+
+    ---
+
+    Add packages, services, kernel modules, firmware and debug tools within an appliance's limits.
+
+    [:octicons-arrow-right-24: Read](add-software.md)
 
 -   :material-wrench: __Customise an image__
 
@@ -27,14 +53,6 @@ registry.
     Give the installer static addresses, VLANs, bonds, drivers or firmware.
 
     [:octicons-arrow-right-24: Read](customise-installer.md)
-
--   :material-expansion-card: __Support additional hardware__
-
-    ---
-
-    Add drivers, firmware and platform settings for hardware the base images do not cover.
-
-    [:octicons-arrow-right-24: Read](additional-hardware.md)
 
 -   :material-file-certificate: __Sign images for Secure Boot__
 

@@ -149,6 +149,15 @@ the network the node is on. Then deliver the corrected documents with
 A control plane that lost an address it was pinned to says `pinned address ... is not present`
 instead; see [Recover a node](recover-node.md#a-control-plane-cannot-rejoin-etcd).
 
+### A NIC or disk is not found
+
+The node stops in the initrd because it finds no system disk, which the console shows, or a
+network card or disk is missing from `ip link` or `lsblk` in a shell on the node. The image lacks
+the device's driver, or the firmware the driver loads, and `dmesg` names a firmware file that
+failed to load. A disk controller's driver must also be in the initrd.
+[Add software, drivers and kernel modules](../build/add-software.md) finds the module and adds it
+with its firmware.
+
 ### A control plane waits for bootstrap
 
 `waiting for bootstrap or for the cluster at https://...` is the state of every control plane

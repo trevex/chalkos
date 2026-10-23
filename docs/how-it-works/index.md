@@ -26,12 +26,12 @@ chalkos adds to run Kubernetes on it.
 
     [:octicons-arrow-right-24: Read](node/architecture.md)
 
--   :material-layers-triple: __Variants and platforms__
+-   :material-layers-triple: __Extensions__
 
     ---
 
-    How `mkImages` builds a cluster's images from variants, platforms and NixOS modules, and how an
-    extension adds a config kind.
+    How an extension adds a config kind and the services that read its documents to a variant's
+    images.
 
     [:octicons-arrow-right-24: Read](node/variants.md)
 

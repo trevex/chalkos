@@ -10,7 +10,8 @@ let
       ../zensical.toml
       ../docs
       ../includes
-      # The homelab's extensions, whose sections the pages include as snippets.
+      # The homelab's flake and extensions, which the pages include as snippets.
+      ../examples/homelab/flake.nix
       ../examples/homelab/extensions
     ];
   };
@@ -322,6 +323,7 @@ rec {
         rsync -a zensical.toml "$work/zensical.toml"
         rsync -a includes/ "$work/includes/"
         mkdir -p "$work/examples/homelab"
+        rsync -a examples/homelab/flake.nix "$work/examples/homelab/flake.nix"
         rsync -a --delete examples/homelab/extensions/ "$work/examples/homelab/extensions/"
       }
       copy

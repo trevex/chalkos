@@ -18,7 +18,7 @@ files, each with a recommendation and what it costs.
   are familiar.
 - Know the machines: their disks, network segments and whether their firmware lets you enrol
   your own Secure Boot keys.
-- Read [Variants and platforms](../how-it-works/node/variants.md) for how the flake builds images, and
+- Read [Your first image flake](../build/first-image.md) for how the flake builds images, and
   [Config and the inventory](../how-it-works/node/config.md) for how the YAML files become each node's
   config.
 
