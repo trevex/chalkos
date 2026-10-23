@@ -165,13 +165,20 @@ func StartStopped(ctx context.Context, dir string) error {
 	if !running {
 		return fmt.Errorf("no supervisor runs the lab in %s", dir)
 	}
-	if err := syscall.Kill(pid, startSignal); err != nil {
-		return fmt.Errorf("signal the supervisor %d: %w", pid, err)
-	}
+	// A VM whose QEMU removed its PID file but has not exited yet looks stopped here, while the
+	// supervisor runs it still and skips it: the supervisor is asked again until every VM runs.
+	// It starts only the VMs that do not run, so asking again starts none twice.
+	var signalled time.Time
 	for {
 		// The lab may be ready still while its supervisor has not yet heard that a VM exited.
 		if Ready(dir) && allRunning(dir, l) {
 			return nil
+		}
+		if time.Since(signalled) >= time.Second {
+			if err := syscall.Kill(pid, startSignal); err != nil {
+				return fmt.Errorf("signal the supervisor %d: %w", pid, err)
+			}
+			signalled = time.Now()
 		}
 		select {
 		case <-ctx.Done():

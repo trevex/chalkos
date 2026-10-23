@@ -391,6 +391,36 @@ func TestVMExitKeepsTheLab(t *testing.T) {
 	}
 }
 
+// TestStartWhileAVMExits starts a VM whose QEMU removed its PID file but has not exited yet,
+// which the supervisor still runs when it hears the first start.
+func TestStartWhileAVMExits(t *testing.T) {
+	dir, l := testLab(t)
+	t.Setenv(fakeQEMULinger, "1s")
+	supervise(t, dir, io.Discard)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	w1 := l.VMConfig(dir, l.Nodes[1])
+	pid, ok := runningPID(w1.pidPath(), w1.Dir)
+	if !ok {
+		t.Fatal("w1 does not run")
+	}
+	syscall.Kill(pid, syscall.SIGTERM)
+	for Running(w1) {
+		select {
+		case <-ctx.Done():
+			t.Fatal("w1 runs on")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if err := StartStopped(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	if newPID, ok := runningPID(w1.pidPath(), w1.Dir); !ok || newPID == pid {
+		t.Error("w1 was not started again")
+	}
+}
+
 // TestStartAgain refuses to start a lab a supervisor runs, and starts a lab no supervisor runs
 // again from its state, over the stale sockets a host's reboot leaves.
 func TestStartAgain(t *testing.T) {

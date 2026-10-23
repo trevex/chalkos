@@ -101,6 +101,13 @@ func fakeFail(err error) {
 	os.Exit(1)
 }
 
+// beforeExit runs when a fake tool got SIGTERM, before it exits.
+var beforeExit = func() {}
+
+// fakeQEMULinger is the variable that, set to a duration, has fake QEMU remove its PID file on
+// SIGTERM and exit only that long after, as QEMU removes its PID file before it exits.
+const fakeQEMULinger = "FAKE_QEMU_LINGER"
+
 // listenUnix listens on a Unix socket and exits on SIGTERM, as the tools do.
 func listenUnix(path string) net.Listener {
 	os.Remove(path)
@@ -112,6 +119,7 @@ func listenUnix(path string) net.Listener {
 	signal.Notify(stop, syscall.SIGTERM)
 	go func() {
 		<-stop
+		beforeExit()
 		os.Exit(0)
 	}()
 	return l
@@ -128,8 +136,15 @@ func fakeQEMU(args []string) {
 	if err != nil {
 		fakeFail(err)
 	}
-	if err := os.WriteFile(flagValue(args, "-pidfile"), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644); err != nil {
+	pidFile := flagValue(args, "-pidfile")
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644); err != nil {
 		fakeFail(err)
+	}
+	if linger, err := time.ParseDuration(os.Getenv(fakeQEMULinger)); err == nil {
+		beforeExit = func() {
+			os.Remove(pidFile)
+			time.Sleep(linger)
+		}
 	}
 	qmp := listenUnix(strings.TrimSuffix(strings.TrimPrefix(flagValue(args, "-qmp"), "unix:"), ",server=on,wait=off"))
 	fmt.Fprintf(f, "booting %s\r\nchalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint %s\n", flagValue(args, "-name"), fakeFingerprint)
