@@ -9,8 +9,8 @@ This page lists the partitions of a node's disks, the files on the [ESP](glossar
 [STATE](glossary.md#state), the outputs of an image build and the paths a running node uses. The
 system region comes from `modules/node/base/disk.nix`, VAR and volumes from the node's
 `SystemDisk` and `Volume` documents through `pkg/config/storage.go`, and the file names from
-`pkg/upgrade`, `pkg/install`, `pkg/storage` and `pkg/chalkd`. [The image](../concepts/image.md)
-and [Storage and encryption](../concepts/storage.md) explain why the layout is what it is.
+`pkg/upgrade`, `pkg/install`, `pkg/storage` and `pkg/chalkd`. [The image](../how-it-works/node/image.md)
+and [Storage and encryption](../how-it-works/node/storage.md) explain why the layout is what it is.
 
 ## Partition map
 

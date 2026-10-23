@@ -103,5 +103,5 @@ No check reads the image's version, because it has none: chalkd's Info and Statu
 image by the [root hash](glossary.md#root-hash) on the kernel command line, and the record of a
 boot that was not found healthy by that root hash and the entry's generation.
 
-[The image](../concepts/image.md) explains what an image is and [Upgrades](../concepts/upgrades.md)
+[The image](../how-it-works/node/image.md) explains what an image is and [Upgrades](../how-it-works/node/upgrades.md)
 how the checks above keep an upgrade within its platform.

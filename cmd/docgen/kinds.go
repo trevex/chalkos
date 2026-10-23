@@ -140,9 +140,9 @@ func writeKind(b *strings.Builder, k kindSchema) {
 	// The rules' expressions, the storage kinds' especially, read as code rather than as a
 	// reference; the concept page describes what the built-in kinds' rules decide.
 	if n := countRules(k.root); n == 1 {
-		b.WriteString("It has a [change rule](../concepts/rules.md).\n\n")
+		b.WriteString("It has a [change rule](../how-it-works/node/rules.md).\n\n")
 	} else if n > 1 {
-		fmt.Fprintf(b, "It has %d [change rules](../concepts/rules.md).\n\n", n)
+		fmt.Fprintf(b, "It has %d [change rules](../how-it-works/node/rules.md).\n\n", n)
 	}
 	spec := resolve(k.root, asMap(props(k.root)["spec"]))
 	if isNetworkd(spec) {

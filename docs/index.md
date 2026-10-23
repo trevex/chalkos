@@ -79,16 +79,16 @@ chalkos. Run it in labs and test clusters.
 
 Each section of the documentation serves one kind of reader:
 
-- New to chalkos: the [quick start](getting-started/index.md) runs a cluster of two virtual
+- New to chalkos: the [quick start](get-started/quick-start.md) runs a cluster of two virtual
   machines on one machine with chalklab, upgrades it and removes it, in about 15 minutes.
-  [chalkos in five minutes](getting-started/five-minutes.md) then gives the model of a cluster on
-  one page, and [Requirements](getting-started/requirements.md) lists what real machines need.
-- Running a cluster: the [guides](guides/index.md) install, upgrade, rotate and recover real
+  [chalkos in five minutes](get-started/what-is-chalkos.md) then gives the model of a cluster on
+  one page, and [Requirements](get-started/requirements.md) lists what real machines need.
+- Running a cluster: the [guides](operate/index.md) install, upgrade, rotate and recover real
   clusters, one task per page.
-- Weighing the design: the [concepts](concepts/index.md) explain how chalkos works, why, and
+- Weighing the design: the [concepts](how-it-works/index.md) explain how chalkos works, why, and
   where its protections stop.
 - Looking something up: the [reference](reference/index.md) lists the commands, the config kinds,
   the arguments of `mkImages` and the image options, the node API, the disk layout, the ports and
   the [glossary](reference/glossary.md).
-- Changing chalkos: [contributing](contributing/index.md) covers the development setup, the tests,
+- Changing chalkos: [contributing](contribute/index.md) covers the development setup, the tests,
   the code's layout and how these pages are written.

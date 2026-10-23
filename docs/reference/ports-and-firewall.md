@@ -11,8 +11,8 @@ come from `modules/node/chalkd.nix`, `modules/node/kubernetes.nix`,
 `modules/node/controlplane-ports.nix` and `modules/node/vxlan-rule.nix`; the listeners from
 `cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
 `modules/node/kubernetes.nix`.
-[Networking](../concepts/networking.md) explains the network design and
-[Security model](../concepts/security.md) what each listener trusts.
+[Networking](../how-it-works/node/networking.md) explains the network design and
+[Security model](../how-it-works/node/security.md) what each listener trusts.
 
 ## Open ports
 
@@ -85,7 +85,7 @@ opens no port on the node.
 ## What a node does not listen on
 
 A node runs no SSH server, so port 22 is closed, and there are no logins on the console.
-[Troubleshooting](../guides/troubleshooting.md) shows how to debug a node through
+[Troubleshooting](../operate/troubleshooting.md) shows how to debug a node through
 `kubectl debug node/<node>` and the node API. chrony keeps the clock and serves no NTP clients.
 
 ## Firewall tables

@@ -29,7 +29,7 @@ chalklab create
 
 `chalklab create` builds the images, starts the virtual machines, installs the nodes,
 bootstraps the cluster and prints how to reach it with kubectl and chalkctl. `chalklab destroy`
-removes the lab. The [quick start](https://trevex.github.io/chalkos/getting-started/) walks
+removes the lab. The [quick start](https://trevex.github.io/chalkos/get-started/quick-start/) walks
 through it, including an upgrade.
 
 ## Development
@@ -37,5 +37,5 @@ through it, including an upgrade.
 `nix develop` gives the tools; `nix flake check` runs the tests, including the end-to-end tests
 in QEMU, which need `/dev/kvm`. The documentation is built with `nix build .#docs`, served while
 it is edited with `nix run .#docs-serve`, and its generated reference pages are written with
-`nix run .#docgen`. The [contributing guide](https://trevex.github.io/chalkos/contributing/)
+`nix run .#docgen`. The [contributing guide](https://trevex.github.io/chalkos/contribute/)
 has the details.

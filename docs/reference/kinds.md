@@ -55,7 +55,7 @@ A node's config may hold several, each with a name of its own.
 
 A node's config holds at most one.
 
-It has 4 [change rules](../concepts/rules.md).
+It has 4 [change rules](../how-it-works/node/rules.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -104,7 +104,7 @@ A node's config holds at most one.
 
 A node's config holds at most one.
 
-It has a [change rule](../concepts/rules.md).
+It has a [change rule](../how-it-works/node/rules.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -265,7 +265,7 @@ networkd spells it.
 
 A node's config may hold several, each with a name of its own.
 
-It has a [change rule](../concepts/rules.md).
+It has a [change rule](../how-it-works/node/rules.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -278,7 +278,7 @@ It has a [change rule](../concepts/rules.md).
 
 A node's config may hold several, each with a name of its own.
 
-It has 2 [change rules](../concepts/rules.md).
+It has 2 [change rules](../how-it-works/node/rules.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -293,7 +293,7 @@ It has 2 [change rules](../concepts/rules.md).
 
 A node's config holds at most one.
 
-It has a [change rule](../concepts/rules.md).
+It has a [change rule](../how-it-works/node/rules.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -318,7 +318,7 @@ It has a [change rule](../concepts/rules.md).
 
 A node's config may hold several, each with a name of its own.
 
-It has 7 [change rules](../concepts/rules.md).
+It has 7 [change rules](../how-it-works/node/rules.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
