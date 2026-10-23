@@ -89,38 +89,96 @@ func TestUpgradePullsTheImage(t *testing.T) {
 		{name: "another header", running: registryConfig(host), platform: "kvm", want: "its header describes"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, _ := configServer(t)
-			if tc.running != "" {
-				docs, err := config.Parse(strings.NewReader(tc.running))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := store.Write(slotOf(t, s), store.Stored{Delivered: docs, Documents: docs, Version: "v1"}); err != nil {
-					t.Fatal(err)
-				}
-			}
-			var got []byte
-			s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
-				var err error
-				got, err = io.ReadAll(r)
-				return upgrade.Result{Entry: "chalkos_2+3.efi"}, err
-			}
-			conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
 			h := proto.Clone(header).(*nodev1.UpgradeHeader)
-			h.Config = tc.config
 			if tc.platform != "" {
 				h.Image.Platform = tc.platform
 			}
-			stream := conn.Upgrade(context.Background())
-			if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}}); err != nil {
-				t.Fatal(err)
-			}
-			_, err := stream.CloseAndReceive()
+			got, err := upgradeWith(t, c, h, tc.running, tc.config)
 			if tc.want == "" && (err != nil || string(got) != "storehash treeuki") {
 				t.Errorf("upgrade = %v, received %q", err, got)
 			}
 			if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), ref)) {
 				t.Errorf("upgrade = %v, want an error naming %s and %q", err, ref, tc.want)
+			}
+		})
+	}
+}
+
+// upgradeWith runs an upgrade of header, which pulls its image, on a node whose running config is
+// running, delivering cfg, and returns what the installation read and the upgrade's error.
+func upgradeWith(t *testing.T, c creds, header *nodev1.UpgradeHeader, running, cfg string) ([]byte, error) {
+	t.Helper()
+	s, _ := configServer(t)
+	if running != "" {
+		docs, err := config.Parse(strings.NewReader(running))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Write(slotOf(t, s), store.Stored{Delivered: docs, Documents: docs, Version: "v1"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []byte
+	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
+		var err error
+		got, err = io.ReadAll(r)
+		return upgrade.Result{Entry: "chalkos_2+3.efi"}, err
+	}
+	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
+	h := proto.Clone(header).(*nodev1.UpgradeHeader)
+	h.Config = cfg
+	stream := conn.Upgrade(context.Background())
+	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := stream.CloseAndReceive()
+	return got, err
+}
+
+// mirrorConfig is a Mirror of the registry whose one endpoint is http://endpoint, and a Registry
+// of the endpoint's host that allows plain HTTP to it unless the config gives one already.
+func mirrorConfig(registry, endpoint string, withRegistry bool) string {
+	s := fmt.Sprintf("---\napiVersion: oci.chalkos.dev/v1alpha1\nkind: Mirror\nmetadata: {name: lab}\nspec: {registry: %q, endpoints: [\"http://%s\"]}\n", registry, endpoint)
+	if withRegistry {
+		s += fmt.Sprintf("---\napiVersion: oci.chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: mirror}\nspec: {host: %q, insecure: true}\n", endpoint)
+	}
+	return s
+}
+
+// TestUpgradePullsThroughAMirror pulls through the endpoint of the Mirror of the image's registry
+// with the Registry of the endpoint's host, passes over an endpoint without the image for the
+// registry, and does not send the mirrored registry's credentials to an endpoint.
+func TestUpgradePullsThroughAMirror(t *testing.T) {
+	c := newCreds(t)
+	host := ocitest.AuthRegistry(t, "ci-bot", "s3cret")
+	header := pulledHeader(t, host)
+	ref := header.GetSource().GetOci().GetReference()
+	mirrored := proto.Clone(header).(*nodev1.UpgradeHeader)
+	mirroredRef := "mirrored.invalid/" + strings.SplitN(ref, "/", 2)[1]
+	mirrored.Source.GetOci().Reference = mirroredRef
+	empty := ocitest.Registry(t)
+	for _, tc := range []struct {
+		name   string
+		header *nodev1.UpgradeHeader
+		config string
+		want   string
+	}{
+		// The endpoint authenticates with its own Registry; the registry it mirrors does not resolve.
+		{"through the endpoint with its Registry", mirrored, registryConfig(host) + mirrorConfig("mirrored.invalid", host, false), ""},
+		// An endpoint without the image is passed over for the registry.
+		{"past an endpoint without the image", header, registryConfig(host) + mirrorConfig(host, empty, true), ""},
+		// The mirrored registry's credentials do not go to the endpoint.
+		{"not with the mirrored registry's credentials", mirrored,
+			strings.Replace(registryConfig("mirrored.invalid"), "insecure: true, ", "", 1) + mirrorConfig("mirrored.invalid", host, true), "UNAUTHORIZED"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := upgradeWith(t, c, tc.header, "", tc.config)
+			if tc.want == "" && (err != nil || string(got) != "storehash treeuki") {
+				t.Errorf("upgrade = %v, received %q", err, got)
+			}
+			if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), mirroredRef) ||
+				!strings.Contains(err.Error(), "after the mirror http://"+host+": ")) {
+				t.Errorf("upgrade = %v, want an error naming %s, the mirror and %q", err, mirroredRef, tc.want)
 			}
 		})
 	}
@@ -169,31 +227,42 @@ func TestUpgradeRefusesChunksOfAPull(t *testing.T) {
 	}
 }
 
-// TestRegistryAuth authenticates with the Registry of the reference's registry host, in any case
-// and Docker Hub's by either of its names, and allows plain HTTP if it does. It pulls anonymously
-// and over HTTPS alone from a host no Registry names, whatever its port.
-func TestRegistryAuth(t *testing.T) {
-	docs, err := config.Parse(strings.NewReader(registryConfig("Docker.IO")))
+// TestPullSources sends a pull through each endpoint of the Mirror of the reference's registry,
+// in order, then to the registry, each with the credentials and leave for plain HTTP of the
+// Registry of its own host, found by any name of it; a registry without a Mirror is pulled
+// from alone, anonymously and over HTTPS without a Registry.
+func TestPullSources(t *testing.T) {
+	docs, err := config.Parse(strings.NewReader(registryConfig("Docker.IO") + `---
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Mirror
+metadata: {name: hub}
+spec: {registry: index.docker.io, endpoints: ["https://mirror.example/cache", "http://10.0.0.5:5000"]}
+---
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Registry
+metadata: {name: lan}
+spec: {host: "10.0.0.5:5000", insecure: true}
+`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	digest := "@sha256:" + strings.Repeat("ab", 32)
-	basic := &authn.Basic{Username: "ci-bot", Password: "s3cret"}
-	for ref, want := range map[string]struct {
-		auth     authn.Authenticator
-		insecure bool
-	}{
-		"docker.io/library/chalkos" + digest:       {basic, true},
-		"index.docker.io/library/chalkos" + digest: {basic, true},
-		"docker.io:5000/library/chalkos" + digest:  {authn.Anonymous, false},
-		"ghcr.io/library/chalkos" + digest:         {authn.Anonymous, false},
+	hub := []ociimage.Source{
+		{Endpoint: "https://mirror.example/cache", Auth: authn.Anonymous},
+		{Endpoint: "http://10.0.0.5:5000", Auth: authn.Anonymous, Insecure: true},
+		{Auth: &authn.Basic{Username: "ci-bot", Password: "s3cret"}, Insecure: true},
+	}
+	for ref, want := range map[string][]ociimage.Source{
+		"docker.io/library/chalkos" + digest:       hub,
+		"index.docker.io/library/chalkos" + digest: hub,
+		"docker.io:5000/library/chalkos" + digest:  {{Auth: authn.Anonymous}},
+		"ghcr.io/library/chalkos" + digest:         {{Auth: authn.Anonymous}},
 	} {
-		got, insecure, err := registryAuth(ref, docs)
-		if err != nil || fmt.Sprint(got) != fmt.Sprint(want.auth) || insecure != want.insecure {
-			t.Errorf("%s: %v, %v, %v; want %v, %v", ref, got, insecure, err, want.auth, want.insecure)
+		if got, err := pullSources(ref, docs); err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: %+v, %v; want %+v", ref, got, err, want)
 		}
 	}
-	if _, _, err := registryAuth("docker.io/library/chalkos:v1", docs); err == nil || !strings.Contains(err.Error(), "is no image reference by digest") {
+	if _, err := pullSources("docker.io/library/chalkos:v1", docs); err == nil || !strings.Contains(err.Error(), "is no image reference by digest") {
 		t.Errorf("by tag: %v", err)
 	}
 }

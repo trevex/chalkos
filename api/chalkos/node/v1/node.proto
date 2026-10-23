@@ -317,10 +317,11 @@ message RegistryImage {
   // The image's repository and manifest digest, repository@sha256:…, as chalkctl resolved the
   // inventory's reference. The node pulls that manifest and refuses it unless its config is the
   // image the header describes and its store, hash-tree, UKI and, for an install, boot-loader
-  // layers have the header's sizes and SHA-256 sums. An upgrade authenticates with the Registry
-  // document of the reference's host in the config the request delivers, or without one in the
-  // running config; an install with that of the config the request delivers. Without a Registry
-  // of the host, the node pulls anonymously.
+  // layers have the header's sizes and SHA-256 sums. An upgrade pulls through the Mirror and
+  // authenticates with the Registry documents of the config the request delivers, or without one
+  // of the running config; an install through those of the config the request delivers. It tries
+  // each endpoint of the Mirror of the reference's host, then the host, each with the Registry of
+  // its own host, and pulls anonymously from a host without one.
   string reference = 1;
 }
 

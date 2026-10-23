@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -16,8 +17,8 @@ import (
 )
 
 // pullParts is the stream of the store, hash tree and UKI of the image h describes, which an
-// upgrade pulls from ref, as newPull pulls it with the Registry documents of the config text
-// delivers, or without config of the running config. A failure to read the running config is a
+// upgrade pulls from ref, as newPull pulls it through the Mirror and with the Registry documents of
+// the config text delivers, or without config of the running config. A failure to read the running config is a
 // connect error of its own code.
 func (s *Server) pullParts(ctx context.Context, ref string, h upgrade.Header, text string) (*ociimage.Pull, error) {
 	docs, err := s.registryDocuments(ref, text)
@@ -28,11 +29,11 @@ func (s *Server) pullParts(ctx context.Context, ref string, h upgrade.Header, te
 }
 
 // newPull is the stream of the store, hash tree, UKI and, when h names one, boot loader of the
-// image h describes, pulled from ref with the credentials of the Registry of ref's host among
-// docs, or anonymously without one. It pulls over HTTPS alone unless that Registry allows plain
-// HTTP. Nothing is fetched until the stream or its contract is read.
+// image h describes, pulled from ref through the Mirror of ref's registry and with the Registry
+// documents among docs, as pullSources gives them. Nothing is fetched until the stream or its
+// contract is read.
 func newPull(ctx context.Context, ref string, h upgrade.Header, docs []config.Document) (*ociimage.Pull, error) {
-	auth, insecure, err := registryAuth(ref, docs)
+	sources, err := pullSources(ref, docs)
 	if err != nil {
 		return nil, err
 	}
@@ -48,10 +49,10 @@ func newPull(ctx context.Context, ref string, h upgrade.Header, docs []config.Do
 	if h.BootLoaderSize > 0 {
 		parts = append(parts, ociimage.Part{MediaType: ociimage.BootLoaderType, Size: h.BootLoaderSize, SHA256: h.BootLoaderSHA256})
 	}
-	return ociimage.NewPull(ctx, ref, []ociimage.Source{{Auth: auth, Insecure: insecure}}, want, parts)
+	return ociimage.NewPull(ctx, ref, sources, want, parts)
 }
 
-// registryDocuments are the documents whose Registry documents authenticate the pull of ref: the
+// registryDocuments are the documents whose Mirror and Registry documents direct the pull of ref: the
 // config text delivers, or without one the running config as it was delivered.
 func (s *Server) registryDocuments(ref, text string) ([]config.Document, error) {
 	if text != "" {
@@ -70,31 +71,39 @@ func (s *Server) registryDocuments(ref, text string) ([]config.Document, error) 
 	return running.Delivered, nil
 }
 
-// registryAuth authenticates a pull of ref, an image by digest, with the Registry among docs whose
-// host is ref's registry, as go-containerregistry names registries and in any case, or
-// anonymously without one, and reports whether that Registry allows plain HTTP. The credentials
-// go to that host and the token service it names alone: go-containerregistry sends no
-// Authorization header to a host the registry redirects to, and without insecure every request
-// is HTTPS.
-func registryAuth(ref string, docs []config.Document) (authn.Authenticator, bool, error) {
+// pullSources are where a pull of ref goes, in order: each endpoint of the Mirror of ref's
+// registry among docs, then the registry itself. Each authenticates with the Registry of its own
+// host among docs, by any name of the host, or anonymously without one, and is reached over
+// plain HTTP only if that Registry allows it. The credentials of one host never go to another,
+// so an endpoint does not receive those of the registry it mirrors. They go to that host and the
+// token service it names alone: go-containerregistry sends no Authorization header to a host the
+// registry redirects to.
+func pullSources(ref string, docs []config.Document) ([]ociimage.Source, error) {
 	r, err := name.NewDigest(ref, name.StrictValidation)
 	if err != nil {
-		return nil, false, fmt.Errorf("%q is no image reference by digest, repository@sha256:…: %w", ref, err)
+		return nil, fmt.Errorf("%q is no image reference by digest, repository@sha256:…: %w", ref, err)
 	}
 	secrets, err := config.SecretsOf(docs)
 	if err != nil {
-		return nil, false, fmt.Errorf("pull %s: the Secrets: %w", ref, err)
+		return nil, fmt.Errorf("pull %s: the Secrets: %w", ref, err)
 	}
 	regs, err := config.RegistriesOf(docs, secrets)
 	if err != nil {
-		return nil, false, fmt.Errorf("pull %s: the Registry and Mirror documents: %w", ref, err)
+		return nil, fmt.Errorf("pull %s: the Registry and Mirror documents: %w", ref, err)
 	}
-	l, ok := regs.Login(r.Context().RegistryStr())
-	switch {
-	case !ok:
-		return authn.Anonymous, false, nil
-	case l.Username == "":
-		return authn.Anonymous, l.Insecure, nil
+	source := func(endpoint, host string) ociimage.Source {
+		l, _ := regs.Login(host)
+		s := ociimage.Source{Endpoint: endpoint, Auth: authn.Anonymous, Insecure: l.Insecure}
+		if l.Username != "" {
+			s.Auth = &authn.Basic{Username: l.Username, Password: l.Password}
+		}
+		return s
 	}
-	return &authn.Basic{Username: l.Username, Password: l.Password}, l.Insecure, nil
+	var out []ociimage.Source
+	for _, e := range regs.Endpoints(r.Context().RegistryStr()) {
+		// RegistriesOf checked the endpoint.
+		u, _ := url.Parse(e)
+		out = append(out, source(e, u.Host))
+	}
+	return append(out, source("", r.Context().RegistryStr())), nil
 }
