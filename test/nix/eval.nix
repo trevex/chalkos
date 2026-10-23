@@ -350,10 +350,21 @@ lib.runTests {
     };
   };
   # chalkd pulls images over HTTPS with Go's crypto/x509, which reads the system trust store at
-  # /etc/ssl/certs/ca-certificates.crt.
+  # /etc/ssl/certs/ca-certificates.crt, on the nodes for upgrades and on the installer for installs.
   testImageHasTheCABundle = {
-    expr = (worker [ ]).environment.etc ? "ssl/certs/ca-certificates.crt";
-    expected = true;
+    expr =
+      let
+        i = mkImages { variants.worker = { }; };
+        has = config: config.environment.etc ? "ssl/certs/ca-certificates.crt";
+      in
+      {
+        node = has i.nixos.worker-metal.config;
+        installer = has i.nixos.installer.config;
+      };
+    expected = {
+      node = true;
+      installer = true;
+    };
   };
   testChrony = {
     expr =
