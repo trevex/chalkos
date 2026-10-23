@@ -279,10 +279,11 @@ type Skipper interface {
 
 // Skip receives the store and its hash tree that the stream holds for a slot that holds them
 // already, and checks their SHA-256 all the same: every part of an image is checked. A Skipper
-// passes over them without reading them instead, since its source checks the parts it serves.
+// passes over them without reading them instead: the slot holds them already, as Holds found by
+// reading its hash tree and verifying its store against the root hash.
 func Skip(h Header, stream io.Reader) error {
-	// A Skipper's parts are those the header's SHA-256 sums name, which its source checks; the
-	// slot was found to hold them.
+	// What the stream would carry need not be read: Holds verified the slot's store and hash tree
+	// against the header's root hash and sizes, and the slot keeps them.
 	if s, ok := stream.(Skipper); ok {
 		if err := s.Skip(h.StoreSize + h.VeritySize); err != nil {
 			return fmt.Errorf("pass over the store and hash tree: %w", err)

@@ -85,7 +85,12 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		}
 		pull, err := s.pullParts(ctx, ref, header, h.GetConfig())
 		if err != nil {
-			return nil, failed(connect.CodeInvalidArgument, "upgrade: %v", err)
+			code := connect.CodeInvalidArgument
+			var ce *connect.Error
+			if errors.As(err, &ce) {
+				code = ce.Code()
+			}
+			return nil, failed(code, "upgrade: %v", plain(err))
 		}
 		defer pull.Close()
 		parts = pull

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -22,13 +23,13 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-// registryConfig is a Registry of the host with the user ci-bot and the token s3cret, and its
-// Secret.
+// registryConfig is a Registry of the host with the user ci-bot and the token s3cret, which
+// allows plain HTTP, as the test registries serve it, and its Secret.
 func registryConfig(host string) string {
 	return fmt.Sprintf(`apiVersion: chalkos.dev/v1alpha1
 kind: Registry
 metadata: {name: lab}
-spec: {host: %q, username: ci-bot, password: {secretRef: {name: lab, key: token}}}
+spec: {host: %q, insecure: true, username: ci-bot, password: {secretRef: {name: lab, key: token}}}
 ---
 apiVersion: chalkos.dev/v1alpha1
 kind: Secret
@@ -57,7 +58,8 @@ func pulledHeader(t *testing.T, host string) *nodev1.UpgradeHeader {
 
 // TestUpgradePullsTheImage pulls the image an upgrade names in a registry, with the credentials of
 // the Registry of its host in the config the upgrade delivers, or else in the running config, and
-// anonymously without one, which a registry that asks for credentials refuses. An image whose
+// anonymously without one, which a registry that asks for credentials refuses. It pulls over
+// HTTPS alone unless the Registry allows plain HTTP. An image whose
 // header is not the upgrade's is refused. The installation reads the store, hash tree and UKI as
 // it reads them from chunks; failures name the reference.
 func TestUpgradePullsTheImage(t *testing.T) {
@@ -71,8 +73,10 @@ func TestUpgradePullsTheImage(t *testing.T) {
 		{name: "with the running config's Registry", running: registryConfig(host)},
 		{name: "with the delivered config's Registry", config: registryConfig(host)},
 		{name: "with the delivered config's Registry over the running one's", running: registryConfig("other.example"), config: registryConfig(host)},
-		{name: "not with the running config's Registry when the upgrade delivers config", running: registryConfig(host), config: registryConfig("other.example"), want: "UNAUTHORIZED"},
-		{name: "anonymously", want: "UNAUTHORIZED"},
+		{name: "not with the running config's Registry when the upgrade delivers config", running: registryConfig(host), config: registryConfig("other.example"), want: "plain HTTP to " + host + " is refused"},
+		{name: "anonymously", running: fmt.Sprintf("apiVersion: chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lab}\nspec: {host: %q, insecure: true}\n", host), want: "UNAUTHORIZED"},
+		{name: "over HTTPS alone without a Registry", want: "plain HTTP to " + host + " is refused: set insecure: true"},
+		{name: "over HTTPS alone without insecure", running: strings.Replace(registryConfig(host), "insecure: true, ", "", 1), want: "plain HTTP to " + host + " is refused: set insecure: true"},
 		{name: "another header", running: registryConfig(host), platform: "kvm", want: "its header describes"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,26 +160,55 @@ func TestUpgradeRefusesChunksOfAPull(t *testing.T) {
 	}
 }
 
-// TestRegistryAuth authenticates with the Registry of the reference's registry host, Docker Hub's
-// by either of its names, and pulls anonymously from a host no Registry names, whatever its port.
+// TestRegistryAuth authenticates with the Registry of the reference's registry host, in any case
+// and Docker Hub's by either of its names, and allows plain HTTP if it does. It pulls anonymously
+// and over HTTPS alone from a host no Registry names, whatever its port.
 func TestRegistryAuth(t *testing.T) {
-	docs, err := config.Parse(strings.NewReader(registryConfig("docker.io")))
+	docs, err := config.Parse(strings.NewReader(registryConfig("Docker.IO")))
 	if err != nil {
 		t.Fatal(err)
 	}
 	digest := "@sha256:" + strings.Repeat("ab", 32)
-	for ref, want := range map[string]authn.Authenticator{
-		"docker.io/library/chalkos" + digest:       &authn.Basic{Username: "ci-bot", Password: "s3cret"},
-		"index.docker.io/library/chalkos" + digest: &authn.Basic{Username: "ci-bot", Password: "s3cret"},
-		"docker.io:5000/library/chalkos" + digest:  authn.Anonymous,
-		"ghcr.io/library/chalkos" + digest:         authn.Anonymous,
+	basic := &authn.Basic{Username: "ci-bot", Password: "s3cret"}
+	for ref, want := range map[string]struct {
+		auth     authn.Authenticator
+		insecure bool
+	}{
+		"docker.io/library/chalkos" + digest:       {basic, true},
+		"index.docker.io/library/chalkos" + digest: {basic, true},
+		"docker.io:5000/library/chalkos" + digest:  {authn.Anonymous, false},
+		"ghcr.io/library/chalkos" + digest:         {authn.Anonymous, false},
 	} {
-		got, err := registryAuth(ref, docs)
-		if err != nil || fmt.Sprint(got) != fmt.Sprint(want) {
-			t.Errorf("%s: %v, %v; want %v", ref, got, err, want)
+		got, insecure, err := registryAuth(ref, docs)
+		if err != nil || fmt.Sprint(got) != fmt.Sprint(want.auth) || insecure != want.insecure {
+			t.Errorf("%s: %v, %v, %v; want %v, %v", ref, got, insecure, err, want.auth, want.insecure)
 		}
 	}
-	if _, err := registryAuth("docker.io/library/chalkos:v1", docs); err == nil || !strings.Contains(err.Error(), "is no image reference by digest") {
+	if _, _, err := registryAuth("docker.io/library/chalkos:v1", docs); err == nil || !strings.Contains(err.Error(), "is no image reference by digest") {
 		t.Errorf("by tag: %v", err)
+	}
+}
+
+// TestUpgradePullFailsInternallyWithoutTheRunningConfig answers an upgrade that pulls without
+// config with an internal error when the running config cannot be read.
+func TestUpgradePullFailsInternallyWithoutTheRunningConfig(t *testing.T) {
+	c := newCreds(t)
+	s, _ := configServer(t)
+	slot := slotOf(t, s)
+	if err := os.RemoveAll(slot); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(slot, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, error) {
+		t.Error("installed the image")
+		return upgrade.Result{}, nil
+	}
+	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
+	stream := conn.Upgrade(context.Background())
+	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: pulledHeader(t, ocitest.Registry(t))}})
+	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the running image's config slot") {
+		t.Errorf("upgrade = %v", err)
 	}
 }

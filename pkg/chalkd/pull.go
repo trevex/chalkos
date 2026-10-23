@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"connectrpc.com/connect"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 
@@ -17,13 +18,15 @@ import (
 // pullParts is the stream of the store, hash tree and UKI of the image h describes, which an
 // upgrade pulls from ref. chalkd authenticates with the Registry of ref's host among the documents
 // of the config text delivers, or without config of the running config, and pulls anonymously
-// without one. Nothing is fetched until the stream is read.
+// without one. It pulls over HTTPS alone unless that Registry allows plain HTTP. Nothing is
+// fetched until the stream is read. A failure to read the running config is a connect error of
+// its own code.
 func (s *Server) pullParts(ctx context.Context, ref string, h upgrade.Header, text string) (*ociimage.Pull, error) {
-	docs, err := s.registryDocuments(text)
+	docs, err := s.registryDocuments(ref, text)
 	if err != nil {
-		return nil, fmt.Errorf("pull %s: %w", ref, err)
+		return nil, err
 	}
-	auth, err := registryAuth(ref, docs)
+	auth, insecure, err := registryAuth(ref, docs)
 	if err != nil {
 		return nil, err
 	}
@@ -31,20 +34,20 @@ func (s *Server) pullParts(ctx context.Context, ref string, h upgrade.Header, te
 		ImageID: h.ImageID, RootHash: hex.EncodeToString(h.RootHash), Architecture: h.Architecture, Platform: h.Platform,
 		Revision: h.Provenance.Revision, Tag: h.Provenance.Tag,
 	}
-	return ociimage.NewPull(ctx, ref, auth, want, []ociimage.Part{
+	return ociimage.NewPull(ctx, ref, auth, insecure, want, []ociimage.Part{
 		{MediaType: ociimage.StoreType, Size: h.StoreSize, SHA256: h.StoreSHA256},
 		{MediaType: ociimage.HashTreeType, Size: h.VeritySize, SHA256: h.VeritySHA256},
 		{MediaType: ociimage.UKIType, Size: h.UKISize, SHA256: h.UKISHA256},
 	})
 }
 
-// registryDocuments are the documents whose Registry documents authenticate an upgrade's pull: the
+// registryDocuments are the documents whose Registry documents authenticate the pull of ref: the
 // config text delivers, or without one the running config as it was delivered.
-func (s *Server) registryDocuments(text string) ([]config.Document, error) {
+func (s *Server) registryDocuments(ref, text string) ([]config.Document, error) {
 	if text != "" {
 		docs, err := config.Parse(strings.NewReader(text))
 		if err != nil {
-			return nil, fmt.Errorf("parse the config: %w", err)
+			return nil, fmt.Errorf("pull %s: parse the config: %w", ref, err)
 		}
 		return docs, nil
 	}
@@ -52,36 +55,39 @@ func (s *Server) registryDocuments(text string) ([]config.Document, error) {
 	defer s.mu.Unlock()
 	_, running, _, err := s.runningSlot()
 	if err != nil {
-		return nil, plain(err)
+		return nil, failed(connect.CodeOf(err), "pull %s: %v", ref, plain(err))
 	}
 	return running.Delivered, nil
 }
 
 // registryAuth authenticates a pull of ref, an image by digest, with the Registry among docs whose
-// host is ref's registry, as go-containerregistry names registries, or anonymously without one.
-// The credentials go to that host alone: go-containerregistry sends no Authorization header to a
-// host the registry redirects to.
-func registryAuth(ref string, docs []config.Document) (authn.Authenticator, error) {
+// host is ref's registry, as go-containerregistry names registries and in any case, or
+// anonymously without one, and reports whether that Registry allows plain HTTP. The credentials
+// go to that host and the token service it names alone: go-containerregistry sends no
+// Authorization header to a host the registry redirects to, and without insecure every request
+// is HTTPS.
+func registryAuth(ref string, docs []config.Document) (authn.Authenticator, bool, error) {
 	r, err := name.NewDigest(ref, name.StrictValidation)
 	if err != nil {
-		return nil, fmt.Errorf("%q is no image reference by digest, repository@sha256:…: %w", ref, err)
+		return nil, false, fmt.Errorf("%q is no image reference by digest, repository@sha256:…: %w", ref, err)
+	}
+	host, err := config.RegistryHost(r.Context().RegistryStr())
+	if err != nil {
+		return nil, false, fmt.Errorf("pull %s: %w", ref, err)
 	}
 	creds, err := config.RegistryCredentialsOf(docs)
 	if err != nil {
-		return nil, fmt.Errorf("pull %s: the Registry documents: %w", ref, err)
+		return nil, false, fmt.Errorf("pull %s: the Registry documents: %w", ref, err)
 	}
 	for _, c := range creds {
-		reg, err := name.NewRegistry(c.Host, name.StrictValidation)
-		if err != nil {
-			return nil, fmt.Errorf("pull %s: the Registry of %s: %w", ref, c.Host, err)
-		}
-		if reg.RegistryStr() != r.Context().RegistryStr() {
+		// RegistryCredentialsOf checked the host.
+		if reg, _ := config.RegistryHost(c.Host); reg != host {
 			continue
 		}
 		if c.Username == "" {
-			return authn.Anonymous, nil
+			return authn.Anonymous, c.Insecure, nil
 		}
-		return &authn.Basic{Username: c.Username, Password: c.Password}, nil
+		return &authn.Basic{Username: c.Username, Password: c.Password}, c.Insecure, nil
 	}
-	return authn.Anonymous, nil
+	return authn.Anonymous, false, nil
 }

@@ -12,7 +12,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +27,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/registry"
+
+	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
@@ -1096,5 +1104,78 @@ func TestSkipPassesOverASkipper(t *testing.T) {
 	}
 	if rest, _ := io.ReadAll(s); string(rest) != "uki" {
 		t.Errorf("the stream goes on with %q", rest)
+	}
+}
+
+// TestInstallPassesOverAHeldStoreOfAPull installs an image pulled from a registry again into the
+// slot that holds it, though no entry boots it any more: the pull fetches the UKI alone, and the
+// install writes no partition.
+func TestInstallPassesOverAHeldStoreOfAPull(t *testing.T) {
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
+	l := newLab(t, old)
+	if _, err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(l.esp, linuxDir, "chalkos_2+3.efi"))
+
+	var served sync.Map
+	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, digest, ok := strings.Cut(r.URL.Path, "/blobs/"); ok && r.Method == http.MethodGet {
+			served.Store(digest, true)
+		}
+		reg.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	oh := ociimage.Header{ImageID: "chalkos", RootHash: hex.EncodeToString(img.root), Architecture: "x86-64", Platform: "metal"}
+	contract, err := ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}.Tar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oci, err := ociimage.Build(oh,
+		ociimage.BytesBlob(ociimage.StoreType, img.store),
+		ociimage.BytesBlob(ociimage.HashTreeType, img.hash),
+		ociimage.BytesBlob(ociimage.UKIType, img.uki),
+		ociimage.BytesBlob(ociimage.BootLoaderType, []byte("boot loader")),
+		ociimage.BytesBlob(ociimage.ContractType, contract))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := ocitest.Push(t, oci, strings.TrimPrefix(srv.URL, "http://")+"/lab/node-metal:v1")
+	clear(l.writes)
+	served.Clear()
+	h := img.header
+	pull, err := ociimage.NewPull(context.Background(), ref, authn.Anonymous, true, oh, []ociimage.Part{
+		{MediaType: ociimage.StoreType, Size: h.StoreSize, SHA256: h.StoreSHA256},
+		{MediaType: ociimage.HashTreeType, Size: h.VeritySize, SHA256: h.VeritySHA256},
+		{MediaType: ociimage.UKIType, Size: h.UKISize, SHA256: h.UKISHA256},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pull.Close()
+	if res, err := l.node.Install(context.Background(), h, pull); err != nil || res.Entry == "" {
+		t.Fatalf("install = %+v, %v", res, err)
+	}
+	if len(l.writes) != 0 {
+		t.Errorf("wrote partitions %v", l.writes)
+	}
+	for what, data := range map[string][]byte{"store": img.store, "hash tree": img.hash} {
+		if _, ok := served.Load("sha256:" + hex.EncodeToString(sum(data))); ok {
+			t.Errorf("the %s was fetched", what)
+		}
+	}
+	if _, ok := served.Load("sha256:" + hex.EncodeToString(sum(img.uki))); !ok {
+		t.Error("the UKI was not fetched")
+	}
+}
+
+// TestInstallRefusesAStreamGoingOnAfterTheUKI refuses a stream with bytes after the UKI.
+func TestInstallRefusesAStreamGoingOnAfterTheUKI(t *testing.T) {
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
+	l := newLab(t, old)
+	stream := io.MultiReader(img.stream(), strings.NewReader("x"))
+	if _, err := l.node.Install(context.Background(), img.header, stream); err == nil || !strings.Contains(err.Error(), "the stream goes on after the UKI") {
+		t.Errorf("install = %v", err)
 	}
 }

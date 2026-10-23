@@ -349,7 +349,17 @@ func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
 	}
 	tmp := filepath.Join(dir, tempPrefix+hex.EncodeToString(h.RootHash)+".efi")
 	tries, err := ReceiveUKI(tmp, h, stream, n.EFIVars)
-	return tmp, tries, err
+	if err != nil {
+		return tmp, 0, err
+	}
+	// The UKI is the stream's last part. A stream that goes on, or fails at its end, such as a
+	// pull whose UKI layer is longer than the header says, is refused.
+	if extra, err := io.Copy(io.Discard, io.LimitReader(stream, 1)); err != nil {
+		return tmp, 0, fmt.Errorf("receive the UKI: %w", err)
+	} else if extra > 0 {
+		return tmp, 0, errors.New("the stream goes on after the UKI")
+	}
+	return tmp, tries, nil
 }
 
 // activate makes the slot hold the image as systemd finds it and gives the UKI its name, the

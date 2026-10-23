@@ -3,8 +3,10 @@ package ociimage
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -14,8 +16,12 @@ import (
 )
 
 // manifestTimeout bounds the fetch of a pulled image's manifest and header; its layers take as
-// long as their reader reads them.
+// long as their reader reads them, as long as the registry sends data.
 const manifestTimeout = 2 * time.Minute
+
+// stallTimeout is how long a layer's fetch may wait for data from the registry before it is
+// canceled.
+var stallTimeout = 2 * time.Minute
 
 // Part is a layer an image is pulled for: its media type, and the size and SHA-256 of its content.
 type Part struct {
@@ -28,8 +34,9 @@ type Part struct {
 // the other, as one stream: an install or an upgrade reads it as it reads the chunks of an image
 // streamed to it. The first read fetches the manifest and the header and refuses an image whose
 // header is not the one wanted, or that has no layer of a part's media type with the part's size
-// and SHA-256 as its digest. A layer is fetched once the one before it was read to its end. Every
-// error names the reference.
+// and SHA-256 as its digest. A layer is fetched once the one before it was read to its end, and
+// ends after exactly its part's size, once go-containerregistry checked its digest. A layer whose
+// registry sends no data for two minutes is canceled. Every error names the reference.
 type Pull struct {
 	ctx    context.Context
 	ref    name.Digest
@@ -39,47 +46,119 @@ type Pull struct {
 	// next is the part read next; checked is set once the manifest was checked.
 	next    int
 	checked bool
+	// cur is the layer being read, left the bytes of it not read yet; cancel cancels its fetch
+	// with a cause, and stall does once the registry sent no data for stallTimeout.
 	cur     io.ReadCloser
+	left    int64
+	cancel  context.CancelCauseFunc
+	stall   *time.Timer
+	ctxCur  context.Context
+	stalled error
+	// err is the error a read failed with, which every later read returns.
+	err error
 }
 
 // NewPull is the Pull of the parts of the image at ref, which must name a manifest by digest,
-// authenticated with auth; authn.Anonymous pulls without credentials. ctx bounds every fetch.
-func NewPull(ctx context.Context, ref string, auth authn.Authenticator, want Header, parts []Part) (*Pull, error) {
-	d, err := name.NewDigest(ref, name.StrictValidation)
+// authenticated with auth; authn.Anonymous pulls without credentials. It pulls over HTTPS alone,
+// unless insecure allows plain HTTP to ref's registry. ctx bounds every fetch.
+func NewPull(ctx context.Context, ref string, auth authn.Authenticator, insecure bool, want Header, parts []Part) (*Pull, error) {
+	opts := []name.Option{name.StrictValidation}
+	if insecure {
+		opts = append(opts, name.Insecure)
+	}
+	d, err := name.NewDigest(ref, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("%q is no image reference by digest, repository@sha256:…: %w", ref, err)
 	}
-	p, err := remote.NewPuller(remote.WithAuth(auth))
+	var transport http.RoundTripper = remote.DefaultTransport
+	if !insecure {
+		transport = httpsOnly{next: transport}
+	}
+	p, err := remote.NewPuller(remote.WithAuth(auth), remote.WithTransport(transport))
 	if err != nil {
 		return nil, err
 	}
 	return &Pull{ctx: ctx, ref: d, puller: p, want: want, parts: parts}, nil
 }
 
+// httpsOnly refuses every request but one over HTTPS, as go-containerregistry falls back to plain
+// HTTP for a loopback or private registry host, and follows redirects to any scheme.
+type httpsOnly struct{ next http.RoundTripper }
+
+func (t httpsOnly) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.URL.Scheme != "https" {
+		return nil, fmt.Errorf("plain HTTP to %s is refused: set insecure: true in the Registry of the host to allow it", r.URL.Host)
+	}
+	return t.next.RoundTrip(r)
+}
+
 func (p *Pull) Read(b []byte) (int, error) {
-	for {
-		if p.cur == nil {
-			if p.next == len(p.parts) {
-				return 0, io.EOF
-			}
-			if err := p.open(); err != nil {
-				return 0, err
-			}
+	if p.err != nil {
+		return 0, p.err
+	}
+	n, err := p.read(b)
+	if err != nil && err != io.EOF {
+		p.err = err
+	}
+	return n, err
+}
+
+// read is Read without the error of an earlier read.
+func (p *Pull) read(b []byte) (int, error) {
+	if p.cur == nil {
+		if p.next == len(p.parts) {
+			return 0, io.EOF
 		}
-		n, err := p.cur.Read(b)
-		if err == io.EOF {
-			p.cur.Close()
-			p.cur = nil
-			p.next++
-			if n > 0 {
-				return n, nil
-			}
-			continue
+		if err := p.open(); err != nil {
+			return 0, err
+		}
+	}
+	part := p.parts[p.next]
+	if int64(len(b)) > p.left {
+		b = b[:p.left]
+	}
+	p.stall.Reset(stallTimeout)
+	n, err := p.cur.Read(b)
+	p.left -= int64(n)
+	if p.left == 0 && err == nil {
+		err = p.end()
+	}
+	p.stall.Stop()
+	switch {
+	case err == io.EOF && p.left == 0:
+	case err == io.EOF:
+		return n, fmt.Errorf("pull %s: the %s layer ends after %d of %d bytes", p.ref, part.MediaType, part.Size-p.left, part.Size)
+	case err != nil:
+		if errors.Is(err, errTooLong) {
+			return n, fmt.Errorf("pull %s: the %s layer is longer than %d bytes", p.ref, part.MediaType, part.Size)
+		}
+		if context.Cause(p.ctxCur) == p.stalled {
+			return n, p.stalled
+		}
+		return n, fmt.Errorf("pull %s: the %s layer: %w", p.ref, part.MediaType, err)
+	default:
+		return n, nil
+	}
+	p.Close()
+	p.next++
+	return n, nil
+}
+
+// errTooLong is the error of a layer longer than its part.
+var errTooLong = errors.New("the layer is longer than its part")
+
+// end reads the layer being read past the bytes of its part and returns io.EOF if it ends there,
+// which go-containerregistry returns only once the layer's digest matched.
+func (p *Pull) end() error {
+	var one [1]byte
+	for {
+		n, err := p.cur.Read(one[:])
+		if n > 0 {
+			return errTooLong
 		}
 		if err != nil {
-			return n, fmt.Errorf("pull %s: the %s layer: %w", p.ref, p.parts[p.next].MediaType, err)
+			return err
 		}
-		return n, nil
 	}
 }
 
@@ -99,12 +178,15 @@ func (p *Pull) Close() error {
 	if p.cur == nil {
 		return nil
 	}
+	p.stall.Stop()
 	err := p.cur.Close()
-	p.cur = nil
+	p.cancel(nil)
+	p.cur, p.cancel, p.stall, p.ctxCur, p.stalled = nil, nil, nil, nil, nil
 	return err
 }
 
-// open checks the image once and opens the layer of the next part.
+// open checks the image once and opens the layer of the next part, whose fetch is canceled once
+// the registry sends no data for stallTimeout.
 func (p *Pull) open() error {
 	if !p.checked {
 		if err := p.check(); err != nil {
@@ -113,13 +195,24 @@ func (p *Pull) open() error {
 		p.checked = true
 	}
 	part := p.parts[p.next]
-	l, err := p.puller.Layer(p.ctx, p.ref.Context().Digest("sha256:"+hex.EncodeToString(part.SHA256)))
+	ctx, cancel := context.WithCancelCause(p.ctx)
+	stalled := fmt.Errorf("no data from the registry for %v while pulling the %s layer of %s", stallTimeout, part.MediaType, p.ref)
+	stall := time.AfterFunc(stallTimeout, func() { cancel(stalled) })
+	l, err := p.puller.Layer(ctx, p.ref.Context().Digest("sha256:"+hex.EncodeToString(part.SHA256)))
+	var rc io.ReadCloser
 	if err == nil {
-		p.cur, err = l.Compressed()
+		rc, err = l.Compressed()
 	}
+	stall.Stop()
 	if err != nil {
+		if context.Cause(ctx) == stalled {
+			cancel(nil)
+			return stalled
+		}
+		cancel(nil)
 		return fmt.Errorf("pull %s: the %s layer: %w", p.ref, part.MediaType, err)
 	}
+	p.cur, p.left, p.cancel, p.stall, p.ctxCur, p.stalled = rc, part.Size, cancel, stall, ctx, stalled
 	return nil
 }
 
