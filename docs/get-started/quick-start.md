@@ -5,14 +5,11 @@ description: "Run a chalkos cluster of two QEMU virtual machines on this machine
 
 # Quick start
 
-This tutorial builds a chalkos cluster of one control
-plane and one worker on
-your machine, runs kubectl against it, upgrades both nodes to a new image and removes the cluster
-again. chalklab runs the two nodes as QEMU virtual machines,
-each with UEFI firmware, Secure Boot and a
-TPM, so they go through the same install, bootstrap and upgrade
-steps as real machines. It takes about 15 minutes; most of that is Nix downloading and building the
-image the first time.
+This tutorial builds a chalkos cluster of one control plane and one worker on your machine, runs
+kubectl against it, upgrades both nodes to a new image and removes the cluster again. chalklab runs
+the two nodes as QEMU virtual machines, each with UEFI firmware, Secure Boot and a TPM, so they go
+through the same install, bootstrap and upgrade steps as real machines. It takes about 15 minutes;
+most of that is Nix downloading and building the image the first time.
 
 ## Before you begin
 

@@ -12,17 +12,19 @@ the end-to-end tests.
 
 ## Nodes and network
 
-A node is the machine that runs a chalkos image, on bare metal
-or as a virtual machine under KVM.
+A node is the machine that runs a chalkos image, on bare metal or as a virtual machine under KVM.
 
 ### Machine and firmware
 
 | Requirement | What chalkos needs | Without it |
 | --- | --- | --- |
-| CPU architecture | x86-64. Images are built for [`system`](../reference/options.md#system), `x86_64-linux` by default. | chalkd and the partition layout know arm64, but no arm64 image has been built or tested. |
+| CPU architecture | x86-64. Images are built for the image option `system`, `x86_64-linux` by default. | chalkd and the partition layout know arm64, but no arm64 image has been built or tested. |
 | Firmware | UEFI. systemd-boot and the UKI are EFI binaries. | A BIOS-only machine does not boot an image. |
 | Secure Boot | On, with the certificate that signs the images in the firmware's db. | The image boots, but nothing verifies the UKI or the store, and the TPM unseals STATE and VAR for whatever boots. |
-| TPM | TPM 2.0, for the default encryption mode `tpm2`, which seals the keys of STATE, VAR and encrypted volumes to PCR 7. | Install fails with mode `tpm2`. Set `spec.encryption.mode` of the node's [`SystemDisk`](../reference/kinds.md#systemdisk) document to `none`, which leaves STATE and the node's secrets unencrypted on the disk. |
+| TPM | TPM 2.0, for the default encryption mode `tpm2`, which seals the keys of STATE, VAR and encrypted volumes to PCR 7. | Install fails with mode `tpm2`. Set `spec.encryption.mode` of the node's `SystemDisk` document to `none`, which leaves STATE and the node's secrets unencrypted on the disk. |
+
+The image option [`system`](../reference/options.md#system) sets the architecture, and the
+[`SystemDisk`](../reference/kinds.md#systemdisk) kind describes the encryption modes.
 
 chalkos does not enrol Secure Boot keys on a real machine. The operator enrols the certificate
 that signs the images, as [Sign images for Secure Boot](../build/sign-images.md) shows; chalklab
@@ -36,10 +38,9 @@ Secure Boot is enforced.
 ### Memory
 
 A node's memory follows mostly from its workloads. Measured before any workload, a single control
-plane uses about 0.7 GiB after its bootstrap and 1.1 GiB
-after a reboot, each control plane of three about 860 MiB, and a
-worker about 0.3 GiB. The end-to-end tests run control planes in
-1.5 to 2 GiB and a worker in 1 GiB.
+plane uses about 0.7 GiB after its bootstrap and 1.1 GiB after a reboot, each control plane of
+three about 860 MiB, and a worker about 0.3 GiB. The end-to-end tests run control planes in 1.5 to
+2 GiB and a worker in 1 GiB.
 
 ### System disk
 
@@ -48,24 +49,31 @@ The sizes of the system region are options of a variant's NixOS modules; VAR's i
 
 | Partition | Default size | Option |
 | --- | --- | --- |
-| ESP | 1 GiB | [`chalkos.disk.espSize`](../reference/options.md#chalkosdiskespsize) |
-| Store, slot A and slot B | 3 GiB each | [`chalkos.disk.storeSize`](../reference/options.md#chalkosdiskstoresize) |
-| Store hash tree, slot A and slot B | 128 MiB each | [`chalkos.disk.storeVeritySize`](../reference/options.md#chalkosdiskstoreveritysize) |
-| STATE | 128 MiB | [`chalkos.disk.stateSize`](../reference/options.md#chalkosdiskstatesize) |
-| VAR | the rest of the disk | `spec.var.size` of the node's [`SystemDisk`](../reference/kinds.md#systemdisk) |
+| ESP | 1 GiB | `chalkos.disk.espSize` |
+| Store, slot A and slot B | 3 GiB each | `chalkos.disk.storeSize` |
+| Store hash tree, slot A and slot B | 128 MiB each | `chalkos.disk.storeVeritySize` |
+| STATE | 128 MiB | `chalkos.disk.stateSize` |
+| VAR | the rest of the disk | `spec.var.size` of the node's `SystemDisk` document |
 
 The system region takes about 7.4 GiB. VAR holds etcd, containerd's images and the logs, so its
 size follows from the workloads; a lab's 16 GiB disk leaves about 8.6 GiB for it, enough to try
-chalkos. [Storage and encryption](../how-it-works/node/storage.md) explains the layout and its limits.
+chalkos. The [image options](../reference/options.md#chalkosdiskespsize) describe the
+`chalkos.disk` options, and [Storage and encryption](../how-it-works/node/storage.md) explains the
+layout and its limits.
 
 ### Network
 
 | Requirement | What chalkos needs |
 | --- | --- |
-| Addresses | Static addresses in the node's [`Network`](../reference/kinds.md#network) documents, or DHCP on interfaces that none of them matches. A control plane that joined etcd keeps the addresses it joined with. |
-| Ports | chalkd listens on TCP 50000 and a control plane's API server on TCP 6443; [Ports and firewall](../reference/ports-and-firewall.md) lists every port between nodes and from operators. |
-| Time | Reachable time servers, because certificates are checked against the clock and a node whose clock is off reaches no other node. The default servers are `ptbtime1.ptb.de` to `ptbtime3.ptb.de`, authenticated with NTS; `spec.servers` of a [`TimeSync`](../reference/kinds.md#timesync) document replaces them. |
-| Container registries | Access to `registry.k8s.io` for the control plane, etcd, kube-proxy, CoreDNS and pause images and to `ghcr.io` for flannel, or mirrors of them in [`Mirror`](../reference/kinds.md#mirror) documents. The kubelet and containerd are in the image. |
+| Addresses | Static addresses in the node's `Network` documents, or DHCP on interfaces that none of them matches. A control plane that joined etcd keeps the addresses it joined with. |
+| Ports | chalkd listens on TCP 50000 and a control plane's API server on TCP 6443. |
+| Time | Reachable time servers, because certificates are checked against the clock and a node whose clock is off reaches no other node. The default servers are `ptbtime1.ptb.de` to `ptbtime3.ptb.de`, authenticated with NTS; `spec.servers` of a `TimeSync` document replaces them. |
+| Container registries | Access to `registry.k8s.io` for the control plane, etcd, kube-proxy, CoreDNS and pause images and to `ghcr.io` for flannel, or mirrors of them in `Mirror` documents. The kubelet and containerd are in the image. |
+
+[Ports and firewall](../reference/ports-and-firewall.md) lists every port between nodes and from
+operators. The kinds [`Network`](../reference/kinds.md#network),
+[`TimeSync`](../reference/kinds.md#timesync) and [`Mirror`](../reference/kinds.md#mirror) describe
+the documents that set addresses, time servers and mirrors.
 
 ## Workstation and build host
 
@@ -84,15 +92,22 @@ Nix: it reads the image directories with the inventory and its YAML files.
 
 | Requirement | What chalkos needs |
 | --- | --- |
-| chalkctl and kubectl | From the chalkos flake's packages or the `lab` template's development shell. chalkctl is a static binary and needs no Nix to run, so it can be copied to a machine without Nix, an airgapped one included. |
+| chalkctl and kubectl | From the chalkos flake's packages or the `lab` template's development shell. |
+| mtools | `mdir` and `mcopy`, which `install` and `upgrade` run to read the ESP of an image directory. The flake's chalkctl brings them. |
 | Files | The inventory, `chalkos.yaml`, the YAML files it names, and the image directories the inventory names for the nodes, for installs, upgrades and `chalkctl validate`. |
 | age identity | To decrypt `secrets.age`: an age key in `~/.config/chalkos/age.key`, or the SSH key `~/.ssh/id_ed25519` or `~/.ssh/id_rsa` the file was encrypted to, or a file named with `--identity`. A client file needs none. |
 | Network | Reach to each node's TCP 50000 and to the API server's TCP 6443. |
 
-### Lab host
+The flake's `bin/chalkctl` is a wrapper script that puts mtools on the `PATH` and runs
+`bin/.chalkctl-wrapped`. That program is built without cgo, so it is a static binary. To run
+chalkctl on a machine without Nix, an airgapped one included, copy `bin/.chalkctl-wrapped` there
+as `chalkctl` and install the distribution's mtools package.
+[Set up your workstation](../operate/workstation.md#chalkctl-comes-from-the-chalkos-flake) shows how
+to take chalkctl from the flake.
 
-chalklab runs a cluster's `kvm` nodes as QEMU virtual
-machines on one machine, without root.
+## Lab host
+
+chalklab runs a cluster's `kvm` nodes as QEMU virtual machines on one machine, without root.
 
 | Requirement | What chalklab needs |
 | --- | --- |
@@ -104,8 +119,7 @@ machines on one machine, without root.
 
 ## What is untested
 
-chalkos is tested on x86-64 only: on QEMU with KVM in the end-to-end tests and the lab, and with the
-`metal` platform's images in QEMU. arm64, VMware ESXi, Hyper-V and the cloud platforms have no
-platform definition and no tests; the `virtualisation` module
-group carries their drivers, so a custom platform can start
-from it.
+chalkos is tested on x86-64 only: on QEMU with KVM in the end-to-end tests and the lab, and with
+the `metal` platform's images in QEMU. arm64, VMware ESXi, Hyper-V and the cloud platforms have no
+platform definition and no tests. The `virtualisation` module group carries their drivers, so a
+custom platform can start from it.

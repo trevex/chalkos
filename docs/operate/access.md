@@ -29,11 +29,9 @@ without the secrets file. Issue one per person with `chalkctl config new`:
 chalkctl config new --name alice --role operator --ttl 2160h --out alice.json --secrets secrets.age
 ```
 
-The three roles are reader, operator and admin. A reader reads status, logs and disks. An operator
-may also reboot and upgrade nodes. An admin may call every method of the node API except the one
-nodes renew their certificates with. Give each person the least role their work needs.
-[A client file grants one role](workstation.md#a-client-file-grants-one-role) shows the command's
-output and where the file goes, and
+`--role` is reader, operator or admin. Give each person the least role their work needs.
+[A client file grants one role](workstation.md#a-client-file-grants-one-role) says what each role
+may do and where the file goes, and
 [Each command needs the secrets file or a client file](workstation.md#each-command-needs-the-secrets-file-or-a-client-file)
 lists the role each command needs.
 
@@ -61,9 +59,9 @@ until the nodes no longer trust the OS CA it chains to. To take access away:
 Each node serves a node certificate, which chalkctl verifies. It is valid for a year, and never
 beyond the node CA that issued it.
 
-On the shipped variant, a node renews its own certificate. chalkd checks about every hour, and once
-two thirds of the certificate's lifetime have passed, it creates a new key and asks a control plane
-at the cluster endpoint for a certificate. A control plane signs its own with the node CA it holds.
+On the shipped variant, a node renews its own certificate. chalkd checks about every hour. Once two
+thirds of the certificate's lifetime have passed, it creates a new key and asks a control plane at
+the cluster endpoint for a certificate. A control plane signs its own with the node CA it holds.
 A failed attempt keeps the current certificate and retries later. Nothing needs doing until
 `chalkctl status` reports a problem on the `node` line under `certificates:`.
 

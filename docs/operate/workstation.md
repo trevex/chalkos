@@ -14,7 +14,7 @@ credential each command needs.
 ## Before you begin
 
 You need an x86-64 Linux machine. To get chalkctl from the chalkos flake, the machine needs Nix
-with flakes enabled. A machine without Nix can run a copy of the binary.
+with flakes enabled. A machine without Nix can run a copy of the program with mtools installed.
 
 You need an age key or an SSH key of type ed25519 or RSA to encrypt the secrets file to. Each
 person who will hold the secrets file needs one, and so does an offline backup.
@@ -25,21 +25,24 @@ builds write, and no Nix.
 
 ## chalkctl comes from the chalkos flake
 
-chalkctl is the package `chalkctl` of the chalkos flake, built for `x86_64-linux`. Run it from a
-shell that has it on the `PATH`:
+chalkctl is the package `chalkctl` of the chalkos flake, built for `x86_64-linux`. Take it from the
+chalkos revision your images are built from, because chalkos is unreleased and its commands and
+node API still change between revisions. Run it from a shell that has it on the `PATH`:
 
 ```sh
-nix shell github:trevex/chalkos#chalkctl
+nix shell github:trevex/chalkos/<rev>#chalkctl
 chalkctl --help
 ```
 
-Take chalkctl from the chalkos revision your images are built from: the one the image author's
-`flake.lock` pins. chalkos is unreleased, and its commands and node API still change between
-revisions. A cluster's flake can add chalkctl to its development shell, as the lab template
-does, so that `nix develop` gives the chalkctl of the pinned revision.
+`<rev>` is the commit that the image author's `flake.lock` pins for the `chalkos` input, its
+`locked.rev`. A cluster's flake can add chalkctl to its development shell instead, as the lab
+template does, so that `nix develop` gives the chalkctl of the pinned revision.
 
-chalkctl is built without cgo, so the binary is static. Copy `bin/chalkctl` out of the package to
-run it on a machine without Nix, an airgapped one included.
+The package's `bin/chalkctl` is a wrapper script that puts mtools on the `PATH` and runs the
+program `bin/.chalkctl-wrapped`. `install` and `upgrade` run mtools' `mdir` and `mcopy` to read
+the ESP of an image directory. The program is built without cgo, so it is a static binary. To run
+chalkctl on a machine without Nix, an airgapped one included, copy `bin/.chalkctl-wrapped` there as
+`chalkctl` and install the distribution's mtools package.
 
 ## The repository holds the inventory, the config files and the images
 
@@ -48,7 +51,9 @@ secrets are generated:
 
 ```text
 homelab/
+├── .gitignore         keeps images/ and nix build's result links out of git
 ├── flake.nix          the image author's flake, which builds the image
+├── extensions/        the image author's NixOS modules that add kinds
 ├── chalkos.yaml       the inventory
 ├── cluster/           config files every node gets
 │   ├── bgp.yaml
@@ -77,9 +82,9 @@ run chalkctl from the repository's root. Paths in the inventory are relative to 
 `chalkbuild sign` writes a signed copy beside it, such as `images/node-metal-signed`, for nodes
 that enforce Secure Boot. Both are outside git: the homelab's `.gitignore` lists `images/`.
 
-Commit the inventory, `cluster/`, `nodes/` and `secrets.pub.json`. The flake reads
-`secrets.pub.json`, and a flake sees only the files git tracks. `secrets.age` may be committed
-too, as the next section explains.
+Commit the inventory, `cluster/`, `nodes/` and `secrets.pub.json`. A flake that names
+`secrets.pub.json` in `osCA` reads it, and a flake sees only the files git tracks. `secrets.age`
+may be committed too, as the next section explains.
 
 ## Generate the cluster's secrets with age
 
@@ -105,11 +110,7 @@ runs chalkctl.
 The command writes two files:
 
 - `secrets.age` is the secrets file, encrypted to the recipients.
-- `secrets.pub.json` is its public half, with certificates and no keys. The image author names it
-  in the `osCA` argument of `mkImages`, so that images and the installer accept only clients
-  with a certificate from this cluster's OS CA, as
-  [The OS CA ties images to one cluster](../build/variants-and-platforms.md#the-os-ca-ties-images-to-one-cluster)
-  describes.
+- `secrets.pub.json` is its public half, with certificates and no keys.
 
 `gen secrets` refuses to overwrite either file, because new secrets would lock you out of every
 installed node:
@@ -139,8 +140,21 @@ Every clone then carries it, so its protection rests on the recipients' keys alo
 
     New secrets do not match the installed nodes. Without the file you cannot install or
     reinstall a node, deliver config, issue client files or derive a recovery key. Back it up to
-    a second place. [Recover a node](recover-node.md#the-secrets-file-is-lost) lists what still
-    works without it.
+    a second place, as [Back up what you cannot rebuild](#back-up-what-you-cannot-rebuild) lists.
+    [Recover a node](recover-node.md#the-secrets-file-is-lost) lists what still works without it.
+
+## Build the images with the cluster's OS CA
+
+Give `secrets.pub.json` to the image author, who names it in the `osCA` argument of `mkImages`, as
+`osCA = ./secrets.pub.json;`. The image author then builds the images and the installer again.
+Their chalkd in maintenance mode accepts only clients with a certificate from this cluster's OS
+CA, so nobody else can install an image on a machine that waits for its install.
+[The OS CA ties images to one cluster](../build/variants-and-platforms.md#the-os-ca-ties-images-to-one-cluster)
+describes the argument, and [Your first image flake](../build/first-image.md) shows the flake that
+takes it.
+
+Images built without `osCA` accept any client until they are installed. The homelab's flake leaves
+it out, which suits a lab on a private network alone.
 
 ## Secret documents hold the services' secrets
 
@@ -179,9 +193,9 @@ file of their own, with the least role their work needs:
 - admin may call every method of the node API, but for the one nodes renew their own
   certificates with.
 
-Nothing revokes a single client file. Access ends when the certificate expires, or for every
-client file at once when you rotate the OS CA. A short validity limits how long the file
-of someone who leaves keeps working without a rotation.
+Nothing revokes a single client file.
+[Access ends when a certificate expires or its CA goes](access.md#access-ends-when-a-certificate-expires-or-its-ca-goes)
+describes how to take access away.
 
 ## Each command needs the secrets file or a client file
 
@@ -266,20 +280,40 @@ The diagram shows the secrets file at the centre. The keys of its recipients dec
 issues client files, and chalkctl issues itself a one-hour admin certificate from it for each
 command. Its public half reaches the images, whose chalkd accepts certificates of the OS CA.
 
+## Back up what you cannot rebuild
+
+A node can be reinstalled and an image built again, but some files exist only where you keep them.
+Back up these files to a place apart from the workstation:
+
+- The secrets file and the age or SSH identities of its recipients, the offline backup key
+  included. Without an identity the file cannot be decrypted.
+- The Secure Boot db key and certificate, `db.key` and `db.crt`, which
+  [Sign images for Secure Boot](../build/sign-images.md) creates. Every machine's firmware trusts
+  that certificate, so a new key means enrolling a new certificate on each machine.
+- The repository: the inventory, the config files, `secrets.pub.json` and `flake.lock`, which pins
+  the chalkos revision every image is built from.
+- The image directory of the image the nodes ran before an upgrade, until the new image has
+  proven itself. [Go back to the previous image](upgrade.md#go-back-to-the-previous-image) uses
+  it.
+- The password of each node whose encryption fallback is a password. Nothing else holds it.
+
+On the shipped variant, the cluster's state lives in etcd on the control planes.
+[Plan backups](../kubernetes/production-cluster.md#plan-backups) covers etcd and the workloads.
+
 ## Check that it worked
 
 `chalkctl validate` reads the inventory, the config files and the image directories, and needs no
-credentials. Run it in the repository's root:
+credentials. It needs the image directory the inventory names, so the image author builds the
+image first. Run it in the repository's root:
 
-```console
-$ chalkctl validate
-cp1: valid for the image node-metal (node on metal, root hash d871203debfe), config 675850c48eaffe4a755dca41652dbf65a5b7959f1e70a3cdd2a94799136fd200
-w1: valid for the image node-metal (node on metal, root hash d871203debfe), config 82ec5bbabd10ec79bf76ad892a0bcd7627c9db2ed4c9e252ad0657313359254c
+```sh
+chalkctl validate
 ```
 
-A line per node shows that chalkctl runs, finds the inventory and reads the image directory. The
-repository then holds `secrets.age` and `secrets.pub.json`, and `~/.config/chalkos/config` holds
-your client file.
+It prints a line per node, as
+[Write a node's config](node-config.md#check-that-it-worked) shows. The lines show that chalkctl
+runs, finds the inventory and reads the image directory. The repository then holds `secrets.age`
+and `secrets.pub.json`, and `~/.config/chalkos/config` holds your client file.
 
 If `validate` cannot open `chalkos.yaml`, run it in the repository's root or pass `--inventory`.
 If a command says that `the secrets file is encrypted and no usable age identity was found`, pass
