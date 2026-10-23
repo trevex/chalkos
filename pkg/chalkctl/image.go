@@ -180,15 +180,6 @@ func ociImage(nc *inventory.NodeConfig, bootLoader bool) (*diskImage, error) {
 	return &diskImage{header: h, contract: &c, source: &nodev1.ImageSource{Source: &nodev1.ImageSource_Oci{Oci: &nodev1.RegistryImage{Reference: a.Reference}}}}, nil
 }
 
-// pullsInstall refuses to have an installer that cannot pull an image from a registry install
-// the node's image in one, before chalkctl reads the image.
-func pullsInstall(nc *inventory.NodeConfig, info *nodev1.InfoResponse) error {
-	if nc.ImageOCI == "" || info.GetPullsInstallImages() {
-		return nil
-	}
-	return fmt.Errorf("%s runs an installer that cannot pull an image from a registry, so it cannot install the image %s from %s; boot an installer built from this chalkos, or pass --image with the image's directory", nc.Name, nc.ImageName, nc.ImageOCI)
-}
-
 // size is how many bytes of the image follow its header.
 func (img *diskImage) size() uint64 {
 	h := img.header

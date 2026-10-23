@@ -77,10 +77,8 @@ sends each node the reference by that digest with the header's sizes and SHA-256
 store, hash tree and UKI. chalkd pulls those layers and checks them against what chalkctl sent.
 It authenticates with the [`Registry`](../reference/kinds.md#registry) for the registry's host,
 from the config the upgrade delivers or else the config it runs, and pulls over HTTPS unless that
-`Registry` sets `insecure`. A chalkd from before pulling cannot take such an upgrade, so chalkctl
-refuses the run before it drains any node; upgrading that node once from a directory fixes it.
-[Publish images to a registry](../guides/publish-images.md#upgrade-from-the-registry) covers the
-steps.
+`Registry` sets `insecure`. [Publish images to a registry](../guides/publish-images.md#upgrade-from-the-registry)
+covers the steps.
 
 Before it sends anything, chalkctl checks each image against the cluster:
 

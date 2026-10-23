@@ -23,10 +23,10 @@ Kubernetes share. A node that runs its image already installs in place. A node t
 installer gets the image as well: the image --image names, or the node's image in the inventory,
 signed with chalkbuild sign when the machine enforces Secure Boot. An image from a directory
 follows the header over the connection. An image in a registry the installer pulls itself, by the
-digest chalkctl resolved, with the credentials of the Registry for the registry's host in the
-config chalkctl sends, and it takes the image's schemas, image.json and partition definitions from
-the image's contract layer. An installer built before pulls is refused an image in a registry.
-With Secure Boot on, the installer checks the UKI and the boot loader against the firmware's db
+digest chalkctl resolved, through the Mirror of the registry's host and with the Registry
+documents of the config chalkctl sends, and it takes the image's schemas, image.json and partition
+definitions from the image's contract layer. With Secure Boot on, the installer checks the UKI and
+the boot loader against the firmware's db
 and dbx. It writes the image to the disk the node's SystemDisk names: a disk on which blkid finds
 no signature, or one holding an unfinished install of the node, which it continues; any other
 disk only with --wipe-disk. The node reboots into the installed image. The node certificate

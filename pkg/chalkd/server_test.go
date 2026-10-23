@@ -637,7 +637,7 @@ func TestInfo(t *testing.T) {
 	}
 	got := resp.Msg
 	if got.Mode != maintenance || got.ImageId != "chalkos-installer" || !got.Installer || !bytes.Equal(got.RootHash, bytes.Repeat([]byte{0xab}, 32)) || got.Revision != "" || got.Tag != "" ||
-		got.BootDisk != "/dev/vda" || !got.Tpm || got.SecureBoot != nodev1.SecureBoot_SECURE_BOOT_ENABLED || got.Fingerprint != "ab01" || got.Variant != "worker" || got.Platform != "" || !got.PullsUpgradeImages || !got.PullsInstallImages {
+		got.BootDisk != "/dev/vda" || !got.Tpm || got.SecureBoot != nodev1.SecureBoot_SECURE_BOOT_ENABLED || got.Fingerprint != "ab01" || got.Variant != "worker" || got.Platform != "" {
 		t.Errorf("info = %+v", got)
 	}
 

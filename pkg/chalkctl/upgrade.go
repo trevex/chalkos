@@ -483,9 +483,6 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			groups[g.key] = g
 		}
 		g = groups[g.key]
-		if g.image != nil && g.image.source != nil && !info.GetPullsUpgradeImages() {
-			return fmt.Errorf("%s runs a chalkd that cannot pull an image from a registry, so it cannot take %s from %s; upgrade it once to an image from a directory, with --image or a directory source in the inventory", name, g.image.name(), g.image.source.GetOci().GetReference())
-		}
 		r.nodes[name] = n
 		if info.Variant != "" && info.Variant != g.variant {
 			r.say("%s runs the variant %s; it gets the image of %s", name, info.Variant, g.variant)

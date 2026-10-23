@@ -121,8 +121,6 @@ type upgradeFake struct {
 	// alreadyStaged makes the node answer an upgrade as one that found the image staged already,
 	// though its status did not say so, as when another run staged it in between.
 	alreadyStaged bool
-	// noPull makes the node's chalkd report that it cannot pull an image from a registry.
-	noPull bool
 	// header is the header the last upgrade sent.
 	header *nodev1.UpgradeHeader
 }
@@ -197,7 +195,7 @@ func (n *upgradeFake) Info(context.Context, *connect.Request[nodev1.InfoRequest]
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return connect.NewResponse(&nodev1.InfoResponse{RootHash: n.root, ImageId: "chalkos", Variant: n.variant, Platform: n.platform, PullsUpgradeImages: !n.noPull}), nil
+	return connect.NewResponse(&nodev1.InfoResponse{RootHash: n.root, ImageId: "chalkos", Variant: n.variant, Platform: n.platform}), nil
 }
 
 func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
@@ -522,8 +520,7 @@ func (l *upgradeLab) images() map[string]string {
 
 // TestUpgradeFromARegistry upgrades a node whose image the inventory names in a registry by tag:
 // the node is told to pull the image by the digest chalkctl resolved, with the header a directory
-// of the same build gives and no chunks. A node whose chalkd cannot pull stops the run before any
-// node is drained or sent anything.
+// of the same build gives and no chunks.
 func TestUpgradeFromARegistry(t *testing.T) {
 	ctx := context.Background()
 	dir := testUpgradeImage(t, "plain", "0.2.0")
@@ -557,16 +554,6 @@ func TestUpgradeFromARegistry(t *testing.T) {
 	defer streamed.Close()
 	if got := l.nodes["n1"].header.GetImage(); !proto.Equal(got, streamed.header) {
 		t.Errorf("header %v, want the directory's %v", got, streamed.header)
-	}
-
-	old := newUpgradeLab(t, 1)
-	old.nodes["n1"].noPull = true
-	old.useInventory(t, map[string]string{"plain": "oci:" + ref})
-	if err := old.run("upgrade", "--nodes", "n1"); err == nil || !strings.Contains(err.Error(), "n1 runs a chalkd that cannot pull an image from a registry") {
-		t.Errorf("a node that cannot pull = %v", err)
-	}
-	if events := old.takeEvents(); slices.ContainsFunc(events, func(e string) bool { return strings.HasSuffix(e, " upgrade") || strings.HasSuffix(e, " drain") }) {
-		t.Errorf("events %q: a node was sent something", events)
 	}
 }
 

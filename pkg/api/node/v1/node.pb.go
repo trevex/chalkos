@@ -258,16 +258,10 @@ type InfoResponse struct {
 	RootHash []byte `protobuf:"bytes,13,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
 	// The git revision and tag the running image was built from, as the node's record of the
 	// images it installed names them; empty when it does not know them.
-	Revision string `protobuf:"bytes,14,opt,name=revision,proto3" json:"revision,omitempty"`
-	Tag      string `protobuf:"bytes,15,opt,name=tag,proto3" json:"tag,omitempty"`
-	// Whether chalkd pulls an upgrade's image from a registry when UpgradeHeader.source names one;
-	// a node without it takes an upgrade's image only as chunks.
-	PullsUpgradeImages bool `protobuf:"varint,16,opt,name=pulls_upgrade_images,json=pullsUpgradeImages,proto3" json:"pulls_upgrade_images,omitempty"`
-	// Whether chalkd pulls an install's image from a registry when InstallHeader.source names one;
-	// an installer without it takes an install's image only as chunks.
-	PullsInstallImages bool `protobuf:"varint,17,opt,name=pulls_install_images,json=pullsInstallImages,proto3" json:"pulls_install_images,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	Revision      string `protobuf:"bytes,14,opt,name=revision,proto3" json:"revision,omitempty"`
+	Tag           string `protobuf:"bytes,15,opt,name=tag,proto3" json:"tag,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InfoResponse) Reset() {
@@ -389,20 +383,6 @@ func (x *InfoResponse) GetTag() string {
 		return x.Tag
 	}
 	return ""
-}
-
-func (x *InfoResponse) GetPullsUpgradeImages() bool {
-	if x != nil {
-		return x.PullsUpgradeImages
-	}
-	return false
-}
-
-func (x *InfoResponse) GetPullsInstallImages() bool {
-	if x != nil {
-		return x.PullsInstallImages
-	}
-	return false
 }
 
 type DisksRequest struct {
@@ -4264,7 +4244,7 @@ var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x1achalkos/node/v1/node.proto\x12\x0fchalkos.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\r\n" +
-	"\vInfoRequest\"\x82\x04\n" +
+	"\vInfoRequest\"\xd6\x03\n" +
 	"\fInfoResponse\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.chalkos.node.v1.ModeR\x04mode\x12\x19\n" +
 	"\bimage_id\x18\x03 \x01(\tR\aimageId\x12\x1c\n" +
@@ -4279,9 +4259,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\bplatform\x18\f \x01(\tR\bplatform\x12\x1b\n" +
 	"\troot_hash\x18\r \x01(\fR\brootHash\x12\x1a\n" +
 	"\brevision\x18\x0e \x01(\tR\brevision\x12\x10\n" +
-	"\x03tag\x18\x0f \x01(\tR\x03tag\x120\n" +
-	"\x14pulls_upgrade_images\x18\x10 \x01(\bR\x12pullsUpgradeImages\x120\n" +
-	"\x14pulls_install_images\x18\x11 \x01(\bR\x12pullsInstallImages\"\x0e\n" +
+	"\x03tag\x18\x0f \x01(\tR\x03tagJ\x04\b\x10\x10\x11J\x04\b\x11\x10\x12R\x14pulls_upgrade_imagesR\x14pulls_install_images\"\x0e\n" +
 	"\fDisksRequest\"<\n" +
 	"\rDisksResponse\x12+\n" +
 	"\x05disks\x18\x01 \x03(\v2\x15.chalkos.node.v1.DiskR\x05disks\"\x80\x02\n" +

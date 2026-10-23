@@ -57,8 +57,8 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	})
 
 	fingerprint := consoleFingerprint(t, n.vm)
-	if info := waitForChalkd(t, n, 5*time.Minute); !info.Installer || info.ImageId != "chalkos-installer" || !info.PullsInstallImages {
-		t.Fatalf("info = %+v, want the installer, which pulls images", info)
+	if info := waitForChalkd(t, n, 5*time.Minute); !info.Installer || info.ImageId != "chalkos-installer" {
+		t.Fatalf("info = %+v, want the installer", info)
 	}
 	image := signedImage(t, dir, "CHALKLAB_IMAGE_DIR")
 	inv, layers := publish(t, reg, image, ociInventory{

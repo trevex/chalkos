@@ -185,10 +185,10 @@ Kubernetes share. A node that runs its image already installs in place. A node t
 installer gets the image as well: the image --image names, or the node's image in the inventory,
 signed with chalkbuild sign when the machine enforces Secure Boot. An image from a directory
 follows the header over the connection. An image in a registry the installer pulls itself, by the
-digest chalkctl resolved, with the credentials of the Registry for the registry's host in the
-config chalkctl sends, and it takes the image's schemas, image.json and partition definitions from
-the image's contract layer. An installer built before pulls is refused an image in a registry.
-With Secure Boot on, the installer checks the UKI and the boot loader against the firmware's db
+digest chalkctl resolved, through the Mirror of the registry's host and with the Registry
+documents of the config chalkctl sends, and it takes the image's schemas, image.json and partition
+definitions from the image's contract layer. With Secure Boot on, the installer checks the UKI and
+the boot loader against the firmware's db
 and dbx. It writes the image to the disk the node's SystemDisk names: a disk on which blkid finds
 no signature, or one holding an unfinished install of the node, which it continues; any other
 disk only with --wipe-disk. The node reboots into the installed image. The node certificate
@@ -305,9 +305,9 @@ Without --image each node (every node of the inventory, or those --nodes names) 
 inventory names for it, which must be the build whose root hash its directory's metadata.json
 names, as status compares nodes with it: rebuild the image or link its directory again otherwise.
 Each node pulls an image the inventory names in a registry itself, by the digest chalkctl resolved
-its reference to, with the credentials of the node's Registry of the registry's host; a node whose
-chalkd cannot pull stops the run before any node is drained. A node that runs on another platform
-than its image stops the run before any node is sent anything. With --image the nodes that run the image's variant get it, or
+its reference to, through the node's Mirror of the registry's host and with its Registry
+documents. A node that runs on another platform than its image stops the run before any node is
+sent anything. With --image the nodes that run the image's variant get it, or
 those --nodes names whatever they run, and nodes on another platform are skipped and named.
 A node may get an image of another variant than the one it runs, which chalkctl prints.
 

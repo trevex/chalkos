@@ -100,29 +100,6 @@ func TestInstallPullsTheImageFromTheRegistry(t *testing.T) {
 	}
 }
 
-// TestOCIImageNeedsAnInstallerThatPulls refuses to install a node from its image in a registry
-// onto an installer that cannot pull it, before chalkctl reads the registry, and accepts one that
-// can.
-func TestOCIImageNeedsAnInstallerThatPulls(t *testing.T) {
-	ta := newTestApp(t)
-	useOCIImage(t, ta, "registry.example/lab/test-metal:v1")
-	c, err := loadInventory(context.Background(), ta.inventory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nc, err := c.inventoryImage("n1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "n1 runs an installer that cannot pull an image from a registry, so it cannot install the image test-metal from registry.example/lab/test-metal:v1"
-	if err := pullsInstall(nc, &nodev1.InfoResponse{Installer: true}); err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("pullsInstall = %v", err)
-	}
-	if err := pullsInstall(nc, &nodev1.InfoResponse{Installer: true, PullsInstallImages: true}); err != nil {
-		t.Errorf("pullsInstall of an installer that pulls = %v", err)
-	}
-}
-
 // TestOCIImageContractAndStatus reads the contract apply-config checks a node's config against,
 // and the root hash status compares a node's store with, from the node's image in a registry.
 func TestOCIImageContractAndStatus(t *testing.T) {

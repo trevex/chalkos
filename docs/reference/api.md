@@ -494,8 +494,6 @@ No fields.
 | `root_hash` | `bytes` | The verity root hash of the store the node runs, as its kernel command line's usrhash= names it, which identifies the running image; empty when it could not be read. |
 | `revision` | `string` | The git revision and tag the running image was built from, as the node's record of the images it installed names them; empty when it does not know them. |
 | `tag` | `string` |  |
-| `pulls_upgrade_images` | `bool` | Whether chalkd pulls an upgrade's image from a registry when UpgradeHeader.source names one; a node without it takes an upgrade's image only as chunks. |
-| `pulls_install_images` | `bool` | Whether chalkd pulls an install's image from a registry when InstallHeader.source names one; an installer without it takes an install's image only as chunks. |
 
 ### InstallHeader { #message-installheader }
 

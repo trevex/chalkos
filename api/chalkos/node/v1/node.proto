@@ -137,12 +137,8 @@ message InfoResponse {
   // images it installed names them; empty when it does not know them.
   string revision = 14;
   string tag = 15;
-  // Whether chalkd pulls an upgrade's image from a registry when UpgradeHeader.source names one;
-  // a node without it takes an upgrade's image only as chunks.
-  bool pulls_upgrade_images = 16;
-  // Whether chalkd pulls an install's image from a registry when InstallHeader.source names one;
-  // an installer without it takes an install's image only as chunks.
-  bool pulls_install_images = 17;
+  reserved 16, 17;
+  reserved "pulls_upgrade_images", "pulls_install_images";
 }
 
 message DisksRequest {}

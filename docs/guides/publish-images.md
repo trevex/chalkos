@@ -172,10 +172,6 @@ that is unreachable, refuses the credentials or lacks the digest fails the insta
 that names the reference, and the disk stays as it was. An install that stops partway continues
 when the command runs again, by a pull or with `--image`.
 
-chalkctl refuses an installer built before installs could pull, before it reads the registry, and
-names the fix: boot an installer built from the current chalkos, or pass `--image` with the
-image's directory. `--image` always streams the image it names.
-
 ## Upgrade from the registry
 
 `chalkctl upgrade` resolves the inventory's reference to a digest once and sends each node the
@@ -194,10 +190,6 @@ as it checks a streamed image: their SHA-256 sums, the store against the root ha
 against the firmware's db and dbx when Secure Boot is enforced. A layer whose registry sends no
 data for two minutes stops that node's upgrade. A node that has the image staged already gets it
 without contacting the registry.
-
-A node whose chalkd predates pulling stops the run before any node is drained, and chalkctl names
-it. Upgrade such a node once to an image from a directory, with `--image` or a directory source in
-the inventory, then run the upgrade from the registry again.
 
 ## What next
 

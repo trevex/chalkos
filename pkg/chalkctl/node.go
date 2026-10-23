@@ -351,7 +351,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		}
 		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
 	} else {
-		if img, c, err = a.installerImage(ctx, t, f.image, info.Msg); err != nil {
+		if img, c, err = a.installerImage(ctx, t, f.image); err != nil {
 			return err
 		}
 		defer img.Close()
@@ -433,8 +433,8 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 // installerImage is the image an installer writes and its contract: the image the path names,
 // or without one the node's image in the inventory. That image comes from its directory, which
 // must hold the build its metadata.json names, or from a registry, which the installer pulls by
-// the digest chalkctl resolved. An installer that cannot pull is refused an image in a registry.
-func (a *app) installerImage(ctx context.Context, t *target, path string, info *nodev1.InfoResponse) (*diskImage, contract, error) {
+// the digest chalkctl resolved.
+func (a *app) installerImage(ctx context.Context, t *target, path string) (*diskImage, contract, error) {
 	fromInventory := path == ""
 	if fromInventory {
 		nc, err := t.cluster.inventoryImage(t.name)
@@ -442,9 +442,6 @@ func (a *app) installerImage(ctx context.Context, t *target, path string, info *
 			return nil, contract{}, err
 		}
 		if nc.ImageOCI != "" {
-			if err := pullsInstall(nc, info); err != nil {
-				return nil, contract{}, err
-			}
 			img, err := ociImage(nc, true)
 			if err != nil {
 				return nil, contract{}, err
