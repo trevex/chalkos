@@ -25,6 +25,8 @@ import (
 
 	"connectrpc.com/connect"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -72,6 +74,8 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 			return nil, errors.New("connection refused")
 		},
 		ClusterAnswers: func(context.Context, k8s.Cluster, kpki.Share) bool { return false },
+		// The API server keeps no objects.
+		APIClient: func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return fake.NewClientset(), nil },
 	}
 	// The loops a test started would run on against its removed files, and load the tests after
 	// it, until the test binary ends.

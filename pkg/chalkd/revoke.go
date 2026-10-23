@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -142,15 +144,37 @@ func (s *Server) revokedNodes(ctx context.Context) (revoked.List, error) {
 	if s.RevokedNodes != nil {
 		return s.RevokedNodes(ctx)
 	}
-	c, _, share, err := s.Kubernetes.controlPlane()
+	return s.Kubernetes.revokedNodes(ctx)
+}
+
+// revokedNodes reads the revoked nodes through the control plane's own API server.
+func (k *Kubernetes) revokedNodes(ctx context.Context) (revoked.List, error) {
+	c, _, share, err := k.controlPlane()
 	if err != nil {
 		return nil, err
 	}
-	cs, err := s.Kubernetes.APIClient(c, share)
+	cs, err := k.APIClient(c, share)
 	if err != nil {
 		return nil, err
 	}
 	return revoked.Load(ctx, cs)
+}
+
+// revokedStatus lists the revoked nodes in a bootstrapped control plane's status, or why they
+// could not be read.
+func (k *Kubernetes) revokedStatus(ctx context.Context, st *nodev1.KubernetesStatus) {
+	list, err := k.revokedNodes(ctx)
+	if err != nil {
+		st.RevokedNodesError = err.Error()
+		return
+	}
+	for _, name := range slices.Sorted(maps.Keys(list)) {
+		n := &nodev1.RevokedNode{Name: name}
+		if at := list[name]; !at.IsZero() {
+			n.RevokedAt = timestamppb.New(at)
+		}
+		st.RevokedNodes = append(st.RevokedNodes, n)
+	}
 }
 
 // staleCAs names, as chalkctl rotate does, the CAs made before a node was revoked at that its

@@ -869,6 +869,9 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	if c.Kind == k8s.KindControlPlane {
+		k.revokedStatus(ctx, st)
+	}
 	node, err := k.Node(ctx)
 	if err != nil {
 		st.NodeReady = fmt.Sprintf("unknown: %v", err)

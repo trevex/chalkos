@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -249,5 +250,45 @@ func TestUnrevokeNodeRevokedAtAnUnknownTime(t *testing.T) {
 	}
 	if got.RevokedAt != nil || !slices.Equal(got.StaleCas, []string{"os-ca", "kubernetes-ca"}) {
 		t.Errorf("revoked at %v, stale CAs %q; want no time and both CAs", got.RevokedAt, got.StaleCas)
+	}
+}
+
+// TestStatusListsRevokedNodes lists the revoked nodes in a bootstrapped control plane's status,
+// and why they could not be read in place of failing the status.
+func TestStatusListsRevokedNodes(t *testing.T) {
+	l := newRevokeLab(t)
+	if _, err := l.revoke("w2"); err != nil {
+		t.Fatal(err)
+	}
+	cm, err := l.cs.CoreV1().ConfigMaps(revoked.Namespace).Get(context.Background(), revoked.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cm.Data["w1"] = "yesterday"
+	if _, err := l.cs.CoreV1().ConfigMaps(revoked.Namespace).Update(context.Background(), cm, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := l.s.Kubernetes.status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := st.RevokedNodes
+	if len(got) != 2 || got[0].Name != "w1" || got[0].RevokedAt != nil || got[1].Name != "w2" || got[1].RevokedAt.AsTime().Format(revoked.TimeFormat) != cm.Data["w2"] || st.RevokedNodesError != "" {
+		t.Errorf("revoked nodes %v, error %q; want w1 at an unknown time and w2 at %s", got, st.RevokedNodesError, cm.Data["w2"])
+	}
+
+	l.s.Kubernetes.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
+		return nil, errors.New("connection refused")
+	}
+	if st, err = l.s.Kubernetes.status(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.RevokedNodes) != 0 || !strings.Contains(st.RevokedNodesError, "connection refused") || !strings.HasPrefix(st.State, "bootstrapped") {
+		t.Errorf("without the API server: revoked nodes %v, error %q, state %q", st.RevokedNodes, st.RevokedNodesError, st.State)
+	}
+
+	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
+	if st, err := worker.Kubernetes.status(context.Background()); err != nil || st.RevokedNodes != nil || st.RevokedNodesError != "" {
+		t.Errorf("a worker's status: %v, %v", st, err)
 	}
 }

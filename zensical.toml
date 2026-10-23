@@ -114,6 +114,8 @@ nav = [
         { "node" = [
           { "Overview" = "reference/cli/chalkctl_node.md" },
           { "renew" = "reference/cli/chalkctl_node_renew.md" },
+          { "revoke" = "reference/cli/chalkctl_node_revoke.md" },
+          { "unrevoke" = "reference/cli/chalkctl_node_unrevoke.md" },
         ] },
         { "node-ca" = [
           { "Overview" = "reference/cli/chalkctl_node-ca.md" },

@@ -80,11 +80,53 @@ secrets file.`
 
 const storageExample = `  chalkctl storage reset w1 data`
 
-const nodeLong = `Manages the node certificate of an installed node. Its command needs the secrets file.`
+const nodeLong = `Manages a node's access to the cluster: renews its node certificate, and revokes and unrevokes
+it by name. node renew needs the secrets file; node revoke and node unrevoke need an admin client
+file or the secrets file.`
 
-const nodeExample = `  chalkctl node renew w1`
+const nodeExample = `  chalkctl node renew w1
+  chalkctl node revoke w1`
 
 const nodeRenewExample = `  chalkctl node renew w1`
+
+const nodeRevokeLong = `Cuts a node off the cluster by name, at once and without a rotation. A control plane lists the
+node in the ConfigMap kube-system/chalkos-revoked-nodes with the time of its revocation and
+deletes the node's Node object; a node revoked already keeps its first time. From then on, control
+planes refuse to renew the node's node certificate, chalkd approves none of its kubelet serving
+certificates, and the API server denies every write by its kubelet (system:node:<node>), which keeps
+it from registering its Node again and from renewing its kubelet client certificate.
+
+The node's certificates stay valid until they expire. Its kubelet can still read from the API
+server, which grants a node with no Node and no pods almost nothing. A control plane's disk holds
+the node CA's and the Kubernetes CA's keys: if a control plane's disk was stolen, rotate os-ca and
+kubernetes-ca with chalkctl rotate as well. A cluster without Kubernetes keeps no revoked nodes:
+there, revoking a node means not renewing its node certificate, and chalkctl rotate os-ca cuts it
+off at once.
+
+A control plane revokes the node: --via, or the first one that answers. The command needs an
+admin client file or the secrets file.`
+
+const nodeRevokeExample = `  # Cut off w1, which was removed from the cluster.
+  chalkctl node revoke w1`
+
+const nodeUnrevokeLong = `Removes a node from the revoked nodes, so a node of that name may join the cluster again. The old
+node's certificates then work again too, unless the CAs they chain to were rotated after the
+revocation: chalkd trusts every node CA the OS CA signed, and the kubelet's certificates chain to
+the Kubernetes CA. The control plane therefore refuses while the OS CA or the Kubernetes CA
+predates the revocation, and names the rotations missing. --force unrevokes the node anyway, and
+its old certificates work again until they expire.
+
+To reuse a revoked node's name safely, rotate both CAs first, then unrevoke it:
+chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish.
+
+A control plane unrevokes the node: --via, or the first one that answers. The command needs an
+admin client file or the secrets file.`
+
+const nodeUnrevokeExample = `  # Reuse the name w1 once the rotations of os-ca and kubernetes-ca have finished.
+  chalkctl node unrevoke w1
+
+  # Let the old w1 back in, certificates and all.
+  chalkctl node unrevoke w1 --force`
 
 const nodeCALong = `Manages the node CA, which issues the certificates nodes serve. Its command needs the secrets
 file.`
@@ -269,9 +311,9 @@ gives; its platform; the image it booted, by its store's root hash and the tag a
 was built from as far as the node knows them, the boot entry and whether that boot was found
 healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled back,
 with the journal of the boot that failed; whether its store is the image the inventory names for
-it; its volumes and their state; Kubernetes; the certificates it serves and when they expire; the
-CAs it trusts; its clock; and the units that failed. The command needs a reader client file or
-the secrets file.`
+it; its volumes and their state; Kubernetes, with the nodes revoked in the cluster on a control
+plane; the certificates it serves and when they expire; the CAs it trusts; its clock; and the
+units that failed. The command needs a reader client file or the secrets file.`
 
 const statusExample = `  chalkctl status cp1
 

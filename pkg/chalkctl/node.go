@@ -848,6 +848,13 @@ func (a *app) status(ctx context.Context, n nodeCommand, pos []string) error {
 	}
 	if k := s.Kubernetes; k != nil {
 		fmt.Fprintln(a.stdout, kubernetesLine(k))
+		w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+		for _, line := range revokedLines(k) {
+			fmt.Fprintln(w, line)
+		}
+		if err := w.Flush(); err != nil {
+			return err
+		}
 	}
 	if len(s.Certificates) > 0 {
 		fmt.Fprintln(a.stdout, "certificates:")

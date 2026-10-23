@@ -551,6 +551,20 @@ message KubernetesStatus {
   // certificates the node holds now and the API server answers ready, otherwise what is not so,
   // such as "the API server serves certificates the node replaced". Empty on other nodes.
   string control_plane = 5;
+  // On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the
+  // ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty on other nodes and when
+  // revoked_nodes_error is set.
+  repeated RevokedNode revoked_nodes = 6;
+  // On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when
+  // they were.
+  string revoked_nodes_error = 7;
+}
+
+message RevokedNode {
+  // The node's name in Kubernetes.
+  string name = 1;
+  // When the node was revoked; unset when the time it is listed with cannot be read.
+  google.protobuf.Timestamp revoked_at = 2;
 }
 
 message DiskStatus {
