@@ -136,3 +136,57 @@ func revokedSince(n *nodev1.RevokedNode) string {
 	}
 	return "since " + n.RevokedAt.AsTime().UTC().Format(time.RFC3339)
 }
+
+// revokedNodesOf reads the revoked nodes by name from the first of the control planes whose
+// status lists them. A control plane that was never bootstrapped keeps no list, so a cluster
+// whose control planes all answer and none of which was bootstrapped has revoked no node yet.
+// Otherwise the list is unknown while no control plane gives it: one does not when it does not
+// answer, cannot read the list, or does not say it read it, as a chalkd from before revocation.
+// The error then names why each did not.
+func revokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx context.Context, name string) (*nodev1.StatusResponse, error)) (map[string]*nodev1.RevokedNode, error) {
+	var why []string
+	bootstrapped := false
+	for _, name := range controlPlanes {
+		st, err := status(ctx, name)
+		if err != nil {
+			bootstrapped = true
+			why = append(why, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		switch k := st.Kubernetes; {
+		case k == nil || !everBootstrapped(k.State):
+			state := "no Kubernetes"
+			if k != nil {
+				state = k.State
+			}
+			why = append(why, fmt.Sprintf("%s: is not bootstrapped: %s", name, state))
+			continue
+		case k.RevokedNodesError != "":
+			why = append(why, fmt.Sprintf("%s: %s", name, k.RevokedNodesError))
+		case !k.RevokedNodesRead:
+			why = append(why, name+": reports no revoked nodes; its chalkd predates node revocation")
+		default:
+			list := map[string]*nodev1.RevokedNode{}
+			for _, n := range k.RevokedNodes {
+				list[n.Name] = n
+			}
+			return list, nil
+		}
+		bootstrapped = true
+	}
+	if !bootstrapped {
+		return map[string]*nodev1.RevokedNode{}, nil
+	}
+	return nil, fmt.Errorf("no control-plane node said which nodes are revoked (%s)", strings.Join(why, "; "))
+}
+
+// everBootstrapped reports whether a control plane in the Kubernetes state was bootstrapped,
+// whether or not it serves now.
+func everBootstrapped(state string) bool {
+	for _, prefix := range []string{"bootstrapped", "etcd data missing", "left etcd"} {
+		if strings.HasPrefix(state, prefix) {
+			return true
+		}
+	}
+	return false
+}

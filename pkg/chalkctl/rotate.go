@@ -218,9 +218,18 @@ func (r *rotation) finishGuard(ctx context.Context, kind string, force bool) err
 // run applies the phase the secrets file records and the ones after it, up to the kind's pause
 // or the end of the finish.
 func (r *rotation) run(ctx context.Context) error {
+	// rotate read the revoked nodes before the first phase; a node revoked while a phase ran is
+	// left out of the phases after it.
+	first := true
 	for {
 		rot := *r.file.secrets.Rotation
 		if !rot.Applied {
+			if !first {
+				if err := r.skipRevoked(ctx); err != nil {
+					return fmt.Errorf("the %s phase of the rotation of the %s did not start: %w; continue with chalkctl rotate %s --resume", rot.Phase, pki.RotationName(rot.Kind), err, rot.Kind)
+				}
+			}
+			first = false
 			r.say("%s: the %s phase", rot.Kind, rot.Phase)
 			if err := r.apply(ctx, rot.Kind, rot.Phase); err != nil {
 				return fmt.Errorf("the %s phase of the rotation of the %s stopped: %w; once that is fixed, continue with chalkctl rotate %s --resume", rot.Phase, pki.RotationName(rot.Kind), err, rot.Kind)
@@ -278,49 +287,25 @@ func (r *rotation) nodesOf(kind string) []string {
 }
 
 // skipRevoked reads the revoked nodes from the first control plane that answers with them and
-// leaves those of the cluster out of the rotation, naming each. Without the list no rotation
-// runs, so none hands a certificate to a revoked node. A cluster without control planes keeps no
-// revoked nodes.
+// leaves those of the cluster out of the rotation, naming each as it first skips it. Without the
+// list no phase runs, so none hands a certificate to a revoked node. A node stays skipped for the
+// rest of the run once it is: it missed the phases before.
 func (r *rotation) skipRevoked(ctx context.Context) error {
 	nodes := r.allNodes()
-	var failed []string
-	for _, name := range r.nodesOf(identity.KindControlPlane) {
-		list, err := r.revokedNodes(ctx, name)
-		if err != nil {
-			failed = append(failed, fmt.Sprintf("%s: %v", name, err))
-			continue
-		}
-		r.revoked = map[string]bool{}
-		for _, n := range list {
-			if slices.Contains(nodes, n.Name) {
-				r.revoked[n.Name] = true
-				r.say("skipping %s: revoked %s", n.Name, revokedSince(n))
-			}
-		}
-		return nil
-	}
-	if len(failed) == 0 {
-		return nil
-	}
-	return fmt.Errorf("no control-plane node said which nodes are revoked (%s); rotate runs only once one does, so it never hands a certificate to a revoked node", strings.Join(failed, "; "))
-}
-
-// revokedNodes reads the revoked nodes from a control plane's status.
-func (r *rotation) revokedNodes(ctx context.Context, name string) ([]*nodev1.RevokedNode, error) {
-	st, err := r.status(ctx, name)
+	list, err := revokedNodesOf(ctx, r.nodesOf(identity.KindControlPlane), r.status)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("%w; rotate runs only once one does, so it never hands a certificate to a revoked node", err)
 	}
-	switch k := st.Kubernetes; {
-	case k == nil:
-		return nil, errors.New("reports no Kubernetes")
-	case !strings.HasPrefix(k.State, "bootstrapped"):
-		return nil, fmt.Errorf("is not bootstrapped: %s", k.State)
-	case k.RevokedNodesError != "":
-		return nil, errors.New(k.RevokedNodesError)
-	default:
-		return k.RevokedNodes, nil
+	if r.revoked == nil {
+		r.revoked = map[string]bool{}
 	}
+	for _, name := range slices.Sorted(maps.Keys(list)) {
+		if slices.Contains(nodes, name) && !r.revoked[name] {
+			r.revoked[name] = true
+			r.say("skipping %s: revoked %s", name, revokedSince(list[name]))
+		}
+	}
+	return nil
 }
 
 // allNodes lists every node, control planes first.

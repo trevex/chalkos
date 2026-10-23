@@ -146,7 +146,13 @@ func (n *fakeNode) Status(ctx context.Context, _ *connect.Request[nodev1.StatusR
 			}
 			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", ControlPlane: state}
 			n.lab.mu.Lock()
-			st.Kubernetes.RevokedNodes, st.Kubernetes.RevokedNodesError = n.lab.revoked, n.lab.revokedErr[n.name]
+			if s, ok := n.lab.states[n.name]; ok {
+				st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: s}
+			} else {
+				k := st.Kubernetes
+				k.RevokedNodes, k.RevokedNodesError = n.lab.revoked, n.lab.revokedErr[n.name]
+				k.RevokedNodesRead = k.RevokedNodesError == "" && !n.lab.unreported[n.name]
+			}
 			n.lab.mu.Unlock()
 		} else {
 			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined"}
@@ -271,6 +277,10 @@ type rotationLab struct {
 	// why one could not read them.
 	revoked    []*nodev1.RevokedNode
 	revokedErr map[string]string
+	// unreported makes control planes report no revoked nodes, as a chalkd from before
+	// revocation; states makes them report a Kubernetes state other than bootstrapped.
+	unreported map[string]bool
+	states     map[string]string
 }
 
 func (l *rotationLab) record(event string) {
@@ -829,5 +839,70 @@ func TestRotateRefusesWithoutRevokedNodes(t *testing.T) {
 	}
 	if plain.phase() != "accept applied" || strings.Contains(plain.ta.stdout.String(), "skipping") {
 		t.Errorf("without Kubernetes the secrets file records %q:\n%s", plain.phase(), plain.ta.stdout)
+	}
+}
+
+// TestRotateRefusesRevokedNodesNotReported takes no empty list from a control plane that does not
+// say it read the list, as one whose chalkd predates revocation.
+func TestRotateRefusesRevokedNodesNotReported(t *testing.T) {
+	l := newRotationLab(t)
+	l.unreported = map[string]bool{"cp1": true, "cp2": true}
+	err := l.rotate("os-ca")
+	if err == nil || !strings.Contains(err.Error(), "cp1: reports no revoked nodes") || !strings.Contains(err.Error(), "cp2: ") {
+		t.Errorf("err = %v, want a refusal naming both control planes", err)
+	}
+	if l.phase() != "" {
+		t.Errorf("the secrets file records %q, want no rotation", l.phase())
+	}
+}
+
+// TestRotateBeforeBootstrap takes a cluster whose control planes all answer and none of which is
+// bootstrapped to have no revoked nodes; one that does not answer leaves that unknown.
+func TestRotateBeforeBootstrap(t *testing.T) {
+	l := newRotationLab(t)
+	l.states = map[string]string{"cp1": "no share", "cp2": "waiting for the first control plane"}
+	if err := l.rotate("os-ca"); err != nil {
+		t.Fatal(err)
+	}
+	if l.phase() != "accept applied" {
+		t.Errorf("the secrets file records %q", l.phase())
+	}
+
+	down := newRotationLab(t)
+	down.states = map[string]string{"cp1": "no share"}
+	down.nodes["cp2"].down = true
+	err := down.rotate("os-ca")
+	if err == nil || !strings.Contains(err.Error(), "cp1: is not bootstrapped") || !strings.Contains(err.Error(), "cp2: ") {
+		t.Errorf("err = %v, want a refusal naming both control planes", err)
+	}
+}
+
+// TestRotateReadsRevokedNodesBeforeEachPhase skips a node revoked while a phase ran in the phases
+// after it.
+func TestRotateReadsRevokedNodesBeforeEachPhase(t *testing.T) {
+	l := newRotationLab(t)
+	if err := l.rotate("os-ca"); err != nil {
+		t.Fatal(err)
+	}
+	// The switch delivers the control planes their shares; w1 is revoked meanwhile.
+	l.onShare = func(string) {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		l.revoked = []*nodev1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}}
+	}
+	l.takeEvents()
+	if err := l.rotate("os-ca", "--resume"); err != nil {
+		t.Fatal(err)
+	}
+	if l.phase() != "refresh applied" {
+		t.Fatalf("the secrets file records %q, want the refresh applied", l.phase())
+	}
+	if out := l.ta.stdout.String(); strings.Count(out, "skipping w1: revoked since 2026-10-23T12:00:00Z\n") != 1 {
+		t.Errorf("stdout does not skip w1 once:\n%s", out)
+	}
+	for _, e := range l.takeEvents() {
+		if strings.HasPrefix(e, "w1 ") {
+			t.Errorf("the rotation asked w1 after its revocation: %s", e)
+		}
 	}
 }
