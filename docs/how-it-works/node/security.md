@@ -242,14 +242,27 @@ the node's Node object. The list takes effect in three places:
 
 The policy takes no parameters. chalkd writes the revoked names into the policy's CEL expression
 itself, and the policy fails closed. A control plane writes the policy again from the ConfigMap
-after each revoke and unrevoke, and each time it applies its add-ons. The API server that
-chalkctl went through denies the node's writes within seconds. The other control planes' API
-servers pick up the policy shortly after.
+after each revoke and unrevoke. Every control plane also compares the ConfigMap's resource version
+with the one it last applied the policy from, about every 10 seconds, and applies the policy again
+when they differ or its last apply failed. So the policy follows a ConfigMap edited by hand, or a
+revocation whose apply was cancelled, within about 10 seconds. The API server that chalkctl went
+through denies the node's writes within seconds. The other control planes' API servers pick up
+the policy shortly after.
+
+`chalkctl node revoke` first asks every other control plane whether it reads the revoked nodes.
+A control plane whose chalkd predates node revocation renews the node's certificate regardless,
+so the command refuses while one does not answer, cannot read the list, or does not say it read
+it. `--force` revokes the node anyway.
 
 chalkctl reads the list as well. `chalkctl rotate` reads it before each phase and skips the listed
 nodes, so no rotation hands a revoked node a certificate. `chalkctl node renew` and
-`chalkctl apply-config --kubernetes-share` refuse a listed node unless `--force` is given. All three
-refuse to run while no control plane says which nodes are revoked.
+`chalkctl apply-config --kubernetes-share` refuse a listed node unless `--force` is given, and
+`chalkctl install` refuses to install a node under a listed name unless `--force` is given. All
+four refuse to run while no control plane says which nodes are revoked. `chalkctl rotate
+--ignore-revoked` rotates without the list, as during an outage of the API server, and every node
+of the inventory then takes part. install counts a control plane that does not answer as an
+installed node as one not installed yet, so a cluster's first nodes install while the others
+wait.
 
 [`chalkctl node unrevoke`](../../reference/cli/chalkctl_node_unrevoke.md) removes the name and
 applies the policy again. A node's old certificates chain to the OS CA, which chalkd trusts with
@@ -279,17 +292,20 @@ A revocation shuts out a node's writes and renewals. It leaves these gaps:
 - A renewal already in flight when the revoke lands can still complete, and the node then holds a
   node certificate valid for a year. The policy still denies its kubelet's writes.
 - A cluster-admin can edit or delete the ConfigMap and the policy with kubectl. Renewals follow
-  the ConfigMap at once, and the policy follows it at the next revoke, unrevoke or add-on apply.
-  An edited or deleted policy stays so until then. Deleting the ConfigMap unrevokes every node.
-  Revoke and unrevoke nodes with chalkctl alone.
+  the ConfigMap at once, and the policy follows it within about 10 seconds. An edited or deleted
+  policy stays so until the ConfigMap changes or chalkd restarts. Deleting the ConfigMap unrevokes
+  every node. Editing the ConfigMap by hand skips the checks of chalkctl node revoke and
+  chalkctl node unrevoke, so use those commands.
 - A control plane renews node certificates only while it can read the list from its API server.
   During a long outage of the API server, renewals stop, the control plane's own included.
   `chalkctl node renew --force` renews a node's certificate without asking the control planes.
 - A control plane that still runs a chalkd from before node revocation renews a revoked node's
   node certificate until it is upgraded. The API server denies the node's writes all the same.
-- The list has a size limit. The policy's expression may hold about 100,000 characters: about
-  2,000 short names, or about 1,000 names of the longest length Kubernetes allows. Unrevoke names
-  once the CAs were rotated, to keep the list short.
+  `chalkctl node revoke` refuses while such a control plane runs, unless `--force` is given.
+- The list has a size limit. The API server compiles no expression longer than 100,000
+  characters, so a control plane refuses a revocation that would make the policy's map longer
+  than 90,000: about 2,000 short names, or about 300 names of the longest length Kubernetes
+  allows. Unrevoke names once the CAs were rotated, to keep the list short.
 - A revoked node left in the inventory is skipped by every rotation, and other commands still
   reach it. Remove it from the inventory.
 

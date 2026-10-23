@@ -273,6 +273,14 @@ certificate's expiry, and a problem beside it when one needs doing, such as a re
 - A node that stays unreachable blocks every phase. Remove it from the inventory, or reinstall it,
   before you resume. A rotation skips a revoked node and says
   `skipping w1: revoked since <time>`, where `<time>` is when the node was revoked.
+- `no control-plane node said which nodes are revoked (...); rotate runs only once one does, so it
+  never hands a certificate to a revoked node, or with --ignore-revoked`: the API server is down,
+  or the control planes run a chalkd from before node revocation. Fix that, or rotate with
+  `--ignore-revoked`, which reads no list and rotates every node of the inventory. A revoked node
+  still in the inventory then receives the new CA and its certificates, so remove revoked nodes
+  from the inventory first. chalkctl warns of this at each run.
+- A node unrevoked while a rotation is paused takes part from the next run on, but it missed the
+  earlier phases, and the rotation may stop at it. Unrevoke nodes before or after a rotation.
 
 ## What next
 

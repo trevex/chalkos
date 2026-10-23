@@ -494,6 +494,19 @@ second keyslot. chalkctl refuses a node that is installed already, with
     Kubernetes secrets. A control plane gets the CAs with their keys, a worker a kubelet client
     certificate.
 
+!!! note "On the shipped variant, a revoked name is refused"
+
+    Before it installs the node, chalkctl asks the other control planes of the inventory for the
+    revoked nodes, and refuses a name that
+    [`chalkctl node revoke`](../reference/cli/chalkctl_node_revoke.md) revoked, with
+    `w1 is revoked since <time>, and install installs it only once chalkctl node unrevoke w1 lets
+    it back in, or with --force`.
+    [Reuse a removed node's name](add-remove-nodes.md#reuse-a-removed-nodes-name) describes how to
+    free the name. chalkctl also refuses while control planes were bootstrapped and none says which
+    nodes are revoked. A control plane that does not answer as an installed node counts as not
+    installed yet, so the cluster's first nodes install while the others still wait in maintenance
+    mode. `--force` installs without asking.
+
 ### The installer writes the image to the system disk
 
 A machine that runs the installer gets the image as well. chalkctl takes it from the directory the

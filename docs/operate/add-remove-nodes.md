@@ -190,14 +190,32 @@ From then on:
 - chalkd approves none of its kubelet serving certificates.
 - The API server denies every write by its kubelet, so the kubelet can neither register its Node
   again nor renew its kubelet client certificate.
-- `chalkctl rotate` skips the node, and `chalkctl node renew` and
-  `chalkctl apply-config --kubernetes-share` refuse it unless `--force` is given.
+- `chalkctl rotate` skips the node, and `chalkctl node renew`,
+  `chalkctl apply-config --kubernetes-share` and `chalkctl install` refuse it unless `--force` is
+  given.
 
 The command needs an admin client file or the secrets file. It goes through a control plane:
 the one `--via` names, or the first other one that answers. The removed node does not have to run,
 and it does not have to be in the inventory any more. Revoking a node twice keeps the first time.
-Revoke and unrevoke nodes with chalkctl alone: an edit of the ConfigMap with `kubectl edit`
-reaches the API server's admission policy only at the next revoke or unrevoke.
+Every control plane applies the API server's admission policy again within about 10 seconds of a
+change to the ConfigMap, so an edit with `kubectl edit` takes effect too. Revoke and unrevoke
+nodes with chalkctl all the same, because an edit by hand skips the commands' checks.
+
+Before it revokes the node, `chalkctl node revoke` asks every other control plane whether it reads
+the revoked nodes. A control plane whose chalkd predates node revocation renews the node's
+certificate regardless, so the command refuses while one does not answer, cannot read the list, or
+runs such a chalkd:
+
+```text
+chalkctl: not every control-plane node says it reads the revoked nodes, and one that does not may go on renewing w1's node certificate (cp2: its chalkd predates node revocation and renews w1's node certificate until it is upgraded); upgrade or repair those, or pass --force to revoke w1 anyway
+```
+
+Upgrade or repair that control plane, then revoke again. `--force` revokes the node at once; the
+API server denies its writes all the same.
+
+A control plane also refuses a revocation that would make the list too long for the API server to
+compile the admission policy, at about 2,000 short names. Unrevoke names whose CAs were rotated
+since, as [Reuse a removed node's name](#reuse-a-removed-nodes-name) describes, to make room.
 
 `chalkctl status` on a control plane lists the revoked nodes:
 
@@ -243,7 +261,9 @@ to. Then remove the name from the revoked nodes:
 
 Unrevoke a name once the rotations are done, even when no new node takes it. The list holds
 about 2,000 short names at most, and after the rotations the old node's certificates no longer
-work anyway.
+work anyway. Unrevoke before or after a rotation, not while one is paused: a node unrevoked
+between two runs of `chalkctl rotate` missed the phases it was skipped in, and the rotation may
+stop at it.
 
 The control plane checks that the OS CA and the Kubernetes CA it trusts were all made after the
 revocation. While one of them predates it, the old node's certificates would work again, so
