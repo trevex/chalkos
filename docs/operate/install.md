@@ -599,7 +599,7 @@ the fingerprint, choose the disk and run `chalkctl install`.
 
 !!! note "On the shipped variant, only the first control plane needs a bootstrap"
 
-    Once `cp1` is back up in normal mode, [Bootstrap a cluster](../kubernetes/bootstrap.md)
+    Once `cp1` is back up in normal mode, [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md)
     starts the cluster on it. The other nodes need no bootstrap. Workers join at the cluster
     endpoint with the kubelet certificate chalkctl gave them. Further control planes join etcd
     and the control plane on their own, as
@@ -651,4 +651,4 @@ covers a node that does not come up after the reboot.
 - [Sign images for Secure Boot](../build/sign-images.md) covers the key's life and why it must
   not change for an installed node.
 
-On the shipped variant, continue at [Bootstrap](../kubernetes/bootstrap.md).
+On the shipped variant, continue at [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md).

@@ -185,8 +185,7 @@ secrets file among the files to keep in a second place.
 
     `bootstrap` and the etcd commands keep working with client files, and the kubelets keep
     renewing their certificates. Existing kubeconfigs work until they expire, and no new ones can
-    be issued. [Protect the secrets file](../kubernetes/production-cluster.md#protect-the-secrets-file)
-    covers backups.
+    be issued.
 
 ## What next
 

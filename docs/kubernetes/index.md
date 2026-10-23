@@ -6,28 +6,38 @@ description: "Plan and run Kubernetes clusters on chalkos nodes"
 # Run Kubernetes
 
 These pages are for operators who run a Kubernetes cluster on chalkos nodes. They add what a
-cluster needs on top of [Operate nodes](../operate/index.md): planning it, bootstrapping it, running
+cluster needs on top of [Operate nodes](../operate/index.md): planning it, bootstrapping it, configuring it, running
 its control plane on several nodes, upgrading Kubernetes, rotating its CAs and keys, and finding
 out why it misbehaves.
 
 <div class="grid cards" markdown>
 
--   :material-clipboard-text-outline: __Plan a production cluster__
+-   :material-clipboard-text-outline: __Plan a cluster__
 
     ---
 
-    Decide the variants, addresses, storage, keys and time sources of a production cluster before
-    installing it.
+    Decide the control planes, the cluster endpoint, the address families and scheduling before
+    installing a cluster.
 
-    [:octicons-arrow-right-24: Read](production-cluster.md)
+    [:octicons-arrow-right-24: Read](plan.md)
 
--   :material-play-circle-outline: __Bootstrap a cluster__
+-   :material-play-circle-outline: __Bootstrap and get a kubeconfig__
 
     ---
 
-    Start the cluster on its first control plane, and issue kubeconfigs for its Kubernetes API.
+    Start the cluster on its first control plane, watch the other nodes join and issue
+    kubeconfigs for its Kubernetes API.
 
     [:octicons-arrow-right-24: Read](bootstrap.md)
+
+-   :material-cog-outline: __Configure Kubernetes__
+
+    ---
+
+    Set the cluster's settings, each node's labels, taints and flags, the pod network and your
+    own add-ons.
+
+    [:octicons-arrow-right-24: Read](configure.md)
 
 -   :material-sitemap: __Run a highly available control plane__
 

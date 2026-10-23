@@ -6,9 +6,8 @@ description: "Decide the variants, addresses, storage, keys and time sources of 
 # Plan a production cluster
 
 A production cluster needs decisions that the [quick start](../get-started/quick-start.md)'s lab
-makes for you. A few of them cannot change once the cluster runs: the IP families, the control
-planes' addresses, the secrets file and the
-Secure Boot signing key. This page lays out the
+makes for you. A few of them cannot change once the cluster runs: the secrets file and the Secure Boot signing
+key. [Plan a cluster](plan.md) takes the Kubernetes decisions. This page lays out the
 cluster's repository, then takes the decisions in the order you meet them while writing its
 files, each with a recommendation and what it costs.
 
@@ -145,154 +144,11 @@ node in two groups that name different images is refused.
 Every variant is built for every platform the flake names, so name only the platforms you run.
 [Variants and platforms](../build/variants-and-platforms.md) adds modules to a variant.
 
-## Choose the number of control planes
+## Plan the Kubernetes side
 
-Use three control planes. etcd needs a majority of its voters, so three survive the loss of one
-machine, and [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) can reboot them one at a
-time while the API server keeps answering.
-
-| Control planes | Survives the loss of | Upgrades and reboots |
-| --- | --- | --- |
-| 1 | none | The API server is down while the node reboots; `chalkctl upgrade` needs `--allow-downtime`. |
-| 2 | none | Both must run for a quorum, so two are less available than one; `--allow-downtime` again. |
-| 3 | one | One at a time, with no API downtime. |
-| 5 | two | One at a time. Each member adds etcd write latency. |
-
-Four voters tolerate one failure, like three, so an even number buys nothing. A single control
-plane is fine for a lab or a cluster whose API may go away during upgrades. Small clusters can
-run workloads on the control planes with `allowSchedulingOnControlPlanes: true` in the
-[`Cluster`](../reference/kinds.md#cluster) document; otherwise they are tainted.
-
-A node is a control plane when its [`Node`](../reference/kinds.md#node) document says
-`type: controlplane`, and a worker with `type: worker`:
-
-```yaml title="nodes/cp1.yaml"
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: default}
-spec:
-  type: controlplane
----
-apiVersion: storage.chalkos.dev/v1alpha1
-kind: SystemDisk
-metadata: {name: system}
-spec:
-  disk: {path: /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001}
----
-apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Network
-metadata: {name: 10-uplink}
-spec:
-  match: {name: enp1s0}
-  network: {address: [10.0.0.11/24], gateway: 10.0.0.1}
-```
-
-[Run a highly available control plane](ha-control-plane.md) walks through installing three.
-
-## Decide how clients reach the API server
-
-The cluster endpoint, `spec.endpoint` of the
-[`Cluster`](../reference/kinds.md#cluster) document, is the URL kubelets, kubeconfigs and
-workers use to reach the control planes. Workers also renew their
-node certificates through it:
-chalkd on a worker connects to the endpoint's host on port
-50000, where a control plane's chalkd answers. So whatever the endpoint points at must reach
-chalkd on 50000 as well as the API server on 6443.
-
-Two ways make the endpoint survive a control plane's failure:
-
-- A VIP, which chalkd holds on one healthy control plane. It
-  needs the control planes on one layer-2 segment, because the holder announces the address
-  with gratuitous ARP and unsolicited neighbour advertisements. This is the default choice for
-  machines in one rack or VLAN. The endpoint is the VIP, or a host name that resolves to it.
-- An external load balancer, for control planes in different segments. It must forward port
-  50000 too; a balancer that forwards only 6443 leaves workers unable to renew their
-  certificates.
-
-A VIP failover takes seconds: the holder's lease lives 10 seconds, and the HA end-to-end test
-requires the VIP to move within 30 seconds of its holder's link going down. Clients with an open
-connection to the old holder notice only when it times out.
-
-The VIP is `spec.vip.addresses` of the `Cluster` document every node gets, and the endpoint
-points at it:
-
-```yaml title="cluster/kubernetes.yaml"
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: default}
-spec:
-  # The VIP the control planes hold.
-  endpoint: https://10.0.0.10:6443
-  vip: {addresses: [10.0.0.10]}
----
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Flannel
-metadata: {name: default}
-spec:
-  # Nodes accept the pod network's VXLAN traffic only from the nodes' own network.
-  vxlanSourceSubnets: [10.0.0.0/24]
-```
-
-A control plane adds the VIP to the interface holding its address of the VIP's family. One that
-should carry it on another interface names that one in `spec.vip.interface` of its own `Node`
-document, since interface names differ from machine to machine.
-
-[Networking](../how-it-works/node/networking.md) explains the election and the address selection.
-
-## Fix the IP families
-
-`spec.ipFamilies` of the `Cluster` document lists the cluster's address families, the
-primary one first: `[ipv4]` by default, `[ipv4, ipv6]` for dual stack. The families and their
-order are fixed when the cluster is created. A control plane compares them with the families it
-was pinned with and refuses to prepare Kubernetes when they differ:
-
-```text
-the cluster was created with families [ipv4]; ipFamilies is [ipv4 ipv6]; changing the families of a running cluster is not supported
-```
-
-A different choice later means a new cluster, so decide now. Pick the pod and service ranges of
-each family at the same time, so they overlap none of your networks. A dual-stack cluster's
-document names both families and one range of each:
-
-```yaml
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: default}
-spec:
-  endpoint: https://10.0.0.10:6443
-  ipFamilies: [ipv4, ipv6]
-  podCIDRs:
-    ipv4: 10.244.0.0/16
-    ipv6: fd00:10:244::/56
-  serviceCIDRs:
-    ipv4: 10.96.0.0/12
-    ipv6: fd00:10:96::/112
-```
-
-## Plan the node addresses
-
-Give every node a static address in a [`Network`](../reference/kinds.md#network) document of its
-own file, as `nodes/cp1.yaml` above does, and the same address as its `address` in the
-inventory. Two things depend on it:
-
-- A control plane's addresses are pinned on STATE when it
-  becomes an etcd member, and every later boot waits for
-  exactly those addresses. A control plane cannot change its address while it runs; it leaves
-  etcd and is reinstalled.
-- chalkctl reaches a node at the address the inventory names for it, or at `--address`. It does
-  not read the `Network` documents, so the two must agree.
-
-Workers may take their address from DHCP instead and pick it with `spec.nodeIP.validSubnets` of
-the `Cluster` document, or `spec.nodeIP.validSubnets` of a node's own
-[`Node`](../reference/kinds.md#node) document, which replaces the cluster's. The inventory names
-such a node by an address that stays, such as a DNS name.
-
-Set `spec.vxlanSourceSubnets` of the [`Flannel`](../reference/kinds.md#flannel) document to the
-ranges your nodes live in, as `cluster/kubernetes.yaml` above does. Without it, nodes accept the
-pod network's VXLAN traffic from any source.
-[`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a node whose fixed addresses,
-`nodeIP.addresses` of its `Node` or else the first static address of each family of its `Network`
-documents, or whose `nodeIP.validSubnets` lie outside these ranges.
+The control planes, the cluster endpoint, the control planes' addresses, the IP families and
+scheduling on control planes are on [Plan a cluster](plan.md). The `Flannel` document's VXLAN
+sources and the other Kubernetes settings are on [Configure Kubernetes](configure.md).
 
 ## Plan disks, storage and encryption
 
@@ -413,9 +269,8 @@ rotation you plan rather than one you rush.
 
 Kubeconfigs from [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md) are the same
 for the Kubernetes API: one per person with `--name`, all in the group bound to
-`cluster-admin`, revoked only by rotating the Kubernetes CAs. For narrower access, configure an
-authenticator of the API server through `spec.extraArgs.kube-apiserver` of the `Cluster`
-document.
+`cluster-admin`, revoked only by rotating the Kubernetes CAs. Narrower access uses RBAC, as
+[Bootstrap and get a kubeconfig](bootstrap.md#give-someone-access-to-the-kubernetes-api) describes.
 
 ## Choose time servers
 

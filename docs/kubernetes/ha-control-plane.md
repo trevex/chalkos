@@ -16,7 +16,8 @@ member, removing one and replacing a failed machine.
 - The cluster's repository, with its inventory, the YAML
   files of its nodes and a flake that builds their image, and the cluster's
   secrets file, `secrets.age`, as in
-  [Plan a production cluster](production-cluster.md). The commands below run in the repository's
+  [Set up your workstation](../operate/workstation.md), with the decisions of
+  [Plan a cluster](plan.md). The commands below run in the repository's
   directory.
 - Three machines on one layer-2 segment, each with a static address, and one free address on
   that segment for the VIP. The VIP is announced with gratuitous ARP and unsolicited neighbour

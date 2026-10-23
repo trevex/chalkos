@@ -310,7 +310,7 @@ says where to keep the files that hold them.
     document, the same on every node, and one `Node` document with the node's type,
     `controlplane` or `worker`. The homelab puts the `Cluster` in `cluster/cluster.yaml` and each
     `Node` in the node's own file.
-    [Plan a production cluster](../kubernetes/production-cluster.md) covers both.
+    [Configure Kubernetes](../kubernetes/configure.md) covers both.
 
 ## Check that it worked
 
