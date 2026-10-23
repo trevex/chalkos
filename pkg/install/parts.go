@@ -73,7 +73,7 @@ func (i *Installer) FromParts(ctx context.Context, req PartsRequest) error {
 	if h.Architecture != i.Architecture {
 		return fmt.Errorf("the image is built for %s, this machine for %s", h.Architecture, i.Architecture)
 	}
-	l, err := parseLayout(req.SystemDefinitions)
+	l, err := parseLayout(req.SystemDefinitions, h.Architecture)
 	if err != nil {
 		return err
 	}

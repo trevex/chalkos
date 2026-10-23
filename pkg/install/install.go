@@ -559,8 +559,14 @@ func readDefinitions(dir string) (map[string]string, error) {
 }
 
 // writeDefinitions writes the system region's definitions to dir with STATE encrypted as the
-// policy says. The image's definition always encrypts STATE.
+// policy says. The image's definition always encrypts STATE. It refuses a definition with a key
+// parseDefinition does not allow, before it writes any.
 func writeDefinitions(dir string, defs map[string]string, policy string) error {
+	for name, text := range defs {
+		if _, err := parseDefinition(name, text); err != nil {
+			return err
+		}
+	}
 	if err := os.RemoveAll(dir); err != nil {
 		return err
 	}
@@ -569,9 +575,6 @@ func writeDefinitions(dir string, defs map[string]string, policy string) error {
 	}
 	foundState := false
 	for name, text := range defs {
-		if strings.ContainsRune(name, '/') || !strings.HasSuffix(name, ".conf") {
-			return fmt.Errorf("invalid definition file name %q", name)
-		}
 		if definesLabel(text, stateLabel) {
 			foundState = true
 			text = withEncryption(text, policy)

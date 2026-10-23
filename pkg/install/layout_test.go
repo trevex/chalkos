@@ -2,6 +2,7 @@ package install
 
 import (
 	"maps"
+	"os"
 	"strings"
 	"testing"
 
@@ -43,7 +44,7 @@ func TestParseLayoutRounds(t *testing.T) {
 		{"SizeMinBytes=1M\nSizeMaxBytes=2M\n", 0, ""},
 		{"SizeMinBytes=2097200\nSizeMaxBytes=2097200\n", 0, "SizeMinBytes rounds up to 2101248 bytes, beyond SizeMaxBytes, which rounds down to 2097152"},
 	} {
-		l, err := parseLayout(defs(tc.store))
+		l, err := parseLayout(defs(tc.store), "x86-64")
 		if tc.want != "" {
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("%q: %v, want %q", tc.store, err, tc.want)
@@ -62,7 +63,7 @@ func TestParseLayoutRounds(t *testing.T) {
 // TestLayoutCheck compares tables against the lab's definitions: the image's partitions in order,
 // counted in the disk's sectors, then only volumes of the system disk.
 func TestLayoutCheck(t *testing.T) {
-	l, err := parseLayout(labDefinitions)
+	l, err := parseLayout(labDefinitions, "x86-64")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,5 +113,66 @@ func TestLayoutCheck(t *testing.T) {
 				t.Errorf("check = %v, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestParseLayoutTakesTheImageDefinitions takes the definitions the test image ships as they
+// are, as chalkos builds them for every image, and writes them with STATE's encryption.
+func TestParseLayoutTakesTheImageDefinitions(t *testing.T) {
+	dir := os.Getenv("CHALKOS_TEST_IMAGE_DEFINITIONS")
+	if dir == "" {
+		t.Skip("CHALKOS_TEST_IMAGE_DEFINITIONS not set")
+	}
+	defs, err := readDefinitions(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseLayout(defs, "x86-64"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeDefinitions(t.TempDir(), defs, storage.EncryptionTPM2); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestParseLayoutRefuses refuses definitions that lay out more or other partitions than an ESP,
+// two store slots of the image's architecture and STATE, or that set any key the system region's
+// own definitions do not, such as one that copies files or blocks from the installer onto the
+// target disk. writeDefinitions refuses each definition with a key it may not set as well.
+func TestParseLayoutRefuses(t *testing.T) {
+	state := labDefinitions["50-state.conf"]
+	for name, tc := range map[string]struct {
+		file, text, want string
+	}{
+		"CopyFiles":                {"50-state.conf", state + "CopyFiles=/etc:/etc\n", "50-state.conf sets CopyFiles"},
+		"CopyBlocks":               {"20-store-a.conf", labDefinitions["20-store-a.conf"] + "CopyBlocks=/dev/vda\n", "20-store-a.conf sets CopyBlocks"},
+		"MakeDirectories":          {"50-state.conf", state + "MakeDirectories=/x\n", "sets MakeDirectories"},
+		"Subvolumes":               {"50-state.conf", state + "Subvolumes=/x\n", "sets Subvolumes"},
+		"ExcludeFiles":             {"50-state.conf", state + "ExcludeFiles=/x\n", "sets ExcludeFiles"},
+		"an unknown key":           {"00-esp.conf", labDefinitions["00-esp.conf"] + "Frobnicate=yes\n", "00-esp.conf sets Frobnicate"},
+		"Encrypt on a store":       {"20-store-a.conf", labDefinitions["20-store-a.conf"] + "Encrypt=key-file\n", "sets Encrypt, which a definition of the system region's store partition may not"},
+		"Format on a store":        {"20-store-a.conf", labDefinitions["20-store-a.conf"] + "Format=ext4\n", "sets Format"},
+		"a key set twice":          {"20-store-a.conf", labDefinitions["20-store-a.conf"] + "SizeMaxBytes=3M\n", "sets SizeMaxBytes twice"},
+		"another section":          {"50-state.conf", state + "[Other]\nCopyFiles=/etc\n", "has the section [Other]"},
+		"a second [Partition]":     {"50-state.conf", state + "[Partition]\n", "has the section [Partition]"},
+		"a key before the section": {"00-esp.conf", "Type=esp\n" + labDefinitions["00-esp.conf"], "sets Type outside the [Partition] section"},
+		"a line without =":         {"00-esp.conf", labDefinitions["00-esp.conf"] + "CopyFiles\n", "is no key=value line"},
+		"a continued line":         {"50-state.conf", state + "Label=state \\\n", "continues a line"},
+		"another partition":        {"60-var.conf", "[Partition]\nType=" + storage.PartitionType("var") + "\nLabel=var\n", "the partition type"},
+		"a third store slot":       {"60-store-c.conf", labDefinitions["20-store-a.conf"], "two store slots and STATE, and nothing else"},
+		"stores of another arch":   {"20-store-a.conf", "[Partition]\nType=usr-arm64\nSizeMinBytes=2M\nSizeMaxBytes=2M\n", "none of the system region of an image for x86-64"},
+		"STATE of another label":   {"50-state.conf", strings.Replace(state, "Label=state", "Label=other", 1), `does not label STATE "state"`},
+		"STATE of another format":  {"50-state.conf", strings.Replace(state, "Format=ext4", "Format=btrfs", 1), "does not format STATE as ext4"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defs := maps.Clone(labDefinitions)
+			defs[tc.file] = tc.text
+			if _, err := parseLayout(defs, "x86-64"); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("parseLayout = %v, want %q", err, tc.want)
+			}
+		})
+	}
+	if err := writeDefinitions(t.TempDir(), map[string]string{"50-state.conf": state + "CopyFiles=/etc:/etc\n"}, storage.EncryptionNone); err == nil || !strings.Contains(err.Error(), "sets CopyFiles") {
+		t.Errorf("writeDefinitions = %v, want CopyFiles refused", err)
 	}
 }
