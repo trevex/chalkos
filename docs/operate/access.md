@@ -65,6 +65,11 @@ the cluster endpoint for a certificate. A control plane signs its own with the n
 A failed attempt keeps the current certificate and retries later. Nothing needs doing until
 `chalkctl status` reports a problem on the `node` line under `certificates:`.
 
+A control plane renews a certificate only while it can read the revoked nodes from its API
+server, so that it never renews a revoked node's. During a long outage of the API server, no
+renewal succeeds, the control plane's own included. `chalkctl node renew --force` renews a node's
+certificate without asking the control planes.
+
 A node whose image runs no Kubernetes has no control plane to ask. Renew its certificate with
 `chalkctl node renew` once a year, before it expires:
 

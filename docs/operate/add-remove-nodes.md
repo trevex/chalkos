@@ -182,7 +182,9 @@ revoked node w1 (since 2026-10-23T22:42:25Z); deleted its Node object
 ```
 
 A control plane records the name and the time in the ConfigMap `kube-system/chalkos-revoked-nodes`
-and deletes the node's Node object, so `kubectl delete node` is not needed. From then on:
+and deletes the node's Node object, so `kubectl delete node` is not needed. The revocation
+takes effect within seconds, and the other control planes' API servers pick it up shortly after.
+From then on:
 
 - Control planes refuse to renew the node's node certificate.
 - chalkd approves none of its kubelet serving certificates.
@@ -194,6 +196,8 @@ and deletes the node's Node object, so `kubectl delete node` is not needed. From
 The command needs an admin client file or the secrets file. It goes through a control plane:
 the one `--via` names, or the first other one that answers. The removed node does not have to run,
 and it does not have to be in the inventory any more. Revoking a node twice keeps the first time.
+Revoke and unrevoke nodes with chalkctl alone: an edit of the ConfigMap with `kubectl edit`
+reaches the API server's admission policy only at the next revoke or unrevoke.
 
 `chalkctl status` on a control plane lists the revoked nodes:
 
@@ -236,6 +240,10 @@ to. Then remove the name from the revoked nodes:
 
 4. Add the node to the inventory and install it, as [Install the new node](#install-the-new-node)
    describes. It joins as usual.
+
+Unrevoke a name once the rotations are done, even when no new node takes it. The list holds
+about 2,000 short names at most, and after the rotations the old node's certificates no longer
+work anyway.
 
 The control plane checks that the OS CA and the Kubernetes CA it trusts were all made after the
 revocation. While one of them predates it, the old node's certificates would work again, so
