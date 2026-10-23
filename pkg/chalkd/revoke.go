@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/kubernetes/addons"
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
@@ -32,6 +33,9 @@ func (s *Server) RevokeNode(ctx context.Context, req *connect.Request[nodev1.Rev
 	}
 	cs, _, err := s.Kubernetes.revokedClient()
 	if err != nil {
+		return nil, err
+	}
+	if err := policyRoom(ctx, cs, name); err != nil {
 		return nil, err
 	}
 	at, err := revoked.Revoke(ctx, cs, name, time.Now())
@@ -100,6 +104,26 @@ func (s *Server) UnrevokeNode(ctx context.Context, req *connect.Request[nodev1.U
 		resp.RevokedAt = timestamppb.New(at)
 	}
 	return connect.NewResponse(resp), nil
+}
+
+// policyRoom refuses to revoke a node not revoked yet while the admission policy's map of revoked
+// nodes would grow past addons.MaxRevokedLength with it, which the API server could not compile.
+func policyRoom(ctx context.Context, cs kubernetes.Interface, name string) error {
+	list, err := revoked.Load(ctx, cs)
+	if err != nil {
+		return failed(connect.CodeUnavailable, "%v", err)
+	}
+	if _, ok := list[name]; ok {
+		return nil
+	}
+	list[name] = time.Now()
+	if n := addons.RevokedLength(list); n > addons.MaxRevokedLength {
+		return failed(connect.CodeFailedPrecondition, "revoking %s would make the admission policy's map of the %d revoked nodes %d characters long, "+
+			"past the %d chalkos allows below the API server's limit on an expression; make room first: rotate the CAs with chalkctl rotate os-ca "+
+			"and chalkctl rotate kubernetes-ca, each to its finish, then unrevoke the nodes revoked before them with chalkctl node unrevoke",
+			name, len(list), n, addons.MaxRevokedLength)
+	}
+	return nil
 }
 
 // checkNodeName refuses what is no Kubernetes node name, which the revoked nodes would never

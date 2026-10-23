@@ -3,6 +3,7 @@ package chalkd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -19,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/addons"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -383,4 +385,49 @@ func TestStatusReadsTheNodeWhileTheListHangs(t *testing.T) {
 	if st.NodeReady != "True" || st.RevokedNodesError == "" {
 		t.Errorf("node ready %q, revoked nodes error %q; want the Node read and the list's error", st.NodeReady, st.RevokedNodesError)
 	}
+}
+
+// A revocation that would make the admission policy's map of revoked nodes longer than the API
+// server compiles is refused before the node is listed; one already listed is revoked again.
+func TestRevokeNodeRefusesPastThePolicysLimit(t *testing.T) {
+	l := newRevokeLab(t)
+	data := map[string]string{}
+	at := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC).Format(revoked.TimeFormat)
+	for i := 0; addons.RevokedLength(asList(data)) <= addons.MaxRevokedLength-200; i++ {
+		data[fmt.Sprintf("node-%05d-%s", i, strings.Repeat("x", 40))] = at
+	}
+	if _, err := l.cs.CoreV1().ConfigMaps(revoked.Namespace).Create(context.Background(), &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Namespace: revoked.Namespace, Name: revoked.Name},
+		Data:       data,
+	}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// A name of 246 characters, whose entry alone takes the room left.
+	long := "w1." + strings.Repeat(strings.Repeat("x", 59)+".", 4) + "end"
+	_, err := l.revoke(long)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl rotate os-ca") || !strings.Contains(err.Error(), "chalkctl node unrevoke") {
+		t.Errorf("revoking %s: %v, want refused naming the rotations and unrevoke", long, err)
+	}
+	if _, ok := l.list(t)[long]; ok {
+		t.Errorf("the refusal listed %s", long)
+	}
+	if _, err := l.revoke("w1"); err != nil {
+		t.Errorf("revoking a short name within the limit: %v", err)
+	}
+	for name := range data {
+		if _, err := l.revoke(name); err != nil {
+			t.Errorf("revoking %s again: %v", name, err)
+		}
+		break
+	}
+}
+
+// asList reads a ConfigMap's data as the revoked nodes.
+func asList(data map[string]string) revoked.List {
+	l := revoked.List{}
+	for name, value := range data {
+		at, _ := time.Parse(revoked.TimeFormat, value)
+		l[name] = at
+	}
+	return l
 }

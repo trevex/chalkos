@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
@@ -137,9 +138,22 @@ func RevokedNodes(l revoked.List) []map[string]any {
 	}
 }
 
+// MaxRevokedLength bounds the length of the policy's map of revoked nodes, in code points. The
+// API server compiles no CEL expression longer than 100,000 code points; the bound leaves room
+// for nodes revoked through other control planes at the same time, each of which checks the list
+// as it read it.
+const MaxRevokedLength = 90_000
+
+// RevokedLength is the length, in code points, of the map of revoked nodes the policy names for
+// the list, which MaxRevokedLength bounds.
+func RevokedLength(l revoked.List) int {
+	return utf8.RuneCountInString(revokedLiteral(l))
+}
+
 // revokedLiteral is a CEL map from each revoked node's name to when it was revoked, in name
-// order. Go's quoting escapes no more than CEL's string literals unescape, so every name stays the
-// one string it is: ConfigMap keys are valid UTF-8.
+// order. strconv.Quote is safe here: ConfigMap keys are limited to [-._a-zA-Z0-9] and the times
+// are rendered again, so no string holds what Go and CEL quote differently. The one mismatch,
+// Go's \xNN for bytes of invalid UTF-8, which CEL reads as a code point, cannot occur.
 func revokedLiteral(l revoked.List) string {
 	var entries []string
 	for _, name := range slices.Sorted(maps.Keys(l)) {

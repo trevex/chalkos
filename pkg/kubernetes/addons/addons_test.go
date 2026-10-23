@@ -381,3 +381,63 @@ func TestRevokedNodesPolicyEvaluates(t *testing.T) {
 		})
 	}
 }
+
+// TestRevokedNodesPolicyEvaluatesEmpty compiles every expression of the policy without revoked
+// nodes, the message's too, and admits every node with the empty map.
+func TestRevokedNodesPolicyEvaluatesEmpty(t *testing.T) {
+	spec := asJSON(t, find(t, RevokedNodes(nil), "ValidatingAdmissionPolicy", "chalkos-revoked-nodes"))["spec"].(map[string]any)
+	expr := func(list []any, field string) string { return list[0].(map[string]any)[field].(string) }
+	env, err := cel.NewEnv(
+		ext.Strings(ext.StringsVersion(2)),
+		cel.OptionalTypes(),
+		cel.Variable("request", cel.DynType),
+		cel.Variable("variables", cel.DynType),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	programs := map[string]cel.Program{}
+	for name, src := range map[string]string{
+		"list":       expr(spec["variables"].([]any), "expression"),
+		"validation": expr(spec["validations"].([]any), "expression"),
+		"message":    expr(spec["validations"].([]any), "messageExpression"),
+	} {
+		ast, iss := env.Compile(src)
+		if iss.Err() != nil {
+			t.Fatalf("compile the %s, %s: %v", name, src, iss.Err())
+		}
+		if programs[name], err = env.Program(ast); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, _, err := programs["list"].Eval(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, ok := list.Value().(map[ref.Val]ref.Val); !ok || len(m) != 0 {
+		t.Fatalf("the list evaluates to %v, want an empty map", list.Value())
+	}
+	vars := map[string]any{"variables": map[string]any{"node": "w1", "revoked": list}}
+	admitted, _, err := programs["validation"].Eval(vars)
+	if err != nil || admitted.Value() != true {
+		t.Errorf("admitted = %v, %v; want true", admitted, err)
+	}
+	// The message is evaluated for denied nodes alone, which an empty map has none of.
+	if _, _, err := programs["message"].Eval(vars); err == nil {
+		t.Error("the message evaluated for a node the map does not name")
+	}
+}
+
+// TestRevokedLength counts the map literal's code points, which the API server limits.
+func TestRevokedLength(t *testing.T) {
+	if got := RevokedLength(nil); got != 2 {
+		t.Errorf("RevokedLength(nil) = %d, want 2", got)
+	}
+	l := revoked.List{"wä": time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)}
+	if got, want := RevokedLength(l), len(`{"wä": "since 2026-10-23T10:00:00Z"}`)-1; got != want {
+		t.Errorf("RevokedLength = %d, want %d", got, want)
+	}
+	if MaxRevokedLength >= 100_000 {
+		t.Errorf("MaxRevokedLength = %d, want below the API server's 100,000", MaxRevokedLength)
+	}
+}
