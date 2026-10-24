@@ -95,6 +95,7 @@ func main() {
 	}
 	err := run(os.Args[2:])
 	if _, ok := errors.AsType[usageError](err); ok {
+		fmt.Fprintf(os.Stderr, "chalkd %s: %v\n", os.Args[1], err)
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
@@ -125,7 +126,7 @@ func prepareKubernetes(args []string) error {
 	case len(args) == 1 && args[0] == "--vxlan-rule":
 		firewall = knode.VXLANRule(vxlan.Default())
 	case len(args) > 0:
-		return usageError{fmt.Errorf("prepare-kubernetes takes --vxlan-rule alone, not %q", args)}
+		return usageError{fmt.Errorf("takes --vxlan-rule alone, not %q", args)}
 	}
 	return knode.Prepare(knode.DefaultPaths(), time.Now(), knode.WaitForAddresses, firewall)
 }
@@ -133,7 +134,7 @@ func prepareKubernetes(args []string) error {
 // vxlanRule fills the firewall's VXLAN table from the file given, or empties it without one.
 func vxlanRule(args []string) error {
 	if len(args) > 1 {
-		return usageError{fmt.Errorf("vxlan-rule takes one file, not %q", args)}
+		return usageError{fmt.Errorf("takes one file, not %q", args)}
 	}
 	var file string
 	if len(args) == 1 {

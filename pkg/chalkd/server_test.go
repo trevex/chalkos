@@ -732,7 +732,7 @@ func TestRPCCommentsNamePermissions(t *testing.T) {
 	available := regexp.MustCompile(`Available in (maintenance and normal|maintenance|normal) mode to (readers|operators|admins|nodes)\.`)
 	rpc := regexp.MustCompile(`^rpc (\w+)\(`)
 	modes := map[string][]nodev1.Mode{"maintenance and normal": anyMode, "maintenance": maintenanceOnly, "normal": normalOnly}
-	roles := map[string]string{"readers": pki.RoleReader, "operators": pki.RoleOperator, "admins": pki.RoleAdmin, "nodes": pki.RoleNode}
+	roles := map[string]pki.Role{"readers": pki.RoleReader, "operators": pki.RoleOperator, "admins": pki.RoleAdmin, "nodes": pki.RoleNode}
 	var comment []string
 	rpcs := 0
 	for line := range strings.Lines(string(data)) {

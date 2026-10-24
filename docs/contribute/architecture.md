@@ -140,8 +140,9 @@ nodev1connect.NodeServiceUpgradeProcedure: {normalOnly, pki.RoleOperator},
 
 A new method needs an entry there; the authoriser refuses a method without one. One check sits
 outside the table: `Upgrade` needs the admin role when its header carries config or a fallback
-secret, as `ApplyConfig` does. The table cannot see the header, so `Upgrade` checks that itself. Comments in the
-proto file become the [Node API](../reference/api.md) page, so they are written for users.
+secret, as `ApplyConfig` does. The table cannot see the header, so `Upgrade` checks that
+itself. Comments in the proto file become the [Node API](../reference/api.md) page, so they
+are written for users.
 
 ## chalkd runs with a narrow sandbox
 
