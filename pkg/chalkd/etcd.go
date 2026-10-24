@@ -20,42 +20,49 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
-// controlPlane checks that the node is a control plane and returns its cluster, name and share.
-func (k *Kubernetes) controlPlane() (k8s.Cluster, string, kpki.Share, error) {
+// controlPlaneNode is what a request to a control-plane node reads of it.
+type controlPlaneNode struct {
+	cluster k8s.Cluster
+	name    string
+	share   kpki.Share
+}
+
+// controlPlane checks that the node is a control plane and reads its cluster, name and share.
+func (k *Kubernetes) controlPlane() (controlPlaneNode, error) {
 	if k == nil {
-		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeFailedPrecondition, "the node's image has no Kubernetes")
+		return controlPlaneNode{}, failed(connect.CodeFailedPrecondition, "the node's image has no Kubernetes")
 	}
 	c, err := k8s.ReadCluster(k.Paths.Cluster)
 	if err != nil {
-		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeInternal, "%v", err)
+		return controlPlaneNode{}, failed(connect.CodeInternal, "%v", err)
 	}
 	if c.Kind != k8s.KindControlPlane {
-		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeFailedPrecondition, "the node is a worker; ask a control-plane node")
+		return controlPlaneNode{}, failed(connect.CodeFailedPrecondition, "the node is a worker; ask a control-plane node")
 	}
 	n, err := k8s.ReadNode(k.Paths.NodeFile)
 	if err != nil {
-		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeInternal, "%v", err)
+		return controlPlaneNode{}, failed(connect.CodeInternal, "%v", err)
 	}
 	share, err := knode.ReadShare(k.Paths)
 	if err != nil {
-		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeFailedPrecondition, "%v", err)
+		return controlPlaneNode{}, failed(connect.CodeFailedPrecondition, "%v", err)
 	}
-	return c, n.Name, share, nil
+	return controlPlaneNode{cluster: c, name: n.Name, share: share}, nil
 }
 
-// member checks that the node is an etcd member and returns its cluster, name and share.
-func (k *Kubernetes) member() (k8s.Cluster, string, kpki.Share, error) {
-	c, name, share, err := k.controlPlane()
+// etcdMember checks that the node is an etcd member and reads its cluster, name and share.
+func (k *Kubernetes) etcdMember() (controlPlaneNode, error) {
+	cp, err := k.controlPlane()
 	if err != nil {
-		return k8s.Cluster{}, "", kpki.Share{}, err
+		return controlPlaneNode{}, err
 	}
 	switch m, _, err := knode.ReadMembership(k.Paths); {
 	case err != nil:
-		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeInternal, "%v", err)
+		return controlPlaneNode{}, failed(connect.CodeInternal, "%v", err)
 	case m != knode.MembershipBootstrapped:
-		return k8s.Cluster{}, "", kpki.Share{}, errNotEtcdMember()
+		return controlPlaneNode{}, errNotEtcdMember()
 	}
-	return c, name, share, nil
+	return cp, nil
 }
 
 // errNotEtcdMember refuses a request that needs an etcd member. Its NotEtcdMember detail tells
@@ -101,11 +108,11 @@ func memberMessage(m etcd.Member, unhealthy error) *nodev1.EtcdMember {
 
 func (s *Server) EtcdMembers(ctx context.Context, _ *connect.Request[nodev1.EtcdMembersRequest]) (*connect.Response[nodev1.EtcdMembersResponse], error) {
 	k := s.Kubernetes
-	c, _, share, err := k.member()
+	cp, err := k.etcdMember()
 	if err != nil {
 		return nil, err
 	}
-	cli, err := k.dialEtcd(c, share)
+	cli, err := k.dialEtcd(cp.cluster, cp.share)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
@@ -128,11 +135,12 @@ func (s *Server) EtcdRemoveMember(ctx context.Context, req *connect.Request[node
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := s.Kubernetes
-	c, name, share, err := k.member()
+	cp, err := k.etcdMember()
 	if err != nil {
 		return nil, err
 	}
-	cli, err := k.dialEtcd(c, share)
+	name := cp.name
+	cli, err := k.dialEtcd(cp.cluster, cp.share)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
@@ -200,10 +208,11 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := s.Kubernetes
-	c, name, share, err := k.controlPlane()
+	cp, err := k.controlPlane()
 	if err != nil {
 		return nil, err
 	}
+	c, name, share := cp.cluster, cp.name, cp.share
 	p := k.Paths
 	m, leftovers, err := knode.ReadMembership(p)
 	switch {

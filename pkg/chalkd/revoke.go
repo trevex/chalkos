@@ -162,8 +162,8 @@ func (k *Kubernetes) revokedClient() (kubernetes.Interface, kpki.Share, error) {
 		return nil, kpki.Share{}, failed(connect.CodeFailedPrecondition, "the node's image has no Kubernetes, so the node keeps no revoked nodes; "+
 			"a node without Kubernetes is revoked by not renewing its node certificate, and chalkctl rotate os-ca cuts it off at once")
 	}
-	cs, _, share, err := k.apiClient(k.member)
-	return cs, share, err
+	cs, cp, err := k.apiClient(k.etcdMember)
+	return cs, cp.share, err
 }
 
 // revokedNodes returns the cluster's revoked nodes, as RevokedNodes does when set.
@@ -176,7 +176,7 @@ func (s *Server) revokedNodes(ctx context.Context) (revoked.List, error) {
 
 // revokedNodes reads the revoked nodes through the control plane's own API server.
 func (k *Kubernetes) revokedNodes(ctx context.Context) (revoked.List, error) {
-	cs, _, _, err := k.apiClient(k.controlPlane)
+	cs, _, err := k.apiClient(k.controlPlane)
 	if err != nil {
 		return nil, err
 	}

@@ -30,7 +30,7 @@ const UpgradeCordon = "chalkos.dev/upgrade-cordon"
 const defaultDrainTimeout = 5 * time.Minute
 
 func (s *Server) DrainNode(ctx context.Context, req *connect.Request[nodev1.DrainNodeRequest]) (*connect.Response[nodev1.DrainNodeResponse], error) {
-	cs, _, _, err := s.Kubernetes.apiClient(s.Kubernetes.member)
+	cs, _, err := s.Kubernetes.apiClient(s.Kubernetes.etcdMember)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (s *Server) DrainNode(ctx context.Context, req *connect.Request[nodev1.Drai
 }
 
 func (s *Server) UncordonNode(ctx context.Context, req *connect.Request[nodev1.UncordonNodeRequest]) (*connect.Response[nodev1.UncordonNodeResponse], error) {
-	cs, _, _, err := s.Kubernetes.apiClient(s.Kubernetes.member)
+	cs, _, err := s.Kubernetes.apiClient(s.Kubernetes.etcdMember)
 	if err != nil {
 		return nil, err
 	}

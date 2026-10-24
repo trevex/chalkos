@@ -61,13 +61,13 @@ func (c *idleCloser) CloseIdleConnections() { c.closed++ }
 // ones are closed.
 func TestAPIClientRenewsAtHalfLife(t *testing.T) {
 	k := apiClientLab(t)
-	if _, _, _, err := k.apiClient(k.member); err != nil {
+	if _, _, err := k.apiClient(k.etcdMember); err != nil {
 		t.Fatal(err)
 	}
 	old := k.api
 	transport := &idleCloser{}
 	old.transport = transport
-	if _, _, _, err := k.apiClient(k.member); err != nil {
+	if _, _, err := k.apiClient(k.etcdMember); err != nil {
 		t.Fatal(err)
 	}
 	if k.api != old || transport.closed != 0 {
@@ -75,7 +75,7 @@ func TestAPIClientRenewsAtHalfLife(t *testing.T) {
 	}
 	later := time.Now().Add(credentialValidity / 2)
 	old.cred.now = func() time.Time { return later }
-	if _, _, _, err := k.apiClient(k.member); err != nil {
+	if _, _, err := k.apiClient(k.etcdMember); err != nil {
 		t.Fatal(err)
 	}
 	if k.api == old || k.api.cred == old.cred {
@@ -93,7 +93,7 @@ func TestAPIClientRenewsAtHalfLife(t *testing.T) {
 // TestAPIClientWithoutKubernetes refuses on a node whose image has no Kubernetes.
 func TestAPIClientWithoutKubernetes(t *testing.T) {
 	var k *Kubernetes
-	if _, _, _, err := k.apiClient(k.controlPlane); err == nil {
+	if _, _, err := k.apiClient(k.controlPlane); err == nil {
 		t.Error("reached an API server without Kubernetes")
 	}
 }

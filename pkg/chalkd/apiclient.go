@@ -26,19 +26,18 @@ func apiKey(c k8s.Cluster, share kpki.Share) string {
 	return share.CA.Certificate + "\x00" + share.CABundle() + "\x00" + c.LocalAPIServer()
 }
 
-// apiClient checks the node with need, such as k.member, and returns a client for the node's
-// own API server and the cluster and share need read. Kubernetes.APIClient, when set, builds the
-// client instead.
-func (k *Kubernetes) apiClient(need func() (k8s.Cluster, string, kpki.Share, error)) (kubernetes.Interface, k8s.Cluster, kpki.Share, error) {
-	c, _, share, err := need()
+// apiClient checks the node with need, such as k.etcdMember, and returns a client for the node's
+// own API server and what need read.
+func (k *Kubernetes) apiClient(need func() (controlPlaneNode, error)) (kubernetes.Interface, controlPlaneNode, error) {
+	cp, err := need()
 	if err != nil {
-		return nil, k8s.Cluster{}, kpki.Share{}, err
+		return nil, controlPlaneNode{}, err
 	}
-	client, err := k.hooks.APIClient(c, share)
+	client, err := k.hooks.APIClient(cp.cluster, cp.share)
 	if err != nil {
-		return nil, k8s.Cluster{}, kpki.Share{}, failed(connect.CodeInternal, "reach the API server: %v", err)
+		return nil, controlPlaneNode{}, failed(connect.CodeInternal, "reach the API server: %v", err)
 	}
-	return client, c, share, nil
+	return client, cp, nil
 }
 
 // ownAPIClient returns chalkd's client for the API server, with a credential in system:masters.
