@@ -12,17 +12,17 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/nodeconfig"
+	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// effects are the running image's effects, and what a delivery compares their rules with: the
+// pendingEffects are the running image's effects, and what a delivery compares their rules with: the
 // config and the facts as they were before it changed anything, or before the first delivery
 // since one was last applied whole, as its baseline holds them.
-type effects struct {
-	defs  map[string]nodeconfig.Effect
+type pendingEffects struct {
+	defs  map[string]effects.Definition
 	rules []*rules.Effect
 	// node is the node's name, which the rules read as node.name.
 	node      string
@@ -50,8 +50,8 @@ type effects struct {
 // kinds' hashes, as the baseline, which consume removes once the delivery is applied whole, and
 // refused once it is refused before it changed anything. A retry, or another delivery, then takes
 // the effects of what the failed delivery changed already too.
-func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.Document, schemas *schema.Schemas, secret string) (*effects, error) {
-	defs, err := nodeconfig.ReadEffects(s.Loader.Effects)
+func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.Document, schemas *schema.Schemas, secret string) (*pendingEffects, error) {
+	defs, err := effects.Read(s.Loader.Effects)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
@@ -64,7 +64,7 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 			return nil, failed(connect.CodeInternal, "the running image's schemas: %v", err)
 		}
 	}
-	e := &effects{defs: defs, node: name, next: next, old: old, schemas: schemas}
+	e := &pendingEffects{defs: defs, node: name, next: next, old: old, schemas: schemas}
 	var errs []error
 	for _, effect := range slices.Sorted(maps.Keys(defs)) {
 		// An effect without a rule fires on its outputs or kinds alone.
@@ -111,7 +111,7 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 }
 
 // factNames are the facts the rules read, sorted.
-func (e *effects) factNames() []string {
+func (e *pendingEffects) factNames() []string {
 	var names []string
 	for _, r := range e.rules {
 		for _, n := range r.Facts {
@@ -125,7 +125,7 @@ func (e *effects) factNames() []string {
 }
 
 // oldConfig is the old config as rules see it.
-func (e *effects) oldConfig() map[string]any {
+func (e *pendingEffects) oldConfig() map[string]any {
 	if e.oldHashed {
 		return rules.HashedConfigOf(e.old)
 	}
@@ -137,7 +137,7 @@ func (e *effects) oldConfig() map[string]any {
 // whose kinds' documents, or a Secret they reference, changed, and those whose rule holds,
 // loading the facts as they are now. A rule that cannot be evaluated counts as true, and goes to
 // the journal and to warnings, which say why without the values it read.
-func (s *Server) due(ctx context.Context, e *effects, states map[string]outputs.State, secret string) (due, warnings []string, err error) {
+func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]outputs.State, secret string) (due, warnings []string, err error) {
 	after, err := s.factsFor(ctx, e.next, nil, secret)
 	if err != nil {
 		return nil, nil, err
@@ -176,7 +176,7 @@ func (s *Server) due(ctx context.Context, e *effects, states map[string]outputs.
 // slot and not its documents, which the units would restart on otherwise. The staged outputs
 // follow, swapped in before any effect is taken. It returns the restarted units and the warnings of rules that could not be evaluated. Once every effect is
 // taken it removes the baseline; until then a retry compares with it and takes them again.
-func (s *Server) consume(ctx context.Context, e *effects, staged *outputs.Staged, stored bool, secret string) ([]string, []string, error) {
+func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs.Staged, stored bool, secret string) ([]string, []string, error) {
 	states := staged.States()
 	due, warnings, err := s.due(ctx, e, states, secret)
 	if err != nil {
@@ -186,14 +186,14 @@ func (s *Server) consume(ctx context.Context, e *effects, staged *outputs.Staged
 		if err := s.Loader.LoadConfig(); err != nil {
 			// What chalkd's loops read, the slot, the cluster file and the share, is in place.
 			a := actionsOf(e.defs, due)
-			s.actOnSelf(a.chalkd == nodeconfig.ChalkdReload, a.chalkd == nodeconfig.ChalkdRestart)
+			s.actOnSelf(a.chalkd == effects.ChalkdReload, a.chalkd == effects.ChalkdRestart)
 			return nil, nil, failed(connect.CodeInternal, "write the config for the granted units: %v%s", err, a.byHand())
 		}
 	}
 	// The outputs, checked before the delivery changed anything, follow the documents.
 	if err := staged.Swap(); err != nil {
 		a := actionsOf(e.defs, due)
-		s.actOnSelf(a.chalkd == nodeconfig.ChalkdReload, a.chalkd == nodeconfig.ChalkdRestart)
+		s.actOnSelf(a.chalkd == effects.ChalkdReload, a.chalkd == effects.ChalkdRestart)
 		return nil, nil, failed(connect.CodeInternal, "%v%s", err, a.byHand())
 	}
 	restarted, err := s.applyEffects(ctx, actionsOf(e.defs, due))
@@ -206,7 +206,7 @@ func (s *Server) consume(ctx context.Context, e *effects, staged *outputs.Staged
 
 // refused removes the baseline of a delivery refused before it changed anything, which leaves the
 // next one nothing to take again. A baseline an earlier delivery that failed part way left stays.
-func (s *Server) refused(e *effects) {
+func (s *Server) refused(e *pendingEffects) {
 	if e.recorded {
 		s.dropBaseline()
 	}
@@ -216,14 +216,14 @@ func (s *Server) refused(e *effects) {
 // changed the node and before its slot was written: the files its loops read besides the slot,
 // the cluster file and the share, may be written by then, and the rules compare them as they are.
 // The baseline stays, so a retry takes every effect of the delivery.
-func (s *Server) failedPartWay(ctx context.Context, e *effects, secret string) {
+func (s *Server) failedPartWay(ctx context.Context, e *pendingEffects, secret string) {
 	due, _, err := s.due(ctx, e, nil, secret)
 	if err != nil {
 		log.Printf("the effects on chalkd's loops: %v", err)
 		return
 	}
 	a := actionsOf(e.defs, due)
-	s.actOnSelf(a.chalkd == nodeconfig.ChalkdReload, a.chalkd == nodeconfig.ChalkdRestart)
+	s.actOnSelf(a.chalkd == effects.ChalkdReload, a.chalkd == effects.ChalkdRestart)
 }
 
 // actions are what the due effects ask for together: the units to reload and to restart, each
@@ -233,10 +233,10 @@ type actions struct {
 	reload, restart []string
 	start           map[string]bool
 	run             []string
-	chalkd          string
+	chalkd          effects.ChalkdAction
 }
 
-func actionsOf(defs map[string]nodeconfig.Effect, due []string) actions {
+func actionsOf(defs map[string]effects.Definition, due []string) actions {
 	a := actions{start: map[string]bool{}}
 	for _, name := range due {
 		d := defs[name]
@@ -249,9 +249,9 @@ func actionsOf(defs map[string]nodeconfig.Effect, due []string) actions {
 			a.run = append(a.run, d.Run)
 		}
 		switch {
-		case d.Chalkd == nodeconfig.ChalkdRestart:
+		case d.Chalkd == effects.ChalkdRestart:
 			a.chalkd = d.Chalkd
-		case d.Chalkd == nodeconfig.ChalkdReload && a.chalkd == "":
+		case d.Chalkd == effects.ChalkdReload && a.chalkd == "":
 			a.chalkd = d.Chalkd
 		}
 	}
@@ -272,7 +272,7 @@ func actionsOf(defs map[string]nodeconfig.Effect, due []string) actions {
 func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) {
 	// Once the units it restarts read the new config, and whether or not they could: the
 	// cluster and the share the loops read are in place.
-	defer s.actOnSelf(a.chalkd == nodeconfig.ChalkdReload, a.chalkd == nodeconfig.ChalkdRestart)
+	defer s.actOnSelf(a.chalkd == effects.ChalkdReload, a.chalkd == effects.ChalkdRestart)
 	states := map[string]string{}
 	for _, unit := range append(slices.Clone(a.reload), a.restart...) {
 		if _, ok := states[unit]; ok {

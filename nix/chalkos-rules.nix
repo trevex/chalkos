@@ -8,15 +8,14 @@ callPackage ./go-module.nix { } {
     ../pkg/atomicfile
     ../pkg/command
     ../pkg/config
+    ../pkg/effects
     ../pkg/facts
     ../pkg/identity
     ../pkg/kubernetes
-    ../pkg/nodeconfig
     ../pkg/outputs
     ../pkg/rules
     ../pkg/schema
     ../pkg/storage
-    ../pkg/uki
   ];
   subPackages = [ "cmd/chalkos-rules" ];
   # The go-unit check runs the tests.

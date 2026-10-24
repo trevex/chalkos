@@ -19,8 +19,8 @@ import (
 
 	"github.com/trevex/chalkos/pkg/command"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
-	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -56,7 +56,7 @@ func check(image string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	effects, err := nodeconfig.ReadEffects(filepath.Join(image, "effects.json"))
+	effectDefs, err := effects.Read(filepath.Join(image, "effects.json"))
 	if err != nil {
 		return err
 	}
@@ -93,8 +93,8 @@ func check(image string, out io.Writer) error {
 		}
 	}
 	compiled := 0
-	for _, name := range sortedNames(effects) {
-		e := effects[name]
+	for _, name := range sortedNames(effectDefs) {
+		e := effectDefs[name]
 		for _, unit := range slices.Concat(e.Restart, e.Reload) {
 			if err := checkUnit(image, unit); err != nil {
 				errs = append(errs, fmt.Errorf("effect %s: %w", name, err))
@@ -111,7 +111,7 @@ func check(image string, out io.Writer) error {
 		reads(p.Where(), p.When, p.Facts)
 		compiled++
 	}
-	errs = append(errs, checkOutputs(s, outs, effects)...)
+	errs = append(errs, checkOutputs(s, outs, effectDefs)...)
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -157,7 +157,7 @@ func sortedNames[V any](m map[string]V) []string {
 // checkOutputs refuses an output whose programs are not of the image's store or whose inputs are
 // kinds the image does not declare, or that a unit cannot read, and an effect whose outputs name
 // no output or whose kinds are not the image's.
-func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effects map[string]nodeconfig.Effect) []error {
+func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectDefs map[string]effects.Definition) []error {
 	kinds := map[string]bool{}
 	for _, k := range s.Kinds() {
 		kinds[k.Kind] = true
@@ -179,13 +179,13 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effects
 			}
 		}
 	}
-	for _, name := range sortedNames(effects) {
-		for _, o := range effects[name].Outputs {
+	for _, name := range sortedNames(effectDefs) {
+		for _, o := range effectDefs[name].Outputs {
 			if _, ok := defs[o]; !ok {
 				errs = append(errs, fmt.Errorf("effect %s: outputs names %s, which is no output of the image; its outputs are %s", name, o, declared(defs)))
 			}
 		}
-		for _, kind := range effects[name].Kinds {
+		for _, kind := range effectDefs[name].Kinds {
 			switch {
 			case kind == "Secret" || kind == "Addon":
 				errs = append(errs, fmt.Errorf("effect %s: an effect does not fire on %s documents", name, kind))

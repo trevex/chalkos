@@ -11,6 +11,7 @@ callPackage ./go-module.nix { } {
     ../pkg/client
     ../pkg/command
     ../pkg/config
+    ../pkg/effects
     ../pkg/facts
     ../pkg/identity
     ../pkg/image
