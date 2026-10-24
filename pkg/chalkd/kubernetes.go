@@ -230,8 +230,7 @@ func (k *Kubernetes) loops() context.Context {
 	return k.ctx
 }
 
-// Stop ends the loops for good, as chalkd stops: a Start or Reload arriving meanwhile starts
-// none again.
+// Stop ends the loops for good, as chalkd stops. A Start or Reload after it starts none.
 func (k *Kubernetes) Stop() {
 	k.mu.Lock()
 	k.stopped = true
@@ -239,9 +238,12 @@ func (k *Kubernetes) Stop() {
 	k.stopLoops()
 }
 
-// stopLoops ends the loops and waits until the node released the VIPs, so they never stay on a
-// node that no longer holds their lease, until the join stopped, and until a renewal of the
-// control plane's certificates, which renders the static pods, ended. Start starts them again.
+// stopLoops ends the loops and waits until:
+//   - the node released the VIPs, which must never stay on a node that no longer holds their lease;
+//   - the join stopped;
+//   - a renewal of the control plane's certificates, which renders the static pods, ended.
+//
+// Start starts the loops again.
 func (k *Kubernetes) stopLoops() {
 	k.mu.Lock()
 	cancel, vipDone, joinDone, leavesDone, controlPlaneDone := k.cancel, k.vipDone, k.joinDone, k.leavesDone, k.controlPlaneDone
@@ -265,8 +267,8 @@ func (k *Kubernetes) stopLoops() {
 	}
 }
 
-// Start runs the control plane's loop once, when the node is a bootstrapped control plane, and
-// joins a control plane that is not to the cluster.
+// Start runs the control plane's loop on a bootstrapped control plane, or the join on a control
+// plane that is neither bootstrapped nor left etcd. A loop that runs already is not started again.
 func (k *Kubernetes) Start() {
 	c, err := k8s.ReadCluster(k.Paths.Cluster)
 	if err != nil {
@@ -295,8 +297,8 @@ func (k *Kubernetes) Start() {
 	}
 }
 
-// start runs the control plane's loop and, when the cluster has VIPs, the VIP election unless
-// they run already, and returns the channel closed once the manifests were applied.
+// start runs the control plane's loop and, when the cluster has VIPs, the VIP election, unless
+// they run already. It returns the channel closed once the manifests were applied.
 func (k *Kubernetes) start() chan struct{} {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -352,9 +354,9 @@ func (k *Kubernetes) Restart() {
 	k.Start()
 }
 
-// Reload makes a running control-plane loop start again with the share and the config STATE
-// holds now, which applies the control plane's objects again, or starts the loop when the node
-// is a bootstrapped control plane.
+// Reload starts a running control-plane loop again with the share and the config STATE holds now,
+// so the loop applies the control plane's objects again. When no loop runs, Reload starts it on a
+// bootstrapped control plane.
 func (k *Kubernetes) Reload() {
 	k.mu.Lock()
 	started, reload := k.started, k.reload

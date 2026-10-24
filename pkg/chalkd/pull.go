@@ -52,8 +52,8 @@ func newPull(ctx context.Context, ref string, h upgrade.Header, docs []config.Do
 	return ociimage.NewPull(ctx, ref, sources, want, parts)
 }
 
-// registryDocuments are the documents whose Mirror and Registry documents direct the pull of ref: the
-// config text delivers, or without one the running config as it was delivered.
+// registryDocuments returns the config whose Mirror and Registry documents direct the pull of
+// ref: the config text delivers, or else the running config as it was delivered.
 func (s *Server) registryDocuments(ref, text string) ([]config.Document, error) {
 	if text != "" {
 		docs, err := config.Parse(strings.NewReader(text))
