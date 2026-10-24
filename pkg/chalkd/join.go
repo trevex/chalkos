@@ -10,11 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"slices"
-	"sort"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -308,23 +305,7 @@ func (k *Kubernetes) etcdEndpoints(ctx context.Context, c k8s.Cluster, share kpk
 	if err != nil {
 		return nil, err
 	}
-	pods, err := client.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{LabelSelector: "component=etcd,tier=control-plane"})
-	if err != nil {
-		return nil, err
-	}
-	var endpoints []string
-	for _, pod := range pods.Items {
-		ip := net.ParseIP(pod.Status.PodIP)
-		if ip == nil || slices.ContainsFunc(self, ip.Equal) {
-			continue
-		}
-		endpoints = append(endpoints, etcd.ClientURL(ip))
-	}
-	if len(endpoints) == 0 {
-		return nil, errors.New("the cluster lists no etcd members")
-	}
-	sort.Strings(endpoints)
-	return endpoints, nil
+	return etcd.EndpointsFromPods(ctx, client, self)
 }
 
 // clusterAnswers reports whether the API server at the endpoint presents a certificate of the

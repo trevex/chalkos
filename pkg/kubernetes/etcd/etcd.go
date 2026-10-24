@@ -1,6 +1,7 @@
 // Package etcd manages the etcd membership of chalkos control-plane nodes: it lists the members
 // and their health, adds a node as a learner and promotes it, and removes members only while
-// the voters left keep a quorum.
+// the voters left keep a quorum. It also finds the members from etcd's mirror pods, and counts the
+// values the API server encrypted by their key.
 package etcd
 
 import (
