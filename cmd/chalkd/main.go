@@ -26,6 +26,7 @@ import (
 	"time"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
@@ -290,10 +291,10 @@ func maintenanceCertificate(runDir string, now time.Time) (tls.Certificate, erro
 	}
 	// A crash between the two writes leaves a pair that does not match, which the next start
 	// replaces.
-	if err := install.WriteFile(keyPath, []byte(self.Key), 0o600); err != nil {
+	if err := atomicfile.WriteFile(keyPath, []byte(self.Key), 0o600); err != nil {
 		return tls.Certificate{}, err
 	}
-	if err := install.WriteFile(certPath, []byte(self.Certificate), 0o644); err != nil {
+	if err := atomicfile.WriteFile(certPath, []byte(self.Certificate), 0o644); err != nil {
 		return tls.Certificate{}, err
 	}
 	return cert, nil

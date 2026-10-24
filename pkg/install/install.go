@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/identity"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -307,7 +308,7 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 	if err != nil {
 		return err
 	}
-	if err := WriteFile(filepath.Join(st.StorageDir(), "storage.json"), section, 0o600); err != nil {
+	if err := atomicfile.WriteFile(filepath.Join(st.StorageDir(), "storage.json"), section, 0o600); err != nil {
 		return err
 	}
 	if err := i.change("apply the storage section"); err != nil {
@@ -364,12 +365,12 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 		{"chalkd/ca.crt", req.CA, 0o644},
 	}
 	for _, f := range files {
-		if err := WriteFile(filepath.Join(i.StateDir, f.path), f.data, f.perm); err != nil {
+		if err := atomicfile.WriteFile(filepath.Join(i.StateDir, f.path), f.data, f.perm); err != nil {
 			return err
 		}
 	}
 	if len(req.Images) > 0 {
-		if err := WriteFile(filepath.Join(i.StateDir, upgrade.ImagesRecord), req.Images, 0o644); err != nil {
+		if err := atomicfile.WriteFile(filepath.Join(i.StateDir, upgrade.ImagesRecord), req.Images, 0o644); err != nil {
 			return err
 		}
 	}
@@ -401,7 +402,7 @@ func (i *Installer) markInstalled() error {
 	if err := i.change("mark the node installed"); err != nil {
 		return err
 	}
-	return WriteFile(filepath.Join(i.StateDir, installedMarker), []byte(i.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+	return atomicfile.WriteFile(filepath.Join(i.StateDir, installedMarker), []byte(i.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
 }
 
 // prepareState makes the disk's STATE match the node's encryption policy. A STATE that does
@@ -612,43 +613,6 @@ func withEncryption(text, policy string) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// WriteFile replaces a file atomically and durably, creating its directory.
-func WriteFile(path string, data []byte, perm fs.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return err
-	}
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
-}
-
 // WriteShare records the node's Kubernetes share on STATE, in a directory only root can enter.
 func WriteShare(stateDir string, share []byte) error {
 	dir := filepath.Join(stateDir, "kubernetes")
@@ -658,7 +622,7 @@ func WriteShare(stateDir string, share []byte) error {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return err
 	}
-	return WriteFile(filepath.Join(dir, "share.json"), share, 0o600)
+	return atomicfile.WriteFile(filepath.Join(dir, "share.json"), share, 0o600)
 }
 
 func newUUID() string {

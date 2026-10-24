@@ -9,8 +9,8 @@ import (
 	"log"
 	"os"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 )
@@ -80,7 +80,7 @@ func (b baseline) write(path string) error {
 	if err != nil {
 		return err
 	}
-	return install.WriteFile(path, data, 0o600)
+	return atomicfile.WriteFile(path, data, 0o600)
 }
 
 // documents are the baseline's documents, with their secret values hashed.

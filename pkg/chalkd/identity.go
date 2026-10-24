@@ -16,6 +16,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/facts"
@@ -520,7 +521,7 @@ func (s *Server) applyStorage(ctx context.Context, recorded, section storage.Sec
 	if err != nil {
 		return err
 	}
-	if err := install.WriteFile(filepath.Join(st.StorageDir(), "storage.json"), data, 0o600); err != nil {
+	if err := atomicfile.WriteFile(filepath.Join(st.StorageDir(), "storage.json"), data, 0o600); err != nil {
 		return failed(connect.CodeInternal, "record the storage section: %v", err)
 	}
 	if _, err := s.Run.Run(ctx, "systemctl", "daemon-reload"); err != nil {

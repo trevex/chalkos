@@ -15,9 +15,9 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
-	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -325,7 +325,7 @@ func (s *Server) recordImages(installed *upgrade.Header) {
 	}
 	data, err := images.Encode()
 	if err == nil {
-		err = install.WriteFile(path, data, 0o644)
+		err = atomicfile.WriteFile(path, data, 0o644)
 	}
 	if err != nil {
 		log.Printf("record the image's provenance: %v", err)

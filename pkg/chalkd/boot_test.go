@@ -12,7 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -85,7 +85,7 @@ func TestStatusWithoutTheRecordOfImages(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, _ := installedServer(t, section("", ""), false)
 			if record != "" {
-				if err := install.WriteFile(filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord), []byte(record), 0o644); err != nil {
+				if err := atomicfile.WriteFile(filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord), []byte(record), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}

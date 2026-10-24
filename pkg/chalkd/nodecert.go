@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -116,7 +116,7 @@ func (n *NodeCertificate) ReplaceTrust(bundle string, keep ...*x509.Certificate)
 	if t.bundle == n.OSCA() {
 		return nil
 	}
-	if err := install.WriteFile(n.caPath, []byte(t.bundle), 0o644); err != nil {
+	if err := atomicfile.WriteFile(n.caPath, []byte(t.bundle), 0o644); err != nil {
 		return fmt.Errorf("record the OS CAs: %w", err)
 	}
 	n.trust.Store(t)
@@ -208,7 +208,7 @@ func (n *NodeCertificate) replace(from *x509.Certificate, chain, key string, now
 	if err != nil {
 		return false, err
 	}
-	if err := install.WriteFile(n.path, file, 0o600); err != nil {
+	if err := atomicfile.WriteFile(n.path, file, 0o600); err != nil {
 		return false, fmt.Errorf("record the node certificate: %w", err)
 	}
 	n.current.Store(&cred)

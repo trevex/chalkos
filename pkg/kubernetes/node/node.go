@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
@@ -155,7 +155,7 @@ func Joining(p Paths) (bool, error) {
 
 // MarkJoining records that the node starts joining the cluster at the endpoint.
 func MarkJoining(p Paths, endpoint string) error {
-	return install.WriteFile(p.Joining(), []byte(endpoint+"\n"), 0o644)
+	return atomicfile.WriteFile(p.Joining(), []byte(endpoint+"\n"), 0o644)
 }
 
 // MarkJoined records that the node joined the cluster: from then on it is a bootstrapped control
@@ -171,7 +171,7 @@ func MarkJoined(p Paths, now time.Time) error {
 // MarkBootstrapped records that the node is a bootstrapped control plane, which renders its
 // static pods at boot.
 func MarkBootstrapped(p Paths, now time.Time) error {
-	return install.WriteFile(p.Bootstrapped(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
+	return atomicfile.WriteFile(p.Bootstrapped(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
 }
 
 // ClearMembership removes what makes the node an etcd member at boot: the bootstrapped,
@@ -195,7 +195,7 @@ func Left(p Paths) (bool, error) {
 // MarkLeft records that the node left etcd. It comes before the node deletes its etcd data and
 // ClearMembership, so a node interrupted there never looks like one that has yet to join.
 func MarkLeft(p Paths, now time.Time) error {
-	return install.WriteFile(p.Left(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
+	return atomicfile.WriteFile(p.Left(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
 }
 
 // RemoveEtcdData deletes etcd's data and keeps its directory.
@@ -233,7 +233,7 @@ func MarkEtcdInitialised(p Paths, now time.Time) error {
 	if err != nil || initialised {
 		return err
 	}
-	return install.WriteFile(p.EtcdInitialised(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
+	return atomicfile.WriteFile(p.EtcdInitialised(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
 }
 
 // CheckEtcdData refuses an empty etcd data directory once etcd was initialised. Without the
@@ -358,7 +358,7 @@ func WritePin(p Paths, ips []net.IP) error {
 	if len(ips) == 0 {
 		return errors.New("pin the node's addresses: there are none")
 	}
-	return install.WriteFile(p.Pin(), nodeIPFile(ips), 0o644)
+	return atomicfile.WriteFile(p.Pin(), nodeIPFile(ips), 0o644)
 }
 
 // ReadPin returns the addresses the node is pinned to, nil when it is not pinned.
@@ -509,7 +509,7 @@ func Prepare(p Paths, now time.Time, resolve Resolver, firewall Firewall) error 
 		err = firewall(p)
 	}
 	if err == nil {
-		if err = install.WriteFile(p.Prepared(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644); err == nil {
+		if err = atomicfile.WriteFile(p.Prepared(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644); err == nil {
 			return nil
 		}
 	}
@@ -526,7 +526,7 @@ func Prepare(p Paths, now time.Time, resolve Resolver, firewall Firewall) error 
 		}
 	}
 	// chalkd reports the reason in the node's status. Errors never hold key material.
-	if werr := install.WriteFile(p.PrepareError(), []byte(err.Error()+"\n"), 0o644); werr != nil {
+	if werr := atomicfile.WriteFile(p.PrepareError(), []byte(err.Error()+"\n"), 0o644); werr != nil {
 		log.Print(werr)
 	}
 	return err
@@ -619,19 +619,19 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 		"flags":       []byte("KUBELET_ARGS=" + strings.Join(KubeletFlags(c, n), " ") + "\n"),
 		"config.json": config,
 	} {
-		if err := install.WriteFile(filepath.Join(p.KubeletDir(), name), data, 0o644); err != nil {
+		if err := atomicfile.WriteFile(filepath.Join(p.KubeletDir(), name), data, 0o644); err != nil {
 			return err
 		}
 	}
 	// Written once the certificates naming it are, which Bootstrap relies on.
-	if err := install.WriteFile(p.NodeIP(), nodeIPFile(n.IPs), 0o644); err != nil {
+	if err := atomicfile.WriteFile(p.NodeIP(), nodeIPFile(n.IPs), 0o644); err != nil {
 		return err
 	}
-	if err := install.WriteFile(p.VXLAN(), vxlanFile(picked, sources), 0o644); err != nil {
+	if err := atomicfile.WriteFile(p.VXLAN(), vxlanFile(picked, sources), 0o644); err != nil {
 		return err
 	}
 	// The kubelet starts once its kubeconfig exists, so it is written last.
-	if err := install.WriteFile(p.Kubeconfig(), kubeconfig, 0o644); err != nil {
+	if err := atomicfile.WriteFile(p.Kubeconfig(), kubeconfig, 0o644); err != nil {
 		return err
 	}
 	if c.Kind != kubernetes.KindControlPlane {
@@ -741,7 +741,7 @@ func installKubeletClient(p Paths, ca pki.CertKey, ck pki.CertKey, node string, 
 	}
 	// One file, replaced atomically; the kubelet writes renewed certificates next to it.
 	name := "kubelet-client-chalkos.pem"
-	if err := install.WriteFile(filepath.Join(p.KubeletPKI, name), []byte(ck.Certificate+ck.Key), 0o600); err != nil {
+	if err := atomicfile.WriteFile(filepath.Join(p.KubeletPKI, name), []byte(ck.Certificate+ck.Key), 0o600); err != nil {
 		return err
 	}
 	// The kubelet's store follows the link and refuses to replace a file that is not one.
@@ -791,7 +791,7 @@ func checkRenewedClient(path string, ca pki.CertKey, want *x509.Certificate, nod
 
 // WriteInitialCluster records the initial cluster the node's etcd joins with.
 func WriteInitialCluster(p Paths, initialCluster string) error {
-	return install.WriteFile(p.EtcdInitialCluster(), []byte(initialCluster+"\n"), 0o644)
+	return atomicfile.WriteFile(p.EtcdInitialCluster(), []byte(initialCluster+"\n"), 0o644)
 }
 
 // HasInitialCluster reports whether the node recorded the initial cluster its etcd joins with.
@@ -843,7 +843,7 @@ func render(p Paths, only string) error {
 		if only != "" && name != only {
 			continue
 		}
-		if err := install.WriteFile(filepath.Join(p.Manifests(), name), data, 0o644); err != nil {
+		if err := atomicfile.WriteFile(filepath.Join(p.Manifests(), name), data, 0o644); err != nil {
 			return err
 		}
 	}

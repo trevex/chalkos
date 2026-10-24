@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
@@ -110,7 +110,7 @@ func writeDir(dir string, files map[string][]byte) error {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return err
 		}
-		if err := install.WriteFile(path, data, 0o600); err != nil {
+		if err := atomicfile.WriteFile(path, data, 0o600); err != nil {
 			return err
 		}
 	}

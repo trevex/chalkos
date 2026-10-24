@@ -13,8 +13,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -206,7 +206,7 @@ func (a *app) configNew(ctx context.Context, f configNewFlags) error {
 	}
 	// The file holds the user's private key.
 	if f.force {
-		err = install.WriteFile(path, data, 0o600)
+		err = atomicfile.WriteFile(path, data, 0o600)
 	} else if _, statErr := os.Stat(path); statErr == nil {
 		return fmt.Errorf("%s exists; pass --force to replace it", path)
 	} else {

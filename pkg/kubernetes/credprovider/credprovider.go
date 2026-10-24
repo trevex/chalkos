@@ -19,8 +19,8 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/install"
 )
 
 // Dir is where the provider's files are on a node. The Nix module names the same directory.
@@ -111,13 +111,13 @@ func Write(dir, bin string, logins []config.RegistryCredentials) error {
 	if err != nil {
 		return err
 	}
-	if err := install.WriteFile(filepath.Join(dir, "credentials.json"), data, 0o600); err != nil {
+	if err := atomicfile.WriteFile(filepath.Join(dir, "credentials.json"), data, 0o600); err != nil {
 		return err
 	}
-	if err := install.WriteFile(cfgPath, cfg, 0o644); err != nil {
+	if err := atomicfile.WriteFile(cfgPath, cfg, 0o644); err != nil {
 		return err
 	}
-	return install.WriteFile(filepath.Join(dir, "flags"), []byte(flags), 0o644)
+	return atomicfile.WriteFile(filepath.Join(dir, "flags"), []byte(flags), 0o644)
 }
 
 // Provide answers the kubelet's CredentialProviderRequest on in with the credentials in dir of

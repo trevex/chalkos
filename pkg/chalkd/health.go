@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -359,7 +359,7 @@ func (h *Health) record(ctx context.Context, failure error) {
 		text += fmt.Sprintf("the journal could not be read: %v\n", err)
 	}
 	text += failure.Error() + "\n"
-	if err := install.WriteFile(h.Record, []byte(text), 0o600); err != nil {
+	if err := atomicfile.WriteFile(h.Record, []byte(text), 0o600); err != nil {
 		log.Printf("record the failed boot: %v", err)
 	}
 }
