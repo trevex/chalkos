@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -69,14 +70,24 @@ type Schemas struct {
 	raw map[Kind]any
 }
 
-// LoadSchemas compiles every *.json file in dir and builds the kind list from each file's
+// LoadSchemas compiles the schemas of the directory dir with LoadFS.
+func LoadSchemas(dir string) (*Schemas, error) {
+	return load(os.DirFS(dir), dir)
+}
+
+// LoadFS compiles every *.json file at the root of fsys and builds the kind list from each file's
 // "x-chalkos-kind": {"group","version","kind","multiple"}. A file's name must equal
 // "<group>_<version>_<kind>.json" by its own declared identity, and no two files may declare the
 // same kind; either failure names the offending file or kind.
-func LoadSchemas(dir string) (*Schemas, error) {
-	entries, err := os.ReadDir(dir)
+func LoadFS(fsys fs.FS) (*Schemas, error) {
+	return load(fsys, "")
+}
+
+// load is LoadFS, naming the files in its errors as paths below dir.
+func load(fsys fs.FS, dir string) (*Schemas, error) {
+	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
-		return nil, err
+		return nil, below(dir, err)
 	}
 	c := jsonschema.NewCompiler()
 	c.DefaultDraft(jsonschema.Draft2020)
@@ -88,7 +99,7 @@ func LoadSchemas(dir string) (*Schemas, error) {
 		}
 		name := e.Name()
 		path := filepath.Join(dir, name)
-		doc, err := readDoc(path)
+		doc, err := readDoc(fsys, dir, name)
 		if err != nil {
 			return nil, err
 		}
@@ -113,23 +124,33 @@ func LoadSchemas(dir string) (*Schemas, error) {
 	return ss, nil
 }
 
+// below makes the path of a file system error err the path below dir.
+func below(dir string, err error) error {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		pe.Path = filepath.Join(dir, pe.Path)
+	}
+	return err
+}
+
 // fileName is the name a schema of k must have, as lib/kinds/schema.nix also builds it.
 func fileName(k Kind) string {
 	group, version, _ := strings.Cut(k.APIVersion, "/")
 	return group + "_" + version + "_" + k.Kind + ".json"
 }
 
-// readDoc reads and decodes the JSON document at path with jsonschema.UnmarshalJSON, which keeps
-// numbers exact, the way compileSchema needs it and the way kindOf reads "x-chalkos-kind".
-func readDoc(path string) (any, error) {
-	f, err := os.Open(path)
+// readDoc reads and decodes the JSON document name of fsys, the directory dir, with
+// jsonschema.UnmarshalJSON, which keeps numbers exact, the way compileSchema needs it and the way
+// kindOf reads "x-chalkos-kind".
+func readDoc(fsys fs.FS, dir, name string) (any, error) {
+	f, err := fsys.Open(name)
 	if err != nil {
-		return nil, err
+		return nil, below(dir, err)
 	}
 	defer f.Close()
 	doc, err := jsonschema.UnmarshalJSON(f)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, name), err)
 	}
 	return doc, nil
 }
