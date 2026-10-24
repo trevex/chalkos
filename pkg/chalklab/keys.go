@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -49,10 +50,10 @@ func (a *app) createKeys(ctx context.Context, dir, labName, templateVars string)
 		if err != nil {
 			return err
 		}
-		if err := writeNew(filepath.Join(dir, name+".key"), []byte(keyPEM), 0o600); err != nil {
+		if err := atomicfile.WriteNew(filepath.Join(dir, name+".key"), []byte(keyPEM), 0o600); err != nil {
 			return err
 		}
-		if err := writeNew(filepath.Join(dir, name+".crt"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
+		if err := atomicfile.WriteNew(filepath.Join(dir, name+".crt"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
 			return err
 		}
 	}
@@ -68,19 +69,6 @@ func (a *app) createKeys(ctx context.Context, dir, labName, templateVars string)
 		return fmt.Errorf("enroll the lab's keys: %w", err)
 	}
 	return nil
-}
-
-// writeNew writes a file that must not exist yet with the permissions given.
-func writeNew(path string, data []byte, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
 }
 
 // randomGUID is a random GUID, the owner of the keys the lab enrolls.

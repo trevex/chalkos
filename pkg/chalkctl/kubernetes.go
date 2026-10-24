@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -168,7 +169,7 @@ func (a *app) kubeconfig(ctx context.Context, f kubeconfigFlags) error {
 		}
 	}
 	// The file holds the admin's private key.
-	if err := writeNew(f.out, data, 0o600); err != nil {
+	if err := atomicfile.WriteNew(f.out, data, 0o600); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.stdout, "wrote %s; its certificate is valid for %s\n", f.out, f.ttl)

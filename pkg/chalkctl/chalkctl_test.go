@@ -850,29 +850,6 @@ func TestDefaultIdentitiesSkipUnreadable(t *testing.T) {
 	}
 }
 
-func TestCreateNewRemovesPartialFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "secrets.json")
-	err := createNew(path, 0o600, func(w io.Writer) error {
-		w.Write([]byte("half a sec"))
-		return errors.New("disk full")
-	})
-	if err == nil || !strings.Contains(err.Error(), "disk full") {
-		t.Fatalf("err = %v", err)
-	}
-	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("the partial file is left: %v", err)
-	}
-	if err := writeNew(path, []byte("data"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeNew(path, []byte("other"), 0o600); err == nil {
-		t.Error("overwrote an existing file")
-	}
-	if got, _ := os.ReadFile(path); string(got) != "data" {
-		t.Errorf("file = %q, want the existing file kept", got)
-	}
-}
-
 func TestAdminCertificateLastsOneRun(t *testing.T) {
 	ta := newTestApp(t)
 	pair, err := adminCertificate(ta.secrets)

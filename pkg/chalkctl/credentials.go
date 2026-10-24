@@ -211,7 +211,7 @@ func (a *app) configNew(ctx context.Context, f configNewFlags) error {
 	} else if _, statErr := os.Stat(path); statErr == nil {
 		return fmt.Errorf("%s exists; pass --force to replace it", path)
 	} else {
-		err = writeNew(path, data, 0o600)
+		err = atomicfile.WriteNew(path, data, 0o600)
 	}
 	if err != nil {
 		return err

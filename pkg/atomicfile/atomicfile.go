@@ -3,6 +3,8 @@
 package atomicfile
 
 import (
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -60,6 +62,36 @@ func Stage(path string, data []byte, perm fs.FileMode) (name string, err error) 
 		return "", err
 	}
 	return f.Name(), nil
+}
+
+// WriteNew writes data with perm to a new file at path, which must not exist yet, and syncs it.
+// A file it cannot write completely is removed again, so no partial file is left behind.
+func WriteNew(path string, data []byte, perm fs.FileMode) error {
+	return createNew(path, perm, func(w io.Writer) error {
+		_, err := w.Write(data)
+		return err
+	})
+}
+
+// createNew creates a file that must not exist yet with what write writes, and removes it again
+// when it cannot be written completely.
+func createNew(path string, perm fs.FileMode, write func(w io.Writer) error) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return err
+	}
+	err = write(f)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(path)
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
 }
 
 // SyncDir syncs a directory, so the names of the files renamed into it last survive a crash.

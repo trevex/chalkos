@@ -333,7 +333,7 @@ func (a *app) genSecretsToStdout(recipients []string, plaintext bool, publicPath
 	if err != nil {
 		return err
 	}
-	if err := writeNew(publicPath, public, 0o644); err != nil {
+	if err := atomicfile.WriteNew(publicPath, public, 0o644); err != nil {
 		return err
 	}
 	if _, err := a.stdout.Write(data); err != nil {
@@ -346,36 +346,6 @@ func (a *app) genSecretsToStdout(recipients []string, plaintext bool, publicPath
 		fmt.Fprintf(a.stderr, "encrypted the secrets to %s\n", strings.Join(recipients, ", "))
 	}
 	fmt.Fprintf(a.stderr, "wrote %s\n", publicPath)
-	return nil
-}
-
-// writeNew writes a file that must not exist yet.
-func writeNew(path string, data []byte, perm fs.FileMode) error {
-	return createNew(path, perm, func(w io.Writer) error {
-		_, err := w.Write(data)
-		return err
-	})
-}
-
-// createNew creates a file that must not exist yet with what write writes. It removes the file
-// again when it cannot be written completely: a partial secrets file would read as corrupt, and
-// would stop the next run from generating the file.
-func createNew(path string, perm fs.FileMode, write func(w io.Writer) error) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
-	if err != nil {
-		return err
-	}
-	err = write(f)
-	if err == nil {
-		err = f.Sync()
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		os.Remove(path)
-		return fmt.Errorf("write %s: %w", path, err)
-	}
 	return nil
 }
 
@@ -395,7 +365,7 @@ func (a *app) writeSecrets(secrets clustersecrets.Secrets, recipients []string, 
 	if err != nil {
 		return err
 	}
-	if err := writeNew(path, data, 0o600); err != nil {
+	if err := atomicfile.WriteNew(path, data, 0o600); err != nil {
 		return err
 	}
 	if !plaintext {
@@ -408,7 +378,7 @@ func (a *app) writeSecrets(secrets clustersecrets.Secrets, recipients []string, 
 	if err != nil {
 		return err
 	}
-	return writeNew(publicPath, public, 0o644)
+	return atomicfile.WriteNew(publicPath, public, 0o644)
 }
 
 // encodeSecrets encodes the secrets as a secrets file: encrypted to the recipients, which it
@@ -752,7 +722,7 @@ func (f *secretsFile) unchanged() error {
 func (a *app) writeOrReplace(path string, data []byte, perm fs.FileMode, create *bool) error {
 	var err error
 	if *create {
-		if err = writeNew(path, data, perm); err != nil {
+		if err = atomicfile.WriteNew(path, data, perm); err != nil {
 			return err
 		}
 		*create = false
@@ -838,10 +808,7 @@ func keepPrevious(path string, perm fs.FileMode) error {
 		if rerr != nil {
 			return rerr
 		}
-		if err := createNew(next, perm, func(w io.Writer) error {
-			_, err := w.Write(data)
-			return err
-		}); err != nil {
+		if err := atomicfile.WriteNew(next, data, perm); err != nil {
 			return err
 		}
 	}
