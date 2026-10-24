@@ -432,7 +432,7 @@ func TestInstallRefusesAPull(t *testing.T) {
 			s, _ := newTestServer(t, maintenance, vda)
 			s.Installer = !tc.inPlace
 			s.FromParts = func(context.Context, install.PartsRequest) error { t.Error("installed onto the disk"); return nil }
-			s.InPlace = func(context.Context, install.Request) error { t.Error("installed in place"); return nil }
+			s.InPlace = func(context.Context, install.Request, []byte) error { t.Error("installed in place"); return nil }
 			h := pulledInstall(t, host, registryConfig(host))
 			if tc.inPlace {
 				h.Target, h.Image = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}, nil

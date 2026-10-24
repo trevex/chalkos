@@ -32,9 +32,6 @@ type Request struct {
 	// Config is the node's config as the config slot of the image installed keeps it, with the
 	// identity it translates to as delivered (JSON), which the slot keeps as it is.
 	Config slot.Stored
-	// RootHash is the root hash of the running image's store, whose slot an install in place
-	// writes; an install from parts writes the slot of the image it installs.
-	RootHash []byte
 	// Images is the provenance record STATE starts with, as chalkd keeps it in
 	// chalkd/images.json; nil writes none.
 	Images []byte

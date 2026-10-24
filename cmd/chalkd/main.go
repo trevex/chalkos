@@ -332,8 +332,8 @@ func serve() error {
 		Run:         tool.ExecRunner{},
 		Host:        storage.DefaultHost(),
 		Loader:      nodeconfig.Default(),
-		InPlace:     install.Default(true).InPlace,
-		FromParts:   install.Default(false).FromParts,
+		InPlace:     install.ForNode().InPlace,
+		FromParts:   install.ForInstaller().FromParts,
 		Journal:     chalkd.Journal,
 		RebootNode: func() {
 			if out, err := exec.Command("systemctl", "reboot").CombinedOutput(); err != nil {

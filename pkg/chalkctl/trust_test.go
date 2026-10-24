@@ -52,7 +52,7 @@ func TestClientFilesAndInstallsTrustBothOSCAs(t *testing.T) {
 
 	s := maintenanceNode()
 	var got install.Request
-	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
+	s.InPlace = func(_ context.Context, req install.Request, _ []byte) error { got = req; return nil }
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--insecure"}, addr)); err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestTrustLine(t *testing.T) {
 func TestInstallFromAnImageOfAnotherOSCA(t *testing.T) {
 	ta := newTestApp(t)
 	s := maintenanceNode()
-	s.InPlace = func(context.Context, install.Request) error { t.Error("installed"); return nil }
+	s.InPlace = func(context.Context, install.Request, []byte) error { t.Error("installed"); return nil }
 	other, err := pki.NewOSCA(time.Now())
 	if err != nil {
 		t.Fatal(err)

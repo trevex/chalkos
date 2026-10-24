@@ -36,7 +36,7 @@ func installShare(t *testing.T, ta *testApp) (install.Request, error) {
 	t.Helper()
 	s := maintenanceNode()
 	var got install.Request
-	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
+	s.InPlace = func(_ context.Context, req install.Request, _ []byte) error { got = req; return nil }
 	if ta.kind != "" {
 		kubernetesImage(t, s)
 	}

@@ -265,7 +265,7 @@ func TestInstallFromTheInventory(t *testing.T) {
 	path := writeInventory(t, ta.dir, n1Host, n1SystemDisk, n1Network)
 	s := maintenanceNode()
 	var got install.Request
-	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
+	s.InPlace = func(_ context.Context, req install.Request, _ []byte) error { got = req; return nil }
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), []string{"install", "n1", "--insecure", "--inventory", path, "--address", addr}); err != nil {
 		t.Fatal(err)

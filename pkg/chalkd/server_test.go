@@ -122,7 +122,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 			KubernetesImage: filepath.Join(root, "etc", "chalkos", "kubernetes", "image.json"),
 			SetHostname:     func(string) error { return nil },
 		},
-		InPlace:   func(context.Context, install.Request) error { return errors.New("no install expected") },
+		InPlace:   func(context.Context, install.Request, []byte) error { return errors.New("no install expected") },
 		FromParts: func(context.Context, install.PartsRequest) error { return errors.New("no install expected") },
 		Journal: func(context.Context, string, bool) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader("")), nil

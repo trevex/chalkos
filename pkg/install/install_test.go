@@ -369,7 +369,6 @@ func testRequest(t *testing.T, section storage.Section) Request {
 	}
 	return Request{
 		Config:          slot.Stored{Identity: text},
-		RootHash:        runningHash,
 		Section:         section,
 		Kubernetes:      &identity.Kubernetes{NodeName: "n1"},
 		NodeCertificate: []byte(n.Certificate),
@@ -411,7 +410,7 @@ func TestInPlaceInstallsOnBootDisk(t *testing.T) {
 	r.add(inPlaceRules(i)...)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
 
-	if err := i.InPlace(context.Background(), req); err != nil {
+	if err := i.InPlace(context.Background(), req, runningHash); err != nil {
 		t.Fatal(err)
 	}
 
@@ -497,7 +496,7 @@ func TestInPlaceRecreatesStateForPolicy(t *testing.T) {
 	r.add(inPlaceRules(i)...)
 	req := testRequest(t, testSection(storage.EncryptionNone, "recovery-key", "/dev/vda"))
 
-	if err := i.InPlace(context.Background(), req); err != nil {
+	if err := i.InPlace(context.Background(), req, runningHash); err != nil {
 		t.Fatal(err)
 	}
 	system := filepath.Join(i.WorkDir, "system")
@@ -526,7 +525,7 @@ func TestInPlaceKeepsMatchingState(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda)
 	r.add(inPlaceRules(i)...)
-	if err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))); err != nil {
+	if err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda")), runningHash); err != nil {
 		t.Fatal(err)
 	}
 	if hasPrefix(r.Calls, "sfdisk --lock=nonblock --delete") || hasPrefix(r.Calls, "systemd-repart --dry-run=no --seed=random --definitions="+filepath.Join(i.WorkDir, "system")) {
@@ -579,7 +578,7 @@ func TestInPlaceRefusals(t *testing.T) {
 			r.add(inPlaceRules(i)...)
 			req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
 			c.change(t, i, &req)
-			err := i.InPlace(context.Background(), req)
+			err := i.InPlace(context.Background(), req, runningHash)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err = %v, want %q", err, c.want)
 			}
@@ -599,7 +598,7 @@ func TestInPlaceStopsOnDiskError(t *testing.T) {
 	section.Disks["data"] = storage.Disk{Ref: storage.Ref{Selector: storage.Selector{Serial: "chalk-target"}}, Seed: systemSeed, Repart: map[string]string{"10-data.conf": "[Partition]\nLabel=data\n"}}
 	section.Volumes["data"] = storage.Volume{Disk: "data", Label: "data", Format: "xfs", MountPoint: "/srv/data", Encryption: "tpm2"}
 
-	err := i.InPlace(context.Background(), testRequest(t, section))
+	err := i.InPlace(context.Background(), testRequest(t, section), runningHash)
 	if err == nil || !strings.Contains(err.Error(), "disk data") || !strings.Contains(err.Error(), "carries data") {
 		t.Fatalf("err = %v, want the data disk's problem", err)
 	}
@@ -615,7 +614,7 @@ func TestInPlaceCanRunAgain(t *testing.T) {
 	r.add(inPlaceRules(i)...)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
 
-	err := i.InPlace(context.Background(), req)
+	err := i.InPlace(context.Background(), req, runningHash)
 	if err == nil || !strings.Contains(err.Error(), "enroll the fallback key on state") {
 		t.Fatalf("err = %v, want the enrollment failure", err)
 	}
@@ -623,7 +622,7 @@ func TestInPlaceCanRunAgain(t *testing.T) {
 		t.Fatal("an interrupted install wrote the installed marker")
 	}
 	r.Calls = nil
-	if err := i.InPlace(context.Background(), req); err != nil {
+	if err := i.InPlace(context.Background(), req, runningHash); err != nil {
 		t.Fatalf("the install did not run again: %v", err)
 	}
 	if !installed(t, i.StateDir) || hasPrefix(r.Calls, "sfdisk --lock=nonblock --delete") {
@@ -643,7 +642,7 @@ func TestInstallRecordsTheSectionLast(t *testing.T) {
 		}
 		return nil
 	}
-	err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda")))
+	err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda")), runningHash)
 	if err == nil || err.Error() != "stopped" {
 		t.Fatalf("err = %v, want the install stopped before the enrolment", err)
 	}
@@ -657,7 +656,7 @@ func TestInstallRefusesUnencryptedVolumeMeantToBeEncrypted(t *testing.T) {
 	i := newTestInstaller(t, r, vda)
 	r.add(tooltest.Rule{Prefix: "blkid -p -o value -s TYPE /dev/vda7", Out: "ext4\n"})
 	r.add(inPlaceRules(i)...)
-	err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda")))
+	err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda")), runningHash)
 	if err == nil || !strings.Contains(err.Error(), "volume var is meant to be encrypted") {
 		t.Fatalf("err = %v", err)
 	}
@@ -670,7 +669,7 @@ func TestInstallWithoutFallbackEnrollsNothing(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda)
 	r.add(inPlaceRules(i)...)
-	if err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, storage.FallbackNone, "/dev/vda"))); err != nil {
+	if err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, storage.FallbackNone, "/dev/vda")), runningHash); err != nil {
 		t.Fatal(err)
 	}
 	if hasPrefix(r.Calls, "systemd-cryptenroll") {
@@ -688,7 +687,7 @@ func TestBootLoader(t *testing.T) {
 			t.Errorf("the boot loader of %q = %q, want %q", arch, got, want)
 		}
 	}
-	if arch := Default(false).Architecture; arch != uki.GoArchitecture(runtime.GOARCH) {
+	if arch := ForInstaller().Architecture; arch != uki.GoArchitecture(runtime.GOARCH) {
 		t.Errorf("Default installs %q on %s", arch, runtime.GOARCH)
 	}
 }
@@ -709,7 +708,7 @@ func TestInPlaceStoresKubernetesShare(t *testing.T) {
 	if req.KubernetesShare, err = share.Encode(); err != nil {
 		t.Fatal(err)
 	}
-	if err := i.InPlace(context.Background(), req); err != nil {
+	if err := i.InPlace(context.Background(), req, runningHash); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(i.StateDir, "kubernetes", "share.json")
@@ -730,7 +729,7 @@ func TestInstallRefusesInvalidShare(t *testing.T) {
 	i := newTestInstaller(t, r, vda, vdb)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
 	req.KubernetesShare = []byte(`{"kind": "worker", "ca": {"certificate": "not a certificate"}}`)
-	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
+	if err := i.InPlace(context.Background(), req, runningHash); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
 		t.Fatalf("err = %v, want the share refused", err)
 	}
 	if len(r.Calls) != 0 {
@@ -756,7 +755,7 @@ func TestInstallRefusesShareForAnotherNode(t *testing.T) {
 	if req.KubernetesShare, err = share.Encode(); err != nil {
 		t.Fatal(err)
 	}
-	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
+	if err := i.InPlace(context.Background(), req, runningHash); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
 		t.Fatalf("err = %v, want the share refused", err)
 	}
 	if len(r.Calls) != 0 {
@@ -790,7 +789,7 @@ func TestInstallRefusesShareWithExtraFields(t *testing.T) {
 	if req.KubernetesShare, err = json.Marshal(fields); err != nil {
 		t.Fatal(err)
 	}
-	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
+	if err := i.InPlace(context.Background(), req, runningHash); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
 		t.Fatalf("err = %v, want the share refused", err)
 	}
 	if len(r.Calls) != 0 {
@@ -826,7 +825,7 @@ func TestInPlaceStoresCanonicalShare(t *testing.T) {
 	}
 	req.KubernetesShare = indented
 
-	if err := i.InPlace(context.Background(), req); err != nil {
+	if err := i.InPlace(context.Background(), req, runningHash); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(filepath.Join(i.StateDir, "kubernetes", "share.json"))
@@ -859,7 +858,7 @@ func TestInstallRefusesForeignNodeCA(t *testing.T) {
 	if req.KubernetesShare, err = kpki.ControlPlaneShare(k, nodeCA).Encode(); err != nil {
 		t.Fatal(err)
 	}
-	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "node CA") {
+	if err := i.InPlace(context.Background(), req, runningHash); err == nil || !strings.Contains(err.Error(), "node CA") {
 		t.Fatalf("err = %v, want the node CA refused", err)
 	}
 	if len(r.Calls) != 0 {
@@ -884,7 +883,7 @@ func TestInPlaceWritesALoadableNodeCertificate(t *testing.T) {
 			r.add(inPlaceRules(i)...)
 			req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
 			req.NodeCertificate = []byte(edit(string(req.NodeCertificate)))
-			if err := i.InPlace(context.Background(), req); err != nil {
+			if err := i.InPlace(context.Background(), req, runningHash); err != nil {
 				if installed(t, i.StateDir) {
 					t.Error("a refused install wrote the installed marker")
 				}
@@ -917,7 +916,7 @@ func TestInPlaceStoresConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Config = slot.Stored{Delivered: docs, Documents: docs, Version: "abc", Identity: req.Config.Identity}
-	if err := i.InPlace(context.Background(), req); err != nil {
+	if err := i.InPlace(context.Background(), req, runningHash); err != nil {
 		t.Fatal(err)
 	}
 	got, found, err := slot.Read(slot.Dir(filepath.Join(i.StateDir, "config"), runningHash))
@@ -929,14 +928,13 @@ func TestInPlaceStoresConfig(t *testing.T) {
 	}
 }
 
-// TestInPlaceNeedsTheRunningImage refuses an install in place that does not name the root hash
-// of the image the node runs, whose slot the config goes to.
+// TestInPlaceNeedsTheRunningImage refuses an install in place that is not given the root hash of
+// the image the node runs, whose slot the config goes to.
 func TestInPlaceNeedsTheRunningImage(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda, vdb)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
-	req.RootHash = nil
-	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "no root hash") {
+	if err := i.InPlace(context.Background(), req, nil); err == nil || !strings.Contains(err.Error(), "no root hash") {
 		t.Errorf("err = %v", err)
 	}
 	if len(r.Calls) != 0 {
@@ -954,7 +952,7 @@ func TestInPlaceNamesTheRemedyOfAStateTheTPMDoesNotUnseal(t *testing.T) {
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
 
 	for range 2 {
-		err := i.InPlace(context.Background(), req)
+		err := i.InPlace(context.Background(), req, runningHash)
 		if !errors.Is(err, node.ErrNotUnsealed) || !strings.Contains(err.Error(), "install the node from the installer with --wipe-disk") {
 			t.Fatalf("err = %v, want the TPM's failure and the wiped disk", err)
 		}

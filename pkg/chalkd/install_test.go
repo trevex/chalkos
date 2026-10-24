@@ -89,14 +89,18 @@ func sendInstall(t *testing.T, s *Server, h *nodev1.InstallHeader, image []byte)
 func TestInstallInPlace(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	var got install.Request
-	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
+	var gotHash []byte
+	s.InPlace = func(_ context.Context, req install.Request, rootHash []byte) error {
+		got, gotHash = req, rootHash
+		return nil
+	}
 	rebooted := make(chan struct{})
 	s.RebootNode = func() { close(rebooted) }
 
 	if err := sendInstall(t, s, header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if got.Config.Version != hashOf(t, installConfig) || !bytes.Equal(got.RootHash, bytes.Repeat([]byte{0xab}, 32)) || string(got.NodeKey) != "key" || string(got.CA) != "ca" || got.FallbackSecret != "recovery" || string(got.KubernetesShare) != "share" ||
+	if got.Config.Version != hashOf(t, installConfig) || !bytes.Equal(gotHash, bytes.Repeat([]byte{0xab}, 32)) || string(got.NodeKey) != "key" || string(got.CA) != "ca" || got.FallbackSecret != "recovery" || string(got.KubernetesShare) != "share" ||
 		got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
 		t.Errorf("install request = %+v", got)
 	}
@@ -117,7 +121,7 @@ func TestInstallInPlace(t *testing.T) {
 func TestInstallTakesTheNodesNameFromTheHeadersCertificate(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	var got install.Request
-	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
+	s.InPlace = func(_ context.Context, req install.Request, _ []byte) error { got = req; return nil }
 	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	h.Config = installConfig
 	h.NodeCertificate = nodeChain(t, "w1")
@@ -138,7 +142,7 @@ func TestInstallTakesTheNodesNameFromTheHeadersCertificate(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := newTestServer(t, maintenance, vda)
-			s.InPlace = func(context.Context, install.Request) error { t.Error("installed"); return nil }
+			s.InPlace = func(context.Context, install.Request, []byte) error { t.Error("installed"); return nil }
 			h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 			h.NodeCertificate = cert
 			err := sendInstall(t, s, h, nil)
@@ -225,7 +229,7 @@ func TestInstallFromParts(t *testing.T) {
 // in place with one.
 func TestInstallImageMatchesTheTarget(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
-	s.InPlace = func(context.Context, install.Request) error {
+	s.InPlace = func(context.Context, install.Request, []byte) error {
 		t.Error("installed in place")
 		return nil
 	}
@@ -267,7 +271,7 @@ func TestInstallTargetMustMatchImage(t *testing.T) {
 func TestInstallFailureCanBeRepeated(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	attempts := 0
-	s.InPlace = func(context.Context, install.Request) error {
+	s.InPlace = func(context.Context, install.Request, []byte) error {
 		attempts++
 		if attempts == 1 {
 			return errors.New("enroll the fallback key on var: TPM unavailable")
@@ -316,7 +320,7 @@ func TestInstallInPlaceWithConfig(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	writeSchemas(t, s.Loader.Schemas)
 	var got install.Request
-	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
+	s.InPlace = func(_ context.Context, req install.Request, _ []byte) error { got = req; return nil }
 	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	h.Config = baseConfig
 
@@ -340,7 +344,7 @@ func TestInstallInPlaceWithConfig(t *testing.T) {
 func TestInstallInPlaceReadsNoFacts(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	installed := false
-	s.InPlace = func(context.Context, install.Request) error { installed = true; return nil }
+	s.InPlace = func(context.Context, install.Request, []byte) error { installed = true; return nil }
 	write(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), "{")
 	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	h.Config = baseConfig
@@ -417,7 +421,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 			s, _ := newTestServer(t, maintenance, vda)
 			s.Installer = c.installer
 			writeSchemas(t, s.Loader.Schemas)
-			s.InPlace = func(context.Context, install.Request) error { t.Error("installed in place"); return nil }
+			s.InPlace = func(context.Context, install.Request, []byte) error { t.Error("installed in place"); return nil }
 			s.FromParts = func(context.Context, install.PartsRequest) error { t.Error("installed onto the disk"); return nil }
 			h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 			c.edit(h)
@@ -444,7 +448,7 @@ func TestInstallInPlaceChecksTheOutputs(t *testing.T) {
 			if err := outputs.RecordFailures(s.Loader.Render.Root, []outputs.Failure{{Output: "demo", Problem: "an earlier failure"}}); err != nil {
 				t.Fatal(err)
 			}
-			s.InPlace = func(context.Context, install.Request) error { installed = true; return nil }
+			s.InPlace = func(context.Context, install.Request, []byte) error { installed = true; return nil }
 			h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 			h.Config = baseConfig
 			err := sendInstall(t, s, h, nil)

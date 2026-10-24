@@ -208,7 +208,7 @@ func (i *Installer) openState(ctx context.Context, disk storage.BlockDisk, defs 
 	if err := i.change("open STATE"); err != nil {
 		return "", err
 	}
-	if err := i.storage(disk).Open(ctx, stateMapperName, state.Node, i.StateDir, false, policy == storage.EncryptionTPM2); err != nil {
+	if err := i.storage(disk).Open(ctx, stateMapperName, state.Node, i.StateDir, node.OpenOptions{Encrypted: policy == storage.EncryptionTPM2}); err != nil {
 		// prepareState keeps a STATE that matches the policy, so every retry finds this one
 		// again; only a wiped disk gets a new one.
 		if errors.Is(err, node.ErrNotUnsealed) {

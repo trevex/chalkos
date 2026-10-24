@@ -115,7 +115,7 @@ type Server struct {
 	// Loader applies the node's stored config, as chalkos-config.service does at boot.
 	Loader nodeconfig.Loader
 	// InPlace and FromParts install the node; tests replace them.
-	InPlace   func(context.Context, install.Request) error
+	InPlace   func(ctx context.Context, req install.Request, rootHash []byte) error
 	FromParts func(context.Context, install.PartsRequest) error
 	// InstallImage installs an upgrade's image with the config and the fallback secret the upgrade
 	// delivers; nil installs it on the boot disk. Tests replace it.

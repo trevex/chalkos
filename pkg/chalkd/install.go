@@ -91,11 +91,12 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	}
 	switch target := h.Target.(type) {
 	case *nodev1.InstallHeader_InPlace:
-		if req.RootHash, err = s.runningHash(); err != nil {
-			return nil, failed(connect.CodeInternal, "the running image: %v", err)
+		running, rerr := s.runningHash()
+		if rerr != nil {
+			return nil, failed(connect.CodeInternal, "the running image: %v", rerr)
 		}
 		log.Print("installing in place")
-		err = s.InPlace(ctx, req)
+		err = s.InPlace(ctx, req, running)
 	case *nodev1.InstallHeader_Disk:
 		d := target.Disk
 		ref := storage.Ref{Path: d.Path, Selector: storage.Selector{Model: d.Model, Serial: d.Serial, WWN: d.Wwn, Size: d.Size, Type: d.Type}}

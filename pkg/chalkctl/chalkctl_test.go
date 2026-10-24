@@ -202,7 +202,7 @@ func serveTLS(t *testing.T, h http.Handler, cfg *tls.Config) string {
 func maintenanceNode() *chalkd.Server {
 	return &chalkd.Server{
 		Mode:       nodev1.Mode_MODE_MAINTENANCE,
-		InPlace:    func(context.Context, install.Request) error { return errors.New("unexpected install in place") },
+		InPlace:    func(context.Context, install.Request, []byte) error { return errors.New("unexpected install in place") },
 		FromParts:  func(context.Context, install.PartsRequest) error { return errors.New("unexpected install onto a disk") },
 		RebootNode: func() {},
 	}
@@ -317,7 +317,7 @@ func TestInstallInPlace(t *testing.T) {
 	ta := newTestApp(t)
 	s := maintenanceNode()
 	var got install.Request
-	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
+	s.InPlace = func(_ context.Context, req install.Request, _ []byte) error { got = req; return nil }
 	addr := ta.startNode(t, s)
 
 	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--insecure"}, addr)); err != nil {
@@ -363,7 +363,7 @@ func TestInstallInPlaceRefusesAnotherPlatform(t *testing.T) {
 	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test", "kvm", testRootHash, false)
 	s := maintenanceNode()
 	called := false
-	s.InPlace = func(context.Context, install.Request) error { called = true; return nil }
+	s.InPlace = func(context.Context, install.Request, []byte) error { called = true; return nil }
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint}, addr))
 	if want := "n1 runs an image built for metal, but its image test-metal is built for kvm; changing a node's platform is a reinstall"; err == nil || !strings.Contains(err.Error(), want) {
@@ -378,7 +378,7 @@ func TestInstallRefusesWrongFingerprint(t *testing.T) {
 	ta := newTestApp(t)
 	s := maintenanceNode()
 	called := false
-	s.InPlace = func(context.Context, install.Request) error { called = true; return nil }
+	s.InPlace = func(context.Context, install.Request, []byte) error { called = true; return nil }
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", strings.Repeat("00", 32)}, addr))
 	if err == nil || !strings.Contains(err.Error(), "fingerprint") {
@@ -474,7 +474,7 @@ func TestInstallChecksThePlatform(t *testing.T) {
 func TestInstallReportsNodeRefusal(t *testing.T) {
 	ta := newTestApp(t)
 	s := maintenanceNode()
-	s.InPlace = func(context.Context, install.Request) error {
+	s.InPlace = func(context.Context, install.Request, []byte) error {
 		return errors.New("the identity places the system on /dev/vdb, but the node runs from /dev/vda")
 	}
 	addr := ta.startNode(t, s)
@@ -1147,7 +1147,7 @@ func TestInstallInPlaceOnAnImageOfAnotherVariant(t *testing.T) {
 	ta := newTestApp(t)
 	s := maintenanceNode()
 	called := false
-	s.InPlace = func(context.Context, install.Request) error { called = true; return nil }
+	s.InPlace = func(context.Context, install.Request, []byte) error { called = true; return nil }
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
 	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=w\nCHALKOS_PLATFORM=metal\n")
 	addr := ta.startNode(t, s)

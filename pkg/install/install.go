@@ -60,12 +60,14 @@ func (i *Installer) change(what string) error {
 	return i.Change(what)
 }
 
-// Default installs on the running node.
-func Default(inPlace bool) *Installer {
-	stateDir := "/state"
-	if !inPlace {
-		stateDir = "/run/chalkd/target"
-	}
+// ForNode installs the running node in place, on the STATE it booted with.
+func ForNode() *Installer { return defaults("/state") }
+
+// ForInstaller installs a node from the installer onto a target disk, whose STATE it mounts in
+// chalkd's runtime directory.
+func ForInstaller() *Installer { return defaults("/run/chalkd/target") }
+
+func defaults(stateDir string) *Installer {
 	return &Installer{
 		Run:           tool.ExecRunner{},
 		Host:          storage.DefaultHost(),
@@ -83,11 +85,11 @@ func Default(inPlace bool) *Installer {
 }
 
 // InPlace installs the node on the disk it booted from, where the node's image already runs.
-func (i *Installer) InPlace(ctx context.Context, req Request) error {
+func (i *Installer) InPlace(ctx context.Context, req Request, rootHash []byte) error {
 	if err := req.validate(); err != nil {
 		return err
 	}
-	if len(req.RootHash) == 0 {
+	if len(rootHash) == 0 {
 		return errors.New("the request names no root hash of the running image, whose config slot the install writes")
 	}
 	if installed, err := Installed(i.StateDir); err != nil {
@@ -114,7 +116,7 @@ func (i *Installer) InPlace(ctx context.Context, req Request) error {
 	if err := i.closeState(ctx); err != nil {
 		return err
 	}
-	if err := i.installOn(ctx, boot, defs, req, req.RootHash); err != nil {
+	if err := i.installOn(ctx, boot, defs, req, rootHash); err != nil {
 		return err
 	}
 	if err := i.randomizeESP(ctx, boot); err != nil {

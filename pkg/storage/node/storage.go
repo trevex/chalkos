@@ -69,13 +69,21 @@ func (s *Storage) PinsFile() string { return filepath.Join(s.StorageDir(), "disk
 // OpenState unlocks STATE when it is encrypted and mounts it. The fallback is always offered:
 // it is recorded on STATE itself, so it cannot be known yet.
 func (s *Storage) OpenState(ctx context.Context) error {
-	return s.Open(ctx, "state", filepath.Join(s.BootPartitions, "state"), s.StateDir, true, false)
+	return s.Open(ctx, "state", filepath.Join(s.BootPartitions, "state"), s.StateDir, OpenOptions{Prompt: true})
+}
+
+// OpenOptions say how Open treats a volume's encryption.
+type OpenOptions struct {
+	// Prompt lets systemd-cryptsetup ask for the fallback key when the TPM does not unseal the
+	// volume; without it, only the TPM is tried.
+	Prompt bool
+	// Encrypted refuses a device without LUKS, so data meant to be encrypted never lands on a
+	// plain file system.
+	Encrypted bool
 }
 
 // Open unlocks dev as /dev/mapper/<name> if it holds LUKS and mounts the file system at target.
-// Without prompt, systemd-cryptsetup only tries the TPM. With encrypted, a device without LUKS
-// is refused, so data meant to be encrypted never lands on a plain file system.
-func (s *Storage) Open(ctx context.Context, name, dev, target string, prompt, encrypted bool) error {
+func (s *Storage) Open(ctx context.Context, name, dev, target string, o OpenOptions) error {
 	if _, err := s.Run.Run(ctx, "udevadm", "wait", "--timeout=60", dev); err != nil {
 		return fmt.Errorf("wait for %s: %w", dev, err)
 	}
@@ -85,16 +93,16 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, prompt, en
 	}
 	source := dev
 	fsType := strings.TrimSpace(string(out))
-	if encrypted && fsType != ContentLUKS {
+	if o.Encrypted && fsType != ContentLUKS {
 		return fmt.Errorf("volume %s is meant to be encrypted, but %s holds %q instead of LUKS; refusing to mount it", name, dev, fsType)
 	}
 	if fsType == ContentLUKS {
 		options := "tpm2-device=auto"
-		if !prompt {
+		if !o.Prompt {
 			options += ",headless=true"
 		}
 		if _, err := s.Run.Run(ctx, "systemd-cryptsetup", "attach", name, dev, "-", options); err != nil {
-			if !prompt && unsealFailed(err) {
+			if !o.Prompt && unsealFailed(err) {
 				// Only a reinstall recreates VAR. The installer, which opens STATE without a
 				// prompt, names its own remedy.
 				if name == storage.VarVolume {
@@ -164,9 +172,11 @@ func (s *Storage) setUpVolumes(ctx context.Context, status *storage.Status) erro
 		log.Print("VAR does not exist; /var stays on tmpfs")
 		return nil
 	}
-	prompt := section.Fallback != storage.FallbackNone
-	encrypted := section.Volumes[storage.VarVolume].Encryption == storage.EncryptionTPM2
-	if err := s.Open(ctx, storage.VarVolume, filepath.Join(s.BootPartitions, storage.VarVolume), s.VarDir, prompt, encrypted); err != nil {
+	o := OpenOptions{
+		Prompt:    section.Fallback != storage.FallbackNone,
+		Encrypted: section.Volumes[storage.VarVolume].Encryption == storage.EncryptionTPM2,
+	}
+	if err := s.Open(ctx, storage.VarVolume, filepath.Join(s.BootPartitions, storage.VarVolume), s.VarDir, o); err != nil {
 		status.Disks[storage.SystemDisk] = storage.DiskStatus{Device: status.Disks[storage.SystemDisk].Device, Error: err.Error()}
 		return err
 	}

@@ -358,7 +358,7 @@ func installLab(t *testing.T) *rotationLab {
 // install installs n1 in the lab, on a node in maintenance mode started for it.
 func (l *rotationLab) install(args ...string) error {
 	s := maintenanceNode()
-	s.InPlace = func(context.Context, install.Request) error { return nil }
+	s.InPlace = func(context.Context, install.Request, []byte) error { return nil }
 	addr := l.ta.startNode(l.t, s)
 	return l.ta.run(context.Background(), append([]string{"install", "n1", "--insecure", "--inventory", l.ta.inventory, "--address", addr}, args...))
 }
