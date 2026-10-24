@@ -352,7 +352,7 @@ The effects images with Kubernetes add.
 | `chalkd-share`{ #effect-chalkd-share } | The `when` after the table holds, which reads the documents of `Addon` and `Node` and the fact `share`. | Reloads chalkd's control-plane loop. |
 | `controlplane-ports`{ #effect-controlplane-ports } | The `when` after the table holds, which reads the documents of `Node`. | Restarts `chalkos-controlplane.service`. |
 | `kubernetes`{ #effect-kubernetes } | The `when` after the table holds, which reads the documents of `Cluster`, `Flannel`, `Host`, `Network` and `Node` and the facts `cluster` and `share`. | Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |
-| `registry-credentials`{ #effect-registry-credentials } | The documents of `Registry` changed. | Restarts `chalkos-registry-credentials.service` and `kubelet.service`. |
+| `registry-credentials`{ #effect-registry-credentials } | The documents of `Registry`, or a value of a Secret they reference, changed. | Restarts `chalkos-registry-credentials.service` and `kubelet.service`. |
 | `registry-mirrors`{ #effect-registry-mirrors } | The `when` after the table holds, which reads the documents of `Mirror` and `Registry`. | Restarts `chalkos-registry-mirrors.service`. |
 
 `when` of `chalkd-cluster`:

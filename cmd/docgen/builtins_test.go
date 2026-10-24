@@ -83,7 +83,7 @@ func TestWriteBuiltins(t *testing.T) {
 			"| `networkd`{ #effect-networkd } | The output `networkd` changed. | Reloads `systemd-networkd.service`. |\n",
 		"| `chalkd-cluster`{ #effect-chalkd-cluster } | `facts.cluster != oldFacts.cluster` holds. | Restarts chalkd's Kubernetes loops. |\n" +
 			"| `chalkd-share`{ #effect-chalkd-share } | `facts.share != oldFacts.share` holds. | Reloads chalkd's control-plane loop. |\n" +
-			"| `kubernetes`{ #effect-kubernetes } | The documents of `Host` changed, or the `when` after the table holds, which reads the documents of `Node` and the facts `cluster` and `share`. | Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |\n",
+			"| `kubernetes`{ #effect-kubernetes } | The documents of `Host`, or a value of a Secret they reference, changed, or the `when` after the table holds, which reads the documents of `Node` and the facts `cluster` and `share`. | Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |\n",
 		"\n`when` of `kubernetes`:\n\n```text\ncel.bind(d, config[\"kubernetes.chalkos.dev/v1alpha1\"].Node, d)",
 	} {
 		if !strings.Contains(got, want) {

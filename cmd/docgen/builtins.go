@@ -579,7 +579,7 @@ func writeEffects(b *strings.Builder, anchor, intro string, names []string, effe
 			fires = append(fires, "one of the outputs "+andList(codes(e.Outputs), "and")+" changed")
 		}
 		if len(e.Kinds) > 0 {
-			fires = append(fires, "the documents of "+andList(codes(e.Kinds), "or")+" changed")
+			fires = append(fires, "the documents of "+andList(codes(e.Kinds), "or")+", or a value of a Secret they reference, changed")
 		}
 		if e.When != "" {
 			if inline(e.When) {
