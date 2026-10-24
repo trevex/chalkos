@@ -214,8 +214,8 @@ func nodeReady(node *corev1.Node) string {
 }
 
 // missingPodRanges says which of the cluster's families the Node has no pod range of, once the
-// controller-manager allocated it any: it allocates ranges of the families the control plane
-// runs with, which a worker's image cannot change.
+// controller-manager allocated it any. The controller-manager allocates ranges of the families
+// the control plane runs with, which a worker's image cannot change.
 func missingPodRanges(c k8s.Cluster, node *corev1.Node) (string, error) {
 	if len(node.Spec.PodCIDRs) == 0 {
 		return "", nil

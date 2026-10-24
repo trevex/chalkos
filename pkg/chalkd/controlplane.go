@@ -126,8 +126,8 @@ func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int
 }
 
 // pinFromEtcd pins a bootstrapped node without a pin, as an older image left it, to its
-// addresses once its etcd member's peer URL confirms them: etcd's peers know the member by that
-// URL. A node whose address differs is not pinned, and its status says so.
+// addresses. It does so once its etcd member's peer URL confirms them, since etcd's peers know
+// the member by that URL. A node whose address differs is not pinned, and its status says so.
 func (k *Kubernetes) pinFromEtcd(ctx context.Context, c k8s.Cluster, share kpki.Share) error {
 	ips, err := knode.ReadNodeIPs(k.Paths)
 	if err != nil {
@@ -182,10 +182,11 @@ func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, appl
 	return k.serveControlPlane(ctx, c, cfg, applied)
 }
 
-// serveControlPlane approves kubelet serving certificates once the API server is ready and,
-// independently, applies the control plane's objects until that succeeds, so objects that fail,
-// such as an Addon document's, leave kubelets their serving certificates. It runs until ctx
-// ends.
+// serveControlPlane runs until ctx ends. It does two things independently:
+//   - approves kubelet serving certificates once the API server is ready;
+//   - applies the control plane's objects until that succeeds.
+//
+// Objects that fail, such as an Addon document's, so leave kubelets their serving certificates.
 func (k *Kubernetes) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *rest.Config, applied func(n int)) error {
 	go func() {
 		err := kapply.WaitReady(ctx, cfg)

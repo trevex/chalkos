@@ -173,8 +173,8 @@ func (s *Server) EtcdRemoveMember(ctx context.Context, req *connect.Request[node
 	return connect.NewResponse(&nodev1.EtcdRemoveMemberResponse{Removed: memberMessage(m, nil)}), nil
 }
 
-// ownMember finds the node's member among the members with etcd.Self, at the peer URL of its pinned
-// address.
+// ownMember finds the node's member among the members with etcd.Self, at the peer URL of the
+// node's pinned address.
 func (k *Kubernetes) ownMember(members []etcd.Member, name string) (etcd.Member, bool, error) {
 	pin, err := knode.ReadPin(k.Paths)
 	if err != nil {
@@ -188,8 +188,8 @@ func (k *Kubernetes) ownMember(members []etcd.Member, name string) (etcd.Member,
 	return m, ok, nil
 }
 
-// leaveEndpoints are the node's own etcd member and the other control planes' that the API
-// server lists, which still answer when the node's member was removed.
+// leaveEndpoints are the node's own etcd member and the other control planes' members the API
+// server lists. The others still answer once the node's member is removed.
 func (k *Kubernetes) leaveEndpoints(ctx context.Context, c k8s.Cluster, share kpki.Share) []string {
 	endpoints := []string{k.localEtcd(c)}
 	// Without its addresses the node's own member is listed too, which only repeats it.
