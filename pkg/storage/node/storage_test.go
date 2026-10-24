@@ -12,66 +12,22 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
-type testDisk struct {
-	name, devnum string
-	sectors      uint64
-	props        map[string]string
-}
-
 var (
-	bootDisk = testDisk{"vda", "253:0", 16 << 30 / 512, map[string]string{"ID_PATH": "pci-0000:00:04.0"}}
-	dataDisk = testDisk{"vdb", "253:16", 2 << 30 / 512, map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-data"}}
+	bootDisk = storagetest.Disk{Name: "vda", Devnum: "253:0", Size: 16 << 30, Props: map[string]string{"ID_PATH": "pci-0000:00:04.0"}}
+	dataDisk = storagetest.Disk{Name: "vdb", Devnum: "253:16", Size: 2 << 30, Props: map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-data"}}
 )
 
-// newTestHost builds sysfs, udev and /dev trees with the disks; vda is the boot disk.
-func newTestHost(t *testing.T, disks ...testDisk) storage.Host {
-	t.Helper()
-	root := t.TempDir()
-	h := storage.Host{
-		SysRoot:  filepath.Join(root, "sys"),
-		UdevRoot: filepath.Join(root, "udev"),
-		DevRoot:  filepath.Join(root, "dev"),
-	}
-	write := func(path, content string) {
-		t.Helper()
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, d := range disks {
-		dir := filepath.Join(h.SysRoot, "block", d.name)
-		write(filepath.Join(dir, "dev"), d.devnum+"\n")
-		write(filepath.Join(dir, "size"), strconv.FormatUint(d.sectors, 10)+"\n")
-		write(filepath.Join(dir, "queue", "rotational"), "1\n")
-		var props string
-		for k, v := range d.props {
-			props += "E:" + k + "=" + v + "\n"
-		}
-		write(filepath.Join(h.UdevRoot, "b"+d.devnum), props)
-		write(filepath.Join(h.DevRoot, d.name), "")
-	}
-	if err := os.MkdirAll(filepath.Join(h.DevRoot, "disk"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink("../vda", filepath.Join(h.DevRoot, "disk", "chalk-boot-disk")); err != nil {
-		t.Fatal(err)
-	}
-	return h
-}
-
-func newTestBoot(t *testing.T, r *tooltest.Runner, disks ...testDisk) *Storage {
+func newTestBoot(t *testing.T, r *tooltest.Runner, disks ...storagetest.Disk) *Storage {
 	t.Helper()
 	root := t.TempDir()
 	return &Storage{
 		Run:            r,
-		Host:           newTestHost(t, disks...),
+		Host:           storagetest.NewHost(t, "vda", disks...),
 		StateDir:       filepath.Join(root, "state"),
 		VarDir:         filepath.Join(root, "var"),
 		BootDisk:       "/dev/disk/chalk-boot-disk",
@@ -268,7 +224,7 @@ func TestSetUpUsesPinnedDisks(t *testing.T) {
 func TestSetUpRefusesUnidentifiableDisk(t *testing.T) {
 	r := &tooltest.Runner{}
 	anonymous := dataDisk
-	anonymous.props = map[string]string{"ID_MODEL": "QEMU_HARDDISK"}
+	anonymous.Props = map[string]string{"ID_MODEL": "QEMU_HARDDISK"}
 	b := newTestBoot(t, r, bootDisk, anonymous)
 	r.Rules = firstBootRules(b)
 	writeSection(t, b, `{
@@ -306,7 +262,7 @@ func TestSetUpRefusesUnidentifiableDisk(t *testing.T) {
 func TestSetUpRefusesUnidentifiableBootDisk(t *testing.T) {
 	r := &tooltest.Runner{}
 	anonymous := bootDisk
-	anonymous.props = nil
+	anonymous.Props = nil
 	b := newTestBoot(t, r, anonymous, dataDisk)
 	r.Rules = firstBootRules(b)
 	writeStorage(t, b, "recovery-key")
@@ -364,7 +320,7 @@ func TestSetUpPinnedDiskMissing(t *testing.T) {
 
 	// Boot again without the data disk.
 	r.Calls = nil
-	b.Host = newTestHost(t, bootDisk)
+	b.Host = storagetest.NewHost(t, "vda", bootDisk)
 	if err := b.SetUp(context.Background()); err != nil {
 		t.Fatalf("a missing extra disk stopped the boot: %v", err)
 	}
@@ -393,8 +349,8 @@ func TestSetUpRefusesOtherBootDisk(t *testing.T) {
 	// The same image boots from a disk on another port: VAR's disk is not there.
 	r.Calls = nil
 	moved := bootDisk
-	moved.props = map[string]string{"ID_PATH": "pci-0000:00:09.0"}
-	b.Host = newTestHost(t, moved, dataDisk)
+	moved.Props = map[string]string{"ID_PATH": "pci-0000:00:09.0"}
+	b.Host = storagetest.NewHost(t, "vda", moved, dataDisk)
 	err := b.SetUp(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "VAR lives on the disk") || !strings.Contains(err.Error(), "pci-0000:00:04.0") {
 		t.Fatalf("err = %v, want VAR's disk named", err)
@@ -698,8 +654,8 @@ func TestSetUpRefreshesPinThatGainedIdentifiers(t *testing.T) {
 	// udev now reports a WWN for the data disk, which it did not when the disk was pinned.
 	r.Calls = nil
 	gained := dataDisk
-	gained.props = map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-data", "ID_WWN": "0x5000c500a1b2c3d4"}
-	b.Host = newTestHost(t, bootDisk, gained)
+	gained.Props = map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-data", "ID_WWN": "0x5000c500a1b2c3d4"}
+	b.Host = storagetest.NewHost(t, "vda", bootDisk, gained)
 	if err := b.SetUp(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -773,7 +729,7 @@ func TestSetUpChecksPinnedDiskIsUnchanged(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			// A disk without serial or WWN is pinned by its port alone.
 			portOnly := dataDisk
-			portOnly.props = map[string]string{"ID_PATH": "pci-0000:00:05.0"}
+			portOnly.Props = map[string]string{"ID_PATH": "pci-0000:00:05.0"}
 			r := &tooltest.Runner{}
 			b := newTestBoot(t, r, bootDisk, portOnly)
 			r.Rules = firstBootRules(b)
@@ -799,8 +755,8 @@ func TestSetUpChecksPinnedDiskIsUnchanged(t *testing.T) {
 
 			// Another disk, with a serial, now sits in the same port.
 			other := portOnly
-			other.props = map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "someone-else"}
-			b.Host = newTestHost(t, bootDisk, other)
+			other.Props = map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "someone-else"}
+			b.Host = storagetest.NewHost(t, "vda", bootDisk, other)
 			r.Calls = nil
 			r.Rules = append(c.rules, firstBootRules(b)...)
 			if err := b.SetUp(context.Background()); err != nil {

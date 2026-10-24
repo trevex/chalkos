@@ -30,6 +30,7 @@ import (
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
@@ -106,7 +107,7 @@ var labDefinitions = map[string]string{
 }
 
 // labTarget is the target disk, a disk image VAR fills the rest of.
-var labTarget = testDisk{"vdb", "253:16", 400 * mib, map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-target"}}
+var labTarget = storagetest.Disk{Name: "vdb", Devnum: "253:16", Size: 400 * mib, Props: map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-target"}}
 
 // partsLab is an installer booted from vda whose target vdb is a disk image. sfdisk,
 // systemd-repart and blkid run on the image; mounts, LUKS, the TPM and the firmware are
@@ -133,7 +134,7 @@ const labDev = "/dev/vdb"
 
 func newPartsLab(t *testing.T) *partsLab {
 	t.Helper()
-	return newPartsLabOf(t, 512, labTarget.size)
+	return newPartsLabOf(t, 512, labTarget.Size)
 }
 
 // newPartsLabOf makes a lab whose target has sectors of the size, sfdisk and systemd-repart
@@ -151,7 +152,7 @@ func newPartsLabOf(t *testing.T, sector int64, size uint64) *partsLab {
 	}
 	r := &fakeRunner{}
 	target := labTarget
-	target.size = size
+	target.Size = size
 	i := newTestInstaller(t, r, vda, target)
 	write(t, i.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
 	if err := os.Remove(filepath.Join(i.Host.DevRoot, "mapper", "state")); err != nil {
@@ -541,12 +542,12 @@ func TestFromPartsInstallsOntoEmptyDisk(t *testing.T) {
 // refused before anything changes, on an empty disk as on one an earlier attempt laid out.
 func TestFromPartsOnFourKnDisk(t *testing.T) {
 	img := newPartsImage(t, "a")
-	l := newPartsLabOf(t, 4096, labTarget.size)
+	l := newPartsLabOf(t, 4096, labTarget.Size)
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
 	l.checkInstalled(img)
-	l = newPartsLabOf(t, 4096, labTarget.size)
+	l = newPartsLabOf(t, 4096, labTarget.Size)
 	l.stopAt(img, "write the store")
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
@@ -555,7 +556,7 @@ func TestFromPartsOnFourKnDisk(t *testing.T) {
 
 	large := newPartsImageOfBlocks(t, "a", 600)
 	for _, laidOut := range []bool{false, true} {
-		l := newPartsLabOf(t, 4096, labTarget.size)
+		l := newPartsLabOf(t, 4096, labTarget.Size)
 		if laidOut {
 			l.stopAt(img, "write the store")
 		}

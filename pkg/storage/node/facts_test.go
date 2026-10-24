@@ -9,12 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
 // otherDisk has a serial of its own, so a reference can find it instead of the pinned disk.
-var otherDisk = testDisk{"vdc", "253:32", 2 << 30 / 512, map[string]string{"ID_PATH": "pci-0000:00:06.0", "ID_SERIAL": "chalk-other"}}
+var otherDisk = storagetest.Disk{Name: "vdc", Devnum: "253:32", Size: 2 << 30, Props: map[string]string{"ID_PATH": "pci-0000:00:06.0", "ID_SERIAL": "chalk-other"}}
 
 // writePins pins the data disk by its serial, as an install of writeStorage's section does.
 func writePins(t *testing.T, b *Storage) {

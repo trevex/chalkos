@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -225,15 +225,9 @@ var (
 	varType   = storage.PartitionType("var")
 )
 
-type testDisk struct {
-	name, devnum string
-	size         uint64
-	props        map[string]string
-}
-
 var (
-	vda = testDisk{"vda", "253:0", 16 << 30, map[string]string{"ID_PATH": "pci-0000:00:04.0"}}
-	vdb = testDisk{"vdb", "253:16", 16 << 30, map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-target"}}
+	vda = storagetest.Disk{Name: "vda", Devnum: "253:0", Size: 16 << 30, Props: map[string]string{"ID_PATH": "pci-0000:00:04.0"}}
+	vdb = storagetest.Disk{Name: "vdb", Devnum: "253:16", Size: 16 << 30, Props: map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-target"}}
 )
 
 func write(t *testing.T, path, content string) {
@@ -248,32 +242,10 @@ func write(t *testing.T, path, content string) {
 
 // newTestInstaller builds sysfs, udev and /dev trees with the disks, of which vda is the boot
 // disk, plus the image's system-region definitions and a mount table with STATE mounted.
-func newTestInstaller(t *testing.T, r *fakeRunner, disks ...testDisk) *Installer {
+func newTestInstaller(t *testing.T, r *fakeRunner, disks ...storagetest.Disk) *Installer {
 	t.Helper()
 	root := t.TempDir()
-	h := storage.Host{
-		SysRoot:  filepath.Join(root, "sys"),
-		UdevRoot: filepath.Join(root, "udev"),
-		DevRoot:  filepath.Join(root, "dev"),
-	}
-	for _, d := range disks {
-		dir := filepath.Join(h.SysRoot, "block", d.name)
-		write(t, filepath.Join(dir, "dev"), d.devnum+"\n")
-		write(t, filepath.Join(dir, "size"), strconv.FormatUint(d.size/512, 10)+"\n")
-		write(t, filepath.Join(dir, "queue", "rotational"), "1\n")
-		var props string
-		for k, v := range d.props {
-			props += "E:" + k + "=" + v + "\n"
-		}
-		write(t, filepath.Join(h.UdevRoot, "b"+d.devnum), props)
-		write(t, filepath.Join(h.DevRoot, d.name), "")
-	}
-	if err := os.MkdirAll(filepath.Join(h.DevRoot, "disk"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink("../vda", filepath.Join(h.DevRoot, "disk", "chalk-boot-disk")); err != nil {
-		t.Fatal(err)
-	}
+	h := storagetest.NewHost(t, "vda", disks...)
 	write(t, filepath.Join(h.DevRoot, "mapper", "state"), "")
 	state := filepath.Join(root, "state")
 	write(t, filepath.Join(root, "mountinfo"), "30 1 0:27 / / rw - tmpfs tmpfs rw\n41 30 253:1 / "+state+" rw,relatime - ext4 /dev/mapper/state rw\n")

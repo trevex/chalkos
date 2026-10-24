@@ -20,6 +20,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
@@ -115,17 +116,17 @@ func documentsOf(identity string) []config.Document {
 
 // installedServer is a normal-mode server of node n1, as its node certificate names it, whose
 // STATE records the section and its pins.
-func installedServer(t *testing.T, recorded string, extraPinned bool, more ...testDisk) (*Server, *tooltest.Runner) {
+func installedServer(t *testing.T, recorded string, extraPinned bool, more ...storagetest.Disk) (*Server, *tooltest.Runner) {
 	t.Helper()
-	s, r := newTestServer(t, normal, append([]testDisk{vda, vdb}, more...)...)
+	s, r := newTestServer(t, normal, append([]storagetest.Disk{vda, vdb}, more...)...)
 	withNodeCertificate(t, s)
 	dir := filepath.Join(s.Paths.StateDir, "storage")
 	write(t, filepath.Join(dir, "storage.json"), recorded)
-	pins := `"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "` + varUUID + `"}}`
+	pins := []string{systemPin(map[string]string{"var": varUUID})}
 	if extraPinned {
-		pins += `, "extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": {"extra": "` + extraUUID + `"}}`
+		pins = append(pins, extraPin(map[string]string{"extra": extraUUID}))
 	}
-	write(t, filepath.Join(dir, "disks.json"), `{"disks": {`+pins+`}}`)
+	writePins(t, s, pins...)
 	if err := slot.Write(slotOf(t, s), slot.Stored{Documents: documentsOf(identityWith(recorded)), Identity: []byte(identityWith(recorded))}); err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +252,7 @@ func TestApplyConfigRefusesDestructiveChange(t *testing.T) {
 }
 
 // vdc is a disk besides the extra volume's, which a changed disk reference can find.
-var vdc = testDisk{"vdc", "253:32", map[string]string{"ID_PATH": "pci-0000:00:06.0", "ID_SERIAL": "chalk-other"}}
+var vdc = storagetest.Disk{Name: "vdc", Devnum: "253:32", Props: map[string]string{"ID_PATH": "pci-0000:00:06.0", "ID_SERIAL": "chalk-other"}}
 
 // withExtraRef returns a rendered section whose extra disk is referenced by the serial given.
 func withExtraRef(t *testing.T, rendered, serial string) string {
@@ -280,7 +281,7 @@ func asSSDs(t *testing.T, s *Server, names ...string) {
 // twin gives vdc the serial of vdb, so that two disks have the extra disk's pinned identity.
 func twin(t *testing.T, s *Server) {
 	t.Helper()
-	write(t, filepath.Join(s.Host.UdevRoot, "b"+vdc.devnum), "E:ID_PATH="+vdc.props["ID_PATH"]+"\nE:ID_SERIAL="+vdb.props["ID_SERIAL"]+"\n")
+	write(t, filepath.Join(s.Host.UdevRoot, "b"+vdc.Devnum), "E:ID_PATH="+vdc.Props["ID_PATH"]+"\nE:ID_SERIAL="+vdb.Props["ID_SERIAL"]+"\n")
 }
 
 // unlistable breaks a test disk's sysfs entry, so that the node cannot list its disks.
@@ -641,8 +642,7 @@ func systemVolumeServer(t *testing.T, partUUID string) (*Server, *tooltest.Runne
 	t.Helper()
 	recorded := withSystemVolume(t, section("", ""), storage.EncryptionTPM2)
 	s, r := installedServer(t, recorded, false)
-	dir := filepath.Join(s.Paths.StateDir, "storage")
-	write(t, filepath.Join(dir, "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`", "data": "`+extraUUID+`"}}}}`)
+	writePins(t, s, systemPin(map[string]string{"var": varUUID, "data": extraUUID}))
 	addPartition(t, s, "vda", "vda9", "253:9", "9", partUUID, "disk/chalk-boot/data")
 	return s, r
 }
@@ -686,7 +686,7 @@ func TestResetVolumeChecksPartUUID(t *testing.T) {
 		{"pinned disk, no recorded PARTUUID", func(t *testing.T) (*Server, *tooltest.Runner, string) {
 			s, r := installedServer(t, section("", "ext4"), true)
 			partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
-			write(t, filepath.Join(s.Paths.StateDir, "storage", "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`"}}, "extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": {}}}}`)
+			writePins(t, s, systemPin(map[string]string{"var": varUUID}), extraPin(nil))
 			return s, r, next
 		}, "no recorded partition"},
 		{"system disk, partition with another PARTUUID", func(t *testing.T) (*Server, *tooltest.Runner, string) {

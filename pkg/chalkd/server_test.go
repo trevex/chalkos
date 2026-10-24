@@ -23,7 +23,6 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +38,7 @@ import (
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
@@ -53,42 +52,45 @@ func write(t *testing.T, path, content string) {
 	}
 }
 
-type testDisk struct {
-	name, devnum string
-	props        map[string]string
+// systemPin and extraPin are the disks.json entries that pin vda as the disk system and vdb as
+// extra, with their partitions' PARTUUIDs by name.
+func systemPin(partitions map[string]string) string {
+	return `"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": ` + partitionsJSON(partitions) + `}`
+}
+
+func extraPin(partitions map[string]string) string {
+	return `"extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": ` + partitionsJSON(partitions) + `}`
+}
+
+func partitionsJSON(partitions map[string]string) string {
+	if partitions == nil {
+		return "{}"
+	}
+	data, err := json.Marshal(partitions)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}
+
+// writePins writes the server's disks.json with the pins.
+func writePins(t *testing.T, s *Server, pins ...string) {
+	t.Helper()
+	write(t, filepath.Join(s.Paths.StateDir, "storage", "disks.json"), `{"disks": {`+strings.Join(pins, ", ")+`}}`)
 }
 
 var (
-	vda = testDisk{"vda", "253:0", map[string]string{"ID_PATH": "pci-0000:00:04.0"}}
-	vdb = testDisk{"vdb", "253:16", map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-extra"}}
+	vda = storagetest.Disk{Name: "vda", Devnum: "253:0", Props: map[string]string{"ID_PATH": "pci-0000:00:04.0"}}
+	vdb = storagetest.Disk{Name: "vdb", Devnum: "253:16", Props: map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-extra"}}
 )
 
 // newTestServer returns a server in the mode whose paths point at fixture trees: vda is the
 // boot disk and carries VAR as vda7.
-func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, *tooltest.Runner) {
+func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*Server, *tooltest.Runner) {
 	t.Helper()
 	root := t.TempDir()
-	h := storage.Host{
-		SysRoot:  filepath.Join(root, "sys"),
-		UdevRoot: filepath.Join(root, "udev"),
-		DevRoot:  filepath.Join(root, "dev"),
-	}
-	for _, d := range disks {
-		dir := filepath.Join(h.SysRoot, "block", d.name)
-		write(t, filepath.Join(dir, "dev"), d.devnum+"\n")
-		write(t, filepath.Join(dir, "size"), strconv.Itoa(16<<30/512)+"\n")
-		write(t, filepath.Join(dir, "queue", "rotational"), "1\n")
-		var props string
-		for k, v := range d.props {
-			props += "E:" + k + "=" + v + "\n"
-		}
-		write(t, filepath.Join(h.UdevRoot, "b"+d.devnum), props)
-		write(t, filepath.Join(h.DevRoot, d.name), "")
-	}
+	h := storagetest.NewHost(t, "vda", disks...)
 	if err := os.MkdirAll(filepath.Join(h.DevRoot, "disk", "chalk-boot"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink("../vda", filepath.Join(h.DevRoot, "disk", "chalk-boot-disk")); err != nil {
 		t.Fatal(err)
 	}
 	r := &tooltest.Runner{}
@@ -613,7 +615,7 @@ func TestDisks(t *testing.T) {
 	write(t, filepath.Join(dir, "dev"), "253:7\n")
 	write(t, filepath.Join(dir, "size"), "2048\n")
 	write(t, filepath.Join(s.Host.UdevRoot, "b253:7"), "E:ID_PART_ENTRY_NAME=var\nE:ID_FS_TYPE=crypto_LUKS\n")
-	write(t, filepath.Join(s.Paths.StateDir, "storage", "disks.json"), `{"disks": {"extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "size": 1, "type": "hdd"}, "partitions": {}}}}`)
+	writePins(t, s, `"extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "size": 1, "type": "hdd"}, "partitions": {}}`)
 
 	resp, err := s.Disks(context.Background(), connect.NewRequest(&nodev1.DisksRequest{}))
 	if err != nil {
@@ -640,7 +642,7 @@ func TestStatus(t *testing.T) {
 	    "extra": {"disk": "extra", "label": "extra", "format": "ext4", "mountPoint": "/srv/extra", "encryption": "tpm2"}
 	  },
 	  "fallback": "recovery-key", "encryption": "tpm2"}`)
-	write(t, filepath.Join(s.Paths.StateDir, "storage", "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "p", "size": 1, "type": "hdd"}, "partitions": {"var": "a"}}}}`)
+	writePins(t, s, `"system": {"ref": "/dev/vda", "identity": {"path": "p", "size": 1, "type": "hdd"}, "partitions": {"var": "a"}}`)
 	write(t, s.Paths.StorageStatus, `{"installed": true, "disks": {"system": {"device": "/dev/disk/chalk-boot-disk"}, "extra": {"error": "no disk matches serial \"chalk-extra\""}}}`)
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
 	r.Rules = []tooltest.Rule{{Prefix: "systemctl list-units --state=failed", Out: "systemd-cryptsetup@extra.service loaded failed failed Unlock chalkos volume extra\nsrv-extra.mount loaded failed failed chalkos volume extra\n"}}

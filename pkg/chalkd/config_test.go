@@ -149,7 +149,7 @@ func configServer(t *testing.T) (*Server, *tooltest.Runner) {
 	}
 	dir := filepath.Join(s.Paths.StateDir, "storage")
 	write(t, filepath.Join(dir, "storage.json"), string(section))
-	write(t, filepath.Join(dir, "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`"}}}}`)
+	writePins(t, s, systemPin(map[string]string{"var": varUUID}))
 	if err := slot.Write(slotOf(t, s), c); err != nil {
 		t.Fatal(err)
 	}
@@ -674,9 +674,7 @@ func TestResetVolumeThroughConfig(t *testing.T) {
 	}
 	dir := filepath.Join(s.Paths.StateDir, "storage")
 	write(t, filepath.Join(dir, "storage.json"), string(section))
-	write(t, filepath.Join(dir, "disks.json"), `{"disks": {
-	  "system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`"}},
-	  "extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": {"extra": "`+extraUUID+`"}}}}`)
+	writePins(t, s, systemPin(map[string]string{"var": varUUID}), extraPin(map[string]string{"extra": extraUUID}))
 	writeIdentity(t, s, string(c.Identity))
 	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
 	r.Rules = []tooltest.Rule{
