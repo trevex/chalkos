@@ -34,6 +34,7 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/kubernetes/vip"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 )
 
@@ -68,7 +69,7 @@ type Kubernetes struct {
 	// it starts over; zero means 10 minutes.
 	PromoteTimeout time.Duration
 	// VIPAddresses are the cluster's VIPs on this node's interfaces. Tests replace it.
-	VIPAddresses func(c k8s.Cluster, p knode.Paths) (AddressManager, error)
+	VIPAddresses func(c k8s.Cluster, p knode.Paths) (vip.Holder, error)
 	// APIServerReady reports whether the node's API server answers ready. Tests replace it.
 	APIServerReady func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
 	// VIPTTL is the lifetime in seconds of the lease that holds the VIPs, and VIPInterval the
@@ -165,7 +166,7 @@ func NewKubernetes() *Kubernetes {
 	k.Node = k.node
 	k.EtcdEndpoints = k.etcdEndpoints
 	k.ClusterAnswers = clusterAnswers
-	k.VIPAddresses = systemVIPAddresses
+	k.VIPAddresses = vip.NodeAddresses
 	k.APIServerReady = apiServerReady
 	k.EtcdStopped = etcdStopped
 	k.ControlPlaneState = k.controlPlaneState

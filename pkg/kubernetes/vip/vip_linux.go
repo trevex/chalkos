@@ -1,5 +1,3 @@
-// Package vip puts the cluster's virtual IPs on a node: it adds them to an interface and
-// announces them to the neighbours, so traffic for them reaches this node, and removes them.
 package vip
 
 import (
