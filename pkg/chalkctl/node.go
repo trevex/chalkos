@@ -281,13 +281,24 @@ func fallbackNeeded(section storage.Section, existing []string, reset string) bo
 	return false
 }
 
-// nodeError puts the node's name where the node's own messages say <node>.
+// nodeError puts the node's name where the node's own messages say <node>. The error it wraps
+// stays reachable, so its connect code still decides whether another node is tried.
 func nodeError(err error, name string) error {
 	if err == nil {
 		return nil
 	}
-	return errors.New(strings.ReplaceAll(err.Error(), "<node>", name))
+	return namedError{err, name}
 }
+
+// namedError is a node's error with the node's name in place of <node>.
+type namedError struct {
+	err  error
+	name string
+}
+
+func (e namedError) Error() string { return strings.ReplaceAll(e.err.Error(), "<node>", e.name) }
+
+func (e namedError) Unwrap() error { return e.err }
 
 type installFlags struct {
 	node                nodeCommand

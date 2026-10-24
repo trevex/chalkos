@@ -278,3 +278,23 @@ func TestRotateFinishSaysWhatToReissue(t *testing.T) {
 		})
 	}
 }
+
+// TestRotateStepMovesPastADownControlPlane checks that a rotation step a control plane runs is
+// asked of the next control plane when the first one is down.
+func TestRotateStepMovesPastADownControlPlane(t *testing.T) {
+	l := newRotationLab(t)
+	if err := l.rotate("encryption-key"); err != nil {
+		t.Fatal(err)
+	}
+	l.takeEvents()
+	l.nodes["cp1"].down = true
+	// The finish counts the objects under the old key through a control plane, then delivers
+	// the finish to every node, which cp1 fails.
+	err := l.rotate("encryption-key", "--finish", "--timeout", "100ms")
+	if err == nil || !strings.Contains(err.Error(), "the finish phase") {
+		t.Fatalf("err = %v, want the finish phase stopped by cp1", err)
+	}
+	if events := l.takeEvents(); !slices.Contains(events, "cp2 COUNT_ENCRYPTED") {
+		t.Errorf("events = %v, want cp2 to count the encrypted objects", events)
+	}
+}
