@@ -198,11 +198,7 @@ func Tree(data io.ReaderAt, sb Superblock) ([]byte, []byte, error) {
 // Verify checks the data and hash devices against the root hash: every data block the tree
 // covers and every block of the tree. It returns the hash device's superblock.
 func Verify(data, hash io.ReaderAt, root []byte) (Superblock, error) {
-	head := make([]byte, SuperblockSize)
-	if _, err := hash.ReadAt(head, 0); err != nil {
-		return Superblock{}, fmt.Errorf("read the verity superblock: %w", err)
-	}
-	sb, err := ParseSuperblock(head)
+	sb, err := readSuperblock(hash)
 	if err != nil {
 		return Superblock{}, err
 	}
@@ -252,12 +248,27 @@ func (sb Superblock) walk(data, tree io.ReaderAt, emit func(l level, j int64, bl
 			return nil, fmt.Errorf("hash level %d: %w", i, err)
 		}
 	}
-	top := make([]byte, hbs)
-	if _, err := tree.ReadAt(top, levels[len(levels)-1].start*hbs); err != nil {
+	return sb.topDigest(tree, levels)
+}
+
+// topDigest reads the top hash block of the tree, the last of levels, and returns its digest: the
+// root hash.
+func (sb Superblock) topDigest(tree io.ReaderAt, levels []level) ([]byte, error) {
+	top := make([]byte, sb.HashBlockSize)
+	if _, err := tree.ReadAt(top, levels[len(levels)-1].start*int64(sb.HashBlockSize)); err != nil {
 		return nil, fmt.Errorf("read the top hash block: %w", err)
 	}
 	d := sb.digest(top)
 	return d[:], nil
+}
+
+// readSuperblock reads and parses the superblock at the start of a hash device.
+func readSuperblock(hash io.ReaderAt) (Superblock, error) {
+	head := make([]byte, SuperblockSize)
+	if _, err := hash.ReadAt(head, 0); err != nil {
+		return Superblock{}, fmt.Errorf("read the verity superblock: %w", err)
+	}
+	return ParseSuperblock(head)
 }
 
 // bytesAt reads a byte slice as a device.
@@ -271,11 +282,7 @@ func (b bytesAt) ReadAt(p []byte, off int64) (int, error) {
 // without checking the blocks below: a quick look at which tree the device holds, which Verify
 // then confirms.
 func Root(hash io.ReaderAt) (Superblock, []byte, error) {
-	head := make([]byte, SuperblockSize)
-	if _, err := hash.ReadAt(head, 0); err != nil {
-		return Superblock{}, nil, fmt.Errorf("read the verity superblock: %w", err)
-	}
-	sb, err := ParseSuperblock(head)
+	sb, err := readSuperblock(hash)
 	if err != nil {
 		return Superblock{}, nil, err
 	}
@@ -283,10 +290,9 @@ func Root(hash io.ReaderAt) (Superblock, []byte, error) {
 	if len(levels) == 0 {
 		return sb, nil, errors.New("a tree of one data block has no hash block")
 	}
-	top := make([]byte, sb.HashBlockSize)
-	if _, err := hash.ReadAt(top, levels[len(levels)-1].start*int64(sb.HashBlockSize)); err != nil {
-		return Superblock{}, nil, fmt.Errorf("read the top hash block: %w", err)
+	root, err := sb.topDigest(hash, levels)
+	if err != nil {
+		return Superblock{}, nil, err
 	}
-	d := sb.digest(top)
-	return sb, d[:], nil
+	return sb, root, nil
 }
