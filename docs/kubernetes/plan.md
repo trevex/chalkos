@@ -94,7 +94,8 @@ Choose one:
   name.
 
 When the holder crashes or loses its network, another control plane takes the VIP once the
-holder's etcd lease of 10 seconds expires. [Networking](../how-it-works/node/networking.md#how-does-the-vip-move-between-control-planes)
+holder's etcd lease of 10 seconds expires.
+[Kubernetes networking](../how-it-works/kubernetes/networking.md#one-healthy-control-plane-holds-the-vip)
 describes the election.
 
 A single control plane can take the endpoint of its own address, as the homelab does. Every
@@ -146,8 +147,8 @@ spec:
     ipv6: fd00:10:96::/112
 ```
 
-[Networking](../how-it-works/node/networking.md#how-does-dual-stack-work) explains how nodes pick
-an address of each family.
+[Kubernetes networking](../how-it-works/kubernetes/networking.md#each-node-picks-one-address-per-family-before-the-kubelet-starts)
+explains how nodes pick an address of each family.
 
 ## Workloads stay off control planes by default
 

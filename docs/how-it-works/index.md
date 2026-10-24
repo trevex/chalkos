@@ -80,7 +80,8 @@ chalkos adds to run Kubernetes on it.
 
     ---
 
-    Node addresses, dual stack, the virtual IP, and packet filtering with nftables.
+    How a node configures its interfaces with networkd, filters traffic with nftables and keeps its
+    clock.
 
     [:octicons-arrow-right-24: Read](node/networking.md)
 
@@ -96,7 +97,8 @@ chalkos adds to run Kubernetes on it.
 
     ---
 
-    Every certificate authority and certificate of a cluster, and how each is renewed and rotated.
+    The OS CA, the node CA and the node API's certificates, how they are renewed and rotated, and
+    why the clock matters.
 
     [:octicons-arrow-right-24: Read](node/certificates.md)
 
@@ -136,7 +138,8 @@ These pages describe what chalkos adds to a node to run Kubernetes on the shippe
 
     ---
 
-    Node addresses, the VIP, the pod network and the ports of the control plane.
+    How a node picks its addresses, dual stack, the VIP election, flannel and the ports of the
+    control plane.
 
     [:octicons-arrow-right-24: Read](kubernetes/networking.md)
 
@@ -144,7 +147,8 @@ These pages describe what chalkos adds to a node to run Kubernetes on the shippe
 
     ---
 
-    Where the control plane's and the kubelets' certificates come from and who approves them.
+    The Kubernetes CAs and keys, the certificates of the control plane and the kubelets, and their
+    rotation.
 
     [:octicons-arrow-right-24: Read](kubernetes/certificates.md)
 

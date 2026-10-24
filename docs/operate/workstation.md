@@ -231,27 +231,20 @@ over to the new image, and chalkctl prints
 chalkd on each node enforces the roles. A call that the role does not allow fails
 with a message that names the role it needs, such as
 `/chalkos.node.v1.NodeService/Reboot needs the operator role`.
-[Who may call the node API?](../how-it-works/node/security.md#who-may-call-the-node-api) lists the
-methods of each role.
+[Roles and credentials](../reference/access.md#methods) lists the role each method needs.
 
 ## chalkctl looks for credentials in a fixed order
 
 The commands that need the secrets file read it only from `--secrets`. chalkctl never looks for a
-secrets file on its own. The commands that accept a client file take the first credential in this
-order:
-
-1. `--config FILE`, a client file, or `--secrets FILE`, the secrets file. Passing both is an
-   error.
-2. The client file `$CHALKOSCONFIG` names.
-3. `~/.config/chalkos/config`.
-
-With none of them, the command stops:
+secrets file on its own. The commands that accept a client file take the first credential they
+find, in the order
+[Where chalkctl finds its credentials](../reference/access.md#where-chalkctl-finds-its-credentials)
+lists. With none of them, the command stops:
 
 ```text
 chalkctl: there is no client file at /home/alice/.config/chalkos/config; pass --config or --secrets
 ```
 
-chalkctl refuses a client file whose certificate has expired, and warns during its last 30 days.
 `$CHALKOSCONFIG` lets you keep the files of several clusters apart:
 
 ```sh

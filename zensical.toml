@@ -177,6 +177,8 @@ nav = [
     { "Node API" = "reference/api.md" },
     "reference/image-layout.md",
     "reference/boot.md",
+    "reference/access.md",
+    "reference/certificates.md",
     "reference/kubernetes.md",
     "reference/ports-and-firewall.md",
     "reference/os-release.md",

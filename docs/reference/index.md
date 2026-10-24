@@ -1,6 +1,6 @@
 ---
 title: "Reference"
-description: "Commands, config kinds, image options, the node API, boot units, Kubernetes, and the layout of images, ports and os-release"
+description: "Commands, config kinds, image options, the node API, boot units, roles, certificates, Kubernetes, ports and os-release"
 ---
 
 # Reference
@@ -57,6 +57,22 @@ chalkos.
     How systemd-boot orders a node's entries, the units that run at every boot, and what an image fixes.
 
     [:octicons-arrow-right-24: Read](boot.md)
+
+-   :material-account-key: __Roles and credentials__
+
+    ---
+
+    The role each node API method needs, and the order chalkctl looks for credentials.
+
+    [:octicons-arrow-right-24: Read](access.md)
+
+-   :material-certificate-outline: __Certificates__
+
+    ---
+
+    Every CA, key and certificate of a cluster, its lifetime, its renewal point and the status notes.
+
+    [:octicons-arrow-right-24: Read](certificates.md)
 
 -   :material-kubernetes: __Kubernetes__
 

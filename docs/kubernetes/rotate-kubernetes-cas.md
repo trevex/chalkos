@@ -209,17 +209,9 @@ chains to is no longer trusted:
 
 ## Certificates expire on a fixed schedule
 
-chalkos renews what it can by itself, and `chalkctl status` warns before anything else expires:
-
-| What | Lifetime | Renewed by |
-| --- | --- | --- |
-| OS CA | 10 years | `chalkctl rotate os-ca`; status warns a year ahead |
-| Node CA | 5 years | `chalkctl node-ca rotate`; status warns 18 months ahead |
-| Kubernetes, front-proxy and etcd CAs | 10 years | `chalkctl rotate kubernetes-ca`; status warns a year ahead |
-| Node certificates | 1 year | chalkd, after two thirds of the lifetime; nodes without Kubernetes need `chalkctl node renew` |
-| Control-plane certificates | 1 year | chalkd, at every boot and after two thirds of the lifetime |
-| Kubelet certificates | 1 year | The kubelet |
-| Client files and kubeconfigs | `--ttl`, 1 year by default | Issuing new ones |
+chalkos renews what it can by itself, and `chalkctl status` warns before anything else expires.
+[Certificates](../reference/certificates.md) in the reference lists each CA and certificate with
+its lifetime, what renews it and when status warns.
 
 [Manage access and certificates](../operate/access.md) covers the OS CA, the node CA and node
 certificates.
@@ -269,5 +261,6 @@ kubectl --kubeconfig=admin.kubeconfig get nodes
 
 - [Manage access and certificates](../operate/access.md) rotates the OS CA and the node CA.
 - [Upgrade Kubernetes](upgrade-kubernetes.md) rolls a new image through the cluster.
-- [Certificates](../how-it-works/node/certificates.md) shows every CA and what it issues.
+- [Kubernetes certificates](../how-it-works/kubernetes/certificates.md) explains what each
+  Kubernetes CA issues and how a rotation runs.
 - [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md) lists every flag.

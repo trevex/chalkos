@@ -1,276 +1,210 @@
 ---
 title: "Certificates"
-description: "Every certificate authority and certificate of a cluster, and how each is renewed and rotated"
+description: "The OS CA, the node CA and the certificates of the node API, how they are renewed and rotated, and why the clock matters"
 ---
 
 # Certificates
 
-A chalkos cluster runs on five certificate authorities and two keys, all generated once by
-[`chalkctl gen secrets`](../../reference/cli/chalkctl_gen_secrets.md) and kept in the
-secrets file. Two CAs authenticate the node API that
-chalkd serves; three authenticate Kubernetes. This page lists
-what each one issues, how long each certificate lives, what renews it, and how a CA or key is
-replaced. The secrets file also holds the recovery secret, from which each node's
-recovery key is derived. The [Security model](security.md)
-explains who is allowed what with these certificates.
+`chalkctl status` lists the certificates a node holds and the CAs it trusts. A node without
+Kubernetes whose node certificate is due for renewal shows:
 
-## Which CAs and keys does a cluster have?
+```text
+certificates:
+  node   expires <date>  less than a third of its lifetime remains; renew it with chalkctl node renew w1
+  OS CA  expires <date>
+trust:
+  OS CA  <fingerprint>
+time: synchronised to <server>, offset <offset> s
+```
 
-Every CA has an ECDSA P-256 key, and every certificate chalkos issues is capped at its CA's own
-expiry and backdated by an hour, so a node whose clock lags slightly still accepts it.
+Two certificate authorities authenticate the node API that chalkd serves: the OS CA and the node
+CA below it. `chalkctl gen secrets` generates them once and keeps them in the secrets file. This
+page explains what each one issues, how the certificates are renewed, how a CA is replaced, and
+why a node's clock decides what it accepts. [Certificates](../../reference/certificates.md) in the
+reference lists every CA and certificate with its lifetime and renewal point.
 
-| CA or key | Lifetime | Issues or does | Held by |
-| --- | --- | --- | --- |
-| OS CA | 10 years | Client certificates and the node CA; path length 1 | The secrets file; its certificate is on every installed node, and in every image built with [`osCA`](../../reference/options.md#osca) |
-| Node CA | 5 years | Node certificates, for TLS servers and clients only; path length 0 | The secrets file and every control plane |
-| Kubernetes CA | 10 years | The API server's, controllers' and kubelets' certificates and admin kubeconfigs | The secrets file and every control plane; workers get its certificate |
-| Front-proxy CA | 10 years | The certificate the API server presents to aggregated API servers | The secrets file and every control plane |
-| etcd CA | 10 years | etcd's server and peer certificates and its clients' | The secrets file and every control plane |
-| Service-account key | No expiry | Signs service-account tokens (ES256) | The secrets file and every control plane |
-| Encryption key | No expiry | Encrypts Secrets in etcd (secretbox) | The secrets file and every control plane |
+!!! note "On the shipped variant, three more CAs and two keys serve Kubernetes"
 
-The node CA exists so that control planes can renew node certificates without holding the OS
-CA's key. Its extended key usages allow TLS servers and clients alone, and its path length of 0
-forbids any CA below it, so a control plane that is taken over can issue node certificates but no
-client certificate of a role and no CA. chalkd gives any certificate that chains through the node
-CA the role `node`, whatever its subject says.
+    The secrets file also holds the Kubernetes, front-proxy and etcd CAs, the service-account key
+    and the encryption key. [Kubernetes certificates](../kubernetes/certificates.md) explains what
+    they issue and how they are rotated.
 
-The CAs that grant different access must not share a key: the secrets file is refused when two of
-them do, because an etcd CA that was also the Kubernetes CA would give every certificate the
-Kubernetes CA issues full access to etcd.
+## The OS CA issues clients and the node CA
 
-## What does each CA issue?
+The OS CA is the root of the node API. It lives ten years and issues two things:
 
-The diagram shows the hierarchy: the OS CA's tree serves the node API, and the three Kubernetes
-CAs serve the cluster.
+- client certificates, with the role in their Organization;
+- the node CA, an intermediate that lives five years.
+
+The node CA issues node certificates and nothing else. It exists so that control planes can renew
+node certificates without holding the OS CA's key. Its extended key usages allow TLS servers and
+clients alone, and its path length of 0 forbids any CA below it. A control plane that is taken
+over can therefore issue node certificates, but no client certificate of a role and no CA. chalkd
+gives any certificate that chains through the node CA the role `node`, whatever its subject says,
+as [Security model](security.md#chalkd-checks-the-role-of-every-request) explains.
 
 ```mermaid
 flowchart TD
     osca["OS CA"] --> nodeca["node CA"]
     nodeca --> nodecert["node certificates"]
     osca --> client["client certificates: client files, chalkctl's admin certificate"]
-    kca["Kubernetes CA"] --> cp["control plane: API server, controller-manager, scheduler, chalkd"]
-    kca --> kubelet["kubelet client and serving certificates"]
-    kca --> admin["admin kubeconfigs"]
-    fpca["front-proxy CA"] --> fp["front-proxy client"]
-    etcdca["etcd CA"] --> etcd["etcd server, peer and client certificates"]
 ```
 
-### Certificates of the node API
+The diagram shows the two branches below the OS CA: node certificates through the node CA, and
+client certificates directly.
 
-A node's node certificate is what chalkd serves and
-what it presents to renew itself. It carries the node's name in the inventory as its subject,
-which chalkd takes as the node's name, the host name its `Host` document gives and the node's
-addresses. It lives one year and is stored with its key and the node CA's certificate in one file
-on STATE, `/state/chalkd/node.pem`. chalkctl issues the first
-one at install.
+Every CA has an ECDSA P-256 key, and no two CAs of a secrets file may share one. Every certificate
+chalkos issues is capped at its CA's own expiry and backdated by an hour, so a node whose clock
+lags slightly still accepts it.
 
-Client certificates come from the OS CA directly, with the role in their Organization. A
-client file from
-[`chalkctl config new`](../../reference/cli/chalkctl_config_new.md) holds one, valid for one year by
-default (`--ttl`). A command that reads the secrets file issues itself an admin certificate that
-lives one hour and exists only in memory, so using the secrets file leaves no admin certificate
-behind.
+## A node certificate carries the node's name
 
-### Certificates of Kubernetes
+A node's node certificate is what chalkd serves and what it presents to renew itself. Its subject
+is the node's name in the inventory, which chalkd takes as the node's name. It also names the host
+name the node's `Host` document gives and the node's addresses. It lives one year and is stored
+with its key and the node CA's certificate in one file on STATE, `/state/chalkd/node.pem`. chalkctl
+issues the first one at install.
 
-A control plane issues its own certificates from the CAs
-in its Kubernetes share at every boot: the API server's
-serving certificate, its clients of the kubelets and etcd, the front-proxy client, etcd's server and
-peer certificates, and the kubeconfigs of the controller-manager and the scheduler. Each lives one
-year. They are written to `/run/chalkos/kubernetes/pki`, a tmpfs, so they never reach a disk. The
-API server's certificate names the cluster endpoint,
-every VIP, the node's addresses and the `kubernetes` service names.
+Client certificates come from the OS CA directly. A client file from
+[`chalkctl config new`](../../reference/cli/chalkctl_config_new.md) holds one, valid for one year
+by default (`--ttl`). A command that reads the secrets file issues itself an admin certificate that
+lives one hour and exists only in memory.
 
-chalkd's own clients of the API server and of etcd are certificates it issues itself in memory,
-valid for one hour and replaced at half their lifetime. The API server client is in
-`system:masters`, because chalkd creates the RBAC bindings everything else depends on.
+## A node renews its certificate through a control plane
 
-A kubelet authenticates with a client certificate for `system:node:<node>` in `system:nodes`. A
-worker receives the first one in its share at install, issued
-for its name; a control plane issues its own at every boot. The kubelet renews it itself, once 70
-to 90% of its lifetime have passed, through a certificate request the controller-manager
-approves. The kubelet's serving certificate, which the API server verifies when it fetches logs or
-runs `kubectl exec`, comes from a request that chalkd on a control plane approves. Both live in
-`/var/lib/kubelet/pki` on VAR.
+chalkd checks its node certificate about hourly and renews it once two thirds of its lifetime have
+passed. It creates a new key and asks a control plane for a certificate through
+[RenewNodeCertificate](../../reference/api.md#method-renewnodecertificate), on port 50000 of the
+cluster endpoint's host. It authenticates with its current certificate, and the control plane
+signs exactly the names of that certificate, whatever the request asks for. A control plane signs
+its own with the node CA it holds. A failed attempt keeps the current certificate and is retried
+after a minute, doubling up to an hour.
 
-An admin kubeconfig from [`chalkctl kubeconfig`](../../reference/cli/chalkctl_kubeconfig.md) holds a
-client certificate in the group `chalkos:cluster-admins`, which chalkos's RBAC addon binds to
-`cluster-admin`. It is valid for one year unless `--ttl` says otherwise. The group is used instead
-of `system:masters` because RBAC can take a group's access away, which it cannot do for
-`system:masters`.
+A node whose image runs no Kubernetes reaches no control plane, so it does not renew its node
+certificate by itself. [`chalkctl node renew`](../../reference/cli/chalkctl_node_renew.md) issues a
+new one from the secrets file and delivers it, and the status line above names the command.
 
-## How are certificates renewed?
+`chalkctl node renew` also renews a node whose certificate expired, for example after a year
+switched off. Such a node cannot renew itself, because the control plane no longer accepts the
+certificate it authenticates with. To reach it, chalkctl verifies the expired certificate as of
+its start date, so it trusts the node's old key. Someone who holds a leaked, expired key of that
+node and sits in its network path could receive the new certificate instead. A node that renews
+before expiry never needs this.
+[Node certificates renew through a control plane](../../operate/access.md#node-certificates-renew-through-a-control-plane)
+gives the steps.
 
-The certificates nodes hold are renewed by the nodes themselves; only client files and admin
-kubeconfigs are issued again by hand.
-
-- Node certificates: chalkd checks about hourly and renews once two thirds of the lifetime have
-  passed. It creates a new key and asks a control plane for a certificate through
-  [RenewNodeCertificate](../../reference/api.md#method-renewnodecertificate), on port 50000 of the
-  cluster endpoint's host, authenticating with its current certificate. The control plane signs
-  exactly the names of that certificate, whatever the request asks for. A control plane signs its
-  own with the node CA it holds. A failed attempt keeps the current certificate and is retried
-  after a minute, doubling up to an hour.
-- The control plane's certificates: chalkd renews the whole set once two thirds of the lifetime of
-  the one that expires first have passed, and replaces the directory in one step. The previous
-  set stays in `/run/chalkos/kubernetes/pki.old`, because running containers keep the directory
-  they mounted. Each static pod carries a hash of the certificates it mounts in the annotation
-  `chalkos.dev/certificates`, so the kubelet starts each pod again on the new files.
-- Kubelet certificates: the kubelet renews both itself, as above.
-
-Nodes whose image runs no Kubernetes reach no control plane, so they do not renew their node
-certificate automatically; [`chalkctl node renew`](../../reference/cli/chalkctl_node_renew.md) does
-it.
-
-### What does the status report?
-
-[`chalkctl status`](../../reference/cli/chalkctl_status.md) lists every certificate a node holds with
-its expiry, and the CAs it trusts by the first 16 hex digits of their fingerprints, the issuing
-one marked `(issues)`. A certificate line carries a note when something needs doing:
-
-| Note | Shown for |
-| --- | --- |
-| `less than a third of its lifetime remains` | A node or control-plane certificate whose renewal is due; on a node without Kubernetes, with `renew it with chalkctl node renew <node>`, which names the node |
-| `renewal failing: ...; expires ...` | A renewal that failed, with the error and the expiry |
-| `less than a tenth of its lifetime remains, though the kubelet renews it itself` | A kubelet certificate close to its end |
-| `<CA> expires <date>` | A CA in its last year, the node CA in its last 18 months with `run chalkctl node-ca rotate` |
-| `expired`, `<CA> expired <date>` | A certificate or CA past its end |
-| `expired; deliver a new one with chalkctl apply-config <node> --kubernetes-share` | A worker's kubelet client certificate when the one the kubelet renewed was lost with VAR and the one its Kubernetes share holds has expired too; the note names the node |
-
-The node CA is reported six months earlier than the other CAs because no node certificate outlives
-it, so the certificates it issues get shorter in its last year.
-
-### Why does the clock matter?
+## The clock decides whether a certificate is valid
 
 Certificates are checked against the node's clock, so a node whose clock is off refuses valid
-certificates. Nodes keep time with chrony, authenticated with NTS by default, against the
-Physikalisch-Technische Bundesanstalt's servers `ptbtime1.ptb.de` to `ptbtime3.ptb.de` unless the
-node's [`TimeSync`](../../reference/kinds.md#timesync) document names others. chrony steps a clock that
-is more than a second off during its first three updates, instead of slewing it for hours. The
-status reports the clock as `time: synchronised to <source>, offset <seconds> s`, or `time: not
-synchronised; certificates are checked against this clock`.
+certificates and accepts expired ones. Nodes keep time with chrony, from the servers
+[Networking](networking.md#chrony-keeps-the-clock-with-authenticated-servers) describes.
 
-## What if a certificate expired?
+chrony steps a clock that is more than a second off during its first three updates, instead of
+slewing it for hours. Until then, chalkd and the control plane may refuse certificates that are
+valid. NTS authenticates the time servers with certificates too, so chrony skips their time check
+until it has set the clock once. The hour by which every certificate is backdated covers a clock
+that lags a little.
 
-A node whose node certificate expired, for example after being switched off for a year, cannot
-renew itself, because the control plane no longer accepts the certificate it authenticates with.
-`chalkctl node renew` issues a new one from the secrets file and delivers it:
+The status reports the clock as `time: synchronised to <source>, offset <seconds> s`, or as
+`time: not synchronised; certificates are checked against this clock`.
 
-```sh
-chalkctl node renew <node>
+## A rotation replaces a CA in four phases
+
+[`chalkctl rotate os-ca`](../../reference/cli/chalkctl_rotate.md) replaces the OS CA, and with it
+the node CA, across the cluster. It runs in four phases. Every node confirms a phase in its status
+before the next one starts, so no node ever presents a certificate that another node does not
+trust yet:
+
+1. Accept: every node trusts the new OS CA besides the old one.
+2. Switch: the new CAs issue.
+3. Refresh: every node gets a node certificate of the new node CA.
+4. Finish: the old OS CA is removed, and whatever it issued is refused from then on.
+
+The diagram shows the phases and the two pauses in which the operator acts before the rotation
+goes on.
+
+```mermaid
+stateDiagram-v2
+    state "Paused for new client files" as Paused1
+    state "Paused before the old CA goes" as Paused2
+    [*] --> Accept: chalkctl rotate os-ca
+    Accept --> Paused1: every node confirms
+    Paused1 --> Switch: --resume
+    Switch --> Refresh: every node confirms
+    Refresh --> Paused2: every node confirms
+    Paused2 --> Finish: --finish
+    Finish --> [*]: every node confirms
 ```
 
-To reach the node, chalkctl verifies its expired certificate as of the certificate's start date,
-so it trusts the node's old key. Someone holding a leaked, expired key of that node and sitting in
-its network path could receive the new certificate instead. That is inherent to recovering a
-node; a node that renews before expiry never needs it.
-
-A worker that lost VAR falls back to the kubelet certificate in its share, which may have expired
-since install. [`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md) with
-`--kubernetes-share` delivers a new one:
+chalkctl says at each pause what to do. After the accept phase, client files issued carry both OS
+CAs and keep working through the rotation and after it:
 
 ```sh
-chalkctl apply-config <node> --kubernetes-share
-```
-
-## How is a CA or key rotated?
-
-[`chalkctl rotate`](../../reference/cli/chalkctl_rotate.md) replaces a CA or key across the cluster
-in four phases, each of which every node confirms in its status before the next one starts, so no
-node ever presents a certificate that another node does not trust yet:
-
-1. Accept: every node trusts the new value besides the old one.
-2. Switch: the new value issues or signs.
-3. Refresh: what the old value issued is issued again.
-4. Finish, with `--finish`: the old value is removed, and whatever it issued is refused from then
-   on.
-
-Four kinds can be rotated:
-
-| Kind | What it replaces | Pauses after |
-| --- | --- | --- |
-| `os-ca` | The OS CA and with it the node CA; every node gets a certificate of the new node CA in the refresh | Accept, refresh |
-| `kubernetes-ca` | The Kubernetes, front-proxy and etcd CAs; the kubelets request new serving certificates | Accept, refresh |
-| `service-account-key` | The key that signs service-account tokens | Refresh |
-| `encryption-key` | The key that encrypts Secrets in etcd; the refresh rewrites every encrypted object under the new key | Refresh |
-
-A pause is where the operator acts before the rotation continues, and chalkctl says what to do.
-After the accept phase of a CA rotation, clients learn the new CA: new client files or kubeconfigs
-issued then carry both CAs and keep working through the rotation and after it. The rotation then
-continues with `--resume`, and ends with `--finish`:
-
-```sh
-chalkctl rotate kubernetes-ca
-chalkctl rotate kubernetes-ca --resume
-chalkctl rotate kubernetes-ca --finish
+chalkctl rotate os-ca
+chalkctl rotate os-ca --resume
+chalkctl rotate os-ca --finish
 ```
 
 The secrets file records the phase reached, so a rotation that stopped, at an unreachable node for
 example, continues with `--resume`. One rotation runs at a time, and one chalkctl command at a time
 changes the secrets file, holding `<file>.lock`. The file is updated in place and its previous
-version kept as `<file>.prev`, unless `--out` names a new file; an encrypted file is encrypted again
-to the recipients recorded inside it.
-
-The finish has guards. A service-account key is removed only an hour after every control plane
-applied the switch, by which time the kubelets have renewed the tokens of running pods; `--force`
-removes it earlier and refuses the tokens not renewed yet. An encryption key is removed only once
-etcd holds no object encrypted with it.
+version kept as `<file>.prev`, unless `--out` names a new file. An encrypted file is encrypted
+again to the recipients recorded inside it.
 
 [`chalkctl node-ca rotate`](../../reference/cli/chalkctl_node-ca_rotate.md) replaces the node CA
-alone, without phases: it issues a new node CA from the OS CA and delivers it to every control
+alone, without phases. It issues a new node CA from the OS CA and delivers it to every control
 plane. Node certificates of the old node CA stay valid until they expire, because they chain to
 the same OS CA, and are renewed from the new one as they fall due.
 
-### What happens to client files and kubeconfigs during a rotation?
+## A rotation leaves client files behind
 
-A client file and a kubeconfig hold the CA certificates they verify the servers with, and a rotation
-cannot reach those files. During an `os-ca` rotation, client files from before it stop verifying the
-nodes at the switch and are refused at the finish; files issued after the accept phase carry both OS
-CAs. During a `kubernetes-ca` rotation, kubeconfigs from before it stop verifying the API server at
-the switch and are refused at the finish. Images and installer
+A client file holds the OS CA certificates it verifies the nodes with, and a rotation cannot reach
+it. Client files from before an `os-ca` rotation stop verifying the nodes at the switch and are
+refused at the finish. Files issued after the accept phase carry both OS CAs. Images and installer
 media carry the OS CA too, so after an `os-ca` rotation they are built again from the new
-`secrets.pub.json`; older ones fail to install.
+`secrets.pub.json`. Older ones fail to install.
 
-Files issued during a rotation still trust the old CA when they verify the servers after the
-finish, so whoever holds the old CA's key could pose as a node or as the API server to them. Issue
-them again once the rotation is finished.
+Files issued during a rotation still trust the old OS CA when they verify the nodes after the
+finish, so whoever holds the old CA's key could pose as a node to them. Issue them again once the
+rotation is finished.
 
-## How is access revoked?
+## Access is revoked by rotating its CA
 
-Access is revoked by rotating the CA that granted it. chalkos keeps no list of revoked
-certificates, so a certificate stays valid until it expires or its CA is removed. A leaked client
-file is revoked by rotating `os-ca`, a leaked kubeconfig by rotating `kubernetes-ca`, and either
-rotation also retires every other client file or kubeconfig of that CA. Short `--ttl` values on
-client files and kubeconfigs limit how long a leak matters.
+chalkos keeps no list of revoked certificates, so a certificate stays valid until it expires or
+its CA is removed. A leaked client file is revoked by rotating `os-ca`, which also retires every
+other client file of the old OS CA. Short `--ttl` values on client files limit how long a leak
+matters.
 
-On the shipped variant, a node is revoked by name as well, with `chalkctl node revoke`. Its
-certificates then renew no more, and the API server denies its kubelet every write. The
-certificates themselves stay valid until they expire.
-[Security model](security.md#revoking-a-node-cuts-off-its-writes-and-renewals) explains what that
-covers. `chalkctl node-ca rotate` revokes nothing: chalkd trusts every node CA the OS CA signed, so
-only an `os-ca` rotation retires the certificates of the old node CA.
+`chalkctl node-ca rotate` revokes nothing: chalkd trusts every node CA the OS CA signed, so only
+an `os-ca` rotation retires the certificates of the old node CA.
+
+!!! note "On the shipped variant, chalkctl node revoke shuts out one node"
+
+    A node is revoked by name with `chalkctl node revoke`. Its certificates then renew no more, and
+    the API server denies its kubelet every write. The certificates themselves stay valid until
+    they expire.
+    [Revoking a node cuts off its writes and renewals](security.md#revoking-a-node-cuts-off-its-writes-and-renewals)
+    explains what that covers.
 
 ## Limits
 
-- There is no revocation of a single certificate; revoking one revokes all of its CA. Revoking a
-  node by name stops its renewals and its kubelet's writes; its certificates stay valid.
-- The CAs live ten years and are not renewed automatically. A CA in its last year shows in the
-  status, and rotation replaces it.
+- There is no revocation of a single certificate. Revoking one revokes all of its CA.
+- The CAs are not renewed automatically. A CA in its last year shows in the status, the node CA
+  in its last 18 months, and a rotation replaces it.
 - Nodes whose image runs no Kubernetes renew their node certificates only through
   `chalkctl node renew`.
-- Recovering a node whose certificate expired trusts the node's old key, as described above.
-- A control plane holds every Kubernetes CA key and the node CA. Taking one over gives full access
-  to the cluster's Kubernetes and lets the attacker issue node certificates, but not client
-  certificates of the node API.
+- Recovering a node whose certificate expired trusts the node's old key.
+- A control plane holds the node CA. Taking one over lets the attacker issue node certificates, but
+  no client certificate of the node API.
 
 ## Related pages
 
 - [Security model](security.md): client roles, the secrets file and client files.
-- [Kubernetes certificates](../kubernetes/certificates.md): what the control plane runs with these certificates.
+- [Kubernetes certificates](../kubernetes/certificates.md): the Kubernetes CAs and their rotation.
+- [Certificates](../../reference/certificates.md) in the reference: every CA and certificate, its
+  lifetime and the status notes.
 - [Manage access and certificates](../../operate/access.md) and
   [Recover a node](../../operate/recover-node.md).
 - [`chalkctl rotate`](../../reference/cli/chalkctl_rotate.md),
-  [`chalkctl node-ca rotate`](../../reference/cli/chalkctl_node-ca_rotate.md),
-  [`chalkctl node renew`](../../reference/cli/chalkctl_node_renew.md) and
-  [RenewNodeCertificate](../../reference/api.md#method-renewnodecertificate).
+  [`chalkctl node-ca rotate`](../../reference/cli/chalkctl_node-ca_rotate.md) and
+  [`chalkctl node renew`](../../reference/cli/chalkctl_node_renew.md).

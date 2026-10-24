@@ -156,7 +156,7 @@ explains how the kubelet renews it and gets its serving certificate.
 A VIP is an address of the API server that one healthy control plane holds at a time. The status
 line names a control plane's role as `vip holder` or `vip standby`. When a control plane's own
 etcd member is unhealthy, its API server fails its readiness and the VIP moves to another control
-plane. [How does the VIP move between control planes?](../node/networking.md#how-does-the-vip-move-between-control-planes)
+plane. [One healthy control plane holds the VIP](networking.md#one-healthy-control-plane-holds-the-vip)
 describes the election.
 
 ## The control plane applies the add-ons and the Addon documents

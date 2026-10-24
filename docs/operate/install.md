@@ -192,7 +192,7 @@ Every hypervisor below gives the VM the same settings:
 | Guest agent channel | virtio-serial port `org.qemu.guest_agent.0` | Optional. The host can then shut the VM down cleanly and read its addresses. |
 
 The guest agent runs no commands for the host, as
-[Can anyone log in to a node?](../how-it-works/node/security.md#can-anyone-log-in-to-a-node)
+[Can anyone log in to a node?](../how-it-works/node/security.md#nobody-logs-in-to-a-node)
 describes.
 
 !!! warning "Keep the VM's UEFI variables and TPM state for the node's life"

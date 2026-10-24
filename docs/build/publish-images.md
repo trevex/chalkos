@@ -116,7 +116,7 @@ A reference by digest pins the image, so the inventory changes only when you pus
 inventory may name a tag instead, such as `ghcr.io/example/node-metal:v1.5.0`. chalkctl resolves
 a tag to a digest once per command, so one command reads one image even when the tag moves while
 it runs.
-[Config and the inventory](../how-it-works/node/config.md#how-does-the-inventory-name-images)
+[Config and the inventory](../how-it-works/node/config.md#the-inventory-names-the-image-each-node-runs)
 covers the rest of `spec.images`.
 
 ## The artifact holds the image and its contract

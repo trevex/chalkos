@@ -174,7 +174,8 @@ certificate's Organization. It checks the certificate for every request against 
 trusts at that moment, so a client whose CA was rotated out loses access on its next request, not
 when its connection closes. The one exception is maintenance mode on an image built without an
 OS CA: chalkd checks no certificate there and treats every client as admin.
-[Security model](security.md) explains the roles and what each may call.
+[Security model](security.md) explains the roles, and
+[Roles and credentials](../../reference/access.md) lists what each may call.
 
 ## Limits
 

@@ -11,7 +11,8 @@ come from `modules/node/chalkd.nix`, `modules/node/kubernetes.nix`,
 `modules/node/controlplane-ports.nix` and `modules/node/vxlan-rule.nix`; the listeners from
 `cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
 `modules/node/kubernetes.nix`.
-[Networking](../how-it-works/node/networking.md) explains the network design and
+[Networking](../how-it-works/node/networking.md) and
+[Kubernetes networking](../how-it-works/kubernetes/networking.md) explain the network design, and
 [Security model](../how-it-works/node/security.md) what each listener trusts.
 
 ## Open ports
@@ -44,7 +45,7 @@ The rule has three parts:
 
 | Part | What it does |
 | --- | --- |
-| Table `inet chalkos-vxlan`, chain `input` | Runs before the firewall and marks UDP 8472 sent to the node's address of each family with the bit `0x01000000`: on the interface holding that address, or on any interface but the pod network's and kube-proxy's when the address is on a loopback or dummy interface. With source ranges set, only packets from them get the mark, and a family without a range gets none. |
+| Table `inet chalkos-vxlan`, chain `input` | Runs before the firewall and marks UDP 8472 sent to the node's address of each family with the bit `0x01000000`: on the interface holding that address, or on any interface but the pod network's and kube-proxy's (`cni*`, `flannel*`, `kube-*` and `veth*`) when the address is on a loopback or dummy interface. With source ranges set, only packets from them get the mark, and a family without a range gets none. |
 | Firewall's `input-allow` chain | Accepts UDP 8472 that carries the mark. |
 | Table `inet chalkos-vxlan`, chain `clear` | Runs after the firewall and clears the mark, so no later rule sees it. |
 

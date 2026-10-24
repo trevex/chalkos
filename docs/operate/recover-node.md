@@ -120,7 +120,7 @@ w1 serves a new node certificate; it expires <time>
 
 `<time>` stands for the new expiry, such as `2027-10-10T09:12:44Z`. For this command alone,
 chalkctl verifies the expired certificate as of its start date, so it trusts the node's old key.
-[What if a certificate expired?](../how-it-works/node/certificates.md#what-if-a-certificate-expired)
+[A node renews its certificate through a control plane](../how-it-works/node/certificates.md#a-node-renews-its-certificate-through-a-control-plane)
 explains the risk. Fix the reason the renewal failed too, or the certificate expires again next
 year.
 

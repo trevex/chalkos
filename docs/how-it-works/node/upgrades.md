@@ -101,7 +101,7 @@ describes.
 An upgrade with an admin client file or the secrets file carries config. chalkctl sends each node
 its config with the image: the set the inventory gives the node, which it checked against the
 image. The node checks the set against the image again and keeps it in the new image's
-[config slot](config.md#where-does-a-node-keep-its-config), beside the slot of the image it runs.
+[config slot](config.md#a-node-keeps-one-config-slot-per-image), beside the slot of the image it runs.
 The new image boots with its own config, and a fallback boots the previous image with the config
 it ran. Config that only the new image accepts, such as a document of a kind its extension
 declares, therefore goes with the upgrade.
@@ -124,8 +124,8 @@ storage STATE records. A storage change that takes a reset or a reinstall is ref
 change of a setting the rules fix. A new volume is created before the image
 boots, while the running image runs. chalkctl sends the fallback secret such a volume is enrolled
 with: the recovery key from the secrets file, or a password from `--password-file`.
-[Config and the inventory](config.md#which-changes-does-a-node-accept) lists what each change
-takes.
+[Config and the inventory](config.md#change-rules-decide-which-changes-a-node-accepts) lists what
+each change takes.
 
 Before it sends a node the image, chalkctl prints a line of what the config changes against the
 running image's, the slot the new one replaces, such as `w1: config 1 added, 0 removed, 1 changed`.
@@ -192,7 +192,8 @@ flowchart TD
 4. Check and keep the config. chalkd opens the written store read-only through dm-verity with the
    image's root hash. It reads the schemas and `image.json` of the system the UKI boots, and checks
    the config the upgrade carries against them, or without one the running slot's documents. The
-   check is an install's: the set rules, each document's schema and, on an image with Kubernetes,
+   request carries no schemas of its own, so the check always uses those the image will translate
+   the config with. The check is an install's: the set rules, each document's schema and, on an image with Kubernetes,
    the cluster it gives. chalkd evaluates the image's change rules against the running slot's
    config, the storage STATE records and the node's facts. It refuses a change they refuse, makes
    the storage changes they accept, such as a new volume, and writes the image's config slot

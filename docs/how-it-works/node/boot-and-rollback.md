@@ -80,7 +80,7 @@ The initrd prepares the root file system in four steps:
 Stage 2 starts the node's own services in order:
 
 1. `chalkos-config.service` applies the config that STATE keeps for the booted image, its
-   [config slot](config.md#where-does-a-node-keep-its-config), before networkd starts. The config
+   [config slot](config.md#a-node-keeps-one-config-slot-per-image), before networkd starts. The config
    holds the hostname, the documents services read and the outputs rendered from them, networkd's
    units and chrony's time servers among them. A fallback boots the previous image with its own
    slot, so it runs the config it ran. An image without a slot fails here, and its boot is not

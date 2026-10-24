@@ -91,8 +91,8 @@ documents of the kinds of the group `kubernetes.chalkos.dev`:
 
 The cluster's documents go into the files the inventory gives every node, so all nodes hold the
 same ones. A node's `Node` goes into its own file, as
-[Config and the inventory](../node/config.md#how-does-the-inventory-assign-files-to-nodes)
-describes. chalkctl refuses an inventory whose nodes hold different `Cluster` or `Flannel` specs.
+[Config and the inventory](../node/config.md#the-inventory-gives-each-node-a-set-of-files)
+describes.
 
 On an image with Kubernetes, the node's config must hold one `Cluster` and one `Node` document.
 [`chalkctl validate`](../../reference/cli/chalkctl_validate.md) and chalkd refuse a set without
@@ -122,6 +122,33 @@ chalkctl delivers the documents at install and with
 [`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md). At boot and on every
 apply, chalkd builds the node's cluster from its `Node`, `Cluster` and `Flannel` documents and
 `image.json`. It writes the result to `/run/chalkos/kubernetes/cluster.json`.
+
+## Every node holds the same cluster documents
+
+Every node of an inventory whose set holds a `Cluster` document must hold the same `Cluster` spec
+and the same `Flannel` spec, or no `Flannel` document on any of them, because each node builds the
+cluster from its own documents. The specs compare as written, whatever the documents are called: a
+field left to its default differs from one set to the default value. Only the order of the
+`Flannel` document's `vxlanSourceSubnets` makes no difference. `chalkctl validate` and every
+chalkctl command that reads the inventory refuse an inventory whose nodes differ. The error names
+the first field that differs, in the order of the fields' names, and the nodes of each of its
+values:
+
+```text
+chalkos.yaml: the nodes hold different Flannel specs: spec.mtu is 1400 on cp1 and cp2, 1450 on w1; every node of the cluster holds the same Cluster and Flannel specs
+```
+
+A node without the `Flannel` document is named as holding none, as in `none on w1`.
+
+The cluster's documents therefore belong in the files every node gets. What differs from node to
+node goes into each node's `Node` document instead, which chalkctl does not compare:
+
+- `type`, `controlplane` or `worker`;
+- `labels` and `taints`;
+- `nodeIP.addresses` and `nodeIP.validSubnets`, the node's own addresses or the subnets it picks
+  them from;
+- `kubeletExtraArgs`, the extra flags of the node's kubelet;
+- `vip.interface`, the interface a control plane adds the VIP to, which a worker leaves null.
 
 ## The ranges of a cluster are fixed once it exists
 
@@ -158,9 +185,9 @@ cluster:
 - `rotateCertificates` and `serverTLSBootstrap`.
 
 The kubelet gets what differs per node as flags in `$KUBELET_ARGS`. These are the node name, which
-is the node's [name in the inventory](../node/config.md#what-names-a-node), and the addresses,
-labels, taints and extra flags of its `Node` document. The homelab example's worker carries fast
-storage and keeps other workloads off:
+is the node's [name in the inventory](../node/config.md#a-nodes-name-is-its-key-in-the-inventory),
+and the addresses, labels, taints and extra flags of its `Node` document. The homelab example's
+worker carries fast storage and keeps other workloads off:
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1

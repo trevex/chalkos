@@ -109,7 +109,7 @@ These limits hold in the current code, grouped by area.
 - VIPs are announced on the local network alone, with ARP and IPv6 neighbour advertisements.
 
 [Ports and firewall](../reference/ports-and-firewall.md) lists the rules and
-[Networking](../how-it-works/node/networking.md) the design behind them.
+[Kubernetes networking](../how-it-works/kubernetes/networking.md) the design behind them.
 
 ### Storage
 

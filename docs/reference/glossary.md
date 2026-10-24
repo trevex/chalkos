@@ -115,7 +115,7 @@ The URL of the cluster's API server, which kubelets, kubeconfigs and joining con
 It is `spec.endpoint` of the [`Cluster`](kinds.md#cluster) document. Nodes also renew their
 [node certificates](#node-certificate) at port 50000 of its host, so it points at a control plane,
 a [VIP](#vip) or a load balancer that forwards both ports. See
-[Networking](../how-it-works/node/networking.md).
+[Kubernetes networking](../how-it-works/kubernetes/networking.md).
 
 ## Config { #config }
 <!-- abbr: none -->
@@ -137,7 +137,7 @@ One object of a node's [config](#config), written in YAML like a Kubernetes obje
 `spec`. The schema of its [kind](#kind) defines the `spec`; [Config kinds](kinds.md) lists the
 fields of the built-in kinds. On the node, chalkd writes each document except `Secret`s and
 `Addon`s to `/run/chalkos/config/<group>/<Kind>/<name>.json`. See
-[Config and the inventory](../how-it-works/node/config.md#what-is-a-config-document).
+[Config and the inventory](../how-it-works/node/config.md#a-config-document-is-an-object-of-one-kind).
 
 ## Config slot { #config-slot }
 <!-- abbr: config slots, Config slots -->
@@ -149,7 +149,7 @@ same documents with the schemas' defaults filled in, the config's version and th
 previous image with the config it ran. An install or an [upgrade](#upgrade) writes the slot of the
 image it writes, and `chalkctl apply-config` that of the running image. An upgrade removes the
 slots of images no UKI on the ESP boots any more, so a node holds at most two. See
-[Config and the inventory](../how-it-works/node/config.md#where-does-a-node-keep-its-config).
+[Config and the inventory](../how-it-works/node/config.md#a-node-keeps-one-config-slot-per-image).
 
 ## Contract { #contract }
 
@@ -176,7 +176,7 @@ renders, besides containerd and the kubelet, and it is the only kind of node cha
 The UEFI firmware's Secure Boot databases: db lists what the firmware boots, dbx what it
 refuses. Both hold certificates and hashes of binaries. A chalkos image boots under Secure Boot
 when its signer's certificate is in db and nothing of it is in dbx. See
-[Security model](../how-it-works/node/security.md).
+[The image](../how-it-works/node/image.md#the-uki-is-checked-against-db-and-dbx-before-anything-runs-it).
 
 ## dm-verity { #dm-verity }
 
@@ -319,7 +319,7 @@ holds a `Cluster` document holds the same `Cluster` and `Flannel` specs. chalkct
 operator's machine and names no secrets. Its keys of `spec.nodes` are the [node names](#node-name);
 its `metadata.name` is a label for messages and the default kubeconfig context. See
 [Write a node's config](../operate/node-config.md),
-[Config and the inventory](../how-it-works/node/config.md#how-does-the-inventory-assign-files-to-nodes)
+[Config and the inventory](../how-it-works/node/config.md#the-inventory-gives-each-node-a-set-of-files)
 and its fields in [Config kinds](kinds.md#inventory).
 
 ## Kind { #kind }
@@ -330,7 +330,7 @@ group and version. chalkos declares its own kinds in `chalkos.dev` and its subdo
 [`chalkos.kinds`](options.md#chalkoskinds) in a variant's NixOS modules, with a group of its own.
 An image accepts the kinds its modules declare and refuses any other. A unit reads the documents
 of the kinds it is [granted](#grant). See
-[Config and the inventory](../how-it-works/node/config.md#which-kinds-are-there) and
+[Config and the inventory](../how-it-works/node/config.md#chalkoss-kinds-live-in-the-group-chalkosdev) and
 [Config kinds](kinds.md).
 
 ## Kubernetes share { #kubernetes-share }
@@ -339,7 +339,8 @@ of the kinds it is [granted](#grant). See
 The Kubernetes secrets a node receives at install. On a control plane, these are the cluster,
 front-proxy and etcd CAs with their keys, the service-account key, the encryption key and the
 node CA; on a worker, the cluster CA certificate and a kubelet client certificate. chalkd keeps it
-on [STATE](#state). See [Certificates](../how-it-works/node/certificates.md).
+on [STATE](#state). See
+[How Kubernetes runs on a node](../how-it-works/kubernetes/overview.md#the-kubernetes-share-holds-the-secrets-of-a-node).
 
 ## Lab { #lab }
 <!-- abbr: none -->
@@ -397,7 +398,7 @@ A [node](#node)'s key in the [inventory](#inventory)'s `spec.nodes`, such as `cp
 install, and chalkd reads it from there. The hostname defaults to it unless a `Host` document
 gives another, and the Kubernetes node name, the etcd member, the seed of the partition UUIDs and
 the [recovery key](#recovery-key) derive from it, so renaming a node takes a reinstall. See
-[Config and the inventory](../how-it-works/node/config.md#what-names-a-node).
+[Config and the inventory](../how-it-works/node/config.md#a-nodes-name-is-its-key-in-the-inventory).
 
 ## Normal mode { #normal-mode }
 
@@ -441,7 +442,7 @@ The TPM register that measures the Secure Boot state. It measures whether Secure
 PK, KEK, db and dbx contents, and the db certificate that verified the boot binaries. chalkos
 seals the keys of encrypted partitions to it, so they unseal after an upgrade signed with the
 same key and not after a change to Secure Boot. See
-[Security model](../how-it-works/node/security.md).
+[Storage and encryption](../how-it-works/node/storage.md#the-tpm-seals-the-disk-keys-to-pcr-7).
 
 ## Platform { #platform }
 <!-- abbr: platforms, Platforms -->
@@ -589,7 +590,7 @@ schemas decide which [config](#config) it takes. See
 
 A virtual IP address of the API server, one per IP family, that one healthy control plane
 holds. chalkd elects the holder through etcd and announces the address on the local network.
-See [Networking](../how-it-works/node/networking.md).
+See [Kubernetes networking](../how-it-works/kubernetes/networking.md#one-healthy-control-plane-holds-the-vip).
 
 ## Volume { #volume }
 <!-- abbr: volumes, Volumes -->

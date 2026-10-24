@@ -137,7 +137,8 @@ A node has no shell, so status, logs, reboots, config and upgrades all go throug
 that chalkd serves on port 50000. Every call carries a client certificate, and its role (reader,
 operator or admin) decides which methods it may call. chalkctl signs itself a short-lived admin
 certificate from the secrets file, or uses a client file that holds a certificate of one role.
-[Security model](security.md) lists who may call what.
+[Security model](security.md) explains the roles, and [Roles and credentials](../../reference/access.md)
+lists who may call what.
 
 ## An upgrade writes the inactive slot and boots it on trial
 

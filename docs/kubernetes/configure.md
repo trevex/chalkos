@@ -95,7 +95,7 @@ A reinstall registers the node again with the labels and taints of its `Node` do
 
 The `Node` document also holds the node's own address settings, `nodeIP`, and on a control plane
 the interface it holds the VIP on, `vip.interface`.
-[Networking](../how-it-works/node/networking.md#which-addresses-does-a-node-use-for-kubernetes)
+[Kubernetes networking](../how-it-works/kubernetes/networking.md#each-node-picks-one-address-per-family-before-the-kubelet-starts)
 explains both.
 
 ## Run workloads on control planes

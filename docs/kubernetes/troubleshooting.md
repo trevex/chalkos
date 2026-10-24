@@ -218,7 +218,7 @@ chalkctl apply-config w1 --kubernetes-share --secrets=secrets.age
 ```
 
 chalkctl issues the certificate from the Kubernetes CA in the secrets file.
-[Certificates](../how-it-works/node/certificates.md) lists every certificate and its lifetime.
+[Certificates](../reference/certificates.md) lists every certificate and its lifetime.
 
 ## A node's writes are denied as revoked
 

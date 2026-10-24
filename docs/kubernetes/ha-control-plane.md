@@ -154,7 +154,7 @@ When the holder's API server stops answering, or the holder fails, another healt
 takes the VIP through an election in etcd. The holder's lease lasts 10 seconds. The HA end-to-end
 test requires the VIP to move within 30 seconds of its holder's network link going down. When the
 old holder comes back, the VIP stays with its new holder.
-[Networking](../how-it-works/node/networking.md#how-does-the-vip-move-between-control-planes)
+[Kubernetes networking](../how-it-works/kubernetes/networking.md#one-healthy-control-plane-holds-the-vip)
 explains the election. Clients with an open connection to the old holder notice only when the
 connection times out. A cluster without etcd quorum has no holder, because no node can win the
 election.

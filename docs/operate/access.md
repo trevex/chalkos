@@ -18,7 +18,8 @@ file `secrets.age` and the inventory. A rotation also needs every node of the in
 reachable, because each phase waits until every node confirms it.
 
 [Certificates](../how-it-works/node/certificates.md) shows the CAs this page changes and what each
-one issues.
+one issues, and [Certificates](../reference/certificates.md) in the reference lists their lifetimes
+and when status warns about them.
 
 ## A client file gives one person one role
 
