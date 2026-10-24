@@ -8,10 +8,11 @@
 package schema
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -60,46 +61,51 @@ type MetadataKubernetes struct {
 }
 
 // Schemas is the compiled schema of every kind named by the *.json files of a schemas directory,
-// such as an image's schemas/ in its build output or /etc/chalkos/schemas on a running node.
-// LoadSchemas builds it from each file's "x-chalkos-kind" alone, so it needs no metadata.json.
+// such as an image's schemas/ in its build output or /etc/chalkos/schemas on a running node, or by
+// the files LoadFiles is given. It is built from each file's "x-chalkos-kind" alone, so it needs
+// no metadata.json.
 type Schemas struct {
-	// kinds is in the order LoadSchemas read the directory, which os.ReadDir sorts by name.
+	// kinds is in the order of the files' names.
 	kinds   []Kind
 	schemas map[Kind]*jsonschema.Schema
 	// raw holds each kind's schema document as its file holds it, for readers of annotations.
 	raw map[Kind]any
 }
 
-// LoadSchemas compiles the schemas of the directory dir with LoadFS.
+// LoadSchemas compiles every *.json file in dir, as compile does, naming each by its path in
+// errors. Directories are skipped; a link is followed.
 func LoadSchemas(dir string) (*Schemas, error) {
-	return load(os.DirFS(dir), dir)
-}
-
-// LoadFS compiles every *.json file at the root of fsys and builds the kind list from each file's
-// "x-chalkos-kind": {"group","version","kind","multiple"}. A file's name must equal
-// "<group>_<version>_<kind>.json" by its own declared identity, and no two files may declare the
-// same kind; either failure names the offending file or kind.
-func LoadFS(fsys fs.FS) (*Schemas, error) {
-	return load(fsys, "")
-}
-
-// load is LoadFS, naming the files in its errors as paths below dir.
-func load(fsys fs.FS, dir string) (*Schemas, error) {
-	entries, err := fs.ReadDir(fsys, ".")
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, below(dir, err)
+		return nil, err
 	}
-	c := jsonschema.NewCompiler()
-	c.DefaultDraft(jsonschema.Draft2020)
-	c.UseLoader(noLoader{})
-	ss := &Schemas{schemas: map[Kind]*jsonschema.Schema{}, raw: map[Kind]any{}}
+	files := map[string][]byte{}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
-		name := e.Name()
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return nil, err
+		}
+		files[e.Name()] = data
+	}
+	return compile(files, dir)
+}
+
+// compile compiles the schema files, by name, in the order of their names, and builds the kind
+// list from each file's "x-chalkos-kind": {"group","version","kind","multiple"}. A file's name
+// must equal "<group>_<version>_<kind>.json" by its own declared identity, and no two files may
+// declare the same kind; either failure names the offending file or kind. Errors name a file by
+// its path below dir, or by its name alone when dir is empty.
+func compile(files map[string][]byte, dir string) (*Schemas, error) {
+	c := jsonschema.NewCompiler()
+	c.DefaultDraft(jsonschema.Draft2020)
+	c.UseLoader(noLoader{})
+	ss := &Schemas{schemas: map[Kind]*jsonschema.Schema{}, raw: map[Kind]any{}}
+	for _, name := range slices.Sorted(maps.Keys(files)) {
 		path := filepath.Join(dir, name)
-		doc, err := readDoc(fsys, dir, name)
+		doc, err := decodeDoc(files[name], path)
 		if err != nil {
 			return nil, err
 		}
@@ -124,33 +130,18 @@ func load(fsys fs.FS, dir string) (*Schemas, error) {
 	return ss, nil
 }
 
-// below makes the path of a file system error err the path below dir.
-func below(dir string, err error) error {
-	var pe *fs.PathError
-	if errors.As(err, &pe) {
-		pe.Path = filepath.Join(dir, pe.Path)
-	}
-	return err
-}
-
 // fileName is the name a schema of k must have, as lib/kinds/schema.nix also builds it.
 func fileName(k Kind) string {
 	group, version, _ := strings.Cut(k.APIVersion, "/")
 	return group + "_" + version + "_" + k.Kind + ".json"
 }
 
-// readDoc reads and decodes the JSON document name of fsys, the directory dir, with
-// jsonschema.UnmarshalJSON, which keeps numbers exact, the way compileSchema needs it and the way
-// kindOf reads "x-chalkos-kind".
-func readDoc(fsys fs.FS, dir, name string) (any, error) {
-	f, err := fsys.Open(name)
+// decodeDoc decodes the JSON document of the file at path with jsonschema.UnmarshalJSON, which
+// keeps numbers exact, the way compileSchema needs it and the way kindOf reads "x-chalkos-kind".
+func decodeDoc(data []byte, path string) (any, error) {
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
 	if err != nil {
-		return nil, below(dir, err)
-	}
-	defer f.Close()
-	doc, err := jsonschema.UnmarshalJSON(f)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, name), err)
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return doc, nil
 }
