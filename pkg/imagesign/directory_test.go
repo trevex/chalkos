@@ -127,6 +127,13 @@ func TestSignDirectoryRefuses(t *testing.T) {
 	if entries, _ := os.ReadDir(existing); len(entries) != 1 {
 		t.Errorf("the directory that exists holds %v", entries)
 	}
+	dangling := filepath.Join(dir, "dangling")
+	if err := os.Symlink(filepath.Join(dir, "nowhere"), dangling); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SignDirectory(context.Background(), in, dangling, key, other); err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Errorf("SignDirectory onto a dangling symlink = %v", err)
+	}
 	out := filepath.Join(dir, "out")
 	if _, err := SignDirectory(context.Background(), in, out, key, other); err == nil {
 		t.Error("SignDirectory with the certificate of another key succeeded")

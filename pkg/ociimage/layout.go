@@ -17,6 +17,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"golang.org/x/sys/unix"
 )
 
 // IsLayout tells whether dir is an OCI image layout: whether it holds an oci-layout file.
@@ -39,6 +40,28 @@ func CheckNew(out string) error {
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("%s is no directory", parent)
+	}
+	return nil
+}
+
+// RenameNew renames the directory tmp to out, which CheckNew found missing, and fails if out
+// exists by now. It renames with RENAME_NOREPLACE, so out cannot appear between the check and the
+// rename; on a file system without RENAME_NOREPLACE it checks out just before renaming.
+func RenameNew(tmp, out string) error {
+	err := unix.Renameat2(unix.AT_FDCWD, tmp, unix.AT_FDCWD, out, unix.RENAME_NOREPLACE)
+	if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOSYS) {
+		if _, err := os.Lstat(out); err == nil {
+			return fmt.Errorf("%s appeared while it was being written", out)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return os.Rename(tmp, out)
+	}
+	if errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("%s appeared while it was being written", out)
+	}
+	if err != nil {
+		return &os.LinkError{Op: "rename", Old: tmp, New: out, Err: err}
 	}
 	return nil
 }
@@ -120,12 +143,7 @@ func WriteLayout(ctx context.Context, img v1.Image, out string) (_ v1.Hash, err 
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		return v1.Hash{}, err
 	}
-	if _, err := os.Lstat(out); err == nil {
-		return v1.Hash{}, fmt.Errorf("%s appeared while writing the layout", out)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return v1.Hash{}, err
-	}
-	if err := os.Rename(tmp, out); err != nil {
+	if err := RenameNew(tmp, out); err != nil {
 		return v1.Hash{}, err
 	}
 	return digest, nil

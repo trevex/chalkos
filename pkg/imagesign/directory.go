@@ -6,27 +6,29 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 
 	"github.com/trevex/chalkos/pkg/image"
+	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/secureboot"
 )
 
-// SignDirectory copies the image directory in into a new directory next to out and signs the boot
-// loader and UKIs of the copy's disk images with the Secure Boot db key and its certificate: the
-// raw image, which repart-output.json describes, and an ISO beside it, which <name>.iso.json
-// describes, as the installer's directory holds. Disk images are copied without their holes and
-// the other entries with symlinks resolved, so the copy holds no link into in, which stays as it
-// is. SignDirectory checks the UKI and the boot loader of each disk image against cert, as
-// firmware with cert in db would, and only once every disk image is signed and verified does it
-// rename the copy to out. out must not exist and its parent directory must, or SignDirectory
-// refuses before copying anything; the copy is removed again on any later failure, including out
-// appearing while it was being built. SignDirectory returns the names of the disk images it
-// signed.
+// SignDirectory signs the disk images of the image directory in with the Secure Boot db key and
+// certificate, and writes the result to the new directory out. It returns the names of the disk
+// images it signed.
+//
+// The disk images are the raw image, which repart-output.json describes, and each ISO beside it,
+// which <name>.iso.json describes. SignDirectory signs the UKI and the boot loader on each, and
+// checks them against cert as firmware with cert in db would.
+//
+//   - It works on a copy next to out and leaves in as it is. The copy skips the holes of disk
+//     images and resolves symlinks, so it holds no link into in.
+//   - out must not exist and its parent directory must; otherwise it refuses before copying.
+//   - It renames the copy to out only once every disk image is signed and verified, and removes the
+//     copy on any failure, including out appearing meanwhile.
 func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, err error) {
 	info, err := os.Stat(in)
 	if err != nil {
@@ -35,18 +37,8 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, 
 	if !info.IsDir() {
 		return nil, fmt.Errorf("%s is no image directory", in)
 	}
-	if _, err := os.Stat(out); err == nil {
-		return nil, fmt.Errorf("%s exists; signing writes a new directory", out)
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	if err := ociimage.CheckNew(out); err != nil {
 		return nil, err
-	}
-	parent := filepath.Dir(out)
-	parentInfo, err := os.Stat(parent)
-	if err != nil {
-		return nil, err
-	}
-	if !parentInfo.IsDir() {
-		return nil, fmt.Errorf("%s is no directory", parent)
 	}
 	disks, err := diskImages(in)
 	if err != nil {
@@ -59,7 +51,7 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, 
 	if err != nil {
 		return nil, err
 	}
-	tmp, err := os.MkdirTemp(parent, "."+filepath.Base(out)+"-")
+	tmp, err := os.MkdirTemp(filepath.Dir(out), "."+filepath.Base(out)+"-")
 	if err != nil {
 		return nil, err
 	}
@@ -90,12 +82,7 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, 
 		}
 		names = append(names, d.name)
 	}
-	if _, err := os.Stat(out); err == nil {
-		return nil, fmt.Errorf("%s appeared while signing", out)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	}
-	if err := os.Rename(tmp, out); err != nil {
+	if err := ociimage.RenameNew(tmp, out); err != nil {
 		return nil, err
 	}
 	return names, nil
