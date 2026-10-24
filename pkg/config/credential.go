@@ -16,11 +16,11 @@ func CredentialFile(ref SecretRef) string { return ref.Name + "." + ref.Key }
 
 // CheckCredential refuses a reference whose file would not become a credential: systemd fails a
 // unit whose credentials directory holds a file whose credential ID is not valid. Secret and key
-// are file names that do not start with a dot, so the file stays inside the directory.
+// do not start with a dot, as the store's own temporary files do.
 func CheckCredential(ref SecretRef) error {
 	if ref.Name == "" || ref.Key == "" || strings.HasPrefix(ref.Name, ".") || strings.HasPrefix(ref.Key, ".") ||
 		!credentialNameValid(CredentialPrefix+"_"+CredentialFile(ref)) {
-		return fmt.Errorf("key %q of Secret %q cannot name a credential: use printable ASCII without / or : that does not start with a dot, at most %d bytes for Secret and key together", ref.Key, ref.Name, maxCredentialName-len(CredentialPrefix)-2)
+		return fmt.Errorf("key %q of Secret %q cannot name a credential: use printable ASCII without / or :, not starting with a dot, at most %d bytes for Secret and key together", ref.Key, ref.Name, maxCredentialName-len(CredentialPrefix)-2)
 	}
 	return nil
 }

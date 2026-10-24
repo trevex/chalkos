@@ -202,7 +202,7 @@ A node's set is valid when:
 - every `secretRef` can name the systemd credential a unit loads its value from: the key is
   printable ASCII without `/` or `:` and does not start with a dot, the `Secret`'s name and the
   key together take at most 247 bytes, and no two references share the credential
-  `<secret>.<key>`, as `Secret` `a.b` with key `c` and `Secret` `a` with key `b.c` would;
+  file `<secret>.<key>`, as `Secret` `a.b` with key `c` and `Secret` `a` with key `b.c` would;
 - every document is valid against its kind's schema.
 
 Beyond the schemas, chalkctl and chalkd translate the set as the node will use it, which checks
