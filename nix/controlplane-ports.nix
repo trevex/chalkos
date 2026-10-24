@@ -1,9 +1,10 @@
 # Opens the control plane's ports on a control-plane node and makes etcd's data directory, by the
 # node's type from typeCommand. The NixOS firewall drops what its own input chain does not
 # accept, whatever other tables do, so the table chalkos-controlplane only marks TCP to 6443,
-# 2379 and 2380, and the firewall accepts what carries the mark (see modules/node/kubernetes.nix).
-# The table is not the firewall's: reloading the firewall leaves it alone. On a worker the table
-# goes. Without the firewall, ports is false and the script makes etcd's directory alone.
+# 2379 and 2380, and the firewall accepts what carries the mark (see
+# modules/node/kubernetes/firewall.nix). The table is not the firewall's: reloading the firewall
+# leaves it alone. On a worker the table goes. Without the firewall, ports is false and the
+# script makes etcd's directory alone.
 {
   lib,
   writeShellApplication,

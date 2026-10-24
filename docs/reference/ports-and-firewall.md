@@ -147,7 +147,7 @@ A VIP needs no port of its own: chalkd adds the address to an interface of the
 control plane that holds it and announces it to the neighbours with ARP or IPv6 neighbour
 advertisements.
 
-Sources: the firewall rules of `modules/node/chalkd.nix`, `modules/node/kubernetes.nix`,
+Sources: the firewall rules of `modules/node/chalkd.nix`, `modules/node/kubernetes`,
 `nix/controlplane-ports.nix` and `nix/vxlan-rule.nix`, and the listeners of
 `cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
-`modules/node/kubernetes.nix`.
+`modules/node/kubernetes`.

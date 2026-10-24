@@ -116,4 +116,4 @@ serve the current certificates and the API server answers ready.
 
 Sources: `pkg/kubernetes/cluster.go`, `pkg/kubernetes/manifests/manifests.go`,
 `pkg/kubernetes/addons/addons.go`, `pkg/chalkd/kubernetes.go`, `pkg/chalkd/join.go` and
-`modules/node/kubernetes.nix`.
+`modules/node/kubernetes`.

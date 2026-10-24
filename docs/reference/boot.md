@@ -61,6 +61,6 @@ config delivery, without a reboot.
 | Boot tries and health timeout | Time servers, in `TimeSync` |
 | The config kinds the image accepts and their schemas | Documents of the kinds extensions declare, and the `Secret`s they reference |
 
-Sources: systemd-boot's sort order, `pkg/upgrade/esp.go`, `modules/node/base/storage.nix`, `modules/node/chalkd.nix`, `modules/node/kubernetes.nix`,
+Sources: systemd-boot's sort order, `pkg/upgrade/esp.go`, `modules/node/base/storage.nix`, `modules/node/chalkd.nix`, `modules/node/kubernetes`,
 `modules/node/upgrade.nix`, `modules/installer/default.nix`, `lib/images-arguments.nix` and
 `modules/node/kinds`.

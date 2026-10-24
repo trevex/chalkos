@@ -77,7 +77,7 @@ Whether an image runs Kubernetes, the packages and images it runs it with, and i
 
 ### `chalkos.kubernetes.enable` { #chalkoskubernetesenable }
 
-Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes.nix)
+Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
 
 Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
 node's Kubernetes configuration. One image serves control planes and workers: the type
@@ -86,25 +86,25 @@ the variant's `kubernetes`; the installer runs none.
 
 ### `chalkos.kubernetes.images.coredns` { #chalkoskubernetesimagescoredns }
 
-Type: string · Default: `"registry.k8s.io/coredns/coredns:v1.14.6"` · Declared in: [modules/node/kubernetes.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes.nix)
+Type: string · Default: `"registry.k8s.io/coredns/coredns:v1.14.6"` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
 
 Image of the cluster DNS.
 
 ### `chalkos.kubernetes.images.etcd` { #chalkoskubernetesimagesetcd }
 
-Type: string · Default: `"registry.k8s.io/etcd:3.7.0-0"` · Declared in: [modules/node/kubernetes.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes.nix)
+Type: string · Default: `"registry.k8s.io/etcd:3.7.0-0"` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
 
 Image of etcd. The default is the version kubeadm uses with the release of the default `chalkos.kubernetes.package`; an image with another release may need another.
 
 ### `chalkos.kubernetes.images.pause` { #chalkoskubernetesimagespause }
 
-Type: string · Default: `"registry.k8s.io/pause:3.10.2"` · Declared in: [modules/node/kubernetes.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes.nix)
+Type: string · Default: `"registry.k8s.io/pause:3.10.2"` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
 
 Image of the pod sandbox.
 
 ### `chalkos.kubernetes.package` { #chalkoskubernetespackage }
 
-Type: package · Default: `pkgs.kubernetes` · Declared in: [modules/node/kubernetes.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes.nix)
+Type: package · Default: `pkgs.kubernetes` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
 
 Kubernetes release of the image. Nodes run its kubelet; control planes run the
 upstream images of the same version. A Kubernetes upgrade is an image upgrade.

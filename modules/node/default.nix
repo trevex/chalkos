@@ -10,7 +10,7 @@
     ./chalkd.nix
     ./time.nix
     ./cni.nix
-    ./kubernetes.nix
+    ./kubernetes
     ./upgrade.nix
   ];
 }
