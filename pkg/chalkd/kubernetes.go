@@ -449,15 +449,9 @@ func (k *Kubernetes) superviseControlPlane(ctx context.Context, applied func(n i
 	}
 }
 
-// errNotPrepared stops the control plane's loop until the preparation finished; its backoff
-// tries again.
-var errNotPrepared = errors.New("the node's Kubernetes files are not prepared yet")
-
 func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int)) error {
-	if prepared, err := knode.Prepared(k.Paths); err != nil {
+	if err := knode.CheckPrepared(k.Paths); err != nil {
 		return err
-	} else if !prepared {
-		return errNotPrepared
 	}
 	// A renewal interrupted after it replaced the certificates left the static pods on the ones
 	// before; unchanged manifests are not written, so nothing starts again.
@@ -743,7 +737,7 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 	case err != nil:
 		return nil, failed(connect.CodeInternal, "%v", err)
 	case problem == preparing:
-		return nil, failed(connect.CodeFailedPrecondition, "%v; see chalkctl logs %s --unit chalkos-kubernetes", errNotPrepared, s.nodeName())
+		return nil, failed(connect.CodeFailedPrecondition, "%v; see chalkctl logs %s --unit chalkos-kubernetes", knode.ErrNotPrepared, s.nodeName())
 	case problem != "":
 		return nil, failed(connect.CodeFailedPrecondition, "%s", problem)
 	}

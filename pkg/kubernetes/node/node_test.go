@@ -1305,3 +1305,38 @@ func TestKubeletConfig(t *testing.T) {
 		t.Errorf("clusterDNS with IPv4 primary = %v", got)
 	}
 }
+
+func TestCheckPrepared(t *testing.T) {
+	p := Paths{Run: t.TempDir()}
+	if err := CheckPrepared(p); !errors.Is(err, ErrNotPrepared) {
+		t.Errorf("before the preparation: %v, want ErrNotPrepared", err)
+	}
+	if err := os.WriteFile(p.Prepared(), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckPrepared(p); err != nil {
+		t.Errorf("after the preparation: %v", err)
+	}
+}
+
+// RemoveStaticPods removes every manifest, and finds nothing to do without the directory.
+func TestRemoveStaticPods(t *testing.T) {
+	p := Paths{Run: t.TempDir()}
+	if err := RemoveStaticPods(p); err != nil {
+		t.Fatalf("without manifests: %v", err)
+	}
+	if err := os.MkdirAll(p.Manifests(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"etcd.json", "kube-apiserver.json"} {
+		if err := os.WriteFile(filepath.Join(p.Manifests(), name), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := RemoveStaticPods(p); err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := os.ReadDir(p.Manifests()); err != nil || len(entries) != 0 {
+		t.Errorf("manifests left: %v, %v", entries, err)
+	}
+}

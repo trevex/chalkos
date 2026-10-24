@@ -28,10 +28,6 @@ func (p Paths) OldPKI() string { return p.PKI + ".old" }
 // separate process, and chalkd's renewal.
 func (p Paths) pkiLock() string { return filepath.Join(p.Run, ".pki.lock") }
 
-// ErrNotPrepared means the node's Kubernetes files were not prepared since the preparation last
-// started.
-var ErrNotPrepared = errors.New("the node's Kubernetes files are not prepared")
-
 // LockPKI waits for the lock on the control plane's certificates until ctx ends. A node leaving
 // etcd holds it while it removes the static pods, so no renewal renders them again. The wait
 // polls, as flock cannot be interrupted: a preparation waiting for the node's addresses may hold
@@ -157,10 +153,8 @@ func RenewControlPlane(ctx context.Context, p Paths, now time.Time) error {
 		return err
 	}
 	defer unlock()
-	if prepared, err := Prepared(p); err != nil {
+	if err := CheckPrepared(p); err != nil {
 		return err
-	} else if !prepared {
-		return ErrNotPrepared
 	}
 	if stale, err := StaticPodsStale(p); err != nil {
 		return err

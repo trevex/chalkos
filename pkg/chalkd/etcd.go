@@ -4,11 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"net"
-	"os"
-	"path/filepath"
 	"slices"
 	"time"
 
@@ -321,7 +318,7 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 	if err := knode.MarkLeft(p, time.Now()); err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd, but recording it failed: %v", err)
 	}
-	if err := removeStaticPods(p); err != nil {
+	if err := knode.RemoveStaticPods(p); err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd, but stopping its control plane failed: %v", err)
 	}
 	if err := k.EtcdStopped(ctx, c); err != nil {
@@ -335,23 +332,6 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 	}
 	log.Print("kubernetes: the node left etcd; reinstall it to join the cluster again")
 	return connect.NewResponse(&nodev1.EtcdLeaveResponse{}), nil
-}
-
-// removeStaticPods lets the kubelet stop the control plane.
-func removeStaticPods(p knode.Paths) error {
-	entries, err := os.ReadDir(p.Manifests())
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if err := os.Remove(filepath.Join(p.Manifests(), e.Name())); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // etcdStopped waits until the node's etcd no longer listens, as the kubelet stops it once its

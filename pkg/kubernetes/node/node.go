@@ -227,6 +227,22 @@ func Prepared(p Paths) (bool, error) {
 	return marked(p.Prepared())
 }
 
+// ErrNotPrepared means the node's Kubernetes files were not prepared since the preparation last
+// started.
+var ErrNotPrepared = errors.New("the node's Kubernetes files are not prepared yet")
+
+// CheckPrepared returns ErrNotPrepared unless Prepare finished and succeeded since it last started.
+func CheckPrepared(p Paths) error {
+	prepared, err := Prepared(p)
+	if err != nil {
+		return err
+	}
+	if !prepared {
+		return ErrNotPrepared
+	}
+	return nil
+}
+
 // MarkEtcdInitialised records that etcd answered ready; it keeps an existing marker.
 func MarkEtcdInitialised(p Paths, now time.Time) error {
 	initialised, err := EtcdInitialised(p)
@@ -821,6 +837,23 @@ func RenderStaticPods(p Paths) error {
 // server would not start before etcd is a voter.
 func RenderEtcd(p Paths) error {
 	return render(p, "etcd.json")
+}
+
+// RemoveStaticPods removes the static pods, so the kubelet stops the control plane.
+func RemoveStaticPods(p Paths) error {
+	entries, err := os.ReadDir(p.Manifests())
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := os.Remove(filepath.Join(p.Manifests(), e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // render writes the static pods, or only the one in the file only names.

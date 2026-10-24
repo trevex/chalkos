@@ -37,10 +37,8 @@ func (k *Kubernetes) superviseVIP(ctx context.Context, done chan struct{}) {
 }
 
 func (k *Kubernetes) runVIP(ctx context.Context) error {
-	if prepared, err := knode.Prepared(k.Paths); err != nil {
+	if err := knode.CheckPrepared(k.Paths); err != nil {
 		return err
-	} else if !prepared {
-		return errNotPrepared
 	}
 	share, err := knode.ReadShare(k.Paths)
 	if err != nil {

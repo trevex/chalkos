@@ -131,7 +131,7 @@ func (k *Kubernetes) superviseJoin(ctx context.Context, done chan struct{}) {
 		case errors.Is(err, errBootstrapped), errors.Is(err, errLeft):
 			k.setJoinStep("")
 			return
-		case errors.As(err, &waiting), errors.Is(err, errNotPrepared):
+		case errors.As(err, &waiting), errors.Is(err, knode.ErrNotPrepared):
 		case errors.As(err, &stale), errors.As(err, &split), errors.Is(err, errEarlierData):
 			logChange(fmt.Sprintf("kubernetes: %v", err))
 		case errors.Is(err, errMemberRemoved):
@@ -158,10 +158,8 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 	if err := k.mayJoin(); err != nil {
 		return err
 	}
-	if prepared, err := knode.Prepared(k.Paths); err != nil {
+	if err := knode.CheckPrepared(k.Paths); err != nil {
 		return err
-	} else if !prepared {
-		return errNotPrepared
 	}
 	share, err := knode.ReadShare(k.Paths)
 	if err != nil {
