@@ -4,7 +4,7 @@
 # its program's command.
 { lib }:
 let
-  schema = import ../modules/node/kinds/schema.nix { inherit lib; };
+  kindTypes = import ./kinds/types.nix { inherit lib; };
   # An effect that acts on units when one of outputs or the documents of one of kinds changed.
   effectOn =
     action:
@@ -18,7 +18,7 @@ let
     };
 in
 {
-  types = { inherit (schema.types) secretRef; };
+  types = { inherit (kindTypes) secretRef; };
 
   # lib.mkOption, for a field of a kind, with the field's change rules: each { rule; message or
   # messageExpression; takes ? "refuse"; description ? null; }, as a kind's rules are.

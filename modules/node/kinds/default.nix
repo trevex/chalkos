@@ -12,8 +12,8 @@
   ...
 }:
 let
-  schema = import ./schema.nix { inherit lib; };
-  getLib = import ./get.nix { inherit lib; };
+  schema = import ../../../lib/kinds/schema.nix { inherit lib; };
+  getLib = import ../../../lib/kinds/get.nix { inherit lib; };
   chalkcfg = pkgs.callPackage ../../../nix/chalkcfg.nix { };
   chalkos-rules = pkgs.callPackage ../../../nix/chalkos-rules.nix { };
   chalkos-render = pkgs.callPackage ../../../nix/chalkos-render.nix { };

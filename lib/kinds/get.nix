@@ -3,7 +3,7 @@
 # instead of printing nothing on the node.
 { lib }:
 let
-  isOption = v: lib.isAttrs v && (v._type or null) == "option";
+  types = import ./types.nix { inherit lib; };
 
   # What a path may go on with below a value of an option type: the fields of a submodule, the
   # elements of a list, the values of an attribute set, or nothing below a plain value. nullOr
@@ -19,14 +19,14 @@ let
       { list = typeNode t.nestedTypes.elemType; }
     else if n == "attrsOf" || n == "lazyAttrsOf" then
       { attrs = typeNode t.nestedTypes.elemType; }
-    else if n == "submodule" || n == "chalkosSecretRef" then
+    else if n == "submodule" || n == types.secretRef.name then
       groupNode (t.getSubOptions [ ])
     else
       { value = t.description; };
 
   # A group of option declarations, nested as in a module's options.
   groupNode = tree: {
-    fields = lib.mapAttrs (_: v: if isOption v then typeNode v.type else groupNode v) (
+    fields = lib.mapAttrs (_: v: if lib.isOption v then typeNode v.type else groupNode v) (
       removeAttrs tree [ "_module" ]
     );
   };
@@ -136,8 +136,8 @@ rec {
       fail = msg: throw "chalkos.kinds.${kind}.get: ${msg}";
       resolved = resolve spec path;
       format =
-        if name != null && builtins.match "[a-z0-9]([-a-z0-9.]*[a-z0-9])?" name == null then
-          fail "the name \"${name}\" is no document name: chalkcfg reads names that match ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$, as metadata.name does"
+        if name != null && builtins.match types.documentName name == null then
+          fail "the name \"${name}\" is no document name: chalkcfg reads names that match ^${types.documentName}$, as metadata.name does"
         else if path != null && output != null then
           fail "give a path or an output, not both"
         else if path != null then

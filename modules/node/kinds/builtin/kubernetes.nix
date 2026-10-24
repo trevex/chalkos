@@ -11,7 +11,7 @@ let
   inherit (import ./lib.nix) builtin;
   kubernetes = config.chalkos.kubernetes.enable;
   flannel = config.chalkos.cni.provider == "flannel";
-  inherit ((import ../schema.nix { inherit lib; }).types) kubernetesObject;
+  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) kubernetesObject;
   # An option per address family, as the cluster's ranges are given.
   perFamily =
     {

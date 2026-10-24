@@ -24,7 +24,7 @@ let
   # When the node's Kubernetes files change, which the preparation writes and the kubelet reads:
   # the node's address, the firewall's VXLAN rule, the kubelet's credentials and flags and the
   # control plane's certificates come from the share, the node's identity and its cluster.
-  cel = import ./runtime/cel.nix { inherit lib; };
+  cel = import ../../lib/cel.nix { inherit lib; };
   core = "chalkos.dev/v1alpha1";
   kubernetesAPI = "kubernetes.chalkos.dev/v1alpha1";
   ociAPI = "oci.chalkos.dev/v1alpha1";

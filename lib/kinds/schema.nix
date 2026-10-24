@@ -3,7 +3,7 @@
 # option, so an image never ships a schema that accepts more or less than its options declare.
 { lib }:
 let
-  isOption = v: lib.isAttrs v && (v._type or null) == "option";
+  types = import ./types.nix { inherit lib; };
 
   # A value JSON carries as it is: literal expressions, paths, packages and functions only make
   # sense to Nix.
@@ -92,9 +92,9 @@ let
     let
       n = t.name;
     in
-    if n == "chalkosSecretRef" then
+    if n == types.secretRef.name then
       secretRefSchema
-    else if n == "chalkosKubernetesObject" then
+    else if n == types.kubernetesObject.name then
       {
         type = "object";
         properties = {
@@ -203,7 +203,7 @@ let
   # An option without a default must be given; a group must be given when one of its options must.
   isRequired =
     at: v:
-    if isOption v then
+    if lib.isOption v then
       !(v ? default)
     else if lib.isAttrs v then
       lib.any (name: isRequired "${at}.${name}" v.${name}) (lib.attrNames v)
@@ -224,39 +224,13 @@ let
       {
         type = "object";
         properties = lib.mapAttrs (
-          name: v: if isOption v then optionSchema "${at}.${name}" v else groupSchema "${at}.${name}" v
+          name: v: if lib.isOption v then optionSchema "${at}.${name}" v else groupSchema "${at}.${name}" v
         ) options;
         additionalProperties = false;
       }
       // lib.optionalAttrs (required != [ ]) { inherit required; };
 in
 rec {
-  types.secretRef =
-    lib.types.submodule {
-      options.secretRef = {
-        name = lib.mkOption {
-          type = lib.types.nonEmptyStr;
-          description = "Name of the Secret document.";
-        };
-        key = lib.mkOption {
-          type = lib.types.nonEmptyStr;
-          description = "Key in the Secret's data.";
-        };
-      };
-    }
-    // {
-      # The converter recognises the type by this name.
-      name = "chalkosSecretRef";
-      description = "reference to a key of a Secret";
-    };
-
-  # A Kubernetes object, which the control planes apply as it is. Built-in kinds alone use it:
-  # lib.chalkos.types does not offer it, as extensions get no raw schemas.
-  types.kubernetesObject = lib.types.attrsOf lib.types.anything // {
-    name = "chalkosKubernetesObject";
-    description = "Kubernetes object";
-  };
-
   # The schema of a whole document of a kind, around the schema of its spec. The kind's rules
   # over its documents go into x-chalkos-kind, where a kind without rules has none, and its
   # description, the sentence that says what its documents are for, is the schema's.
@@ -281,7 +255,7 @@ rec {
           type = "object";
           properties.name = {
             type = "string";
-            pattern = "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$";
+            pattern = "^${types.documentName}$";
           };
           required = [ "name" ];
           additionalProperties = false;

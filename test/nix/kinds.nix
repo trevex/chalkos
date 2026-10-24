@@ -6,8 +6,9 @@
 }:
 let
   inherit (lib) mkOption types;
-  schema = import ../../modules/node/kinds/schema.nix { inherit lib; };
-  getLib = import ../../modules/node/kinds/get.nix { inherit lib; };
+  schema = import ../../lib/kinds/schema.nix { inherit lib; };
+  kindTypes = import ../../lib/kinds/types.nix { inherit lib; };
+  getLib = import ../../lib/kinds/get.nix { inherit lib; };
   libChalkos = import ../../lib/chalkos.nix { inherit lib; };
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
 
@@ -136,7 +137,7 @@ let
         lib.hasSuffix "/bin/chalkcfg" (lib.head words) && lib.hasPrefix "/nix/store/" (lib.head words);
       args = lib.concatStringsSep " " (lib.tail words);
     };
-  resolvePeering = getLib.resolve (peeringSpec schema.types.secretRef);
+  resolvePeering = getLib.resolve (peeringSpec kindTypes.secretRef);
   # The homelab example's image, with its Rack extension.
   homelab =
     (mkImages { variants.node.modules = [ ../../examples/homelab/extensions/rack.nix ]; })
@@ -196,7 +197,7 @@ let
         default = "safe";
       };
       token = mkOption {
-        type = types.nullOr schema.types.secretRef;
+        type = types.nullOr kindTypes.secretRef;
         default = null;
       };
       tags = mkOption {
@@ -608,7 +609,7 @@ lib.runTests {
   };
   # A Kubernetes object: an object with apiVersion, kind and metadata, and any other field.
   testKubernetesObjectSchema = {
-    expr = propOf schema.types.kubernetesObject;
+    expr = propOf kindTypes.kubernetesObject;
     expected = {
       type = "object";
       properties = {
