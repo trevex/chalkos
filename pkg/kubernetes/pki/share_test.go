@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/pki/pkitest"
 )
 
 var now = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
@@ -102,7 +103,7 @@ func TestParseShare(t *testing.T) {
 func TestShareValidateRefuses(t *testing.T) {
 	k := secrets(t)
 	other := secrets(t)
-	cp := ControlPlaneShare(k, testNodeCA(t))
+	cp := ControlPlaneShare(k, pkitest.NodeCA(t, now))
 	w, err := WorkerShare(k, "w1", now)
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +146,7 @@ func TestShareValidateRefuses(t *testing.T) {
 }
 
 func TestShareStringRedacted(t *testing.T) {
-	s := ControlPlaneShare(secrets(t), testNodeCA(t))
+	s := ControlPlaneShare(secrets(t), pkitest.NodeCA(t, now))
 	out := fmt.Sprintf("%v %+v %#v", s, s, s)
 	if strings.Contains(out, "PRIVATE KEY") {
 		t.Errorf("formatted share leaks a key: %s", out)
@@ -239,7 +240,7 @@ func TestControlPlaneShareRejectsSharedCAs(t *testing.T) {
 		{"front-proxy CA is the Kubernetes CA", "ca", "frontProxyCA", func(s *Share) { ca := s.CA; s.FrontProxyCA = &ca }},
 		{"etcd CA is the front-proxy CA", "frontProxyCA", "etcdCA", func(s *Share) { ca := *s.FrontProxyCA; s.EtcdCA = &ca }},
 	} {
-		s := ControlPlaneShare(k, testNodeCA(t))
+		s := ControlPlaneShare(k, pkitest.NodeCA(t, now))
 		tc.edit(&s)
 		err := s.Validate()
 		if err == nil {
@@ -332,7 +333,7 @@ func TestShareValidateFor(t *testing.T) {
 	if err := w2.ValidateFor("w2"); err != nil {
 		t.Errorf("w2 rejected its share: %v", err)
 	}
-	if err := ControlPlaneShare(k, testNodeCA(t)).ValidateFor("cp1"); err != nil {
+	if err := ControlPlaneShare(k, pkitest.NodeCA(t, now)).ValidateFor("cp1"); err != nil {
 		t.Errorf("cp1 rejected its share: %v", err)
 	}
 	bad := w2
@@ -342,29 +343,15 @@ func TestShareValidateFor(t *testing.T) {
 	}
 }
 
-// testNodeCA returns a node CA of a new OS CA.
-func testNodeCA(t *testing.T) pki.CertKey {
-	t.Helper()
-	osCA, err := pki.NewOSCA(now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nodeCA, err := pki.NewNodeCA(osCA, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return nodeCA
-}
-
 // withNodeCA returns secrets with the Kubernetes secrets and a node CA.
 func withNodeCA(t *testing.T, k *clustersecrets.KubernetesSecrets) *clustersecrets.Secrets {
 	t.Helper()
-	return &clustersecrets.Secrets{Kubernetes: *k, NodeCA: testNodeCA(t)}
+	return &clustersecrets.Secrets{Kubernetes: *k, NodeCA: pkitest.NodeCA(t, now)}
 }
 
 func TestShareNodeCA(t *testing.T) {
 	k := secrets(t)
-	nodeCA := testNodeCA(t)
+	nodeCA := pkitest.NodeCA(t, now)
 	w, err := WorkerShare(k, "w1", now)
 	if err != nil {
 		t.Fatal(err)
@@ -393,7 +380,7 @@ func TestShareNodeCA(t *testing.T) {
 // shares the node CA's key: certificates the node CA issued would verify as that CA's.
 func TestControlPlaneShareAcceptsNoCAOfTheNodeCAsKey(t *testing.T) {
 	k := secrets(t)
-	nodeCA := testNodeCA(t)
+	nodeCA := pkitest.NodeCA(t, now)
 	_, key, err := nodeCA.Parse()
 	if err != nil {
 		t.Fatal(err)

@@ -22,6 +22,7 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/vxlan"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/pki/pkitest"
 )
 
 var now = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
@@ -92,7 +93,7 @@ func testNode(t *testing.T, kind, name string, k *clustersecrets.KubernetesSecre
 	write(t, p.NodeFile, `{"hostname": "`+name+`", "network": {"networks": {"10-lan": {"address": ["192.168.100.11/24"]}}},
 	  "labels": {"zone": "a", "disk": "ssd"}, "taints": [], "kubernetes": {"nodeName": "`+name+`", "nodeIPs": ["192.168.100.11"]}}`)
 	if k != nil {
-		share, err := kpki.ShareFor(&clustersecrets.Secrets{Kubernetes: *k, NodeCA: testNodeCA(t)}, kind, name, now)
+		share, err := kpki.ShareFor(&clustersecrets.Secrets{Kubernetes: *k, NodeCA: pkitest.NodeCA(t, time.Now())}, kind, name, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1211,20 +1212,6 @@ func TestPrepareMarksPrepared(t *testing.T) {
 	if exists(p.Prepared()) {
 		t.Error("a preparation that refused the static pods is marked prepared")
 	}
-}
-
-// testNodeCA returns a node CA of a new OS CA.
-func testNodeCA(t *testing.T) pki.CertKey {
-	t.Helper()
-	osCA, err := pki.NewOSCA(time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	nodeCA, err := pki.NewNodeCA(osCA, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return nodeCA
 }
 
 // TestPrepareGivesTheKubeletEveryCA checks that while the Kubernetes CAs rotate, the kubelet
