@@ -5,12 +5,9 @@ description: "Every port a chalkos node listens on, who needs to reach it, and h
 
 # Ports and firewall
 
-This page lists the ports a chalkos node accepts connections on, the ports its services listen
-on locally, the nftables tables on a node and the connections a node makes. The firewall rules
-come from `modules/node/chalkd.nix`, `modules/node/kubernetes.nix`,
-`modules/node/controlplane-ports.nix` and `modules/node/vxlan-rule.nix`; the listeners from
-`cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
-`modules/node/kubernetes.nix`.
+This page is for operators who set up a network firewall in front of the nodes or read a node's
+nftables rules. It lists the ports a chalkos node accepts connections on, the ports its services
+listen on locally, the nftables tables on a node and the connections a node makes.
 [Networking](../how-it-works/node/networking.md) and
 [Kubernetes networking](../how-it-works/kubernetes/networking.md) explain the network design, and
 [Security model](../how-it-works/node/security.md) what each listener trusts.
@@ -38,10 +35,11 @@ The firewall opens the NodePort range for TCP only.
 
 ## VXLAN rule
 
-flannel's VXLAN carries pod traffic unauthenticated, so a node accepts UDP 8472 only when it is
-sent to one of the addresses the node picked for Kubernetes, and only from the ranges of the
-[`Flannel`](kinds.md#flannel) document's `spec.vxlanSourceSubnets` when that list is set.
-The rule has three parts:
+A node accepts UDP 8472 only when it is sent to one of the addresses the node picked for
+Kubernetes, and only from the ranges of the [`Flannel`](kinds.md#flannel) document's
+`spec.vxlanSourceSubnets` when that list is set.
+[Kubernetes networking](../how-it-works/kubernetes/networking.md#the-firewall-accepts-vxlan-only-for-the-nodes-own-addresses)
+explains why. The rule has three parts:
 
 | Part | What it does |
 | --- | --- |
@@ -49,14 +47,13 @@ The rule has three parts:
 | Firewall's `input-allow` chain | Accepts UDP 8472 that carries the mark. |
 | Table `inet chalkos-vxlan`, chain `clear` | Runs after the firewall and clears the mark, so no later rule sees it. |
 
-With source ranges set, a `forward` chain in the same table also drops VXLAN that pods send
-through the node to those ranges: the node masquerades pod traffic behind its own address,
-which is in the ranges, so other nodes would take it for this node's. The chain takes the pod
-range of each family in `ipFamilies` from the node's `Cluster` document and the source ranges
-from its `Flannel` document on every run, and skips ranges of a family the image does not use.
-While those ranges are unknown, because the node's config holds no `Cluster` document or
-chalkcfg cannot read it or the `Flannel` document, or when they are not valid ranges, the chain
-drops all UDP 8472 the node forwards.
+With source ranges set, a `forward` chain in the same table also drops UDP 8472 that pods send
+through the node to those ranges. The chain takes the pod range of each family in `ipFamilies`
+from the node's `Cluster` document and the source ranges from its `Flannel` document on every
+run, and skips ranges of a family the image does not use. While those ranges are unknown,
+because the node's config holds no `Cluster` document or chalkcfg cannot read it or the
+`Flannel` document, or when they are not valid ranges, the chain drops all UDP 8472 the node
+forwards.
 
 `chalkos-vxlan-rule` fills the table from `/run/chalkos/kubernetes/vxlan`, which chalkd writes
 once it picked the node's addresses at boot. Without that file, or with one it cannot parse, the
@@ -132,9 +129,9 @@ between the nodes.
 
 | Destination | Port | Protocol | Purpose |
 | --- | --- | --- | --- |
-| Container registries, or the endpoints their [`Mirror`](kinds.md#mirror) documents name | 443, or the endpoint's port | TCP | Images of the control plane's static pods, kube-proxy, flannel, CoreDNS and workloads. An endpoint may use plain HTTP when a [`Registry`](kinds.md#registry) of its host sets `spec.insecure`. |
-| The registry of an install's or upgrade's image, when the inventory names the image in a registry, or the endpoints of its [`Mirror`](kinds.md#mirror) | 443, or the port of the image reference or the endpoint | TCP | chalkd pulling the image, on the installer during `chalkctl install` and on the node during `chalkctl upgrade`. Plain HTTP only when the [`Registry`](kinds.md#registry) of the host or endpoint sets `spec.insecure`. |
-| Time servers of the [`TimeSync`](kinds.md#timesync) document's `spec.servers` | 4460 | TCP | NTS key exchange, for servers with `nts`, the default. |
+| Container registries, or the endpoints their `Mirror` documents name | 443, or the endpoint's port | TCP | Images of the control plane's static pods, kube-proxy, flannel, CoreDNS and workloads. An endpoint may use plain HTTP when a `Registry` of its host sets `spec.insecure`. |
+| The registry of an install's or upgrade's image, when the inventory names the image in a registry, or the endpoints of its `Mirror` | 443, or the port of the image reference or the endpoint | TCP | chalkd pulling the image, on the installer during `chalkctl install` and on the node during `chalkctl upgrade`. Plain HTTP only when the `Registry` of the host or endpoint sets `spec.insecure`. |
+| Time servers of the `TimeSync` document's `spec.servers` | 4460 | TCP | NTS key exchange, for servers with `nts`, the default. |
 | Time servers | 123, or the server's `port` | UDP | NTP. |
 | DNS resolvers of the node's network | 53 | UDP and TCP | Names of registries and time servers. |
 | DHCP servers, when the node's network units use DHCP | 67 | UDP | Addresses. |
@@ -144,6 +141,13 @@ between the nodes.
 | The other Kubernetes nodes | 10250 | TCP | The API server reaching kubelets, from control planes. |
 | The other Kubernetes nodes | 8472 | UDP | flannel's VXLAN. |
 
+[Config kinds](kinds.md) describes the `Mirror`, `Registry` and `TimeSync` documents.
+
 A VIP needs no port of its own: chalkd adds the address to an interface of the
 control plane that holds it and announces it to the neighbours with ARP or IPv6 neighbour
 advertisements.
+
+Sources: the firewall rules of `modules/node/chalkd.nix`, `modules/node/kubernetes.nix`,
+`modules/node/controlplane-ports.nix` and `modules/node/vxlan-rule.nix`, and the listeners of
+`cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
+`modules/node/kubernetes.nix`.

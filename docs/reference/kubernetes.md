@@ -5,10 +5,11 @@ description: "The components of each node type, the flags chalkos refuses, the a
 
 # Kubernetes
 
-This page is for operators of a cluster on the shipped variant. It lists what runs on each type
-of node, for reading a node's units and pods. It lists the flags chalkos refuses in `extraArgs`
-and `kubeletExtraArgs`, for reading a refusal of `chalkctl validate`. It also lists the objects
-the control planes apply and the states of the Kubernetes line of `chalkctl status`.
+This page is for operators of a cluster on the shipped variant who read a node's units and pods,
+a refusal of `chalkctl validate` or the Kubernetes line of `chalkctl status`. It lists what runs
+on each type of node, the flags chalkos refuses in `extraArgs` and `kubeletExtraArgs`, the
+objects the control planes apply and the states of the Kubernetes line.
+[How Kubernetes runs on a node](../how-it-works/kubernetes/overview.md) explains the mechanism.
 
 ## Components by node type
 

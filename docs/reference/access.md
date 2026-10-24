@@ -5,9 +5,9 @@ description: "The role each node API method needs, the modes it is served in, an
 
 # Roles and credentials
 
-This page is for operators who hand out client files and for anyone reading a refusal of the node
-API. It lists the least role each method of the node API needs and the modes chalkd serves it in.
-It also lists the order in which chalkctl looks for the credentials of a command.
+This page is for operators who hand out client files or read a refusal of the node API. It lists
+the least role each method of the node API needs, the modes chalkd serves it in, and the order in
+which chalkctl looks for the credentials of a command.
 
 ## Roles
 

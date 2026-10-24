@@ -52,6 +52,11 @@ systemd-boot boots the first UKI in `/EFI/Linux` whose tries are not used up. Am
 UKIs, the highest generation in the file name `chalkos_<generation>.efi` comes first, so the entry
 installed last boots first. Once its tries are used up, systemd-boot passes over it to the
 previous generation. chalkd sets no EFI variable to choose the entry.
+
+The generation decides because every chalkos image sets `IMAGE_VERSION` in its os-release empty.
+systemd-boot orders the UKIs of one image ID by `IMAGE_VERSION` before their file names, and
+without the field by `VERSION`, which NixOS sets to its release. An empty `IMAGE_VERSION` leaves
+the order to the file name, so an older image installed by an upgrade still boots first.
 [Boot](../../reference/boot.md#systemd-boot-sort-rules) lists the sort rules.
 
 ## The initrd opens the store and the node's partitions

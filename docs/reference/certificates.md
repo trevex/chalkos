@@ -8,6 +8,7 @@ description: "Every CA, key and certificate of a cluster, with its lifetime, its
 This page is for operators who plan rotations or read the `certificates:` section of
 `chalkctl status`. It lists every CA and key of a cluster, every certificate chalkos issues with
 its lifetime and the point at which it is renewed, and the notes status shows about them.
+[Certificates](../how-it-works/node/certificates.md) in How chalkos works explains how they chain.
 
 Every CA has an ECDSA P-256 key. Every certificate chalkos issues is capped at its CA's own expiry
 and backdated by one hour. No two CAs of a secrets file may share a key: the file is refused with

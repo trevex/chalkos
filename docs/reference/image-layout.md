@@ -5,12 +5,11 @@ description: "The partitions of an installed node and the files of an image"
 
 # Image and partition layout
 
-This page lists the partitions of a node's disks, the files on the ESP and on
-STATE, the outputs of an image build and the paths a running node uses. The
-system region comes from `modules/node/base/disk.nix`, VAR and volumes from the node's
-`SystemDisk` and `Volume` documents through `pkg/config/storage.go`, and the file names from
-`pkg/upgrade`, `pkg/install`, `pkg/storage` and `pkg/chalkd`. [The image](../how-it-works/node/image.md)
-and [Storage and encryption](../how-it-works/node/storage.md) explain why the layout is what it is.
+This page is for operators and image authors who read a node's disks, its ESP or STATE, or the
+outputs of an image build. It lists the partitions of a node's disks, the files on the ESP and on
+STATE, the outputs of an image build and the paths a running node uses.
+[The image](../how-it-works/node/image.md) and
+[Storage and encryption](../how-it-works/node/storage.md) explain why the layout is what it is.
 
 ## Partition map
 
@@ -38,17 +37,18 @@ flowchart LR
 
 The table lists the partitions in disk order. The first column is the systemd-repart
 definition file that describes each one. The system region's sizes are the defaults of the
-image's `chalkos.disk` options, and fixed, so every node that runs an image of one variant has
-the same system region.
+image's `chalkos.disk` options, which [Image options](image-options.md#disk) describes. They are
+fixed when the image is built, so every node that runs an image of one variant has the same
+system region.
 
 | Definition | Label | Size | File system | Encryption | Created by |
 | --- | --- | --- | --- | --- | --- |
-| `00-esp` | `esp` | [`espSize`](image-options.md#chalkosdiskespsize), `1G` | vfat | none | image build |
-| `10-store-verity-a` | `store-verity_<hash16>` | [`storeVeritySize`](image-options.md#chalkosdiskstoreveritysize), `128M` | dm-verity hash tree | none | image build |
-| `20-store-a` | `store_<hash16>` | [`storeSize`](image-options.md#chalkosdiskstoresize), `3G` | erofs, zstd | none | image build |
+| `00-esp` | `esp` | `espSize`, `1G` | vfat | none | image build |
+| `10-store-verity-a` | `store-verity_<hash16>` | `storeVeritySize`, `128M` | dm-verity hash tree | none | image build |
+| `20-store-a` | `store_<hash16>` | `storeSize`, `3G` | erofs, zstd | none | image build |
 | `30-store-verity-b` | `_empty` | `storeVeritySize`, `128M` | none until an upgrade | none | first boot, or install from the installer |
 | `40-store-b` | `_empty` | `storeSize`, `3G` | none until an upgrade | none | first boot, or install from the installer |
-| `50-state` | `state` | [`stateSize`](image-options.md#chalkosdiskstatesize), `128M` | ext4 | node's policy, LUKS2 sealed to the TPM by default | first boot, install |
+| `50-state` | `state` | `stateSize`, `128M` | ext4 | node's policy, LUKS2 sealed to the TPM by default | first boot, install |
 | `50-var` | `var` | the `SystemDisk`'s `spec.var.size`, rest of the disk | ext4 | node's policy | install |
 | `60-<name>` | `<name>` | the volume's `size` | the volume's `format` | node's policy | install, later config |
 
@@ -140,7 +140,7 @@ idle, so a power cut rarely finds its FAT file system in use.
 | --- | --- |
 | `/EFI/BOOT/BOOTX64.EFI` | systemd-boot, at the removable-media path, so firmware finds it without a boot entry. `BOOTAA64.EFI` on arm64. |
 | `/EFI/Linux/chalkos_<generation>.efi` | A UKI without a boot counter: `chalkos_1.efi` as the image holds it and an install from the installer writes it, or one whose boot was blessed. |
-| `/EFI/Linux/chalkos_<generation>+<left>.efi` | A UKI an upgrade installed, one generation above the highest on the ESP, with [`chalkos.upgrade.bootTries`](image-options.md#chalkosupgradeboottries) tries left, such as `chalkos_2+3.efi`. |
+| `/EFI/Linux/chalkos_<generation>+<left>.efi` | A UKI an upgrade installed, one generation above the highest on the ESP, with `chalkos.upgrade.bootTries` tries left, such as `chalkos_2+3.efi`. |
 | `/EFI/Linux/chalkos_<generation>+<left>-<done>.efi` | The same UKI after systemd-boot counted a boot that was not blessed, such as `chalkos_2+2-1.efi`. `+0-3` means no tries left: systemd-boot boots another entry. |
 | `/EFI/Linux/.upgrade-<root-hash>.efi` | A UKI an upgrade is receiving, named by the image's full root hash. systemd-boot ignores names starting with a dot. |
 | `/EFI/Linux/.install-<root-hash>.efi` | A UKI an install from the installer is receiving. |
@@ -169,8 +169,7 @@ never puts UKIs of other image IDs on the ESP. An upgrade leaves systemd-boot al
 install writes the boot loader.
 
 systemd-boot boots the highest generation whose tries are not used up, comparing the numbers as
-numbers, because every chalkos image sets `IMAGE_VERSION` empty and the file name decides the
-order. chalkd sets no EFI variable to choose an entry. An install from the installer adds a UEFI
+numbers, by the rules [Boot and the image](boot.md#systemd-boot-sort-rules) lists. chalkd sets no EFI variable to choose an entry. An install from the installer adds a UEFI
 boot entry labelled `chalkos` for the target ESP's removable-media path, `\EFI\BOOT\BOOTX64.EFI`
 on x86-64 and `\EFI\BOOT\BOOTAA64.EFI` on arm64.
 
@@ -218,8 +217,10 @@ image with Kubernetes:
 | `repart-output.json` | systemd-repart's description of the raw image's partitions: type, label, UUID, offset, size and the store's root hash, with slot A's labels as the raw image carries them. `chalkbuild sign` and `chalkctl install` find the partitions with it. |
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
 | `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, variant, platform and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
-| `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. [Config kinds](kinds.md) lists the fields of the default image's kinds. |
+| `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. |
 | `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only on an image with Kubernetes. An install from the installer sends it with `schemas`, or the installer reads both from the contract layer of an image it pulls, so chalkd translates the node's config for the image it writes; an upgrade checks each node's config from the inventory against both before it drains a node, and chalkd checks the config it carries against those of the image it wrote. |
+
+[Config kinds](kinds.md) lists the fields of the kinds in the default variant's `schemas`.
 
 The definitions of an image with the default sizes read:
 
@@ -316,11 +317,11 @@ another disk carrying the same image or the same labels for its own.
 | `/var` | VAR; tmpfs until the node is installed. |
 | `/etc/chalkos/repart.d` | The system region's definitions. |
 | `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; chalkcfg reads their names to know the kinds. |
-| `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the image is built with [`osCA`](mkimages.md#osca). |
+| `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the image is built with the mkImages argument `osCA`. |
 | `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
-| `/etc/chalkos/services.json` | The units granted config kinds, from [`systemd.services.<unit>.chalkos.kinds`](extension-api.md#systemdserviceschalkoskinds). |
-| `/etc/chalkos/outputs.json` | The image's outputs, from [`chalkos.outputs`](extension-api.md#chalkosoutputs): each one's input kinds, renderer, check, directory, owner and mode. |
-| `/etc/chalkos/effects.json` | What a delivery does to the node's services, from [`chalkos.effects`](extension-api.md#chalkoseffects), with the outputs, the kinds and the rules that fire each effect. |
+| `/etc/chalkos/services.json` | The units granted config kinds, from `systemd.services.<unit>.chalkos.kinds`. |
+| `/etc/chalkos/outputs.json` | The image's outputs, from `chalkos.outputs`: each one's input kinds, renderer, check, directory, owner and mode. |
+| `/etc/chalkos/effects.json` | What a delivery does to the node's services, from `chalkos.effects`, with the outputs, the kinds and the rules that fire each effect. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
 | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster` and `Flannel` documents and `image.json` at boot and on every apply. |
 | `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s and `Addon`s excepted, which chalkcfg prints. |
@@ -343,3 +344,8 @@ another disk carrying the same image or the same labels for its own.
 | `/var/lib/etcd` | etcd's data on a control plane, whose directory `chalkos-controlplane.service` makes when the node's `Node.spec.type` is `controlplane`. |
 | `/var/lib/kubelet/pki` | The kubelet's client and serving certificates. |
 | `/var/lib/chalkd/failed-boot` | The log lines of the last boot that was not found healthy. |
+
+Sources: `modules/node/base/disk.nix` for the system region, the outputs of an image build and the
+device links, `pkg/config/storage.go` for VAR and the volumes, `pkg/ociimage` for the OCI
+artifact, and `pkg/upgrade`, `pkg/install`, `pkg/storage` and `pkg/chalkd` for the files on the
+ESP and STATE and the paths on a running node.

@@ -260,9 +260,10 @@ are being picked or when none are found.
 
 `vxlanSourceSubnets` of the `Flannel` document narrows this to sources in the given ranges, one or
 more per family. They must hold every node's addresses and may not overlap the pod or service
-ranges. With them, the node also drops VXLAN that pods send through it to those ranges. Without
-them, VXLAN is accepted from any source, so pods can reach the other nodes' VXLAN port too. The
-node reads the pod ranges from its `Cluster` document and the source ranges from its `Flannel`
+ranges. With them, the node also drops VXLAN that pods send through it to those ranges. The node
+masquerades pod traffic behind its own address, which lies in the ranges, so the other nodes would
+take such VXLAN for this node's own. Without them, VXLAN is accepted from any source, so pods can
+reach the other nodes' VXLAN port too. The node reads the pod ranges from its `Cluster` document and the source ranges from its `Flannel`
 document. While it cannot, it drops all VXLAN it forwards.
 
 [`chalkctl validate`](../../reference/cli/chalkctl_validate.md) refuses a node whose fixed addresses,

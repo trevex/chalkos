@@ -5,11 +5,11 @@ description: "How systemd-boot orders a node's entries, the units that run at ev
 
 # Boot and the image
 
-This page is for operators and image authors. It lists the rules by which systemd-boot picks the
-UKI a node boots, for reading a node's ESP. It lists the units that do chalkos's work at every
-boot of a node, for reading a node's logs. It also lists what an image fixes when it is
-built and what reaches a node in its config, for deciding whether a change needs a new image or a
-config delivery.
+This page is for operators and image authors who read a node's ESP or boot logs, or decide
+whether a change needs a new image or a config delivery. It lists the rules by which
+systemd-boot picks the UKI a node boots, the units that do chalkos's work at every boot, and
+what an image fixes when it is built and what reaches a node in its config.
+[Boot, health and rollback](../how-it-works/node/boot-and-rollback.md) explains the boot.
 
 ## systemd-boot sort rules
 
