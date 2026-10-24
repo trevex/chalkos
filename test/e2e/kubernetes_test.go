@@ -68,27 +68,31 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 
 // TestKubernetesCluster brings up through chalklab, as the lab template's nodes are, a dual-stack
 // cluster, IPv4 primary, of a control plane and a worker on KVM that picks its addresses from
-// subnets, and checks that the host reaches the nodes' guest agents, that the worker registers
-// and accepts VXLAN on those addresses only, that pods on both nodes have addresses of both
-// families and reach each other over both, directly, through a dual-stack service and at a host
-// port, and resolve the API server's service and other names through the IPv4 DNS address, all of
-// it again after the control plane rebooted with newly issued certificates. It checks that a
-// worker pulls a private image with the node's registry credentials through a mirror, without a
-// pull secret. It checks that both
-// nodes keep their clocks with the test's NTP server, that a reader's client file reads a node's
-// status but cannot reboot it, that the worker renews its node certificate through the control
-// plane, that the control plane renews its node certificate and its own certificates in place,
-// after which the API server serves the new ones and the controller-manager and the scheduler
-// take the lead again, that a worker whose link is cut turns NotReady, and that the OS CA, the
-// Kubernetes CAs, the service-account key and the encryption key rotate with the cluster working
-// throughout. It revokes the worker, whose renewal and kubelet's writes are refused then, and
-// unrevokes it, which only --force does before a rotation; the worker registers again once it
-// rebooted. At its end the host shuts the worker down through its guest agent, the control plane
-// runs on, chalklab start starts the worker's VM again, and chalklab destroy
-// removes the lab.
-// The images come from a registry the test serves; with CHALKLAB_K8S_ONLINE=1 the test does not
-// start that registry, so the nodes' mirror is unreachable and containerd falls back to pulling
-// from upstream.
+// subnets. Each phase is a subtest; a failed phase stops the ones after it.
+//   - ready: the host reaches the nodes' guest agents, both nodes register, a second bootstrap is
+//     refused, both nodes keep their clocks with the test's NTP server and show no failed unit,
+//     and a reader's client file reads a node's status but cannot reboot it. The worker accepts
+//     VXLAN on its addresses only, the API server answers anonymous requests for health alone,
+//     and the worker pulls a private image with the node's registry credentials through a
+//     mirror, without a pull secret.
+//   - pods: pods on both nodes have addresses of both families and reach each other over both,
+//     directly, through a dual-stack service and at a host port, and resolve the API server's
+//     service and other names through the IPv4 DNS address.
+//   - reboot: all of that again after the control plane rebooted with newly issued certificates.
+//   - renewals: the worker renews its node certificate through the control plane, and the control
+//     plane renews its node certificate and its own certificates in place. The API server then
+//     serves the new ones, and the controller-manager and the scheduler take the lead again.
+//   - link: a worker whose link is cut turns NotReady, and Ready again once its link is back.
+//   - rotations: the OS CA, the Kubernetes CAs, the service-account key and the encryption key
+//     rotate with the cluster working throughout.
+//   - revocation: the worker is revoked, after which its renewal and its kubelet's writes are
+//     refused. Only --force unrevokes it before a rotation; it registers again once it rebooted.
+//   - restart: the host shuts the worker down through its guest agent, the control plane runs
+//     on, and chalklab start starts the worker's VM again. chalklab destroy removes the lab when
+//     the test ends.
+//
+// The images come from a registry the test serves. With CHALKLAB_K8S_ONLINE=1 the test does not
+// start that registry, so the nodes' mirror is unreachable and containerd pulls from upstream.
 func TestKubernetesCluster(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_K8S_IMAGE_DIR"}, chalkdEnv...)...)
 	online := os.Getenv("CHALKLAB_K8S_ONLINE") == "1"
@@ -104,13 +108,6 @@ func TestKubernetesCluster(t *testing.T) {
 	}
 	startNTP(t)
 	nodes, apiPort, kubeconfig := createLab(t, dir, args...)
-	for _, name := range []string{"cp1", "w1"} {
-		waitFor(t, 5*time.Minute, "the guest agent of "+name, func() error {
-			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
-			return nodes[name].vm.PingGuestAgent(ctx)
-		})
-	}
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		t.Fatal(err)
@@ -119,26 +116,9 @@ func TestKubernetesCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	waitFor(t, 15*time.Minute, "both nodes Ready", func() error { return nodesReady(ctx, cs, "cp1", "w1") })
-	waitFor(t, 5*time.Minute, "approved kubelet serving certificates", func() error { return servingCertificates(ctx, cs, "cp1", "w1") })
-	if out, err := chalkctl(t, nodes["cp1"], "base", "bootstrap", "cp1"); err == nil || !strings.Contains(out, "bootstrapped already") {
-		t.Errorf("a second bootstrap was not refused: %v", err)
-	}
-	if out, err := chalkctl(t, nodes["w1"], "base", "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined, node ready: True") {
-		t.Errorf("status of w1: %v\n%s", err, out)
-	}
-	for _, name := range []string{"cp1", "w1"} {
-		synchronised(t, nodes[name], name)
-		// flannel's links come up as a burst, which once failed chrony's DHCP units.
-		if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || strings.Contains(out, "failed unit") {
-			t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
-		}
-	}
-	readerClientFile(t, nodes["w1"], filepath.Join(dir, "reader.json"))
 	// The checks of the nodes and of the cluster's networking, again after cp1's reboot. cp1 has
 	// fixed addresses; w1 picks the ones in its validSubnets.
-	checkNetworking := func() {
+	checkNetworking := func(t *testing.T) {
 		for _, name := range []string{"cp1", "w1"} {
 			dualStackNode(t, ctx, cs, nodes[name], name)
 		}
@@ -146,11 +126,6 @@ func TestKubernetesCluster(t *testing.T) {
 		kubeProxyNFTables(t, ctx, cs)
 		dnsService(t, ctx, cs)
 	}
-	checkNetworking()
-	if !online {
-		privatePull(t, ctx, cs)
-	}
-
 	p := peers{
 		nodes:        [2]string{"cp1", "w1"},
 		nodeIPs:      [2][]string{dualStackAddresses["cp1"], dualStackAddresses["w1"]},
@@ -158,95 +133,150 @@ func TestKubernetesCluster(t *testing.T) {
 		dnsIP:        "10.96.0.10",
 		kubernetesIP: "10.96.0.1",
 	}
-	p.create(t, ctx, cs)
-	start := time.Now()
-	waitFor(t, 10*time.Minute, "pods reaching each other", func() error { return p.reached(ctx, cs, nil) })
-	t.Logf("pods reached each other after %v", time.Since(start).Round(time.Second))
-	p.check(t, ctx, cs)
-	logMemory(t, ctx, cs)
 
-	before := servingCertificate(t, apiPort)
-	// The probe's last fact on the console after the reboot marks the new boot; until then the
-	// old chalkd may still answer.
-	cp1 := nodes["cp1"]
-	cp1.vm.Console.Skip()
-	requested := time.Now()
-	if _, err := chalkctl(t, cp1, "base", "reboot", "cp1"); err != nil {
-		t.Fatal(err)
-	}
-	rebootCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
-	if _, err := cp1.vm.Console.WaitFor(rebootCtx, probeDoneRE); err != nil {
-		t.Fatalf("cp1 did not boot again: %v", err)
-	}
-	waitForNode(t, cp1, "cp1")
-	waitFor(t, 10*time.Minute, "the API server after the reboot", func() error {
-		_, err := cs.Discovery().RESTClient().Get().AbsPath("/readyz").DoRaw(ctx)
-		return err
-	})
-	rebooted := metav1.Now()
-	if after := servingCertificate(t, apiPort); after.SerialNumber.Cmp(before.SerialNumber) == 0 {
-		t.Error("the API server serves the certificate from before the reboot")
-	}
-	waitFor(t, 10*time.Minute, "pods reaching each other after the reboot", func() error { return p.reached(ctx, cs, &rebooted) })
-	// flannel announces its addresses when it starts, so the annotations are this boot's once it
-	// started again.
-	waitFor(t, 5*time.Minute, "flannel on cp1 to start after the reboot", func() error { return flannelStarted(ctx, cs, "cp1", requested) })
-	checkNetworking()
-	p.check(t, ctx, cs)
-	logMemory(t, ctx, cs)
-
-	renewals(t, ctx, cs, nodes, apiPort)
-
-	// A worker whose link is cut turns NotReady, and Ready again once its link is back.
-	if err := nodes["w1"].vm.SetLink(false); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, 5*time.Minute, "w1 NotReady without its link", func() error {
-		if nodesReady(ctx, cs, "w1") == nil {
-			return errors.New("w1 is Ready")
+	if !t.Run("ready", func(t *testing.T) {
+		for _, name := range []string{"cp1", "w1"} {
+			waitFor(t, 5*time.Minute, "the guest agent of "+name, func() error {
+				ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				defer cancel()
+				return nodes[name].vm.PingGuestAgent(ctx)
+			})
 		}
-		return nil
-	})
-	if err := nodes["w1"].vm.SetLink(true); err != nil {
-		t.Fatal(err)
+		waitFor(t, 15*time.Minute, "both nodes Ready", func() error { return nodesReady(ctx, cs, "cp1", "w1") })
+		waitFor(t, 5*time.Minute, "approved kubelet serving certificates", func() error { return servingCertificates(ctx, cs, "cp1", "w1") })
+		if out, err := chalkctl(t, nodes["cp1"], "base", "bootstrap", "cp1"); err == nil || !strings.Contains(out, "bootstrapped already") {
+			t.Errorf("a second bootstrap was not refused: %v", err)
+		}
+		if out, err := chalkctl(t, nodes["w1"], "base", "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined, node ready: True") {
+			t.Errorf("status of w1: %v\n%s", err, out)
+		}
+		for _, name := range []string{"cp1", "w1"} {
+			synchronised(t, nodes[name], name)
+			// flannel's links come up as a burst, which once failed chrony's DHCP units.
+			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || strings.Contains(out, "failed unit") {
+				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
+			}
+		}
+		readerClientFile(t, nodes["w1"], filepath.Join(dir, "reader.json"))
+		checkNetworking(t)
+		if !online {
+			privatePull(t, ctx, cs)
+		}
+	}) {
+		return
 	}
-	waitFor(t, 5*time.Minute, "w1 Ready with its link back", func() error { return nodesReady(ctx, cs, "w1") })
+
+	if !t.Run("pods", func(t *testing.T) {
+		p.create(t, ctx, cs)
+		start := time.Now()
+		waitFor(t, 10*time.Minute, "pods reaching each other", func() error { return p.reached(ctx, cs, nil) })
+		t.Logf("pods reached each other after %v", time.Since(start).Round(time.Second))
+		p.check(t, ctx, cs)
+		logMemory(t, ctx, cs)
+	}) {
+		return
+	}
+
+	if !t.Run("reboot", func(t *testing.T) {
+		before := servingCertificate(t, apiPort)
+		// The probe's last fact on the console after the reboot marks the new boot; until then
+		// the old chalkd may still answer.
+		cp1 := nodes["cp1"]
+		cp1.vm.Console.Skip()
+		requested := time.Now()
+		if _, err := chalkctl(t, cp1, "base", "reboot", "cp1"); err != nil {
+			t.Fatal(err)
+		}
+		rebootCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		defer cancel()
+		if _, err := cp1.vm.Console.WaitFor(rebootCtx, probeDoneRE); err != nil {
+			t.Fatalf("cp1 did not boot again: %v", err)
+		}
+		waitForNode(t, cp1, "cp1")
+		waitFor(t, 10*time.Minute, "the API server after the reboot", func() error {
+			_, err := cs.Discovery().RESTClient().Get().AbsPath("/readyz").DoRaw(ctx)
+			return err
+		})
+		rebooted := metav1.Now()
+		if after := servingCertificate(t, apiPort); after.SerialNumber.Cmp(before.SerialNumber) == 0 {
+			t.Error("the API server serves the certificate from before the reboot")
+		}
+		waitFor(t, 10*time.Minute, "pods reaching each other after the reboot", func() error { return p.reached(ctx, cs, &rebooted) })
+		// flannel announces its addresses when it starts, so the annotations are this boot's once
+		// it started again.
+		waitFor(t, 5*time.Minute, "flannel on cp1 to start after the reboot", func() error { return flannelStarted(ctx, cs, "cp1", requested) })
+		checkNetworking(t)
+		p.check(t, ctx, cs)
+		logMemory(t, ctx, cs)
+	}) {
+		return
+	}
+
+	if !t.Run("renewals", func(t *testing.T) { renewals(t, ctx, cs, nodes, apiPort) }) {
+		return
+	}
+
+	if !t.Run("link", func(t *testing.T) {
+		if err := nodes["w1"].vm.SetLink(false); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, 5*time.Minute, "w1 NotReady without its link", func() error {
+			if nodesReady(ctx, cs, "w1") == nil {
+				return errors.New("w1 is Ready")
+			}
+			return nil
+		})
+		if err := nodes["w1"].vm.SetLink(true); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, 5*time.Minute, "w1 Ready with its link back", func() error { return nodesReady(ctx, cs, "w1") })
+	}) {
+		return
+	}
 
 	// Revoking w1 deletes its Node, and with it the pod the rotations' checks need: it comes after
 	// them.
-	revocation(t, ctx, nodes, rotations(t, ctx, nodes, p, dir, apiPort))
+	var rotated string
+	if !t.Run("rotations", func(t *testing.T) { rotated = rotations(t, ctx, nodes, p, dir, apiPort) }) {
+		return
+	}
+	if !t.Run("revocation", func(t *testing.T) { revocation(t, ctx, nodes, rotated) }) {
+		return
+	}
 
-	// The host shuts the worker down through its guest agent, and its VM exits.
-	w1 := nodes["w1"]
-	shutdownCtx, cancelShutdown := context.WithTimeout(ctx, time.Minute)
-	defer cancelShutdown()
-	if err := w1.vm.ShutdownGuest(shutdownCtx); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, 3*time.Minute, "the VM of w1 to exit once its guest agent shut it down", func() error {
-		if lab.Running(w1.vm.Config) {
-			return errors.New("the VM of w1 runs")
+	t.Run("restart", func(t *testing.T) {
+		// The host shuts the worker down through its guest agent, and its VM exits.
+		w1 := nodes["w1"]
+		shutdownCtx, cancelShutdown := context.WithTimeout(ctx, time.Minute)
+		defer cancelShutdown()
+		if err := w1.vm.ShutdownGuest(shutdownCtx); err != nil {
+			t.Fatal(err)
 		}
-		return nil
+		waitFor(t, 3*time.Minute, "the VM of w1 to exit once its guest agent shut it down", func() error {
+			if lab.Running(w1.vm.Config) {
+				return errors.New("the VM of w1 runs")
+			}
+			return nil
+		})
+		// The lab runs on without w1, and chalklab start has its supervisor start w1's VM alone
+		// again.
+		if !lab.Running(nodes["cp1"].vm.Config) {
+			t.Error("the VM of cp1 stopped with w1's")
+		}
+		startCtx, cancelStart := context.WithTimeout(ctx, 3*time.Minute)
+		defer cancelStart()
+		out, err := exec.CommandContext(startCtx, os.Getenv("CHALKLAB_CHALKLAB"), "start").CombinedOutput()
+		t.Logf("chalklab start:\n%s", out)
+		if err != nil {
+			t.Fatalf("chalklab start: %v", err)
+		}
+		if !strings.Contains(string(out), "starting w1\n") {
+			t.Error("chalklab start did not start w1 alone")
+		}
+		if !lab.Running(w1.vm.Config) || !lab.Running(nodes["cp1"].vm.Config) {
+			t.Error("the VMs of cp1 and w1 do not both run after chalklab start")
+		}
 	})
-	// The lab runs on without w1, and chalklab start has its supervisor start w1's VM alone again.
-	if !lab.Running(nodes["cp1"].vm.Config) {
-		t.Error("the VM of cp1 stopped with w1's")
-	}
-	startCtx, cancelStart := context.WithTimeout(ctx, 3*time.Minute)
-	defer cancelStart()
-	out, err := exec.CommandContext(startCtx, os.Getenv("CHALKLAB_CHALKLAB"), "start").CombinedOutput()
-	t.Logf("chalklab start:\n%s", out)
-	if err != nil {
-		t.Fatalf("chalklab start: %v", err)
-	}
-	if !strings.Contains(string(out), "starting w1\n") {
-		t.Error("chalklab start did not start w1 alone")
-	}
-	if !lab.Running(w1.vm.Config) || !lab.Running(nodes["cp1"].vm.Config) {
-		t.Error("the VMs of cp1 and w1 do not both run after chalklab start")
-	}
 }
 
 // revocation revokes w1 through cp1, after which cp1 lists it as revoked, refuses to renew its
@@ -380,21 +410,6 @@ func anonymousOnlyHealth(t *testing.T, ctx context.Context, cfg *rest.Config) {
 	}
 	if _, err := client.Get().AbsPath("/version").DoRaw(ctx); !apierrors.IsUnauthorized(err) {
 		t.Errorf("anonymous /version: %v, want unauthorized", err)
-	}
-}
-
-func waitFor(t *testing.T, timeout time.Duration, what string, check func() error) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for {
-		err := check()
-		if err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("waiting for %s: %v", what, err)
-		}
-		time.Sleep(5 * time.Second)
 	}
 }
 

@@ -32,7 +32,7 @@ type node struct {
 
 // startNode boots a VM with a user-mode NIC that forwards a host port to chalkd, besides the
 // forwards the configuration has.
-func startNode(t *testing.T, c lab.VMConfig) *node {
+func startNode(t testing.TB, c lab.VMConfig) *node {
 	t.Helper()
 	port, err := lab.FreePort()
 	if err != nil {
@@ -96,19 +96,21 @@ func chalkdInfo(n *node, timeout time.Duration) (*nodev1.InfoResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(timeout)
-	for {
+	var info *nodev1.InfoResponse
+	err = poll(timeout, 2*time.Second, func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		resp, err := c.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
-		cancel()
-		if err == nil {
-			return resp.Msg, nil
+		if err != nil {
+			return err
 		}
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("chalkd at %s did not answer: %w", n.addr, err)
-		}
-		time.Sleep(2 * time.Second)
+		info = resp.Msg
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("chalkd at %s did not answer: %w", n.addr, err)
 	}
+	return info, nil
 }
 
 // chalkctl runs the chalkctl binary for the node, or for the cluster when n is nil, against the
@@ -215,15 +217,8 @@ func installedNodeAnswers(n *node, name string) error {
 	if err != nil {
 		return err
 	}
-	deadline := time.Now().Add(2 * time.Minute)
-	for {
-		err := info(c)
-		if err == nil {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("the installed node %s did not answer: %w", name, err)
-		}
-		time.Sleep(2 * time.Second)
+	if err := poll(2*time.Minute, 2*time.Second, func() error { return info(c) }); err != nil {
+		return fmt.Errorf("the installed node %s did not answer: %w", name, err)
 	}
+	return nil
 }

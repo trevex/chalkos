@@ -212,6 +212,15 @@ func logConsoleTail(t *testing.T, path string, n int) {
 	t.Logf("last %d lines of %s:\n%s", len(lines), path, strings.Join(lines, "\n"))
 }
 
+// outliving is a subtest's T whose cleanups run when owner ends, so a VM a phase of a test starts
+// runs on through the phases after it.
+type outliving struct {
+	*testing.T
+	owner *testing.T
+}
+
+func (o outliving) Cleanup(f func()) { o.owner.Cleanup(f) }
+
 func startVM(t *testing.T, dir, vars string, disks ...lab.VMDisk) *lab.VM {
 	t.Helper()
 	return bootVM(t, lab.VMConfig{Dir: dir, FirmwareVars: vars, Disks: disks})
@@ -219,7 +228,7 @@ func startVM(t *testing.T, dir, vars string, disks ...lab.VMDisk) *lab.VM {
 
 // bootVM starts a VM with the test firmware, a TPM, and the resources an image needs: 2 GiB of
 // memory unless the configuration asks for another amount.
-func bootVM(t *testing.T, c lab.VMConfig) *lab.VM {
+func bootVM(t testing.TB, c lab.VMConfig) *lab.VM {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -340,5 +349,27 @@ func assertFacts(t *testing.T, got, want map[string]string) {
 		if got[k] != v {
 			t.Errorf("fact %s = %q, want %q (all facts: %v)", k, got[k], v, got)
 		}
+	}
+}
+
+// poll calls check every interval until it succeeds or timeout has passed, and returns check's
+// last error.
+func poll(timeout, interval time.Duration, check func() error) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		err := check()
+		if err == nil || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(interval)
+	}
+}
+
+// waitFor polls check every 5 seconds and fails the test when it has not succeeded within
+// timeout.
+func waitFor(t *testing.T, timeout time.Duration, what string, check func() error) {
+	t.Helper()
+	if err := poll(timeout, 5*time.Second, check); err != nil {
+		t.Fatalf("waiting for %s: %v", what, err)
 	}
 }

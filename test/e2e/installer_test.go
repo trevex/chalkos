@@ -185,14 +185,11 @@ func TestInstallerISOBoots(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out []byte
-	deadline := time.Now().Add(2 * time.Minute)
-	for {
+	err = poll(2*time.Minute, 2*time.Second, func() error {
+		var err error
 		out, err = exec.Command(os.Getenv("CHALKLAB_CHALKCTL"), "disks", "--address", n.addr, "--fingerprint", m[1]).CombinedOutput()
-		if err == nil || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(2 * time.Second)
-	}
+		return err
+	})
 	t.Logf("chalkctl disks:\n%s", out)
 	if err != nil {
 		t.Fatal(err)

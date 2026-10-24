@@ -35,7 +35,9 @@ const haMemoryMB = 1536
 
 // haCluster is the VMs of the HA test.
 type haCluster struct {
-	t        *testing.T
+	// t is the running phase, which the helpers fail; owner is the whole test, which stops the VMs
+	// when it ends.
+	t, owner *testing.T
 	dir      string
 	sw       *lab.Switch
 	forwards []lab.GuestForward
@@ -49,6 +51,17 @@ type haNode struct {
 	*node
 	apiPort int
 	dir     string
+}
+
+// phase runs f as the subtest name, whose failures c's helpers report, and reports whether it
+// passed.
+func (c *haCluster) phase(name string, f func(t *testing.T)) bool {
+	parent := c.t
+	defer func() { c.t = parent }()
+	return parent.Run(name, func(t *testing.T) {
+		c.t = t
+		f(t)
+	})
 }
 
 // start boots the node's VM with the MAC on the cluster network. With fresh it gets a new
@@ -76,7 +89,7 @@ func (c *haCluster) start(name, mac string, fresh bool) *haNode {
 	if err != nil {
 		c.t.Fatal(err)
 	}
-	n := startNode(c.t, lab.VMConfig{
+	n := startNode(outliving{c.t, c.owner}, lab.VMConfig{
 		Dir:           dir,
 		FirmwareVars:  os.Getenv("CHALKLAB_OVMF_VARS"),
 		Disks:         disks,
@@ -194,11 +207,12 @@ func (c *haCluster) client(name string) kubernetes.Interface {
 // one reinstalled without leaving refuses to bootstrap and finds its stale member until an
 // operator removes it. A rolling upgrade with an operator's client file takes two control planes,
 // the VIP's holder among them, to a new image one at a time while the cluster keeps answering.
+// Each of these phases is a subtest; a failed phase stops the ones after it.
 func TestKubernetesHA(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_K8S_HA_IMAGE_DIR", "CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR", "CHALKLAB_K8S_IMAGES"}, chalkdEnv...)...)
 	ctx := context.Background()
 	start := time.Now()
-	c := &haCluster{t: t, dir: vmDir(t), nodes: map[string]*haNode{}, boots: map[string]int{}}
+	c := &haCluster{t: t, owner: t, dir: vmDir(t), nodes: map[string]*haNode{}, boots: map[string]int{}}
 	c.forwards = []lab.GuestForward{{Guest: "10.0.2.100:5000", Host: startRegistry(t)}}
 	sw, err := lab.StartSwitch(ctx, filepath.Join(c.dir, "switch"))
 	if err != nil {
@@ -235,167 +249,190 @@ func TestKubernetesHA(t *testing.T) {
 	}
 	t.Logf("installed after %v", time.Since(start).Round(time.Second))
 
-	waitFor(t, 5*time.Minute, "cp1 to wait for bootstrap or the cluster", func() error {
-		if got := c.kubernetes("cp1"); got != "kubernetes controlplane: waiting for bootstrap or for the cluster at https://[fd00:100::10]:6443" {
-			return fmt.Errorf("status %q", got)
+	var cs kubernetes.Interface
+	if !c.phase("bootstrap", func(t *testing.T) {
+		waitFor(t, 5*time.Minute, "cp1 to wait for bootstrap or the cluster", func() error {
+			if got := c.kubernetes("cp1"); got != "kubernetes controlplane: waiting for bootstrap or for the cluster at https://[fd00:100::10]:6443" {
+				return fmt.Errorf("status %q", got)
+			}
+			return nil
+		})
+		if _, err := c.chalkctl("cp1", "bootstrap", "cp1"); err != nil {
+			t.Fatalf("bootstrap: %v", err)
 		}
-		return nil
-	})
-	if _, err := c.chalkctl("cp1", "bootstrap", "cp1"); err != nil {
-		t.Fatalf("bootstrap: %v", err)
-	}
-	waitFor(t, 5*time.Minute, "cp1 to hold the VIP", func() error {
-		if holders := c.holders("cp1"); len(holders) != 1 {
-			return fmt.Errorf("cp1: %s", c.kubernetes("cp1"))
-		}
-		return nil
-	})
-	joined := time.Now()
-	waitFor(t, 20*time.Minute, "cp2 and cp3 to join etcd", func() error { return c.members("cp1", "cp1", "cp2", "cp3") })
-	t.Logf("cp2 and cp3 joined %v after the bootstrap", time.Since(joined).Round(time.Second))
-	cs := c.client("cp1")
-	waitFor(t, 10*time.Minute, "the three nodes Ready", func() error { return nodesReady(ctx, cs, "cp1", "cp2", "cp3") })
-	for _, name := range []string{"cp2", "cp3"} {
-		if got := c.kubernetes(name); !strings.HasPrefix(got, "kubernetes controlplane: bootstrapped, node ready: True, vip standby") {
-			t.Errorf("status of %s: %q", name, got)
-		}
-	}
-	for _, name := range []string{"cp1", "cp2"} {
-		if out, err := c.chalkctl(name, "bootstrap", name); err == nil || !strings.Contains(out, "bootstrapped already") {
-			t.Errorf("a second bootstrap of %s was not refused: %v", name, err)
-		}
-	}
-	if holders := c.holders("cp1", "cp2", "cp3"); !slices.Equal(holders, []string{"cp1"}) {
-		t.Errorf("VIP holders %v, want cp1", holders)
-	}
-	c.ipv6Only(ctx, cs)
-	p := peers{
-		nodes:        [2]string{"cp1", "cp2"},
-		nodeIPs:      [2][]string{{"fd00:100::11"}, {"fd00:100::12"}},
-		families:     []corev1.IPFamily{corev1.IPv6Protocol},
-		dnsIP:        "fd00:10:96::a",
-		kubernetesIP: "fd00:10:96::1",
-	}
-	p.create(t, ctx, cs)
-	waitFor(t, 10*time.Minute, "pods reaching each other", func() error { return p.reached(ctx, cs, nil) })
-	p.check(t, ctx, cs)
-	logHAMemory(t, ctx, cs)
-
-	// The VIP moves when its holder's link is cut. The kubelets of the other control planes reach
-	// the API server at the endpoint, the VIP, so their leases show it works through the VIP.
-	if err := c.nodes["cp1"].vm.SetLink(false); err != nil {
-		t.Fatal(err)
-	}
-	cut := time.Now()
-	var holder string
-	waitFor(t, 2*time.Minute, "another node to hold the VIP", func() error {
-		holders := c.holders("cp2", "cp3")
-		if len(holders) != 1 {
-			return fmt.Errorf("VIP holders %v", holders)
-		}
-		holder = holders[0]
-		return nil
-	})
-	movedAfter := time.Since(cut)
-	t.Logf("the VIP moved to %s %v after cp1's link was cut", holder, movedAfter.Round(time.Second))
-	// The lease lives 10 seconds; the statuses are polled every 5.
-	if movedAfter > 30*time.Second {
-		t.Errorf("the VIP moved %v after cp1's link was cut, want within 30s", movedAfter.Round(time.Second))
-	}
-	moved := metav1.Now()
-	other := c.client(holder)
-	waitFor(t, 5*time.Minute, "the kubelets to renew their leases through the VIP", func() error {
+		waitFor(t, 5*time.Minute, "cp1 to hold the VIP", func() error {
+			if holders := c.holders("cp1"); len(holders) != 1 {
+				return fmt.Errorf("cp1: %s", c.kubernetes("cp1"))
+			}
+			return nil
+		})
+		joined := time.Now()
+		waitFor(t, 20*time.Minute, "cp2 and cp3 to join etcd", func() error { return c.members("cp1", "cp1", "cp2", "cp3") })
+		t.Logf("cp2 and cp3 joined %v after the bootstrap", time.Since(joined).Round(time.Second))
+		cs = c.client("cp1")
+		waitFor(t, 10*time.Minute, "the three nodes Ready", func() error { return nodesReady(ctx, cs, "cp1", "cp2", "cp3") })
 		for _, name := range []string{"cp2", "cp3"} {
-			lease, err := other.CoordinationV1().Leases("kube-node-lease").Get(ctx, name, metav1.GetOptions{})
-			if err != nil {
-				return err
-			}
-			if lease.Spec.RenewTime == nil || !lease.Spec.RenewTime.After(moved.Time) {
-				return fmt.Errorf("the lease of %s was last renewed %v", name, lease.Spec.RenewTime)
+			if got := c.kubernetes(name); !strings.HasPrefix(got, "kubernetes controlplane: bootstrapped, node ready: True, vip standby") {
+				t.Errorf("status of %s: %q", name, got)
 			}
 		}
-		return nil
-	})
-	waitFor(t, 2*time.Minute, "cp1 to release the VIP", func() error {
-		if got := c.kubernetes("cp1"); strings.Contains(got, ", vip holder") {
-			return fmt.Errorf("status of cp1: %q", got)
+		for _, name := range []string{"cp1", "cp2"} {
+			if out, err := c.chalkctl(name, "bootstrap", name); err == nil || !strings.Contains(out, "bootstrapped already") {
+				t.Errorf("a second bootstrap of %s was not refused: %v", name, err)
+			}
 		}
-		return nil
-	})
-	if err := c.nodes["cp1"].vm.SetLink(true); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, 5*time.Minute, "cp1 to be a healthy member again", func() error { return c.members(holder, "cp1", "cp2", "cp3") })
-	for range 3 {
-		time.Sleep(5 * time.Second)
-		if holders := c.holders("cp1", "cp2", "cp3"); !slices.Equal(holders, []string{holder}) {
-			t.Errorf("VIP holders %v with cp1 back, want %s", holders, holder)
+		if holders := c.holders("cp1", "cp2", "cp3"); !slices.Equal(holders, []string{"cp1"}) {
+			t.Errorf("VIP holders %v, want cp1", holders)
 		}
+		c.ipv6Only(ctx, cs)
+		p := peers{
+			nodes:        [2]string{"cp1", "cp2"},
+			nodeIPs:      [2][]string{{"fd00:100::11"}, {"fd00:100::12"}},
+			families:     []corev1.IPFamily{corev1.IPv6Protocol},
+			dnsIP:        "fd00:10:96::a",
+			kubernetesIP: "fd00:10:96::1",
+		}
+		p.create(t, ctx, cs)
+		waitFor(t, 10*time.Minute, "pods reaching each other", func() error { return p.reached(ctx, cs, nil) })
+		p.check(t, ctx, cs)
+		logHAMemory(t, ctx, cs)
+	}) {
+		return
 	}
 
-	// cp3 boots without its pinned address: its NIC on the cluster network gets another MAC,
-	// which its network configuration does not match.
-	c.stop("cp3", false)
-	c.start("cp3", "52:54:00:00:02:23", false)
-	waitFor(t, 10*time.Minute, "cp3 to fail without its pinned address", func() error {
-		want := "kubernetes controlplane: preparation failed: pinned address fd00:100::13 is not present, 30s after chalkos-node-addresses.target; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp3 and reinstall the node"
-		if got := c.kubernetes("cp3"); got != want {
-			return fmt.Errorf("status of cp3: %q", got)
+	if !c.phase("vip", func(t *testing.T) {
+		// The VIP moves when its holder's link is cut. The kubelets of the other control planes reach
+		// the API server at the endpoint, the VIP, so their leases show it works through the VIP.
+		if err := c.nodes["cp1"].vm.SetLink(false); err != nil {
+			t.Fatal(err)
 		}
-		return nil
-	})
-	if _, err := cs.CoreV1().Nodes().List(ctx, metav1.ListOptions{}); err != nil {
-		t.Errorf("the API server without cp3: %v", err)
+		cut := time.Now()
+		var holder string
+		waitFor(t, 2*time.Minute, "another node to hold the VIP", func() error {
+			holders := c.holders("cp2", "cp3")
+			if len(holders) != 1 {
+				return fmt.Errorf("VIP holders %v", holders)
+			}
+			holder = holders[0]
+			return nil
+		})
+		movedAfter := time.Since(cut)
+		t.Logf("the VIP moved to %s %v after cp1's link was cut", holder, movedAfter.Round(time.Second))
+		// The lease lives 10 seconds; the statuses are polled every 5.
+		if movedAfter > 30*time.Second {
+			t.Errorf("the VIP moved %v after cp1's link was cut, want within 30s", movedAfter.Round(time.Second))
+		}
+		moved := metav1.Now()
+		other := c.client(holder)
+		waitFor(t, 5*time.Minute, "the kubelets to renew their leases through the VIP", func() error {
+			for _, name := range []string{"cp2", "cp3"} {
+				lease, err := other.CoordinationV1().Leases("kube-node-lease").Get(ctx, name, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				if lease.Spec.RenewTime == nil || !lease.Spec.RenewTime.After(moved.Time) {
+					return fmt.Errorf("the lease of %s was last renewed %v", name, lease.Spec.RenewTime)
+				}
+			}
+			return nil
+		})
+		waitFor(t, 2*time.Minute, "cp1 to release the VIP", func() error {
+			if got := c.kubernetes("cp1"); strings.Contains(got, ", vip holder") {
+				return fmt.Errorf("status of cp1: %q", got)
+			}
+			return nil
+		})
+		if err := c.nodes["cp1"].vm.SetLink(true); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, 5*time.Minute, "cp1 to be a healthy member again", func() error { return c.members(holder, "cp1", "cp2", "cp3") })
+		for range 3 {
+			time.Sleep(5 * time.Second)
+			if holders := c.holders("cp1", "cp2", "cp3"); !slices.Equal(holders, []string{holder}) {
+				t.Errorf("VIP holders %v with cp1 back, want %s", holders, holder)
+			}
+		}
+	}) {
+		return
 	}
-	if out, err := c.chalkctl("cp1", "etcd", "members", "--via", "cp1"); err != nil || !strings.Contains(out, "cp3") {
-		t.Errorf("etcd members without cp3: %v\n%s", err, out)
-	}
-	c.stop("cp3", false)
-	c.start("cp3", "52:54:00:00:02:13", false)
-	waitFor(t, 10*time.Minute, "cp3 with its address back", func() error { return c.members("cp1", "cp1", "cp2", "cp3") })
 
-	// cp3 leaves etcd, is reinstalled, and joins again.
-	if _, err := c.chalkctl("cp3", "etcd", "leave", "cp3"); err != nil {
-		t.Fatalf("leave: %v", err)
+	if !c.phase("pinned address", func(t *testing.T) {
+		// cp3 boots without its pinned address: its NIC on the cluster network gets another MAC,
+		// which its network configuration does not match.
+		c.stop("cp3", false)
+		c.start("cp3", "52:54:00:00:02:23", false)
+		waitFor(t, 10*time.Minute, "cp3 to fail without its pinned address", func() error {
+			want := "kubernetes controlplane: preparation failed: pinned address fd00:100::13 is not present, 30s after chalkos-node-addresses.target; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp3 and reinstall the node"
+			if got := c.kubernetes("cp3"); got != want {
+				return fmt.Errorf("status of cp3: %q", got)
+			}
+			return nil
+		})
+		if _, err := cs.CoreV1().Nodes().List(ctx, metav1.ListOptions{}); err != nil {
+			t.Errorf("the API server without cp3: %v", err)
+		}
+		if out, err := c.chalkctl("cp1", "etcd", "members", "--via", "cp1"); err != nil || !strings.Contains(out, "cp3") {
+			t.Errorf("etcd members without cp3: %v\n%s", err, out)
+		}
+		c.stop("cp3", false)
+		c.start("cp3", "52:54:00:00:02:13", false)
+		waitFor(t, 10*time.Minute, "cp3 with its address back", func() error { return c.members("cp1", "cp1", "cp2", "cp3") })
+	}) {
+		return
 	}
-	if err := c.members("cp1", "cp1", "cp2"); err != nil {
-		t.Error(err)
-	}
-	if got := c.kubernetes("cp3"); got != "kubernetes controlplane: left etcd; reinstall the node to join the cluster again" {
-		t.Errorf("status of cp3 after leaving: %q", got)
-	}
-	c.reinstall("cp3", "52:54:00:00:02:13")
-	waitFor(t, 20*time.Minute, "the reinstalled cp3 to join", func() error { return c.members("cp1", "cp1", "cp2", "cp3") })
 
-	// Reinstalled without leaving, cp3 finds its old member and waits until it is removed.
-	c.reinstall("cp3", "52:54:00:00:02:13")
-	waitFor(t, 10*time.Minute, "cp3 to find its stale member", func() error {
-		got := c.kubernetes("cp3")
-		if !strings.HasSuffix(got, "etcd has a member cp3 already; remove it with chalkctl etcd remove-member cp3") {
-			return fmt.Errorf("status of cp3: %q", got)
+	if !c.phase("rejoin", func(t *testing.T) {
+		// cp3 leaves etcd, is reinstalled, and joins again.
+		if _, err := c.chalkctl("cp3", "etcd", "leave", "cp3"); err != nil {
+			t.Fatalf("leave: %v", err)
 		}
-		return nil
-	})
-	// Not yet a member again, cp3 refuses to bootstrap a second cluster: the endpoint answers with
-	// this cluster's CA. A join attempt holding the membership refuses it too, so ask again then.
-	waitFor(t, time.Minute, "cp3 to refuse a bootstrap while the cluster answers", func() error {
-		out, err := c.chalkctl("cp3", "bootstrap", "cp3")
-		if err == nil {
-			t.Fatalf("cp3 bootstrapped a second cluster:\n%s", out)
+		if err := c.members("cp1", "cp1", "cp2"); err != nil {
+			t.Error(err)
 		}
-		if !strings.Contains(out, "the cluster's API server answers at https://[fd00:100::10]:6443") {
-			return fmt.Errorf("bootstrap: %v\n%s", err, out)
+		if got := c.kubernetes("cp3"); got != "kubernetes controlplane: left etcd; reinstall the node to join the cluster again" {
+			t.Errorf("status of cp3 after leaving: %q", got)
 		}
-		return nil
-	})
-	if _, err := c.chalkctl("cp1", "etcd", "remove-member", "cp3", "--via", "cp1"); err != nil {
-		t.Fatalf("remove-member: %v", err)
+		c.reinstall("cp3", "52:54:00:00:02:13")
+		waitFor(t, 20*time.Minute, "the reinstalled cp3 to join", func() error { return c.members("cp1", "cp1", "cp2", "cp3") })
+	}) {
+		return
 	}
-	waitFor(t, 20*time.Minute, "cp3 to join after its stale member was removed", func() error { return c.members("cp1", "cp1", "cp2", "cp3") })
-	waitFor(t, 10*time.Minute, "the three nodes Ready", func() error { return nodesReady(ctx, cs, "cp1", "cp2", "cp3") })
 
-	c.rollingUpgrade(ctx)
-	logHAMemory(t, ctx, cs)
+	if !c.phase("stale member", func(t *testing.T) {
+		// Reinstalled without leaving, cp3 finds its old member and waits until it is removed.
+		c.reinstall("cp3", "52:54:00:00:02:13")
+		waitFor(t, 10*time.Minute, "cp3 to find its stale member", func() error {
+			got := c.kubernetes("cp3")
+			if !strings.HasSuffix(got, "etcd has a member cp3 already; remove it with chalkctl etcd remove-member cp3") {
+				return fmt.Errorf("status of cp3: %q", got)
+			}
+			return nil
+		})
+		// Not yet a member again, cp3 refuses to bootstrap a second cluster: the endpoint answers with
+		// this cluster's CA. A join attempt holding the membership refuses it too, so ask again then.
+		waitFor(t, time.Minute, "cp3 to refuse a bootstrap while the cluster answers", func() error {
+			out, err := c.chalkctl("cp3", "bootstrap", "cp3")
+			if err == nil {
+				t.Fatalf("cp3 bootstrapped a second cluster:\n%s", out)
+			}
+			if !strings.Contains(out, "the cluster's API server answers at https://[fd00:100::10]:6443") {
+				return fmt.Errorf("bootstrap: %v\n%s", err, out)
+			}
+			return nil
+		})
+		if _, err := c.chalkctl("cp1", "etcd", "remove-member", "cp3", "--via", "cp1"); err != nil {
+			t.Fatalf("remove-member: %v", err)
+		}
+		waitFor(t, 20*time.Minute, "cp3 to join after its stale member was removed", func() error { return c.members("cp1", "cp1", "cp2", "cp3") })
+		waitFor(t, 10*time.Minute, "the three nodes Ready", func() error { return nodesReady(ctx, cs, "cp1", "cp2", "cp3") })
+	}) {
+		return
+	}
+
+	c.phase("rolling upgrade", func(t *testing.T) {
+		c.rollingUpgrade(ctx)
+		logHAMemory(t, ctx, cs)
+	})
 	t.Logf("the test took %v", time.Since(start).Round(time.Second))
 }
 
