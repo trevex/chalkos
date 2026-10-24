@@ -37,7 +37,7 @@ nodes and to write the kubeconfig and the client file.
 | --- | --- | --- | --- |
 | `--guest-forward`{ #flag-guest-forward } | list of string | — | GUEST=HOST: make a host address (a local registry, for example) reachable at a guest address of the VMs' user-mode network; may be repeated. |
 | `--lab`{ #flag-lab } | string | chalklab.yaml in the current directory | Lab file naming the inventory and the nodes the lab runs. |
-| `--secrets`{ #flag-secrets } | string | — | The cluster's secrets file, which chalkctl reads to install the nodes. |
+| `--secrets`{ #flag-secrets } | string | required | The cluster's secrets file, which chalkctl reads to install the nodes. |
 
 ## Examples
 

@@ -170,6 +170,8 @@ func (a *app) configNewCommand() *cobra.Command {
 	f.secrets.register(fs)
 	fs.StringVar(&f.name, "name", "", "the user's name, which the certificate carries")
 	fs.StringVar(&f.role, "role", "", "the role the certificate grants: admin, operator or reader")
+	cmd.MarkFlagRequired("name")
+	cmd.MarkFlagRequired("role")
 	fs.DurationVar(&f.ttl, "ttl", 8760*time.Hour, "validity of the certificate")
 	fs.StringVar(&f.out, "out", "", "file to write (default ~/.config/chalkos/config)")
 	fs.BoolVar(&f.force, "force", false, "replace an existing file")

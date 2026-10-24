@@ -84,8 +84,8 @@ func TestSignNeedsKeyCertAndTwoDirectories(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"sign", "--key", "db.key", "in", "out"}, "needs --key and --cert"},
-		{[]string{"sign", "--cert", "db.crt", "in", "out"}, "needs --key and --cert"},
+		{[]string{"sign", "--key", "db.key", "in", "out"}, `required flag(s) "cert" not set`},
+		{[]string{"sign", "--cert", "db.crt", "in", "out"}, `required flag(s) "key" not set`},
 		{[]string{"sign", "--key", "db.key", "--cert", "db.crt", "in"}, "usage: chalkbuild sign"},
 	} {
 		if status, _, stderr := run(tc.args...); status != 1 || !strings.Contains(stderr, tc.want) {

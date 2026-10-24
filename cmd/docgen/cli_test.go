@@ -19,6 +19,8 @@ func testTree() *cobra.Command {
 	run.Flags().StringSlice("tag", nil, "tags of the thing")
 	run.Flags().Duration("timeout", 0, "how long to wait")
 	run.Flags().Int("tries", 3, "how often to try")
+	run.Flags().String("key", "", "key to sign with")
+	run.MarkFlagRequired("key")
 	group := &cobra.Command{Use: "group", Short: "Group things"}
 	group.AddCommand(&cobra.Command{Use: "add", Short: "Add a thing", RunE: func(*cobra.Command, []string) error { return nil }})
 	hidden := &cobra.Command{Use: "secret", Short: "Hidden", Hidden: true, RunE: func(*cobra.Command, []string) error { return nil }}
@@ -60,6 +62,7 @@ func TestWriteCLI(t *testing.T) {
 		"| Flag | Type | Default | Description |\n" +
 		"| --- | --- | --- | --- |\n" +
 		"| `--fast`{ #flag-fast } | boolean | `false` | Run fast. |\n" +
+		"| `--key`{ #flag-key } | string | required | Key to sign with. |\n" +
 		"| `--out`{ #flag-out }, `-o` | string | the thing's directory | File to write, a\\|b. |\n" +
 		"| `--tag`{ #flag-tag } | list of string | — | Tags of the thing. |\n" +
 		"| `--timeout`{ #flag-timeout } | duration | `0s` | How long to wait. |\n" +

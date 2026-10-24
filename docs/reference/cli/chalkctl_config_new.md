@@ -29,9 +29,9 @@ The command needs the secrets file and no inventory.
 | --- | --- | --- | --- |
 | `--force`{ #flag-force } | boolean | `false` | Replace an existing file. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
-| `--name`{ #flag-name } | string | — | The user's name, which the certificate carries. |
+| `--name`{ #flag-name } | string | required | The user's name, which the certificate carries. |
 | `--out`{ #flag-out } | string | ~/.config/chalkos/config | File to write. |
-| `--role`{ #flag-role } | string | — | The role the certificate grants: admin, operator or reader. |
+| `--role`{ #flag-role } | string | required | The role the certificate grants: admin, operator or reader. |
 | `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
 | `--ttl`{ #flag-ttl } | duration | `8760h0m0s` | Validity of the certificate. |
 

@@ -62,6 +62,7 @@ func (a *app) createCommand() *cobra.Command {
 	fs := cmd.Flags()
 	fs.StringVar(&f.lab, "lab", "", "lab file naming the inventory and the nodes the lab runs (default "+defaultLabFile+" in the current directory)")
 	fs.StringVar(&f.secrets, "secrets", "", "the cluster's secrets file, which chalkctl reads to install the nodes")
+	cmd.MarkFlagRequired("secrets")
 	fs.Var(&f.guestForwards, "guest-forward", "GUEST=HOST: make a host address (a local registry, for example) reachable at a guest address of the VMs' user-mode network; may be repeated")
 	return cmd
 }

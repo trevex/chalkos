@@ -151,8 +151,9 @@ var completionLoad = map[string]struct{ current, every string }{
 }
 
 // flagTable is a section of a page that lists flags, each with an anchor of its name, its type,
-// its default and its description. A flag's help names a default that is no value of the flag,
-// such as a file found in the current directory, at its end, as cobra's help would.
+// its default, or required for a flag cobra requires, and its description. A flag's help names a
+// default that is no value of the flag, such as a file found in the current directory, at its
+// end, as cobra's help would.
 func flagTable(heading string, flags *pflag.FlagSet) string {
 	var rows []string
 	flags.VisitAll(func(f *pflag.Flag) {
@@ -161,7 +162,9 @@ func flagTable(heading string, flags *pflag.FlagSet) string {
 		}
 		_, usage := pflag.UnquoteUsage(f)
 		def := "—"
-		if m := describedDefault.FindStringSubmatch(usage); m != nil {
+		if r := f.Annotations[cobra.BashCompOneRequiredFlag]; len(r) > 0 && r[0] == "true" {
+			def = "required"
+		} else if m := describedDefault.FindStringSubmatch(usage); m != nil {
 			usage, def = strings.TrimSuffix(usage, m[0]), prose(m[1])
 		} else if f.DefValue != "" && f.DefValue != "[]" {
 			def = tableCell(code(f.DefValue))

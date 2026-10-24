@@ -28,8 +28,8 @@ new manifest's digest.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--cert`{ #flag-cert } | string | — | PEM certificate of the Secure Boot db signer, which the signed copy is checked against. |
-| `--key`{ #flag-key } | string | — | PEM private key of the Secure Boot db signer. |
+| `--cert`{ #flag-cert } | string | required | PEM certificate of the Secure Boot db signer, which the signed copy is checked against. |
+| `--key`{ #flag-key } | string | required | PEM private key of the Secure Boot db signer. |
 
 ## Examples
 

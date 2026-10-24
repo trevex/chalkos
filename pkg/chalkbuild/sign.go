@@ -28,6 +28,8 @@ func signCommand() *cobra.Command {
 	fs := cmd.Flags()
 	fs.StringVar(&key, "key", "", "PEM private key of the Secure Boot db signer")
 	fs.StringVar(&cert, "cert", "", "PEM certificate of the Secure Boot db signer, which the signed copy is checked against")
+	cmd.MarkFlagRequired("key")
+	cmd.MarkFlagRequired("cert")
 	return cmd
 }
 

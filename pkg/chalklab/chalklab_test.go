@@ -385,10 +385,17 @@ func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 		t.Fatalf("StateDir(mylab) = %s", dir)
 	}
 	a, _ := testApp()
-	for _, args := range [][]string{{}, {"--secrets", "-"}, {"--secrets", secrets}} {
-		err = a.run(context.Background(), append([]string{"create", "--lab", path}, args...))
-		if err == nil || !strings.Contains(err.Error(), "secrets file") {
-			t.Errorf("create with %q = %v, want the secrets file asked for", args, err)
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{nil, `required flag(s) "secrets" not set`},
+		{[]string{"--secrets", "-"}, "secrets file"},
+		{[]string{"--secrets", secrets}, "secrets file"},
+	} {
+		err = a.run(context.Background(), append([]string{"create", "--lab", path}, tc.args...))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("create with %q = %v, want the secrets file asked for", tc.args, err)
 		}
 	}
 	if err := os.WriteFile(secrets, []byte("{}"), 0o600); err != nil {
@@ -591,7 +598,7 @@ func TestCreateNeedsKVM(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "kvm")
 	kvmDevice = missing
 	a, _ := testApp()
-	err := a.run(context.Background(), []string{"create", "--lab", "/nonexistent.yaml"})
+	err := a.run(context.Background(), []string{"create", "--lab", "/nonexistent.yaml", "--secrets", "/nonexistent.json"})
 	if err == nil || !strings.Contains(err.Error(), missing) || !strings.Contains(err.Error(), "KVM") {
 		t.Errorf("create without KVM = %v, want %s named", err, missing)
 	}
@@ -599,7 +606,7 @@ func TestCreateNeedsKVM(t *testing.T) {
 		if err := os.WriteFile(missing, nil, 0o000); err != nil {
 			t.Fatal(err)
 		}
-		if err := a.run(context.Background(), []string{"create", "--lab", "/nonexistent.yaml"}); err == nil || !strings.Contains(err.Error(), "kvm group") {
+		if err := a.run(context.Background(), []string{"create", "--lab", "/nonexistent.yaml", "--secrets", "/nonexistent.json"}); err == nil || !strings.Contains(err.Error(), "kvm group") {
 			t.Errorf("create without access to KVM = %v, want the kvm group named", err)
 		}
 	}
