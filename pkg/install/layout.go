@@ -9,23 +9,17 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 // GPT partition types of the names repart's Type= takes that the system region uses.
 var partitionTypes = map[string]string{
-	"esp":               typeESP,
-	"usr-x86-64":        typeUsrX86,
-	"usr-x86-64-verity": typeUsrX86Verity,
-	"usr-arm64":         typeUsrArm,
-	"usr-arm64-verity":  typeUsrArmVerity,
-}
-
-// storeTypes are the GPT partition types of a store slot's data and hash tree partitions, by the
-// architecture an image is built for.
-var storeTypes = map[string]struct{ data, verity string }{
-	"x86-64": {typeUsrX86, typeUsrX86Verity},
-	"arm64":  {typeUsrArm, typeUsrArmVerity},
+	"esp":               gpt.TypeESP,
+	"usr-x86-64":        gpt.TypeUsrX86,
+	"usr-x86-64-verity": gpt.TypeUsrX86Verity,
+	"usr-arm64":         gpt.TypeUsrArm,
+	"usr-arm64-verity":  gpt.TypeUsrArmVerity,
 }
 
 // definitionKeys are the keys of repart's [Partition] section a definition of the system region
@@ -71,20 +65,20 @@ func parseLayout(defs map[string]string, arch string) (layout, error) {
 		}
 		l = append(l, d)
 	}
-	store, ok := storeTypes[arch]
+	store, ok := gpt.StoreTypes[arch]
 	if !ok {
 		return nil, fmt.Errorf("chalkos builds no images for the architecture %q", arch)
 	}
 	count := map[string]int{}
 	for _, d := range l {
 		switch d.typ {
-		case typeESP, store.data, store.verity, storage.PartitionType(stateLabel):
+		case gpt.TypeESP, store.Data, store.Verity, storage.PartitionType(stateLabel):
 			count[d.typ]++
 		default:
 			return nil, fmt.Errorf("%s defines a partition of the type %s, which is none of the system region of an image for %s", d.file, d.typ, arch)
 		}
 	}
-	if len(l) != 6 || count[typeESP] != 1 || count[store.data] != 2 || count[store.verity] != 2 || count[storage.PartitionType(stateLabel)] != 1 {
+	if len(l) != 6 || count[gpt.TypeESP] != 1 || count[store.Data] != 2 || count[store.Verity] != 2 || count[storage.PartitionType(stateLabel)] != 1 {
 		return nil, errors.New("the image's definitions do not lay out an ESP, two store slots and STATE, and nothing else")
 	}
 	return l, nil
@@ -136,9 +130,9 @@ func parseDefinition(name, text string) (definedPartition, error) {
 	switch typ {
 	case "":
 		return definedPartition{}, fmt.Errorf("%s defines no partition type", name)
-	case typeESP:
+	case gpt.TypeESP:
 		kind = "esp"
-	case typeUsrX86, typeUsrX86Verity, typeUsrArm, typeUsrArmVerity:
+	case gpt.TypeUsrX86, gpt.TypeUsrX86Verity, gpt.TypeUsrArm, gpt.TypeUsrArmVerity:
 		kind = "store"
 	case storage.PartitionType(stateLabel):
 		kind = "state"
@@ -286,7 +280,7 @@ func (l layout) check(t partitionTable, section storage.Section) error {
 }
 
 // describeAll names the partitions found on a disk.
-func describeAll(parts []partition) string {
+func describeAll(parts []gpt.Partition) string {
 	if len(parts) == 0 {
 		return "no partitions"
 	}
@@ -302,9 +296,9 @@ func (l layout) fits(h upgrade.Header) error {
 	var verity, data *definedPartition
 	for n, d := range l {
 		switch {
-		case verity == nil && (d.typ == typeUsrX86Verity || d.typ == typeUsrArmVerity):
+		case verity == nil && gpt.IsStoreVerity(d.typ):
 			verity = &l[n]
-		case data == nil && (d.typ == typeUsrX86 || d.typ == typeUsrArm):
+		case data == nil && gpt.IsStoreData(d.typ):
 			data = &l[n]
 		}
 	}

@@ -23,6 +23,7 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
@@ -93,14 +94,14 @@ func (f *fakeRunner) apply(name string, args []string, out []byte) ([]byte, erro
 			return nil, err
 		}
 		return out, nil
-	case name == "sfdisk" && len(args) == 4 && args[0] == "--part-uuid":
+	case name == "sfdisk" && len(args) == 5 && args[1] == "--part-uuid":
 		if f.partUUIDs == nil {
 			f.partUUIDs = map[string]string{}
 		}
-		f.partUUIDs[args[1]+" "+args[2]] = args[3]
+		f.partUUIDs[args[2]+" "+args[3]] = args[4]
 		return out, nil
-	case name == "sfdisk" && len(args) == 2 && args[0] == "--json" && len(f.partUUIDs) > 0 && len(out) > 0:
-		return f.withPartUUIDs(args[1], out)
+	case name == "sfdisk" && len(args) == 3 && args[1] == "--json" && len(f.partUUIDs) > 0 && len(out) > 0:
+		return f.withPartUUIDs(args[2], out)
 	case f.efi != nil && name == "efibootmgr":
 		return f.efi.run(f, args)
 	}
@@ -306,7 +307,7 @@ type part struct {
 }
 
 var (
-	espPart   = part{1, strings.ToUpper(typeESP), "esp"}
+	espPart   = part{1, strings.ToUpper(gpt.TypeESP), "esp"}
 	usrPart   = part{3, "8484680C-9521-48C6-9C11-B0720656F69E", "usr-x86-64"}
 	statePart = part{6, strings.ToUpper(stateType), "state"}
 	varPart   = part{7, strings.ToUpper(varType), "var"}
@@ -382,7 +383,7 @@ func testRequest(t *testing.T, section storage.Section) Request {
 // unseals: repart creates VAR as vda7.
 func inPlaceRules(i *Installer) []tooltest.Rule {
 	return []tooltest.Rule{
-		{Prefix: "sfdisk --json /dev/vda", Out: sfdisk("/dev/vda", espPart, usrPart, statePart, varPart)},
+		{Prefix: "sfdisk --lock=nonblock --json /dev/vda", Out: sfdisk("/dev/vda", espPart, usrPart, statePart, varPart)},
 		{Prefix: "blkid -p -o value -s TYPE", Out: "crypto_LUKS\n"},
 		{Prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(i.StateDir, "storage", "disks", "system"), Out: repartRow(filepath.Join(i.StateDir, "storage", "disks", "system", "50-var.conf"), varUUID)},
 	}
@@ -421,25 +422,25 @@ func TestInPlaceInstallsOnBootDisk(t *testing.T) {
 	assertCalls(t, calls, []string{
 		"umount " + i.StateDir,
 		"systemd-cryptsetup detach state",
-		"sfdisk --json /dev/vda",
+		"sfdisk --lock=nonblock --json /dev/vda",
 		"udevadm settle --timeout=30",
 		"blkid -p -o value -s TYPE /dev/vda6",
-		"sfdisk --json /dev/vda",
+		"sfdisk --lock=nonblock --json /dev/vda",
 		"udevadm wait --timeout=60 /dev/vda6",
 		"blkid -p -o value -s TYPE /dev/vda6",
 		"systemd-cryptsetup attach state /dev/vda6 - tpm2-device=auto,headless=true",
 		"e2fsck -p /dev/mapper/state",
 		"mount -t ext4 /dev/mapper/state " + i.StateDir,
 		"systemd-repart --dry-run=no --json=short --definitions=" + defs + " --seed=" + systemSeed + " /dev/vda",
-		"sfdisk --json /dev/vda",
+		"sfdisk --lock=nonblock --json /dev/vda",
 		"udevadm settle --timeout=30",
 		"blkid -p -o value -s TYPE /dev/vda6",
 		enroll + "/dev/vda6",
 		"udevadm settle --timeout=30",
 		"blkid -p -o value -s TYPE /dev/vda7",
 		enroll + "/dev/vda7",
-		"sfdisk --json /dev/vda",
-		"sfdisk --part-uuid /dev/vda 1 " + espUUID,
+		"sfdisk --lock=nonblock --json /dev/vda",
+		"sfdisk --lock=nonblock --part-uuid /dev/vda 1 " + espUUID,
 	})
 	if espUUID == "00000001-0000-4000-8000-000000000000" {
 		t.Error("the ESP kept the image's partition UUID")
@@ -501,7 +502,7 @@ func TestInPlaceRecreatesStateForPolicy(t *testing.T) {
 	}
 	system := filepath.Join(i.WorkDir, "system")
 	for _, want := range []string{
-		"sfdisk --delete /dev/vda 6",
+		"sfdisk --lock=nonblock --delete /dev/vda 6",
 		"systemd-repart --dry-run=no --seed=random --definitions=" + system + " --tpm2-pcrs=7 /dev/vda",
 		"mount -t ext4 /dev/vda6 " + i.StateDir,
 	} {
@@ -528,7 +529,7 @@ func TestInPlaceKeepsMatchingState(t *testing.T) {
 	if err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))); err != nil {
 		t.Fatal(err)
 	}
-	if hasPrefix(r.Calls, "sfdisk --delete") || hasPrefix(r.Calls, "systemd-repart --dry-run=no --seed=random --definitions="+filepath.Join(i.WorkDir, "system")) {
+	if hasPrefix(r.Calls, "sfdisk --lock=nonblock --delete") || hasPrefix(r.Calls, "systemd-repart --dry-run=no --seed=random --definitions="+filepath.Join(i.WorkDir, "system")) {
 		t.Errorf("recreated a STATE that matches the policy: %v", r.Calls)
 	}
 }
@@ -625,7 +626,7 @@ func TestInPlaceCanRunAgain(t *testing.T) {
 	if err := i.InPlace(context.Background(), req); err != nil {
 		t.Fatalf("the install did not run again: %v", err)
 	}
-	if !installed(t, i.StateDir) || hasPrefix(r.Calls, "sfdisk --delete") {
+	if !installed(t, i.StateDir) || hasPrefix(r.Calls, "sfdisk --lock=nonblock --delete") {
 		t.Errorf("second install: installed = %v, commands %v", installed(t, i.StateDir), r.Calls)
 	}
 }
@@ -961,7 +962,7 @@ func TestInPlaceNamesTheRemedyOfAStateTheTPMDoesNotUnseal(t *testing.T) {
 			t.Errorf("err = %v names a reset, which cannot recreate STATE", err)
 		}
 	}
-	if hasPrefix(r.Calls, "sfdisk --delete") || installed(t, i.StateDir) {
+	if hasPrefix(r.Calls, "sfdisk --lock=nonblock --delete") || installed(t, i.StateDir) {
 		t.Errorf("replaced STATE or installed: %v", r.Calls)
 	}
 }

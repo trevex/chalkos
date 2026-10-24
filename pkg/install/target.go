@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 )
 
 // Disk is a disk opened for wiping.
@@ -78,14 +79,6 @@ func (d blockDevice) RereadPartitions() error {
 	return nil
 }
 
-// GPT partition types of the store partitions.
-const (
-	typeUsrX86       = "8484680c-9521-48c6-9c11-b0720656f69e"
-	typeUsrX86Verity = "77ff5f63-e7b6-4633-acf4-1565b864c0e6"
-	typeUsrArm       = "b0e01050-ee5f-4390-949a-9101b17104e9"
-	typeUsrArmVerity = "6e11a4e7-fbca-4ded-b9e9-e1a512bb664e"
-)
-
 // mib is how much of a disk's start and end is zeroed to drop its partition tables.
 const mib = 1 << 20
 
@@ -107,13 +100,13 @@ func (i *Installer) refuseBootDisk(target storage.BlockDisk) error {
 }
 
 // describe names a partition found on the target.
-func describe(p partition) string {
+func describe(p gpt.Partition) string {
 	switch p.Type {
-	case typeESP:
+	case gpt.TypeESP:
 		return "ESP"
-	case typeUsrX86, typeUsrArm:
+	case gpt.TypeUsrX86, gpt.TypeUsrArm:
 		return "chalkos store"
-	case typeUsrX86Verity, typeUsrArmVerity:
+	case gpt.TypeUsrX86Verity, gpt.TypeUsrArmVerity:
 		return "chalkos store verity"
 	}
 	if p.Type != storage.PartitionType(p.Name) {
@@ -174,7 +167,7 @@ func (i *Installer) addBootEntry(ctx context.Context, disk storage.BlockDisk) er
 	if err != nil {
 		return err
 	}
-	esp, err := table.findType(typeESP)
+	esp, err := table.findType(gpt.TypeESP)
 	if err != nil {
 		return err
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
@@ -164,7 +165,7 @@ func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
 	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
 	l.node.CheckStore = func(Store) error { return nil }
 	partitions := l.node.OpenPartition
-	l.node.OpenPartition = func(p Partition, write bool) (PartitionFile, error) {
+	l.node.OpenPartition = func(p gpt.Partition, write bool) (PartitionFile, error) {
 		if write && open {
 			return nil, errors.New("device or resource busy")
 		}
@@ -375,7 +376,7 @@ func TestOnlyARecheckRetiresTheStagedImage(t *testing.T) {
 	l.boots(img, 2)
 
 	// Another program changed the slot's UUIDs, so the image is written anew and checked then.
-	l.setUUID(5, randomUUID())
+	l.setUUID(5, gpt.NewUUID())
 	if _, err := l.install(img); !errors.Is(err, refusal) || errors.As(err, &retired) {
 		t.Errorf("install into a changed slot = %v, want the check's refusal without a StagedRetiredError", err)
 	}

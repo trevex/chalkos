@@ -14,13 +14,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/storage"
-	"github.com/trevex/chalkos/pkg/tool"
-)
-
-// What blkid reports as the TYPE of a LUKS device and of an ext4 file system.
-const (
-	ContentLUKS = "crypto_LUKS"
-	ContentExt4 = "ext4"
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 )
 
 // unitNames is what Change and DeleteVolume pass Generate for systemd-cryptsetup: they read only
@@ -118,29 +112,6 @@ func (s *Storage) Enroll(ctx context.Context, devices map[string]string, secret 
 		}
 	}
 	return nil
-}
-
-// Content returns what blkid finds on a device once udev processed it, such as crypto_LUKS or
-// ext4; empty when it finds nothing.
-func Content(ctx context.Context, run tool.Runner, dev string) (string, error) {
-	if _, err := run.Run(ctx, "udevadm", "settle", "--timeout=30"); err != nil {
-		return "", err
-	}
-	out, err := run.Run(ctx, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
-	if foundNothing(err) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("probe %s: %w", dev, err)
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-// foundNothing reports whether blkid failed because it found no signature: it exits with 2 and
-// says nothing. It also exits with 2 when it cannot read the device, but then it complains.
-func foundNothing(err error) bool {
-	var te *tool.Error
-	return errors.As(err, &te) && te.Code == 2 && strings.TrimSpace(te.Stderr) == ""
 }
 
 // Change makes the additive changes a delivered section makes to the recorded one:
@@ -269,7 +240,8 @@ func (s *Storage) DeleteVolume(ctx context.Context, name string, v storage.Volum
 	if _, err := s.Run.Run(ctx, "wipefs", "--all", part.Device); err != nil {
 		return internalError{fmt.Errorf("wipe volume %s: %w", name, err)}
 	}
-	if _, err := s.Run.Run(ctx, "sfdisk", "--lock", "--delete", "/dev/"+disk, strconv.Itoa(part.Number)); err != nil {
+	sfdisk := gpt.Sfdisk{Run: s.Run, Disk: "/dev/" + disk}
+	if _, err := sfdisk.Exec(ctx, "--delete", sfdisk.Disk, strconv.Itoa(part.Number)); err != nil {
 		return internalError{fmt.Errorf("delete the partition of volume %s: %w", name, err)}
 	}
 	delete(pin.Partitions, name)

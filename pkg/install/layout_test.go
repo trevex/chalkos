@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 )
 
 func TestParseSize(t *testing.T) {
@@ -68,17 +69,17 @@ func TestLayoutCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	section := testSection(storage.EncryptionNone, storage.FallbackNone, "/dev/vdb")
-	region := func(sector int64) []partition {
-		return []partition{
-			{Number: 1, Type: typeESP, Size: 260 << 20 / sector},
-			{Number: 2, Type: typeUsrX86Verity, Name: "store-verity_3fa93fa93fa93fa9", Size: 256 << 10 / sector},
-			{Number: 3, Type: typeUsrX86, Name: "store_3fa93fa93fa93fa9", Size: 2 << 20 / sector},
-			{Number: 4, Type: typeUsrX86Verity, Name: "_empty", Size: 256 << 10 / sector},
-			{Number: 5, Type: typeUsrX86, Name: "_empty", Size: 2 << 20 / sector},
+	region := func(sector int64) []gpt.Partition {
+		return []gpt.Partition{
+			{Number: 1, Type: gpt.TypeESP, Size: 260 << 20 / sector},
+			{Number: 2, Type: gpt.TypeUsrX86Verity, Name: "store-verity_3fa93fa93fa93fa9", Size: 256 << 10 / sector},
+			{Number: 3, Type: gpt.TypeUsrX86, Name: "store_3fa93fa93fa93fa9", Size: 2 << 20 / sector},
+			{Number: 4, Type: gpt.TypeUsrX86Verity, Name: "_empty", Size: 256 << 10 / sector},
+			{Number: 5, Type: gpt.TypeUsrX86, Name: "_empty", Size: 2 << 20 / sector},
 			{Number: 6, Type: stateType, Name: "state", Size: 32 << 20 / sector},
 		}
 	}
-	table := func(sector int64, edit func([]partition) []partition) partitionTable {
+	table := func(sector int64, edit func([]gpt.Partition) []gpt.Partition) partitionTable {
 		parts := region(sector)
 		if edit != nil {
 			parts = edit(parts)
@@ -91,21 +92,21 @@ func TestLayoutCheck(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		sector int64
-		edit   func([]partition) []partition
+		edit   func([]gpt.Partition) []gpt.Partition
 		want   string
 	}{
 		{"the region", 512, nil, ""},
 		{"the region on a 4Kn disk", 4096, nil, ""},
-		{"with VAR", 512, func(p []partition) []partition {
-			return append(p, partition{Number: 7, Type: varType, Name: "var", Size: 1000})
+		{"with VAR", 512, func(p []gpt.Partition) []gpt.Partition {
+			return append(p, gpt.Partition{Number: 7, Type: varType, Name: "var", Size: 1000})
 		}, ""},
-		{"with another partition", 512, func(p []partition) []partition {
-			return append(p, partition{Number: 7, Type: "0fc63daf-8483-4772-8e79-3d69d8477de4", Name: "data", Size: 1000})
+		{"with another partition", 512, func(p []gpt.Partition) []gpt.Partition {
+			return append(p, gpt.Partition{Number: 7, Type: "0fc63daf-8483-4772-8e79-3d69d8477de4", Name: "data", Size: 1000})
 		}, "partition 7 (type 0fc63daf-8483-4772-8e79-3d69d8477de4, label \"data\") is no volume"},
-		{"without STATE", 512, func(p []partition) []partition { return p[:5] }, "fewer partitions than the image's 6"},
-		{"slot B labelled", 512, func(p []partition) []partition { p[3].Name = "store-verity_81bd02c4a9e1aa00"; return p }, "not labelled \"_empty\""},
-		{"a larger slot", 512, func(p []partition) []partition { p[2].Size *= 2; return p }, "has 4194304 bytes, not the 2097152"},
-		{"the slots swapped", 512, func(p []partition) []partition { p[1], p[2] = p[2], p[1]; return p }, "is not of the type"},
+		{"without STATE", 512, func(p []gpt.Partition) []gpt.Partition { return p[:5] }, "fewer partitions than the image's 6"},
+		{"slot B labelled", 512, func(p []gpt.Partition) []gpt.Partition { p[3].Name = "store-verity_81bd02c4a9e1aa00"; return p }, "not labelled \"_empty\""},
+		{"a larger slot", 512, func(p []gpt.Partition) []gpt.Partition { p[2].Size *= 2; return p }, "has 4194304 bytes, not the 2097152"},
+		{"the slots swapped", 512, func(p []gpt.Partition) []gpt.Partition { p[1], p[2] = p[2], p[1]; return p }, "is not of the type"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := l.check(table(tc.sector, tc.edit), section)

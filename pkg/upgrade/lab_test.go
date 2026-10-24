@@ -21,6 +21,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/verity"
@@ -241,20 +242,20 @@ func (r sectorRunner) Run(ctx context.Context, name string, args ...string) ([]b
 	return r.Runner.Run(ctx, name, args...)
 }
 
-func (l *lab) table() map[int]Partition {
+func (l *lab) table() map[int]gpt.Partition {
 	l.t.Helper()
 	parts, err := l.node.slots().ReadTable(context.Background())
 	if err != nil {
 		l.t.Fatal(err)
 	}
-	m := map[int]Partition{}
+	m := map[int]gpt.Partition{}
 	for _, p := range parts {
 		m[p.Number] = p
 	}
 	return m
 }
 
-func (l *lab) writePartition(p Partition, data []byte) {
+func (l *lab) writePartition(p gpt.Partition, data []byte) {
 	l.t.Helper()
 	f, err := os.OpenFile(l.disk, os.O_WRONLY, 0)
 	if err != nil {
@@ -295,7 +296,7 @@ func (p partitionFile) Close() error { return p.f.Close() }
 
 // open opens a partition of the disk image, refusing writes to the running slot's partitions as
 // the kernel would, and counts writes.
-func (l *lab) open(p Partition, write bool) (PartitionFile, error) {
+func (l *lab) open(p gpt.Partition, write bool) (PartitionFile, error) {
 	if write {
 		l.mu.Lock()
 		l.writes[p.Number]++
@@ -356,7 +357,7 @@ func (l *lab) boot() (Entry, string) {
 	})
 	selected := entries[0]
 	data, verityUUID := PartitionUUIDs(selected.RootHash)
-	var store, hash *Partition
+	var store, hash *gpt.Partition
 	for _, p := range l.table() {
 		switch p.UUID {
 		case data:

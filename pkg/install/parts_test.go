@@ -33,6 +33,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -273,7 +274,7 @@ func (l *partsLab) real(ctx context.Context, name string, args []string) ([]byte
 }
 
 // table reads the disk image's partition table, by partition number.
-func (l *partsLab) table() map[int]upgrade.Partition {
+func (l *partsLab) table() map[int]gpt.Partition {
 	l.t.Helper()
 	out, err := exec.Command("sfdisk", "--sector-size", strconv.FormatInt(l.sector, 10), "--json", l.disk).Output()
 	if err != nil {
@@ -281,13 +282,13 @@ func (l *partsLab) table() map[int]upgrade.Partition {
 	}
 	var dump struct {
 		Table struct {
-			Partitions []upgrade.Partition `json:"partitions"`
+			Partitions []gpt.Partition `json:"partitions"`
 		} `json:"partitiontable"`
 	}
 	if err := json.Unmarshal(out, &dump); err != nil {
 		l.t.Fatal(err)
 	}
-	parts := map[int]upgrade.Partition{}
+	parts := map[int]gpt.Partition{}
 	for _, p := range dump.Table.Partitions {
 		p.Number, _ = strconv.Atoi(strings.TrimPrefix(p.Node, l.disk))
 		p.Node = labDev + strconv.Itoa(p.Number)
@@ -382,7 +383,7 @@ func (p labPartition) WriteAt(b []byte, off int64) (int, error) {
 func (p labPartition) Sync() error  { return p.f.Sync() }
 func (p labPartition) Close() error { return p.f.Close() }
 
-func (l *partsLab) openPartition(p upgrade.Partition, write bool) (upgrade.PartitionFile, error) {
+func (l *partsLab) openPartition(p gpt.Partition, write bool) (upgrade.PartitionFile, error) {
 	if !strings.HasPrefix(p.Node, labDev) {
 		l.t.Errorf("opened %s, a partition of another disk", p.Node)
 		return nil, syscall.EBUSY
@@ -421,7 +422,7 @@ func (l *partsLab) install(img partsImage) error {
 // esp returns the directory standing for the target's ESP, which is empty while none exists.
 func (l *partsLab) esp() string {
 	for _, p := range l.table() {
-		if p.Type == typeESP {
+		if p.Type == gpt.TypeESP {
 			return filepath.Join(l.fs, p.UUID)
 		}
 	}
@@ -467,11 +468,11 @@ func (l *partsLab) checkInstalled(img partsImage) {
 	parts := l.table()
 	data, verityUUID := upgrade.PartitionUUIDs(img.root)
 	want := []struct{ typ, label, uuid string }{
-		{typeESP, "", ""},
-		{typeUsrX86Verity, "store-verity_" + upgrade.LabelID(img.root), verityUUID},
-		{typeUsrX86, "store_" + upgrade.LabelID(img.root), data},
-		{typeUsrX86Verity, "_empty", ""},
-		{typeUsrX86, "_empty", ""},
+		{gpt.TypeESP, "", ""},
+		{gpt.TypeUsrX86Verity, "store-verity_" + upgrade.LabelID(img.root), verityUUID},
+		{gpt.TypeUsrX86, "store_" + upgrade.LabelID(img.root), data},
+		{gpt.TypeUsrX86Verity, "_empty", ""},
+		{gpt.TypeUsrX86, "_empty", ""},
 		{stateType, "state", ""},
 		{varType, "var", ""},
 	}

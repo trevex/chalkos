@@ -44,6 +44,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
 )
@@ -61,7 +62,7 @@ type Node struct {
 	// Architecture is the node's, as images name theirs.
 	Architecture string
 	// OpenPartition opens a partition of the boot disk.
-	OpenPartition func(p Partition, write bool) (PartitionFile, error)
+	OpenPartition func(p gpt.Partition, write bool) (PartitionFile, error)
 	// TableLock, when set, is held while the boot disk's partition table is read or changed:
 	// chalkd's storage changes take it too.
 	TableLock sync.Locker

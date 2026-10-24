@@ -5,7 +5,6 @@ package node
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -15,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
@@ -368,47 +368,21 @@ func (s *Storage) resolveNew(ctx context.Context, d storage.Disk, claimed []clai
 // on it, or it carries a GPT whose partitions all have types of this disk's definitions, which
 // repart takes over. repart would otherwise write a new partition table over foreign data.
 func (s *Storage) checkUnused(ctx context.Context, disk storage.BlockDisk, d storage.Disk) error {
-	out, err := s.Run.Run(ctx, "blkid", "-p", "-o", "export", disk.Device)
-	var te *tool.Error
-	// blkid also exits with 2 when it cannot read the disk, but then it complains.
-	if errors.As(err, &te) && te.Code == 2 && strings.TrimSpace(te.Stderr) == "" {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("probe %s: %w", disk.Device, err)
-	}
-	props := map[string]string{}
-	for _, line := range strings.Split(string(out), "\n") {
-		if k, v, ok := strings.Cut(line, "="); ok {
-			props[k] = v
-		}
+	props, err := Probe(ctx, s.Run, disk.Device)
+	if err != nil || len(props) == 0 {
+		return err
 	}
 	if props["PTTYPE"] != "gpt" {
 		return fmt.Errorf("%s carries data (%s); wipe it or reference another disk", disk, strings.TrimSpace(props["PTTYPE"]+" "+props["TYPE"]))
 	}
 
-	out, err = s.Run.Run(ctx, "sfdisk", "--json", disk.Device)
+	parts, err := gpt.Sfdisk{Run: s.Run, Disk: disk.Device}.ReadTable(ctx)
 	if err != nil {
-		return fmt.Errorf("read the partition table of %s: %w", disk.Device, err)
-	}
-	var dump struct {
-		PartitionTable struct {
-			Label      string `json:"label"`
-			Partitions []struct {
-				Node string `json:"node"`
-				Type string `json:"type"`
-			} `json:"partitions"`
-		} `json:"partitiontable"`
-	}
-	if err := json.Unmarshal(out, &dump); err != nil {
-		return fmt.Errorf("read the partition table of %s: %w", disk.Device, err)
-	}
-	if dump.PartitionTable.Label != "gpt" {
-		return fmt.Errorf("%s carries a %q partition table where blkid found a GPT; wipe it or reference another disk", disk, dump.PartitionTable.Label)
+		return fmt.Errorf("%w; wipe it or reference another disk", err)
 	}
 	types := d.PartitionTypes()
-	for _, p := range dump.PartitionTable.Partitions {
-		if !types[strings.ToLower(p.Type)] {
+	for _, p := range parts {
+		if !types[p.Type] {
 			return fmt.Errorf("%s carries data: %s has the partition type %s, which none of the disk's definitions sets; wipe it or reference another disk", disk, p.Node, p.Type)
 		}
 	}

@@ -33,6 +33,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
@@ -311,7 +312,7 @@ func TestAlreadyStaged(t *testing.T) {
 	unchanged("chalkos_2+2-1.efi")
 
 	// Another program changed the slot's UUIDs, so the entry would find no store.
-	l.setUUID(5, randomUUID())
+	l.setUUID(5, gpt.NewUUID())
 	res, err := l.install(img)
 	if err != nil || res.AlreadyStaged || res.Entry != "chalkos_3+3.efi" {
 		t.Errorf("installing the image into a changed slot: %+v, %v", res, err)
@@ -1008,27 +1009,6 @@ func TestHeaderValidate(t *testing.T) {
 				t.Errorf("Validate = %v, want %q", err, tc.want)
 			}
 		})
-	}
-}
-
-// TestParseTable counts sizes in the table's sectors, which older sfdisk versions do not name:
-// they are 512 bytes then.
-func TestParseTable(t *testing.T) {
-	for _, tc := range []struct {
-		sector string
-		want   int64
-	}{{"", 2048 * 512}, {`"sectorsize": 512,`, 2048 * 512}, {`"sectorsize": 4096,`, 2048 * 4096}} {
-		out := `{"partitiontable": {"label": "gpt", ` + tc.sector + ` "partitions": [{"node": "/dev/nvme0n1p3", "start": 2048, "size": 2048, "type": "8484680C-9521-48C6-9C11-B0720656F69E", "uuid": "AB", "name": "store_2ece03b0fa094b77"}]}}`
-		parts, err := ParseTable("/dev/nvme0n1", []byte(out))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if p := parts[0]; p.Bytes() != tc.want || p.Number != 3 || p.Type != "8484680c-9521-48c6-9c11-b0720656f69e" || p.UUID != "ab" {
-			t.Errorf("%s: %+v has %d bytes, want %d", tc.sector, p, p.Bytes(), tc.want)
-		}
-	}
-	if _, err := ParseTable("/dev/vda", []byte(`{"partitiontable": {"label": "dos"}}`)); err == nil || !strings.Contains(err.Error(), `a "dos" partition table, not a GPT`) {
-		t.Errorf("a DOS table: %v", err)
 	}
 }
 

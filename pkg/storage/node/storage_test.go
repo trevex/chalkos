@@ -457,10 +457,10 @@ func TestSetUpChecksNewDiskIsUnused(t *testing.T) {
 		{"blkid fails without finding anything", []tooltest.Rule{{Prefix: "blkid -p -o export /dev/vdb", Err: &tool.Error{Command: "blkid", Code: 2, Stderr: "error: /dev/vdb: Input/output error"}}}, "Input/output error"},
 		{"blkid fails otherwise", []tooltest.Rule{{Prefix: "blkid -p -o export /dev/vdb", Err: &tool.Error{Command: "blkid", Code: 4}}}, "probe /dev/vdb"},
 		{"file system", []tooltest.Rule{{Prefix: "blkid -p -o export /dev/vdb", Out: "DEVNAME=/dev/vdb\nTYPE=ext4\n"}}, "carries data (ext4)"},
-		{"empty GPT", []tooltest.Rule{gpt, {Prefix: "sfdisk --json /dev/vdb", Out: sfdiskTable()}}, ""},
-		{"GPT with chalkos partitions", []tooltest.Rule{gpt, {Prefix: "sfdisk --json /dev/vdb", Out: sfdiskTable(strings.ToUpper(dataType))}}, ""},
-		{"GPT with a foreign partition", []tooltest.Rule{gpt, {Prefix: "sfdisk --json /dev/vdb", Out: sfdiskTable(dataType, "0FC63DAF-8483-4772-8E79-3D69D8477DE4")}}, "/dev/vdb2 has the partition type 0FC63DAF-8483-4772-8E79-3D69D8477DE4"},
-		{"partition table unreadable", []tooltest.Rule{gpt, {Prefix: "sfdisk --json /dev/vdb", Err: &tool.Error{Command: "sfdisk", Code: 1}}}, "read the partition table"},
+		{"empty GPT", []tooltest.Rule{gpt, {Prefix: "sfdisk --lock=nonblock --json /dev/vdb", Out: sfdiskTable()}}, ""},
+		{"GPT with chalkos partitions", []tooltest.Rule{gpt, {Prefix: "sfdisk --lock=nonblock --json /dev/vdb", Out: sfdiskTable(strings.ToUpper(dataType))}}, ""},
+		{"GPT with a foreign partition", []tooltest.Rule{gpt, {Prefix: "sfdisk --lock=nonblock --json /dev/vdb", Out: sfdiskTable(dataType, "0FC63DAF-8483-4772-8E79-3D69D8477DE4")}}, "/dev/vdb2 has the partition type 0fc63daf-8483-4772-8e79-3d69d8477de4"},
+		{"partition table unreadable", []tooltest.Rule{gpt, {Prefix: "sfdisk --lock=nonblock --json /dev/vdb", Err: &tool.Error{Command: "sfdisk", Code: 1}}}, "read the partition table"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := &tooltest.Runner{}
@@ -765,9 +765,9 @@ func TestSetUpChecksPinnedDiskIsUnchanged(t *testing.T) {
 		refused bool
 	}{
 		{"empty", nil, false},
-		{"chalkos partitions", []tooltest.Rule{gpt, {Prefix: "sfdisk --json /dev/vdb", Out: sfdiskTable(dataType)}}, false},
+		{"chalkos partitions", []tooltest.Rule{gpt, {Prefix: "sfdisk --lock=nonblock --json /dev/vdb", Out: sfdiskTable(dataType)}}, false},
 		{"MBR", []tooltest.Rule{{Prefix: "blkid -p -o export /dev/vdb", Out: "DEVNAME=/dev/vdb\nPTUUID=5d1f2c3a\nPTTYPE=dos\n"}}, true},
-		{"foreign GPT partition", []tooltest.Rule{gpt, {Prefix: "sfdisk --json /dev/vdb", Out: sfdiskTable(dataType, "0FC63DAF-8483-4772-8E79-3D69D8477DE4")}}, true},
+		{"foreign GPT partition", []tooltest.Rule{gpt, {Prefix: "sfdisk --lock=nonblock --json /dev/vdb", Out: sfdiskTable(dataType, "0FC63DAF-8483-4772-8E79-3D69D8477DE4")}}, true},
 		{"file system", []tooltest.Rule{{Prefix: "blkid -p -o export /dev/vdb", Out: "DEVNAME=/dev/vdb\nTYPE=ext4\n"}}, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {

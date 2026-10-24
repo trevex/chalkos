@@ -17,8 +17,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/node"
-	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -140,7 +140,7 @@ func (i *Installer) fromParts(ctx context.Context, target storage.BlockDisk, l l
 	if err != nil {
 		return err
 	}
-	esp, err := table.findType(typeESP)
+	esp, err := table.findType(gpt.TypeESP)
 	if err != nil {
 		return err
 	}
@@ -167,20 +167,12 @@ func (i *Installer) classify(ctx context.Context, target storage.BlockDisk, l la
 	if req.WipeDisk {
 		return true, nil
 	}
-	out, err := i.Run.Run(ctx, "blkid", "-p", "-o", "export", target.Device)
-	var te *tool.Error
-	// blkid exits with 2 and says nothing when it finds nothing.
-	if errors.As(err, &te) && te.Code == 2 && strings.TrimSpace(te.Stderr) == "" {
-		return true, nil
-	}
+	props, err := node.Probe(ctx, i.Run, target.Device)
 	if err != nil {
-		return false, fmt.Errorf("probe the target disk %s: %w", target.Device, err)
+		return false, err
 	}
-	props := map[string]string{}
-	for _, line := range strings.Split(string(out), "\n") {
-		if k, v, ok := strings.Cut(line, "="); ok {
-			props[k] = v
-		}
+	if len(props) == 0 {
+		return true, nil
 	}
 	if props["PTTYPE"] != "gpt" || props["TYPE"] != "" {
 		return false, fmt.Errorf("the target disk %s carries data (%s); pass --wipe-disk to replace it", target, strings.TrimSpace(props["PTTYPE"]+" "+props["TYPE"]))
@@ -195,11 +187,7 @@ func (i *Installer) classify(ctx context.Context, target storage.BlockDisk, l la
 	if err := l.check(table, req.Section); err != nil {
 		return false, fmt.Errorf("the target disk %s is not one an earlier install of this image left: %w; pass --wipe-disk to replace it", target, err)
 	}
-	parts, err := i.slotWriter(target).ReadTable(ctx)
-	if err != nil {
-		return false, err
-	}
-	pairs, err := upgrade.StoreSlots(target.String(), parts)
+	pairs, err := upgrade.StoreSlots(target.String(), table.Partitions)
 	if err != nil {
 		return false, err
 	}
@@ -360,7 +348,7 @@ const ukiTempPrefix = ".install-"
 // writeUKI writes the image's UKI to the ESP, checked as an upgrade checks it, and then receives
 // the boot loader, which it checks and returns. The UKI is the image's first generation, with no
 // tries counter: the first boot has nothing to fall back to.
-func (i *Installer) writeUKI(ctx context.Context, esp partition, h upgrade.Header, parts io.Reader) (_ []byte, err error) {
+func (i *Installer) writeUKI(ctx context.Context, esp gpt.Partition, h upgrade.Header, parts io.Reader) (_ []byte, err error) {
 	dir, unmount, err := i.mountESP(ctx, esp)
 	if err != nil {
 		return nil, err
@@ -465,7 +453,7 @@ func (i *Installer) receiveBootLoader(h upgrade.Header, parts io.Reader) ([]byte
 
 // writeBootLoader writes the boot loader to the ESP's removable-media path, where firmware finds
 // it without a boot entry, under a temporary name first.
-func (i *Installer) writeBootLoader(ctx context.Context, esp partition, loader []byte) (err error) {
+func (i *Installer) writeBootLoader(ctx context.Context, esp gpt.Partition, loader []byte) (err error) {
 	dir, unmount, err := i.mountESP(ctx, esp)
 	if err != nil {
 		return err
@@ -514,7 +502,7 @@ func writeSynced(path string, data []byte) error {
 
 // mountESP mounts the target's ESP in the install's own directory, where nothing else uses it,
 // and returns the directory and the function that flushes the file system and unmounts it.
-func (i *Installer) mountESP(ctx context.Context, esp partition) (string, func() error, error) {
+func (i *Installer) mountESP(ctx context.Context, esp gpt.Partition) (string, func() error, error) {
 	dir := filepath.Join(i.WorkDir, "esp")
 	if err := i.releaseESP(ctx); err != nil {
 		return "", nil, err
@@ -570,7 +558,7 @@ func (i *Installer) unboot(ctx context.Context, target storage.BlockDisk) error 
 	if err != nil {
 		return err
 	}
-	esp, err := table.findType(typeESP)
+	esp, err := table.findType(gpt.TypeESP)
 	if err != nil {
 		return err
 	}
@@ -600,7 +588,7 @@ func (i *Installer) unboot(ctx context.Context, target storage.BlockDisk) error 
 }
 
 // removeBootLoader removes the boot loader from the ESP.
-func (i *Installer) removeBootLoader(ctx context.Context, esp partition) (err error) {
+func (i *Installer) removeBootLoader(ctx context.Context, esp gpt.Partition) (err error) {
 	dir, unmount, err := i.mountESP(ctx, esp)
 	if err != nil {
 		return err

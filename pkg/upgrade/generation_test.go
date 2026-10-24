@@ -5,6 +5,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 )
 
 // TestGeneration reads an entry's generation from its ID, with or without the tries counter the
@@ -129,7 +131,7 @@ func TestSlotLabels(t *testing.T) {
 		{"store-verity_3fa93fa93fa93fa9", "store_81bd02c4a9e1aa00", ""},
 		{"store-verity", "store", ""},
 	} {
-		s := Slot{Verity: Partition{Name: tc.verity}, Data: Partition{Name: tc.data}}
+		s := Slot{Verity: gpt.Partition{Name: tc.verity}, Data: gpt.Partition{Name: tc.data}}
 		if got := s.Label(); got != tc.want {
 			t.Errorf("the label of %s and %s = %q, want %q", tc.verity, tc.data, got, tc.want)
 		}

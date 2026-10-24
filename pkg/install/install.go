@@ -7,7 +7,6 @@ package install
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -27,6 +26,7 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -34,8 +34,6 @@ import (
 )
 
 const (
-	// typeESP is the GPT partition type of an EFI system partition.
-	typeESP         = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
 	stateLabel      = "state"
 	installedMarker = "installed"
 	stateMapperName = "state"
@@ -163,7 +161,7 @@ type Installer struct {
 	// against when Secure Boot is on.
 	EFIVars string
 	// OpenPartition opens a partition of the target disk for its store slots.
-	OpenPartition func(p upgrade.Partition, write bool) (upgrade.PartitionFile, error)
+	OpenPartition func(p gpt.Partition, write bool) (upgrade.PartitionFile, error)
 	// Change, when set, is called before each change to the target disk, its ESP, STATE and the
 	// firmware's boot entries; tests make it fail to stop an install at each of them.
 	Change func(what string) error
@@ -411,7 +409,7 @@ func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, de
 			return nil
 		}
 		log.Printf("STATE holds %q, but the node's encryption policy is %s; creating it again", found, policy)
-		if _, err := i.Run.Run(ctx, "sfdisk", "--delete", disk.Device, strconv.Itoa(state.Number)); err != nil {
+		if _, err := i.sfdisk(disk.Device).Exec(ctx, "--delete", disk.Device, strconv.Itoa(state.Number)); err != nil {
 			return fmt.Errorf("delete STATE: %w", err)
 		}
 	} else if !errors.Is(err, errNotFound) {
@@ -457,11 +455,11 @@ func (i *Installer) randomizeESP(ctx context.Context, disk storage.BlockDisk) er
 	if err != nil {
 		return err
 	}
-	esp, err := table.findType(typeESP)
+	esp, err := table.findType(gpt.TypeESP)
 	if err != nil {
 		return err
 	}
-	if _, err := i.Run.Run(ctx, "sfdisk", "--part-uuid", disk.Device, strconv.Itoa(esp.Number), newUUID()); err != nil {
+	if _, err := i.sfdisk(disk.Device).Exec(ctx, "--part-uuid", disk.Device, strconv.Itoa(esp.Number), gpt.NewUUID()); err != nil {
 		return fmt.Errorf("set the ESP's partition UUID: %w", err)
 	}
 	return nil
@@ -548,14 +546,6 @@ func WriteShare(stateDir string, share []byte) error {
 		return err
 	}
 	return atomicfile.WriteFile(filepath.Join(dir, "share.json"), share, 0o600)
-}
-
-func newUUID() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	b[6] = b[6]&0x0f | 0x40
-	b[8] = b[8]&0x3f | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 // isMounted reports whether a file system is mounted at path, per a mountinfo file.
