@@ -3,10 +3,12 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // testTree is a program with a command, a group, a hidden command and a completion command.
@@ -233,6 +235,57 @@ func TestSiteLinks(t *testing.T) {
 	} {
 		if _, err := siteLinks(bad, docs); err == nil {
 			t.Errorf("siteLinks(%s) found a page", bad)
+		}
+	}
+}
+
+// addresses is a flag value of a type pflag does not know, as chalkctl rotate's --address.
+type addresses map[string]string
+
+func (addresses) String() string   { return "" }
+func (addresses) Set(string) error { return nil }
+func (addresses) Type() string     { return "nodeAddresses" }
+
+// unknownValue is a flag value of a type docgen does not name.
+type unknownValue struct{}
+
+func (unknownValue) String() string   { return "" }
+func (unknownValue) Set(string) error { return nil }
+func (unknownValue) Type() string     { return "ipNet" }
+
+// A flag's type is in the words of the page of config kinds; one docgen does not know shows as
+// pflag names it.
+func TestFlagType(t *testing.T) {
+	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
+	fs.Bool("bool", false, "")
+	fs.StringToString("map", nil, "")
+	fs.StringSlice("list", nil, "")
+	fs.Var(addresses{}, "address", "")
+	fs.Var(unknownValue{}, "net", "")
+	for name, want := range map[string]string{
+		"bool":    "boolean",
+		"map":     "map of string",
+		"list":    "list of string",
+		"address": "map of string",
+		"net":     "ipNet",
+	} {
+		if got := flagType(fs.Lookup(name)); got != want {
+			t.Errorf("flagType(--%s) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// A default the help names at its end is cut off and kept; parentheses elsewhere stay.
+func TestDescribedDefault(t *testing.T) {
+	for usage, want := range map[string][]string{
+		"file to write (default the thing's directory)":                       {" (default the thing's directory)", "the thing's directory"},
+		"client file (default $CHALKOSCONFIG, else ~/.config/chalkos/config)": {" (default $CHALKOSCONFIG, else ~/.config/chalkos/config)", "$CHALKOSCONFIG, else ~/.config/chalkos/config"},
+		"how long to wait (default 5m) for the node":                          nil,
+		"a size (in bytes)":                 nil,
+		"nested (default the (first) node)": nil,
+	} {
+		if got := describedDefault.FindStringSubmatch(usage); !slices.Equal(got, want) {
+			t.Errorf("describedDefault in %q = %q, want %q", usage, got, want)
 		}
 	}
 }
