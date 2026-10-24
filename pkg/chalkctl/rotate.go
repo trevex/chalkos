@@ -125,22 +125,6 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	return r.start(ctx, kind)
 }
 
-// poll is the time between two looks at the nodes' status.
-func (a *app) poll() time.Duration {
-	if a.pollInterval > 0 {
-		return a.pollInterval
-	}
-	return 3 * time.Second
-}
-
-// now is chalkctl's clock.
-func (a *app) now() time.Time {
-	if a.clock != nil {
-		return a.clock()
-	}
-	return time.Now()
-}
-
 // rotation runs the phases of a rotation on the nodes of the cluster, recording each in the
 // secrets file.
 type rotation struct {

@@ -106,3 +106,19 @@ func count[N ~int | ~uint32 | ~uint64](n N, noun string) string {
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
 }
+
+// poll is the time between two looks at the nodes' status.
+func (a *app) poll() time.Duration {
+	if a.pollInterval > 0 {
+		return a.pollInterval
+	}
+	return 3 * time.Second
+}
+
+// now is chalkctl's clock.
+func (a *app) now() time.Time {
+	if a.clock != nil {
+		return a.clock()
+	}
+	return time.Now()
+}
