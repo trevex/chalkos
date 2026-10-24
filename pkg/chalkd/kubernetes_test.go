@@ -76,7 +76,7 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 			},
 			ClusterAnswers: func(context.Context, k8s.Cluster, kpki.Share) bool { return false },
 			// The control plane runs with the certificates the node holds.
-			ControlPlaneState: func(context.Context, k8s.Cluster, kpki.Share) string { return controlPlaneCurrent },
+			CheckControlPlane: func(context.Context, k8s.Cluster, kpki.Share) error { return nil },
 			// The API server keeps no objects.
 			APIClient: func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return fake.NewClientset(), nil },
 		},

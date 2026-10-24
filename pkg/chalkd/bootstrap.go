@@ -62,13 +62,13 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 	}
 	// The static pods advertise the node's address and read the certificates the preparation
 	// writes, which runs at boot while chalkd answers already.
-	switch problem, err := preparation(k.Paths); {
+	switch prep, err := readPreparation(k.Paths); {
 	case err != nil:
 		return nil, failed(connect.CodeInternal, "%v", err)
-	case problem == preparing:
+	case prep.failure != "":
+		return nil, failed(connect.CodeFailedPrecondition, "%s", prep.problem())
+	case !prep.done:
 		return nil, failed(connect.CodeFailedPrecondition, "%v; see chalkctl logs %s --unit chalkos-kubernetes", knode.ErrNotPrepared, s.nodeName())
-	case problem != "":
-		return nil, failed(connect.CodeFailedPrecondition, "%s", problem)
 	}
 	ips, err := knode.ReadNodeIPs(k.Paths)
 	if err != nil {

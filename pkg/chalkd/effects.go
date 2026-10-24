@@ -349,8 +349,8 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 		// The Kubernetes units start only once their preparation succeeds, whose reason tells
 		// more than systemctl's error; another unit's failure has its own.
 		if slices.ContainsFunc(byHand.restart, isKubernetesUnit) && s.Kubernetes != nil {
-			if problem, err := preparation(s.Kubernetes.Paths); err == nil && problem != "" && problem != preparing {
-				return nil, failed(connect.CodeFailedPrecondition, "%v; the node runs no kubelet: %s%s", errors.Join(errs...), problem, hand)
+			if prep, err := readPreparation(s.Kubernetes.Paths); err == nil && prep.failure != "" {
+				return nil, failed(connect.CodeFailedPrecondition, "%v; the node runs no kubelet: %s%s", errors.Join(errs...), prep.problem(), hand)
 			}
 		}
 		return nil, failed(connect.CodeInternal, "%v%s", errors.Join(errs...), hand)

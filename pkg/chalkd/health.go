@@ -82,11 +82,11 @@ func (h *Health) Check(ctx context.Context) error {
 	if _, err := os.Stat(k.Paths.Share()); errors.Is(err, fs.ErrNotExist) {
 		return h.applied(ctx)
 	}
-	switch problem, err := preparation(k.Paths); {
+	switch prep, err := readPreparation(k.Paths); {
 	case err != nil:
 		return err
-	case problem != "":
-		return errors.New(problem)
+	case prep.problem() != "":
+		return errors.New(prep.problem())
 	}
 	c, err := k8s.ReadCluster(k.Paths.Cluster)
 	if err != nil {

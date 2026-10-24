@@ -25,25 +25,33 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
-// preparing is the state of a node whose Kubernetes files are being prepared.
-const preparing = "preparing"
+// preparation is how far the preparation of the node's Kubernetes files got.
+type preparation struct {
+	// failure is why the last preparation failed; "" unless it did.
+	failure string
+	// done is set once a preparation succeeded.
+	done bool
+}
 
-// preparation says why the node's Kubernetes files cannot be used: why the last preparation
-// failed, preparing while one runs, or "" once one succeeded.
-func preparation(p knode.Paths) (string, error) {
-	switch reason, err := knode.PreparationError(p); {
-	case err != nil:
-		return "", err
-	case reason != "":
-		return "preparation failed: " + reason, nil
+// readPreparation reads how far the preparation of the node's Kubernetes files got.
+func readPreparation(p knode.Paths) (preparation, error) {
+	reason, err := knode.PreparationError(p)
+	if err != nil || reason != "" {
+		return preparation{failure: reason}, err
 	}
-	switch prepared, err := knode.Prepared(p); {
-	case err != nil:
-		return "", err
-	case !prepared:
-		return preparing, nil
+	done, err := knode.Prepared(p)
+	return preparation{done: done}, err
+}
+
+// problem says why the node's Kubernetes files cannot be used, "" once they can.
+func (p preparation) problem() string {
+	switch {
+	case p.failure != "":
+		return "preparation failed: " + p.failure
+	case !p.done:
+		return "preparing"
 	}
-	return "", nil
+	return ""
 }
 
 // status describes the node's Kubernetes state.
@@ -57,9 +65,9 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 		st.State = "no share"
 		return st, nil
 	}
-	if problem, err := preparation(k.Paths); err != nil {
+	if prep, err := readPreparation(k.Paths); err != nil {
 		return nil, err
-	} else if problem != "" {
+	} else if problem := prep.problem(); problem != "" {
 		st.State = problem
 		return st, nil
 	}
@@ -92,8 +100,10 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 			}
 		}
 		if share, err := knode.ReadShare(k.Paths); err == nil {
-			st.ControlPlane = k.hooks.ControlPlaneState(ctx, c, share)
-			st.ControlPlaneCurrent = st.ControlPlane == controlPlaneCurrent
+			st.ControlPlane, st.ControlPlaneCurrent = controlPlaneCurrent, true
+			if err := k.hooks.CheckControlPlane(ctx, c, share); err != nil {
+				st.ControlPlane, st.ControlPlaneCurrent = err.Error(), false
+			}
 		}
 	default:
 		st.State = k.joinStatus(c, m == knode.MembershipJoining)
@@ -128,14 +138,13 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 	return st, nil
 }
 
-// controlPlaneCurrent is the control plane's state once its API server and etcd serve the
-// certificates the node holds now and the API server answers ready.
+// controlPlaneCurrent is the control plane's state in the status once checkControlPlane passes.
 const controlPlaneCurrent = "current"
 
-// controlPlaneState checks that the API server and etcd present the certificates in the
-// control plane's files and that the API server answers ready: after the files were replaced,
-// the kubelet starts the static pods again, and until then they run on the ones before.
-func (k *Kubernetes) controlPlaneState(ctx context.Context, c k8s.Cluster, share kpki.Share) string {
+// checkControlPlane checks that the API server and etcd present the certificates in the control
+// plane's files and that the API server answers ready. Once the files are replaced, the kubelet
+// starts the static pods again; until then they run on the certificates before.
+func (k *Kubernetes) checkControlPlane(ctx context.Context, c k8s.Cluster, share kpki.Share) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	for _, server := range []struct{ name, url, file string }{
@@ -144,16 +153,16 @@ func (k *Kubernetes) controlPlaneState(ctx context.Context, c k8s.Cluster, share
 	} {
 		u, err := url.Parse(server.url)
 		if err != nil {
-			return fmt.Sprintf("%s: %v", server.name, err)
+			return fmt.Errorf("%s: %v", server.name, err)
 		}
 		if err := servesFile(ctx, u.Host, filepath.Join(k.Paths.PKI, server.file)); err != nil {
-			return fmt.Sprintf("%s %v", server.name, err)
+			return fmt.Errorf("%s %v", server.name, err)
 		}
 	}
 	if !k.hooks.APIServerReady(ctx, c, share) {
-		return "the API server is not ready"
+		return errors.New("the API server is not ready")
 	}
-	return controlPlaneCurrent
+	return nil
 }
 
 // servesFile checks that the TLS server at addr presents the certificate the file holds. The

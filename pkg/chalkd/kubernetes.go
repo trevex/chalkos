@@ -101,9 +101,9 @@ type KubernetesHooks struct {
 	APIServerReady func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
 	// EtcdStopped waits until the node's etcd stopped once its static pod is gone.
 	EtcdStopped func(ctx context.Context, c k8s.Cluster) error
-	// ControlPlaneState says whether the node's API server and etcd run with the certificates the
-	// node holds now: controlPlaneCurrent, or what is not so.
-	ControlPlaneState func(ctx context.Context, c k8s.Cluster, share kpki.Share) string
+	// CheckControlPlane checks that the node's API server and etcd run with the certificates the
+	// node holds now, and says what is not so.
+	CheckControlPlane func(ctx context.Context, c k8s.Cluster, share kpki.Share) error
 	// APIClient returns a client for the node's own API server.
 	APIClient func(c k8s.Cluster, share kpki.Share) (kubernetes.Interface, error)
 	// Approve approves kubelet serving certificates with the API server at cfg until ctx ends.
@@ -210,8 +210,8 @@ func NewKubernetes(o KubernetesOptions) *Kubernetes {
 	if h.EtcdStopped == nil {
 		h.EtcdStopped = etcdStopped
 	}
-	if h.ControlPlaneState == nil {
-		h.ControlPlaneState = k.controlPlaneState
+	if h.CheckControlPlane == nil {
+		h.CheckControlPlane = k.checkControlPlane
 	}
 	if h.APIClient == nil {
 		h.APIClient = k.ownAPIClient

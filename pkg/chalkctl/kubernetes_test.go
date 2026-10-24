@@ -105,9 +105,9 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o chalkd.KubernetesOptions) (
 		// The API server keeps no objects.
 		o.Hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return fake.NewClientset(), nil }
 	}
-	if o.Hooks.ControlPlaneState == nil {
+	if o.Hooks.CheckControlPlane == nil {
 		// The control plane runs with the certificates the node holds.
-		o.Hooks.ControlPlaneState = func(context.Context, k8s.Cluster, kpki.Share) string { return "current" }
+		o.Hooks.CheckControlPlane = func(context.Context, k8s.Cluster, kpki.Share) error { return nil }
 	}
 	s.Kubernetes = chalkd.NewKubernetes(o)
 	// The loops a test started would run on against its removed files until the test binary ends.
