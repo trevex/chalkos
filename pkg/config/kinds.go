@@ -27,10 +27,6 @@ type hostSpec struct {
 	Hostname *string `json:"hostname"`
 }
 
-type secretSpec struct {
-	Data map[string]string `json:"data"`
-}
-
 type systemDiskSpec struct {
 	Disk       storage.DiskRef `json:"disk"`
 	Encryption struct {

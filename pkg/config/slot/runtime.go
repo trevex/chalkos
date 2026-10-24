@@ -59,12 +59,7 @@ func ReadRuntime(runDir string) ([]config.Document, error) {
 
 // credentials returns, by unit, the files of the values its kinds' secretRefs name.
 func credentials(docs []config.Document, schemas *schema.Schemas, units map[string][]string) (map[string]map[string][]byte, error) {
-	data := map[string]map[string]string{}
-	for _, d := range docs {
-		if d.IsSecret() {
-			data[d.Name] = secretData(d)
-		}
-	}
+	secrets := config.Secrets(docs)
 	out := map[string]map[string][]byte{}
 	for unit, kinds := range units {
 		if !validName(unit) {
@@ -79,7 +74,7 @@ func credentials(docs []config.Document, schemas *schema.Schemas, units map[stri
 				if err := config.CheckCredential(ref); err != nil {
 					return nil, fmt.Errorf("%s: %w", d, err)
 				}
-				v, ok := data[ref.Name][ref.Key]
+				v, ok := secrets.Lookup(ref)
 				if !ok {
 					return nil, fmt.Errorf("%s names key %q of Secret %q, which the config does not hold", d, ref.Key, ref.Name)
 				}
@@ -89,18 +84,6 @@ func credentials(docs []config.Document, schemas *schema.Schemas, units map[stri
 		out[unit] = files
 	}
 	return out, nil
-}
-
-func secretData(d config.Document) map[string]string {
-	spec, _ := d.Object["spec"].(map[string]any)
-	data, _ := spec["data"].(map[string]any)
-	out := make(map[string]string, len(data))
-	for k, v := range data {
-		if s, ok := v.(string); ok {
-			out[k] = s
-		}
-	}
-	return out
 }
 
 // syncFiles makes dir hold exactly files, each readable by root alone. A unit reads its

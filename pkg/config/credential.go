@@ -16,7 +16,7 @@ func CredentialFile(ref SecretRef) string { return ref.Name + "." + ref.Key }
 
 // CheckCredential refuses a reference whose file would not become a credential: systemd fails a
 // unit whose credentials directory holds a file whose credential ID is not valid. Secret and key
-// do not start with a dot, as the store's own temporary files do.
+// do not start with a dot, as the slot package's own temporary files do.
 func CheckCredential(ref SecretRef) error {
 	if ref.Name == "" || ref.Key == "" || strings.HasPrefix(ref.Name, ".") || strings.HasPrefix(ref.Key, ".") ||
 		!credentialNameValid(CredentialPrefix+"_"+CredentialFile(ref)) {

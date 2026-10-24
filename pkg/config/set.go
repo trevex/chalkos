@@ -10,8 +10,7 @@ import (
 // Set is a node's whole config: every document valid against the image's schemas, with schema
 // defaults filled in, and the rules of a set met.
 type Set struct {
-	docs    []Document
-	secrets map[string]map[string]string
+	docs []Document
 	// schemas are the image's, which renderers read annotations from.
 	schemas *schema.Schemas
 }
@@ -31,7 +30,7 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 	for _, k := range s.Kinds() {
 		multiple[k.APIVersion+" "+k.Kind] = k.Multiple
 	}
-	set := &Set{secrets: map[string]map[string]string{}, schemas: s}
+	set := &Set{schemas: s}
 	count := map[string]int{}
 	names := map[string]bool{}
 	for _, d := range docs {
@@ -60,14 +59,7 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 		}
 	}
 	SortDocuments(set.docs)
-	for _, d := range set.Of(CoreAPI, "Secret") {
-		var spec secretSpec
-		if err := d.decodeSpec(&spec); err != nil {
-			return nil, err
-		}
-		set.secrets[d.Name] = spec.Data
-	}
-	if err := checkSecretRefs(set.docs, s, set.secrets); err != nil {
+	if err := checkSecretRefs(set.docs, s, Secrets(set.docs)); err != nil {
 		return nil, err
 	}
 	return set, nil
@@ -113,25 +105,12 @@ func (s *Set) CheckRegistries() error {
 	return err
 }
 
-// ResolveSecret returns the value a secretRef names.
-func (s *Set) ResolveSecret(ref SecretRef) (string, error) {
-	data, ok := s.secrets[ref.Name]
-	if !ok {
-		return "", fmt.Errorf("no Secret %q", ref.Name)
-	}
-	v, ok := data[ref.Key]
-	if !ok {
-		return "", fmt.Errorf("Secret %q has no key %q", ref.Name, ref.Key)
-	}
-	return v, nil
-}
-
 // checkSecretRefs finds every secretRef a document's own schema marks with
 // "x-chalkos-secret-ref", at whatever depth and shape that schema gives it, and checks that the
 // Secret and its key exist and that the reference can become a credential file of its own, as
 // the node writes one for each unit that reads it. It never mistakes a user's own data for one:
 // a map entry named secretRef that the schema does not itself mark is just data, not a reference.
-func checkSecretRefs(docs []Document, s *schema.Schemas, secrets map[string]map[string]string) error {
+func checkSecretRefs(docs []Document, s *schema.Schemas, secrets SecretValues) error {
 	files := map[string]SecretRef{}
 	for _, d := range docs {
 		raw, ok := s.Raw(d.APIVersion, d.Kind)
@@ -142,11 +121,10 @@ func checkSecretRefs(docs []Document, s *schema.Schemas, secrets map[string]map[
 		sch, _ := raw.(map[string]any)
 		defs, _ := sch["$defs"].(map[string]any)
 		err := walkSchemaRefs(defs, sch, d.Object, func(ref SecretRef) error {
-			data, ok := secrets[ref.Name]
-			if !ok {
+			if _, ok := secrets[ref.Name]; !ok {
 				return fmt.Errorf("%s names Secret %q, which the config does not hold", d, ref.Name)
 			}
-			if _, ok := data[ref.Key]; !ok {
+			if _, ok := secrets.Lookup(ref); !ok {
 				return fmt.Errorf("%s names key %q of Secret %q, which it does not hold", d, ref.Key, ref.Name)
 			}
 			if err := CheckCredential(ref); err != nil {

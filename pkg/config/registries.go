@@ -22,23 +22,6 @@ type Registries struct {
 	Mirrors []RegistryMirror
 }
 
-// SecretsOf returns the value of the key a secretRef names among the Secrets of docs, and whether
-// they hold it.
-func SecretsOf(docs []Document) (func(SecretRef) (string, bool), error) {
-	data := map[string]map[string]string{}
-	for _, d := range docsOf(docs, CoreAPI, "Secret") {
-		var spec secretSpec
-		if err := d.decodeSpec(&spec); err != nil {
-			return nil, err
-		}
-		data[d.Name] = spec.Data
-	}
-	return func(ref SecretRef) (string, bool) {
-		v, ok := data[ref.Name][ref.Key]
-		return v, ok
-	}, nil
-}
-
 // RegistriesOf returns the Registry and Mirror documents among docs, with each password taken
 // from secret, or left empty when secret is nil. It reads documents as delivered, without the
 // image's defaults, as chalkd reads an upgrade's config before it checks it against the image.

@@ -356,18 +356,11 @@ type State struct {
 // secrets hashes the values the secretRefs of the output's input documents name, by Secret and
 // key; empty for documents that reference none.
 func (d Definition) secrets(in Input) string {
-	data := map[string]map[string]any{}
-	for _, doc := range in.Documents {
-		if doc.IsSecret() {
-			spec, _ := doc.Object["spec"].(map[string]any)
-			values, _ := spec["data"].(map[string]any)
-			data[doc.Name] = values
-		}
-	}
+	secrets := config.Secrets(in.Documents)
 	var lines []string
 	for _, doc := range d.documents(in) {
 		for _, ref := range config.SecretRefs(doc, in.Schemas) {
-			v, _ := data[ref.Name][ref.Key].(string)
+			v, _ := secrets.Lookup(ref)
 			sum := sha256.Sum256([]byte(v))
 			lines = append(lines, ref.Name+"\x00"+ref.Key+"\x00"+hex.EncodeToString(sum[:]))
 		}

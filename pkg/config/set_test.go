@@ -140,17 +140,20 @@ func TestNewSetRejects(t *testing.T) {
 	}
 }
 
-func TestResolveSecret(t *testing.T) {
+// TestSecrets finds the values of a set's Secrets by Secret and key.
+func TestSecrets(t *testing.T) {
 	s, err := parseSet(t, minimal+"---\napiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: bgp}\nspec: {data: {password: s3cret}}\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := s.ResolveSecret(SecretRef{Name: "bgp", Key: "password"})
-	if err != nil || v != "s3cret" {
-		t.Fatalf("ResolveSecret = %q, %v", v, err)
+	secrets := Secrets(s.Documents())
+	if v, ok := secrets.Lookup(SecretRef{Name: "bgp", Key: "password"}); !ok || v != "s3cret" {
+		t.Fatalf("Lookup = %q, %v", v, ok)
 	}
-	if _, err := s.ResolveSecret(SecretRef{Name: "bgp", Key: "nope"}); err == nil {
-		t.Error("resolved a missing key")
+	for _, ref := range []SecretRef{{Name: "bgp", Key: "nope"}, {Name: "nope", Key: "password"}} {
+		if v, ok := secrets.Lookup(ref); ok {
+			t.Errorf("Lookup(%+v) = %q, want none", ref, v)
+		}
 	}
 }
 
@@ -162,7 +165,7 @@ func TestCheckSecretRefsFindsARealSecretRef(t *testing.T) {
 		"spec": map[string]any{"name": "a", "token": map[string]any{
 			"secretRef": map[string]any{"name": "missing", "key": "k"}}},
 	}}}
-	err := checkSecretRefs(docs, imageSchemas(t), map[string]map[string]string{})
+	err := checkSecretRefs(docs, imageSchemas(t), SecretValues{})
 	if err == nil || !strings.Contains(err.Error(), `Demo "a"`) || !strings.Contains(err.Error(), `Secret "missing"`) {
 		t.Fatalf("err = %v", err)
 	}
@@ -215,7 +218,7 @@ func TestCheckSecretRefsIgnoresAnUnmarkedUserMapEntry(t *testing.T) {
 		"spec": map[string]any{"data": map[string]any{
 			"secretRef": map[string]any{"name": "missing", "key": "k"}}},
 	}}}
-	if err := checkSecretRefs(docs, extraSchemaDir(t), map[string]map[string]string{}); err != nil {
+	if err := checkSecretRefs(docs, extraSchemaDir(t), SecretValues{}); err != nil {
 		t.Fatalf("err = %v, want nil: the schema never marks spec.data as a secret reference", err)
 	}
 }
