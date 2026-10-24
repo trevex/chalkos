@@ -115,5 +115,5 @@ role, `vip holder` or `vip standby`, and `control plane current` when its API se
 serve the current certificates and the API server answers ready.
 
 Sources: `pkg/kubernetes/cluster.go`, `pkg/kubernetes/manifests/manifests.go`,
-`pkg/kubernetes/addons/addons.go`, `pkg/chalkd/kubernetes.go`, `pkg/chalkd/join.go` and
+`pkg/kubernetes/addons/addons.go`, `pkg/chalkd/kubernetes_status.go`, `pkg/chalkd/join.go` and
 `modules/node/kubernetes`.
