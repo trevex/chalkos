@@ -13,20 +13,16 @@ in
 {
   # The image's own name for the input differs from mkImages's osCA, so the options reference
   # names each once.
-  options.chalkos = lib.mkOption {
-    type = lib.types.submodule {
-      options.maintenance.osCA = lib.mkOption {
-        type = lib.types.nullOr lib.types.path;
-        default = null;
-        description = ''
-          Public part of the cluster's secrets (`secrets.pub.json` from `chalkctl gen secrets`),
-          whose OS CA the image carries, so chalkd in maintenance mode accepts only clients with a
-          certificate from it. null builds an image that accepts any client until it is installed.
-          mkImages sets it, in every image and the installer, from its `osCA`, which checks the
-          file's version; the image's build checks it again.
-        '';
-      };
-    };
+  options.chalkos.maintenance.osCA = lib.mkOption {
+    type = lib.types.nullOr lib.types.path;
+    default = null;
+    description = ''
+      Public part of the cluster's secrets (`secrets.pub.json` from `chalkctl gen secrets`),
+      whose OS CA the image carries, so chalkd in maintenance mode accepts only clients with a
+      certificate from it. null builds an image that accepts any client until it is installed.
+      mkImages sets it, in every image and the installer, from its `osCA`, which checks the
+      file's version; the image's build checks it again.
+    '';
   };
 
   config = {

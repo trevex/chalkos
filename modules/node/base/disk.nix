@@ -125,56 +125,52 @@ in
 {
   imports = [ "${modulesPath}/image/repart.nix" ];
 
-  options.chalkos = lib.mkOption {
-    type = lib.types.submodule {
-      options.disk = {
-        espSize = lib.mkOption {
-          type = lib.types.str;
-          default = "1G";
-          description = "Size of the EFI system partition, which holds the UKIs of both slots; at least 260M, the smallest systemd-repart formats as vfat.";
-        };
-        storeSize = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = "3G";
-          description = ''
-            Size of each store slot's erofs data partition; null sizes it to its contents, for
-            images that are never upgraded.
-          '';
-        };
-        storeVeritySize = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = "128M";
-          description = ''
-            Size of each store slot's dm-verity hash partition; null sizes it to its contents. The
-            image build fails when the hash tree takes more than 80% of it. With 4 KiB blocks the
-            tree needs up to about 1/128 of storeSize.
-          '';
-        };
-        stateSize = lib.mkOption {
-          type = lib.types.str;
-          default = "128M";
-          description = "Size of the STATE partition holding the node's config and secrets; at least 64M, the smallest encrypted ext4 partition systemd-repart makes.";
-        };
-      };
-      options.provenance = {
-        revision = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = null;
-          description = ''
-            The git revision the image is built from, as `metadata.json` records it; mkImages sets
-            it from its `revision` argument. It never reaches the store, so it changes no root hash,
-            and nothing orders or refuses images by it.
-          '';
-        };
-        tag = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = null;
-          description = ''
-            The git tag the image is built from, as `metadata.json` records it; mkImages sets it
-            from its `tag` argument. Like the revision, it only says where the image came from.
-          '';
-        };
-      };
+  options.chalkos.disk = {
+    espSize = lib.mkOption {
+      type = lib.types.str;
+      default = "1G";
+      description = "Size of the EFI system partition, which holds the UKIs of both slots; at least 260M, the smallest systemd-repart formats as vfat.";
+    };
+    storeSize = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = "3G";
+      description = ''
+        Size of each store slot's erofs data partition; null sizes it to its contents, for
+        images that are never upgraded.
+      '';
+    };
+    storeVeritySize = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = "128M";
+      description = ''
+        Size of each store slot's dm-verity hash partition; null sizes it to its contents. The
+        image build fails when the hash tree takes more than 80% of it. With 4 KiB blocks the
+        tree needs up to about 1/128 of storeSize.
+      '';
+    };
+    stateSize = lib.mkOption {
+      type = lib.types.str;
+      default = "128M";
+      description = "Size of the STATE partition holding the node's config and secrets; at least 64M, the smallest encrypted ext4 partition systemd-repart makes.";
+    };
+  };
+  options.chalkos.provenance = {
+    revision = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        The git revision the image is built from, as `metadata.json` records it; mkImages sets
+        it from its `revision` argument. It never reaches the store, so it changes no root hash,
+        and nothing orders or refuses images by it.
+      '';
+    };
+    tag = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        The git tag the image is built from, as `metadata.json` records it; mkImages sets it
+        from its `tag` argument. Like the revision, it only says where the image came from.
+      '';
     };
   };
 

@@ -253,35 +253,31 @@ let
       '';
 in
 {
-  options.chalkos = lib.mkOption {
-    type = lib.types.submodule {
-      options.kernel = {
-        moduleGroups = lib.mkOption {
-          type = lib.types.listOf (lib.types.enum (lib.attrNames groups));
-          description = ''
-            Groups of kernel modules the image carries. The base groups are set by default and
-            a variant's modules add to them, for example `[ "gpu" ]`; `lib.mkForce` replaces
-            them. Base: ${lib.concatStringsSep ", " baseGroups}. Further:
-            ${lib.concatStringsSep ", " (lib.subtractLists baseGroups (lib.attrNames groups))}.
-            Modules from `boot.extraModulePackages` are always included whole, with the modules
-            of the kernel they depend on.
-          '';
-        };
-        extraModules = lib.mkOption {
-          type = lib.types.listOf lib.types.str;
-          default = [ ];
-          example = [ "kvm_amd" ];
-          description = ''
-            Kernel modules the image carries besides its groups, with what they depend on. A name
-            the kernel does not know fails the build.
-          '';
-        };
-        allModules = lib.mkOption {
-          type = lib.types.bool;
-          default = false;
-          description = "Carry every module of the kernel instead of the groups and names.";
-        };
-      };
+  options.chalkos.kernel = {
+    moduleGroups = lib.mkOption {
+      type = lib.types.listOf (lib.types.enum (lib.attrNames groups));
+      description = ''
+        Groups of kernel modules the image carries. The base groups are set by default and
+        a variant's modules add to them, for example `[ "gpu" ]`; `lib.mkForce` replaces
+        them. Base: ${lib.concatStringsSep ", " baseGroups}. Further:
+        ${lib.concatStringsSep ", " (lib.subtractLists baseGroups (lib.attrNames groups))}.
+        Modules from `boot.extraModulePackages` are always included whole, with the modules
+        of the kernel they depend on.
+      '';
+    };
+    extraModules = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "kvm_amd" ];
+      description = ''
+        Kernel modules the image carries besides its groups, with what they depend on. A name
+        the kernel does not know fails the build.
+      '';
+    };
+    allModules = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Carry every module of the kernel instead of the groups and names.";
     };
   };
 

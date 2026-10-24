@@ -416,32 +416,28 @@ in
     type = lib.types.attrsOf (lib.types.submodule grant);
   };
 
-  options.chalkos = lib.mkOption {
-    type = lib.types.submodule {
-      options.outputs = lib.mkOption {
-        type = lib.types.attrsOf (lib.types.submodule output);
-        default = { };
-        description = ''
-          Config files of the node's services, by a name of the output's own, each rendered from
-          documents by a program of the image's store. chalkd renders and checks every output
-          before a delivery changes anything, and refuses the delivery when one fails; once the
-          delivery is stored it swaps the files in, and the effects of `chalkos.effects` that name
-          a changed output fire. `chalkos-config.service` renders them at boot, before services
-          start, and fails when one fails.
-        '';
-      };
-      options.effects = lib.mkOption {
-        type = lib.types.attrsOf effect;
-        default = { };
-        description = ''
-          What a delivery does to the node's services, by a name of the effect's own. Once a
-          delivery is applied, chalkd takes every effect one of whose `outputs` changed, the
-          documents of one of whose `kinds` did, or whose `when` holds: it reloads the units
-          of their `reload`, runs their `run`, restarts the units of their `restart`, and acts on
-          its own loops as their `chalkd` says. An effect exists only when it is declared.
-        '';
-      };
-    };
+  options.chalkos.outputs = lib.mkOption {
+    type = lib.types.attrsOf (lib.types.submodule output);
+    default = { };
+    description = ''
+      Config files of the node's services, by a name of the output's own, each rendered from
+      documents by a program of the image's store. chalkd renders and checks every output
+      before a delivery changes anything, and refuses the delivery when one fails; once the
+      delivery is stored it swaps the files in, and the effects of `chalkos.effects` that name
+      a changed output fire. `chalkos-config.service` renders them at boot, before services
+      start, and fails when one fails.
+    '';
+  };
+  options.chalkos.effects = lib.mkOption {
+    type = lib.types.attrsOf effect;
+    default = { };
+    description = ''
+      What a delivery does to the node's services, by a name of the effect's own. Once a
+      delivery is applied, chalkd takes every effect one of whose `outputs` changed, the
+      documents of one of whose `kinds` did, or whose `when` holds: it reloads the units
+      of their `reload`, runs their `run`, restarts the units of their `restart`, and acts on
+      its own loops as their `chalkd` says. An effect exists only when it is declared.
+    '';
   };
 
   config = {

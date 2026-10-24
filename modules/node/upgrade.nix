@@ -14,36 +14,32 @@ let
   chalkd = pkgs.callPackage ../../nix/chalkd.nix { };
 in
 {
-  options.chalkos = lib.mkOption {
-    type = lib.types.submodule {
-      options.upgrade = {
-        bootTries = lib.mkOption {
-          type = lib.types.ints.positive;
-          default = 3;
-          description = ''
-            How often systemd-boot boots this image after an upgrade installed it before it falls
-            back to the image the node ran before, unless a boot was found healthy first.
-          '';
-        };
-        healthTimeout = lib.mkOption {
-          type = lib.types.ints.positive;
-          default = 300;
-          description = ''
-            Seconds a boot of this image that systemd-boot counts has to become healthy. Then
-            chalkd reboots the node, so the boot loader tries again or falls back.
-          '';
-        };
-        healthIgnoreUnits = lib.mkOption {
-          type = lib.types.listOf lib.types.str;
-          default = [ ];
-          example = [ "example-sync.service" ];
-          description = ''
-            Units of the boot whose failure leaves a node without Kubernetes healthy. Only units
-            multi-user.target and sysinit.target pull in count; jobs that timers and sockets start
-            never do.
-          '';
-        };
-      };
+  options.chalkos.upgrade = {
+    bootTries = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 3;
+      description = ''
+        How often systemd-boot boots this image after an upgrade installed it before it falls
+        back to the image the node ran before, unless a boot was found healthy first.
+      '';
+    };
+    healthTimeout = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 300;
+      description = ''
+        Seconds a boot of this image that systemd-boot counts has to become healthy. Then
+        chalkd reboots the node, so the boot loader tries again or falls back.
+      '';
+    };
+    healthIgnoreUnits = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "example-sync.service" ];
+      description = ''
+        Units of the boot whose failure leaves a node without Kubernetes healthy. Only units
+        multi-user.target and sysinit.target pull in count; jobs that timers and sockets start
+        never do.
+      '';
     };
   };
 

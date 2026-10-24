@@ -369,27 +369,23 @@ in
 {
   imports = [ ./builtin.nix ];
 
-  options.chalkos = lib.mkOption {
-    type = lib.types.submodule {
-      options.kinds = lib.mkOption {
-        type = lib.types.attrsOf (lib.types.submodule kindModule);
-        default = { };
-        description = ''
-          Config kinds the image accepts, by kind name. A node's config is a set of documents of
-          these kinds; chalkctl and chalkd validate each against the kind's schema.
-        '';
-      };
-      options.facts = lib.mkOption {
-        type = lib.types.attrsOf (lib.types.submodule factModule);
-        default = { };
-        description = ''
-          Facts about the node that change rules read as `facts.<name>`, each from a file or a
-          command. chalkd loads a fact when a rule first reads it and keeps it for the delivery: a
-          file is read once, and a command runs once for each config it reads; chalkctl
-          runs no rule that reads one.
-        '';
-      };
-    };
+  options.chalkos.kinds = lib.mkOption {
+    type = lib.types.attrsOf (lib.types.submodule kindModule);
+    default = { };
+    description = ''
+      Config kinds the image accepts, by kind name. A node's config is a set of documents of
+      these kinds; chalkctl and chalkd validate each against the kind's schema.
+    '';
+  };
+  options.chalkos.facts = lib.mkOption {
+    type = lib.types.attrsOf (lib.types.submodule factModule);
+    default = { };
+    description = ''
+      Facts about the node that change rules read as `facts.<name>`, each from a file or a
+      command. chalkd loads a fact when a rule first reads it and keeps it for the delivery: a
+      file is read once, and a command runs once for each config it reads; chalkctl
+      runs no rule that reads one.
+    '';
   };
 
   config = {

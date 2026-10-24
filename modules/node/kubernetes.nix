@@ -148,45 +148,41 @@ let
   };
 in
 {
-  options.chalkos = lib.mkOption {
-    type = lib.types.submodule {
-      options.kubernetes = {
-        enable = lib.mkOption {
-          type = lib.types.bool;
-          default = false;
-          description = ''
-            Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
-            node's Kubernetes configuration. One image serves control planes and workers: the type
-            of the node's Kubernetes Node document makes it one or the other. mkImages sets it from
-            the variant's `kubernetes`; the installer runs none.
-          '';
-        };
-        package = lib.mkOption {
-          type = lib.types.package;
-          default = pkgs.kubernetes;
-          defaultText = lib.literalExpression "pkgs.kubernetes";
-          description = ''
-            Kubernetes release of the image. Nodes run its kubelet; control planes run the
-            upstream images of the same version. A Kubernetes upgrade is an image upgrade.
-          '';
-        };
-        images = {
-          etcd = lib.mkOption {
-            type = lib.types.str;
-            default = "registry.k8s.io/etcd:3.7.0-0";
-            description = "Image of etcd. The default is the version kubeadm uses with the release of the default `chalkos.kubernetes.package`; an image with another release may need another.";
-          };
-          pause = lib.mkOption {
-            type = lib.types.str;
-            default = "registry.k8s.io/pause:3.10.2";
-            description = "Image of the pod sandbox.";
-          };
-          coredns = lib.mkOption {
-            type = lib.types.str;
-            default = "registry.k8s.io/coredns/coredns:v1.14.6";
-            description = "Image of the cluster DNS.";
-          };
-        };
+  options.chalkos.kubernetes = {
+    enable = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
+        node's Kubernetes configuration. One image serves control planes and workers: the type
+        of the node's Kubernetes Node document makes it one or the other. mkImages sets it from
+        the variant's `kubernetes`; the installer runs none.
+      '';
+    };
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = pkgs.kubernetes;
+      defaultText = lib.literalExpression "pkgs.kubernetes";
+      description = ''
+        Kubernetes release of the image. Nodes run its kubelet; control planes run the
+        upstream images of the same version. A Kubernetes upgrade is an image upgrade.
+      '';
+    };
+    images = {
+      etcd = lib.mkOption {
+        type = lib.types.str;
+        default = "registry.k8s.io/etcd:3.7.0-0";
+        description = "Image of etcd. The default is the version kubeadm uses with the release of the default `chalkos.kubernetes.package`; an image with another release may need another.";
+      };
+      pause = lib.mkOption {
+        type = lib.types.str;
+        default = "registry.k8s.io/pause:3.10.2";
+        description = "Image of the pod sandbox.";
+      };
+      coredns = lib.mkOption {
+        type = lib.types.str;
+        default = "registry.k8s.io/coredns/coredns:v1.14.6";
+        description = "Image of the cluster DNS.";
       };
     };
   };
