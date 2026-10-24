@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -69,7 +70,7 @@ func check(image string, out io.Writer) error {
 		return err
 	}
 	var errs []error
-	for _, name := range sortedNames(defs) {
+	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		if err := defs[name].Check(); err != nil {
 			errs = append(errs, fmt.Errorf("fact %s: %w", name, err))
 		}
@@ -93,7 +94,7 @@ func check(image string, out io.Writer) error {
 		}
 	}
 	compiled := 0
-	for _, name := range sortedNames(effectDefs) {
+	for _, name := range slices.Sorted(maps.Keys(effectDefs)) {
 		e := effectDefs[name]
 		for _, unit := range slices.Concat(e.Restart, e.Reload) {
 			if err := checkUnit(image, unit); err != nil {
@@ -138,20 +139,11 @@ func checkUnit(image, unit string) error {
 }
 
 func declared[V any](m map[string]V) string {
-	names := sortedNames(m)
+	names := slices.Sorted(maps.Keys(m))
 	if len(names) == 0 {
 		return "none"
 	}
 	return strings.Join(names, ", ")
-}
-
-func sortedNames[V any](m map[string]V) []string {
-	names := make([]string, 0, len(m))
-	for n := range m {
-		names = append(names, n)
-	}
-	slices.Sort(names)
-	return names
 }
 
 // checkOutputs refuses an output whose programs are not of the image's store or whose inputs are
@@ -163,7 +155,7 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectD
 		kinds[k.Kind] = true
 	}
 	var errs []error
-	for _, name := range sortedNames(defs) {
+	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		d := defs[name]
 		for _, p := range []struct{ what, command string }{{"renderer", d.Render}, {"check", d.Check}} {
 			if p.command != "" && !command.InStore(p.command) {
@@ -179,7 +171,7 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectD
 			}
 		}
 	}
-	for _, name := range sortedNames(effectDefs) {
+	for _, name := range slices.Sorted(maps.Keys(effectDefs)) {
 		for _, o := range effectDefs[name].Outputs {
 			if _, ok := defs[o]; !ok {
 				errs = append(errs, fmt.Errorf("effect %s: outputs names %s, which is no output of the image; its outputs are %s", name, o, declared(defs)))
@@ -203,7 +195,7 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectD
 func checkExamples(s *schema.Schemas, defs map[string]outputs.Definition, examples map[string]string) (int, []error) {
 	var errs []error
 	n := 0
-	for _, name := range sortedNames(examples) {
+	for _, name := range slices.Sorted(maps.Keys(examples)) {
 		d, ok := defs[name]
 		if !ok {
 			errs = append(errs, fmt.Errorf("output %s: it has examples but is no output", name))

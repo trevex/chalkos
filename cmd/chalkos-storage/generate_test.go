@@ -1,9 +1,10 @@
 package main
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -57,12 +58,12 @@ func TestGenerateGolden(t *testing.T) {
 		want[name] = "-> " + target
 	}
 
-	for _, name := range sortedKeys(want) {
+	for _, name := range slices.Sorted(maps.Keys(want)) {
 		if got[name] != want[name] {
 			t.Errorf("%s:\n got: %q\nwant: %q", name, got[name], want[name])
 		}
 	}
-	for _, name := range sortedKeys(got) {
+	for _, name := range slices.Sorted(maps.Keys(got)) {
 		if _, ok := want[name]; !ok {
 			t.Errorf("unexpected %s:\n%s", name, got[name])
 		}
@@ -77,15 +78,6 @@ func TestGenerateWithoutSection(t *testing.T) {
 	if files := readTree(t, out); len(files) != 0 {
 		t.Errorf("wrote %v without a storage section", files)
 	}
-}
-
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func TestGenerateRefusesSharedMountPoint(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -245,19 +246,19 @@ var forbiddenMountPoints = []string{"/", "/nix", "/state", "/var"}
 func (s Section) Validate() error {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
-	for _, name := range sortedKeys(s.Disks) {
+	for _, name := range slices.Sorted(maps.Keys(s.Disks)) {
 		if !validName.MatchString(name) {
 			add("disk name %q must match %s", name, validName)
 			continue
 		}
-		for _, file := range sortedKeys(s.Disks[name].Repart) {
+		for _, file := range slices.Sorted(maps.Keys(s.Disks[name].Repart)) {
 			if !validDefinitionFile.MatchString(file) {
 				add("disk %s: definition file %q must be a plain file name ending in .conf", name, file)
 			}
 		}
 	}
 	mounts := map[string]string{}
-	for _, name := range sortedKeys(s.Volumes) {
+	for _, name := range slices.Sorted(maps.Keys(s.Volumes)) {
 		v := s.Volumes[name]
 		if !validName.MatchString(name) {
 			add("volume name %q must match %s", name, validName)
@@ -304,13 +305,4 @@ func safeMountPoint(p string) bool {
 		}
 	}
 	return true
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
