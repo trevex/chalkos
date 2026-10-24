@@ -519,16 +519,6 @@ func TestImageLineOfAStagedImage(t *testing.T) {
 	}
 }
 
-// appendDocument adds a document to a config file.
-func appendDocument(t *testing.T, path, doc string) {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, path, string(data)+"---\n"+doc)
-}
-
 // passwordSystemDisk is n1's system disk with the password fallback.
 const passwordSystemDisk = "apiVersion: storage.chalkos.dev/v1alpha1\nkind: SystemDisk\nmetadata: {name: system}\nspec: {disk: {serial: chalk-target}, encryption: {fallback: password}}\n"
 

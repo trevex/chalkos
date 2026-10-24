@@ -247,9 +247,6 @@ func installed(t *testing.T, stateDir string) bool {
 	return ok
 }
 
-// blkidNothing is how blkid reports a device without any signature.
-var blkidNothing = &node.ToolError{Command: "blkid", Code: 2}
-
 const (
 	systemSeed = "2869f04c-5655-50f4-28b9-6b2eb9700a02"
 	varUUID    = "7ad19bdf-77ff-4273-8a5c-d403d2a5f95b"

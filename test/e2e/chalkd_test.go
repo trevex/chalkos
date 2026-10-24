@@ -41,15 +41,6 @@ func startNode(t *testing.T, c lab.VMConfig) *node {
 	return &node{vm: bootVM(t, c), addr: fmt.Sprintf("127.0.0.1:%d", port)}
 }
 
-func secrets(t *testing.T) pki.Secrets {
-	t.Helper()
-	s, err := readSecrets()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
-}
-
 func readSecrets() (pki.Secrets, error) {
 	data, err := os.ReadFile(os.Getenv("CHALKLAB_SECRETS"))
 	if err != nil {
