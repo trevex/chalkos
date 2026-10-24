@@ -25,41 +25,79 @@ type Kubeconfig struct {
 	ClientFile string
 }
 
+// A kubeconfig file as Encode writes it and kubeconfigCertificate reads it, its fields in key
+// order.
+type (
+	kubeconfigFile struct {
+		APIVersion     string         `json:"apiVersion"`
+		Clusters       []namedCluster `json:"clusters"`
+		Contexts       []namedContext `json:"contexts"`
+		CurrentContext string         `json:"current-context"`
+		Kind           string         `json:"kind"`
+		Users          []namedUser    `json:"users"`
+	}
+	namedCluster struct {
+		Cluster kubeconfigCluster `json:"cluster"`
+		Name    string            `json:"name"`
+	}
+	kubeconfigCluster struct {
+		CertificateAuthority     string `json:"certificate-authority,omitempty"`
+		CertificateAuthorityData []byte `json:"certificate-authority-data,omitempty"`
+		Server                   string `json:"server"`
+		TLSServerName            string `json:"tls-server-name,omitempty"`
+	}
+	namedContext struct {
+		Context kubeconfigContext `json:"context"`
+		Name    string            `json:"name"`
+	}
+	kubeconfigContext struct {
+		Cluster string `json:"cluster"`
+		User    string `json:"user"`
+	}
+	namedUser struct {
+		Name string         `json:"name"`
+		User kubeconfigUser `json:"user"`
+	}
+	kubeconfigUser struct {
+		ClientCertificate     string `json:"client-certificate,omitempty"`
+		ClientCertificateData []byte `json:"client-certificate-data,omitempty"`
+		ClientKey             string `json:"client-key,omitempty"`
+		ClientKeyData         []byte `json:"client-key-data,omitempty"`
+	}
+)
+
 // Encode returns the kubeconfig as JSON, which kubectl and the components read like YAML.
 func (k Kubeconfig) Encode() ([]byte, error) {
 	if k.Name == "" || k.Server == "" {
 		return nil, errors.New("a kubeconfig needs a name and a server")
 	}
-	cluster := map[string]any{"server": k.Server}
-	if k.ServerName != "" {
-		cluster["tls-server-name"] = k.ServerName
-	}
+	cluster := kubeconfigCluster{Server: k.Server, TLSServerName: k.ServerName}
 	switch {
 	case k.CAFile != "":
-		cluster["certificate-authority"] = k.CAFile
+		cluster.CertificateAuthority = k.CAFile
 	case len(k.CA) > 0:
-		cluster["certificate-authority-data"] = k.CA
+		cluster.CertificateAuthorityData = k.CA
 	default:
 		return nil, errors.New("a kubeconfig needs the cluster's CA")
 	}
-	user := map[string]any{}
+	var user kubeconfigUser
 	switch {
 	case k.ClientFile != "":
-		user["client-certificate"] = k.ClientFile
-		user["client-key"] = k.ClientFile
+		user.ClientCertificate = k.ClientFile
+		user.ClientKey = k.ClientFile
 	case k.Client.Certificate != "" && k.Client.Key != "":
-		user["client-certificate-data"] = []byte(k.Client.Certificate)
-		user["client-key-data"] = []byte(k.Client.Key)
+		user.ClientCertificateData = []byte(k.Client.Certificate)
+		user.ClientKeyData = []byte(k.Client.Key)
 	default:
 		return nil, errors.New("a kubeconfig needs a client certificate and key")
 	}
-	data, err := json.MarshalIndent(map[string]any{
-		"apiVersion":      "v1",
-		"kind":            "Config",
-		"clusters":        []any{map[string]any{"name": k.Name, "cluster": cluster}},
-		"users":           []any{map[string]any{"name": k.Name, "user": user}},
-		"contexts":        []any{map[string]any{"name": k.Name, "context": map[string]any{"cluster": k.Name, "user": k.Name}}},
-		"current-context": k.Name,
+	data, err := json.MarshalIndent(kubeconfigFile{
+		APIVersion:     "v1",
+		Kind:           "Config",
+		Clusters:       []namedCluster{{Name: k.Name, Cluster: cluster}},
+		Users:          []namedUser{{Name: k.Name, User: user}},
+		Contexts:       []namedContext{{Name: k.Name, Context: kubeconfigContext{Cluster: k.Name, User: k.Name}}},
+		CurrentContext: k.Name,
 	}, "", "  ")
 	if err != nil {
 		return nil, err

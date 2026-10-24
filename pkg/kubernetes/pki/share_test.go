@@ -168,29 +168,13 @@ func TestKubeconfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var kc struct {
-		Clusters []struct {
-			Name    string `json:"name"`
-			Cluster struct {
-				Server        string `json:"server"`
-				TLSServerName string `json:"tls-server-name"`
-				CAData        []byte `json:"certificate-authority-data"`
-			} `json:"cluster"`
-		} `json:"clusters"`
-		Users []struct {
-			User struct {
-				CertData []byte `json:"client-certificate-data"`
-				KeyData  []byte `json:"client-key-data"`
-			} `json:"user"`
-		} `json:"users"`
-		CurrentContext string `json:"current-context"`
-	}
+	var kc kubeconfigFile
 	if err := json.Unmarshal(data, &kc); err != nil {
 		t.Fatal(err)
 	}
 	c := kc.Clusters[0].Cluster
-	if c.Server != "https://127.0.0.1:16443" || c.TLSServerName != "10.0.0.10" || string(c.CAData) != k.CA.Certificate ||
-		string(kc.Users[0].User.CertData) != admin.Certificate || string(kc.Users[0].User.KeyData) != admin.Key || kc.CurrentContext != "lab" {
+	if c.Server != "https://127.0.0.1:16443" || c.TLSServerName != "10.0.0.10" || string(c.CertificateAuthorityData) != k.CA.Certificate ||
+		string(kc.Users[0].User.ClientCertificateData) != admin.Certificate || string(kc.Users[0].User.ClientKeyData) != admin.Key || kc.CurrentContext != "lab" {
 		// The kubeconfig embeds the client key, so describe it rather than print it.
 		t.Errorf("kubeconfig: server %q, tls-server-name %q, context %q, or its CA, certificate or key differ",
 			c.Server, c.TLSServerName, kc.CurrentContext)
@@ -200,8 +184,41 @@ func TestKubeconfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(files), `"client-certificate": "/client.pem"`) || !strings.Contains(string(files), `"certificate-authority": "/ca.crt"`) {
-		t.Errorf("kubeconfig with files = %s", files)
+	want := `{
+  "apiVersion": "v1",
+  "clusters": [
+    {
+      "cluster": {
+        "certificate-authority": "/ca.crt",
+        "server": "https://10.0.0.10:6443"
+      },
+      "name": "lab"
+    }
+  ],
+  "contexts": [
+    {
+      "context": {
+        "cluster": "lab",
+        "user": "lab"
+      },
+      "name": "lab"
+    }
+  ],
+  "current-context": "lab",
+  "kind": "Config",
+  "users": [
+    {
+      "name": "lab",
+      "user": {
+        "client-certificate": "/client.pem",
+        "client-key": "/client.pem"
+      }
+    }
+  ]
+}
+`
+	if string(files) != want {
+		t.Errorf("kubeconfig with files =\n%s\nwant\n%s", files, want)
 	}
 	if _, err := (Kubeconfig{Name: "lab", Server: "https://x"}).Encode(); err == nil {
 		t.Error("encoded a kubeconfig without credentials")

@@ -2,7 +2,6 @@ package pki
 
 import (
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -157,43 +156,77 @@ func certificateIPs(addrs []netip.Addr) []net.IP {
 	return ips
 }
 
+// authenticationConfiguration is the API server's authentication configuration file, its fields
+// in key order.
+type authenticationConfiguration struct {
+	Anonymous struct {
+		Conditions []anonymousCondition `json:"conditions"`
+		Enabled    bool                 `json:"enabled"`
+	} `json:"anonymous"`
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+}
+
+type anonymousCondition struct {
+	Path string `json:"path"`
+}
+
 // authenticationConfig allows anonymous requests only to the health endpoints, which the
 // kubelet probes without credentials.
 func authenticationConfig() ([]byte, error) {
-	var conditions []any
+	config := authenticationConfiguration{APIVersion: "apiserver.config.k8s.io/v1", Kind: "AuthenticationConfiguration"}
+	config.Anonymous.Enabled = true
 	for _, path := range []string{"/livez", "/readyz", "/healthz"} {
-		conditions = append(conditions, map[string]any{"path": path})
+		config.Anonymous.Conditions = append(config.Anonymous.Conditions, anonymousCondition{Path: path})
 	}
-	return json.MarshalIndent(map[string]any{
-		"apiVersion": "apiserver.config.k8s.io/v1",
-		"kind":       "AuthenticationConfiguration",
-		"anonymous":  map[string]any{"enabled": true, "conditions": conditions},
-	}, "", "  ")
+	return json.MarshalIndent(config, "", "  ")
 }
 
 // EncryptedResources are the resources the API server encrypts in etcd.
 var EncryptedResources = []string{"secrets"}
 
+// The API server's encryption configuration file, its fields in key order.
+type (
+	encryptionConfiguration struct {
+		APIVersion string                `json:"apiVersion"`
+		Kind       string                `json:"kind"`
+		Resources  []encryptionResources `json:"resources"`
+	}
+	encryptionResources struct {
+		Providers []encryptionProvider `json:"providers"`
+		Resources []string             `json:"resources"`
+	}
+	// encryptionProvider holds one provider.
+	encryptionProvider struct {
+		Identity  *struct{}  `json:"identity,omitempty"`
+		Secretbox *secretbox `json:"secretbox,omitempty"`
+	}
+	secretbox struct {
+		Keys []secretboxKey `json:"keys"`
+	}
+	secretboxKey struct {
+		Name   string `json:"name"`
+		Secret []byte `json:"secret"`
+	}
+)
+
 // encryptionConfig encrypts secrets with secretbox and the first of the keys; the others decrypt
 // what was encrypted with them. identity still reads secrets written before encryption was
 // configured.
 func encryptionConfig(keys []pki.EncryptionKey) ([]byte, error) {
-	var entries []any
+	var box secretbox
 	for _, key := range keys {
 		if len(key.Key) != pki.EncryptionKeySize {
 			return nil, fmt.Errorf("the encryption key %s must be %d bytes", key.Name, pki.EncryptionKeySize)
 		}
-		entries = append(entries, map[string]any{"name": key.Name, "secret": base64.StdEncoding.EncodeToString(key.Key)})
+		box.Keys = append(box.Keys, secretboxKey{Name: key.Name, Secret: key.Key})
 	}
-	return json.MarshalIndent(map[string]any{
-		"apiVersion": "apiserver.config.k8s.io/v1",
-		"kind":       "EncryptionConfiguration",
-		"resources": []any{map[string]any{
-			"resources": EncryptedResources,
-			"providers": []any{
-				map[string]any{"secretbox": map[string]any{"keys": entries}},
-				map[string]any{"identity": map[string]any{}},
-			},
+	return json.MarshalIndent(encryptionConfiguration{
+		APIVersion: "apiserver.config.k8s.io/v1",
+		Kind:       "EncryptionConfiguration",
+		Resources: []encryptionResources{{
+			Resources: EncryptedResources,
+			Providers: []encryptionProvider{{Secretbox: &box}, {Identity: &struct{}{}}},
 		}},
 	}, "", "  ")
 }
@@ -201,18 +234,7 @@ func encryptionConfig(keys []pki.EncryptionKey) ([]byte, error) {
 // ParseEncryptionConfig reads the secretbox keys of an encryption configuration encryptionConfig
 // wrote, the encrypting one first.
 func ParseEncryptionConfig(data []byte) ([]pki.EncryptionKey, error) {
-	var config struct {
-		Resources []struct {
-			Providers []struct {
-				Secretbox *struct {
-					Keys []struct {
-						Name   string `json:"name"`
-						Secret []byte `json:"secret"`
-					} `json:"keys"`
-				} `json:"secretbox"`
-			} `json:"providers"`
-		} `json:"resources"`
-	}
+	var config encryptionConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
 		// The configuration holds keys: the error does not quote it.
 		return nil, errors.New("the encryption configuration is no JSON")
@@ -285,18 +307,12 @@ func ControlPlaneLeaves(files map[string][]byte) (map[string]*x509.Certificate, 
 
 // kubeconfigCertificate parses the client certificate a kubeconfig embeds.
 func kubeconfigCertificate(data []byte) (*x509.Certificate, error) {
-	var kc struct {
-		Users []struct {
-			User struct {
-				Certificate []byte `json:"client-certificate-data"`
-			} `json:"user"`
-		} `json:"users"`
-	}
+	var kc kubeconfigFile
 	if err := json.Unmarshal(data, &kc); err != nil {
 		return nil, fmt.Errorf("parse the kubeconfig: %w", err)
 	}
 	if len(kc.Users) != 1 {
 		return nil, errors.New("the kubeconfig has no single user")
 	}
-	return pki.ParseCertificate(kc.Users[0].User.Certificate)
+	return pki.ParseCertificate(kc.Users[0].User.ClientCertificateData)
 }
