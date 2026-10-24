@@ -78,7 +78,7 @@ func renderUnit(what string, doc, raw map[string]any) (string, error) {
 		if name == "" {
 			return "", fmt.Errorf("%s: spec.%s has no x-chalkos-networkd-section annotation", what, yamlName)
 		}
-		def, _ := defs[name].(map[string]any)
+		def := sectionDef(defs, prop)
 		for _, body := range oneOrMany(v) {
 			m, _ := body.(map[string]any)
 			sections = append(sections, section{name: name, body: m, def: def})
@@ -136,6 +136,25 @@ func unitValue(v any) (string, error) {
 	default:
 		return "", fmt.Errorf("%v is not a string, number or boolean", v)
 	}
+}
+
+// sectionDef is the definition a spec property refers to, by its own $ref or by that of a branch
+// of its anyOf: one section, or a list of them. It is nil when the property refers to none.
+func sectionDef(defs, prop map[string]any) map[string]any {
+	candidates := []map[string]any{prop}
+	branches, _ := prop["anyOf"].([]any)
+	for _, b := range branches {
+		branch, _ := b.(map[string]any)
+		candidates = append(candidates, branch, dig(branch, "items"))
+	}
+	for _, c := range candidates {
+		ref, _ := c["$ref"].(string)
+		if name, ok := strings.CutPrefix(ref, "#/$defs/"); ok {
+			def, _ := defs[name].(map[string]any)
+			return def
+		}
+	}
+	return nil
 }
 
 func oneOrMany(v any) []any {

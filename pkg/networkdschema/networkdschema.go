@@ -1,7 +1,7 @@
 // Package networkdschema generates the spec schemas of chalkos's networkd kinds from systemd's
 // gperf tables, the lists of sections and keys networkd itself accepts in .network, .netdev and
 // .link files. Section and key names are camelCase in documents; each schema records the systemd
-// spelling, from which chalkd renders the unit files.
+// spelling, from which chalkos-render renders the unit files.
 package networkdschema
 
 import (
@@ -175,8 +175,8 @@ func SpecSchema(entries []Entry) (map[string]any, error) {
 		}
 		sectionProp := oneOrMany(map[string]any{"$ref": "#/$defs/" + section})
 		// The section name also sits next to this property's own anyOf, the way a key's
-		// x-chalkos-networkd-key sits next to its anyOf, so a renderer can map a YAML section
-		// name to its systemd section without resolving $ref.
+		// x-chalkos-networkd-key sits next to its anyOf, so a renderer reads the systemd section
+		// name from the property itself.
 		sectionProp["x-chalkos-networkd-section"] = section
 		specProps[yamlSection] = sectionProp
 	}
