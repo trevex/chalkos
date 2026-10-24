@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -803,34 +804,20 @@ func replaceFile(path string, data []byte, perm fs.FileMode) error {
 	case !errors.Is(err, fs.ErrNotExist):
 		return err
 	}
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	err = tmp.Chmod(perm)
-	if err == nil {
-		_, err = tmp.Write(data)
-	}
-	if err == nil {
-		err = tmp.Sync()
-	}
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
+	tmp, err := atomicfile.Stage(path, data, perm)
 	if err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
+	defer os.Remove(tmp)
 	if exists {
 		if err := keepPrevious(path, perm); err != nil {
 			return fmt.Errorf("keep the previous version of %s: %w", path, err)
 		}
 	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
+	if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
-	if err := syncDir(dir); err != nil {
+	if err := syncDir(filepath.Dir(path)); err != nil {
 		return &unsyncedError{path, err}
 	}
 	return nil
@@ -856,12 +843,5 @@ func keepPrevious(path string, perm fs.FileMode) error {
 	return os.Rename(next, path+".prev")
 }
 
-// syncDir syncs a directory, so the names of the files written into it last; tests replace it.
-var syncDir = func(dir string) error {
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
-}
+// syncDir syncs a directory after a rename into it; tests replace it.
+var syncDir = atomicfile.SyncDir

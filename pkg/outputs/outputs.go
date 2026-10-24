@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -775,14 +776,7 @@ func updateStatus(root string, update func(map[string]Status)) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		return err
-	}
-	tmp := statusPath(root) + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, statusPath(root))
+	return atomicfile.WriteFile(statusPath(root), data, 0o644)
 }
 
 // Join is the failures as one error, in the order given.

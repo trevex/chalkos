@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -124,7 +125,7 @@ func syncFiles(dir string, files map[string][]byte) error {
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(files)) {
-		if err := writeFile(filepath.Join(dir, name), files[name], 0o600); err != nil {
+		if err := atomicfile.Replace(filepath.Join(dir, name), files[name], 0o600); err != nil {
 			return err
 		}
 	}

@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
 )
 
@@ -114,7 +115,7 @@ func Retire(root string, keep [][]byte) error {
 			return err
 		}
 	}
-	return syncDir(root)
+	return atomicfile.SyncDir(root)
 }
 
 // Write replaces the slot dir, such as /state/config/<root hash>, as a whole. The documents as
@@ -136,10 +137,10 @@ func Write(dir string, s Stored) error {
 				return err
 			}
 		}
-		if err := writeFile(filepath.Join(tmp, identityFile), s.Identity, 0o600); err != nil {
+		if err := atomicfile.Replace(filepath.Join(tmp, identityFile), s.Identity, 0o600); err != nil {
 			return err
 		}
-		return writeFile(filepath.Join(tmp, versionFile), []byte(s.Version+"\n"), 0o644)
+		return atomicfile.Replace(filepath.Join(tmp, versionFile), []byte(s.Version+"\n"), 0o644)
 	})
 }
 
@@ -245,7 +246,7 @@ func replace(dir string, fill func(tmp string) error) error {
 		os.RemoveAll(tmp)
 		return err
 	}
-	if err := syncDir(parent); err != nil {
+	if err := atomicfile.SyncDir(parent); err != nil {
 		return err
 	}
 	return removeStale(dir, tmp)
@@ -301,7 +302,7 @@ func fillDir(tmp string, fill func(string) error) error {
 		if err != nil || !e.IsDir() {
 			return err
 		}
-		return syncDir(path)
+		return atomicfile.SyncDir(path)
 	})
 }
 
@@ -333,7 +334,7 @@ func writeDocuments(root string, docs []config.Document, stored bool) error {
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				return err
 			}
-			if err := writeFile(filepath.Join(dir, d.Name+".json"), data, 0o600); err != nil {
+			if err := atomicfile.Replace(filepath.Join(dir, d.Name+".json"), data, 0o600); err != nil {
 				return err
 			}
 			continue
@@ -349,7 +350,7 @@ func writeDocuments(root string, docs []config.Document, stored bool) error {
 			}
 			perm = 0o600
 		}
-		if err := writeFile(filepath.Join(dir, d.Name+".json"), data, perm); err != nil {
+		if err := atomicfile.Replace(filepath.Join(dir, d.Name+".json"), data, perm); err != nil {
 			return err
 		}
 	}
@@ -376,42 +377,4 @@ func readDocument(path string) (config.Document, error) {
 // hidden ones the store uses itself.
 func validName(s string) bool {
 	return s != "" && !strings.HasPrefix(s, ".") && !strings.ContainsAny(s, "/\x00") && len(s) <= 255
-}
-
-// writeFile replaces path with data, synced, through a temporary file in its directory.
-func writeFile(path string, data []byte, perm fs.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
-}
-
-func syncDir(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return f.Sync()
 }

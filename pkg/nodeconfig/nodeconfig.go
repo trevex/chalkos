@@ -22,6 +22,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -258,7 +259,7 @@ func (l Loader) WriteCluster(c *kubernetes.Cluster) error {
 	if bytes.Equal(old, data) {
 		return nil
 	}
-	return writeFile(l.ClusterFile, data, 0o644)
+	return atomicfile.WriteFile(l.ClusterFile, data, 0o644)
 }
 
 // Apply writes what the identity determines and sets the hostname.
@@ -267,7 +268,7 @@ func (l Loader) Apply(data []byte) error {
 	if err := json.Unmarshal(data, &id); err != nil {
 		return fmt.Errorf("parse the identity: %w", err)
 	}
-	if err := writeFile(filepath.Join(l.RunDir, "node.json"), data, 0o644); err != nil {
+	if err := atomicfile.WriteFile(filepath.Join(l.RunDir, "node.json"), data, 0o644); err != nil {
 		return err
 	}
 	if id.Hostname != "" {
@@ -349,29 +350,6 @@ func (e Effect) Check() error {
 		}
 	}
 	return nil
-}
-
-func writeFile(path string, data []byte, perm fs.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
 }
 
 // RenderOutputs renders and checks every output of the image from docs, a config set with its

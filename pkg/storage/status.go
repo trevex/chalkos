@@ -1,6 +1,10 @@
 package storage
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/trevex/chalkos/pkg/atomicfile"
+)
 
 // Status records what chalkos-storage did at boot, for chalkd to report; it is written to
 // /run/chalkos/storage-status.json.
@@ -22,5 +26,5 @@ func WriteStatus(path string, s Status) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path, append(data, '\n'))
+	return atomicfile.WriteFile(path, append(data, '\n'), 0o600)
 }

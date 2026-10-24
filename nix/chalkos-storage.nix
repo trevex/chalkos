@@ -4,6 +4,7 @@ callPackage ./go-module.nix { } {
   pname = "chalkos-storage";
   paths = [
     ../cmd/chalkos-storage
+    ../pkg/atomicfile
     ../pkg/storage
   ];
   subPackages = [ "cmd/chalkos-storage" ];

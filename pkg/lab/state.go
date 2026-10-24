@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/trevex/chalkos/pkg/atomicfile"
 )
 
 // ChalkdPort is the port chalkd serves on in the guest.
@@ -112,11 +114,7 @@ func (l *Lab) Write(dir string) error {
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(dir, labFile+".tmp")
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(dir, labFile))
+	return atomicfile.WriteFile(filepath.Join(dir, labFile), append(data, '\n'), 0o600)
 }
 
 // Node returns the lab's node of the name.
