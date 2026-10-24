@@ -36,14 +36,20 @@ type trust struct {
 }
 
 func newTrust(bundle string) (*trust, error) {
-	if _, err := pki.ValidateOSCABundle(bundle); err != nil {
-		return nil, fmt.Errorf("the OS CA: %w", err)
-	}
-	pool, err := pki.BundlePool(bundle)
+	pool, err := OSCAPool(bundle)
 	if err != nil {
 		return nil, err
 	}
 	return &trust{bundle: bundle, pool: pool}, nil
+}
+
+// OSCAPool returns the bundle of OS CAs as a pool after checking that it holds only self-signed
+// root CAs, none of them a node CA.
+func OSCAPool(bundle string) (*x509.CertPool, error) {
+	if _, err := pki.ValidateOSCABundle(bundle); err != nil {
+		return nil, fmt.Errorf("the OS CA: %w", err)
+	}
+	return pki.BundlePool(bundle)
 }
 
 // NodeCertificateFile is the file below STATE's chalkd directory that holds the node's chain and

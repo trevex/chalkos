@@ -251,10 +251,10 @@ func loadCredentials(stateDir, imageCA, runDir string, now time.Time) (credentia
 		return credentials{}, err
 	}
 	c := credentials{mode: nodev1.Mode_MODE_MAINTENANCE, maintenance: &cert}
-	if _, err := os.Stat(imageCA); err == nil {
-		pool, err := loadPool(imageCA)
+	if bundle, err := os.ReadFile(imageCA); err == nil {
+		pool, err := chalkd.OSCAPool(string(bundle))
 		if err != nil {
-			return credentials{}, err
+			return credentials{}, fmt.Errorf("%s: %w", imageCA, err)
 		}
 		c.clientCAs = chalkd.StaticCAs(pool)
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -308,18 +308,6 @@ func renewOnApplyConfig(getenv func(string) string) bool {
 	}
 	log.Print("test image: renewing the certificates after each ApplyConfig")
 	return true
-}
-
-func loadPool(path string) (*x509.CertPool, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(data) {
-		return nil, fmt.Errorf("%s holds no certificate", path)
-	}
-	return pool, nil
 }
 
 func serve() error {

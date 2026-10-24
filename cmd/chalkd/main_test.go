@@ -65,6 +65,19 @@ func TestLoadCredentials(t *testing.T) {
 			t.Errorf("credentials = %+v, want maintenance requiring clients of the OS CA", c)
 		}
 	})
+	for name, bundle := range map[string]string{
+		"junk after the OS CA": ca.Certificate + "junk\n",
+		"a node CA":            nodeCA.Certificate,
+		"a node certificate":   nodeCert.Certificate,
+	} {
+		t.Run("maintenance refuses an image carrying "+name, func(t *testing.T) {
+			root := t.TempDir()
+			writeFile(t, filepath.Join(root, "os-ca.crt"), bundle)
+			if _, err := loadCredentials(filepath.Join(root, "state"), filepath.Join(root, "os-ca.crt"), filepath.Join(root, "run"), now); err == nil {
+				t.Error("the bundle was accepted as the OS CA")
+			}
+		})
+	}
 	t.Run("normal", func(t *testing.T) {
 		root := t.TempDir()
 		state := filepath.Join(root, "state")
