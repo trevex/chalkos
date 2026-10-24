@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -367,7 +367,7 @@ func testRequest(t *testing.T, section storage.Section) Request {
 		fallback = ""
 	}
 	return Request{
-		Config:          store.Stored{Identity: text},
+		Config:          slot.Stored{Identity: text},
 		RootHash:        runningHash,
 		Section:         section,
 		Kubernetes:      &identity.Kubernetes{NodeName: "n1"},
@@ -894,11 +894,11 @@ func TestInPlaceStoresConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Config = store.Stored{Delivered: docs, Documents: docs, Version: "abc", Identity: req.Config.Identity}
+	req.Config = slot.Stored{Delivered: docs, Documents: docs, Version: "abc", Identity: req.Config.Identity}
 	if err := i.InPlace(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
-	got, found, err := store.Read(store.Slot(filepath.Join(i.StateDir, "config"), runningHash))
+	got, found, err := slot.Read(slot.Dir(filepath.Join(i.StateDir, "config"), runningHash))
 	if err != nil || !found || got.Version != "abc" || len(got.Documents) != 1 || got.Documents[0].Name != "n1" || string(got.Identity) != string(req.Config.Identity) {
 		t.Errorf("stored config = %+v, found %v, %v", got, found, err)
 	}

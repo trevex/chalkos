@@ -18,7 +18,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
@@ -157,7 +157,7 @@ func (s *Server) slotsNaming(name string, writing []byte) []string {
 	if err != nil {
 		return nil
 	}
-	hashes, err := store.Slots(s.Loader.Slots)
+	hashes, err := slot.List(s.Loader.Slots)
 	if err != nil {
 		return nil
 	}
@@ -166,7 +166,7 @@ func (s *Server) slotsNaming(name string, writing []byte) []string {
 		if bytes.Equal(h, runningHash) || bytes.Equal(h, writing) {
 			continue
 		}
-		held, found, err := store.Read(store.Slot(s.Loader.Slots, h))
+		held, found, err := slot.Read(slot.Dir(s.Loader.Slots, h))
 		if err != nil || !found {
 			continue
 		}
@@ -187,7 +187,7 @@ func hasVolume(section storage.Section, name string) bool {
 // checked against; and the rest of the request.
 type applyRequest struct {
 	identity string
-	next     store.Stored
+	next     slot.Stored
 	schemas  *schema.Schemas
 	msg      *nodev1.ApplyConfigRequest
 }
@@ -242,7 +242,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err != nil {
 		return nil, err
 	}
-	slot, prev, found, err := s.runningSlot()
+	dir, prev, found, err := s.runningSlot()
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +384,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	// so a retry finds them recorded and makes none twice.
 	if !keep {
 		r.next.Identity = d.data
-		if err := store.Write(slot, r.next); err != nil {
+		if err := slot.Write(dir, r.next); err != nil {
 			s.failedPartWay(ctx, fx, m.FallbackSecret)
 			return nil, failed(connect.CodeInternal, "store the config: %v", err)
 		}
@@ -620,7 +620,7 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 // created again like a new one, so they are checked against the recorded section without it, which
 // they must then accept whole. They check the disk the volume lives on and the fallback secret it
 // is enrolled with too.
-func (s *Server) resetVolume(ctx context.Context, node, name string, next store.Stored, schemas *schema.Schemas, fallback string) error {
+func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.Stored, schemas *schema.Schemas, fallback string) error {
 	d, err := parseIdentity(string(next.Identity))
 	if err != nil {
 		return err

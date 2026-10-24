@@ -17,18 +17,18 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
 func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
 	resp := &nodev1.StatusResponse{Platform: readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]}
-	slot, err := s.Loader.Slot()
+	dir, err := s.Loader.Slot()
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
 	}
-	if resp.ConfigVersion, err = store.Version(slot); err != nil {
+	if resp.ConfigVersion, err = slot.Version(dir); err != nil {
 		return nil, failed(connect.CodeInternal, "read the config's version: %v", err)
 	}
 

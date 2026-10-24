@@ -13,7 +13,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -38,11 +38,11 @@ func stagedServer(t *testing.T, schemas map[string][]byte) (*Server, *tooltest.R
 	}
 	writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2.efi", "chalkos_3+3.efi")
 	for _, h := range [][]byte{runningImage, stagedImage} {
-		if err := store.Write(store.Slot(s.Loader.Slots, h), held); err != nil {
+		if err := slot.Write(slot.Dir(s.Loader.Slots, h), held); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := store.Retire(s.Loader.Slots, [][]byte{runningImage, stagedImage}); err != nil {
+	if err := slot.Retire(s.Loader.Slots, [][]byte{runningImage, stagedImage}); err != nil {
 		t.Fatal(err)
 	}
 	img := imageWith(t, schemas, "")
@@ -57,7 +57,7 @@ func stagedServer(t *testing.T, schemas map[string][]byte) (*Server, *tooltest.R
 
 func slotVersion(t *testing.T, s *Server, rootHash []byte) string {
 	t.Helper()
-	v, err := store.Version(store.Slot(s.Loader.Slots, rootHash))
+	v, err := slot.Version(slot.Dir(s.Loader.Slots, rootHash))
 	if err != nil {
 		t.Fatal(err)
 	}

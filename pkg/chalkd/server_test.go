@@ -31,7 +31,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
@@ -226,12 +226,12 @@ func slotOf(t *testing.T, s *Server) string {
 func writeIdentity(t *testing.T, s *Server, identity string) {
 	t.Helper()
 	dir := slotOf(t, s)
-	stored, _, err := store.Read(dir)
+	stored, _, err := slot.Read(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	stored.Identity = []byte(identity)
-	if err := store.Write(dir, stored); err != nil {
+	if err := slot.Write(dir, stored); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -242,7 +242,7 @@ func readIdentity(s *Server) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	stored, found, err := store.Read(dir)
+	stored, found, err := slot.Read(dir)
 	if err == nil && !found {
 		err = fs.ErrNotExist
 	}

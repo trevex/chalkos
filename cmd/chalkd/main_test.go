@@ -12,7 +12,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -252,7 +252,7 @@ spec: {registry: docker.io, endpoints: ["http://10.0.0.5:5000"]}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.WriteRuntime(dir, docs, nil, nil); err != nil {
+	if err := slot.WriteRuntime(dir, docs, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -278,7 +278,7 @@ spec: {host: docker.io, username: hub-bot, password: {secretRef: {name: hub, key
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.WriteRuntime(runDir, docs, nil, nil); err != nil {
+	if err := slot.WriteRuntime(runDir, docs, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(creds, "secret_hub.token"), "hub-s3cret")

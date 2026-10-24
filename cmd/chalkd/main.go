@@ -29,7 +29,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes/credprovider"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -179,7 +179,7 @@ func health(args []string) error {
 // documents below runDir name, by its directory below containerd's config_path, each after a line
 // "=== <directory>", for chalkos-registry-mirrors to write.
 func containerdHosts(w io.Writer, runDir string) error {
-	docs, err := store.ReadRuntime(runDir)
+	docs, err := slot.ReadRuntime(runDir)
 	if err != nil {
 		return err
 	}
@@ -433,11 +433,11 @@ func addresses() string {
 // loads into the directory credentials: the unit is granted the Registry kind. The provider is
 // this chalkd.
 func registryCredentials(runDir, credentials, dir string) error {
-	docs, err := store.ReadRuntime(runDir)
+	docs, err := slot.ReadRuntime(runDir)
 	if err != nil {
 		return err
 	}
-	r, err := config.RegistriesOf(docs, store.CredentialSecrets(credentials))
+	r, err := config.RegistriesOf(docs, slot.CredentialSecrets(credentials))
 	if err != nil {
 		return err
 	}

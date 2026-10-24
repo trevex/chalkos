@@ -12,7 +12,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -27,7 +27,7 @@ func (s *Server) stagedImage() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	hashes, err := store.Slots(s.Loader.Slots)
+	hashes, err := slot.List(s.Loader.Slots)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (s *Server) checkStaged(schemas *schema.Schemas, name string, next []config
 	if staged == nil {
 		return nil
 	}
-	held, found, err := store.Read(store.Slot(s.Loader.Slots, staged))
+	held, found, err := slot.Read(slot.Dir(s.Loader.Slots, staged))
 	if err != nil {
 		return failed(connect.CodeInternal, "read the staged image's config slot: %v", err)
 	}
@@ -157,7 +157,7 @@ func (s *Server) stagedVersion(boot *nodev1.BootStatus) (string, error) {
 	if boot.GetStaged() == nil {
 		return "", nil
 	}
-	v, err := store.Version(store.Slot(s.Loader.Slots, boot.GetStaged().GetRootHash()))
+	v, err := slot.Version(slot.Dir(s.Loader.Slots, boot.GetStaged().GetRootHash()))
 	if err != nil {
 		return "", fmt.Errorf("read the staged config's version: %w", err)
 	}

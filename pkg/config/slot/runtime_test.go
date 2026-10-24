@@ -1,4 +1,4 @@
-package store
+package slot
 
 import (
 	"os"

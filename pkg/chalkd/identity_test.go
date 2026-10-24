@@ -14,7 +14,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -123,7 +123,7 @@ func installedServer(t *testing.T, recorded string, extraPinned bool, more ...te
 		pins += `, "extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": {"extra": "` + extraUUID + `"}}`
 	}
 	write(t, filepath.Join(dir, "disks.json"), `{"disks": {`+pins+`}}`)
-	if err := store.Write(slotOf(t, s), store.Stored{Documents: documentsOf(identityWith(recorded)), Identity: []byte(identityWith(recorded))}); err != nil {
+	if err := slot.Write(slotOf(t, s), slot.Stored{Documents: documentsOf(identityWith(recorded)), Identity: []byte(identityWith(recorded))}); err != nil {
 		t.Fatal(err)
 	}
 	// As at boot: the identity is in place.
@@ -168,7 +168,7 @@ func deliver(ctx context.Context, s *Server, identity string, req *nodev1.ApplyC
 		if err != nil {
 			return nil, err
 		}
-		r.next, r.schemas = store.Stored{Version: "empty", Documents: documentsOf(identity)}, schemas
+		r.next, r.schemas = slot.Stored{Version: "empty", Documents: documentsOf(identity)}, schemas
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -451,7 +451,7 @@ func resetWith(s *Server, volume, identity, fallback string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.resetVolume(context.Background(), "n1", volume, store.Stored{Documents: documentsOf(identity), Identity: []byte(identity)}, schemas, fallback)
+	return s.resetVolume(context.Background(), "n1", volume, slot.Stored{Documents: documentsOf(identity), Identity: []byte(identity)}, schemas, fallback)
 }
 
 // A reset recreates a volume on its disk, also when the config references the disk anew.

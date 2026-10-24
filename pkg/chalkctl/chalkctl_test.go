@@ -25,7 +25,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -530,7 +530,7 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	s.Loader.Cmdline = filepath.Join(root, "cmdline")
 	s.Paths.Cmdline = s.Loader.Cmdline
 	writeFile(t, s.Loader.Cmdline, "init=/x usrhash="+strings.Repeat("ab", 32)+"\n")
-	if err := store.Write(slotOf(t, s), store.Stored{Identity: recorded}); err != nil {
+	if err := slot.Write(slotOf(t, s), slot.Stored{Identity: recorded}); err != nil {
 		t.Fatal(err)
 	}
 	section, _ := json.Marshal(ta.identity(t).Storage)
@@ -597,7 +597,7 @@ func TestApplyConfigAndStatus(t *testing.T) {
 		t.Errorf("node ran %v", r.calls)
 	}
 	want := ta.configVersion(t)
-	if v, err := store.Version(slotOf(t, s)); err != nil || v != want {
+	if v, err := slot.Version(slotOf(t, s)); err != nil || v != want {
 		t.Errorf("config version on the node = %q, %v; want %s", v, err, want)
 	}
 	if !strings.Contains(ta.stdout.String(), "n1 runs config "+want) {
@@ -1135,7 +1135,7 @@ func TestApplyConfigToAnImageOfAnotherVariant(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := ta.configVersion(t)
-	if v, err := store.Version(slotOf(t, s)); err != nil || v != want {
+	if v, err := slot.Version(slotOf(t, s)); err != nil || v != want {
 		t.Errorf("config version on the node = %q, %v; want %s", v, err, want)
 	}
 }
@@ -1180,10 +1180,10 @@ func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
 	if len(r.calls) != 0 {
 		t.Errorf("node ran %v", r.calls)
 	}
-	if got, _, _ := store.Read(slotOf(t, s)); string(got.Identity) != `{"hostname": "old"}` {
+	if got, _, _ := slot.Read(slotOf(t, s)); string(got.Identity) != `{"hostname": "old"}` {
 		t.Errorf("identity on the node = %s", got)
 	}
-	if v, err := store.Version(slotOf(t, s)); err != nil || v != "" {
+	if v, err := slot.Version(slotOf(t, s)); err != nil || v != "" {
 		t.Errorf("config version on the node = %q, %v; want none", v, err)
 	}
 }

@@ -27,7 +27,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/addons"
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
@@ -616,11 +616,11 @@ func (k *Kubernetes) objects(c k8s.Cluster) ([]map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("render chalkos's add-ons: %w", err)
 	}
-	slot, err := k.Slot()
+	dir, err := k.Slot()
 	if err != nil {
 		return nil, fmt.Errorf("find the running image's config slot: %w", err)
 	}
-	stored, _, err := store.Read(slot)
+	stored, _, err := slot.Read(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read the stored config: %w", err)
 	}

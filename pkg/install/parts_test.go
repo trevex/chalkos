@@ -31,7 +31,7 @@ import (
 	"testing/iotest"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
@@ -503,7 +503,7 @@ func (l *partsLab) checkInstalled(img partsImage) {
 	if !l.installed() {
 		l.t.Error("STATE holds no installed marker")
 	}
-	if s, found, err := store.Read(store.Slot(filepath.Join(l.state(), "config"), img.root)); err != nil || !found || len(s.Identity) == 0 {
+	if s, found, err := slot.Read(slot.Dir(filepath.Join(l.state(), "config"), img.root)); err != nil || !found || len(s.Identity) == 0 {
 		l.t.Errorf("STATE holds no config slot of the image: %+v, %v", s, err)
 	}
 	var entry string

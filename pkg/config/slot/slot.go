@@ -1,7 +1,7 @@
-// Package store keeps a node's config on STATE, a slot per image, and writes it for the node's
+// Package slot keeps a node's config on STATE, a slot per image, and writes it for the node's
 // services: the documents below /run/chalkos/config and, for each unit that reads config kinds,
 // the secret values those kinds reference, as files systemd loads as the unit's credentials.
-package store
+package slot
 
 import (
 	"bytes"
@@ -43,15 +43,15 @@ const (
 	documentsDir = "documents"
 )
 
-// Slot is the slot of the image whose store has the root hash, below root, such as
+// Dir is the slot of the image whose store has the root hash, below root, such as
 // /state/config.
-func Slot(root string, rootHash []byte) string {
+func Dir(root string, rootHash []byte) string {
 	return filepath.Join(root, hex.EncodeToString(rootHash))
 }
 
-// Slots returns the root hashes of the slots below root, in order; none when root does not
+// List returns the root hashes of the slots below root, in order; none when root does not
 // exist.
-func Slots(root string) ([][]byte, error) {
+func List(root string) ([][]byte, error) {
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -269,8 +269,8 @@ func removeStale(dir, keep string) error {
 	return nil
 }
 
-// checkLink fails when something other than a symbolic link is at dir, which the store never
-// writes there and must not replace or remove.
+// checkLink fails when something other than a symbolic link is at dir. Nothing here writes
+// anything else there, so it must not replace or remove it.
 func checkLink(dir string) error {
 	info, err := os.Lstat(dir)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -374,7 +374,7 @@ func readDocument(path string) (config.Document, error) {
 }
 
 // validName tells whether s can name a file or directory in one path element, other than the
-// hidden ones the store uses itself.
+// hidden ones this package uses itself.
 func validName(s string) bool {
 	return s != "" && !strings.HasPrefix(s, ".") && !strings.ContainsAny(s, "/\x00") && len(s) <= 255
 }

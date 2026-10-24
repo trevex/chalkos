@@ -18,7 +18,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -149,7 +149,7 @@ func configServer(t *testing.T) (*Server, *tooltest.Runner) {
 	dir := filepath.Join(s.Paths.StateDir, "storage")
 	write(t, filepath.Join(dir, "storage.json"), string(section))
 	write(t, filepath.Join(dir, "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`"}}}}`)
-	if err := store.Write(slotOf(t, s), c); err != nil {
+	if err := slot.Write(slotOf(t, s), c); err != nil {
 		t.Fatal(err)
 	}
 	// As at boot: the outputs, networkd's and chrony's among them, are in place.
@@ -181,7 +181,7 @@ func TestApplyConfig(t *testing.T) {
 	if !slices.Equal(resp.RestartedUnits, []string{"demo.service"}) || len(resp.Changes) != 0 {
 		t.Errorf("response = %+v", resp)
 	}
-	if v, err := store.Version(slotOf(t, s)); err != nil || v != hashOf(t, next) {
+	if v, err := slot.Version(slotOf(t, s)); err != nil || v != hashOf(t, next) {
 		t.Errorf("stored version = %q, %v; want the hash of the delivered documents", v, err)
 	}
 	stored := readFile(t, filepath.Join(slotOf(t, s), "documents", "demo.example.org", "Demo", "one.json"))
@@ -342,7 +342,7 @@ func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
 	if len(r.Calls) != 0 {
 		t.Errorf("ran %v for a refused config", r.Calls)
 	}
-	if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
+	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
 		t.Error("stored a refused config")
 	}
 }
@@ -805,7 +805,7 @@ func TestApplyConfigRefusesWithoutABaseline(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "record the config, facts, outputs and kinds the effects compare with") {
 		t.Fatalf("err = %v, want the baseline's failure", err)
 	}
-	if v, err := store.Version(slotOf(t, s)); err != nil || v != hashOf(t, baseConfig) {
+	if v, err := slot.Version(slotOf(t, s)); err != nil || v != hashOf(t, baseConfig) {
 		t.Errorf("stored version = %q, %v; want the config from before", v, err)
 	}
 	if len(r.Calls) != 0 {
@@ -966,7 +966,7 @@ func TestApplyConfigRefusesAnOutputThatFails(t *testing.T) {
 			if !strings.Contains(logged.String(), "second") {
 				t.Errorf("the journal lacks the program's stderr: %s", logged.String())
 			}
-			if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) || len(r.Calls) != 0 {
+			if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, baseConfig) || len(r.Calls) != 0 {
 				t.Errorf("stored %s, ran %v", v, r.Calls)
 			}
 			if got := readFile(t, filepath.Join(s.Loader.Render.Root, "demo", "demo.json")); got != before {
@@ -1077,7 +1077,7 @@ func TestApplyConfigRefusesEffectsThatDoNotCompile(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), `the running image's effects: effect demo: rule "config =="`) {
 		t.Fatalf("err = %v", err)
 	}
-	if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) || len(r.Calls) != 0 {
+	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, baseConfig) || len(r.Calls) != 0 {
 		t.Errorf("stored %s, ran %v", v, r.Calls)
 	}
 }

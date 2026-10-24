@@ -17,7 +17,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -260,7 +260,7 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 	if err := s.applyMachine(ctx, mc, secret); err != nil {
 		return err
 	}
-	if err := store.Write(store.Slot(s.Loader.Slots, rootHash), next); err != nil {
+	if err := slot.Write(slot.Dir(s.Loader.Slots, rootHash), next); err != nil {
 		return failed(connect.CodeInternal, "store the image's config: %v", err)
 	}
 	log.Printf("the config %s of %x is stored", next.Version, rootHash)
@@ -311,7 +311,7 @@ func (s *Server) recordImages(installed *upgrade.Header) {
 		return
 	}
 	s.mu.Lock()
-	err = store.Retire(s.Loader.Slots, append(keep, running))
+	err = slot.Retire(s.Loader.Slots, append(keep, running))
 	s.mu.Unlock()
 	if err != nil {
 		log.Printf("retire the config slots of images the ESP no longer boots: %v", err)

@@ -14,7 +14,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -23,14 +23,14 @@ import (
 
 // configure parses text, YAML config documents, and makes them the config slot of the image t
 // describes for the node called name, as translateSlot does.
-func configure(name, text string, schemas *schema.Schemas, t config.Target) (store.Stored, error) {
+func configure(name, text string, schemas *schema.Schemas, t config.Target) (slot.Stored, error) {
 	docs, err := config.Parse(strings.NewReader(text))
 	if err != nil {
-		return store.Stored{}, failed(connect.CodeInvalidArgument, "parse the config: %v", err)
+		return slot.Stored{}, failed(connect.CodeInvalidArgument, "parse the config: %v", err)
 	}
 	c, err := translateSlot(name, docs, schemas, t)
 	if err != nil {
-		return store.Stored{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
+		return slot.Stored{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
 	}
 	return c, nil
 }
@@ -39,20 +39,20 @@ func configure(name, text string, schemas *schema.Schemas, t config.Target) (sto
 // their defaults and translates them into the identity of the node called name on the image t
 // describes: what that image's config slot keeps. The set's version is the hash of the documents
 // as delivered, before the defaults, as a client computes it from the files it sends.
-func translateSlot(name string, docs []config.Document, schemas *schema.Schemas, t config.Target) (store.Stored, error) {
+func translateSlot(name string, docs []config.Document, schemas *schema.Schemas, t config.Target) (slot.Stored, error) {
 	version, err := config.Hash(docs)
 	if err != nil {
-		return store.Stored{}, fmt.Errorf("hash the config: %w", err)
+		return slot.Stored{}, fmt.Errorf("hash the config: %w", err)
 	}
 	set, id, err := config.Translate(name, docs, schemas, t)
 	if err != nil {
-		return store.Stored{}, err
+		return slot.Stored{}, err
 	}
 	data, err := json.Marshal(id)
 	if err != nil {
-		return store.Stored{}, fmt.Errorf("encode the identity: %w", err)
+		return slot.Stored{}, fmt.Errorf("encode the identity: %w", err)
 	}
-	return store.Stored{Delivered: docs, Documents: set.Documents(), Version: version, Identity: data}, nil
+	return slot.Stored{Delivered: docs, Documents: set.Documents(), Version: version, Identity: data}, nil
 }
 
 // runningTarget is the running image, as config for it is translated, and its schemas.
@@ -81,13 +81,13 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 // that image's rules with no running config to compare with: rules of a field that read oldSelf
 // do not run, the rules of a kind see no oldDocuments, and every fact is null: an install in place
 // that is tried again must not read what the attempt before it left on STATE.
-func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (store.Stored, error) {
+func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (slot.Stored, error) {
 	if h.Config == "" {
-		return store.Stored{}, failed(connect.CodeInvalidArgument, "the header delivers no config")
+		return slot.Stored{}, failed(connect.CodeInvalidArgument, "the header delivers no config")
 	}
 	name, err := headerName(h)
 	if err != nil {
-		return store.Stored{}, err
+		return slot.Stored{}, err
 	}
 	var (
 		t       config.Target
@@ -102,23 +102,23 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (st
 		t, schemas, err = s.runningTarget()
 	}
 	if err != nil {
-		return store.Stored{}, err
+		return slot.Stored{}, err
 	}
 	stored, err := configure(name, h.Config, schemas, t)
 	if err != nil {
-		return store.Stored{}, err
+		return slot.Stored{}, err
 	}
 	set, err := compileRules(schemas, !s.Installer)
 	if err != nil {
-		return store.Stored{}, err
+		return slot.Stored{}, err
 	}
 	f, err := s.factsFor(ctx, stored.Documents, nil, h.FallbackSecret)
 	if err != nil {
-		return store.Stored{}, err
+		return slot.Stored{}, err
 	}
 	f.Install = true
 	if err := s.checkRules(set, name, stored.Documents, nil, f); err != nil {
-		return store.Stored{}, err
+		return slot.Stored{}, err
 	}
 	// In place, the running image's renderers check the outputs before the install changes
 	// anything; the node renders them again at the boot that follows. The installer cannot run the
@@ -126,7 +126,7 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (st
 	if !s.Installer {
 		staged, err := s.renderOutputs(ctx, name, stored.Documents, schemas, true)
 		if err != nil {
-			return store.Stored{}, err
+			return slot.Stored{}, err
 		}
 		if err := staged.ClearFailures(); err != nil {
 			log.Printf("clear the outputs' failures: %v", err)
@@ -185,12 +185,12 @@ func imageTarget(platform string, kubernetesImage []byte) (config.Target, error)
 
 // runningSlot is the running image's config slot on STATE and what it holds; found is false while
 // it holds nothing.
-func (s *Server) runningSlot() (dir string, stored store.Stored, found bool, err error) {
+func (s *Server) runningSlot() (dir string, stored slot.Stored, found bool, err error) {
 	if dir, err = s.Loader.Slot(); err != nil {
-		return "", store.Stored{}, false, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
+		return "", slot.Stored{}, false, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
 	}
-	if stored, found, err = store.Read(dir); err != nil {
-		return "", store.Stored{}, false, failed(connect.CodeInternal, "read the running image's config slot: %v", err)
+	if stored, found, err = slot.Read(dir); err != nil {
+		return "", slot.Stored{}, false, failed(connect.CodeInternal, "read the running image's config slot: %v", err)
 	}
 	return dir, stored, found, nil
 }
@@ -223,9 +223,9 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 		if staged == nil {
 			return nil, failed(connect.CodeNotFound, "no image is staged to boot next")
 		}
-		dir = store.Slot(s.Loader.Slots, staged)
+		dir = slot.Dir(s.Loader.Slots, staged)
 	}
-	stored, found, err := store.Read(dir)
+	stored, found, err := slot.Read(dir)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "read the config slot: %v", err)
 	}

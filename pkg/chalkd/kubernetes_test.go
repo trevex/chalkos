@@ -31,7 +31,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
@@ -1169,7 +1169,7 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Write(slotOf(t, s), store.Stored{Delivered: docs, Documents: docs, Version: "v1"}); err != nil {
+	if err := slot.Write(slotOf(t, s), slot.Stored{Delivered: docs, Documents: docs, Version: "v1"}); err != nil {
 		t.Fatal(err)
 	}
 	objects, err := k.Objects(c)

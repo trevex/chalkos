@@ -1,4 +1,4 @@
-package store
+package slot
 
 import (
 	"bytes"
@@ -206,30 +206,30 @@ func TestRefusesADirectory(t *testing.T) {
 func TestSlots(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "config")
 	a, b := bytes.Repeat([]byte{0xaa}, 32), bytes.Repeat([]byte{0xbb}, 32)
-	if got := Slot(root, a); got != filepath.Join(root, strings.Repeat("aa", 32)) {
+	if got := Dir(root, a); got != filepath.Join(root, strings.Repeat("aa", 32)) {
 		t.Errorf("slot = %s", got)
 	}
-	if hashes, err := Slots(root); err != nil || hashes != nil {
+	if hashes, err := List(root); err != nil || hashes != nil {
 		t.Errorf("slots without a directory of slots = %x, %v", hashes, err)
 	}
 	for _, h := range [][]byte{b, a} {
-		if err := Write(Slot(root, h), stored(t, "v-"+hex.EncodeToString(h[:1]))); err != nil {
+		if err := Write(Dir(root, h), stored(t, "v-"+hex.EncodeToString(h[:1]))); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := Write(Slot(root, a), stored(t, "v2")); err != nil {
+	if err := Write(Dir(root, a), stored(t, "v2")); err != nil {
 		t.Fatal(err)
 	}
-	hashes, err := Slots(root)
+	hashes, err := List(root)
 	if err != nil || !reflect.DeepEqual(hashes, [][]byte{a, b}) {
 		t.Errorf("slots = %x, %v; want aa… and bb…", hashes, err)
 	}
 	for h, want := range map[string][]byte{"v2": a, "v-bb": b} {
-		if v, err := Version(Slot(root, want)); err != nil || v != h {
+		if v, err := Version(Dir(root, want)); err != nil || v != h {
 			t.Errorf("version of %x… = %q, %v; want %q", want[:2], v, err, h)
 		}
 	}
-	if l := leftovers(t, Slot(root, a)); len(l) != 1 {
+	if l := leftovers(t, Dir(root, a)); len(l) != 1 {
 		t.Errorf("directories of slot aa…: %v, want the current one alone", l)
 	}
 }
@@ -240,13 +240,13 @@ func TestRetire(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "config")
 	a, b, c := bytes.Repeat([]byte{0xaa}, 32), bytes.Repeat([]byte{0xbb}, 32), bytes.Repeat([]byte{0xcc}, 32)
 	for _, h := range [][]byte{a, b} {
-		if err := Write(Slot(root, h), stored(t, "v1")); err != nil {
+		if err := Write(Dir(root, h), stored(t, "v1")); err != nil {
 			t.Fatal(err)
 		}
 	}
-	interrupted(t, Slot(root, b))
+	interrupted(t, Dir(root, b))
 	// A first write of c cut short leaves its directory without a link.
-	interrupted(t, Slot(root, c))
+	interrupted(t, Dir(root, c))
 	if err := Retire(root, [][]byte{a}); err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestRetire(t *testing.T) {
 	if len(names) != 2 || names[1] != strings.Repeat("aa", 32) || !strings.HasPrefix(names[0], "."+strings.Repeat("aa", 32)+"-") {
 		t.Errorf("left %v, want slot aa… alone", names)
 	}
-	if got, found, err := Read(Slot(root, a)); err != nil || !found || got.Version != "v1" {
+	if got, found, err := Read(Dir(root, a)); err != nil || !found || got.Version != "v1" {
 		t.Errorf("the kept slot: %+v, found %v, %v", got, found, err)
 	}
 	if err := Retire(filepath.Join(t.TempDir(), "none"), nil); err != nil {
@@ -272,7 +272,7 @@ func TestRetire(t *testing.T) {
 // TestRetireRefusesADirectory leaves a directory in place of a slot's link alone and says so.
 func TestRetireRefusesADirectory(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "config")
-	dir := Slot(root, bytes.Repeat([]byte{0xbb}, 32))
+	dir := Dir(root, bytes.Repeat([]byte{0xbb}, 32))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -85,7 +85,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `client` | Connections to chalkd: by fingerprint in maintenance mode, by the OS CA otherwise; the names chalkd's status gives certificates and trusted values. |
 | `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. |
 | `config` | Config documents: parsing, the rules of a set, defaults, the hash, and the translation into the identity the node applies. |
-| `config/store` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
+| `config/slot` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
 | `facts` | Loads the facts change rules read: files, and commands of the image's store run in a sandbox. |
 | `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads, and the kinds of Kubernetes nodes. |
 | `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |

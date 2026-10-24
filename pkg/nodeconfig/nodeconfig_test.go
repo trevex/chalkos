@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -54,7 +54,7 @@ func writeSlot(t *testing.T, l Loader, hash, identity, documents string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Write(filepath.Join(l.Slots, hash), store.Stored{Delivered: docs, Documents: docs, Version: "v1", Identity: []byte(identity)}); err != nil {
+	if err := slot.Write(filepath.Join(l.Slots, hash), slot.Stored{Delivered: docs, Documents: docs, Version: "v1", Identity: []byte(identity)}); err != nil {
 		t.Fatal(err)
 	}
 }

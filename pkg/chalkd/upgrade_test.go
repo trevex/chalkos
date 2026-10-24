@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -229,9 +229,9 @@ func imageWith(t *testing.T, files map[string][]byte, facts string) dirStore {
 var newImage = bytes.Repeat([]byte{0xcd}, 32)
 
 // staged reads the config slot of the image the upgrade tests stage; found is false without one.
-func staged(t *testing.T, s *Server) (store.Stored, bool) {
+func staged(t *testing.T, s *Server) (slot.Stored, bool) {
 	t.Helper()
-	stored, found, err := store.Read(store.Slot(s.Loader.Slots, newImage))
+	stored, found, err := slot.Read(slot.Dir(s.Loader.Slots, newImage))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestStageConfigWritesTheDeliveredConfig(t *testing.T) {
 	if got, _ := staged(t, s); got.Version != hashOf(t, next) {
 		t.Errorf("staged version = %q, want the delivered config's", got.Version)
 	}
-	if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
+	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
 		t.Errorf("running version = %q, want it unchanged", v)
 	}
 }
@@ -349,7 +349,7 @@ func TestStageConfigAddsAVolume(t *testing.T) {
 	if got, _ := staged(t, s); got.Version != hashOf(t, extraConfig("ext4")) {
 		t.Errorf("staged version = %q, want the delivered config's", got.Version)
 	}
-	if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
+	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
 		t.Errorf("running version = %q, want it unchanged", v)
 	}
 }
@@ -371,7 +371,7 @@ func TestStageConfigRetriedAfterTheVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The slot the first try wrote is gone, as one a failed activation retired.
-	if err := store.Retire(s.Loader.Slots, [][]byte{running}); err != nil {
+	if err := slot.Retire(s.Loader.Slots, [][]byte{running}); err != nil {
 		t.Fatal(err)
 	}
 	r.Calls = nil
@@ -410,7 +410,7 @@ func TestApplyConfigNamesAVolumeAnotherImageAdded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Retire(s.Loader.Slots, [][]byte{running}); err != nil {
+	if err := slot.Retire(s.Loader.Slots, [][]byte{running}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "name it in this config too") || strings.Contains(err.Error(), "cdcdcdcdcdcd") {
@@ -454,7 +454,7 @@ func TestUpgradeRetiresConfigSlots(t *testing.T) {
 	writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2.efi", "chalkos_3+3.efi")
 	booted, kept, stale := bytes.Repeat([]byte{'2'}, 32), bytes.Repeat([]byte{'3'}, 32), bytes.Repeat([]byte{'4'}, 32)
 	for _, h := range [][]byte{booted, kept, stale} {
-		if err := store.Write(store.Slot(s.Loader.Slots, h), store.Stored{Version: "v1", Identity: []byte("{}")}); err != nil {
+		if err := slot.Write(slot.Dir(s.Loader.Slots, h), slot.Stored{Version: "v1", Identity: []byte("{}")}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -484,7 +484,7 @@ func TestUpgradeRetiresConfigSlots(t *testing.T) {
 	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("upgrade = %v, want its refusal", err)
 	}
-	slots, err := store.Slots(s.Loader.Slots)
+	slots, err := slot.List(s.Loader.Slots)
 	if err != nil || len(slots) != 1 || !bytes.Equal(slots[0], booted) {
 		t.Errorf("slots = %q, %v; want the booted image's alone", slots, err)
 	}

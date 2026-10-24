@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -75,7 +75,7 @@ type Request struct {
 	KubernetesShare []byte
 	// Config is the node's config as the config slot of the image installed keeps it, with the
 	// identity it translates to as delivered (JSON), which the slot keeps as it is.
-	Config store.Stored
+	Config slot.Stored
 	// RootHash is the root hash of the running image's store, whose slot an install in place
 	// writes; an install from parts writes the slot of the image it installs.
 	RootHash []byte
@@ -376,7 +376,7 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 		}
 	}
 	// The identity is in the slot, so the boot applies it with the documents it came from.
-	if err := store.Write(store.Slot(filepath.Join(i.StateDir, "config"), rootHash), req.Config); err != nil {
+	if err := slot.Write(slot.Dir(filepath.Join(i.StateDir, "config"), rootHash), req.Config); err != nil {
 		return fmt.Errorf("store the config: %w", err)
 	}
 	if len(req.KubernetesShare) > 0 {

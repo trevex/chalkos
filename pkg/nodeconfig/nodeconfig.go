@@ -24,7 +24,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -119,7 +119,7 @@ func (l Loader) Slot() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("the running image: %w", err)
 	}
-	return store.Slot(l.Slots, hash), nil
+	return slot.Dir(l.Slots, hash), nil
 }
 
 // Load applies the running image's config slot: the identity it holds, then its documents for
@@ -128,7 +128,7 @@ func (l Loader) Slot() (string, error) {
 // upgrade wrote config for, fails without applying any: the node runs without config, its health
 // check fails, and a counted boot falls back to an image that has its own.
 func (l Loader) Load() error {
-	slots, err := store.Slots(l.Slots)
+	slots, err := slot.List(l.Slots)
 	if err != nil {
 		return fmt.Errorf("list the config slots: %w", err)
 	}
@@ -149,17 +149,17 @@ func (l Loader) Load() error {
 }
 
 // readSlot reads the running image's slot, which must exist.
-func (l Loader) readSlot() (store.Stored, error) {
+func (l Loader) readSlot() (slot.Stored, error) {
 	dir, err := l.Slot()
 	if err != nil {
-		return store.Stored{}, err
+		return slot.Stored{}, err
 	}
-	stored, found, err := store.Read(dir)
+	stored, found, err := slot.Read(dir)
 	if err != nil {
-		return store.Stored{}, fmt.Errorf("read the config slot %s: %w", dir, err)
+		return slot.Stored{}, fmt.Errorf("read the config slot %s: %w", dir, err)
 	}
 	if !found {
-		return store.Stored{}, fmt.Errorf("STATE holds no config for the running image %s: no install or upgrade wrote config for it", filepath.Base(dir))
+		return slot.Stored{}, fmt.Errorf("STATE holds no config for the running image %s: no install or upgrade wrote config for it", filepath.Base(dir))
 	}
 	return stored, nil
 }
@@ -180,7 +180,7 @@ func (l Loader) LoadConfig() error {
 // image's schemas again: the slot is the image's own, written only once they passed. A slot without
 // documents, an identity alone, gets empty directories, so its units load their credentials all
 // the same, and no cluster.
-func (l Loader) writeConfig(stored store.Stored) error {
+func (l Loader) writeConfig(stored slot.Stored) error {
 	services, err := ReadServices(l.Services)
 	if err != nil {
 		return err
@@ -199,7 +199,7 @@ func (l Loader) writeConfig(stored store.Stored) error {
 			return fmt.Errorf("read the image's schemas: %w", err)
 		}
 	}
-	if err := store.WriteRuntime(l.RunDir, stored.Documents, schemas, kinds); err != nil {
+	if err := slot.WriteRuntime(l.RunDir, stored.Documents, schemas, kinds); err != nil {
 		return err
 	}
 	var c *kubernetes.Cluster
