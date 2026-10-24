@@ -34,6 +34,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/credprovider"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	"github.com/trevex/chalkos/pkg/kubernetes/vxlan"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -51,9 +52,12 @@ commands:
                                    boot loader counts; failed units ignored do not count
   health --stopped                 after a wait ended before it decided, as it would have:
                                    record the boot and reboot when that leads on
-  prepare-kubernetes [vxlan-rule]  pick the node's addresses and write its Kubernetes
-                                   certificates and configuration, then run vxlan-rule with the
-                                   file saying where VXLAN may arrive
+  prepare-kubernetes [--vxlan-rule]
+                                   pick the node's addresses and write its Kubernetes
+                                   certificates and configuration; with --vxlan-rule, then fill
+                                   the firewall's VXLAN table from them
+  vxlan-rule [FILE]                fill the firewall's VXLAN table from FILE, as the preparation
+                                   writes it, or empty it without FILE
   containerd-hosts                 print containerd's hosts.toml of each registry the node's
                                    Mirror and Registry documents name, each after a line
                                    "=== <directory>"
@@ -79,9 +83,15 @@ func main() {
 	case "prepare-kubernetes":
 		var firewall knode.Firewall
 		if len(os.Args) == 3 {
-			firewall = knode.VXLANRule(os.Args[2])
+			firewall = knode.VXLANRule(vxlan.Default())
 		}
 		err = knode.Prepare(knode.DefaultPaths(), time.Now(), knode.WaitForAddresses, firewall)
+	case "vxlan-rule":
+		var file string
+		if len(os.Args) == 3 {
+			file = os.Args[2]
+		}
+		err = vxlan.Default().Apply(file)
 	case "containerd-hosts":
 		err = containerdHosts(os.Stdout, "/run/chalkos")
 	case "registry-credentials":
@@ -102,6 +112,8 @@ func main() {
 func validArgs(command string, args []string) bool {
 	switch command {
 	case "prepare-kubernetes":
+		return len(args) == 0 || len(args) == 1 && args[0] == "--vxlan-rule"
+	case "vxlan-rule":
 		return len(args) <= 1
 	case "health":
 		_, err := parseHealthArgs(args)

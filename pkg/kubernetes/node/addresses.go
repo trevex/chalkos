@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/netip"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
+	"github.com/trevex/chalkos/pkg/kubernetes/vxlan"
 )
 
 // addressesTarget is the systemd target that says the node's addresses have settled.
@@ -170,25 +170,6 @@ func nodeSelector(p Paths, c kubernetes.Cluster, n kubernetes.Node) (nodeip.Sele
 	return c.NodeIPSelector(n)
 }
 
-// vxlanFile is the content of p.VXLAN() for the node's addresses. An address on a network
-// interface takes VXLAN on that interface alone. One on a loopback or dummy interface is an
-// address routers reach the node at through its other interfaces, as with a routing daemon that
-// announces it, so VXLAN to it arrives on any interface.
-func vxlanFile(picked []nodeip.Address, sources []netip.Prefix) []byte {
-	var b strings.Builder
-	for _, a := range picked {
-		mode := "interface"
-		if a.Link.Loopback || a.Link.Kind == "dummy" {
-			mode = "any"
-		}
-		fmt.Fprintf(&b, "destination %s %s\n", a.IP, mode)
-	}
-	for _, s := range sources {
-		fmt.Fprintf(&b, "source %s\n", s)
-	}
-	return []byte(b.String())
-}
-
 // checkVXLANSources refuses picked addresses outside the ranges the other nodes take VXLAN from.
 // The node's config was checked against them already, but an address picked from the subnets at
 // boot is known only now.
@@ -200,16 +181,23 @@ func checkVXLANSources(picked []nodeip.Address, sources []netip.Prefix) error {
 	return kubernetes.CheckVXLANSources(sources, addrs)
 }
 
+// vxlanAccept is what the firewall's VXLAN rule accepts for the node's addresses.
+func vxlanAccept(picked []nodeip.Address, sources []netip.Prefix) vxlan.Accept {
+	a := vxlan.Accept{Sources: sources}
+	for _, p := range picked {
+		a.Destinations = append(a.Destinations, vxlan.DestinationOf(p))
+	}
+	return a
+}
+
 // Firewall accepts VXLAN as p.VXLAN() says, or none when the file does not exist.
 type Firewall func(p Paths) error
 
-// VXLANRule is the Firewall that runs script with p.VXLAN(). The script prints the rules to the
-// journal, which the error points to.
-func VXLANRule(script string) Firewall {
+// VXLANRule is the Firewall that fills the table chalkos-vxlan from p.VXLAN() with rule, which
+// prints the table to the journal; the error points there.
+func VXLANRule(rule vxlan.Rule) Firewall {
 	return func(p Paths) error {
-		cmd := exec.Command(script, p.VXLAN())
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
+		if err := rule.Apply(p.VXLAN()); err != nil {
 			name := "<node>"
 			if n, rerr := kubernetes.ReadNode(p.NodeFile); rerr == nil {
 				name = n.Name

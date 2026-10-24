@@ -130,7 +130,7 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	if err := atomicfile.WriteFile(p.NodeIP(), nodeIPFile(n.IPs), 0o644); err != nil {
 		return err
 	}
-	if err := atomicfile.WriteFile(p.VXLAN(), vxlanFile(picked, c.VXLANSources()), 0o644); err != nil {
+	if err := atomicfile.WriteFile(p.VXLAN(), vxlanAccept(picked, c.VXLANSources()).Marshal(), 0o644); err != nil {
 		return err
 	}
 	// The kubelet starts once its kubeconfig exists, so it is written last.

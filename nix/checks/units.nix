@@ -5,18 +5,18 @@ let
   inherit (checkLib) worker firewall unitCheck;
 in
 {
-  # The worker's VXLAN rule with its firewall, in a network namespace: a peer sends UDP to port
-  # 8472 over a veth pair, and the node receives what the firewall accepts. The rule reads the
-  # cluster's ranges from the Cluster documents the test writes.
+  # The worker's VXLAN rule, chalkd vxlan-rule as its preparation unit runs it, with its firewall,
+  # in a network namespace: a peer sends UDP to port 8472 over a veth pair, and the node receives
+  # what the firewall accepts. The rule reads the cluster's ranges from the cluster file the test
+  # writes. chalkd's unit tests cover what the rule makes of the files.
   vxlan-rule =
     let
-      rule = lib.getExe worker.config.system.build.chalkosVxlanRule;
-      # The rule of an image without IPv6.
-      ipv4Rule = lib.getExe (worker.config.system.build.chalkosVxlanRule.override { ipv6 = false; });
+      rule = builtins.head worker.config.systemd.services.chalkos-kubernetes.serviceConfig.ExecStartPre;
     in
     unitCheck "vxlan-rule" checkLib.networkTools ''
       fail() {
         echo "error: $*" >&2
+        cat errors.log >&2 2>/dev/null || true
         nft list ruleset >&2
         exit 1
       }
@@ -112,12 +112,12 @@ in
         done
         return 1
       }
-      # Runs the script with the arguments, setting status; the rules it prints go to rules.log.
+      # Runs the rule with the arguments, setting status; the table it prints goes to rules.log.
       run() {
         status=0
         ${rule} "$@" >rules.log 2>errors.log || status=$?
       }
-      # Runs the script with the file holding the content, with escapes. Without source lines
+      # Runs the rule with the file holding the content, with escapes. Without source lines
       # VXLAN may come from any source.
       holding() {
         printf '%b' "$1" >vxlan
@@ -125,26 +125,21 @@ in
       }
       v4='destination 10.0.0.11 interface\n'
       v6='destination fd00::11 interface\n'
-      # The node's Cluster document with the spec given, its Flannel document with the source
-      # ranges given, and both of a dual-stack cluster with the source ranges given.
-      cluster=/run/chalkos/config/kubernetes.chalkos.dev/Cluster/default.json
-      flannel=/run/chalkos/config/kubernetes.chalkos.dev/Flannel/default.json
-      mkdir -p "$(dirname "$cluster")" "$(dirname "$flannel")"
+      # The node's cluster file, as chalkd writes it from the Cluster and Flannel documents: with
+      # the spec given, or of a dual-stack cluster whose flannel has the source ranges given.
+      cluster=/run/chalkos/kubernetes/cluster.json
+      mkdir -p "$(dirname "$cluster")"
       spec() {
-        printf '{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Cluster","metadata":{"name":"default"},"spec":%s}\n' "$1" >"$cluster"
-      }
-      sources() {
-        printf '{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Flannel","metadata":{"name":"default"},"spec":{"vxlanSourceSubnets":%s}}\n' "$1" >"$flannel"
+        printf '%s\n' "$1" >"$cluster"
       }
       ranges() {
-        spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16","ipv6":"fd00:10:244::/56"}}'
-        sources "$1"
+        spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16","ipv6":"fd00:10:244::/56"},"flannel":{"vxlanSourceSubnets":'"$1"'}}'
       }
       ranges '["10.0.0.0/24","fd00::/64"]'
       rules() {
         grep -c 'meta mark set meta mark |' rules.log || true
       }
-      # The rules in the table now, which may differ from what the script printed.
+      # The rules in the table now, which may differ from what the rule printed.
       marking() {
         nft list table inet chalkos-vxlan 2>/dev/null | grep -c 'meta mark set meta mark |' || true
       }
@@ -191,57 +186,32 @@ in
       forwarded 10.0.0.12 8472 || fail "a pod's VXLAN was dropped without source ranges"
       forwarded fd00::12 8472 || fail "a pod's IPv6 VXLAN was dropped without source ranges"
 
-      # Ranges that cannot be read, and anything but ranges, drop all VXLAN the node forwards,
-      # and say so; the node still takes VXLAN.
+      # Ranges that cannot be read drop all VXLAN the node forwards, and say so; the node still
+      # takes VXLAN.
       closed() {
         holding "$v4$v6"
         [ "$status" = 0 ] && [ "$(rules)" = 2 ] || fail "the addresses $1"
-        grep -q "$2" errors.log || fail "no warning $1"
+        grep -q "ranges are unknown" errors.log || fail "no warning $1"
         if forwarded 10.0.2.12 8472; then fail "a pod sent VXLAN outside the source ranges $1"; fi
         if forwarded fd00:2::12 8472; then fail "a pod sent IPv6 VXLAN outside the source ranges $1"; fi
         forwarded 10.0.2.12 8473 || fail "a pod's datagram to another port was dropped $1"
         arrives 10.0.0.11 || fail "VXLAN to the node was refused $1"
       }
       rm "$cluster"
-      closed "without a Cluster document" "ranges are unknown"
+      closed "without a cluster file"
       echo '{' >"$cluster"
-      closed "with a document chalkcfg cannot read" "ranges are unknown"
+      closed "with a cluster file that cannot be read"
       spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16"}}'
-      closed "with a family without a pod range" "ranges are unknown"
-      sources '[]'
-      for s in \
-        '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.0.0.0/8 }"}}' \
-        '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":null}}' \
-        '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.244.0.0/16 10.0.0.0/8"}}'; do
-        spec "$s"
-        closed "with the spec $s" "ranges hold"
-      done
-      spec '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.244.0.0/16"}}'
-      for s in '["cafe.be/8"]' '["10.0.0.0/24\nflush 10.0.0.0/8"]'; do
-        sources "$s"
-        closed "with the source ranges $s" "ranges hold"
-      done
-      echo '{' >"$flannel"
-      closed "with a Flannel document chalkcfg cannot read" "ranges are unknown"
-      # Without a Flannel document VXLAN may come from anywhere, so nothing is dropped.
-      rm "$flannel"
+      closed "with a family without a pod range"
+      # Without flannel VXLAN may come from anywhere, so nothing is dropped.
+      spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16","ipv6":"fd00:10:244::/56"}}'
       holding "$v4$v6"
-      [ ! -s errors.log ] || fail "warned without a Flannel document: $(cat errors.log)"
-      forwarded 10.0.0.12 8472 || fail "a pod's VXLAN was dropped without a Flannel document"
+      [ ! -s errors.log ] || fail "warned without flannel: $(cat errors.log)"
+      forwarded 10.0.0.12 8472 || fail "a pod's VXLAN was dropped without flannel"
       ranges '["10.0.0.0/24","fd00::/64"]'
       holding "$v4$v6"
       if forwarded 10.0.0.12 8472; then fail "a pod sent VXLAN to a source range after the ranges came back"; fi
       forwarded 10.0.2.12 8472 || fail "a pod's VXLAN outside the source ranges was dropped after the ranges came back"
-
-      # An image without IPv6 skips the IPv6 ranges, the cluster's and the file's alike.
-      printf '%b' "$v4"'source 10.0.0.0/24\nsource fd00::/64\n' >vxlan
-      ${ipv4Rule} vxlan >rules.log 2>errors.log || fail "an image without IPv6 refused IPv6 ranges"
-      [ ! -s errors.log ] || fail "an image without IPv6 warned of IPv6 ranges: $(cat errors.log)"
-      [ "$(rules)" = 1 ] || fail "an image without IPv6"
-      arrives 10.0.0.11 || fail "an image without IPv6 refused VXLAN from a source range"
-      if forwarded 10.0.0.12 8472; then fail "a pod sent VXLAN to a source range on an image without IPv6"; fi
-      forwarded fd00::12 8472 || fail "an image without IPv6 dropped IPv6 VXLAN it forwards"
-      holding "$v4$v6"
 
       # A reload of the firewall replaces its own table alone.
       nft add table ip kube-proxy
@@ -299,24 +269,10 @@ in
       arrives 10.0.0.11 || fail "VXLAN from a source in the ranges was refused"
       if arrives fd00::11; then fail "IPv6 VXLAN arrived without an IPv6 source range"; fi
 
-      # Anything but a destination line per family, of a bare address and a mode, and source
-      # lines of a range each, adds no rule, empties the table and fails.
-      for content in "" '\n' '10.0.0.11\n' 'destination 10.0.0.11\n' 'destination 10.0.0.11 eth0\n' \
-        'destination 10.0.0.0/8 interface\n' "$v4"'destination 10.0.0.12 any\n' "$v6"'destination fd00::12 interface\n' \
-        "$v4"'destination fd00::11 interface accept\n' 'destination 10.0.0.11 interface accept\n' \
-        'destination fd00::11 }\n' 'destination  10.0.0.11 interface\n' 'destination 10.0.0.11 interface \n' \
-        'Destination 10.0.0.11 interface\n' 'source 10.0.0.0/24\n' "$v4"'\n' 'destination ::ffff: interface\n' \
-        'destination eth0 interface\n' 'destination cafe.be interface\n' 'destination cafe any\n' \
-        'destination 10.0.0 interface\n' 'destination 10.0.0.11.12 interface\n' 'destination 10.0.0.256 interface\n' \
-        'destination 10.0.0.0x1 interface\n' 'destination 10.0..11 interface\n' 'destination ::: interface\n' \
-        "$v4"'source 10.0.0.0\n' "$v4"'source 10.0.0.0/33\n' "$v4"'source fd00::/129\n' "$v4"'source 10.0.0.0/024\n' \
-        "$v4"'source 10.0.0.0/\n' "$v4"'source cafe/8\n' "$v4"'source 10.0.0.0/24 accept\n' "$v4"'source 10.0.0.0/24 }\n' \
-        "$v4"'source  10.0.0.0/24\n' "$v4"'source 10.0.0.0/8/8\n' "$v4"'source 10.0.0.256/24\n' \
-        'destination a:b interface\n' 'destination cafe:babe interface\n' 'destination 1::2::3 interface\n' \
-        'destination 12345:: interface\n' 'destination fe80::1%v0 interface\n' 'destination 1:2:3:4:5:6:7:8:9 interface\n' \
-        'destination 1:2:3:4:5:6:7::8 interface\n' 'destination :1::2 interface\n' 'destination 1::2: interface\n' \
-        'destination ::10.0.0 interface\n' 'destination fd00:10.0.0.11 interface\n' 'destination ::10.0.0.11:1 interface\n' \
-        'destination 10.0.0.011 interface\n' "$v4"'source a:b/64\n' "$v4"'source 1::2::3/64\n'; do
+      # A file holding anything but the node's addresses and source ranges adds no rule, empties
+      # the table and fails.
+      for content in "" 'destination 10.0.0.11 eth0\n' 'destination cafe.be interface\n' \
+        'destination fe80::1%v0 interface\n' "$v4"'source 10.0.0.0/24 }\n'; do
         holding "$v4"
         holding "$content"
         [ "$status" != 0 ] && [ "$(rules)" = 0 ] || fail "accepted a file holding '$content'"

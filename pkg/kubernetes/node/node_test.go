@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/kubernetes/vxlan"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -1137,29 +1138,36 @@ func TestPrepareWritesVXLANDestinations(t *testing.T) {
 	}
 }
 
-// The script that fills the firewall's VXLAN table gets the file saying what to accept, and its
-// failure names it.
+// The firewall's VXLAN rule fills the table from the file saying what to accept, and its failure
+// names it.
 func TestVXLANRule(t *testing.T) {
 	p := testNode(t, kubernetes.KindWorker, "w1", nil)
-	dir := t.TempDir()
-	args := filepath.Join(dir, "args")
-	script := func(name, body string) string {
-		t.Helper()
-		path := filepath.Join(dir, name)
-		write(t, path, "#!/bin/sh\necho \"$@\" >"+args+"\n"+body+"\n")
-		if err := os.Chmod(path, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		return path
+	write(t, p.VXLAN(), "destination 192.168.100.11 interface\n")
+	var inputs []string
+	refuse := false
+	rule := vxlan.Rule{
+		LockFile:    filepath.Join(t.TempDir(), "lock"),
+		ClusterFile: p.Cluster,
+		NFT: func(input string, args ...string) error {
+			if input == "" {
+				return nil
+			}
+			inputs = append(inputs, input)
+			if refuse {
+				return errors.New("exit status 1")
+			}
+			return nil
+		},
 	}
-	if err := VXLANRule(script("ok", "exit 0"))(p); err != nil {
+	if err := VXLANRule(rule)(p); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(args); string(data) != p.VXLAN()+"\n" {
-		t.Errorf("arguments %q", data)
+	if len(inputs) != 1 || !strings.Contains(inputs[0], "ip daddr 192.168.100.11 udp dport 8472 fib daddr . iif type local") {
+		t.Errorf("nft inputs %q", inputs)
 	}
-	err := VXLANRule(script("fails", "exit 1"))(p)
-	if err == nil || err.Error() != "accept VXLAN to the node's address: exit status 1; see chalkctl logs w1 --unit chalkos-kubernetes" {
+	refuse = true
+	err := VXLANRule(rule)(p)
+	if err == nil || !strings.HasPrefix(err.Error(), "accept VXLAN to the node's address: ") || !strings.HasSuffix(err.Error(), "; see chalkctl logs w1 --unit chalkos-kubernetes") {
 		t.Errorf("err = %v", err)
 	}
 }

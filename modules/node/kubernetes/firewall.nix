@@ -10,34 +10,18 @@
 }:
 let
   flannel = config.chalkos.cni.provider == "flannel";
+  chalkd = lib.getExe chalkosPackages.chalkd;
 
   # flannel's VXLAN carries pod traffic unauthenticated, so it is accepted only when sent to the
   # node's addresses, which flanneld uses and other nodes send to: on the interface holding one,
   # or on any for one on a loopback or dummy interface. chalkd picks them after the firewall
-  # started, so a table of chalkos's own marks such packets, filled by this script from the file
-  # the preparation writes and emptied without one, and the firewall accepts what carries the
-  # mark. The firewall's reloads leave that table alone.
+  # started, so a table of chalkos's own, which chalkd fills (pkg/kubernetes/vxlan), marks such
+  # packets, and the firewall accepts what carries the mark. The firewall's reloads leave that
+  # table alone.
   vxlanFirewall = flannel && config.networking.firewall.enable;
-  # A packet mark bit kube-proxy (0x4000, 0x8000) and flannel leave alone.
+  # The packet mark bit chalkd's table sets, vxlan.Mark; the vxlan-rule check fails when the two
+  # differ.
   vxlanMark = "0x01000000";
-  vxlanRule = pkgs.callPackage ../../../nix/vxlan-rule.nix {
-    ipv6 = config.networking.enableIPv6;
-    mark = vxlanMark;
-    # Each family's pod range from the node's Cluster document, then the source ranges from its
-    # Flannel document, which the node need not have. Either command failing fails the whole.
-    rangesCommand = lib.concatStringsSep " && " [
-      (config.chalkos.kinds.Cluster.get {
-        output = ''
-          go-template={{$s := .spec}}{{range $s.ipFamilies}}pods {{index $s.podCIDRs .}}
-          {{end}}'';
-      })
-      (config.chalkos.kinds.Flannel.get {
-        output = ''
-          go-template={{range .spec.vxlanSourceSubnets}}source {{.}}
-          {{end}}'';
-      })
-    ];
-  };
 
   # A packet mark bit of the control plane's ports, which chalkos-controlplane sets; kube-proxy
   # (0x4000, 0x8000), flannel and the VXLAN rule leave it alone. It is cleared on every packet
@@ -52,17 +36,15 @@ let
 in
 {
   config = lib.mkIf config.chalkos.kubernetes.enable {
-    # The script of the unit that reads the config, which checks run with documents of their own.
-    system.build.chalkosVxlanRule = vxlanRule;
-
     systemd.services.chalkos-kubernetes = lib.mkIf vxlanFirewall {
       after = [ "nftables.service" ];
+      path = [ pkgs.nftables ];
       serviceConfig = {
         # No VXLAN is accepted while the addresses are picked, nor when none are found.
-        ExecStartPre = [ (lib.getExe vxlanRule) ];
+        ExecStartPre = [ "${chalkd} vxlan-rule" ];
         # The preparation fills the table last, so the node is marked prepared only with the rules
-        # in place, and a failure to fill it is the preparation's, which chalkd reports.
-        ExecStart = "${lib.getExe chalkosPackages.chalkd} prepare-kubernetes ${lib.getExe vxlanRule}";
+        # in place, and a failure to fill it is the preparation's.
+        ExecStart = "${chalkd} prepare-kubernetes --vxlan-rule";
       };
     };
 

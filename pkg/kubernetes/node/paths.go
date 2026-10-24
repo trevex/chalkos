@@ -49,9 +49,7 @@ func (p Paths) KubeletDir() string   { return filepath.Join(p.Run, "kubelet") }
 // NodeIP holds the addresses the node picked, one per line, the primary family's first.
 func (p Paths) NodeIP() string { return filepath.Join(p.Run, "node-ip") }
 
-// VXLAN holds what the firewall's VXLAN rule accepts: a line "destination <address> <mode>" for
-// each of the node's addresses, where mode is interface or any, and a line "source <range>" for
-// each range VXLAN must come from.
+// VXLAN holds what the firewall's VXLAN rule accepts, as vxlan.Accept.Marshal writes it.
 func (p Paths) VXLAN() string { return filepath.Join(p.Run, "vxlan") }
 
 // Pin holds the addresses a control-plane node was pinned to when it became an etcd member: its

@@ -1162,10 +1162,10 @@ lib.runTests {
               let
                 pre = prepare.serviceConfig.ExecStartPre or [ ];
               in
-              builtins.length pre == 1 && lib.hasSuffix "/bin/chalkos-vxlan-rule" (builtins.elemAt pre 0);
+              builtins.length pre == 1 && lib.hasSuffix "/bin/chalkd vxlan-rule" (builtins.elemAt pre 0);
             # The preparation fills the table as its last step, and nothing fills it after a failure.
             prepareFills =
-              lib.hasSuffix "/bin/chalkos-vxlan-rule" prepare.serviceConfig.ExecStart
+              lib.hasSuffix "/bin/chalkd prepare-kubernetes --vxlan-rule" prepare.serviceConfig.ExecStart
               && !(prepare.serviceConfig ? ExecStartPost);
             afterFirewall = lib.elem "nftables.service" prepare.after;
           };
