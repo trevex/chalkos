@@ -10,7 +10,7 @@ import (
 // Set is a node's whole config: every document valid against the image's schemas, with schema
 // defaults filled in, and the rules of a set met.
 type Set struct {
-	docs []Document
+	docs Documents
 	// schemas are the image's, which renderers read annotations from.
 	schemas *schema.Schemas
 }
@@ -24,7 +24,7 @@ var singletons = []struct{ apiVersion, kind string }{
 // kind is one the image accepts, kinds that are not multiple appear once, names are unique per
 // kind, the SystemDisk is present, and every secretRef names a key of a Secret in the set and a
 // credential file of its own. The Cluster and Node documents an image with Kubernetes requires
-// are its cluster's, which ClusterOf checks.
+// are its cluster's, which Documents.Cluster checks.
 func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 	multiple := map[string]bool{}
 	for _, k := range s.Kinds() {
@@ -66,18 +66,7 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 }
 
 // Documents returns the set's documents, ordered by apiVersion, kind and name.
-func (s *Set) Documents() []Document { return s.docs }
-
-// Of returns the documents of a kind, ordered by name.
-func (s *Set) Of(apiVersion, kind string) []Document {
-	var out []Document
-	for _, d := range s.docs {
-		if d.APIVersion == apiVersion && d.Kind == kind {
-			out = append(out, d)
-		}
-	}
-	return out
-}
+func (s *Set) Documents() Documents { return s.docs }
 
 // One returns the document of a kind the set holds exactly once: the image declares it as not
 // multiple, and exactly one document of it is present. Kind names are unique within an image, so
@@ -90,7 +79,7 @@ func (s *Set) One(kind string) (Document, bool) {
 		if k.Multiple {
 			return Document{}, false
 		}
-		if docs := s.Of(k.APIVersion, kind); len(docs) == 1 {
+		if docs := s.docs.Of(k.APIVersion, kind); len(docs) == 1 {
 			return docs[0], true
 		}
 		return Document{}, false

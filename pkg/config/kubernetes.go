@@ -12,33 +12,14 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
 
-// docsOf returns the documents of a kind among docs.
-func docsOf(docs []Document, apiVersion, kind string) []Document {
-	var out []Document
-	for _, d := range docs {
-		if d.APIVersion == apiVersion && d.Kind == kind {
-			out = append(out, d)
-		}
-	}
-	return out
-}
-
-// single returns the document of a kind when docs hold exactly one.
-func single(docs []Document, apiVersion, kind string) (Document, bool) {
-	if found := docsOf(docs, apiVersion, kind); len(found) == 1 {
-		return found[0], true
-	}
-	return Document{}, false
-}
-
-// ClusterOf builds the Kubernetes cluster a node's documents give on an image with the facts img:
+// Cluster builds the Kubernetes cluster the documents give on an image with the facts img:
 // its kind, the kubelet's extra flags and the VIP's interface from the Kubernetes Node, its
 // endpoint and other settings from the Cluster document and, on a flannel image, flannel's from
 // the Flannel document, and checks it. It holds the per-family values of the cluster's families
 // alone, and each error names the document whose setting fails. docs carry their schema
 // defaults, as a Set and the stored config do.
-func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error) {
-	nodeDoc, ok := single(docs, KubernetesAPI, "Node")
+func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) {
+	nodeDoc, ok := docs.single(KubernetesAPI, "Node")
 	if !ok {
 		return kubernetes.Cluster{}, errors.New("no Node: the config of a node whose image runs Kubernetes holds one Node document")
 	}
@@ -46,7 +27,7 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 	if err := nodeDoc.decodeSpec(&node); err != nil {
 		return kubernetes.Cluster{}, err
 	}
-	kdoc, ok := single(docs, KubernetesAPI, "Cluster")
+	kdoc, ok := docs.single(KubernetesAPI, "Cluster")
 	if !ok {
 		return kubernetes.Cluster{}, errors.New("no Cluster: the config of a node whose image runs Kubernetes holds one Cluster document")
 	}
@@ -94,7 +75,7 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 	keepFamilies(&c)
 	if img.CNI == kubernetes.CNIFlannel {
 		c.Flannel = &kubernetes.Flannel{VXLANSourceSubnets: []string{}}
-		if d, ok := single(docs, KubernetesAPI, "Flannel"); ok {
+		if d, ok := docs.single(KubernetesAPI, "Flannel"); ok {
 			var f flannelSpec
 			if err := d.decodeSpec(&f); err != nil {
 				return kubernetes.Cluster{}, err
@@ -150,15 +131,10 @@ func dnsIP(given *string, service string) string {
 	return a.String()
 }
 
-// Cluster builds the set's Kubernetes cluster on an image with the facts img.
-func (s *Set) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) {
-	return ClusterOf(s.docs, img)
-}
-
-// AddonObjectsOf returns the objects of the Addon documents, in the order of the documents' names
+// AddonObjects returns the objects of the Addon documents, in the order of the documents' names
 // and each document's own order: the objects the control planes apply after chalkos's.
-func AddonObjectsOf(docs []Document) ([]map[string]any, error) {
-	addons := docsOf(docs, KubernetesAPI, "Addon")
+func (docs Documents) AddonObjects() ([]map[string]any, error) {
+	addons := docs.Of(KubernetesAPI, "Addon")
 	slices.SortStableFunc(addons, func(a, b Document) int { return cmp.Compare(a.Name, b.Name) })
 	var out []map[string]any
 	for _, d := range addons {
@@ -171,16 +147,13 @@ func AddonObjectsOf(docs []Document) ([]map[string]any, error) {
 	return out, nil
 }
 
-// AddonObjects returns the objects of the set's Addon documents in the order they apply.
-func (s *Set) AddonObjects() ([]map[string]any, error) { return AddonObjectsOf(s.docs) }
-
 // CheckKubernetes refuses a set whose Node, Cluster, Flannel and Addon documents a node of an
 // image with the facts img could not run on: a cluster the Node, Cluster and Flannel documents do
 // not build, and Addon documents that do not decode.
 func (s *Set) CheckKubernetes(img kubernetes.Image) error {
-	if _, err := s.Cluster(img); err != nil {
+	if _, err := s.docs.Cluster(img); err != nil {
 		return err
 	}
-	_, err := s.AddonObjects()
+	_, err := s.docs.AddonObjects()
 	return err
 }

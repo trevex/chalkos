@@ -118,7 +118,7 @@ func TestWriteReplacesTheWholeSet(t *testing.T) {
 	if err := Write(dir, stored(t, "v1")); err != nil {
 		t.Fatal(err)
 	}
-	cluster := parse(t, set)[:1]
+	cluster := config.Documents(parse(t, set)[:1])
 	if err := Write(dir, Stored{Delivered: cluster, Documents: cluster, Version: "v2", Identity: []byte("{}\n")}); err != nil {
 		t.Fatal(err)
 	}

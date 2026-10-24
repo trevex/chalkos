@@ -25,8 +25,8 @@ var homelabImage = kubernetes.Image{Version: "1.37.1", CNI: kubernetes.CNIFlanne
 
 // The homelab worker's documents on the homelab's image give the whole cluster in
 // testdata/homelab-w1-cluster.json.
-func TestClusterOfHomelabWorker(t *testing.T) {
-	c, err := homelabSet(t, "w1").Cluster(homelabImage)
+func TestClusterHomelabWorker(t *testing.T) {
+	c, err := homelabSet(t, "w1").Documents().Cluster(homelabImage)
 	if err != nil {
 		t.Fatal(err)
 	}

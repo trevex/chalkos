@@ -65,13 +65,13 @@ func TestClusterTakesTheNodesType(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c, err := s.Cluster(testImage); err != nil || c.Kind != kubernetes.KindControlPlane {
+	if c, err := s.Documents().Cluster(testImage); err != nil || c.Kind != kubernetes.KindControlPlane {
 		t.Errorf("kind = %q, %v, want %q", c.Kind, err, kubernetes.KindControlPlane)
 	}
 }
 
 func TestClusterFromDefaults(t *testing.T) {
-	c, err := kubernetesSet(t, "{}", "").Cluster(testImage)
+	c, err := kubernetesSet(t, "{}", "").Documents().Cluster(testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestClusterFromDefaults(t *testing.T) {
 		t.Errorf("defaults = %+v", c)
 	}
 	// The DNS address defaults to the 10th address of each service range.
-	dual, err := kubernetesSet(t, "{ipFamilies: [ipv4, ipv6]}", "").Cluster(testImage)
+	dual, err := kubernetesSet(t, "{ipFamilies: [ipv4, ipv6]}", "").Documents().Cluster(testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestClusterFromDefaults(t *testing.T) {
 func TestClusterFromSettings(t *testing.T) {
 	s := kubernetesNodeSet(t, `{ipFamilies: [ipv6, ipv4], serviceCIDRs: {ipv4: 10.100.0.0/16}, vip: {addresses: [10.0.0.10]}}`,
 		`kubeletExtraArgs: {v: "2"}`, flannelDoc("default", `{mtu: 1430, vxlanSourceSubnets: ["fd00:1::/64", "10.0.0.0/24"]}`))
-	c, err := s.Cluster(testImage)
+	c, err := s.Documents().Cluster(testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestClusterFromSettings(t *testing.T) {
 	}
 	none := testImage
 	none.CNI, none.Images.Flannel = kubernetes.CNINone, ""
-	if c, err := kubernetesSet(t, "{}", "").Cluster(none); err != nil || c.Flannel != nil {
+	if c, err := kubernetesSet(t, "{}", "").Documents().Cluster(none); err != nil || c.Flannel != nil {
 		t.Errorf("without flannel: %+v, %v", c.Flannel, err)
 	}
 }
@@ -133,7 +133,7 @@ func TestClusterRejects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.Cluster(testImage); err == nil || !strings.Contains(err.Error(), tc.want) {
+			if _, err := s.Documents().Cluster(testImage); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
 			}
 		})
@@ -149,7 +149,7 @@ func TestAddonObjectsInNameOrder(t *testing.T) {
 		return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: " + name + "}\nspec: {objects: [" + strings.Join(list, ", ") + "]}\n"
 	}
 	s := kubernetesSet(t, "{}", addon("b", "third")+addon("a", "first", "second"))
-	objects, err := s.AddonObjects()
+	objects, err := s.Documents().AddonObjects()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestIdentityTakesTheDocumentsFamilies(t *testing.T) {
 // The cluster holds the values of its families alone.
 func TestClusterKeepsTheFamiliesInUse(t *testing.T) {
 	c, err := kubernetesSet(t, `{podCIDRs: {ipv6: "fd00:1::/56"}, serviceCIDRs: {ipv6: "fd00:2::/112"},
-  dnsIPs: {ipv6: "fd00:2::b"}, nodeCIDRMaskSizes: {ipv6: 60}}`, "").Cluster(testImage)
+  dnsIPs: {ipv6: "fd00:2::b"}, nodeCIDRMaskSizes: {ipv6: 60}}`, "").Documents().Cluster(testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := s.Cluster(testImage)
+	c, err := s.Documents().Cluster(testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
 		t.Errorf("cluster = %+v", c)
 	}
 	want := `Node "default": vip.interface: only control planes hold the VIP; leave it null on a worker`
-	if _, err := kubernetesNodeSet(t, `{vip: {addresses: [10.0.0.10]}}`, "vip: {interface: lan0}", "").Cluster(testImage); err == nil || err.Error() != want {
+	if _, err := kubernetesNodeSet(t, `{vip: {addresses: [10.0.0.10]}}`, "vip: {interface: lan0}", "").Documents().Cluster(testImage); err == nil || err.Error() != want {
 		t.Errorf("a worker's VIP interface: err = %v, want %q", err, want)
 	}
 }
@@ -214,16 +214,16 @@ func TestClusterNamesTheDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Cluster(testImage); err == nil || !strings.HasPrefix(err.Error(), `Cluster "k": endpoint`) {
+	if _, err := s.Documents().Cluster(testImage); err == nil || !strings.HasPrefix(err.Error(), `Cluster "k": endpoint`) {
 		t.Errorf("endpoint: err = %v", err)
 	}
 	s = kubernetesSet(t, "{}", flannelDoc("flannel", "{mtu: 600}"))
-	if _, err := s.Cluster(testImage); err == nil || !strings.HasPrefix(err.Error(), `Flannel "flannel": flannel: the MTU 600`) {
+	if _, err := s.Documents().Cluster(testImage); err == nil || !strings.HasPrefix(err.Error(), `Flannel "flannel": flannel: the MTU 600`) {
 		t.Errorf("mtu: err = %v", err)
 	}
 	// VXLAN sources are flannel's, checked against the Cluster document's families and ranges.
 	s = kubernetesSet(t, "{}", flannelDoc("flannel", "{vxlanSourceSubnets: [10.244.0.0/24]}"))
-	if _, err := s.Cluster(testImage); err == nil || err.Error() != `Flannel "flannel": vxlanSourceSubnets: 10.244.0.0/24 overlaps podCIDRs.ipv4 10.244.0.0/16` {
+	if _, err := s.Documents().Cluster(testImage); err == nil || err.Error() != `Flannel "flannel": vxlanSourceSubnets: 10.244.0.0/24 overlaps podCIDRs.ipv4 10.244.0.0/16` {
 		t.Errorf("vxlanSourceSubnets: err = %v", err)
 	}
 }
@@ -232,7 +232,7 @@ func TestClusterNamesTheDocument(t *testing.T) {
 func TestAddonObjectsKeepNumbers(t *testing.T) {
 	s := kubernetesSet(t, "{}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: m}\n"+
 		"spec: {objects: [{apiVersion: v1, kind: ConfigMap, metadata: {name: c}, data: {}, big: 9007199254740993, f: 1.5}]}\n")
-	objects, err := s.AddonObjects()
+	objects, err := s.Documents().AddonObjects()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestClusterTakesItsEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c, err := s.Cluster(testImage); err != nil || c.Endpoint != "https://api.lab:6443" {
+	if c, err := s.Documents().Cluster(testImage); err != nil || c.Endpoint != "https://api.lab:6443" {
 		t.Errorf("endpoint = %q, %v", c.Endpoint, err)
 	}
 }

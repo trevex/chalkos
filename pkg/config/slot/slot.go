@@ -24,10 +24,10 @@ import (
 type Stored struct {
 	// Delivered are the documents as they were delivered, Secrets included, which a later config
 	// is compared with.
-	Delivered []config.Document
+	Delivered config.Documents
 	// Documents are the same documents with the image's schema defaults filled in, which the
 	// node's services read.
-	Documents []config.Document
+	Documents config.Documents
 	// Version is config.Hash of the documents as they were delivered.
 	Version string
 	// Identity is the node's identity the documents translate to on the slot's image, as JSON,

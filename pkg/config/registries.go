@@ -35,7 +35,7 @@ func RegistriesOf(docs []Document, secret func(SecretRef) (string, bool)) (Regis
 		host string
 	}
 	logins := map[string]named{}
-	for _, d := range docsOf(docs, OCIAPI, "Registry") {
+	for _, d := range Documents(docs).Of(OCIAPI, "Registry") {
 		var spec registrySpec
 		if err := d.decodeSpec(&spec); err != nil {
 			return Registries{}, err
@@ -66,7 +66,7 @@ func RegistriesOf(docs []Document, secret func(SecretRef) (string, bool)) (Regis
 		r.Logins = append(r.Logins, c)
 	}
 	mirrors := map[string]named{}
-	for _, d := range docsOf(docs, OCIAPI, "Mirror") {
+	for _, d := range Documents(docs).Of(OCIAPI, "Mirror") {
 		var spec mirrorSpec
 		if err := d.decodeSpec(&spec); err != nil {
 			return Registries{}, err

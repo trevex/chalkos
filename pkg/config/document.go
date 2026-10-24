@@ -28,6 +28,28 @@ type Document struct {
 	Object map[string]any
 }
 
+// Documents are a node's config documents, such as a Set holds or a config slot stores.
+type Documents []Document
+
+// Of returns the documents of a kind, in their order.
+func (docs Documents) Of(apiVersion, kind string) Documents {
+	var out Documents
+	for _, d := range docs {
+		if d.APIVersion == apiVersion && d.Kind == kind {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// single returns the document of a kind when docs hold exactly one.
+func (docs Documents) single(apiVersion, kind string) (Document, bool) {
+	if found := docs.Of(apiVersion, kind); len(found) == 1 {
+		return found[0], true
+	}
+	return Document{}, false
+}
+
 // jsonNumber matches a number literal as JSON writes it.
 var jsonNumber = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
 

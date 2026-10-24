@@ -217,7 +217,7 @@ func (l Loader) writeConfig(stored slot.Stored) error {
 
 // Cluster returns the Kubernetes cluster docs give on this image, from the image's facts and the
 // documents' settings; nil on an image without Kubernetes.
-func (l Loader) Cluster(docs []config.Document) (*kubernetes.Cluster, error) {
+func (l Loader) Cluster(docs config.Documents) (*kubernetes.Cluster, error) {
 	if l.KubernetesImage == "" {
 		return nil, nil
 	}
@@ -228,7 +228,7 @@ func (l Loader) Cluster(docs []config.Document) (*kubernetes.Cluster, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := config.ClusterOf(docs, img)
+	c, err := docs.Cluster(img)
 	if err != nil {
 		return nil, err
 	}

@@ -63,7 +63,7 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 	}
 	var networkDocs []Document
 	for _, kind := range []string{"Link", "NetDev", "Network"} {
-		networkDocs = append(networkDocs, s.Of(NetworkdAPI, kind)...)
+		networkDocs = append(networkDocs, s.docs.Of(NetworkdAPI, kind)...)
 	}
 	id := identity.Identity{
 		Hostname: name,
@@ -85,7 +85,7 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 	if t.Image != nil {
 		// The node's addresses follow the families and nodeIP.validSubnets of the cluster the
 		// documents give, which needs a Node and a Cluster document.
-		c, err := s.Cluster(*t.Image)
+		c, err := s.docs.Cluster(*t.Image)
 		if err != nil {
 			return identity.Identity{}, fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
 		}

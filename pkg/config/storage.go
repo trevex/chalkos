@@ -118,7 +118,7 @@ func (s *Set) storage(name string) (storage.Section, error) {
 		return storage.Section{}, fmt.Errorf("%s: disk: %w", sd, err)
 	}
 	var vols []namedVolume
-	for _, d := range s.Of(StorageAPI, "Volume") {
+	for _, d := range s.docs.Of(StorageAPI, "Volume") {
 		v := namedVolume{name: d.Name}
 		if err := d.decodeSpec(&v.spec); err != nil {
 			return storage.Section{}, err
