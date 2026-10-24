@@ -92,9 +92,9 @@ func (n *Node) change(what string) error {
 type Result struct {
 	// AlreadyInstalled is set when the node runs the image already, and nothing changed.
 	AlreadyInstalled bool
-	// AlreadyStaged is set when the image boots next already, from esp.Entry, and nothing changed.
+	// AlreadyStaged is set when the image boots next already, from Entry, and nothing changed.
 	AlreadyStaged bool
-	// esp.Entry is the UKI that boots the image from the next boot on.
+	// Entry is the UKI that boots the image from the next boot on.
 	Entry string
 	// Wrote is set when the store was written; it is not when the slot held it already.
 	Wrote bool
