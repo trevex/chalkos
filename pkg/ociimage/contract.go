@@ -173,12 +173,12 @@ func ParseContract(r io.Reader) (Contract, error) {
 	return c, nil
 }
 
-// ReadContract reads the contract layer of a chalkos image: a layer larger than a contract may be
-// is refused by its descriptor's size alone, before it is read, and a smaller one is read to its
-// end before it is parsed. go-containerregistry verifies a remote blob's digest only once a
-// reader of it reaches end of stream; archive/tar's reader does not reach that on its own, since
-// it stops at the end-of-archive marker, so parsing a layer straight from its reader would accept
-// one that was tampered with in transit.
+// ReadContract reads the contract layer of a chalkos image.
+//
+//   - It refuses a layer larger than a contract may be by its descriptor's size, before reading it.
+//   - It reads a smaller layer to its end before parsing it. go-containerregistry checks a remote
+//     blob's digest only at end of stream, and archive/tar stops at its end-of-archive marker, so
+//     parsing straight from the layer's reader would accept a layer tampered with in transit.
 func ReadContract(img v1.Image) (Contract, error) {
 	m, err := img.Manifest()
 	if err != nil {

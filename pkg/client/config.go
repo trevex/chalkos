@@ -14,9 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// ConfigVersion is the version of the client file this package reads and writes. Version 1 named
-// the nodes' addresses, which an inventory names now; version 2 named the cluster, which the OS CA
-// of the file tells apart now.
+// ConfigVersion is the version of the client file this package reads and writes.
 const ConfigVersion = 3
 
 // Config is a client file: a user's certificate from the OS CA, with what is needed to reach

@@ -162,13 +162,13 @@ func (r ctxReader) Read(p []byte) (int, error) {
 	return r.ReadCloser.Read(p)
 }
 
-// VerifiedReader reads a layer's content and hashes every byte read through it, so Verify can
-// check after the fact that it read exactly the bytes the layer's own Digest and Size say it is.
-// A layout's own blob store does not check a blob's content against the digest its file name
-// is, so a reader of a local layer, as much as a reader of a remote one, must be checked once it
-// has been read: WriteBlob and io.Copy close their reader without checking the error Close
-// returns, so a caller calls Verify once its own copy, and any error from closing the copy's
-// destination, have both been checked.
+// VerifiedReader reads a layer's content and hashes every byte read through it. Verify then
+// checks that it read exactly the bytes the layer's Digest and Size name.
+//
+// A layout's blob store does not check a blob against the digest its file name is, so a local
+// layer needs this check as much as a remote one. WriteBlob and io.Copy close their reader without
+// checking the error of Close. A caller therefore calls Verify once its copy, and closing the
+// copy's destination, both succeeded.
 type VerifiedReader struct {
 	io.ReadCloser
 	hash hash.Hash
