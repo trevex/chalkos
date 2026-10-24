@@ -4,83 +4,58 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/storeslot"
 )
 
-// Disk is a disk opened for wiping.
-type Disk interface {
-	io.WriterAt
-	Sync() error
-	// RereadPartitions makes the kernel drop the partitions the disk had.
-	RereadPartitions() error
-	Close() error
-}
-
-// blockDevice is a whole disk opened exclusively: the kernel refuses while any of its
-// partitions is mounted or held by a device mapper or RAID device.
-type blockDevice struct{ *os.File }
-
-// lockRetry is how often openExclusive tries again to lock a disk another process holds.
-const lockRetry = 100 * time.Millisecond
-
-// diskLockWait is how long openExclusive waits for a disk another process keeps locked, as sfdisk
-// does: the install holds chalkd's lock meanwhile.
-var diskLockWait = 30 * time.Second
-
-func openExclusive(ctx context.Context, path string) (Disk, error) {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_EXCL, 0)
+// classify tells whether the target is laid out anew: when it is empty or the request wipes it.
+// A target that holds what an earlier attempt of this install left is continued, and anything
+// else refused, naming what it holds.
+func (i *Installer) classify(ctx context.Context, target storage.BlockDisk, l layout, req PartsRequest) (bool, error) {
+	if req.WipeDisk {
+		return true, nil
+	}
+	props, err := node.Probe(ctx, i.Run, target.Device)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	// udev probes a disk, and rereads its partition table, when it is closed after writing; the
-	// lock keeps udev waiting until the kernel dropped the old partitions, so the two never race.
-	deadline := time.Now().Add(diskLockWait)
-	for {
-		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return blockDevice{f}, nil
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) {
-			f.Close()
-			return nil, fmt.Errorf("lock %s: %w", path, err)
-		}
-		if !time.Now().Before(deadline) {
-			f.Close()
-			return nil, fmt.Errorf("another program kept the target disk %s locked for %v", path, diskLockWait)
-		}
-		select {
-		case <-ctx.Done():
-			f.Close()
-			return nil, fmt.Errorf("the target disk is locked by another process: %s: %w", path, ctx.Err())
-		case <-time.After(min(lockRetry, time.Until(deadline))):
-		}
+	if len(props) == 0 {
+		return true, nil
 	}
+	if props["PTTYPE"] != "gpt" || props["TYPE"] != "" {
+		return false, fmt.Errorf("the target disk %s carries data (%s); pass --wipe-disk to replace it", target, strings.TrimSpace(props["PTTYPE"]+" "+props["TYPE"]))
+	}
+	table, err := i.readTable(ctx, target.Device)
+	if err != nil {
+		return false, err
+	}
+	if len(table.Partitions) == 0 {
+		return true, nil
+	}
+	if err := l.check(table, req.Section); err != nil {
+		return false, fmt.Errorf("the target disk %s is not one an earlier install of this image left: %w; pass --wipe-disk to replace it", target, err)
+	}
+	pairs, err := storeslot.StoreSlots(target.String(), table.Partitions)
+	if err != nil {
+		return false, err
+	}
+	if a := pairs[0]; a.Label() != "" && !a.Holds(req.Image.RootHash) {
+		return false, fmt.Errorf("slot A of the target disk %s holds the store %s of another image; pass --wipe-disk to replace it", target, a.Label())
+	}
+	if err := i.checkState(ctx, target, table, req.Section.Encryption); err != nil {
+		return false, err
+	}
+	log.Printf("continuing the install on %s", target)
+	return false, nil
 }
-
-// blkrrpart is the BLKRRPART ioctl. The kernel allows it to the disk's exclusive opener.
-const blkrrpart = 0x125f
-
-func (d blockDevice) RereadPartitions() error {
-	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, d.Fd(), blkrrpart, 0); errno != 0 {
-		return fmt.Errorf("reread the partition table of %s: %w", d.Name(), errno)
-	}
-	return nil
-}
-
-// mib is how much of a disk's start and end is zeroed to drop its partition tables.
-const mib = 1 << 20
 
 // refuseBootDisk refuses the disk the installer runs from. Only a missing boot-disk link lets
 // the install go ahead without knowing that disk; any other failure to resolve it refuses.
@@ -119,114 +94,5 @@ func describe(p gpt.Partition) string {
 		return "chalkos VAR"
 	default:
 		return "chalkos volume " + p.Name
-	}
-}
-
-var (
-	bootEntryRE = regexp.MustCompile(`^Boot([0-9A-Fa-f]{4})\*?\s`)
-	bootNextRE  = regexp.MustCompile(`(?m)^BootNext: ([0-9A-Fa-f]{4})`)
-	gptPartRE   = regexp.MustCompile(`HD\([0-9a-fA-Fx]+,GPT,([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})`)
-)
-
-// bootLabel is the label of the UEFI boot entries the installer adds.
-const bootLabel = "chalkos"
-
-type bootEntry struct {
-	num, label string
-	// partUUID is the GPT partition UUID the entry boots from, lower case; empty when the entry
-	// does not name one.
-	partUUID string
-}
-
-// parseBootEntries reads the entries of efibootmgr --verbose. A label is known only when a tab
-// ends it.
-func parseBootEntries(out string) []bootEntry {
-	var entries []bootEntry
-	for _, line := range strings.Split(out, "\n") {
-		m := bootEntryRE.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		e := bootEntry{num: m[1]}
-		if label, _, ok := strings.Cut(line[len(m[0]):], "\t"); ok {
-			e.label = strings.TrimSpace(label)
-		}
-		if p := gptPartRE.FindStringSubmatch(line); p != nil {
-			e.partUUID = strings.ToLower(p[1])
-		}
-		entries = append(entries, e)
-	}
-	return entries
-}
-
-// addBootEntry adds a UEFI boot entry for the target's boot loader, unless an earlier attempt
-// added it, and makes it the next boot. efibootmgr puts it first in the boot order too, so the
-// target keeps booting afterwards.
-func (i *Installer) addBootEntry(ctx context.Context, disk storage.BlockDisk) error {
-	table, err := i.readTable(ctx, disk.Device)
-	if err != nil {
-		return err
-	}
-	espPart, err := table.findType(gpt.TypeESP)
-	if err != nil {
-		return err
-	}
-	// The ESP's partition UUID is random, so it names the target's entries alone.
-	find := func() (*bootEntry, []bootEntry, error) {
-		out, err := i.Run.Run(ctx, "efibootmgr", "--verbose")
-		if err != nil {
-			return nil, nil, fmt.Errorf("list UEFI boot entries: %w", err)
-		}
-		entries := parseBootEntries(string(out))
-		for n, e := range entries {
-			if e.label == bootLabel && e.partUUID == espPart.UUID {
-				return &entries[n], entries, nil
-			}
-		}
-		return nil, entries, nil
-	}
-	created, entries, err := find()
-	if err != nil {
-		return err
-	}
-	if created == nil {
-		if err := i.change("add the UEFI boot entry"); err != nil {
-			return err
-		}
-		if _, err := i.Run.Run(ctx, "efibootmgr", "--create", "--disk", disk.Device, "--part", strconv.Itoa(espPart.Number), "--label", bootLabel, "--loader", i.loader()); err != nil {
-			return fmt.Errorf("add a UEFI boot entry: %w", err)
-		}
-		if created, entries, err = find(); err != nil {
-			return err
-		}
-		if created == nil {
-			return fmt.Errorf("the UEFI boot entry for the ESP %s is missing after creating it", espPart.UUID)
-		}
-	}
-	if err := i.change("boot the target next"); err != nil {
-		return err
-	}
-	if _, err := i.Run.Run(ctx, "efibootmgr", "--bootnext", created.num); err != nil {
-		return fmt.Errorf("boot the target next: %w", err)
-	}
-	i.deleteStaleBootEntries(ctx, entries, created.num)
-	return nil
-}
-
-// deleteStaleBootEntries deletes the entries earlier installs added whose ESP is on no disk any
-// more, such as one whose image was written again. An entry whose ESP is present, or that
-// cannot be told to be absent, stays. The node is installed already, so failures are logged.
-func (i *Installer) deleteStaleBootEntries(ctx context.Context, entries []bootEntry, keep string) {
-	for _, e := range entries {
-		if e.num == keep || e.label != bootLabel || e.partUUID == "" {
-			continue
-		}
-		_, err := os.Lstat(filepath.Join(i.Host.DevRoot, "disk", "by-partuuid", e.partUUID))
-		if !errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if _, err := i.Run.Run(ctx, "efibootmgr", "--delete-bootnum", "--bootnum", e.num); err != nil {
-			log.Printf("delete the stale UEFI boot entry Boot%s: %v", e.num, err)
-		}
 	}
 }

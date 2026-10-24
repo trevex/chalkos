@@ -9,135 +9,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"log"
 	"maps"
-	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/atomicfile"
-	"github.com/trevex/chalkos/pkg/config/slot"
-	"github.com/trevex/chalkos/pkg/identity"
-	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
-	"github.com/trevex/chalkos/pkg/upgrade"
 )
-
-const (
-	stateLabel      = "state"
-	installedMarker = "installed"
-	stateMapperName = "state"
-)
-
-// Installed reports whether STATE, mounted at stateDir, holds the installed marker. Only a
-// marker that does not exist means not installed; any other error is returned, so callers
-// never take an unreadable STATE for an empty one.
-func Installed(stateDir string) (bool, error) {
-	_, err := os.Stat(filepath.Join(stateDir, installedMarker))
-	switch {
-	case err == nil:
-		return true, nil
-	case errors.Is(err, fs.ErrNotExist):
-		return false, nil
-	default:
-		return false, fmt.Errorf("check whether the node is installed: %w", err)
-	}
-}
-
-// Request is what both flows install.
-type Request struct {
-	// Section is the identity's storage section.
-	Section storage.Section
-	// Kubernetes is the identity's Kubernetes section; nil on a node whose image has no Kubernetes.
-	Kubernetes *identity.Kubernetes
-	// NodeCertificate, the node certificate followed by the node CA's, and NodeKey are what chalkd
-	// serves once the node is installed; CA holds the OS CAs, which issue the client certificates
-	// it accepts and the node CA. All are PEM.
-	NodeCertificate, NodeKey, CA []byte
-	// FallbackSecret is enrolled as the second keyslot of every encrypted volume.
-	FallbackSecret string
-	// KubernetesShare is the node's share of the Kubernetes secrets (JSON); empty on a node whose
-	// image has no Kubernetes.
-	KubernetesShare []byte
-	// Config is the node's config as the config slot of the image installed keeps it, with the
-	// identity it translates to as delivered (JSON), which the slot keeps as it is.
-	Config slot.Stored
-	// RootHash is the root hash of the running image's store, whose slot an install in place
-	// writes; an install from parts writes the slot of the image it installs.
-	RootHash []byte
-	// Images is the provenance record STATE starts with, as chalkd keeps it in
-	// chalkd/images.json; nil writes none.
-	Images []byte
-}
-
-func (r Request) validate() error {
-	if len(r.Config.Identity) == 0 {
-		return errors.New("no identity")
-	}
-	if _, ok := r.Section.Disks[storage.SystemDisk]; !ok {
-		return errors.New("the identity's storage section has no system disk")
-	}
-	if err := r.Section.Validate(); err != nil {
-		return err
-	}
-	switch r.Section.Encryption {
-	case storage.EncryptionTPM2, storage.EncryptionNone:
-	default:
-		return fmt.Errorf("the identity's storage section has the unknown encryption policy %q", r.Section.Encryption)
-	}
-	if r.Section.Fallback != storage.FallbackNone && r.FallbackSecret == "" {
-		return fmt.Errorf("the node's fallback is %s, but no fallback secret was sent", r.Section.Fallback)
-	}
-	if _, err := pki.ValidateOSCABundle(string(r.CA)); err != nil {
-		return fmt.Errorf("CA certificate: %w", err)
-	}
-	// A node whose certificate does not chain through the node CA to the OS CA could not be
-	// reached once installed. The node's clock may not be set yet, so dates are not checked.
-	if _, err := r.nodeFile(); err != nil {
-		return err
-	}
-	if len(r.KubernetesShare) > 0 {
-		share, err := kpki.ParseShare(r.KubernetesShare)
-		if err != nil {
-			return err
-		}
-		var nodeName string
-		if r.Kubernetes != nil {
-			nodeName = r.Kubernetes.NodeName
-		}
-		// A worker share names the node its kubelet certificate is for; a node must never run a
-		// kubelet certificate issued for another node.
-		if err := share.ValidateFor(nodeName); err != nil {
-			return err
-		}
-		if share.NodeCA != nil {
-			if err := pki.ValidateNodeCA(*share.NodeCA, string(r.CA)); err != nil {
-				return fmt.Errorf("the share's node CA: %w", err)
-			}
-		}
-	}
-	return nil
-}
-
-// nodeFile is the file chalkd loads its node certificate from.
-func (r Request) nodeFile() ([]byte, error) {
-	cred, err := pki.VerifyNode(string(r.NodeCertificate), string(r.NodeKey), string(r.CA), time.Time{})
-	if err != nil {
-		return nil, err
-	}
-	return pki.NodeFile(cred, string(r.CA))
-}
 
 // Installer holds what installing works on; tests point it at temporary directories and a
 // fake runner.
@@ -198,17 +82,6 @@ func Default(inPlace bool) *Installer {
 	}
 }
 
-// loader is where the image's systemd-boot sits on the ESP, the removable-media path of the
-// architecture, as the UEFI boot entry names it; empty for an architecture chalkos builds no
-// images for.
-func (i *Installer) loader() string {
-	name := uki.BootLoaderName(i.Architecture)
-	if name == "" {
-		return ""
-	}
-	return `\EFI\BOOT\` + name
-}
-
 // InPlace installs the node on the disk it booted from, where the node's image already runs.
 func (i *Installer) InPlace(ctx context.Context, req Request) error {
 	if err := req.validate(); err != nil {
@@ -250,181 +123,50 @@ func (i *Installer) InPlace(ctx context.Context, req Request) error {
 	return i.markInstalled()
 }
 
-// closeState unmounts STATE from StateDir and closes its LUKS device: the STATE the node booted
-// with, so it can be recreated, or the target's, so the target disk is free again. A STATE that
-// is not mounted or not open is fine.
-func (i *Installer) closeState(ctx context.Context) error {
-	mounted, err := isMounted(i.MountInfo, i.StateDir)
-	if err != nil {
-		return err
-	}
-	if mounted {
-		_, err := i.Run.Run(ctx, "umount", i.StateDir)
-		var te *tool.Error
-		if err != nil && !(errors.As(err, &te) && strings.Contains(te.Stderr, "not mounted")) {
-			return fmt.Errorf("unmount STATE: %w", err)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(i.Host.DevRoot, "mapper", stateMapperName)); err == nil {
-		if _, err := i.Run.Run(ctx, "systemd-cryptsetup", "detach", stateMapperName); err != nil {
-			return fmt.Errorf("close STATE: %w", err)
-		}
-	}
-	return nil
-}
-
 // installOn runs the steps both flows share on disk, which holds the node's image: STATE, the
 // node's volumes, the fallback key and the config slot of the image whose store has the root
 // hash, with the identity. defs are the image's repart definitions of the system region.
 func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs map[string]string, req Request, rootHash []byte) error {
-	policy := req.Section.Encryption
-	if err := i.prepareState(ctx, disk, defs, policy); err != nil {
-		return err
-	}
-	table, err := i.readTable(ctx, disk.Device)
-	if err != nil {
-		return err
-	}
-	state, err := table.find(stateLabel, storage.PartitionType(stateLabel))
+	state, err := i.openState(ctx, disk, defs, req.Section.Encryption)
 	if err != nil {
 		return err
 	}
 	st := i.storage(disk)
-	if err := i.change("open STATE"); err != nil {
-		return err
-	}
-	if err := st.Open(ctx, stateMapperName, state.Node, i.StateDir, false, policy == storage.EncryptionTPM2); err != nil {
-		// prepareState keeps a STATE that matches the policy, so every retry finds this one
-		// again; only a wiped disk gets a new one.
-		if errors.Is(err, node.ErrNotUnsealed) {
-			return fmt.Errorf("%w; STATE was sealed on another machine or under other Secure Boot settings, so install the node from the installer with --wipe-disk to replace it", err)
-		}
-		return err
-	}
-
-	if err := i.change("apply the storage section"); err != nil {
-		return err
-	}
-	pins, err := st.ApplyAll(ctx, req.Section)
+	pins, err := i.applyStorage(ctx, st, req.Section)
 	if err != nil {
 		return err
 	}
-	if req.Section.Fallback != storage.FallbackNone {
-		devices, err := i.encryptedDevices(ctx, disk, req.Section, pins, state.Node)
-		if err != nil {
-			return err
-		}
-		if err := i.change("enroll the fallback key"); err != nil {
-			return err
-		}
-		if err := st.Enroll(ctx, devices, req.FallbackSecret); err != nil {
-			return err
-		}
+	if err := i.enrollFallback(ctx, st, disk, req, pins, state); err != nil {
+		return err
 	}
 	if err := st.RecordSection(req.Section); err != nil {
 		return err
 	}
+	return i.writeIdentity(req, rootHash)
+}
 
-	if err := i.change("write the identity"); err != nil {
-		return err
+// applyStorage creates the node's volumes on its disks: every disk must take its own.
+func (i *Installer) applyStorage(ctx context.Context, st *node.Storage, section storage.Section) (storage.Pins, error) {
+	if err := i.change("apply the storage section"); err != nil {
+		return storage.Pins{}, err
 	}
-	// chalkd/ holds the node's private key.
-	chalkdDir := filepath.Join(i.StateDir, "chalkd")
-	if err := os.MkdirAll(chalkdDir, 0o700); err != nil {
-		return err
+	return st.ApplyAll(ctx, section)
+}
+
+// enrollFallback adds the fallback keyslot to STATE, at the device state, and to every encrypted
+// volume, unless the node has no fallback.
+func (i *Installer) enrollFallback(ctx context.Context, st *node.Storage, disk storage.BlockDisk, req Request, pins storage.Pins, state string) error {
+	if req.Section.Fallback == storage.FallbackNone {
+		return nil
 	}
-	if err := os.Chmod(chalkdDir, 0o700); err != nil {
-		return err
-	}
-	nodeFile, err := req.nodeFile()
+	devices, err := i.encryptedDevices(ctx, disk, req.Section, pins, state)
 	if err != nil {
 		return err
 	}
-	files := []struct {
-		path string
-		data []byte
-		perm fs.FileMode
-	}{
-		// One file, so the chain and the key are only ever replaced together.
-		{"chalkd/node.pem", nodeFile, 0o600},
-		{"chalkd/ca.crt", req.CA, 0o644},
-	}
-	for _, f := range files {
-		if err := atomicfile.WriteFile(filepath.Join(i.StateDir, f.path), f.data, f.perm); err != nil {
-			return err
-		}
-	}
-	if len(req.Images) > 0 {
-		if err := atomicfile.WriteFile(filepath.Join(i.StateDir, upgrade.ImagesRecord), req.Images, 0o644); err != nil {
-			return err
-		}
-	}
-	// The identity is in the slot, so the boot applies it with the documents it came from.
-	if err := slot.Write(slot.Dir(filepath.Join(i.StateDir, "config"), rootHash), req.Config); err != nil {
-		return fmt.Errorf("store the config: %w", err)
-	}
-	if len(req.KubernetesShare) > 0 {
-		// validate already parsed and checked the share; encode it again so STATE holds the
-		// canonical form, never whatever bytes the request happened to carry.
-		share, err := kpki.ParseShare(req.KubernetesShare)
-		if err != nil {
-			return err
-		}
-		canonical, err := share.Encode()
-		if err != nil {
-			return err
-		}
-		if err := WriteShare(i.StateDir, canonical); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// markInstalled writes the installed marker to STATE, last: until it is there, the node is not
-// installed and the install runs again.
-func (i *Installer) markInstalled() error {
-	if err := i.change("mark the node installed"); err != nil {
+	if err := i.change("enroll the fallback key"); err != nil {
 		return err
 	}
-	return atomicfile.WriteFile(filepath.Join(i.StateDir, installedMarker), []byte(i.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
-}
-
-// prepareState makes the disk's STATE match the node's encryption policy. A STATE that does
-// not match is empty, as the node is not installed yet, so it is deleted and created again.
-func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, defs map[string]string, policy string) error {
-	table, err := i.readTable(ctx, disk.Device)
-	if err != nil {
-		return err
-	}
-	want := node.ContentExt4
-	if policy == storage.EncryptionTPM2 {
-		want = node.ContentLUKS
-	}
-	if state, err := table.find(stateLabel, storage.PartitionType(stateLabel)); err == nil {
-		found, err := node.Content(ctx, i.Run, state.Node)
-		if err != nil {
-			return err
-		}
-		if found == want {
-			return nil
-		}
-		log.Printf("STATE holds %q, but the node's encryption policy is %s; creating it again", found, policy)
-		if _, err := i.sfdisk(disk.Device).Exec(ctx, "--delete", disk.Device, strconv.Itoa(state.Number)); err != nil {
-			return fmt.Errorf("delete STATE: %w", err)
-		}
-	} else if !errors.Is(err, errNotFound) {
-		return err
-	}
-
-	dir := filepath.Join(i.WorkDir, "system")
-	if err := writeDefinitions(dir, defs, policy); err != nil {
-		return err
-	}
-	if _, err := i.Run.Run(ctx, "systemd-repart", "--dry-run=no", "--seed=random", "--definitions="+dir, "--tpm2-pcrs=7", disk.Device); err != nil {
-		return fmt.Errorf("create the system region on %s: %w", disk.Device, err)
-	}
-	return nil
+	return st.Enroll(ctx, devices, req.FallbackSecret)
 }
 
 // encryptedDevices lists the LUKS devices that get the fallback keyslot: STATE and every
@@ -449,117 +191,18 @@ func (i *Installer) encryptedDevices(ctx context.Context, disk storage.BlockDisk
 	return devices, nil
 }
 
-// randomizeESP gives the ESP a random partition UUID: systemd-boot reports it as the boot
-// partition, and no other disk carrying the same image may match it.
-func (i *Installer) randomizeESP(ctx context.Context, disk storage.BlockDisk) error {
-	table, err := i.readTable(ctx, disk.Device)
-	if err != nil {
-		return err
+// storage opens and changes the node's volumes on the disk.
+func (i *Installer) storage(disk storage.BlockDisk) *node.Storage {
+	return &node.Storage{
+		Run:        i.Run,
+		Host:       i.Host,
+		StateDir:   i.StateDir,
+		BootDisk:   disk.Device,
+		StatusFile: filepath.Join(i.WorkDir, "storage-status.json"),
 	}
-	espPart, err := table.findType(gpt.TypeESP)
-	if err != nil {
-		return err
-	}
-	if _, err := i.sfdisk(disk.Device).Exec(ctx, "--part-uuid", disk.Device, strconv.Itoa(espPart.Number), gpt.NewUUID()); err != nil {
-		return fmt.Errorf("set the ESP's partition UUID: %w", err)
-	}
-	return nil
 }
 
-// readDefinitions reads the *.conf files of a repart.d directory.
-func readDefinitions(dir string) (map[string]string, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, "*.conf"))
-	if err != nil {
-		return nil, err
-	}
-	defs := map[string]string{}
-	for _, p := range paths {
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return nil, err
-		}
-		defs[filepath.Base(p)] = string(data)
-	}
-	return defs, nil
-}
-
-// writeDefinitions writes the system region's definitions to dir with STATE encrypted as the
-// policy says. The image's definition always encrypts STATE. It refuses a definition with a key
-// parseDefinition does not allow, before it writes any.
-func writeDefinitions(dir string, defs map[string]string, policy string) error {
-	for name, text := range defs {
-		if _, err := parseDefinition(name, text); err != nil {
-			return err
-		}
-	}
-	if err := os.RemoveAll(dir); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	foundState := false
-	for name, text := range defs {
-		if definesLabel(text, stateLabel) {
-			foundState = true
-			text = withEncryption(text, policy)
-		}
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
-			return err
-		}
-	}
-	if !foundState {
-		return errors.New("the system region's definitions have no STATE partition")
-	}
-	return nil
-}
-
-func definesLabel(text, label string) bool {
-	for _, line := range strings.Split(text, "\n") {
-		if k, v, ok := strings.Cut(line, "="); ok && strings.TrimSpace(k) == "Label" && strings.TrimSpace(v) == label {
-			return true
-		}
-	}
-	return false
-}
-
-func withEncryption(text, policy string) string {
-	var lines []string
-	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
-		if k, _, ok := strings.Cut(line, "="); ok && strings.TrimSpace(k) == "Encrypt" {
-			continue
-		}
-		lines = append(lines, line)
-	}
-	if policy == storage.EncryptionTPM2 {
-		lines = append(lines, "Encrypt=tpm2")
-	}
-	return strings.Join(lines, "\n") + "\n"
-}
-
-// WriteShare records the node's Kubernetes share on STATE, in a directory only root can enter.
-func WriteShare(stateDir string, share []byte) error {
-	dir := filepath.Join(stateDir, "kubernetes")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
-		return err
-	}
-	return atomicfile.WriteFile(filepath.Join(dir, "share.json"), share, 0o600)
-}
-
-// isMounted reports whether a file system is mounted at path, per a mountinfo file.
-func isMounted(mountInfo, path string) (bool, error) {
-	data, err := os.ReadFile(mountInfo)
-	if err != nil {
-		return false, err
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) > 4 && fields[4] == path {
-			return true, nil
-		}
-	}
-	return false, nil
+// slotWriter writes the target's store slots.
+func (i *Installer) slotWriter(target storage.BlockDisk) *storeslot.Writer {
+	return &storeslot.Writer{Run: i.Run, Disk: target.Device, OpenPartition: i.OpenPartition, Change: i.Change}
 }
