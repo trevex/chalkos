@@ -101,9 +101,9 @@ func (h *Health) Check(ctx context.Context) error {
 		return nil
 	}
 	// A control plane that is no etcd member yet waits for a bootstrap or a cluster to join.
-	if bootstrapped, err := knode.Bootstrapped(k.Paths); err != nil {
+	if m, _, err := knode.ReadMembership(k.Paths); err != nil {
 		return err
-	} else if !bootstrapped {
+	} else if m != knode.MembershipBootstrapped {
 		return h.applied(ctx)
 	}
 	share, err := knode.ReadShare(k.Paths)

@@ -74,9 +74,9 @@ func (k *Kubernetes) setJoinWaiting(err error) {
 	k.joinStep, k.joinWaiting = err.Error(), true
 }
 
-// joinStatus is the state of a control plane that is not bootstrapped. Once the join started, as
-// joining says from its marker on STATE, it names the join and its step or last error, also while
-// the cluster cannot be reached and after chalkd started again.
+// joinStatus is the state of a control plane that is not bootstrapped. joining says whether the
+// join's marker on STATE is set. Once the join started, the state names the join and its step or
+// last error. It does so also while the cluster cannot be reached and after chalkd restarted.
 func (k *Kubernetes) joinStatus(c k8s.Cluster, joining bool) string {
 	k.mu.Lock()
 	step, waiting := k.joinStep, k.joinWaiting

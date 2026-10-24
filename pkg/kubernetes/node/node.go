@@ -640,12 +640,8 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	if err := os.MkdirAll(p.Manifests(), 0o755); err != nil {
 		return err
 	}
-	bootstrapped, err := Bootstrapped(p)
-	if err != nil || !bootstrapped {
-		return err
-	}
-	// A leave that was interrupted keeps the marker, but the node's member is gone.
-	if left, err := Left(p); err != nil || left {
+	// A leave that was interrupted keeps the bootstrapped marker, but the node's member is gone.
+	if renders, err := rendersStaticPods(p); err != nil || !renders {
 		return err
 	}
 	return RenderStaticPods(p)
