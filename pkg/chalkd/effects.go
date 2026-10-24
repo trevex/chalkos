@@ -18,8 +18,8 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// pendingEffects are the running image's effects, and what a delivery compares their rules with: the
-// config and the facts as they were before it changed anything, or before the first delivery
+// pendingEffects are the running image's effects, and what a delivery compares their rules with:
+// the config and the facts as they were before it changed anything, or before the first delivery
 // since one was last applied whole, as its baseline holds them.
 type pendingEffects struct {
 	defs  map[string]effects.Definition
