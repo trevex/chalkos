@@ -281,8 +281,8 @@ func (k KubernetesSecrets) ValidateAccepted() error {
 	return nil
 }
 
-// validKeyName checks a name the API server prefixes ciphertexts with, k8s:enc:secretbox:v1:<name>:,
-// and that chalkctl prints: no colon, space or control character.
+// validKeyName checks a name the API server prefixes ciphertexts with,
+// k8s:enc:secretbox:v1:<name>:, and that chalkctl prints: no colon, space or control character.
 func validKeyName(name string) error {
 	if name == "" || strings.ContainsFunc(name, func(r rune) bool { return r == ':' || unicode.IsSpace(r) || unicode.IsControl(r) }) {
 		return fmt.Errorf("the name %q is empty or holds a colon, space or control character", name)

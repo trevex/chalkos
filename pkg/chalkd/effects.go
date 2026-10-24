@@ -135,11 +135,14 @@ func (e *pendingEffects) oldConfig() map[string]any {
 	return rules.ConfigOf(e.old)
 }
 
-// due returns the names of the effects due once the delivery is applied, sorted: those of whose
-// outputs one has a state in states, the outputs swapped in, other than before, those one of
-// whose kinds' documents, or a Secret they reference, changed, and those whose rule holds,
-// loading the facts as they are now. A rule that cannot be evaluated counts as true, and goes to
-// the journal and to warnings, which say why without the values it read.
+// due returns the sorted names of the effects due once the delivery is applied. An effect is due
+// when:
+//   - one of its outputs has a state in states, the outputs swapped in, that differs from before;
+//   - the documents of one of its kinds, or a Secret they reference, changed;
+//   - its rule holds on the facts as they are now.
+//
+// A rule that cannot be evaluated counts as true. Its error goes to the journal and to warnings,
+// which say why without the values it read.
 func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]outputs.State, secret string) (due, warnings []string, err error) {
 	after, err := s.factsFor(ctx, e.next, nil, secret)
 	if err != nil {
@@ -233,9 +236,11 @@ func (s *Server) failedPartWay(ctx context.Context, e *pendingEffects, secret st
 	s.actOnSelf(a.chalkd)
 }
 
-// actions are what the due effects ask for together: the units to reload and to restart, each
-// sorted, those of restart to start too, the commands to run, in the order of their effects'
-// names, and what chalkd does to its own loops, a restart taking precedence over a reload.
+// actions are what the due effects ask for together:
+//   - reload and restart: the units to reload and to restart, each sorted;
+//   - start: the units of restart to start too;
+//   - run: the commands to run, in the order of their effects' names;
+//   - chalkd: what chalkd does to its own loops, a restart taking precedence over a reload.
 type actions struct {
 	reload, restart []string
 	start           map[string]bool
@@ -269,13 +274,16 @@ func actionsOf(defs map[string]effects.Definition, due []string) actions {
 }
 
 // applyEffects reloads the units of a.reload that run, runs a.run, then restarts the units of
-// a.restart, and returns the restarted units; chalkd acts on its own loops last. A unit it
-// restarts is not reloaded: the restart reads all a reload would.
-// The restarts take one systemctl call each way: try-restart for a unit that runs, or ran and
-// stays active, so a unit that never started, or was stopped, stays so; restart for a unit that
-// starts too; and for a unit that failed, such as one that found no document of its kind at boot,
-// reset-failed and restart, since the new config may be what it lacked and try-restart leaves a
-// failed unit alone.
+// a.restart, and returns the restarted units. chalkd acts on its own loops last. A unit it
+// restarts is not reloaded, because the restart reads all a reload would.
+//
+// The restarts take one systemctl call for each way of restarting:
+//   - try-restart for a unit that runs, or ran and stays active, so a unit that never started,
+//     or was stopped, stays so;
+//   - restart for a unit whose effect starts it too;
+//   - reset-failed and restart for a unit that failed, such as one that found no document of its
+//     kind at boot. The new config may be what it lacked, and try-restart leaves a failed unit
+//     alone.
 func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) {
 	// Once the units it restarts read the new config, and whether or not they could: the
 	// cluster and the share the loops read are in place.

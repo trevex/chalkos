@@ -146,9 +146,10 @@ func declared[V any](m map[string]V) string {
 	return strings.Join(names, ", ")
 }
 
-// checkOutputs refuses an output whose programs are not of the image's store or whose inputs are
-// kinds the image does not declare, or that a unit cannot read, and an effect whose outputs name
-// no output or whose kinds are not the image's.
+// checkOutputs refuses:
+//   - an output whose programs are not of the image's store;
+//   - an output whose inputs are kinds the image does not declare, or that a unit cannot read;
+//   - an effect whose outputs name no output, or whose kinds are not the image's.
 func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectDefs map[string]effects.Definition) []error {
 	kinds := map[string]bool{}
 	for _, k := range s.Kinds() {

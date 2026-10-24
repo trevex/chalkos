@@ -262,7 +262,7 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 	return nil
 }
 
-// plain is err without the code a connect error carries, for an upgrade's error, which has its own.
+// plain is err without the code a connect error carries. An upgrade's error has a code of its own.
 func plain(err error) error {
 	var ce *connect.Error
 	if errors.As(err, &ce) {
@@ -282,12 +282,13 @@ func imageHeader(h *nodev1.ImageHeader) upgrade.Header {
 	}
 }
 
-// recordImages forgets every image no UKI on the ESP boots any more: the record of installed
-// images keeps the others alone, and the config slots of the others and of the running image
-// alone, so a retired image's slot goes in the same step as its provenance. installed, when set,
-// is the image an upgrade installed or found installed, whose provenance the record keeps. Both
-// only shrink and a boot loads its own image's slot alone, so failing to forget fails no upgrade;
-// the next one forgets again.
+// recordImages forgets every image no UKI on the ESP boots any more, in one step:
+//   - the record of installed images keeps only the others;
+//   - the config slots keep only those of the others and of the running image.
+//
+// installed, when set, is the image an upgrade installed or found installed; the record keeps its
+// provenance. Failing to forget fails no upgrade, because both only shrink and a boot loads only
+// its own image's slot. The next upgrade forgets again.
 func (s *Server) recordImages(installed *upgrade.Header) {
 	entries, err := esp.Entries(s.Paths.ESP)
 	if err != nil {

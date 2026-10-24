@@ -643,8 +643,8 @@ func TestSignOut(t *testing.T) {
 	}
 }
 
-// TestStatusNamesTheLabsFiles names the kubeconfig, the inventory, the client file and the db key and
-// certificate an upgrade's images are signed with.
+// TestStatusNamesTheLabsFiles names the kubeconfig, the inventory, the client file and the db key
+// and certificate an upgrade's images are signed with.
 func TestStatusNamesTheLabsFiles(t *testing.T) {
 	dir := writeLab(t)
 	for _, name := range []string{kubeconfigFile, inventoryFile, clientFile, "keys/db.key", "keys/db.crt"} {

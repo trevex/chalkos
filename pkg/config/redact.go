@@ -9,9 +9,9 @@ import (
 
 // Redact returns docs with every secret value replaced by the hex SHA-256 of the value, as Hash
 // replaces a Secret's: the values of each Secret's spec.data, and the data and stringData values of
-// each Kubernetes Secret an Addon applies, which Hash keeps as they are. Two sets redact to the same
-// documents where they hold the same values, so a node can show its config for comparison without
-// revealing a secret. docs are left as they are.
+// each Kubernetes Secret an Addon applies, which Hash keeps as they are. Two sets redact to the
+// same documents where they hold the same values, so a node can show its config for comparison
+// without revealing a secret. docs are left as they are.
 func Redact(docs []Document) []Document {
 	out := make([]Document, len(docs))
 	for i, d := range docs {

@@ -52,8 +52,9 @@ func identityWith(storageSection string) string {
 }
 
 // documentsOf is the config of node n1 whose storage section an identity renders: the SystemDisk
-// and Volume documents that translate into the section, with their defaults. The storage rules read these documents; the identity is
-// what the tests deliver; one that does not parse, which the node refuses first, has none.
+// and Volume documents that translate into the section, with their defaults. The storage rules read
+// these documents; the identity is what the tests deliver; one that does not parse, which the node
+// refuses first, has none.
 func documentsOf(identity string) []config.Document {
 	var id struct {
 		Storage storage.Section `json:"storage"`
@@ -257,7 +258,8 @@ func withExtraRef(t *testing.T, rendered, serial string) string {
 	return withExtraSelector(t, rendered, storage.Selector{Serial: serial, Type: "hdd"})
 }
 
-// withExtraSelector returns a rendered section whose extra disk is referenced by the selector given.
+// withExtraSelector returns a rendered section whose extra disk is referenced by the selector
+// given.
 func withExtraSelector(t *testing.T, rendered string, sel storage.Selector) string {
 	return editSection(t, rendered, func(s *storage.Section) {
 		d := s.Disks["extra"]

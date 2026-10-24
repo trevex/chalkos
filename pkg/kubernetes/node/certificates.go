@@ -61,10 +61,11 @@ func lockPKI(p Paths, wait bool) (unlock func(), err error) {
 	return func() { f.Close() }, nil
 }
 
-// replaceDir replaces dir with the files, readable by root only, as they hold keys, in one step:
-// the files are written to a sibling directory, which is exchanged with dir. Static pods mount
-// dir by path, so a container started afterwards sees the new files, and one still running keeps
-// the old directory, which stays as OldPKI until the next replacement.
+// replaceDir replaces dir with the files in one step. It writes them, readable by root only
+// because they hold keys, to a sibling directory and exchanges that with dir.
+//
+// Static pods mount dir by path: a container started afterwards sees the new files, and one still
+// running keeps the old directory. The old directory stays as OldPKI until the next replacement.
 func replaceDir(dir string, files map[string][]byte) error {
 	next, old := dir+".new", dir+".old"
 	if err := writeDir(next, files); err != nil {

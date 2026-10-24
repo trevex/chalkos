@@ -200,8 +200,8 @@ var journalRule = tooltest.Rule{Prefix: "journalctl --boot --no-pager --output=s
 // it.
 var failedHeader = "usrhash=" + strings.Repeat("32", 32) + " generation=2"
 
-// TestHealthWaitReboots waits for a boot that never becomes healthy, records its journal on VAR, and
-// reboots only while the boot loader counts it and has somewhere to go.
+// TestHealthWaitReboots waits for a boot that never becomes healthy, records its journal on VAR,
+// and reboots only while the boot loader counts it and has somewhere to go.
 func TestHealthWaitReboots(t *testing.T) {
 	_, cert := chalkdServing(t)
 	for _, tc := range []struct {

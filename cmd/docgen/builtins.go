@@ -56,8 +56,8 @@ const (
 		"in. A `when` too long for its row follows the table.\n"
 )
 
-// builtinRule is a change rule of a kind: of the kind itself, whose field is empty, or of one of its
-// fields.
+// builtinRule is a change rule of a kind: of the kind itself, whose field is empty, or of one of
+// its fields.
 type builtinRule struct {
 	rules.Rule
 	field string
@@ -344,8 +344,8 @@ func textBlock(s string) string {
 }
 
 // writeRulesSection writes a section of change rules: a heading and a table per kind. A kind's
-// anchor is #rules-<kind>, or #rules-kubernetes-<kind> for the rules images with Kubernetes add to a
-// kind of every image, whose anchors are in taken.
+// anchor is #rules-<kind>, or #rules-kubernetes-<kind> for the rules images with Kubernetes add to
+// a kind of every image, whose anchors are in taken.
 func writeRulesSection(b *strings.Builder, anchor, intro string, kinds []kindRules, taken map[string]bool) {
 	heading := "Every image"
 	if anchor == "rules-kubernetes" {

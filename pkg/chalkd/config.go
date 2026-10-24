@@ -33,10 +33,12 @@ func configure(name, text string, schemas *schema.Schemas, t config.Target) (slo
 	return c, nil
 }
 
-// translateSlot checks docs, config documents as delivered, as a set against schemas, fills in
-// their defaults and translates them into the identity of the node called name on the image t
-// describes: what that image's config slot keeps. The set's version is the hash of the documents
-// as delivered, before the defaults, as a client computes it from the files it sends.
+// translateSlot returns what the config slot of the image t describes keeps for docs, the config
+// documents as delivered. It checks docs as a set against schemas, fills in their defaults and
+// translates them into the identity of the node called name.
+//
+// The set's version is the hash of the documents as delivered, before the defaults, the same hash
+// a client computes from the files it sends.
 func translateSlot(name string, docs []config.Document, schemas *schema.Schemas, t config.Target) (slot.Stored, error) {
 	version, err := config.Hash(docs)
 	if err != nil {

@@ -139,10 +139,10 @@ func nftFamily(f nodeip.Family) string {
 // cluster's ranges are read and when they cannot be.
 var dropAll = []string{fmt.Sprintf("udp dport %d drop", vxlanPort)}
 
-// forwardRules returns the forward chain's rules from the cluster's ranges. The node masquerades what
-// pods send to other nodes behind its own address, which is in the source ranges, so pods could
-// send VXLAN the other nodes take as this node's. The chain drops it as the node forwards it, per
-// family of the cluster with source ranges; flannel's own VXLAN is the node's, not forwarded.
+// forwardRules returns the forward chain's rules from the cluster's ranges. The node masquerades
+// what pods send to other nodes behind its own address, which is in the source ranges, so pods
+// could send VXLAN the other nodes take as this node's. The chain drops it as the node forwards it,
+// per family of the cluster with source ranges; flannel's own VXLAN is the node's, not forwarded.
 // Source ranges of a family the cluster lacks are skipped. A family without a pod range, and a
 // source range that is not one, are errors, which the caller answers with dropAll.
 func forwardRules(c kubernetes.Cluster) ([]string, error) {

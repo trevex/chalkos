@@ -165,10 +165,10 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	// The new entry boots before the image's entries an upgrade keeps, the booted one and those
-	// booting the running store, only while their names order them by the generation they give, as
-	// chalkd names them: from 1 on, without leading zeros. Other names are placed by hand or
-	// corrupted, and systemd-boot may sort one above the new entry, such as chalkos_5a.efi or
+	// The new entry boots before the entries an upgrade keeps (the booted one and those booting
+	// the running store) only while their names order them by generation, as chalkd names them:
+	// from 1 on, without leading zeros. Other names were placed by hand or are corrupted, and
+	// systemd-boot may sort one above the new entry. Examples are chalkos_5a.efi and
 	// chalkos_7+2147483648.efi, whose ID is the whole name.
 	for _, e := range all {
 		if retired(e, h.ImageID, booted, running) || !ofImage(e, h.ImageID) && e.ID != booted.ID {
@@ -272,9 +272,11 @@ func retired(e esp.Entry, imageID string, booted esp.Entry, running []byte) bool
 }
 
 // recheck checks the image a staged entry boots, as an upgrade checks one it writes. When the
-// check fails, the slot and the entry are retired, as after a failed check of a written image,
-// and the running image stays the next boot; the error is then a StagedRetiredError, which holds
-// a CheckError when CheckStore refused the image. When the retirement fails too, the image still boots next, and the error says so.
+// check fails:
+//   - the slot and the entry are retired, as after a failed check of a written image, and the
+//     running image stays the next boot. The error is a StagedRetiredError, which holds a
+//     CheckError when CheckStore refused the image.
+//   - when the retirement fails too, the staged image still boots next, and the error says so.
 func (n *Node) recheck(ctx context.Context, h Header, slot storeslot.Slot, staged esp.Entry, all []esp.Entry, booted esp.Entry, running []byte) error {
 	if n.CheckStore == nil {
 		return nil

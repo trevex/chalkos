@@ -22,9 +22,10 @@ import (
 // chalkos_2.efi and says so. Each image is named by its root hash. The node pulls the upgrade image
 // through a Mirror of a registry host it cannot reach, whose endpoint is a registry on the host
 // that asks for the credentials of the endpoint's own Registry; the upgrade delivers the Mirror and
-// the Registry. The upgrade to the unhealthy image still streams it from its directory. The upgrade carries config only the
-// upgrade image accepts, a Farewell, and the upgrade to the unhealthy image the test image's config
-// again: the fallback boots the upgrade image with its own config, Farewell included.
+// the Registry. The upgrade to the unhealthy image still streams it from its directory. The upgrade
+// carries config only the upgrade image accepts, a Farewell, and the upgrade to the unhealthy image
+// the test image's config again: the fallback boots the upgrade image with its own config, Farewell
+// included.
 func TestUpgrade(t *testing.T) {
 	requireEnv(t, append(secureBootEnv, append(chalkdEnv, "CHALKLAB_UPGRADE_IMAGE_DIR", "CHALKLAB_UNHEALTHY_IMAGE_DIR")...)...)
 	base, nextHash, badHash := rootHash(t, "CHALKLAB_IMAGE_DIR"), rootHash(t, "CHALKLAB_UPGRADE_IMAGE_DIR"), rootHash(t, "CHALKLAB_UNHEALTHY_IMAGE_DIR")
@@ -97,7 +98,8 @@ func TestUpgrade(t *testing.T) {
 	// One boot of the unhealthy image from slot A, then the upgrade image again.
 	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + badHash[:16], "store_partition": "3", "state_boots": "4"})
 	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + nextHash[:16], "store_partition": "5", "state_boots": "5", "var_boots": "4"})
-	// The upgrade image runs the config the upgrade gave it, not the one sent with the unhealthy image.
+	// The upgrade image runs the config the upgrade gave it, not the one sent with the unhealthy
+	// image.
 	out, err = chalkctl(t, n, "", "status", "chalklab", "--inventory", pullInventory)
 	if err != nil || !strings.Contains(out, "image "+nextHash[:12]+", booted from chalkos_2.efi\n") || !strings.Contains(out, "upgrade to "+badHash[:12]+" failed: rolled back to "+nextHash[:12]) ||
 		!strings.Contains(out, "units failed: chalktest-broken.service") || !inventoryConfig.MatchString(out) {

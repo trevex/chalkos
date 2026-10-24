@@ -1,8 +1,10 @@
-# Config kinds: the documents an image accepts at runtime, declared in chalkos.kinds. Each kind
-# becomes a JSON Schema in /etc/chalkos/schemas and in the image directory's schemas/, from which
-# chalkctl and chalkd validate a node's config documents, and has a get function that builds
-# chalkcfg commands. The schemas include networkd's kinds (networkd.nix). The image builds only
-# when chalkos-rules accepts the rules of its kinds, facts (facts.nix), outputs and effects.
+# Config kinds: the documents an image accepts at runtime, declared in chalkos.kinds.
+# - Each kind becomes a JSON Schema in /etc/chalkos/schemas and in the image directory's schemas/.
+#   chalkctl and chalkd validate a node's config documents against them.
+# - Each kind has a get function that builds chalkcfg commands.
+# - The schemas include networkd's kinds (networkd.nix).
+# The image builds only when chalkos-rules accepts the rules of its kinds, facts (facts.nix),
+# outputs and effects.
 {
   chalkosPackages,
   config,

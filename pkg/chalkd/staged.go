@@ -108,11 +108,14 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 }
 
 // checkStaged refuses a change of the machine's storage to section when the config slot of the
-// image staged to boot next could not be written again after it. That is so when the slot's config
-// fails the storage rules against the new storage, as when it lacks a volume the change adds. The
-// staged image would still boot and mount the volume, since every boot sets up the volumes
-// storage.json records, but its next config would be refused for removing it. The operator brings
-// the staged slot along first with chalkctl apply-config --staged; the new volume is then additive.
+// image staged to boot next could not be written again after it. That happens when the slot's
+// config fails the storage rules against the new storage, for example when it lacks a volume the
+// change adds.
+//
+// The staged image would still boot and mount such a volume, because every boot sets up the
+// volumes storage.json records. Its next config, however, would be refused for removing it. The
+// operator first brings the staged slot along with chalkctl apply-config --staged, after which
+// the new volume is additive.
 //
 // The slot is checked as it would be written again once the change is made:
 //   - section is the recorded storage, and next, the config this change runs, the running config;

@@ -34,7 +34,8 @@ func write(t *testing.T, path, content string) {
 	}
 }
 
-// verified is sbverify's verdict on a file of the disk image's ESP, which imagetest puts at offset 0.
+// verified is sbverify's verdict on a file of the disk image's ESP, which imagetest puts at offset
+// 0.
 func verified(t *testing.T, disk, file, cert string) error {
 	t.Helper()
 	copied := filepath.Join(t.TempDir(), filepath.Base(file))
