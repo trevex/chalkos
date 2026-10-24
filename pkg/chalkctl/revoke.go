@@ -47,7 +47,7 @@ func (a *app) nodeRevoke(ctx context.Context, f viaFlags, pos []string) error {
 	}
 	var resp *nodev1.RevokeNodeResponse
 	// A control plane is not asked to revoke itself.
-	err := a.throughControlPlane(ctx, f.node, f.via, name, func(conn *client.Conn) error {
+	err := a.throughControlPlane(ctx, f, name, func(conn *client.Conn) error {
 		if !f.force {
 			m, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
 			if err != nil {
@@ -97,26 +97,7 @@ func (a *app) controlPlanesRead(ctx context.Context, f viaFlags, name string) er
 	if err != nil {
 		return err
 	}
-	return everyControlPlaneReads(ctx, controlPlanes, name, func(ctx context.Context, cp string) (*nodev1.StatusResponse, error) {
-		var n nodeFlags
-		if cp == f.via {
-			n = f.node
-		}
-		t, err := targetIn(c, n, cp, creds)
-		if err != nil {
-			return nil, err
-		}
-		conn, err := dialInstalled(t)
-		if err != nil {
-			return nil, err
-		}
-		defer conn.Close()
-		resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-		if err != nil {
-			return nil, nodeError(err, cp)
-		}
-		return resp.Msg, nil
-	})
+	return everyControlPlaneReads(ctx, controlPlanes, name, f.nodes(c, creds).status)
 }
 
 // everyControlPlaneReads refuses to revoke the node while a control plane may renew its node
@@ -205,7 +186,7 @@ func (a *app) nodeUnrevoke(ctx context.Context, f viaFlags, pos []string) error 
 		return err
 	}
 	var resp *nodev1.UnrevokeNodeResponse
-	err := a.throughControlPlane(ctx, f.node, f.via, "", func(conn *client.Conn) error {
+	err := a.throughControlPlane(ctx, f, "", func(conn *client.Conn) error {
 		r, err := conn.UnrevokeNode(ctx, connect.NewRequest(&nodev1.UnrevokeNodeRequest{Node: pos[0], Force: f.force}))
 		if err == nil {
 			resp = r.Msg
@@ -327,25 +308,14 @@ func installNotRevoked(ctx context.Context, t *target) error {
 	if err != nil {
 		return err
 	}
+	nodes := nodeSet{cluster: t.cluster, creds: t.creds}
 	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
-		ct, err := targetIn(t.cluster, nodeFlags{}, name, t.creds)
-		if err != nil {
-			return nil, err
-		}
-		conn, err := dialInstalled(ct)
-		if err != nil {
-			return nil, notInstalledYet{err}
-		}
-		defer conn.Close()
-		resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		st, err := nodes.status(ctx, name)
 		switch connect.CodeOf(err) {
 		case connect.CodeUnavailable, connect.CodeDeadlineExceeded:
-			return nil, notInstalledYet{nodeError(err, name)}
+			return nil, notInstalledYet{err}
 		}
-		if err != nil {
-			return nil, nodeError(err, name)
-		}
-		return resp.Msg, nil
+		return st, err
 	})
 	if err != nil {
 		return fmt.Errorf("%w; install installs %s only once one does, or with --force", err, t.name)
@@ -373,24 +343,13 @@ func notRevoked(ctx context.Context, t *target, does string) error {
 	if err != nil {
 		return err
 	}
+	nodes := nodeSet{cluster: t.cluster, creds: t.creds}
 	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
 		// The target is reached where the command reaches it, the others where the inventory says.
-		ct := t
-		if name != t.name {
-			if ct, err = targetIn(t.cluster, nodeFlags{}, name, t.creds); err != nil {
-				return nil, err
-			}
+		if name == t.name {
+			return nodeStatus(ctx, t)
 		}
-		conn, err := dialInstalled(ct)
-		if err != nil {
-			return nil, err
-		}
-		defer conn.Close()
-		resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-		if err != nil {
-			return nil, nodeError(err, name)
-		}
-		return resp.Msg, nil
+		return nodes.status(ctx, name)
 	})
 	if err != nil {
 		return fmt.Errorf("%w; %s only once one does, or with --force", err, does)

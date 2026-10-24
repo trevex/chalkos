@@ -18,50 +18,32 @@ import (
 
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
 // control-plane nodes but skip in name order, moving on past nodes that are down or no etcd member.
-func (a *app) throughControlPlane(ctx context.Context, n nodeFlags, via, skip string, call func(conn *client.Conn) error) error {
-	c, err := loadCluster(ctx, n.cluster)
+func (a *app) throughControlPlane(ctx context.Context, f viaFlags, skip string, call func(conn *client.Conn) error) error {
+	c, err := loadCluster(ctx, f.node.cluster)
 	if err != nil {
 		return err
 	}
-	creds, err := a.loadCredentials(ctx, n.secrets, n.config)
+	creds, err := a.loadCredentials(ctx, f.node.secrets, f.node.config)
 	if err != nil {
 		return err
 	}
-	names := []string{via}
-	if via == "" {
-		if n.address != "" {
-			return errors.New("--address reaches one node; name it with --via")
-		}
-		if c.partial() {
-			return errors.New("an inventory names the control planes; name one with --via, or pass --inventory")
-		}
-		if names, err = c.nodesOf(kubernetes.KindControlPlane, skip); err != nil {
-			return err
-		}
-		if len(names) == 0 {
-			return errors.New("the cluster has no other control-plane node to ask")
-		}
+	if f.via != "" {
+		return f.nodes(c, creds).viaControlPlanes([]string{f.via}, func(error) bool { return false }, call)
 	}
-	var last error
-	for _, name := range names {
-		t, err := targetIn(c, n, name, creds)
-		if err != nil {
-			return err
-		}
-		conn, err := dialInstalled(t)
-		if err != nil {
-			return err
-		}
-		err = call(conn)
-		if err == nil {
-			return nil
-		}
-		if via != "" || !tryNextControlPlane(err) {
-			return fmt.Errorf("%s: %w", name, err)
-		}
-		last = fmt.Errorf("%s: %w", name, err)
+	if f.node.address != "" {
+		return errors.New("--address reaches one node; name it with --via")
 	}
-	return fmt.Errorf("no control-plane node answered: %w", last)
+	if c.partial() {
+		return errors.New("an inventory names the control planes; name one with --via, or pass --inventory")
+	}
+	names, err := c.nodesOf(kubernetes.KindControlPlane, skip)
+	if err != nil {
+		return err
+	}
+	if len(names) == 0 {
+		return errors.New("the cluster has no other control-plane node to ask")
+	}
+	return f.nodes(c, creds).viaControlPlanes(names, tryNextControlPlane, call)
 }
 
 // tryNextControlPlane reports whether another control plane may answer where one failed with
@@ -101,6 +83,15 @@ type viaFlags struct {
 	force bool
 }
 
+// nodes reaches the cluster's nodes with the credentials, --via at the address --address gives.
+func (f viaFlags) nodes(c *cluster, creds *credentials) nodeSet {
+	s := nodeSet{cluster: c, creds: creds}
+	if f.via != "" {
+		s.addresses = map[string]string{f.via: f.node.address}
+	}
+	return s
+}
+
 func (a *app) etcdMembersCommand() *cobra.Command {
 	var f viaFlags
 	cmd := a.command(&cobra.Command{
@@ -117,7 +108,7 @@ func (a *app) etcdMembersCommand() *cobra.Command {
 
 func (a *app) etcdMembers(ctx context.Context, f viaFlags) error {
 	var members []*nodev1.EtcdMember
-	err := a.throughControlPlane(ctx, f.node, f.via, "", func(conn *client.Conn) error {
+	err := a.throughControlPlane(ctx, f, "", func(conn *client.Conn) error {
 		resp, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
 		if err == nil {
 			members = resp.Msg.Members
@@ -163,7 +154,7 @@ func (a *app) etcdRemoveMemberCommand() *cobra.Command {
 
 func (a *app) etcdRemoveMember(ctx context.Context, f viaFlags, pos []string) error {
 	var removed *nodev1.EtcdMember
-	err := a.throughControlPlane(ctx, f.node, f.via, pos[0], func(conn *client.Conn) error {
+	err := a.throughControlPlane(ctx, f, pos[0], func(conn *client.Conn) error {
 		resp, err := conn.EtcdRemoveMember(ctx, connect.NewRequest(&nodev1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force}))
 		if err == nil {
 			removed = resp.Msg.Removed
@@ -196,11 +187,10 @@ func (a *app) etcdLeave(ctx context.Context, f viaFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := dialInstalled(t)
-	if err != nil {
+	if err := callNode(t, func(conn *client.Conn) error {
+		_, err := conn.EtcdLeave(ctx, connect.NewRequest(&nodev1.EtcdLeaveRequest{Force: f.force}))
 		return err
-	}
-	if _, err := conn.EtcdLeave(ctx, connect.NewRequest(&nodev1.EtcdLeaveRequest{Force: f.force})); err != nil {
+	}); err != nil {
 		return fmt.Errorf("%s: %w", t.name, err)
 	}
 	fmt.Fprintf(a.stdout, "%s left etcd; reinstall it to join the cluster again\n", t.name)

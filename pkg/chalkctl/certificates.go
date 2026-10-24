@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -59,6 +60,7 @@ func (a *app) nodeRenew(ctx context.Context, f nodeRenewFlags, pos []string) err
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	cert, err := pki.IssueNode(t.secrets.NodeCA, names, time.Now())
 	if err != nil {
 		return err
@@ -146,9 +148,15 @@ func (a *app) nodeCARotate(ctx context.Context, f nodeCARotateFlags) error {
 	if err != nil {
 		return err
 	}
+	creds, err := secretCredentials(secrets)
+	if err != nil {
+		return err
+	}
+	// --address is refused above unless the cluster has this one control plane.
+	nodes := nodeSet{cluster: c, creds: creds, addresses: map[string]string{controlPlanes[0]: f.node.address}}
 	var failed []string
 	for _, name := range controlPlanes {
-		err := a.deliverNodeCA(ctx, c, f.node.address, name, secrets, share)
+		err := a.deliverNodeCA(ctx, nodes, name, share)
 		if err != nil {
 			failed = append(failed, fmt.Sprintf("%s: %v", name, err))
 			continue
@@ -162,23 +170,13 @@ func (a *app) nodeCARotate(ctx context.Context, f nodeCARotateFlags) error {
 }
 
 // deliverNodeCA delivers the control-plane share with the new node CA to a node, and nothing else.
-func (a *app) deliverNodeCA(ctx context.Context, c *cluster, address, name string, secrets clustersecrets.Secrets, share []byte) error {
-	creds, err := secretCredentials(secrets)
-	if err != nil {
-		return err
-	}
-	t, err := targetIn(c, nodeFlags{address: address}, name, creds)
-	if err != nil {
-		return err
-	}
-	conn, err := dialInstalled(t)
-	if err != nil {
-		return err
-	}
-	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
-	if err != nil {
-		return nodeError(err, name)
-	}
-	a.warnDelivery(name, resp.Msg)
-	return nil
+func (a *app) deliverNodeCA(ctx context.Context, nodes nodeSet, name string, share []byte) error {
+	return nodes.call(name, func(conn *client.Conn) error {
+		resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
+		if err != nil {
+			return err
+		}
+		a.warnDelivery(name, resp.Msg)
+		return nil
+	})
 }

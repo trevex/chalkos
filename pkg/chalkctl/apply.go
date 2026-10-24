@@ -57,6 +57,7 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	// The staged image is the node's image in the inventory, as after an upgrade without a reboot;
 	// the node checks the config against the staged image itself again, and refuses it without one.
 	var c contract
@@ -176,6 +177,7 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	c, err := nodeContract(ctx, conn, t.name)
 	if err != nil {
 		return err

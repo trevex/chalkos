@@ -187,7 +187,7 @@ func (r *rotation) waitQuorum(ctx context.Context, name string) error {
 	return r.waitFor(ctx, "etcd's members to be healthy", func() error {
 		var members []*nodev1.EtcdMember
 		var answer error
-		err := r.call(name, func(conn *client.Conn, _ *target) error {
+		err := r.call(name, func(conn *client.Conn) error {
 			resp, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
 			if err == nil {
 				members = resp.Msg.Members
@@ -266,7 +266,7 @@ func (r *rotation) refreshKubernetesCA(ctx context.Context, workers []string) er
 			r.say("  %s's kubelet serves a certificate of the new CA already", name)
 			return nil
 		}
-		if err := r.call(name, func(conn *client.Conn, _ *target) error {
+		if err := r.call(name, func(conn *client.Conn) error {
 			ctx, cancel := context.WithTimeout(ctx, r.timeout)
 			defer cancel()
 			_, err := conn.RotationStep(ctx, connect.NewRequest(&nodev1.RotationStepRequest{Step: nodev1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING}))
@@ -371,18 +371,11 @@ func (r *rotation) pausedKubernetes(ctx context.Context, rot clustersecrets.Rota
 func (r *rotation) throughControlPlane(ctx context.Context, fn func(ctx context.Context, conn *client.Conn) error) error {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
-	last := errors.New("the cluster has no control-plane node")
-	for _, name := range r.nodesOf(kubernetes.KindControlPlane) {
-		err := r.call(name, func(conn *client.Conn, _ *target) error { return fn(ctx, conn) })
-		if err == nil {
-			return nil
-		}
-		last = fmt.Errorf("%s: %w", name, err)
-		if !tryNextControlPlane(err) {
-			return last
-		}
+	nodes, err := r.nodes()
+	if err != nil {
+		return err
 	}
-	return last
+	return nodes.viaControlPlanes(r.nodesOf(kubernetes.KindControlPlane), tryNextControlPlane, func(conn *client.Conn) error { return fn(ctx, conn) })
 }
 
 // encryptedCounts runs a rotation step that counts the objects etcd holds and returns them by key

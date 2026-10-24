@@ -9,8 +9,10 @@ import (
 	"slices"
 	"strings"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/pflag"
 
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 )
@@ -22,8 +24,8 @@ type nodeFlags struct {
 	address string
 	// config is the client file of commands that a client file may run.
 	config string
-	// needs names the command when it needs the nodes' config, which only an inventory gives: it
-	// is refused without one before any credentials are read.
+	// needs names a command that needs the nodes' config. Only an inventory gives that config, so
+	// without one the command is refused before any credentials are read.
 	needs string
 }
 
@@ -61,7 +63,7 @@ func (a *app) target(ctx context.Context, n nodeFlags, name string) (*target, er
 	if err != nil {
 		return nil, err
 	}
-	return targetIn(c, n, name, creds)
+	return targetIn(c, n.address, name, creds)
 }
 
 // clientTarget addresses a node with the secrets file or a client file.
@@ -74,7 +76,7 @@ func (a *app) clientTarget(ctx context.Context, n nodeFlags, name string) (*targ
 	if err != nil {
 		return nil, err
 	}
-	return targetIn(c, n, name, creds)
+	return targetIn(c, n.address, name, creds)
 }
 
 // loadCluster loads the cluster the command's flags name, and refuses a partial one when the
@@ -92,11 +94,12 @@ func (n nodeFlags) loadCluster(ctx context.Context) (*cluster, error) {
 	return c, nil
 }
 
-func targetIn(c *cluster, n nodeFlags, name string, creds *credentials) (*target, error) {
+// targetIn addresses a node of the cluster at address, or without one at the inventory's.
+func targetIn(c *cluster, address, name string, creds *credentials) (*target, error) {
 	if err := c.node(name); err != nil {
 		return nil, err
 	}
-	addr, source, err := c.address(n.address, name)
+	addr, source, err := c.address(address, name)
 	if err != nil {
 		return nil, err
 	}
@@ -112,10 +115,10 @@ func dialInstalled(t *target) (*client.Conn, error) {
 	return dialNode(t, false)
 }
 
-// dialNode connects to an installed node; ignoreValidity accepts a node certificate that expired,
-// for chalkctl node renew alone. A client file names no cluster: one of another cluster carries
-// another OS CA, so the TLS handshake of every call fails, and the error names the file. The
-// secrets file's credentials keep the handshake's error, which points at another problem.
+// dialNode connects to an installed node and verifies it by the OS CA and its name.
+// ignoreValidity also accepts an expired node certificate; only node renew passes it.
+// With a client file, a failed handshake names the file: a client file names no cluster, and one
+// of another cluster carries another OS CA. The secrets file keeps the handshake's own error.
 func dialNode(t *target, ignoreValidity bool) (*client.Conn, error) {
 	roots, err := t.creds.roots()
 	if err != nil {
@@ -240,4 +243,79 @@ func (c *cluster) checkAddresses(l addressList) error {
 // registerConfig registers --config, the client file of a command that a client file may run.
 func registerConfig(fs *pflag.FlagSet, p *string) {
 	fs.StringVar(p, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)")
+}
+
+// nodeSet reaches the nodes of a cluster with one set of credentials: each at the address
+// --address gives for it, or else at the inventory's.
+type nodeSet struct {
+	cluster   *cluster
+	creds     *credentials
+	addresses map[string]string
+}
+
+// target addresses a node of the set.
+func (s nodeSet) target(name string) (*target, error) {
+	return targetIn(s.cluster, s.addresses[name], name, s.creds)
+}
+
+// call runs fn on a connection to an installed node of the set.
+func (s nodeSet) call(name string, fn func(conn *client.Conn) error) error {
+	t, err := s.target(name)
+	if err != nil {
+		return err
+	}
+	return callNode(t, fn)
+}
+
+// callNode runs fn on a connection to an installed node and closes the connection. fn's error
+// carries the node's name in place of <node>.
+func callNode(t *target, fn func(conn *client.Conn) error) error {
+	conn, err := dialInstalled(t)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return nodeError(fn(conn), t.name)
+}
+
+// status reads an installed node's status.
+func (s nodeSet) status(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
+	t, err := s.target(name)
+	if err != nil {
+		return nil, err
+	}
+	return nodeStatus(ctx, t)
+}
+
+// nodeStatus reads an installed node's status.
+func nodeStatus(ctx context.Context, t *target) (*nodev1.StatusResponse, error) {
+	var st *nodev1.StatusResponse
+	err := callNode(t, func(conn *client.Conn) error {
+		resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		if err == nil {
+			st = resp.Msg
+		}
+		return err
+	})
+	return st, err
+}
+
+// viaControlPlanes calls fn on the first of the control planes named that answers: it moves on
+// past those whose error next accepts. The error names the control plane that gave it.
+func (s nodeSet) viaControlPlanes(names []string, next func(error) bool, fn func(conn *client.Conn) error) error {
+	if len(names) == 0 {
+		return errors.New("the cluster has no control-plane node to ask")
+	}
+	var last error
+	for _, name := range names {
+		err := s.call(name, fn)
+		if err == nil {
+			return nil
+		}
+		last = fmt.Errorf("%s: %w", name, err)
+		if !next(err) {
+			return last
+		}
+	}
+	return fmt.Errorf("no control-plane node answered: %w", last)
 }

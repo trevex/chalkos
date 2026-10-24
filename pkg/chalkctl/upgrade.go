@@ -29,9 +29,8 @@ import (
 type upgradeRun struct {
 	a       *app
 	cluster *cluster
-	creds   *credentials
-	// addresses are the nodes' chalkd addresses that --address gives.
-	addresses map[string]string
+	// reach reaches the nodes with the run's credentials, at the addresses --address gives.
+	reach nodeSet
 	// nodes are the nodes to upgrade, as they were when the run started, and groups the same
 	// nodes by the image they get.
 	nodes  map[string]*upgradeNode
@@ -169,7 +168,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 		return errors.New("without --image each node gets the image the inventory names for it, which needs an inventory; pass --image, or --inventory")
 	}
 	r := &upgradeRun{
-		a: a, cluster: c, creds: creds, addresses: addresses,
+		a: a, cluster: c, reach: nodeSet{cluster: c, creds: creds, addresses: addresses},
 		allowDowntime: f.allowDowntime, noReboot: f.noReboot, maxUnavailable: int(f.maxUnavailable),
 		retryFailed: f.retryFailed, deleteEmptyDir: f.deleteEmptyDir, passwordFile: f.passwordFile,
 		timeout: f.timeout, drainTimeout: f.timeout, poll: a.poll(), quorumWait: min(f.timeout, time.Minute),
@@ -396,21 +395,14 @@ func (r *upgradeRun) say(format string, args ...any) {
 	fmt.Fprintf(r.a.stdout, format+"\n", args...)
 }
 
-// call runs fn against a node.
+// call runs fn against a node; fn's error names the node.
 func (r *upgradeRun) call(name string, fn func(conn *client.Conn) error) error {
-	t, err := targetIn(r.cluster, nodeFlags{address: r.addresses[name]}, name, r.creds)
-	if err != nil {
-		return err
-	}
-	conn, err := dialInstalled(t)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	if err := fn(conn); err != nil {
-		return fmt.Errorf("%s: %w", name, err)
-	}
-	return nil
+	return r.reach.call(name, func(conn *client.Conn) error {
+		if err := fn(conn); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		return nil
+	})
 }
 
 // probe reads what a node runs and its status.
@@ -551,7 +543,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 // nodeNames are the cluster's nodes: the inventory's, or without one those --address names.
 func (r *upgradeRun) nodeNames() []string {
 	if r.cluster.partial() {
-		return slices.Sorted(maps.Keys(r.addresses))
+		return slices.Sorted(maps.Keys(r.reach.addresses))
 	}
 	return r.cluster.nodeNames()
 }
@@ -743,7 +735,7 @@ func (r *upgradeRun) fallbacks(ctx context.Context) error {
 			if !r.installs(n, st.Msg) {
 				return nil
 			}
-			t, err := targetIn(r.cluster, nodeFlags{address: r.addresses[name]}, name, r.creds)
+			t, err := r.reach.target(name)
 			if err != nil {
 				return err
 			}
@@ -885,15 +877,7 @@ func (r *upgradeRun) viaControlPlanes(prefer string, next func(error) bool, fn f
 	if len(names) == 0 {
 		return errors.New("the cluster has no control-plane node to ask; pass --inventory")
 	}
-	var last error
-	for _, name := range names {
-		err := r.call(name, fn)
-		if err == nil || !next(err) {
-			return err
-		}
-		last = err
-	}
-	return fmt.Errorf("no control-plane node answered: %w", last)
+	return r.reach.viaControlPlanes(names, next, fn)
 }
 
 // drainElsewhere reports whether a drain that failed so may be run on another control plane: not

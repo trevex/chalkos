@@ -38,6 +38,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 	if err != nil {
 		return err

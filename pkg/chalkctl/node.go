@@ -65,6 +65,7 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 	default:
 		return cli.Usagef("disks needs a node or --address")
 	}
+	defer conn.Close()
 	resp, err := conn.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))
 	if err != nil {
 		return err
@@ -126,6 +127,7 @@ func (a *app) logs(ctx context.Context, f logsFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	stream, err := conn.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{Unit: f.unit, Follow: f.follow}))
 	if err != nil {
 		return err
@@ -167,6 +169,7 @@ func (a *app) reboot(ctx context.Context, f nodePinFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	if _, err := conn.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{})); err != nil {
 		return err
 	}

@@ -69,6 +69,7 @@ func (a *app) bootstrap(ctx context.Context, f bootstrapFlags, pos []string) err
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	ctx, cancel := context.WithTimeout(ctx, f.timeout)
 	defer cancel()
 	fmt.Fprintf(a.stdout, "bootstrapping %s; the control plane pulls its images and starts\n", t.name)

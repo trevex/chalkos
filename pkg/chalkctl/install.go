@@ -56,6 +56,8 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
+	// The insecure connection is replaced below, so whichever is current is closed.
+	defer func() { conn.Close() }()
 	if p.insecure {
 		// An insecure connection's fingerprint vouches only for that connection. The secrets go
 		// over a new one pinned to the fingerprint printed here.
@@ -64,9 +66,12 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		}
 		fp := conn.Fingerprint()
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", fp)
-		if conn, err = client.Dial(t.addr, client.Options{Verify: client.ByFingerprint(fp), Certificate: cert, Source: t.source}); err != nil {
+		pinned, err := client.Dial(t.addr, client.Options{Verify: client.ByFingerprint(fp), Certificate: cert, Source: t.source})
+		if err != nil {
 			return err
 		}
+		conn.Close()
+		conn = pinned
 	}
 	info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
 	if err != nil {

@@ -289,33 +289,37 @@ func (r *rotation) allNodes() []string {
 	return slices.Concat(r.nodesOf(kubernetes.KindControlPlane), r.nodesOf(kubernetes.KindWorker), r.nodesOf(""))
 }
 
-// target addresses a node with the secrets as they are now: chalkctl's admin certificate comes
+// nodes reaches the nodes with the secrets as they are now: chalkctl's admin certificate comes
 // from the OS CA that issues, and it trusts every OS CA accepted.
-func (r *rotation) target(name string) (*target, error) {
+func (r *rotation) nodes() (nodeSet, error) {
 	creds, err := secretCredentials(r.file.secrets)
+	if err != nil {
+		return nodeSet{}, err
+	}
+	return nodeSet{cluster: r.cluster, creds: creds, addresses: r.addresses}, nil
+}
+
+// target addresses a node with the secrets as they are now.
+func (r *rotation) target(name string) (*target, error) {
+	nodes, err := r.nodes()
 	if err != nil {
 		return nil, err
 	}
-	return targetIn(r.cluster, nodeFlags{address: r.addresses[name]}, name, creds)
+	return nodes.target(name)
 }
 
 // call runs fn against a node.
-func (r *rotation) call(name string, fn func(conn *client.Conn, t *target) error) error {
-	t, err := r.target(name)
+func (r *rotation) call(name string, fn func(conn *client.Conn) error) error {
+	nodes, err := r.nodes()
 	if err != nil {
 		return err
 	}
-	conn, err := dialInstalled(t)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	return nodeError(fn(conn, t), name)
+	return nodes.call(name, fn)
 }
 
 // deliver sends a node what req carries.
 func (r *rotation) deliver(ctx context.Context, name string, req *nodev1.ApplyConfigRequest) error {
-	return r.call(name, func(conn *client.Conn, _ *target) error {
+	return r.call(name, func(conn *client.Conn) error {
 		resp, err := conn.ApplyConfig(ctx, connect.NewRequest(req))
 		if err != nil {
 			return err
@@ -340,15 +344,11 @@ func (r *rotation) deliverShare(ctx context.Context, name string) error {
 
 // status reads a node's status.
 func (r *rotation) status(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
-	var st *nodev1.StatusResponse
-	err := r.call(name, func(conn *client.Conn, _ *target) error {
-		resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-		if err == nil {
-			st = resp.Msg
-		}
-		return err
-	})
-	return st, err
+	nodes, err := r.nodes()
+	if err != nil {
+		return nil, err
+	}
+	return nodes.status(ctx, name)
 }
 
 // stopWaiting is a check's error that waiting does not fix: waitFor returns it at once.
