@@ -164,7 +164,7 @@ func checkRules(c contract, next, old []config.Document, node string) error {
 		if err != nil {
 			continue
 		}
-		d.Object = filled.(map[string]any)
+		d.Object = filled
 		baseline = append(baseline, d)
 	}
 	failures, err := set.Evaluate(rules.Input{Documents: next, Old: baseline, OldHashed: true, Node: node})

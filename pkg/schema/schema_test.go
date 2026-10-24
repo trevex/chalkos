@@ -11,13 +11,17 @@ import (
 
 const fixture = "../../test/fixtures/kinds/image"
 
-func decode(t *testing.T, doc string) any {
+func decode(t *testing.T, doc string) map[string]any {
 	t.Helper()
 	v, err := jsonschema.UnmarshalJSON(strings.NewReader(doc))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v
+	m, ok := v.(map[string]any)
+	if !ok {
+		t.Fatalf("%s is not an object", doc)
+	}
+	return m
 }
 
 func TestLoadReadsMetadata(t *testing.T) {
@@ -222,7 +226,6 @@ func TestValidateRejects(t *testing.T) {
 			`{"apiVersion": "demo.example.org/v1alpha1", "kind": "Other", "metadata": {"name": "a"}, "spec": {}}`,
 			`does not accept kind "Other"`,
 		},
-		"not an object": {`[]`, "object"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := img.Validate(decode(t, tc.doc))

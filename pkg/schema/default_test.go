@@ -20,7 +20,7 @@ func TestDefaultFillsMissingFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := json.Marshal(got.(map[string]any)["spec"])
+	b, _ := json.Marshal(got["spec"])
 	want := `{"disk":{"model":null,"path":"/dev/vda","serial":null,"size":null,"type":null,"wwn":null},` +
 		`"encryption":{"fallback":"recovery-key","mode":"tpm2"},"var":{"encryption":{"mode":null},"size":"20G"}}`
 	if string(b) != want {
@@ -41,7 +41,7 @@ func TestDefaultKeepsGivenValuesAndFillsListItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := json.Marshal(got.(map[string]any)["spec"])
+	b, _ := json.Marshal(got["spec"])
 	if want := `{"dhcp":false,"servers":[{"host":"ntp.lan","nts":false,"port":null}]}`; string(b) != want {
 		t.Errorf("spec = %s, want %s", b, want)
 	}
@@ -57,7 +57,7 @@ func TestDefaultFillsAWholeMissingSpecField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	servers := got.(map[string]any)["spec"].(map[string]any)["servers"].([]any)
+	servers := got["spec"].(map[string]any)["servers"].([]any)
 	if len(servers) != 3 {
 		t.Fatalf("servers = %v", servers)
 	}
@@ -68,13 +68,13 @@ func TestDefaultDoesNotShareDefaultValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := func() any {
+	doc := func() map[string]any {
 		return decode(t, `{"apiVersion": "time.chalkos.dev/v1alpha1", "kind": "TimeSync", "metadata": {"name": "t"}, "spec": {}}`)
 	}
 	a, _ := s.Default(doc())
-	a.(map[string]any)["spec"].(map[string]any)["servers"].([]any)[0].(map[string]any)["host"] = "changed"
+	a["spec"].(map[string]any)["servers"].([]any)[0].(map[string]any)["host"] = "changed"
 	b, _ := s.Default(doc())
-	if host := b.(map[string]any)["spec"].(map[string]any)["servers"].([]any)[0].(map[string]any)["host"]; host != "ptbtime1.ptb.de" {
+	if host := b["spec"].(map[string]any)["servers"].([]any)[0].(map[string]any)["host"]; host != "ptbtime1.ptb.de" {
 		t.Errorf("a changed default leaked into another document: %v", host)
 	}
 }

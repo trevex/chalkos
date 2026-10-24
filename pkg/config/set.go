@@ -40,7 +40,7 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 		if err != nil {
 			return nil, err
 		}
-		d.Object = filled.(map[string]any)
+		d.Object = filled
 		id := d.APIVersion + " " + d.Kind
 		count[id]++
 		if count[id] > 1 && !multiple[id] {

@@ -162,20 +162,16 @@ func (s *Schemas) Kinds() []Kind {
 
 // Validate checks a document — decoded JSON such as jsonschema.UnmarshalJSON returns, which keeps
 // numbers exact — against the schema of its apiVersion and kind.
-func (s *Schemas) Validate(doc any) error {
-	m, ok := doc.(map[string]any)
-	if !ok {
-		return errors.New("a config document must be an object")
-	}
-	apiVersion, _ := m["apiVersion"].(string)
-	docKind, _ := m["kind"].(string)
+func (s *Schemas) Validate(doc map[string]any) error {
+	apiVersion, _ := doc["apiVersion"].(string)
+	docKind, _ := doc["kind"].(string)
 	sch, ok := s.schemas[key(apiVersion, docKind)]
 	if !ok {
 		return fmt.Errorf("does not accept kind %q of apiVersion %q", docKind, apiVersion)
 	}
 	if err := sch.Validate(doc); err != nil {
 		name := ""
-		if md, ok := m["metadata"].(map[string]any); ok {
+		if md, ok := doc["metadata"].(map[string]any); ok {
 			name, _ = md["name"].(string)
 		}
 		return fmt.Errorf("%s %q: %s", docKind, name, explain(err))

@@ -18,18 +18,15 @@ func (s *Schemas) Raw(apiVersion, kind string) (any, bool) {
 // Default returns doc with every field its kind's schema gives a default for and doc leaves out
 // set to that default, at every level: in the fields of objects doc holds, in list items and in
 // the values of maps. doc must be valid. Defaults are copied, so no two documents share them.
-func (s *Schemas) Default(doc any) (any, error) {
-	m, ok := doc.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("a config document must be an object")
-	}
-	apiVersion, _ := m["apiVersion"].(string)
-	kind, _ := m["kind"].(string)
+func (s *Schemas) Default(doc map[string]any) (map[string]any, error) {
+	apiVersion, _ := doc["apiVersion"].(string)
+	kind, _ := doc["kind"].(string)
 	sch, ok := s.schemas[key(apiVersion, kind)]
 	if !ok {
 		return nil, fmt.Errorf("does not accept kind %q of apiVersion %q", kind, apiVersion)
 	}
-	return fill(sch, doc), nil
+	// fill keeps the shape of the value it fills, an object here.
+	return fill(sch, doc).(map[string]any), nil
 }
 
 func fill(sch *jsonschema.Schema, v any) any {

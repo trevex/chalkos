@@ -69,7 +69,7 @@ func TestCheckRules(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			next[0].Object = filled.(map[string]any)
+			next[0].Object = filled
 			err = checkRules(c, next, old, "n1")
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || err.Error() != tc.want) {
 				t.Errorf("err = %v, want %q", err, tc.want)

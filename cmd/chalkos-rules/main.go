@@ -262,7 +262,7 @@ func renderExample(s *schema.Schemas, name string, d outputs.Definition, file st
 		if err != nil {
 			return err
 		}
-		docs[i].Object = filled.(map[string]any)
+		docs[i].Object = filled
 	}
 	root, err := os.MkdirTemp("", "chalkos-example-")
 	if err != nil {
