@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 
 	"connectrpc.com/connect"
 
@@ -340,7 +339,7 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secre
 	if s.InstallImage != nil {
 		return s.InstallImage(ctx, h, text, secret, image)
 	}
-	n, err := s.upgradeNode(&s.mu)
+	n, err := s.upgradeNode()
 	if err != nil {
 		return upgrade.Result{}, err
 	}
@@ -350,10 +349,19 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secre
 	return n.Install(ctx, h, image)
 }
 
-// upgradeNode is the node an upgrade changes, its boot disk's partition table read and changed
-// under tableLock; nil for a caller that holds s.mu, which ApplyConfig and ResetVolume change the
-// boot disk's partitions under.
-func (s *Server) upgradeNode(tableLock sync.Locker) (*upgrade.Node, error) {
+// upgradeNode is the node an upgrade changes. It reads and changes the boot disk's partition
+// table under s.mu, which ApplyConfig and ResetVolume change the boot disk's partitions under.
+func (s *Server) upgradeNode() (*upgrade.Node, error) {
+	n, err := s.upgradeNodeLocked()
+	if err != nil {
+		return nil, err
+	}
+	n.TableLock = &s.mu
+	return n, nil
+}
+
+// upgradeNodeLocked is upgradeNode for a caller that holds s.mu.
+func (s *Server) upgradeNodeLocked() (*upgrade.Node, error) {
 	boot, err := s.Host.ResolvePath(s.Paths.BootDisk)
 	if err != nil {
 		return nil, fmt.Errorf("find the disk the node booted from: %w", err)
@@ -367,6 +375,5 @@ func (s *Server) upgradeNode(tableLock sync.Locker) (*upgrade.Node, error) {
 		OSRelease:     readOSRelease(s.Paths.OSRelease),
 		Architecture:  uki.GoArchitecture(runtime.GOARCH),
 		OpenPartition: storeslot.OpenPartition,
-		TableLock:     tableLock,
 	}, nil
 }

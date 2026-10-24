@@ -57,7 +57,7 @@ func (s *Server) readImage(ctx context.Context, rootHash []byte, read func(st im
 	if s.ReadImage != nil {
 		return s.ReadImage(ctx, rootHash, read)
 	}
-	n, err := s.upgradeNode(nil)
+	n, err := s.upgradeNodeLocked()
 	if err != nil {
 		return err
 	}
