@@ -253,6 +253,33 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 			}
 		}
 	}
+	// The API server refuses to start with flags that conflict with chalkos's own. Written out rather
+	// than read from the list of conflicting flags, so a flag dropped from it fails here.
+	for want, flags := range map[string][]string{
+		"chalkos configures authentication through --authentication-config": {
+			"oidc-issuer-url", "oidc-client-id", "oidc-ca-file", "oidc-username-claim", "oidc-username-prefix",
+			"oidc-groups-claim", "oidc-groups-prefix", "oidc-signing-algs", "oidc-required-claim",
+		},
+		"chalkos sets --authorization-mode=Node,RBAC":                     {"authorization-config", "authorization-policy-file", "authorization-webhook-config-file"},
+		"chalkos sets --enable-admission-plugins":                         {"admission-control"},
+		"chalkos signs service account tokens with --service-account-signing-key-file": {"service-account-signing-endpoint"},
+	} {
+		for _, flag := range flags {
+			for _, name := range []string{flag, strings.ReplaceAll(flag, "-", "_")} {
+				c := valid
+				c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {name: "x"}}
+				err := c.Validate()
+				if prefix := "extraArgs: kube-apiserver --" + name + " conflicts with "; err == nil || !strings.HasPrefix(err.Error(), prefix) || !strings.Contains(err.Error(), want) {
+					t.Errorf("kube-apiserver %s: err = %v, want %s…%s", name, err, prefix, want)
+				}
+			}
+		}
+	}
+	c = valid
+	c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {"oidc-issuer-url": "https://id.example.com"}}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "chalkos offers no way to add an authenticator") || !strings.Contains(err.Error(), "RBAC") {
+		t.Errorf("oidc-issuer-url: err = %v, want the missing authenticator and RBAC named", err)
+	}
 	// Other flags, and the protected flags of other components, are the cluster's.
 	c = valid
 	c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", "max-pods": "50", "max_open_files": "100"}, "kube-scheduler": {"config": "/x"}}
