@@ -455,7 +455,7 @@ func TestSetUpChecksNewDiskIsUnused(t *testing.T) {
 	}{
 		{"blkid finds nothing", nil, ""},
 		{"blkid fails without finding anything", []tooltest.Rule{{Prefix: "blkid -p -o export /dev/vdb", Err: &tool.Error{Command: "blkid", Code: 2, Stderr: "error: /dev/vdb: Input/output error"}}}, "Input/output error"},
-		{"blkid fails otherwise", []tooltest.Rule{{Prefix: "blkid -p -o export /dev/vdb", Err: &tool.Error{Command: "blkid", Code: 4}}}, "probe /dev/vdb"},
+		{"blkid fails otherwise", []tooltest.Rule{{Prefix: "blkid -p -o export /dev/vdb", Err: &tool.Error{Command: "blkid", Code: 4}}}, "probe the disk /dev/vdb"},
 		{"file system", []tooltest.Rule{{Prefix: "blkid -p -o export /dev/vdb", Out: "DEVNAME=/dev/vdb\nTYPE=ext4\n"}}, "carries data (ext4)"},
 		{"empty GPT", []tooltest.Rule{gpt, {Prefix: "sfdisk --lock=nonblock --json /dev/vdb", Out: sfdiskTable()}}, ""},
 		{"GPT with chalkos partitions", []tooltest.Rule{gpt, {Prefix: "sfdisk --lock=nonblock --json /dev/vdb", Out: sfdiskTable(strings.ToUpper(dataType))}}, ""},

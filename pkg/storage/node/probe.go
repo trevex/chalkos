@@ -23,7 +23,7 @@ func Probe(ctx context.Context, run tool.Runner, dev string) (map[string]string,
 		return map[string]string{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("probe %s: %w", dev, err)
+		return nil, fmt.Errorf("probe the disk %s: %w", dev, err)
 	}
 	props := map[string]string{}
 	for _, line := range strings.Split(string(out), "\n") {
