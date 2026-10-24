@@ -1,16 +1,15 @@
 package chalkd
 
 import (
-	"bufio"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"os"
-	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
@@ -105,67 +105,6 @@ func mountPoints(mountInfo string) (map[string]bool, error) {
 	return points, nil
 }
 
-func (s *Server) Logs(ctx context.Context, req *connect.Request[nodev1.LogsRequest], stream *connect.ServerStream[nodev1.LogsResponse]) error {
-	if s.logStreams.Add(1) > maxLogStreams {
-		s.logStreams.Add(-1)
-		return failed(connect.CodeResourceExhausted, "%d log streams are open already; close one first", maxLogStreams)
-	}
-	defer s.logStreams.Add(-1)
-	r, err := s.Journal(ctx, req.Msg.Unit, req.Msg.Follow)
-	if err != nil {
-		return failed(connect.CodeInternal, "read the journal: %v", err)
-	}
-	defer r.Close()
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 64*1024), 1024*1024)
-	for sc.Scan() {
-		if err := stream.Send(&nodev1.LogsResponse{Line: sc.Text()}); err != nil {
-			return err
-		}
-	}
-	if err := sc.Err(); err != nil && ctx.Err() == nil {
-		return failed(connect.CodeInternal, "read the journal: %v", err)
-	}
-	return nil
-}
-
-// Journal runs journalctl for the current boot; following ends when ctx does.
-func Journal(ctx context.Context, unit string, follow bool) (io.ReadCloser, error) {
-	args := []string{"--boot", "--no-pager", "--output=short-iso"}
-	if unit != "" {
-		args = append(args, "--unit="+unit)
-	}
-	if follow {
-		args = append(args, "--follow")
-	}
-	cmd := exec.CommandContext(ctx, "journalctl", args...)
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	return &process{ReadCloser: out, cmd: cmd}, nil
-}
-
-type process struct {
-	io.ReadCloser
-	cmd *exec.Cmd
-}
-
-func (p *process) Close() error {
-	p.ReadCloser.Close()
-	p.cmd.Process.Kill()
-	p.cmd.Wait()
-	return nil
-}
-
-func (s *Server) Reboot(ctx context.Context, _ *connect.Request[nodev1.RebootRequest]) (*connect.Response[nodev1.RebootResponse], error) {
-	s.rebootSoon()
-	return connect.NewResponse(&nodev1.RebootResponse{}), nil
-}
-
 // outputStatus is each output of the running image with the hash of the files the node serves
 // and why its last render or check failed, as the renders recorded them.
 func (s *Server) outputStatus() ([]*nodev1.OutputStatus, error) {
@@ -183,4 +122,52 @@ func (s *Server) outputStatus() ([]*nodev1.OutputStatus, error) {
 		list = append(list, &nodev1.OutputStatus{Name: name, Hash: recorded[name].Hash, Error: recorded[name].Error})
 	}
 	return list, nil
+}
+
+// timeStatus reads chrony's tracking state.
+func (s *Server) timeStatus(ctx context.Context) *nodev1.TimeStatus {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	// chronyc fails on every request while chronyd is down: its error goes into the status, not
+	// once more into chalkd's log.
+	run := s.Run.Run
+	if quiet, ok := s.Run.(tool.QuietRunner); ok {
+		run = quiet.RunQuiet
+	}
+	out, err := run(ctx, "chronyc", "-n", "-c", "tracking")
+	if err != nil {
+		return &nodev1.TimeStatus{Error: err.Error()}
+	}
+	st, err := parseTracking(out)
+	if err != nil {
+		return &nodev1.TimeStatus{Error: err.Error()}
+	}
+	return st
+}
+
+// parseTracking reads chronyc's tracking report in its CSV form: reference ID, source, stratum,
+// reference time, the system clock's offset (positive when it is slow), ... and the leap status
+// as field 13. Later fields, which a newer chrony may add, are ignored.
+func parseTracking(out []byte) (*nodev1.TimeStatus, error) {
+	records, err := csv.NewReader(strings.NewReader(string(out))).ReadAll()
+	if err != nil || len(records) != 1 || len(records[0]) < 14 {
+		return nil, fmt.Errorf("chronyc tracking printed %q", strings.TrimSpace(string(out)))
+	}
+	r := records[0]
+	stratum, err := strconv.Atoi(r[2])
+	if err != nil {
+		return nil, fmt.Errorf("chronyc tracking: stratum %q", r[2])
+	}
+	slow, err := strconv.ParseFloat(r[4], 64)
+	if err != nil {
+		return nil, fmt.Errorf("chronyc tracking: offset %q", r[4])
+	}
+	st := &nodev1.TimeStatus{
+		Synchronised:  r[13] != "Not synchronised" && stratum > 0 && stratum < 16,
+		OffsetSeconds: -slow,
+	}
+	if st.Synchronised {
+		st.Source = r[1]
+	}
+	return st, nil
 }

@@ -357,12 +357,41 @@ func (s *Server) recorded() (storage.Section, storage.Pins, error) {
 	return section, pins, nil
 }
 
+func (s *Server) Reboot(ctx context.Context, _ *connect.Request[nodev1.RebootRequest]) (*connect.Response[nodev1.RebootResponse], error) {
+	s.rebootSoon()
+	return connect.NewResponse(&nodev1.RebootResponse{}), nil
+}
+
 // rebootSoon reboots once the response has had time to reach the client.
 func (s *Server) rebootSoon() {
 	go func() {
 		time.Sleep(time.Second)
 		s.RebootNode()
 	}()
+}
+
+// name is the node's name: the subject of its node certificate, which chalkctl issues for the
+// node's inventory name. chalkd keeps the name nowhere else.
+//   - In normal mode chalkd always serves its node certificate; a node without one, or with one
+//     that names no node, is broken, and no name stands in for it.
+//   - An install takes the name from the certificate in its header instead.
+func (s *Server) name() (string, error) {
+	if s.Certificate == nil {
+		return "", failed(connect.CodeInternal, "the node serves no node certificate, which names the node")
+	}
+	if leaf := s.Certificate.Current().Leaf; leaf != nil && leaf.Subject.CommonName != "" {
+		return leaf.Subject.CommonName, nil
+	}
+	return "", failed(connect.CodeInternal, "the node's node certificate names no node")
+}
+
+// nodeName is the node's name for the commands its messages advise, as name has it. A node
+// without one says <node>, which chalkctl replaces with the name it was called with.
+func (s *Server) nodeName() string {
+	if name, err := s.name(); err == nil {
+		return name
+	}
+	return "<node>"
 }
 
 func failed(code connect.Code, format string, args ...any) error {

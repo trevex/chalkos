@@ -1,19 +1,13 @@
 package chalkd
 
 import (
-	"context"
 	"crypto/x509"
-	"encoding/csv"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -22,7 +16,6 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // How long before they expire CAs are reported: a year, and for the node CA 18 months, as node
@@ -148,30 +141,6 @@ func (k *Kubernetes) trust() []*nodev1.TrustStatus {
 		}
 	}
 	return list
-}
-
-// name is the node's name: the subject of its node certificate, which chalkctl issues to the
-// node's name in the inventory. chalkd keeps the name nowhere else. Config is translated and
-// checked in normal mode, where chalkd always serves its node certificate, and at an install,
-// which takes the name from the certificate its header carries instead; a node in normal mode
-// without one, or with one that names no node, is broken, and no name stands in for it.
-func (s *Server) name() (string, error) {
-	if s.Certificate == nil {
-		return "", failed(connect.CodeInternal, "the node serves no node certificate, which names the node")
-	}
-	if leaf := s.Certificate.Current().Leaf; leaf != nil && leaf.Subject.CommonName != "" {
-		return leaf.Subject.CommonName, nil
-	}
-	return "", failed(connect.CodeInternal, "the node's node certificate names no node")
-}
-
-// nodeName is the node's name for the commands its messages advise, as name has it. A node
-// without one says <node>, which chalkctl replaces with the name it was called with.
-func (s *Server) nodeName() string {
-	if name, err := s.name(); err == nil {
-		return name
-	}
-	return "<node>"
 }
 
 // certificates lists every certificate the node holds or issues with what needs doing about it.
@@ -334,52 +303,4 @@ func readPEMCertificate(path string) (*x509.Certificate, error) {
 		return nil, err
 	}
 	return pki.ParseCertificate(data)
-}
-
-// timeStatus reads chrony's tracking state.
-func (s *Server) timeStatus(ctx context.Context) *nodev1.TimeStatus {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	// chronyc fails on every request while chronyd is down: its error goes into the status, not
-	// once more into chalkd's log.
-	run := s.Run.Run
-	if quiet, ok := s.Run.(tool.QuietRunner); ok {
-		run = quiet.RunQuiet
-	}
-	out, err := run(ctx, "chronyc", "-n", "-c", "tracking")
-	if err != nil {
-		return &nodev1.TimeStatus{Error: err.Error()}
-	}
-	st, err := parseTracking(out)
-	if err != nil {
-		return &nodev1.TimeStatus{Error: err.Error()}
-	}
-	return st
-}
-
-// parseTracking reads chronyc's tracking report in its CSV form: reference ID, source, stratum,
-// reference time, the system clock's offset (positive when it is slow), ... and the leap status
-// as field 13. Later fields, which a newer chrony may add, are ignored.
-func parseTracking(out []byte) (*nodev1.TimeStatus, error) {
-	records, err := csv.NewReader(strings.NewReader(string(out))).ReadAll()
-	if err != nil || len(records) != 1 || len(records[0]) < 14 {
-		return nil, fmt.Errorf("chronyc tracking printed %q", strings.TrimSpace(string(out)))
-	}
-	r := records[0]
-	stratum, err := strconv.Atoi(r[2])
-	if err != nil {
-		return nil, fmt.Errorf("chronyc tracking: stratum %q", r[2])
-	}
-	slow, err := strconv.ParseFloat(r[4], 64)
-	if err != nil {
-		return nil, fmt.Errorf("chronyc tracking: offset %q", r[4])
-	}
-	st := &nodev1.TimeStatus{
-		Synchronised:  r[13] != "Not synchronised" && stratum > 0 && stratum < 16,
-		OffsetSeconds: -slow,
-	}
-	if st.Synchronised {
-		st.Source = r[1]
-	}
-	return st, nil
 }
