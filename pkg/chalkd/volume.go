@@ -28,13 +28,14 @@ type machineChange struct {
 	changes           []storage.Change
 }
 
-// machineChanges compares a slot's storage section with the machine's, as every write of a slot
+// machineChanges compares a slot's storage section with the machine's. Every write of a slot
 // does, whichever image the slot is for: the machine has one storage, which a slot's config may
-// grow but not undo. The image's rules refused the changes a node does not make before. A slot
-// whose section lacks a volume the machine has, as the slot of an image that ran before an upgrade
-// or apply-config --staged added it, is compared so only when it is written again. Every boot sets
-// up each volume storage.json records, so that image mounts the volume too, and nothing at boot
-// removes one. The caller holds s.mu.
+// grow but not undo. The image's rules refused the changes a node does not make already.
+//
+// A slot whose section lacks a volume the machine has, as one written before an upgrade or
+// apply-config --staged added the volume, is compared only when it is written again. Until then
+// its image mounts the volume too: every boot sets up each volume storage.json records, and
+// nothing at boot removes one. The caller holds s.mu.
 func (s *Server) machineChanges(section storage.Section) (machineChange, error) {
 	recorded, _, err := s.recorded()
 	if err != nil {
@@ -194,10 +195,10 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 }
 
 // elsewhere adds to err, a refusal of config whose storage section is section, the images whose
-// config slots name a volume the machine records and section leaves out, when the running
-// image's config never named it either: the config of one of them added it, with an upgrade or
-// apply-config --staged, and naming the volume keeps it. The slot of the image writing, the one
-// being written, is not named: its config is the one being replaced. The caller holds s.mu.
+// config slots name a volume that section leaves out. It names them only for a volume the machine
+// records and the running image's config never named: the config of one of those images added
+// it, with an upgrade or apply-config --staged, and naming the volume keeps it. The slot being
+// written, writing, is left out: its config is the one being replaced. The caller holds s.mu.
 func (s *Server) elsewhere(err error, section storage.Section, writing []byte) error {
 	var ce *connect.Error
 	if !errors.As(err, &ce) {

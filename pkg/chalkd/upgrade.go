@@ -178,11 +178,11 @@ func imageContract(st imageStore, system, platform string) (*schema.Schemas, con
 	return schemas, t, err
 }
 
-// stageConfig writes the config slot of the image an upgrade installs, whose store has the root
-// hash and is st: the config text delivers, or without one the documents of the running slot as
-// they were delivered, as writeSlot writes them. secret is the fallback secret a new encrypted
-// volume is enrolled with. It runs once the store is written to the inactive slot and before the
-// image becomes the next boot, and again for an image that boots next already.
+// stageConfig writes the config slot of the image an upgrade installs, whose store is st with the
+// root hash, through writeSlot. The config is the one text delivers, or else the running slot's
+// documents as they were delivered. secret is the fallback secret a new encrypted volume is
+// enrolled with. It runs once the store is written to the inactive slot, before the image becomes
+// the next boot, and again for an image that boots next already.
 func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platform string, rootHash []byte, text, secret string) error {
 	// ApplyConfig writes the slots and changes the machine under the same lock.
 	s.mu.Lock()
@@ -209,17 +209,20 @@ func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platfor
 }
 
 // writeSlot writes docs, config as delivered, to the config slot of an image that does not run,
-// whose store has the root hash and is st: checked and translated against the schemas and
-// image.json in st, so the config is checked against exactly what the image will translate it with
-// at boot, and checked against the machine state as every slot write is. The node boots the
-// image with that slot, and a config chalkos-config could not apply would leave boot counting to
-// fall back. It refuses config that the image's rules refuse, such as one that changes what a
-// node holding a share was set up for, and storage changes that take a reset or a reinstall; the
-// others, such as a new volume, are made now, while the running image runs, and storage.json
-// records them. Every boot sets up the volumes storage.json records, so the running image mounts
-// such a volume too, although its config does not name it; its slot counts as removing the volume
-// only once it is written again. system is the image's NixOS system in st, platform its platform
-// and secret the fallback secret. The caller holds s.mu.
+// whose store is st with the root hash. system is the image's NixOS system in st, platform its
+// platform and secret the fallback secret. The caller holds s.mu.
+//
+// The config is checked and translated against the schemas and image.json in st, exactly as the
+// image translates it at boot, and against the machine as every slot write is. A config
+// chalkos-config could not apply would leave boot counting to fall back. writeSlot refuses:
+//   - config the image's rules refuse, such as one that changes what a node holding a share was
+//     set up for;
+//   - storage changes that take a reset or a reinstall.
+//
+// Other storage changes, such as a new volume, are made now and recorded in storage.json. Every
+// boot sets up the volumes storage.json records, so the running image mounts such a volume too
+// although its config does not name it; its slot counts as removing the volume only once it is
+// written again.
 func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) error {
 	_, running, _, err := s.runningSlot()
 	if err != nil {

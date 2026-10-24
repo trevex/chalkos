@@ -106,17 +106,19 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 	return connect.NewResponse(resp), nil
 }
 
-// checkStaged refuses a change of the machine's storage to section that the config slot of the
-// image staged to boot next could not be written again with: that slot's config fails the storage
-// rules against the storage the change makes, as when it lacks a volume the change adds. That image
-// would still boot and mount the volume, as every boot sets up the volumes storage.json records,
-// but its next config would be refused for removing it. The staged slot is brought along first,
-// with chalkctl apply-config --staged, to which the new volume is then additive. The slot is
-// checked as it would be written again once the change is made: against section as the recorded
-// storage and next, the config this change runs, as the running config, with the running image's
-// storage rules, whose schemas are given, which see the node called name, and the delivery's facts
-// f, which its commands read for the staged slot. The check runs this way only: a write of the
-// staged slot does not check the running slot against the storage it makes. The caller holds s.mu.
+// checkStaged refuses a change of the machine's storage to section when the config slot of the
+// image staged to boot next could not be written again after it. That is so when the slot's config
+// fails the storage rules against the new storage, as when it lacks a volume the change adds. The
+// staged image would still boot and mount the volume, since every boot sets up the volumes
+// storage.json records, but its next config would be refused for removing it. The operator brings
+// the staged slot along first with chalkctl apply-config --staged; the new volume is then additive.
+//
+// The slot is checked as it would be written again once the change is made:
+//   - section is the recorded storage, and next, the config this change runs, the running config;
+//   - the rules are the running image's storage rules, from schemas, and see the node called name;
+//   - f is the delivery's facts, which its commands read for the staged slot.
+//
+// A write of the staged slot does not check the running slot in turn. The caller holds s.mu.
 func (s *Server) checkStaged(schemas *schema.Schemas, name string, next []config.Document, section storage.Section, f *facts.Loader) error {
 	staged, err := s.stagedImage()
 	if err != nil {

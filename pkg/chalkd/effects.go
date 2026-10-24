@@ -40,16 +40,19 @@ type pendingEffects struct {
 	schemas *schema.Schemas
 }
 
-// effectsOf compiles the rules of the running image's effects for a delivery to the node called
-// name that makes next, checked against schemas, the config of the running slot in place of old,
-// and loads every fact they read: the caller calls it before the delivery changes anything. A
-// delivery without config keeps old. The image's build compiled the rules already, so one that
-// does not compile is the node's own failure.
-// The rules compare with the baseline instead while there is one, as a delivery that failed part
-// way left it; otherwise effectsOf records old and the facts, and the outputs' states and the
-// kinds' hashes, as the baseline, which consume removes once the delivery is applied whole, and
-// refused once it is refused before it changed anything. A retry, or another delivery, then takes
-// the effects of what the failed delivery changed already too.
+// effectsOf compiles the rules of the running image's effects and loads every fact they read.
+// The caller calls it before the delivery changes anything.
+//   - The delivery goes to the node called name and makes next, checked against schemas, the
+//     running slot's config in place of old. A delivery without config keeps old.
+//   - The image's build compiled the rules already, so one that does not compile is the node's
+//     own failure.
+//   - While a baseline exists, as a delivery that failed part way leaves one, the rules compare
+//     with it. Otherwise effectsOf records old, the facts, the outputs' states and the kinds'
+//     hashes as the baseline.
+//
+// consume removes the baseline once the delivery is applied whole, and refused once it is refused
+// before it changed anything. Until then a retry, or another delivery, takes the effects of what
+// the failed delivery changed too.
 func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.Document, schemas *schema.Schemas, secret string) (*pendingEffects, error) {
 	defs, err := effects.Read(s.Loader.Effects)
 	if err != nil {
@@ -170,12 +173,16 @@ func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]o
 	return slices.Compact(due), warnings, nil
 }
 
-// consume takes the effects a delivery asks for once it is applied. With stored set the delivery
-// wrote the running slot, whose documents it writes for the granted units first; so does a
-// delivery that compares with a baseline, since the one that failed part way may have written the
-// slot and not its documents, which the units would restart on otherwise. The staged outputs
-// follow, swapped in before any effect is taken. It returns the restarted units and the warnings of rules that could not be evaluated. Once every effect is
-// taken it removes the baseline; until then a retry compares with it and takes them again.
+// consume takes the effects a delivery asks for once it is applied, in this order:
+//  1. the running slot's documents for the granted units, when stored says the delivery wrote the
+//     slot, or when it compares with a baseline: the delivery that failed part way may have
+//     written the slot and not its documents, which the units would otherwise restart on;
+//  2. the staged outputs;
+//  3. the effects.
+//
+// It returns the restarted units and the warnings of rules that could not be evaluated. Once every
+// effect is taken it removes the baseline; until then a retry compares with it and takes them
+// again.
 func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs.Staged, stored bool, secret string) ([]string, []string, error) {
 	states := staged.States()
 	due, warnings, err := s.due(ctx, e, states, secret)

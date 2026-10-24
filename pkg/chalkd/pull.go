@@ -16,10 +16,10 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-// pullParts is the stream of the store, hash tree and UKI of the image h describes, which an
-// upgrade pulls from ref, as newPull pulls it through the Mirror and with the Registry documents of
-// the config text delivers, or without config of the running config. A failure to read the running config is a
-// connect error of its own code.
+// pullParts returns the stream of the store, hash tree and UKI of the image h describes, pulled
+// from ref. newPull pulls it through the Mirror with the Registry documents of the config text
+// delivers, or of the running config when text is empty. A failure to read the running config is
+// a connect error with its own code.
 func (s *Server) pullParts(ctx context.Context, ref string, h upgrade.Header, text string) (*ociimage.Pull, error) {
 	docs, err := s.registryDocuments(ref, text)
 	if err != nil {
