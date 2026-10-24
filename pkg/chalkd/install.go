@@ -94,7 +94,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	case *nodev1.InstallHeader_InPlace:
 		running, rerr := uki.RunningHash(s.Paths.Cmdline)
 		if rerr != nil {
-			return nil, failed(connect.CodeInternal, "the running image: %v", rerr)
+			return nil, failed(connect.CodeInternal, "%v", rerr)
 		}
 		log.Print("installing in place")
 		err = s.InPlace(ctx, req, running)
