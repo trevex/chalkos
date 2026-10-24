@@ -1,7 +1,6 @@
 package config
 
 import (
-	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -132,27 +131,4 @@ func ChangedKinds(before, after []Document, schemas *schema.Schemas) ([]string, 
 	}
 	slices.Sort(changed)
 	return changed, nil
-}
-
-// SecretRefs returns the secretRefs of d that its kind's schema in schemas marks, ordered by
-// Secret and key; none for a kind schemas does not declare, or without schemas.
-func SecretRefs(d Document, schemas *schema.Schemas) []SecretRef {
-	if schemas == nil {
-		return nil
-	}
-	raw, ok := schemas.Raw(d.APIVersion, d.Kind)
-	if !ok {
-		return nil
-	}
-	sch, _ := raw.(map[string]any)
-	defs, _ := sch["$defs"].(map[string]any)
-	var refs []SecretRef
-	_ = walkSchemaRefs(defs, sch, d.Object, func(ref SecretRef) error {
-		refs = append(refs, ref)
-		return nil
-	})
-	slices.SortFunc(refs, func(a, b SecretRef) int {
-		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.Key, b.Key))
-	})
-	return refs
 }
