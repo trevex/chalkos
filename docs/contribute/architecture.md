@@ -133,12 +133,14 @@ TCP port 50000 with mutual TLS. Which client role may
 call a method, and in which mode, is one table: `permissions` in `pkg/chalkd/server.go`.
 
 ```go
-nodev1connect.NodeServiceInfoProcedure:    {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
-nodev1connect.NodeServiceInstallProcedure: {[]nodev1.Mode{maintenance}, pki.RoleAdmin},
-nodev1connect.NodeServiceUpgradeProcedure: {[]nodev1.Mode{normal}, pki.RoleOperator},
+nodev1connect.NodeServiceInfoProcedure:    {anyMode, pki.RoleReader},
+nodev1connect.NodeServiceInstallProcedure: {maintenanceOnly, pki.RoleAdmin},
+nodev1connect.NodeServiceUpgradeProcedure: {normalOnly, pki.RoleOperator},
 ```
 
-A new method needs an entry there; the authoriser refuses a method without one. Comments in the
+A new method needs an entry there; the authoriser refuses a method without one. One check sits
+outside the table: `Upgrade` needs the admin role when its header carries config or a fallback
+secret, as `ApplyConfig` does. The table cannot see the header, so `Upgrade` checks that itself. Comments in the
 proto file become the [Node API](../reference/api.md) page, so they are written for users.
 
 ## chalkd runs with a narrow sandbox

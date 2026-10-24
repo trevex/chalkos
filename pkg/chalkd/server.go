@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -161,28 +162,39 @@ type permission struct {
 	role  pki.Role
 }
 
+// The modes an RPC may be called in.
+var (
+	anyMode         = []nodev1.Mode{maintenance, normal}
+	maintenanceOnly = []nodev1.Mode{maintenance}
+	normalOnly      = []nodev1.Mode{normal}
+)
+
+// permissions are the modes and least role of each RPC. The authorizer refuses an RPC without an
+// entry.
 var permissions = map[string]permission{
-	nodev1connect.NodeServiceInfoProcedure:                 {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
-	nodev1connect.NodeServiceDisksProcedure:                {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
-	nodev1connect.NodeServiceContractProcedure:             {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
-	nodev1connect.NodeServiceInstallProcedure:              {[]nodev1.Mode{maintenance}, pki.RoleAdmin},
-	nodev1connect.NodeServiceApplyConfigProcedure:          {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceGetConfigProcedure:            {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceResetVolumeProcedure:          {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceStatusProcedure:               {[]nodev1.Mode{normal}, pki.RoleReader},
-	nodev1connect.NodeServiceLogsProcedure:                 {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
-	nodev1connect.NodeServiceRebootProcedure:               {[]nodev1.Mode{maintenance, normal}, pki.RoleOperator},
-	nodev1connect.NodeServiceBootstrapProcedure:            {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceEtcdMembersProcedure:          {[]nodev1.Mode{normal}, pki.RoleReader},
-	nodev1connect.NodeServiceEtcdRemoveMemberProcedure:     {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceEtcdLeaveProcedure:            {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceRenewNodeCertificateProcedure: {[]nodev1.Mode{normal}, pki.RoleNode},
-	nodev1connect.NodeServiceRotationStepProcedure:         {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceUpgradeProcedure:              {[]nodev1.Mode{normal}, pki.RoleOperator},
-	nodev1connect.NodeServiceDrainNodeProcedure:            {[]nodev1.Mode{normal}, pki.RoleOperator},
-	nodev1connect.NodeServiceUncordonNodeProcedure:         {[]nodev1.Mode{normal}, pki.RoleOperator},
-	nodev1connect.NodeServiceRevokeNodeProcedure:           {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceUnrevokeNodeProcedure:         {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceInfoProcedure:                 {anyMode, pki.RoleReader},
+	nodev1connect.NodeServiceDisksProcedure:                {anyMode, pki.RoleReader},
+	nodev1connect.NodeServiceContractProcedure:             {anyMode, pki.RoleReader},
+	nodev1connect.NodeServiceInstallProcedure:              {maintenanceOnly, pki.RoleAdmin},
+	nodev1connect.NodeServiceApplyConfigProcedure:          {normalOnly, pki.RoleAdmin},
+	nodev1connect.NodeServiceGetConfigProcedure:            {normalOnly, pki.RoleAdmin},
+	nodev1connect.NodeServiceResetVolumeProcedure:          {normalOnly, pki.RoleAdmin},
+	nodev1connect.NodeServiceStatusProcedure:               {normalOnly, pki.RoleReader},
+	nodev1connect.NodeServiceLogsProcedure:                 {anyMode, pki.RoleReader},
+	nodev1connect.NodeServiceRebootProcedure:               {anyMode, pki.RoleOperator},
+	nodev1connect.NodeServiceBootstrapProcedure:            {normalOnly, pki.RoleAdmin},
+	nodev1connect.NodeServiceEtcdMembersProcedure:          {normalOnly, pki.RoleReader},
+	nodev1connect.NodeServiceEtcdRemoveMemberProcedure:     {normalOnly, pki.RoleAdmin},
+	nodev1connect.NodeServiceEtcdLeaveProcedure:            {normalOnly, pki.RoleAdmin},
+	nodev1connect.NodeServiceRenewNodeCertificateProcedure: {normalOnly, pki.RoleNode},
+	nodev1connect.NodeServiceRotationStepProcedure:         {normalOnly, pki.RoleAdmin},
+	nodev1connect.NodeServiceDrainNodeProcedure:            {normalOnly, pki.RoleOperator},
+	nodev1connect.NodeServiceUncordonNodeProcedure:         {normalOnly, pki.RoleOperator},
+	nodev1connect.NodeServiceRevokeNodeProcedure:           {normalOnly, pki.RoleAdmin},
+	nodev1connect.NodeServiceUnrevokeNodeProcedure:         {normalOnly, pki.RoleAdmin},
+	// Upgrade needs the admin role when its header carries config or a fallback secret, as
+	// ApplyConfig does; Upgrade checks that itself, as the table cannot see the header.
+	nodev1connect.NodeServiceUpgradeProcedure: {normalOnly, pki.RoleOperator},
 }
 
 type roleKey struct{}
@@ -264,11 +276,7 @@ func (a authorizer) check(ctx context.Context, procedure string) error {
 	if !ok {
 		return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("%s is not served", procedure))
 	}
-	allowed := false
-	for _, m := range r.modes {
-		allowed = allowed || m == a.s.Mode
-	}
-	if !allowed {
+	if !slices.Contains(r.modes, a.s.Mode) {
 		if a.s.Mode == maintenance {
 			return connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is in maintenance mode; install it first"))
 		}
