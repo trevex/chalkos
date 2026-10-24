@@ -6,6 +6,7 @@ callPackage ./go-module.nix { } {
   paths = [
     ../cmd/chalkos-rules
     ../pkg/atomicfile
+    ../pkg/command
     ../pkg/config
     ../pkg/facts
     ../pkg/identity

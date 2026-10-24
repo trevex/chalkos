@@ -17,6 +17,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/command"
 )
 
 const (
@@ -25,9 +27,8 @@ const (
 	// FallbackSecret is the input that gives a command the fallback secret delivered with the
 	// config, the only input there is.
 	FallbackSecret = "fallbackSecret"
-	// Timeout and MaxOutput bound a command: a delivery waits for its facts under the config lock.
-	Timeout   = 30 * time.Second
-	MaxOutput = 1 << 20
+	// Timeout bounds a command: a delivery waits for its facts under the config lock.
+	Timeout = 30 * time.Second
 )
 
 // Definition is a fact as facts.json declares it: a file, with the fields of it the fact keeps, or
@@ -231,18 +232,18 @@ func (l *Loader) command(name string, def Definition, stdin []byte) (any, error)
 	}
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	out, err := l.Run.Run(ctx, argv, stdin, MaxOutput)
+	out, err := l.Run.Run(ctx, argv, stdin, command.MaxOutput)
 	switch {
 	case ctx.Err() == context.DeadlineExceeded:
 		return nil, fmt.Errorf("%s did not finish within %s", argv[0], timeout)
 	case err != nil:
-		var failed *CommandError
+		var failed *command.Error
 		if errors.As(err, &failed) {
 			log.Printf("fact %s: %s failed (%s): %q", name, argv[0], failed.Status, failed.Stderr)
 		}
 		return nil, err
-	case len(out) > MaxOutput:
-		return nil, fmt.Errorf("%s printed more than %d bytes", argv[0], MaxOutput)
+	case len(out) > command.MaxOutput:
+		return nil, fmt.Errorf("%s printed more than %d bytes", argv[0], command.MaxOutput)
 	}
 	v, err := decode(out)
 	if err != nil {

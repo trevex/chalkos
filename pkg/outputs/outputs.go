@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/command"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -189,6 +189,10 @@ const manager = "DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/systemd/private"
 // unit's own timeout stops the program first and its result says so.
 const stopMargin = 10 * time.Second
 
+// defaultTimeout bounds a program when the Renderer sets no timeout. A delivery renders its
+// outputs under the config lock.
+const defaultTimeout = 30 * time.Second
+
 // sandbox holds the properties of the units Sandbox runs.
 var sandbox = []string{
 	"--property=User=" + RenderUser,
@@ -248,12 +252,12 @@ func (Sandbox) Run(ctx context.Context, p Program) error {
 	unit := "chalkos-render-" + filepath.Ext(p.Out)[1:] + ".service"
 	waitCtx, cancel := context.WithTimeout(ctx, p.Timeout+stopMargin)
 	defer cancel()
-	_, err := facts.RunCommand(waitCtx, sandboxArgs(unit, p, input), nil, facts.MaxOutput, manager)
+	_, err := command.Run(waitCtx, sandboxArgs(unit, p, input), nil, command.MaxOutput, manager)
 	// What follows asks the manager about the unit, as long as it answers.
 	systemctl := func(args ...string) ([]byte, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), stopMargin)
 		defer cancel()
-		return facts.RunCommand(ctx, append([]string{"systemctl"}, args...), nil, facts.MaxOutput, manager)
+		return command.Run(ctx, append([]string{"systemctl"}, args...), nil, command.MaxOutput, manager)
 	}
 	if waitCtx.Err() != nil {
 		// systemd-run is gone, and the unit may run on.
@@ -261,7 +265,7 @@ func (Sandbox) Run(ctx context.Context, p Program) error {
 		systemctl("reset-failed", unit)
 		return fmt.Errorf("%s: %w", unit, waitCtx.Err())
 	}
-	var exit *facts.CommandError
+	var exit *command.Error
 	if !errors.As(err, &exit) {
 		return err
 	}
@@ -293,11 +297,11 @@ type Direct struct{}
 func (Direct) Run(ctx context.Context, p Program) error {
 	ctx, cancel := context.WithTimeout(ctx, p.Timeout)
 	defer cancel()
-	_, err := facts.RunCommand(ctx, p.Argv, p.Stdin, facts.MaxOutput, "OUT="+p.Out)
+	_, err := command.Run(ctx, p.Argv, p.Stdin, command.MaxOutput, "OUT="+p.Out)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	var failed *facts.CommandError
+	var failed *command.Error
 	if errors.As(err, &failed) {
 		return &ProgramError{Status: failed.Status, Stderr: failed.Stderr}
 	}
@@ -433,7 +437,7 @@ func (f Failure) Error() string { return "output " + f.Output + ": " + f.Problem
 type Renderer struct {
 	Root string
 	Run  Runner
-	// Timeout bounds each program; zero is facts.Timeout.
+	// Timeout bounds each program; zero is defaultTimeout.
 	Timeout time.Duration
 	// KeepOwner leaves the files the renderer's, as the image's build does, which has none of the
 	// image's users.
@@ -527,7 +531,7 @@ func (r Renderer) render(ctx context.Context, name string, d Definition, in Inpu
 // run runs a renderer or a check of the output name, the renderer with out writable, logging what
 // a failed program wrote to standard error, or the unit whose journal holds it.
 func (r Renderer) run(ctx context.Context, name, what, command string, stdin []byte, out string) error {
-	timeout := cmp.Or(r.Timeout, facts.Timeout)
+	timeout := cmp.Or(r.Timeout, defaultTimeout)
 	argv := strings.Fields(command)
 	err := r.Run.Run(ctx, Program{Argv: argv, Stdin: stdin, Out: out, Write: what == "renderer", Timeout: timeout})
 	var failed *ProgramError

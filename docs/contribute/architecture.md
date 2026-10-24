@@ -83,6 +83,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `chalkd` | The node API server, with the permissions of each method, and chalkd's work at boot: renewals, the VIP election, the health check. |
 | `chalklab` | The chalklab command tree. |
 | `client` | Connections to chalkd: by fingerprint in maintenance mode, by the OS CA otherwise. |
+| `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. |
 | `config` | Config documents: parsing, the rules of a set, defaults, the hash, and the translation into the identity the node applies. |
 | `config/store` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
 | `facts` | Loads the facts change rules read: files, and commands of the image's store run in a sandbox. |

@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/command"
 )
 
 // fakeRunner answers commands from out, by program, and records what each read.
@@ -211,7 +212,7 @@ func TestCommandFact(t *testing.T) {
 	if r.stdins[1][FallbackSecret] != "s3cret" {
 		t.Errorf("fallback read %v; want the secret it declares", r.stdins[1])
 	}
-	if !slices.Equal(r.limits, []int{MaxOutput, MaxOutput}) {
+	if !slices.Equal(r.limits, []int{command.MaxOutput, command.MaxOutput}) {
 		t.Errorf("limits = %v", r.limits)
 	}
 }
@@ -237,7 +238,7 @@ func TestSandboxed(t *testing.T) {
 		"--property=NoNewPrivileges=yes", "--property=RuntimeMaxSec=30",
 		"--property=ReadWritePaths=-/run/cryptsetup", "--",
 		"/nix/store/x/bin/chalkos-storage", "facts", "disks"}
-	if got := Sandboxed([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}, "--property=ReadWritePaths=-/run/cryptsetup"); !slices.Equal(got, want) {
+	if got := sandboxed([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}, "--property=ReadWritePaths=-/run/cryptsetup"); !slices.Equal(got, want) {
 		t.Errorf("sandboxed = %v", got)
 	}
 }
@@ -250,13 +251,13 @@ func TestCommandFailures(t *testing.T) {
 		r         *fakeRunner
 		want, log string
 	}{
-		"exit status": {&fakeRunner{err: &CommandError{Status: "exit 1", Stderr: "no disk for s3cret"}},
+		"exit status": {&fakeRunner{err: &command.Error{Status: "exit 1", Stderr: "no disk for s3cret"}},
 			"the command failed (exit 1); see the node's journal", `fact disks: /bin/disks failed (exit 1): "no disk for s3cret"`},
 		"not JSON": {&fakeRunner{out: map[string]string{"/bin/disks": "s3cret: ok"}},
 			"/bin/disks printed no JSON; see the node's journal", "fact disks: /bin/disks printed no JSON: invalid character"},
 		"two values": {&fakeRunner{out: map[string]string{"/bin/disks": "{} {}"}},
 			"/bin/disks printed no JSON; see the node's journal", "more than one JSON value"},
-		"too long": {&fakeRunner{out: map[string]string{"/bin/disks": `"` + strings.Repeat("x", MaxOutput) + `"`}},
+		"too long": {&fakeRunner{out: map[string]string{"/bin/disks": `"` + strings.Repeat("x", command.MaxOutput) + `"`}},
 			"/bin/disks printed more than 1048576 bytes", ""},
 		"timeout": {&fakeRunner{block: true}, "/bin/disks did not finish within 50ms", ""},
 	} {
@@ -271,38 +272,6 @@ func TestCommandFailures(t *testing.T) {
 			}
 			if !strings.Contains(logged.String(), tc.log) {
 				t.Errorf("logged %q, want %q", logged.String(), tc.log)
-			}
-		})
-	}
-}
-
-// run passes stdin, returns standard output and refuses more than the limit. A program that fails
-// is a CommandError with its exit status, or the signal that ended it, and the start of what it
-// wrote to standard error, which its error does not show.
-func TestRun(t *testing.T) {
-	ctx := context.Background()
-	out, err := RunCommand(ctx, []string{"sh", "-c", "cat"}, []byte(`{"a": 1}`), 100)
-	if err != nil || !bytes.Equal(out, []byte(`{"a": 1}`)) {
-		t.Errorf("cat = %q, %v", out, err)
-	}
-	if _, err := RunCommand(ctx, []string{"sh", "-c", "head -c 200 /dev/zero"}, nil, 100); err == nil || !strings.Contains(err.Error(), "more than 100 bytes") {
-		t.Errorf("long output: err = %v", err)
-	}
-	for name, tc := range map[string]struct {
-		script, status, stderr string
-	}{
-		"exit":   {"cat >&2; exit 3", "exit 3", `{"config": "s3cret"}`},
-		"signal": {"cat >&2; kill -9 $$", "signal: killed", `{"config": "s3cret"}`},
-		"long":   {"head -c 10000 /dev/zero | tr '\\0' x >&2; exit 1", "exit 1", strings.Repeat("x", maxStderr)},
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, err := RunCommand(ctx, []string{"sh", "-c", tc.script}, []byte(`{"config": "s3cret"}`), 100)
-			var failed *CommandError
-			if !errors.As(err, &failed) || failed.Status != tc.status || failed.Stderr != tc.stderr {
-				t.Fatalf("err = %#v", err)
-			}
-			if want := "the command failed (" + tc.status + "); see the node's journal"; err.Error() != want {
-				t.Errorf("err = %q, want %q", err, want)
 			}
 		})
 	}
