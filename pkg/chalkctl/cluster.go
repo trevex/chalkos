@@ -30,11 +30,13 @@ func (c *clusterFlags) register(fs *pflag.FlagSet) {
 // Without one it is partial and nameless: each command names its node and --address reaches it.
 type cluster struct {
 	name, endpoint string
-	partial        bool
 	inv            *inventory.Inventory
 	// configs holds each node's config, once read from the inventory.
 	configs map[string]*inventory.NodeConfig
 }
+
+// partial reports whether the cluster comes without an inventory.
+func (c *cluster) partial() bool { return c.inv == nil }
 
 // loadCluster reads the inventory --inventory names, or else chalkos.yaml in the current
 // directory, whose images in registries are read under ctx; without either, the cluster is
@@ -49,7 +51,7 @@ func loadCluster(ctx context.Context, f clusterFlags) (*cluster, error) {
 	case !errors.Is(err, fs.ErrNotExist):
 		return nil, err
 	}
-	return &cluster{partial: true}, nil
+	return &cluster{}, nil
 }
 
 // loadInventory reads an inventory and the endpoint its nodes' Cluster documents name; every
@@ -70,7 +72,7 @@ func loadInventory(ctx context.Context, path string) (*cluster, error) {
 
 // requireNodes refuses a partial cluster for a command that needs the nodes' config.
 func (c *cluster) requireNodes(command string) error {
-	if c.partial {
+	if c.partial() {
 		return fmt.Errorf("%s needs an inventory, which gives the cluster's nodes and their config; pass --inventory", command)
 	}
 	return nil
@@ -78,7 +80,7 @@ func (c *cluster) requireNodes(command string) error {
 
 // nodeNames are the inventory's nodes, sorted; none on a partial cluster.
 func (c *cluster) nodeNames() []string {
-	if c.inv == nil {
+	if c.partial() {
 		return nil
 	}
 	return c.inv.NodeNames()
@@ -87,7 +89,7 @@ func (c *cluster) nodeNames() []string {
 // node refuses a node the cluster does not have. A partial cluster has every node a command
 // names.
 func (c *cluster) node(name string) error {
-	if c.partial || slices.Contains(c.nodeNames(), name) {
+	if c.partial() || slices.Contains(c.nodeNames(), name) {
 		return nil
 	}
 	return fmt.Errorf("the cluster %s has no node %s; its nodes are %s", c.name, name, strings.Join(c.nodeNames(), ", "))
@@ -109,7 +111,7 @@ func (c *cluster) config(name string) (*inventory.NodeConfig, error) {
 // kind is what a node is in Kubernetes: the type its Node document names; empty without
 // Kubernetes and on a partial cluster.
 func (c *cluster) kind(name string) (string, error) {
-	if c.inv == nil {
+	if c.partial() {
 		return "", nil
 	}
 	nc, err := c.config(name)
@@ -158,7 +160,7 @@ func (c *cluster) declares(name, platform string) string {
 // inventoryImage is the config of the node in the inventory, which names the node's image: its
 // directory or its reference in a registry.
 func (c *cluster) inventoryImage(name string) (*inventory.NodeConfig, error) {
-	if c.inv == nil {
+	if c.partial() {
 		return nil, errors.New("the image comes from --image without an inventory, which names the nodes' images; pass --inventory")
 	}
 	return c.config(name)
@@ -187,7 +189,7 @@ func (c *cluster) address(flagValue, name string) (addr, source string, err erro
 	if flagValue != "" {
 		return flagValue, "--address", nil
 	}
-	if c.inv == nil {
+	if c.partial() {
 		return "", "", fmt.Errorf("no inventory names the address of %s; pass --address, or --inventory", name)
 	}
 	if a := c.inv.Spec.Nodes[name].Address; a != "" {
@@ -199,7 +201,7 @@ func (c *cluster) address(flagValue, name string) (addr, source string, err erro
 // certNames are what a node's certificate is for: its name, its hostname and its static
 // addresses, as its config gives them.
 func (c *cluster) certNames(name string) (pki.NodeNames, error) {
-	if c.inv == nil {
+	if c.partial() {
 		return pki.NodeNames{}, errors.New("a node certificate names the node's addresses, which an inventory gives; pass --inventory")
 	}
 	nc, err := c.config(name)
@@ -227,7 +229,7 @@ func ipAddresses(addrs []string) []net.IP {
 // samePlatform refuses a node that runs an image of another platform than its config's image:
 // its config and images would not fit the machine.
 func (c *cluster) samePlatform(name, reported string) error {
-	if c.partial {
+	if c.partial() {
 		return nil
 	}
 	want, err := c.platform(name)

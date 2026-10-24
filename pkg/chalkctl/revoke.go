@@ -82,13 +82,13 @@ func (a *app) controlPlanesRead(ctx context.Context, f viaFlags, name string) er
 	if err != nil {
 		return err
 	}
-	if f.via == "" && (c.partial || f.node.address != "") {
+	if f.via == "" && (c.partial() || f.node.address != "") {
 		// node revoke asks for --via, which names the node --address reaches and the control
 		// plane to ask without an inventory.
 		return nil
 	}
 	controlPlanes := []string{f.via}
-	if !c.partial {
+	if !c.partial() {
 		if controlPlanes, err = c.nodesOf(kubernetes.KindControlPlane, name); err != nil {
 			return err
 		}
@@ -171,7 +171,7 @@ func (a *app) keepsRevokedNodes(ctx context.Context, f viaFlags) error {
 		return nil
 	}
 	c, err := loadCluster(ctx, f.node.cluster)
-	if err != nil || c.partial {
+	if err != nil || c.partial() {
 		return err
 	}
 	switch names, err := c.nodesOf(kubernetes.KindControlPlane, ""); {

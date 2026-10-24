@@ -56,7 +56,7 @@ func (a *app) bootstrap(ctx context.Context, f bootstrapFlags, pos []string) err
 		return err
 	}
 	// Without an inventory the node itself refuses when it is a worker.
-	if !t.cluster.partial {
+	if !t.cluster.partial() {
 		kind, err := t.cluster.kind(t.name)
 		if err != nil {
 			return err

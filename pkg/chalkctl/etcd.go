@@ -32,7 +32,7 @@ func (a *app) throughControlPlane(ctx context.Context, n nodeFlags, via, skip st
 		if n.address != "" {
 			return errors.New("--address reaches one node; name it with --via")
 		}
-		if c.partial {
+		if c.partial() {
 			return errors.New("an inventory names the control planes; name one with --via, or pass --inventory")
 		}
 		if names, err = c.nodesOf(kubernetes.KindControlPlane, skip); err != nil {

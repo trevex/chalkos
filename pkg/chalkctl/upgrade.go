@@ -165,7 +165,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 			return err
 		}
 		defer img.Close()
-	} else if c.inv == nil {
+	} else if c.partial() {
 		return errors.New("without --image each node gets the image the inventory names for it, which needs an inventory; pass --image, or --inventory")
 	}
 	r := &upgradeRun{
@@ -202,7 +202,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	case !r.role.Allows(pki.RoleAdmin):
 		// A partial cluster has no inventory, so there is no config to withhold, and each node
 		// says that it carries its own over.
-		if !r.cluster.partial {
+		if !r.cluster.partial() {
 			r.withhold("config not delivered: the %s role cannot deliver config; each node carries its own over", r.roleName())
 		}
 	default:
@@ -371,7 +371,7 @@ func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *up
 // it; on a partial cluster, which has no inventory, that check of the config the node carries over
 // is all there is.
 func (r *upgradeRun) checkConfig() error {
-	if r.cluster.partial {
+	if r.cluster.partial() {
 		return nil
 	}
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
@@ -447,7 +447,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	if len(candidates) == 0 {
 		candidates = r.nodeNames()
 	}
-	if len(candidates) == 0 && c.partial {
+	if len(candidates) == 0 && c.partial() {
 		return errors.New("without an inventory, give each node's address with --address NODE=ADDR")
 	}
 	r.nodes = map[string]*upgradeNode{}
@@ -523,7 +523,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	// files hold the same document twice. Without an inventory, the nodes --address names that
 	// the run leaves alone are asked.
 	for _, name := range r.nodeNames() {
-		if _, probed := probedCPs[name]; c.partial && !probed {
+		if _, probed := probedCPs[name]; c.partial() && !probed {
 			_, st, err := r.probe(ctx, name)
 			if err != nil {
 				return err
@@ -550,7 +550,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 
 // nodeNames are the cluster's nodes: the inventory's, or without one those --address names.
 func (r *upgradeRun) nodeNames() []string {
-	if r.cluster.partial {
+	if r.cluster.partial() {
 		return slices.Sorted(maps.Keys(r.addresses))
 	}
 	return r.cluster.nodeNames()

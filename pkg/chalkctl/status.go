@@ -233,7 +233,7 @@ func outputLine(o *nodev1.OutputStatus) string {
 
 // platformLine is the status line of the platform the node runs on, compared with its config's.
 func (c *cluster) platformLine(name, reported string) string {
-	if c.partial {
+	if c.partial() {
 		return "platform " + reported
 	}
 	want, err := c.platform(name)
@@ -249,7 +249,7 @@ func (c *cluster) platformLine(name, reported string) string {
 // configState says whether a slot of a node holds the config chalkctl delivers to it: the running
 // image's, or with staged the staged image's.
 func (c *cluster) configState(name, version string, staged bool) string {
-	if c.partial {
+	if c.partial() {
 		return "no inventory to compare it with"
 	}
 	want, err := c.version(name)
@@ -269,7 +269,7 @@ func (c *cluster) configState(name, version string, staged bool) string {
 // or when the node or its config is unknown, which the config line reports.
 func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
 	running := boot.GetRunning().GetRootHash()
-	if c.inv == nil || len(running) == 0 {
+	if c.partial() || len(running) == 0 {
 		return ""
 	}
 	nc, err := c.config(name)
