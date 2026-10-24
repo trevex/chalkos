@@ -36,6 +36,29 @@ in
     // testEnv.vars
   );
 
+  # The Go code, the e2e tests included, is gofmt-formatted and passes go vet and staticcheck,
+  # with the checks staticcheck.conf selects.
+  go-lint = chalkPkgs.chalkctl.overrideAttrs (old: {
+    pname = "chalkos-go-lint";
+    nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.go-tools ];
+    buildPhase = ''
+      runHook preBuild
+      cp ${../../staticcheck.conf} staticcheck.conf
+      unformatted=$(gofmt -l pkg cmd test)
+      if [ -n "$unformatted" ]; then
+        echo "error: gofmt would change these files:" >&2
+        echo "$unformatted" >&2
+        exit 1
+      fi
+      go vet ./pkg/... ./cmd/... ./test/...
+      XDG_CACHE_HOME=$TMPDIR/cache staticcheck ./pkg/... ./cmd/... ./test/...
+      runHook postBuild
+    '';
+    doCheck = false;
+    installPhase = "touch $out";
+    postFixup = "";
+  });
+
   # The generated API code is committed; it must match what buf generates from the proto files.
   api-generated =
     pkgs.runCommand "chalkos-api-generated"

@@ -17,6 +17,7 @@ pkgs.mkShell (
         python3Packages.virt-firmware
         jq
         nixfmt
+        go-tools
       ]);
   }
   // testEnv.vars
