@@ -241,9 +241,9 @@ Another program can add their trees to its own, and tests run commands in-proces
 output captured. The four share `pkg/internal/cli`: its `Execute` prints a command's error and
 exits with 2 and the command's usage after a usage error, such as a wrong number of arguments, an
 unknown flag or a required flag not set, and with 1 after another error. chalkctl also exits with
-130 after an error once Ctrl+C cancelled it. Each package keeps its help texts in `help.go`, and a test requires a short and
-a long description and an example on every visible command, because they become the
-[command reference](../reference/cli/index.md). chalkcfg runs on nodes, which have no logins, so
+130 after an error once Ctrl+C cancelled it. Each package keeps its help texts in `help.go`, and
+a test requires a short and a long description and an example on every visible command, because
+they become the [command reference](../reference/cli/index.md). chalkcfg runs on nodes, which have no logins, so
 it has no `completion` command.
 
 ## Nix modules

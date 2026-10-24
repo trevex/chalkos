@@ -54,6 +54,9 @@ func Group(cmd *cobra.Command) *cobra.Command {
 
 // NoArgs refuses positional arguments with a usage error.
 func NoArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 && !cmd.HasSubCommands() {
+		return Usagef("%s takes no arguments", cmd.CommandPath())
+	}
 	return usage(cobra.NoArgs(cmd, args))
 }
 
