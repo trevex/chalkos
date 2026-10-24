@@ -10,31 +10,23 @@ chalkctl apply-config <node> [flags]
 ```
 
 Delivers a node's config to the installed node: the documents of the files the inventory gives
-it. chalkctl first asks the node for the contract of the image it runs: its platform, schemas and
-image.json. It refuses an image of another platform than the node's image in the inventory, and
-checks the documents as the node does, with the image's change rules that read no facts about the
-node against the config the node serves. The node replaces its config as a whole, and applies
-additive storage changes (a new volume, for example) while it runs. When the image's rules refuse a
-change, the node refuses the whole config, applies none of it, and names the remedy: chalkctl
-storage reset recreates a volume in place, once the disk it lives on is plugged in; a change that
-would recreate VAR, a removed volume or a move to another disk takes a reinstall; a changed disk
-reference that finds no disk needs fixing or its disk plugged in, and one that cannot otherwise be
-resolved, as it finds more than one disk or names something other than a whole disk, needs fixing.
-Otherwise the node restarts the units that read what changed, and chalkctl prints the changes and
-the units. --kubernetes-share also delivers a new Kubernetes share: for example a worker's new
-kubelet certificate. It is refused to a node revoked with chalkctl node revoke, and while no
-control plane says which nodes are revoked; --force delivers it without asking.
+it. chalkctl checks them against the contract of the image the node runs, with the image's change
+rules that read no facts, and the node checks them again. The node replaces its config as a whole,
+applies additive storage changes such as a new volume while it runs, and restarts the units that
+read what changed; chalkctl prints the changes and the units. When the image's rules refuse a
+change, the node refuses the whole config and names the remedy. How chalkos works lists what each
+change takes:
+[https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts](../../how-it-works/node/config.md#change-rules-decide-which-changes-a-node-accepts)
 
 Each image on a node keeps its own config. --staged delivers the config for the image staged to
-boot next, as an upgrade with --no-reboot leaves it, instead of the running image: chalkctl checks
-it against the node's image in the inventory, and the node checks it against the staged image and
-keeps it for that image. Its storage changes count against the node's storage as the running
-image's do, so a new volume is created at once and every image's boot mounts it, also the running
-image's, whose config must name it the next time it is delivered; nothing restarts. Without
---staged, chalkctl warns of a staged image, whose config stays as it is. A config for the running
-image that adds storage the staged image's config lacks is refused: the staged image's config
-would then count as removing it, and the node could not write that config again. Deliver the
-config with --staged first. The command needs the secrets file.
+boot next, as an upgrade with --no-reboot leaves it, and nothing restarts. Without --staged,
+chalkctl warns of a staged image, whose config stays as it is. A config for the running image that
+adds storage the staged image's config lacks is refused: deliver the config with --staged first.
+
+--kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
+certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
+says which nodes are revoked; --force delivers it without asking. The command needs the secrets
+file.
 
 ## Flags
 

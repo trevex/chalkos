@@ -10,22 +10,15 @@ chalkctl node unrevoke <node> [flags]
 ```
 
 Removes a node from the revoked nodes, so a node of that name may join the cluster again. The old
-node's certificates then work again too, unless the CAs they chain to were rotated after the
-revocation: chalkd trusts every node CA the OS CA signed, and the kubelet's certificates chain to
-the Kubernetes CA. The control plane therefore refuses while the OS CA or the Kubernetes CA
-predates the revocation, and names the rotations missing. --force unrevokes the node anyway, and
-its old certificates work again until they expire. The check looks at the OS CA and the
-Kubernetes CA alone. A former control plane's etcd and front-proxy certificates are beyond
-revocation either way: they stay valid until chalkctl rotate kubernetes-ca, which replaces those
-CAs along with the Kubernetes CA, has finished.
+node's certificates would work again too, so the control plane refuses while the OS CA or the
+Kubernetes CA predates the revocation, and names the rotations missing. To reuse the name, run
+chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish, first; a node
+installed afresh under the name then joins as usual. How chalkos works describes the check:
+[https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-a-node-cuts-off-its-writes-and-renewals](../../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)
 
-To reuse a revoked node's name safely, rotate both CAs first, then unrevoke it:
-chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish. A node installed
-afresh under the name then joins as usual.
-
-The old node does not come back by itself after a forced unrevoke: its kubelet registers its Node
-once as it starts, and not again when the Node is deleted, as the revocation did. Reboot the old
-node with chalkctl reboot, or restart its kubelet.
+--force unrevokes the node anyway, and its old certificates work again until they expire. The old
+node does not come back by itself: its kubelet registers its Node once as it starts, so reboot it
+with chalkctl reboot, or restart its kubelet.
 
 A control plane unrevokes the node: --via, or the first one that answers. The command needs an
 admin client file or the secrets file.

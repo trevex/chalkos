@@ -9,17 +9,17 @@ description: "Generate the cluster's secrets file"
 chalkctl gen secrets [flags]
 ```
 
-Generates the cluster's secrets once: the OS CA, which every node and client trusts and which
-issues client certificates and the node CA; the node CA; the Kubernetes CAs and keys; and the
-secret that nodes' recovery keys derive from. They go to secrets.age, encrypted to the
-age recipients given with --recipient (age public keys, SSH public keys or age plugin
-recipients), or with --plaintext to secrets.json unencrypted, for files protected by other means.
-The public half goes to secrets.pub.json, or to --public-out, which the osCA argument of
-mkImages names so images trust the OS CA in maintenance mode. The command refuses to
-overwrite any of these files: new secrets would lock out every installed node. With --out - the
-secrets file goes to standard output, for a secret manager to keep, the public half to
---public-out, which --out - needs, and what the command says to standard error. It needs no
-secrets file or client file.
+Generates the cluster's secrets once: the OS CA, the node CA, the Kubernetes CAs and keys, and
+the secret that nodes' recovery keys derive from. They go to secrets.age, encrypted to the age
+recipients --recipient gives (age public keys, SSH public keys or age plugin recipients), or with
+--plaintext to secrets.json unencrypted. The public half goes to secrets.pub.json, or to
+--public-out, which the osCA argument of mkImages names. How chalkos works describes the CAs:
+[https://trevex.github.io/chalkos/how-it-works/node/certificates/](../../how-it-works/node/certificates.md)
+
+The command refuses to overwrite any of these files, because new secrets would lock out every
+installed node. With --out - the secrets file goes to standard output, for a secret manager to
+keep, the public half to --public-out, which --out - needs, and the command's messages to standard
+error. The command needs no secrets file or client file.
 
 ## Flags
 

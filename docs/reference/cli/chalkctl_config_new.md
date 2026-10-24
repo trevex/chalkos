@@ -10,16 +10,19 @@ chalkctl config new [flags]
 ```
 
 Writes a client file: a new key with a certificate from the OS CA for --name and --role, and
-the OS CA that nodes' certificates chain to. A client file works for status, logs, disks,
-reboot, storage reset, bootstrap, the etcd commands and upgrade; every other command needs the
-secrets file. The role decides what chalkd allows: a reader may read nodes' information, disks,
-status and logs and etcd's members; an operator may also reboot, upgrade, drain and uncordon
-nodes; an admin may call every method of chalkd except RenewNodeCertificate, which needs the
-node role (nodes call it to renew their own certificates). The file is written to
-~/.config/chalkos/config unless --out names another; commands read it from there, or from the
-path --config or $CHALKOSCONFIG names. The command needs the secrets file and no inventory. A
-client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the
-TLS handshake, which chalkctl reports as a node that does not accept the client file.
+the OS CA that nodes' certificates chain to. The file goes to ~/.config/chalkos/config unless --out
+names another; commands read it from there, or from the path --config or $CHALKOSCONFIG names. A
+client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the TLS
+handshake, which chalkctl reports as a node that does not accept the client file.
+
+A client file works for status, logs, disks, reboot, storage reset, bootstrap, the etcd commands
+and upgrade; every other command needs the secrets file. A reader may read nodes' information,
+disks, status and logs and etcd's members; an operator may also reboot, upgrade, drain and
+uncordon nodes; an admin may call every method of chalkd but the node's own renewal. How chalkos
+works describes the roles:
+[https://trevex.github.io/chalkos/how-it-works/node/security/#chalkd-checks-the-role-of-every-request](../../how-it-works/node/security.md#chalkd-checks-the-role-of-every-request)
+
+The command needs the secrets file and no inventory.
 
 ## Flags
 

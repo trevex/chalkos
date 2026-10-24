@@ -4,15 +4,13 @@ package chalkctl
 // reference pages show. They are kept together so they read as one text.
 
 const rootLong = `chalkctl installs and operates the nodes of a chalkos cluster. It reads the cluster from an
-inventory (chalkos.yaml in the current directory, or --inventory), which names each node, the
-address chalkctl reaches it at, the image it runs and the config files it gets, and talks to chalkd
-on each node over mutual TLS. chalkctl never builds or signs images: the inventory names the
-directory of each image, for Secure Boot a copy chalkbuild sign signed, or its reference in a
-registry, which chalkbuild push prints. Commands authenticate with the cluster's secrets file,
-which holds every CA key, or with a client file (chalkctl config new), which holds a certificate
-of the admin, operator or reader role. Each command's help says which of the two it needs. The
-secrets file is read only where --secrets names it, as a path or as - for standard input,
-encrypted with age or not; the inventory names none. Commands that accept both take --config or
+inventory, chalkos.yaml in the current directory or --inventory, which names each node, its
+address, its image and its config files. It talks to chalkd on each node over mutual TLS, and never
+builds or signs images.
+
+Commands authenticate with the cluster's secrets file, which holds every CA key and which only
+--secrets names, or with a client file of the admin, operator or reader role, which chalkctl config
+new writes. Each command's help says which it needs. A command that accepts both takes --config or
 --secrets, not both, else the client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
@@ -29,17 +27,17 @@ const genLong = `Generates the files a cluster starts from. Its command needs no
 
 const genExample = `  chalkctl gen secrets --plaintext`
 
-const genSecretsLong = `Generates the cluster's secrets once: the OS CA, which every node and client trusts and which
-issues client certificates and the node CA; the node CA; the Kubernetes CAs and keys; and the
-secret that nodes' recovery keys derive from. They go to secrets.age, encrypted to the
-age recipients given with --recipient (age public keys, SSH public keys or age plugin
-recipients), or with --plaintext to secrets.json unencrypted, for files protected by other means.
-The public half goes to secrets.pub.json, or to --public-out, which the osCA argument of
-mkImages names so images trust the OS CA in maintenance mode. The command refuses to
-overwrite any of these files: new secrets would lock out every installed node. With --out - the
-secrets file goes to standard output, for a secret manager to keep, the public half to
---public-out, which --out - needs, and what the command says to standard error. It needs no
-secrets file or client file.`
+const genSecretsLong = `Generates the cluster's secrets once: the OS CA, the node CA, the Kubernetes CAs and keys, and
+the secret that nodes' recovery keys derive from. They go to secrets.age, encrypted to the age
+recipients --recipient gives (age public keys, SSH public keys or age plugin recipients), or with
+--plaintext to secrets.json unencrypted. The public half goes to secrets.pub.json, or to
+--public-out, which the osCA argument of mkImages names. How chalkos works describes the CAs:
+https://trevex.github.io/chalkos/how-it-works/node/certificates/
+
+The command refuses to overwrite any of these files, because new secrets would lock out every
+installed node. With --out - the secrets file goes to standard output, for a secret manager to
+keep, the public half to --public-out, which --out - needs, and the command's messages to standard
+error. The command needs no secrets file or client file.`
 
 const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
   chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
@@ -58,16 +56,19 @@ a client file needs the secrets file.`
 const configExample = `  chalkctl config new --name alice --role operator --secrets secrets.age`
 
 const configNewLong = `Writes a client file: a new key with a certificate from the OS CA for --name and --role, and
-the OS CA that nodes' certificates chain to. A client file works for status, logs, disks,
-reboot, storage reset, bootstrap, the etcd commands and upgrade; every other command needs the
-secrets file. The role decides what chalkd allows: a reader may read nodes' information, disks,
-status and logs and etcd's members; an operator may also reboot, upgrade, drain and uncordon
-nodes; an admin may call every method of chalkd except RenewNodeCertificate, which needs the
-node role (nodes call it to renew their own certificates). The file is written to
-~/.config/chalkos/config unless --out names another; commands read it from there, or from the
-path --config or $CHALKOSCONFIG names. The command needs the secrets file and no inventory. A
-client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the
-TLS handshake, which chalkctl reports as a node that does not accept the client file.`
+the OS CA that nodes' certificates chain to. The file goes to ~/.config/chalkos/config unless --out
+names another; commands read it from there, or from the path --config or $CHALKOSCONFIG names. A
+client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the TLS
+handshake, which chalkctl reports as a node that does not accept the client file.
+
+A client file works for status, logs, disks, reboot, storage reset, bootstrap, the etcd commands
+and upgrade; every other command needs the secrets file. A reader may read nodes' information,
+disks, status and logs and etcd's members; an operator may also reboot, upgrade, drain and
+uncordon nodes; an admin may call every method of chalkd but the node's own renewal. How chalkos
+works describes the roles:
+https://trevex.github.io/chalkos/how-it-works/node/security/#chalkd-checks-the-role-of-every-request
+
+The command needs the secrets file and no inventory.`
 
 const configNewExample = `  # A reader's client file for a dashboard.
   chalkctl config new --name grafana --role reader --ttl 720h --out grafana.json --secrets secrets.age
@@ -90,54 +91,37 @@ const nodeExample = `  chalkctl node renew w1
 const nodeRenewExample = `  chalkctl node renew w1`
 
 const nodeRevokeLong = `Cuts a node off the cluster by name, at once and without a rotation. A control plane lists the
-node in the ConfigMap kube-system/chalkos-revoked-nodes with the time of its revocation and
-deletes the node's Node object; a node revoked already keeps its first time. From then on, control
-planes refuse to renew the node's node certificate, chalkd approves none of its kubelet serving
-certificates, the API server denies every write by its kubelet (system:node:<node>), which keeps
-it from registering its Node again and from renewing its kubelet client certificate, and chalkctl
-rotate skips it.
+node, with the time of its first revocation, in the ConfigMap kube-system/chalkos-revoked-nodes and
+deletes its Node object. From then on
+the control planes renew none of its certificates, the API server denies every write by its
+kubelet, and chalkctl rotate skips it. Its certificates stay valid until they expire, so its kubelet
+can still read what every kubelet may. How chalkos works describes what a revocation cuts off:
+https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-a-node-cuts-off-its-writes-and-renewals
 
-The node's certificates stay valid until they expire, and the API server's admission sees writes
-alone. So the node's kubelet can still read what every kubelet may: Services, Endpoints and
-EndpointSlices, and a few cluster-scoped kinds such as Nodes and RuntimeClasses. The Secrets and
-ConfigMaps of the pods bound to it stay readable to it until the pod garbage collector deletes
-those pods, shortly after their Node is gone.
+Revoking a control plane does not cut it off, because its disk holds the node CA's and the
+Kubernetes CA's keys. The command refuses a node that is still an etcd member, and the control
+plane --via names: take it out with chalkctl etcd leave, or chalkctl etcd remove-member once it is
+gone, then rotate os-ca and kubernetes-ca. A cluster without Kubernetes keeps no revoked nodes, and
+there chalkctl rotate os-ca cuts a node off.
 
-Revoking a control plane does not cut it off: its disk holds the node CA's and the Kubernetes
-CA's keys. The command refuses a node that is still an etcd member, and the control plane --via
-names; take such a node out with chalkctl etcd leave, or chalkctl etcd remove-member once it is
-gone, then rotate os-ca and kubernetes-ca with chalkctl rotate. --force revokes it all the same.
-The same rotations cut off whoever stole a control plane's disk. A cluster without Kubernetes
-keeps no revoked nodes: there, revoking a node means not renewing its node certificate, and
-chalkctl rotate os-ca cuts it off at once.
-
-Before it revokes the node, the command asks every other control plane of the inventory, or the
-one --via names without an inventory, whether it reads the revoked nodes. A control plane whose
-chalkd predates node revocation renews the node's node certificate until it is upgraded, so the
-command refuses while one does not answer, cannot read the revoked nodes, or does not say it read
-them; --force revokes the node anyway. A control plane revokes the node: --via, or the first other
-one that answers. The command needs an admin client file or the secrets file.`
+The command first asks every other control plane whether it reads the revoked nodes, and refuses
+while one does not answer or does not say it read them. --force revokes the node despite either
+refusal. A control plane revokes the node: --via, or the first other one that answers. The command
+needs an admin client file or the secrets file.`
 
 const nodeRevokeExample = `  # Cut off w1, which was removed from the cluster.
   chalkctl node revoke w1`
 
 const nodeUnrevokeLong = `Removes a node from the revoked nodes, so a node of that name may join the cluster again. The old
-node's certificates then work again too, unless the CAs they chain to were rotated after the
-revocation: chalkd trusts every node CA the OS CA signed, and the kubelet's certificates chain to
-the Kubernetes CA. The control plane therefore refuses while the OS CA or the Kubernetes CA
-predates the revocation, and names the rotations missing. --force unrevokes the node anyway, and
-its old certificates work again until they expire. The check looks at the OS CA and the
-Kubernetes CA alone. A former control plane's etcd and front-proxy certificates are beyond
-revocation either way: they stay valid until chalkctl rotate kubernetes-ca, which replaces those
-CAs along with the Kubernetes CA, has finished.
+node's certificates would work again too, so the control plane refuses while the OS CA or the
+Kubernetes CA predates the revocation, and names the rotations missing. To reuse the name, run
+chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish, first; a node
+installed afresh under the name then joins as usual. How chalkos works describes the check:
+https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-a-node-cuts-off-its-writes-and-renewals
 
-To reuse a revoked node's name safely, rotate both CAs first, then unrevoke it:
-chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish. A node installed
-afresh under the name then joins as usual.
-
-The old node does not come back by itself after a forced unrevoke: its kubelet registers its Node
-once as it starts, and not again when the Node is deleted, as the revocation did. Reboot the old
-node with chalkctl reboot, or restart its kubelet.
+--force unrevokes the node anyway, and its old certificates work again until they expire. The old
+node does not come back by itself: its kubelet registers its Node once as it starts, so reboot it
+with chalkctl reboot, or restart its kubelet.
 
 A control plane unrevokes the node: --via, or the first one that answers. The command needs an
 admin client file or the secrets file.`
@@ -238,31 +222,20 @@ const installLong = `Installs a node that waits in maintenance mode: a machine t
 node's image booted for the first time. The node serves a self-signed certificate in maintenance
 mode, so chalkctl verifies it by the SHA-256 fingerprint the node prints on its console
 (--fingerprint), or accepts any certificate with --insecure and prints the fingerprint it saw,
-which can be checked against the console afterwards; the secrets go over a second connection
-pinned to that fingerprint.
+which can be checked against the console afterwards.
 
-chalkctl sends the node its config, the documents of the files the inventory gives it, checked
-against the schemas of the image it installs, a node certificate, the OS CA, the secret of its
-encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node, its
-Kubernetes share. A node that runs its image already installs in place. A node that runs the
-installer gets the image as well: the image --image names, or the node's image in the inventory,
-signed with chalkbuild sign when the machine enforces Secure Boot. An image from a directory
-follows the header over the connection. An image in a registry the installer pulls itself, by the
-digest chalkctl resolved, through the Mirror of the registry's host and with the Registry
-documents of the config chalkctl sends, and it takes the image's schemas, image.json and partition
-definitions from the image's contract layer. With Secure Boot on, the installer checks the UKI and
-the boot loader against the firmware's db
-and dbx. It writes the image to the disk the node's SystemDisk names: a disk on which blkid finds
-no signature, or one holding an unfinished install of the node, which it continues; any other
-disk only with --wipe-disk. The node reboots into the installed image. The node certificate
-carries the node's name in the inventory, which stays the node's name until it is reinstalled.
+chalkctl sends the node its config, checked against the schemas of the image it installs, a node
+certificate with the node's name in the inventory, the OS CA, the secret of its volumes' second
+keyslot and, on a Kubernetes node, its Kubernetes share. A node that runs its image already
+installs in place. A node that runs the installer also gets the image --image names, or the node's
+image in the inventory, and writes it to the disk its SystemDisk names: a disk on which blkid finds
+no signature, one holding an unfinished install of the node, or any disk with --wipe-disk. The node
+then reboots into the image. How chalkos works describes an install:
+https://trevex.github.io/chalkos/how-it-works/node/overview/#an-install-turns-a-machine-in-maintenance-mode-into-a-node
 
-A name revoked with chalkctl node revoke is refused until chalkctl node unrevoke lets it back in:
-chalkctl first asks the other control planes of the inventory for the revoked nodes. It also
-refuses while control planes were bootstrapped and none says which nodes are revoked. A control
-plane that does not answer as an installed node counts as not installed yet, so the cluster's
-first nodes install while the others wait. --force installs without asking. The command needs the
-secrets file.`
+A name revoked with chalkctl node revoke is refused, as is any node while control planes were
+bootstrapped and none says which nodes are revoked; --force installs without asking. The command
+needs the secrets file.`
 
 const installExample = `  # Install cp1, comparing the certificate with the fingerprint on its console.
   chalkctl install cp1 --secrets secrets.age \
@@ -286,31 +259,23 @@ const disksExample = `  # The disks of an installed node.
   chalkctl disks --address 192.168.1.50 --insecure --secrets secrets.age`
 
 const applyConfigLong = `Delivers a node's config to the installed node: the documents of the files the inventory gives
-it. chalkctl first asks the node for the contract of the image it runs: its platform, schemas and
-image.json. It refuses an image of another platform than the node's image in the inventory, and
-checks the documents as the node does, with the image's change rules that read no facts about the
-node against the config the node serves. The node replaces its config as a whole, and applies
-additive storage changes (a new volume, for example) while it runs. When the image's rules refuse a
-change, the node refuses the whole config, applies none of it, and names the remedy: chalkctl
-storage reset recreates a volume in place, once the disk it lives on is plugged in; a change that
-would recreate VAR, a removed volume or a move to another disk takes a reinstall; a changed disk
-reference that finds no disk needs fixing or its disk plugged in, and one that cannot otherwise be
-resolved, as it finds more than one disk or names something other than a whole disk, needs fixing.
-Otherwise the node restarts the units that read what changed, and chalkctl prints the changes and
-the units. --kubernetes-share also delivers a new Kubernetes share: for example a worker's new
-kubelet certificate. It is refused to a node revoked with chalkctl node revoke, and while no
-control plane says which nodes are revoked; --force delivers it without asking.
+it. chalkctl checks them against the contract of the image the node runs, with the image's change
+rules that read no facts, and the node checks them again. The node replaces its config as a whole,
+applies additive storage changes such as a new volume while it runs, and restarts the units that
+read what changed; chalkctl prints the changes and the units. When the image's rules refuse a
+change, the node refuses the whole config and names the remedy. How chalkos works lists what each
+change takes:
+https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts
 
 Each image on a node keeps its own config. --staged delivers the config for the image staged to
-boot next, as an upgrade with --no-reboot leaves it, instead of the running image: chalkctl checks
-it against the node's image in the inventory, and the node checks it against the staged image and
-keeps it for that image. Its storage changes count against the node's storage as the running
-image's do, so a new volume is created at once and every image's boot mounts it, also the running
-image's, whose config must name it the next time it is delivered; nothing restarts. Without
---staged, chalkctl warns of a staged image, whose config stays as it is. A config for the running
-image that adds storage the staged image's config lacks is refused: the staged image's config
-would then count as removing it, and the node could not write that config again. Deliver the
-config with --staged first. The command needs the secrets file.`
+boot next, as an upgrade with --no-reboot leaves it, and nothing restarts. Without --staged,
+chalkctl warns of a staged image, whose config stays as it is. A config for the running image that
+adds storage the staged image's config lacks is refused: deliver the config with --staged first.
+
+--kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
+certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
+says which nodes are revoked; --force delivers it without asking. The command needs the secrets
+file.`
 
 const applyConfigExample = `  # Apply w1's changed network and labels.
   chalkctl apply-config w1 --secrets secrets.age
@@ -369,65 +334,41 @@ command needs the secrets file.`
 
 const recoveryKeyExample = `  chalkctl recovery-key w1`
 
-const upgradeLong = `Installs on each node a new image: control planes one at a time, each only while etcd keeps its
+const upgradeLong = `Installs a new image on each node: control planes one at a time, each only while etcd keeps its
 quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
-Without --image each node (every node of the inventory, or those --nodes names) gets the image the
-inventory names for it, which must be the build whose root hash its directory's metadata.json
-names, as status compares nodes with it: rebuild the image or link its directory again otherwise.
-Each node pulls an image the inventory names in a registry itself, by the digest chalkctl resolved
-its reference to, through the node's Mirror of the registry's host and with its Registry
-documents. A node that runs on another platform than its image stops the run before any node is
-sent anything. With --image the nodes that run the image's variant get it, or
-those --nodes names whatever they run, and nodes on another platform are skipped and named.
-A node may get an image of another variant than the one it runs, which chalkctl prints.
+Without --image, each node, or each node --nodes names, gets the image the inventory names for it;
+with --image, the nodes that run the image's variant get it, or those --nodes names. A node gets
+the image in its inactive slot, is cordoned and drained, reboots into the image, and is uncordoned
+once its boot was found healthy and it is Ready. A node that falls back to the image before stops
+the run.
 
-Each node gets its config with the image: the documents of the files the inventory gives it,
-checked against the image before any node is drained. The node checks them against the image
-again and keeps them for it, so a fallback boots the image before with its own config. Storage
-changes count against the node's storage as with apply-config: a destructive one is refused, a new
-volume is created before the image boots, enrolled with the recovery key, which only the secrets
-file gives, or the password --password-file holds. chalkctl asks for each node's password before
-it drains the first node, one node after the other. Without an inventory a node carries the config
-of the image it runs over, checked against the new image. A node that has the image staged already
-gets it again only when the config kept for it is not the inventory's. Before it sends a node the
-image, chalkctl prints a line of what the node's config changes against the config of the image
-it runs, as apply-config does; --diff prints the whole diff for every node and changes nothing.
+Each node gets its config with the image, checked against it before any node is drained, and
+chalkctl prints a line of what it changes; --diff prints the whole diff and changes nothing.
+Delivering config needs the admin role: with an operator client file, each node carries its own
+config over. A new volume is enrolled with the recovery key, which only the secrets file gives, or
+the password --password-file holds.
 
-Delivering config with the upgrade needs the admin role, which the secrets file and an admin
-client file grant. With an operator client file chalkctl sends no config, says so once when there
-is an inventory, and each node carries its own over; --diff needs the admin role.
-
-A node gets the image in its inactive slot, is cordoned and drained within its pods'
-PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy
-and the node is Ready. A node whose image never becomes healthy falls back to the image before,
-and the run stops there, showing what that boot logged; with --retry-failed a node that fell
-back from the image before gets it once more.
-
-Run again, the command skips nodes that run the image and continues one it stopped at; it
-uncordons only nodes it cordoned itself. etcd of one or two control planes loses its quorum while
-one reboots, and the API server is down, which --allow-downtime accepts. Pods with emptyDir
-volumes are evicted only with --delete-emptydir-data. Without an inventory, --address NODE=ADDR
-names the nodes, and --image is needed. The command needs an operator client file or the secrets
-file.`
+Run again, the command continues where it stopped, and --retry-failed installs the image once more
+on nodes that fell back from it. How chalkos works describes a node's upgrade,
+https://trevex.github.io/chalkos/how-it-works/node/upgrades/, and the roll through a cluster,
+https://trevex.github.io/chalkos/how-it-works/kubernetes/upgrades/. The command needs an operator
+client file or the secrets file.`
 
 const rotateLong = `Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
-status before the next one starts: accept (every node trusts the new value besides the old one),
-switch (the new value issues or signs), refresh (what the old value issued is issued again) and,
-with --finish, finish (the old value is removed, and whatever it issued is refused from then on).
+status before the next one starts: accept, switch, refresh and, with --finish, finish. A rotation
+that stopped, at an unreachable node for example, or paused for the operator continues with
+--resume. How chalkos works describes the phases:
+https://trevex.github.io/chalkos/how-it-works/node/certificates/#a-rotation-replaces-a-ca-in-four-phases
+
 The secrets file records the phase reached and is updated in place, keeping its previous version
-as <file>.prev, unless --out names a new file; an encrypted file is encrypted again to the
-recipients it records inside, which --recipient replaces. A rotation that stopped (at an
-unreachable node, for example) or paused for the operator continues with --resume. One rotation
-runs at a time, and one chalkctl command at a time changes the secrets file, holding <file>.lock.
-Nodes revoked with chalkctl node revoke are skipped and named: before each phase, rotate reads
-them from the first control plane that says which nodes are revoked, and it stops while none
-does. A cluster none of whose control planes was bootstrapped yet has revoked no node.
---ignore-revoked rotates without the list, as while the API server is down or the control planes
-run a chalkd from before node revocation: every node of the inventory takes part, so remove
-revoked nodes from the inventory first, or they receive the new value too. A node unrevoked
-between two runs of a rotation takes part from the next run on, but it missed the phases it was
-skipped in, and the rotation may stop at it; unrevoke nodes before or after a rotation, not while
-one is paused. The command needs the secrets file.`
+as <file>.prev, unless --out names a new file. An encrypted file is encrypted again to the
+recipients it records, which --recipient replaces. One rotation runs at a time, and one chalkctl
+command at a time changes the secrets file, holding <file>.lock.
+
+Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while no control plane
+says which nodes are revoked, unless none was bootstrapped yet. --ignore-revoked rotates without the list, and every node of the
+inventory takes part, so remove revoked nodes from the inventory first. The command needs the
+secrets file.`
 
 const nodeRenewLong = `Issues the node a new node certificate and key from the node CA and delivers them, also once the
 node's own certificate expired. Such a node is verified by the OS CA as of its certificate's
@@ -441,17 +382,17 @@ certificate expired cannot answer; --force renews without asking. The command ne
 file.`
 
 const validateLong = `Checks the config of the nodes named, or of every node of the inventory, as each node would
-check it on its image: the files the inventory gives the node form its set, every document is
-checked against the schemas of the node's image in the inventory, its directory's or those of
-the contract layer of its image in a registry, whose tag chalkctl resolves to a digest once per
-command, and the set is translated as the node translates it. The image's change rules that read
-no facts about a node run too, without a running config to compare with: the rules of kinds and
-the rules of fields that do not compare with the running value. Before any node, it checks that
-every node whose files hold a Kubernetes Cluster document holds the same Cluster spec and the same
-Flannel spec or none, as every command that reads the inventory does. It prints a line for each
-node whose config is valid, with the digest of an image in a registry, and names each node whose
-config is not, and warns of a node whose SystemDisk leaves STATE, which holds its keys and secrets,
-unencrypted. It reaches no node and needs no secrets file or client file.`
+check it on its image: the set the inventory gives the node, every document against the schemas of
+the node's image in the inventory, and the set's translation. The image's change rules that read no
+facts and compare with no running value run too. Every node whose files hold a Kubernetes Cluster
+document must hold the same Cluster spec, and the same Flannel spec or none. How chalkos works
+describes the checks:
+https://trevex.github.io/chalkos/how-it-works/node/config/#chalkctl-and-chalkd-both-check-the-config
+
+The command prints a line for each node whose config is valid, with the digest of an image in a
+registry, names each node whose config is not, and warns of a node whose SystemDisk leaves STATE,
+which holds its keys and secrets, unencrypted. It reaches no node and needs no secrets file or
+client file.`
 
 const validateExample = `  # Check every node of chalkos.yaml.
   chalkctl validate

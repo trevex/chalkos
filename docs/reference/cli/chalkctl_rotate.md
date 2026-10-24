@@ -10,23 +10,20 @@ chalkctl rotate <kind> [flags]
 ```
 
 Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
-status before the next one starts: accept (every node trusts the new value besides the old one),
-switch (the new value issues or signs), refresh (what the old value issued is issued again) and,
-with --finish, finish (the old value is removed, and whatever it issued is refused from then on).
+status before the next one starts: accept, switch, refresh and, with --finish, finish. A rotation
+that stopped, at an unreachable node for example, or paused for the operator continues with
+--resume. How chalkos works describes the phases:
+[https://trevex.github.io/chalkos/how-it-works/node/certificates/#a-rotation-replaces-a-ca-in-four-phases](../../how-it-works/node/certificates.md#a-rotation-replaces-a-ca-in-four-phases)
+
 The secrets file records the phase reached and is updated in place, keeping its previous version
-as &lt;file>.prev, unless --out names a new file; an encrypted file is encrypted again to the
-recipients it records inside, which --recipient replaces. A rotation that stopped (at an
-unreachable node, for example) or paused for the operator continues with --resume. One rotation
-runs at a time, and one chalkctl command at a time changes the secrets file, holding &lt;file>.lock.
-Nodes revoked with chalkctl node revoke are skipped and named: before each phase, rotate reads
-them from the first control plane that says which nodes are revoked, and it stops while none
-does. A cluster none of whose control planes was bootstrapped yet has revoked no node.
---ignore-revoked rotates without the list, as while the API server is down or the control planes
-run a chalkd from before node revocation: every node of the inventory takes part, so remove
-revoked nodes from the inventory first, or they receive the new value too. A node unrevoked
-between two runs of a rotation takes part from the next run on, but it missed the phases it was
-skipped in, and the rotation may stop at it; unrevoke nodes before or after a rotation, not while
-one is paused. The command needs the secrets file.
+as &lt;file>.prev, unless --out names a new file. An encrypted file is encrypted again to the
+recipients it records, which --recipient replaces. One rotation runs at a time, and one chalkctl
+command at a time changes the secrets file, holding &lt;file>.lock.
+
+Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while no control plane
+says which nodes are revoked, unless none was bootstrapped yet. --ignore-revoked rotates without the list, and every node of the
+inventory takes part, so remove revoked nodes from the inventory first. The command needs the
+secrets file.
 
 ## Flags
 

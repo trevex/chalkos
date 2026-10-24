@@ -13,31 +13,20 @@ Installs a node that waits in maintenance mode: a machine that booted the instal
 node's image booted for the first time. The node serves a self-signed certificate in maintenance
 mode, so chalkctl verifies it by the SHA-256 fingerprint the node prints on its console
 (--fingerprint), or accepts any certificate with --insecure and prints the fingerprint it saw,
-which can be checked against the console afterwards; the secrets go over a second connection
-pinned to that fingerprint.
+which can be checked against the console afterwards.
 
-chalkctl sends the node its config, the documents of the files the inventory gives it, checked
-against the schemas of the image it installs, a node certificate, the OS CA, the secret of its
-encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node, its
-Kubernetes share. A node that runs its image already installs in place. A node that runs the
-installer gets the image as well: the image --image names, or the node's image in the inventory,
-signed with chalkbuild sign when the machine enforces Secure Boot. An image from a directory
-follows the header over the connection. An image in a registry the installer pulls itself, by the
-digest chalkctl resolved, through the Mirror of the registry's host and with the Registry
-documents of the config chalkctl sends, and it takes the image's schemas, image.json and partition
-definitions from the image's contract layer. With Secure Boot on, the installer checks the UKI and
-the boot loader against the firmware's db
-and dbx. It writes the image to the disk the node's SystemDisk names: a disk on which blkid finds
-no signature, or one holding an unfinished install of the node, which it continues; any other
-disk only with --wipe-disk. The node reboots into the installed image. The node certificate
-carries the node's name in the inventory, which stays the node's name until it is reinstalled.
+chalkctl sends the node its config, checked against the schemas of the image it installs, a node
+certificate with the node's name in the inventory, the OS CA, the secret of its volumes' second
+keyslot and, on a Kubernetes node, its Kubernetes share. A node that runs its image already
+installs in place. A node that runs the installer also gets the image --image names, or the node's
+image in the inventory, and writes it to the disk its SystemDisk names: a disk on which blkid finds
+no signature, one holding an unfinished install of the node, or any disk with --wipe-disk. The node
+then reboots into the image. How chalkos works describes an install:
+[https://trevex.github.io/chalkos/how-it-works/node/overview/#an-install-turns-a-machine-in-maintenance-mode-into-a-node](../../how-it-works/node/overview.md#an-install-turns-a-machine-in-maintenance-mode-into-a-node)
 
-A name revoked with chalkctl node revoke is refused until chalkctl node unrevoke lets it back in:
-chalkctl first asks the other control planes of the inventory for the revoked nodes. It also
-refuses while control planes were bootstrapped and none says which nodes are revoked. A control
-plane that does not answer as an installed node counts as not installed yet, so the cluster's
-first nodes install while the others wait. --force installs without asking. The command needs the
-secrets file.
+A name revoked with chalkctl node revoke is refused, as is any node while control planes were
+bootstrapped and none says which nodes are revoked; --force installs without asking. The command
+needs the secrets file.
 
 ## Flags
 

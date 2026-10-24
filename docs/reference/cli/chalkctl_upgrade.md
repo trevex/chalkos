@@ -9,46 +9,25 @@ description: "Install new images on the cluster's nodes, one control plane at a 
 chalkctl upgrade [flags]
 ```
 
-Installs on each node a new image: control planes one at a time, each only while etcd keeps its
+Installs a new image on each node: control planes one at a time, each only while etcd keeps its
 quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
-Without --image each node (every node of the inventory, or those --nodes names) gets the image the
-inventory names for it, which must be the build whose root hash its directory's metadata.json
-names, as status compares nodes with it: rebuild the image or link its directory again otherwise.
-Each node pulls an image the inventory names in a registry itself, by the digest chalkctl resolved
-its reference to, through the node's Mirror of the registry's host and with its Registry
-documents. A node that runs on another platform than its image stops the run before any node is
-sent anything. With --image the nodes that run the image's variant get it, or
-those --nodes names whatever they run, and nodes on another platform are skipped and named.
-A node may get an image of another variant than the one it runs, which chalkctl prints.
+Without --image, each node, or each node --nodes names, gets the image the inventory names for it;
+with --image, the nodes that run the image's variant get it, or those --nodes names. A node gets
+the image in its inactive slot, is cordoned and drained, reboots into the image, and is uncordoned
+once its boot was found healthy and it is Ready. A node that falls back to the image before stops
+the run.
 
-Each node gets its config with the image: the documents of the files the inventory gives it,
-checked against the image before any node is drained. The node checks them against the image
-again and keeps them for it, so a fallback boots the image before with its own config. Storage
-changes count against the node's storage as with apply-config: a destructive one is refused, a new
-volume is created before the image boots, enrolled with the recovery key, which only the secrets
-file gives, or the password --password-file holds. chalkctl asks for each node's password before
-it drains the first node, one node after the other. Without an inventory a node carries the config
-of the image it runs over, checked against the new image. A node that has the image staged already
-gets it again only when the config kept for it is not the inventory's. Before it sends a node the
-image, chalkctl prints a line of what the node's config changes against the config of the image
-it runs, as apply-config does; --diff prints the whole diff for every node and changes nothing.
+Each node gets its config with the image, checked against it before any node is drained, and
+chalkctl prints a line of what it changes; --diff prints the whole diff and changes nothing.
+Delivering config needs the admin role: with an operator client file, each node carries its own
+config over. A new volume is enrolled with the recovery key, which only the secrets file gives, or
+the password --password-file holds.
 
-Delivering config with the upgrade needs the admin role, which the secrets file and an admin
-client file grant. With an operator client file chalkctl sends no config, says so once when there
-is an inventory, and each node carries its own over; --diff needs the admin role.
-
-A node gets the image in its inactive slot, is cordoned and drained within its pods'
-PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy
-and the node is Ready. A node whose image never becomes healthy falls back to the image before,
-and the run stops there, showing what that boot logged; with --retry-failed a node that fell
-back from the image before gets it once more.
-
-Run again, the command skips nodes that run the image and continues one it stopped at; it
-uncordons only nodes it cordoned itself. etcd of one or two control planes loses its quorum while
-one reboots, and the API server is down, which --allow-downtime accepts. Pods with emptyDir
-volumes are evicted only with --delete-emptydir-data. Without an inventory, --address NODE=ADDR
-names the nodes, and --image is needed. The command needs an operator client file or the secrets
-file.
+Run again, the command continues where it stopped, and --retry-failed installs the image once more
+on nodes that fell back from it. How chalkos works describes a node's upgrade,
+[https://trevex.github.io/chalkos/how-it-works/node/upgrades/](../../how-it-works/node/upgrades.md), and the roll through a cluster,
+[https://trevex.github.io/chalkos/how-it-works/kubernetes/upgrades/](../../how-it-works/kubernetes/upgrades.md). The command needs an operator
+client file or the secrets file.
 
 ## Flags
 
