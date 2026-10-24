@@ -372,14 +372,19 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		if err := checkInstallImage(t, img); err != nil {
 			return err
 		}
-		header.Image, header.Source = img.header, img.source
+		header.Image = img.header
 		// The installer runs another image than the one it installs, so it gets that image's
 		// contract with the config; an image it pulls brings its contract along.
-		if img.source == nil {
-			header.Schemas, header.KubernetesImage = c.files, c.kubernetesImage
-			if header.SystemDefinitions, err = readDefinitions(img.definitions); err != nil {
+		if img.source != nil {
+			header.Origin = &nodev1.InstallHeader_Source{Source: img.source}
+		} else {
+			definitions, err := readDefinitions(img.definitions)
+			if err != nil {
 				return err
 			}
+			header.Origin = &nodev1.InstallHeader_Contract{Contract: &nodev1.ImageContract{
+				SystemDefinitions: definitions, Schemas: c.files, KubernetesImage: c.kubernetesImage,
+			}}
 		}
 	}
 	d, err := t.cluster.deliveryFor(t.name, c)

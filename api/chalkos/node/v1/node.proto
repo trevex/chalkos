@@ -277,39 +277,41 @@ message InstallHeader {
     // Target disk, which the installer lays out and writes the streamed image to.
     DiskReference disk = 6;
   }
-  // The image the installer writes to the target disk; it must name the boot loader. Its parts
-  // follow as chunks unless source names where the installer pulls them from. Installer only.
+  // The image the installer writes to the target disk; it must name the boot loader. Installer
+  // only.
   ImageHeader image = 7;
   // Whether the installer may replace what the target disk holds, including an installed node.
   bool wipe_disk = 8;
-  // The image's repart definitions of the system region (ESP, slots A and B, STATE) by file
-  // name, which the installer lays out the target disk with; installer only. Each image chooses
-  // its partition sizes, so the installer's own may not fit; absent when source names an image in
-  // a registry, whose contract layer holds them.
-  map<string, string> system_definitions = 9;
   // The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA
   // certificate and a kubelet client certificate for a worker. Empty for an image without
   // Kubernetes.
-  bytes kubernetes_share = 10;
+  bytes kubernetes_share = 9;
   // The node's config: YAML documents separated by ---. chalkd checks them as a set against the
   // schemas of the image it installs, fills in their defaults, keeps them on STATE and translates
   // them into what the node applies at boot. Required.
-  string config = 11;
-  // The schemas of the image the installer writes, by file name, as its image directory's
-  // schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses
-  // the running image's; absent when source names an image in a registry, whose contract layer
-  // holds them.
-  map<string, bytes> schemas = 12;
-  // The image.json of the image the installer writes, as its image directory holds it; empty for
-  // an image without Kubernetes. Installer only; absent when source names an image in a
-  // registry, whose contract layer holds them.
-  bytes kubernetes_image = 13;
-  // Where the installer takes the image's parts from. Absent, they follow the header as chunks.
-  // For an image in a registry, the installer pulls them and takes the image's schemas,
-  // image.json and repart definitions from its contract layer; the request then carries nothing
-  // after the header, and the header no schemas, kubernetes_image or system_definitions.
-  // Installer only.
-  ImageSource source = 14;
+  string config = 10;
+  // Where the installer takes the contract and the parts of the image it writes from.
+  oneof origin {
+    // The contract of an image whose parts follow the header as chunks. Installer only: in place,
+    // chalkd checks the config against the running image.
+    ImageContract contract = 11;
+    // An image in a registry, which the installer pulls. Its contract layer holds the image's
+    // contract, and the request carries nothing after the header. Installer only.
+    ImageSource source = 12;
+  }
+}
+
+// The contract of the image an installer writes, as its image directory holds it.
+message ImageContract {
+  // The image's repart definitions of the system region (ESP, slots A and B, STATE) by file
+  // name, which the installer lays out the target disk with. Each image chooses its partition
+  // sizes, so the installer's own may not fit.
+  map<string, string> system_definitions = 1;
+  // The image's schemas by file name, as its image directory's schemas/ holds them; the config is
+  // checked against them.
+  map<string, bytes> schemas = 2;
+  // The image's image.json; empty for an image without Kubernetes.
+  bytes kubernetes_image = 3;
 }
 
 // The target of an install in place, which the node's own image runs from its boot disk.
@@ -509,7 +511,7 @@ message StatusResponse {
   string platform = 9;
   // SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents
   // in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by
-  // its own SHA-256. Empty on a node that runs no config, as one installed by an earlier chalkos.
+  // its own SHA-256. Empty on a node that runs no config.
   string config_version = 10;
   // The version of the config kept for the image staged to boot next, as config_version gives
   // the running one's; empty without a staged image or config for it.

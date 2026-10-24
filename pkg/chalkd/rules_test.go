@@ -136,8 +136,8 @@ func TestInstallRulesThatDoNotCompile(t *testing.T) {
 	}
 	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1}}
-	h.Schemas = fixtureSchemas(t)
-	h.Schemas["storage.chalkos.dev_v1alpha1_SystemDisk.json"] = withBrokenRule(t, h.Schemas["storage.chalkos.dev_v1alpha1_SystemDisk.json"])
+	contractOf(h).Schemas = fixtureSchemas(t)
+	contractOf(h).Schemas["storage.chalkos.dev_v1alpha1_SystemDisk.json"] = withBrokenRule(t, contractOf(h).Schemas["storage.chalkos.dev_v1alpha1_SystemDisk.json"])
 	err := sendInstall(t, s, h, nil)
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the image's rules: SystemDisk: rule ") {
 		t.Errorf("err = %v", err)

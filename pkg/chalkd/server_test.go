@@ -21,6 +21,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -717,6 +719,43 @@ func TestEveryProcedureHasPermissions(t *testing.T) {
 	}
 	if len(permissions) != methods.Len() {
 		t.Errorf("permissions has %d entries for %d procedures", len(permissions), methods.Len())
+	}
+}
+
+// TestRPCCommentsNamePermissions holds each RPC's comment in node.proto, which the API reference
+// shows, to the modes and role the permissions table gives the RPC.
+func TestRPCCommentsNamePermissions(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "api", "chalkos", "node", "v1", "node.proto"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	available := regexp.MustCompile(`Available in (maintenance and normal|maintenance|normal) mode to (readers|operators|admins|nodes)\.`)
+	rpc := regexp.MustCompile(`^rpc (\w+)\(`)
+	modes := map[string][]nodev1.Mode{"maintenance and normal": anyMode, "maintenance": maintenanceOnly, "normal": normalOnly}
+	roles := map[string]string{"readers": pki.RoleReader, "operators": pki.RoleOperator, "admins": pki.RoleAdmin, "nodes": pki.RoleNode}
+	var comment []string
+	rpcs := 0
+	for line := range strings.Lines(string(data)) {
+		line = strings.TrimSpace(line)
+		if text, ok := strings.CutPrefix(line, "//"); ok {
+			comment = append(comment, strings.TrimSpace(text))
+			continue
+		}
+		if m := rpc.FindStringSubmatch(line); m != nil {
+			rpcs++
+			procedure := "/" + nodev1connect.NodeServiceName + "/" + m[1]
+			a := available.FindStringSubmatch(strings.Join(comment, " "))
+			p := permissions[procedure]
+			if a == nil {
+				t.Errorf("the comment of %s names no modes and role", m[1])
+			} else if !slices.Equal(modes[a[1]], p.modes) || roles[a[2]] != p.role {
+				t.Errorf("the comment of %s says %q, the permissions are %v to %s", m[1], a[0], p.modes, p.role)
+			}
+		}
+		comment = nil
+	}
+	if rpcs != len(permissions) {
+		t.Errorf("node.proto declares %d RPCs, permissions has %d entries", rpcs, len(permissions))
 	}
 }
 

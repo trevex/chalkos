@@ -75,11 +75,11 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 
 // installConfig translates the config an install header delivers into the identity of the node
 // for the image installed, and returns the config slot of that image, identity included. In place,
-// that image is the running one; from the installer, the header describes it. The config meets
-// that image's rules with no running config to compare with: rules of a field that read oldSelf
-// do not run, the rules of a kind see no oldDocuments, and every fact is null: an install in place
-// that is tried again must not read what the attempt before it left on STATE.
-func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (slot.Stored, error) {
+// that image is the running one; from the installer, the header and contract describe it. The
+// config meets that image's rules with no running config to compare with: rules of a field that
+// read oldSelf do not run, the rules of a kind see no oldDocuments, and every fact is null:
+// an install in place that is tried again must not read what the attempt before it left on STATE.
+func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, contract *nodev1.ImageContract) (slot.Stored, error) {
 	if h.Config == "" {
 		return slot.Stored{}, failed(connect.CodeInvalidArgument, "the header delivers no config")
 	}
@@ -93,8 +93,8 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (sl
 	)
 	switch {
 	case s.Installer:
-		t, schemas, err = headerTarget(h)
-	case len(h.Schemas) > 0 || len(h.KubernetesImage) > 0:
+		t, schemas, err = headerTarget(h, contract)
+	case contract != nil:
 		err = failed(connect.CodeInvalidArgument, "an install in place checks the config against the running image; the header must carry no schemas or image.json")
 	default:
 		t, schemas, err = s.runningTarget()
@@ -154,20 +154,20 @@ func headerName(h *nodev1.InstallHeader) (string, error) {
 	return cert.Subject.CommonName, nil
 }
 
-// headerTarget is the image an install from the installer writes, as its header describes it,
-// and the schemas the header carries for it.
-func headerTarget(h *nodev1.InstallHeader) (config.Target, *schema.Schemas, error) {
+// headerTarget is the image an install from the installer writes, as its header and contract
+// describe it, and the contract's schemas.
+func headerTarget(h *nodev1.InstallHeader, contract *nodev1.ImageContract) (config.Target, *schema.Schemas, error) {
 	if h.Image == nil {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the installer needs the node's image to write to the target disk")
 	}
-	if len(h.Schemas) == 0 {
+	if len(contract.GetSchemas()) == 0 {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the header carries config but not the schemas of the image it installs")
 	}
-	schemas, err := schema.LoadFiles(h.Schemas)
+	schemas, err := schema.LoadFiles(contract.GetSchemas())
 	if err != nil {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's schemas: %v", err)
 	}
-	t, err := imageTarget(h.Image.GetPlatform(), h.KubernetesImage)
+	t, err := imageTarget(h.Image.GetPlatform(), contract.GetKubernetesImage())
 	return t, schemas, err
 }
 

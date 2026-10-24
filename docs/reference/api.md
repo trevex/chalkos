@@ -247,7 +247,7 @@ The response of Status: the state of an installed node.
 | `trust` | list of TrustStatus | What the node trusts and issues with, by fingerprint. |
 | `boot` | BootStatus | The image the node booted, and what upgrades installed beside it. |
 | `platform` | string | The platform the running image was built for. |
-| `config_version` | string | SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by its own SHA-256. Empty on a node that runs no config, as one installed by an earlier chalkos. |
+| `config_version` | string | SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by its own SHA-256. Empty on a node that runs no config. |
 | `staged_config_version` | string | The version of the config kept for the image staged to boot next, as config_version gives the running one's; empty without a staged image or config for it. |
 | `outputs` | list of OutputStatus | The image's outputs, by name. |
 
@@ -721,6 +721,16 @@ A piece of an image's parts, which follow the header back to back in the header'
 | ----- | ---- | ----------- |
 | `data` | bytes | The next bytes of the parts; a chunk may end inside a part or span two. chalkctl sends 1 MiB per chunk. |
 
+### ImageContract { #message-imagecontract }
+
+The contract of the image an installer writes, as its image directory holds it.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `system_definitions` | map of string | The image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with. Each image chooses its partition sizes, so the installer's own may not fit. |
+| `schemas` | map of bytes | The image's schemas by file name, as its image directory's schemas/ holds them; the config is checked against them. |
+| `kubernetes_image` | bytes | The image's image.json; empty for an image without Kubernetes. |
+
 ### ImageHeader { #message-imageheader }
 
 An image as install and upgrade send it. Its parts follow the header as chunks, in this order:
@@ -779,16 +789,14 @@ What an install delivers: the node's credentials and config, the target and the 
 | `fallback_secret` | string | Recovery key or password enrolled as the second keyslot of every encrypted volume; empty when the node's fallback is none. |
 | `in_place` | InPlace, oneof target | Target of a node whose image already runs from its boot disk. |
 | `disk` | DiskReference, oneof target | Target disk, which the installer lays out and writes the streamed image to. |
-| `image` | ImageHeader | The image the installer writes to the target disk; it must name the boot loader. Its parts follow as chunks unless source names where the installer pulls them from. Installer only. |
+| `image` | ImageHeader | The image the installer writes to the target disk; it must name the boot loader. Installer only. |
 | `wipe_disk` | bool | Whether the installer may replace what the target disk holds, including an installed node. |
-| `system_definitions` | map of string | The image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with; installer only. Each image chooses its partition sizes, so the installer's own may not fit; absent when source names an image in a registry, whose contract layer holds them. |
 | `kubernetes_share` | bytes | The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA certificate and a kubelet client certificate for a worker. Empty for an image without Kubernetes. |
 | `config` | string | The node's config: YAML documents separated by ---. chalkd checks them as a set against the schemas of the image it installs, fills in their defaults, keeps them on STATE and translates them into what the node applies at boot. Required. |
-| `schemas` | map of bytes | The schemas of the image the installer writes, by file name, as its image directory's schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses the running image's; absent when source names an image in a registry, whose contract layer holds them. |
-| `kubernetes_image` | bytes | The image.json of the image the installer writes, as its image directory holds it; empty for an image without Kubernetes. Installer only; absent when source names an image in a registry, whose contract layer holds them. |
-| `source` | ImageSource | Where the installer takes the image's parts from. Absent, they follow the header as chunks. For an image in a registry, the installer pulls them and takes the image's schemas, image.json and repart definitions from its contract layer; the request then carries nothing after the header, and the header no schemas, kubernetes_image or system_definitions. Installer only. |
+| `contract` | ImageContract, oneof origin | The contract of an image whose parts follow the header as chunks. Installer only: in place, chalkd checks the config against the running image. |
+| `source` | ImageSource, oneof origin | An image in a registry, which the installer pulls. Its contract layer holds the image's contract, and the request carries nothing after the header. Installer only. |
 
-Field types: [InPlace](#message-inplace), [DiskReference](#message-diskreference), [ImageHeader](#message-imageheader), [ImageSource](#message-imagesource).
+Field types: [InPlace](#message-inplace), [DiskReference](#message-diskreference), [ImageHeader](#message-imageheader), [ImageContract](#message-imagecontract), [ImageSource](#message-imagesource).
 
 ### KubernetesStatus { #message-kubernetesstatus }
 

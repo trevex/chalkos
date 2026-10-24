@@ -313,7 +313,7 @@ func pulledInstall(t *testing.T, host, docs string) *nodev1.InstallHeader {
 	h.Config = workerConfig + "---\n" + docs
 	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: bytes.Repeat([]byte{0xab}, 32),
 		Store: imagePart("store"), HashTree: imagePart("hash tree"), Uki: imagePart("uki"), BootLoader: imagePart("boot loader")}
-	h.Source = &nodev1.ImageSource{Source: &nodev1.ImageSource_Oci{Oci: &nodev1.RegistryImage{Reference: ref}}}
+	h.Origin = &nodev1.InstallHeader_Source{Source: &nodev1.ImageSource{Source: &nodev1.ImageSource_Oci{Oci: &nodev1.RegistryImage{Reference: ref}}}}
 	return h
 }
 
@@ -409,16 +409,13 @@ func TestInstallRefusesAPull(t *testing.T) {
 		want    string
 		inPlace bool
 	}{
-		"without a reference":     {edit: func(h *nodev1.InstallHeader) { h.Source.GetOci().Reference = "" }, code: connect.CodeInvalidArgument, want: "names no image in a registry"},
+		"without a reference":     {edit: func(h *nodev1.InstallHeader) { h.GetSource().GetOci().Reference = "" }, code: connect.CodeInvalidArgument, want: "names no image in a registry"},
 		"without config":          {edit: func(h *nodev1.InstallHeader) { h.Config = "" }, code: connect.CodeInvalidArgument, want: "the header delivers no config"},
 		"without a boot loader":   {edit: func(h *nodev1.InstallHeader) { h.Image.BootLoader = nil }, code: connect.CodeInvalidArgument, want: "brings no boot loader"},
 		"of an invalid image":     {edit: func(h *nodev1.InstallHeader) { h.Image.ImageId = "" }, code: connect.CodeInvalidArgument, want: "the image: the image's ID and platform are required"},
-		"with schemas":            {edit: func(h *nodev1.InstallHeader) { h.Schemas = fixtureSchemas(t) }, code: connect.CodeInvalidArgument, want: "takes the schemas, image.json and repart definitions from the image's contract layer"},
-		"with image.json":         {edit: func(h *nodev1.InstallHeader) { h.KubernetesImage = []byte(testImage) }, code: connect.CodeInvalidArgument, want: "the header must carry none"},
-		"with definitions":        {edit: func(h *nodev1.InstallHeader) { h.SystemDefinitions = map[string]string{"x.conf": ""} }, code: connect.CodeInvalidArgument, want: "the header must carry none"},
 		"with chunks":             {chunk: true, code: connect.CodeInvalidArgument, want: "an install that pulls its image carries no chunks"},
 		"in place":                {inPlace: true, code: connect.CodeInvalidArgument, want: "an install in place takes no image"},
-		"with a reference by tag": {edit: func(h *nodev1.InstallHeader) { h.Source.GetOci().Reference = host + "/lab/worker-metal:v1" }, code: connect.CodeInvalidArgument, want: "is no image reference by digest"},
+		"with a reference by tag": {edit: func(h *nodev1.InstallHeader) { h.GetSource().GetOci().Reference = host + "/lab/worker-metal:v1" }, code: connect.CodeInvalidArgument, want: "is no image reference by digest"},
 		"with bad Registry documents": {edit: func(h *nodev1.InstallHeader) {
 			h.Config = workerConfig + "---\n" + strings.Replace(registryConfig(host), "key: token", "key: other", 1)
 		}, code: connect.CodeInvalidArgument, want: "the Registry and Mirror documents"},

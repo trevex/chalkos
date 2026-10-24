@@ -13,6 +13,8 @@ let
     ../pkg
     ../test/e2e
     ../test/fixtures
+    # node.proto, whose RPC comments a chalkd test holds to the permissions table.
+    ../api/chalkos/node/v1/node.proto
     # The lab template's YAML, which a chalklab test reads.
     (lib.fileset.fileFilter (f: f.hasExt "yaml") ../templates/lab)
   ];

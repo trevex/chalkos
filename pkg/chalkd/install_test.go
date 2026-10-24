@@ -199,9 +199,9 @@ func TestInstallFromParts(t *testing.T) {
 		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{2}}, HashTree: &nodev1.ImagePart{Size: 3, Sha256: []byte{4}},
 		Uki: &nodev1.ImagePart{Size: 5, Sha256: []byte{6}}, BootLoader: &nodev1.ImagePart{Size: 7, Sha256: []byte{8}},
 	}
-	h.SystemDefinitions = map[string]string{"50-state.conf": "[Partition]\nLabel=state\n"}
+	contractOf(h).SystemDefinitions = map[string]string{"50-state.conf": "[Partition]\nLabel=state\n"}
 	h.WipeDisk = true
-	h.Schemas = fixtureSchemas(t)
+	contractOf(h).Schemas = fixtureSchemas(t)
 
 	if err := sendInstall(t, s, h, parts); err != nil {
 		t.Fatal(err)
@@ -364,8 +364,8 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 	}
 	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Config = workerConfig
-	h.Schemas = fixtureSchemas(t)
-	h.KubernetesImage = []byte(testImage)
+	contractOf(h).Schemas = fixtureSchemas(t)
+	contractOf(h).KubernetesImage = []byte(testImage)
 	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64"}
 
 	if err := sendInstall(t, s, h, nil); err != nil {
@@ -386,7 +386,7 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 func TestInstallRefusesConfig(t *testing.T) {
 	schemas := fixtureSchemas(t)
 	fromInstaller := func(h *nodev1.InstallHeader) {
-		h.Config, h.Schemas = workerConfig, schemas
+		h.Config, contractOf(h).Schemas = workerConfig, schemas
 		h.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}
 		h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal"}
 	}
@@ -399,7 +399,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 			h.Config = strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: vda}}", 1)
 		}, `SystemDisk "system"`},
 		"in place with schemas": {false, func(h *nodev1.InstallHeader) {
-			h.Config, h.Schemas = baseConfig, map[string][]byte{"x.json": []byte("{}")}
+			h.Config, contractOf(h).Schemas = baseConfig, map[string][]byte{"x.json": []byte("{}")}
 		}, "running image"},
 		"from the installer without schemas": {true, func(h *nodev1.InstallHeader) {
 			h.Config = baseConfig
@@ -409,12 +409,12 @@ func TestInstallRefusesConfig(t *testing.T) {
 		"without config": {false, func(h *nodev1.InstallHeader) { h.Config = "" }, "the header delivers no config"},
 		"from the installer with an invalid image.json": {true, func(h *nodev1.InstallHeader) {
 			fromInstaller(h)
-			h.KubernetesImage = []byte(`{"version": "1.37.1"`)
+			contractOf(h).KubernetesImage = []byte(`{"version": "1.37.1"`)
 		}, "image.json"},
 		"from the installer with a schema outside schemas/": {true, func(h *nodev1.InstallHeader) {
 			fromInstaller(h)
-			h.KubernetesImage = []byte(testImage)
-			h.Schemas = map[string][]byte{"../x.json": []byte("{}")}
+			contractOf(h).KubernetesImage = []byte(testImage)
+			contractOf(h).Schemas = map[string][]byte{"../x.json": []byte("{}")}
 		}, `"../x.json" is not the name of a schema file`},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -464,4 +464,13 @@ func TestInstallInPlaceChecksTheOutputs(t *testing.T) {
 			}
 		})
 	}
+}
+
+// contractOf is the image contract an install header carries, which it gives one first if it
+// carries none.
+func contractOf(h *nodev1.InstallHeader) *nodev1.ImageContract {
+	if h.GetContract() == nil {
+		h.Origin = &nodev1.InstallHeader_Contract{Contract: &nodev1.ImageContract{}}
+	}
+	return h.GetContract()
 }
