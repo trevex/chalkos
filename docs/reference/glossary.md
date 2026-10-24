@@ -43,7 +43,7 @@ uses a try; with none left, systemd-boot boots the previous image. The number of
 The one-time start of a cluster's etcd on its first [control plane](#control-plane). It runs
 with [`chalkctl bootstrap`](cli/chalkctl_bootstrap.md) and is refused on a node that is bootstrapped or holds etcd data, so a cluster is never initialised
 twice; further control planes join on their own. See
-[Kubernetes on chalkos](../how-it-works/kubernetes/kubernetes.md).
+[The control plane](../how-it-works/kubernetes/control-plane.md).
 
 ## chalkbuild { #chalkbuild }
 
@@ -169,7 +169,7 @@ it from the image it wrote. See [Image and partition layout](image-layout.md).
 A node that runs etcd and the Kubernetes API server, controller-manager and scheduler. Its `Node`
 document sets `spec.type: controlplane`. It runs those components as static pods that chalkd
 renders, besides containerd and the kubelet, and it is the only kind of node chalkctl delivers
-`Addon` documents to. See [Kubernetes on chalkos](../how-it-works/kubernetes/kubernetes.md).
+`Addon` documents to. See [The control plane](../how-it-works/kubernetes/control-plane.md).
 
 ## db and dbx { #db-and-dbx }
 
@@ -207,8 +207,8 @@ systemd-boot and the [UKIs](#uki) of both [slots](#slot), and is 1 GiB by defaul
 A control plane that belongs to the cluster's etcd. It is a learner while it catches up and a
 voter after. A control plane pins its addresses on [STATE](#state) when it bootstraps, or before
 it adds itself as a learner, and every later boot waits for exactly them;
-[`chalkctl etcd leave`](cli/chalkctl_etcd_leave.md) undoes both. See [Kubernetes on
-chalkos](../how-it-works/kubernetes/kubernetes.md).
+[`chalkctl etcd leave`](cli/chalkctl_etcd_leave.md) undoes both. See [The control
+plane](../how-it-works/kubernetes/control-plane.md).
 
 ## Extension { #extension }
 <!-- abbr: extensions, Extensions -->
@@ -606,4 +606,4 @@ A node that runs containerd and the kubelet but no control plane components. Its
 sets `spec.type: worker`. Its kubelet joins the cluster at the
 [cluster endpoint](#cluster-endpoint) with the certificate in its
 [Kubernetes share](#kubernetes-share). See
-[Kubernetes on chalkos](../how-it-works/kubernetes/kubernetes.md).
+[How Kubernetes runs on a node](../how-it-works/kubernetes/overview.md).

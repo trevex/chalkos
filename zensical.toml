@@ -74,7 +74,11 @@ nav = [
       "how-it-works/node/upgrades.md",
     ] },
     { "Kubernetes layer" = [
-      "how-it-works/kubernetes/kubernetes.md",
+      "how-it-works/kubernetes/overview.md",
+      "how-it-works/kubernetes/control-plane.md",
+      "how-it-works/kubernetes/networking.md",
+      "how-it-works/kubernetes/certificates.md",
+      "how-it-works/kubernetes/upgrades.md",
     ] },
   ] },
   { "Reference" = [
@@ -173,6 +177,7 @@ nav = [
     { "Node API" = "reference/api.md" },
     "reference/image-layout.md",
     "reference/boot.md",
+    "reference/kubernetes.md",
     "reference/ports-and-firewall.md",
     "reference/os-release.md",
     "reference/glossary.md",

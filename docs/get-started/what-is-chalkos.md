@@ -101,7 +101,7 @@ joins without a command: further control planes add themselves to etcd, and
 workers register with the kubelet certificate that install gave
 them. The `type` of a node's `Node` document makes it a control plane or a worker. When the
 `Cluster` document declares a VIP for the API server, chalkd holds
-it on one healthy control plane. See [Kubernetes on chalkos](../how-it-works/kubernetes/kubernetes.md) and
+it on one healthy control plane. See [How Kubernetes runs on a node](../how-it-works/kubernetes/overview.md) and
 [Networking](../how-it-works/node/networking.md).
 
 ## chalkd is the only way in

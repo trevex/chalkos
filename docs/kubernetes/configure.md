@@ -148,8 +148,8 @@ spec:
 
 The components take the flags on every control plane. A flag chalkos also sets takes your value.
 A flag's name holds letters, digits, `_`, `.` and `-`, and starts with a letter or digit.
-[Kubernetes on chalkos](../how-it-works/kubernetes/kubernetes.md#how-does-the-control-plane-run)
-lists the flags chalkos sets.
+[The control plane](../how-it-works/kubernetes/control-plane.md#the-flags-follow-kubeadm-with-a-few-access-choices)
+explains the flags chalkos sets.
 
 The API server's flags that decide who may do what are refused, also when spelt with `_` for `-`:
 `anonymous-auth`, `authentication-config`, `authorization-mode` and
@@ -160,14 +160,8 @@ node cp1: the Kubernetes cluster the documents give: Cluster "default": extraArg
 ```
 
 The API server refuses to start with some flags next to flags chalkos sets, so `chalkctl validate`
-refuses them too:
-
-| Flags | Conflict with |
-| --- | --- |
-| `oidc-issuer-url`, `oidc-client-id`, `oidc-ca-file`, `oidc-username-claim`, `oidc-username-prefix`, `oidc-groups-claim`, `oidc-groups-prefix`, `oidc-signing-algs`, `oidc-required-claim` | `authentication-config` |
-| `authorization-config`, `authorization-policy-file`, `authorization-webhook-config-file` | `authorization-mode=Node,RBAC` |
-| `admission-control` | `enable-admission-plugins` |
-| `service-account-signing-endpoint` | `service-account-signing-key-file` and `service-account-key-file` |
+refuses them too. [Conflicting API server flags](../reference/kubernetes.md#conflicting-api-server-flags)
+lists them.
 
 The error names the flag, the flag it conflicts with and what to do instead:
 
@@ -197,13 +191,8 @@ spec:
 The kubelet's configuration is the same on every node and comes from the cluster. Its flags come
 last on the kubelet's command line, so they override that configuration. chalkos refuses the flags
 it sets itself. They give the kubelet its configuration, credentials, certificates and static pods.
-They also set the node's name, addresses, labels and taints, and who may use the kubelet's API:
-
-`anonymous-auth`, `authentication-token-webhook`, `authorization-mode`, `bootstrap-kubeconfig`,
-`cert-dir`, `client-ca-file`, `config`, `config-dir`, `hostname-override`,
-`image-credential-provider-bin-dir`, `image-credential-provider-config`, `kubeconfig`, `node-ip`,
-`node-labels`, `pod-manifest-path`, `read-only-port`, `register-with-taints`,
-`rotate-certificates`, `tls-cert-file` and `tls-private-key-file`.
+They also set the node's name, addresses, labels and taints, and who may use the kubelet's API.
+[Protected kubelet flags](../reference/kubernetes.md#protected-kubelet-flags) lists them.
 
 A refused flag names its replacement where there is one:
 
@@ -356,5 +345,6 @@ kubelet's journal, `chalkctl logs cp1 --unit=kubelet.service`.
 - [Upgrade Kubernetes](upgrade-kubernetes.md) to a new release.
 - [Change a node's config](../operate/change-config.md) covers previews, refusals and the
   services a change restarts.
-- [Kubernetes on chalkos](../how-it-works/kubernetes/kubernetes.md) explains what runs on each node
-  and what the control plane applies.
+- [How Kubernetes runs on a node](../how-it-works/kubernetes/overview.md) explains what runs on each
+  node, and [The control plane](../how-it-works/kubernetes/control-plane.md) what the control plane
+  applies.

@@ -48,7 +48,7 @@ sequenceDiagram
 ```
 
 The diagram shows a cluster with a second control plane, cp2. The homelab has one control plane, so
-only w1 joins. [Kubernetes on chalkos](../how-it-works/kubernetes/kubernetes.md#how-does-a-cluster-start)
+only w1 joins. [The control plane](../how-it-works/kubernetes/control-plane.md#chalkctl-bootstrap-starts-the-cluster-once)
 explains each step.
 
 ## Every control plane waits for the bootstrap

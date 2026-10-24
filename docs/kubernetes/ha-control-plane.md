@@ -349,6 +349,6 @@ Its own etcd member does not answer, so `chalkctl etcd leave cp3` refuses withou
   a time.
 - [Add and remove nodes](../operate/add-remove-nodes.md) covers workers and nodes without
   Kubernetes.
-- [Kubernetes on chalkos](../how-it-works/kubernetes/kubernetes.md) explains bootstrap, join and
+- [The control plane](../how-it-works/kubernetes/control-plane.md) explains bootstrap, join and
   the static pods.
 - [`chalkctl etcd`](../reference/cli/chalkctl_etcd.md) lists the etcd commands and their flags.

@@ -375,7 +375,7 @@ files, for the host, so the hypervisor's admin gets no shell on the node through
   a `credentials.json` that only root reads, but the kubelet hands them to containerd for any pod
   whose image names the `Registry`'s host, and containerd sends them to that host's mirror
   endpoints as well, as
-  [Kubernetes](../kubernetes/kubernetes.md#how-do-pods-pull-images-from-a-private-registry) describes.
+  [How Kubernetes runs on a node](../kubernetes/overview.md#pods-pull-private-images-with-node-credentials) describes.
 - A node's clock decides whether certificates are valid. A node whose clock is far off refuses
   valid certificates and accepts expired ones until chrony sets it.
 

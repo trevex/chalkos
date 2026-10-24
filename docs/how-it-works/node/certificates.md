@@ -267,7 +267,7 @@ only an `os-ca` rotation retires the certificates of the old node CA.
 ## Related pages
 
 - [Security model](security.md): client roles, the secrets file and client files.
-- [Kubernetes on chalkos](../kubernetes/kubernetes.md): what the control plane runs with these certificates.
+- [Kubernetes certificates](../kubernetes/certificates.md): what the control plane runs with these certificates.
 - [Manage access and certificates](../../operate/access.md) and
   [Recover a node](../../operate/recover-node.md).
 - [`chalkctl rotate`](../../reference/cli/chalkctl_rotate.md),

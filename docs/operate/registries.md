@@ -131,7 +131,7 @@ When the last source fails too, the error names the source it ended at, followed
 On the shipped variant, containerd pulls the pods' container images through the endpoints of the
 same `Mirror` documents. The same `Registry` gives every pod on the node the images of its host,
 without `imagePullSecrets`.
-[How do pods pull images from a private registry?](../how-it-works/kubernetes/kubernetes.md#how-do-pods-pull-images-from-a-private-registry)
+[Pods pull private images with node credentials](../how-it-works/kubernetes/overview.md#pods-pull-private-images-with-node-credentials)
 describes how the kubelet gets the credentials.
 
 A cluster without internet access pulls every container image from a mirror, so the mirror must

@@ -101,7 +101,7 @@ Some kinds depend on the image or the node:
   `Registry` gives a host's credentials and allows plain HTTP to it; a `Mirror` names the
   endpoints chalkd and containerd try before a registry itself. On images with Kubernetes, the
   kubelet takes a `Registry`'s credentials for every pod's pulls from its host, as
-  [Kubernetes](../kubernetes/kubernetes.md#how-do-pods-pull-images-from-a-private-registry) describes.
+  [How Kubernetes runs on a node](../kubernetes/overview.md#pods-pull-private-images-with-node-credentials) describes.
 - A `Network`, `NetDev` or `Link` document's `metadata.name` is the unit file's name without its
   suffix, so `10-uplink` becomes `/run/systemd/network/10-uplink.network` and networkd's order by
   file name holds. Sections and keys are networkd's own in camelCase: `[Match]` with `MACAddress=`

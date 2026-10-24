@@ -300,7 +300,7 @@ interface lo, whose MTU flannel would take; set the Flannel document's spec.mtu`
 
 ## Related pages
 
-- [Kubernetes on chalkos](../kubernetes/kubernetes.md): what runs on those addresses.
+- [Kubernetes networking](../kubernetes/networking.md): what runs on those addresses.
 - [Config and the inventory](config.md): how the network and Kubernetes documents reach a node.
 - [Run a highly available control plane](../../kubernetes/ha-control-plane.md) and
   [Plan a cluster](../../kubernetes/plan.md).

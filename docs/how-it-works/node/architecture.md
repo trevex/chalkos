@@ -113,7 +113,7 @@ describes its sandbox.
     On a control plane, chalkd renders the static pods of etcd, the API server, the
     controller-manager and the scheduler. It holds the VIP when elected, renews the node
     certificates of the cluster and drains nodes for upgrades.
-    [Kubernetes on chalkos](../kubernetes/kubernetes.md) covers that side.
+    [The control plane](../kubernetes/control-plane.md) covers that side.
 
 ## The installed marker decides chalkd's mode
 

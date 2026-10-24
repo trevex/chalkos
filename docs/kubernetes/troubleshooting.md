@@ -142,7 +142,7 @@ The line reads `leaving certificate request <name> pending: <reason>`. The most 
 chalkd looks at the pending requests every 10 seconds and checks each one again, so it approves a
 request once the Node reports what the request asks for. chalkd approves no client certificate
 requests. The controller-manager approves those when a kubelet renews its own client certificate.
-[How do workers join?](../how-it-works/kubernetes/kubernetes.md#how-do-workers-join) explains
+[Kubelets renew their own certificates](../how-it-works/kubernetes/certificates.md#kubelets-renew-their-own-certificates) explains
 both certificates.
 
 ## Pods on different nodes cannot reach each other
@@ -255,5 +255,5 @@ The name `w1` is in the cluster's revoked nodes, which `chalkctl status cp1` lis
   `chalkctl status` and the units to read.
 - [Run a highly available control plane](ha-control-plane.md) covers etcd's members and how to
   bring a control plane back.
-- [Kubernetes on chalkos](../how-it-works/kubernetes/kubernetes.md) explains bootstrap, join and
+- [The control plane](../how-it-works/kubernetes/control-plane.md) explains bootstrap, join and
   the certificates.

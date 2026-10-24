@@ -112,14 +112,48 @@ chalkos adds to run Kubernetes on it.
 
 ## Kubernetes layer
 
+These pages describe what chalkos adds to a node to run Kubernetes on the shipped variant.
+
 <div class="grid cards" markdown>
 
--   :material-kubernetes: __Kubernetes on chalkos__
+-   :material-kubernetes: __How Kubernetes runs on a node__
 
     ---
 
-    How chalkos runs etcd, the control plane, the kubelet and the cluster's add-ons.
+    The components of each type of node, the Kubernetes share and where the config comes from.
 
-    [:octicons-arrow-right-24: Read](kubernetes/kubernetes.md)
+    [:octicons-arrow-right-24: Read](kubernetes/overview.md)
+
+-   :material-server-network: __The control plane__
+
+    ---
+
+    The static pods, the bootstrap, the joins of etcd and the add-ons the control plane applies.
+
+    [:octicons-arrow-right-24: Read](kubernetes/control-plane.md)
+
+-   :material-lan-connect: __Kubernetes networking__
+
+    ---
+
+    Node addresses, the VIP, the pod network and the ports of the control plane.
+
+    [:octicons-arrow-right-24: Read](kubernetes/networking.md)
+
+-   :material-certificate: __Kubernetes certificates__
+
+    ---
+
+    Where the control plane's and the kubelets' certificates come from and who approves them.
+
+    [:octicons-arrow-right-24: Read](kubernetes/certificates.md)
+
+-   :material-update: __Kubernetes upgrades__
+
+    ---
+
+    How a new Kubernetes version rolls through the control planes first.
+
+    [:octicons-arrow-right-24: Read](kubernetes/upgrades.md)
 
 </div>

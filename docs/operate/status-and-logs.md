@@ -130,7 +130,7 @@ On the shipped variant, `kubernetes worker: joined, node ready: True` names the 
 state and whether its Node is Ready. A control plane adds its VIP role, `vip holder` or
 `vip standby`, and `control plane current` when its API server and etcd serve the current
 certificates and the API server answers ready.
-[What does the status show?](../how-it-works/kubernetes/kubernetes.md#what-does-the-status-show)
+[Kubernetes status states](../reference/kubernetes.md#kubernetes-status-states)
 lists every state, and [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md) acts on them.
 
 ## The certificates section warns before an expiry

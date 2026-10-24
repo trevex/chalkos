@@ -118,7 +118,7 @@ from STATE. [Boot, health and rollback](boot-and-rollback.md) follows the boot c
 
     `chalkctl bootstrap` starts etcd and the control plane on the first control plane, once per
     cluster. Further control planes and workers join on their own.
-    [Kubernetes on chalkos](../kubernetes/kubernetes.md) describes the bootstrap and the joins.
+    [The control plane](../kubernetes/control-plane.md) describes the bootstrap and the joins.
 
 ## YAML documents configure the node without a reboot
 
@@ -187,5 +187,5 @@ rotation and revocation.
   machine's firmware; only chalklab enrols keys, its own, in its virtual machines. Installing does
   not check that Secure Boot is on.
 - chalkctl never builds or signs images and never runs Nix.
-- There is no certificate revocation list. Access ends when a certificate expires or its CA is
-  rotated out.
+- Nothing revokes a single client certificate or kubeconfig. One works until it expires or its CA
+  is rotated out. On the shipped variant, `chalkctl node revoke` revokes a whole node by name.

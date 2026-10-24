@@ -1,6 +1,6 @@
 ---
 title: "Reference"
-description: "Commands, config kinds, mkImages and image options, the node API, boot units and the layout of images, ports and os-release"
+description: "Commands, config kinds, image options, the node API, boot units, Kubernetes, and the layout of images, ports and os-release"
 ---
 
 # Reference
@@ -57,6 +57,14 @@ chalkos.
     The units that run at every boot, and what an image fixes versus what its config delivers.
 
     [:octicons-arrow-right-24: Read](boot.md)
+
+-   :material-kubernetes: __Kubernetes__
+
+    ---
+
+    The components of each node type, the flags chalkos refuses, its add-ons and the status states.
+
+    [:octicons-arrow-right-24: Read](kubernetes.md)
 
 -   :material-lan: __Ports and firewall__
 
