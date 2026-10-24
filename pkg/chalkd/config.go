@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"os"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -18,7 +17,6 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
-	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // configure parses text, YAML config documents, and makes them the config slot of the image t
@@ -197,15 +195,6 @@ func (s *Server) runningSlot() (dir string, stored slot.Stored, found bool, err 
 		return "", slot.Stored{}, false, failed(connect.CodeInternal, "read the running image's config slot: %v", err)
 	}
 	return dir, stored, found, nil
-}
-
-// runningHash is the root hash of the store the node runs, as the kernel command line names it.
-func (s *Server) runningHash() ([]byte, error) {
-	cmdline, err := os.ReadFile(s.Paths.Cmdline)
-	if err != nil {
-		return nil, fmt.Errorf("read the kernel command line: %w", err)
-	}
-	return uki.UsrHash(string(cmdline))
 }
 
 // GetConfig returns the documents a config slot keeps as they were delivered, the running

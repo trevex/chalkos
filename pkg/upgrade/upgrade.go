@@ -130,7 +130,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if h.Architecture != n.Architecture {
 		return Result{}, fmt.Errorf("the image is built for %s, this machine for %s", h.Architecture, n.Architecture)
 	}
-	running, err := n.running()
+	running, err := uki.RunningHash(n.Cmdline)
 	if err != nil {
 		return Result{}, err
 	}
@@ -247,19 +247,6 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	}
 	log.Printf("installed %s %x into partitions %d and %d; it boots next as %s", h.ImageID, h.RootHash, inactive.Verity.Number, inactive.Data.Number, entry)
 	return Result{Entry: entry, Wrote: wrote}, nil
-}
-
-// running is the root hash of the store the node runs.
-func (n *Node) running() ([]byte, error) {
-	cmdline, err := os.ReadFile(n.Cmdline)
-	if err != nil {
-		return nil, fmt.Errorf("read the kernel command line: %w", err)
-	}
-	hash, err := uki.UsrHash(string(cmdline))
-	if err != nil {
-		return nil, fmt.Errorf("the running store: %w", err)
-	}
-	return hash, nil
 }
 
 // slots is the slot writer of the node's boot disk.

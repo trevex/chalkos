@@ -21,14 +21,9 @@ import (
 // gives it.
 func (s *Server) bootStatus() *nodev1.BootStatus {
 	st := &nodev1.BootStatus{}
-	cmdline, err := os.ReadFile(s.Paths.Cmdline)
+	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
 		st.Error = err.Error()
-		return st
-	}
-	running, err := uki.UsrHash(string(cmdline))
-	if err != nil {
-		st.Error = "the running store: " + err.Error()
 		return st
 	}
 	images := s.images()

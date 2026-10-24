@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -91,7 +92,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	}
 	switch target := h.Target.(type) {
 	case *nodev1.InstallHeader_InPlace:
-		running, rerr := s.runningHash()
+		running, rerr := uki.RunningHash(s.Paths.Cmdline)
 		if rerr != nil {
 			return nil, failed(connect.CodeInternal, "the running image: %v", rerr)
 		}

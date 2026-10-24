@@ -710,7 +710,7 @@ func TestRebootHelps(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, why := RebootHelps(entries, l.efivars, "usrhash="+hex.EncodeToString(img.root))
+			got, why := RebootHelps(entries, l.efivars, img.root)
 			if got != tc.want {
 				t.Errorf("RebootHelps = %v (%s), want %v", got, why, tc.want)
 			}

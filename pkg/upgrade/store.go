@@ -136,7 +136,7 @@ func (n *Node) checkStore(ctx context.Context, h Header, slot storeslot.Slot, uk
 // caller holds TableLock, if any, or leaves it unset. It fails for the running image and for one
 // the inactive slot does not hold.
 func (n *Node) ReadImage(ctx context.Context, rootHash []byte, read func(Store) error) error {
-	running, err := n.running()
+	running, err := uki.RunningHash(n.Cmdline)
 	if err != nil {
 		return err
 	}

@@ -302,13 +302,9 @@ func (h *Health) unhealthy(ctx context.Context, err error) error {
 
 // booted finds the entry the node booted and the root hash of the store it runs.
 func (h *Health) booted() (esp.Entry, []byte, error) {
-	cmdline, err := os.ReadFile(h.Cmdline)
+	running, err := uki.RunningHash(h.Cmdline)
 	if err != nil {
 		return esp.Entry{}, nil, err
-	}
-	running, err := uki.UsrHash(string(cmdline))
-	if err != nil {
-		return esp.Entry{}, nil, fmt.Errorf("the running store: %w", err)
 	}
 	entries, err := esp.Entries(h.ESP)
 	if err != nil {
@@ -324,11 +320,11 @@ func (h *Health) rebootHelps() (bool, string) {
 	if err != nil {
 		return false, err.Error()
 	}
-	cmdline, err := os.ReadFile(h.Cmdline)
+	running, err := uki.RunningHash(h.Cmdline)
 	if err != nil {
 		return false, err.Error()
 	}
-	return upgrade.RebootHelps(entries, h.EFIVars, string(cmdline))
+	return upgrade.RebootHelps(entries, h.EFIVars, running)
 }
 
 // forgetFailedBoot removes the record of a failed boot once a boot the loader counts was found

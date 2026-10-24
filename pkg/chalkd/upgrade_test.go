@@ -25,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
+	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -366,7 +367,7 @@ func TestStageConfigRetriedAfterTheVolume(t *testing.T) {
 	if err := stage(secret); err != nil {
 		t.Fatal(err)
 	}
-	running, err := s.runningHash()
+	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +407,7 @@ func TestApplyConfigNamesAVolumeAnotherImageAdded(t *testing.T) {
 	if err != nil && (strings.Contains(err.Error(), "carries it out") || !strings.Contains(err.Error(), "; only a reinstall of n1 removes it")) {
 		t.Errorf("err = %v, want the volume named, and a reinstall only as what removes it", err)
 	}
-	running, err := s.runningHash()
+	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
 		t.Fatal(err)
 	}

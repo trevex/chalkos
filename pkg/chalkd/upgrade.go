@@ -309,7 +309,7 @@ func (s *Server) recordImages(installed *upgrade.Header) {
 			keep = append(keep, e.RootHash)
 		}
 	}
-	running, err := s.runningHash()
+	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
 		log.Printf("keep the running image's config: %v", err)
 		return

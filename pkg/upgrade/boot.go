@@ -12,7 +12,6 @@ import (
 	"unicode/utf16"
 
 	"github.com/trevex/chalkos/pkg/esp"
-	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // Booted finds the entry the node booted: the one systemd-boot says it selected, which must boot
@@ -82,12 +81,9 @@ func loaderString(efivars, name string) (string, error) {
 // RebootHelps says whether rebooting after a boot that was not found healthy leads systemd-boot
 // on, and why: to another try while the booted entry has tries left, or on its last try to an
 // entry it falls back to. Rebooting a boot the loader does not count, or one with nothing to fall
-// back to, would boot the same image again, endlessly.
-func RebootHelps(entries []esp.Entry, efivars, cmdline string) (bool, string) {
-	running, err := uki.UsrHash(cmdline)
-	if err != nil {
-		return false, fmt.Sprintf("the running store: %v", err)
-	}
+// back to, would boot the same image again, endlessly. running is the root hash of the store the
+// node runs.
+func RebootHelps(entries []esp.Entry, efivars string, running []byte) (bool, string) {
 	booted, err := Booted(entries, efivars, running)
 	if err != nil {
 		return false, err.Error()

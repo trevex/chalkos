@@ -29,11 +29,9 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 		Platform:    release["CHALKOS_PLATFORM"],
 	}
 	// An image is its store's root hash; the record of installed images gives its provenance.
-	if cmdline, err := os.ReadFile(s.Paths.Cmdline); err == nil {
-		if root, err := uki.UsrHash(string(cmdline)); err == nil {
-			p := s.images().Of(root)
-			resp.RootHash, resp.Revision, resp.Tag = root, p.Revision, p.Tag
-		}
+	if root, err := uki.RunningHash(s.Paths.Cmdline); err == nil {
+		p := s.images().Of(root)
+		resp.RootHash, resp.Revision, resp.Tag = root, p.Revision, p.Tag
 	}
 	if boot, err := s.Host.ResolvePath(s.Paths.BootDisk); err == nil {
 		resp.BootDisk = boot.Device

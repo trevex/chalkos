@@ -80,13 +80,9 @@ type identityFields struct {
 // Slot is the running image's config slot: the one below Slots named by the root hash of the store
 // the kernel command line's usrhash= boots.
 func (l Loader) Slot() (string, error) {
-	cmdline, err := os.ReadFile(l.Cmdline)
+	hash, err := uki.RunningHash(l.Cmdline)
 	if err != nil {
-		return "", fmt.Errorf("read the kernel command line: %w", err)
-	}
-	hash, err := uki.UsrHash(string(cmdline))
-	if err != nil {
-		return "", fmt.Errorf("the running image: %w", err)
+		return "", err
 	}
 	return slot.Dir(l.Slots, hash), nil
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -24,7 +25,7 @@ import (
 // upgrade without a reboot leaves it; nil without one. A node whose config slots are the running
 // image's alone has none, whatever the ESP holds: no upgrade wrote config for another.
 func (s *Server) stagedImage() ([]byte, error) {
-	running, err := s.runningHash()
+	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
 		return nil, err
 	}

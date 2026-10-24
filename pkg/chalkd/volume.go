@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // machineChange is what a config slot's storage section adds to the machine's: storage.json, the
@@ -234,7 +235,7 @@ func (s *Server) elsewhere(err error, section storage.Section, writing []byte) e
 // slotsNaming lists, by the start of their root hashes, the images other than the running one and
 // writing whose config slots name the volume.
 func (s *Server) slotsNaming(name string, writing []byte) []string {
-	runningHash, err := s.runningHash()
+	runningHash, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
 		return nil
 	}
