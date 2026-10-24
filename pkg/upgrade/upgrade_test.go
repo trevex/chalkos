@@ -3,17 +3,11 @@ package upgrade
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/hex"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,6 +26,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/registry"
 
 	"github.com/trevex/chalkos/pkg/esp"
+	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/secureboot"
@@ -608,10 +603,10 @@ func TestSecureBoot(t *testing.T) {
 	}
 	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	dir := t.TempDir()
-	key, cert, certDER := testSigner(t, dir, "db")
-	_, _, otherDER := testSigner(t, dir, "other")
+	key, cert, certDER := imagetest.Signer(t, dir, "db")
+	_, _, otherDER := imagetest.Signer(t, dir, "other")
 	signed := img
-	signed.uki = sbsign(t, dir, img.uki, key, cert)
+	signed.uki = imagetest.SBSign(t, img.uki, key, cert)
 	signed.header = signed.headerFor(signed.uki)
 
 	for _, tc := range []struct {
@@ -648,39 +643,6 @@ func TestSecureBoot(t *testing.T) {
 			}
 		})
 	}
-}
-
-func testSigner(t *testing.T, dir, name string) (key, cert string, der []byte) {
-	t.Helper()
-	k, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: name}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
-	der, err = x509.CreateCertificate(rand.Reader, tmpl, tmpl, &k.PublicKey, k)
-	if err != nil {
-		t.Fatal(err)
-	}
-	key, cert = filepath.Join(dir, name+".key"), filepath.Join(dir, name+".crt")
-	os.WriteFile(key, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)}), 0o600)
-	os.WriteFile(cert, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644)
-	return key, cert, der
-}
-
-func sbsign(t *testing.T, dir string, image []byte, key, cert string) []byte {
-	t.Helper()
-	in, out := filepath.Join(dir, "in.efi"), filepath.Join(dir, "out.efi")
-	if err := os.WriteFile(in, image, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if o, err := exec.Command("sbsign", "--key", key, "--cert", cert, "--output", out, in).CombinedOutput(); err != nil {
-		t.Fatalf("sbsign: %v: %s", err, o)
-	}
-	signed, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return signed
 }
 
 // TestRebootHelps decides whether a reboot after an unhealthy boot leads the boot loader on.

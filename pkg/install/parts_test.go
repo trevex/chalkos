@@ -3,21 +3,15 @@ package install
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
 	"maps"
-	"math/big"
 	mrand "math/rand/v2"
 	"os"
 	"os/exec"
@@ -33,6 +27,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/esp"
+	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storeslot"
@@ -674,41 +669,6 @@ func (l *partsLab) foreignTable() {
 	}
 }
 
-// testSigner makes a db signer: its key and certificate files and the certificate's DER.
-func testSigner(t *testing.T, dir, name string) (key, cert string, der []byte) {
-	t.Helper()
-	k, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: name}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
-	der, err = x509.CreateCertificate(rand.Reader, tmpl, tmpl, &k.PublicKey, k)
-	if err != nil {
-		t.Fatal(err)
-	}
-	key, cert = filepath.Join(dir, name+".key"), filepath.Join(dir, name+".crt")
-	write(t, key, string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})))
-	write(t, cert, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})))
-	return key, cert, der
-}
-
-func sbsign(t *testing.T, binary []byte, key, cert string) []byte {
-	t.Helper()
-	dir := t.TempDir()
-	in, out := filepath.Join(dir, "in.efi"), filepath.Join(dir, "out.efi")
-	if err := os.WriteFile(in, binary, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if o, err := exec.Command("sbsign", "--key", key, "--cert", cert, "--output", out, in).CombinedOutput(); err != nil {
-		t.Fatalf("sbsign: %v: %s", err, o)
-	}
-	signed, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return signed
-}
-
 // enforceSecureBoot turns Secure Boot on with db holding the certificates and dbx those of
 // revoked, which may be none.
 func (l *partsLab) enforceSecureBoot(db []byte, revoked ...[]byte) {
@@ -739,17 +699,17 @@ func TestFromPartsRefuses(t *testing.T) {
 	}
 	img := newPartsImage(t, "a")
 	keys := t.TempDir()
-	key, cert, der := testSigner(t, keys, "db")
+	key, cert, der := imagetest.Signer(t, keys, "db")
 	signed := img
-	signed.uki, signed.loader = sbsign(t, img.uki, key, cert), sbsign(t, img.loader, key, cert)
+	signed.uki, signed.loader = imagetest.SBSign(t, img.uki, key, cert), imagetest.SBSign(t, img.loader, key, cert)
 	signed.header = signed.headerFor()
 	unsignedLoader := signed
 	unsignedLoader.loader = img.loader
 	unsignedLoader.header = unsignedLoader.headerFor()
 	// The boot loader signed by another db certificate, which dbx lists.
-	revokedKey, revokedCert, revokedDER := testSigner(t, keys, "revoked")
+	revokedKey, revokedCert, revokedDER := imagetest.Signer(t, keys, "revoked")
 	revokedLoader := signed
-	revokedLoader.loader = sbsign(t, img.loader, revokedKey, revokedCert)
+	revokedLoader.loader = imagetest.SBSign(t, img.loader, revokedKey, revokedCert)
 	revokedLoader.header = revokedLoader.headerFor()
 	noTries := img
 	noTries.uki = ukitest.UKI(map[string]string{
@@ -947,8 +907,8 @@ func TestFromPartsUnderSecureBoot(t *testing.T) {
 		t.Skip("sbsign not in PATH")
 	}
 	img := newPartsImage(t, "a")
-	key, cert, der := testSigner(t, t.TempDir(), "db")
-	img.uki, img.loader = sbsign(t, img.uki, key, cert), sbsign(t, img.loader, key, cert)
+	key, cert, der := imagetest.Signer(t, t.TempDir(), "db")
+	img.uki, img.loader = imagetest.SBSign(t, img.uki, key, cert), imagetest.SBSign(t, img.loader, key, cert)
 	img.header = img.headerFor()
 	l := newPartsLab(t)
 	l.enforceSecureBoot(ukitest.SignatureList(der))
@@ -1281,7 +1241,7 @@ func TestFromPartsUnbootsAResumedTarget(t *testing.T) {
 	if !l.bootable() || l.r.efi.bootNext == "" {
 		t.Fatal("the stopped install left no boot loader or BootNext")
 	}
-	_, _, der := testSigner(t, t.TempDir(), "db")
+	_, _, der := imagetest.Signer(t, t.TempDir(), "db")
 	l.enforceSecureBoot(ukitest.SignatureList(der))
 	if err := l.install(img); err == nil || !strings.Contains(err.Error(), "Secure Boot would refuse the UKI") {
 		t.Fatalf("install = %v, want the unsigned UKI refused", err)

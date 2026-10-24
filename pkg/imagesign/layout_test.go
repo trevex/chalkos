@@ -42,7 +42,7 @@ func unsignedLayout(t *testing.T, dir string) (string, string) {
 func TestSignLayout(t *testing.T) {
 	needSigningTools(t)
 	dir := t.TempDir()
-	key, cert := imagetest.Signer(t, dir, "db")
+	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in, before := unsignedLayout(t, dir)
 	out := filepath.Join(dir, "signed")
 	digest, err := SignLayout(context.Background(), in, out, key, cert)
@@ -104,7 +104,7 @@ func TestSignLayout(t *testing.T) {
 // come out of SignFile validly signed and validly addressed.
 func TestSignLayoutRefusesACorruptUKI(t *testing.T) {
 	dir := t.TempDir()
-	key, cert := imagetest.Signer(t, dir, "db")
+	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in, _ := unsignedLayout(t, dir)
 	img, err := ociimage.ReadLayout(in)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestSignLayoutRefusesACorruptUKI(t *testing.T) {
 func TestSignLayoutNeedsANewDirectory(t *testing.T) {
 	needSigningTools(t)
 	dir := t.TempDir()
-	key, cert := imagetest.Signer(t, dir, "db")
+	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in, _ := unsignedLayout(t, dir)
 	out := filepath.Join(dir, "signed")
 	if err := os.Mkdir(out, 0o755); err != nil {

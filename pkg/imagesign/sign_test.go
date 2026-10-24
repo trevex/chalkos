@@ -2,19 +2,14 @@ package imagesign
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"fmt"
-	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
-	"time"
+
+	"github.com/trevex/chalkos/pkg/image/imagetest"
 )
 
 func mustRun(t *testing.T, name string, args ...string) {
@@ -24,35 +19,6 @@ func mustRun(t *testing.T, name string, args ...string) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
 	}
-}
-
-func writeTestSigner(t *testing.T, dir string) (keyPath, certPath string) {
-	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "imagesign test db"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	keyPath = filepath.Join(dir, "db.key")
-	certPath = filepath.Join(dir, "db.crt")
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(certPath, certPEM, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return keyPath, certPath
 }
 
 func TestSignImageSignsOnlyBootLoaderAndUKIs(t *testing.T) {
@@ -66,7 +32,7 @@ func TestSignImageSignsOnlyBootLoaderAndUKIs(t *testing.T) {
 		t.Skip("CHALKOS_TEST_EFI not set")
 	}
 	dir := t.TempDir()
-	key, cert := writeTestSigner(t, dir)
+	key, cert, _ := imagetest.Signer(t, dir, "db")
 
 	// 1 MiB of padding stands in for the partition table, followed by a 32 MiB FAT filesystem.
 	const offset = 1 << 20
@@ -116,7 +82,7 @@ func TestSignFile(t *testing.T) {
 		t.Skip("CHALKOS_TEST_EFI not set")
 	}
 	dir := t.TempDir()
-	key, cert := writeTestSigner(t, dir)
+	key, cert, _ := imagetest.Signer(t, dir, "db")
 	data, err := os.ReadFile(efi)
 	if err != nil {
 		t.Fatal(err)

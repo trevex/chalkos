@@ -102,22 +102,39 @@ func Write(t testing.TB, dir string, img Image) []byte {
 }
 
 // Signer writes a Secure Boot db key, name.key, and its self-signed certificate, name.crt, into
-// dir and returns their paths.
-func Signer(t testing.TB, dir, name string) (key, cert string) {
+// dir and returns their paths and the certificate's DER.
+func Signer(t testing.TB, dir, name string) (key, cert string, der []byte) {
 	t.Helper()
 	k, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: name}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &k.PublicKey, k)
+	der, err = x509.CreateCertificate(rand.Reader, tmpl, tmpl, &k.PublicKey, k)
 	if err != nil {
 		t.Fatal(err)
 	}
 	key, cert = filepath.Join(dir, name+".key"), filepath.Join(dir, name+".crt")
 	write(t, key, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)}))
 	write(t, cert, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
-	return key, cert
+	return key, cert, der
+}
+
+// SBSign signs an EFI binary with sbsign and the key and certificate files, and returns the
+// signed binary.
+func SBSign(t testing.TB, binary []byte, key, cert string) []byte {
+	t.Helper()
+	dir := t.TempDir()
+	in, out := filepath.Join(dir, "in.efi"), filepath.Join(dir, "out.efi")
+	write(t, in, binary)
+	if o, err := exec.Command("sbsign", "--key", key, "--cert", cert, "--output", out, in).CombinedOutput(); err != nil {
+		t.Fatalf("sbsign: %v: %s", err, o)
+	}
+	signed, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signed
 }
 
 // WriteContract writes the contract files of an image directory into dir: metadata.json of the

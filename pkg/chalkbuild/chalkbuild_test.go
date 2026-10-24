@@ -47,7 +47,7 @@ func TestSign(t *testing.T) {
 		t.Skip("sbsign not in PATH")
 	}
 	dir := t.TempDir()
-	key, cert := imagetest.Signer(t, dir, "db")
+	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
 	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
 	out := filepath.Join(dir, "out")
@@ -64,7 +64,7 @@ func TestSignMakesOutsParent(t *testing.T) {
 		t.Skip("sbsign not in PATH")
 	}
 	dir := t.TempDir()
-	key, cert := imagetest.Signer(t, dir, "db")
+	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
 	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
 	out := filepath.Join(dir, "signed", "node-metal")
@@ -101,7 +101,7 @@ func TestOCISignAndPush(t *testing.T) {
 		t.Skip("sbsign not in PATH")
 	}
 	dir := t.TempDir()
-	key, cert := imagetest.Signer(t, dir, "db")
+	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
 	img := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
 	imagetest.WriteContract(t, in, img, imagetest.Write(t, in, img))

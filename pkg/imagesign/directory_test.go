@@ -49,7 +49,7 @@ func verified(t *testing.T, disk, file, cert string) error {
 func TestSignDirectory(t *testing.T) {
 	needSigningTools(t)
 	dir := t.TempDir()
-	key, cert := imagetest.Signer(t, dir, "db")
+	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
 	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
 	store := filepath.Join(dir, "store")
@@ -116,8 +116,8 @@ func TestSignDirectory(t *testing.T) {
 func TestSignDirectoryRefuses(t *testing.T) {
 	needSigningTools(t)
 	dir := t.TempDir()
-	key, _ := imagetest.Signer(t, dir, "db")
-	_, other := imagetest.Signer(t, dir, "other")
+	key, _, _ := imagetest.Signer(t, dir, "db")
+	_, other, _ := imagetest.Signer(t, dir, "other")
 	in := filepath.Join(dir, "in")
 	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
 	existing := filepath.Join(dir, "existing")
@@ -153,7 +153,7 @@ func TestSignDirectoryRefuses(t *testing.T) {
 func TestSignDirectoryBracketInPath(t *testing.T) {
 	needSigningTools(t)
 	dir := t.TempDir()
-	key, cert := imagetest.Signer(t, dir, "db")
+	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in[1]")
 	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
 	out := filepath.Join(dir, "out[1]")
