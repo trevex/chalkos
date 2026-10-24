@@ -65,23 +65,14 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
 	}
 	header := imageHeader(img)
-	var parts io.Reader = &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
-		if !stream.Receive() {
-			return nil, false
-		}
-		return stream.Msg().GetChunk(), true
-	}, err: stream.Err}
+	parts := chunks(stream)
 	if src := h.GetSource(); src != nil {
 		ref := src.GetOci().GetReference()
 		if ref == "" {
 			return nil, failed(connect.CodeInvalidArgument, "the header's source names no image in a registry")
 		}
-		// The parts come from the registry: the client sends nothing after the header, and Receive
-		// returns once it closed its side.
-		if stream.Receive() {
-			return nil, failed(connect.CodeInvalidArgument, "an upgrade that pulls its image carries no chunks")
-		}
-		if err := stream.Err(); err != nil {
+		// The parts come from the registry.
+		if err := noChunks(stream, "an upgrade"); err != nil {
 			return nil, err
 		}
 		pull, err := s.pullParts(ctx, ref, header, h.GetConfig())

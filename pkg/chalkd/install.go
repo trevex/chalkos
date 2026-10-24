@@ -102,12 +102,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		d := target.Disk
 		ref := storage.Ref{Path: d.Path, Selector: storage.Selector{Model: d.Model, Serial: d.Serial, WWN: d.Wwn, Size: d.Size, Type: d.Type}}
 		img := imageHeader(h.Image)
-		var parts io.Reader = &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
-			if !stream.Receive() {
-				return nil, false
-			}
-			return stream.Msg().GetChunk(), true
-		}, err: stream.Err}
+		parts := chunks(stream)
 		from := ""
 		if pull != nil {
 			parts, from = pull, ", pulled from "+h.Source.GetOci().GetReference()
@@ -160,11 +155,7 @@ func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[n
 	case h.Config == "":
 		return nil, failed(connect.CodeInvalidArgument, "the header delivers no config")
 	}
-	// The client sends nothing after the header, and Receive returns once it closed its side.
-	if stream.Receive() {
-		return nil, failed(connect.CodeInvalidArgument, "an install that pulls its image carries no chunks")
-	}
-	if err := stream.Err(); err != nil {
+	if err := noChunks(stream, "an install"); err != nil {
 		return nil, err
 	}
 	docs, err := config.Parse(strings.NewReader(h.Config))
@@ -186,6 +177,34 @@ func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[n
 		h.SystemDefinitions[name] = string(data)
 	}
 	return pull, nil
+}
+
+// chunkMessage is a request that carries a chunk of an image after the header of its stream.
+type chunkMessage interface {
+	GetChunk() *nodev1.ImageChunk
+}
+
+// chunks reads the image the requests after the header of stream carry.
+func chunks[T any, M interface {
+	*T
+	chunkMessage
+}](stream *connect.ClientStream[T]) io.Reader {
+	return &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
+		if !stream.Receive() {
+			return nil, false
+		}
+		return M(stream.Msg()).GetChunk(), true
+	}, err: stream.Err}
+}
+
+// noChunks refuses a request after the header of stream, whose image what pulls from a
+// registry: the client sends nothing after the header, and Receive returns once it closed its
+// side.
+func noChunks[T any](stream *connect.ClientStream[T], what string) error {
+	if stream.Receive() {
+		return failed(connect.CodeInvalidArgument, "%s that pulls its image carries no chunks", what)
+	}
+	return stream.Err()
 }
 
 // chunkReader reads an image from the chunks that follow a header: next returns the next message's
