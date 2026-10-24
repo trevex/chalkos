@@ -1,10 +1,8 @@
-# Config kinds: the documents an image accepts at runtime. Each kind of chalkos.kinds becomes a
-# JSON Schema in /etc/chalkos/schemas and in the image directory's schemas/, from which chalkctl
-# and chalkd validate a node's config documents. networkd's Network, NetDev and Link come from the
-# image's systemd. Each kind of chalkos.kinds has a get function that builds chalkcfg commands;
-# networkd's kinds have none, because their schemas exist only once systemd's tables are built and
-# a section of theirs may be an object or a list, so a path through them cannot be checked during
-# evaluation.
+# Config kinds: the documents an image accepts at runtime, declared in chalkos.kinds. Each kind
+# becomes a JSON Schema in /etc/chalkos/schemas and in the image directory's schemas/, from which
+# chalkctl and chalkd validate a node's config documents, and has a get function that builds
+# chalkcfg commands. The schemas include networkd's kinds (networkd.nix). The image builds only
+# when chalkos-rules accepts the rules of its kinds, facts (facts.nix), outputs and effects.
 {
   chalkosPackages,
   config,
@@ -16,63 +14,8 @@ let
   schema = import ../../../lib/kinds/schema.nix { inherit lib; };
   getLib = import ../../../lib/kinds/get.nix { inherit lib; };
   api = import ../../../lib/kinds/api.nix;
-  inherit (chalkosPackages) chalkcfg chalkos-rules chalkos-render;
+  inherit (chalkosPackages) chalkcfg chalkos-rules;
   cfg = config.chalkos.kinds;
-
-  # networkd's Network, NetDev and Link, generated from the tables of the systemd the image runs,
-  # so their schemas accept exactly the sections and keys its networkd does.
-  networkd = {
-    group = api.groups.networkd;
-    inherit (api) version;
-    kinds = api.networkdKinds;
-    # What a document of each kind is, which its schema carries.
-    descriptions = {
-      Link = "A systemd .link file, which udev applies to the network devices it matches, such as to name them or set their offloads.";
-      NetDev = "A systemd-networkd .netdev file, which creates a virtual network device, such as a VLAN, a bond or a bridge.";
-      Network = "A systemd-networkd .network file, which configures the network devices it matches: their addresses, routes, DHCP and the virtual devices on them.";
-    };
-  };
-  networkdKind = kind: {
-    inherit kind;
-    inherit (networkd) group version;
-    multiple = true;
-    description = networkd.descriptions.${kind};
-  };
-  networkdSchemas = pkgs.stdenvNoCC.mkDerivation {
-    name = "chalkos-networkd-schemas";
-    inherit (config.systemd.package) src;
-    nativeBuildInputs = [
-      chalkosPackages.chalkos-networkd-schema
-      pkgs.jq
-    ];
-    dontConfigure = true;
-    buildPhase = ''
-      runHook preBuild
-      chalkos-networkd-schema \
-        src/network/networkd-network-gperf.gperf \
-        src/network/netdev/netdev-gperf.gperf \
-        src/udev/net/link-config-gperf.gperf \
-        specs
-      mkdir $out
-      ${lib.concatMapStrings (
-        kind:
-        let
-          k = networkdKind kind;
-          envelope = pkgs.writeText "${kind}-envelope.json" (
-            builtins.toJSON (schema.envelope (k // { spec = { }; }))
-          );
-        in
-        ''
-          jq --slurpfile s specs/${lib.toLower kind}.json \
-            '.properties.spec = $s[0].spec | ."$defs" = $s[0]."$defs"' \
-            ${envelope} > $out/${schema.fileName k}
-        ''
-      ) networkd.kinds}
-      runHook postBuild
-    '';
-    dontInstall = true;
-    dontFixup = true;
-  };
 
   # A change rule, of a kind or, in the same shape, of a field.
   ruleModule = {
@@ -111,87 +54,11 @@ let
     };
   };
 
-  # A fact: node state that rules read as facts.<name>.
-  factModule = {
-    options = {
-      file = lib.mkOption {
-        type = lib.types.nullOr lib.types.str;
-        default = null;
-        example = "/state/kubernetes/share.json";
-        description = "File whose JSON content is the fact: null while the file is missing. A file that cannot be read, or holds no JSON, refuses the delivery.";
-      };
-      fields = lib.mkOption {
-        type = lib.types.listOf lib.types.nonEmptyStr;
-        default = [ ];
-        example = [ "kind" ];
-        description = "Keys of the file's JSON object the fact keeps, so rules and their messages see nothing else of the file; empty keeps the whole content, unless `hashOthers` is set.";
-      };
-      hashOthers = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = "Keep the other keys of the file's JSON object too, each as the hex SHA-256 of its value, so rules see whether a value changed but not what it holds, as of a file of private keys.";
-      };
-      command = lib.mkOption {
-        type = lib.types.nullOr lib.types.str;
-        default = null;
-        example = lib.literalExpression ''"''${pkgs.my-tool}/bin/my-tool facts"'';
-        description = ''
-          Program of the image's store, with its arguments, that prints the fact as JSON. It reads
-          `{"config": …, "oldConfig": …}` and its inputs as JSON on standard input, runs through
-          `systemd-run` with the system read-only and no network, and must finish within 30
-          seconds with at most 1 MiB of output.
-        '';
-      };
-      inputs = lib.mkOption {
-        type = lib.types.listOf (lib.types.enum [ "fallbackSecret" ]);
-        default = [ ];
-        description = "Delivery inputs the command receives besides the config: `fallbackSecret`, the fallback secret delivered with it.";
-      };
-    };
-  };
-  factsCfg = config.chalkos.facts;
-  # A fact's name is read as facts.<name> in CEL, so it is an identifier.
-  badFacts = lib.filter (name: builtins.match "[a-z][A-Za-z0-9]*" name == null) (
-    lib.attrNames factsCfg
-  );
-  # A fact is a file or a command; only a command takes inputs, and only a file keeps fields.
-  unsourcedFacts = lib.filter (
-    name: (factsCfg.${name}.file == null) == (factsCfg.${name}.command == null)
-  ) (lib.attrNames factsCfg);
-  fileInputs = lib.filter (name: factsCfg.${name}.file != null && factsCfg.${name}.inputs != [ ]) (
-    lib.attrNames factsCfg
-  );
-  commandFields = lib.filter (
-    name:
-    factsCfg.${name}.command != null && (factsCfg.${name}.fields != [ ] || factsCfg.${name}.hashOthers)
-  ) (lib.attrNames factsCfg);
-  facts =
-    if badFacts != [ ] then
-      throw "chalkos.facts.${lib.head badFacts}: a fact's name must match [a-z][A-Za-z0-9]*, since rules read it as facts.<name>"
-    else if unsourcedFacts != [ ] then
-      throw "chalkos.facts.${lib.head unsourcedFacts}: a fact has either a file or a command"
-    else if fileInputs != [ ] then
-      throw "chalkos.facts.${lib.head fileInputs}: only a command fact takes inputs"
-    else if commandFields != [ ] then
-      throw "chalkos.facts.${lib.head commandFields}: only a file fact keeps fields or hashes them"
-    else
-      lib.mapAttrs (
-        _: f:
-        if f.file != null then
-          {
-            inherit (f) file;
-          }
-          // lib.optionalAttrs (f.fields != [ ]) { inherit (f) fields; }
-          // lib.optionalAttrs f.hashOthers { inherit (f) hashOthers; }
-        else
-          { inherit (f) command; } // lib.optionalAttrs (f.inputs != [ ]) { inherit (f) inputs; }
-      ) factsCfg;
-  factsFile = pkgs.writeText "chalkos-facts.json" (builtins.toJSON facts);
   # The files of the image chalkos-rules checks, laid out as it reads them; units holds every
   # systemd unit of the image, the upstream ones among them.
   rulesImage = pkgs.linkFarm "chalkos-rules-image" {
     schemas = schemas;
-    "facts.json" = factsFile;
+    "facts.json" = config.system.build.chalkosFacts;
     "effects.json" = config.system.build.chalkosEffects;
     "outputs.json" = config.system.build.chalkosOutputs;
     "examples.json" = config.system.build.chalkosOutputExamples;
@@ -319,8 +186,8 @@ let
 
   # Kind names follow Kubernetes: upper camel case.
   badNames = lib.filter (kind: builtins.match "[A-Z][A-Za-z0-9]*" kind == null) (lib.attrNames cfg);
-  takenNames = lib.filter (kind: lib.elem kind networkd.kinds) (lib.attrNames cfg);
-  reservedGroups = lib.filter (kind: cfg.${kind}.group == networkd.group) (lib.attrNames cfg);
+  takenNames = lib.filter (kind: lib.elem kind api.networkdKinds) (lib.attrNames cfg);
+  reservedGroups = lib.filter (kind: cfg.${kind}.group == api.groups.networkd) (lib.attrNames cfg);
   chalkosGroups = lib.filter (
     kind:
     !cfg.${kind}.builtin
@@ -332,7 +199,7 @@ let
     else if takenNames != [ ] then
       throw "chalkos.kinds.${lib.head takenNames}: the name is taken by chalkos's networkd kind of the same name"
     else if reservedGroups != [ ] then
-      throw "chalkos.kinds.${lib.head reservedGroups}: the group ${networkd.group} is reserved for chalkos's networkd kinds"
+      throw "chalkos.kinds.${lib.head reservedGroups}: the group ${api.groups.networkd} is reserved for chalkos's networkd kinds"
     else if chalkosGroups != [ ] then
       throw "chalkos.kinds.${lib.head chalkosGroups}: the groups chalkos.dev and *.chalkos.dev are reserved for chalkos's own kinds"
     else
@@ -354,7 +221,7 @@ let
   );
   schemas = pkgs.runCommand "chalkos-schemas" { } ''
     mkdir $out
-    cp ${networkdSchemas}/*.json $out/
+    cp ${config.system.build.chalkosNetworkdSchemas}/*.json $out/
     ${lib.concatStrings (
       lib.mapAttrsToList (file: s: ''
         cp ${pkgs.writeText file (builtins.toJSON s)} $out/${file}
@@ -363,7 +230,11 @@ let
   '';
 in
 {
-  imports = [ ./builtin ];
+  imports = [
+    ./builtin
+    ./facts.nix
+    ./networkd.nix
+  ];
 
   options.chalkos.kinds = lib.mkOption {
     type = lib.types.attrsOf (lib.types.submodule kindModule);
@@ -373,48 +244,17 @@ in
       these kinds; chalkctl and chalkd validate each against the kind's schema.
     '';
   };
-  options.chalkos.facts = lib.mkOption {
-    type = lib.types.attrsOf (lib.types.submodule factModule);
-    default = { };
-    description = ''
-      Facts about the node that change rules read as `facts.<name>`, each from a file or a
-      command. chalkd loads a fact when a rule first reads it and keeps it for the delivery: a
-      file is read once, and a command runs once for each config it reads; chalkctl
-      runs no rule that reads one.
-    '';
-  };
 
   config = {
     system.build.chalkosSchemas = schemas;
     system.build.chalkosKindSchemas = kindSchemas;
-    system.build.chalkosFacts = factsFile;
-    system.build.chalkosFactDefinitions = facts;
     system.build.chalkosRulesCheck = rulesCheck;
     system.build.chalkosRulesImage = rulesImage;
     system.checks = [ rulesCheck ];
     system.build.chalkosKinds = map (k: {
       apiVersion = "${k.group}/${k.version}";
       inherit (k) kind multiple;
-    }) (map networkdKind networkd.kinds ++ kinds);
+    }) (config.system.build.chalkosNetworkdKinds ++ kinds);
     environment.etc."chalkos/schemas".source = schemas;
-    environment.etc."chalkos/facts.json".source = factsFile;
-
-    # The node's networkd documents as networkd units, in /run/systemd/network, where they take
-    # precedence over the image's own. The renderer reads each key's networkd name from the
-    # schemas, which are the image's, so the units follow from the documents alone. chalkos-config
-    # renders them before networkd starts, and nothing else writes the directory. networkd has no
-    # offline validator, so the output has no check: the schemas accept exactly the sections and
-    # keys the image's networkd does, and the examples render when the image is built.
-    chalkos.outputs.networkd = {
-      inputs = networkd.kinds;
-      render = "${lib.getExe chalkos-render} networkd ${networkdSchemas}";
-      dir = "/run/systemd/network";
-      examples = ../examples/networkd;
-    };
-    # networkd reloads on systemctl reload as on networkctl reload.
-    chalkos.effects.networkd = {
-      outputs = [ "networkd" ];
-      reload = [ "systemd-networkd.service" ];
-    };
   };
 }

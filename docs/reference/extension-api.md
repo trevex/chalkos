@@ -74,7 +74,7 @@ The values a node reads at a delivery, which change rules and effects compare.
 
 ### `chalkos.facts` { #chalkosfacts }
 
-Type: map of submodule · Default: `{ }` · Declared in: [modules/node/kinds/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+Type: map of submodule · Default: `{ }` · Declared in: [modules/node/kinds/facts.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/facts.nix)
 
 Facts about the node that change rules read as `facts.<name>`, each from a file or a
 command. chalkd loads a fact when a rule first reads it and keeps it for the delivery: a
