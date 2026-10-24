@@ -73,7 +73,8 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	return d.commit(ctx)
 }
 
-// delivery is an ApplyConfig request that passed every check made before the node changes.
+// delivery is an ApplyConfig request that passed the checks made before the node changes; the
+// trust's own checks come first in commit.
 type delivery struct {
 	s   *Server
 	msg *nodev1.ApplyConfigRequest
