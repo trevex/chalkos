@@ -1,7 +1,8 @@
 package chalkctl
 
 // The long descriptions and examples of chalkctl's commands, which its help and the generated
-// reference pages show. They are kept together so they read as one text.
+// reference pages show. They are kept together so they read as one text: each command's long
+// description and its examples, in the order of the command tree.
 
 const rootLong = `chalkctl installs and operates the nodes of a chalkos cluster. It reads the cluster from an
 inventory, chalkos.yaml in the current directory or --inventory, which names each node, its
@@ -50,42 +51,23 @@ const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
   chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
     --out - --public-out secrets.pub.json | pass insert --multiline chalkos/secrets`
 
-const configLong = `Manages client files, which let a person operate the cluster without the secrets file. Writing
-a client file needs the secrets file.`
-
-const configExample = `  chalkctl config new --name alice --role operator --secrets secrets.age`
-
-const configNewLong = `Writes a client file: a new key with a certificate from the OS CA for --name and --role, and
-the OS CA that nodes' certificates chain to. The file goes to ~/.config/chalkos/config unless --out
-names another; commands read it from there, or from the path --config or $CHALKOSCONFIG names. A
-client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the TLS
-handshake, which chalkctl reports as a node that does not accept the client file.
-
-A client file works for status, logs, disks, reboot, storage reset, bootstrap, the etcd commands
-and upgrade; every other command needs the secrets file. A reader may read nodes' information,
-disks, status and logs and etcd's members; an operator may also reboot, upgrade, drain and
-uncordon nodes; an admin may call every method of chalkd but the node's own renewal. See
-https://trevex.github.io/chalkos/how-it-works/node/security/#chalkd-checks-the-role-of-every-request.
-
-The command needs the secrets file and no inventory.`
-
-const configNewExample = `  # A reader's client file for a dashboard.
-  chalkctl config new --name grafana --role reader --ttl 720h --out grafana.json --secrets secrets.age
-
-  # The operator's own client file, at ~/.config/chalkos/config.
-  chalkctl config new --name alice --role operator --secrets secrets.age`
-
-const storageLong = `Manages the volumes of an installed node. Its command needs an admin client file or the
-secrets file.`
-
-const storageExample = `  chalkctl storage reset w1 data`
-
 const nodeLong = `Manages a node's access to the cluster: renews its node certificate, and revokes and unrevokes
 it by name. node renew needs the secrets file; node revoke and node unrevoke need an admin client
 file or the secrets file.`
 
 const nodeExample = `  chalkctl node renew w1
   chalkctl node revoke w1`
+
+const nodeRenewLong = `Issues the node a new node certificate and key from the node CA and delivers them, also once the
+node's own certificate expired. Such a node is verified by the OS CA as of its certificate's
+start, so chalkctl trusts the node's old key: someone holding a leaked, expired key of the node
+and sitting in its network path could receive the new certificate in its place. That is inherent
+to recovering a node; renewing node certificates before they expire avoids it.
+
+A node revoked with chalkctl node revoke is refused, as is any node while no control plane says
+which nodes are revoked: the control planes are asked first. A control plane whose own
+certificate expired cannot answer; --force renews without asking. The command needs the secrets
+file.`
 
 const nodeRenewExample = `  chalkctl node renew w1`
 
@@ -147,6 +129,46 @@ const nodeCARotateExample = `  chalkctl node-ca rotate
   # Write the changed secrets to a new file and keep the old one.
   chalkctl node-ca rotate --secrets secrets.age --out secrets.new.age --public-out secrets.pub.new.json`
 
+const configLong = `Manages client files, which let a person operate the cluster without the secrets file. Writing
+a client file needs the secrets file.`
+
+const configExample = `  chalkctl config new --name alice --role operator --secrets secrets.age`
+
+const configNewLong = `Writes a client file: a new key with a certificate from the OS CA for --name and --role, and
+the OS CA that nodes' certificates chain to. The file goes to ~/.config/chalkos/config unless --out
+names another; commands read it from there, or from the path --config or $CHALKOSCONFIG names. A
+client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the TLS
+handshake, which chalkctl reports as a node that does not accept the client file.
+
+A client file works for status, logs, disks, reboot, storage reset, bootstrap, the etcd commands
+and upgrade; every other command needs the secrets file. A reader may read nodes' information,
+disks, status and logs and etcd's members; an operator may also reboot, upgrade, drain and
+uncordon nodes; an admin may call every method of chalkd but the node's own renewal. See
+https://trevex.github.io/chalkos/how-it-works/node/security/#chalkd-checks-the-role-of-every-request.
+
+The command needs the secrets file and no inventory.`
+
+const configNewExample = `  # A reader's client file for a dashboard.
+  chalkctl config new --name grafana --role reader --ttl 720h --out grafana.json --secrets secrets.age
+
+  # The operator's own client file, at ~/.config/chalkos/config.
+  chalkctl config new --name alice --role operator --secrets secrets.age`
+
+const storageLong = `Manages the volumes of an installed node. Its command needs an admin client file or the
+secrets file.`
+
+const storageExample = `  chalkctl storage reset w1 data`
+
+const resetVolumeLong = `Wipes one volume of a node and creates it again, empty, the way the node's config defines it.
+Its data is lost. A volume the config encrypts is sealed to the TPM again and, unless the
+node's fallback is none, gets the second keyslot back: the node's recovery key or its password.
+A volume the config leaves unencrypted is created without encryption. The command needs the
+inventory, which defines the volume, and an admin client file or the secrets file. A
+node whose fallback is its recovery key needs the secrets file, from which the key is derived.`
+
+const resetVolumeExample = `  # Recreate the data volume of w1.
+  chalkctl storage reset w1 data --secrets secrets.age`
+
 const etcdLong = `Manages the members of the cluster's etcd, which runs on the control planes. etcd members
 needs a reader client file, and etcd remove-member and etcd leave need an admin client file; the
 secrets file works for all three.`
@@ -180,41 +202,12 @@ an admin client file or the secrets file.`
 
 const etcdLeaveExample = `  chalkctl etcd leave cp3`
 
-const bootstrapLong = `Initialises the cluster on one control plane: the node starts etcd as its first member, starts
-the Kubernetes control-plane components and applies chalkos's add-ons and the objects of its Addon
-documents. chalkctl waits until they are applied, up to --timeout. The node refuses when it is
-bootstrapped already or holds etcd data, so a second cluster is never initialised; the other
-control planes join the first. The command needs an admin client file or the secrets file.`
+const recoveryKeyLong = `Prints the recovery key of a node, which unlocks its encrypted volumes when the TPM does not:
+for example after a change of the Secure Boot keys or state, which the TPM measures in PCR 7. It
+is derived from the secrets file's recovery secret and the node's name, so no file stores it. The
+command needs the secrets file.`
 
-const bootstrapExample = `  chalkctl bootstrap cp1`
-
-const kubeconfigLong = `Writes a kubeconfig with a client certificate for the Kubernetes API server, issued from the
-secrets file for --name in the group chalkos:cluster-admins, which is bound to cluster-admin,
-and valid for --ttl. The file holds the certificate's private key and is written with mode
-0600. --server points clients at another URL than the cluster endpoint (a forwarded port, for
-example), while they still verify the API server's certificate for the endpoint. The
-kubeconfig's cluster, user and context are named after the inventory's metadata.name, or after
---context. The command needs the secrets file.`
-
-const kubeconfigExample = `  chalkctl kubeconfig --secrets secrets.age --out lab.kubeconfig
-
-  # With the context home, to merge into a kubeconfig that holds other clusters.
-  chalkctl kubeconfig --secrets secrets.age --context home --out home.kubeconfig
-
-  # Through a port forwarded to the API server.
-  chalkctl kubeconfig --secrets secrets.age --server https://127.0.0.1:6443 --out -`
-
-const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept phase, so kubeconfigs and workloads can
-  # trust the new CA before it issues certificates. It pauses again after the refresh.
-  chalkctl rotate kubernetes-ca --secrets secrets.age
-  chalkctl rotate kubernetes-ca --secrets secrets.age --resume
-  chalkctl rotate kubernetes-ca --secrets secrets.age --finish`
-
-const upgradeExample = `  # Upgrade the whole cluster, each node to the image the inventory names for it.
-  chalkctl upgrade
-
-  # Upgrade the nodes that run an image's variant, two at a time, with an image chalkbuild signed.
-  chalkctl upgrade --image ./worker-image --max-unavailable 2`
+const recoveryKeyExample = `  chalkctl recovery-key w1`
 
 const installLong = `Installs a node that waits in maintenance mode: a machine that booted the installer, or a
 node's image booted for the first time. The node serves a self-signed certificate in maintenance
@@ -286,16 +279,6 @@ const applyConfigExample = `  # Apply w1's changed network and labels.
   # Deliver w1's config for the image an upgrade with --no-reboot staged.
   chalkctl apply-config w1 --secrets secrets.age --staged`
 
-const resetVolumeLong = `Wipes one volume of a node and creates it again, empty, the way the node's config defines it.
-Its data is lost. A volume the config encrypts is sealed to the TPM again and, unless the
-node's fallback is none, gets the second keyslot back: the node's recovery key or its password.
-A volume the config leaves unencrypted is created without encryption. The command needs the
-inventory, which defines the volume, and an admin client file or the secrets file. A
-node whose fallback is its recovery key needs the secrets file, from which the key is derived.`
-
-const resetVolumeExample = `  # Recreate the data volume of w1.
-  chalkctl storage reset w1 data --secrets secrets.age`
-
 const statusLong = `Shows an installed node's status: the config it runs and whether it is the one the inventory
 gives; its platform; the image it booted, by its store's root hash and the tag and revision it
 was built from as far as the node knows them, the boot entry and whether that boot was found
@@ -324,12 +307,51 @@ maintenance mode is reached with --fingerprint or --insecure as well.`
 
 const rebootExample = `  chalkctl reboot w1`
 
-const recoveryKeyLong = `Prints the recovery key of a node, which unlocks its encrypted volumes when the TPM does not:
-for example after a change of the Secure Boot keys or state, which the TPM measures in PCR 7. It
-is derived from the secrets file's recovery secret and the node's name, so no file stores it. The
-command needs the secrets file.`
+const rotateLong = `Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
+status before the next one starts: accept, switch, refresh and, with --finish, finish. A rotation
+that stopped, at an unreachable node for example, or paused for the operator continues with
+--resume. See
+https://trevex.github.io/chalkos/how-it-works/node/certificates/#a-rotation-replaces-a-ca-in-four-phases.
 
-const recoveryKeyExample = `  chalkctl recovery-key w1`
+The secrets file records the phase reached and is updated in place, keeping its previous version
+as <file>.prev, unless --out names a new file. An encrypted file is encrypted again to the
+recipients it records, which --recipient replaces. One rotation runs at a time, and one chalkctl
+command at a time changes the secrets file, holding <file>.lock.
+
+Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while no control plane
+says which nodes are revoked, unless none was bootstrapped yet. --ignore-revoked rotates without
+the list, and every node of the inventory takes part, so remove revoked nodes from the inventory
+first. The command needs the secrets file.`
+
+const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept phase, so kubeconfigs and workloads can
+  # trust the new CA before it issues certificates. It pauses again after the refresh.
+  chalkctl rotate kubernetes-ca --secrets secrets.age
+  chalkctl rotate kubernetes-ca --secrets secrets.age --resume
+  chalkctl rotate kubernetes-ca --secrets secrets.age --finish`
+
+const bootstrapLong = `Initialises the cluster on one control plane: the node starts etcd as its first member, starts
+the Kubernetes control-plane components and applies chalkos's add-ons and the objects of its Addon
+documents. chalkctl waits until they are applied, up to --timeout. The node refuses when it is
+bootstrapped already or holds etcd data, so a second cluster is never initialised; the other
+control planes join the first. The command needs an admin client file or the secrets file.`
+
+const bootstrapExample = `  chalkctl bootstrap cp1`
+
+const kubeconfigLong = `Writes a kubeconfig with a client certificate for the Kubernetes API server, issued from the
+secrets file for --name in the group chalkos:cluster-admins, which is bound to cluster-admin,
+and valid for --ttl. The file holds the certificate's private key and is written with mode
+0600. --server points clients at another URL than the cluster endpoint (a forwarded port, for
+example), while they still verify the API server's certificate for the endpoint. The
+kubeconfig's cluster, user and context are named after the inventory's metadata.name, or after
+--context. The command needs the secrets file.`
+
+const kubeconfigExample = `  chalkctl kubeconfig --secrets secrets.age --out lab.kubeconfig
+
+  # With the context home, to merge into a kubeconfig that holds other clusters.
+  chalkctl kubeconfig --secrets secrets.age --context home --out home.kubeconfig
+
+  # Through a port forwarded to the API server.
+  chalkctl kubeconfig --secrets secrets.age --server https://127.0.0.1:6443 --out -`
 
 const upgradeLong = `Installs a new image on each node: control planes one at a time, each only while etcd keeps its
 quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
@@ -351,32 +373,11 @@ https://trevex.github.io/chalkos/how-it-works/node/upgrades/ and
 https://trevex.github.io/chalkos/how-it-works/kubernetes/upgrades/. The command needs an
 operator client file or the secrets file.`
 
-const rotateLong = `Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
-status before the next one starts: accept, switch, refresh and, with --finish, finish. A rotation
-that stopped, at an unreachable node for example, or paused for the operator continues with
---resume. See
-https://trevex.github.io/chalkos/how-it-works/node/certificates/#a-rotation-replaces-a-ca-in-four-phases.
+const upgradeExample = `  # Upgrade the whole cluster, each node to the image the inventory names for it.
+  chalkctl upgrade
 
-The secrets file records the phase reached and is updated in place, keeping its previous version
-as <file>.prev, unless --out names a new file. An encrypted file is encrypted again to the
-recipients it records, which --recipient replaces. One rotation runs at a time, and one chalkctl
-command at a time changes the secrets file, holding <file>.lock.
-
-Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while no control plane
-says which nodes are revoked, unless none was bootstrapped yet. --ignore-revoked rotates without
-the list, and every node of the inventory takes part, so remove revoked nodes from the inventory
-first. The command needs the secrets file.`
-
-const nodeRenewLong = `Issues the node a new node certificate and key from the node CA and delivers them, also once the
-node's own certificate expired. Such a node is verified by the OS CA as of its certificate's
-start, so chalkctl trusts the node's old key: someone holding a leaked, expired key of the node
-and sitting in its network path could receive the new certificate in its place. That is inherent
-to recovering a node; renewing node certificates before they expire avoids it.
-
-A node revoked with chalkctl node revoke is refused, as is any node while no control plane says
-which nodes are revoked: the control planes are asked first. A control plane whose own
-certificate expired cannot answer; --force renews without asking. The command needs the secrets
-file.`
+  # Upgrade the nodes that run an image's variant, two at a time, with an image chalkbuild signed.
+  chalkctl upgrade --image ./worker-image --max-unavailable 2`
 
 const validateLong = `Checks the config of the nodes named, or of every node of the inventory, as each node would
 check it on its image: the set the inventory gives the node, every document against the schemas of
