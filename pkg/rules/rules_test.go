@@ -14,7 +14,7 @@ import (
 )
 
 // kindSchema is the schema of a kind of the group t.example.org with the spec and rules given, as
-// modules/node/kinds/schema.nix writes one.
+// lib/kinds/schema.nix writes one.
 func kindSchema(kind string, multiple bool, spec map[string]any, rules []any) map[string]any {
 	xk := map[string]any{"group": "t.example.org", "version": "v1", "kind": kind, "multiple": multiple}
 	if rules != nil {

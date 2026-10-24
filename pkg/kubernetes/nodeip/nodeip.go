@@ -34,7 +34,7 @@ func (a Address) String() string { return a.IP.String() + " on " + a.Interface }
 
 // kubernetesInterfaces are name prefixes of the interfaces the pod network and kube-proxy
 // create, such as flannel.1 and flannel-v6.1; their addresses are never the node's. The VXLAN
-// rule in modules/node/vxlan-rule.nix refuses VXLAN arriving on them; keep the two in sync.
+// rule in nix/vxlan-rule.nix refuses VXLAN arriving on them; keep the two in sync.
 var kubernetesInterfaces = []string{"flannel", "cni", "veth", "kube-"}
 
 // Filter selects addresses by subnet: an address matches when an included subnet holds it, or

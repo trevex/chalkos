@@ -113,7 +113,7 @@ func LoadSchemas(dir string) (*Schemas, error) {
 	return ss, nil
 }
 
-// fileName is the name a schema of k must have, as modules/node/kinds/schema.nix also builds it.
+// fileName is the name a schema of k must have, as lib/kinds/schema.nix also builds it.
 func fileName(k Kind) string {
 	group, version, _ := strings.Cut(k.APIVersion, "/")
 	return group + "_" + version + "_" + k.Kind + ".json"
