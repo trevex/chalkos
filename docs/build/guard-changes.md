@@ -293,24 +293,15 @@ no JSON refuses the delivery.
 
 ## Built into chalkos
 
-chalkos's own kinds guard changes the same way:
+chalkos's own kinds guard changes the same way.
+[Built-ins](../reference/builtins.md#change-rules) lists their rules and the
+[facts](../reference/builtins.md#facts) that they and the built-in effects read: those of every
+image and those that images with Kubernetes add.
 
-| Kind | Rule | Takes |
-| --- | --- | --- |
-| `SystemDisk` | VAR keeps its format, encryption and size; a larger VAR, or one that fills the disk, is accepted. | reinstall |
-| `Volume` | A volume keeps its disk, and a changed disk reference finds the disk it lives on. | reinstall |
-| `Volume` | A volume keeps its format and encryption, also the encryption it inherits from the `SystemDisk`, and does not shrink or take a fixed size where it filled its disk. | reset |
-| `Volume` | A disk reference that differs from the one its disk was pinned by resolves, and the pinned disk of a volume the config creates or changes is plugged in. | refuse |
-| `Volume` | No volume the machine records is left out. | reinstall |
-| `Volume` | A new encrypted volume comes with the fallback secret, which opens the node's fallback keyslot. | refuse |
-
-They, and the `when` rules of the built-in effects, read these facts:
-
-| Fact | Source | Value |
-| --- | --- | --- |
-| `recorded` | `/state/storage/storage.json` | The storage section STATE records. |
-| `disks` | `chalkos-storage facts disks` | For each volume with a disk of its own, whether its disk is pinned and plugged in, and what a changed reference finds. |
-| `fallback` | `chalkos-storage facts fallback` | Whether a fallback secret was sent, and whether it opens the node's fallback keyslot. |
+The storage kinds read three facts. `recorded` is the storage section STATE records. `disks`
+says, for each volume with a disk of its own, whether its disk is pinned and plugged in, and what
+a changed reference finds. `fallback` says whether a fallback secret was sent, and whether it
+opens the node's fallback keyslot.
 
 The storage kinds' messages show what the `disks` fact found: a volume's disk reference, the
 identity of its pinned disk and of the disk a changed reference finds, and why a disk cannot be
@@ -324,16 +315,13 @@ as when its header is damaged, although the reset would wipe it.
 
 !!! note "Kubernetes: the Node and Cluster kinds keep the node's share"
 
-    Images with Kubernetes add two rules. The `Node`'s type stays the one the node's Kubernetes
-    share is for, read from `facts.share`. The `Cluster`'s `ipFamilies`, and the pod ranges,
-    service ranges and DNS addresses of the families both configs have, stay once the node holds
-    a share. Ranges and addresses compare as what they denote; an unset DNS address is the 10th
-    of its service range. Both take `refuse`.
-
-    Two facts come with them. `share` is `/state/kubernetes/share.json`: the kind of the node's
-    share and the SHA-256 of each of its other keys, so its certificates and private keys stay
-    out. `cluster` is `/run/chalkos/kubernetes/cluster.json`, the node's cluster as chalkd last
-    wrote it.
+    Images with Kubernetes add rules that keep, once the node holds a Kubernetes share, the
+    `Node`'s type, labels and taints, and the `Cluster`'s `allowSchedulingOnControlPlanes`,
+    `ipFamilies`, and the ranges and DNS addresses of the families both configs have. Ranges and
+    addresses compare as what they denote; an unset DNS address is the 10th of its service range.
+    The fact `share` holds the kind of the node's share and the SHA-256 of each of its other keys,
+    so its certificates and private keys stay out. The fact `cluster` is the node's cluster as
+    chalkd last wrote it.
 
 ## Check that it worked
 

@@ -312,7 +312,7 @@ A changed `Cluster`, `Flannel` or `Node` document restarts `chalkos-kubernetes.s
 A changed `Node` document also restarts `chalkos-controlplane.service`, which opens the control
 plane's ports by the node's type.
 A changed `Addon` document restarts nothing: the control planes apply its objects again.
-[React to changes](../build/react-to-changes.md#built-into-chalkos) lists these effects.
+[Built-ins](../reference/builtins.md#effects-kubernetes) lists these effects.
 
 A node that holds a Kubernetes share refuses a config that changes `ipFamilies`, `podCIDRs`,
 `serviceCIDRs` or `dnsIPs`, or the node's `type`, and names what the change takes.

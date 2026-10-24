@@ -109,17 +109,12 @@ restart it or run a command. The image declares its effects, and each one names 
 or condition that fire it. A delivery that changes nothing an effect watches takes no effect, so
 delivering the same config twice restarts nothing the second time.
 
-chalkos's own effects cover the network and the time servers:
-
-| Effect | Fires when | Does |
-| --- | --- | --- |
-| `networkd` | The rendered `Network`, `NetDev` or `Link` units changed. | Reloads `systemd-networkd.service`. |
-| `chrony` | The rendered list of time servers changed. | Runs `chronyc reload sources` while chronyd runs. |
-| `chrony-dhcp` | The `TimeSync`'s spec changed. | Restarts `chalkos-chrony-dhcp.service`. |
+chalkos's own effects reload networkd when the network changes and chrony when the time servers
+do. [Built-ins](../reference/builtins.md#effects) lists them, and those of images with Kubernetes.
 
 chalkctl lists restarted units alone. A reload or a command prints no line.
-[React to changes](../build/react-to-changes.md) describes how image authors declare effects, the
-order chalkd takes them in, and the effects of the shipped variant's Kubernetes services.
+[React to changes](../build/react-to-changes.md) describes how image authors declare effects and
+the order chalkd takes them in.
 
 A reload, command or restart that fails fails the delivery. The config is applied by then, so the
 error ends with what is still to do, such as `reload bird.service by hand once that is fixed, or

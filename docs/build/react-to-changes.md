@@ -203,39 +203,29 @@ and the next delivery compares with it, so it takes every effect of the failed o
 Every image renders the node's network and time servers as outputs of its own. A delivery checks
 them as it checks an extension's, and every boot renders them before networkd and chrony start.
 Their names are taken, so an extension's outputs and effects use others.
+[Built-ins](../reference/builtins.md#outputs) lists these outputs and the
+[effects](../reference/builtins.md#effects) of every image and of images with Kubernetes.
 
-| Output | Inputs | Files | Check |
-| --- | --- | --- | --- |
-| `networkd` | `Network`, `NetDev`, `Link` | One unit per document in `/run/systemd/network`, named as the document with its kind's suffix, such as `10-uplink.network`. | None. |
-| `chrony` | `TimeSync` | `servers.sources`, one `server` line per server of the `TimeSync`, or chalkos's own servers without one. | `chronyd -p` parses the file, and each line must be a `server` line of a host name or address. |
+The output `networkd` writes one unit per document to `/run/systemd/network`, named as the
+document with its kind's suffix, such as `10-uplink.network`. networkd has no offline validator,
+so the schemas guard it: they accept exactly the sections and keys of the image's networkd, and
+refuse a value that spans lines. Its units take precedence over the image's own in
+`/etc/systemd/network`. The output owns `/run/systemd/network`, so a unit written there by other
+means is gone once the link replaces the directory.
 
-`networkd` has no offline validator, so the schemas guard it: they accept exactly the sections and
-keys of the image's networkd, and refuse a value that spans lines. Its units take precedence over
-the image's own in `/etc/systemd/network`. The output owns `/run/systemd/network`, so a unit
-written there by other means is gone once the link replaces the directory. The time servers that
-DHCP announces are no output, because they come from the network at runtime.
+The output `chrony` writes `servers.sources`, one `server` line per server of the `TimeSync`, or
+chalkos's own servers without one. Its check parses the file with `chronyd -p` and accepts only
+`server` lines of a host name or address. Its effect runs `chalkos-chrony-reload-sources`, which
+runs `chronyc reload sources` while `chronyd.service` is active. The time servers that DHCP
+announces are no output, because they come from the network at runtime.
 
-| Effect | Fires when | Does |
-| --- | --- | --- |
-| `networkd` | The output `networkd` changed. | Reloads `systemd-networkd.service`. |
-| `chrony` | The output `chrony` changed. | Runs `chronyc reload sources` while `chronyd.service` is active. |
-| `chrony-dhcp` | The `TimeSync`'s spec changed. | Restarts `chalkos-chrony-dhcp.service`. |
+!!! note "Kubernetes: effects on the share and chalkd's loops"
 
-!!! note "Kubernetes: six more effects"
-
-    Images with Kubernetes declare six more effects:
-
-    | Effect | Fires when | Does |
-    | --- | --- | --- |
-    | `registry-mirrors` | A `Mirror` or `Registry` spec changed. | Restarts `chalkos-registry-mirrors.service`. |
-    | `registry-credentials` | A `Registry` document, or a value of a Secret one references, changed. | Restarts `chalkos-registry-credentials.service` and `kubelet.service`. |
-    | `controlplane-ports` | The `Node`'s spec changed. | Restarts `chalkos-controlplane.service`. |
-    | `kubernetes` | The `Node`, the `Host`, the `Network` documents' addresses, the `Cluster` or `Flannel` document, the cluster file or the share changed, apart from a share that differs in its node CA alone. | Restarts and starts `chalkos-kubernetes.service` and `kubelet.service`. |
-    | `chalkd-cluster` | The cluster changed. | Restarts chalkd's Kubernetes loops. |
-    | `chalkd-share` | The share changed beyond its node CA or, on a control plane, the objects of the `Addon` documents changed. | Reloads the control plane's loop. |
-
-    chalkd acts on its loops also when a delivery fails part way, as when it cannot write the
-    cluster file, the node certificate, the share or the slot.
+    Images with Kubernetes add effects that restart their services and act on chalkd's own
+    loops. Their `when` rules leave out a share that differs in its node CA alone, and
+    `chalkd-share` also fires on a control plane when the objects of the `Addon` documents
+    changed. chalkd acts on its loops also when a delivery fails part way, as when it cannot
+    write the cluster file, the node certificate, the share or the slot.
 
 ## Check that it worked
 

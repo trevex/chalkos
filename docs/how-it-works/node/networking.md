@@ -50,7 +50,7 @@ that spans lines, before the node sees it. [Config kinds](../../reference/kinds.
 every section with its networkd name.
 
 Each key records its networkd spelling. From it, the built-in
-[output](../../build/react-to-changes.md#built-into-chalkos) `networkd` renders the units into
+[output](../../reference/builtins.md#output-networkd) `networkd` renders the units into
 `/run/systemd/network`, where they take precedence over the image's. chalkd renders them for every
 delivery before it changes anything, and `chalkos-config.service` renders them at every boot before
 networkd starts. A changed network reaches a running node with

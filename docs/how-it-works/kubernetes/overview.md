@@ -154,7 +154,7 @@ node goes into each node's `Node` document instead, which chalkctl does not comp
 ## The ranges of a cluster are fixed once it exists
 
 A changed cluster restarts `chalkos-kubernetes` and the kubelet, as their
-[effect](../../build/react-to-changes.md#built-into-chalkos) says. chalkd on a control plane then
+[effect](../../reference/builtins.md#effect-kubernetes) says. chalkd on a control plane then
 starts its Kubernetes work again, so the static pods and add-ons follow the new settings.
 
 Some settings are fixed once the cluster exists: `ipFamilies`, the pod ranges of `podCIDRs`, the
