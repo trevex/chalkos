@@ -54,7 +54,7 @@ chalkos.
 
     ---
 
-    The units that run at every boot, and what an image fixes versus what its config delivers.
+    How systemd-boot orders a node's entries, the units that run at every boot, and what an image fixes.
 
     [:octicons-arrow-right-24: Read](boot.md)
 

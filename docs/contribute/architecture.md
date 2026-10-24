@@ -213,6 +213,25 @@ After the reboot, the initrd unseals STATE and VAR with the TPM, `chalkos-config
 the config, and chalkd finds the `installed` marker and starts in normal mode with the node
 certificate from STATE.
 
+## Storage partitions are matched deterministically
+
+`pkg/config/storage.go` renders the systemd-repart definitions of a node's VAR and volumes, and
+`pkg/storage/node` runs systemd-repart once per disk to create and grow the partitions. repart
+assigns existing partitions to definitions, so three choices keep that matching deterministic:
+
+- Each partition gets its own GPT type UUID, derived from its label. repart assigns existing
+  partitions to definitions by type, so a new volume can never take over another volume's
+  partition.
+- Definition files are ordered: VAR first, then the system disk's volumes in name order. A disk of
+  its own holds one volume.
+- Partition UUIDs derive from a seed of the node's name and the disk, passed as `--seed`. The same
+  definition yields the same partition UUID on every run, and the node opens volumes on other
+  disks by that UUID.
+
+A `Volume`'s `repart` field passes further repart.d keys through. The keys the typed fields set
+(`Type`, `Label`, `Encrypt`, `Format`, `SizeMinBytes`, `SizeMaxBytes` and `MountPoint`) are refused
+there.
+
 ## The command-line programs
 
 chalkctl, chalklab, chalkbuild and chalkcfg are cobra command trees in importable packages:

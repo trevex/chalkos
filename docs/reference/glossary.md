@@ -246,7 +246,7 @@ The image and an install write
 generation 1; each [upgrade](#upgrade) writes the one above the highest on the ESP, so
 systemd-boot, which orders a node's UKIs by file name, boots the image installed last first,
 older or newer. See
-[Boot, health and rollback](../how-it-works/node/boot-and-rollback.md#how-does-systemd-boot-choose-an-entry).
+[Boot and the image](boot.md#systemd-boot-sort-rules).
 
 ## Grant { #grant }
 <!-- abbr: grants, Grants -->
@@ -458,7 +458,7 @@ The git revision and tag an image was built from. `chalkos.lib.mkImages` takes t
 and `tag` and writes them into the [image](#image)'s `metadata.json`. chalkctl shows them beside
 the [root hash](#root-hash), as in `3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)`, and a node keeps them in
 `/state/chalkd/images.json`. They never reach the store, and nothing orders or refuses an image by
-them. See [The image](../how-it-works/node/image.md#what-identifies-an-image).
+them. See [The image](../how-it-works/node/image.md#the-root-hash-identifies-an-image).
 
 ## Reader { #reader }
 <!-- abbr: none -->
@@ -496,7 +496,7 @@ with the failed boot's last log lines, and `chalkctl upgrade` stops. See
 The top hash of the [store](#store)'s dm-verity hash tree. The UKI carries it on the kernel command line (`usrhash=`), so the UKI's signature covers
 every byte of the store. It identifies an image: chalkd and chalkctl tell images apart by it
 alone, and chalkctl shows its first 12 hex characters. See
-[The image](../how-it-works/node/image.md#what-identifies-an-image).
+[The image](../how-it-works/node/image.md#the-root-hash-identifies-an-image).
 
 ## Rotation { #rotation }
 <!-- abbr: rotations, Rotations -->

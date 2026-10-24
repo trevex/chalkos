@@ -163,7 +163,7 @@ A comment in a block explains a decision, not the next line:
 ## Links
 
 Links between pages use relative paths to the Markdown file, such as
-`[the image](../how-it-works/node/image.md#what-identifies-an-image)`. The strict build fails on a missing page or
+`[the image](../how-it-works/node/image.md#the-root-hash-identifies-an-image)`. The strict build fails on a missing page or
 anchor. The generated reference has predictable anchors:
 
 | Target | Path and anchor |

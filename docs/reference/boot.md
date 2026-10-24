@@ -1,14 +1,34 @@
 ---
 title: "Boot and the image"
-description: "The units that run at every boot of a node, and what an image fixes versus what its config delivers"
+description: "How systemd-boot orders a node's entries, the units that run at every boot, and what an image fixes"
 ---
 
 # Boot and the image
 
-This page is for operators and image authors. It lists the units that do chalkos's work at
-every boot of a node, for reading a node's logs. It also lists what an image fixes when it is
+This page is for operators and image authors. It lists the rules by which systemd-boot picks the
+UKI a node boots, for reading a node's ESP. It lists the units that do chalkos's work at every
+boot of a node, for reading a node's logs. It also lists what an image fixes when it is
 built and what reaches a node in its config, for deciding whether a change needs a new image or a
 config delivery.
+
+## systemd-boot sort rules
+
+systemd-boot lists the UKIs in `/EFI/Linux` on the ESP and boots the first entry of this order
+whose tries are not used up. Each rule decides only between entries that the rules above it leave
+equal.
+
+| Rule | Order | On a chalkos node |
+| --- | --- | --- |
+| Tries left | Entries with tries left, or without a counter, first; used-up entries last | A new image's entry is passed over once its tries are used up, so the previous generation boots |
+| Image ID | `IMAGE_ID`, or else `ID`, lowest first | Every chalkos UKI has `IMAGE_ID=chalkos`. A UKI of another image whose ID sorts before it, such as `IMAGE_ID=alpine`, boots before every chalkos entry |
+| `IMAGE_VERSION` | Highest first | Empty on every chalkos image, so it decides nothing |
+| File name | Highest first, numbers compared as numbers | `chalkos_<generation>.efi`, so `chalkos_10.efi` comes before `chalkos_9.efi` and the entry installed last boots first, whether its image is newer or older |
+
+The image and an install write generation 1, and each upgrade writes the generation above the
+highest on the ESP. An entry being counted carries its tries in its name, as
+`chalkos_<generation>+<tries>.efi` and then `chalkos_<generation>+<left>-<used>.efi`. chalkd sets
+no EFI variable to choose the entry, so the order is systemd-boot's own. chalkos never writes UKIs
+of other image IDs to the ESP and leaves those placed there alone.
 
 ## Boot units
 
@@ -41,6 +61,6 @@ config delivery, without a reboot.
 | Boot tries and health timeout | Time servers, in `TimeSync` |
 | The config kinds the image accepts and their schemas | Documents of the kinds extensions declare, and the `Secret`s they reference |
 
-Sources: `modules/node/base/storage.nix`, `modules/node/chalkd.nix`, `modules/node/kubernetes.nix`,
+Sources: systemd-boot's sort order, `pkg/upgrade/esp.go`, `modules/node/base/storage.nix`, `modules/node/chalkd.nix`, `modules/node/kubernetes.nix`,
 `modules/node/upgrade.nix`, `modules/installer/default.nix`, `lib/images-arguments.nix` and
 `modules/node/kinds`.

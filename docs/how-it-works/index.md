@@ -104,7 +104,7 @@ chalkos adds to run Kubernetes on it.
 
     ---
 
-    How a new image reaches a node, how chalkctl rolls it through a cluster, and what stops it.
+    How a new image reaches a node, how the node writes and checks it, and how it boots it on trial.
 
     [:octicons-arrow-right-24: Read](node/upgrades.md)
 
