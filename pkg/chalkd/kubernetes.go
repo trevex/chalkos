@@ -73,7 +73,8 @@ type Kubernetes struct {
 	// APIServerReady reports whether the node's API server answers ready. Tests replace it.
 	APIServerReady func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
 	// VIPTTL is the lifetime in seconds of the lease that holds the VIPs, and VIPInterval the
-	// time between two health checks of the API server; zero means 10 seconds and 2 seconds.
+	// time between two health checks of the API server; zero means vip.DefaultTTL and
+	// vip.DefaultInterval.
 	VIPTTL      int
 	VIPInterval time.Duration
 	// EtcdTimeout bounds each request to etcd, so an etcd member that does not answer never holds

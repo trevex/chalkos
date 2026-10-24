@@ -65,7 +65,7 @@ func TestStatusVIP(t *testing.T) {
 	}
 }
 
-// The VIPs go on the interface the cluster names, or else on the one with the node's address of
+// vipControlPlane runs the VIP election of the bootstrapped control plane n1 on its own etcd
 // member, with addrs standing for its VIPs and an API server that is always ready.
 func vipControlPlane(t *testing.T) (*Kubernetes, *fakeAddresses) {
 	t.Helper()

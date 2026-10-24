@@ -162,9 +162,8 @@ func Own(members []Member, name, peerURL string, resume bool) (m Member, ok bool
 	return Member{}, false, nil
 }
 
-// Self finds the member of the node of the name among the members once it joined: the one of its
-// name or, as a learner that never started has none, one without a name at peerURL. An empty
-// peerURL finds it by name alone.
+// Self finds a joined node's own member: the one named name or, as a learner that never started
+// has none, a nameless one at peerURL. An empty peerURL finds it by name alone.
 //
 // Self is lenient on purpose and reports no stale member: it only looks up the node's own. Own is
 // the strict check at join time.

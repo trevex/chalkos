@@ -22,6 +22,14 @@ const electionPrefix = "/chalkos/vip"
 // the election stops.
 const cleanupTimeout = 3 * time.Second
 
+// The defaults of an Election's zero fields.
+const (
+	DefaultTTL      = 10
+	DefaultInterval = 2 * time.Second
+	DefaultMargin   = 2 * time.Second
+	DefaultFailures = 3
+)
+
 // ErrEtcdStalled means etcd did not answer the resignation from a cancelled campaign in time, and
 // the election's client was closed.
 var ErrEtcdStalled = errors.New("etcd did not answer the resignation from the VIP election")
@@ -38,6 +46,8 @@ type Holder interface {
 // Election holds the VIPs on this node while it leads the etcd election, which it campaigns in
 // only while its API server is healthy.
 type Election struct {
+	// Client reaches etcd. The election owns it: Close closes it, and so does a campaign that
+	// stalled.
 	Client *clientv3.Client
 	// Name is the node's name, the leader's value in the election.
 	Name string
@@ -45,19 +55,23 @@ type Election struct {
 	Healthy   func(ctx context.Context) bool
 	Addresses Holder
 	// TTL is the lease's lifetime in seconds: how long the VIPs stay unheld after their holder
-	// failed.
+	// failed. Zero means DefaultTTL.
 	TTL int
-	// Interval is the time between two health checks, and between two announcements.
+	// Interval is the time between two health checks, and between two announcements. Zero means
+	// DefaultInterval.
 	Interval time.Duration
 	// Margin is how long before etcd may let the lease expire the node releases the VIPs, at most
-	// a quarter of the lease's lifetime.
+	// a quarter of the lease's lifetime. Zero means DefaultMargin.
 	Margin time.Duration
-	// Failures is how many health checks in a row fail before the node resigns.
+	// Failures is how many health checks in a row fail before the node resigns. Zero means
+	// DefaultFailures.
 	Failures int
-	// Holding is set while the node holds the VIPs.
+	// Holding is set while the node holds the VIPs; it may be nil.
 	Holding *atomic.Bool
 	// keepAlive renews the lease once; nil means the client's KeepAliveOnce.
 	keepAlive func(context.Context, clientv3.LeaseID) (*clientv3.LeaseKeepAliveResponse, error)
+	// held stands in for a nil Holding.
+	held atomic.Bool
 	// closed closes the client once, when its campaign stalled or the election ended.
 	closed sync.Once
 }
@@ -85,7 +99,7 @@ func (e *Election) Run(ctx context.Context) error {
 			log.Printf("kubernetes: the VIP election: %v", err)
 			select {
 			case <-ctx.Done():
-			case <-time.After(e.Interval):
+			case <-time.After(e.interval()):
 			}
 		}
 	}
@@ -98,7 +112,7 @@ func (e *Election) waitHealthy(ctx context.Context) bool {
 		select {
 		case <-ctx.Done():
 			return false
-		case <-time.After(e.Interval):
+		case <-time.After(e.interval()):
 		}
 	}
 	return true
@@ -116,8 +130,8 @@ var errLeaseUnrenewed = errors.New("could not renew the lease of the VIPs in tim
 // releases the VIPs before it resigns.
 func (e *Election) lead(ctx context.Context) error {
 	sent := time.Now()
-	gctx, cancel := context.WithTimeout(ctx, time.Duration(e.TTL)*time.Second)
-	grant, err := e.Client.Grant(gctx, int64(e.TTL))
+	gctx, cancel := context.WithTimeout(ctx, time.Duration(e.ttl())*time.Second)
+	grant, err := e.Client.Grant(gctx, int64(e.ttl()))
 	cancel()
 	if err != nil {
 		return err
@@ -164,7 +178,7 @@ func (e *Election) lead(ctx context.Context) error {
 	// etcd keeps the lease at least ttl after it received the last renewal, so at least ttl after
 	// its request was sent: the node releases the VIPs before then unless a newer renewal
 	// succeeded, so no other node takes them while it still holds them.
-	margin := min(e.Margin, ttl/4)
+	margin := min(e.margin(), ttl/4)
 	if !time.Now().Before(renewed.deadline(ttl, margin)) {
 		resign()
 		return errLeaseUnrenewed
@@ -176,9 +190,9 @@ func (e *Election) lead(ctx context.Context) error {
 		resign()
 		return err
 	}
-	e.Holding.Store(true)
+	e.holding().Store(true)
 	log.Print("kubernetes: this node holds the VIPs")
-	acquire := time.NewTicker(e.Interval)
+	acquire := time.NewTicker(e.interval())
 	defer acquire.Stop()
 	for {
 		select {
@@ -280,11 +294,11 @@ func (e *Election) renew(ctx context.Context, id clientv3.LeaseID, ttl time.Dura
 func (e *Election) watchHealth(ctx context.Context, unhealthy func()) {
 	defer unhealthy()
 	failed := 0
-	for failed < e.Failures {
+	for failed < e.failures() {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(e.Interval):
+		case <-time.After(e.interval()):
 		}
 		if e.Healthy(ctx) {
 			failed = 0
@@ -296,7 +310,7 @@ func (e *Election) watchHealth(ctx context.Context, unhealthy func()) {
 }
 
 func (e *Election) release() {
-	if e.Holding.Swap(false) {
+	if e.holding().Swap(false) {
 		log.Print("kubernetes: this node releases the VIPs")
 	}
 	if err := e.Addresses.Release(); err != nil {
@@ -309,4 +323,39 @@ func (e *Election) keepAliveOnce(ctx context.Context, id clientv3.LeaseID) (*cli
 		return e.keepAlive(ctx, id)
 	}
 	return e.Client.KeepAliveOnce(ctx, id)
+}
+
+func (e *Election) ttl() int {
+	if e.TTL <= 0 {
+		return DefaultTTL
+	}
+	return e.TTL
+}
+
+func (e *Election) interval() time.Duration {
+	if e.Interval <= 0 {
+		return DefaultInterval
+	}
+	return e.Interval
+}
+
+func (e *Election) margin() time.Duration {
+	if e.Margin <= 0 {
+		return DefaultMargin
+	}
+	return e.Margin
+}
+
+func (e *Election) failures() int {
+	if e.Failures <= 0 {
+		return DefaultFailures
+	}
+	return e.Failures
+}
+
+func (e *Election) holding() *atomic.Bool {
+	if e.Holding == nil {
+		return &e.held
+	}
+	return e.Holding
 }

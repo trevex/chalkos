@@ -477,3 +477,15 @@ func eventually(t *testing.T, what string, check func() bool) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// An election's zero fields take the defaults, and a nil Holding still tracks the holder.
+func TestElectionDefaults(t *testing.T) {
+	e := &Election{}
+	if e.ttl() != DefaultTTL || e.interval() != DefaultInterval || e.margin() != DefaultMargin || e.failures() != DefaultFailures {
+		t.Errorf("defaults %d, %v, %v, %d", e.ttl(), e.interval(), e.margin(), e.failures())
+	}
+	e.holding().Store(true)
+	if !e.held.Load() {
+		t.Error("a nil Holding does not track the holder")
+	}
+}
