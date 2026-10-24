@@ -5,10 +5,11 @@
 #
 # The NixOS firewall drops what its own input chain does not accept, whatever other tables do, so
 # the table only marks VXLAN packets sent to the node's addresses, and the firewall accepts
-# packets carrying the mark (see kubernetes.nix). The table is not the firewall's: reloading the
-# firewall leaves it alone. With source ranges it also drops the VXLAN pods send through the node
-# to them, whatever the file holds: the pod and source ranges come from rangesCommand, which
-# prints "pods <range>" for each family's pod range and "source <range>" for each source range.
+# packets carrying the mark (see modules/node/kubernetes.nix). The table is not the firewall's:
+# reloading the firewall leaves it alone. With source ranges it also drops the VXLAN pods send
+# through the node to them, whatever the file holds: the pod and source ranges come from
+# rangesCommand, which prints "pods <range>" for each family's pod range and "source <range>" for
+# each source range.
 # When it fails or prints anything else, the table drops all VXLAN the node forwards.
 {
   lib,

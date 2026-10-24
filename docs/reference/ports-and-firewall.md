@@ -148,6 +148,6 @@ control plane that holds it and announces it to the neighbours with ARP or IPv6 
 advertisements.
 
 Sources: the firewall rules of `modules/node/chalkd.nix`, `modules/node/kubernetes.nix`,
-`modules/node/controlplane-ports.nix` and `modules/node/vxlan-rule.nix`, and the listeners of
+`nix/controlplane-ports.nix` and `nix/vxlan-rule.nix`, and the listeners of
 `cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
 `modules/node/kubernetes.nix`.

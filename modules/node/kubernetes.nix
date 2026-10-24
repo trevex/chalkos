@@ -79,7 +79,7 @@ let
   vxlanFirewall = flannel && config.networking.firewall.enable;
   # A packet mark bit kube-proxy (0x4000, 0x8000) and flannel leave alone.
   vxlanMark = "0x01000000";
-  vxlanRule = pkgs.callPackage ./vxlan-rule.nix {
+  vxlanRule = pkgs.callPackage ../../nix/vxlan-rule.nix {
     ipv6 = config.networking.enableIPv6;
     mark = vxlanMark;
     # Each family's pod range from the node's Cluster document, then the source ranges from its
@@ -132,7 +132,7 @@ let
 
   # chalkd renders each registry's hosts.toml from the Mirror and Registry documents, so
   # containerd also reaches a registry over plain HTTP when its Registry allows it.
-  registryMirrors = pkgs.callPackage ./registry-mirrors.nix {
+  registryMirrors = pkgs.callPackage ../../nix/registry-mirrors.nix {
     mirrorsCommand = "${lib.getExe chalkd} containerd-hosts";
   };
 
@@ -141,7 +141,7 @@ let
   # the node receives, so a network plugin of the cluster's own (cni.provider "none") must not
   # use it.
   controlPlaneMark = "0x02000000";
-  controlPlanePorts = pkgs.callPackage ./controlplane-ports.nix {
+  controlPlanePorts = pkgs.callPackage ../../nix/controlplane-ports.nix {
     typeCommand = config.chalkos.kinds.Node.get { path = "spec.type"; };
     ports = config.networking.firewall.enable;
     mark = controlPlaneMark;

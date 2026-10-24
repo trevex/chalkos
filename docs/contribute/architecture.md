@@ -247,7 +247,7 @@ it has no `completion` command.
 
 | Directory | What it holds |
 | --- | --- |
-| `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, disk, storage), `kinds/` (`chalkos.kinds` and the built-in kinds), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, Kubernetes, upgrade, the VXLAN rule. |
+| `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, disk, storage), `kinds/` (`chalkos.kinds` and the built-in kinds), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, Kubernetes, upgrade. |
 | `modules/platforms/` | `metal` and `kvm`. |
 | `modules/installer/` | The installer image and its ISO. |
 | `modules/testing/` | The test probe, the test image's partition sizes and the test-only config kind `Greeting` with its output and effect. |
@@ -262,8 +262,9 @@ The layout follows these rules, so each change has one place to go:
 - The node modules declare the image options; `lib/images-arguments.nix` declares the
   arguments of `mkImages`. Everything about a cluster or a node is a config kind, not an option.
 - Go code reads a node's config documents and the image's files alone.
-- `nix/` holds tooling: packages, apps, checks, the development shell, the docs build and test
-  fixtures, not product logic.
+- `nix/` holds packages and tooling: apps, checks, the development shell, the docs build and
+  test fixtures. The scripts the node modules run, such as the VXLAN rule, are packages there;
+  the modules decide where and with which arguments an image runs them.
 - `cmd/` holds the mains, which wire packages up; logic worth testing lives in `pkg/`.
 
 [Development setup](development.md) lists the commands of a development loop and
