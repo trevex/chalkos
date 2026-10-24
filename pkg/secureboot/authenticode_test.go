@@ -1,9 +1,12 @@
-package uki
+package secureboot
 
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/x509"
@@ -15,12 +18,16 @@ import (
 	"math/big"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
+
+// rootHash is a store root hash, as UKIs name it in their command line.
+const rootHash = "a334de1f08f79f925c9c65187238eb212b5f408c378f0f3a361ee8d395c94ddd"
 
 // authenticode signs the PE image as sbsign does, with any key: an Authenticode signature of
 // its digest appended as its certificate table, carrying the signer's certificate and those of bag.
@@ -321,5 +328,166 @@ func writePEM(t *testing.T, path, typ string, der []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: der}), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// signer is a certificate and its key, written as PEM files for sbsign.
+type signer struct {
+	cert            *x509.Certificate
+	key             any
+	certPEM, keyPEM string
+}
+
+func newSigner(t *testing.T, dir, name string, parent *signer, ec bool) *signer {
+	t.Helper()
+	var key any
+	var pub any
+	if ec {
+		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		key, pub = k, &k.PublicKey
+	} else {
+		k, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatal(err)
+		}
+		key, pub = k, &k.PublicKey
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(time.Now().UnixNano()),
+		Subject:               pkix.Name{CommonName: name},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		BasicConstraintsValid: true,
+		IsCA:                  parent == nil,
+	}
+	issuer, signKey := tmpl, key
+	if parent != nil {
+		issuer, signKey = parent.cert, parent.key
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, issuer, pub, signKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &signer{cert: cert, key: key, certPEM: filepath.Join(dir, name+".crt"), keyPEM: filepath.Join(dir, name+".key")}
+	if err := os.WriteFile(s.certPEM, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.keyPEM, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// sbsign signs the image with sbsign and returns the signed image.
+func sbsign(t *testing.T, dir string, image []byte, s *signer) []byte {
+	t.Helper()
+	in, out := filepath.Join(dir, "in.efi"), filepath.Join(dir, "out.efi")
+	os.Remove(out)
+	if err := os.WriteFile(in, image, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if o, err := exec.Command("sbsign", "--key", s.keyPEM, "--cert", s.certPEM, "--output", out, in).CombinedOutput(); err != nil {
+		t.Fatalf("sbsign: %v: %s", err, o)
+	}
+	signed, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signed
+}
+
+func verify(img []byte, db, dbx Database) error {
+	return VerifySignature(bytes.NewReader(img), int64(len(img)), db, dbx)
+}
+
+// TestVerifySignature signs a UKI and systemd-boot with sbsign, as chalkctl does, and checks
+// them against db and dbx as firmware would.
+func TestVerifySignature(t *testing.T) {
+	if _, err := exec.LookPath("sbsign"); err != nil {
+		t.Skip("sbsign not in PATH")
+	}
+	efi := os.Getenv("CHALKOS_TEST_EFI")
+	if efi == "" {
+		t.Skip("CHALKOS_TEST_EFI not set")
+	}
+	boot, err := os.ReadFile(efi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	db := newSigner(t, dir, "db", nil, false)
+	other := newSigner(t, dir, "other", nil, false)
+	// A signing certificate the db certificate issued, as a db CA would.
+	leaf := newSigner(t, dir, "leaf", db, false)
+	uki := ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos"}, "usrhash="+rootHash)
+	// An image whose size is not a multiple of eight, which sbsign pads.
+	odd := append(bytes.Clone(uki), 1, 2, 3)
+	trusted := Database{Certificates: []*x509.Certificate{db.cert}}
+
+	for _, tc := range []struct {
+		name  string
+		image []byte
+		by    *signer
+	}{
+		{"uki", uki, db},
+		{"systemd-boot", boot, db},
+		{"trailing data", odd, db},
+		{"signing certificate of db", uki, leaf},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			signed := sbsign(t, dir, tc.image, tc.by)
+			if err := verify(signed, trusted, Database{}); err != nil {
+				t.Fatalf("a signature of %s was refused: %v", tc.by.cert.Subject.CommonName, err)
+			}
+			if err := exec.Command("sbverify", "--cert", db.certPEM, filepath.Join(dir, "out.efi")).Run(); err != nil && tc.by == db {
+				t.Errorf("sbverify refuses what VerifySignature accepted: %v", err)
+			}
+			if err := verify(signed, Database{Certificates: []*x509.Certificate{other.cert}}, Database{}); err == nil || !strings.Contains(err.Error(), "not in db") {
+				t.Errorf("a signature of a certificate db does not hold: %v", err)
+			}
+			// A byte changed in a section, in the headers and after the sections.
+			for _, at := range []int{len(tc.image) / 2, 0x50} {
+				changed := bytes.Clone(signed)
+				changed[at] ^= 1
+				if err := verify(changed, trusted, Database{}); err == nil {
+					t.Errorf("an image changed at %d after signing was accepted", at)
+				}
+			}
+			digest := sha256.New()
+			l, err := readLayout(bytes.NewReader(signed), int64(len(signed)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			sum, err := l.digest(bytes.NewReader(signed), digest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := verify(signed, trusted, Database{SHA256: [][]byte{sum}}); err == nil || !strings.Contains(err.Error(), "dbx revokes the image") {
+				t.Errorf("an image whose digest dbx lists: %v", err)
+			}
+			if err := verify(signed, trusted, Database{Certificates: []*x509.Certificate{tc.by.cert}}); err == nil || !strings.Contains(err.Error(), "dbx revokes the certificate") {
+				t.Errorf("an image whose signer dbx lists: %v", err)
+			}
+		})
+	}
+
+	if err := verify(uki, trusted, Database{}); err == nil || !strings.Contains(err.Error(), "not signed") {
+		t.Errorf("an unsigned image: %v", err)
+	}
+	// sbsign signs with RSA keys alone; an ECDSA certificate in db trusts nothing it signed.
+	ec := newSigner(t, dir, "ec", nil, true)
+	if err := verify(sbsign(t, dir, uki, db), Database{Certificates: []*x509.Certificate{ec.cert}}, Database{}); err == nil {
+		t.Error("accepted a signature that the ECDSA certificate in db did not make")
 	}
 }

@@ -39,12 +39,8 @@ func Booted(entries []esp.Entry, efivars string, running []byte) (esp.Entry, err
 	return esp.Entry{}, errors.New("no UKI on the ESP boots the running store")
 }
 
-// EFI variable vendors: systemd-boot's, the global one and that of the signature databases.
-const (
-	loaderVendor   = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
-	globalVendor   = "8be4df61-93ca-11d2-aa0d-00e098032b8c"
-	securityVendor = "d719b2cb-3d3a-4596-a3bc-dad00e67656f"
-)
+// loaderVendor is the vendor of systemd-boot's EFI variables.
+const loaderVendor = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
 
 // readVariable reads an EFI variable's value from efivarfs; nil when it is not set.
 func readVariable(efivars, name, vendor string) ([]byte, error) {

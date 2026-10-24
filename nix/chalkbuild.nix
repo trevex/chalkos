@@ -20,6 +20,7 @@ callPackage ./go-module.nix { } {
     ../pkg/ociimage
     ../pkg/pki
     ../pkg/schema
+    ../pkg/secureboot
     ../pkg/uki
     ../pkg/verity
   ];

@@ -34,6 +34,7 @@ import (
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
+	"github.com/trevex/chalkos/pkg/secureboot"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -627,10 +628,10 @@ func TestSecureBoot(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, old)
-			l.setGlobal("SecureBoot", globalVendor, []byte{tc.secureBoot})
-			l.setGlobal("SetupMode", globalVendor, []byte{0})
-			l.setGlobal("db", securityVendor, ukitest.SignatureList(tc.db))
-			l.setGlobal("dbx", securityVendor, nil)
+			l.setGlobal("SecureBoot", secureboot.GlobalVendor, []byte{tc.secureBoot})
+			l.setGlobal("SetupMode", secureboot.GlobalVendor, []byte{0})
+			l.setGlobal("db", secureboot.SecurityVendor, ukitest.SignatureList(tc.db))
+			l.setGlobal("dbx", secureboot.SecurityVendor, nil)
 			_, err := l.install(tc.img)
 			if tc.want == "" {
 				if err != nil {

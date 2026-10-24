@@ -1,5 +1,5 @@
 // Package uki reads what a unified kernel image says about the image it boots, from its
-// os-release and command line sections, and checks its Secure Boot signature as firmware does.
+// os-release and command line sections, and the architecture an EFI binary is built for.
 package uki
 
 import (

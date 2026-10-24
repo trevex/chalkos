@@ -13,7 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/ociimage"
-	"github.com/trevex/chalkos/pkg/uki"
+	"github.com/trevex/chalkos/pkg/secureboot"
 )
 
 // unsignedLayout writes the layout of a test image directory into dir/unsigned and returns its
@@ -71,7 +71,7 @@ func TestSignLayout(t *testing.T) {
 		rc, _ := l.Compressed()
 		data, _ := io.ReadAll(rc)
 		rc.Close()
-		if err := uki.VerifySignature(bytes.NewReader(data), int64(len(data)), uki.Database{Certificates: certs}, uki.Database{}); err != nil {
+		if err := secureboot.VerifyAgainst(bytes.NewReader(data), int64(len(data)), certs); err != nil {
 			t.Errorf("%s: %v", mt, err)
 		}
 	}

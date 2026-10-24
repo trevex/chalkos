@@ -27,6 +27,7 @@ callPackage ./go-module.nix { } {
     ../pkg/pki
     ../pkg/rules
     ../pkg/schema
+    ../pkg/secureboot
     ../pkg/storage
     ../pkg/storeslot
     ../pkg/tool

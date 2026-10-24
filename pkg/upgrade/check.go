@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/trevex/chalkos/pkg/secureboot"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/uki"
 )
@@ -129,43 +130,16 @@ func CheckUKI(r io.ReaderAt, h Header, efivars string) (int, error) {
 // loader, against the firmware's db and dbx, as firmware will when it starts the binary. It
 // checks nothing when Secure Boot is not enforced.
 func CheckSecureBoot(r io.ReaderAt, size int64, efivars, what string) error {
-	db, dbx, enforced, err := secureBootDatabases(efivars)
+	db, dbx, enforced, err := secureboot.Databases(func(name, vendor string) ([]byte, error) {
+		return readVariable(efivars, name, vendor)
+	})
 	if err != nil || !enforced {
 		return err
 	}
-	if err := uki.VerifySignature(r, size, db, dbx); err != nil {
+	if err := secureboot.VerifySignature(r, size, db, dbx); err != nil {
 		return fmt.Errorf("Secure Boot would refuse the %s: %w", what, err)
 	}
 	return nil
-}
-
-// secureBootDatabases returns db and dbx when Secure Boot is enforced, and ok false when it is
-// not: disabled, or in setup mode.
-func secureBootDatabases(efivars string) (db, dbx uki.Database, ok bool, err error) {
-	enabled, err := readVariable(efivars, "SecureBoot", globalVendor)
-	if err != nil {
-		return uki.Database{}, uki.Database{}, false, err
-	}
-	setup, err := readVariable(efivars, "SetupMode", globalVendor)
-	if err != nil {
-		return uki.Database{}, uki.Database{}, false, err
-	}
-	if len(enabled) != 1 || enabled[0] != 1 || len(setup) == 1 && setup[0] == 1 {
-		return uki.Database{}, uki.Database{}, false, nil
-	}
-	for _, v := range []struct {
-		name string
-		into *uki.Database
-	}{{"db", &db}, {"dbx", &dbx}} {
-		data, err := readVariable(efivars, v.name, securityVendor)
-		if err != nil {
-			return uki.Database{}, uki.Database{}, false, err
-		}
-		if *v.into, err = uki.ParseDatabase(data); err != nil {
-			return uki.Database{}, uki.Database{}, false, fmt.Errorf("the firmware's %s: %w", v.name, err)
-		}
-	}
-	return db, dbx, true, nil
 }
 
 // CheckArchitecture checks that an EFI binary of the image, the UKI or the boot loader, is built

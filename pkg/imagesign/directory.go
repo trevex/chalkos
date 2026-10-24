@@ -13,7 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/uki"
+	"github.com/trevex/chalkos/pkg/secureboot"
 )
 
 // SignDirectory copies the image directory in into a new directory next to out and signs the boot
@@ -219,18 +219,17 @@ func verify(ctx context.Context, raw string, espOffset int64, certs []*x509.Cert
 	if err != nil {
 		return err
 	}
-	db := uki.Database{Certificates: certs}
 	for _, f := range []struct{ what, path string }{{"UKI", b.UKI}, {"boot loader", b.BootLoader}} {
-		if err := verifyFile(f.path, db); err != nil {
+		if err := verifyFile(f.path, certs); err != nil {
 			return fmt.Errorf("Secure Boot would refuse the %s: %w", f.what, err)
 		}
 	}
 	return nil
 }
 
-// verifyFile checks one EFI binary against the Secure Boot database db, as firmware would when
-// deciding whether to run it.
-func verifyFile(path string, db uki.Database) error {
+// verifyFile checks one EFI binary against the db certificates, as firmware would when deciding
+// whether to run it.
+func verifyFile(path string, certs []*x509.Certificate) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -240,7 +239,7 @@ func verifyFile(path string, db uki.Database) error {
 	if err != nil {
 		return err
 	}
-	return uki.VerifySignature(f, info.Size(), db, uki.Database{})
+	return secureboot.VerifyAgainst(f, info.Size(), certs)
 }
 
 // readCerts reads the PEM certificates of a db signer.

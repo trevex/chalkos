@@ -11,7 +11,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/trevex/chalkos/pkg/ociimage"
-	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // SignLayout copies the OCI image layout in, as chalkbuild oci writes it, to out with the UKI and
@@ -41,7 +40,6 @@ func SignLayout(ctx context.Context, in, out, key, cert string) (v1.Hash, error)
 		return v1.Hash{}, err
 	}
 	defer os.RemoveAll(dir)
-	db := uki.Database{Certificates: certs}
 	var signed []ociimage.Blob
 	for _, part := range []struct {
 		mediaType  types.MediaType
@@ -57,7 +55,7 @@ func SignLayout(ctx context.Context, in, out, key, cert string) (v1.Hash, error)
 		if err := SignFile(ctx, path, key, cert); err != nil {
 			return v1.Hash{}, err
 		}
-		if err := verifyFile(path, db); err != nil {
+		if err := verifyFile(path, certs); err != nil {
 			return v1.Hash{}, fmt.Errorf("Secure Boot would refuse the %s: %w", part.what, err)
 		}
 		b, err := ociimage.FileBlob(part.mediaType, path)
