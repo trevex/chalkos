@@ -84,7 +84,7 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 		}
 	}
 	for _, d := range docs {
-		if c.Type != identity.KindControlPlane && d.APIVersion == config.KubernetesAPI && d.Kind == "Addon" {
+		if c.Type != identity.KindControlPlane && d.IsAddon() {
 			continue
 		}
 		c.Documents = append(c.Documents, d)

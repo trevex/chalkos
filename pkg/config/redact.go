@@ -27,7 +27,7 @@ func (d Document) Hashed() map[string]any {
 	switch {
 	case d.IsSecret():
 		return hideSecretData(d.Object)
-	case d.StaysStored():
+	case d.IsAddon():
 		return hideAddonSecrets(d.Object)
 	}
 	return d.Object
@@ -98,7 +98,7 @@ func Redacted(d Document, path []string) bool {
 	switch {
 	case d.IsSecret():
 		return len(path) >= 2 && path[0] == "spec" && path[1] == "data"
-	case d.StaysStored():
+	case d.IsAddon():
 		if len(path) < 2 || path[0] != "spec" || path[1] != "objects" {
 			return false
 		}

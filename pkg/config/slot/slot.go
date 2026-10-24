@@ -307,12 +307,11 @@ func fillDir(tmp string, fill func(string) error) error {
 }
 
 // writeDocuments writes each document as JSON below root: Secrets to secrets/<name>.json, every
-// other document to <group>/<Kind>/<name>.json, those that stay stored, such as Addons, readable
-// by root alone. stored is set for the set the node keeps on STATE; the copy for the node's
-// services leaves out the Secrets and the documents that stay stored.
+// other document to <group>/<Kind>/<name>.json, Addons readable by root alone. stored is set for
+// the set the node keeps on STATE; the copy for the node's services leaves out Secrets and Addons.
 func writeDocuments(root string, docs []config.Document, stored bool) error {
 	for _, d := range docs {
-		if !stored && d.StaysStored() {
+		if !stored && d.IsAddon() {
 			continue
 		}
 		group, _, _ := strings.Cut(d.APIVersion, "/")
@@ -340,8 +339,8 @@ func writeDocuments(root string, docs []config.Document, stored bool) error {
 			continue
 		}
 		dir, perm := filepath.Join(root, group, d.Kind), fs.FileMode(0o644)
-		// A document that stays stored may hold Kubernetes Secrets, so root alone reads it.
-		if d.StaysStored() {
+		// An Addon may hold Kubernetes Secrets, so root alone reads it.
+		if d.IsAddon() {
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				return err
 			}

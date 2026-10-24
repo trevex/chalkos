@@ -15,13 +15,13 @@ import (
 )
 
 // WriteRuntime writes a config set for the node's services. Its documents go below runDir/config as
-// <group>/<Kind>/<name>.json, readable by all, except Secrets and the documents that stay stored,
-// such as Addons; replacing the directory removes any an earlier write left. For each granted
-// unit, by name with the kinds it reads, the values the secretRefs of those kinds' documents
-// name go to runDir/credentials/<unit>/<secret>.<key>, readable by root alone, which the unit
-// loads with LoadCredential=secret:<that directory>. Every granted unit gets its directory, empty
-// when it references no secret, because systemd refuses to start a unit whose credential path
-// is missing. schemas tell which fields are secretRefs; nil when docs is empty.
+// <group>/<Kind>/<name>.json, readable by all, except Secrets and Addons; replacing the directory
+// removes any an earlier write left. For each granted unit, by name with the kinds it reads, the
+// values the secretRefs of those kinds' documents name go to
+// runDir/credentials/<unit>/<secret>.<key>, readable by root alone, which the unit loads with
+// LoadCredential=secret:<that directory>. Every granted unit gets its directory, empty when it
+// references no secret, because systemd refuses to start a unit whose credential path is missing.
+// schemas tell which fields are secretRefs; nil when docs is empty.
 func WriteRuntime(runDir string, docs []config.Document, schemas *schema.Schemas, units map[string][]string) error {
 	creds, err := credentials(docs, schemas, units)
 	if err != nil {

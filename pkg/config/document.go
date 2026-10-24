@@ -231,10 +231,10 @@ func FromObject(m map[string]any) Document {
 // them.
 func (d Document) IsSecret() bool { return d.APIVersion == CoreAPI && d.Kind == "Secret" }
 
-// StaysStored tells whether d stays in the node's stored set alone, never written below /run for
-// the node's services: an Addon, whose objects, Secrets among them, chalkd reads from the stored
-// set and applies on control planes, and which no service reads.
-func (d Document) StaysStored() bool { return d.APIVersion == KubernetesAPI && d.Kind == "Addon" }
+// IsAddon tells whether d is an Addon. An Addon stays in the node's stored set alone and is never
+// written below /run for the node's services: chalkd reads its objects, Secrets among them, from
+// the stored set and applies them on control planes, and no service reads it.
+func (d Document) IsAddon() bool { return d.APIVersion == KubernetesAPI && d.Kind == "Addon" }
 
 // SortDocuments orders docs by apiVersion, kind and name.
 func SortDocuments(docs []Document) {
