@@ -151,8 +151,6 @@ func (a *app) configCredentials(path string) (*credentials, error) {
 	return &credentials{config: &c, configPath: path, cert: cert, osCA: c.OSCA}, nil
 }
 
-// configNew issues a client file from the secrets file: a certificate of the role for a new
-// key, and the OS CA.
 type configNewFlags struct {
 	secrets         secretFlags
 	name, role, out string
@@ -181,6 +179,8 @@ func (a *app) configNewCommand() *cobra.Command {
 	return cmd
 }
 
+// configNew issues a client file from the secrets file: a certificate of the role for a new
+// key, and the OS CA.
 func (a *app) configNew(ctx context.Context, f configNewFlags) error {
 	if f.name == "" || f.role == "" {
 		return cli.Usagef("config new needs a --name and a --role")
