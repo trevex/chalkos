@@ -1931,9 +1931,7 @@ type StorageChange struct {
 	Volume string `protobuf:"bytes,1,opt,name=volume,proto3" json:"volume,omitempty"`
 	// What changed, such as "new volume", "new volume on new disk <disk>", "larger: 200G instead of
 	// 100G" or "mounted at /data instead of null".
-	Reason string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
-	// Whether the change destroys data; always false, as chalkd refuses destructive changes.
-	Destructive   bool `protobuf:"varint,3,opt,name=destructive,proto3" json:"destructive,omitempty"`
+	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1980,13 +1978,6 @@ func (x *StorageChange) GetReason() string {
 		return x.Reason
 	}
 	return ""
-}
-
-func (x *StorageChange) GetDestructive() bool {
-	if x != nil {
-		return x.Destructive
-	}
-	return false
 }
 
 // The request of ResetVolume.
@@ -4807,11 +4798,10 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x13ApplyConfigResponse\x128\n" +
 	"\achanges\x18\x01 \x03(\v2\x1e.chalkos.node.v1.StorageChangeR\achanges\x12'\n" +
 	"\x0frestarted_units\x18\x02 \x03(\tR\x0erestartedUnits\x12\x1a\n" +
-	"\bwarnings\x18\x03 \x03(\tR\bwarnings\"a\n" +
+	"\bwarnings\x18\x03 \x03(\tR\bwarnings\"?\n" +
 	"\rStorageChange\x12\x16\n" +
 	"\x06volume\x18\x01 \x01(\tR\x06volume\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\x12 \n" +
-	"\vdestructive\x18\x03 \x01(\bR\vdestructive\"}\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"}\n" +
 	"\x12ResetVolumeRequest\x12\x16\n" +
 	"\x06volume\x18\x01 \x01(\tR\x06volume\x12'\n" +
 	"\x0ffallback_secret\x18\x03 \x01(\tR\x0efallbackSecret\x12\x16\n" +

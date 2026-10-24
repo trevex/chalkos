@@ -477,8 +477,6 @@ message StorageChange {
   // What changed, such as "new volume", "new volume on new disk <disk>", "larger: 200G instead of
   // 100G" or "mounted at /data instead of null".
   string reason = 2;
-  // Whether the change destroys data; always false, as chalkd refuses destructive changes.
-  bool destructive = 3;
 }
 
 // The request of ResetVolume.

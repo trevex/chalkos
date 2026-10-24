@@ -207,7 +207,7 @@ func TestApplyConfigAddsVolume(t *testing.T) {
 	if r.inputs[testState] != secret {
 		t.Errorf("the secret was not checked against STATE's password keyslot on standard input: %v", r.inputs)
 	}
-	if len(resp.Changes) != 1 || resp.Changes[0].Volume != "extra" || resp.Changes[0].Destructive ||
+	if len(resp.Changes) != 1 || resp.Changes[0].Volume != "extra" ||
 		len(resp.RestartedUnits) != 0 {
 		t.Errorf("response = %+v", resp)
 	}

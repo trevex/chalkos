@@ -856,7 +856,6 @@ A change a delivery made to the node's storage.
 | ----- | ---- | ----------- |
 | `volume` | string | Name of the volume that changed. |
 | `reason` | string | What changed, such as "new volume", "new volume on new disk &lt;disk>", "larger: 200G instead of 100G" or "mounted at /data instead of null". |
-| `destructive` | bool | Whether the change destroys data; always false, as chalkd refuses destructive changes. |
 
 ### TimeStatus { #message-timestatus }
 
