@@ -255,3 +255,24 @@ func provenance(dir string, rootHash []byte, stderr io.Writer) (revision, tag st
 	}
 	return revision, tag
 }
+
+// chunkSize is how much of an image one install or upgrade message carries.
+const chunkSize = 1 << 20
+
+// imageFiles finds the raw image in an image directory or takes the given file; the image's
+// system-region definitions are in repart.d next to it.
+func imageFiles(path string) (raw, definitions string, err error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", "", err
+	}
+	raw = path
+	if info.IsDir() {
+		raws, err := filepath.Glob(filepath.Join(path, "*.raw"))
+		if err != nil || len(raws) != 1 {
+			return "", "", fmt.Errorf("want exactly one .raw image in %s, found %v", path, raws)
+		}
+		raw = raws[0]
+	}
+	return raw, filepath.Join(filepath.Dir(raw), "repart.d"), nil
+}

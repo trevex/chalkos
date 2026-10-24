@@ -224,7 +224,7 @@ func (a *app) sign(ctx context.Context, name, out string, pos []string) error {
 		}
 		return nil
 	}
-	raw, partitions, err := imageFiles(pos[0])
+	raw, partitions, err := rawAndPartitions(pos[0])
 	if err != nil {
 		return err
 	}

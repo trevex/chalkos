@@ -1,7 +1,6 @@
 package chalkctl
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/spf13/pflag"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -242,21 +240,6 @@ func (c *cluster) samePlatform(name, reported string) error {
 	return fmt.Errorf("%s runs an image built for %s, but %s; changing a node's platform is a reinstall", name, reported, c.declares(name, want))
 }
 
-// platformLine is the status line of the platform the node runs on, compared with its config's.
-func (c *cluster) platformLine(name, reported string) string {
-	if c.partial {
-		return "platform " + reported
-	}
-	want, err := c.platform(name)
-	switch {
-	case err != nil:
-		return fmt.Sprintf("platform %s; the platform of its config's image is unknown: %v", reported, err)
-	case reported != want:
-		return fmt.Sprintf("platform %s, but %s; changing a node's platform is a reinstall", reported, c.declares(name, want))
-	}
-	return fmt.Sprintf("platform %s (the inventory's)", reported)
-}
-
 // version is the version of the config chalkctl delivers to a node.
 func (c *cluster) version(name string) (string, error) {
 	nc, err := c.config(name)
@@ -268,49 +251,4 @@ func (c *cluster) version(name string) (string, error) {
 		return "", err
 	}
 	return e.Version, nil
-}
-
-// configState says whether a slot of a node holds the config chalkctl delivers to it: the running
-// image's, or with staged the staged image's.
-func (c *cluster) configState(name, version string, staged bool) string {
-	if c.partial {
-		return "no inventory to compare it with"
-	}
-	want, err := c.version(name)
-	switch {
-	case err != nil:
-		return "cannot read the config the inventory gives it: " + err.Error()
-	case want != version && staged:
-		return "not the inventory's; chalkctl apply-config --staged " + name + " delivers it"
-	case want != version:
-		return "not the inventory's; chalkctl apply-config " + name + " delivers it"
-	}
-	return "the inventory's"
-}
-
-// imageLine is the status line of a node whose store has another root hash than the image the
-// inventory names for it, or whose image directory cannot be read; empty when it has that image,
-// or when the node or its config is unknown, which the config line reports.
-func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
-	running := boot.GetRunning().GetRootHash()
-	if c.inv == nil || len(running) == 0 {
-		return ""
-	}
-	nc, err := c.config(name)
-	if err != nil {
-		return ""
-	}
-	md, err := nc.Resolve()
-	switch {
-	case err != nil:
-		return fmt.Sprintf("its store is not compared with its image in the inventory: %v", err)
-	case hex.EncodeToString(running) == md.RootHash:
-		return ""
-	}
-	line := fmt.Sprintf("its store's root hash is %x, not that of the image %s the inventory names, %s", running, nc.ImageName, md.RootHash)
-	// After an upgrade with --no-reboot the image waits for the node's next boot.
-	if want, err := hex.DecodeString(md.RootHash); err == nil && bytes.Equal(boot.GetStaged().GetRootHash(), want) {
-		return fmt.Sprintf("%s; it has %s staged, which it boots with its next reboot: chalkctl reboot %s", line, bootImageName(boot.GetStaged()), name)
-	}
-	return fmt.Sprintf("%s; chalkctl upgrade --nodes %s installs that image", line, name)
 }

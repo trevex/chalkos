@@ -334,9 +334,9 @@ func nodeNames(l *lab.Lab) []string {
 	return names
 }
 
-// imageFiles finds the raw image in an image directory, or takes the file given, and the
+// rawAndPartitions finds the raw image in an image directory, or takes the file given, and the
 // partition table describing it: repart-output.json next to a raw image, or an ISO's .json.
-func imageFiles(path string) (raw, partitions string, err error) {
+func rawAndPartitions(path string) (raw, partitions string, err error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", "", err
@@ -358,7 +358,7 @@ func imageFiles(path string) (raw, partitions string, err error) {
 // copyImage copies the raw image of an image directory without materialising its holes, and its
 // partition table to a .json file next to the copy.
 func copyImage(ctx context.Context, src, dst string) error {
-	raw, partitions, err := imageFiles(src)
+	raw, partitions, err := rawAndPartitions(src)
 	if err != nil {
 		return err
 	}
