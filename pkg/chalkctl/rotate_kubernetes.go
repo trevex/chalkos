@@ -35,11 +35,11 @@ func expectations(s pki.Secrets, kind, nodeKind string) ([]expectation, error) {
 	var list []expectation
 	switch kind {
 	case pki.RotateKubernetesCA:
-		cas := []struct{ name, bundle, issuing string }{{"Kubernetes CA", k.CABundle(), k.CA.Certificate}}
+		cas := []struct{ name, bundle, issuing string }{{client.NameKubernetesCA, k.CABundle(), k.CA.Certificate}}
 		if controlPlane {
 			cas = append(cas,
-				struct{ name, bundle, issuing string }{"front-proxy CA", k.FrontProxyCABundle(), k.FrontProxyCA.Certificate},
-				struct{ name, bundle, issuing string }{"etcd CA", k.EtcdCABundle(), k.EtcdCA.Certificate})
+				struct{ name, bundle, issuing string }{client.NameFrontProxyCA, k.FrontProxyCABundle(), k.FrontProxyCA.Certificate},
+				struct{ name, bundle, issuing string }{client.NameEtcdCA, k.EtcdCABundle(), k.EtcdCA.Certificate})
 		}
 		for _, ca := range cas {
 			values, err := pki.Fingerprints(ca.bundle)
@@ -59,7 +59,7 @@ func expectations(s pki.Secrets, kind, nodeKind string) ([]expectation, error) {
 		if err != nil {
 			return nil, err
 		}
-		e := expectation{name: "service-account keys"}
+		e := expectation{name: client.NameServiceAccountKeys}
 		for _, pub := range pubs {
 			fp, err := pki.PublicKeyFingerprint(pub)
 			if err != nil {
@@ -70,7 +70,7 @@ func expectations(s pki.Secrets, kind, nodeKind string) ([]expectation, error) {
 		e.issuing = e.values[0]
 		list = append(list, e)
 	case pki.RotateEncryptionKey:
-		e := expectation{name: "encryption keys"}
+		e := expectation{name: client.NameEncryptionKeys}
 		for _, key := range k.EncryptionKeys() {
 			e.values = append(e.values, key.Fingerprint())
 		}
@@ -249,20 +249,20 @@ func (r *rotation) refreshKubernetesCA(ctx context.Context, workers []string) er
 		return err
 	}
 	if err := r.eachNode(workers, func(name string) error {
-		if st, err := r.status(ctx, name); err == nil && issuedBy(st, "kubelet client", ca) == nil {
+		if st, err := r.status(ctx, name); err == nil && issuedBy(st, client.NameKubeletClient, ca) == nil {
 			return nil
 		}
 		if err := r.deliverShare(ctx, name); err != nil {
 			return err
 		}
 		return r.waitStatus(ctx, name, "to use a kubelet client certificate of the new CA", func(st *nodev1.StatusResponse) error {
-			return issuedBy(st, "kubelet client", ca)
+			return issuedBy(st, client.NameKubeletClient, ca)
 		})
 	}); err != nil {
 		return err
 	}
 	return r.eachNode(append(r.nodesOf(identity.KindControlPlane), workers...), func(name string) error {
-		if st, err := r.status(ctx, name); err == nil && issuedBy(st, "kubelet serving", ca) == nil {
+		if st, err := r.status(ctx, name); err == nil && issuedBy(st, client.NameKubeletServing, ca) == nil {
 			r.say("  %s's kubelet serves a certificate of the new CA already", name)
 			return nil
 		}
@@ -275,7 +275,7 @@ func (r *rotation) refreshKubernetesCA(ctx context.Context, workers []string) er
 			return err
 		}
 		if err := r.waitStatus(ctx, name, "for a kubelet serving certificate of the new CA", func(st *nodev1.StatusResponse) error {
-			return issuedBy(st, "kubelet serving", ca)
+			return issuedBy(st, client.NameKubeletServing, ca)
 		}); err != nil {
 			return err
 		}

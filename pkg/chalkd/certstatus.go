@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/client"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -62,7 +63,7 @@ func (s *Server) osCAs() string {
 func (s *Server) trust() []*nodev1.TrustStatus {
 	var list []*nodev1.TrustStatus
 	if fps, err := pki.Fingerprints(s.osCAs()); err == nil {
-		list = append(list, &nodev1.TrustStatus{Name: "OS CA", Fingerprints: fps})
+		list = append(list, &nodev1.TrustStatus{Name: client.NameOSCA, Fingerprints: fps})
 	}
 	if s.Kubernetes != nil {
 		list = append(list, s.Kubernetes.trust()...)
@@ -90,14 +91,14 @@ func (k *Kubernetes) trust() []*nodev1.TrustStatus {
 		if err != nil {
 			return nil
 		}
-		return []*nodev1.TrustStatus{{Name: "Kubernetes CA", Fingerprints: fps}}
+		return []*nodev1.TrustStatus{{Name: client.NameKubernetesCA, Fingerprints: fps}}
 	}
 	file := func(name string) string { return filepath.Join(k.Paths.PKI, name) }
 	var list []*nodev1.TrustStatus
 	for _, ca := range []struct{ name, bundle, leaf string }{
-		{"Kubernetes CA", kpki.FileCA, kpki.FileAPIServer},
-		{"front-proxy CA", kpki.FileFrontProxyCA, kpki.FileFrontProxyClient},
-		{"etcd CA", kpki.FileEtcdCA, kpki.FileEtcdServer},
+		{client.NameKubernetesCA, kpki.FileCA, kpki.FileAPIServer},
+		{client.NameFrontProxyCA, kpki.FileFrontProxyCA, kpki.FileFrontProxyClient},
+		{client.NameEtcdCA, kpki.FileEtcdCA, kpki.FileEtcdServer},
 	} {
 		data, err := os.ReadFile(file(ca.bundle))
 		if err != nil {
@@ -119,7 +120,7 @@ func (k *Kubernetes) trust() []*nodev1.TrustStatus {
 		list = append(list, st)
 	}
 	if pubs, err := os.ReadFile(file(kpki.FileServiceAccountPub)); err == nil {
-		st := &nodev1.TrustStatus{Name: "service-account keys"}
+		st := &nodev1.TrustStatus{Name: client.NameServiceAccountKeys}
 		rest := pubs
 		for {
 			var block *pem.Block
@@ -139,7 +140,7 @@ func (k *Kubernetes) trust() []*nodev1.TrustStatus {
 	}
 	if config, err := os.ReadFile(file(kpki.FileEncryptionConfig)); err == nil {
 		if keys, err := kpki.ParseEncryptionConfig(config); err == nil && len(keys) > 0 {
-			st := &nodev1.TrustStatus{Name: "encryption keys", Issuing: keys[0].Fingerprint()}
+			st := &nodev1.TrustStatus{Name: client.NameEncryptionKeys, Issuing: keys[0].Fingerprint()}
 			for _, key := range keys {
 				st.Fingerprints = append(st.Fingerprints, key.Fingerprint())
 			}
@@ -193,15 +194,15 @@ func (s *Server) certificates(now time.Time) []*nodev1.CertificateStatus {
 		if chain := s.Certificate.Current().TLS.Certificate; len(chain) > 1 {
 			issuer, _ = x509.ParseCertificate(chain[1])
 		}
-		add("node", leaf, issuer, problem)
+		add(client.NameNode, leaf, issuer, problem)
 	}
 	if osCAs, err := pki.ParseBundle(s.osCAs()); err == nil {
 		for _, osCA := range osCAs {
 			problem := caProblem(osCA, now, caWarning)
 			if problem != "" {
-				problem = "OS CA " + problem
+				problem = client.NameOSCA + " " + problem
 			}
-			add("OS CA", osCA, osCA, problem)
+			add(client.NameOSCA, osCA, osCA, problem)
 		}
 	}
 	if s.Kubernetes != nil {
@@ -225,7 +226,7 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 	}
 	if err != nil {
 		// Its expiry is unknown, as are those of the certificates the share holds.
-		return []*nodev1.CertificateStatus{{Name: "Kubernetes share", Problem: "unreadable: " + err.Error()}}
+		return []*nodev1.CertificateStatus{{Name: client.NameKubernetesShare, Problem: "unreadable: " + err.Error()}}
 	}
 	// The CAs that may have issued the node's Kubernetes certificates.
 	var issuers []*x509.Certificate
@@ -243,10 +244,10 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 		warning time.Duration
 		hint    string
 	}{
-		{"node CA", share.NodeCA, nodeCAWarning, "; run chalkctl node-ca rotate"},
-		{"Kubernetes CA", &share.CA, caWarning, ""},
-		{"front-proxy CA", share.FrontProxyCA, caWarning, ""},
-		{"etcd CA", share.EtcdCA, caWarning, ""},
+		{client.NameNodeCA, share.NodeCA, nodeCAWarning, "; run chalkctl node-ca rotate"},
+		{client.NameKubernetesCA, &share.CA, caWarning, ""},
+		{client.NameFrontProxyCA, share.FrontProxyCA, caWarning, ""},
+		{client.NameEtcdCA, share.EtcdCA, caWarning, ""},
 	}
 	for _, ca := range cas {
 		if ca.ca == nil {
@@ -266,26 +267,26 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 			if p := k.LeavesProblem(); p != "" {
 				problem = p
 			}
-			add("Kubernetes control plane", first, problem)
+			add(client.NameControlPlane, first, problem)
 		}
 	}
-	client, clientErr := readPEMCertificate(k.Paths.KubeletClient())
+	kubelet, clientErr := readPEMCertificate(k.Paths.KubeletClient())
 	if clientErr == nil {
-		add("kubelet client", client, kubeletProblem(client, now))
+		add(client.NameKubeletClient, kubelet, kubeletProblem(kubelet, now))
 	}
 	// A worker whose kubelet renewed its certificate on VAR starts from the share's again once
 	// VAR is lost; if that one expired too, the kubelet cannot join until a new one arrives.
-	if share.Kubelet != nil && (clientErr != nil || !now.Before(client.NotAfter)) {
+	if share.Kubelet != nil && (clientErr != nil || !now.Before(kubelet.NotAfter)) {
 		if cert, err := pki.ParseCertificate([]byte(share.Kubelet.Certificate)); err == nil && !now.Before(cert.NotAfter) {
 			name := "<node>"
 			if n, err := k8s.ReadNode(k.Paths.NodeFile); err == nil {
 				name = n.Name
 			}
-			add("kubelet client", cert, "expired; deliver a new one with chalkctl apply-config "+name+" --kubernetes-share")
+			add(client.NameKubeletClient, cert, "expired; deliver a new one with chalkctl apply-config "+name+" --kubernetes-share")
 		}
 	}
 	if serving, err := readPEMCertificate(k.Paths.KubeletServing()); err == nil {
-		add("kubelet serving", serving, kubeletProblem(serving, now))
+		add(client.NameKubeletServing, serving, kubeletProblem(serving, now))
 	}
 	return list
 }

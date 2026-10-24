@@ -518,7 +518,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 				return err
 			}
 			if err := r.waitStatus(ctx, name, "to trust the OS CAs", func(st *nodev1.StatusResponse) error {
-				return trusts(st, "OS CA", want, "")
+				return trusts(st, client.NameOSCA, want, "")
 			}); err != nil {
 				return err
 			}
@@ -535,7 +535,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 				return err
 			}
 			if err := r.waitStatus(ctx, name, "to hold the new node CA", func(st *nodev1.StatusResponse) error {
-				if c := certificate(st, "node CA"); c == nil || c.Fingerprint != nodeCA {
+				if c := certificate(st, client.NameNodeCA); c == nil || c.Fingerprint != nodeCA {
 					return errors.New("holds another node CA")
 				}
 				return nil
@@ -552,7 +552,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 		}
 		return r.eachNode(r.allNodes(), func(name string) error {
 			// A node renewed since, or in an earlier run, keeps its certificate.
-			if st, err := r.status(ctx, name); err == nil && issuedBy(st, "node", nodeCA) == nil {
+			if st, err := r.status(ctx, name); err == nil && issuedBy(st, client.NameNode, nodeCA) == nil {
 				r.say("  %s serves a certificate of the new node CA already", name)
 				return nil
 			}
@@ -568,7 +568,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 				return err
 			}
 			if err := r.waitStatus(ctx, name, "to serve a certificate of the new node CA", func(st *nodev1.StatusResponse) error {
-				return issuedBy(st, "node", nodeCA)
+				return issuedBy(st, client.NameNode, nodeCA)
 			}); err != nil {
 				return err
 			}
