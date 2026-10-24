@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -346,12 +345,12 @@ func (s *Server) storage() *node.Storage {
 
 // recorded reads the storage section and pins STATE holds.
 func (s *Server) recorded() (storage.Section, storage.Pins, error) {
-	dir := s.storage().StorageDir()
-	section, err := storage.ReadSection(filepath.Join(dir, "storage.json"))
+	st := s.storage()
+	section, err := storage.ReadSection(st.SectionFile())
 	if err != nil {
 		return storage.Section{}, storage.Pins{}, failed(connect.CodeInternal, "read the recorded storage section: %v", err)
 	}
-	pins, err := storage.ReadPins(filepath.Join(dir, "disks.json"))
+	pins, err := storage.ReadPins(st.PinsFile())
 	if err != nil {
 		return storage.Section{}, storage.Pins{}, failed(connect.CodeInternal, "%v", err)
 	}

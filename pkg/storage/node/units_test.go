@@ -8,7 +8,11 @@ import (
 )
 
 func TestUnitsOf(t *testing.T) {
-	dir := t.TempDir()
+	st := &Storage{StateDir: t.TempDir()}
+	dir := st.StorageDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	files := map[string]string{
 		"storage.json": `{
 		  "disks": {
@@ -32,7 +36,7 @@ func TestUnitsOf(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	units, err := Generate(dir, "systemd-cryptsetup")
+	units, err := st.Generate("systemd-cryptsetup")
 	if err != nil {
 		t.Fatal(err)
 	}

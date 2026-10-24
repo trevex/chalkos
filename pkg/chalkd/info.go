@@ -75,7 +75,7 @@ func (s *Server) Disks(ctx context.Context, _ *connect.Request[nodev1.DisksReque
 		return nil, failed(connect.CodeInternal, "list disks: %v", err)
 	}
 	boot, bootErr := s.Host.ResolvePath(s.Paths.BootDisk)
-	pins, err := storage.ReadPins(filepath.Join(s.Paths.StateDir, "storage", "disks.json"))
+	pins, err := storage.ReadPins(s.storage().PinsFile())
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}

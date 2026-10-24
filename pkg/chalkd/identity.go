@@ -30,7 +30,6 @@ import (
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
-	"github.com/trevex/chalkos/pkg/storage/node"
 )
 
 // cryptsetupPath only names the generator's units here; systemd runs the generator itself.
@@ -470,7 +469,7 @@ func (s *Server) applyStorage(ctx context.Context, recorded, section storage.Sec
 		}
 	}
 	st := s.storage()
-	old, err := node.Generate(st.StorageDir(), cryptsetupPath)
+	old, err := st.Generate(cryptsetupPath)
 	if err != nil {
 		return failed(connect.CodeInternal, "%v", err)
 	}
@@ -521,13 +520,13 @@ func (s *Server) applyStorage(ctx context.Context, recorded, section storage.Sec
 	if err != nil {
 		return err
 	}
-	if err := atomicfile.WriteFile(filepath.Join(st.StorageDir(), "storage.json"), data, 0o600); err != nil {
+	if err := atomicfile.WriteFile(st.SectionFile(), data, 0o600); err != nil {
 		return failed(connect.CodeInternal, "record the storage section: %v", err)
 	}
 	if _, err := s.Run.Run(ctx, "systemctl", "daemon-reload"); err != nil {
 		return failed(connect.CodeInternal, "%v", err)
 	}
-	units, err := node.Generate(st.StorageDir(), cryptsetupPath)
+	units, err := st.Generate(cryptsetupPath)
 	if err != nil {
 		return failed(connect.CodeInternal, "%v", err)
 	}
@@ -687,7 +686,7 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 // was checked.
 func (s *Server) deleteVolume(ctx context.Context, name string, v storage.Volume, pins storage.Pins) error {
 	st := s.storage()
-	units, err := node.Generate(st.StorageDir(), cryptsetupPath)
+	units, err := st.Generate(cryptsetupPath)
 	if err != nil {
 		return failed(connect.CodeInternal, "%v", err)
 	}
@@ -733,7 +732,7 @@ func (s *Server) deleteVolume(ctx context.Context, name string, v storage.Volume
 	}
 	delete(pin.Partitions, name)
 	pins.Disks[v.Disk] = pin
-	if err := storage.WritePins(filepath.Join(st.StorageDir(), "disks.json"), pins); err != nil {
+	if err := storage.WritePins(st.PinsFile(), pins); err != nil {
 		return failed(connect.CodeInternal, "%v", err)
 	}
 	return nil

@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"flag"
-	"path/filepath"
 
 	"github.com/trevex/chalkos/pkg/storage/node"
 )
@@ -19,7 +18,7 @@ func runGenerate(args []string) error {
 	if flags.NArg() != 1 && flags.NArg() != 3 {
 		return errors.New("generate: want the generator directories NORMAL [EARLY LATE]")
 	}
-	units, err := node.Generate(filepath.Join(*stateDir, "storage"), *cryptsetup)
+	units, err := (&node.Storage{StateDir: *stateDir}).Generate(*cryptsetup)
 	if err != nil {
 		return err
 	}

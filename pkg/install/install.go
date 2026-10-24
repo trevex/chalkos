@@ -309,7 +309,7 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 	if err != nil {
 		return err
 	}
-	if err := atomicfile.WriteFile(filepath.Join(st.StorageDir(), "storage.json"), section, 0o600); err != nil {
+	if err := atomicfile.WriteFile(st.SectionFile(), section, 0o600); err != nil {
 		return err
 	}
 	if err := i.change("apply the storage section"); err != nil {

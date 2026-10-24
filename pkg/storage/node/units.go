@@ -24,16 +24,16 @@ type Units struct {
 // Generate builds units for every volume except VAR, which the initrd mounts: a cryptsetup
 // service for encrypted volumes, and a mount or swap unit for formatted ones. All are only
 // wanted, so a missing disk fails its units without holding up the boot.
-func Generate(storageDir, cryptsetup string) (Units, error) {
+func (s *Storage) Generate(cryptsetup string) (Units, error) {
 	units := Units{files: map[string]string{}, owners: map[string]string{}, wants: map[string][]string{}}
-	section, err := storage.ReadSection(filepath.Join(storageDir, "storage.json"))
+	section, err := storage.ReadSection(s.SectionFile())
 	if errors.Is(err, fs.ErrNotExist) {
 		return units, nil
 	}
 	if err != nil {
 		return units, err
 	}
-	pins, err := storage.ReadPins(filepath.Join(storageDir, "disks.json"))
+	pins, err := storage.ReadPins(s.PinsFile())
 	if err != nil {
 		return units, err
 	}

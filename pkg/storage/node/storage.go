@@ -60,6 +60,12 @@ func (e notUnsealed) Unwrap() error        { return e.error }
 // StorageDir is where STATE records the storage section, definitions and pins.
 func (s *Storage) StorageDir() string { return filepath.Join(s.StateDir, "storage") }
 
+// SectionFile is where STATE records the storage section as applied.
+func (s *Storage) SectionFile() string { return filepath.Join(s.StorageDir(), "storage.json") }
+
+// PinsFile is where STATE records the disks' pins and the PARTUUIDs of their volumes.
+func (s *Storage) PinsFile() string { return filepath.Join(s.StorageDir(), "disks.json") }
+
 // OpenState unlocks STATE when it is encrypted and mounts it. The fallback is always offered:
 // it is recorded on STATE itself, so it cannot be known yet.
 func (s *Storage) OpenState(ctx context.Context) error {
@@ -140,7 +146,7 @@ func (s *Storage) SetUp(ctx context.Context) error {
 }
 
 func (s *Storage) setUpVolumes(ctx context.Context, status *storage.Status) error {
-	section, err := storage.ReadSection(filepath.Join(s.StorageDir(), "storage.json"))
+	section, err := storage.ReadSection(s.SectionFile())
 	if errors.Is(err, fs.ErrNotExist) {
 		log.Print("STATE holds no storage section; /var stays on tmpfs until the node is installed")
 		return nil
@@ -179,7 +185,7 @@ func (s *Storage) Apply(ctx context.Context, section storage.Section, status *st
 	if err := storage.WriteDefinitions(filepath.Join(s.StorageDir(), "disks"), section); err != nil {
 		return storage.Pins{}, err
 	}
-	pinsFile := filepath.Join(s.StorageDir(), "disks.json")
+	pinsFile := s.PinsFile()
 	pins, err := storage.ReadPins(pinsFile)
 	if err != nil {
 		return storage.Pins{}, err

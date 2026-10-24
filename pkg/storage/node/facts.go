@@ -104,7 +104,7 @@ type DiskFact struct {
 // DiskFacts resolves the volumes' disk references against the host and the disks the node
 // pinned, by the volumes' names.
 func (s *Storage) DiskFacts(refs map[string]storage.Ref) (map[string]DiskFact, error) {
-	pins, err := storage.ReadPins(filepath.Join(s.StorageDir(), "disks.json"))
+	pins, err := storage.ReadPins(s.PinsFile())
 	if err != nil {
 		return nil, err
 	}
@@ -155,8 +155,7 @@ func (s *Storage) FallbackFacts(ctx context.Context, secret string) (FallbackFac
 		return FallbackFact{}, nil
 	}
 	f := FallbackFact{Sent: true}
-	dir := s.StorageDir()
-	kept, err := storage.ReadSection(filepath.Join(dir, "storage.json"))
+	kept, err := storage.ReadSection(s.SectionFile())
 	if errors.Is(err, fs.ErrNotExist) {
 		return f, nil
 	}
@@ -166,7 +165,7 @@ func (s *Storage) FallbackFacts(ctx context.Context, secret string) (FallbackFac
 	if kept.Fallback == storage.FallbackNone {
 		return f, nil
 	}
-	pins, err := storage.ReadPins(filepath.Join(dir, "disks.json"))
+	pins, err := storage.ReadPins(s.PinsFile())
 	if err != nil {
 		return FallbackFact{}, err
 	}
