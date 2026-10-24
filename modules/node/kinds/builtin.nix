@@ -141,6 +141,13 @@ let
   # holds one Cluster document, compared with the running config's whatever its name, in the
   # families both configs have; ipFamilies, compared as a whole, refuses a change of the families.
   fixed = "they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster";
+  # The kubelet applies the node's labels and taints, the control-plane taint among them, when it
+  # registers the node with the cluster, and chalkd never changes the Node object after that. A
+  # node holding a Kubernetes share has registered, or registers with the config it holds.
+  registered = what: instead: {
+    rule = "facts.share == null || self == oldSelf";
+    message = "the config changes ${what}; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; ${instead}, or reinstall the node";
+  };
   # Binds was and gets to the running and the delivered Cluster spec around expr.
   bindSpecs =
     expr:
@@ -488,15 +495,17 @@ in
           ];
           description = "What the node is in the cluster; it is fixed once the node holds a Kubernetes share.";
         };
-        labels = mkOption {
+        labels = lib.chalkos.mkOption {
           type = types.attrsOf types.str;
           default = { };
-          description = "Kubernetes labels applied to the node.";
+          description = "Kubernetes labels the node registers with; they are fixed once the node holds a Kubernetes share.";
+          rules = [ (registered "the node's labels" "change the Node object with kubectl label instead") ];
         };
-        taints = mkOption {
+        taints = lib.chalkos.mkOption {
           type = types.listOf taint;
           default = [ ];
-          description = "Kubernetes taints applied to the node.";
+          description = "Kubernetes taints the node registers with; they are fixed once the node holds a Kubernetes share.";
+          rules = [ (registered "the node's taints" "change the Node object with kubectl taint instead") ];
         };
         kubeletExtraArgs = flags "the kubelet";
         nodeIP = {
@@ -534,10 +543,13 @@ in
           default = "cluster.local";
           description = "DNS domain of the cluster.";
         };
-        allowSchedulingOnControlPlanes = mkOption {
+        allowSchedulingOnControlPlanes = lib.chalkos.mkOption {
           type = types.bool;
           default = false;
-          description = "Let workloads run on control-plane nodes, which are otherwise tainted.";
+          description = "Let workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share.";
+          rules = [
+            (registered "allowSchedulingOnControlPlanes" "add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead")
+          ];
         };
         ipFamilies = lib.chalkos.mkOption {
           type = types.nonEmptyListOf (

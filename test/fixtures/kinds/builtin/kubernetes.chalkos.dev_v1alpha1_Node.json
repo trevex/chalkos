@@ -37,8 +37,15 @@
             "type": "string"
           },
           "default": {},
-          "description": "Kubernetes labels applied to the node.",
-          "type": "object"
+          "description": "Kubernetes labels the node registers with; they are fixed once the node holds a Kubernetes share.",
+          "type": "object",
+          "x-chalkos-rules": [
+            {
+              "message": "the config changes the node's labels; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl label instead, or reinstall the node",
+              "rule": "facts.share == null || self == oldSelf",
+              "takes": "refuse"
+            }
+          ]
         },
         "nodeIP": {
           "additionalProperties": false,
@@ -80,7 +87,7 @@
         },
         "taints": {
           "default": [],
-          "description": "Kubernetes taints applied to the node.",
+          "description": "Kubernetes taints the node registers with; they are fixed once the node holds a Kubernetes share.",
           "items": {
             "additionalProperties": false,
             "properties": {
@@ -116,7 +123,14 @@
             ],
             "type": "object"
           },
-          "type": "array"
+          "type": "array",
+          "x-chalkos-rules": [
+            {
+              "message": "the config changes the node's taints; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl taint instead, or reinstall the node",
+              "rule": "facts.share == null || self == oldSelf",
+              "takes": "refuse"
+            }
+          ]
         },
         "type": {
           "description": "What the node is in the cluster; it is fixed once the node holds a Kubernetes share.",

@@ -709,8 +709,7 @@ func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 		restarts bool
 	}{
 		"unchanged":           {base, false},
-		"labels":              {node("{type: worker, nodeIP: {addresses: [192.168.100.21]}, labels: {node.kubernetes.io/storage: ssd}}"), true},
-		"taints":              {node("{type: worker, nodeIP: {addresses: [192.168.100.21]}, taints: [{key: dedicated, effect: NoSchedule}]}"), true},
+		"kubeletExtraArgs":    {node("{type: worker, nodeIP: {addresses: [192.168.100.21]}, kubeletExtraArgs: {max-pods: \"50\"}}"), true},
 		"nodeIP.addresses":    {node("{type: worker, nodeIP: {addresses: [192.168.100.22]}}"), true},
 		"nodeIP.validSubnets": {node("{type: worker, nodeIP: {addresses: [], validSubnets: [192.168.100.0/24]}}"), true},
 		"the Node's name":     {strings.Replace(base, "kind: Node\nmetadata: {name: default}", "kind: Node\nmetadata: {name: node}", 1), false},
@@ -1008,8 +1007,8 @@ func TestApplyConfigNodeCAWithConfig(t *testing.T) {
 		name, config string
 		want         []string
 	}{
-		{"the Node's labels", strings.Replace(controlPlane, "nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21]}, labels: {node.kubernetes.io/storage: ssd}}", 1), []string{"chalkos-controlplane.service", "chalkos-kubernetes.service", "kubelet.service"}},
-		{"a Demo", strings.NewReplacer("nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21]}, labels: {node.kubernetes.io/storage: ssd}}", "name: first", "name: second").Replace(controlPlane), []string{"demo.service"}},
+		{"the Node's subnets", strings.Replace(controlPlane, "nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21], validSubnets: [192.168.100.0/24]}}", 1), []string{"chalkos-controlplane.service", "chalkos-kubernetes.service", "kubelet.service"}},
+		{"a Demo", strings.NewReplacer("nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21], validSubnets: [192.168.100.0/24]}}", "name: first", "name: second").Replace(controlPlane), []string{"demo.service"}},
 	} {
 		r.calls, *acted = nil, nil
 		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: step.config, KubernetesShare: withNodeCA()}))
@@ -1611,6 +1610,66 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 			}
 			if c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); err != nil || c.Kind != k8s.KindWorker {
 				t.Errorf("cluster = %+v, %v; want the worker's kept", c, err)
+			}
+		})
+	}
+}
+
+// The kubelet applies the node's labels and taints, and the control-plane taint
+// allowSchedulingOnControlPlanes leaves off, only when it registers the node, so a node holding a
+// share refuses changes to them. The first Node and Cluster documents, unchanged values and a node
+// without a share take any.
+func TestApplyConfigRefusesChangedRegistrationFields(t *testing.T) {
+	node := func(spec string) string {
+		return strings.Replace(workerConfig, "nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21]}, "+spec+"}", 1)
+	}
+	labelled := node("labels: {node.kubernetes.io/storage: ssd}")
+	tainted := node("taints: [{key: dedicated, effect: NoSchedule}]")
+	for name, tc := range map[string]struct {
+		share         bool
+		before, after string
+		want          []string
+	}{
+		"labels added":    {true, workerConfig, labelled, []string{`Node "default" spec.labels: `, "kubectl label"}},
+		"labels changed":  {true, labelled, node("labels: {node.kubernetes.io/storage: hdd}"), []string{`Node "default" spec.labels: `, "kubectl label"}},
+		"labels removed":  {true, labelled, workerConfig, []string{`Node "default" spec.labels: `}},
+		"taints added":    {true, workerConfig, tainted, []string{`Node "default" spec.taints: `, "kubectl taint"}},
+		"taints removed":  {true, tainted, workerConfig, []string{`Node "default" spec.taints: `}},
+		"scheduling":      {true, workerConfig, withClusterSpec("{allowSchedulingOnControlPlanes: true}"), []string{`Cluster "default" spec.allowSchedulingOnControlPlanes: `, "kubectl taint"}},
+		"unchanged":       {true, labelled, labelled, nil},
+		"the first Node":  {true, "", labelled, nil},
+		"no share":        {false, workerConfig, labelled, nil},
+		"no share, taint": {false, workerConfig, tainted, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, r := configServer(t)
+			addKubernetes(t, s, k8s.KindWorker, tc.share)
+			s.Loader.ClusterFile = s.Kubernetes.Paths.Cluster
+			writeFacts(t, s)
+			kubernetesImage(t, s)
+			if tc.before != "" {
+				if _, err := sendConfig(s, tc.before); err != nil {
+					t.Fatal(err)
+				}
+			}
+			r.calls = nil
+			_, err := sendConfig(s, tc.after)
+			if tc.want == nil {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+				t.Fatalf("err = %v", err)
+			}
+			for _, want := range append(tc.want, "applies when the node registers with the cluster", "or reinstall the node") {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("err = %v, want %q", err, want)
+				}
+			}
+			if len(r.calls) != 0 {
+				t.Errorf("ran %v", r.calls)
 			}
 		})
 	}

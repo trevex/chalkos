@@ -55,11 +55,11 @@ A node's config may hold several, each with a name of its own.
 
 A node's config holds at most one.
 
-It has 4 [change rules](../build/guard-changes.md).
+It has 5 [change rules](../build/guard-changes.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.allowSchedulingOnControlPlanes` | boolean | `false` | Let workloads run on control-plane nodes, which are otherwise tainted. |
+| `spec.allowSchedulingOnControlPlanes` | boolean | `false` | Let workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share. |
 | `spec.dnsIPs` | object | see below |  |
 | `spec.dnsIPs.ipv4` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.dnsIPs.ipv6` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
@@ -104,16 +104,16 @@ A node's config holds at most one.
 
 A node's config holds at most one.
 
-It has a [change rule](../build/guard-changes.md).
+It has 3 [change rules](../build/guard-changes.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.kubeletExtraArgs` | map of string | `{}` | Extra flags of the kubelet, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
-| `spec.labels` | map of string | `{}` | Kubernetes labels applied to the node. |
+| `spec.labels` | map of string | `{}` | Kubernetes labels the node registers with; they are fixed once the node holds a Kubernetes share. |
 | `spec.nodeIP` | object | see below |  |
 | `spec.nodeIP.addresses` | list of string or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |
 | `spec.nodeIP.validSubnets` | list of string or null | `null` | Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's. |
-| `spec.taints` | list of object | `[]` | Kubernetes taints applied to the node. |
+| `spec.taints` | list of object | `[]` | Kubernetes taints the node registers with; they are fixed once the node holds a Kubernetes share. |
 | `spec.taints[].effect` | one of `NoSchedule`, `PreferNoSchedule`, `NoExecute` | required | What happens to pods that do not tolerate the taint. |
 | `spec.taints[].key` | string | required | Taint key. |
 | `spec.taints[].value` | string or null | `null` | Taint value; null for a taint without a value. |

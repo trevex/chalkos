@@ -26,8 +26,15 @@
       "properties": {
         "allowSchedulingOnControlPlanes": {
           "default": false,
-          "description": "Let workloads run on control-plane nodes, which are otherwise tainted.",
-          "type": "boolean"
+          "description": "Let workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share.",
+          "type": "boolean",
+          "x-chalkos-rules": [
+            {
+              "message": "the config changes allowSchedulingOnControlPlanes; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node",
+              "rule": "facts.share == null || self == oldSelf",
+              "takes": "refuse"
+            }
+          ]
         },
         "dnsIPs": {
           "additionalProperties": false,

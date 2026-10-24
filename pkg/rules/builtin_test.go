@@ -28,8 +28,8 @@ func TestBuiltinRulesCompile(t *testing.T) {
 	for kind, want := range map[string]int{
 		"storage.chalkos.dev/v1alpha1 Volume":     7,
 		"storage.chalkos.dev/v1alpha1 SystemDisk": 1,
-		"kubernetes.chalkos.dev/v1alpha1 Node":    1,
-		"kubernetes.chalkos.dev/v1alpha1 Cluster": 4,
+		"kubernetes.chalkos.dev/v1alpha1 Node":    3,
+		"kubernetes.chalkos.dev/v1alpha1 Cluster": 5,
 		"oci.chalkos.dev/v1alpha1 Registry":       2,
 		"oci.chalkos.dev/v1alpha1 Mirror":         1,
 	} {
@@ -106,6 +106,61 @@ func TestMirrorRules(t *testing.T) {
 		if got := messages(failures); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// The kubelet applies the node's labels and taints, and the control-plane taint, when it
+// registers the node, so a node holding a Kubernetes share refuses changes to them. A node without
+// a share, as at its install, and unchanged values pass.
+func TestRegistrationRules(t *testing.T) {
+	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := Compile(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := func(node, cluster string) []config.Document {
+		return []config.Document{
+			builtinDoc(t, config.KubernetesAPI, "Node", "default", `{"type": "controlplane", `+node+`}`),
+			builtinDoc(t, config.KubernetesAPI, "Cluster", "default", `{"endpoint": "https://10.0.0.11:6443", "ipFamilies": ["ipv4"], "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"}, "dnsIPs": {"ipv4": null}, `+cluster+`}`),
+		}
+	}
+	const (
+		labels     = `"labels": {"zone": "a"}, "taints": []`
+		scheduling = `"allowSchedulingOnControlPlanes": false`
+		suffix     = "; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; "
+	)
+	old := docs(labels, scheduling)
+	for _, tc := range []struct {
+		name          string
+		node, cluster string
+		want          []string
+	}{
+		{"unchanged", labels, scheduling, nil},
+		{"labels", `"labels": {"zone": "b"}, "taints": []`, scheduling,
+			[]string{`Node "default" spec.labels: the config changes the node's labels` + suffix + "change the Node object with kubectl label instead, or reinstall the node"}},
+		{"taints", `"labels": {"zone": "a"}, "taints": [{"key": "dedicated", "value": null, "effect": "NoSchedule"}]`, scheduling,
+			[]string{`Node "default" spec.taints: the config changes the node's taints` + suffix + "change the Node object with kubectl taint instead, or reinstall the node"}},
+		{"scheduling", labels, `"allowSchedulingOnControlPlanes": true`,
+			[]string{`Cluster "default" spec.allowSchedulingOnControlPlanes: the config changes allowSchedulingOnControlPlanes` + suffix +
+				"add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			share := storageFacts{"share": map[string]any{"kind": "controlplane"}}
+			failures, err := set.Evaluate(Input{Documents: docs(tc.node, tc.cluster), Old: old, Facts: share, Node: "n1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := messages(failures); !slices.Equal(got, tc.want) {
+				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
+			}
+			// A node without a share has not registered.
+			if failures, err := set.Evaluate(Input{Documents: docs(tc.node, tc.cluster), Old: old, Facts: storageFacts{"share": nil}, Node: "n1"}); err != nil || len(failures) != 0 {
+				t.Errorf("without a share: %v, %v", messages(failures), err)
+			}
+		})
 	}
 }
 
