@@ -16,15 +16,8 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes"
 )
 
-// revokeFlags are the flags of node revoke and node unrevoke.
-type revokeFlags struct {
-	node  nodeCommand
-	via   string
-	force bool
-}
-
 func (a *app) nodeRevokeCommand() *cobra.Command {
-	var f revokeFlags
+	var f viaFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "revoke <node>",
 		Short:   "Cut a node off the cluster by name",
@@ -39,7 +32,7 @@ func (a *app) nodeRevokeCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) nodeRevoke(ctx context.Context, f revokeFlags, pos []string) error {
+func (a *app) nodeRevoke(ctx context.Context, f viaFlags, pos []string) error {
 	name := pos[0]
 	if err := a.keepsRevokedNodes(ctx, f); err != nil {
 		return err
@@ -84,7 +77,7 @@ func (a *app) nodeRevoke(ctx context.Context, f revokeFlags, pos []string) error
 // controlPlanesRead asks the control planes, but the node revoked, whether they read the revoked
 // nodes: --via where the command reaches it, the others where the inventory says, or --via alone
 // without an inventory.
-func (a *app) controlPlanesRead(ctx context.Context, f revokeFlags, name string) error {
+func (a *app) controlPlanesRead(ctx context.Context, f viaFlags, name string) error {
 	c, err := loadCluster(ctx, f.node.cluster)
 	if err != nil {
 		return err
@@ -105,7 +98,7 @@ func (a *app) controlPlanesRead(ctx context.Context, f revokeFlags, name string)
 		return err
 	}
 	return everyControlPlaneReads(ctx, controlPlanes, name, func(ctx context.Context, cp string) (*nodev1.StatusResponse, error) {
-		var n nodeCommand
+		var n nodeFlags
 		if cp == f.via {
 			n = f.node
 		}
@@ -173,7 +166,7 @@ func controlPlaneRevocation(name string) string {
 
 // keepsRevokedNodes refuses a cluster whose inventory names no control plane, which keeps no
 // revoked nodes, unless --via names a node to ask.
-func (a *app) keepsRevokedNodes(ctx context.Context, f revokeFlags) error {
+func (a *app) keepsRevokedNodes(ctx context.Context, f viaFlags) error {
 	if f.via != "" {
 		return nil
 	}
@@ -192,7 +185,7 @@ func (a *app) keepsRevokedNodes(ctx context.Context, f revokeFlags) error {
 }
 
 func (a *app) nodeUnrevokeCommand() *cobra.Command {
-	var f revokeFlags
+	var f viaFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "unrevoke <node>",
 		Short:   "Let a revoked node's name join the cluster again",
@@ -207,7 +200,7 @@ func (a *app) nodeUnrevokeCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) nodeUnrevoke(ctx context.Context, f revokeFlags, pos []string) error {
+func (a *app) nodeUnrevoke(ctx context.Context, f viaFlags, pos []string) error {
 	if err := a.keepsRevokedNodes(ctx, f); err != nil {
 		return err
 	}
@@ -335,7 +328,7 @@ func installNotRevoked(ctx context.Context, t *target) error {
 		return err
 	}
 	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
-		ct, err := targetIn(t.cluster, nodeCommand{}, name, t.creds)
+		ct, err := targetIn(t.cluster, nodeFlags{}, name, t.creds)
 		if err != nil {
 			return nil, err
 		}
@@ -384,7 +377,7 @@ func notRevoked(ctx context.Context, t *target, does string) error {
 		// The target is reached where the command reaches it, the others where the inventory says.
 		ct := t
 		if name != t.name {
-			if ct, err = targetIn(t.cluster, nodeCommand{}, name, t.creds); err != nil {
+			if ct, err = targetIn(t.cluster, nodeFlags{}, name, t.creds); err != nil {
 				return nil, err
 			}
 		}

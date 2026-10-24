@@ -127,8 +127,8 @@ func (a *app) upgradeCommand() *cobra.Command {
 	fs := cmd.Flags()
 	f.cluster.register(fs)
 	f.secrets.register(fs)
-	fs.StringVar(&f.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)")
-	fs.Var(f.addresses, "address", "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's address in the inventory)")
+	registerConfig(fs, &f.config)
+	registerAddresses(fs, f.addresses)
 	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
 	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)")
 	fs.Var(&f.maxUnavailable, "max-unavailable", "how many workers and nodes without Kubernetes upgrade at once")
@@ -156,10 +156,8 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	if role := creds.role(); !role.Allows(pki.RoleOperator) {
 		return fmt.Errorf("upgrade needs the %s role; the %s role may not upgrade nodes", pki.RoleOperator, roleLabel(role))
 	}
-	for name := range addresses {
-		if err := c.node(name); err != nil {
-			return err
-		}
+	if err := c.checkAddresses(addresses); err != nil {
+		return err
 	}
 	var img *diskImage
 	if f.image != "" {
@@ -400,7 +398,7 @@ func (r *upgradeRun) say(format string, args ...any) {
 
 // call runs fn against a node.
 func (r *upgradeRun) call(name string, fn func(conn *client.Conn) error) error {
-	t, err := targetIn(r.cluster, nodeCommand{address: r.addresses[name]}, name, r.creds)
+	t, err := targetIn(r.cluster, nodeFlags{address: r.addresses[name]}, name, r.creds)
 	if err != nil {
 		return err
 	}
@@ -745,7 +743,7 @@ func (r *upgradeRun) fallbacks(ctx context.Context) error {
 			if !r.installs(n, st.Msg) {
 				return nil
 			}
-			t, err := targetIn(r.cluster, nodeCommand{address: r.addresses[name]}, name, r.creds)
+			t, err := targetIn(r.cluster, nodeFlags{address: r.addresses[name]}, name, r.creds)
 			if err != nil {
 				return err
 			}

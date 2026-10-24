@@ -31,23 +31,27 @@ func kubernetesShare(t *target, now time.Time) ([]byte, error) {
 	return share.Encode()
 }
 
+type bootstrapFlags struct {
+	node    nodeFlags
+	timeout time.Duration
+}
+
 func (a *app) bootstrapCommand() *cobra.Command {
-	var n nodeCommand
-	var timeout time.Duration
+	var f bootstrapFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "bootstrap <node>",
 		Short:   "Initialise the cluster on a control plane",
 		Long:    bootstrapLong,
 		Example: bootstrapExample,
 		Args:    cli.ExactArgs(1),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.bootstrap(ctx, n, timeout, pos) })
-	n.registerClient(cmd.Flags())
-	cmd.Flags().DurationVar(&timeout, "timeout", 20*time.Minute, "how long to wait for the control plane to apply its add-ons and Addon objects")
+	}, func(a *app, ctx context.Context, pos []string) error { return a.bootstrap(ctx, f, pos) })
+	f.node.registerClient(cmd.Flags())
+	cmd.Flags().DurationVar(&f.timeout, "timeout", 20*time.Minute, "how long to wait for the control plane to apply its add-ons and Addon objects")
 	return cmd
 }
 
-func (a *app) bootstrap(ctx context.Context, n nodeCommand, timeout time.Duration, pos []string) error {
-	t, err := a.clientTarget(ctx, n, pos[0])
+func (a *app) bootstrap(ctx context.Context, f bootstrapFlags, pos []string) error {
+	t, err := a.clientTarget(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
@@ -65,7 +69,7 @@ func (a *app) bootstrap(ctx context.Context, n nodeCommand, timeout time.Duratio
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, f.timeout)
 	defer cancel()
 	fmt.Fprintf(a.stdout, "bootstrapping %s; the control plane pulls its images and starts\n", t.name)
 	resp, err := conn.Bootstrap(ctx, connect.NewRequest(&nodev1.BootstrapRequest{}))

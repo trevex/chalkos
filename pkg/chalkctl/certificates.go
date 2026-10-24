@@ -18,32 +18,35 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// nodeRenew issues a node a new node certificate from the node CA and delivers it. The node is
+type nodeRenewFlags struct {
+	node  nodeFlags
+	force bool
+}
+
+// nodeRenewCommand issues a node a new node certificate from the node CA and delivers it. The node is
 // reached even when its certificate expired: its chain is verified without dates, which only
 // this command does. The node still verifies chalkctl's certificate as usual.
 func (a *app) nodeRenewCommand() *cobra.Command {
-	var n nodeCommand
-	var force bool
+	// The certificate names the node's addresses, which only its config gives.
+	f := nodeRenewFlags{node: nodeFlags{needs: "node renew"}}
 	cmd := a.command(&cobra.Command{
 		Use:     "renew <node>",
 		Short:   "Issue a node a new node certificate, also once its own expired",
 		Long:    nodeRenewLong,
 		Example: nodeRenewExample,
 		Args:    cli.ExactArgs(1),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeRenew(ctx, n, force, pos) })
-	n.register(cmd.Flags())
-	cmd.Flags().BoolVar(&force, "force", false, "renew without asking the control planes whether the node is revoked")
+	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeRenew(ctx, f, pos) })
+	f.node.register(cmd.Flags())
+	cmd.Flags().BoolVar(&f.force, "force", false, "renew without asking the control planes whether the node is revoked")
 	return cmd
 }
 
-func (a *app) nodeRenew(ctx context.Context, n nodeCommand, force bool, pos []string) error {
-	// The certificate names the node's addresses, which only its config gives.
-	n.needs = "node renew"
-	t, err := a.target(ctx, n, pos[0])
+func (a *app) nodeRenew(ctx context.Context, f nodeRenewFlags, pos []string) error {
+	t, err := a.target(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
-	if !force {
+	if !f.force {
 		if err := notRevoked(ctx, t, "node renew issues it a node certificate"); err != nil {
 			return err
 		}
@@ -76,26 +79,30 @@ func (a *app) nodeRenew(ctx context.Context, n nodeCommand, force bool, pos []st
 	return nil
 }
 
-// nodeCARotate issues a new node CA from the OS CA, writes the secrets file with it and delivers
+type nodeCARotateFlags struct {
+	node   nodeFlags
+	change changeFlags
+}
+
+// nodeCARotateCommand issues a new node CA from the OS CA, writes the secrets file with it and delivers
 // it to every control-plane node. Node certificates of the old node CA stay valid until they
 // expire: they chain to the same OS CA.
 func (a *app) nodeCARotateCommand() *cobra.Command {
-	var n nodeCommand
-	var change changeFlags
+	var f nodeCARotateFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "rotate",
 		Short:   "Issue a new node CA and deliver it to the control planes",
 		Long:    nodeCARotateLong,
 		Example: nodeCARotateExample,
 		Args:    cli.NoArgs,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeCARotate(ctx, n, change) })
-	n.register(cmd.Flags())
-	change.register(cmd.Flags())
+	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeCARotate(ctx, f) })
+	f.node.register(cmd.Flags())
+	f.change.register(cmd.Flags())
 	return cmd
 }
 
-func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlags) error {
-	c, err := loadCluster(ctx, n.cluster)
+func (a *app) nodeCARotate(ctx context.Context, f nodeCARotateFlags) error {
+	c, err := loadCluster(ctx, f.node.cluster)
 	if err != nil {
 		return err
 	}
@@ -110,15 +117,15 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 	if len(controlPlanes) == 0 {
 		return errors.New("node-ca rotate: the cluster has no control-plane node to renew node certificates with the new node CA")
 	}
-	if n.address != "" && len(controlPlanes) != 1 {
+	if f.node.address != "" && len(controlPlanes) != 1 {
 		return errors.New("node-ca rotate: --address names one node's chalkd, but the cluster has several control-plane nodes")
 	}
-	f, err := a.openSecrets(ctx, n.secrets, change)
+	file, err := a.openSecrets(ctx, f.node.secrets, f.change)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	secrets := f.secrets
+	defer file.Close()
+	secrets := file.secrets
 	// A rotation delivers its own shares, one control plane at a time.
 	if r := secrets.Rotation; r != nil {
 		return fmt.Errorf("node-ca rotate: %v", &clustersecrets.ErrRotationRuns{Kind: r.Kind, Phase: r.Phase})
@@ -126,14 +133,14 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 	if secrets.NodeCA, err = pki.NewNodeCA(secrets.OSCA, time.Now()); err != nil {
 		return err
 	}
-	if err := a.writeSecretsFile(f, secrets); err != nil {
+	if err := a.writeSecretsFile(file, secrets); err != nil {
 		return err
 	}
 	nodeCA, err := pki.ParseCertificate([]byte(secrets.NodeCA.Certificate))
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "%s holds a new node CA, which expires %s; %s\n", f.out, nodeCA.NotAfter.UTC().Format(time.RFC3339), f.written())
+	fmt.Fprintf(a.stdout, "%s holds a new node CA, which expires %s; %s\n", file.out, nodeCA.NotAfter.UTC().Format(time.RFC3339), file.written())
 
 	share, err := kpki.ControlPlaneShare(&secrets.Kubernetes, secrets.NodeCA).Encode()
 	if err != nil {
@@ -141,7 +148,7 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 	}
 	var failed []string
 	for _, name := range controlPlanes {
-		err := a.deliverNodeCA(ctx, c, n.address, name, secrets, share)
+		err := a.deliverNodeCA(ctx, c, f.node.address, name, secrets, share)
 		if err != nil {
 			failed = append(failed, fmt.Sprintf("%s: %v", name, err))
 			continue
@@ -149,7 +156,7 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 		fmt.Fprintf(a.stdout, "%s renews node certificates with the new node CA\n", name)
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("the new node CA did not reach every control-plane node; deliver it with chalkctl apply-config <node> --kubernetes-share --secrets %s: %s", f.out, strings.Join(failed, "; "))
+		return fmt.Errorf("the new node CA did not reach every control-plane node; deliver it with chalkctl apply-config <node> --kubernetes-share --secrets %s: %s", file.out, strings.Join(failed, "; "))
 	}
 	return nil
 }
@@ -160,7 +167,7 @@ func (a *app) deliverNodeCA(ctx context.Context, c *cluster, address, name strin
 	if err != nil {
 		return err
 	}
-	t, err := targetIn(c, nodeCommand{address: address}, name, creds)
+	t, err := targetIn(c, nodeFlags{address: address}, name, creds)
 	if err != nil {
 		return err
 	}

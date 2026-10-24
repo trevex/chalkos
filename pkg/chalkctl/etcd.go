@@ -18,7 +18,7 @@ import (
 
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
 // control-plane nodes but skip in name order, moving on past nodes that are down or no etcd member.
-func (a *app) throughControlPlane(ctx context.Context, n nodeCommand, via, skip string, call func(conn *client.Conn) error) error {
+func (a *app) throughControlPlane(ctx context.Context, n nodeFlags, via, skip string, call func(conn *client.Conn) error) error {
 	c, err := loadCluster(ctx, n.cluster)
 	if err != nil {
 		return err
@@ -93,15 +93,16 @@ func notEtcdMember(err error) bool {
 	return false
 }
 
-// etcdFlags are the flags of the etcd commands.
-type etcdFlags struct {
-	node  nodeCommand
+// viaFlags are the flags of the commands that act through a control plane: the etcd commands,
+// node revoke and node unrevoke.
+type viaFlags struct {
+	node  nodeFlags
 	via   string
 	force bool
 }
 
 func (a *app) etcdMembersCommand() *cobra.Command {
-	var f etcdFlags
+	var f viaFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "members",
 		Short:   "List etcd's members and their health",
@@ -114,7 +115,7 @@ func (a *app) etcdMembersCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) etcdMembers(ctx context.Context, f etcdFlags) error {
+func (a *app) etcdMembers(ctx context.Context, f viaFlags) error {
 	var members []*nodev1.EtcdMember
 	err := a.throughControlPlane(ctx, f.node, f.via, "", func(conn *client.Conn) error {
 		resp, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
@@ -145,7 +146,7 @@ func (a *app) etcdMembers(ctx context.Context, f etcdFlags) error {
 }
 
 func (a *app) etcdRemoveMemberCommand() *cobra.Command {
-	var f etcdFlags
+	var f viaFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "remove-member <node|id>",
 		Short:   "Remove a node's etcd member, such as a stale one",
@@ -160,7 +161,7 @@ func (a *app) etcdRemoveMemberCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) etcdRemoveMember(ctx context.Context, f etcdFlags, pos []string) error {
+func (a *app) etcdRemoveMember(ctx context.Context, f viaFlags, pos []string) error {
 	var removed *nodev1.EtcdMember
 	err := a.throughControlPlane(ctx, f.node, f.via, pos[0], func(conn *client.Conn) error {
 		resp, err := conn.EtcdRemoveMember(ctx, connect.NewRequest(&nodev1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force}))
@@ -177,7 +178,7 @@ func (a *app) etcdRemoveMember(ctx context.Context, f etcdFlags, pos []string) e
 }
 
 func (a *app) etcdLeaveCommand() *cobra.Command {
-	var f etcdFlags
+	var f viaFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "leave <node>",
 		Short:   "Take a control plane out of etcd",
@@ -190,7 +191,7 @@ func (a *app) etcdLeaveCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) etcdLeave(ctx context.Context, f etcdFlags, pos []string) error {
+func (a *app) etcdLeave(ctx context.Context, f viaFlags, pos []string) error {
 	t, err := a.clientTarget(ctx, f.node, pos[0])
 	if err != nil {
 		return err

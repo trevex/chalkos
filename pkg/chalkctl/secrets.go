@@ -194,23 +194,27 @@ func readInterruptible(ctx context.Context, read func() ([]byte, error), restore
 	}
 }
 
+type recoveryKeyFlags struct {
+	cluster clusterFlags
+	secrets secretFlags
+}
+
 func (a *app) recoveryKeyCommand() *cobra.Command {
-	var cf clusterFlags
-	var sf secretFlags
+	var f recoveryKeyFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "recovery-key <node>",
 		Short:   "Print a node's recovery key",
 		Long:    recoveryKeyLong,
 		Example: recoveryKeyExample,
 		Args:    cli.ExactArgs(1),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.recoveryKey(ctx, cf, sf, pos) })
-	cf.register(cmd.Flags())
-	sf.register(cmd.Flags())
+	}, func(a *app, ctx context.Context, pos []string) error { return a.recoveryKey(ctx, f, pos) })
+	f.cluster.register(cmd.Flags())
+	f.secrets.register(cmd.Flags())
 	return cmd
 }
 
-func (a *app) recoveryKey(ctx context.Context, cf clusterFlags, sf secretFlags, pos []string) error {
-	c, err := loadCluster(ctx, cf)
+func (a *app) recoveryKey(ctx context.Context, f recoveryKeyFlags, pos []string) error {
+	c, err := loadCluster(ctx, f.cluster)
 	if err != nil {
 		return err
 	}
@@ -220,7 +224,7 @@ func (a *app) recoveryKey(ctx context.Context, cf clusterFlags, sf secretFlags, 
 	if err := c.node(pos[0]); err != nil {
 		return err
 	}
-	secrets, err := a.loadSecrets(ctx, sf)
+	secrets, err := a.loadSecrets(ctx, f.secrets)
 	if err != nil {
 		return err
 	}

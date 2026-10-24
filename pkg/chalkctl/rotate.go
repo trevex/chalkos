@@ -20,29 +20,6 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// addressList is --address NODE=ADDR, which may be given for each node.
-type addressList map[string]string
-
-func (l addressList) String() string {
-	var s []string
-	for _, name := range slices.Sorted(maps.Keys(l)) {
-		s = append(s, name+"="+l[name])
-	}
-	return strings.Join(s, ",")
-}
-
-// Type names the value for pflag; help names it NODE=ADDR, from the flag's usage.
-func (l addressList) Type() string { return "nodeAddresses" }
-
-func (l addressList) Set(v string) error {
-	name, addr, ok := strings.Cut(v, "=")
-	if !ok || name == "" || addr == "" {
-		return errors.New("want NODE=ADDR")
-	}
-	l[name] = addr
-	return nil
-}
-
 type rotateFlags struct {
 	cluster               clusterFlags
 	secrets               secretFlags
@@ -66,7 +43,7 @@ func (a *app) rotateCommand() *cobra.Command {
 	f.cluster.register(fs)
 	f.secrets.register(fs)
 	f.change.register(fs)
-	fs.Var(f.addresses, "address", "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's address in the inventory)")
+	registerAddresses(fs, f.addresses)
 	fs.BoolVar(&f.resume, "resume", false, "continue the rotation the secrets file records")
 	fs.BoolVar(&f.finish, "finish", false, "remove the old value from every node and the secrets file")
 	fs.BoolVar(&f.force, "force", false, "with --finish, finish the service-account key's rotation within the hour after its switch")
@@ -94,10 +71,8 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	if err := c.requireNodes("rotate"); err != nil {
 		return err
 	}
-	for name := range addresses {
-		if err := c.node(name); err != nil {
-			return err
-		}
+	if err := c.checkAddresses(addresses); err != nil {
+		return err
 	}
 	// Every node's kind is read before any node is sent anything.
 	if _, err := c.nodesOf("", ""); err != nil {
@@ -321,7 +296,7 @@ func (r *rotation) target(name string) (*target, error) {
 	if err != nil {
 		return nil, err
 	}
-	return targetIn(r.cluster, nodeCommand{address: r.addresses[name]}, name, creds)
+	return targetIn(r.cluster, nodeFlags{address: r.addresses[name]}, name, creds)
 }
 
 // call runs fn against a node.

@@ -13,13 +13,13 @@ import (
 )
 
 type applyConfigFlags struct {
-	node                                 nodeCommand
+	node                                 nodeFlags
 	passwordFile                         string
 	kubernetesShare, staged, diff, force bool
 }
 
 func (a *app) applyConfigCommand() *cobra.Command {
-	var f applyConfigFlags
+	f := applyConfigFlags{node: nodeFlags{needs: "apply-config"}}
 	cmd := a.command(&cobra.Command{
 		Use:     "apply-config <node>",
 		Short:   "Deliver a node's config from the inventory",
@@ -38,15 +38,13 @@ func (a *app) applyConfigCommand() *cobra.Command {
 }
 
 func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
-	n := f.node
 	if f.staged && f.kubernetesShare {
 		return cli.Usagef("--staged delivers config alone; deliver the Kubernetes share to the running image")
 	}
 	if f.force && !f.kubernetesShare {
 		return cli.Usagef("--force goes with --kubernetes-share")
 	}
-	n.needs = "apply-config"
-	t, err := a.target(ctx, n, pos[0])
+	t, err := a.target(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
@@ -150,24 +148,27 @@ func (a *app) warnDelivery(name string, resp *nodev1.ApplyConfigResponse) {
 	}
 }
 
+type resetVolumeFlags struct {
+	node         nodeFlags
+	passwordFile string
+}
+
 func (a *app) resetVolumeCommand() *cobra.Command {
-	var n nodeCommand
-	var passwordFile string
+	f := resetVolumeFlags{node: nodeFlags{needs: "storage reset"}}
 	cmd := a.command(&cobra.Command{
 		Use:     "reset <node> <volume>",
 		Short:   "Wipe and recreate one volume",
 		Long:    resetVolumeLong,
 		Example: resetVolumeExample,
 		Args:    cli.ExactArgs(2),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.resetVolume(ctx, n, passwordFile, pos) })
-	n.registerClient(cmd.Flags())
-	registerPasswordFile(cmd.Flags(), &passwordFile)
+	}, func(a *app, ctx context.Context, pos []string) error { return a.resetVolume(ctx, f, pos) })
+	f.node.registerClient(cmd.Flags())
+	registerPasswordFile(cmd.Flags(), &f.passwordFile)
 	return cmd
 }
 
-func (a *app) resetVolume(ctx context.Context, n nodeCommand, passwordFile string, pos []string) error {
-	n.needs = "storage reset"
-	t, err := a.clientTarget(ctx, n, pos[0])
+func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string) error {
+	t, err := a.clientTarget(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
@@ -183,7 +184,7 @@ func (a *app) resetVolume(ctx context.Context, n nodeCommand, passwordFile strin
 	if err != nil {
 		return err
 	}
-	fallback, err := a.fallbackFor(ctx, conn, t, d.identity.Storage, passwordFile, pos[1])
+	fallback, err := a.fallbackFor(ctx, conn, t, d.identity.Storage, f.passwordFile, pos[1])
 	if err != nil {
 		return err
 	}

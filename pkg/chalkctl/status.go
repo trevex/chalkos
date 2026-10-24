@@ -17,7 +17,7 @@ import (
 )
 
 func (a *app) statusCommand() *cobra.Command {
-	var n nodeCommand
+	var n nodeFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "status <node>",
 		Short:   "Show an installed node's status",
@@ -29,7 +29,7 @@ func (a *app) statusCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) status(ctx context.Context, n nodeCommand, pos []string) error {
+func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
 		return err

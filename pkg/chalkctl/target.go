@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -13,8 +15,8 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 )
 
-// nodeCommand holds what commands addressing one node share.
-type nodeCommand struct {
+// nodeFlags holds what commands addressing one node share.
+type nodeFlags struct {
 	cluster clusterFlags
 	secrets secretFlags
 	address string
@@ -25,16 +27,16 @@ type nodeCommand struct {
 	needs string
 }
 
-func (n *nodeCommand) register(fs *pflag.FlagSet) {
+func (n *nodeFlags) register(fs *pflag.FlagSet) {
 	n.cluster.register(fs)
 	n.secrets.register(fs)
 	fs.StringVar(&n.address, "address", "", "address of the node's chalkd, host or host:port (default the node's address in the inventory)")
 }
 
 // registerClient registers the flags of a command that a client file may run.
-func (n *nodeCommand) registerClient(fs *pflag.FlagSet) {
+func (n *nodeFlags) registerClient(fs *pflag.FlagSet) {
 	n.register(fs)
-	fs.StringVar(&n.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)")
+	registerConfig(fs, &n.config)
 }
 
 // target is a node of the cluster with the credentials chalkctl reaches it with. secrets holds
@@ -50,7 +52,7 @@ type target struct {
 }
 
 // target addresses a node with the secrets file.
-func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, error) {
+func (a *app) target(ctx context.Context, n nodeFlags, name string) (*target, error) {
 	c, err := n.loadCluster(ctx)
 	if err != nil {
 		return nil, err
@@ -63,7 +65,7 @@ func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, 
 }
 
 // clientTarget addresses a node with the secrets file or a client file.
-func (a *app) clientTarget(ctx context.Context, n nodeCommand, name string) (*target, error) {
+func (a *app) clientTarget(ctx context.Context, n nodeFlags, name string) (*target, error) {
 	c, err := n.loadCluster(ctx)
 	if err != nil {
 		return nil, err
@@ -77,7 +79,7 @@ func (a *app) clientTarget(ctx context.Context, n nodeCommand, name string) (*ta
 
 // loadCluster loads the cluster the command's flags name, and refuses a partial one when the
 // command needs the nodes' config.
-func (n nodeCommand) loadCluster(ctx context.Context) (*cluster, error) {
+func (n nodeFlags) loadCluster(ctx context.Context) (*cluster, error) {
 	c, err := loadCluster(ctx, n.cluster)
 	if err != nil {
 		return nil, err
@@ -90,7 +92,7 @@ func (n nodeCommand) loadCluster(ctx context.Context) (*cluster, error) {
 	return c, nil
 }
 
-func targetIn(c *cluster, n nodeCommand, name string, creds *credentials) (*target, error) {
+func targetIn(c *cluster, n nodeFlags, name string, creds *credentials) (*target, error) {
 	if err := c.node(name); err != nil {
 		return nil, err
 	}
@@ -135,20 +137,20 @@ func dialNode(t *target, ignoreValidity bool) (*client.Conn, error) {
 	return client.Dial(t.addr, o)
 }
 
-// pinning verifies a node in maintenance mode, which serves a self-signed certificate.
-type pinning struct {
+// pinFlags verifies a node in maintenance mode, which serves a self-signed certificate.
+type pinFlags struct {
 	fingerprint string
 	insecure    bool
 }
 
-func (p *pinning) register(fs *pflag.FlagSet) {
+func (p *pinFlags) register(fs *pflag.FlagSet) {
 	fs.StringVar(&p.fingerprint, "fingerprint", "", "SHA-256 fingerprint the node prints on its console in maintenance mode")
 	fs.BoolVar(&p.insecure, "insecure", false, "accept any certificate and print the node's fingerprint")
 }
 
-func (p pinning) set() bool { return p.fingerprint != "" || p.insecure }
+func (p pinFlags) set() bool { return p.fingerprint != "" || p.insecure }
 
-func (p pinning) dial(addr, source string, cert *tls.Certificate) (*client.Conn, error) {
+func (p pinFlags) dial(addr, source string, cert *tls.Certificate) (*client.Conn, error) {
 	if p.fingerprint != "" && p.insecure {
 		return nil, errors.New("pass either --fingerprint or --insecure")
 	}
@@ -184,15 +186,58 @@ func (e namedError) Unwrap() error { return e.err }
 // nodePinFlags are the flags of a command that reaches an installed node or, with a fingerprint
 // or --insecure, a node in maintenance mode.
 type nodePinFlags struct {
-	node nodeCommand
-	pin  pinning
+	node nodeFlags
+	pin  pinFlags
 }
 
 // dialEither connects to a node in maintenance mode when a fingerprint or --insecure is given,
 // and to an installed node otherwise.
-func (a *app) dialEither(t *target, p pinning) (*client.Conn, error) {
+func (a *app) dialEither(t *target, p pinFlags) (*client.Conn, error) {
 	if p.set() {
 		return p.dial(t.addr, t.source, t.creds.cert)
 	}
 	return dialInstalled(t)
+}
+
+// addressList is --address NODE=ADDR, which may be given for each node.
+type addressList map[string]string
+
+func (l addressList) String() string {
+	var s []string
+	for _, name := range slices.Sorted(maps.Keys(l)) {
+		s = append(s, name+"="+l[name])
+	}
+	return strings.Join(s, ",")
+}
+
+// Type names the value for pflag; help names it NODE=ADDR, from the flag's usage.
+func (l addressList) Type() string { return "nodeAddresses" }
+
+func (l addressList) Set(v string) error {
+	name, addr, ok := strings.Cut(v, "=")
+	if !ok || name == "" || addr == "" {
+		return errors.New("want NODE=ADDR")
+	}
+	l[name] = addr
+	return nil
+}
+
+// registerAddresses registers --address NODE=ADDR of a command that reaches several nodes.
+func registerAddresses(fs *pflag.FlagSet, l addressList) {
+	fs.Var(l, "address", "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's address in the inventory)")
+}
+
+// checkAddresses refuses an --address NODE=ADDR whose node the cluster does not have.
+func (c *cluster) checkAddresses(l addressList) error {
+	for name := range l {
+		if err := c.node(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// registerConfig registers --config, the client file of a command that a client file may run.
+func registerConfig(fs *pflag.FlagSet, p *string) {
+	fs.StringVar(p, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)")
 }

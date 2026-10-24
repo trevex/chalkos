@@ -14,16 +14,18 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
+type validateFlags struct{ inventory string }
+
 func (a *app) validateCommand() *cobra.Command {
-	var path string
+	var f validateFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "validate [<node>...]",
 		Short:   "Check nodes' config against the schemas of their images",
 		Long:    validateLong,
 		Example: validateExample,
 		Args:    cobra.ArbitraryArgs,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.validate(ctx, path, pos) })
-	cmd.Flags().StringVar(&path, "inventory", "", "inventory naming the nodes and their config files (default "+inventory.DefaultFile+" in the current directory)")
+	}, func(a *app, ctx context.Context, pos []string) error { return a.validate(ctx, f, pos) })
+	cmd.Flags().StringVar(&f.inventory, "inventory", "", "inventory naming the nodes and their config files (default "+inventory.DefaultFile+" in the current directory)")
 	return cmd
 }
 
@@ -31,7 +33,8 @@ func (a *app) validateCommand() *cobra.Command {
 // every node whose config is invalid. The nodes' Cluster and Flannel specs are checked first, as
 // every other command checks them when it loads the inventory. A valid config that
 // leaves the node's secrets unencrypted draws a warning.
-func (a *app) validate(ctx context.Context, path string, names []string) error {
+func (a *app) validate(ctx context.Context, f validateFlags, names []string) error {
+	path := f.inventory
 	if path == "" {
 		path = inventory.DefaultFile
 	}

@@ -24,13 +24,14 @@ func (a *app) disksCommand() *cobra.Command {
 		Long:    disksLong,
 		Example: disksExample,
 		Args:    cli.RangeArgs(0, 1),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.disks(ctx, f.node, f.pin, pos) })
+	}, func(a *app, ctx context.Context, pos []string) error { return a.disks(ctx, f, pos) })
 	f.node.registerClient(cmd.Flags())
 	f.pin.register(cmd.Flags())
 	return cmd
 }
 
-func (a *app) disks(ctx context.Context, n nodeCommand, p pinning, pos []string) error {
+func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
+	n, p := f.node, f.pin
 	var conn *client.Conn
 	var err error
 	switch {
@@ -117,12 +118,11 @@ func (a *app) logsCommand() *cobra.Command {
 }
 
 func (a *app) logs(ctx context.Context, f logsFlags, pos []string) error {
-	n, p := f.node, f.pin
-	t, err := a.clientTarget(ctx, n, pos[0])
+	t, err := a.clientTarget(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
-	conn, err := a.dialEither(t, p)
+	conn, err := a.dialEither(t, f.pin)
 	if err != nil {
 		return err
 	}
@@ -152,18 +152,18 @@ func (a *app) rebootCommand() *cobra.Command {
 		Long:    rebootLong,
 		Example: rebootExample,
 		Args:    cli.ExactArgs(1),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.reboot(ctx, f.node, f.pin, pos) })
+	}, func(a *app, ctx context.Context, pos []string) error { return a.reboot(ctx, f, pos) })
 	f.node.registerClient(cmd.Flags())
 	f.pin.register(cmd.Flags())
 	return cmd
 }
 
-func (a *app) reboot(ctx context.Context, n nodeCommand, p pinning, pos []string) error {
-	t, err := a.clientTarget(ctx, n, pos[0])
+func (a *app) reboot(ctx context.Context, f nodePinFlags, pos []string) error {
+	t, err := a.clientTarget(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
-	conn, err := a.dialEither(t, p)
+	conn, err := a.dialEither(t, f.pin)
 	if err != nil {
 		return err
 	}

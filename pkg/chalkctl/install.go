@@ -20,14 +20,14 @@ import (
 )
 
 type installFlags struct {
-	node                nodeCommand
-	pin                 pinning
+	node                nodeFlags
+	pin                 pinFlags
 	image, passwordFile string
 	wipeDisk, force     bool
 }
 
 func (a *app) installCommand() *cobra.Command {
-	var f installFlags
+	f := installFlags{node: nodeFlags{needs: "install"}}
 	cmd := a.command(&cobra.Command{
 		Use:     "install <node>",
 		Short:   "Install a node that waits in maintenance mode",
@@ -40,15 +40,14 @@ func (a *app) installCommand() *cobra.Command {
 	f.pin.register(fs)
 	fs.StringVar(&f.image, "image", "", "image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory, which chalkctl sends (default the node's image in the inventory: from its directory, or from a registry, which the installer pulls)")
 	fs.BoolVar(&f.wipeDisk, "wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
-	fs.StringVar(&f.passwordFile, "password-file", "", "file holding the password of a node whose fallback is a password")
+	registerPasswordFile(fs, &f.passwordFile)
 	fs.BoolVar(&f.force, "force", false, "install the node without asking the control planes whether its name is revoked")
 	return cmd
 }
 
 func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
-	n, p := f.node, f.pin
-	n.needs = "install"
-	t, err := a.target(ctx, n, pos[0])
+	p := f.pin
+	t, err := a.target(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
