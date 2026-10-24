@@ -78,8 +78,8 @@ func TestReplaceFileFollowsLinks(t *testing.T) {
 func TestDirectorySyncedAfterWrites(t *testing.T) {
 	var synced []string
 	failing := false
-	defer func(orig func(string) error) { syncDir = orig }(syncDir)
-	syncDir = func(dir string) error {
+	defer func(orig func(string) error) { SyncDir = orig }(SyncDir)
+	SyncDir = func(dir string) error {
 		synced = append(synced, dir)
 		if failing {
 			return errors.New("sync failed")

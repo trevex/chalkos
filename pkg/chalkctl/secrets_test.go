@@ -451,3 +451,54 @@ func TestOlderSecretsFilesAreRefused(t *testing.T) {
 		}
 	}
 }
+
+// TestDirectorySyncedAfterWrites checks that writeSecretsFile syncs the directory of a new
+// secrets file, and that a sync failing once the secrets file and its public half are replaced
+// in place is a warning for each, not a failure.
+func TestDirectorySyncedAfterWrites(t *testing.T) {
+	ta := newTestApp(t)
+	var synced []string
+	failing := false
+	defer func(orig func(string) error) { clustersecrets.SyncDir = orig }(clustersecrets.SyncDir)
+	clustersecrets.SyncDir = func(dir string) error {
+		synced = append(synced, dir)
+		if failing {
+			return errors.New("sync failed")
+		}
+		return nil
+	}
+	outDir := filepath.Join(ta.dir, "out")
+	os.Mkdir(outDir, 0o755)
+	f, err := ta.openUnlocked(context.Background(), secretFlags{path: filepath.Join(ta.dir, "secrets.json")}, changeFlags{out: filepath.Join(outDir, "secrets.json")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ta.writeSecretsFile(f, f.secrets); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(synced, outDir) {
+		t.Errorf("synced %v, not the directory of the new file", synced)
+	}
+
+	failing = true
+	f, err = ta.openUnlocked(context.Background(), secretFlags{path: filepath.Join(ta.dir, "secrets.json")}, changeFlags{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := f.secrets
+	if err := changed.BeginRotation(clustersecrets.RotateEncryptionKey, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := ta.writeSecretsFile(f, changed); err != nil {
+		t.Errorf("a failed sync after the rename failed the write: %v", err)
+	}
+	for _, name := range []string{"secrets.json", "secrets.pub.json"} {
+		if want := "warning: " + filepath.Join(ta.dir, name) + " is written"; !strings.Contains(ta.stderr.String(), want) {
+			t.Errorf("no warning %q: %q", want, ta.stderr.String())
+		}
+	}
+	data, _ := os.ReadFile(filepath.Join(ta.dir, "secrets.json"))
+	if read, err := clustersecrets.Read(data, only()); err != nil || read.Rotation == nil {
+		t.Errorf("the file was not replaced: %v", err)
+	}
+}

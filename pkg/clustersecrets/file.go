@@ -102,7 +102,7 @@ func Create(path string, data []byte, perm fs.FileMode) error {
 	if err := atomicfile.WriteNew(path, data, perm); err != nil {
 		return err
 	}
-	if err := syncDir(filepath.Dir(path)); err != nil {
+	if err := SyncDir(filepath.Dir(path)); err != nil {
 		return &UnsyncedError{path, err}
 	}
 	return nil
@@ -148,7 +148,7 @@ func Replace(path string, data []byte, perm fs.FileMode) error {
 	if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
-	if err := syncDir(filepath.Dir(path)); err != nil {
+	if err := SyncDir(filepath.Dir(path)); err != nil {
 		return &UnsyncedError{path, err}
 	}
 	return nil
@@ -193,5 +193,6 @@ func (e *UnsyncedError) Error() string {
 
 func (e *UnsyncedError) Unwrap() error { return e.Err }
 
-// syncDir syncs a directory after a rename into it; tests replace it.
-var syncDir = atomicfile.SyncDir
+// SyncDir syncs a directory after a rename into it. Tests, also those of commands that write
+// secrets files, replace it to make the sync fail.
+var SyncDir = atomicfile.SyncDir
