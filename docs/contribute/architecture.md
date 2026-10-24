@@ -80,7 +80,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `chalkbuild` | The chalkbuild command tree. |
 | `chalkcfg` | The chalkcfg command tree: reads the documents below `/run/chalkos/config` and the kinds the image's schemas name, and prints them. |
 | `chalkctl` | The chalkctl command tree. |
-| `chalkd` | The node API server, with the permissions of each method, and chalkd's work at boot: renewals, the VIP election, the health check. |
+| `chalkd` | The node API server, with the permissions of each method, and chalkd's work at boot: renewals, the supervision of the VIP election, the health check. |
 | `chalklab` | The chalklab command tree. |
 | `client` | Connections to chalkd: by fingerprint in maintenance mode, by the OS CA otherwise; the names chalkd's status gives certificates and trusted values. |
 | `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. |
@@ -95,12 +95,12 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `install` | Installs a node in place or from the installer, step by step and repeatable. |
 | `kubernetes` | The node's Kubernetes cluster as the image records it, the node as its config names it, and the kinds of Kubernetes nodes: control plane and worker. |
 | `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
-| `kubernetes/etcd` | etcd membership: learners, promotion, quorum-safe removal. |
+| `kubernetes/etcd` | etcd membership: learners, promotion, quorum-safe removal, the node's own member; finds the members from etcd's mirror pods and counts encrypted values by key. |
 | `kubernetes/manifests` | The control plane's static pods. |
-| `kubernetes/node` | The node's Kubernetes files at boot: addresses, kubelet credentials and flags, control-plane certificates. |
+| `kubernetes/node` | The node's Kubernetes files at boot: addresses, kubelet credentials and flags, control-plane certificates, the check that they are prepared, the removal of the static pods. |
 | `kubernetes/nodeip` | Picks the node's address of each family. |
 | `kubernetes/pki` | The Kubernetes certificates: the share, the control plane's leaves, admin kubeconfigs. |
-| `kubernetes/vip` | Adds a VIP to an interface and announces it. |
+| `kubernetes/vip` | The etcd election of the control plane that holds the VIPs; adds a VIP to an interface and announces it. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the lab's supervisor, for chalklab and the end-to-end tests. |
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
 | `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the granted units, and renders the outputs at boot, networkd's units and chrony's servers among them. |
