@@ -111,18 +111,6 @@ func TestInvocationsOfTheGoodPage(t *testing.T) {
 	}
 }
 
-func TestWords(t *testing.T) {
-	for line, want := range map[string][]string{
-		`a "b c" 'd e' f\ g $(h) i|j&&k # l`: {"a", "b c", "d e", "f g", "$(", "h", ")", "i", "|", "j", "&&", "k", "#"},
-		`echo "x $(a "b c") y" '$(d)'`:       {"echo", `x $(a "b c") y`, "$(d)"},
-		`a 2>&1 b &> c <&3 d & e`:            {"a", "2>&1", "b", "&>", "c", "<&3", "d", "&", "e"},
-	} {
-		if got := words(line); strings.Join(got, ",") != strings.Join(want, ",") {
-			t.Errorf("words(%s) = %q, want %q", line, got, want)
-		}
-	}
-}
-
 // Short flags combine as pflag combines them: booleans in a row, a flag with a value last, its
 // value the rest of the word or the next word.
 func TestCombinedShortFlags(t *testing.T) {

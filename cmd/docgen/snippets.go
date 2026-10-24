@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,25 +16,6 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/schema"
 )
-
-// markdownFiles returns the Markdown files under dir, but not under dir/superpowers, in lexical
-// order.
-func markdownFiles(dir string) ([]string, error) {
-	var files []string
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() && path == filepath.Join(dir, "superpowers") {
-			return filepath.SkipDir
-		}
-		if !d.IsDir() && filepath.Ext(path) == ".md" {
-			files = append(files, path)
-		}
-		return nil
-	})
-	return files, err
-}
 
 // checkYAML validates the config documents of the YAML blocks of the Markdown files under dir,
 // but not under dir/superpowers, against the schemas in schemasDir, with the parser and the
