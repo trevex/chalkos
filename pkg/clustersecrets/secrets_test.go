@@ -77,7 +77,7 @@ func caWithoutCertSign(t *testing.T) pki.CertKey {
 
 func noIdentities() ([]age.Identity, error) { return nil, errors.New("asked for an identity") }
 
-func TestGenerateSecrets(t *testing.T) {
+func TestGenerate(t *testing.T) {
 	s := generate(t)
 	if err := s.Validate(); err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestGenerateSecrets(t *testing.T) {
 	}
 }
 
-func TestReadSecretsPlaintext(t *testing.T) {
+func TestReadPlaintext(t *testing.T) {
 	s := generate(t)
 	data, err := s.Encode()
 	if err != nil {
@@ -110,7 +110,7 @@ func TestReadSecretsPlaintext(t *testing.T) {
 	}
 }
 
-func TestReadSecretsAge(t *testing.T) {
+func TestReadAge(t *testing.T) {
 	s := generate(t)
 	id, err := age.GenerateX25519Identity()
 	if err != nil {
@@ -152,7 +152,7 @@ func TestReadSecretsAge(t *testing.T) {
 	}
 }
 
-func TestReadSecretsSSH(t *testing.T) {
+func TestReadSSH(t *testing.T) {
 	s := generate(t)
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -195,7 +195,7 @@ func TestReadSecretsSSH(t *testing.T) {
 	}
 }
 
-func TestReadSecretsRejects(t *testing.T) {
+func TestReadRejects(t *testing.T) {
 	s := generate(t)
 	broken := s
 	broken.RecoverySecret = broken.RecoverySecret[:8]
@@ -284,7 +284,7 @@ func TestParseIdentitiesSSHNilPublicKeyCallback(t *testing.T) {
 	}
 }
 
-func TestReadSecretsArmoredLeadingWhitespace(t *testing.T) {
+func TestReadArmoredLeadingWhitespace(t *testing.T) {
 	s := generate(t)
 	id, err := age.GenerateX25519Identity()
 	if err != nil {
@@ -351,7 +351,7 @@ func TestSecretsStringRedacted(t *testing.T) {
 	}
 }
 
-func TestReadSecretsRefusesOlderVersions(t *testing.T) {
+func TestReadRefusesOlderVersions(t *testing.T) {
 	s := generate(t)
 	for _, version := range []int{1, 2} {
 		old := s

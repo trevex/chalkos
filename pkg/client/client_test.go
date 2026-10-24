@@ -130,6 +130,10 @@ func TestCAVerifiesNodeName(t *testing.T) {
 	if got := h.client.Load(); got != "admin" {
 		t.Errorf("client certificate seen by the node = %v", got)
 	}
+	nodeCert, _ := pki.ParseCertificate([]byte(node.Certificate))
+	if c.Fingerprint() != pki.Fingerprint(nodeCert.Raw) {
+		t.Errorf("fingerprint = %q, want the node certificate's", c.Fingerprint())
+	}
 
 	wrong, _ := Dial(addr, Options{Verify: ByCA(pool, "n2")})
 	if err := info(wrong); err == nil {
@@ -172,7 +176,7 @@ func TestCARequiresServerName(t *testing.T) {
 	}
 }
 
-func TestAnyNode(t *testing.T) {
+func TestAnyNodeOf(t *testing.T) {
 	now := time.Now()
 	ca, _ := pki.NewOSCA(now)
 	nodeCA, _ := pki.NewNodeCA(ca, now)
@@ -201,7 +205,7 @@ func TestAnyNode(t *testing.T) {
 	}
 }
 
-func TestIgnoreValidityAcceptsAnExpiredNode(t *testing.T) {
+func TestByCAIgnoringValidityAcceptsAnExpiredNode(t *testing.T) {
 	past := time.Now().Add(-2 * pki.LeafValidity)
 	ca, _ := pki.NewOSCA(past)
 	nodeCA, _ := pki.NewNodeCA(ca, past)

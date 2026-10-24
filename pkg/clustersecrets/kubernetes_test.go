@@ -10,7 +10,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-func TestGenerateSecretsHasKubernetes(t *testing.T) {
+func TestGenerateHasKubernetes(t *testing.T) {
 	s := generate(t)
 	if s.Version != 3 {
 		t.Errorf("version = %d, want 3", s.Version)
