@@ -197,8 +197,8 @@ func chunks[T any, M interface {
 	}, err: stream.Err}
 }
 
-// noChunks refuses a request after the header of stream, whose image what pulls from a
-// registry: the client sends nothing after the header, and Receive returns once it closed its
+// noChunks refuses any request after the header: an install or upgrade (what) that pulls its
+// image from a registry gets no chunks from the client. Receive returns once the client closed its
 // side.
 func noChunks[T any](stream *connect.ClientStream[T], what string) error {
 	if stream.Receive() {
