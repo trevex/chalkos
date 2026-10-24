@@ -53,7 +53,7 @@ The output comes from a lab cluster. `...` stands for cp2's and cp3's lines, whi
 
 The image fixes the Kubernetes release: every node runs the kubelet of its image, and control
 planes run the upstream images of the same release. The image author sets it in the image's
-modules, as [`chalkos.kubernetes.package`](../reference/options.md#chalkoskubernetespackage)
+modules, as [`chalkos.kubernetes.package`](../reference/image-options.md#chalkoskubernetespackage)
 describes, and every variant with Kubernetes gets a new image. The upgrade itself is the same as for
 any other image.
 

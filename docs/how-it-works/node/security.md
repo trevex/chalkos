@@ -201,7 +201,7 @@ it. Only the machine whose fingerprint was printed receives the config, the node
 the Kubernetes share. Every command that reaches a node in maintenance mode accepts `--insecure`.
 
 The node in turn decides whom it accepts. The images and the installer of an mkImages call with
-[`osCA`](../../reference/options.md#osca) carry that OS CA and accept in maintenance mode only
+[`osCA`](../../reference/mkimages.md#osca) carry that OS CA and accept in maintenance mode only
 clients with a certificate from it, so only the holder of the secrets file or a client file can
 install them. An image built without one says `accepting any client` on the console, checks no
 client certificate and treats every client as an admin until it is installed. On a network other
@@ -224,7 +224,7 @@ files, for the host, so the hypervisor's admin gets no shell on the node through
 
     A node with Kubernetes is debugged from a privileged pod, started with
     `kubectl debug node/<node>`, which sees the node's file systems.
-    [`chalkos.debug.tools`](../../reference/options.md#chalkosdebugtools) adds the usual
+    [`chalkos.debug.tools`](../../reference/image-options.md#chalkosdebugtools) adds the usual
     command-line tools to an image for that.
 
 ## Limits

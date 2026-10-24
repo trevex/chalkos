@@ -8,7 +8,7 @@ description: "The fields of the config kinds of chalkos's images, of the invento
 This page is for operators who write a node's config documents, an inventory or a lab file. It
 lists the config kinds that an image of `chalkos.lib.mkImages`'s default variant accepts, by API
 group, and the fields of the inventory and the lab file that chalkctl and chalklab read. An image
-whose modules declare kinds of their own under [`chalkos.kinds`](options.md#chalkoskinds)
+whose modules declare kinds of their own under [`chalkos.kinds`](extension-api.md#chalkoskinds)
 accepts those as well.
 
 Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,

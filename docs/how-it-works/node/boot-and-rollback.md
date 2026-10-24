@@ -100,7 +100,7 @@ Stage 2 starts the node's own services in order:
 
 An upgrade installs the new UKI as `chalkos_<generation>+<tries>.efi`. `<generation>` is one above
 the highest generation on the ESP. `<tries>` is the new image's
-[`chalkos.upgrade.bootTries`](../../reference/options.md#chalkosupgradeboottries), 3 by default.
+[`chalkos.upgrade.bootTries`](../../reference/image-options.md#chalkosupgradeboottries), 3 by default.
 The number travels in the image's os-release as `CHALKOS_BOOT_TRIES`, so the image being installed
 sets it, not the one running.
 
@@ -134,7 +134,7 @@ the fallback boots exactly what the node ran before.
 `chalkos-health.service` runs `chalkd health` on every boot that systemd-boot counts, and only
 then. Only `systemd-bless-boot.service` pulls in `boot-complete.target`, which requires the health
 unit. The check repeats every 5 seconds until the node is healthy or
-[`chalkos.upgrade.healthTimeout`](../../reference/options.md#chalkosupgradehealthtimeout) passes,
+[`chalkos.upgrade.healthTimeout`](../../reference/image-options.md#chalkosupgradehealthtimeout) passes,
 300 seconds by default.
 
 Every check starts with chalkd. It must complete a TLS handshake with the node's own certificate
@@ -144,7 +144,7 @@ control plane not bootstrapped yet, two more criteria follow. The node's config 
 applied, and no unit of the boot may have failed. A unit of the boot is one that
 `multi-user.target` or `sysinit.target` pulls in. Jobs that timers and sockets
 start do not count, nor do the units listed in
-[`chalkos.upgrade.healthIgnoreUnits`](../../reference/options.md#chalkosupgradehealthignoreunits).
+[`chalkos.upgrade.healthIgnoreUnits`](../../reference/image-options.md#chalkosupgradehealthignoreunits).
 
 When the check passes, the unit succeeds, `boot-complete.target` is reached and
 `systemd-bless-boot` blesses the entry. A blessed image is never rolled back.

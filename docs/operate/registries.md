@@ -141,7 +141,7 @@ hold them all. Besides the workloads' images, these are the images chalkos runs:
   `registry.k8s.io`, tagged with the Kubernetes release of the node's image.
 - The images that the image options `chalkos.kubernetes.images.etcd`, `.coredns` and `.pause` and
   `chalkos.cni.flannel.image` name. The
-  [options reference](../reference/options.md#chalkoskubernetesimagescoredns) lists their defaults;
+  [image options](../reference/image-options.md#chalkoskubernetesimagescoredns) list their defaults;
   the image's author knows whether the image changes them.
 
 !!! warning "On the shipped variant, a mirror receives the registry's credentials"

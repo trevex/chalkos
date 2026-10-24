@@ -20,7 +20,7 @@ const kindsIntro = "# Config kinds\n\n" +
 	"This page is for operators who write a node's config documents, an inventory or a lab file. It\n" +
 	"lists the config kinds that an image of `chalkos.lib.mkImages`'s default variant accepts, by API\n" +
 	"group, and the fields of the inventory and the lab file that chalkctl and chalklab read. An image\n" +
-	"whose modules declare kinds of their own under [`chalkos.kinds`](options.md#chalkoskinds)\n" +
+	"whose modules declare kinds of their own under [`chalkos.kinds`](extension-api.md#chalkoskinds)\n" +
 	"accepts those as well.\n\n" +
 	"Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,\n" +
 	"`-` and `.`, and a `spec`, whose fields the tables list. A field within another is listed by its\n" +

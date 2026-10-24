@@ -63,7 +63,7 @@ These pages are generated and never edited by hand:
 | --- | --- | --- |
 | `docs/reference/cli/` | the command trees of chalkctl, chalklab, chalkbuild and chalkcfg, with their help in `pkg/chalkctl/help.go`, `pkg/chalklab/help.go`, `pkg/chalkbuild/help.go` and `pkg/chalkcfg/help.go` | `docgen cli` |
 | `docs/reference/kinds.md` | the JSON Schemas of the default variant's kinds, declared in `modules/node/kinds/builtin.nix`, and of the inventory and the lab file, `pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and `pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json` | `docgen kinds` |
-| `docs/reference/options.md` | the arguments of `mkImages` in `lib/images-arguments.nix` and the option declarations of the node modules | nixosOptionsDoc |
+| `docs/reference/mkimages.md`, `docs/reference/image-options.md`, `docs/reference/extension-api.md` | the arguments of `mkImages` in `lib/images-arguments.nix` and the option declarations of the node modules, as nixosOptionsDoc's JSON; their openings in `nix/docs.nix` | `docgen options` |
 | `docs/reference/api.md` | `api/chalkos/node/v1/node.proto`, through the template `api/markdown.tmpl` | protoc-gen-doc in `buf.gen.yaml` |
 | the navigation region of `zensical.toml` | the command trees | `docgen cli` |
 | `includes/abbreviations.md` | the first sentence of each entry of `docs/reference/glossary.md` | `docgen abbr` |
@@ -169,7 +169,7 @@ anchor. The generated reference has predictable anchors:
 | Target | Path and anchor |
 | --- | --- |
 | A command | `reference/cli/` and the command path joined with underscores: `cli/chalkctl_etcd_leave.md`; a flag is `#flag-` and its long name: `cli/chalkctl_upgrade.md#flag-image` |
-| An option | its name in lower case, keeping only letters, digits, `-` and `_`, with `<name>` and `*` dropped: `options.md#variantsmodules` |
+| An option | its page, `mkimages.md`, `image-options.md` or `extension-api.md`, and its name in lower case, keeping only letters, digits, `-` and `_`, with `<name>` and `*` dropped: `mkimages.md#variantsmodules`, `image-options.md#chalkosdiskespsize` |
 | An API method, message or enum | `method-`, `message-` or `enum-` and the name in lower case without dots: `api.md#method-upgrade` |
 | A kind | its name in lower case: `kinds.md#systemdisk` |
 

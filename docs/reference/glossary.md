@@ -35,7 +35,7 @@ is never rolled back. See [Boot, health and rollback](../how-it-works/node/boot-
 systemd-boot's count of the tries a newly installed image has left. The count is kept in its
 UKI's file name (`chalkos_<generation>+3.efi`). Each boot that is not [blessed](#blessed-boot)
 uses a try; with none left, systemd-boot boots the previous image. The number of tries is
-[`chalkos.upgrade.bootTries`](options.md#chalkosupgradeboottries). See
+[`chalkos.upgrade.bootTries`](image-options.md#chalkosupgradeboottries). See
 [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md).
 
 ## Bootstrap { #bootstrap }
@@ -59,7 +59,7 @@ The command on every node that prints the node's [config documents](#config-docu
 them from `/run/chalkos/config` and prints them by kind and
 name, as names, JSON, YAML, a jsonpath expression or a Go template. It has no network access and
 never prints `Secret`s or `Addon`s. A variant's NixOS modules build its commands with
-[`chalkos.kinds.<Kind>.get`](options.md#chalkoskindsget), which checks a path against the kind's
+[`chalkos.kinds.<Kind>.get`](extension-api.md#chalkoskindsget), which checks a path against the kind's
 options when the image is evaluated. See [its commands](cli/chalkcfg.md).
 
 ## chalkctl { #chalkctl }
@@ -190,7 +190,7 @@ read. Each block of the [store](#store) is hashed into a hash tree whose top is 
 
 An action on the node's services after a delivery is applied, such as a unit restart. An effect
 restarts or reloads units, runs a command or acts on chalkd's loops, as
-[`chalkos.effects`](options.md#chalkoseffects) declares it. It fires when one of its
+[`chalkos.effects`](extension-api.md#chalkoseffects) declares it. It fires when one of its
 [outputs](#output) or the documents of one of its kinds changed, or when its CEL rule, like a
 [change rule](#change-rule), holds. See
 [React to changes](../build/react-to-changes.md).
@@ -215,7 +215,7 @@ plane](../how-it-works/kubernetes/control-plane.md).
 
 NixOS modules outside chalkos that add services to a variant's images and may declare config
 kinds. An extension sits in a [variant](#variant)'s modules and declares its [kinds](#kind) under
-[`chalkos.kinds`](options.md#chalkoskinds), whose documents a node's YAML files then carry. The
+[`chalkos.kinds`](extension-api.md#chalkoskinds), whose documents a node's YAML files then carry. The
 services read those documents through a [grant](#grant) or as [outputs](#output) rendered from
 them, and [effects](#effect) restart them when they change. chalkos's own Kubernetes support
 declares its kinds and effects the same way. See
@@ -225,7 +225,7 @@ declares its kinds and effects the same way. See
 <!-- abbr: facts, Facts -->
 
 Node state that a [change rule](#change-rule) reads. Facts are declared in
-[`chalkos.facts`](options.md#chalkosfacts): the JSON of a file, such as the
+[`chalkos.facts`](extension-api.md#chalkosfacts): the JSON of a file, such as the
 [Kubernetes share](#kubernetes-share), or of a program of the image's store, which chalkd runs in
 a sandbox. See
 [Guard changes with rules and facts](../build/guard-changes.md#facts-give-a-rule-node-state).
@@ -252,7 +252,7 @@ older or newer. See
 <!-- abbr: grants, Grants -->
 
 The [config](#config) kinds a unit may read at runtime. A unit's grant is declared in
-[`systemd.services.<unit>.chalkos.kinds`](options.md#systemdserviceschalkoskinds): chalkd writes
+[`systemd.services.<unit>.chalkos.kinds`](extension-api.md#systemdserviceschalkoskinds): chalkd writes
 the documents of those kinds below `/run/chalkos/config` and the values their
 `secretRef` fields name into the unit's credentials. A grant restarts nothing; an
 [effect](#effect) does. See
@@ -265,7 +265,7 @@ have succeeded. Then a control plane that is an etcd member needs its local etcd
 server and its kubelet healthy, and a worker its kubelet healthy and its Node registered. A node
 without Kubernetes, or a control plane not bootstrapped yet, needs its config applied and no unit
 of the boot failed. A boot that passes within
-[`chalkos.upgrade.healthTimeout`](options.md#chalkosupgradehealthtimeout) is
+[`chalkos.upgrade.healthTimeout`](image-options.md#chalkosupgradehealthtimeout) is
 [blessed](#blessed-boot). See [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md).
 
 ## Identity { #identity }
@@ -303,7 +303,7 @@ See [Image and partition layout](image-layout.md#outputs-of-an-image-build).
 
 An image that always boots into [maintenance mode](#maintenance-mode) and writes a node's image to
 a disk of the machine. `chalkos.lib.mkImages` builds one, as a raw image and a hybrid ISO, with
-[`installer.modules`](options.md#installermodules); it installs images of every variant and
+[`installer.modules`](mkimages.md#installermodules); it installs images of every variant and
 platform. See [Architecture](../how-it-works/node/architecture.md).
 
 ## Inventory { #inventory }
@@ -327,7 +327,7 @@ and its fields in [Config kinds](kinds.md#inventory).
 
 The type of a [config document](#config-document), named by its `kind` and its `apiVersion`'s
 group and version. chalkos declares its own kinds in `chalkos.dev` and its subdomains; an [extension](#extension) declares more under
-[`chalkos.kinds`](options.md#chalkoskinds) in a variant's NixOS modules, with a group of its own.
+[`chalkos.kinds`](extension-api.md#chalkoskinds) in a variant's NixOS modules, with a group of its own.
 An image accepts the kinds its modules declare and refuses any other. A unit reads the documents
 of the kinds it is [granted](#grant). See
 [Config and the inventory](../how-it-works/node/config.md#chalkoss-kinds-live-in-the-group-chalkosdev) and
@@ -362,7 +362,7 @@ reads, reboots and an install. See [Architecture](../how-it-works/node/architect
 <!-- abbr: module groups, Module groups -->
 
 A named set of kernel modules an [image](#image) carries. An image's groups are listed in
-[`chalkos.kernel.moduleGroups`](options.md#chalkoskernelmodulegroups). The base groups
+[`chalkos.kernel.moduleGroups`](image-options.md#chalkoskernelmodulegroups). The base groups
 `storage`, `network`, `virtualisation`, `filesystems`, `kubernetes` and `platform` are on by
 default; `gpu`, `sound`, `media`, `wireless`, `infiniband`, `can` and `industrial` are added in a
 variant's or platform's modules. See [The image](../how-it-works/node/image.md).
@@ -432,7 +432,7 @@ years and signs the [node CA](#node-ca) and client certificates. See
 
 A set of config files for a service, rendered from config documents. A program of the image's
 store renders them, and they are checked before a delivery changes the node, as
-[`chalkos.outputs`](options.md#chalkosoutputs) declares it. chalkd renders every output again at
+[`chalkos.outputs`](extension-api.md#chalkosoutputs) declares it. chalkd renders every output again at
 boot. See
 [Render config files](../build/render-config.md).
 
@@ -448,7 +448,7 @@ same key and not after a change to Secure Boot. See
 <!-- abbr: platforms, Platforms -->
 
 The kind of machine an image is built for, such as `metal` or `kvm`. Each platform is named in
-the [`platforms`](options.md#platforms) argument of `chalkos.lib.mkImages` with NixOS modules of
+the [`platforms`](mkimages.md#platforms) argument of `chalkos.lib.mkImages` with NixOS modules of
 its own. Every [variant](#variant) gets one [image](#image) per platform, so only that platform's
 images carry its drivers and agents. A node refuses an image of another platform than the one it
 runs. See [Variants and platforms](../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine).
@@ -578,7 +578,7 @@ default it fills the rest of the system disk, and it is encrypted like [STATE](#
 <!-- abbr: variants, Variants -->
 
 A named set of NixOS modules that `chalkos.lib.mkImages` builds into one [image](#image) per
-[platform](#platform). Its images are `images.<variant>-<platform>`, and it is given in the [`variants`](options.md#variants) argument: for example one variant for most nodes
+[platform](#platform). Its images are `images.<variant>-<platform>`, and it is given in the [`variants`](mkimages.md#variants) argument: for example one variant for most nodes
 and one with GPU drivers. Control planes and workers can run the same variant. Its name is
 `CHALKOS_VARIANT` in the image's os-release and `variant` in its `metadata.json`. No check
 compares it: a node may change its variant through an [upgrade](#upgrade), and the new image's

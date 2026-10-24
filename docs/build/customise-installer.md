@@ -13,7 +13,7 @@ it. One installer still serves the whole cluster.
 The installer takes its addresses by DHCP on every Ethernet port and carries the drivers of the
 base module groups. A machine without DHCP on its network, on a VLAN, with a bond, or with a card
 the installer cannot drive needs NixOS modules of its own in the installer. The
-[`installer.modules`](../reference/options.md#installermodules) argument of `chalkos.lib.mkImages`
+[`installer.modules`](../reference/mkimages.md#installermodules) argument of `chalkos.lib.mkImages`
 adds them. They change the installer alone: the variants' images and the installed nodes stay as
 they are. `mkImages` builds one installer, which installs the images of every platform.
 
@@ -28,7 +28,7 @@ network configuration written for it, and the others fall back to DHCP.
 You need:
 
 - The flake that builds the cluster's images with `mkImages`, with
-  [`osCA`](../reference/options.md#osca) set.
+  [`osCA`](../reference/mkimages.md#osca) set.
 - The MAC addresses of the machines' ports, from the BMC, the firmware setup or the machines'
   labels.
 - For machines that enforce Secure Boot, the db key and certificate of

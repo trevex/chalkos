@@ -61,7 +61,7 @@ chalkctl delivers, which [Config and the inventory](../how-it-works/node/config.
 | `tag` | `null` | The git tag the images are built from, such as a release's |
 
 The arguments are module options, so a misspelled argument fails the evaluation and names the
-argument. The [options reference](../reference/options.md) documents each one.
+argument. The [mkImages reference](../reference/mkimages.md) documents each one.
 [Variants and platforms](variants-and-platforms.md) covers `variants`, `platforms`, `modules` and
 `osCA`.
 

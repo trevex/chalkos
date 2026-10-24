@@ -94,7 +94,7 @@ commits what they generate too. A check fails when they differ.
 | Source | Command | Generated | Check |
 | --- | --- | --- | --- |
 | `api/chalkos/node/v1/node.proto` | `buf generate` | `pkg/api/node/v1/`, `docs/reference/api.md` | `api-generated`, `docs-generated` |
-| Command help, option declarations, the kinds' JSON Schemas, `node.proto` | `nix run .#docgen` | `docs/reference/cli/`, `docs/reference/options.md`, `docs/reference/kinds.md`, `docs/reference/api.md`, the navigation in `zensical.toml` | `docs-generated` |
+| Command help, option declarations, the kinds' JSON Schemas, `node.proto` | `nix run .#docgen` | `docs/reference/cli/`, `docs/reference/mkimages.md`, `docs/reference/image-options.md`, `docs/reference/extension-api.md`, `docs/reference/kinds.md`, `docs/reference/api.md`, the navigation in `zensical.toml` | `docs-generated` |
 | `docs/reference/glossary.md` | `nix run .#docgen` | `includes/abbreviations.md` | `docs-generated` |
 | `go.mod`, `go.sum` | `nix build .#chalkctl`, with `vendorHash` set to `lib.fakeHash` first | `vendorHash` in `nix/go-module.nix` | every Go package's build |
 

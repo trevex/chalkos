@@ -69,7 +69,7 @@ let
     (pkgs.nixosOptionsDoc {
       options = removeAttrs arguments.options [ "_module" ];
       transformOptions = linkDeclarations;
-    }).optionsCommonMark;
+    }).optionsJSON;
 
   # The images the documentation is generated and checked against: the default variant, whose
   # options the reference lists, and one with the homelab's extensions, whose documents the pages
@@ -113,73 +113,114 @@ let
         // {
           visible = opt.visible && opt.name != "chalkos" && declaredIn "modules/node" opt;
         };
-    }).optionsCommonMark;
+    }).optionsJSON;
 
-  optionsHead = pkgs.writeText "options-head.md" ''
-    ---
-    title: "mkImages and image options"
-    description: "The arguments of chalkos.lib.mkImages and the options of the images it builds"
-    ---
+  # The openings of the options pages, and the end of the extension API's, which docgen options
+  # writes the options between.
+  optionsTemplates = pkgs.linkFarm "chalkos-options-templates" {
+    "mkimages.head.md" = pkgs.writeText "mkimages.head.md" ''
+      ---
+      title: "mkImages"
+      description: "The arguments of chalkos.lib.mkImages and what it returns"
+      ---
 
-    # mkImages and image options
+      # mkImages
 
-    `chalkos.lib.mkImages` builds a cluster's images from its arguments: each variant on each
-    platform, and the installer. The NixOS modules of a variant set the options of its images,
-    NixOS systems with chalkos's node modules. This page is generated from those modules with
-    nixosOptionsDoc; each option links to its declaration.
+      This page is for image authors who call `chalkos.lib.mkImages` in a flake. mkImages builds a
+      cluster's images from its arguments: each variant on each platform, and the installer. The
+      options the images' NixOS modules set are on [Image options](image-options.md) and
+      [Extension API](extension-api.md).
 
-    A flake calls mkImages and exposes the images to build:
+      A flake calls mkImages and exposes the images to build:
 
-    ```nix title="flake.nix"
-    {
-      inputs.chalkos.url = "github:trevex/chalkos";
+      ```nix title="flake.nix"
+      {
+        inputs.chalkos.url = "github:trevex/chalkos";
 
-      outputs =
-        { chalkos, ... }:
-        let
-          images = chalkos.lib.mkImages {
-            osCA = ./secrets.pub.json;
-            platforms = [ "metal" "kvm" ];
-            # Every variant's images carry these.
-            modules = [ ./site.nix ];
-            variants = {
-              node = { };
-              storage = {
-                kubernetes = false;
-                modules = [ ./storage.nix ];
+        outputs =
+          { chalkos, ... }:
+          let
+            images = chalkos.lib.mkImages {
+              osCA = ./secrets.pub.json;
+              platforms = [ "metal" "kvm" ];
+              # Every variant's images carry these.
+              modules = [ ./site.nix ];
+              variants = {
+                node = { };
+                storage = {
+                  kubernetes = false;
+                  modules = [ ./storage.nix ];
+                };
               };
+              installer.modules = [ ./installer-network.nix ];
             };
-            installer.modules = [ ./installer-network.nix ];
+          in
+          {
+            packages.x86_64-linux = images.images // { inherit (images) installer; };
           };
-        in
-        {
-          packages.x86_64-linux = images.images // { inherit (images) installer; };
-        };
-    }
-    ```
+      }
+      ```
 
-    It returns:
+      ## Return values { #return-values }
 
-    - `images.<variant>-<platform>`: the image directory of a variant on a platform, such as
-      `images.node-metal`, each built only when asked for.
-    - `oci.<variant>-<platform>`: the image directory as an OCI image layout, as
-      [`chalkbuild oci`](cli/chalkbuild_oci.md) writes it, each built only when asked for;
-      [Publish images to a registry](../build/publish-images.md) signs and pushes it.
-    - `installer`: the installer, a raw image and a hybrid ISO in one directory, which installs
-      images of every platform.
-    - `nixos.<variant>-<platform>` and `nixos.installer`: the evaluated NixOS systems, to read an
-      image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`.
+      mkImages returns an attribute set:
 
-    ## mkImages arguments
+      - `images.<variant>-<platform>`: the image directory of a variant on a platform, such as
+        `images.node-metal`, each built only when asked for.
+      - `oci.<variant>-<platform>`: the image directory as an OCI image layout, as
+        [`chalkbuild oci`](cli/chalkbuild_oci.md) writes it, each built only when asked for;
+        [Publish images to a registry](../build/publish-images.md) signs and pushes it.
+      - `installer`: the installer, a raw image and a hybrid ISO in one directory, which installs
+        images of every platform.
+      - `nixos.<variant>-<platform>` and `nixos.installer`: the evaluated NixOS systems, to read an
+        image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`.
+    '';
+    "image-options.head.md" = pkgs.writeText "image-options.head.md" ''
+      ---
+      title: "Image options"
+      description: "The options of chalkos's node modules that a variant's NixOS modules set"
+      ---
 
-  '';
-  imageHead = pkgs.writeText "options-image-head.md" ''
+      # Image options
 
-    ## Image options
+      This page is for image authors who set the options of chalkos's node modules in a variant's
+      NixOS modules, the `modules` of [mkImages](mkimages.md). Every image and the installer carry
+      these modules. The options an extension uses to declare kinds, facts, outputs and effects
+      are on [Extension API](extension-api.md).
+    '';
+    "extension-api.head.md" = pkgs.writeText "extension-api.head.md" ''
+      ---
+      title: "Extension API"
+      description: "The options and lib.chalkos helpers that an extension declares kinds, facts, outputs and effects with"
+      ---
 
-    The options the node modules declare in every image and in the installer.
+      # Extension API
 
-  '';
+      This page is for authors of extensions, the NixOS modules that declare config kinds of their
+      own, read a node's documents in a service, and react when they change. It lists the options
+      the node modules give an extension and the helpers of `lib.chalkos`. The Build pages show
+      them at work, from [Declare a config kind](../build/declare-a-kind.md) to
+      [React to config changes](../build/react-to-changes.md).
+    '';
+    "extension-api.tail.md" = pkgs.writeText "extension-api.tail.md" ''
+
+      ## lib.chalkos { #lib-chalkos }
+
+      Every image's NixOS modules get `lib.chalkos` as part of `lib`. It holds the type and the
+      `mkOption` of an extension kind's fields, the renderers of `chalkos.outputs.<name>.render`
+      and the common effects.
+
+      | Helper | Arguments | Result |
+      | --- | --- | --- |
+      | `lib.chalkos.mkOption` | `lib.mkOption`'s, and `rules`, a list of `{ rule; message or messageExpression; takes ? "refuse"; }` | An option for a field of a kind, with the field's change rules. |
+      | `lib.chalkos.types.secretRef` | — | Type of a field that holds a reference to a key of a Secret: `secretRef` with `name` and `key`. |
+      | `lib.chalkos.render.template` | a path ending in `.tmpl` | Renderer of a Go `text/template` into one file, named as the template less `.tmpl`; a missing or null key prints as nothing. |
+      | `lib.chalkos.render.jq` | a path ending in `.jq` | Renderer of a jq program into one file, named as the program less `.jq`; a string is written raw. |
+      | `lib.chalkos.render.documents` | a list of kind names | Renderer of the documents of those kinds as they are, each as `<Kind>/<name>.json`. |
+      | `lib.chalkos.restartOn` | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that restarts the units when one of the outputs or the documents of one of the kinds changed. |
+      | `lib.chalkos.reloadOn` | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that reloads the units when one of the outputs or the documents of one of the kinds changed. |
+    '';
+  };
 in
 rec {
   inherit docgen;
@@ -206,8 +247,8 @@ rec {
 
   # The generated pages of docs/reference and zensical.toml with their navigation, laid out as
   # in the repository: a page per command of chalkctl, chalklab and chalkbuild, the config kinds,
-  # the arguments of mkImages and the image options, the node API, and the glossary's terms as
-  # abbreviations, which every page appends.
+  # the arguments of mkImages, the image options, the extension API, the node API, and the
+  # glossary's terms as abbreviations, which every page appends.
   reference =
     pkgs.runCommand "chalkos-docs-reference"
       {
@@ -233,12 +274,7 @@ rec {
         install -m 644 ${../zensical.toml} $out/zensical.toml
         docgen cli $out/docs/reference/cli $out/zensical.toml ${helpLinkPages}
         docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${inventorySchema} ${labSchema}
-        {
-          cat ${optionsHead}
-          sed 's/^## /### /' ${argumentOptions}
-          cat ${imageHead}
-          sed 's/^## /### /' ${imageOptions}
-        } > $out/docs/reference/options.md
+        docgen options $out/docs/reference ${optionsTemplates} ${argumentOptions}/share/doc/nixos/options.json ${imageOptions}/share/doc/nixos/options.json
         cp -r $api proto
         chmod -R u+w proto
         (cd proto && buf generate)
@@ -284,7 +320,7 @@ rec {
   # Fails when the generated pages in the repository differ from what the code generates.
   generated = pkgs.runCommand "chalkos-docs-generated" { } ''
     status=0
-    for path in docs/reference/cli docs/reference/kinds.md docs/reference/options.md docs/reference/api.md includes/abbreviations.md zensical.toml; do
+    for path in docs/reference/cli docs/reference/kinds.md docs/reference/mkimages.md docs/reference/image-options.md docs/reference/extension-api.md docs/reference/api.md includes/abbreviations.md zensical.toml; do
       diff -ru ${src}/$path ${reference}/$path || status=1
     done
     if [ $status != 0 ]; then
@@ -305,7 +341,7 @@ rec {
       rm -rf docs/reference/cli
       mkdir -p docs/reference
       cp -r --no-preserve=mode ${reference}/docs/reference/cli docs/reference/cli
-      cp --no-preserve=mode ${reference}/docs/reference/kinds.md ${reference}/docs/reference/options.md ${reference}/docs/reference/api.md docs/reference/
+      cp --no-preserve=mode ${reference}/docs/reference/kinds.md ${reference}/docs/reference/mkimages.md ${reference}/docs/reference/image-options.md ${reference}/docs/reference/extension-api.md ${reference}/docs/reference/api.md docs/reference/
       cp --no-preserve=mode ${reference}/zensical.toml zensical.toml
       mkdir -p includes
       cp --no-preserve=mode ${reference}/includes/abbreviations.md includes/

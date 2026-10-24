@@ -31,9 +31,9 @@ about to install, and `/etc/os-release` for the image a node runs.
 | --- | --- | --- | --- |
 | `IMAGE_ID` | `chalkos`; `chalkos-installer` on the installer | `system.image.id` | every image |
 | `IMAGE_VERSION` | empty | `modules/node/upgrade.nix`; `system.image.version` must stay unset | every image |
-| `CHALKOS_VARIANT` | the name of the [`mkImages` variant](options.md#variants) the image is built as, such as `node` | [`chalkos.variant.name`](options.md#chalkosvariantname) | node images; not the installer |
-| `CHALKOS_PLATFORM` | the platform's name, such as `metal` or `kvm` | [`chalkos.platform.name`](options.md#chalkosplatformname) | node images; not the installer |
-| `CHALKOS_BOOT_TRIES` | a positive integer, `3` by default | [`chalkos.upgrade.bootTries`](options.md#chalkosupgradeboottries) | every image |
+| `CHALKOS_VARIANT` | the name of the [`mkImages` variant](mkimages.md#variants) the image is built as, such as `node` | [`chalkos.variant.name`](image-options.md#chalkosvariantname) | node images; not the installer |
+| `CHALKOS_PLATFORM` | the platform's name, such as `metal` or `kvm` | [`chalkos.platform.name`](image-options.md#chalkosplatformname) | node images; not the installer |
+| `CHALKOS_BOOT_TRIES` | a positive integer, `3` by default | [`chalkos.upgrade.bootTries`](image-options.md#chalkosupgradeboottries) | every image |
 
 `IMAGE_VERSION` is empty in every image. systemd-boot orders the UKIs of one image ID by
 `IMAGE_VERSION` before their file names, and without the field by `VERSION`, which NixOS sets to

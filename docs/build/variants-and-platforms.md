@@ -230,5 +230,5 @@ which copies a flake's tracked files.
 
 - [Add software, drivers and kernel modules](add-software.md) writes the modules a variant or
   platform carries.
-- [mkImages and image options](../reference/options.md) documents every argument and option.
+- [mkImages](../reference/mkimages.md) documents every argument, and [Image options](../reference/image-options.md) every option of the node modules.
 - [Upgrade nodes](../operate/upgrade.md) rolls new images out.

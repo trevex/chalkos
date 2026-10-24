@@ -53,7 +53,7 @@ node's `SystemDisk` and `Volume` documents at install, as [Storage and encryptio
 describes.
 
 The sizes are the defaults of the image's
-[`chalkos.disk`](../../reference/options.md#chalkosdiskstoresize) options. A slot's size is fixed at
+[`chalkos.disk`](../../reference/image-options.md#chalkosdiskstoresize) options. A slot's size is fixed at
 install, and it is the room every later upgrade has.
 [Image and partition layout](../../reference/image-layout.md) lists every partition with its GPT
 type and label.
@@ -145,7 +145,7 @@ chalkd reads os-release from the UKI before it installs an image, because the si
 it. `IMAGE_ID` is `chalkos`, or `chalkos-installer` on the installer. `CHALKOS_VARIANT` and
 `CHALKOS_PLATFORM` name the variant and platform; the installer has neither.
 `CHALKOS_BOOT_TRIES` carries the image's
-[`chalkos.upgrade.bootTries`](../../reference/options.md#chalkosupgradeboottries). `IMAGE_VERSION`
+[`chalkos.upgrade.bootTries`](../../reference/image-options.md#chalkosupgradeboottries). `IMAGE_VERSION`
 is empty, so systemd-boot orders the image's entries by their generation. chalkd refuses an image
 whose image ID or platform differs from the node's. [os-release fields](../../reference/os-release.md)
 lists every field.
@@ -216,7 +216,7 @@ are always included whole.
 The system path holds none of NixOS's default packages, because nodes have no logins. It holds
 what the image's own modules put there, such as systemd, bash, less, nftables, kmod and the mount
 helpers, and what a variant adds. Each service names the tools it runs in its own path.
-[`chalkos.debug.tools`](../../reference/options.md#chalkosdebugtools) adds coreutils, grep, sed,
+[`chalkos.debug.tools`](../../reference/image-options.md#chalkosdebugtools) adds coreutils, grep, sed,
 findutils, procps, iproute2 and util-linux, and crictl on images with Kubernetes.
 [Status, logs and the console](../../operate/status-and-logs.md#debug-tools-reach-the-node-through-kubectl-debug)
 shows how they are reached.
@@ -239,11 +239,11 @@ on disk.
 Every image build checks that the image leaves room for the next one. The build fails when:
 
 - the store's data takes more than 80% of
-  [`chalkos.disk.storeSize`](../../reference/options.md#chalkosdiskstoresize);
+  [`chalkos.disk.storeSize`](../../reference/image-options.md#chalkosdiskstoresize);
 - the hash tree takes more than 80% of
-  [`chalkos.disk.storeVeritySize`](../../reference/options.md#chalkosdiskstoreveritysize);
+  [`chalkos.disk.storeVeritySize`](../../reference/image-options.md#chalkosdiskstoreveritysize);
 - three UKIs, both slots' and an upgrade's temporary copy, take more than 80% of
-  [`chalkos.disk.espSize`](../../reference/options.md#chalkosdiskespsize).
+  [`chalkos.disk.espSize`](../../reference/image-options.md#chalkosdiskespsize).
 
 The installer is never upgraded, so its store is sized to its contents, and it is checked for one
 UKI. The build checks against the sizes the image declares. A node checks an upgrade against the

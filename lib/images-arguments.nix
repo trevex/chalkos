@@ -1,5 +1,5 @@
 # The arguments of chalkos.lib.mkImages, checked as module options, so a misspelled or mistyped
-# argument fails with the option's name and the options reference documents each one.
+# argument fails with the option's name and the mkImages reference documents each one.
 { lib, defaultNixpkgs, ... }:
 let
   inherit (lib) mkOption types;

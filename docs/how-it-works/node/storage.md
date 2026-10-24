@@ -37,7 +37,7 @@ The system disk starts with the system region, which every node of an image shar
 two slots A and B, and STATE, as
 [An image holds the ESP and one slot](image.md#an-image-holds-the-esp-and-one-slot) describes.
 Their sizes are options of the image, such as
-[`chalkos.disk.stateSize`](../../reference/options.md#chalkosdiskstatesize), because every node of
+[`chalkos.disk.stateSize`](../../reference/image-options.md#chalkosdiskstatesize), because every node of
 the image must agree on them. VAR follows on the system disk and fills the rest of it by default.
 Volumes go on the system disk after VAR, or each on a disk of its own.
 [Image and partition layout](../../reference/image-layout.md) shows the partition map.

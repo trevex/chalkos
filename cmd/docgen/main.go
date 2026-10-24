@@ -14,6 +14,13 @@
 // writes the page of config kinds to PAGE from the JSON Schemas in SCHEMAS_DIR, an image's schemas
 // directory, and the schema files given, those of chalkctl's and chalklab's own files.
 //
+//	docgen options DIR TEMPLATES_DIR ARGUMENTS_JSON OPTIONS_JSON
+//
+// writes the pages of mkImages's arguments, of the image options and of the extension API to DIR,
+// from nixosOptionsDoc's optionsJSON of the arguments at ARGUMENTS_JSON and of the node modules'
+// options at OPTIONS_JSON. Each page opens with TEMPLATES_DIR/<page>.head.md and may end with
+// <page>.tail.md before its sources. An option that no section of the pages holds fails it.
+//
 //	docgen check DOCS_DIR
 //
 // fails when a shell code block of the Markdown files under DOCS_DIR, but not under
@@ -62,6 +69,8 @@ func run(args []string) error {
 		return writeCLI(programs(), args[1], args[2], args[3])
 	case len(args) >= 3 && args[0] == "kinds":
 		return writeKinds(args[1], args[2], args[3:])
+	case len(args) == 5 && args[0] == "options":
+		return writeOptions(args[1], args[2], args[3], args[4])
 	case len(args) == 2 && args[0] == "check":
 		return check(programs, args[1])
 	case len(args) == 3 && args[0] == "yaml":
@@ -71,7 +80,7 @@ func run(args []string) error {
 	case len(args) == 3 && args[0] == "abbr":
 		return writeAbbr(args[1], args[2])
 	}
-	return errors.New("usage: docgen cli DIR ZENSICAL_TOML DOCS_DIR | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen abbr GLOSSARY OUT")
+	return errors.New("usage: docgen cli DIR ZENSICAL_TOML DOCS_DIR | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen options DIR TEMPLATES_DIR ARGUMENTS_JSON OPTIONS_JSON | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen abbr GLOSSARY OUT")
 }
 
 // programs are the command trees of chalkctl, chalklab, chalkbuild and chalkcfg, with the help and

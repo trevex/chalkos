@@ -222,7 +222,7 @@ VIP moves away from a control plane whose etcd member fails.
 ## flannel carries pod traffic in VXLAN
 
 chalkd applies the pod network as an add-on: flannel, unless
-[`chalkos.cni.provider`](../../reference/options.md#chalkoscniprovider) is `none`. flannel carries
+[`chalkos.cni.provider`](../../reference/image-options.md#chalkoscniprovider) is `none`. flannel carries
 pod traffic between nodes in VXLAN on UDP port 8472, one device per family (`flannel.1` and
 `flannel-v6.1`). flanneld uses exactly the node's addresses as the kubelet registered them, and
 masquerades what pods send to other nodes behind them.

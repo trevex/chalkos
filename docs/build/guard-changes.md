@@ -79,7 +79,7 @@ volume's new format is possible once the volume is recreated.
 ## A kind rule sees all of a kind's documents
 
 A rule over all documents of a kind goes into
-[`chalkos.kinds.<name>.rules`](../reference/options.md#chalkoskindsrules). Here `documents` maps
+[`chalkos.kinds.<name>.rules`](../reference/extension-api.md#chalkoskindsrules). Here `documents` maps
 the names of the delivered `Peer` documents to the documents:
 
 ```nix
@@ -140,7 +140,7 @@ location that differs from the one a rack survey wrote to the node:
 --8<-- "examples/homelab/extensions/rack.nix"
 ```
 
-[`chalkos.facts`](../reference/options.md#chalkosfacts) declares the fact `rackSurvey`: the JSON
+[`chalkos.facts`](../reference/extension-api.md#chalkosfacts) declares the fact `rackSurvey`: the JSON
 of `/var/lib/rack-survey/location.json`, or null while the file is missing. The rule does not
 read `oldSelf`, so it checks every `Rack` a node is delivered, its first one too.
 

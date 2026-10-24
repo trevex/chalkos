@@ -1,0 +1,27 @@
+{
+  "osCA": {
+    "declarations": [{"name": "lib/images-arguments.nix", "url": "https://example.org/lib/images-arguments.nix"}],
+    "default": {"_type": "literalExpression", "text": "null"},
+    "description": "Public part of the cluster's secrets.\n\nnull builds open images.\n",
+    "example": {"_type": "literalExpression", "text": "./secrets.pub.json"},
+    "loc": ["osCA"], "readOnly": false, "type": "null or absolute path"
+  },
+  "nixpkgs": {
+    "declarations": [{"name": "lib/images-arguments.nix", "url": "https://example.org/lib/images-arguments.nix"}],
+    "default": {"_type": "literalMD", "text": "the nixpkgs chalkos is tested against"},
+    "description": "nixpkgs the images are built from.",
+    "loc": ["nixpkgs"], "readOnly": false, "type": "raw value"
+  },
+  "variants": {
+    "declarations": [{"name": "lib/images-arguments.nix", "url": "https://example.org/lib/images-arguments.nix"}],
+    "default": {"_type": "literalExpression", "text": "{\n  node = { };\n}"},
+    "description": "Variants of the cluster's images.",
+    "loc": ["variants"], "readOnly": false, "type": "attribute set of (submodule)"
+  },
+  "variants.<name>.kubernetes": {
+    "declarations": [{"name": "lib/images-arguments.nix", "url": "https://example.org/lib/images-arguments.nix"}],
+    "default": {"_type": "literalExpression", "text": "true"},
+    "description": "Whether the variant's images\nrun Kubernetes.",
+    "loc": ["variants", "<name>", "kubernetes"], "readOnly": false, "type": "boolean"
+  }
+}

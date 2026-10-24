@@ -43,12 +43,12 @@ the same system region.
 
 | Definition | Label | Size | File system | Encryption | Created by |
 | --- | --- | --- | --- | --- | --- |
-| `00-esp` | `esp` | [`espSize`](options.md#chalkosdiskespsize), `1G` | vfat | none | image build |
-| `10-store-verity-a` | `store-verity_<hash16>` | [`storeVeritySize`](options.md#chalkosdiskstoreveritysize), `128M` | dm-verity hash tree | none | image build |
-| `20-store-a` | `store_<hash16>` | [`storeSize`](options.md#chalkosdiskstoresize), `3G` | erofs, zstd | none | image build |
+| `00-esp` | `esp` | [`espSize`](image-options.md#chalkosdiskespsize), `1G` | vfat | none | image build |
+| `10-store-verity-a` | `store-verity_<hash16>` | [`storeVeritySize`](image-options.md#chalkosdiskstoreveritysize), `128M` | dm-verity hash tree | none | image build |
+| `20-store-a` | `store_<hash16>` | [`storeSize`](image-options.md#chalkosdiskstoresize), `3G` | erofs, zstd | none | image build |
 | `30-store-verity-b` | `_empty` | `storeVeritySize`, `128M` | none until an upgrade | none | first boot, or install from the installer |
 | `40-store-b` | `_empty` | `storeSize`, `3G` | none until an upgrade | none | first boot, or install from the installer |
-| `50-state` | `state` | [`stateSize`](options.md#chalkosdiskstatesize), `128M` | ext4 | node's policy, LUKS2 sealed to the TPM by default | first boot, install |
+| `50-state` | `state` | [`stateSize`](image-options.md#chalkosdiskstatesize), `128M` | ext4 | node's policy, LUKS2 sealed to the TPM by default | first boot, install |
 | `50-var` | `var` | the `SystemDisk`'s `spec.var.size`, rest of the disk | ext4 | node's policy | install |
 | `60-<name>` | `<name>` | the volume's `size` | the volume's `format` | node's policy | install, later config |
 
@@ -140,7 +140,7 @@ idle, so a power cut rarely finds its FAT file system in use.
 | --- | --- |
 | `/EFI/BOOT/BOOTX64.EFI` | systemd-boot, at the removable-media path, so firmware finds it without a boot entry. `BOOTAA64.EFI` on arm64. |
 | `/EFI/Linux/chalkos_<generation>.efi` | A UKI without a boot counter: `chalkos_1.efi` as the image holds it and an install from the installer writes it, or one whose boot was blessed. |
-| `/EFI/Linux/chalkos_<generation>+<left>.efi` | A UKI an upgrade installed, one generation above the highest on the ESP, with [`chalkos.upgrade.bootTries`](options.md#chalkosupgradeboottries) tries left, such as `chalkos_2+3.efi`. |
+| `/EFI/Linux/chalkos_<generation>+<left>.efi` | A UKI an upgrade installed, one generation above the highest on the ESP, with [`chalkos.upgrade.bootTries`](image-options.md#chalkosupgradeboottries) tries left, such as `chalkos_2+3.efi`. |
 | `/EFI/Linux/chalkos_<generation>+<left>-<done>.efi` | The same UKI after systemd-boot counted a boot that was not blessed, such as `chalkos_2+2-1.efi`. `+0-3` means no tries left: systemd-boot boots another entry. |
 | `/EFI/Linux/.upgrade-<root-hash>.efi` | A UKI an upgrade is receiving, named by the image's full root hash. systemd-boot ignores names starting with a dot. |
 | `/EFI/Linux/.install-<root-hash>.efi` | A UKI an install from the installer is receiving. |
@@ -208,7 +208,7 @@ maintenance mode.
 ## Outputs of an image build
 
 An image directory is what
-[`mkImages`](options.md) builds as `images.<variant>-<platform>`, such as `nix build .#node-kvm`
+[`mkImages`](mkimages.md) builds as `images.<variant>-<platform>`, such as `nix build .#node-kvm`
 in the lab template, whose flake exposes `images.node-kvm`. It holds five entries, six for an
 image with Kubernetes:
 
@@ -316,11 +316,11 @@ another disk carrying the same image or the same labels for its own.
 | `/var` | VAR; tmpfs until the node is installed. |
 | `/etc/chalkos/repart.d` | The system region's definitions. |
 | `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; chalkcfg reads their names to know the kinds. |
-| `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the image is built with [`osCA`](options.md#osca). |
+| `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the image is built with [`osCA`](mkimages.md#osca). |
 | `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
-| `/etc/chalkos/services.json` | The units granted config kinds, from [`systemd.services.<unit>.chalkos.kinds`](options.md#systemdserviceschalkoskinds). |
-| `/etc/chalkos/outputs.json` | The image's outputs, from [`chalkos.outputs`](options.md#chalkosoutputs): each one's input kinds, renderer, check, directory, owner and mode. |
-| `/etc/chalkos/effects.json` | What a delivery does to the node's services, from [`chalkos.effects`](options.md#chalkoseffects), with the outputs, the kinds and the rules that fire each effect. |
+| `/etc/chalkos/services.json` | The units granted config kinds, from [`systemd.services.<unit>.chalkos.kinds`](extension-api.md#systemdserviceschalkoskinds). |
+| `/etc/chalkos/outputs.json` | The image's outputs, from [`chalkos.outputs`](extension-api.md#chalkosoutputs): each one's input kinds, renderer, check, directory, owner and mode. |
+| `/etc/chalkos/effects.json` | What a delivery does to the node's services, from [`chalkos.effects`](extension-api.md#chalkoseffects), with the outputs, the kinds and the rules that fire each effect. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
 | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster` and `Flannel` documents and `image.json` at boot and on every apply. |
 | `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s and `Addon`s excepted, which chalkcfg prints. |

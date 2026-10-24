@@ -444,7 +444,7 @@ healthy, the node falls back to the image it ran before.
 
 Any change to an image's modules makes a new image, which its store's root hash tells apart from
 the one before; there is no version to raise. Edit `flake.nix` so the variant `node` turns on
-[`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools), which adds the tools
+[`chalkos.debug.tools`](../reference/image-options.md#chalkosdebugtools), which adds the tools
 `kubectl debug` uses on a node:
 
 ```diff

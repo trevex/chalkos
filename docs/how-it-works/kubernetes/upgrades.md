@@ -19,7 +19,7 @@ flowchart LR
 ## A Kubernetes upgrade is an image upgrade
 
 There is no separate Kubernetes upgrade. A new Kubernetes release is a new image built with a new
-[`chalkos.kubernetes.package`](../../reference/options.md#chalkoskubernetespackage), installed like
+[`chalkos.kubernetes.package`](../../reference/image-options.md#chalkoskubernetespackage), installed like
 any other, because the image fixes the release of the kubelet and the control plane, as
 [The image fixes one Kubernetes version](overview.md#the-image-fixes-one-kubernetes-version)
 describes. The steps a single node takes, from the image to the bless, are on

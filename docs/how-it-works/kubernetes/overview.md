@@ -40,11 +40,11 @@ bootstrap, the joins and the add-ons.
 ## The image fixes one Kubernetes version
 
 Each image runs one Kubernetes version:
-[`chalkos.kubernetes.package`](../../reference/options.md#chalkoskubernetespackage), which is
+[`chalkos.kubernetes.package`](../../reference/image-options.md#chalkoskubernetespackage), which is
 nixpkgs's `kubernetes` by default. Nodes run its kubelet. The control plane runs the upstream
 images of the same version from `registry.k8s.io`, so a node's kubelet and control plane always
 run the same version. etcd, the pause image and CoreDNS have their own images under
-[`chalkos.kubernetes.images`](../../reference/options.md#chalkoskubernetesimagesetcd). So a
+[`chalkos.kubernetes.images`](../../reference/image-options.md#chalkoskubernetesimagesetcd). So a
 Kubernetes upgrade is an image upgrade, which [Kubernetes upgrades](upgrades.md)
 describes.
 
@@ -54,7 +54,7 @@ describes.
 in Kubernetes, so control planes and workers boot the same image. A `controlplane` runs
 containerd, the kubelet, and etcd and the control plane as static pods. A `worker` runs containerd
 and the kubelet. The images of a variant built with
-[`kubernetes = false`](../../reference/options.md#variantskubernetes) run no Kubernetes and have no
+[`kubernetes = false`](../../reference/mkimages.md#variantskubernetes) run no Kubernetes and have no
 `Node` kind, so their nodes have no type.
 [Components by node type](../../reference/kubernetes.md#components-by-node-type) lists them in one
 table.

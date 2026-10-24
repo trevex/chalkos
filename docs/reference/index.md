@@ -26,13 +26,29 @@ chalkos.
 
     [:octicons-arrow-right-24: Read](kinds.md)
 
--   :material-tune: __mkImages and image options__
+-   :material-tune: __mkImages__
 
     ---
 
-    The arguments of `chalkos.lib.mkImages` and the options of the images it builds.
+    The arguments of `chalkos.lib.mkImages` and what it returns.
 
-    [:octicons-arrow-right-24: Read](options.md)
+    [:octicons-arrow-right-24: Read](mkimages.md)
+
+-   :material-cog: __Image options__
+
+    ---
+
+    The options of chalkos's node modules that a variant's NixOS modules set.
+
+    [:octicons-arrow-right-24: Read](image-options.md)
+
+-   :material-puzzle: __Extension API__
+
+    ---
+
+    The options and `lib.chalkos` helpers an extension declares kinds, facts, outputs and effects with.
+
+    [:octicons-arrow-right-24: Read](extension-api.md)
 
 -   :material-api: __Node API__
 
@@ -108,5 +124,6 @@ chalkos.
 
 </div>
 
-Sources: the command line, config kinds, options and node API pages are generated from the code,
-as [Writing documentation](../contribute/writing-docs.md#generated-pages) describes.
+Sources: the command line, config kinds, mkImages, image options, extension API and node API pages
+are generated from the code, as
+[Writing documentation](../contribute/writing-docs.md#generated-pages) describes.

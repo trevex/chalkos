@@ -23,7 +23,7 @@ A node is the machine that runs a chalkos image, on bare metal or as a virtual m
 | Secure Boot | On, with the certificate that signs the images in the firmware's db. | The image boots, but nothing verifies the UKI or the store, and the TPM unseals STATE and VAR for whatever boots. |
 | TPM | TPM 2.0, for the default encryption mode `tpm2`, which seals the keys of STATE, VAR and encrypted volumes to PCR 7. | Install fails with mode `tpm2`. Set `spec.encryption.mode` of the node's `SystemDisk` document to `none`, which leaves STATE and the node's secrets unencrypted on the disk. |
 
-The image option [`system`](../reference/options.md#system) sets the architecture, and the
+The image option [`system`](../reference/mkimages.md#system) sets the architecture, and the
 [`SystemDisk`](../reference/kinds.md#systemdisk) kind describes the encryption modes.
 
 chalkos does not enrol Secure Boot keys on a real machine. The operator enrols the certificate
@@ -57,7 +57,7 @@ The sizes of the system region are options of a variant's NixOS modules; VAR's i
 
 The system region takes about 7.4 GiB. VAR holds etcd, containerd's images and the logs, so its
 size follows from the workloads; a lab's 16 GiB disk leaves about 8.6 GiB for it, enough to try
-chalkos. The [image options](../reference/options.md#chalkosdiskespsize) describe the
+chalkos. The [image options](../reference/image-options.md#chalkosdiskespsize) describe the
 `chalkos.disk` options, and [Storage and encryption](../how-it-works/node/storage.md) explains the
 layout and its limits.
 

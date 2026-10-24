@@ -1,0 +1,351 @@
+{
+  "chalkos.disk.espSize": {
+    "declarations": [
+      {
+        "name": "modules/node/base/disk.nix",
+        "url": "https://example.org/modules/node/base/disk.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "\"1G\""
+    },
+    "description": "Size of the EFI system partition.",
+    "loc": [
+      "chalkos",
+      "disk",
+      "espSize"
+    ],
+    "readOnly": false,
+    "type": "string"
+  },
+  "chalkos.cni.provider": {
+    "declarations": [
+      {
+        "name": "modules/node/kubernetes.nix",
+        "url": "https://example.org/modules/node/kubernetes.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "\"flannel\""
+    },
+    "description": "The CNI.",
+    "loc": [
+      "chalkos",
+      "cni",
+      "provider"
+    ],
+    "readOnly": false,
+    "type": "one of \"flannel\", \"none\""
+  },
+  "chalkos.kubernetes.enable": {
+    "declarations": [
+      {
+        "name": "modules/node/kubernetes.nix",
+        "url": "https://example.org/modules/node/kubernetes.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "true"
+    },
+    "description": "Whether the image runs Kubernetes.",
+    "loc": [
+      "chalkos",
+      "kubernetes",
+      "enable"
+    ],
+    "readOnly": false,
+    "type": "boolean"
+  },
+  "chalkos.variant.name": {
+    "declarations": [
+      {
+        "name": "modules/node/settings.nix",
+        "url": "https://example.org/modules/node/settings.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "null"
+    },
+    "description": "The image's variant.",
+    "loc": [
+      "chalkos",
+      "variant",
+      "name"
+    ],
+    "readOnly": false,
+    "type": "null or string"
+  },
+  "chalkos.kinds": {
+    "declarations": [
+      {
+        "name": "modules/node/kinds/default.nix",
+        "url": "https://example.org/modules/node/kinds/default.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "{ }"
+    },
+    "description": "Config kinds the image accepts.",
+    "loc": [
+      "chalkos",
+      "kinds"
+    ],
+    "readOnly": false,
+    "type": "attribute set of (submodule)"
+  },
+  "chalkos.kinds.<name>.group": {
+    "declarations": [
+      {
+        "name": "modules/node/kinds/default.nix",
+        "url": "https://example.org/modules/node/kinds/default.nix"
+      }
+    ],
+    "description": "API group of the kind.",
+    "example": {
+      "_type": "literalExpression",
+      "text": "\"bgp.example.org\""
+    },
+    "loc": [
+      "chalkos",
+      "kinds",
+      "<name>",
+      "group"
+    ],
+    "readOnly": false,
+    "type": "string matching the pattern [a-z]+(\\.[a-z]+)+"
+  },
+  "chalkos.kinds.<name>.dir": {
+    "declarations": [
+      {
+        "name": "modules/node/kinds/default.nix",
+        "url": "https://example.org/modules/node/kinds/default.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "\"/run/chalkos/config/${group}/<kind>\""
+    },
+    "description": "Directory of the kind's documents.",
+    "loc": [
+      "chalkos",
+      "kinds",
+      "<name>",
+      "dir"
+    ],
+    "readOnly": true,
+    "type": "string"
+  },
+  "chalkos.kinds.<name>.rules": {
+    "declarations": [
+      {
+        "name": "modules/node/kinds/default.nix",
+        "url": "https://example.org/modules/node/kinds/default.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "[ ]"
+    },
+    "description": "Change rules\nof the kind.",
+    "example": {
+      "_type": "literalExpression",
+      "text": "[\n  # A rule.\n  { rule = \"true\"; message = \"never\"; }\n]"
+    },
+    "loc": [
+      "chalkos",
+      "kinds",
+      "<name>",
+      "rules"
+    ],
+    "readOnly": false,
+    "type": "list of (submodule)"
+  },
+  "chalkos.kinds.<name>.rules.*.takes": {
+    "declarations": [
+      {
+        "name": "modules/node/kinds/default.nix",
+        "url": "https://example.org/modules/node/kinds/default.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "\"refuse\""
+    },
+    "description": "What a refused change needs.",
+    "loc": [
+      "chalkos",
+      "kinds",
+      "<name>",
+      "rules",
+      "*",
+      "takes"
+    ],
+    "readOnly": false,
+    "type": "one of \"refuse\", \"reset\""
+  },
+  "systemd.services.<name>.chalkos.kinds": {
+    "declarations": [
+      {
+        "name": "modules/node/runtime/default.nix",
+        "url": "https://example.org/modules/node/runtime/default.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "[ ]"
+    },
+    "description": "Config kinds the unit reads.",
+    "example": {
+      "_type": "literalExpression",
+      "text": "[\n  \"Peer\"\n]"
+    },
+    "loc": [
+      "systemd",
+      "services",
+      "<name>",
+      "chalkos",
+      "kinds"
+    ],
+    "readOnly": false,
+    "type": "list of string"
+  },
+  "chalkos.kernel.moduleGroups": {
+    "declarations": [
+      {
+        "name": "modules/node/base/kernel.nix",
+        "url": "https://example.org/modules/node/base/kernel.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "[ ]"
+    },
+    "description": "Module groups.",
+    "loc": [
+      "chalkos",
+      "kernel",
+      "moduleGroups"
+    ],
+    "readOnly": false,
+    "type": "list of (one of \"gpu\", \"sound\")"
+  },
+  "chalkos.upgrade.bootTries": {
+    "declarations": [
+      {
+        "name": "modules/node/base/upgrade.nix",
+        "url": "https://example.org/modules/node/base/upgrade.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "3"
+    },
+    "description": "Boot tries.",
+    "loc": [
+      "chalkos",
+      "upgrade",
+      "bootTries"
+    ],
+    "readOnly": false,
+    "type": "positive integer, meaning >0"
+  },
+  "chalkos.debug.tools": {
+    "declarations": [
+      {
+        "name": "modules/node/debug.nix",
+        "url": "https://example.org/modules/node/debug.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "false"
+    },
+    "description": "Debug tools.",
+    "loc": [
+      "chalkos",
+      "debug",
+      "tools"
+    ],
+    "readOnly": false,
+    "type": "boolean"
+  },
+  "chalkos.facts": {
+    "declarations": [
+      {
+        "name": "modules/node/runtime/default.nix",
+        "url": "https://example.org/modules/node/runtime/default.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "{ }"
+    },
+    "description": "Facts.",
+    "loc": [
+      "chalkos",
+      "facts"
+    ],
+    "readOnly": false,
+    "type": "attribute set of (submodule)"
+  },
+  "chalkos.outputs": {
+    "declarations": [
+      {
+        "name": "modules/node/runtime/default.nix",
+        "url": "https://example.org/modules/node/runtime/default.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "{ }"
+    },
+    "description": "Outputs.",
+    "loc": [
+      "chalkos",
+      "outputs"
+    ],
+    "readOnly": false,
+    "type": "attribute set of (submodule)"
+  },
+  "chalkos.outputs.<name>.render": {
+    "declarations": [
+      {
+        "name": "modules/node/runtime/default.nix",
+        "url": "https://example.org/modules/node/runtime/default.nix"
+      }
+    ],
+    "description": "The renderer.",
+    "loc": [
+      "chalkos",
+      "outputs",
+      "<name>",
+      "render"
+    ],
+    "readOnly": false,
+    "type": "command, package or lib.chalkos.render value"
+  },
+  "chalkos.effects": {
+    "declarations": [
+      {
+        "name": "modules/node/runtime/default.nix",
+        "url": "https://example.org/modules/node/runtime/default.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "{ }"
+    },
+    "description": "Effects.",
+    "loc": [
+      "chalkos",
+      "effects"
+    ],
+    "readOnly": false,
+    "type": "attribute set of (submodule)"
+  }
+}

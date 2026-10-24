@@ -33,7 +33,7 @@ chalkd on every node. The sections below take them in that order.
 ## Nix builds the software and the config carries the rest
 
 Nix builds the software a node runs: the operating system, Kubernetes and chalkd.
-[`chalkos.lib.mkImages`](../../reference/options.md#mkimages-arguments) evaluates one NixOS system
+[`chalkos.lib.mkImages`](../../reference/mkimages.md#mkimages-arguments) evaluates one NixOS system
 per variant and platform. Each system comes from chalkos's node modules, the platform's modules,
 the modules every variant shares and the variant's own. Nix builds each into an unsigned raw disk
 image in an image directory. It also builds one installer, which installs images of every

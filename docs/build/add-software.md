@@ -103,7 +103,7 @@ Replace `node-metal` with the variant and platform of the node's image.
 
 ## Kernel module groups select whole driver directories
 
-[`chalkos.kernel.moduleGroups`](../reference/options.md#chalkoskernelmodulegroups) selects whole
+[`chalkos.kernel.moduleGroups`](../reference/image-options.md#chalkoskernelmodulegroups) selects whole
 directories of the kernel's tree, so a group follows a kernel update with its subsystem's new
 drivers. Every image carries the base groups:
 
@@ -134,9 +134,9 @@ Every image of the variant carries them. In `modules`, they go to every variant.
 set add to the base groups. `lib.mkForce` replaces the base groups, for an image that carries
 less.
 
-[`chalkos.kernel.extraModules`](../reference/options.md#chalkoskernelextramodules) names single
+[`chalkos.kernel.extraModules`](../reference/image-options.md#chalkoskernelextramodules) names single
 modules, for a driver whose directory holds much you do not need. Each comes with the modules it
-depends on. [`chalkos.kernel.allModules`](../reference/options.md#chalkoskernelallmodules)
+depends on. [`chalkos.kernel.allModules`](../reference/image-options.md#chalkoskernelallmodules)
 carries the kernel's whole tree. It adds about 100 MiB to the store and is meant for finding out
 what a machine needs, not for production.
 
@@ -231,7 +231,7 @@ build fails when such a module depends on one the kernel does not have.
 
 ## Debug tools are an option of the image
 
-[`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) adds coreutils, grep, sed,
+[`chalkos.debug.tools`](../reference/image-options.md#chalkosdebugtools) adds coreutils, grep, sed,
 findutils, procps, iproute2 and util-linux to the system path, and crictl on images with
 Kubernetes:
 
@@ -278,7 +278,7 @@ anything, and these settings break the node or are refused:
 - On a variant without Kubernetes, a boot is healthy only when no unit that `multi-user.target` or
   `sysinit.target` pulls in failed. A unit of yours that fails makes the next upgrade roll back.
   Jobs that timers and sockets start never count, and
-  [`chalkos.upgrade.healthIgnoreUnits`](../reference/options.md#chalkosupgradehealthignoreunits)
+  [`chalkos.upgrade.healthIgnoreUnits`](../reference/image-options.md#chalkosupgradehealthignoreunits)
   lists units whose failure does not count.
 
 Your own image options take a namespace of their own, such as `rack.*` or `chalkos.rack.*`. Under
@@ -292,7 +292,7 @@ every node. Each image build checks that the next image will fit beside the runn
 fails when:
 
 - the store's data takes more than 80% of its slot,
-  [`chalkos.disk.storeSize`](../reference/options.md#chalkosdiskstoresize), 3 GiB by default;
+  [`chalkos.disk.storeSize`](../reference/image-options.md#chalkosdiskstoresize), 3 GiB by default;
 - the hash tree takes more than 80% of its partition, `chalkos.disk.storeVeritySize`, 128 MiB by
   default;
 - three UKIs, both slots' and an upgrade's temporary copy, take more than 80% of the ESP,
