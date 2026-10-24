@@ -152,35 +152,33 @@ message InfoResponse {
   // Mode chalkd serves the node in.
   Mode mode = 1;
   // Image ID of the running image, such as "chalkos".
-  string image_id = 3;
+  string image_id = 2;
   // Whether the node runs the installer, which writes a node's image to another disk.
-  bool installer = 4;
+  bool installer = 3;
   // Device of the disk the node booted from; empty on the installer booted from a CD.
-  string boot_disk = 5;
+  string boot_disk = 4;
   // Whether the kernel found a TPM, as /sys/class/tpm lists one.
-  bool tpm = 6;
+  bool tpm = 5;
   // State of Secure Boot.
-  SecureBoot secure_boot = 7;
+  SecureBoot secure_boot = 6;
   // SHA-256 of the certificate chalkd serves, in lower-case hex.
-  string fingerprint = 8;
+  string fingerprint = 7;
   // Host name of the node, as the kernel holds it.
-  string hostname = 9;
+  string hostname = 8;
   // The mkImages variant the running image was built as; empty on the installer.
-  string variant = 11;
+  string variant = 9;
   // The platform the running image was built for, such as metal or kvm; empty on the installer,
   // which installs images of every platform.
-  string platform = 12;
+  string platform = 10;
   // The verity root hash of the store the node runs, as its kernel command line's usrhash= names
   // it, which identifies the running image; empty when it could not be read.
-  bytes root_hash = 13;
+  bytes root_hash = 11;
   // The git revision the running image was built from, as the node's record of the images it
   // installed names it; empty when it does not know it.
-  string revision = 14;
+  string revision = 12;
   // The git tag the running image was built from, as the node's record of the images it
   // installed names it; empty when it does not know it.
-  string tag = 15;
-  reserved 16, 17;
-  reserved "pulls_upgrade_images", "pulls_install_images";
+  string tag = 13;
 }
 
 // The request of Disks.
@@ -240,17 +238,15 @@ message ContractRequest {}
 
 // The response of Contract: the config contract of the image the node runs.
 message ContractResponse {
-  reserved 2;
-  reserved "kubernetes_cluster";
   // The image's schemas by file name, as /etc/chalkos/schemas holds them.
   map<string, bytes> schemas = 1;
   // The variant the image was built as, as its os-release names it.
-  string variant = 4;
+  string variant = 2;
   // The platform the image was built for, as its os-release names it.
-  string platform = 5;
+  string platform = 3;
   // The image's image.json: the Kubernetes release, the images of its components and the pod
   // network it ships. Empty on an image without Kubernetes.
-  bytes kubernetes_image = 6;
+  bytes kubernetes_image = 4;
 }
 
 // A message of the Install stream: the header first, then the image's chunks.
@@ -265,57 +261,55 @@ message InstallRequest {
 
 // What an install delivers: the node's credentials and config, the target and the image.
 message InstallHeader {
-  reserved 1, 14;
-  reserved "identity", "kubernetes_cluster";
   // PEM certificate chalkd serves once the node is installed.
-  bytes node_certificate = 2;
+  bytes node_certificate = 1;
   // PEM key of node_certificate.
-  bytes node_key = 3;
+  bytes node_key = 2;
   // PEM certificates of the OS CAs the node trusts, the one that issues client certificates and
   // the node CA first, then those still trusted while it rotates.
-  bytes ca_certificate = 4;
+  bytes ca_certificate = 3;
   // Recovery key or password enrolled as the second keyslot of every encrypted volume; empty
   // when the node's fallback is none.
-  string fallback_secret = 5;
+  string fallback_secret = 4;
   oneof target {
     // Target of a node whose image already runs from its boot disk.
-    InPlace in_place = 6;
+    InPlace in_place = 5;
     // Target disk, which the installer lays out and writes the streamed image to.
-    DiskReference disk = 7;
+    DiskReference disk = 6;
   }
   // The image the installer writes to the target disk; it must name the boot loader. Its parts
   // follow as chunks unless source names where the installer pulls them from. Installer only.
-  ImageHeader image = 8;
+  ImageHeader image = 7;
   // Whether the installer may replace what the target disk holds, including an installed node.
-  bool wipe_disk = 9;
+  bool wipe_disk = 8;
   // The image's repart definitions of the system region (ESP, slots A and B, STATE) by file
   // name, which the installer lays out the target disk with; installer only. Each image chooses
   // its partition sizes, so the installer's own may not fit; absent when source names an image in
   // a registry, whose contract layer holds them.
-  map<string, string> system_definitions = 10;
+  map<string, string> system_definitions = 9;
   // The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA
   // certificate and a kubelet client certificate for a worker. Empty for an image without
   // Kubernetes.
-  bytes kubernetes_share = 11;
+  bytes kubernetes_share = 10;
   // The node's config: YAML documents separated by ---. chalkd checks them as a set against the
   // schemas of the image it installs, fills in their defaults, keeps them on STATE and translates
   // them into what the node applies at boot. Required.
-  string config = 12;
+  string config = 11;
   // The schemas of the image the installer writes, by file name, as its image directory's
   // schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses
   // the running image's; absent when source names an image in a registry, whose contract layer
   // holds them.
-  map<string, bytes> schemas = 13;
+  map<string, bytes> schemas = 12;
   // The image.json of the image the installer writes, as its image directory holds it; empty for
   // an image without Kubernetes. Installer only; absent when source names an image in a
   // registry, whose contract layer holds them.
-  bytes kubernetes_image = 15;
+  bytes kubernetes_image = 13;
   // Where the installer takes the image's parts from. Absent, they follow the header as chunks.
   // For an image in a registry, the installer pulls them and takes the image's schemas,
   // image.json and repart definitions from its contract layer; the request then carries nothing
   // after the header, and the header no schemas, kubernetes_image or system_definitions.
   // Installer only.
-  ImageSource source = 16;
+  ImageSource source = 14;
 }
 
 // The target of an install in place, which the node's own image runs from its boot disk.
@@ -341,34 +335,32 @@ message DiskReference {
 // the store data, the hash tree, the UKI and, when the header names one, the boot loader, unless
 // the request's source names where the node pulls them from.
 message ImageHeader {
-  reserved 4;
-  reserved "role";
   // The image's ID, as its os-release names it.
-  string image_id = 2;
+  string image_id = 1;
   // The verity root hash of the image's store.
-  bytes root_hash = 5;
+  bytes root_hash = 2;
   // The store data, which the root hash covers.
-  ImagePart store = 6;
+  ImagePart store = 3;
   // The store's verity hash tree.
-  ImagePart hash_tree = 7;
+  ImagePart hash_tree = 4;
   // The signed UKI that boots the image.
-  ImagePart uki = 8;
+  ImagePart uki = 5;
   // The signed systemd-boot, which firmware starts from the ESP's removable-media path.
-  ImagePart boot_loader = 9;
+  ImagePart boot_loader = 6;
   // The architecture the image runs on, as systemd and os-release name it: x86-64 or arm64. A
   // node refuses an image of another architecture than its own.
-  string architecture = 10;
+  string architecture = 7;
   // The platform the image is built for, as its os-release names it, such as metal or kvm. A node
   // refuses an upgrade to an image of another platform than its own, and the installer
   // translates the config for the platform the image names.
-  string platform = 11;
+  string platform = 8;
   // The git revision the image was built from, as its directory's metadata.json names it; empty
   // when the build named none. The node records it to show beside the image's root hash; nothing
   // compares it.
-  string revision = 12;
+  string revision = 9;
   // The git tag the image was built from, as its directory's metadata.json names it; empty when
   // the build named none. The node records it as it does revision.
-  string tag = 13;
+  string tag = 10;
 }
 
 // The size and SHA-256 of a part of an image.
@@ -412,34 +404,32 @@ message InstallResponse {}
 
 // The request of ApplyConfig: a config, or a share, a node certificate or OS CAs to deliver.
 message ApplyConfigRequest {
-  reserved 1;
-  reserved "identity";
   // Recovery key or password enrolled on the encrypted volumes the config adds; required when it
   // adds one and the node's fallback is not none.
-  string fallback_secret = 2;
+  string fallback_secret = 1;
   // A new Kubernetes share (JSON) replacing the node's, as InstallHeader carries it; empty
   // keeps the node's share.
-  bytes kubernetes_share = 3;
+  bytes kubernetes_share = 2;
   // A new node certificate for the node, followed by the certificate of the node CA that issued
   // it (PEM), which chalkd serves from then on; empty keeps the node's.
-  bytes node_certificate = 4;
+  bytes node_certificate = 3;
   // PEM key of node_certificate; empty keeps the node's.
-  bytes node_key = 5;
+  bytes node_key = 4;
   // The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them;
   // empty keeps the node's. They must verify the node's certificate, the caller's and a control
   // plane's node CA. Not together with a node certificate.
-  bytes trust = 6;
+  bytes trust = 5;
   // The node's config, as InstallHeader.config holds it, checked against the running image's
   // schemas. It replaces the node's config as a whole. Empty keeps the node's config and
   // storage, for a request that delivers only a share, a node certificate or OS CAs.
-  string config = 7;
+  string config = 6;
   // Whether the config is for the image staged to boot next: chalkd checks it against that image
   // and keeps it in that image's config slot, changing nothing the running image runs but the
   // machine's storage. The config meets that image's change rules, compared with the running
   // slot's config and the machine as for the running image, and the storage changes they accept
   // are made at once, with fallback_secret. It takes the config and the fallback secret alone,
   // and an image staged.
-  bool staged = 8;
+  bool staged = 7;
 }
 
 // The request of GetConfig.
@@ -481,16 +471,14 @@ message StorageChange {
 
 // The request of ResetVolume.
 message ResetVolumeRequest {
-  reserved 2;
-  reserved "identity";
   // Name of the volume to reset.
   string volume = 1;
   // Recovery key or password enrolled on the volume when it is encrypted; required then, unless
   // the node's fallback is none.
-  string fallback_secret = 3;
+  string fallback_secret = 2;
   // The node's config, as ApplyConfigRequest.config holds it, checked against the running
   // image's schemas; the volume is created as it defines. Required.
-  string config = 4;
+  string config = 3;
 }
 
 // The response of ResetVolume, once the volume is created again.
@@ -501,35 +489,33 @@ message StatusRequest {}
 
 // The response of Status: the state of an installed node.
 message StatusResponse {
-  reserved 1;
-  reserved "identity_version";
   // The disks of the node's storage, by name, as the boot's storage setup left them.
-  repeated DiskStatus disks = 2;
+  repeated DiskStatus disks = 1;
   // The volumes of the node's storage, by name.
-  repeated VolumeStatus volumes = 3;
+  repeated VolumeStatus volumes = 2;
   // Names of the systemd units that failed.
-  repeated string failed_units = 4;
+  repeated string failed_units = 3;
   // State of the node's Kubernetes; absent on a node whose image has no Kubernetes.
-  KubernetesStatus kubernetes = 5;
+  KubernetesStatus kubernetes = 4;
   // Every certificate the node holds or issues, with its expiry and what needs doing about it.
-  repeated CertificateStatus certificates = 6;
+  repeated CertificateStatus certificates = 5;
   // How the node keeps its clock.
-  TimeStatus time = 7;
+  TimeStatus time = 6;
   // What the node trusts and issues with, by fingerprint.
-  repeated TrustStatus trust = 8;
+  repeated TrustStatus trust = 7;
   // The image the node booted, and what upgrades installed beside it.
-  BootStatus boot = 9;
+  BootStatus boot = 8;
   // The platform the running image was built for.
-  string platform = 10;
+  string platform = 9;
   // SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents
   // in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by
   // its own SHA-256. Empty on a node that runs no config, as one installed by an earlier chalkos.
-  string config_version = 11;
+  string config_version = 10;
   // The version of the config kept for the image staged to boot next, as config_version gives
   // the running one's; empty without a staged image or config for it.
-  string staged_config_version = 12;
+  string staged_config_version = 11;
   // The image's outputs, by name.
-  repeated OutputStatus outputs = 13;
+  repeated OutputStatus outputs = 12;
 }
 
 // The state of one output of the running image.
@@ -856,8 +842,6 @@ message UpgradeRequest {
 
 // What an upgrade delivers: the image and, optionally, the node's config for it.
 message UpgradeHeader {
-  reserved 3, 4;
-  reserved "schemas", "kubernetes_image";
   // The image to install. The node refuses another ID or platform than its own, and an image that
   // names a boot loader: an upgrade leaves the boot loader as it is.
   ImageHeader image = 1;
@@ -869,14 +853,14 @@ message UpgradeHeader {
   // Kubernetes setting, makes the storage changes they accept, such as a new volume, at once, and
   // keeps the config in the image's config slot. Empty carries the running image's config over,
   // checked against the image the same way. Only the admin role may set it.
-  string config = 5;
+  string config = 3;
   // Recovery key or password enrolled on the encrypted volumes the config adds, as
   // ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is
   // not none. Only the admin role may set it.
-  string fallback_secret = 6;
+  string fallback_secret = 4;
   // Where the node takes the image's parts from. Absent, they follow the header as chunks; for
   // an image in a registry, the node pulls them and the request carries nothing after the header.
-  ImageSource source = 7;
+  ImageSource source = 5;
 }
 
 // The response of Upgrade.

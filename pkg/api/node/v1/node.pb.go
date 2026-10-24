@@ -249,33 +249,33 @@ type InfoResponse struct {
 	// Mode chalkd serves the node in.
 	Mode Mode `protobuf:"varint,1,opt,name=mode,proto3,enum=chalkos.node.v1.Mode" json:"mode,omitempty"`
 	// Image ID of the running image, such as "chalkos".
-	ImageId string `protobuf:"bytes,3,opt,name=image_id,json=imageId,proto3" json:"image_id,omitempty"`
+	ImageId string `protobuf:"bytes,2,opt,name=image_id,json=imageId,proto3" json:"image_id,omitempty"`
 	// Whether the node runs the installer, which writes a node's image to another disk.
-	Installer bool `protobuf:"varint,4,opt,name=installer,proto3" json:"installer,omitempty"`
+	Installer bool `protobuf:"varint,3,opt,name=installer,proto3" json:"installer,omitempty"`
 	// Device of the disk the node booted from; empty on the installer booted from a CD.
-	BootDisk string `protobuf:"bytes,5,opt,name=boot_disk,json=bootDisk,proto3" json:"boot_disk,omitempty"`
+	BootDisk string `protobuf:"bytes,4,opt,name=boot_disk,json=bootDisk,proto3" json:"boot_disk,omitempty"`
 	// Whether the kernel found a TPM, as /sys/class/tpm lists one.
-	Tpm bool `protobuf:"varint,6,opt,name=tpm,proto3" json:"tpm,omitempty"`
+	Tpm bool `protobuf:"varint,5,opt,name=tpm,proto3" json:"tpm,omitempty"`
 	// State of Secure Boot.
-	SecureBoot SecureBoot `protobuf:"varint,7,opt,name=secure_boot,json=secureBoot,proto3,enum=chalkos.node.v1.SecureBoot" json:"secure_boot,omitempty"`
+	SecureBoot SecureBoot `protobuf:"varint,6,opt,name=secure_boot,json=secureBoot,proto3,enum=chalkos.node.v1.SecureBoot" json:"secure_boot,omitempty"`
 	// SHA-256 of the certificate chalkd serves, in lower-case hex.
-	Fingerprint string `protobuf:"bytes,8,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
+	Fingerprint string `protobuf:"bytes,7,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
 	// Host name of the node, as the kernel holds it.
-	Hostname string `protobuf:"bytes,9,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	Hostname string `protobuf:"bytes,8,opt,name=hostname,proto3" json:"hostname,omitempty"`
 	// The mkImages variant the running image was built as; empty on the installer.
-	Variant string `protobuf:"bytes,11,opt,name=variant,proto3" json:"variant,omitempty"`
+	Variant string `protobuf:"bytes,9,opt,name=variant,proto3" json:"variant,omitempty"`
 	// The platform the running image was built for, such as metal or kvm; empty on the installer,
 	// which installs images of every platform.
-	Platform string `protobuf:"bytes,12,opt,name=platform,proto3" json:"platform,omitempty"`
+	Platform string `protobuf:"bytes,10,opt,name=platform,proto3" json:"platform,omitempty"`
 	// The verity root hash of the store the node runs, as its kernel command line's usrhash= names
 	// it, which identifies the running image; empty when it could not be read.
-	RootHash []byte `protobuf:"bytes,13,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
+	RootHash []byte `protobuf:"bytes,11,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
 	// The git revision the running image was built from, as the node's record of the images it
 	// installed names it; empty when it does not know it.
-	Revision string `protobuf:"bytes,14,opt,name=revision,proto3" json:"revision,omitempty"`
+	Revision string `protobuf:"bytes,12,opt,name=revision,proto3" json:"revision,omitempty"`
 	// The git tag the running image was built from, as the node's record of the images it
 	// installed names it; empty when it does not know it.
-	Tag           string `protobuf:"bytes,15,opt,name=tag,proto3" json:"tag,omitempty"`
+	Tag           string `protobuf:"bytes,13,opt,name=tag,proto3" json:"tag,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -755,12 +755,12 @@ type ContractResponse struct {
 	// The image's schemas by file name, as /etc/chalkos/schemas holds them.
 	Schemas map[string][]byte `protobuf:"bytes,1,rep,name=schemas,proto3" json:"schemas,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// The variant the image was built as, as its os-release names it.
-	Variant string `protobuf:"bytes,4,opt,name=variant,proto3" json:"variant,omitempty"`
+	Variant string `protobuf:"bytes,2,opt,name=variant,proto3" json:"variant,omitempty"`
 	// The platform the image was built for, as its os-release names it.
-	Platform string `protobuf:"bytes,5,opt,name=platform,proto3" json:"platform,omitempty"`
+	Platform string `protobuf:"bytes,3,opt,name=platform,proto3" json:"platform,omitempty"`
 	// The image's image.json: the Kubernetes release, the images of its components and the pod
 	// network it ships. Empty on an image without Kubernetes.
-	KubernetesImage []byte `protobuf:"bytes,6,opt,name=kubernetes_image,json=kubernetesImage,proto3" json:"kubernetes_image,omitempty"`
+	KubernetesImage []byte `protobuf:"bytes,4,opt,name=kubernetes_image,json=kubernetesImage,proto3" json:"kubernetes_image,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -912,15 +912,15 @@ func (*InstallRequest_Chunk) isInstallRequest_Message() {}
 type InstallHeader struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// PEM certificate chalkd serves once the node is installed.
-	NodeCertificate []byte `protobuf:"bytes,2,opt,name=node_certificate,json=nodeCertificate,proto3" json:"node_certificate,omitempty"`
+	NodeCertificate []byte `protobuf:"bytes,1,opt,name=node_certificate,json=nodeCertificate,proto3" json:"node_certificate,omitempty"`
 	// PEM key of node_certificate.
-	NodeKey []byte `protobuf:"bytes,3,opt,name=node_key,json=nodeKey,proto3" json:"node_key,omitempty"`
+	NodeKey []byte `protobuf:"bytes,2,opt,name=node_key,json=nodeKey,proto3" json:"node_key,omitempty"`
 	// PEM certificates of the OS CAs the node trusts, the one that issues client certificates and
 	// the node CA first, then those still trusted while it rotates.
-	CaCertificate []byte `protobuf:"bytes,4,opt,name=ca_certificate,json=caCertificate,proto3" json:"ca_certificate,omitempty"`
+	CaCertificate []byte `protobuf:"bytes,3,opt,name=ca_certificate,json=caCertificate,proto3" json:"ca_certificate,omitempty"`
 	// Recovery key or password enrolled as the second keyslot of every encrypted volume; empty
 	// when the node's fallback is none.
-	FallbackSecret string `protobuf:"bytes,5,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
+	FallbackSecret string `protobuf:"bytes,4,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
 	// Types that are valid to be assigned to Target:
 	//
 	//	*InstallHeader_InPlace
@@ -928,37 +928,37 @@ type InstallHeader struct {
 	Target isInstallHeader_Target `protobuf_oneof:"target"`
 	// The image the installer writes to the target disk; it must name the boot loader. Its parts
 	// follow as chunks unless source names where the installer pulls them from. Installer only.
-	Image *ImageHeader `protobuf:"bytes,8,opt,name=image,proto3" json:"image,omitempty"`
+	Image *ImageHeader `protobuf:"bytes,7,opt,name=image,proto3" json:"image,omitempty"`
 	// Whether the installer may replace what the target disk holds, including an installed node.
-	WipeDisk bool `protobuf:"varint,9,opt,name=wipe_disk,json=wipeDisk,proto3" json:"wipe_disk,omitempty"`
+	WipeDisk bool `protobuf:"varint,8,opt,name=wipe_disk,json=wipeDisk,proto3" json:"wipe_disk,omitempty"`
 	// The image's repart definitions of the system region (ESP, slots A and B, STATE) by file
 	// name, which the installer lays out the target disk with; installer only. Each image chooses
 	// its partition sizes, so the installer's own may not fit; absent when source names an image in
 	// a registry, whose contract layer holds them.
-	SystemDefinitions map[string]string `protobuf:"bytes,10,rep,name=system_definitions,json=systemDefinitions,proto3" json:"system_definitions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	SystemDefinitions map[string]string `protobuf:"bytes,9,rep,name=system_definitions,json=systemDefinitions,proto3" json:"system_definitions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA
 	// certificate and a kubelet client certificate for a worker. Empty for an image without
 	// Kubernetes.
-	KubernetesShare []byte `protobuf:"bytes,11,opt,name=kubernetes_share,json=kubernetesShare,proto3" json:"kubernetes_share,omitempty"`
+	KubernetesShare []byte `protobuf:"bytes,10,opt,name=kubernetes_share,json=kubernetesShare,proto3" json:"kubernetes_share,omitempty"`
 	// The node's config: YAML documents separated by ---. chalkd checks them as a set against the
 	// schemas of the image it installs, fills in their defaults, keeps them on STATE and translates
 	// them into what the node applies at boot. Required.
-	Config string `protobuf:"bytes,12,opt,name=config,proto3" json:"config,omitempty"`
+	Config string `protobuf:"bytes,11,opt,name=config,proto3" json:"config,omitempty"`
 	// The schemas of the image the installer writes, by file name, as its image directory's
 	// schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses
 	// the running image's; absent when source names an image in a registry, whose contract layer
 	// holds them.
-	Schemas map[string][]byte `protobuf:"bytes,13,rep,name=schemas,proto3" json:"schemas,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Schemas map[string][]byte `protobuf:"bytes,12,rep,name=schemas,proto3" json:"schemas,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// The image.json of the image the installer writes, as its image directory holds it; empty for
 	// an image without Kubernetes. Installer only; absent when source names an image in a
 	// registry, whose contract layer holds them.
-	KubernetesImage []byte `protobuf:"bytes,15,opt,name=kubernetes_image,json=kubernetesImage,proto3" json:"kubernetes_image,omitempty"`
+	KubernetesImage []byte `protobuf:"bytes,13,opt,name=kubernetes_image,json=kubernetesImage,proto3" json:"kubernetes_image,omitempty"`
 	// Where the installer takes the image's parts from. Absent, they follow the header as chunks.
 	// For an image in a registry, the installer pulls them and takes the image's schemas,
 	// image.json and repart definitions from its contract layer; the request then carries nothing
 	// after the header, and the header no schemas, kubernetes_image or system_definitions.
 	// Installer only.
-	Source        *ImageSource `protobuf:"bytes,16,opt,name=source,proto3" json:"source,omitempty"`
+	Source        *ImageSource `protobuf:"bytes,14,opt,name=source,proto3" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1108,12 +1108,12 @@ type isInstallHeader_Target interface {
 
 type InstallHeader_InPlace struct {
 	// Target of a node whose image already runs from its boot disk.
-	InPlace *InPlace `protobuf:"bytes,6,opt,name=in_place,json=inPlace,proto3,oneof"`
+	InPlace *InPlace `protobuf:"bytes,5,opt,name=in_place,json=inPlace,proto3,oneof"`
 }
 
 type InstallHeader_Disk struct {
 	// Target disk, which the installer lays out and writes the streamed image to.
-	Disk *DiskReference `protobuf:"bytes,7,opt,name=disk,proto3,oneof"`
+	Disk *DiskReference `protobuf:"bytes,6,opt,name=disk,proto3,oneof"`
 }
 
 func (*InstallHeader_InPlace) isInstallHeader_Target() {}
@@ -1254,31 +1254,31 @@ func (x *DiskReference) GetType() string {
 type ImageHeader struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The image's ID, as its os-release names it.
-	ImageId string `protobuf:"bytes,2,opt,name=image_id,json=imageId,proto3" json:"image_id,omitempty"`
+	ImageId string `protobuf:"bytes,1,opt,name=image_id,json=imageId,proto3" json:"image_id,omitempty"`
 	// The verity root hash of the image's store.
-	RootHash []byte `protobuf:"bytes,5,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
+	RootHash []byte `protobuf:"bytes,2,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
 	// The store data, which the root hash covers.
-	Store *ImagePart `protobuf:"bytes,6,opt,name=store,proto3" json:"store,omitempty"`
+	Store *ImagePart `protobuf:"bytes,3,opt,name=store,proto3" json:"store,omitempty"`
 	// The store's verity hash tree.
-	HashTree *ImagePart `protobuf:"bytes,7,opt,name=hash_tree,json=hashTree,proto3" json:"hash_tree,omitempty"`
+	HashTree *ImagePart `protobuf:"bytes,4,opt,name=hash_tree,json=hashTree,proto3" json:"hash_tree,omitempty"`
 	// The signed UKI that boots the image.
-	Uki *ImagePart `protobuf:"bytes,8,opt,name=uki,proto3" json:"uki,omitempty"`
+	Uki *ImagePart `protobuf:"bytes,5,opt,name=uki,proto3" json:"uki,omitempty"`
 	// The signed systemd-boot, which firmware starts from the ESP's removable-media path.
-	BootLoader *ImagePart `protobuf:"bytes,9,opt,name=boot_loader,json=bootLoader,proto3" json:"boot_loader,omitempty"`
+	BootLoader *ImagePart `protobuf:"bytes,6,opt,name=boot_loader,json=bootLoader,proto3" json:"boot_loader,omitempty"`
 	// The architecture the image runs on, as systemd and os-release name it: x86-64 or arm64. A
 	// node refuses an image of another architecture than its own.
-	Architecture string `protobuf:"bytes,10,opt,name=architecture,proto3" json:"architecture,omitempty"`
+	Architecture string `protobuf:"bytes,7,opt,name=architecture,proto3" json:"architecture,omitempty"`
 	// The platform the image is built for, as its os-release names it, such as metal or kvm. A node
 	// refuses an upgrade to an image of another platform than its own, and the installer
 	// translates the config for the platform the image names.
-	Platform string `protobuf:"bytes,11,opt,name=platform,proto3" json:"platform,omitempty"`
+	Platform string `protobuf:"bytes,8,opt,name=platform,proto3" json:"platform,omitempty"`
 	// The git revision the image was built from, as its directory's metadata.json names it; empty
 	// when the build named none. The node records it to show beside the image's root hash; nothing
 	// compares it.
-	Revision string `protobuf:"bytes,12,opt,name=revision,proto3" json:"revision,omitempty"`
+	Revision string `protobuf:"bytes,9,opt,name=revision,proto3" json:"revision,omitempty"`
 	// The git tag the image was built from, as its directory's metadata.json names it; empty when
 	// the build named none. The node records it as it does revision.
-	Tag           string `protobuf:"bytes,13,opt,name=tag,proto3" json:"tag,omitempty"`
+	Tag           string `protobuf:"bytes,10,opt,name=tag,proto3" json:"tag,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1648,30 +1648,30 @@ type ApplyConfigRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Recovery key or password enrolled on the encrypted volumes the config adds; required when it
 	// adds one and the node's fallback is not none.
-	FallbackSecret string `protobuf:"bytes,2,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
+	FallbackSecret string `protobuf:"bytes,1,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
 	// A new Kubernetes share (JSON) replacing the node's, as InstallHeader carries it; empty
 	// keeps the node's share.
-	KubernetesShare []byte `protobuf:"bytes,3,opt,name=kubernetes_share,json=kubernetesShare,proto3" json:"kubernetes_share,omitempty"`
+	KubernetesShare []byte `protobuf:"bytes,2,opt,name=kubernetes_share,json=kubernetesShare,proto3" json:"kubernetes_share,omitempty"`
 	// A new node certificate for the node, followed by the certificate of the node CA that issued
 	// it (PEM), which chalkd serves from then on; empty keeps the node's.
-	NodeCertificate []byte `protobuf:"bytes,4,opt,name=node_certificate,json=nodeCertificate,proto3" json:"node_certificate,omitempty"`
+	NodeCertificate []byte `protobuf:"bytes,3,opt,name=node_certificate,json=nodeCertificate,proto3" json:"node_certificate,omitempty"`
 	// PEM key of node_certificate; empty keeps the node's.
-	NodeKey []byte `protobuf:"bytes,5,opt,name=node_key,json=nodeKey,proto3" json:"node_key,omitempty"`
+	NodeKey []byte `protobuf:"bytes,4,opt,name=node_key,json=nodeKey,proto3" json:"node_key,omitempty"`
 	// The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them;
 	// empty keeps the node's. They must verify the node's certificate, the caller's and a control
 	// plane's node CA. Not together with a node certificate.
-	Trust []byte `protobuf:"bytes,6,opt,name=trust,proto3" json:"trust,omitempty"`
+	Trust []byte `protobuf:"bytes,5,opt,name=trust,proto3" json:"trust,omitempty"`
 	// The node's config, as InstallHeader.config holds it, checked against the running image's
 	// schemas. It replaces the node's config as a whole. Empty keeps the node's config and
 	// storage, for a request that delivers only a share, a node certificate or OS CAs.
-	Config string `protobuf:"bytes,7,opt,name=config,proto3" json:"config,omitempty"`
+	Config string `protobuf:"bytes,6,opt,name=config,proto3" json:"config,omitempty"`
 	// Whether the config is for the image staged to boot next: chalkd checks it against that image
 	// and keeps it in that image's config slot, changing nothing the running image runs but the
 	// machine's storage. The config meets that image's change rules, compared with the running
 	// slot's config and the machine as for the running image, and the storage changes they accept
 	// are made at once, with fallback_secret. It takes the config and the fallback secret alone,
 	// and an image staged.
-	Staged        bool `protobuf:"varint,8,opt,name=staged,proto3" json:"staged,omitempty"`
+	Staged        bool `protobuf:"varint,7,opt,name=staged,proto3" json:"staged,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1987,10 +1987,10 @@ type ResetVolumeRequest struct {
 	Volume string `protobuf:"bytes,1,opt,name=volume,proto3" json:"volume,omitempty"`
 	// Recovery key or password enrolled on the volume when it is encrypted; required then, unless
 	// the node's fallback is none.
-	FallbackSecret string `protobuf:"bytes,3,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
+	FallbackSecret string `protobuf:"bytes,2,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
 	// The node's config, as ApplyConfigRequest.config holds it, checked against the running
 	// image's schemas; the volume is created as it defines. Required.
-	Config        string `protobuf:"bytes,4,opt,name=config,proto3" json:"config,omitempty"`
+	Config        string `protobuf:"bytes,3,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2124,32 +2124,32 @@ func (*StatusRequest) Descriptor() ([]byte, []int) {
 type StatusResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The disks of the node's storage, by name, as the boot's storage setup left them.
-	Disks []*DiskStatus `protobuf:"bytes,2,rep,name=disks,proto3" json:"disks,omitempty"`
+	Disks []*DiskStatus `protobuf:"bytes,1,rep,name=disks,proto3" json:"disks,omitempty"`
 	// The volumes of the node's storage, by name.
-	Volumes []*VolumeStatus `protobuf:"bytes,3,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	Volumes []*VolumeStatus `protobuf:"bytes,2,rep,name=volumes,proto3" json:"volumes,omitempty"`
 	// Names of the systemd units that failed.
-	FailedUnits []string `protobuf:"bytes,4,rep,name=failed_units,json=failedUnits,proto3" json:"failed_units,omitempty"`
+	FailedUnits []string `protobuf:"bytes,3,rep,name=failed_units,json=failedUnits,proto3" json:"failed_units,omitempty"`
 	// State of the node's Kubernetes; absent on a node whose image has no Kubernetes.
-	Kubernetes *KubernetesStatus `protobuf:"bytes,5,opt,name=kubernetes,proto3" json:"kubernetes,omitempty"`
+	Kubernetes *KubernetesStatus `protobuf:"bytes,4,opt,name=kubernetes,proto3" json:"kubernetes,omitempty"`
 	// Every certificate the node holds or issues, with its expiry and what needs doing about it.
-	Certificates []*CertificateStatus `protobuf:"bytes,6,rep,name=certificates,proto3" json:"certificates,omitempty"`
+	Certificates []*CertificateStatus `protobuf:"bytes,5,rep,name=certificates,proto3" json:"certificates,omitempty"`
 	// How the node keeps its clock.
-	Time *TimeStatus `protobuf:"bytes,7,opt,name=time,proto3" json:"time,omitempty"`
+	Time *TimeStatus `protobuf:"bytes,6,opt,name=time,proto3" json:"time,omitempty"`
 	// What the node trusts and issues with, by fingerprint.
-	Trust []*TrustStatus `protobuf:"bytes,8,rep,name=trust,proto3" json:"trust,omitempty"`
+	Trust []*TrustStatus `protobuf:"bytes,7,rep,name=trust,proto3" json:"trust,omitempty"`
 	// The image the node booted, and what upgrades installed beside it.
-	Boot *BootStatus `protobuf:"bytes,9,opt,name=boot,proto3" json:"boot,omitempty"`
+	Boot *BootStatus `protobuf:"bytes,8,opt,name=boot,proto3" json:"boot,omitempty"`
 	// The platform the running image was built for.
-	Platform string `protobuf:"bytes,10,opt,name=platform,proto3" json:"platform,omitempty"`
+	Platform string `protobuf:"bytes,9,opt,name=platform,proto3" json:"platform,omitempty"`
 	// SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents
 	// in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by
 	// its own SHA-256. Empty on a node that runs no config, as one installed by an earlier chalkos.
-	ConfigVersion string `protobuf:"bytes,11,opt,name=config_version,json=configVersion,proto3" json:"config_version,omitempty"`
+	ConfigVersion string `protobuf:"bytes,10,opt,name=config_version,json=configVersion,proto3" json:"config_version,omitempty"`
 	// The version of the config kept for the image staged to boot next, as config_version gives
 	// the running one's; empty without a staged image or config for it.
-	StagedConfigVersion string `protobuf:"bytes,12,opt,name=staged_config_version,json=stagedConfigVersion,proto3" json:"staged_config_version,omitempty"`
+	StagedConfigVersion string `protobuf:"bytes,11,opt,name=staged_config_version,json=stagedConfigVersion,proto3" json:"staged_config_version,omitempty"`
 	// The image's outputs, by name.
-	Outputs       []*OutputStatus `protobuf:"bytes,13,rep,name=outputs,proto3" json:"outputs,omitempty"`
+	Outputs       []*OutputStatus `protobuf:"bytes,12,rep,name=outputs,proto3" json:"outputs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4069,14 +4069,14 @@ type UpgradeHeader struct {
 	// Kubernetes setting, makes the storage changes they accept, such as a new volume, at once, and
 	// keeps the config in the image's config slot. Empty carries the running image's config over,
 	// checked against the image the same way. Only the admin role may set it.
-	Config string `protobuf:"bytes,5,opt,name=config,proto3" json:"config,omitempty"`
+	Config string `protobuf:"bytes,3,opt,name=config,proto3" json:"config,omitempty"`
 	// Recovery key or password enrolled on the encrypted volumes the config adds, as
 	// ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is
 	// not none. Only the admin role may set it.
-	FallbackSecret string `protobuf:"bytes,6,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
+	FallbackSecret string `protobuf:"bytes,4,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
 	// Where the node takes the image's parts from. Absent, they follow the header as chunks; for
 	// an image in a registry, the node pulls them and the request carries nothing after the header.
-	Source        *ImageSource `protobuf:"bytes,7,opt,name=source,proto3" json:"source,omitempty"`
+	Source        *ImageSource `protobuf:"bytes,5,opt,name=source,proto3" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4672,22 +4672,23 @@ var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x1achalkos/node/v1/node.proto\x12\x0fchalkos.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\r\n" +
-	"\vInfoRequest\"\xd6\x03\n" +
+	"\vInfoRequest\"\x9e\x03\n" +
 	"\fInfoResponse\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.chalkos.node.v1.ModeR\x04mode\x12\x19\n" +
-	"\bimage_id\x18\x03 \x01(\tR\aimageId\x12\x1c\n" +
-	"\tinstaller\x18\x04 \x01(\bR\tinstaller\x12\x1b\n" +
-	"\tboot_disk\x18\x05 \x01(\tR\bbootDisk\x12\x10\n" +
-	"\x03tpm\x18\x06 \x01(\bR\x03tpm\x12<\n" +
-	"\vsecure_boot\x18\a \x01(\x0e2\x1b.chalkos.node.v1.SecureBootR\n" +
+	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x1c\n" +
+	"\tinstaller\x18\x03 \x01(\bR\tinstaller\x12\x1b\n" +
+	"\tboot_disk\x18\x04 \x01(\tR\bbootDisk\x12\x10\n" +
+	"\x03tpm\x18\x05 \x01(\bR\x03tpm\x12<\n" +
+	"\vsecure_boot\x18\x06 \x01(\x0e2\x1b.chalkos.node.v1.SecureBootR\n" +
 	"secureBoot\x12 \n" +
-	"\vfingerprint\x18\b \x01(\tR\vfingerprint\x12\x1a\n" +
-	"\bhostname\x18\t \x01(\tR\bhostname\x12\x18\n" +
-	"\avariant\x18\v \x01(\tR\avariant\x12\x1a\n" +
-	"\bplatform\x18\f \x01(\tR\bplatform\x12\x1b\n" +
-	"\troot_hash\x18\r \x01(\fR\brootHash\x12\x1a\n" +
-	"\brevision\x18\x0e \x01(\tR\brevision\x12\x10\n" +
-	"\x03tag\x18\x0f \x01(\tR\x03tagJ\x04\b\x10\x10\x11J\x04\b\x11\x10\x12R\x14pulls_upgrade_imagesR\x14pulls_install_images\"\x0e\n" +
+	"\vfingerprint\x18\a \x01(\tR\vfingerprint\x12\x1a\n" +
+	"\bhostname\x18\b \x01(\tR\bhostname\x12\x18\n" +
+	"\avariant\x18\t \x01(\tR\avariant\x12\x1a\n" +
+	"\bplatform\x18\n" +
+	" \x01(\tR\bplatform\x12\x1b\n" +
+	"\troot_hash\x18\v \x01(\fR\brootHash\x12\x1a\n" +
+	"\brevision\x18\f \x01(\tR\brevision\x12\x10\n" +
+	"\x03tag\x18\r \x01(\tR\x03tag\"\x0e\n" +
 	"\fDisksRequest\"<\n" +
 	"\rDisksResponse\x12+\n" +
 	"\x05disks\x18\x01 \x03(\v2\x15.chalkos.node.v1.DiskR\x05disks\"\x80\x02\n" +
@@ -4713,42 +4714,42 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x05label\x18\x05 \x01(\tR\x05label\x12\x12\n" +
 	"\x04uuid\x18\x06 \x01(\tR\x04uuid\x12\x18\n" +
 	"\acontent\x18\a \x01(\tR\acontent\"\x11\n" +
-	"\x0fContractRequest\"\x93\x02\n" +
+	"\x0fContractRequest\"\xf9\x01\n" +
 	"\x10ContractResponse\x12H\n" +
 	"\aschemas\x18\x01 \x03(\v2..chalkos.node.v1.ContractResponse.SchemasEntryR\aschemas\x12\x18\n" +
-	"\avariant\x18\x04 \x01(\tR\avariant\x12\x1a\n" +
-	"\bplatform\x18\x05 \x01(\tR\bplatform\x12)\n" +
-	"\x10kubernetes_image\x18\x06 \x01(\fR\x0fkubernetesImage\x1a:\n" +
+	"\avariant\x18\x02 \x01(\tR\avariant\x12\x1a\n" +
+	"\bplatform\x18\x03 \x01(\tR\bplatform\x12)\n" +
+	"\x10kubernetes_image\x18\x04 \x01(\fR\x0fkubernetesImage\x1a:\n" +
 	"\fSchemasEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01J\x04\b\x02\x10\x03R\x12kubernetes_cluster\"\x8a\x01\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"\x8a\x01\n" +
 	"\x0eInstallRequest\x128\n" +
 	"\x06header\x18\x01 \x01(\v2\x1e.chalkos.node.v1.InstallHeaderH\x00R\x06header\x123\n" +
 	"\x05chunk\x18\x02 \x01(\v2\x1b.chalkos.node.v1.ImageChunkH\x00R\x05chunkB\t\n" +
-	"\amessage\"\xea\x06\n" +
+	"\amessage\"\xc0\x06\n" +
 	"\rInstallHeader\x12)\n" +
-	"\x10node_certificate\x18\x02 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
-	"\bnode_key\x18\x03 \x01(\fR\anodeKey\x12%\n" +
-	"\x0eca_certificate\x18\x04 \x01(\fR\rcaCertificate\x12'\n" +
-	"\x0ffallback_secret\x18\x05 \x01(\tR\x0efallbackSecret\x125\n" +
-	"\bin_place\x18\x06 \x01(\v2\x18.chalkos.node.v1.InPlaceH\x00R\ainPlace\x124\n" +
-	"\x04disk\x18\a \x01(\v2\x1e.chalkos.node.v1.DiskReferenceH\x00R\x04disk\x122\n" +
-	"\x05image\x18\b \x01(\v2\x1c.chalkos.node.v1.ImageHeaderR\x05image\x12\x1b\n" +
-	"\twipe_disk\x18\t \x01(\bR\bwipeDisk\x12d\n" +
-	"\x12system_definitions\x18\n" +
-	" \x03(\v25.chalkos.node.v1.InstallHeader.SystemDefinitionsEntryR\x11systemDefinitions\x12)\n" +
-	"\x10kubernetes_share\x18\v \x01(\fR\x0fkubernetesShare\x12\x16\n" +
-	"\x06config\x18\f \x01(\tR\x06config\x12E\n" +
-	"\aschemas\x18\r \x03(\v2+.chalkos.node.v1.InstallHeader.SchemasEntryR\aschemas\x12)\n" +
-	"\x10kubernetes_image\x18\x0f \x01(\fR\x0fkubernetesImage\x124\n" +
-	"\x06source\x18\x10 \x01(\v2\x1c.chalkos.node.v1.ImageSourceR\x06source\x1aD\n" +
+	"\x10node_certificate\x18\x01 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
+	"\bnode_key\x18\x02 \x01(\fR\anodeKey\x12%\n" +
+	"\x0eca_certificate\x18\x03 \x01(\fR\rcaCertificate\x12'\n" +
+	"\x0ffallback_secret\x18\x04 \x01(\tR\x0efallbackSecret\x125\n" +
+	"\bin_place\x18\x05 \x01(\v2\x18.chalkos.node.v1.InPlaceH\x00R\ainPlace\x124\n" +
+	"\x04disk\x18\x06 \x01(\v2\x1e.chalkos.node.v1.DiskReferenceH\x00R\x04disk\x122\n" +
+	"\x05image\x18\a \x01(\v2\x1c.chalkos.node.v1.ImageHeaderR\x05image\x12\x1b\n" +
+	"\twipe_disk\x18\b \x01(\bR\bwipeDisk\x12d\n" +
+	"\x12system_definitions\x18\t \x03(\v25.chalkos.node.v1.InstallHeader.SystemDefinitionsEntryR\x11systemDefinitions\x12)\n" +
+	"\x10kubernetes_share\x18\n" +
+	" \x01(\fR\x0fkubernetesShare\x12\x16\n" +
+	"\x06config\x18\v \x01(\tR\x06config\x12E\n" +
+	"\aschemas\x18\f \x03(\v2+.chalkos.node.v1.InstallHeader.SchemasEntryR\aschemas\x12)\n" +
+	"\x10kubernetes_image\x18\r \x01(\fR\x0fkubernetesImage\x124\n" +
+	"\x06source\x18\x0e \x01(\v2\x1c.chalkos.node.v1.ImageSourceR\x06source\x1aD\n" +
 	"\x16SystemDefinitionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
 	"\fSchemasEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01B\b\n" +
-	"\x06targetJ\x04\b\x01\x10\x02J\x04\b\x0e\x10\x0fR\bidentityR\x12kubernetes_cluster\"\t\n" +
+	"\x06target\"\t\n" +
 	"\aInPlace\"\x8b\x01\n" +
 	"\rDiskReference\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x14\n" +
@@ -4756,20 +4757,20 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x06serial\x18\x03 \x01(\tR\x06serial\x12\x10\n" +
 	"\x03wwn\x18\x04 \x01(\tR\x03wwn\x12\x12\n" +
 	"\x04size\x18\x05 \x01(\tR\x04size\x12\x12\n" +
-	"\x04type\x18\x06 \x01(\tR\x04type\"\x95\x03\n" +
+	"\x04type\x18\x06 \x01(\tR\x04type\"\x89\x03\n" +
 	"\vImageHeader\x12\x19\n" +
-	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x1b\n" +
-	"\troot_hash\x18\x05 \x01(\fR\brootHash\x120\n" +
-	"\x05store\x18\x06 \x01(\v2\x1a.chalkos.node.v1.ImagePartR\x05store\x127\n" +
-	"\thash_tree\x18\a \x01(\v2\x1a.chalkos.node.v1.ImagePartR\bhashTree\x12,\n" +
-	"\x03uki\x18\b \x01(\v2\x1a.chalkos.node.v1.ImagePartR\x03uki\x12;\n" +
-	"\vboot_loader\x18\t \x01(\v2\x1a.chalkos.node.v1.ImagePartR\n" +
+	"\bimage_id\x18\x01 \x01(\tR\aimageId\x12\x1b\n" +
+	"\troot_hash\x18\x02 \x01(\fR\brootHash\x120\n" +
+	"\x05store\x18\x03 \x01(\v2\x1a.chalkos.node.v1.ImagePartR\x05store\x127\n" +
+	"\thash_tree\x18\x04 \x01(\v2\x1a.chalkos.node.v1.ImagePartR\bhashTree\x12,\n" +
+	"\x03uki\x18\x05 \x01(\v2\x1a.chalkos.node.v1.ImagePartR\x03uki\x12;\n" +
+	"\vboot_loader\x18\x06 \x01(\v2\x1a.chalkos.node.v1.ImagePartR\n" +
 	"bootLoader\x12\"\n" +
-	"\farchitecture\x18\n" +
-	" \x01(\tR\farchitecture\x12\x1a\n" +
-	"\bplatform\x18\v \x01(\tR\bplatform\x12\x1a\n" +
-	"\brevision\x18\f \x01(\tR\brevision\x12\x10\n" +
-	"\x03tag\x18\r \x01(\tR\x03tagJ\x04\b\x04\x10\x05R\x04role\"7\n" +
+	"\farchitecture\x18\a \x01(\tR\farchitecture\x12\x1a\n" +
+	"\bplatform\x18\b \x01(\tR\bplatform\x12\x1a\n" +
+	"\brevision\x18\t \x01(\tR\brevision\x12\x10\n" +
+	"\x03tag\x18\n" +
+	" \x01(\tR\x03tag\"7\n" +
 	"\tImagePart\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x04R\x04size\x12\x16\n" +
 	"\x06sha256\x18\x02 \x01(\fR\x06sha256\"K\n" +
@@ -4781,15 +4782,15 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"ImageChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\"\x11\n" +
-	"\x0fInstallResponse\"\x84\x02\n" +
+	"\x0fInstallResponse\"\xf4\x01\n" +
 	"\x12ApplyConfigRequest\x12'\n" +
-	"\x0ffallback_secret\x18\x02 \x01(\tR\x0efallbackSecret\x12)\n" +
-	"\x10kubernetes_share\x18\x03 \x01(\fR\x0fkubernetesShare\x12)\n" +
-	"\x10node_certificate\x18\x04 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
-	"\bnode_key\x18\x05 \x01(\fR\anodeKey\x12\x14\n" +
-	"\x05trust\x18\x06 \x01(\fR\x05trust\x12\x16\n" +
-	"\x06config\x18\a \x01(\tR\x06config\x12\x16\n" +
-	"\x06staged\x18\b \x01(\bR\x06stagedJ\x04\b\x01\x10\x02R\bidentity\"*\n" +
+	"\x0ffallback_secret\x18\x01 \x01(\tR\x0efallbackSecret\x12)\n" +
+	"\x10kubernetes_share\x18\x02 \x01(\fR\x0fkubernetesShare\x12)\n" +
+	"\x10node_certificate\x18\x03 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
+	"\bnode_key\x18\x04 \x01(\fR\anodeKey\x12\x14\n" +
+	"\x05trust\x18\x05 \x01(\fR\x05trust\x12\x16\n" +
+	"\x06config\x18\x06 \x01(\tR\x06config\x12\x16\n" +
+	"\x06staged\x18\a \x01(\bR\x06staged\"*\n" +
 	"\x10GetConfigRequest\x12\x16\n" +
 	"\x06staged\x18\x01 \x01(\bR\x06staged\"K\n" +
 	"\x11GetConfigResponse\x12\x1c\n" +
@@ -4801,29 +4802,29 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\bwarnings\x18\x03 \x03(\tR\bwarnings\"?\n" +
 	"\rStorageChange\x12\x16\n" +
 	"\x06volume\x18\x01 \x01(\tR\x06volume\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"}\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"m\n" +
 	"\x12ResetVolumeRequest\x12\x16\n" +
 	"\x06volume\x18\x01 \x01(\tR\x06volume\x12'\n" +
-	"\x0ffallback_secret\x18\x03 \x01(\tR\x0efallbackSecret\x12\x16\n" +
-	"\x06config\x18\x04 \x01(\tR\x06configJ\x04\b\x02\x10\x03R\bidentity\"\x15\n" +
+	"\x0ffallback_secret\x18\x02 \x01(\tR\x0efallbackSecret\x12\x16\n" +
+	"\x06config\x18\x03 \x01(\tR\x06config\"\x15\n" +
 	"\x13ResetVolumeResponse\"\x0f\n" +
-	"\rStatusRequest\"\x88\x05\n" +
+	"\rStatusRequest\"\xf0\x04\n" +
 	"\x0eStatusResponse\x121\n" +
-	"\x05disks\x18\x02 \x03(\v2\x1b.chalkos.node.v1.DiskStatusR\x05disks\x127\n" +
-	"\avolumes\x18\x03 \x03(\v2\x1d.chalkos.node.v1.VolumeStatusR\avolumes\x12!\n" +
-	"\ffailed_units\x18\x04 \x03(\tR\vfailedUnits\x12A\n" +
+	"\x05disks\x18\x01 \x03(\v2\x1b.chalkos.node.v1.DiskStatusR\x05disks\x127\n" +
+	"\avolumes\x18\x02 \x03(\v2\x1d.chalkos.node.v1.VolumeStatusR\avolumes\x12!\n" +
+	"\ffailed_units\x18\x03 \x03(\tR\vfailedUnits\x12A\n" +
 	"\n" +
-	"kubernetes\x18\x05 \x01(\v2!.chalkos.node.v1.KubernetesStatusR\n" +
+	"kubernetes\x18\x04 \x01(\v2!.chalkos.node.v1.KubernetesStatusR\n" +
 	"kubernetes\x12F\n" +
-	"\fcertificates\x18\x06 \x03(\v2\".chalkos.node.v1.CertificateStatusR\fcertificates\x12/\n" +
-	"\x04time\x18\a \x01(\v2\x1b.chalkos.node.v1.TimeStatusR\x04time\x122\n" +
-	"\x05trust\x18\b \x03(\v2\x1c.chalkos.node.v1.TrustStatusR\x05trust\x12/\n" +
-	"\x04boot\x18\t \x01(\v2\x1b.chalkos.node.v1.BootStatusR\x04boot\x12\x1a\n" +
-	"\bplatform\x18\n" +
-	" \x01(\tR\bplatform\x12%\n" +
-	"\x0econfig_version\x18\v \x01(\tR\rconfigVersion\x122\n" +
-	"\x15staged_config_version\x18\f \x01(\tR\x13stagedConfigVersion\x127\n" +
-	"\aoutputs\x18\r \x03(\v2\x1d.chalkos.node.v1.OutputStatusR\aoutputsJ\x04\b\x01\x10\x02R\x10identity_version\"L\n" +
+	"\fcertificates\x18\x05 \x03(\v2\".chalkos.node.v1.CertificateStatusR\fcertificates\x12/\n" +
+	"\x04time\x18\x06 \x01(\v2\x1b.chalkos.node.v1.TimeStatusR\x04time\x122\n" +
+	"\x05trust\x18\a \x03(\v2\x1c.chalkos.node.v1.TrustStatusR\x05trust\x12/\n" +
+	"\x04boot\x18\b \x01(\v2\x1b.chalkos.node.v1.BootStatusR\x04boot\x12\x1a\n" +
+	"\bplatform\x18\t \x01(\tR\bplatform\x12%\n" +
+	"\x0econfig_version\x18\n" +
+	" \x01(\tR\rconfigVersion\x122\n" +
+	"\x15staged_config_version\x18\v \x01(\tR\x13stagedConfigVersion\x127\n" +
+	"\aoutputs\x18\f \x03(\v2\x1d.chalkos.node.v1.OutputStatusR\aoutputs\"L\n" +
 	"\fOutputStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\tR\x04hash\x12\x14\n" +
@@ -4934,13 +4935,13 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x0eUpgradeRequest\x128\n" +
 	"\x06header\x18\x01 \x01(\v2\x1e.chalkos.node.v1.UpgradeHeaderH\x00R\x06header\x123\n" +
 	"\x05chunk\x18\x02 \x01(\v2\x1b.chalkos.node.v1.ImageChunkH\x00R\x05chunkB\t\n" +
-	"\amessage\"\xf9\x01\n" +
+	"\amessage\"\xd2\x01\n" +
 	"\rUpgradeHeader\x122\n" +
 	"\x05image\x18\x01 \x01(\v2\x1c.chalkos.node.v1.ImageHeaderR\x05image\x12\x16\n" +
 	"\x06reboot\x18\x02 \x01(\bR\x06reboot\x12\x16\n" +
-	"\x06config\x18\x05 \x01(\tR\x06config\x12'\n" +
-	"\x0ffallback_secret\x18\x06 \x01(\tR\x0efallbackSecret\x124\n" +
-	"\x06source\x18\a \x01(\v2\x1c.chalkos.node.v1.ImageSourceR\x06sourceJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\aschemasR\x10kubernetes_image\"\x99\x01\n" +
+	"\x06config\x18\x03 \x01(\tR\x06config\x12'\n" +
+	"\x0ffallback_secret\x18\x04 \x01(\tR\x0efallbackSecret\x124\n" +
+	"\x06source\x18\x05 \x01(\v2\x1c.chalkos.node.v1.ImageSourceR\x06source\"\x99\x01\n" +
 	"\x0fUpgradeResponse\x12+\n" +
 	"\x11already_installed\x18\x01 \x01(\bR\x10alreadyInstalled\x12\x14\n" +
 	"\x05entry\x18\x02 \x01(\tR\x05entry\x12\x1c\n" +
