@@ -236,8 +236,11 @@ func TestKubernetesCluster(t *testing.T) {
 
 	// Revoking w1 deletes its Node, and with it the pod the rotations' checks need: it comes after
 	// them.
+	// The rotated secrets outlive the rotations phase: the later phases' chalkctl calls read them.
+	secrets := copySecrets(t, dir)
+	t.Setenv("CHALKLAB_SECRETS", secrets)
 	var rotated string
-	if !t.Run("rotations", func(t *testing.T) { rotated = rotations(t, ctx, nodes, p, dir, apiPort) }) {
+	if !t.Run("rotations", func(t *testing.T) { rotated = rotations(t, ctx, nodes, p, dir, secrets, apiPort) }) {
 		return
 	}
 	if !t.Run("revocation", func(t *testing.T) { revocation(t, ctx, nodes, rotated) }) {

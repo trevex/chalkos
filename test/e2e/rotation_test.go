@@ -32,13 +32,11 @@ var rotationSecret = &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "de
 // rotations rotates the OS CA, the Kubernetes CAs, the service-account key and the encryption
 // key one after the other. After each finish the pods reach each other and resolve names, the
 // Secret reads back, and what the old value issued is refused: a client file of the old OS CA,
-// a kubeconfig of the old Kubernetes CA. The rotations update a copy of the test's secrets file,
-// which every later chalkctl call reads. It returns the path of a kubeconfig of the new
-// Kubernetes CA.
-func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peers, dir string, apiPort int) string {
+// a kubeconfig of the old Kubernetes CA. The rotations update secrets, a copy of the test's
+// secrets file that the caller makes CHALKLAB_SECRETS for every later chalkctl call. It returns
+// the path of a kubeconfig of the new Kubernetes CA.
+func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peers, dir, secrets string, apiPort int) string {
 	t.Helper()
-	secrets := copySecrets(t, dir)
-	t.Setenv("CHALKLAB_SECRETS", secrets)
 	kubeconfig := func(name string) (string, kubernetes.Interface) {
 		path := filepath.Join(dir, name)
 		if _, err := chalkctl(t, nil, "base", "kubeconfig", "--out", path, "--force", "--server", fmt.Sprintf("https://127.0.0.1:%d", apiPort)); err != nil {
