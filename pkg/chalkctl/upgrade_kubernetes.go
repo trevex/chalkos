@@ -22,6 +22,9 @@ func (r *upgradeRun) quorum(ctx context.Context, name string) error {
 	return waitFor(ctx, "", r.quorumWait, r.poll, func() error { return r.quorumOnce(ctx, name) })
 }
 
+// quorumOnce checks the quorum once. A reboot keeps every voter, so the quorum counts them all,
+// the rebooting one included; etcd.CheckQuorum counts a removal's quorum over the voters left.
+// With 4 voters a reboot needs 3 healthy others, a removal 2.
 func (r *upgradeRun) quorumOnce(ctx context.Context, name string) error {
 	var members []*nodev1.EtcdMember
 	err := r.viaControlPlanes(name, tryNextControlPlane, func(conn *client.Conn) error {
