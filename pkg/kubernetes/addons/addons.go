@@ -141,21 +141,21 @@ type kubeProxyConfiguration struct {
 // The kubeconfig of a pod's service account, its fields in key order.
 type (
 	serviceAccountKubeconfig struct {
-		APIVersion     string         `json:"apiVersion"`
-		Clusters       []namedCluster `json:"clusters"`
-		Contexts       []namedContext `json:"contexts"`
-		CurrentContext string         `json:"current-context"`
-		Kind           string         `json:"kind"`
-		Users          []namedUser    `json:"users"`
+		APIVersion     string      `json:"apiVersion"`
+		Clusters       []saCluster `json:"clusters"`
+		Contexts       []saContext `json:"contexts"`
+		CurrentContext string      `json:"current-context"`
+		Kind           string      `json:"kind"`
+		Users          []saUser    `json:"users"`
 	}
-	namedCluster struct {
+	saCluster struct {
 		Cluster struct {
 			CertificateAuthority string `json:"certificate-authority"`
 			Server               string `json:"server"`
 		} `json:"cluster"`
 		Name string `json:"name"`
 	}
-	namedContext struct {
+	saContext struct {
 		Context struct {
 			Cluster   string `json:"cluster"`
 			Namespace string `json:"namespace"`
@@ -163,7 +163,7 @@ type (
 		} `json:"context"`
 		Name string `json:"name"`
 	}
-	namedUser struct {
+	saUser struct {
 		Name string `json:"name"`
 		User struct {
 			TokenFile string `json:"tokenFile"`
@@ -199,22 +199,22 @@ func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
 		return nil, err
 	}
 	// Pods reach the API server at the cluster endpoint: the service address needs kube-proxy.
-	cluster := namedCluster{Name: "default"}
+	cluster := saCluster{Name: "default"}
 	cluster.Cluster.CertificateAuthority = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 	cluster.Cluster.Server = c.Endpoint
-	context := namedContext{Name: "default"}
+	context := saContext{Name: "default"}
 	context.Context.Cluster = "default"
 	context.Context.Namespace = "default"
 	context.Context.User = "default"
-	user := namedUser{Name: "default"}
+	user := saUser{Name: "default"}
 	user.User.TokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	kubeconfig, err := compact(serviceAccountKubeconfig{
 		APIVersion:     "v1",
 		Kind:           "Config",
-		Clusters:       []namedCluster{cluster},
-		Contexts:       []namedContext{context},
+		Clusters:       []saCluster{cluster},
+		Contexts:       []saContext{context},
 		CurrentContext: "default",
-		Users:          []namedUser{user},
+		Users:          []saUser{user},
 	})
 	if err != nil {
 		return nil, err

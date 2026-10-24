@@ -361,3 +361,73 @@ func TestControlPlaneLeaves(t *testing.T) {
 		t.Error("a missing certificate went unnoticed")
 	}
 }
+
+// TestConfigFilesBytes pins the authentication and encryption configurations byte for byte: the
+// API server restarts when either file changes.
+func TestConfigFilesBytes(t *testing.T) {
+	auth, err := authenticationConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAuth := `{
+  "anonymous": {
+    "conditions": [
+      {
+        "path": "/livez"
+      },
+      {
+        "path": "/readyz"
+      },
+      {
+        "path": "/healthz"
+      }
+    ],
+    "enabled": true
+  },
+  "apiVersion": "apiserver.config.k8s.io/v1",
+  "kind": "AuthenticationConfiguration"
+}`
+	if string(auth) != wantAuth {
+		t.Errorf("authentication configuration =\n%s\nwant\n%s", auth, wantAuth)
+	}
+	enc, err := encryptionConfig([]pki.EncryptionKey{
+		{Name: "k1", Key: make([]byte, pki.EncryptionKeySize)},
+		{Name: "k0", Key: []byte("0123456789abcdef0123456789abcdef")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEnc := `{
+  "apiVersion": "apiserver.config.k8s.io/v1",
+  "kind": "EncryptionConfiguration",
+  "resources": [
+    {
+      "providers": [
+        {
+          "secretbox": {
+            "keys": [
+              {
+                "name": "k1",
+                "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+              },
+              {
+                "name": "k0",
+                "secret": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+              }
+            ]
+          }
+        },
+        {
+          "identity": {}
+        }
+      ],
+      "resources": [
+        "secrets"
+      ]
+    }
+  ]
+}`
+	if string(enc) != wantEnc {
+		t.Errorf("encryption configuration =\n%s\nwant\n%s", enc, wantEnc)
+	}
+}
