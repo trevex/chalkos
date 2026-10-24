@@ -12,6 +12,7 @@
   chalkos.kinds.Hardware = {
     group = "hardware.example.org";
     version = "v1alpha1";
+    description = "Who made the node's server and which model it is.";
     spec = {
       vendor = lib.mkOption {
         type = lib.types.nonEmptyStr;

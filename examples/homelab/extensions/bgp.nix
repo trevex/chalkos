@@ -45,6 +45,7 @@ in
   chalkos.kinds.Peer = {
     group = "bgp.example.org";
     version = "v1alpha1";
+    description = "A BGP neighbour that the node's bird connects to.";
     multiple = true;
     spec = {
       # The address lands in bird.conf, so the pattern accepts an IPv4 or IPv6 address and

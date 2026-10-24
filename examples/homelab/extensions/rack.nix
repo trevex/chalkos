@@ -12,6 +12,7 @@
   chalkos.kinds.Rack = {
     group = "rack.example.org";
     version = "v1alpha1";
+    description = "The rack and height unit a node is mounted in.";
     spec.location = lib.chalkos.mkOption {
       type = lib.types.nonEmptyStr;
       example = "rack-a/u12";

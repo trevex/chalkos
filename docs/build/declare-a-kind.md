@@ -27,12 +27,14 @@ declares it:
 --8<-- "examples/homelab/extensions/bgp.nix:kind"
 ```
 
-The declaration sets four things:
+The declaration sets five things:
 
 - `group` is a DNS name you control. chalkos keeps `chalkos.dev` and its subdomains for its own
   kinds, and the build refuses a kind of yours in them.
 - `version` is the kind's API version, such as `v1alpha1` or `v1`. A document names group and
   version together as its `apiVersion`, here `bgp.example.org/v1alpha1`.
+- `description` is a sentence that says what a document of the kind is for. The kind's schema
+  carries it as its own `description`. A kind may leave it out.
 - `multiple = true` lets a node hold several `Peer` documents, each with a name of its own.
   Without it, a node holds at most one document of the kind.
 - `spec` declares the document's fields as NixOS options, under the names the YAML uses.
@@ -61,6 +63,7 @@ and the `description` of `password` are left out:
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Peer",
+  "description": "A BGP neighbour that the node's bird connects to.",
   "type": "object",
   "properties": {
     "apiVersion": {"const": "bgp.example.org/v1alpha1"},
@@ -124,7 +127,8 @@ Each part of the schema comes from the options:
 - `required` lists the fields without a default.
 - `strMatching` becomes a `pattern` anchored at both ends.
 - `ints.between 1 4294967295` becomes `minimum` and `maximum`.
-- `description`, `default` and `example` carry over, the example as `examples`.
+- The kind's `description`, and its fields' `description`, `default` and `example`, carry
+  over, the example as `examples`.
 - `x-chalkos-rules` holds the field's change rules, and `x-chalkos-kind` holds the kind's group,
   version and `multiple`.
 
