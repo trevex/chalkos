@@ -252,7 +252,7 @@ func nodeAccepts(ctx context.Context, addr, clientFile string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := client.Dial(addr, client.Options{Insecure: true, Certificate: cert})
+	conn, err := client.Dial(addr, client.Options{Verify: client.AnyCertificate(), Certificate: cert})
 	if err != nil {
 		return err
 	}

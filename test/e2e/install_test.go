@@ -38,7 +38,7 @@ func TestInstallInPlace(t *testing.T) {
 	readFacts(t, n.vm, 5*time.Minute)
 
 	// The image carries the OS CA, so even in maintenance mode a client needs its certificate.
-	anonymous, err := client.Dial(n.addr, client.Options{Insecure: true})
+	anonymous, err := client.Dial(n.addr, client.Options{Verify: client.AnyCertificate()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -92,7 +92,7 @@ func chalkdInfo(n *node, timeout time.Duration) (*nodev1.InfoResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := client.Dial(n.addr, client.Options{Insecure: true, Certificate: cert})
+	c, err := client.Dial(n.addr, client.Options{Verify: client.AnyCertificate(), Certificate: cert})
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func dialInstalled(n *node, name string, cert *tls.Certificate) (*client.Conn, e
 	}
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
-	return client.Dial(n.addr, client.Options{CA: pool, ServerName: name, Certificate: cert})
+	return client.Dial(n.addr, client.Options{Verify: client.ByCA(pool, name), Certificate: cert})
 }
 
 func info(c *client.Conn) error {

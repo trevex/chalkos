@@ -69,7 +69,7 @@ func TestApplyConfigReplacesTheOSCAs(t *testing.T) {
 	addr := serveTLS(t, s.Handler(), TLSConfig(s.Certificate.GetCertificate, s.Certificate.ClientCAs))
 	roots, _ := pki.BundlePool(both)
 	reach := func() error {
-		c, err := client.Dial(addr, client.Options{CA: roots, ServerName: "n1", Certificate: nextClient})
+		c, err := client.Dial(addr, client.Options{Verify: client.ByCA(roots, "n1"), Certificate: nextClient})
 		if err != nil {
 			return err
 		}
@@ -328,7 +328,7 @@ func TestCallsVerifyAgainstTheCurrentOSCAs(t *testing.T) {
 	t.Cleanup(func() { srv.Close() })
 	roots, _ := pki.BundlePool(both)
 	open := func(cert *tls.Certificate) *client.Conn {
-		c, err := client.Dial(ln.Addr().String(), client.Options{CA: roots, ServerName: "n1", Certificate: cert})
+		c, err := client.Dial(ln.Addr().String(), client.Options{Verify: client.ByCA(roots, "n1"), Certificate: cert})
 		if err != nil {
 			t.Fatal(err)
 		}

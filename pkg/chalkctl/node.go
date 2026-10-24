@@ -135,7 +135,11 @@ func dialNode(t *target, ignoreValidity bool) (*client.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	o := client.Options{CA: roots, ServerName: t.name, Certificate: t.creds.cert, IgnoreValidity: ignoreValidity, Source: t.source}
+	verify := client.ByCA(roots, t.name)
+	if ignoreValidity {
+		verify = client.ByCAIgnoringValidity(roots, t.name)
+	}
+	o := client.Options{Verify: verify, Certificate: t.creds.cert, Source: t.source}
 	if path := t.creds.configPath; t.creds.config != nil {
 		o.Untrusted = func(err error, refused bool) error {
 			if refused {
@@ -167,7 +171,11 @@ func (p pinning) dial(addr, source string, cert *tls.Certificate) (*client.Conn,
 	if !p.set() {
 		return nil, errors.New("a node in maintenance mode is verified by its certificate's fingerprint; pass --fingerprint FP, or --insecure to accept any certificate")
 	}
-	return client.Dial(addr, client.Options{Fingerprint: p.fingerprint, Insecure: p.insecure, Certificate: cert, Source: source})
+	verify := client.ByFingerprint(p.fingerprint)
+	if p.insecure {
+		verify = client.AnyCertificate()
+	}
+	return client.Dial(addr, client.Options{Verify: verify, Certificate: cert, Source: source})
 }
 
 // fallbackSecret returns the secret enrolled as the second keyslot of the node's encrypted
@@ -327,7 +335,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		}
 		fp := conn.Fingerprint()
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", fp)
-		if conn, err = client.Dial(t.addr, client.Options{Fingerprint: fp, Certificate: cert, Source: t.source}); err != nil {
+		if conn, err = client.Dial(t.addr, client.Options{Verify: client.ByFingerprint(fp), Certificate: cert, Source: t.source}); err != nil {
 			return err
 		}
 	}

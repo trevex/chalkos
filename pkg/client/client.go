@@ -26,20 +26,9 @@ const Port = "50000"
 
 // Options say how to verify the node and how to authenticate to it.
 type Options struct {
-	// Fingerprint pins the node's certificate by its SHA-256.
-	Fingerprint string
-	// Insecure accepts any certificate; Conn.Fingerprint reports what the node presented.
-	Insecure bool
-	// CA verifies the certificate of an installed node, which must be valid for ServerName.
-	CA         *x509.CertPool
-	ServerName string
-	// AnyNode accepts, instead of ServerName, any node certificate that verifies against CA
-	// through a node CA, as a node reaching a control plane through an address that names no
-	// node, such as a VIP, does.
-	AnyNode bool
-	// IgnoreValidity verifies the node's chain by CA as of the node certificate's start, so a node
-	// whose certificate expired is reached to deliver it a new one. Nothing else may use it.
-	IgnoreValidity bool
+	// Verify checks the node's certificate. Whichever it is, Conn.Fingerprint reports the
+	// certificate the node presented.
+	Verify Verifier
 	// Certificate is presented to the node; nil presents none. GetClientCertificate, when set,
 	// replaces it.
 	Certificate          *tls.Certificate
@@ -47,7 +36,7 @@ type Options struct {
 	// Source says where the address came from, such as --address; an error reaching it names it.
 	Source string
 	// Untrusted, when set, gives the error of a call whose TLS handshake failed because the
-	// node's certificate does not verify against CA or because the node refused Certificate for
+	// node's certificate does not verify against the CA or because the node refused Certificate for
 	// an issuer it does not know; it is passed the handshake's error and whether the node
 	// refused.
 	Untrusted func(err error, refused bool) error
@@ -139,24 +128,11 @@ func (c *Conn) Fingerprint() string {
 // Dial prepares a client of the node at endpoint, host or host:port; the port defaults to
 // chalkd's. The TLS handshake happens with the first call, before any request is sent.
 func Dial(endpoint string, o Options) (*Conn, error) {
-	modes := 0
-	for _, set := range []bool{o.Fingerprint != "", o.Insecure, o.CA != nil} {
-		if set {
-			modes++
-		}
+	if o.Verify == nil {
+		return nil, errors.New("no way to verify the node is given")
 	}
-	if modes != 1 {
-		return nil, errors.New("exactly one of a fingerprint, insecure or a CA must be given")
-	}
-	// The CA issues every node's certificate; only the name tells this node from the others.
-	if o.CA != nil && o.ServerName == "" && !o.AnyNode {
-		return nil, errors.New("verifying the node by the CA needs the node's name")
-	}
-	if o.IgnoreValidity && (o.CA == nil || o.AnyNode) {
-		return nil, errors.New("ignoring the validity needs the CA and the node's name")
-	}
-	if o.AnyNode && (o.CA == nil || o.ServerName != "") {
-		return nil, errors.New("accepting any node needs the CA and no node's name")
+	if err := o.Verify.check(); err != nil {
+		return nil, err
 	}
 	if _, _, err := net.SplitHostPort(endpoint); err != nil {
 		endpoint = net.JoinHostPort(endpoint, Port)
@@ -167,43 +143,7 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 		// Verification is VerifyConnection's job: by fingerprint, or by the CA for the node's
 		// name, which may differ from the address it is reached at.
 		InsecureSkipVerify: true,
-		VerifyConnection: func(cs tls.ConnectionState) error {
-			if len(cs.PeerCertificates) == 0 {
-				return errors.New("the node presented no certificate")
-			}
-			leaf := cs.PeerCertificates[0]
-			fp := pki.Fingerprint(leaf.Raw)
-			c.mu.Lock()
-			c.fingerprint = fp
-			c.mu.Unlock()
-			switch {
-			case o.Insecure:
-				return nil
-			case o.Fingerprint != "":
-				if want := pki.NormalizeFingerprint(o.Fingerprint); fp != want {
-					return fmt.Errorf("the node's certificate has the fingerprint %s, not %s", fp, want)
-				}
-				return nil
-			}
-			intermediates := x509.NewCertPool()
-			for _, cert := range cs.PeerCertificates[1:] {
-				intermediates.AddCert(cert)
-			}
-			verify := x509.VerifyOptions{Roots: o.CA, Intermediates: intermediates, DNSName: o.ServerName,
-				KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
-			if o.IgnoreValidity {
-				// Each CA's validity covers the start of what it issued.
-				verify.CurrentTime = leaf.NotBefore
-			}
-			chains, err := leaf.Verify(verify)
-			if err != nil {
-				return err
-			}
-			if role, _ := pki.ClientRole(chains); o.AnyNode && role != pki.RoleNode {
-				return errors.New("the peer's certificate is not a node certificate")
-			}
-			return nil
-		},
+		VerifyConnection:   func(cs tls.ConnectionState) error { return c.verifyConnection(cs, o.Verify) },
 	}
 	if o.Certificate != nil {
 		cfg.Certificates = []tls.Certificate{*o.Certificate}
@@ -222,6 +162,19 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 	}
 	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(&http.Client{Transport: rt}, "https://"+endpoint)
 	return c, nil
+}
+
+// verifyConnection records the fingerprint of the node's certificate and checks the certificate
+// with v.
+func (c *Conn) verifyConnection(cs tls.ConnectionState, v Verifier) error {
+	if len(cs.PeerCertificates) == 0 {
+		return errors.New("the node presented no certificate")
+	}
+	fp := pki.Fingerprint(cs.PeerCertificates[0].Raw)
+	c.mu.Lock()
+	c.fingerprint = fp
+	c.mu.Unlock()
+	return v.verify(cs.PeerCertificates, fp)
 }
 
 // untrusted replaces the error of a request whose TLS handshake failed for want of trust, as

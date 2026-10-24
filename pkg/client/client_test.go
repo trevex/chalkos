@@ -71,7 +71,7 @@ func TestPinnedFingerprint(t *testing.T) {
 	cert, _ := pki.ParseCertificate([]byte(self.Certificate))
 	fp := pki.Fingerprint(cert.Raw)
 
-	c, err := Dial(addr, Options{Fingerprint: strings.ToUpper(fp)})
+	c, err := Dial(addr, Options{Verify: ByFingerprint(strings.ToUpper(fp))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestPinnedFingerprint(t *testing.T) {
 		t.Fatalf("pinned fingerprint refused: %v", err)
 	}
 
-	other, err := Dial(addr, Options{Fingerprint: strings.Repeat("ab", 32)})
+	other, err := Dial(addr, Options{Verify: ByFingerprint(strings.Repeat("ab", 32))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestPinnedFingerprint(t *testing.T) {
 func TestInsecureReportsFingerprint(t *testing.T) {
 	self, _ := pki.SelfSigned("chalkd", time.Now())
 	_, addr := serve(t, self)
-	c, err := Dial(addr, Options{Insecure: true})
+	c, err := Dial(addr, Options{Verify: AnyCertificate()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestCAVerifiesNodeName(t *testing.T) {
 	pool.AddCert(caCert)
 	pair, _ := tls.X509KeyPair([]byte(admin.Certificate), []byte(admin.Key))
 
-	c, err := Dial(addr, Options{CA: pool, ServerName: "n1", Certificate: &pair})
+	c, err := Dial(addr, Options{Verify: ByCA(pool, "n1"), Certificate: &pair})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestCAVerifiesNodeName(t *testing.T) {
 		t.Errorf("client certificate seen by the node = %v", got)
 	}
 
-	wrong, _ := Dial(addr, Options{CA: pool, ServerName: "n2"})
+	wrong, _ := Dial(addr, Options{Verify: ByCA(pool, "n2")})
 	if err := info(wrong); err == nil {
 		t.Error("accepted a node certificate issued for another node")
 	}
@@ -139,14 +139,20 @@ func TestCAVerifiesNodeName(t *testing.T) {
 	otherCert, _ := pki.ParseCertificate([]byte(otherCA.Certificate))
 	otherPool := x509.NewCertPool()
 	otherPool.AddCert(otherCert)
-	foreign, _ := Dial(addr, Options{CA: otherPool, ServerName: "n1"})
+	foreign, _ := Dial(addr, Options{Verify: ByCA(otherPool, "n1")})
 	if err := info(foreign); err == nil {
 		t.Error("accepted a node certificate from another CA")
 	}
 }
 
 func TestDialOptions(t *testing.T) {
-	for _, o := range []Options{{}, {Insecure: true, Fingerprint: "ab"}} {
+	for _, o := range []Options{
+		{},
+		{Verify: ByFingerprint("")},
+		{Verify: ByCA(nil, "n1")},
+		{Verify: AnyNodeOf(nil)},
+		{Verify: ByCAIgnoringValidity(nil, "n1")},
+	} {
 		if _, err := Dial("127.0.0.1", o); err == nil {
 			t.Errorf("accepted %+v", o)
 		}
@@ -159,8 +165,10 @@ func TestCARequiresServerName(t *testing.T) {
 	caCert, _ := pki.ParseCertificate([]byte(ca.Certificate))
 	pool := x509.NewCertPool()
 	pool.AddCert(caCert)
-	if c, err := Dial("127.0.0.1", Options{CA: pool}); err == nil || c != nil {
-		t.Fatalf("Dial = %v, %v; want a refusal before connecting", c, err)
+	for _, v := range []Verifier{ByCA(pool, ""), ByCAIgnoringValidity(pool, "")} {
+		if c, err := Dial("127.0.0.1", Options{Verify: v}); err == nil || c != nil {
+			t.Fatalf("Dial = %v, %v; want a refusal before connecting", c, err)
+		}
 	}
 }
 
@@ -173,7 +181,7 @@ func TestAnyNode(t *testing.T) {
 	pool := x509.NewCertPool()
 	pool.AddCert(caCert)
 	_, addr := serve(t, node)
-	c, err := Dial(addr, Options{CA: pool, AnyNode: true})
+	c, err := Dial(addr, Options{Verify: AnyNodeOf(pool)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,17 +192,12 @@ func TestAnyNode(t *testing.T) {
 	// A server certificate the OS CA issued itself is no node's.
 	leaf, _ := pki.IssueLeaf(ca, pki.Leaf{CommonName: "cp1", Server: true}, now)
 	_, rootAddr := serve(t, leaf)
-	c, err = Dial(rootAddr, Options{CA: pool, AnyNode: true})
+	c, err = Dial(rootAddr, Options{Verify: AnyNodeOf(pool)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := info(c); err == nil || !strings.Contains(err.Error(), "not a node certificate") {
 		t.Errorf("err = %v, want a refusal of a certificate that is not a node's", err)
-	}
-	for _, o := range []Options{{AnyNode: true}, {AnyNode: true, CA: pool, ServerName: "cp1"}} {
-		if _, err := Dial(addr, o); err == nil {
-			t.Errorf("accepted %+v", o)
-		}
 	}
 }
 
@@ -219,10 +222,10 @@ func TestIgnoreValidityAcceptsAnExpiredNode(t *testing.T) {
 		o    Options
 		ok   bool
 	}{
-		{"with dates", Options{CA: pool, ServerName: "n1"}, false},
-		{"without dates", Options{CA: pool, ServerName: "n1", IgnoreValidity: true}, true},
-		{"without dates for another name", Options{CA: pool, ServerName: "n2", IgnoreValidity: true}, false},
-		{"without dates by another CA", Options{CA: otherPool, ServerName: "n1", IgnoreValidity: true}, false},
+		{"with dates", Options{Verify: ByCA(pool, "n1")}, false},
+		{"without dates", Options{Verify: ByCAIgnoringValidity(pool, "n1")}, true},
+		{"without dates for another name", Options{Verify: ByCAIgnoringValidity(pool, "n2")}, false},
+		{"without dates by another CA", Options{Verify: ByCAIgnoringValidity(otherPool, "n1")}, false},
 	} {
 		c, err := Dial(addr, tc.o)
 		if err != nil {
@@ -232,16 +235,13 @@ func TestIgnoreValidityAcceptsAnExpiredNode(t *testing.T) {
 			t.Errorf("%s: %v, want ok %v", tc.name, err, tc.ok)
 		}
 	}
-	if _, err := Dial(addr, Options{Insecure: true, IgnoreValidity: true}); err == nil {
-		t.Error("ignored the validity without a CA")
-	}
 }
 
 // A connection whose dial completes after Close is closed at once: nothing outlives Close.
 func TestCloseEndsALateConnection(t *testing.T) {
 	self, _ := pki.SelfSigned("chalkd", time.Now())
 	h, addr := serve(t, self)
-	c, err := Dial(addr, Options{Insecure: true})
+	c, err := Dial(addr, Options{Verify: AnyCertificate()})
 	if err != nil {
 		t.Fatal(err)
 	}

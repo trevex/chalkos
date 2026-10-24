@@ -401,7 +401,7 @@ func serveTLS(t *testing.T, h http.Handler, cfg *tls.Config) string {
 
 func dial(t *testing.T, addr string, cert *tls.Certificate) *client.Conn {
 	t.Helper()
-	c, err := client.Dial(addr, client.Options{Insecure: true, Certificate: cert})
+	c, err := client.Dial(addr, client.Options{Verify: client.AnyCertificate(), Certificate: cert})
 	if err != nil {
 		t.Fatal(err)
 	}

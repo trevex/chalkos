@@ -128,7 +128,7 @@ func RenewThrough(ctx context.Context, cert *NodeCertificate, addr string, reque
 	if !roots.AppendCertsFromPEM([]byte(cert.OSCA())) {
 		return "", errors.New("the node's OS CA holds no certificate")
 	}
-	conn, err := client.Dial(addr, client.Options{CA: roots, AnyNode: true, GetClientCertificate: cert.GetClientCertificate})
+	conn, err := client.Dial(addr, client.Options{Verify: client.AnyNodeOf(roots), GetClientCertificate: cert.GetClientCertificate})
 	if err != nil {
 		return "", err
 	}

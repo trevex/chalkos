@@ -585,7 +585,7 @@ func TestRotateResumesAfterAnUnreachableNode(t *testing.T) {
 
 // dialWith reaches a node with a client file's credentials.
 func dialWith(addr, node string, roots *x509.CertPool, creds *credentials) (*client.Conn, error) {
-	return client.Dial(addr, client.Options{CA: roots, ServerName: node, Certificate: creds.cert})
+	return client.Dial(addr, client.Options{Verify: client.ByCA(roots, node), Certificate: creds.cert})
 }
 
 // authenticatesWith reads a node's status with a client file's certificate without verifying
@@ -595,7 +595,7 @@ func (l *rotationLab) authenticatesWith(config, node string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := client.Dial(l.addrs[node], client.Options{Insecure: true, Certificate: creds.cert})
+	conn, err := client.Dial(l.addrs[node], client.Options{Verify: client.AnyCertificate(), Certificate: creds.cert})
 	if err != nil {
 		return err
 	}
