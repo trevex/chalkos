@@ -434,3 +434,28 @@ func TestLocal(t *testing.T) {
 		t.Error("found a member at an endpoint that does not answer")
 	}
 }
+
+// Self finds the member of the node's name, or a learner that never started at its peer URL, and
+// takes no other member for the node's.
+func TestSelf(t *testing.T) {
+	members := []Member{
+		{ID: 1, Name: "cp1", PeerURLs: []string{"https://10.0.0.1:2380"}},
+		{ID: 2, PeerURLs: []string{"https://10.0.0.2:2380"}},
+		{ID: 3, Name: "cp3", PeerURLs: []string{"https://10.0.0.3:2380"}},
+	}
+	for _, tc := range []struct {
+		name, peerURL string
+		want          uint64
+	}{
+		{"cp1", "", 1},
+		{"cp1", "https://10.0.0.2:2380", 1},
+		{"cp2", "https://10.0.0.2:2380", 2},
+		{"cp2", "", 0},
+		{"cp4", "https://10.0.0.3:2380", 0},
+	} {
+		m, ok := Self(members, tc.name, tc.peerURL)
+		if ok != (tc.want != 0) || m.ID != tc.want {
+			t.Errorf("Self(%s, %q) = %v, %v, want member %d", tc.name, tc.peerURL, m.ID, ok, tc.want)
+		}
+	}
+}

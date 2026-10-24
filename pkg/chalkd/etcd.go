@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"slices"
 	"time"
 
@@ -164,8 +165,8 @@ func (s *Server) EtcdRemoveMember(ctx context.Context, req *connect.Request[node
 	return connect.NewResponse(&nodev1.EtcdRemoveMemberResponse{Removed: memberMessage(m, nil)}), nil
 }
 
-// ownMember finds the node's member among the members: the one of its name or, as a learner that
-// never started has none, one without a name at its pinned peer URL.
+// ownMember finds the node's member among the members with etcd.Self, at the peer URL of its pinned
+// address.
 func (k *Kubernetes) ownMember(members []etcd.Member, name string) (etcd.Member, bool, error) {
 	pin, err := knode.ReadPin(k.Paths)
 	if err != nil {
@@ -175,12 +176,8 @@ func (k *Kubernetes) ownMember(members []etcd.Member, name string) (etcd.Member,
 	if pin != nil {
 		peerURL = etcd.PeerURL(net.IP(pin[0].AsSlice()))
 	}
-	for _, m := range members {
-		if m.Name == name || (m.Name == "" && peerURL != "" && slices.Contains(m.PeerURLs, peerURL)) {
-			return m, true, nil
-		}
-	}
-	return etcd.Member{}, false, nil
+	m, ok := etcd.Self(members, name, peerURL)
+	return m, ok, nil
 }
 
 // leaveEndpoints are the node's own etcd member and the other control planes' that the API
@@ -339,7 +336,11 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 func etcdStopped(ctx context.Context, c k8s.Cluster) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	addr := net.JoinHostPort(c.Loopback().String(), "2379")
+	u, err := url.Parse(c.LocalEtcd())
+	if err != nil {
+		return err
+	}
+	addr := u.Host
 	for {
 		conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", addr)
 		if err != nil && ctx.Err() == nil {
