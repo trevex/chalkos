@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -1176,6 +1177,16 @@ func TestInstallRefusesAStreamGoingOnAfterTheUKI(t *testing.T) {
 	l := newLab(t, old)
 	stream := io.MultiReader(img.stream(), strings.NewReader("x"))
 	if _, err := l.node.Install(context.Background(), img.header, stream); err == nil || !strings.Contains(err.Error(), "the stream goes on after the UKI") {
+		t.Errorf("install = %v", err)
+	}
+}
+
+// TestInstallRefusesAStreamFailingAtItsEnd refuses a stream whose read after the UKI fails.
+func TestInstallRefusesAStreamFailingAtItsEnd(t *testing.T) {
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
+	l := newLab(t, old)
+	stream := io.MultiReader(img.stream(), iotest.ErrReader(errors.New("connection reset")))
+	if _, err := l.node.Install(context.Background(), img.header, stream); err == nil || !strings.Contains(err.Error(), "receive the UKI: connection reset") {
 		t.Errorf("install = %v", err)
 	}
 }

@@ -447,8 +447,8 @@ func (i *Installer) receiveBootLoader(h upgrade.Header, parts io.Reader) ([]byte
 	if _, err := io.ReadFull(parts, loader); err != nil {
 		return nil, fmt.Errorf("receive the boot loader: %w", err)
 	}
-	if n, _ := parts.Read(make([]byte, 1)); n > 0 {
-		return nil, errors.New("the image's parts are longer than its header says")
+	if err := upgrade.ExpectEnd(parts, "boot loader"); err != nil {
+		return nil, err
 	}
 	if sum := sha256.Sum256(loader); !bytes.Equal(sum[:], h.BootLoaderSHA256) {
 		return nil, fmt.Errorf("the boot loader's SHA-256 is %x, want %x", sum, h.BootLoaderSHA256)

@@ -28,6 +28,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/config/store"
@@ -810,7 +811,10 @@ func TestFromPartsRefuses(t *testing.T) {
 		{"a wrong store SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.StoreSHA256 = sha(nil) }, "the store's SHA-256"},
 		{"a wrong hash tree SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.VeritySHA256 = sha(nil) }, "the hash tree's SHA-256"},
 		{"a header without a boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoaderSize, r.Image.BootLoaderSHA256 = 0, nil }, "brings no boot loader"},
-		{"more than the header names", nil, img, func(r *PartsRequest) { r.Parts = io.MultiReader(img.parts(), strings.NewReader("x")) }, "longer than its header says"},
+		{"more than the header names", nil, img, func(r *PartsRequest) { r.Parts = io.MultiReader(img.parts(), strings.NewReader("x")) }, "the stream goes on after the boot loader"},
+		{"parts failing at their end", nil, img, func(r *PartsRequest) {
+			r.Parts = io.MultiReader(img.parts(), iotest.ErrReader(errors.New("connection reset")))
+		}, "connection reset"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newPartsLab(t)

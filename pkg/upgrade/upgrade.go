@@ -352,14 +352,23 @@ func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
 	if err != nil {
 		return tmp, 0, err
 	}
-	// The UKI is the stream's last part. A stream that goes on, or fails at its end, such as a
-	// pull whose UKI layer is longer than the header says, is refused.
-	if extra, err := io.Copy(io.Discard, io.LimitReader(stream, 1)); err != nil {
-		return tmp, 0, fmt.Errorf("receive the UKI: %w", err)
-	} else if extra > 0 {
-		return tmp, 0, errors.New("the stream goes on after the UKI")
+	if err := ExpectEnd(stream, "UKI"); err != nil {
+		return tmp, 0, err
 	}
 	return tmp, tries, nil
+}
+
+// ExpectEnd checks that the stream ends after its last part, named last. A stream that goes on,
+// or fails at its end, such as a pull whose last layer is longer than the header says, is refused.
+func ExpectEnd(stream io.Reader, last string) error {
+	extra, err := io.Copy(io.Discard, io.LimitReader(stream, 1))
+	if err != nil {
+		return fmt.Errorf("receive the %s: %w", last, err)
+	}
+	if extra > 0 {
+		return fmt.Errorf("the stream goes on after the %s", last)
+	}
+	return nil
 }
 
 // activate makes the slot hold the image as systemd finds it and gives the UKI its name, the
