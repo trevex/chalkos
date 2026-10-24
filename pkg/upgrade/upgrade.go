@@ -44,13 +44,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // Node is the running node an upgrade changes. Tests point it at a disk image and directories.
 type Node struct {
-	Run node.Runner
+	Run tool.Runner
 	// Disk is the boot disk's device.
 	Disk string
 	// ESP is where the ESP is mounted, EFIVars where efivarfs is, and Cmdline the running kernel's

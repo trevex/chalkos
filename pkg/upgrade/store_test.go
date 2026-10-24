@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // writeStore lays out an image's store as its erofs holds it under root: the system x, whose
@@ -67,7 +67,7 @@ func TestStoreFollowsTheImagesLinks(t *testing.T) {
 // storeRunner runs commands as the runner it wraps, but opens and mounts the store an upgrade
 // checks as writeStore lays it out, recording what it ran.
 type storeRunner struct {
-	node.Runner
+	tool.Runner
 	calls   *[]string
 	mounted func(dir string)
 	// open, when set, tells whether the store's dm-verity device is open, as veritysetup leaves

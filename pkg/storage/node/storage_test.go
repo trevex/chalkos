@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // fakeRunner records commands and answers them from the first rule whose prefix matches.
@@ -147,7 +148,7 @@ func repartRow(file, uuid string) string {
 // firstBootRules answer like a node whose second disk is empty and whose TPM unseals VAR.
 func firstBootRules(b *Storage) []rule {
 	return []rule{
-		{prefix: "blkid -p -o export /dev/vdb", err: &ToolError{Command: "blkid", Code: 2}},
+		{prefix: "blkid -p -o export /dev/vdb", err: &tool.Error{Command: "blkid", Code: 2}},
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + b.StorageDir() + "/disks/system ", out: repartRow(b.StorageDir()+"/disks/system/50-var.conf", varUUID)},
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + b.StorageDir() + "/disks/data ", out: repartRow(b.StorageDir()+"/disks/data/10-data.conf", dataUUID)},
 		{prefix: "blkid -p -o value -s TYPE /dev/disk/chalk-boot/var", out: "crypto_LUKS\n"},
@@ -363,7 +364,7 @@ func TestSetUpRefusesUnidentifiableBootDisk(t *testing.T) {
 func TestSetUpWaitsForUdevBeforeResolving(t *testing.T) {
 	r := &fakeRunner{}
 	b := newTestBoot(t, r, bootDisk, dataDisk)
-	r.rules = append([]rule{{prefix: "udevadm settle", err: &ToolError{Command: "udevadm settle", Code: 1, Stderr: "timeout"}}}, firstBootRules(b)...)
+	r.rules = append([]rule{{prefix: "udevadm settle", err: &tool.Error{Command: "udevadm settle", Code: 1, Stderr: "timeout"}}}, firstBootRules(b)...)
 	writeStorage(t, b, "recovery-key")
 
 	if err := b.SetUp(context.Background()); err != nil {
@@ -483,13 +484,13 @@ func TestSetUpChecksNewDiskIsUnused(t *testing.T) {
 		refusal string
 	}{
 		{"blkid finds nothing", nil, ""},
-		{"blkid fails without finding anything", []rule{{prefix: "blkid -p -o export /dev/vdb", err: &ToolError{Command: "blkid", Code: 2, Stderr: "error: /dev/vdb: Input/output error"}}}, "Input/output error"},
-		{"blkid fails otherwise", []rule{{prefix: "blkid -p -o export /dev/vdb", err: &ToolError{Command: "blkid", Code: 4}}}, "probe /dev/vdb"},
+		{"blkid fails without finding anything", []rule{{prefix: "blkid -p -o export /dev/vdb", err: &tool.Error{Command: "blkid", Code: 2, Stderr: "error: /dev/vdb: Input/output error"}}}, "Input/output error"},
+		{"blkid fails otherwise", []rule{{prefix: "blkid -p -o export /dev/vdb", err: &tool.Error{Command: "blkid", Code: 4}}}, "probe /dev/vdb"},
 		{"file system", []rule{{prefix: "blkid -p -o export /dev/vdb", out: "DEVNAME=/dev/vdb\nTYPE=ext4\n"}}, "carries data (ext4)"},
 		{"empty GPT", []rule{gpt, {prefix: "sfdisk --json /dev/vdb", out: sfdiskTable()}}, ""},
 		{"GPT with chalkos partitions", []rule{gpt, {prefix: "sfdisk --json /dev/vdb", out: sfdiskTable(strings.ToUpper(dataType))}}, ""},
 		{"GPT with a foreign partition", []rule{gpt, {prefix: "sfdisk --json /dev/vdb", out: sfdiskTable(dataType, "0FC63DAF-8483-4772-8E79-3D69D8477DE4")}}, "/dev/vdb2 has the partition type 0FC63DAF-8483-4772-8E79-3D69D8477DE4"},
-		{"partition table unreadable", []rule{gpt, {prefix: "sfdisk --json /dev/vdb", err: &ToolError{Command: "sfdisk", Code: 1}}}, "read the partition table"},
+		{"partition table unreadable", []rule{gpt, {prefix: "sfdisk --json /dev/vdb", err: &tool.Error{Command: "sfdisk", Code: 1}}}, "read the partition table"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := &fakeRunner{}
@@ -536,7 +537,7 @@ func TestSetUpRepartFailureKeepsBooting(t *testing.T) {
 	b := newTestBoot(t, r, bootDisk, dataDisk)
 	r.rules = append([]rule{{
 		prefix: "systemd-repart --dry-run=no --json=short --definitions=" + b.StorageDir() + "/disks/system ",
-		err:    &ToolError{Command: "systemd-repart", Code: 1, Stderr: "Can't fit requested partitions into available free space"},
+		err:    &tool.Error{Command: "systemd-repart", Code: 1, Stderr: "Can't fit requested partitions into available free space"},
 	}}, firstBootRules(b)...)
 	writeStorage(t, b, "recovery-key")
 
@@ -591,7 +592,7 @@ func TestSetUpMountsUnencryptedVar(t *testing.T) {
 func TestSetUpWithoutFallbackDoesNotPrompt(t *testing.T) {
 	r := &fakeRunner{}
 	b := newTestBoot(t, r, bootDisk, dataDisk)
-	r.rules = append([]rule{{prefix: "systemd-cryptsetup attach var", err: &ToolError{Command: "systemd-cryptsetup", Code: 1, Stderr: "No TPM2 metadata matching the current system state found in LUKS2 header, falling back to traditional unlocking.\nPassword querying disabled via 'headless' option.\n"}}}, firstBootRules(b)...)
+	r.rules = append([]rule{{prefix: "systemd-cryptsetup attach var", err: &tool.Error{Command: "systemd-cryptsetup", Code: 1, Stderr: "No TPM2 metadata matching the current system state found in LUKS2 header, falling back to traditional unlocking.\nPassword querying disabled via 'headless' option.\n"}}}, firstBootRules(b)...)
 	writeStorage(t, b, "none")
 
 	err := b.SetUp(context.Background())
@@ -674,7 +675,7 @@ func contains(list []string, s string) bool {
 func TestSetUpWithoutFallbackReportsOtherAttachFailures(t *testing.T) {
 	r := &fakeRunner{}
 	b := newTestBoot(t, r, bootDisk, dataDisk)
-	r.rules = append([]rule{{prefix: "systemd-cryptsetup attach var", err: &ToolError{Command: "systemd-cryptsetup", Code: 1, Stderr: "Failed to load LUKS superblock on device /dev/disk/chalk-boot/var: Input/output error\n"}}}, firstBootRules(b)...)
+	r.rules = append([]rule{{prefix: "systemd-cryptsetup attach var", err: &tool.Error{Command: "systemd-cryptsetup", Code: 1, Stderr: "Failed to load LUKS superblock on device /dev/disk/chalk-boot/var: Input/output error\n"}}}, firstBootRules(b)...)
 	writeStorage(t, b, "none")
 
 	err := b.SetUp(context.Background())
@@ -756,9 +757,9 @@ func TestOpenStateChecksFileSystem(t *testing.T) {
 		refusal string
 	}{
 		{"clean", nil, ""},
-		{"errors corrected", &ToolError{Command: "e2fsck", Code: 1}, ""},
-		{"errors left", &ToolError{Command: "e2fsck", Code: 4, Stderr: "UNEXPECTED INCONSISTENCY; RUN fsck MANUALLY."}, "cannot repair"},
-		{"operational error", &ToolError{Command: "e2fsck", Code: 8, Stderr: "Bad magic number in super-block"}, "Bad magic number"},
+		{"errors corrected", &tool.Error{Command: "e2fsck", Code: 1}, ""},
+		{"errors left", &tool.Error{Command: "e2fsck", Code: 4, Stderr: "UNEXPECTED INCONSISTENCY; RUN fsck MANUALLY."}, "cannot repair"},
+		{"operational error", &tool.Error{Command: "e2fsck", Code: 8, Stderr: "Bad magic number in super-block"}, "Bad magic number"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := &fakeRunner{rules: []rule{

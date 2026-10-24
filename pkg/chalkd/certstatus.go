@@ -21,7 +21,7 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // How long before they expire CAs are reported: a year, and for the node CA 18 months, as node
@@ -342,7 +342,7 @@ func (s *Server) timeStatus(ctx context.Context) *nodev1.TimeStatus {
 	// chronyc fails on every request while chronyd is down: its error goes into the status, not
 	// once more into chalkd's log.
 	run := s.Run.Run
-	if quiet, ok := s.Run.(node.QuietRunner); ok {
+	if quiet, ok := s.Run.(tool.QuietRunner); ok {
 		run = quiet.RunQuiet
 	}
 	out, err := run(ctx, "chronyc", "-n", "-c", "tracking")

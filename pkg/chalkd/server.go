@@ -28,6 +28,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -110,7 +111,7 @@ type Server struct {
 	// Certificate is the node certificate chalkd serves in normal mode.
 	Certificate *NodeCertificate
 	Paths       Paths
-	Run         node.Runner
+	Run         tool.Runner
 	Host        storage.Host
 	// Loader applies the node's stored config, as chalkos-config.service does at boot.
 	Loader nodeconfig.Loader

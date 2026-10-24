@@ -33,7 +33,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/storage"
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/upgrade"
 	"github.com/trevex/chalkos/pkg/verity"
@@ -216,7 +216,7 @@ func (l *partsLab) RunWithEnv(ctx context.Context, env []string, name string, ar
 		return nil, l.umount(args[0])
 	case name == "systemd-cryptsetup" && args[0] == "attach" && l.tpmFails:
 		l.r.calls = append(l.r.calls, strings.Join(append([]string{name}, args...), " "))
-		return nil, &node.ToolError{Command: name, Code: 1, Stderr: "Failed to unseal secret using TPM2: State not recoverable"}
+		return nil, &tool.Error{Command: name, Code: 1, Stderr: "Failed to unseal secret using TPM2: State not recoverable"}
 	case name == "efibootmgr":
 		// The emulated firmware finds the ESP's partition UUID on the disk.
 		l.r.partUUIDs = map[string]string{}
@@ -238,7 +238,7 @@ func (l *partsLab) real(ctx context.Context, name string, args []string) ([]byte
 			n, _ := strconv.Atoi(strings.TrimPrefix(a, labDev))
 			p, ok := l.table()[n]
 			if !ok {
-				return nil, &node.ToolError{Command: name, Code: 2, Stderr: a + ": no such partition"}
+				return nil, &tool.Error{Command: name, Code: 2, Stderr: a + ": no such partition"}
 			}
 			argv = append(argv, "-O", strconv.FormatInt(p.Start*l.sector, 10), "-S", strconv.FormatInt(p.Size*l.sector, 10), l.disk)
 		case strings.HasPrefix(a, "/dev/"):
@@ -258,14 +258,14 @@ func (l *partsLab) real(ctx context.Context, name string, args []string) ([]byte
 			argv = append([]string{"--sector-size=" + strconv.FormatInt(l.sector, 10)}, argv...)
 		}
 	}
-	out, err := node.ExecRunner{}.RunQuiet(ctx, name, argv...)
+	out, err := tool.ExecRunner{}.RunQuiet(ctx, name, argv...)
 	if name == "blkid" && l.sector != 512 {
 		// blkid reads a file as a disk of 512-byte sectors, and so finds only a 4Kn disk's
 		// protective MBR, where it finds the GPT on the disk itself.
 		out = bytes.ReplaceAll(out, []byte("PTTYPE=PMBR"), []byte("PTTYPE=gpt"))
 	}
 	out = bytes.ReplaceAll(out, []byte(l.disk), []byte(labDev))
-	var te *node.ToolError
+	var te *tool.Error
 	if errors.As(err, &te) {
 		te.Stderr = strings.ReplaceAll(te.Stderr, l.disk, labDev)
 	}
@@ -303,14 +303,14 @@ func (l *partsLab) mount(source, target string) error {
 	if name, ok := strings.CutPrefix(source, "/dev/mapper/"); ok {
 		backing, err := os.ReadFile(filepath.Join(l.i.Host.DevRoot, "mapper", name))
 		if err != nil {
-			return &node.ToolError{Command: "mount", Code: 32, Stderr: source + " does not exist"}
+			return &tool.Error{Command: "mount", Code: 32, Stderr: source + " does not exist"}
 		}
 		dev = string(backing)
 	}
 	n, _ := strconv.Atoi(strings.TrimPrefix(dev, labDev))
 	p, ok := l.table()[n]
 	if !ok {
-		return &node.ToolError{Command: "mount", Code: 32, Stderr: dev + " does not exist"}
+		return &tool.Error{Command: "mount", Code: 32, Stderr: dev + " does not exist"}
 	}
 	dir := filepath.Join(l.fs, p.UUID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -344,7 +344,7 @@ func (l *partsLab) umount(target string) error {
 		kept = append(kept, line)
 	}
 	if !found {
-		return &node.ToolError{Command: "umount", Code: 32, Stderr: "umount: " + target + ": not mounted."}
+		return &tool.Error{Command: "umount", Code: 32, Stderr: "umount: " + target + ": not mounted."}
 	}
 	if err := os.Remove(target); err != nil {
 		return err

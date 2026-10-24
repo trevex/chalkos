@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // The facts chalkos-storage reports for the storage kinds' rules, which read the node's disks and
@@ -187,7 +188,7 @@ func (s *Storage) FallbackFacts(ctx context.Context, secret string) (FallbackFac
 			// The secret goes on standard input: arguments are visible to every process, and
 			// cryptsetup takes a key file from stdin as it is, without trimming a newline.
 			_, err := s.Run.RunWithInput(ctx, []byte(secret), "cryptsetup", "open", "--test-passphrase", "--key-slot="+slot, "--key-file=-", dev)
-			var te *ToolError
+			var te *tool.Error
 			switch {
 			case err == nil:
 				matches = true

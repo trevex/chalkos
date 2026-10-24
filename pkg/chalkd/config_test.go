@@ -24,7 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // baseConfig is a node of the test server's image without Kubernetes, with a Demo whose token is a
@@ -678,7 +678,7 @@ func TestResetVolumeThroughConfig(t *testing.T) {
 	writeIdentity(t, s, string(c.Identity))
 	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
 	r.rules = []rule{
-		{prefix: "blkid -p -o export /dev/vdb", err: &node.ToolError{Command: "blkid", Code: 2}},
+		{prefix: "blkid -p -o export /dev/vdb", err: &tool.Error{Command: "blkid", Code: 2}},
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system"), out: `[{"file":"` + filepath.Join(dir, "disks", "system", "50-var.conf") + `","uuid":"` + varUUID + `"}]`},
 		{prefix: "blkid -p -o value -s TYPE", out: "crypto_LUKS\n"},

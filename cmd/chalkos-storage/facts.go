@@ -7,6 +7,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // runFacts prints a fact of the storage kinds' rules for the input chalkd writes to a command
@@ -20,7 +21,7 @@ func runFacts(args []string, stdin io.Reader, stdout io.Writer) error {
 		return err
 	}
 	s := &node.Storage{
-		Run:            node.ExecRunner{},
+		Run:            tool.ExecRunner{},
 		Host:           storage.DefaultHost(),
 		StateDir:       "/state",
 		BootPartitions: "/dev/disk/chalk-boot",

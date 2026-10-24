@@ -33,7 +33,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
@@ -722,7 +722,7 @@ func (l *tableLock) Unlock() { l.held.Store(false); l.mu.Unlock() }
 
 // watchedRunner runs commands as the runner it wraps, after showing each to check.
 type watchedRunner struct {
-	node.Runner
+	tool.Runner
 	check func(ctx context.Context, name string, args []string)
 }
 

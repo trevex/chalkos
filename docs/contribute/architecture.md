@@ -107,6 +107,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `schema` | Reads an image's config contract: `metadata.json` and the JSON Schemas of its kinds, and validates documents against them. |
 | `storage` | Storage sections, disk references and pins, repart definitions, and the changes a delivered section makes to the recorded one. |
 | `storage/node` | Storage on the node: STATE, volumes, VAR and the generator's units. |
+| `tool` | Runs the command-line tools chalkd, the installer and the storage code drive, such as cryptsetup, sfdisk and systemctl. |
 | `uki` | Reads a UKI's os-release and command line, checks its signature as firmware does, and refuses an image version systemd-boot would order its entry by. |
 | `upgrade` | Writes an image into the inactive slot and makes it the next boot; the slot writer install shares. |
 | `verity` | Reads and checks dm-verity hash trees. |

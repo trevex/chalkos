@@ -15,7 +15,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 func status(t *testing.T, s *Server) *nodev1.StatusResponse {
@@ -242,7 +242,7 @@ func TestStatusReportsAnUnreadableShare(t *testing.T) {
 // status, and not in chalkd's log on each call.
 func TestStatusTimeWhileChronydIsDown(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
-	r.rules = append(r.rules, rule{prefix: "chronyc -n -c tracking", err: &node.ToolError{Command: "chronyc -n -c tracking", Code: 1, Stderr: "506 Cannot talk to daemon\n"}})
+	r.rules = append(r.rules, rule{prefix: "chronyc -n -c tracking", err: &tool.Error{Command: "chronyc -n -c tracking", Code: 1, Stderr: "506 Cannot talk to daemon\n"}})
 	st := status(t, s).Time
 	if strings.Count(st.Error, "506 Cannot talk to daemon") != 1 {
 		t.Errorf("time error %q, want chronyc's message once", st.Error)

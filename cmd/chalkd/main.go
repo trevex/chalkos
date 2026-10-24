@@ -36,7 +36,7 @@ import (
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 const usage = `usage: chalkd <command>
@@ -328,7 +328,7 @@ func serve() error {
 		Fingerprint: fingerprint,
 		Certificate: creds.node,
 		Paths:       paths,
-		Run:         node.ExecRunner{},
+		Run:         tool.ExecRunner{},
 		Host:        storage.DefaultHost(),
 		Loader:      nodeconfig.Default(),
 		InPlace:     install.Default(true).InPlace,

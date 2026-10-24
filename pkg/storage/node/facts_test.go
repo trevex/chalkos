@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // otherDisk has a serial of its own, so a reference can find it instead of the pinned disk.
@@ -132,7 +134,7 @@ func TestFallbackFacts(t *testing.T) {
 	}{
 		{"no secret", "", "recovery-key", nil, FallbackFact{}, 0},
 		{"a matching secret", "s3cret", "recovery-key", nil, FallbackFact{Sent: true, Matches: &yes}, 2},
-		{"a wrong secret", "wrong", "recovery-key", []rule{{prefix: "cryptsetup open", err: &ToolError{Command: "cryptsetup open", Code: 2}}}, FallbackFact{Sent: true, Matches: &no}, 2},
+		{"a wrong secret", "wrong", "recovery-key", []rule{{prefix: "cryptsetup open", err: &tool.Error{Command: "cryptsetup open", Code: 2}}}, FallbackFact{Sent: true, Matches: &no}, 2},
 		{"no fallback", "s3cret", "none", nil, FallbackFact{Sent: true}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -157,7 +159,7 @@ func TestFallbackFacts(t *testing.T) {
 		})
 	}
 	// A check that fails otherwise than for the secret fails the fact.
-	r := &fakeRunner{rules: []rule{{prefix: "cryptsetup luksDump", err: &ToolError{Command: "cryptsetup luksDump", Code: 4, Stderr: "Device does not exist."}}}}
+	r := &fakeRunner{rules: []rule{{prefix: "cryptsetup luksDump", err: &tool.Error{Command: "cryptsetup luksDump", Code: 4, Stderr: "Device does not exist."}}}}
 	b := newTestBoot(t, r, bootDisk)
 	writeStorage(t, b, "recovery-key")
 	if _, err := b.Facts(context.Background(), FactFallback, factsInputOf(t, "s3cret", nil)); err == nil || !strings.Contains(err.Error(), "read the keyslots of /dev/disk/chalk-boot/var") {

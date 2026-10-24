@@ -15,11 +15,12 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // Storage holds what the storage setup works on; tests point the paths at temporary directories.
 type Storage struct {
-	Run  Runner
+	Run  tool.Runner
 	Host storage.Host
 	// StateDir is where STATE is mounted.
 	StateDir string
@@ -36,7 +37,7 @@ type Storage struct {
 // Default is the storage setup of the initrd.
 func Default() *Storage {
 	return &Storage{
-		Run:            ExecRunner{},
+		Run:            tool.ExecRunner{},
 		Host:           storage.DefaultHost(),
 		StateDir:       "/sysroot/state",
 		VarDir:         "/sysroot/var",
@@ -116,7 +117,7 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, prompt, en
 // when it corrected errors.
 func (s *Storage) checkFileSystem(ctx context.Context, name, dev string) error {
 	_, err := s.Run.Run(ctx, "e2fsck", "-p", dev)
-	var te *ToolError
+	var te *tool.Error
 	switch {
 	case err == nil, errors.As(err, &te) && te.Code == 1:
 		return nil
@@ -362,7 +363,7 @@ func (s *Storage) resolveNew(ctx context.Context, d storage.Disk, claimed []clai
 // repart takes over. repart would otherwise write a new partition table over foreign data.
 func (s *Storage) checkUnused(ctx context.Context, disk storage.BlockDisk, d storage.Disk) error {
 	out, err := s.Run.Run(ctx, "blkid", "-p", "-o", "export", disk.Device)
-	var te *ToolError
+	var te *tool.Error
 	// blkid also exits with 2 when it cannot read the disk, but then it complains.
 	if errors.As(err, &te) && te.Code == 2 && strings.TrimSpace(te.Stderr) == "" {
 		return nil
@@ -436,7 +437,7 @@ func (s *Storage) repart(ctx context.Context, name, dev string, d storage.Disk) 
 // did not unseal one and headless mode forbade asking for another. Other failures, such as an
 // unreadable device, are no reason to reset the volume.
 func unsealFailed(err error) bool {
-	var te *ToolError
+	var te *tool.Error
 	if !errors.As(err, &te) {
 		return false
 	}

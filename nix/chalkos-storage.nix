@@ -6,6 +6,7 @@ callPackage ./go-module.nix { } {
     ../cmd/chalkos-storage
     ../pkg/atomicfile
     ../pkg/storage
+    ../pkg/tool
   ];
   subPackages = [ "cmd/chalkos-storage" ];
   ldflags = [

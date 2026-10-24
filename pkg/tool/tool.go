@@ -1,4 +1,6 @@
-package node
+// Package tool runs the command-line tools that chalkd, the installer and the storage code
+// drive, such as cryptsetup, sfdisk and systemctl, behind an interface that tests replace.
+package tool
 
 import (
 	"bytes"
@@ -28,14 +30,14 @@ type QuietRunner interface {
 	RunQuiet(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
-// ToolError is a tool that ran and exited with a non-zero status.
-type ToolError struct {
+// Error is a tool that ran and exited with a non-zero status.
+type Error struct {
 	Command string
 	Code    int
 	Stderr  string
 }
 
-func (e *ToolError) Error() string {
+func (e *Error) Error() string {
 	return fmt.Sprintf("%s exited with status %d: %s", e.Command, e.Code, strings.TrimSpace(e.Stderr))
 }
 
@@ -78,7 +80,7 @@ func runTo(ctx context.Context, env []string, input []byte, console io.Writer, n
 	err := cmd.Run()
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
-		return stdout.Bytes(), &ToolError{Command: name + " " + strings.Join(args, " "), Code: ee.ExitCode(), Stderr: stderr.String()}
+		return stdout.Bytes(), &Error{Command: name + " " + strings.Join(args, " "), Code: ee.ExitCode(), Stderr: stderr.String()}
 	}
 	return stdout.Bytes(), err
 }

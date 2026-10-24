@@ -18,7 +18,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 const (
@@ -130,7 +130,7 @@ func installedServer(t *testing.T, recorded string, extraPinned bool, more ...te
 		t.Fatal(err)
 	}
 	r.rules = []rule{
-		{prefix: "blkid -p -o export /dev/vdb", err: &node.ToolError{Command: "blkid", Code: 2}},
+		{prefix: "blkid -p -o export /dev/vdb", err: &tool.Error{Command: "blkid", Code: 2}},
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system"), out: `[{"file":"` + filepath.Join(dir, "disks", "system", "50-var.conf") + `","uuid":"` + varUUID + `"}]`},
 		{prefix: "blkid -p -o value -s TYPE", out: "crypto_LUKS\n"},
@@ -757,7 +757,7 @@ func plainSystem(s *storage.Section) {
 
 // mismatch makes cryptsetup reject every passphrase, as it does a wrong one.
 func mismatch(r *fakeRunner) {
-	r.rules = append([]rule{{prefix: "cryptsetup open --test-passphrase", err: &node.ToolError{Command: "cryptsetup open", Code: 2, Stderr: "No key available with this passphrase."}}}, r.rules...)
+	r.rules = append([]rule{{prefix: "cryptsetup open --test-passphrase", err: &tool.Error{Command: "cryptsetup open", Code: 2, Stderr: "No key available with this passphrase."}}}, r.rules...)
 }
 
 func TestApplyConfigRefusesMismatchingFallbackSecret(t *testing.T) {
@@ -781,7 +781,7 @@ func TestApplyConfigRefusesMismatchingFallbackSecret(t *testing.T) {
 
 func TestApplyConfigRefusesWhenTheCheckFails(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
-	r.rules = append([]rule{{prefix: "cryptsetup open", err: &node.ToolError{Command: "cryptsetup open", Code: 4, Stderr: "Device does not exist."}}}, r.rules...)
+	r.rules = append([]rule{{prefix: "cryptsetup open", err: &tool.Error{Command: "cryptsetup open", Code: 4, Stderr: "Device does not exist."}}}, r.rules...)
 	_, err := apply(s, identityWith(section("", "ext4")), secret)
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || strings.Contains(err.Error(), secret) {
 		t.Fatalf("err = %v", err)

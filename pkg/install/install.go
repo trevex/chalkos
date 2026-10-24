@@ -28,6 +28,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -144,7 +145,7 @@ func (r Request) nodeFile() ([]byte, error) {
 // Installer holds what installing works on; tests point it at temporary directories and a
 // fake runner.
 type Installer struct {
-	Run  node.Runner
+	Run  tool.Runner
 	Host storage.Host
 	// StateDir is where the target's STATE is mounted while installing.
 	StateDir string
@@ -185,7 +186,7 @@ func Default(inPlace bool) *Installer {
 		stateDir = "/run/chalkd/target"
 	}
 	return &Installer{
-		Run:           node.ExecRunner{},
+		Run:           tool.ExecRunner{},
 		Host:          storage.DefaultHost(),
 		StateDir:      stateDir,
 		BootDisk:      "/dev/disk/chalk-boot-disk",
@@ -262,7 +263,7 @@ func (i *Installer) closeState(ctx context.Context) error {
 	}
 	if mounted {
 		_, err := i.Run.Run(ctx, "umount", i.StateDir)
-		var te *node.ToolError
+		var te *tool.Error
 		if err != nil && !(errors.As(err, &te) && strings.Contains(te.Stderr, "not mounted")) {
 			return fmt.Errorf("unmount STATE: %w", err)
 		}
@@ -444,12 +445,12 @@ func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, de
 
 // content returns what blkid finds on a device, such as crypto_LUKS or ext4; empty when it finds
 // nothing.
-func content(ctx context.Context, run node.Runner, dev string) (string, error) {
+func content(ctx context.Context, run tool.Runner, dev string) (string, error) {
 	if _, err := run.Run(ctx, "udevadm", "settle", "--timeout=30"); err != nil {
 		return "", err
 	}
 	out, err := run.Run(ctx, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
-	var te *node.ToolError
+	var te *tool.Error
 	if errors.As(err, &te) && te.Code == 2 && strings.TrimSpace(te.Stderr) == "" {
 		return "", nil
 	}
@@ -490,7 +491,7 @@ func encryptedDevices(section storage.Section, table partitionTable, pins storag
 // Enroll adds the fallback keyslot to each LUKS device, by volume name, unlocking it with the TPM. The secret only
 // travels in the environment; replacing earlier password slots keeps a repeated install from
 // piling up keyslots, and TPM2 slots are never wiped.
-func Enroll(ctx context.Context, run node.Runner, devices map[string]string, secret string) error {
+func Enroll(ctx context.Context, run tool.Runner, devices map[string]string, secret string) error {
 	names := make([]string, 0, len(devices))
 	for name := range devices {
 		names = append(names, name)

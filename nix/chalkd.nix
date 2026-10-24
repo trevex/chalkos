@@ -23,6 +23,7 @@ callPackage ./go-module.nix { } {
     ../pkg/rules
     ../pkg/schema
     ../pkg/storage
+    ../pkg/tool
     ../pkg/uki
     ../pkg/upgrade
     ../pkg/verity

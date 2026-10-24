@@ -21,7 +21,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/verity"
 )
@@ -166,7 +166,7 @@ size=1MiB, type=%s, name=state
 		t.Fatalf("sfdisk: %v: %s", err, out)
 	}
 	l.node = &Node{
-		Run:           sectorRunner{node.ExecRunner{}, sector},
+		Run:           sectorRunner{tool.ExecRunner{}, sector},
 		Disk:          l.disk,
 		ESP:           l.esp,
 		EFIVars:       l.efivars,
@@ -230,7 +230,7 @@ func (l *lab) sfdisk(args ...string) *exec.Cmd {
 
 // sectorRunner runs sfdisk on disk images as on disks of the sector size.
 type sectorRunner struct {
-	node.Runner
+	tool.Runner
 	sector int64
 }
 

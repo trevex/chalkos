@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/verity"
 )
 
@@ -23,7 +23,7 @@ import (
 // activated once its store verifies from the disk, so a slot written in part never carries the
 // partition UUIDs a UKI's usrhash= finds.
 type SlotWriter struct {
-	Run node.Runner
+	Run tool.Runner
 	// Disk is the disk's device.
 	Disk string
 	// OpenPartition opens a partition of the disk.

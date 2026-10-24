@@ -22,7 +22,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -35,7 +35,7 @@ import (
 //   - a node without Kubernetes, or one not part of a cluster yet: its identity was applied and
 //     no unit failed.
 type Health struct {
-	Run node.Runner
+	Run tool.Runner
 	// Kubernetes is the node's Kubernetes side; nil on a node whose image has no Kubernetes.
 	Kubernetes *Kubernetes
 	// Chalkd is where chalkd serves, and Kubelet the kubelet's health endpoint.
@@ -57,7 +57,7 @@ type Health struct {
 func DefaultHealth(k *Kubernetes) *Health {
 	paths := DefaultPaths()
 	return &Health{
-		Run:             node.ExecRunner{},
+		Run:             tool.ExecRunner{},
 		Kubernetes:      k,
 		Chalkd:          "127.0.0.1:50000",
 		NodeCertificate: filepath.Join(paths.StateDir, "chalkd", NodeCertificateFile),

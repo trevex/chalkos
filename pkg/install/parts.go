@@ -18,6 +18,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -167,7 +168,7 @@ func (i *Installer) classify(ctx context.Context, target storage.BlockDisk, l la
 		return true, nil
 	}
 	out, err := i.Run.Run(ctx, "blkid", "-p", "-o", "export", target.Device)
-	var te *node.ToolError
+	var te *tool.Error
 	// blkid exits with 2 and says nothing when it finds nothing.
 	if errors.As(err, &te) && te.Code == 2 && strings.TrimSpace(te.Stderr) == "" {
 		return true, nil

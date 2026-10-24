@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
@@ -117,7 +118,7 @@ func (f *fakeRunner) apply(name string, args []string, out []byte) ([]byte, erro
 			kept = append(kept, l)
 		}
 		if len(kept) == len(strings.SplitAfter(string(data), "\n")) {
-			return nil, &node.ToolError{Command: "umount", Code: 32, Stderr: "umount: " + args[0] + ": not mounted."}
+			return nil, &tool.Error{Command: "umount", Code: 32, Stderr: "umount: " + args[0] + ": not mounted."}
 		}
 		return out, os.WriteFile(f.mountInfo, []byte(strings.Join(kept, "")), 0o644)
 	case f.devRoot != "" && name == "systemd-cryptsetup" && len(args) >= 3 && args[0] == "attach":
@@ -218,7 +219,7 @@ func (e *fakeEFI) run(f *fakeRunner, args []string) ([]byte, error) {
 		e.bootNext = args[1]
 	case len(args) == 1 && args[0] == "--delete-bootnext":
 		if e.bootNext == "" {
-			return nil, &node.ToolError{Command: "efibootmgr", Code: 2, Stderr: "Could not delete BootNext: No such file or directory"}
+			return nil, &tool.Error{Command: "efibootmgr", Code: 2, Stderr: "Could not delete BootNext: No such file or directory"}
 		}
 		e.bootNext = ""
 	case len(args) > 0 && args[0] == "--delete-bootnum":
@@ -230,7 +231,7 @@ func (e *fakeEFI) run(f *fakeRunner, args []string) ([]byte, error) {
 				return nil, nil
 			}
 		}
-		return nil, &node.ToolError{Command: "efibootmgr", Code: 2, Stderr: "Could not delete Boot" + num}
+		return nil, &tool.Error{Command: "efibootmgr", Code: 2, Stderr: "Could not delete Boot" + num}
 	}
 	return nil, nil
 }
@@ -645,7 +646,7 @@ func TestInPlaceStopsOnDiskError(t *testing.T) {
 func TestInPlaceCanRunAgain(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda)
-	r.add(&rule{prefix: "systemd-cryptenroll", err: &node.ToolError{Command: "systemd-cryptenroll", Code: 1, Stderr: "Failed to unseal secret using TPM2"}, times: 1})
+	r.add(&rule{prefix: "systemd-cryptenroll", err: &tool.Error{Command: "systemd-cryptenroll", Code: 1, Stderr: "Failed to unseal secret using TPM2"}, times: 1})
 	r.add(inPlaceRules(i)...)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
 
@@ -962,7 +963,7 @@ func TestInPlaceNeedsTheRunningImage(t *testing.T) {
 func TestInPlaceNamesTheRemedyOfAStateTheTPMDoesNotUnseal(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda)
-	r.add(&rule{prefix: "systemd-cryptsetup attach state", err: &node.ToolError{Command: "systemd-cryptsetup", Code: 1, Stderr: "No TPM2 metadata matching the current system state found in LUKS2 header, falling back to traditional unlocking.\nPassword querying disabled via 'headless' option.\n"}})
+	r.add(&rule{prefix: "systemd-cryptsetup attach state", err: &tool.Error{Command: "systemd-cryptsetup", Code: 1, Stderr: "No TPM2 metadata matching the current system state found in LUKS2 header, falling back to traditional unlocking.\nPassword querying disabled via 'headless' option.\n"}})
 	r.add(inPlaceRules(i)...)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
 
