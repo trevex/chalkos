@@ -3,14 +3,9 @@ package config
 import (
 	"strings"
 	"testing"
-)
 
-func TestUUIDOf(t *testing.T) {
-	// The partition type of VAR, as the image derives it too.
-	if got := uuidOf("chalkos-partition-type:var"); got != "65f335d7-a1f7-f6df-b954-a97d9a5db9e6" {
-		t.Errorf("uuidOf = %s", got)
-	}
-}
+	"github.com/trevex/chalkos/pkg/storage"
+)
 
 func TestDefinitionMatchesNix(t *testing.T) {
 	size := "200G"
@@ -106,7 +101,7 @@ func TestStorageVolumesOnSystemAndOwnDisk(t *testing.T) {
 	if got := fast.Repart["10-fast.conf"]; strings.Contains(got, "Format=") {
 		t.Errorf("10-fast.conf =\n%s", got)
 	}
-	if sec.Disks["fast"].Seed != uuidOf("chalkos-seed:n1/fast") {
+	if sec.Disks["fast"].Seed != storage.UUIDOf("chalkos-seed:n1/fast") {
 		t.Errorf("seed = %s", sec.Disks["fast"].Seed)
 	}
 }
@@ -164,7 +159,7 @@ func TestOwnDiskDefinitionMatchesNix(t *testing.T) {
 func TestDefinitionEscapesEqualsInKeys(t *testing.T) {
 	size := "1G"
 	got := definition("data", "xfs", &size, "none", map[string]string{"A=B": "c"})
-	want := "[Partition]\nA\\=B=c\nFormat=xfs\nLabel=data\nSizeMaxBytes=1G\nSizeMinBytes=1G\nType=" + partitionType("data") + "\n"
+	want := "[Partition]\nA\\=B=c\nFormat=xfs\nLabel=data\nSizeMaxBytes=1G\nSizeMinBytes=1G\nType=" + storage.PartitionType("data") + "\n"
 	if got != want {
 		t.Errorf("definition =\n%s\nwant\n%s", got, want)
 	}

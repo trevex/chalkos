@@ -15,3 +15,10 @@ func TestPartitionType(t *testing.T) {
 		}
 	}
 }
+
+func TestUUIDOf(t *testing.T) {
+	// The partition type of VAR, as the image derives it too.
+	if got := UUIDOf("chalkos-partition-type:var"); got != "65f335d7-a1f7-f6df-b954-a97d9a5db9e6" {
+		t.Errorf("UUIDOf = %s", got)
+	}
+}

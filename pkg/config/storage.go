@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"maps"
 	"regexp"
@@ -12,18 +10,6 @@ import (
 
 	"github.com/trevex/chalkos/pkg/storage"
 )
-
-// uuidOf hashes input into the shape of a UUID, so the same input always gives the same UUID: the
-// partition types, which the image derives too, and the disks' seeds installed nodes hold.
-func uuidOf(input string) string {
-	sum := sha256.Sum256([]byte(input))
-	h := hex.EncodeToString(sum[:])
-	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
-}
-
-// repart assigns existing partitions to definitions by type, then in file name order. A type
-// per label keeps a new volume from taking over the partition of another one.
-func partitionType(label string) string { return uuidOf("chalkos-partition-type:" + label) }
 
 var reservedRepartKeys = []string{"Type", "Label", "Encrypt", "Format", "SizeMinBytes", "SizeMaxBytes", "MountPoint"}
 
@@ -58,7 +44,7 @@ func definition(label, format string, size *string, mode string, repart map[stri
 	for k, v := range repart {
 		keys[k] = v
 	}
-	keys["Type"] = partitionType(label)
+	keys["Type"] = storage.PartitionType(label)
 	keys["Label"] = label
 	if format != "" {
 		keys["Format"] = format
@@ -137,7 +123,7 @@ func (s *Set) storage(name string) (storage.Section, error) {
 	}
 
 	seed := func(disk string) string {
-		return uuidOf("chalkos-seed:" + name + "/" + disk)
+		return storage.UUIDOf("chalkos-seed:" + name + "/" + disk)
 	}
 	varMode := orMode(sys.Var.Encryption.Mode, sys.Encryption.Mode)
 	sec := storage.Section{
