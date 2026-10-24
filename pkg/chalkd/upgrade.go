@@ -18,8 +18,10 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -294,7 +296,7 @@ func imageHeader(h *nodev1.ImageHeader) upgrade.Header {
 // only shrink and a boot loads its own image's slot alone, so failing to forget fails no upgrade;
 // the next one forgets again.
 func (s *Server) recordImages(installed *upgrade.Header) {
-	entries, err := upgrade.Entries(s.Paths.ESP)
+	entries, err := esp.Entries(s.Paths.ESP)
 	if err != nil {
 		log.Printf("forget the images the ESP no longer boots: %v", err)
 		return
@@ -364,7 +366,7 @@ func (s *Server) upgradeNode(tableLock sync.Locker) (*upgrade.Node, error) {
 		Cmdline:       s.Paths.Cmdline,
 		OSRelease:     readOSRelease(s.Paths.OSRelease),
 		Architecture:  uki.GoArchitecture(runtime.GOARCH),
-		OpenPartition: upgrade.OpenPartition,
+		OpenPartition: storeslot.OpenPartition,
 		TableLock:     tableLock,
 	}, nil
 }

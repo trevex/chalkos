@@ -1,8 +1,9 @@
-package upgrade
+// Package esp reads and writes the UKIs on an ESP, as systemd-boot finds them in /EFI/Linux: it
+// lists them with the image and generation each boots, and stages a new UKI under a name
+// systemd-boot ignores before naming it.
+package esp
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -12,19 +13,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"unicode/utf16"
-
-	"golang.org/x/sys/unix"
 
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
-// linuxDir is where systemd-boot finds UKIs on the ESP.
-const linuxDir = "EFI/Linux"
-
-// tempPrefix starts the name a UKI is written under before it gets its own. systemd-boot
-// ignores files whose names start with a dot.
-const tempPrefix = ".upgrade-"
+// LinuxDir is where systemd-boot finds UKIs on the ESP.
+const LinuxDir = "EFI/Linux"
 
 // Entry is a UKI on the ESP, as systemd-boot sees it.
 type Entry struct {
@@ -47,11 +41,11 @@ type Entry struct {
 // Bad reports whether systemd-boot used up the entry's tries.
 func (e Entry) Bad() bool { return e.TriesLeft == 0 }
 
-// nameGeneration reads the generation an entry ID names for the image: the image ID, an
+// NameGeneration reads the generation an entry ID names for the image: the image ID, an
 // underscore and any decimal, in lower case. systemd-boot orders the entry by that name whatever
 // the UKI holds, so the name alone counts. ok is false for an ID of another shape, and err is set
 // when the decimal does not fit a uint64.
-func nameGeneration(id, imageID string) (g uint64, ok bool, err error) {
+func NameGeneration(id, imageID string) (g uint64, ok bool, err error) {
 	s, found := strings.CutPrefix(id, strings.ToLower(imageID)+"_")
 	if !found {
 		return 0, false, nil
@@ -63,27 +57,27 @@ func nameGeneration(id, imageID string) (g uint64, ok bool, err error) {
 	return g, true, err
 }
 
-// entryGeneration is the generation an entry's ID gives a UKI of the image when the ID names it as
+// EntryGeneration is the generation an entry's ID gives a UKI of the image when the ID names it as
 // chalkos does: from 1 on, without leading zeros, so no two names give one generation and the
 // generation orders the entry as systemd-boot's comparison of the name does. Any other name
 // gives 0.
-func entryGeneration(id, imageID string) uint64 {
-	g, ok, err := nameGeneration(id, imageID)
+func EntryGeneration(id, imageID string) uint64 {
+	g, ok, err := NameGeneration(id, imageID)
 	if !ok || err != nil || g < 1 || id != strings.ToLower(EntryName(imageID, g)) {
 		return 0
 	}
 	return g
 }
 
-// nextGeneration is the generation an upgrade names the image's new entry: one above the highest
+// NextGeneration is the generation an upgrade names the image's new entry: one above the highest
 // any name on the ESP gives the image, also of a UKI that cannot be read or names another image.
 // systemd-boot compares chalkos's entries by their IDs alone, the highest first, so the new entry
 // boots next, whatever the others hold. It fails when a name gives a generation past a uint64's
 // range, or the highest leaves no next one.
-func nextGeneration(entries []Entry, imageID string) (uint64, error) {
+func NextGeneration(entries []Entry, imageID string) (uint64, error) {
 	var highest uint64
 	for _, e := range entries {
-		g, ok, err := nameGeneration(e.ID, imageID)
+		g, ok, err := NameGeneration(e.ID, imageID)
 		if !ok {
 			continue
 		}
@@ -103,7 +97,7 @@ func StagedEntry(entries []Entry, imageID string, booted Entry) (Entry, bool) {
 	var generation uint64
 	tied := false
 	for _, e := range entries {
-		g, ok, err := nameGeneration(e.ID, imageID)
+		g, ok, err := NameGeneration(e.ID, imageID)
 		switch {
 		case !ok:
 		case err != nil:
@@ -129,9 +123,9 @@ func EntryName(imageID string, generation uint64) string {
 	return fmt.Sprintf("%s_%d.efi", imageID, generation)
 }
 
-// countedEntryName is the file name of the image's UKI of the generation with a tries counter, as
+// CountedEntryName is the file name of the image's UKI of the generation with a tries counter, as
 // an upgrade writes it.
-func countedEntryName(imageID string, generation uint64, tries int) string {
+func CountedEntryName(imageID string, generation uint64, tries int) string {
 	return fmt.Sprintf("%s_%d+%d.efi", imageID, generation, tries)
 }
 
@@ -181,7 +175,7 @@ func entries(esp string, open func(string) (*os.File, error)) ([]Entry, error) {
 }
 
 func listEntries(esp string, open func(string) (*os.File, error)) ([]Entry, error) {
-	dir := filepath.Join(esp, linuxDir)
+	dir := filepath.Join(esp, LinuxDir)
 	files, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -205,7 +199,7 @@ func listEntries(esp string, open func(string) (*os.File, error)) ([]Entry, erro
 			e.Readable = true
 			e.ImageID = img.ID()
 			e.RootHash, _ = img.UsrHash()
-			e.Generation = entryGeneration(e.ID, e.ImageID)
+			e.Generation = EntryGeneration(e.ID, e.ImageID)
 		}
 		entries = append(entries, e)
 	}
@@ -242,111 +236,4 @@ func (r *recordingReader) ReadAt(p []byte, off int64) (int, error) {
 		r.err = err
 	}
 	return n, err
-}
-
-// Booted finds the entry the node booted: the one systemd-boot says it selected, which must boot
-// the running store; without that variable, as when firmware started the UKI itself, the one
-// that boots the running store.
-func Booted(entries []Entry, efivars string, running []byte) (Entry, error) {
-	selected, err := loaderString(efivars, "LoaderEntrySelected")
-	if err != nil {
-		return Entry{}, err
-	}
-	for _, e := range entries {
-		switch {
-		case selected != "" && e.ID != strings.ToLower(selected):
-		case !bytes.Equal(e.RootHash, running):
-			if selected != "" {
-				return Entry{}, fmt.Errorf("the boot loader entry %s does not boot the running store", selected)
-			}
-		default:
-			return e, nil
-		}
-	}
-	if selected != "" {
-		return Entry{}, fmt.Errorf("the boot loader entry %s the node booted is not on the ESP", selected)
-	}
-	return Entry{}, errors.New("no UKI on the ESP boots the running store")
-}
-
-// EFI variable vendors: systemd-boot's, the global one and that of the signature databases.
-const (
-	loaderVendor   = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
-	globalVendor   = "8be4df61-93ca-11d2-aa0d-00e098032b8c"
-	securityVendor = "d719b2cb-3d3a-4596-a3bc-dad00e67656f"
-)
-
-// readVariable reads an EFI variable's value from efivarfs; nil when it is not set.
-func readVariable(efivars, name, vendor string) ([]byte, error) {
-	data, err := os.ReadFile(filepath.Join(efivars, name+"-"+vendor))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read the EFI variable %s: %w", name, err)
-	}
-	// Four bytes of attributes precede the value.
-	if len(data) < 4 {
-		return nil, fmt.Errorf("the EFI variable %s is cut short", name)
-	}
-	return data[4:], nil
-}
-
-// loaderString reads a string variable of systemd-boot; "" when it is not set.
-func loaderString(efivars, name string) (string, error) {
-	data, err := readVariable(efivars, name, loaderVendor)
-	if err != nil || data == nil {
-		return "", err
-	}
-	if len(data)%2 != 0 {
-		return "", fmt.Errorf("the EFI variable %s is not UTF-16", name)
-	}
-	units := make([]uint16, len(data)/2)
-	for i := range units {
-		units[i] = binary.LittleEndian.Uint16(data[2*i:])
-	}
-	return strings.TrimRight(string(utf16.Decode(units)), "\x00"), nil
-}
-
-// syncESP flushes the ESP's file system: the boot loader reads it without the kernel's caches.
-func syncESP(esp string) error {
-	d, err := os.Open(filepath.Join(esp, linuxDir))
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	if err := d.Sync(); err != nil {
-		return fmt.Errorf("sync the ESP: %w", err)
-	}
-	if err := unix.Syncfs(int(d.Fd())); err != nil {
-		return fmt.Errorf("sync the ESP: %w", err)
-	}
-	return nil
-}
-
-// RebootHelps says whether rebooting after a boot that was not found healthy leads systemd-boot
-// on, and why: to another try while the booted entry has tries left, or on its last try to an
-// entry it falls back to. Rebooting a boot the loader does not count, or one with nothing to fall
-// back to, would boot the same image again, endlessly.
-func RebootHelps(entries []Entry, efivars, cmdline string) (bool, string) {
-	running, err := uki.UsrHash(cmdline)
-	if err != nil {
-		return false, fmt.Sprintf("the running store: %v", err)
-	}
-	booted, err := Booted(entries, efivars, running)
-	if err != nil {
-		return false, err.Error()
-	}
-	switch {
-	case booted.TriesLeft < 0:
-		return false, fmt.Sprintf("the boot loader does not count the boots of %s", booted.File)
-	case booted.TriesLeft > 0:
-		return true, fmt.Sprintf("%s has %d tries left", booted.File, booted.TriesLeft)
-	}
-	for _, e := range entries {
-		if e.ID != booted.ID && !e.Bad() && e.RootHash != nil && !bytes.Equal(e.RootHash, running) {
-			return true, fmt.Sprintf("%s used up its tries, and the boot loader falls back to %s", booted.File, e.File)
-		}
-	}
-	return false, fmt.Sprintf("%s used up its tries, and there is no image to fall back to", booted.File)
 }

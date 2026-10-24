@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
@@ -165,7 +166,7 @@ func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
 	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
 	l.node.CheckStore = func(Store) error { return nil }
 	partitions := l.node.OpenPartition
-	l.node.OpenPartition = func(p gpt.Partition, write bool) (PartitionFile, error) {
+	l.node.OpenPartition = func(p gpt.Partition, write bool) (storeslot.PartitionFile, error) {
 		if write && open {
 			return nil, errors.New("device or resource busy")
 		}

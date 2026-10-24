@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
@@ -30,6 +31,11 @@ type Header struct {
 	BootLoaderSHA256 []byte
 	// Provenance is what the build says of where it came from, which the node records and shows.
 	Provenance Provenance
+}
+
+// Store is the image's store as a slot is written from it.
+func (h Header) Store() storeslot.Image {
+	return storeslot.Image{RootHash: h.RootHash, StoreSize: h.StoreSize, VeritySize: h.VeritySize, StoreSHA256: h.StoreSHA256, VeritySHA256: h.VeritySHA256}
 }
 
 // maxUKI bounds the UKI an image brings; it must fit the ESP beside another.

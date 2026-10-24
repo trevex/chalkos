@@ -12,6 +12,7 @@ callPackage ./go-module.nix { } {
     ../pkg/command
     ../pkg/config
     ../pkg/effects
+    ../pkg/esp
     ../pkg/facts
     ../pkg/identity
     ../pkg/image
@@ -25,6 +26,7 @@ callPackage ./go-module.nix { } {
     ../pkg/rules
     ../pkg/schema
     ../pkg/storage
+    ../pkg/storeslot
     ../pkg/tool
     ../pkg/uki
     ../pkg/upgrade

@@ -21,8 +21,11 @@ import (
 	"testing"
 	"unicode/utf16"
 
+	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/verity"
 )
@@ -151,8 +154,8 @@ func newLabOf(t *testing.T, running image, sector int64) *lab {
 	if err := os.Truncate(l.disk, 16<<20); err != nil {
 		t.Fatal(err)
 	}
-	data, verityUUID := PartitionUUIDs(running.root)
-	id := LabelID(running.root)
+	data, verityUUID := storeslot.PartitionUUIDs(running.root)
+	id := storeslot.LabelID(running.root)
 	script := fmt.Sprintf(`label: gpt
 size=2MiB, type=%s, name=esp
 size=256KiB, type=%s, name=store-verity_%s, uuid=%s
@@ -175,7 +178,7 @@ size=1MiB, type=%s, name=state
 		Architecture:  "x86-64",
 		OpenPartition: l.open,
 	}
-	for _, d := range []string{filepath.Join(l.esp, linuxDir), l.efivars} {
+	for _, d := range []string{filepath.Join(l.esp, esp.LinuxDir), l.efivars} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -183,7 +186,7 @@ size=1MiB, type=%s, name=state
 	parts := l.table()
 	l.writePartition(parts[2], running.hash)
 	l.writePartition(parts[3], running.store)
-	if err := os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_1.efi"), running.uki, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"), running.uki, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	l.runFrom(running, "chalkos_1.efi", 2, 3)
@@ -200,8 +203,12 @@ func (l *lab) runFrom(img image, entry string, verityPart, dataPart int) {
 		l.t.Fatal(err)
 	}
 	l.node.OSRelease = img.osRelease(3)
-	id, _, _ := parseEntryName(entry)
-	l.setVariable("LoaderEntrySelected", id)
+	// The entry's ID is its name without the tries counter, as systemd-boot reads it.
+	id := entry
+	if plus := strings.LastIndexByte(entry, '+'); plus >= 0 {
+		id = entry[:plus] + ".efi"
+	}
+	l.setVariable("LoaderEntrySelected", strings.ToLower(id))
 }
 
 // setVariable sets a string variable of systemd-boot, as the boot loader does.
@@ -296,7 +303,7 @@ func (p partitionFile) Close() error { return p.f.Close() }
 
 // open opens a partition of the disk image, refusing writes to the running slot's partitions as
 // the kernel would, and counts writes.
-func (l *lab) open(p gpt.Partition, write bool) (PartitionFile, error) {
+func (l *lab) open(p gpt.Partition, write bool) (storeslot.PartitionFile, error) {
 	if write {
 		l.mu.Lock()
 		l.writes[p.Number]++
@@ -320,9 +327,9 @@ func (l *lab) open(p gpt.Partition, write bool) (PartitionFile, error) {
 // boot is what systemd-boot would boot: the entry it selects, and the name of the image whose
 // store that entry finds by its partition UUIDs and checks against its root hash. An empty name
 // means the boot finds no store.
-func (l *lab) boot() (Entry, string) {
+func (l *lab) boot() (esp.Entry, string) {
 	l.t.Helper()
-	entries, err := Entries(l.esp)
+	entries, err := esp.Entries(l.esp)
 	if err != nil {
 		l.t.Fatal(err)
 	}
@@ -339,11 +346,17 @@ func (l *lab) boot() (Entry, string) {
 	osID := map[string]string{}
 	for _, e := range entries {
 		osID[e.File] = e.ImageID
-		if img, readable, _ := readUKI(filepath.Join(l.esp, linuxDir, e.File), os.Open); readable && e.ImageID == "" {
-			osID[e.File] = img.OSRelease["ID"]
+		if e.Readable && e.ImageID == "" {
+			data, err := os.ReadFile(filepath.Join(l.esp, esp.LinuxDir, e.File))
+			if err != nil {
+				l.t.Fatal(err)
+			}
+			if img, err := uki.Read(bytes.NewReader(data)); err == nil {
+				osID[e.File] = img.OSRelease["ID"]
+			}
 		}
 	}
-	slices.SortStableFunc(entries, func(a, b Entry) int {
+	slices.SortStableFunc(entries, func(a, b esp.Entry) int {
 		if a.Bad() != b.Bad() {
 			if a.Bad() {
 				return 1
@@ -356,7 +369,7 @@ func (l *lab) boot() (Entry, string) {
 		return compareIDs(b.ID, a.ID)
 	})
 	selected := entries[0]
-	data, verityUUID := PartitionUUIDs(selected.RootHash)
+	data, verityUUID := storeslot.PartitionUUIDs(selected.RootHash)
 	var store, hash *gpt.Partition
 	for _, p := range l.table() {
 		switch p.UUID {
@@ -417,7 +430,7 @@ func idRun(s string) (run, rest string) {
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 // attempt boots as systemd-boot does: it counts a try of the entry it selects, and returns it.
-func (l *lab) attempt() Entry {
+func (l *lab) attempt() esp.Entry {
 	l.t.Helper()
 	e, name := l.boot()
 	if name == "" {
@@ -425,7 +438,7 @@ func (l *lab) attempt() Entry {
 	}
 	if e.TriesLeft >= 0 {
 		next := fmt.Sprintf("%s+%d-%d.efi", strings.TrimSuffix(e.ID, ".efi"), max(e.TriesLeft-1, 0), e.TriesDone+1)
-		if err := os.Rename(filepath.Join(l.esp, linuxDir, e.File), filepath.Join(l.esp, linuxDir, next)); err != nil {
+		if err := os.Rename(filepath.Join(l.esp, esp.LinuxDir, e.File), filepath.Join(l.esp, esp.LinuxDir, next)); err != nil {
 			l.t.Fatal(err)
 		}
 		e.File, e.TriesLeft, e.TriesDone = next, max(e.TriesLeft-1, 0), e.TriesDone+1
@@ -434,9 +447,9 @@ func (l *lab) attempt() Entry {
 }
 
 // bless marks the entry good, as systemd-bless-boot does.
-func (l *lab) bless(e Entry) {
+func (l *lab) bless(e esp.Entry) {
 	l.t.Helper()
-	if err := os.Rename(filepath.Join(l.esp, linuxDir, e.File), filepath.Join(l.esp, linuxDir, e.ID)); err != nil {
+	if err := os.Rename(filepath.Join(l.esp, esp.LinuxDir, e.File), filepath.Join(l.esp, esp.LinuxDir, e.ID)); err != nil {
 		l.t.Fatal(err)
 	}
 }
@@ -468,7 +481,7 @@ func (l *lab) install(img image) (Result, error) {
 
 // file returns a UKI's content, or nil when it is gone.
 func (l *lab) file(name string) []byte {
-	b, err := os.ReadFile(filepath.Join(l.esp, linuxDir, name))
+	b, err := os.ReadFile(filepath.Join(l.esp, esp.LinuxDir, name))
 	if err != nil {
 		return nil
 	}

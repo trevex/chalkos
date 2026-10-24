@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/esp"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -300,18 +301,18 @@ func (h *Health) unhealthy(ctx context.Context, err error) error {
 }
 
 // booted finds the entry the node booted and the root hash of the store it runs.
-func (h *Health) booted() (upgrade.Entry, []byte, error) {
+func (h *Health) booted() (esp.Entry, []byte, error) {
 	cmdline, err := os.ReadFile(h.Cmdline)
 	if err != nil {
-		return upgrade.Entry{}, nil, err
+		return esp.Entry{}, nil, err
 	}
 	running, err := uki.UsrHash(string(cmdline))
 	if err != nil {
-		return upgrade.Entry{}, nil, fmt.Errorf("the running store: %w", err)
+		return esp.Entry{}, nil, fmt.Errorf("the running store: %w", err)
 	}
-	entries, err := upgrade.Entries(h.ESP)
+	entries, err := esp.Entries(h.ESP)
 	if err != nil {
-		return upgrade.Entry{}, running, err
+		return esp.Entry{}, running, err
 	}
 	booted, err := upgrade.Booted(entries, h.EFIVars, running)
 	return booted, running, err
@@ -319,7 +320,7 @@ func (h *Health) booted() (upgrade.Entry, []byte, error) {
 
 // rebootHelps says whether a reboot after an unhealthy boot leads the boot loader on, and why.
 func (h *Health) rebootHelps() (bool, string) {
-	entries, err := upgrade.Entries(h.ESP)
+	entries, err := esp.Entries(h.ESP)
 	if err != nil {
 		return false, err.Error()
 	}

@@ -1,4 +1,4 @@
-package upgrade
+package storeslot
 
 import (
 	"bytes"
@@ -18,11 +18,8 @@ import (
 	"github.com/trevex/chalkos/pkg/verity"
 )
 
-// SlotWriter writes an image's store into a slot of a disk: the boot disk's inactive slot in an
-// upgrade, slot A of the target disk in an install. A slot is retired before it is written and
-// activated once its store verifies from the disk, so a slot written in part never carries the
-// partition UUIDs a UKI's usrhash= finds.
-type SlotWriter struct {
+// Writer writes an image's store into the slots of a disk.
+type Writer struct {
 	Run tool.Runner
 	// Disk is the disk's device.
 	Disk string
@@ -38,7 +35,7 @@ type SlotWriter struct {
 	Change func(what string) error
 }
 
-func (w *SlotWriter) change(what string) error {
+func (w *Writer) change(what string) error {
 	if w.Change == nil {
 		return nil
 	}
@@ -46,7 +43,7 @@ func (w *SlotWriter) change(what string) error {
 }
 
 // lockTable takes the partition table's lock, when there is one, and returns its release.
-func (w *SlotWriter) lockTable() func() {
+func (w *Writer) lockTable() func() {
 	if w.TableLock == nil {
 		return func() {}
 	}
@@ -55,24 +52,24 @@ func (w *SlotWriter) lockTable() func() {
 }
 
 // sfdisk runs sfdisk on the disk with its lock, waiting LockWait for it at most.
-func (w *SlotWriter) sfdisk() gpt.Sfdisk {
+func (w *Writer) sfdisk() gpt.Sfdisk {
 	return gpt.Sfdisk{Run: w.Run, Disk: w.Disk, LockWait: w.LockWait}
 }
 
 // ReadTable reads the disk's GPT with sfdisk, under the partition table's lock.
-func (w *SlotWriter) ReadTable(ctx context.Context) ([]gpt.Partition, error) {
+func (w *Writer) ReadTable(ctx context.Context) ([]gpt.Partition, error) {
 	unlock := w.lockTable()
 	defer unlock()
 	return w.readTable(ctx)
 }
 
-func (w *SlotWriter) readTable(ctx context.Context) ([]gpt.Partition, error) {
+func (w *Writer) readTable(ctx context.Context) ([]gpt.Partition, error) {
 	return w.sfdisk().ReadTable(ctx)
 }
 
 // Retire gives the slot's partitions random UUIDs and the label _empty, so nothing boots it.
-func (w *SlotWriter) Retire(ctx context.Context, slot Slot) error {
-	if err := w.setSlot(ctx, slot, gpt.NewUUID(), emptyLabel, gpt.NewUUID(), emptyLabel); err != nil {
+func (w *Writer) Retire(ctx context.Context, slot Slot) error {
+	if err := w.setSlot(ctx, slot, gpt.NewUUID(), EmptyLabel, gpt.NewUUID(), EmptyLabel); err != nil {
 		return err
 	}
 	log.Printf("retired the slot of partitions %d and %d", slot.Verity.Number, slot.Data.Number)
@@ -82,7 +79,7 @@ func (w *SlotWriter) Retire(ctx context.Context, slot Slot) error {
 // Write writes the store and its hash tree that the stream holds into the slot and checks them
 // against the root hash, as read back from the disk. A slot that holds them already is left as
 // it is, and the stream's copies are skipped. It reports whether it wrote the slot.
-func (w *SlotWriter) Write(h Header, slot Slot, stream io.Reader) (bool, error) {
+func (w *Writer) Write(h Image, slot Slot, stream io.Reader) (bool, error) {
 	if w.Holds(slot, h) {
 		log.Printf("the slot of partitions %d and %d holds the store %x already", slot.Verity.Number, slot.Data.Number, h.RootHash)
 		return false, Skip(h, stream)
@@ -118,7 +115,7 @@ func (w *SlotWriter) Write(h Header, slot Slot, stream io.Reader) (bool, error) 
 
 // Holds reports whether the slot's partitions hold the image's store and hash tree, whatever
 // their UUIDs and labels. Only a hash tree with the image's root hash is read in full.
-func (w *SlotWriter) Holds(slot Slot, h Header) bool {
+func (w *Writer) Holds(slot Slot, h Image) bool {
 	hash, err := w.OpenPartition(slot.Verity, false)
 	if err != nil {
 		return false
@@ -132,7 +129,7 @@ func (w *SlotWriter) Holds(slot Slot, h Header) bool {
 	return err == nil
 }
 
-func (w *SlotWriter) verify(slot Slot, root []byte) (verity.Superblock, error) {
+func (w *Writer) verify(slot Slot, root []byte) (verity.Superblock, error) {
 	data, err := w.OpenPartition(slot.Data, false)
 	if err != nil {
 		return verity.Superblock{}, err
@@ -151,7 +148,7 @@ const chunk = 4 << 20
 
 // copyInto writes size bytes of the stream to the start of the partition and checks their
 // SHA-256.
-func (w *SlotWriter) copyInto(p gpt.Partition, stream io.Reader, size int64, sum []byte, what string) error {
+func (w *Writer) copyInto(p gpt.Partition, stream io.Reader, size int64, sum []byte, what string) error {
 	f, err := w.OpenPartition(p, true)
 	if errors.Is(err, syscall.EBUSY) {
 		return fmt.Errorf("partition %d is in use; it must not be written", p.Number)
@@ -184,7 +181,7 @@ func (w *SlotWriter) copyInto(p gpt.Partition, stream io.Reader, size int64, sum
 
 // Activate gives the slot the partition UUIDs systemd derives from the image's root hash, so a
 // UKI booting the image finds its store there, and the labels naming the store by its root hash.
-func (w *SlotWriter) Activate(ctx context.Context, slot Slot, h Header) error {
+func (w *Writer) Activate(ctx context.Context, slot Slot, h Image) error {
 	dataUUID, verityUUID := PartitionUUIDs(h.RootHash)
 	id := LabelID(h.RootHash)
 	return w.setSlot(ctx, slot, verityUUID, "store-verity_"+id, dataUUID, "store_"+id)
@@ -192,7 +189,7 @@ func (w *SlotWriter) Activate(ctx context.Context, slot Slot, h Header) error {
 
 // setSlot gives the slot's verity and data partitions UUIDs and labels. It reads the partition
 // table again under its lock, and refuses partitions that moved since the slot was found.
-func (w *SlotWriter) setSlot(ctx context.Context, slot Slot, verityUUID, verityLabel, dataUUID, dataLabel string) error {
+func (w *Writer) setSlot(ctx context.Context, slot Slot, verityUUID, verityLabel, dataUUID, dataLabel string) error {
 	unlock := w.lockTable()
 	defer unlock()
 	parts, err := w.readTable(ctx)
@@ -222,7 +219,7 @@ func (w *SlotWriter) setSlot(ctx context.Context, slot Slot, verityUUID, verityL
 }
 
 // setPartition gives a partition of the disk a UUID and a label, unless it has them.
-func (w *SlotWriter) setPartition(ctx context.Context, p gpt.Partition, uuid, label string) error {
+func (w *Writer) setPartition(ctx context.Context, p gpt.Partition, uuid, label string) error {
 	if p.UUID != uuid {
 		if err := w.change(fmt.Sprintf("set the UUID of partition %d", p.Number)); err != nil {
 			return err
@@ -242,6 +239,26 @@ func (w *SlotWriter) setPartition(ctx context.Context, p gpt.Partition, uuid, la
 	return nil
 }
 
+// WriteActive writes the image's store into the slot and activates it, unless the slot holds it
+// already, active and labelled for it: then the stream's copies are skipped. The slot is retired
+// first, so a slot written in part never carries the UUIDs a UKI finds its store by.
+func (w *Writer) WriteActive(ctx context.Context, slot Slot, h Image, stream io.Reader) error {
+	if slot.Holds(h.RootHash) && slot.Label() == LabelID(h.RootHash) && w.Holds(slot, h) {
+		log.Printf("the slot of partitions %d and %d holds the store %x already", slot.Verity.Number, slot.Data.Number, h.RootHash)
+		return Skip(h, stream)
+	}
+	if err := slot.Fits(h); err != nil {
+		return err
+	}
+	if err := w.Retire(ctx, slot); err != nil {
+		return err
+	}
+	if _, err := w.Write(h, slot, stream); err != nil {
+		return err
+	}
+	return w.Activate(ctx, slot, h)
+}
+
 // Skipper is a stream that passes over bytes without reading them, as a pull passes over the
 // layers of parts a slot holds already without fetching them.
 type Skipper interface {
@@ -252,7 +269,7 @@ type Skipper interface {
 // already, and checks their SHA-256 all the same: every part of an image is checked. A Skipper
 // passes over them without reading them instead: the slot holds them already, as Holds found by
 // reading its hash tree and verifying its store against the root hash.
-func Skip(h Header, stream io.Reader) error {
+func Skip(h Image, stream io.Reader) error {
 	// What the stream would carry need not be read: Holds verified the slot's store and hash tree
 	// against the header's root hash and sizes, and the slot keeps them.
 	if s, ok := stream.(Skipper); ok {

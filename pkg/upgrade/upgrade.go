@@ -25,14 +25,14 @@
 //
 // The running slot and its UKI are never written.
 //
-// The installer shares the slot writer, SlotWriter, and the checks of an image's UKI and boot
-// loader, CheckUKI and CheckSecureBoot: it writes slot A of the disk it installs a node onto.
+// The installer shares the checks of an image's UKI and boot loader, CheckUKI and CheckSecureBoot,
+// and writes slot A of the disk it installs a node onto with the same slot writer,
+// storeslot.Writer.
 package upgrade
 
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -40,11 +40,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
 )
@@ -62,7 +63,7 @@ type Node struct {
 	// Architecture is the node's, as images name theirs.
 	Architecture string
 	// OpenPartition opens a partition of the boot disk.
-	OpenPartition func(p gpt.Partition, write bool) (PartitionFile, error)
+	OpenPartition func(p gpt.Partition, write bool) (storeslot.PartitionFile, error)
 	// TableLock, when set, is held while the boot disk's partition table is read or changed:
 	// chalkd's storage changes take it too.
 	TableLock sync.Locker
@@ -91,9 +92,9 @@ func (n *Node) change(what string) error {
 type Result struct {
 	// AlreadyInstalled is set when the node runs the image already, and nothing changed.
 	AlreadyInstalled bool
-	// AlreadyStaged is set when the image boots next already, from Entry, and nothing changed.
+	// AlreadyStaged is set when the image boots next already, from esp.Entry, and nothing changed.
 	AlreadyStaged bool
-	// Entry is the UKI that boots the image from the next boot on.
+	// esp.Entry is the UKI that boots the image from the next boot on.
 	Entry string
 	// Wrote is set when the store was written; it is not when the slot held it already.
 	Wrote bool
@@ -156,7 +157,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	all, err := Entries(n.ESP)
+	all, err := esp.Entries(n.ESP)
 	if err != nil {
 		return Result{}, err
 	}
@@ -173,19 +174,19 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		if retired(e, h.ImageID, booted, running) || !ofImage(e, h.ImageID) && e.ID != booted.ID {
 			continue
 		}
-		if entryGeneration(e.ID, h.ImageID) == 0 {
+		if esp.EntryGeneration(e.ID, h.ImageID) == 0 {
 			return Result{}, fmt.Errorf("%s on the ESP is not named %s_<generation>.efi with a generation from 1 on and no leading zeros, so the next generation might not boot before it; reinstall the node, or rename the entry", e.File, h.ImageID)
 		}
 	}
 	// The UKI is renamed last, to the image's next generation, above the generation any name on the
 	// ESP gives, so it replaces no UKI and shares no entry's ID.
-	generation, err := nextGeneration(all, h.ImageID)
+	generation, err := esp.NextGeneration(all, h.ImageID)
 	if err != nil {
 		return Result{}, err
 	}
 	// The image boots next already, as after an upgrade without a reboot. The check runs again: the
 	// upgrade brings the config the image boots with, which replaces the one staged with it.
-	if staged, ok := StagedEntry(all, h.ImageID, booted); ok && bytes.Equal(staged.RootHash, h.RootHash) && inactive.Holds(h.RootHash) {
+	if staged, ok := esp.StagedEntry(all, h.ImageID, booted); ok && bytes.Equal(staged.RootHash, h.RootHash) && inactive.Holds(h.RootHash) {
 		if err := n.recheck(ctx, h, inactive, staged, all, booted, running); err != nil {
 			return Result{}, err
 		}
@@ -193,7 +194,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	}
 	// UKIs of other images on the ESP, such as a rescue system's, are left alone; a UKI is of the
 	// image its os-release names, or one that cannot be read of the image its name gives.
-	entries := slices.DeleteFunc(slices.Clone(all), func(e Entry) bool { return !ofImage(e, h.ImageID) })
+	entries := slices.DeleteFunc(slices.Clone(all), func(e esp.Entry) bool { return !ofImage(e, h.ImageID) })
 	// Until the running image's boot is found good, the image it falls back to must stay.
 	if booted.TriesLeft >= 0 {
 		for _, e := range entries {
@@ -203,7 +204,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 			}
 		}
 	}
-	if err := inactive.Fits(h); err != nil {
+	if err := inactive.Fits(h.Store()); err != nil {
 		return Result{}, err
 	}
 
@@ -218,7 +219,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err := n.retire(ctx, all, h.ImageID, booted, running, inactive); err != nil {
 		return Result{}, err
 	}
-	wrote, err := w.Write(h, inactive, stream)
+	wrote, err := w.Write(h.Store(), inactive, stream)
 	if err != nil {
 		return Result{}, err
 	}
@@ -262,16 +263,16 @@ func (n *Node) running() ([]byte, error) {
 }
 
 // slots is the slot writer of the node's boot disk.
-func (n *Node) slots() *SlotWriter {
-	return &SlotWriter{Run: n.Run, Disk: n.Disk, OpenPartition: n.OpenPartition, TableLock: n.TableLock, LockWait: n.LockWait, Change: n.Change}
+func (n *Node) slots() *storeslot.Writer {
+	return &storeslot.Writer{Run: n.Run, Disk: n.Disk, OpenPartition: n.OpenPartition, TableLock: n.TableLock, LockWait: n.LockWait, Change: n.Change}
 }
 
 // ofImage reports whether the UKI is of the image: its os-release names the image or, when it
 // does not parse as a UKI, its name gives a generation of the image. A UKI whose os-release names
 // no IMAGE_ID is another system's, which systemd-boot sorts by its ID, such as nixos.
-func ofImage(e Entry, imageID string) bool {
+func ofImage(e esp.Entry, imageID string) bool {
 	if !e.Readable {
-		_, ok, _ := nameGeneration(e.ID, imageID)
+		_, ok, _ := esp.NameGeneration(e.ID, imageID)
 		return ok
 	}
 	return e.ImageID == imageID
@@ -279,7 +280,7 @@ func ofImage(e Entry, imageID string) bool {
 
 // retired reports whether the retirement removes the UKI: one of the image that neither the node
 // booted nor boots the running store.
-func retired(e Entry, imageID string, booted Entry, running []byte) bool {
+func retired(e esp.Entry, imageID string, booted esp.Entry, running []byte) bool {
 	return ofImage(e, imageID) && e.ID != booted.ID && !bytes.Equal(e.RootHash, running)
 }
 
@@ -287,13 +288,13 @@ func retired(e Entry, imageID string, booted Entry, running []byte) bool {
 // check fails, the slot and the entry are retired, as after a failed check of a written image,
 // and the running image stays the next boot; the error is then a StagedRetiredError, which holds
 // a CheckError when CheckStore refused the image. When the retirement fails too, the image still boots next, and the error says so.
-func (n *Node) recheck(ctx context.Context, h Header, slot Slot, staged Entry, all []Entry, booted Entry, running []byte) error {
+func (n *Node) recheck(ctx context.Context, h Header, slot storeslot.Slot, staged esp.Entry, all []esp.Entry, booted esp.Entry, running []byte) error {
 	if n.CheckStore == nil {
 		return nil
 	}
 	ctx = context.WithoutCancel(ctx)
 	n.closeStore(ctx, n.storeDir(), true, true)
-	err := n.checkStore(ctx, h, slot, filepath.Join(n.ESP, linuxDir, staged.File))
+	err := n.checkStore(ctx, h, slot, filepath.Join(n.ESP, esp.LinuxDir, staged.File))
 	if err == nil {
 		return nil
 	}
@@ -305,35 +306,18 @@ func (n *Node) recheck(ctx context.Context, h Header, slot Slot, staged Entry, a
 
 // retire removes every UKI of the image but those booting the running store, along with UKIs an
 // upgrade left half written, and then makes the inactive slot one nothing finds.
-func (n *Node) retire(ctx context.Context, entries []Entry, imageID string, booted Entry, running []byte, slot Slot) error {
-	dir := filepath.Join(n.ESP, linuxDir)
-	var remove []string
-	files, err := os.ReadDir(dir)
+func (n *Node) retire(ctx context.Context, entries []esp.Entry, imageID string, booted esp.Entry, running []byte, slot storeslot.Slot) error {
+	remove, err := esp.Leftovers(n.ESP, "")
 	if err != nil {
-		return fmt.Errorf("list the UKIs on the ESP: %w", err)
-	}
-	for _, f := range files {
-		if strings.HasPrefix(f.Name(), tempPrefix) {
-			remove = append(remove, f.Name())
-		}
+		return err
 	}
 	for _, e := range entries {
 		if retired(e, imageID, booted, running) {
 			remove = append(remove, e.File)
 		}
 	}
-	for _, name := range remove {
-		if err := n.change("remove " + name); err != nil {
-			return err
-		}
-		if err := os.Remove(filepath.Join(dir, name)); err != nil {
-			return fmt.Errorf("remove %s from the ESP: %w", name, err)
-		}
-	}
-	if len(remove) > 0 {
-		if err := syncESP(n.ESP); err != nil {
-			return err
-		}
+	if err := esp.Remove(n.ESP, remove, n.Change); err != nil {
+		return err
 	}
 	return n.slots().Retire(ctx, slot)
 }
@@ -344,11 +328,10 @@ func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
 	if err := n.change("write the UKI"); err != nil {
 		return "", 0, err
 	}
-	dir := filepath.Join(n.ESP, linuxDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	tmp, err := esp.Stage(n.ESP, h.RootHash)
+	if err != nil {
 		return "", 0, err
 	}
-	tmp := filepath.Join(dir, tempPrefix+hex.EncodeToString(h.RootHash)+".efi")
 	tries, err := ReceiveUKI(tmp, h, stream, n.EFIVars)
 	if err != nil {
 		return tmp, 0, err
@@ -374,19 +357,40 @@ func ExpectEnd(stream io.Reader, last string) error {
 
 // activate makes the slot hold the image as systemd finds it and gives the UKI its name, the
 // generation with the tries. Until the rename, nothing boots the slot.
-func (n *Node) activate(ctx context.Context, h Header, slot Slot, tmp string, generation uint64, tries int) (string, error) {
-	if err := n.slots().Activate(ctx, slot, h); err != nil {
+func (n *Node) activate(ctx context.Context, h Header, slot storeslot.Slot, tmp string, generation uint64, tries int) (string, error) {
+	if err := n.slots().Activate(ctx, slot, h.Store()); err != nil {
 		return "", err
 	}
-	name := countedEntryName(h.ImageID, generation, tries)
-	if err := n.change("name the UKI " + name); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, filepath.Join(n.ESP, linuxDir, name)); err != nil {
-		return "", fmt.Errorf("name the UKI %s: %w", name, err)
-	}
-	if err := syncESP(n.ESP); err != nil {
+	name := esp.CountedEntryName(h.ImageID, generation, tries)
+	if err := esp.Name(n.ESP, tmp, name, n.Change); err != nil {
 		return "", err
 	}
 	return name, nil
+}
+
+// slots finds the boot disk's two store slots, pairing verity and data partitions in disk order,
+// and tells the one holding the running image from the other.
+func slots(parts []gpt.Partition, running []byte) (booted, inactive storeslot.Slot, err error) {
+	pairs, err := storeslot.StoreSlots("the boot disk", parts)
+	if err != nil {
+		return storeslot.Slot{}, storeslot.Slot{}, err
+	}
+	// The node found its store by these UUIDs; on two slots, which one it runs is unknown.
+	if pairs[0].Holds(running) && pairs[1].Holds(running) {
+		return storeslot.Slot{}, storeslot.Slot{}, errors.New("both slots carry the running store's partition UUIDs; which one the node runs is unknown")
+	}
+	dataUUID, verityUUID := storeslot.PartitionUUIDs(running)
+	for i, s := range pairs {
+		if !s.Holds(running) {
+			continue
+		}
+		other := pairs[1-i]
+		for _, uuid := range []string{other.Data.UUID, other.Verity.UUID} {
+			if uuid == dataUUID || uuid == verityUUID {
+				return storeslot.Slot{}, storeslot.Slot{}, fmt.Errorf("the inactive slot carries the running store's partition UUID %s; which partition the node runs is unknown", uuid)
+			}
+		}
+		return s, other, nil
+	}
+	return storeslot.Slot{}, storeslot.Slot{}, errors.New("no slot of the boot disk holds the running image's store")
 }

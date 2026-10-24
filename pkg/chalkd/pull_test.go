@@ -29,6 +29,7 @@ import (
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -367,10 +368,10 @@ func TestInstallPassesOverAStoreItHolds(t *testing.T) {
 	s.Installer = true
 	var rest []byte
 	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
-		if _, ok := req.Parts.(upgrade.Skipper); !ok {
+		if _, ok := req.Parts.(storeslot.Skipper); !ok {
 			return errors.New("the pulled parts cannot be passed over")
 		}
-		if err := upgrade.Skip(req.Image, req.Parts); err != nil {
+		if err := storeslot.Skip(req.Image.Store(), req.Parts); err != nil {
 			return err
 		}
 		var err error

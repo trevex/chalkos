@@ -1,12 +1,17 @@
-package upgrade
+package esp
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
-	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
 // TestGeneration reads an entry's generation from its ID, with or without the tries counter the
@@ -31,7 +36,7 @@ func TestGeneration(t *testing.T) {
 		"chalkos-installer_1.efi":          0,
 	} {
 		id, _, _ := parseEntryName(file)
-		if got := entryGeneration(id, "chalkos"); got != want {
+		if got := EntryGeneration(id, "chalkos"); got != want {
 			t.Errorf("the generation of %s = %d, want %d", file, got, want)
 		}
 	}
@@ -60,13 +65,13 @@ func TestNextGeneration(t *testing.T) {
 		{"leading zeros", []Entry{entry("chalkos_0012.efi", ""), entry("chalkos_3.efi", "chalkos")}, 13},
 		{"a huge generation", []Entry{entry("chalkos_18446744073709551614.efi", "chalkos")}, math.MaxUint64},
 	} {
-		got, err := nextGeneration(tc.entries, "chalkos")
+		got, err := NextGeneration(tc.entries, "chalkos")
 		if err != nil || got != tc.want {
 			t.Errorf("%s: the next generation = %d, %v, want %d", tc.name, got, err, tc.want)
 		}
 	}
 	for _, file := range []string{"chalkos_18446744073709551615.efi", "chalkos_18446744073709551616.efi", "chalkos_000099999999999999999999999.efi"} {
-		if got, err := nextGeneration([]Entry{entry(file, "")}, "chalkos"); err == nil || !strings.Contains(err.Error(), "too large") {
+		if got, err := NextGeneration([]Entry{entry(file, "")}, "chalkos"); err == nil || !strings.Contains(err.Error(), "too large") {
 			t.Errorf("past %s: the next generation = %d, %v, want it refused", file, got, err)
 		}
 	}
@@ -111,30 +116,8 @@ func TestEntryNames(t *testing.T) {
 	if got := EntryName("chalkos", 1); got != "chalkos_1.efi" {
 		t.Errorf("EntryName = %s", got)
 	}
-	if got := countedEntryName("chalkos", 12, 3); got != "chalkos_12+3.efi" {
-		t.Errorf("countedEntryName = %s", got)
-	}
-}
-
-// TestSlotLabels names a slot's store by its root hash's first 16 hex digits, and reads that ID
-// back from a slot's labels, which retired and foreign slots do not carry.
-func TestSlotLabels(t *testing.T) {
-	root := bytes.Repeat([]byte{0x3f, 0xa9}, 16)
-	if got := LabelID(root); got != "3fa93fa93fa93fa9" {
-		t.Fatalf("LabelID = %s", got)
-	}
-	for _, tc := range []struct {
-		verity, data, want string
-	}{
-		{"store-verity_3fa93fa93fa93fa9", "store_3fa93fa93fa93fa9", "3fa93fa93fa93fa9"},
-		{"_empty", "_empty", ""},
-		{"store-verity_3fa93fa93fa93fa9", "store_81bd02c4a9e1aa00", ""},
-		{"store-verity", "store", ""},
-	} {
-		s := Slot{Verity: gpt.Partition{Name: tc.verity}, Data: gpt.Partition{Name: tc.data}}
-		if got := s.Label(); got != tc.want {
-			t.Errorf("the label of %s and %s = %q, want %q", tc.verity, tc.data, got, tc.want)
-		}
+	if got := CountedEntryName("chalkos", 12, 3); got != "chalkos_12+3.efi" {
+		t.Errorf("CountedEntryName = %s", got)
 	}
 }
 
@@ -156,6 +139,73 @@ func TestTriesCounter(t *testing.T) {
 		id, left, done := parseEntryName(tc.file)
 		if id != tc.id || left != tc.left || done != tc.done {
 			t.Errorf("%s: %s, %d, %d; want %s, %d, %d", tc.file, id, left, done, tc.id, tc.left, tc.done)
+		}
+	}
+}
+
+// testUKI is a UKI of the image chalkos that boots the store with the root hash.
+func testUKI(root []byte) []byte {
+	return ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3"}, fmt.Sprintf("init=/nix/store/x/init usrhash=%x", root))
+}
+
+// TestEntriesWhileBlessed lists the UKIs again when one is renamed while they are read, as
+// systemd-bless-boot renames the booted one once the boot was found healthy.
+func TestEntriesWhileBlessed(t *testing.T) {
+	root := bytes.Repeat([]byte{0xb}, 32)
+	ukiData := testUKI(root)
+	esp := t.TempDir()
+	dir := filepath.Join(esp, LinuxDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "chalkos_2+2-1.efi"), ukiData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	blessed := false
+	list, err := entries(esp, func(path string) (*os.File, error) {
+		if !blessed {
+			blessed = true
+			if err := os.Rename(path, filepath.Join(dir, "chalkos_2.efi")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return os.Open(path)
+	})
+	if err != nil || len(list) != 1 || list[0].File != "chalkos_2.efi" || list[0].Generation != 2 || list[0].TriesLeft != -1 {
+		t.Errorf("entries = %+v, %v", list, err)
+	}
+}
+
+// TestEntriesReadErrors lists a file that reads but is no UKI as one that cannot be read, and
+// fails on a UKI that does not open or read: which store it boots is then unknown.
+func TestEntriesReadErrors(t *testing.T) {
+	root := bytes.Repeat([]byte{0xb}, 32)
+	ukiData := testUKI(root)
+	esp := t.TempDir()
+	dir := filepath.Join(esp, LinuxDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{"chalkos_1.efi": ukiData, "chalkos_2.efi": []byte("not a UKI")} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := entries(esp, os.Open)
+	if err != nil || len(list) != 2 || !list[0].Readable || !bytes.Equal(list[0].RootHash, root) || list[1].Readable || list[1].RootHash != nil {
+		t.Fatalf("entries = %+v, %v", list, err)
+	}
+	for _, tc := range []struct {
+		name string
+		open func(string) (*os.File, error)
+		want error
+	}{
+		{"open", func(string) (*os.File, error) { return nil, syscall.EACCES }, syscall.EACCES},
+		// Reading a directory fails as a read of a broken file system does.
+		{"read", func(string) (*os.File, error) { return os.Open(dir) }, syscall.EISDIR},
+	} {
+		if list, err := entries(esp, tc.open); !errors.Is(err, tc.want) || !strings.Contains(err.Error(), "chalkos_1.efi on the ESP") {
+			t.Errorf("entries failing to %s = %+v, %v; want %v", tc.name, list, err, tc.want)
 		}
 	}
 }

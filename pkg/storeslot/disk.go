@@ -1,8 +1,12 @@
-package upgrade
+// Package storeslot writes an image's store into a store slot of a disk: the boot disk's inactive
+// slot in an upgrade, slot A of the target disk in an install. A slot is a hash tree partition
+// and a data partition; it is retired before it is written and activated once its store verifies
+// from the disk, so a slot written in part never carries the partition UUIDs a UKI's usrhash=
+// finds.
+package storeslot
 
 import (
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,8 +17,16 @@ import (
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 )
 
-// emptyLabel marks a slot that holds no image, as the image's first boot creates slot B.
-const emptyLabel = "_empty"
+// EmptyLabel marks a slot that holds no image, as the image's first boot creates slot B.
+const EmptyLabel = "_empty"
+
+// Image is the store an image brings: its root hash, and the sizes and SHA-256 of the store and
+// of its hash tree, which follow each other in the stream a slot is written from.
+type Image struct {
+	RootHash                  []byte
+	StoreSize, VeritySize     int64
+	StoreSHA256, VeritySHA256 []byte
+}
 
 // Slot is a store slot: its verity and data partitions.
 type Slot struct {
@@ -52,33 +64,6 @@ func (s Slot) Holds(rootHash []byte) bool {
 // is the root hash's first 128 bits, the verity partition's its last.
 func PartitionUUIDs(rootHash []byte) (data, verity string) {
 	return gpt.FormatUUID(rootHash[:16]), gpt.FormatUUID(rootHash[16:32])
-}
-
-// slots finds the boot disk's two store slots, pairing verity and data partitions in disk order,
-// and tells the one holding the running image from the other.
-func slots(parts []gpt.Partition, running []byte) (booted, inactive Slot, err error) {
-	pairs, err := StoreSlots("the boot disk", parts)
-	if err != nil {
-		return Slot{}, Slot{}, err
-	}
-	// The node found its store by these UUIDs; on two slots, which one it runs is unknown.
-	if pairs[0].Holds(running) && pairs[1].Holds(running) {
-		return Slot{}, Slot{}, errors.New("both slots carry the running store's partition UUIDs; which one the node runs is unknown")
-	}
-	dataUUID, verityUUID := PartitionUUIDs(running)
-	for i, s := range pairs {
-		if !s.Holds(running) {
-			continue
-		}
-		other := pairs[1-i]
-		for _, uuid := range []string{other.Data.UUID, other.Verity.UUID} {
-			if uuid == dataUUID || uuid == verityUUID {
-				return Slot{}, Slot{}, fmt.Errorf("the inactive slot carries the running store's partition UUID %s; which partition the node runs is unknown", uuid)
-			}
-		}
-		return s, other, nil
-	}
-	return Slot{}, Slot{}, errors.New("no slot of the boot disk holds the running image's store")
 }
 
 // PartitionFile is a partition opened for reading or writing.
@@ -126,7 +111,7 @@ func StoreSlots(disk string, parts []gpt.Partition) ([]Slot, error) {
 }
 
 // Fits refuses an image whose store or hash tree is larger than the slot's partitions.
-func (s Slot) Fits(h Header) error {
+func (s Slot) Fits(h Image) error {
 	if h.StoreSize > s.Data.Bytes() || h.VeritySize > s.Verity.Bytes() {
 		return fmt.Errorf("the image's store of %d bytes and hash tree of %d bytes do not fit the slot's partitions of %d and %d bytes", h.StoreSize, h.VeritySize, s.Data.Bytes(), s.Verity.Bytes())
 	}

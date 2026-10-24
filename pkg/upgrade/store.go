@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/esp"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
@@ -119,7 +121,7 @@ func (n *Node) storeDir() string {
 // checkStore mounts the slot's store read-only through dm-verity with the image's root hash and
 // passes it to n.CheckStore with the system the UKI at uki boots, then unmounts it. A refusal of
 // n.CheckStore is a CheckError.
-func (n *Node) checkStore(ctx context.Context, h Header, slot Slot, ukiPath string) error {
+func (n *Node) checkStore(ctx context.Context, h Header, slot storeslot.Slot, ukiPath string) error {
 	return n.mountStore(ctx, h.RootHash, slot, ukiPath, func(st Store) error {
 		if err := n.CheckStore(st); err != nil {
 			return &CheckError{Err: err}
@@ -152,22 +154,22 @@ func (n *Node) ReadImage(ctx context.Context, rootHash []byte, read func(Store) 
 	if !inactive.Holds(rootHash) {
 		return fmt.Errorf("the inactive slot does not hold the image %x", rootHash)
 	}
-	entries, err := Entries(n.ESP)
+	entries, err := esp.Entries(n.ESP)
 	if err != nil {
 		return err
 	}
-	i := slices.IndexFunc(entries, func(e Entry) bool { return bytes.Equal(e.RootHash, rootHash) })
+	i := slices.IndexFunc(entries, func(e esp.Entry) bool { return bytes.Equal(e.RootHash, rootHash) })
 	if i < 0 {
 		return fmt.Errorf("no UKI on the ESP boots the image %x", rootHash)
 	}
 	ctx = context.WithoutCancel(ctx)
 	n.closeStore(ctx, n.storeDir(), true, true)
-	return n.mountStore(ctx, rootHash, inactive, filepath.Join(n.ESP, linuxDir, entries[i].File), read)
+	return n.mountStore(ctx, rootHash, inactive, filepath.Join(n.ESP, esp.LinuxDir, entries[i].File), read)
 }
 
 // mountStore mounts the slot's store read-only through dm-verity with the root hash and passes it
 // to read with the system the UKI at ukiPath boots, then unmounts it.
-func (n *Node) mountStore(ctx context.Context, rootHash []byte, slot Slot, ukiPath string, read func(Store) error) error {
+func (n *Node) mountStore(ctx context.Context, rootHash []byte, slot storeslot.Slot, ukiPath string, read func(Store) error) error {
 	f, err := os.Open(ukiPath)
 	if err != nil {
 		return err

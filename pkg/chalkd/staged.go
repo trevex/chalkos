@@ -13,6 +13,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -34,7 +35,7 @@ func (s *Server) stagedImage() ([]byte, error) {
 	if !slices.ContainsFunc(hashes, func(h []byte) bool { return !bytes.Equal(h, running) }) {
 		return nil, nil
 	}
-	entries, err := upgrade.Entries(s.Paths.ESP)
+	entries, err := esp.Entries(s.Paths.ESP)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +43,7 @@ func (s *Server) stagedImage() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	e, ok := upgrade.StagedEntry(entries, readOSRelease(s.Paths.OSRelease)["IMAGE_ID"], booted)
+	e, ok := esp.StagedEntry(entries, readOSRelease(s.Paths.OSRelease)["IMAGE_ID"], booted)
 	if !ok {
 		return nil, nil
 	}

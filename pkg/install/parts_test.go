@@ -32,8 +32,10 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -383,7 +385,7 @@ func (p labPartition) WriteAt(b []byte, off int64) (int, error) {
 func (p labPartition) Sync() error  { return p.f.Sync() }
 func (p labPartition) Close() error { return p.f.Close() }
 
-func (l *partsLab) openPartition(p gpt.Partition, write bool) (upgrade.PartitionFile, error) {
+func (l *partsLab) openPartition(p gpt.Partition, write bool) (storeslot.PartitionFile, error) {
 	if !strings.HasPrefix(p.Node, labDev) {
 		l.t.Errorf("opened %s, a partition of another disk", p.Node)
 		return nil, syscall.EBUSY
@@ -466,11 +468,11 @@ func (l *partsLab) installed() bool {
 func (l *partsLab) checkInstalled(img partsImage) {
 	l.t.Helper()
 	parts := l.table()
-	data, verityUUID := upgrade.PartitionUUIDs(img.root)
+	data, verityUUID := storeslot.PartitionUUIDs(img.root)
 	want := []struct{ typ, label, uuid string }{
 		{gpt.TypeESP, "", ""},
-		{gpt.TypeUsrX86Verity, "store-verity_" + upgrade.LabelID(img.root), verityUUID},
-		{gpt.TypeUsrX86, "store_" + upgrade.LabelID(img.root), data},
+		{gpt.TypeUsrX86Verity, "store-verity_" + storeslot.LabelID(img.root), verityUUID},
+		{gpt.TypeUsrX86, "store_" + storeslot.LabelID(img.root), data},
 		{gpt.TypeUsrX86Verity, "_empty", ""},
 		{gpt.TypeUsrX86, "_empty", ""},
 		{stateType, "state", ""},
@@ -485,8 +487,8 @@ func (l *partsLab) checkInstalled(img partsImage) {
 			l.t.Errorf("partition %d is %s %q %s, want %s %q %s", n+1, p.Type, p.Name, p.UUID, w.typ, w.label, w.uuid)
 		}
 	}
-	w := &upgrade.SlotWriter{OpenPartition: l.openPartition}
-	if !w.Holds(upgrade.Slot{Verity: parts[2], Data: parts[3]}, img.header) {
+	w := &storeslot.Writer{OpenPartition: l.openPartition}
+	if !w.Holds(storeslot.Slot{Verity: parts[2], Data: parts[3]}, img.header.Store()) {
 		l.t.Error("slot A does not hold the image's store")
 	}
 	if !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.uki) {
@@ -1212,8 +1214,8 @@ func TestFromPartsUnmountsALeftoverESP(t *testing.T) {
 	img := newPartsImage(t, "a")
 	l := newPartsLab(t)
 	l.stopAt(img, "write the identity")
-	esp := filepath.Join(l.i.WorkDir, "esp")
-	if err := l.mount(labDev+"1", esp); err != nil {
+	espPart := filepath.Join(l.i.WorkDir, "esp")
+	if err := l.mount(labDev+"1", espPart); err != nil {
 		t.Fatal(err)
 	}
 	req := l.request(img)
@@ -1222,7 +1224,7 @@ func TestFromPartsUnmountsALeftoverESP(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.checkInstalled(img)
-	if mounted, _ := isMounted(l.i.MountInfo, esp); mounted {
+	if mounted, _ := isMounted(l.i.MountInfo, espPart); mounted {
 		t.Error("the ESP is still mounted")
 	}
 }
@@ -1314,11 +1316,17 @@ func TestFromPartsLeavesOneUKI(t *testing.T) {
 		"chalkos_5+0-3.efi": other,
 		"chalkos.efi":       other,
 		"rescue_1.efi":      rescue,
-		ukiTempPrefix + hex.EncodeToString(sha(nil)) + ".efi": other[:100],
 	} {
 		if err := os.WriteFile(filepath.Join(l.esp(), "EFI/Linux", name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+	staged, err := esp.Stage(l.esp(), sha(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(staged, other[:100], 0o644); err != nil {
+		t.Fatal(err)
 	}
 	if err := l.install(img); err != nil {
 		t.Fatal(err)

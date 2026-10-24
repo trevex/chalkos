@@ -167,7 +167,7 @@ func (i *Installer) addBootEntry(ctx context.Context, disk storage.BlockDisk) er
 	if err != nil {
 		return err
 	}
-	esp, err := table.findType(gpt.TypeESP)
+	espPart, err := table.findType(gpt.TypeESP)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,7 @@ func (i *Installer) addBootEntry(ctx context.Context, disk storage.BlockDisk) er
 		}
 		entries := parseBootEntries(string(out))
 		for n, e := range entries {
-			if e.label == bootLabel && e.partUUID == esp.UUID {
+			if e.label == bootLabel && e.partUUID == espPart.UUID {
 				return &entries[n], entries, nil
 			}
 		}
@@ -193,14 +193,14 @@ func (i *Installer) addBootEntry(ctx context.Context, disk storage.BlockDisk) er
 		if err := i.change("add the UEFI boot entry"); err != nil {
 			return err
 		}
-		if _, err := i.Run.Run(ctx, "efibootmgr", "--create", "--disk", disk.Device, "--part", strconv.Itoa(esp.Number), "--label", bootLabel, "--loader", i.loader()); err != nil {
+		if _, err := i.Run.Run(ctx, "efibootmgr", "--create", "--disk", disk.Device, "--part", strconv.Itoa(espPart.Number), "--label", bootLabel, "--loader", i.loader()); err != nil {
 			return fmt.Errorf("add a UEFI boot entry: %w", err)
 		}
 		if created, entries, err = find(); err != nil {
 			return err
 		}
 		if created == nil {
-			return fmt.Errorf("the UEFI boot entry for the ESP %s is missing after creating it", esp.UUID)
+			return fmt.Errorf("the UEFI boot entry for the ESP %s is missing after creating it", espPart.UUID)
 		}
 	}
 	if err := i.change("boot the target next"); err != nil {

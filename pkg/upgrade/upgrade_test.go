@@ -31,9 +31,11 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/registry"
 
+	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
@@ -46,10 +48,10 @@ func TestUpgradeAndFallBack(t *testing.T) {
 	l := newLab(t, old)
 	oldUKI := l.file("chalkos_1.efi")
 	rescue := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.root)
-	os.WriteFile(filepath.Join(l.esp, linuxDir, "rescue_7.efi"), rescue, 0o644)
+	os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "rescue_7.efi"), rescue, 0o644)
 	// A UKI is of the image its os-release names, whatever its file is called.
 	other := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "2"}, newImage(t, "r", 3).root)
-	os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_rescue.efi"), other, 0o644)
+	os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_rescue.efi"), other, 0o644)
 	res, err := l.install(img)
 	if err != nil {
 		t.Fatal(err)
@@ -58,8 +60,8 @@ func TestUpgradeAndFallBack(t *testing.T) {
 		t.Errorf("result %+v", res)
 	}
 	parts := l.table()
-	if parts[4].Name != "store-verity_"+LabelID(img.root) || parts[5].Name != "store_"+LabelID(img.root) ||
-		parts[2].Name != "store-verity_"+LabelID(old.root) || parts[3].Name != "store_"+LabelID(old.root) {
+	if parts[4].Name != "store-verity_"+storeslot.LabelID(img.root) || parts[5].Name != "store_"+storeslot.LabelID(img.root) ||
+		parts[2].Name != "store-verity_"+storeslot.LabelID(old.root) || parts[3].Name != "store_"+storeslot.LabelID(old.root) {
 		t.Errorf("labels %q %q %q %q", parts[2].Name, parts[3].Name, parts[4].Name, parts[5].Name)
 	}
 	if !bytes.Equal(l.file("chalkos_1.efi"), oldUKI) {
@@ -238,7 +240,7 @@ func TestGenerationsByName(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, old)
-			if err := os.WriteFile(filepath.Join(l.esp, linuxDir, tc.file), tc.uki, 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, tc.file), tc.uki, 0o644); err != nil {
 				t.Fatal(err)
 			}
 			res, err := l.install(img)
@@ -362,7 +364,11 @@ func TestInterruptedUpgrade(t *testing.T) {
 			for range 3 {
 				l.attempt()
 			}
-			if err := os.WriteFile(filepath.Join(l.esp, linuxDir, tempPrefix+hex.EncodeToString(b.root)+".efi"), b.uki[:100], 0o644); err != nil {
+			staged, err := esp.Stage(l.esp, b.root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(staged, b.uki[:100], 0o644); err != nil {
 				t.Fatal(err)
 			}
 			return l
@@ -447,8 +453,8 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		{"a store larger than the slot", func(h *Header) { h.StoreSize = 2 << 20 }, nil, "do not fit"},
 		// The node booted generation 2, which is counted, and falls back to generation 1.
 		{"a running boot not found healthy", nil, func(l *lab) {
-			os.Rename(filepath.Join(l.esp, linuxDir, "chalkos_1.efi"), filepath.Join(l.esp, linuxDir, "chalkos_2+2-1.efi"))
-			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_1.efi"), newImage(t, "z", 3).uki, 0o644)
+			os.Rename(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"), filepath.Join(l.esp, esp.LinuxDir, "chalkos_2+2-1.efi"))
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"), newImage(t, "z", 3).uki, 0o644)
 			l.setVariable("LoaderEntrySelected", "chalkos_2.efi")
 		}, "not been found healthy"},
 		{"an entry that boots another store", nil, func(l *lab) { l.setVariable("LoaderEntrySelected", "chalkos_9.efi") }, "not on the ESP"},
@@ -458,35 +464,35 @@ func TestRefusesBeforeChanging(t *testing.T) {
 			}
 		}, "needs two slots"},
 		{"both slots carrying the running store's UUIDs", nil, func(l *lab) {
-			data, verity := PartitionUUIDs(old.root)
+			data, verity := storeslot.PartitionUUIDs(old.root)
 			l.setUUID(4, verity)
 			l.setUUID(5, data)
 		}, "both slots"},
 		{"the inactive slot carrying a UUID of the running store", nil, func(l *lab) {
-			data, _ := PartitionUUIDs(old.root)
+			data, _ := storeslot.PartitionUUIDs(old.root)
 			l.setUUID(5, data)
 		}, "the inactive slot carries"},
 		// Names chalkd never writes, placed by hand or corrupted.
 		{"a booted entry with a leading zero", nil, func(l *lab) {
-			os.Rename(filepath.Join(l.esp, linuxDir, "chalkos_1.efi"), filepath.Join(l.esp, linuxDir, "chalkos_01.efi"))
+			os.Rename(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"), filepath.Join(l.esp, esp.LinuxDir, "chalkos_01.efi"))
 			l.setVariable("LoaderEntrySelected", "chalkos_01.efi")
 		}, "chalkos_01.efi on the ESP is not named chalkos_<generation>.efi"},
 		// A copy of the running UKI the upgrade keeps, which systemd-boot may sort above the new
 		// entry.
 		{"a kept copy with a leading zero", nil, func(l *lab) {
-			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_01.efi"), old.uki, 0o644)
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_01.efi"), old.uki, 0o644)
 		}, "chalkos_01.efi on the ESP is not named chalkos_<generation>.efi"},
 		{"a kept copy with a counter past an int32", nil, func(l *lab) {
-			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_7+2147483648.efi"), old.uki, 0o644)
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_7+2147483648.efi"), old.uki, 0o644)
 		}, "chalkos_7+2147483648.efi on the ESP is not named chalkos_<generation>.efi"},
 		{"a kept copy named by no generation", nil, func(l *lab) {
-			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_5.1.efi"), old.uki, 0o644)
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_5.1.efi"), old.uki, 0o644)
 		}, "chalkos_5.1.efi on the ESP is not named chalkos_<generation>.efi"},
 		{"a generation past a uint64's range", nil, func(l *lab) {
-			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_18446744073709551616.efi"), []byte("not a UKI"), 0o644)
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_18446744073709551616.efi"), []byte("not a UKI"), 0o644)
 		}, "too large"},
 		{"no generation after the highest", nil, func(l *lab) {
-			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_18446744073709551615.efi"), []byte("not a UKI"), 0o644)
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_18446744073709551615.efi"), []byte("not a UKI"), 0o644)
 		}, "too large"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -495,7 +501,7 @@ func TestRefusesBeforeChanging(t *testing.T) {
 				tc.setup(l)
 			}
 			before := l.table()
-			esp, _ := os.ReadDir(filepath.Join(l.esp, linuxDir))
+			files, _ := os.ReadDir(filepath.Join(l.esp, esp.LinuxDir))
 			l.node.Change = func(what string) error {
 				t.Errorf("changed: %s", what)
 				return errCrash
@@ -513,8 +519,8 @@ func TestRefusesBeforeChanging(t *testing.T) {
 					t.Errorf("partition %d changed", n)
 				}
 			}
-			if after, _ := os.ReadDir(filepath.Join(l.esp, linuxDir)); len(after) != len(esp) {
-				t.Errorf("the ESP holds %d files, %d before", len(after), len(esp))
+			if after, _ := os.ReadDir(filepath.Join(l.esp, esp.LinuxDir)); len(after) != len(files) {
+				t.Errorf("the ESP holds %d files, %d before", len(after), len(files))
 			}
 		})
 	}
@@ -580,7 +586,7 @@ func TestRefusesBeforeActivating(t *testing.T) {
 			if e, name := l.boot(); name != "a" {
 				t.Errorf("the disk boots %s from %s", name, e.File)
 			}
-			if p := l.table(); p[4].Name != emptyLabel || p[5].Name != emptyLabel {
+			if p := l.table(); p[4].Name != storeslot.EmptyLabel || p[5].Name != storeslot.EmptyLabel {
 				t.Errorf("the slot is labelled %q and %q", p[4].Name, p[5].Name)
 			}
 		})
@@ -694,13 +700,13 @@ func TestRebootHelps(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, old)
-			os.Remove(filepath.Join(l.esp, linuxDir, "chalkos_1.efi"))
-			os.WriteFile(filepath.Join(l.esp, linuxDir, tc.booted), img.uki, 0o644)
+			os.Remove(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"))
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, tc.booted), img.uki, 0o644)
 			for name, other := range tc.others {
-				os.WriteFile(filepath.Join(l.esp, linuxDir, name), other.uki, 0o644)
+				os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, name), other.uki, 0o644)
 			}
 			l.setVariable("LoaderEntrySelected", "chalkos_2.efi")
-			entries, err := Entries(l.esp)
+			entries, err := esp.Entries(l.esp)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -785,66 +791,6 @@ func TestChangesOutliveTheCaller(t *testing.T) {
 	l.node.Install(ctx, img.header, img.stream())
 }
 
-// TestEntriesWhileBlessed lists the UKIs again when one is renamed while they are read, as
-// systemd-bless-boot renames the booted one once the boot was found healthy.
-func TestEntriesWhileBlessed(t *testing.T) {
-	img := newImage(t, "b", 3)
-	esp := t.TempDir()
-	dir := filepath.Join(esp, linuxDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "chalkos_2+2-1.efi"), img.uki, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	blessed := false
-	list, err := entries(esp, func(path string) (*os.File, error) {
-		if !blessed {
-			blessed = true
-			if err := os.Rename(path, filepath.Join(dir, "chalkos_2.efi")); err != nil {
-				t.Fatal(err)
-			}
-		}
-		return os.Open(path)
-	})
-	if err != nil || len(list) != 1 || list[0].File != "chalkos_2.efi" || list[0].Generation != 2 || list[0].TriesLeft != -1 {
-		t.Errorf("entries = %+v, %v", list, err)
-	}
-}
-
-// TestEntriesReadErrors lists a file that reads but is no UKI as one that cannot be read, and
-// fails on a UKI that does not open or read: which store it boots is then unknown.
-func TestEntriesReadErrors(t *testing.T) {
-	img := newImage(t, "b", 3)
-	esp := t.TempDir()
-	dir := filepath.Join(esp, linuxDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for name, data := range map[string][]byte{"chalkos_1.efi": img.uki, "chalkos_2.efi": []byte("not a UKI")} {
-		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	list, err := entries(esp, os.Open)
-	if err != nil || len(list) != 2 || !list[0].Readable || !bytes.Equal(list[0].RootHash, img.root) || list[1].Readable || list[1].RootHash != nil {
-		t.Fatalf("entries = %+v, %v", list, err)
-	}
-	for _, tc := range []struct {
-		name string
-		open func(string) (*os.File, error)
-		want error
-	}{
-		{"open", func(string) (*os.File, error) { return nil, syscall.EACCES }, syscall.EACCES},
-		// Reading a directory fails as a read of a broken file system does.
-		{"read", func(string) (*os.File, error) { return os.Open(dir) }, syscall.EISDIR},
-	} {
-		if list, err := entries(esp, tc.open); !errors.Is(err, tc.want) || !strings.Contains(err.Error(), "chalkos_1.efi on the ESP") {
-			t.Errorf("entries failing to %s = %+v, %v; want %v", tc.name, list, err, tc.want)
-		}
-	}
-}
-
 // holdDisk takes the disk's BSD lock, as another program changing its partitions would, until
 // the returned release.
 func (l *lab) holdDisk() func() {
@@ -908,15 +854,9 @@ func TestDiskLockedElsewhere(t *testing.T) {
 // tempUKIs are the UKIs on the ESP written under the temporary name.
 func (l *lab) tempUKIs() []string {
 	l.t.Helper()
-	files, err := os.ReadDir(filepath.Join(l.esp, linuxDir))
+	temp, err := esp.Leftovers(l.esp, "")
 	if err != nil {
 		l.t.Fatal(err)
-	}
-	var temp []string
-	for _, f := range files {
-		if strings.HasPrefix(f.Name(), tempPrefix) {
-			temp = append(temp, f.Name())
-		}
 	}
 	return temp
 }
@@ -1040,7 +980,7 @@ func TestSkippedStoreIsChecked(t *testing.T) {
 		if _, err := l.install(img); err != nil {
 			t.Fatal(err)
 		}
-		os.Remove(filepath.Join(l.esp, linuxDir, "chalkos_2+3.efi"))
+		os.Remove(filepath.Join(l.esp, esp.LinuxDir, "chalkos_2+3.efi"))
 		h := img.header
 		tc.edit(&h)
 		clear(l.writes)
@@ -1068,26 +1008,6 @@ func TestInstallsAnotherVariant(t *testing.T) {
 	}
 }
 
-// skipStream counts the bytes Skip passed over without reading them.
-type skipStream struct {
-	io.Reader
-	skipped int64
-}
-
-func (s *skipStream) Skip(n int64) error { s.skipped += n; return nil }
-
-// TestSkipPassesOverASkipper passes over the store and hash tree of a stream that can pass over
-// bytes without reading them, as a pull does over layers it has not fetched.
-func TestSkipPassesOverASkipper(t *testing.T) {
-	s := &skipStream{Reader: strings.NewReader("uki")}
-	if err := Skip(Header{StoreSize: 3, VeritySize: 2}, s); err != nil || s.skipped != 5 {
-		t.Fatalf("Skip = %v, skipped %d", err, s.skipped)
-	}
-	if rest, _ := io.ReadAll(s); string(rest) != "uki" {
-		t.Errorf("the stream goes on with %q", rest)
-	}
-}
-
 // TestInstallPassesOverAHeldStoreOfAPull installs an image pulled from a registry again into the
 // slot that holds it, though no entry boots it any more: the pull fetches the UKI alone, and the
 // install writes no partition.
@@ -1097,7 +1017,7 @@ func TestInstallPassesOverAHeldStoreOfAPull(t *testing.T) {
 	if _, err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
-	os.Remove(filepath.Join(l.esp, linuxDir, "chalkos_2+3.efi"))
+	os.Remove(filepath.Join(l.esp, esp.LinuxDir, "chalkos_2+3.efi"))
 
 	var served sync.Map
 	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))

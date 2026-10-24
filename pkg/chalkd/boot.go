@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -32,7 +33,7 @@ func (s *Server) bootStatus() *nodev1.BootStatus {
 	}
 	images := s.images()
 	st.Running = bootImage(images, running, 0)
-	entries, err := upgrade.Entries(s.Paths.ESP)
+	entries, err := esp.Entries(s.Paths.ESP)
 	if err != nil {
 		st.Error = err.Error()
 		return st
@@ -44,7 +45,7 @@ func (s *Server) bootStatus() *nodev1.BootStatus {
 	}
 	st.Running.Generation = booted.Generation
 	st.Entry, st.Blessed = booted.File, booted.TriesLeft < 0
-	var failed upgrade.Entry
+	var failed esp.Entry
 	for _, e := range entries {
 		switch {
 		// UKIs of other images on the ESP, such as a rescue system's, are no upgrades of the node.
@@ -76,7 +77,7 @@ func bootImage(images upgrade.Images, rootHash []byte, generation uint64) *nodev
 // failedBoot returns what chalkd and the health check logged during the last boot of the UKI
 // that was not found healthy, as the check recorded it on VAR; nil without a record of a boot of
 // that store and generation.
-func (s *Server) failedBoot(e upgrade.Entry) []string {
+func (s *Server) failedBoot(e esp.Entry) []string {
 	data, err := os.ReadFile(s.Paths.FailedBoot)
 	if err != nil || len(e.RootHash) == 0 {
 		return nil

@@ -28,6 +28,7 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -161,7 +162,7 @@ type Installer struct {
 	// against when Secure Boot is on.
 	EFIVars string
 	// OpenPartition opens a partition of the target disk for its store slots.
-	OpenPartition func(p gpt.Partition, write bool) (upgrade.PartitionFile, error)
+	OpenPartition func(p gpt.Partition, write bool) (storeslot.PartitionFile, error)
 	// Change, when set, is called before each change to the target disk, its ESP, STATE and the
 	// firmware's boot entries; tests make it fail to stop an install at each of them.
 	Change func(what string) error
@@ -192,7 +193,7 @@ func Default(inPlace bool) *Installer {
 		OpenDisk:      openExclusive,
 		Architecture:  uki.GoArchitecture(runtime.GOARCH),
 		EFIVars:       "/sys/firmware/efi/efivars",
-		OpenPartition: upgrade.OpenPartition,
+		OpenPartition: storeslot.OpenPartition,
 		Now:           time.Now,
 	}
 }
@@ -455,11 +456,11 @@ func (i *Installer) randomizeESP(ctx context.Context, disk storage.BlockDisk) er
 	if err != nil {
 		return err
 	}
-	esp, err := table.findType(gpt.TypeESP)
+	espPart, err := table.findType(gpt.TypeESP)
 	if err != nil {
 		return err
 	}
-	if _, err := i.sfdisk(disk.Device).Exec(ctx, "--part-uuid", disk.Device, strconv.Itoa(esp.Number), gpt.NewUUID()); err != nil {
+	if _, err := i.sfdisk(disk.Device).Exec(ctx, "--part-uuid", disk.Device, strconv.Itoa(espPart.Number), gpt.NewUUID()); err != nil {
 		return fmt.Errorf("set the ESP's partition UUID: %w", err)
 	}
 	return nil
