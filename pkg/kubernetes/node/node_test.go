@@ -35,6 +35,45 @@ func write(t *testing.T, path, content string) {
 	}
 }
 
+// testCluster is the cluster of the nodes testNode prepares, of the kind given.
+func testCluster(kind string) kubernetes.Cluster {
+	return kubernetes.Cluster{
+		Kind: kind, Endpoint: "https://192.168.100.11:6443", Version: "1.37.1", Domain: "cluster.local",
+		PodCIDRs:          kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16"), IPv6: netip.MustParsePrefix("fd00:10:244::/56")},
+		ServiceCIDRs:      kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12"), IPv6: netip.MustParsePrefix("fd00:10:96::/112")},
+		DNSIPs:            kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.96.0.10"), IPv6: netip.MustParseAddr("fd00:10:96::a")},
+		NodeCIDRMaskSizes: kubernetes.ByFamily[int]{IPv4: 24, IPv6: 64},
+		NodeIP:            kubernetes.NodeIP{Timeout: 300},
+		ExtraArgs:         map[string]map[string]string{},
+		Images:            kubernetes.Images{Etcd: "e", KubeAPIServer: "a", KubeControllerManager: "c", KubeScheduler: "s"},
+	}
+}
+
+// writeCluster writes c as the node's cluster file.
+func writeCluster(t *testing.T, p Paths, c kubernetes.Cluster) {
+	t.Helper()
+	data, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, p.Cluster, string(data))
+}
+
+// withCluster edits the node's cluster file.
+func withCluster(t *testing.T, p Paths, edit func(c *kubernetes.Cluster)) {
+	t.Helper()
+	data, err := os.ReadFile(p.Cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c kubernetes.Cluster
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatal(err)
+	}
+	edit(&c)
+	writeCluster(t, p, c)
+}
+
 // testNode prepares the files of a node of the kind named name, with a share issued from k.
 func testNode(t *testing.T, kind, name string, k *pki.KubernetesSecrets) Paths {
 	t.Helper()
@@ -48,11 +87,7 @@ func testNode(t *testing.T, kind, name string, k *pki.KubernetesSecrets) Paths {
 		KubeletPKI: filepath.Join(root, "var", "lib", "kubelet", "pki"),
 		EtcdData:   filepath.Join(root, "var", "lib", "etcd"),
 	}
-	write(t, p.Cluster, `{"kind": "`+kind+`", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1",
-	  "podCIDRs": {"ipv4": "10.244.0.0/16", "ipv6": "fd00:10:244::/56"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12", "ipv6": "fd00:10:96::/112"},
-	  "dnsIPs": {"ipv4": "10.96.0.10", "ipv6": "fd00:10:96::a"}, "nodeCIDRMaskSizes": {"ipv4": 24, "ipv6": 64}, "domain": "cluster.local",
-	  "allowSchedulingOnControlPlanes": false, "nodeIP": {"timeout": 300}, "extraArgs": {},
-	  "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`)
+	writeCluster(t, p, testCluster(kind))
 	write(t, p.NodeFile, `{"hostname": "`+name+`", "network": {"networks": {"10-lan": {"address": ["192.168.100.11/24"]}}},
 	  "labels": {"zone": "a", "disk": "ssd"}, "taints": [], "kubernetes": {"nodeName": "`+name+`", "nodeIPs": ["192.168.100.11"]}}`)
 	if k != nil {
@@ -172,7 +207,7 @@ func TestPreparePicksNodeIP(t *testing.T) {
 	if data, err := os.ReadFile(p.NodeIP()); err != nil || string(data) != "192.168.100.12\n" {
 		t.Errorf("node-ip = %q, %v", data, err)
 	}
-	if ips, err := ReadNodeIPs(p); err != nil || len(ips) != 1 || !ips[0].Equal(net.ParseIP("192.168.100.12")) {
+	if ips, err := ReadNodeIPs(p); err != nil || !slices.Equal(ips, []netip.Addr{netip.MustParseAddr("192.168.100.12")}) {
 		t.Errorf("ReadNodeIPs() = %v, %v", ips, err)
 	}
 	flags, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "flags"))
@@ -229,11 +264,7 @@ func TestPrepareFailureRemovesFiles(t *testing.T) {
 	if !exists(p.Kubeconfig()) || !exists(p.PKI) || len(staticPods(t, p)) != 4 {
 		t.Fatal("the first preparation did not prepare the node")
 	}
-	cluster, err := os.ReadFile(p.Cluster)
-	if err != nil {
-		t.Fatal(err)
-	}
-	write(t, p.Cluster, strings.Replace(string(cluster), `"kind": "controlplane"`, `"kind": "worker"`, 1))
+	withCluster(t, p, func(c *kubernetes.Cluster) { c.Kind = kubernetes.KindWorker })
 	if err := Prepare(p, now, picked, nil); err == nil {
 		t.Fatal("prepared a control-plane share on a worker image")
 	}
@@ -294,16 +325,6 @@ func on(links map[string]nodeip.Link, addrs ...string) Resolver {
 	}
 }
 
-// withCluster edits the node's cluster file: each pair replaces old with new once.
-func withCluster(t *testing.T, p Paths, oldNew ...string) {
-	t.Helper()
-	data, err := os.ReadFile(p.Cluster)
-	if err != nil {
-		t.Fatal(err)
-	}
-	write(t, p.Cluster, strings.NewReplacer(oldNew...).Replace(string(data)))
-}
-
 // With flannel the node's addresses are on one interface, and an address on a loopback or a
 // dummy interface needs an MTU flannel can use.
 func TestPrepareFlannelInterfaces(t *testing.T) {
@@ -313,24 +334,27 @@ func TestPrepareFlannelInterfaces(t *testing.T) {
 		"small": {Kind: "dummy", MTU: 1440},
 	}
 	for name, tc := range map[string]struct {
-		flannel string
+		flannel *kubernetes.Flannel
 		addrs   []string
 		want    string
 	}{
-		"NIC":                       {`{"mtu": 0}`, []string{"eth0 192.168.100.11", "eth0 fd00::11"}, ""},
-		"loopback without flannel":  {`null`, []string{"lo 192.168.100.11", "lo fd00::11"}, ""},
-		"loopback without MTU":      {`{"mtu": 0}`, []string{"lo 192.168.100.11", "lo fd00::11"}, "the node's address 192.168.100.11 is on the loopback interface lo, whose MTU flannel would take; set the Flannel document's spec.mtu"},
-		"loopback with MTU":         {`{"mtu": 1430}`, []string{"lo 192.168.100.11", "lo fd00::11"}, ""},
-		"dummy":                     {`{"mtu": 1430}`, []string{"bgp0 192.168.100.11", "bgp0 fd00::11"}, ""},
-		"dummy without MTU":         {`{"mtu": 0}`, []string{"small 192.168.100.11", "small fd00::11"}, ""},
-		"dummy too small for IPv6":  {`{"mtu": 1430}`, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address fd00::11 is on the dummy interface small with MTU 1440; flannel's ipv6 VXLAN with the Flannel document's MTU 1430 needs an MTU of at least 1450 there"},
-		"dummy too small for IPv4":  {`{"mtu": 1450}`, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address 192.168.100.11 is on the dummy interface small with MTU 1440; flannel's ipv4 VXLAN with the Flannel document's MTU 1450 needs an MTU of at least 1450 there"},
-		"two interfaces":            {`{"mtu": 0}`, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, "flannel needs the node's IPv4 and IPv6 addresses on one interface; 192.168.100.11 is on eth0, fd00::11 on eth1, 5m0s after chalkos-node-addresses.target"},
-		"two interfaces without it": {`null`, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, ""},
+		"NIC":                       {&kubernetes.Flannel{}, []string{"eth0 192.168.100.11", "eth0 fd00::11"}, ""},
+		"loopback without flannel":  {nil, []string{"lo 192.168.100.11", "lo fd00::11"}, ""},
+		"loopback without MTU":      {&kubernetes.Flannel{}, []string{"lo 192.168.100.11", "lo fd00::11"}, "the node's address 192.168.100.11 is on the loopback interface lo, whose MTU flannel would take; set the Flannel document's spec.mtu"},
+		"loopback with MTU":         {&kubernetes.Flannel{MTU: 1430}, []string{"lo 192.168.100.11", "lo fd00::11"}, ""},
+		"dummy":                     {&kubernetes.Flannel{MTU: 1430}, []string{"bgp0 192.168.100.11", "bgp0 fd00::11"}, ""},
+		"dummy without MTU":         {&kubernetes.Flannel{}, []string{"small 192.168.100.11", "small fd00::11"}, ""},
+		"dummy too small for IPv6":  {&kubernetes.Flannel{MTU: 1430}, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address fd00::11 is on the dummy interface small with MTU 1440; flannel's ipv6 VXLAN with the Flannel document's MTU 1430 needs an MTU of at least 1450 there"},
+		"dummy too small for IPv4":  {&kubernetes.Flannel{MTU: 1450}, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address 192.168.100.11 is on the dummy interface small with MTU 1440; flannel's ipv4 VXLAN with the Flannel document's MTU 1450 needs an MTU of at least 1450 there"},
+		"two interfaces":            {&kubernetes.Flannel{}, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, "flannel needs the node's IPv4 and IPv6 addresses on one interface; 192.168.100.11 is on eth0, fd00::11 on eth1, 5m0s after chalkos-node-addresses.target"},
+		"two interfaces without it": {nil, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-			withCluster(t, p, `"kind":`, `"ipFamilies": ["ipv4", "ipv6"], "flannel": `+tc.flannel+`, "kind":`)
+			withCluster(t, p, func(c *kubernetes.Cluster) {
+				c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
+				c.Flannel = tc.flannel
+			})
 			write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}`)
 			err := Prepare(p, now, on(links, tc.addrs...), nil)
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || err.Error() != tc.want) {
@@ -346,11 +370,7 @@ func TestPrepareFlannelInterfaces(t *testing.T) {
 func TestPrepareDualStack(t *testing.T) {
 	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
 	write(t, p.Bootstrapped(), "")
-	cluster, err := os.ReadFile(p.Cluster)
-	if err != nil {
-		t.Fatal(err)
-	}
-	write(t, p.Cluster, strings.Replace(string(cluster), `"kind":`, `"ipFamilies": ["ipv6", "ipv4"], "kind":`, 1))
+	withCluster(t, p, func(c *kubernetes.Cluster) { c.IPFamilies = []nodeip.Family{nodeip.IPv6, nodeip.IPv4} })
 	write(t, p.NodeFile, `{"hostname": "cp1", "labels": {}, "taints": [],
 	  "kubernetes": {"nodeName": "cp1", "nodeIPs": ["192.168.100.11"], "validSubnets": ["fd00::/64"]}}`)
 	if err := Prepare(p, now, onNode("10.0.2.15", "192.168.100.11", "2001:db8::11", "fd00::11"), nil); err != nil {
@@ -438,25 +458,25 @@ func TestPreparePinned(t *testing.T) {
 // A pinned control plane whose cluster now lists other address families keeps none of its files:
 // its set of addresses never changes silently.
 func TestPreparePinnedFamiliesChanged(t *testing.T) {
-	for name, tc := range map[string]struct{ pin, families, want string }{
-		"family added": {"192.168.100.11\n", `["ipv4", "ipv6"]`,
+	for name, tc := range map[string]struct {
+		pin      string
+		families []nodeip.Family
+		want     string
+	}{
+		"family added": {"192.168.100.11\n", []nodeip.Family{nodeip.IPv4, nodeip.IPv6},
 			"the cluster was created with families [ipv4]; ipFamilies is [ipv4 ipv6]; changing the families of a running cluster is not supported"},
-		"family removed": {"192.168.100.11\nfd00::11\n", `["ipv4"]`,
+		"family removed": {"192.168.100.11\nfd00::11\n", []nodeip.Family{nodeip.IPv4},
 			"the cluster was created with families [ipv4 ipv6]; ipFamilies is [ipv4]; changing the families of a running cluster is not supported"},
-		"primary family changed": {"192.168.100.11\nfd00::11\n", `["ipv6", "ipv4"]`,
+		"primary family changed": {"192.168.100.11\nfd00::11\n", []nodeip.Family{nodeip.IPv6, nodeip.IPv4},
 			"the cluster was created with families [ipv4 ipv6]; ipFamilies is [ipv6 ipv4]; changing the families of a running cluster is not supported"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
 			write(t, p.Bootstrapped(), "")
 			write(t, p.NodeFile, pickingIdentity("cp1"))
-			data, err := os.ReadFile(p.Cluster)
-			if err != nil {
-				t.Fatal(err)
-			}
-			write(t, p.Cluster, strings.Replace(string(data), `"extraArgs"`, `"ipFamilies": `+tc.families+`, "extraArgs"`, 1))
+			withCluster(t, p, func(c *kubernetes.Cluster) { c.IPFamilies = tc.families })
 			write(t, p.Pin(), tc.pin)
-			err = Prepare(p, now, onNode("192.168.100.11", "fd00::11"), nil)
+			err := Prepare(p, now, onNode("192.168.100.11", "fd00::11"), nil)
 			if err == nil || err.Error() != tc.want {
 				t.Fatalf("err = %v, want %s", err, tc.want)
 			}
@@ -640,6 +660,7 @@ func TestReadNodeIPs(t *testing.T) {
 		"":                    false,
 		"10.0.0.1\nnope\n":    false,
 		"10.0.0.0/8\n":        false,
+		"fe80::1%eth0\n":      false,
 	} {
 		write(t, p.NodeIP(), content)
 		if _, err := ReadNodeIPs(p); (err == nil) != ok {
@@ -837,20 +858,20 @@ func TestPrepareRefusesMismatchedShare(t *testing.T) {
 func TestKubeletFlags(t *testing.T) {
 	c := kubernetes.Cluster{Kind: kubernetes.KindControlPlane, AllowSchedulingOnControlPlanes: true}
 	n := kubernetes.Node{Name: "cp1", Taints: []identity.Taint{{Key: "dedicated", Value: "db", Effect: "NoSchedule"}, {Key: "spot", Effect: "PreferNoSchedule"}}}
-	got := strings.Join(KubeletFlags(c, n), " ")
+	got := strings.Join(kubeletFlags(c, n), " ")
 	if got != "--hostname-override=cp1 --register-with-taints=dedicated=db:NoSchedule,spot:PreferNoSchedule" {
 		t.Errorf("flags = %s", got)
 	}
 	// One address per family, the primary family's first.
-	v4, v6 := net.ParseIP("10.0.0.11"), net.ParseIP("fd00::11")
-	for want, ips := range map[string][]net.IP{
+	v4, v6 := netip.MustParseAddr("10.0.0.11"), netip.MustParseAddr("fd00::11")
+	for want, ips := range map[string][]netip.Addr{
 		"--node-ip=10.0.0.11":          {v4},
 		"--node-ip=10.0.0.11,fd00::11": {v4, v6},
 		"--node-ip=fd00::11,10.0.0.11": {v6, v4},
 		"--node-ip=fd00::11":           {v6},
 	} {
 		n.IPs = ips
-		if got := KubeletFlags(c, n)[1]; got != want {
+		if got := kubeletFlags(c, n)[1]; got != want {
 			t.Errorf("flag = %s, want %s", got, want)
 		}
 	}
@@ -973,7 +994,7 @@ func TestPreparationError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, p.Cluster, strings.Replace(string(cluster), `"kind": "worker"`, `"kind": "controlplane"`, 1))
+	withCluster(t, p, func(c *kubernetes.Cluster) { c.Kind = kubernetes.KindControlPlane })
 	if err := Prepare(p, now, picked, nil); err == nil {
 		t.Fatal("prepared a worker's share on a control-plane image")
 	}
@@ -1068,7 +1089,10 @@ func TestPrepareWritesVXLANDestinations(t *testing.T) {
 		{[]string{"lo 192.168.100.11", "lo fd00::11"}, "destination 192.168.100.11 any\ndestination fd00::11 any\n"},
 	} {
 		p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-		withCluster(t, p, `"kind":`, `"ipFamilies": ["ipv4", "ipv6"], "flannel": {"mtu": 1430}, "kind":`)
+		withCluster(t, p, func(c *kubernetes.Cluster) {
+			c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
+			c.Flannel = &kubernetes.Flannel{MTU: 1430}
+		})
 		write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}`)
 		if err := Prepare(p, now, on(links, tc.addrs...), nil); err != nil {
 			t.Fatal(err)
@@ -1079,7 +1103,12 @@ func TestPrepareWritesVXLANDestinations(t *testing.T) {
 	}
 	// The ranges VXLAN must come from follow; the node's addresses must be in them.
 	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-	withCluster(t, p, `"kind":`, `"ipFamilies": ["ipv4", "ipv6"], "flannel": {"mtu": 1430, "vxlanSourceSubnets": ["192.168.100.0/24", "fd00::/64", "10.1.0.0/16"]}, "kind":`)
+	withCluster(t, p, func(c *kubernetes.Cluster) {
+		c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
+		c.Flannel = &kubernetes.Flannel{MTU: 1430, VXLANSourceSubnets: []netip.Prefix{
+			netip.MustParsePrefix("192.168.100.0/24"), netip.MustParsePrefix("fd00::/64"), netip.MustParsePrefix("10.1.0.0/16"),
+		}}
+	})
 	write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.0.0/16", "fd00::/48"]}}`)
 	if err := Prepare(p, now, on(links, "bgp0 192.168.100.11", "bgp0 fd00::11"), nil); err != nil {
 		t.Fatal(err)
@@ -1226,7 +1255,7 @@ func TestKubeletFlagsEndWithTheExtraFlags(t *testing.T) {
 	c := kubernetes.Cluster{Kind: kubernetes.KindWorker, ExtraArgs: map[string]map[string]string{
 		"kubelet": {"v": "2", "max-pods": "50"}, "kube-apiserver": {"v": "4"},
 	}}
-	got := KubeletFlags(c, kubernetes.Node{Name: "w1"})
+	got := kubeletFlags(c, kubernetes.Node{Name: "w1"})
 	// Sorted, after chalkos's own, so they override them.
 	if want := []string{"--hostname-override=w1", "--max-pods=50", "--v=2"}; !slices.Equal(got, want) {
 		t.Errorf("flags = %v, want %v", got, want)
@@ -1274,8 +1303,8 @@ func TestPrepareWritesTheKubeletConfig(t *testing.T) {
 // through the cluster DNS address of the primary family.
 func TestKubeletConfig(t *testing.T) {
 	p := Paths{Run: "/run/chalkos/kubernetes"}
-	c := kubernetes.Cluster{Domain: "lab.local", IPFamilies: []string{"ipv6", "ipv4"},
-		DNSIPs: kubernetes.ByFamily[string]{IPv4: "10.100.0.10", IPv6: "fd00:10:96::a"}}
+	c := kubernetes.Cluster{Domain: "lab.local", IPFamilies: []nodeip.Family{nodeip.IPv6, nodeip.IPv4},
+		DNSIPs: kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.100.0.10"), IPv6: netip.MustParseAddr("fd00:10:96::a")}}
 	want := map[string]any{
 		"apiVersion": "kubelet.config.k8s.io/v1beta1",
 		"kind":       "KubeletConfiguration",
@@ -1297,11 +1326,11 @@ func TestKubeletConfig(t *testing.T) {
 		"staticPodPath":            "/run/chalkos/kubernetes/manifests",
 		"resolvConf":               "/run/systemd/resolve/resolv.conf",
 	}
-	if got := KubeletConfig(p, c); !reflect.DeepEqual(got, want) {
+	if got := kubeletConfig(p, c); !reflect.DeepEqual(got, want) {
 		t.Errorf("config =\n%#v\nwant\n%#v", got, want)
 	}
-	c.IPFamilies = []string{"ipv4", "ipv6"}
-	if got := KubeletConfig(p, c)["clusterDNS"]; !reflect.DeepEqual(got, []any{"10.100.0.10"}) {
+	c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
+	if got := kubeletConfig(p, c)["clusterDNS"]; !reflect.DeepEqual(got, []any{"10.100.0.10"}) {
 		t.Errorf("clusterDNS with IPv4 primary = %v", got)
 	}
 }

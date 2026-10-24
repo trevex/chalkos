@@ -59,7 +59,7 @@ type Kubernetes struct {
 	// EtcdEndpoints returns the client URLs of the cluster's etcd members other than the node's,
 	// as the API server at the cluster's endpoint lists them; it fails while there is none.
 	// Tests replace it.
-	EtcdEndpoints func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []net.IP) ([]string, error)
+	EtcdEndpoints func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []netip.Addr) ([]string, error)
 	// ClusterAnswers reports whether the API server at the cluster's endpoint answers with the
 	// share's CA. Tests replace it.
 	ClusterAnswers func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
@@ -497,7 +497,7 @@ func (k *Kubernetes) pinFromEtcd(ctx context.Context, c k8s.Cluster, share kpki.
 	if err != nil {
 		return fmt.Errorf("pin the node's addresses: %w", err)
 	}
-	if !slices.Equal(self.PeerURLs, []string{etcd.PeerURL(ips[0])}) {
+	if !slices.Equal(self.PeerURLs, []string{k8s.EtcdPeerURL(ips[0])}) {
 		problem := fmt.Sprintf("the node's address differs from its etcd peer URL %s; restore the address", strings.Join(self.PeerURLs, ", "))
 		k.setPinProblem(problem)
 		return errors.New(problem)
@@ -662,10 +662,7 @@ func missingPodRanges(c k8s.Cluster, node *corev1.Node) (string, error) {
 	if len(node.Spec.PodCIDRs) == 0 {
 		return "", nil
 	}
-	families, err := c.Families()
-	if err != nil {
-		return "", err
-	}
+	families := c.Families()
 	have := map[nodeip.Family]bool{}
 	for _, cidr := range node.Spec.PodCIDRs {
 		if p, err := netip.ParsePrefix(cidr); err == nil {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -213,7 +213,7 @@ func leavingServer(t *testing.T) *Server {
 	s, _, members := memberServer(t, "cp2")
 	k := s.Kubernetes
 	k.EtcdStopped = func(context.Context, k8s.Cluster) error { members["n1"].Stop(); return nil }
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return []string{members["cp2"].ClientURL}, nil
 	}
 	// The node's own etcd does not answer once stopped; asking it ends after the timeout.
@@ -325,7 +325,7 @@ func otherMembersOnly(t *testing.T, s *Server, others ...*etcdtest.Member) {
 	k.LocalEtcd = etcdtest.Silent(t)
 	k.EtcdTimeout = silentEtcdTimeout
 	k.EtcdStatusTimeout = liveEtcdTimeout
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		var urls []string
 		for _, m := range others {
 			urls = append(urls, m.ClientURL)

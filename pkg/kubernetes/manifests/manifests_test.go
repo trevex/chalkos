@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
@@ -23,9 +25,9 @@ func testCluster() kubernetes.Cluster {
 		Kind:              kubernetes.KindControlPlane,
 		Endpoint:          "https://10.0.0.10:6443",
 		Version:           "1.37.1",
-		PodCIDRs:          kubernetes.ByFamily[string]{IPv4: "10.244.0.0/16", IPv6: "fd00:10:244::/56"},
-		ServiceCIDRs:      kubernetes.ByFamily[string]{IPv4: "10.96.0.0/12", IPv6: "fd00:10:96::/112"},
-		DNSIPs:            kubernetes.ByFamily[string]{IPv4: "10.96.0.10", IPv6: "fd00:10:96::a"},
+		PodCIDRs:          kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16"), IPv6: netip.MustParsePrefix("fd00:10:244::/56")},
+		ServiceCIDRs:      kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12"), IPv6: netip.MustParsePrefix("fd00:10:96::/112")},
+		DNSIPs:            kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.96.0.10"), IPv6: netip.MustParseAddr("fd00:10:96::a")},
 		NodeCIDRMaskSizes: kubernetes.ByFamily[int]{IPv4: 24, IPv6: 64},
 		Domain:            "cluster.local",
 		ExtraArgs: map[string]map[string]string{
@@ -40,7 +42,7 @@ func testCluster() kubernetes.Cluster {
 	}
 }
 
-var testNode = kubernetes.Node{Name: "cp1", IPs: []net.IP{net.ParseIP("10.0.0.11")}}
+var testNode = kubernetes.Node{Name: "cp1", IPs: []netip.Addr{netip.MustParseAddr("10.0.0.11")}}
 
 // testFiles stands for the certificates: their content only feeds the hashes.
 func testFiles() map[string][]byte {
@@ -63,14 +65,16 @@ func familySetups() map[string]struct {
 	c kubernetes.Cluster
 	n kubernetes.Node
 } {
-	v4, v6 := net.ParseIP("10.0.0.11"), net.ParseIP("fd00::11")
+	v4, v6 := netip.MustParseAddr("10.0.0.11"), netip.MustParseAddr("fd00::11")
 	setups := map[string]struct {
 		c kubernetes.Cluster
 		n kubernetes.Node
 	}{}
-	for name, families := range map[string][]net.IP{"ipv4": {v4}, "ipv4-ipv6": {v4, v6}, "ipv6-ipv4": {v6, v4}, "ipv6": {v6}} {
+	for name, families := range map[string][]netip.Addr{"ipv4": {v4}, "ipv4-ipv6": {v4, v6}, "ipv6-ipv4": {v6, v4}, "ipv6": {v6}} {
 		c := testCluster()
-		c.IPFamilies = strings.Split(name, "-")
+		for _, f := range strings.Split(name, "-") {
+			c.IPFamilies = append(c.IPFamilies, nodeip.Family(f))
+		}
 		if strings.HasPrefix(name, "ipv6") {
 			c.Endpoint = "https://[fd00::10]:6443"
 		}
@@ -87,7 +91,7 @@ func TestStaticPodsGolden(t *testing.T) {
 		if err := tc.c.Validate(); err != nil {
 			t.Fatalf("%s: %v", setup, err)
 		}
-		pods, err := StaticPods(tc.c, tc.n, testFiles(), "")
+		pods, err := StaticPods(tc.c, tc.n, kubernetes.PKIDir, testFiles(), "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,10 +142,10 @@ func TestPrimaryFamilyValues(t *testing.T) {
 		if got := tc.c.LocalAPIServer(); got != url("https", want.loopback, "6443") {
 			t.Errorf("%s: LocalAPIServer() = %s", setup, got)
 		}
-		if ip, err := tc.c.APIServerServiceIP(); err != nil || ip.String() != want.kubernetesService {
-			t.Errorf("%s: APIServerServiceIP() = %v, %v", setup, ip, err)
+		if ip := tc.c.APIServerServiceIP(); ip.String() != want.kubernetesService {
+			t.Errorf("%s: APIServerServiceIP() = %v", setup, ip)
 		}
-		pods, err := StaticPods(tc.c, tc.n, testFiles(), "")
+		pods, err := StaticPods(tc.c, tc.n, kubernetes.PKIDir, testFiles(), "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -192,8 +196,8 @@ func decode(t *testing.T, data []byte) corev1.Pod {
 // A member joining an existing cluster starts with the cluster's members.
 func TestEtcdJoiningExistingCluster(t *testing.T) {
 	initial := "cp1=https://10.0.0.11:2380,cp2=https://10.0.0.12:2380"
-	n := kubernetes.Node{Name: "cp2", IPs: []net.IP{net.ParseIP("10.0.0.12")}}
-	pods, err := StaticPods(testCluster(), n, testFiles(), initial)
+	n := kubernetes.Node{Name: "cp2", IPs: []netip.Addr{netip.MustParseAddr("10.0.0.12")}}
+	pods, err := StaticPods(testCluster(), n, kubernetes.PKIDir, testFiles(), initial)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +205,7 @@ func TestEtcdJoiningExistingCluster(t *testing.T) {
 	if flags["initial-cluster"] != initial || flags["initial-cluster-state"] != "existing" || flags["initial-advertise-peer-urls"] != "https://10.0.0.12:2380" {
 		t.Errorf("etcd flags %v", flags)
 	}
-	pods, err = StaticPods(testCluster(), testNode, testFiles(), "")
+	pods, err = StaticPods(testCluster(), testNode, kubernetes.PKIDir, testFiles(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +215,7 @@ func TestEtcdJoiningExistingCluster(t *testing.T) {
 }
 
 func TestExtraArgsOverride(t *testing.T) {
-	pods, err := StaticPods(testCluster(), testNode, testFiles(), "")
+	pods, err := StaticPods(testCluster(), testNode, kubernetes.PKIDir, testFiles(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +241,7 @@ func commandFlags(t *testing.T, data []byte) map[string]string {
 }
 
 func TestSecurityFlags(t *testing.T) {
-	pods, err := StaticPods(testCluster(), testNode, testFiles(), "")
+	pods, err := StaticPods(testCluster(), testNode, kubernetes.PKIDir, testFiles(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,12 +276,12 @@ func TestSecurityFlags(t *testing.T) {
 
 func TestCertificatesHashFollowsMountedFiles(t *testing.T) {
 	files := testFiles()
-	before, err := StaticPods(testCluster(), testNode, files, "")
+	before, err := StaticPods(testCluster(), testNode, kubernetes.PKIDir, files, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	files[kpki.FileEtcdServer] = []byte("reissued")
-	after, err := StaticPods(testCluster(), testNode, files, "")
+	after, err := StaticPods(testCluster(), testNode, kubernetes.PKIDir, files, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +305,7 @@ func TestCertificatesHashFollowsMountedFiles(t *testing.T) {
 }
 
 func TestStaticPodsNeedNodeIP(t *testing.T) {
-	if _, err := StaticPods(testCluster(), kubernetes.Node{Name: "cp1"}, testFiles(), ""); err == nil {
+	if _, err := StaticPods(testCluster(), kubernetes.Node{Name: "cp1"}, kubernetes.PKIDir, testFiles(), ""); err == nil {
 		t.Error("rendered static pods without the node's address")
 	}
 }
@@ -309,7 +313,7 @@ func TestStaticPodsNeedNodeIP(t *testing.T) {
 // TestCertificatesHashFollowsBundles checks that a bundle that changes alone, as when a CA is
 // accepted or no longer is, changes the hash of the pods that trust it, so they restart on it.
 func TestCertificatesHashFollowsBundles(t *testing.T) {
-	before, err := StaticPods(testCluster(), testNode, testFiles(), "")
+	before, err := StaticPods(testCluster(), testNode, kubernetes.PKIDir, testFiles(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +324,7 @@ func TestCertificatesHashFollowsBundles(t *testing.T) {
 	} {
 		files := testFiles()
 		files[file] = append(files[file], []byte("\nanother CA")...)
-		after, err := StaticPods(testCluster(), testNode, files, "")
+		after, err := StaticPods(testCluster(), testNode, kubernetes.PKIDir, files, "")
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"time"
 
@@ -211,7 +212,7 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	peerURL := etcd.PeerURL(ips[0])
+	peerURL := k8s.EtcdPeerURL(ips[0])
 	rctx, cancel = k.etcdRequest(ctx)
 	members, err := etcd.Members(rctx, cli)
 	cancel()
@@ -292,7 +293,7 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 
 // etcdEndpoints lists the client URLs of the etcd members other than the node's own, from the
 // mirror pods of etcd's static pods the API server at the endpoint has.
-func (k *Kubernetes) etcdEndpoints(ctx context.Context, c k8s.Cluster, share kpki.Share, self []net.IP) ([]string, error) {
+func (k *Kubernetes) etcdEndpoints(ctx context.Context, c k8s.Cluster, share kpki.Share, self []netip.Addr) ([]string, error) {
 	cfg, err := newCredential(share, credentialValidity, time.Now).restConfig(c.Endpoint)
 	if err != nil {
 		return nil, err

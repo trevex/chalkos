@@ -23,9 +23,6 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 )
 
-// Dir is where the provider's files are on a node. The Nix module names the same directory.
-const Dir = "/run/chalkos/kubernetes/credential-provider"
-
 const apiVersion = "credentialprovider.kubelet.k8s.io/v1"
 
 // cacheDuration is how long the kubelet reuses an answer for a registry. chalkos restarts the

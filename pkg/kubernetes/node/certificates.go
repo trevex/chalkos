@@ -3,10 +3,8 @@ package node
 import (
 	"context"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -15,18 +13,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
-	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
-
-// OldPKI is where the certificates the static pods ran with before the last replacement stay
-// until the next one: running containers keep the directory they mounted, and the kubelet
-// starts each pod again with the new one.
-func (p Paths) OldPKI() string { return p.PKI + ".old" }
-
-// pkiLock serialises the writers of the control plane's certificates: the preparation, a
-// separate process, and chalkd's renewal.
-func (p Paths) pkiLock() string { return filepath.Join(p.Run, ".pki.lock") }
 
 // LockPKI waits for the lock on the control plane's certificates until ctx ends. A node leaving
 // etcd holds it while it removes the static pods, so no renewal renders them again. The wait
@@ -113,19 +101,14 @@ func writeDir(dir string, files map[string][]byte) error {
 	return nil
 }
 
-// ControlPlaneLeaves reads the leaf certificates of the control plane's files by file name.
-func ControlPlaneLeaves(p Paths) (map[string]*x509.Certificate, error) {
-	files, err := readDir(p.PKI)
-	if err != nil {
-		return nil, err
-	}
-	return kpki.ControlPlaneLeaves(files)
-}
-
 // ControlPlaneRenewAt is when the control plane's certificates are renewed: once two thirds of
 // the lifetime of the one that expires first have passed. It returns that certificate too.
 func ControlPlaneRenewAt(p Paths) (time.Time, *x509.Certificate, error) {
-	leaves, err := ControlPlaneLeaves(p)
+	files, err := readDir(p.PKI)
+	if err != nil {
+		return time.Time{}, nil, err
+	}
+	leaves, err := kpki.ControlPlaneLeaves(files)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
@@ -164,7 +147,7 @@ func RenewControlPlane(ctx context.Context, p Paths, now time.Time) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	share, c, n, err := Load(p)
+	share, c, n, err := load(p)
 	if err != nil {
 		return err
 	}
@@ -182,78 +165,4 @@ func RenewControlPlane(ctx context.Context, p Paths, now time.Time) error {
 		return err
 	}
 	return RenderStaticPods(p)
-}
-
-// RefreshStaticPods renders the static pods again when they run on other certificates than the
-// current ones, as chalkd's control-plane loop does when it starts. Manifests that would not
-// change are not written, so no pod starts again. A preparation that runs renders them itself.
-func RefreshStaticPods(p Paths) error {
-	unlock, err := lockPKI(p, false)
-	if errors.Is(err, ErrPKIBusy) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	if prepared, err := Prepared(p); err != nil || !prepared {
-		return err
-	}
-	if stale, err := StaticPodsStale(p); err != nil || !stale {
-		return err
-	}
-	return RenderStaticPods(p)
-}
-
-// StaticPodsStale reports whether a static pod of a node that renders them names other
-// certificates, by their hash, than the control plane's current ones.
-func StaticPodsStale(p Paths) (bool, error) {
-	if renders, err := rendersStaticPods(p); err != nil || !renders {
-		return false, err
-	}
-	pods, err := renderPods(p)
-	if err != nil {
-		return false, err
-	}
-	for name, data := range pods {
-		rendered, err := os.ReadFile(filepath.Join(p.Manifests(), name))
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return false, err
-		}
-		want, err := certificatesHash(data)
-		if err != nil {
-			return false, err
-		}
-		got, err := certificatesHash(rendered)
-		if err != nil {
-			return false, fmt.Errorf("%s: %w", name, err)
-		}
-		if got != want {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-// rendersStaticPods reports whether the node runs the control plane's static pods: once
-// bootstrapped, until it left etcd.
-func rendersStaticPods(p Paths) (bool, error) {
-	m, _, err := ReadMembership(p)
-	return m == MembershipBootstrapped, err
-}
-
-// certificatesHash returns the hash of the certificates a static pod's manifest names.
-func certificatesHash(manifest []byte) (string, error) {
-	var pod struct {
-		Metadata struct {
-			Annotations map[string]string `json:"annotations"`
-		} `json:"metadata"`
-	}
-	if err := json.Unmarshal(manifest, &pod); err != nil {
-		return "", err
-	}
-	return pod.Metadata.Annotations[manifests.CertificatesAnnotation], nil
 }

@@ -17,8 +17,8 @@ let
   kubelet = pkgs.runCommand "kubelet-${k.package.version}" { } ''
     install -Dm755 ${k.package}/bin/kubelet $out/bin/kubelet
   '';
-  # Where chalkd writes the node's Kubernetes files; credprovider.Dir in Go is its
-  # credential-provider directory.
+  # Where chalkd writes the node's Kubernetes files: RunDir in Go (pkg/kubernetes), whose
+  # CredentialProviderDir is the credential-provider directory below it.
   run = "/run/chalkos/kubernetes";
   flannel = config.chalkos.cni.provider == "flannel";
 

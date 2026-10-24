@@ -174,7 +174,7 @@ func (k *Kubernetes) ownMember(members []etcd.Member, name string) (etcd.Member,
 	}
 	peerURL := ""
 	if pin != nil {
-		peerURL = etcd.PeerURL(net.IP(pin[0].AsSlice()))
+		peerURL = k8s.EtcdPeerURL(pin[0])
 	}
 	m, ok := etcd.Self(members, name, peerURL)
 	return m, ok, nil

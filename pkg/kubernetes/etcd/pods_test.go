@@ -2,7 +2,7 @@ package etcd
 
 import (
 	"context"
-	"net"
+	"net/netip"
 	"slices"
 	"testing"
 
@@ -28,14 +28,14 @@ func TestEndpointsFromPods(t *testing.T) {
 		etcdPod("etcd-pending", "", etcd),
 		etcdPod("kube-apiserver-cp1", "10.0.0.9", map[string]string{"component": "kube-apiserver", "tier": "control-plane"}),
 	)
-	got, err := EndpointsFromPods(context.Background(), client, []net.IP{net.ParseIP("10.0.0.2")})
+	got, err := EndpointsFromPods(context.Background(), client, []netip.Addr{netip.MustParseAddr("10.0.0.2")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{"https://10.0.0.1:2379", "https://10.0.0.3:2379"}; !slices.Equal(got, want) {
 		t.Errorf("endpoints %v, want %v", got, want)
 	}
-	if _, err := EndpointsFromPods(context.Background(), client, []net.IP{net.ParseIP("10.0.0.1"), net.ParseIP("10.0.0.2"), net.ParseIP("10.0.0.3")}); err == nil {
+	if _, err := EndpointsFromPods(context.Background(), client, []netip.Addr{netip.MustParseAddr("10.0.0.1"), netip.MustParseAddr("10.0.0.2"), netip.MustParseAddr("10.0.0.3")}); err == nil {
 		t.Error("found endpoints with only the node's own etcd pods listed")
 	}
 }

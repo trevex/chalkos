@@ -108,6 +108,16 @@ func ParseFamily(s string) (Family, error) {
 	return "", fmt.Errorf("%q is not an address family; use ipv4 or ipv6", s)
 }
 
+// UnmarshalText reads the family as ParseFamily does.
+func (f *Family) UnmarshalText(text []byte) error {
+	family, err := ParseFamily(string(text))
+	if err != nil {
+		return err
+	}
+	*f = family
+	return nil
+}
+
 // FamilyOf returns the family of ip.
 func FamilyOf(ip netip.Addr) Family {
 	if ip.Unmap().Is4() {

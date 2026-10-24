@@ -2,7 +2,8 @@ package config
 
 import (
 	"encoding/json"
-	"slices"
+	"fmt"
+	"net/netip"
 	"strings"
 	"testing"
 
@@ -78,7 +79,7 @@ func TestClusterFromDefaults(t *testing.T) {
 	if c.Kind != kubernetes.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.Version != "1.37.1" || c.Images.KubeProxy != "p" {
 		t.Errorf("cluster = %+v", c)
 	}
-	if c.Domain != "cluster.local" || c.PodCIDRs.IPv4 != "10.244.0.0/16" || c.NodeCIDRMaskSizes.IPv4 != 24 || c.NodeIP.Timeout != 300 || c.VIP.Mode != "l2" {
+	if c.Domain != "cluster.local" || c.PodCIDRs.IPv4 != netip.MustParsePrefix("10.244.0.0/16") || c.NodeCIDRMaskSizes.IPv4 != 24 || c.NodeIP.Timeout != 300 || c.VIP.Mode != "l2" {
 		t.Errorf("defaults = %+v", c)
 	}
 	// The DNS address defaults to the 10th address of each service range.
@@ -86,7 +87,7 @@ func TestClusterFromDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dual.DNSIPs.IPv4 != "10.96.0.10" || dual.DNSIPs.IPv6 != "fd00:10:96::a" || dual.NodeCIDRMaskSizes.IPv6 != 64 {
+	if dual.DNSIPs.IPv4 != netip.MustParseAddr("10.96.0.10") || dual.DNSIPs.IPv6 != netip.MustParseAddr("fd00:10:96::a") || dual.NodeCIDRMaskSizes.IPv6 != 64 {
 		t.Errorf("dual stack = %+v", dual)
 	}
 	// A flannel image without a Flannel document takes the interface's MTU.
@@ -102,7 +103,7 @@ func TestClusterFromSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Primary() != "ipv6" || c.DNSIPs.IPv4 != "10.100.0.10" || c.Flannel.MTU != 1430 || !slices.Equal(c.Flannel.VXLANSourceSubnets, []string{"fd00:1::/64", "10.0.0.0/24"}) || c.ExtraArgs["kubelet"]["v"] != "2" || len(c.VIP.Addresses) != 1 {
+	if c.Primary() != "ipv6" || c.DNSIPs.IPv4 != netip.MustParseAddr("10.100.0.10") || c.Flannel.MTU != 1430 || fmt.Sprint(c.Flannel.VXLANSourceSubnets) != "[fd00:1::/64 10.0.0.0/24]" || c.ExtraArgs["kubelet"]["v"] != "2" || len(c.VIP.Addresses) != 1 {
 		t.Errorf("cluster = %+v", c)
 	}
 	none := testImage
@@ -124,6 +125,18 @@ func TestClusterRejects(t *testing.T) {
 		"overlapping ranges": {minimal + worker +
 			clusterDoc("k", "{podCIDRs: {ipv4: 10.96.0.0/16}}"),
 			`Cluster "k": podCIDRs.ipv4 10.96.0.0/16 and serviceCIDRs.ipv4 10.96.0.0/12 overlap`},
+		"range not in CIDR notation": {minimal + worker +
+			clusterDoc("k", "{podCIDRs: {ipv4: 10.244.0.0}}"),
+			`Cluster "k": podCIDRs.ipv4 "10.244.0.0" is not an address range in CIDR notation`},
+		"DNS address not an address": {minimal + worker +
+			clusterDoc("k", "{dnsIPs: {ipv4: dns}}"),
+			`Cluster "k": dnsIPs.ipv4 "dns" is not an address in serviceCIDRs.ipv4 10.96.0.0/12`},
+		"VIP not an address": {minimal + worker +
+			clusterDoc("k", "{vip: {addresses: [10.0.0.10/32]}}"),
+			`Cluster "k": vip: "10.0.0.10/32" is not an address`},
+		"VXLAN source not in CIDR notation": {minimal + worker + clusterDoc("k", "{}") +
+			flannelDoc("f", "{vxlanSourceSubnets: [10.0.0.0]}"),
+			`Flannel "f": vxlanSourceSubnets: "10.0.0.0" is not an address range in CIDR notation`},
 		"protected kubelet flag": {minimal + clusterDoc("k", "{}") +
 			nodeDoc("w", `{type: worker, kubeletExtraArgs: {anonymous-auth: "true"}}`),
 			`Node "w": kubeletExtraArgs: --anonymous-auth is set by chalkos and cannot be overridden`},
@@ -178,8 +191,12 @@ func TestClusterKeepsTheFamiliesInUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := kubernetes.ByFamily[string]{IPv4: "10.244.0.0/16"}
-	if c.PodCIDRs != want || c.ServiceCIDRs.IPv6 != "" || c.DNSIPs != (kubernetes.ByFamily[string]{IPv4: "10.96.0.10"}) ||
+	// The values of the other families are neither kept nor checked.
+	if _, err := kubernetesSet(t, `{podCIDRs: {ipv6: "pods"}, serviceCIDRs: {ipv6: "fd00:2::1"}, dnsIPs: {ipv6: "dns"}}`, "").Documents().Cluster(testImage); err != nil {
+		t.Errorf("an ipv4 cluster checked its ipv6 values: %v", err)
+	}
+	want := kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16")}
+	if c.PodCIDRs != want || c.ServiceCIDRs.IPv6.IsValid() || c.DNSIPs != (kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.96.0.10")}) ||
 		c.NodeCIDRMaskSizes != (kubernetes.ByFamily[int]{IPv4: 24}) {
 		t.Errorf("cluster = %+v", c)
 	}
@@ -197,7 +214,7 @@ func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DNSIPs.IPv4 != "10.96.0.53" || c.VIP.Interface != "lan0" || c.VIP.Mode != "l2" {
+	if c.DNSIPs.IPv4 != netip.MustParseAddr("10.96.0.53") || c.VIP.Interface != "lan0" || c.VIP.Mode != "l2" {
 		t.Errorf("cluster = %+v", c)
 	}
 	want := `Node "default": vip.interface: only control planes hold the VIP; leave it null on a worker`

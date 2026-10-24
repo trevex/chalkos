@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -65,36 +66,24 @@ func ControlPlane(s Share, c kubernetes.Cluster, n kubernetes.Node, now time.Tim
 	if s.Kind != kubernetes.KindControlPlane {
 		return nil, errors.New("the node's share is not a control-plane share")
 	}
-	host, err := c.EndpointHost()
-	if err != nil {
-		return nil, err
-	}
-	serviceIP, err := c.APIServerServiceIP()
-	if err != nil {
-		return nil, err
-	}
-	loopback := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
+	host := c.EndpointHost()
+	loopback := []netip.Addr{netip.AddrFrom4([4]byte{127, 0, 0, 1}), netip.IPv6Loopback()}
 	nodeIPs := n.CertificateIPs()
 
-	apiServerIPs := append(append([]net.IP{serviceIP}, loopback...), nodeIPs...)
+	apiServerIPs := append(append([]netip.Addr{c.APIServerServiceIP()}, loopback...), nodeIPs...)
 	apiServerNames := []string{"localhost", "kubernetes", "kubernetes.default", "kubernetes.default.svc", "kubernetes.default.svc." + c.Domain, n.Name}
-	if ip := net.ParseIP(host); ip != nil {
-		apiServerIPs = append(apiServerIPs, ip)
+	if ip, err := netip.ParseAddr(host); err == nil && ip.Zone() == "" {
+		apiServerIPs = append(apiServerIPs, ip.Unmap())
 	} else {
 		apiServerNames = append(apiServerNames, host)
 	}
 	// Clients may reach the API server through any VIP, not only the endpoint's.
-	vips, err := c.VIPAddresses()
-	if err != nil {
-		return nil, err
-	}
-	for _, vip := range vips {
-		ip := net.IP(vip.AsSlice())
-		if !slices.ContainsFunc(apiServerIPs, ip.Equal) {
-			apiServerIPs = append(apiServerIPs, ip)
+	for _, vip := range c.VIPAddresses() {
+		if !slices.Contains(apiServerIPs, vip) {
+			apiServerIPs = append(apiServerIPs, vip)
 		}
 	}
-	etcdIPs := append(append([]net.IP{}, loopback...), nodeIPs...)
+	etcdIPs := append(slices.Clone(loopback), nodeIPs...)
 	etcdNames := []string{"localhost", n.Name}
 
 	files := map[string][]byte{
@@ -109,12 +98,12 @@ func ControlPlane(s Share, c kubernetes.Cluster, n kubernetes.Node, now time.Tim
 		ca        pki.CertKey
 		leaf      pki.Leaf
 	}{
-		{FileAPIServer, FileAPIServerKey, s.CA, pki.Leaf{CommonName: "kube-apiserver", DNSNames: apiServerNames, IPs: apiServerIPs, Server: true}},
+		{FileAPIServer, FileAPIServerKey, s.CA, pki.Leaf{CommonName: "kube-apiserver", DNSNames: apiServerNames, IPs: certificateIPs(apiServerIPs), Server: true}},
 		{FileAPIServerKubeletClient, FileAPIServerKubeletKey, s.CA, pki.Leaf{CommonName: APIServerKubeletClientUser, Client: true}},
 		{FileAPIServerEtcdClient, FileAPIServerEtcdClientKey, *s.EtcdCA, pki.Leaf{CommonName: APIServerEtcdClientUser, Client: true}},
 		{FileFrontProxyClient, FileFrontProxyClientKey, *s.FrontProxyCA, pki.Leaf{CommonName: FrontProxyClientUser, Client: true}},
-		{FileEtcdServer, FileEtcdServerKey, *s.EtcdCA, pki.Leaf{CommonName: n.Name, DNSNames: etcdNames, IPs: etcdIPs, Server: true, Client: true}},
-		{FileEtcdPeer, FileEtcdPeerKey, *s.EtcdCA, pki.Leaf{CommonName: n.Name, DNSNames: etcdNames, IPs: etcdIPs, Server: true, Client: true}},
+		{FileEtcdServer, FileEtcdServerKey, *s.EtcdCA, pki.Leaf{CommonName: n.Name, DNSNames: etcdNames, IPs: certificateIPs(etcdIPs), Server: true, Client: true}},
+		{FileEtcdPeer, FileEtcdPeerKey, *s.EtcdCA, pki.Leaf{CommonName: n.Name, DNSNames: etcdNames, IPs: certificateIPs(etcdIPs), Server: true, Client: true}},
 	}
 	for _, l := range leaves {
 		ck, err := pki.IssueLeaf(l.ca, l.leaf, now)
@@ -157,6 +146,15 @@ func ControlPlane(s Share, c kubernetes.Cluster, n kubernetes.Node, now time.Tim
 		return nil, err
 	}
 	return files, nil
+}
+
+// certificateIPs converts addresses to a certificate's IP addresses.
+func certificateIPs(addrs []netip.Addr) []net.IP {
+	ips := make([]net.IP, len(addrs))
+	for i, a := range addrs {
+		ips[i] = net.IP(a.AsSlice())
+	}
+	return ips
 }
 
 // authenticationConfig allows anonymous requests only to the health endpoints, which the

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -41,7 +41,7 @@ func joiningServer(t *testing.T) (*Server, *etcdtest.Member, *clientv3.Client) {
 		t.Fatal(err)
 	}
 	cp0 := etcdtest.StartNew(t, *share.EtcdCA, "cp0")
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return []string{cp0.ClientURL}, nil
 	}
 	k.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
@@ -110,7 +110,7 @@ func TestJoin(t *testing.T) {
 		t.Fatalf("pin = %v, %v", pin, err)
 	}
 	// The peers know the learner, which has not started and so sorts first, by the pinned address.
-	if list := members(t, cli); len(list) != 2 || !slices.Equal(list[0].PeerURLs, []string{etcd.PeerURL(net.IP(pin[0].AsSlice()))}) {
+	if list := members(t, cli); len(list) != 2 || !slices.Equal(list[0].PeerURLs, []string{k8s.EtcdPeerURL(pin[0])}) {
 		t.Errorf("members %+v, want the learner at the pinned address %s", list, pin[0])
 	}
 	initial, err := os.ReadFile(p.EtcdInitialCluster())
@@ -208,7 +208,7 @@ func TestJoinWaitsForCluster(t *testing.T) {
 	k := s.Kubernetes
 	k.JoinRetry = 10 * time.Millisecond
 	var asked atomic.Int32
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		asked.Add(1)
 		return nil, errors.New("connection refused")
 	}
@@ -324,7 +324,7 @@ func TestJoinStatusAfterStall(t *testing.T) {
 	k := s.Kubernetes
 	var unreachable atomic.Bool
 	endpoints := k.EtcdEndpoints
-	k.EtcdEndpoints = func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []net.IP) ([]string, error) {
+	k.EtcdEndpoints = func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []netip.Addr) ([]string, error) {
 		if unreachable.Load() {
 			return nil, errors.New("connection refused")
 		}
@@ -365,7 +365,7 @@ func TestJoinBoundsEtcdRequests(t *testing.T) {
 	k.EtcdTimeout = 100 * time.Millisecond
 	silent := etcdtest.Silent(t)
 	var asked atomic.Int32
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		asked.Add(1)
 		return []string{silent}, nil
 	}
@@ -390,7 +390,7 @@ func TestJoinRefusesSplitClusters(t *testing.T) {
 	k := s.Kubernetes
 	share, _ := knode.ReadShare(k.Paths)
 	other := etcdtest.StartNew(t, *share.EtcdCA, "other")
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return []string{cp0.ClientURL, other.ClientURL}, nil
 	}
 	k.Start()
@@ -428,7 +428,7 @@ func TestControlPlaneReportsSplit(t *testing.T) {
 	local := etcdtest.StartNew(t, *share.EtcdCA, "n1")
 	other := etcdtest.StartNew(t, *share.EtcdCA, "cp0")
 	k.LocalEtcd = local.ClientURL
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return []string{other.ClientURL}, nil
 	}
 	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {

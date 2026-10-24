@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,72 +27,67 @@ import (
 )
 
 const (
-	// PKIDir is where chalkd writes the certificates on the node.
-	PKIDir = "/run/chalkos/kubernetes/pki"
-	// EtcdDataDir holds etcd's data on VAR.
-	EtcdDataDir = "/var/lib/etcd"
-	// podPKIDir is where the pods see PKIDir.
+	// podPKIDir is where the pods see the control plane's certificates.
 	podPKIDir = "/etc/kubernetes/pki"
 	// CertificatesAnnotation carries a hash of the certificates a pod mounts, so the kubelet
 	// replaces the pod when they are issued again.
 	CertificatesAnnotation = "chalkos.dev/certificates"
 )
 
-// StaticPods renders the static pods by file name. files are the control plane's certificates
-// as pki.ControlPlane issues them. initialCluster is etcd's --initial-cluster when the node joins
-// an existing cluster; empty starts a new cluster of the node alone.
-func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte, initialCluster string) (map[string][]byte, error) {
+// StaticPods renders the static pods by file name.
+//   - pkiDir is where the control plane's certificates are on the node, kubernetes.PKIDir there.
+//   - files are the certificates as pki.ControlPlane issues them.
+//   - initialCluster is etcd's --initial-cluster when the node joins an existing cluster; empty
+//     starts a new cluster of the node alone.
+func StaticPods(c kubernetes.Cluster, n kubernetes.Node, pkiDir string, files map[string][]byte, initialCluster string) (map[string][]byte, error) {
 	if len(n.IPs) == 0 {
 		return nil, errors.New("the node has no address")
 	}
 	// etcd and the API server advertise the address of the primary family, and listen on its
 	// loopback address for their own node.
-	ip := n.IPs[0].String()
-	loopback := c.Loopback().String()
-	families, err := c.Families()
-	if err != nil {
-		return nil, err
-	}
-	podRanges, err := c.PodCIDRList()
-	if err != nil {
-		return nil, err
-	}
-	serviceRanges, err := c.ServiceCIDRList()
-	if err != nil {
-		return nil, err
-	}
+	ip := n.IPs[0]
+	loopback := c.Loopback()
 	pki := func(file string) string { return path.Join(podPKIDir, file) }
 	state := "existing"
 	if initialCluster == "" {
-		initialCluster, state = n.Name+"=https://"+net.JoinHostPort(ip, "2380"), "new"
+		initialCluster, state = n.Name+"="+kubernetes.EtcdPeerURL(ip), "new"
 	}
 
-	etcd := pod("etcd", c.Images.Etcd, flags(c, "etcd", map[string]string{
-		"name":                        n.Name,
-		"data-dir":                    EtcdDataDir,
-		"advertise-client-urls":       "https://" + net.JoinHostPort(ip, "2379"),
-		"initial-advertise-peer-urls": "https://" + net.JoinHostPort(ip, "2380"),
-		"initial-cluster":             initialCluster,
-		// A member with data ignores the initial cluster, so a restart never starts a new one.
-		"initial-cluster-state": state,
-		"listen-client-urls":    c.LocalEtcd() + ",https://" + net.JoinHostPort(ip, "2379"),
-		"listen-peer-urls":      "https://" + net.JoinHostPort(ip, "2380"),
-		"listen-metrics-urls":   "http://" + net.JoinHostPort(loopback, "2381"),
-		"cert-file":             pki(kpki.FileEtcdServer),
-		"key-file":              pki(kpki.FileEtcdServerKey),
-		"trusted-ca-file":       pki(kpki.FileEtcdCA),
-		"client-cert-auth":      "true",
-		"peer-cert-file":        pki(kpki.FileEtcdPeer),
-		"peer-key-file":         pki(kpki.FileEtcdPeerKey),
-		"peer-trusted-ca-file":  pki(kpki.FileEtcdCA),
-		"peer-client-cert-auth": "true",
-		"snapshot-count":        "10000",
-	}), loopback, 2381, corev1.URISchemeHTTP, "/livez", "/readyz", "/readyz", "100m", "100Mi")
-	mountDir(etcd, "etcd-data", EtcdDataDir, EtcdDataDir, false, corev1.HostPathDirectoryOrCreate)
-	mountDir(etcd, "etcd-certs", path.Join(PKIDir, "etcd"), path.Join(podPKIDir, "etcd"), true, corev1.HostPathDirectory)
+	etcd := pod(component{
+		name:  "etcd",
+		image: c.Images.Etcd,
+		command: flags(c, "etcd", map[string]string{
+			"name":                        n.Name,
+			"data-dir":                    kubernetes.EtcdDataDir,
+			"advertise-client-urls":       kubernetes.EtcdClientURL(ip),
+			"initial-advertise-peer-urls": kubernetes.EtcdPeerURL(ip),
+			"initial-cluster":             initialCluster,
+			// A member with data ignores the initial cluster, so a restart never starts a new one.
+			"initial-cluster-state": state,
+			"listen-client-urls":    c.LocalEtcd() + "," + kubernetes.EtcdClientURL(ip),
+			"listen-peer-urls":      kubernetes.EtcdPeerURL(ip),
+			"listen-metrics-urls":   "http://" + net.JoinHostPort(loopback.String(), strconv.Itoa(kubernetes.EtcdMetricsPort)),
+			"cert-file":             pki(kpki.FileEtcdServer),
+			"key-file":              pki(kpki.FileEtcdServerKey),
+			"trusted-ca-file":       pki(kpki.FileEtcdCA),
+			"client-cert-auth":      "true",
+			"peer-cert-file":        pki(kpki.FileEtcdPeer),
+			"peer-key-file":         pki(kpki.FileEtcdPeerKey),
+			"peer-trusted-ca-file":  pki(kpki.FileEtcdCA),
+			"peer-client-cert-auth": "true",
+			"snapshot-count":        "10000",
+		}),
+		probe: probe{host: loopback.String(), port: kubernetes.EtcdMetricsPort, scheme: corev1.URISchemeHTTP,
+			live: "/livez", ready: "/readyz", startup: "/readyz"},
+		cpu: "100m", memory: "100Mi",
+	})
+	mount(etcd, kubernetes.EtcdDataDir, corev1.HostPathDirectoryOrCreate,
+		corev1.VolumeMount{Name: "etcd-data", MountPath: kubernetes.EtcdDataDir})
+	mount(etcd, path.Join(pkiDir, "etcd"), corev1.HostPathDirectory,
+		corev1.VolumeMount{Name: "etcd-certs", MountPath: path.Join(podPKIDir, "etcd"), ReadOnly: true})
 
-	apiServer := pod("kube-apiserver", c.Images.KubeAPIServer, flags(c, "kube-apiserver", map[string]string{
-		"advertise-address":                  ip,
+	apiServer := pod(component{name: "kube-apiserver", image: c.Images.KubeAPIServer, command: flags(c, "kube-apiserver", map[string]string{
+		"advertise-address":                  ip.String(),
 		"allow-privileged":                   "true",
 		"authentication-config":              pki(kpki.FileAuthenticationConfig),
 		"authorization-mode":                 "Node,RBAC",
@@ -114,16 +111,20 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"requestheader-extra-headers-prefix": "X-Remote-Extra-",
 		"requestheader-group-headers":        "X-Remote-Group",
 		"requestheader-username-headers":     "X-Remote-User",
-		"secure-port":                        "6443",
+		"secure-port":                        strconv.Itoa(kubernetes.APIServerPort),
 		"service-account-issuer":             "https://kubernetes.default.svc." + c.Domain,
 		"service-account-key-file":           pki(kpki.FileServiceAccountPub),
 		"service-account-signing-key-file":   pki(kpki.FileServiceAccountKey),
-		"service-cluster-ip-range":           joinRanges(serviceRanges),
+		"service-cluster-ip-range":           joinRanges(c.ServiceCIDRList()),
 		"tls-cert-file":                      pki(kpki.FileAPIServer),
 		"tls-min-version":                    "VersionTLS12",
 		"tls-private-key-file":               pki(kpki.FileAPIServerKey),
-	}), ip, 6443, corev1.URISchemeHTTPS, "/livez", "/readyz", "/livez", "250m", "")
-	mountDir(apiServer, "k8s-certs", PKIDir, podPKIDir, true, corev1.HostPathDirectory)
+	}),
+		probe: probe{host: ip.String(), port: kubernetes.APIServerPort, scheme: corev1.URISchemeHTTPS,
+			live: "/livez", ready: "/readyz", startup: "/livez"},
+		cpu: "250m",
+	})
+	mount(apiServer, pkiDir, corev1.HostPathDirectory, corev1.VolumeMount{Name: "k8s-certs", MountPath: podPKIDir, ReadOnly: true})
 
 	// The controller-manager and the scheduler serve their health endpoints on IPv4's loopback
 	// address in every setup, as kubeadm's do: every node has it.
@@ -133,7 +134,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"authorization-kubeconfig":         pki(kpki.FileControllerManagerConfig),
 		"bind-address":                     "127.0.0.1",
 		"client-ca-file":                   pki(kpki.FileCA),
-		"cluster-cidr":                     joinRanges(podRanges),
+		"cluster-cidr":                     joinRanges(c.PodCIDRList()),
 		"cluster-name":                     "kubernetes",
 		"cluster-signing-cert-file":        pki(kpki.FileCASigning),
 		"cluster-signing-key-file":         pki(kpki.FileCAKey),
@@ -144,30 +145,38 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"requestheader-client-ca-file":     pki(kpki.FileFrontProxyCA),
 		"root-ca-file":                     pki(kpki.FileCA),
 		"service-account-private-key-file": pki(kpki.FileServiceAccountKey),
-		"service-cluster-ip-range":         joinRanges(serviceRanges),
+		"service-cluster-ip-range":         joinRanges(c.ServiceCIDRList()),
 		"use-service-account-credentials":  "true",
 	}
-	for _, f := range families {
+	for _, f := range c.Families() {
 		controllerManagerFlags["node-cidr-mask-size-"+string(f)] = strconv.Itoa(c.NodeCIDRMaskSizes.Of(f))
 	}
-	controllerManager := pod("kube-controller-manager", c.Images.KubeControllerManager, flags(c, "kube-controller-manager", controllerManagerFlags),
-		"127.0.0.1", 10257, corev1.URISchemeHTTPS, "/healthz", "", "/healthz", "200m", "")
-	mountDir(controllerManager, "k8s-certs", PKIDir, podPKIDir, true, corev1.HostPathDirectory)
+	controllerManager := pod(component{
+		name: "kube-controller-manager", image: c.Images.KubeControllerManager,
+		command: flags(c, "kube-controller-manager", controllerManagerFlags),
+		probe:   probe{host: "127.0.0.1", port: 10257, scheme: corev1.URISchemeHTTPS, live: "/healthz", startup: "/healthz"},
+		cpu:     "200m",
+	})
+	mount(controllerManager, pkiDir, corev1.HostPathDirectory, corev1.VolumeMount{Name: "k8s-certs", MountPath: podPKIDir, ReadOnly: true})
 
 	schedulerConfig := "/etc/kubernetes/scheduler.kubeconfig"
-	scheduler := pod("kube-scheduler", c.Images.KubeScheduler, flags(c, "kube-scheduler", map[string]string{
+	scheduler := pod(component{name: "kube-scheduler", image: c.Images.KubeScheduler, command: flags(c, "kube-scheduler", map[string]string{
 		"authentication-kubeconfig": schedulerConfig,
 		"authorization-kubeconfig":  schedulerConfig,
 		"bind-address":              "127.0.0.1",
 		"kubeconfig":                schedulerConfig,
 		"leader-elect":              "true",
 		"profiling":                 "false",
-	}), "127.0.0.1", 10259, corev1.URISchemeHTTPS, "/livez", "/readyz", "/livez", "100m", "")
-	mountDir(scheduler, "kubeconfig", path.Join(PKIDir, kpki.FileSchedulerConfig), schedulerConfig, true, corev1.HostPathFile)
+	}),
+		probe: probe{host: "127.0.0.1", port: 10259, scheme: corev1.URISchemeHTTPS, live: "/livez", ready: "/readyz", startup: "/livez"},
+		cpu:   "100m",
+	})
+	mount(scheduler, path.Join(pkiDir, kpki.FileSchedulerConfig), corev1.HostPathFile,
+		corev1.VolumeMount{Name: "kubeconfig", MountPath: schedulerConfig, ReadOnly: true})
 
 	out := map[string][]byte{}
 	for _, p := range []*corev1.Pod{etcd, apiServer, controllerManager, scheduler} {
-		hash, err := certificatesHash(p, files)
+		hash, err := certificatesHash(p, pkiDir, files)
 		if err != nil {
 			return nil, err
 		}
@@ -193,58 +202,70 @@ func joinRanges(ranges []netip.Prefix) string {
 // flags turns the component's flags, with the cluster's extra flags for it on top, into
 // arguments in name order.
 func flags(c kubernetes.Cluster, component string, base map[string]string) []string {
-	merged := map[string]string{}
-	for k, v := range base {
-		merged[k] = v
-	}
-	for k, v := range c.ExtraArgs[component] {
-		merged[k] = v
-	}
-	names := make([]string, 0, len(merged))
-	for k := range merged {
-		names = append(names, k)
-	}
-	sort.Strings(names)
+	merged := maps.Clone(base)
+	maps.Copy(merged, c.ExtraArgs[component])
 	args := []string{component}
-	for _, k := range names {
+	for _, k := range slices.Sorted(maps.Keys(merged)) {
 		args = append(args, "--"+k+"="+merged[k])
 	}
 	return args
 }
 
-func pod(name, image string, command []string, probeHost string, port int32, scheme corev1.URIScheme, live, ready, startup, cpu, memory string) *corev1.Pod {
-	probe := func(path string, delay, failures, period int32) *corev1.Probe {
-		return &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
-				Host: probeHost, Path: path, Port: intstr.FromString("probe-port"), Scheme: scheme,
-			}},
-			InitialDelaySeconds: delay, TimeoutSeconds: 15, FailureThreshold: failures, PeriodSeconds: period,
-		}
+// component is a control-plane component's container.
+type component struct {
+	name, image string
+	command     []string
+	probe       probe
+	// cpu and memory are what the container requests; an empty memory requests none.
+	cpu, memory string
+}
+
+// probe is where the kubelet checks a component's health: an HTTP endpoint on the host's network
+// with a path each for liveness, readiness and startup. An empty ready path checks no readiness.
+type probe struct {
+	host                 string
+	port                 int32
+	scheme               corev1.URIScheme
+	live, ready, startup string
+}
+
+// get is the kubelet's check of the path, delay seconds after the start, every period seconds,
+// failing after failures attempts.
+func (pr probe) get(path string, delay, failures, period int32) *corev1.Probe {
+	return &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
+			Host: pr.host, Path: path, Port: intstr.FromString("probe-port"), Scheme: pr.scheme,
+		}},
+		InitialDelaySeconds: delay, TimeoutSeconds: 15, FailureThreshold: failures, PeriodSeconds: period,
 	}
-	requests := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpu)}
-	if memory != "" {
-		requests[corev1.ResourceMemory] = resource.MustParse(memory)
+}
+
+// pod is the static pod that runs the component.
+func pod(c component) *corev1.Pod {
+	requests := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(c.cpu)}
+	if c.memory != "" {
+		requests[corev1.ResourceMemory] = resource.MustParse(c.memory)
 	}
 	container := corev1.Container{
-		Name:            name,
-		Image:           image,
+		Name:            c.name,
+		Image:           c.image,
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         command,
-		Ports:           []corev1.ContainerPort{{Name: "probe-port", ContainerPort: port, Protocol: corev1.ProtocolTCP}},
+		Command:         c.command,
+		Ports:           []corev1.ContainerPort{{Name: "probe-port", ContainerPort: c.probe.port, Protocol: corev1.ProtocolTCP}},
 		Resources:       corev1.ResourceRequirements{Requests: requests},
-		LivenessProbe:   probe(live, 10, 8, 10),
+		LivenessProbe:   c.probe.get(c.probe.live, 10, 8, 10),
 		// Four minutes, as kubeadm allows: a node pulls the images on first start.
-		StartupProbe: probe(startup, 10, 24, 10),
+		StartupProbe: c.probe.get(c.probe.startup, 10, 24, 10),
 	}
-	if ready != "" {
-		container.ReadinessProbe = probe(ready, 0, 3, 1)
+	if c.probe.ready != "" {
+		container.ReadinessProbe = c.probe.get(c.probe.ready, 0, 3, 1)
 	}
 	return &corev1.Pod{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      c.name,
 			Namespace: "kube-system",
-			Labels:    map[string]string{"component": name, "tier": "control-plane"},
+			Labels:    map[string]string{"component": c.name, "tier": "control-plane"},
 		},
 		Spec: corev1.PodSpec{
 			Containers:        []corev1.Container{container},
@@ -255,20 +276,22 @@ func pod(name, image string, command []string, probeHost string, port int32, sch
 	}
 }
 
-func mountDir(p *corev1.Pod, name, hostPath, mountPath string, readOnly bool, kind corev1.HostPathType) {
+// mount adds the host path of the kind to the pod as the volume m names, and mounts it into the
+// pod's container as m says.
+func mount(p *corev1.Pod, hostPath string, kind corev1.HostPathType, m corev1.VolumeMount) {
 	p.Spec.Volumes = append(p.Spec.Volumes, corev1.Volume{
-		Name:         name,
+		Name:         m.Name,
 		VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: hostPath, Type: &kind}},
 	})
 	c := &p.Spec.Containers[0]
-	c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{Name: name, MountPath: mountPath, ReadOnly: readOnly})
+	c.VolumeMounts = append(c.VolumeMounts, m)
 }
 
-// certificatesHash hashes the files below PKIDir that the pod mounts, in name order.
-func certificatesHash(p *corev1.Pod, files map[string][]byte) (string, error) {
+// certificatesHash hashes the files below pkiDir that the pod mounts, in name order.
+func certificatesHash(p *corev1.Pod, pkiDir string, files map[string][]byte) (string, error) {
 	var names []string
 	for _, v := range p.Spec.Volumes {
-		rel, ok := strings.CutPrefix(v.HostPath.Path, PKIDir)
+		rel, ok := strings.CutPrefix(v.HostPath.Path, pkiDir)
 		if !ok {
 			continue
 		}

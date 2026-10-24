@@ -132,10 +132,7 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 			return err
 		}
 	}
-	families, err := c.Families()
-	if err != nil {
-		return err
-	}
+	families := c.Families()
 	var errs []string
 	add := func(format string, args ...any) { errs = append(errs, fmt.Sprintf(format, args...)) }
 
@@ -204,17 +201,15 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 		}
 	}
 	// The other nodes take VXLAN only from vxlanSourceSubnets, so every address the node has or
-	// may pick must lie in them; the node checks the addresses it picks at boot again. Invalid
-	// sources are the Flannel document's error, reported with the cluster.
-	if sources, err := c.VXLANSources(); err == nil {
-		if err := kubernetes.CheckVXLANSources(sources, addrs); err != nil {
-			add("Node: nodeIP.addresses: %v", err)
-		}
-		for _, s := range subnets {
-			p, err := netip.ParsePrefix(s)
-			if err == nil && !kubernetes.InVXLANSources(sources, p) {
-				add("Node: the node picks its address from %s, which is not inside vxlanSourceSubnets, from which alone the other nodes take VXLAN", s)
-			}
+	// may pick must lie in them; the node checks the addresses it picks at boot again.
+	sources := c.VXLANSources()
+	if err := kubernetes.CheckVXLANSources(sources, addrs); err != nil {
+		add("Node: nodeIP.addresses: %v", err)
+	}
+	for _, s := range subnets {
+		p, err := netip.ParsePrefix(s)
+		if err == nil && !kubernetes.InVXLANSources(sources, p) {
+			add("Node: the node picks its address from %s, which is not inside vxlanSourceSubnets, from which alone the other nodes take VXLAN", s)
 		}
 	}
 	// Invalid subnets are reported above; which families they would pick from is moot.

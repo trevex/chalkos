@@ -2,6 +2,7 @@ package addons
 
 import (
 	"encoding/json"
+	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,16 +13,17 @@ import (
 	"cel.dev/cel-go/ext"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 )
 
-func testCluster(families ...string) kubernetes.Cluster {
+func testCluster(families ...nodeip.Family) kubernetes.Cluster {
 	return kubernetes.Cluster{
 		Kind: kubernetes.KindControlPlane, Endpoint: "https://10.0.0.10:6443", Version: "1.37.1", Domain: "lab.local",
 		IPFamilies:   families,
-		PodCIDRs:     kubernetes.ByFamily[string]{IPv4: "10.244.0.0/16", IPv6: "fd00:10:244::/56"},
-		ServiceCIDRs: kubernetes.ByFamily[string]{IPv4: "10.96.0.0/12", IPv6: "fd00:10:96::/112"},
-		DNSIPs:       kubernetes.ByFamily[string]{IPv4: "10.96.0.10", IPv6: "fd00:10:96::a"},
+		PodCIDRs:     kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16"), IPv6: netip.MustParsePrefix("fd00:10:244::/56")},
+		ServiceCIDRs: kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12"), IPv6: netip.MustParsePrefix("fd00:10:96::/112")},
+		DNSIPs:       kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.96.0.10"), IPv6: netip.MustParseAddr("fd00:10:96::a")},
 		Images:       kubernetes.Images{KubeProxy: "proxy", CoreDNS: "coredns", Flannel: "flannel"},
 		Flannel:      &kubernetes.Flannel{MTU: 1430},
 	}
@@ -124,20 +126,20 @@ func asJSON(t *testing.T, o map[string]any) map[string]any {
 func TestRenderFollowsTheFamilies(t *testing.T) {
 	backend := map[string]any{"Type": "vxlan"}
 	for name, tc := range map[string]struct {
-		families          []string
+		families          []nodeip.Family
 		clusterCIDR, bind string
 		netConf           map[string]any
 		dnsIP, dnsFamily  string
 	}{
-		"ipv4": {[]string{"ipv4"}, "10.244.0.0/16", "0.0.0.0",
+		"ipv4": {[]nodeip.Family{"ipv4"}, "10.244.0.0/16", "0.0.0.0",
 			map[string]any{"Network": "10.244.0.0/16", "EnableNFTables": true, "Backend": backend}, "10.96.0.10", "IPv4"},
-		"dual": {[]string{"ipv4", "ipv6"}, "10.244.0.0/16,fd00:10:244::/56", "0.0.0.0",
+		"dual": {[]nodeip.Family{"ipv4", "ipv6"}, "10.244.0.0/16,fd00:10:244::/56", "0.0.0.0",
 			map[string]any{"Network": "10.244.0.0/16", "EnableIPv6": true, "IPv6Network": "fd00:10:244::/56", "EnableNFTables": true, "Backend": backend},
 			"10.96.0.10", "IPv4"},
-		"ipv6 primary": {[]string{"ipv6", "ipv4"}, "fd00:10:244::/56,10.244.0.0/16", "::",
+		"ipv6 primary": {[]nodeip.Family{"ipv6", "ipv4"}, "fd00:10:244::/56,10.244.0.0/16", "::",
 			map[string]any{"Network": "10.244.0.0/16", "EnableIPv6": true, "IPv6Network": "fd00:10:244::/56", "EnableNFTables": true, "Backend": backend},
 			"fd00:10:96::a", "IPv6"},
-		"ipv6": {[]string{"ipv6"}, "fd00:10:244::/56", "::",
+		"ipv6": {[]nodeip.Family{"ipv6"}, "fd00:10:244::/56", "::",
 			map[string]any{"EnableIPv4": false, "EnableIPv6": true, "IPv6Network": "fd00:10:244::/56", "EnableNFTables": true, "Backend": backend},
 			"fd00:10:96::a", "IPv6"},
 	} {

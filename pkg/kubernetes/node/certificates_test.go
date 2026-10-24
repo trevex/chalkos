@@ -143,7 +143,11 @@ func TestRenewControlPlane(t *testing.T) {
 	if kept := readFile(t, filepath.Join(p.OldPKI(), kpki.FileAPIServer)); kept != before {
 		t.Error("the certificates the running pods mounted are gone")
 	}
-	leaves, err := ControlPlaneLeaves(p)
+	files, err := readDir(p.PKI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaves, err := kpki.ControlPlaneLeaves(files)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +233,7 @@ func certificatesAnnotation(t *testing.T, p Paths, file string) string {
 func TestRenewControlPlaneRendersAfterAnInterruptedSwap(t *testing.T) {
 	p := bootstrappedControlPlane(t)
 	pod := certificatesAnnotation(t, p, "kube-apiserver.json")
-	share, c, n, err := Load(p)
+	share, c, n, err := load(p)
 	if err != nil {
 		t.Fatal(err)
 	}

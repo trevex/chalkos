@@ -276,7 +276,7 @@ func TestLoadWritesTheCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Kind != kubernetes.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.DNSIPs.IPv4 != "10.96.0.10" || c.Images.KubeProxy != "p" {
+	if c.Kind != kubernetes.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.DNSIPs.IPv4.String() != "10.96.0.10" || c.Images.KubeProxy != "p" {
 		t.Errorf("cluster = %+v", c)
 	}
 	// Another cluster replaces it.

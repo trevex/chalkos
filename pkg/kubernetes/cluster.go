@@ -6,16 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
-	"net"
 	"net/netip"
 	"net/url"
 	"os"
-	"regexp"
 	"slices"
-	"strings"
 
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
 
@@ -25,9 +20,10 @@ const (
 	KindWorker       = "worker"
 )
 
-// Cluster is what the node's image knows about its cluster.
+// Cluster is the node's Kubernetes cluster. chalkd builds it from the node's config and the
+// image's Kubernetes facts (image.json) and writes it to ClusterFile.
 type Cluster struct {
-	// Kind is what the image's nodes are: KindControlPlane or KindWorker.
+	// Kind is the node's kind: KindControlPlane or KindWorker.
 	Kind string `json:"kind"`
 	// Endpoint is the API server's URL, such as https://10.0.0.10:6443.
 	Endpoint string `json:"endpoint"`
@@ -35,16 +31,16 @@ type Cluster struct {
 	Version                        string `json:"version"`
 	Domain                         string `json:"domain"`
 	AllowSchedulingOnControlPlanes bool   `json:"allowSchedulingOnControlPlanes"`
-	// IPFamilies are the address families nodes have an address of, ipv4 or ipv6, the primary
-	// one first. Empty means ipv4.
-	IPFamilies []string `json:"ipFamilies"`
+	// IPFamilies are the address families nodes have an address of, the primary one first.
+	// Empty means ipv4.
+	IPFamilies []nodeip.Family `json:"ipFamilies"`
 	// PodCIDRs and ServiceCIDRs are the pod and service ranges of each family, DNSIPs the cluster
 	// DNS's service address and NodeCIDRMaskSizes the prefix length of each node's part of the
 	// pod range. Only the entries of IPFamilies count.
-	PodCIDRs          ByFamily[string] `json:"podCIDRs"`
-	ServiceCIDRs      ByFamily[string] `json:"serviceCIDRs"`
-	DNSIPs            ByFamily[string] `json:"dnsIPs"`
-	NodeCIDRMaskSizes ByFamily[int]    `json:"nodeCIDRMaskSizes"`
+	PodCIDRs          ByFamily[netip.Prefix] `json:"podCIDRs"`
+	ServiceCIDRs      ByFamily[netip.Prefix] `json:"serviceCIDRs"`
+	DNSIPs            ByFamily[netip.Addr]   `json:"dnsIPs"`
+	NodeCIDRMaskSizes ByFamily[int]          `json:"nodeCIDRMaskSizes"`
 	// NodeIP is how nodes without a fixed address pick theirs.
 	NodeIP NodeIP `json:"nodeIP"`
 	// Flannel is flannel's configuration when it is the pod network; nil otherwise.
@@ -90,13 +86,13 @@ type Flannel struct {
 	MTU int `json:"mtu"`
 	// VXLANSourceSubnets are the ranges flannel's VXLAN must come from, at least one of each family
 	// and none overlapping the pod or service ranges; empty takes it from any source.
-	VXLANSourceSubnets []string `json:"vxlanSourceSubnets"`
+	VXLANSourceSubnets []netip.Prefix `json:"vxlanSourceSubnets"`
 }
 
 // VIP is the cluster's virtual IP.
 type VIP struct {
 	// Addresses are the virtual addresses, at most one per family; none means no virtual IP.
-	Addresses []string `json:"addresses"`
+	Addresses []netip.Addr `json:"addresses"`
 	// Mode is how the holder announces them: l2 adds them to an interface and announces them
 	// with gratuitous ARP and unsolicited neighbour advertisements.
 	Mode string `json:"mode"`
@@ -123,16 +119,15 @@ func ReadCluster(path string) (Cluster, error) {
 	if err != nil {
 		return Cluster{}, err
 	}
-	c, err := ParseCluster(data)
+	c, err := parseCluster(data)
 	if err != nil {
 		return Cluster{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return c, nil
 }
 
-// ParseCluster parses and checks a cluster file's contents, such as an install header carries
-// for the image it installs.
-func ParseCluster(data []byte) (Cluster, error) {
+// parseCluster parses and checks a cluster file's contents.
+func parseCluster(data []byte) (Cluster, error) {
 	var c Cluster
 	if err := json.Unmarshal(data, &c); err != nil {
 		return Cluster{}, fmt.Errorf("parse: %w", err)
@@ -143,114 +138,17 @@ func ParseCluster(data []byte) (Cluster, error) {
 	return c, nil
 }
 
-// ProtectedAPIServerFlags decide who may do what on the API server; chalkos sets them and
-// extra flags must not override them.
-var ProtectedAPIServerFlags = []string{"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth"}
-
-// flagConflict is a chalkos flag that the API server refuses to start next to another flag, and
-// why chalkos sets it.
-type flagConflict struct{ flag, reason string }
-
-var (
-	authenticationConflict = flagConflict{"authentication-config", "chalkos configures authentication through " +
-		"--authentication-config, and the API server refuses oidc-* flags next to it; chalkos offers no way " +
-		"to add an authenticator today, so grant narrower access with RBAC"}
-	authorizationConflict = flagConflict{"authorization-mode", "chalkos sets --authorization-mode=Node,RBAC, " +
-		"and the API server refuses this flag next to it; grant access with RBAC"}
-)
-
-// conflictingAPIServerFlags are the API server's flags it refuses to start with next to the flags
-// chalkos sets, keyed by name.
-var conflictingAPIServerFlags = map[string]flagConflict{
-	"oidc-issuer-url": authenticationConflict, "oidc-client-id": authenticationConflict,
-	"oidc-ca-file": authenticationConflict, "oidc-username-claim": authenticationConflict,
-	"oidc-username-prefix": authenticationConflict, "oidc-groups-claim": authenticationConflict,
-	"oidc-groups-prefix": authenticationConflict, "oidc-signing-algs": authenticationConflict,
-	"oidc-required-claim":  authenticationConflict,
-	"authorization-config": authorizationConflict, "authorization-policy-file": authorizationConflict,
-	"authorization-webhook-config-file": authorizationConflict,
-	"admission-control": {"enable-admission-plugins", "chalkos sets --enable-admission-plugins, and the API " +
-		"server refuses this flag next to it; give the plugins in enable-admission-plugins and disable-admission-plugins"},
-	"service-account-signing-endpoint": {"service-account-signing-key-file", "chalkos signs service account " +
-		"tokens with --service-account-signing-key-file and verifies them with --service-account-key-file, " +
-		"and the API server refuses this flag next to them"},
-}
-
-// ProtectedKubeletFlags are the kubelet's flags chalkos sets: where it finds its configuration,
-// credentials, credential provider, certificates and static pods, the node's name, addresses,
-// labels and taints, and who may use its API. Extra flags come last on the kubelet's command
-// line, so they would override them.
-var ProtectedKubeletFlags = []string{
-	"anonymous-auth", "authentication-token-webhook", "authorization-mode", "bootstrap-kubeconfig",
-	"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override",
-	"image-credential-provider-bin-dir", "image-credential-provider-config", "kubeconfig", "node-ip",
-	"node-labels", "pod-manifest-path", "read-only-port", "register-with-taints", "rotate-certificates",
-	"tls-cert-file", "tls-private-key-file",
-}
-
-// flagName is a flag's name as the Kubernetes components read it: they take _ for -, so
-// anonymous_auth sets --anonymous-auth.
-func flagName(name string) string { return strings.ReplaceAll(name, "_", "-") }
-
-// flagNamePattern is what a flag's name may be. Flags reach the components as --name=value, so
-// a name holding = or whitespace, or starting with -, would set another flag than it names.
-var flagNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
-
-// validateExtraArgs refuses the flags ValidateFlags refuses, naming their component.
-func (c Cluster) validateExtraArgs() error {
-	for _, component := range slices.Sorted(maps.Keys(c.ExtraArgs)) {
-		if err := ValidateFlags(component, c.ExtraArgs[component]); err != nil {
-			return fmt.Errorf("extraArgs: %s %w", component, err)
-		}
-	}
-	return nil
-}
-
-// ValidateFlags refuses extra flags of a component, such as kube-apiserver or kubelet, whose
-// names flagNamePattern does not allow, the component's protected flags in any spelling it
-// accepts, the API server's flags that conflict with chalkos's own, and kubelet flags holding whitespace or backslashes: they reach the kubelet through
-// KUBELET_ARGS, which systemd reads from an environment file, dropping backslashes, and
-// ExecStart splits at whitespace where it expands the unbraced variable. Its errors start with
-// the flag.
-func ValidateFlags(component string, flags map[string]string) error {
-	protected := map[string][]string{"kube-apiserver": ProtectedAPIServerFlags, "kubelet": ProtectedKubeletFlags}
-	for _, name := range slices.Sorted(maps.Keys(flags)) {
-		if !flagNamePattern.MatchString(name) {
-			return fmt.Errorf("flag %q: a flag's name is letters, digits, _, . and -, without the leading dashes", name)
-		}
-		if slices.Contains(protected[component], flagName(name)) {
-			err := fmt.Errorf("--%s is set by chalkos and cannot be overridden", name)
-			if component == "kubelet" && (flagName(name) == "node-labels" || flagName(name) == "register-with-taints") {
-				err = fmt.Errorf("%w; give the node's labels and taints in the Node document's labels and taints", err)
-			}
-			return err
-		}
-		if conflict, ok := conflictingAPIServerFlags[flagName(name)]; ok && component == "kube-apiserver" {
-			return fmt.Errorf("--%s conflicts with --%s: %s", name, conflict.flag, conflict.reason)
-		}
-	}
-	if component != "kubelet" {
-		return nil
-	}
-	for _, name := range slices.Sorted(maps.Keys(flags)) {
-		if strings.ContainsAny(name+flags[name], " \t\r\n\\") {
-			return fmt.Errorf("--%s=%q: the kubelet's flags cannot hold whitespace or backslashes", name, flags[name])
-		}
-	}
-	return nil
-}
-
-// Validate checks the kind, the endpoint, the address families and their ranges, how nodes pick
-// their address, the VIPs and the extra flags.
+// Validate checks the endpoint, the extra flags, the kind, how nodes pick their address, the
+// address families and their ranges, flannel's settings and the VIPs.
 func (c Cluster) Validate() error {
+	if _, err := parseEndpoint(c.Endpoint); err != nil {
+		return err
+	}
 	if err := c.validateExtraArgs(); err != nil {
 		return err
 	}
 	if c.Kind != KindControlPlane && c.Kind != KindWorker {
 		return fmt.Errorf("unknown kind %q", c.Kind)
-	}
-	if _, err := c.EndpointHost(); err != nil {
-		return err
 	}
 	if c.Domain == "" {
 		return errors.New("no cluster domain")
@@ -261,10 +159,10 @@ func (c Cluster) Validate() error {
 	if c.NodeIP.Timeout < 0 {
 		return fmt.Errorf("nodeIP: the timeout %d is negative", c.NodeIP.Timeout)
 	}
-	families, err := c.Families()
-	if err != nil {
+	if err := c.validateFamilies(); err != nil {
 		return err
 	}
+	families := c.Families()
 	if err := c.validateFlannel(families); err != nil {
 		return err
 	}
@@ -273,35 +171,21 @@ func (c Cluster) Validate() error {
 			return err
 		}
 	}
-	sources, err := c.VXLANSources()
-	if err != nil {
+	if err := c.validateVXLANSources(families); err != nil {
 		return err
 	}
-	// Pods could pass the source check from a source range that overlaps the cluster's own.
-	for _, s := range sources {
-		f := nodeip.FamilyOf(s.Addr())
-		for _, r := range []struct{ option, cidr string }{{"podCIDRs", c.PodCIDRs.Of(f)}, {"serviceCIDRs", c.ServiceCIDRs.Of(f)}} {
-			if p, err := netip.ParsePrefix(r.cidr); err == nil && s.Overlaps(p) {
-				return fmt.Errorf("vxlanSourceSubnets: %s overlaps %s.%s %s", s, r.option, f, p)
-			}
+	return c.validateVIP(families)
+}
+
+// validateFamilies refuses unknown families and families listed twice.
+func (c Cluster) validateFamilies() error {
+	for i, f := range c.IPFamilies {
+		if _, err := nodeip.ParseFamily(string(f)); err != nil {
+			return fmt.Errorf("ipFamilies: %w", err)
 		}
-	}
-	vips, err := c.VIPAddresses()
-	if err != nil {
-		return err
-	}
-	if len(vips) == 0 {
-		return nil
-	}
-	if c.VIP.Mode != "l2" {
-		return fmt.Errorf("vip: unknown mode %q", c.VIP.Mode)
-	}
-	if err := onePerFamily("vip", vips, families); err != nil {
-		return err
-	}
-	host, _ := c.EndpointHost()
-	if ip, err := netip.ParseAddr(host); err == nil && !slices.Contains(vips, ip.Unmap()) {
-		return fmt.Errorf("vip: the endpoint %s is none of the virtual addresses", c.Endpoint)
+		if slices.Contains(c.IPFamilies[:i], f) {
+			return fmt.Errorf("ipFamilies: %s is listed twice", f)
+		}
 	}
 	return nil
 }
@@ -322,38 +206,48 @@ func (c Cluster) validateFlannel(families []nodeip.Family) error {
 	return nil
 }
 
+// validateVIP checks the virtual addresses: at most one of each of the cluster's families, a
+// known mode, and the endpoint's address among them when the endpoint names one.
+func (c Cluster) validateVIP(families []nodeip.Family) error {
+	for _, ip := range c.VIP.Addresses {
+		if !ip.IsValid() || ip.Zone() != "" {
+			return fmt.Errorf("vip: %q is not an address", ip)
+		}
+	}
+	vips := c.VIPAddresses()
+	if len(vips) == 0 {
+		return nil
+	}
+	if c.VIP.Mode != "l2" {
+		return fmt.Errorf("vip: unknown mode %q", c.VIP.Mode)
+	}
+	if err := onePerFamily("vip", vips, families); err != nil {
+		return err
+	}
+	if ip, err := netip.ParseAddr(c.EndpointHost()); err == nil && !slices.Contains(vips, ip.Unmap()) {
+		return fmt.Errorf("vip: the endpoint %s is none of the virtual addresses", c.Endpoint)
+	}
+	return nil
+}
+
 // Families returns the address families of the cluster's nodes, the primary one first.
-func (c Cluster) Families() ([]nodeip.Family, error) {
+func (c Cluster) Families() []nodeip.Family {
 	if len(c.IPFamilies) == 0 {
-		return []nodeip.Family{nodeip.IPv4}, nil
+		return []nodeip.Family{nodeip.IPv4}
 	}
-	var families []nodeip.Family
-	for _, s := range c.IPFamilies {
-		f, err := nodeip.ParseFamily(s)
-		if err != nil {
-			return nil, fmt.Errorf("ipFamilies: %w", err)
-		}
-		if slices.Contains(families, f) {
-			return nil, fmt.Errorf("ipFamilies: %s is listed twice", f)
-		}
-		families = append(families, f)
-	}
-	return families, nil
+	return slices.Clone(c.IPFamilies)
 }
 
 // Primary returns the primary address family, the first of IPFamilies. Every value that exists
 // for one family only, such as the kubernetes service's address, follows it.
 func (c Cluster) Primary() nodeip.Family {
-	families, err := c.Families()
-	if err != nil {
-		return nodeip.IPv4
-	}
-	return families[0]
+	return c.Families()[0]
 }
 
-// Loopback returns the primary family's loopback address, which the control plane's own
-// connections on a node use: etcd's local listeners, the API server's connection to etcd, and the
-// connections of the controller-manager, the scheduler and chalkd to the API server.
+// Loopback returns the primary family's loopback address. The control plane's own connections on
+// a node use it:
+//   - etcd's local listeners and the API server's connection to etcd;
+//   - the connections of the controller-manager, the scheduler and chalkd to the API server.
 func (c Cluster) Loopback() netip.Addr {
 	if c.Primary() == nodeip.IPv6 {
 		return netip.IPv6Loopback()
@@ -363,338 +257,44 @@ func (c Cluster) Loopback() netip.Addr {
 
 // LocalAPIServer is where components on a control-plane node reach their own API server.
 func (c Cluster) LocalAPIServer() string {
-	return "https://" + net.JoinHostPort(c.Loopback().String(), "6443")
+	return httpsURL(c.Loopback(), APIServerPort)
 }
 
 // LocalEtcd is where the API server and chalkd on a control-plane node reach its etcd member.
 func (c Cluster) LocalEtcd() string {
-	return "https://" + net.JoinHostPort(c.Loopback().String(), "2379")
+	return EtcdClientURL(c.Loopback())
 }
 
-// validateRanges checks the ranges of family f as kubeadm does: each a network of its family,
-// the pod and service ranges apart, at most 2^20 service addresses, node parts of the pod range
-// longer than it by at most 16 bits, and the DNS address inside the service range, but neither
-// its network address nor its first address, which the kubernetes service gets.
-func (c Cluster) validateRanges(f nodeip.Family) error {
-	pod, err := parseRange("podCIDRs", f, c.PodCIDRs.Of(f))
-	if err != nil {
-		return err
-	}
-	service, err := parseRange("serviceCIDRs", f, c.ServiceCIDRs.Of(f))
-	if err != nil {
-		return err
-	}
-	if pod.Overlaps(service) {
-		return fmt.Errorf("podCIDRs.%s %s and serviceCIDRs.%s %s overlap", f, pod, f, service)
-	}
-	bits := service.Addr().BitLen()
-	if bits-service.Bits() > 20 {
-		return fmt.Errorf("serviceCIDRs.%s %s holds more than 2^20 addresses; use a prefix of /%d or longer", f, service, bits-20)
-	}
-	mask := c.NodeCIDRMaskSizes.Of(f)
-	if mask > bits {
-		return fmt.Errorf("nodeCIDRMaskSizes.%s %d is longer than an %s address", f, mask, f)
-	}
-	if mask <= pod.Bits() || mask-pod.Bits() > 16 {
-		return fmt.Errorf("nodeCIDRMaskSizes.%s %d must be longer than the prefix of podCIDRs.%s %s, by at most 16 bits", f, mask, f, pod)
-	}
-	s := c.DNSIPs.Of(f)
-	dns, err := netip.ParseAddr(s)
-	if err != nil || dns.Zone() != "" || !service.Contains(dns) {
-		return fmt.Errorf("dnsIPs.%s %q is not an address in serviceCIDRs.%s %s", f, s, f, service)
-	}
-	if dns == service.Addr() || dns == service.Addr().Next() {
-		return fmt.Errorf("dnsIPs.%s %s is the network address of serviceCIDRs.%s %s or the kubernetes service's address", f, dns, f, service)
-	}
-	return nil
-}
-
-// parseRange reads the range of family f that option holds: a network of that family in CIDR
-// notation, without host bits.
-func parseRange(option string, f nodeip.Family, s string) (netip.Prefix, error) {
-	p, err := netip.ParsePrefix(s)
-	if err != nil {
-		return netip.Prefix{}, fmt.Errorf("%s.%s %q is not an address range in CIDR notation", option, f, s)
-	}
-	if p.Addr().Is4In6() {
-		return netip.Prefix{}, fmt.Errorf("%s.%s %s is an IPv4-mapped IPv6 range; write the IPv4 form", option, f, p)
-	}
-	if p.Addr().Is4() != (f == nodeip.IPv4) {
-		return netip.Prefix{}, fmt.Errorf("%s.%s %s is not an %s range", option, f, p, f)
-	}
-	if p != p.Masked() {
-		return netip.Prefix{}, fmt.Errorf("%s.%s %s has host bits set; write %s", option, f, p, p.Masked())
-	}
-	return p, nil
-}
-
-// CheckVXLANSources refuses node addresses outside the ranges the other nodes take VXLAN from,
-// sources from VXLANSources: their pods could not reach this node's. No sources take VXLAN from
-// anywhere.
-func CheckVXLANSources(sources []netip.Prefix, addrs []netip.Addr) error {
-	for _, a := range addrs {
-		if !InVXLANSources(sources, netip.PrefixFrom(a, a.BitLen())) {
-			return fmt.Errorf("the node's address %s is outside vxlanSourceSubnets %s, from which alone the other nodes take VXLAN", a, joinPrefixes(sources))
-		}
-	}
-	return nil
-}
-
-// InVXLANSources tells whether every address of the range p lies in one of sources, or sources
-// are none.
-func InVXLANSources(sources []netip.Prefix, p netip.Prefix) bool {
-	return len(sources) == 0 || slices.ContainsFunc(sources, func(s netip.Prefix) bool {
-		return s.Bits() <= p.Bits() && s.Contains(p.Masked().Addr())
-	})
-}
-
-// joinPrefixes lists the ranges, separated by commas.
-func joinPrefixes(prefixes []netip.Prefix) string {
-	list := make([]string, len(prefixes))
-	for i, p := range prefixes {
-		list[i] = p.String()
-	}
-	return strings.Join(list, ", ")
-}
-
-// VXLANSources returns the ranges flannel's VXLAN must come from: networks of the cluster's
-// families, at least one of each, or none, as without flannel.
-func (c Cluster) VXLANSources() ([]netip.Prefix, error) {
-	families, err := c.Families()
-	if err != nil {
-		return nil, err
-	}
-	if c.Flannel == nil {
-		return nil, nil
-	}
-	var sources []netip.Prefix
-	have := map[nodeip.Family]bool{}
-	for _, s := range c.Flannel.VXLANSourceSubnets {
-		p, err := netip.ParsePrefix(s)
-		if err != nil {
-			return nil, fmt.Errorf("vxlanSourceSubnets: %q is not an address range in CIDR notation", s)
-		}
-		f := nodeip.FamilyOf(p.Addr())
-		if p, err = parseRange("vxlanSourceSubnets", f, s); err != nil {
-			return nil, err
-		}
-		if !slices.Contains(families, f) {
-			return nil, fmt.Errorf("vxlanSourceSubnets: %s is an %s range, but the cluster's families are %v", p, f, families)
-		}
-		have[f] = true
-		sources = append(sources, p)
-	}
-	for _, f := range families {
-		if len(sources) > 0 && !have[f] {
-			return nil, fmt.Errorf("vxlanSourceSubnets: no %s range, so no node would take %s VXLAN", f, f)
-		}
-	}
-	return sources, nil
-}
-
-// PodCIDRList returns the pod ranges of the cluster's families, the primary family's first.
-func (c Cluster) PodCIDRList() ([]netip.Prefix, error) {
-	return c.rangeList("podCIDRs", c.PodCIDRs)
-}
-
-// ServiceCIDRList returns the service ranges of the cluster's families, the primary family's
-// first.
-func (c Cluster) ServiceCIDRList() ([]netip.Prefix, error) {
-	return c.rangeList("serviceCIDRs", c.ServiceCIDRs)
-}
-
-func (c Cluster) rangeList(option string, ranges ByFamily[string]) ([]netip.Prefix, error) {
-	families, err := c.Families()
-	if err != nil {
-		return nil, err
-	}
-	var out []netip.Prefix
-	for _, f := range families {
-		p, err := parseRange(option, f, ranges.Of(f))
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, nil
-}
-
-// VIPAddresses returns the virtual addresses.
-func (c Cluster) VIPAddresses() ([]netip.Addr, error) {
+// VIPAddresses returns the virtual addresses, IPv4-mapped ones in their IPv4 form.
+func (c Cluster) VIPAddresses() []netip.Addr {
 	var vips []netip.Addr
-	for _, s := range c.VIP.Addresses {
-		ip, err := netip.ParseAddr(s)
-		if err != nil || ip.Zone() != "" {
-			return nil, fmt.Errorf("vip: %q is not an address", s)
-		}
+	for _, ip := range c.VIP.Addresses {
 		vips = append(vips, ip.Unmap())
 	}
-	return vips, nil
+	return vips
 }
 
-// onePerFamily checks that the addresses are of the families, at most one of each.
-func onePerFamily(what string, ips []netip.Addr, families []nodeip.Family) error {
-	seen := map[nodeip.Family]netip.Addr{}
-	for _, ip := range ips {
-		f := nodeip.FamilyOf(ip)
-		if !slices.Contains(families, f) {
-			return fmt.Errorf("%s: %s is an %s address, but the cluster's families are %v", what, ip, f, families)
-		}
-		if other, ok := seen[f]; ok {
-			return fmt.Errorf("%s: %s and %s are both %s addresses; give at most one of each family", what, other, ip, f)
-		}
-		seen[f] = ip
-	}
-	return nil
-}
-
-// EndpointHost returns the host of the endpoint, a name or an address.
-func (c Cluster) EndpointHost() (string, error) {
-	u, err := url.Parse(c.Endpoint)
+// parseEndpoint reads an endpoint, an https URL with a host.
+func parseEndpoint(endpoint string) (*url.URL, error) {
+	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" {
-		return "", fmt.Errorf("endpoint %q is not an https URL", c.Endpoint)
+		return nil, fmt.Errorf("endpoint %q is not an https URL", endpoint)
 	}
-	return u.Hostname(), nil
+	return u, nil
+}
+
+// EndpointHost returns the host of the endpoint, a name or an address. It is empty for an
+// endpoint Validate refuses.
+func (c Cluster) EndpointHost() string {
+	u, err := parseEndpoint(c.Endpoint)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
 }
 
 // APIServerServiceIP returns the first address of the primary family's service range, which
 // the kubernetes service gets: the API server creates it in that family alone.
-func (c Cluster) APIServerServiceIP() (net.IP, error) {
-	f := c.Primary()
-	service, err := parseRange("serviceCIDRs", f, c.ServiceCIDRs.Of(f))
-	if err != nil {
-		return nil, err
-	}
-	return net.IP(service.Addr().Next().AsSlice()), nil
-}
-
-// Node is this node as its identity describes it.
-type Node struct {
-	// Name is the node's name in the cluster and in Kubernetes.
-	Name string
-	// Hostname is the node's host name, which may differ from its name.
-	Hostname string
-	// FixedIPs are the node's fixed addresses, at most one per family; the node picks the
-	// addresses of the other families at boot.
-	FixedIPs []net.IP
-	// IPs are the addresses the node picked at boot, one per family, the primary family's first;
-	// empty in a node read from its identity.
-	IPs []net.IP
-	// ValidSubnets are the subnets the node picks its address from instead of its cluster's;
-	// nil uses the cluster's.
-	ValidSubnets []string
-	// Addresses are the node's static addresses.
-	Addresses []net.IP
-	Labels    map[string]string
-	Taints    []identity.Taint
-}
-
-// ReadNode reads the node from its identity without secrets (node.json).
-func ReadNode(path string) (Node, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Node{}, err
-	}
-	n, err := ParseNode(data)
-	if err != nil {
-		return Node{}, fmt.Errorf("%s: %w", path, err)
-	}
-	return n, nil
-}
-
-// ParseNode reads the node from its identity.
-func ParseNode(data []byte) (Node, error) {
-	var id identity.Identity
-	if err := json.Unmarshal(data, &id); err != nil {
-		return Node{}, fmt.Errorf("parse the identity: %w", err)
-	}
-	if id.Kubernetes == nil || id.Kubernetes.NodeName == "" {
-		return Node{}, errors.New("the identity names no Kubernetes node")
-	}
-	n := Node{Name: id.Kubernetes.NodeName, Hostname: id.Hostname, ValidSubnets: id.Kubernetes.ValidSubnets, Labels: id.Labels, Taints: id.Taints}
-	for _, s := range id.Kubernetes.NodeIPs {
-		ip := net.ParseIP(s)
-		if ip == nil {
-			return Node{}, fmt.Errorf("nodeIPs: %q is not an address", s)
-		}
-		n.FixedIPs = append(n.FixedIPs, ip)
-	}
-	if _, err := nodeip.ParseFilter(n.ValidSubnets); err != nil {
-		return Node{}, err
-	}
-	for _, a := range id.StaticAddresses() {
-		if ip := net.ParseIP(a); ip != nil {
-			n.Addresses = append(n.Addresses, ip)
-		}
-	}
-	return n, nil
-}
-
-// CertificateIPs returns the addresses the node picked and its static addresses, each once.
-func (n Node) CertificateIPs() []net.IP {
-	var ips []net.IP
-	for _, ip := range append(slices.Clone(n.IPs), n.Addresses...) {
-		seen := false
-		for _, have := range ips {
-			seen = seen || have.Equal(ip)
-		}
-		if !seen {
-			ips = append(ips, ip)
-		}
-	}
-	return ips
-}
-
-// NodeIPSelector is how node n picks its addresses, one of each of the cluster's families: its
-// fixed address of the family, or else the first address in the subnets of its identity or,
-// without those, of its cluster. Addresses in the pod and service ranges of every family are
-// never picked, and the endpoint's and the virtual addresses only when no other matches.
-func (c Cluster) NodeIPSelector(n Node) (nodeip.Selector, error) {
-	families, err := c.Families()
-	if err != nil {
-		return nodeip.Selector{}, err
-	}
-	subnets := c.NodeIP.ValidSubnets
-	if n.ValidSubnets != nil {
-		subnets = n.ValidSubnets
-	}
-	filter, err := nodeip.ParseFilter(subnets)
-	if err != nil {
-		return nodeip.Selector{}, err
-	}
-	// flannel uses the interface of the primary family's address for every family.
-	s := nodeip.Selector{Families: families, Filter: filter, SameInterface: c.Flannel != nil && len(families) > 1}
-	for _, ip := range n.FixedIPs {
-		fixed, ok := netip.AddrFromSlice(ip)
-		if !ok {
-			return nodeip.Selector{}, fmt.Errorf("nodeIP %v is not an address", ip)
-		}
-		s.Fixed = append(s.Fixed, fixed.Unmap())
-	}
-	if err := onePerFamily("nodeIPs", s.Fixed, families); err != nil {
-		return nodeip.Selector{}, err
-	}
-	pods, err := c.PodCIDRList()
-	if err != nil {
-		return nodeip.Selector{}, err
-	}
-	services, err := c.ServiceCIDRList()
-	if err != nil {
-		return nodeip.Selector{}, err
-	}
-	s.Reserved = append(pods, services...)
-	host, err := c.EndpointHost()
-	if err != nil {
-		return nodeip.Selector{}, err
-	}
-	// A host name is not resolved: its address may change, and the node may not reach DNS yet.
-	if ip, err := netip.ParseAddr(host); err == nil {
-		s.Last = append(s.Last, ip.Unmap().WithZone(""))
-	}
-	vips, err := c.VIPAddresses()
-	if err != nil {
-		return nodeip.Selector{}, err
-	}
-	s.Last = append(s.Last, vips...)
-	return s, nil
+func (c Cluster) APIServerServiceIP() netip.Addr {
+	return c.ServiceCIDRs.Of(c.Primary()).Masked().Addr().Next()
 }

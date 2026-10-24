@@ -18,7 +18,7 @@ func TestNodeAddresses(t *testing.T) {
 	if err := os.WriteFile(p.NodeIP(), []byte("127.0.0.1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c := k8s.Cluster{VIP: k8s.VIP{Addresses: []string{"10.0.0.10"}, Mode: "l2"}}
+	c := k8s.Cluster{VIP: k8s.VIP{Addresses: []netip.Addr{netip.MustParseAddr("10.0.0.10")}, Mode: "l2"}}
 	got, err := NodeAddresses(c, p)
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +31,7 @@ func TestNodeAddresses(t *testing.T) {
 	if a := got.(*addresses).addrs; err != nil || len(a) != 1 || a[0] != (Address{IP: a[0].IP, Interface: "bond0"}) {
 		t.Errorf("VIPs %v, %v, want them on bond0", got, err)
 	}
-	c.VIP = k8s.VIP{Addresses: []string{"fd00::10"}, Mode: "l2"}
+	c.VIP = k8s.VIP{Addresses: []netip.Addr{netip.MustParseAddr("fd00::10")}, Mode: "l2"}
 	if _, err := NodeAddresses(c, p); err == nil {
 		t.Error("found an interface for an IPv6 VIP on a node without an IPv6 address")
 	}

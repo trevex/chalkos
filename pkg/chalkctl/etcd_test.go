@@ -3,7 +3,7 @@ package chalkctl
 import (
 	"context"
 	"errors"
-	"net"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +37,7 @@ func etcdNode(t *testing.T, ta *testApp) *chalkd.Server {
 	writeFile(t, k.Paths.Bootstrapped(), "")
 	k.LocalEtcd = etcdtest.StartNew(t, *share.EtcdCA, "n1").ClientURL
 	// No API server lists the other members.
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return nil, errors.New("connection refused")
 	}
 	return s
@@ -95,7 +95,7 @@ func TestEtcdLeaveForce(t *testing.T) {
 	// Each leave waits the timeout out for the silent member, while the other one must answer
 	// within it also on a busy machine.
 	k.EtcdTimeout = 10 * time.Second
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return []string{local}, nil
 	}
 	addr := ta.startNode(t, s)

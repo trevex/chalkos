@@ -24,10 +24,7 @@ type object = map[string]any
 // Render returns the objects in the order the control plane applies them: RBAC, kube-proxy, the
 // pod network, the cluster DNS.
 func Render(c kubernetes.Cluster) ([]map[string]any, error) {
-	families, err := c.Families()
-	if err != nil {
-		return nil, err
-	}
+	families := c.Families()
 	out := rbac()
 	proxy, err := kubeProxy(c, families)
 	if err != nil {
@@ -169,7 +166,7 @@ func revokedLiteral(l revoked.List) string {
 func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]object, error) {
 	cidrs := make([]string, len(families))
 	for i, f := range families {
-		cidrs[i] = c.PodCIDRs.Of(f)
+		cidrs[i] = c.PodCIDRs.Of(f).String()
 	}
 	// kube-proxy serves every family the node has addresses of; it binds as kubeadm's does, by
 	// the primary family.
@@ -294,13 +291,13 @@ func flannel(c kubernetes.Cluster, families []nodeip.Family) ([]object, error) {
 	}
 	netConf := object{"EnableNFTables": true, "Backend": backend}
 	if inUse(nodeip.IPv4) {
-		netConf["Network"] = c.PodCIDRs.IPv4
+		netConf["Network"] = c.PodCIDRs.IPv4.String()
 	} else {
 		netConf["EnableIPv4"] = false
 	}
 	if inUse(nodeip.IPv6) {
 		netConf["EnableIPv6"] = true
-		netConf["IPv6Network"] = c.PodCIDRs.IPv6
+		netConf["IPv6Network"] = c.PodCIDRs.IPv6.String()
 	}
 	net, err := compact(netConf)
 	if err != nil {
@@ -545,7 +542,7 @@ func coreDNS(c kubernetes.Cluster, primary nodeip.Family) []object {
 			// One address of the primary family, which every pod has, as kubeadm's DNS service
 			// gets: the kubelet hands pods one name server. It still answers A and AAAA queries.
 			"spec": object{
-				"clusterIP":      c.DNSIPs.Of(primary),
+				"clusterIP":      c.DNSIPs.Of(primary).String(),
 				"ipFamilyPolicy": "SingleStack",
 				"ipFamilies":     []any{family},
 				"selector":       labels(),

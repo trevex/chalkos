@@ -10,7 +10,6 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -71,7 +70,7 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 		ControlPlane: func(_ context.Context, _ kpki.Share, applied func(int)) error { applied(19); return nil },
 		Node:         func(context.Context) (*corev1.Node, error) { return readyNode(), nil },
 		// No cluster answers at the endpoint.
-		EtcdEndpoints: func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+		EtcdEndpoints: func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 			return nil, errors.New("connection refused")
 		},
 		ClusterAnswers: func(context.Context, k8s.Cluster, kpki.Share) bool { return false },

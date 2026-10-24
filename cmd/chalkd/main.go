@@ -31,6 +31,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/install"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/credprovider"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
@@ -84,9 +85,9 @@ func main() {
 	case "containerd-hosts":
 		err = containerdHosts(os.Stdout, "/run/chalkos")
 	case "registry-credentials":
-		err = registryCredentials("/run/chalkos", os.Getenv("CREDENTIALS_DIRECTORY"), credprovider.Dir)
+		err = registryCredentials("/run/chalkos", os.Getenv("CREDENTIALS_DIRECTORY"), k8s.CredentialProviderDir)
 	case "credential-provider":
-		err = credprovider.Provide(credprovider.Dir, os.Stdin, os.Stdout)
+		err = credprovider.Provide(k8s.CredentialProviderDir, os.Stdin, os.Stdout)
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)

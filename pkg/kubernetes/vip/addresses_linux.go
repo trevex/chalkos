@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
-	"net/netip"
 	"slices"
 	"sync"
 	"time"
@@ -98,10 +96,7 @@ func (a *addresses) Release() error {
 
 // NodeAddresses finds the interfaces of the cluster's VIPs on this node.
 func NodeAddresses(c k8s.Cluster, p knode.Paths) (Holder, error) {
-	vips, err := c.VIPAddresses()
-	if err != nil {
-		return nil, err
-	}
+	vips := c.VIPAddresses()
 	var held []Address
 	if c.VIP.Interface != "" {
 		for _, ip := range vips {
@@ -122,10 +117,7 @@ func NodeAddresses(c k8s.Cluster, p knode.Paths) (Holder, error) {
 			if nodeip.FamilyOf(a.IP) != nodeip.FamilyOf(ip) {
 				return false
 			}
-			return slices.ContainsFunc(ips, func(own net.IP) bool {
-				addr, ok := netip.AddrFromSlice(own)
-				return ok && addr.Unmap() == a.IP
-			})
+			return slices.Contains(ips, a.IP)
 		})
 		if i < 0 {
 			return nil, fmt.Errorf("the node has no %s address for the VIP %s", nodeip.FamilyOf(ip), ip)

@@ -1,11 +1,12 @@
 package kubernetes
 
 import (
+	"encoding/json"
 	"fmt"
-	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -28,6 +29,24 @@ const clusterJSON = `{
     "kubeControllerManager": "registry.k8s.io/kube-controller-manager:v1.37.1", "kubeScheduler": "registry.k8s.io/kube-scheduler:v1.37.1"}
 }`
 
+// mustAddrs parses the addresses.
+func mustAddrs(list ...string) []netip.Addr {
+	var out []netip.Addr
+	for _, s := range list {
+		out = append(out, netip.MustParseAddr(s))
+	}
+	return out
+}
+
+// mustPrefixes parses the ranges.
+func mustPrefixes(list ...string) []netip.Prefix {
+	var out []netip.Prefix
+	for _, s := range list {
+		out = append(out, netip.MustParsePrefix(s))
+	}
+	return out
+}
+
 func writeFile(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "file.json")
@@ -45,11 +64,11 @@ func TestReadCluster(t *testing.T) {
 	if c.Kind != KindControlPlane || c.ExtraArgs["kube-apiserver"]["v"] != "2" || c.Images.Etcd != "registry.k8s.io/etcd:3.7.0-0" || c.NodeIP.Timeout != 300 {
 		t.Errorf("cluster = %+v", c)
 	}
-	if host, err := c.EndpointHost(); err != nil || host != "10.0.0.10" {
-		t.Errorf("EndpointHost() = %q, %v", host, err)
+	if host := c.EndpointHost(); host != "10.0.0.10" {
+		t.Errorf("EndpointHost() = %q", host)
 	}
-	if ip, err := c.APIServerServiceIP(); err != nil || !ip.Equal(net.ParseIP("10.96.0.1")) {
-		t.Errorf("APIServerServiceIP() = %v, %v", ip, err)
+	if ip := c.APIServerServiceIP(); ip != netip.MustParseAddr("10.96.0.1") {
+		t.Errorf("APIServerServiceIP() = %v", ip)
 	}
 }
 
@@ -59,15 +78,15 @@ func TestClusterRanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		families       []string
+		families       []nodeip.Family
 		primary        nodeip.Family
 		pods, services string
 		apiServerSvcIP string
 	}{
-		{[]string{"ipv4"}, nodeip.IPv4, "10.244.0.0/16", "10.96.0.0/12", "10.96.0.1"},
-		{[]string{"ipv4", "ipv6"}, nodeip.IPv4, "10.244.0.0/16 fd00:10:244::/56", "10.96.0.0/12 fd00:10:96::/112", "10.96.0.1"},
-		{[]string{"ipv6", "ipv4"}, nodeip.IPv6, "fd00:10:244::/56 10.244.0.0/16", "fd00:10:96::/112 10.96.0.0/12", "fd00:10:96::1"},
-		{[]string{"ipv6"}, nodeip.IPv6, "fd00:10:244::/56", "fd00:10:96::/112", "fd00:10:96::1"},
+		{[]nodeip.Family{"ipv4"}, nodeip.IPv4, "10.244.0.0/16", "10.96.0.0/12", "10.96.0.1"},
+		{[]nodeip.Family{"ipv4", "ipv6"}, nodeip.IPv4, "10.244.0.0/16 fd00:10:244::/56", "10.96.0.0/12 fd00:10:96::/112", "10.96.0.1"},
+		{[]nodeip.Family{"ipv6", "ipv4"}, nodeip.IPv6, "fd00:10:244::/56 10.244.0.0/16", "fd00:10:96::/112 10.96.0.0/12", "fd00:10:96::1"},
+		{[]nodeip.Family{"ipv6"}, nodeip.IPv6, "fd00:10:244::/56", "fd00:10:96::/112", "fd00:10:96::1"},
 	} {
 		c := c
 		c.IPFamilies = tc.families
@@ -77,16 +96,14 @@ func TestClusterRanges(t *testing.T) {
 		if got := c.Primary(); got != tc.primary {
 			t.Errorf("%v: Primary() = %s", tc.families, got)
 		}
-		pods, err := c.PodCIDRList()
-		if err != nil || fmt.Sprint(pods) != "["+tc.pods+"]" {
-			t.Errorf("%v: PodCIDRList() = %v, %v", tc.families, pods, err)
+		if pods := c.PodCIDRList(); fmt.Sprint(pods) != "["+tc.pods+"]" {
+			t.Errorf("%v: PodCIDRList() = %v", tc.families, pods)
 		}
-		services, err := c.ServiceCIDRList()
-		if err != nil || fmt.Sprint(services) != "["+tc.services+"]" {
-			t.Errorf("%v: ServiceCIDRList() = %v, %v", tc.families, services, err)
+		if services := c.ServiceCIDRList(); fmt.Sprint(services) != "["+tc.services+"]" {
+			t.Errorf("%v: ServiceCIDRList() = %v", tc.families, services)
 		}
-		if ip, err := c.APIServerServiceIP(); err != nil || !ip.Equal(net.ParseIP(tc.apiServerSvcIP)) {
-			t.Errorf("%v: APIServerServiceIP() = %v, %v", tc.families, ip, err)
+		if ip := c.APIServerServiceIP(); ip != netip.MustParseAddr(tc.apiServerSvcIP) {
+			t.Errorf("%v: APIServerServiceIP() = %v", tc.families, ip)
 		}
 	}
 
@@ -96,37 +113,43 @@ func TestClusterRanges(t *testing.T) {
 		edit   func(c *Cluster)
 		want   string
 	}{
-		{"ipv4", func(c *Cluster) { c.PodCIDRs.IPv4 = "" }, `podCIDRs.ipv4 "" is not an address range in CIDR notation`},
-		{"ipv4", func(c *Cluster) { c.PodCIDRs.IPv4 = "10.244.0.0" }, `podCIDRs.ipv4 "10.244.0.0" is not an address range`},
-		{"ipv4", func(c *Cluster) { c.PodCIDRs.IPv4 = "fd00:10:244::/56" }, "podCIDRs.ipv4 fd00:10:244::/56 is not an ipv4 range"},
-		{"ipv6", func(c *Cluster) { c.ServiceCIDRs.IPv6 = "10.96.0.0/12" }, "serviceCIDRs.ipv6 10.96.0.0/12 is not an ipv6 range"},
-		{"ipv6", func(c *Cluster) { c.PodCIDRs.IPv6 = "::ffff:10.244.0.0/112" }, "podCIDRs.ipv6 ::ffff:10.244.0.0/112 is an IPv4-mapped IPv6 range"},
-		{"ipv4", func(c *Cluster) { c.ServiceCIDRs.IPv4 = "10.96.0.1/12" }, "serviceCIDRs.ipv4 10.96.0.1/12 has host bits set; write 10.96.0.0/12"},
-		{"ipv4", func(c *Cluster) { c.ServiceCIDRs.IPv4 = "10.244.128.0/20" }, "podCIDRs.ipv4 10.244.0.0/16 and serviceCIDRs.ipv4 10.244.128.0/20 overlap"},
-		{"ipv6", func(c *Cluster) { c.PodCIDRs.IPv6 = "fd00:10::/32" }, "podCIDRs.ipv6 fd00:10::/32 and serviceCIDRs.ipv6 fd00:10:96::/112 overlap"},
-		{"ipv4", func(c *Cluster) { c.ServiceCIDRs.IPv4 = "10.96.0.0/11" }, "serviceCIDRs.ipv4 10.96.0.0/11 holds more than 2^20 addresses; use a prefix of /12 or longer"},
-		{"ipv6", func(c *Cluster) { c.ServiceCIDRs.IPv6 = "fd00:10:96::/107" }, "serviceCIDRs.ipv6 fd00:10:96::/107 holds more than 2^20 addresses; use a prefix of /108 or longer"},
+		{"ipv4", func(c *Cluster) { c.PodCIDRs.IPv4 = netip.Prefix{} }, "podCIDRs.ipv4 is not set"},
+		{"ipv4", func(c *Cluster) { c.PodCIDRs.IPv4 = netip.MustParsePrefix("fd00:10:244::/56") }, "podCIDRs.ipv4 fd00:10:244::/56 is not an ipv4 range"},
+		{"ipv6", func(c *Cluster) { c.ServiceCIDRs.IPv6 = netip.MustParsePrefix("10.96.0.0/12") }, "serviceCIDRs.ipv6 10.96.0.0/12 is not an ipv6 range"},
+		{"ipv6", func(c *Cluster) { c.PodCIDRs.IPv6 = netip.MustParsePrefix("::ffff:10.244.0.0/112") }, "podCIDRs.ipv6 ::ffff:10.244.0.0/112 is an IPv4-mapped IPv6 range"},
+		{"ipv4", func(c *Cluster) { c.ServiceCIDRs.IPv4 = netip.MustParsePrefix("10.96.0.1/12") }, "serviceCIDRs.ipv4 10.96.0.1/12 has host bits set; write 10.96.0.0/12"},
+		{"ipv4", func(c *Cluster) { c.ServiceCIDRs.IPv4 = netip.MustParsePrefix("10.244.128.0/20") }, "podCIDRs.ipv4 10.244.0.0/16 and serviceCIDRs.ipv4 10.244.128.0/20 overlap"},
+		{"ipv6", func(c *Cluster) { c.PodCIDRs.IPv6 = netip.MustParsePrefix("fd00:10::/32") }, "podCIDRs.ipv6 fd00:10::/32 and serviceCIDRs.ipv6 fd00:10:96::/112 overlap"},
+		{"ipv4", func(c *Cluster) { c.ServiceCIDRs.IPv4 = netip.MustParsePrefix("10.96.0.0/11") }, "serviceCIDRs.ipv4 10.96.0.0/11 holds more than 2^20 addresses; use a prefix of /12 or longer"},
+		{"ipv6", func(c *Cluster) { c.ServiceCIDRs.IPv6 = netip.MustParsePrefix("fd00:10:96::/107") }, "serviceCIDRs.ipv6 fd00:10:96::/107 holds more than 2^20 addresses; use a prefix of /108 or longer"},
 		{"ipv4", func(c *Cluster) { c.NodeCIDRMaskSizes.IPv4 = 16 }, "nodeCIDRMaskSizes.ipv4 16 must be longer than the prefix of podCIDRs.ipv4 10.244.0.0/16, by at most 16 bits"},
 		{"ipv4", func(c *Cluster) { c.NodeCIDRMaskSizes.IPv4 = 33 }, "nodeCIDRMaskSizes.ipv4 33 is longer than an ipv4 address"},
-		{"ipv4", func(c *Cluster) { c.PodCIDRs.IPv4 = "10.244.0.0/20"; c.NodeCIDRMaskSizes.IPv4 = 33 }, "nodeCIDRMaskSizes.ipv4 33 is longer than an ipv4 address"},
-		{"ipv6", func(c *Cluster) { c.PodCIDRs.IPv6 = "fd00:10:244::/120"; c.NodeCIDRMaskSizes.IPv6 = 129 }, "nodeCIDRMaskSizes.ipv6 129 is longer than an ipv6 address"},
+		{"ipv4", func(c *Cluster) {
+			c.PodCIDRs.IPv4 = netip.MustParsePrefix("10.244.0.0/20")
+			c.NodeCIDRMaskSizes.IPv4 = 33
+		}, "nodeCIDRMaskSizes.ipv4 33 is longer than an ipv4 address"},
+		{"ipv6", func(c *Cluster) {
+			c.PodCIDRs.IPv6 = netip.MustParsePrefix("fd00:10:244::/120")
+			c.NodeCIDRMaskSizes.IPv6 = 129
+		}, "nodeCIDRMaskSizes.ipv6 129 is longer than an ipv6 address"},
 		{"ipv6", func(c *Cluster) { c.NodeCIDRMaskSizes.IPv6 = 73 }, "nodeCIDRMaskSizes.ipv6 73 must be longer than the prefix of podCIDRs.ipv6 fd00:10:244::/56, by at most 16 bits"},
 		{"ipv6", func(c *Cluster) { c.NodeCIDRMaskSizes.IPv6 = 0 }, "nodeCIDRMaskSizes.ipv6 0 must be longer"},
-		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = "dns" }, `dnsIPs.ipv4 "dns" is not an address in serviceCIDRs.ipv4 10.96.0.0/12`},
-		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = "10.112.0.10" }, `dnsIPs.ipv4 "10.112.0.10" is not an address in serviceCIDRs.ipv4 10.96.0.0/12`},
-		{"ipv6", func(c *Cluster) { c.DNSIPs.IPv6 = "10.96.0.10" }, `dnsIPs.ipv6 "10.96.0.10" is not an address in serviceCIDRs.ipv6 fd00:10:96::/112`},
-		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = "10.96.0.1" }, "dnsIPs.ipv4 10.96.0.1 is the network address of serviceCIDRs.ipv4 10.96.0.0/12 or the kubernetes service's address"},
-		{"ipv6", func(c *Cluster) { c.DNSIPs.IPv6 = "fd00:10:96::" }, "dnsIPs.ipv6 fd00:10:96:: is the network address"},
+		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = netip.Addr{} }, `dnsIPs.ipv4 "invalid IP" is not an address in serviceCIDRs.ipv4 10.96.0.0/12`},
+		{"ipv6", func(c *Cluster) { c.DNSIPs.IPv6 = netip.MustParseAddr("fd00:10:96::a%eth0") }, `dnsIPs.ipv6 "fd00:10:96::a%eth0" is not an address in serviceCIDRs.ipv6 fd00:10:96::/112`},
+		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = netip.MustParseAddr("10.112.0.10") }, `dnsIPs.ipv4 "10.112.0.10" is not an address in serviceCIDRs.ipv4 10.96.0.0/12`},
+		{"ipv6", func(c *Cluster) { c.DNSIPs.IPv6 = netip.MustParseAddr("10.96.0.10") }, `dnsIPs.ipv6 "10.96.0.10" is not an address in serviceCIDRs.ipv6 fd00:10:96::/112`},
+		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = netip.MustParseAddr("10.96.0.1") }, "dnsIPs.ipv4 10.96.0.1 is the network address of serviceCIDRs.ipv4 10.96.0.0/12 or the kubernetes service's address"},
+		{"ipv6", func(c *Cluster) { c.DNSIPs.IPv6 = netip.MustParseAddr("fd00:10:96::") }, "dnsIPs.ipv6 fd00:10:96:: is the network address"},
 	} {
 		bad := c
-		bad.IPFamilies = []string{"ipv4", "ipv6"}
+		bad.IPFamilies = []nodeip.Family{"ipv4", "ipv6"}
 		tc.edit(&bad)
 		if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("Validate() = %v, want %q", err, tc.want)
 		}
 		// Only the entries of the cluster's families count.
-		other := map[string]string{"ipv4": "ipv6", "ipv6": "ipv4"}[tc.family]
-		bad.IPFamilies = []string{other}
+		other := map[string]nodeip.Family{"ipv4": "ipv6", "ipv6": "ipv4"}[tc.family]
+		bad.IPFamilies = []nodeip.Family{other}
 		if err := bad.Validate(); err != nil {
 			t.Errorf("an %s cluster refused the %s entries: %v", other, tc.family, err)
 		}
@@ -149,7 +172,7 @@ func TestClusterValidate(t *testing.T) {
 		// IPv6's of 1280 with IPv6 in use (clusterJSON lists no families, so IPv4 alone).
 		"flannel MTU below IPv4's minimum": func(c *Cluster) { c.Flannel = &Flannel{MTU: 625} },
 		"flannel MTU below IPv6's minimum": func(c *Cluster) {
-			c.IPFamilies = []string{"ipv4", "ipv6"}
+			c.IPFamilies = []nodeip.Family{"ipv4", "ipv6"}
 			c.Flannel = &Flannel{MTU: 1329}
 		},
 		// The kubelet's flags reach it through an environment variable that ExecStart splits at
@@ -194,7 +217,7 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Written out rather than read from ProtectedKubeletFlags, so a flag dropped from it fails here.
+	// Written out rather than read from protectedKubeletFlags, so a flag dropped from it fails here.
 	for _, flag := range []string{
 		"anonymous-auth", "authentication-token-webhook", "authorization-mode", "bootstrap-kubeconfig",
 		"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override",
@@ -297,7 +320,7 @@ func TestClusterValidateFlannelMinimums(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Errorf("IPv4's minimum: %v", err)
 	}
-	c.IPFamilies = []string{"ipv4", "ipv6"}
+	c.IPFamilies = []nodeip.Family{"ipv4", "ipv6"}
 	c.Flannel = &Flannel{MTU: 1330}
 	if err := c.Validate(); err != nil {
 		t.Errorf("IPv6's minimum: %v", err)
@@ -309,32 +332,33 @@ func TestClusterFamiliesAndVIP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if families, err := valid.Families(); err != nil || len(families) != 1 || families[0] != nodeip.IPv4 {
-		t.Errorf("Families() = %v, %v, want ipv4 alone", families, err)
+	if families := valid.Families(); len(families) != 1 || families[0] != nodeip.IPv4 {
+		t.Errorf("Families() = %v, want ipv4 alone", families)
 	}
 	dual := valid
-	dual.IPFamilies = []string{"ipv6", "ipv4"}
-	dual.VIP = VIP{Addresses: []string{"10.0.0.10", "fd00::10"}, Mode: "l2"}
+	dual.IPFamilies = []nodeip.Family{"ipv6", "ipv4"}
+	dual.VIP = VIP{Addresses: mustAddrs("10.0.0.10", "fd00::10"), Mode: "l2"}
 	if err := dual.Validate(); err != nil {
 		t.Fatalf("dual stack with a VIP per family: %v", err)
 	}
-	if families, _ := dual.Families(); len(families) != 2 || families[0] != nodeip.IPv6 {
+	if families := dual.Families(); len(families) != 2 || families[0] != nodeip.IPv6 {
 		t.Errorf("Families() = %v, want ipv6 first", families)
 	}
 	named := valid
 	named.Endpoint = "https://api.example.com:6443"
-	named.VIP = VIP{Addresses: []string{"10.0.0.10"}, Mode: "l2"}
+	named.VIP = VIP{Addresses: mustAddrs("10.0.0.10"), Mode: "l2"}
 	if err := named.Validate(); err != nil {
 		t.Errorf("a host name endpoint with a VIP: %v", err)
 	}
 	for name, edit := range map[string]func(c *Cluster){
-		"unknown family":         func(c *Cluster) { c.IPFamilies = []string{"ipv5"} },
-		"family twice":           func(c *Cluster) { c.IPFamilies = []string{"ipv4", "ipv4"} },
-		"VIP not an address":     func(c *Cluster) { c.VIP = VIP{Addresses: []string{"10.0.0.10/32"}, Mode: "l2"} },
-		"VIP of another family":  func(c *Cluster) { c.VIP = VIP{Addresses: []string{"10.0.0.10", "fd00::10"}, Mode: "l2"} },
-		"two VIPs of one family": func(c *Cluster) { c.VIP = VIP{Addresses: []string{"10.0.0.10", "10.0.0.20"}, Mode: "l2"} },
-		"endpoint not a VIP":     func(c *Cluster) { c.VIP = VIP{Addresses: []string{"10.0.0.20"}, Mode: "l2"} },
-		"unknown mode":           func(c *Cluster) { c.VIP = VIP{Addresses: []string{"10.0.0.10"}, Mode: "bgp"} },
+		"unknown family":         func(c *Cluster) { c.IPFamilies = []nodeip.Family{"ipv5"} },
+		"family twice":           func(c *Cluster) { c.IPFamilies = []nodeip.Family{"ipv4", "ipv4"} },
+		"VIP not an address":     func(c *Cluster) { c.VIP = VIP{Addresses: []netip.Addr{{}}, Mode: "l2"} },
+		"VIP with a zone":        func(c *Cluster) { c.VIP = VIP{Addresses: mustAddrs("fd00::10%eth0"), Mode: "l2"} },
+		"VIP of another family":  func(c *Cluster) { c.VIP = VIP{Addresses: mustAddrs("10.0.0.10", "fd00::10"), Mode: "l2"} },
+		"two VIPs of one family": func(c *Cluster) { c.VIP = VIP{Addresses: mustAddrs("10.0.0.10", "10.0.0.20"), Mode: "l2"} },
+		"endpoint not a VIP":     func(c *Cluster) { c.VIP = VIP{Addresses: mustAddrs("10.0.0.20"), Mode: "l2"} },
+		"unknown mode":           func(c *Cluster) { c.VIP = VIP{Addresses: mustAddrs("10.0.0.10"), Mode: "bgp"} },
 	} {
 		c := valid
 		edit(&c)
@@ -378,7 +402,7 @@ func TestNodeIPSelectorEndpointLast(t *testing.T) {
 		t.Errorf("only the endpoint's address: picked %s, want 10.0.0.10", got)
 	}
 	v6 := c
-	v6.IPFamilies = []string{"ipv6"}
+	v6.IPFamilies = []nodeip.Family{"ipv6"}
 	v6.Endpoint = "https://[fd00::10]:6443"
 	if got := pick(v6, "fd00::10", "fd00::11"); got != "fd00::11" {
 		t.Errorf("IPv6 endpoint: picked %s, want fd00::11", got)
@@ -405,11 +429,11 @@ func TestReadNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n.Name != "cp1" || n.Hostname != "cp1-host" || len(n.FixedIPs) != 1 || !n.FixedIPs[0].Equal(net.ParseIP("10.0.0.11")) || n.Labels["zone"] != "a" || len(n.Taints) != 1 {
+	if n.Name != "cp1" || n.Hostname != "cp1-host" || !slices.Equal(n.FixedIPs, mustAddrs("10.0.0.11")) || n.Labels["zone"] != "a" || len(n.Taints) != 1 {
 		t.Errorf("node = %+v", n)
 	}
 	// The certificates name the addresses the node picked and its static addresses.
-	n.IPs = []net.IP{net.ParseIP("10.0.0.11"), net.ParseIP("fd00::11")}
+	n.IPs = mustAddrs("10.0.0.11", "fd00::11")
 	var ips []string
 	for _, ip := range n.CertificateIPs() {
 		ips = append(ips, ip.String())
@@ -450,13 +474,13 @@ func TestNodeIPSelector(t *testing.T) {
 	}
 	// The VIPs sort last like the endpoint's address.
 	withVIP := c
-	withVIP.VIP = VIP{Addresses: []string{"10.0.0.10"}, Mode: "l2"}
+	withVIP.VIP = VIP{Addresses: mustAddrs("10.0.0.10"), Mode: "l2"}
 	if sel, err := withVIP.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1"}}`)); err != nil || len(sel.Last) != 2 {
 		t.Errorf("Last = %v, %v, want the endpoint's address and the VIP", sel.Last, err)
 	}
 	// A dual-stack node picks one address of each family.
 	dual := c
-	dual.IPFamilies = []string{"ipv4", "ipv6"}
+	dual.IPFamilies = []nodeip.Family{"ipv4", "ipv6"}
 	sel, err := dual.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1", "nodeIPs": ["192.168.100.12"], "validSubnets": ["fd00::/64"]}}`))
 	if err != nil {
 		t.Fatal(err)
@@ -529,10 +553,10 @@ func TestVXLANSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.IPFamilies = []string{"ipv4", "ipv6"}
-	c.Flannel = &Flannel{VXLANSourceSubnets: []string{"10.0.0.0/10", "fd00::/48", "192.168.0.0/16"}}
-	if sources, err := c.VXLANSources(); err != nil || fmt.Sprint(sources) != "[10.0.0.0/10 fd00::/48 192.168.0.0/16]" {
-		t.Errorf("VXLANSources() = %v, %v", sources, err)
+	c.IPFamilies = []nodeip.Family{"ipv4", "ipv6"}
+	c.Flannel = &Flannel{VXLANSourceSubnets: mustPrefixes("10.0.0.0/10", "fd00::/48", "192.168.0.0/16")}
+	if sources := c.VXLANSources(); fmt.Sprint(sources) != "[10.0.0.0/10 fd00::/48 192.168.0.0/16]" {
+		t.Errorf("VXLANSources() = %v", sources)
 	}
 	if err := c.Validate(); err != nil {
 		t.Errorf("Validate() = %v", err)
@@ -540,18 +564,15 @@ func TestVXLANSources(t *testing.T) {
 	for name, f := range map[string]*Flannel{"without ranges": {}, "without flannel": nil} {
 		c := c
 		c.Flannel = f
-		if sources, err := c.VXLANSources(); err != nil || sources != nil {
-			t.Errorf("%s: VXLANSources() = %v, %v", name, sources, err)
+		if sources := c.VXLANSources(); sources != nil {
+			t.Errorf("%s: VXLANSources() = %v", name, sources)
 		}
 	}
 	for subnets, want := range map[string]string{
-		"10.0.0.0":                  `vxlanSourceSubnets: "10.0.0.0" is not an address range in CIDR notation`,
-		"10.0.0.1/8 fd00::/48":      "vxlanSourceSubnets.ipv4 10.0.0.1/8 has host bits set; write 10.0.0.0/8",
-		"::ffff:10.0.0.0/104":       "vxlanSourceSubnets.ipv4 ::ffff:10.0.0.0/104 is an IPv4-mapped IPv6 range",
-		"10.0.0.0/8":                "vxlanSourceSubnets: no ipv6 range, so no node would take ipv6 VXLAN",
-		"fd00::/48":                 "vxlanSourceSubnets: no ipv4 range, so no node would take ipv4 VXLAN",
-		"!10.0.0.0/8 fd00::/48":     `vxlanSourceSubnets: "!10.0.0.0/8" is not an address range in CIDR notation`,
-		"10.0.0.0/8 fd00::/48 10.1": `vxlanSourceSubnets: "10.1" is not an address range in CIDR notation`,
+		"10.0.0.1/8 fd00::/48": "vxlanSourceSubnets.ipv4 10.0.0.1/8 has host bits set; write 10.0.0.0/8",
+		"::ffff:10.0.0.0/104":  "vxlanSourceSubnets.ipv4 ::ffff:10.0.0.0/104 is an IPv4-mapped IPv6 range",
+		"10.0.0.0/8":           "vxlanSourceSubnets: no ipv6 range, so no node would take ipv6 VXLAN",
+		"fd00::/48":            "vxlanSourceSubnets: no ipv4 range, so no node would take ipv4 VXLAN",
 		// Ranges pods could pass the source check from.
 		"10.0.0.0/8 fd00::/48":                   "vxlanSourceSubnets: 10.0.0.0/8 overlaps podCIDRs.ipv4 10.244.0.0/16",
 		"10.244.1.0/24 fd00::/48":                "vxlanSourceSubnets: 10.244.1.0/24 overlaps podCIDRs.ipv4 10.244.0.0/16",
@@ -560,15 +581,36 @@ func TestVXLANSources(t *testing.T) {
 		"192.168.0.0/16 fd00:10:96::/120":        "vxlanSourceSubnets: fd00:10:96::/120 overlaps serviceCIDRs.ipv6 fd00:10:96::/112",
 	} {
 		bad := c
-		bad.Flannel = &Flannel{VXLANSourceSubnets: strings.Fields(subnets)}
+		bad.Flannel = &Flannel{VXLANSourceSubnets: mustPrefixes(strings.Fields(subnets)...)}
 		if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: Validate() = %v, want %q", subnets, err, want)
 		}
 	}
 	ipv4 := c
-	ipv4.IPFamilies = []string{"ipv4"}
-	ipv4.Flannel = &Flannel{VXLANSourceSubnets: []string{"10.0.0.0/8", "fd00::/48"}}
+	ipv4.IPFamilies = []nodeip.Family{"ipv4"}
+	ipv4.Flannel = &Flannel{VXLANSourceSubnets: mustPrefixes("10.0.0.0/8", "fd00::/48")}
 	if err := ipv4.Validate(); err == nil || !strings.Contains(err.Error(), "vxlanSourceSubnets: fd00::/48 is an ipv6 range, but the cluster's families are [ipv4]") {
 		t.Errorf("a range of another family: %v", err)
+	}
+}
+
+// A cluster file as chalkd writes it reads back into the same bytes: the typed families, ranges
+// and addresses keep every value as written.
+func TestClusterFileRoundTrip(t *testing.T) {
+	path := filepath.Join("..", "config", "testdata", "homelab-w1-cluster.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c Cluster
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatal(err)
+	}
+	again, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(again)+"\n" != string(data) {
+		t.Errorf("%s reads back as\n%s", path, again)
 	}
 }

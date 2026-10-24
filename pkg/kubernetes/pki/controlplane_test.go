@@ -3,13 +3,14 @@ package pki
 import (
 	"crypto/x509"
 	"encoding/json"
-	"net"
+	"net/netip"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -17,12 +18,12 @@ func testCluster() kubernetes.Cluster {
 	return kubernetes.Cluster{
 		Kind:         kubernetes.KindControlPlane,
 		Endpoint:     "https://api.lab.example:6443",
-		ServiceCIDRs: kubernetes.ByFamily[string]{IPv4: "10.96.0.0/12", IPv6: "fd00:10:96::/112"},
+		ServiceCIDRs: kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12"), IPv6: netip.MustParsePrefix("fd00:10:96::/112")},
 		Domain:       "cluster.local",
 	}
 }
 
-var testNode = kubernetes.Node{Name: "cp1", IPs: []net.IP{net.ParseIP("10.0.0.11")}, Addresses: []net.IP{net.ParseIP("10.0.0.11"), net.ParseIP("10.0.1.11")}}
+var testNode = kubernetes.Node{Name: "cp1", IPs: []netip.Addr{netip.MustParseAddr("10.0.0.11")}, Addresses: []netip.Addr{netip.MustParseAddr("10.0.0.11"), netip.MustParseAddr("10.0.1.11")}}
 
 func leaf(t *testing.T, files map[string][]byte, name string) *x509.Certificate {
 	t.Helper()
@@ -98,8 +99,8 @@ func TestControlPlaneCertificates(t *testing.T) {
 	// In a cluster whose primary family is IPv6 the kubernetes service's address and the local
 	// API server are IPv6 ones.
 	v6 := testCluster()
-	v6.IPFamilies = []string{"ipv6", "ipv4"}
-	v6files, err := ControlPlane(ControlPlaneShare(k, testNodeCA(t)), v6, kubernetes.Node{Name: "cp1", IPs: []net.IP{net.ParseIP("fd00::11"), net.ParseIP("10.0.0.11")}}, now)
+	v6.IPFamilies = []nodeip.Family{"ipv6", "ipv4"}
+	v6files, err := ControlPlane(ControlPlaneShare(k, testNodeCA(t)), v6, kubernetes.Node{Name: "cp1", IPs: []netip.Addr{netip.MustParseAddr("fd00::11"), netip.MustParseAddr("10.0.0.11")}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,13 +234,14 @@ func TestControlPlaneWithAddressEndpoint(t *testing.T) {
 func TestControlPlaneWithDualStackVIPs(t *testing.T) {
 	c := testCluster()
 	c.Endpoint = "https://10.0.0.10:6443"
-	c.VIP = kubernetes.VIP{Addresses: []string{"10.0.0.10", "fd00::10"}, Mode: "l2"}
+	c.VIP = kubernetes.VIP{Addresses: []netip.Addr{netip.MustParseAddr("10.0.0.10"), netip.MustParseAddr("fd00::10")}, Mode: "l2"}
 	files, err := ControlPlane(ControlPlaneShare(secrets(t), testNodeCA(t)), c, testNode, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	api := leaf(t, files, FileAPIServer)
-	for _, vip := range c.VIP.Addresses {
+	for _, addr := range c.VIP.Addresses {
+		vip := addr.String()
 		if err := api.VerifyHostname(vip); err != nil {
 			t.Errorf("API server certificate for %s: %v", vip, err)
 		}

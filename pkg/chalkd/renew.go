@@ -116,11 +116,7 @@ func (s *Server) IssueNodeCertificate(ctx context.Context, request []byte) (stri
 		}
 		return signRequest(nodeCA, names, request, time.Now())
 	}
-	host, err := c.EndpointHost()
-	if err != nil {
-		return "", err
-	}
-	return RenewThrough(ctx, s.Certificate, net.JoinHostPort(host, client.Port), request)
+	return RenewThrough(ctx, s.Certificate, net.JoinHostPort(c.EndpointHost(), client.Port), request)
 }
 
 // RenewThrough asks the chalkd at addr, which must present a node certificate, for a node

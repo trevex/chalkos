@@ -9,7 +9,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"net"
 	"slices"
 	"sort"
 	"strings"
@@ -42,12 +41,6 @@ func (m Member) String() string {
 func member(m *etcdserverpb.Member) Member {
 	return Member{ID: m.ID, Name: m.Name, PeerURLs: m.PeerURLs, ClientURLs: m.ClientURLs, Learner: m.IsLearner}
 }
-
-// PeerURL is the URL etcd's peers reach the member on the node with the address at.
-func PeerURL(ip net.IP) string { return "https://" + net.JoinHostPort(ip.String(), "2380") }
-
-// ClientURL is the URL clients reach the member on the node with the address at.
-func ClientURL(ip net.IP) string { return "https://" + net.JoinHostPort(ip.String(), "2379") }
 
 // Dial connects to etcd at the endpoints with the TLS configuration. While requests or streams
 // are open, the client pings a connection that has been quiet for 10 seconds and drops it when
