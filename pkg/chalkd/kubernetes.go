@@ -267,7 +267,7 @@ func (k *Kubernetes) Start() {
 		log.Printf("kubernetes: %v", err)
 		return
 	}
-	bootstrapped, err := knode.Bootstrapped(k.Paths)
+	m, leftovers, err := knode.ReadMembership(k.Paths)
 	if err != nil {
 		log.Printf("kubernetes: %v", err)
 		return
@@ -275,19 +275,18 @@ func (k *Kubernetes) Start() {
 	if c.Kind != k8s.KindControlPlane {
 		return
 	}
-	// A node that left etcd joins again only once reinstalled.
-	if left, err := knode.Left(k.Paths); err != nil || left {
-		return
-	}
-	if !bootstrapped {
+	switch m {
+	case knode.MembershipLeft:
+		// A node that left etcd joins again only once reinstalled.
+	case knode.MembershipBootstrapped:
+		if leftovers.EtcdDataMissing {
+			log.Printf("kubernetes: %v", knode.ErrEtcdDataMissing)
+			return
+		}
+		k.start()
+	default:
 		k.startJoin()
-		return
 	}
-	if err := knode.CheckEtcdData(k.Paths); err != nil {
-		log.Printf("kubernetes: %v", err)
-		return
-	}
-	k.start()
 }
 
 // start runs the control plane's loop and, when the cluster has VIPs, the VIP election unless
@@ -718,23 +717,16 @@ func (s *Server) Bootstrap(ctx context.Context, _ *connect.Request[nodev1.Bootst
 // bootstrap commits the node to initialising etcd: the marker comes first, so a failure after
 // it is retried by the next boot and never initialises a second cluster.
 func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (chan struct{}, error) {
-	bootstrapped, err := knode.Bootstrapped(k.Paths)
+	m, leftovers, err := knode.ReadMembership(k.Paths)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	if bootstrapped {
+	switch {
+	case m == knode.MembershipBootstrapped:
 		return nil, failed(connect.CodeFailedPrecondition, "the node is bootstrapped already")
-	}
-	if left, err := knode.Left(k.Paths); err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
-	} else if left {
+	case m == knode.MembershipLeft:
 		return nil, failed(connect.CodeFailedPrecondition, "the node left etcd; reinstall it to join the cluster again")
-	}
-	hasData, err := knode.EtcdHasData(k.Paths)
-	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
-	}
-	if hasData {
+	case leftovers.EtcdData:
 		return nil, failed(connect.CodeFailedPrecondition, "%s holds etcd data; reset VAR before bootstrapping a new cluster on this node", k.Paths.EtcdData)
 	}
 	share, err := knode.ReadShare(k.Paths)
@@ -759,22 +751,19 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 		return nil, failed(connect.CodeFailedPrecondition, "the node is joining the cluster at %s; chalkctl status shows its progress", c.Endpoint)
 	}
 	defer k.membership.Unlock()
-	switch bootstrapped, err := knode.Bootstrapped(k.Paths); {
-	case err != nil:
+	// A join may have run while the node waited for the lock.
+	if m, leftovers, err = knode.ReadMembership(k.Paths); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
-	case bootstrapped:
+	}
+	switch {
+	case m == knode.MembershipBootstrapped:
 		return nil, failed(connect.CodeFailedPrecondition, "the node joined the cluster already")
-	}
-	// The node may be an etcd member of the cluster already, even when it never learned so.
-	switch joining, err := knode.Joining(k.Paths); {
-	case err != nil:
-		return nil, failed(connect.CodeInternal, "%v", err)
-	case joining:
+	case m == knode.MembershipLeft:
+		return nil, failed(connect.CodeFailedPrecondition, "the node left etcd; reinstall it to join the cluster again")
+	case m == knode.MembershipJoining:
+		// The node may be an etcd member of the cluster already, even when it never learned so.
 		return nil, failed(connect.CodeFailedPrecondition, "the node started joining the cluster at %s; finish the join or remove its member and reinstall", c.Endpoint)
-	}
-	if started, err := knode.HasInitialCluster(k.Paths); err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
-	} else if started {
+	case leftovers.InitialCluster:
 		return nil, failed(connect.CodeFailedPrecondition, "the node is joining the cluster at %s; chalkctl status shows its progress", c.Endpoint)
 	}
 	// A second bootstrap would start a second cluster.
@@ -833,26 +822,20 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 		st.State = problem
 		return st, nil
 	}
-	left, err := knode.Left(k.Paths)
+	m, leftovers, err := knode.ReadMembership(k.Paths)
 	if err != nil {
 		return nil, err
 	}
-	switch bootstrapped, err := knode.Bootstrapped(k.Paths); {
-	case err != nil:
-		return nil, err
+	switch {
 	case c.Kind == k8s.KindWorker:
 		st.State = "joined"
-	case left:
+	case m == knode.MembershipLeft:
 		st.State = "left etcd; reinstall the node to join the cluster again"
 		return st, nil
-	case bootstrapped:
-		switch err := knode.CheckEtcdData(k.Paths); {
-		case errors.Is(err, knode.ErrEtcdDataMissing):
-			st.State = "etcd data missing: restore etcd or reinstall the node"
-			return st, nil
-		case err != nil:
-			return nil, err
-		}
+	case m == knode.MembershipBootstrapped && leftovers.EtcdDataMissing:
+		st.State = "etcd data missing: restore etcd or reinstall the node"
+		return st, nil
+	case m == knode.MembershipBootstrapped:
 		st.State = "bootstrapped"
 		k.mu.Lock()
 		for _, problem := range []string{k.pinProblem, k.split} {
@@ -871,9 +854,7 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 			st.ControlPlane = k.ControlPlaneState(ctx, c, share)
 		}
 	default:
-		if st.State, err = k.joinStatus(c); err != nil {
-			return nil, err
-		}
+		st.State = k.joinStatus(c, m == knode.MembershipJoining)
 		return st, nil
 	}
 	if c.Kind == k8s.KindControlPlane {

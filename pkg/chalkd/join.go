@@ -26,6 +26,9 @@ import (
 // errBootstrapped ends the join: the node was bootstrapped, or joined, meanwhile.
 var errBootstrapped = errors.New("the node is bootstrapped")
 
+// errLeft ends the join: the node left etcd, and joins again only once reinstalled.
+var errLeft = errors.New("the node left etcd; reinstall it to join the cluster again")
+
 // errMemberRemoved stops the join: an operator removed the member the node started etcd with,
 // and joining again would start etcd with that member's data.
 var errMemberRemoved = errors.New("the node's etcd member was removed while joining; run chalkctl etcd leave and reinstall the node")
@@ -72,23 +75,19 @@ func (k *Kubernetes) setJoinWaiting(err error) {
 }
 
 // joinStatus is the state of a control plane that is not bootstrapped. Once the join started, as
-// its marker on STATE says, it names the join and its step or last error, also while the
-// cluster cannot be reached and after chalkd started again.
-func (k *Kubernetes) joinStatus(c k8s.Cluster) (string, error) {
-	joining, err := knode.Joining(k.Paths)
-	if err != nil {
-		return "", err
-	}
+// joining says from its marker on STATE, it names the join and its step or last error, also while
+// the cluster cannot be reached and after chalkd started again.
+func (k *Kubernetes) joinStatus(c k8s.Cluster, joining bool) string {
 	k.mu.Lock()
 	step, waiting := k.joinStep, k.joinWaiting
 	k.mu.Unlock()
 	switch {
 	case !joining && (waiting || step == ""):
-		return waitingForCluster(c), nil
+		return waitingForCluster(c)
 	case step == "":
 		step = "resuming the join"
 	}
-	return "joining the cluster at " + c.Endpoint + ": " + step, nil
+	return "joining the cluster at " + c.Endpoint + ": " + step
 }
 
 // superviseJoin tries to join the cluster until the node is an etcd voter, then starts the
@@ -132,7 +131,7 @@ func (k *Kubernetes) superviseJoin(ctx context.Context, done chan struct{}) {
 			}
 			k.mu.Unlock()
 			return
-		case errors.Is(err, errBootstrapped):
+		case errors.Is(err, errBootstrapped), errors.Is(err, errLeft):
 			k.setJoinStep("")
 			return
 		case errors.As(err, &waiting), errors.Is(err, errNotPrepared):
@@ -159,10 +158,8 @@ func (k *Kubernetes) superviseJoin(ctx context.Context, done chan struct{}) {
 // control plane. A node that remembers adding itself, by its pin, continues where it stopped; one
 // that finds a member of its name otherwise stops, as that member is stale.
 func (k *Kubernetes) joinOnce(ctx context.Context) error {
-	if bootstrapped, err := knode.Bootstrapped(k.Paths); err != nil {
+	if err := k.mayJoin(); err != nil {
 		return err
-	} else if bootstrapped {
-		return errBootstrapped
 	}
 	if prepared, err := knode.Prepared(k.Paths); err != nil {
 		return err
@@ -212,10 +209,8 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 	// Bootstrap refuses while the node joins.
 	k.membership.Lock()
 	defer k.membership.Unlock()
-	if bootstrapped, err := knode.Bootstrapped(k.Paths); err != nil {
+	if err := k.mayJoin(); err != nil {
 		return err
-	} else if bootstrapped {
-		return errBootstrapped
 	}
 	pin, err := knode.ReadPin(k.Paths)
 	if err != nil {
@@ -426,18 +421,31 @@ func (k *Kubernetes) checkSplit(ctx context.Context, share kpki.Share) (*etcd.Sp
 	return nil, nil
 }
 
+// mayJoin refuses joining a node that is bootstrapped or left etcd.
+func (k *Kubernetes) mayJoin() error {
+	m, _, err := knode.ReadMembership(k.Paths)
+	switch {
+	case err != nil:
+		return err
+	case m == knode.MembershipBootstrapped:
+		return errBootstrapped
+	case m == knode.MembershipLeft:
+		return errLeft
+	}
+	return nil
+}
+
 // checkFreshJoin refuses adding the node to etcd when it finds no member of its own but etcd ran
 // on it already: the member it started etcd with was removed, or its data is from an earlier
 // membership. It deletes nothing.
 func (k *Kubernetes) checkFreshJoin() error {
-	if started, err := knode.HasInitialCluster(k.Paths); err != nil {
+	_, leftovers, err := knode.ReadMembership(k.Paths)
+	switch {
+	case err != nil:
 		return err
-	} else if started {
+	case leftovers.InitialCluster:
 		return errMemberRemoved
-	}
-	if hasData, err := knode.EtcdHasData(k.Paths); err != nil {
-		return err
-	} else if hasData {
+	case leftovers.EtcdData:
 		return errEarlierData
 	}
 	return nil

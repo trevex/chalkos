@@ -60,9 +60,9 @@ func (s *Server) nodeCA() (pki.CertKey, error) {
 	}
 	// A node that left etcd is no control plane of the cluster any more, though its share still
 	// holds the node CA until it is reinstalled.
-	if left, err := knode.Left(s.Kubernetes.Paths); err != nil {
+	if m, _, err := knode.ReadMembership(s.Kubernetes.Paths); err != nil {
 		return pki.CertKey{}, failed(connect.CodeInternal, "%v", err)
-	} else if left {
+	} else if m == knode.MembershipLeft {
 		return pki.CertKey{}, failed(connect.CodeFailedPrecondition, "the node left etcd and signs no node certificates; reinstall it to join the cluster again")
 	}
 	share, err := knode.ReadShare(s.Kubernetes.Paths)

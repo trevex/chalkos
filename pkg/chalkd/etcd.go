@@ -51,10 +51,10 @@ func (k *Kubernetes) member() (k8s.Cluster, string, kpki.Share, error) {
 	if err != nil {
 		return k8s.Cluster{}, "", kpki.Share{}, err
 	}
-	switch bootstrapped, err := knode.Bootstrapped(k.Paths); {
+	switch m, _, err := knode.ReadMembership(k.Paths); {
 	case err != nil:
 		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeInternal, "%v", err)
-	case !bootstrapped:
+	case m != knode.MembershipBootstrapped:
 		// chalkctl asks the next control plane on this answer.
 		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeFailedPrecondition, "the node is not an etcd member; ask another control-plane node")
 	}
@@ -63,20 +63,8 @@ func (k *Kubernetes) member() (k8s.Cluster, string, kpki.Share, error) {
 
 // mayBeMember reports whether the node is, or may be, an etcd member: it was bootstrapped, or it
 // started joining, or it holds what either left behind.
-func mayBeMember(p knode.Paths) (bool, error) {
-	pinned := func(p knode.Paths) (bool, error) {
-		_, err := os.Stat(p.Pin())
-		if errors.Is(err, fs.ErrNotExist) {
-			return false, nil
-		}
-		return err == nil, err
-	}
-	for _, marked := range []func(knode.Paths) (bool, error){knode.Bootstrapped, knode.Joining, knode.HasInitialCluster, pinned, knode.EtcdHasData} {
-		if ok, err := marked(p); err != nil || ok {
-			return ok, err
-		}
-	}
-	return false, nil
+func mayBeMember(m knode.Membership, l knode.Leftovers) bool {
+	return m == knode.MembershipBootstrapped || m == knode.MembershipJoining || l.InitialCluster || l.Pinned || l.EtcdData
 }
 
 // dialEtcd connects to the endpoints, the node's own member by default, with chalkd's etcd
@@ -214,19 +202,17 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 		return nil, err
 	}
 	p := k.Paths
-	switch member, err := mayBeMember(p); {
+	m, leftovers, err := knode.ReadMembership(p)
+	switch {
 	case err != nil:
 		return nil, failed(connect.CodeInternal, "%v", err)
-	case !member:
-		if left, err := knode.Left(p); err == nil && left {
-			return nil, failed(connect.CodeFailedPrecondition, "the node left etcd already; reinstall it to join the cluster again")
-		}
+	case mayBeMember(m, leftovers):
+	case m == knode.MembershipLeft:
+		return nil, failed(connect.CodeFailedPrecondition, "the node left etcd already; reinstall it to join the cluster again")
+	default:
 		return nil, failed(connect.CodeFailedPrecondition, "the node is not an etcd member")
 	}
-	bootstrapped, err := knode.Bootstrapped(p)
-	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
-	}
+	bootstrapped := m == knode.MembershipBootstrapped
 	// A refused leave starts the loops it stopped again.
 	restart := false
 	defer func() {

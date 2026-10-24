@@ -247,11 +247,8 @@ func StaticPodsStale(p Paths) (bool, error) {
 // rendersStaticPods reports whether the node runs the control plane's static pods: once
 // bootstrapped, until it left etcd.
 func rendersStaticPods(p Paths) (bool, error) {
-	if bootstrapped, err := Bootstrapped(p); err != nil || !bootstrapped {
-		return false, err
-	}
-	left, err := Left(p)
-	return !left, err
+	m, _, err := ReadMembership(p)
+	return m == MembershipBootstrapped, err
 }
 
 // certificatesHash returns the hash of the certificates a static pod's manifest names.
