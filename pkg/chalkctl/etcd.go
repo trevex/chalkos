@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"text/tabwriter"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -118,7 +117,7 @@ func (a *app) etcdMembers(ctx context.Context, f viaFlags) error {
 	if err != nil {
 		return err
 	}
-	w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+	w := a.table()
 	fmt.Fprintln(w, "NAME\tID\tPEER URLS\tMEMBER\tHEALTH")
 	for _, m := range members {
 		name, kind, health := m.Name, "voter", "healthy"

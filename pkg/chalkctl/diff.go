@@ -208,17 +208,10 @@ func (c configDiff) write(w io.Writer) {
 					fmt.Fprintf(w, "    %s: changed\n", f.name)
 					continue
 				}
-				fmt.Fprintf(w, "    %s: %s → %s\n", f.name, orNone(f.old), orNone(f.new))
+				fmt.Fprintf(w, "    %s: %s → %s\n", f.name, cmp.Or(f.old, "(none)"), cmp.Or(f.new, "(none)"))
 			}
 		}
 	}
-}
-
-func orNone(v string) string {
-	if v == "" {
-		return "(none)"
-	}
-	return v
 }
 
 // slotConfig asks a node for the documents of a slot, the running image's or with staged the

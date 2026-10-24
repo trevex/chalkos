@@ -1,6 +1,7 @@
 package chalkctl
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"time"
@@ -78,11 +79,7 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		return err
 	}
 	if !f.staged && st.Msg.Boot.GetStaged() != nil {
-		version := st.Msg.StagedConfigVersion
-		if version == "" {
-			version = "none"
-		}
-		fmt.Fprintf(a.stderr, "%s has a staged image with its own config (version %s); apply-config --staged updates it\n", t.name, version)
+		fmt.Fprintf(a.stderr, "%s has a staged image with its own config (version %s); apply-config --staged updates it\n", t.name, cmp.Or(st.Msg.StagedConfigVersion, "none"))
 	}
 	if f.staged && st.Msg.Boot.GetStaged() == nil {
 		return fmt.Errorf("%s: no image is staged to boot next; apply the config to the running image", t.name)

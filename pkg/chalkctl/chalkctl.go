@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -157,3 +158,8 @@ func waitFor(ctx context.Context, what string, timeout, interval time.Duration, 
 type permanent struct{ error }
 
 func (p permanent) Unwrap() error { return p.error }
+
+// table writes aligned columns, separated by tabs, to standard output once flushed.
+func (a *app) table() *tabwriter.Writer {
+	return tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+}

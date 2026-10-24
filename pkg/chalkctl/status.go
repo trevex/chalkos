@@ -2,11 +2,11 @@ package chalkctl
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/hex"
 	"fmt"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"connectrpc.com/connect"
@@ -45,18 +45,10 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	}
 	s := resp.Msg
 	state := t.cluster.configState(t.name, s.ConfigVersion, false)
-	version := s.ConfigVersion
-	if version == "" {
-		// A node installed before config documents runs an identity alone.
-		version = "none"
-	}
-	fmt.Fprintf(a.stdout, "config %s (%s)\n", version, state)
+	// A node installed before config documents runs an identity alone.
+	fmt.Fprintf(a.stdout, "config %s (%s)\n", cmp.Or(s.ConfigVersion, "none"), state)
 	if s.Boot.GetStaged() != nil {
-		staged := s.StagedConfigVersion
-		if staged == "" {
-			staged = "none"
-		}
-		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", staged, t.cluster.configState(t.name, s.StagedConfigVersion, true))
+		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", cmp.Or(s.StagedConfigVersion, "none"), t.cluster.configState(t.name, s.StagedConfigVersion, true))
 	}
 	fmt.Fprintln(a.stdout, t.cluster.platformLine(t.name, s.Platform))
 	for _, line := range bootLines(s.Boot) {
@@ -65,7 +57,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	if line := t.cluster.imageLine(t.name, s.Boot); line != "" {
 		fmt.Fprintln(a.stdout, line)
 	}
-	w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+	w := a.table()
 	fmt.Fprintln(w, "VOLUME\tDISK\tMOUNT POINT\tSTATE")
 	for _, v := range s.Volumes {
 		st := "present"
@@ -88,7 +80,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 		}
 	}
 	if len(s.Outputs) > 0 {
-		w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+		w := a.table()
 		fmt.Fprintln(w, "OUTPUT\tHASH\tSTATE")
 		for _, o := range s.Outputs {
 			fmt.Fprintln(w, outputLine(o))
@@ -99,7 +91,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	}
 	if k := s.Kubernetes; k != nil {
 		fmt.Fprintln(a.stdout, kubernetesLine(k))
-		w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+		w := a.table()
 		for _, line := range revokedLines(k) {
 			fmt.Fprintln(w, line)
 		}
@@ -109,7 +101,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	}
 	if len(s.Certificates) > 0 {
 		fmt.Fprintln(a.stdout, "certificates:")
-		w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+		w := a.table()
 		for _, c := range s.Certificates {
 			fmt.Fprintln(w, certificateLine(c, t.name))
 		}
@@ -119,7 +111,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	}
 	if len(s.Trust) > 0 {
 		fmt.Fprintln(a.stdout, "trust:")
-		w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+		w := a.table()
 		for _, tr := range s.Trust {
 			fmt.Fprintln(w, trustLine(tr))
 		}

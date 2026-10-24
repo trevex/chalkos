@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"strings"
-	"text/tabwriter"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -73,7 +72,7 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 	if p.insecure {
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", conn.Fingerprint())
 	}
-	w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+	w := a.table()
 	fmt.Fprintln(w, "DEVICE\tSIZE\tTYPE\tMODEL\tSERIAL\tWWN\tUSE")
 	for _, d := range resp.Msg.Disks {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d.Device, size(d.Size), d.Type, d.Model, d.Serial, d.Wwn, d.Usage)
