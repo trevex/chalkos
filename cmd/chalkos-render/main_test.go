@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,7 +65,7 @@ func TestDocuments(t *testing.T) {
 
 func TestUsage(t *testing.T) {
 	for _, args := range [][]string{nil, {"template", "x"}, {"documents"}, {"other", "x"}} {
-		if _, err := render(t, args, peers); err == nil || !strings.Contains(err.Error(), "usage:") {
+		if _, err := render(t, args, peers); !errors.Is(err, errUsage) {
 			t.Errorf("%v: %v", args, err)
 		}
 	}

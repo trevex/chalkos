@@ -32,12 +32,15 @@ kinds' schemas in the directory SCHEMAS.`
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Getenv("OUT")); err != nil {
 		fmt.Fprintln(os.Stderr, "chalkos-render: "+err.Error())
+		if errors.Is(err, errUsage) {
+			fmt.Fprintln(os.Stderr, usage)
+		}
 		os.Exit(1)
 	}
 }
 
-// errUsage is a command line chalkos-render does not take.
-var errUsage = errors.New(usage)
+// errUsage is a command line chalkos-render does not take; main prints the usage after it.
+var errUsage = errors.New("unknown command line")
 
 func run(args []string, stdin io.Reader, out string) error {
 	if len(args) == 0 {
