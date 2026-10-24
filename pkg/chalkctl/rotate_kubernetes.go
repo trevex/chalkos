@@ -202,7 +202,7 @@ func (r *rotation) waitQuorum(ctx context.Context, name string) error {
 			if silent.IsZero() {
 				silent = time.Now()
 			} else if time.Since(silent) >= window {
-				return stopWaiting{fmt.Errorf("%s does not answer: %w", name, err)}
+				return permanent{fmt.Errorf("%s does not answer: %w", name, err)}
 			}
 			return err
 		case err != nil:

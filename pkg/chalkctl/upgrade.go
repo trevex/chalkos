@@ -810,23 +810,8 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 // and the API server is down while it reboots, which only --allow-downtime accepts. etcd may need
 // a moment after the control plane before came back, so the check is tried for a while.
 func (r *upgradeRun) quorum(ctx context.Context, name string) error {
-	deadline := time.Now().Add(r.quorumWait)
-	for {
-		err := r.quorumOnce(ctx, name)
-		var final finalError
-		if err == nil || errors.As(err, &final) || !time.Now().Before(deadline) {
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(r.poll):
-		}
-	}
+	return waitFor(ctx, "", r.quorumWait, r.poll, func() error { return r.quorumOnce(ctx, name) })
 }
-
-// finalError is a check's error that waiting does not change.
-type finalError struct{ error }
 
 func (r *upgradeRun) quorumOnce(ctx context.Context, name string) error {
 	var members []*nodev1.EtcdMember
@@ -858,7 +843,7 @@ func (r *upgradeRun) quorumOnce(ctx context.Context, name string) error {
 		// A control plane that is no etcd member takes nothing of etcd down.
 		return nil
 	case voters-1 < quorum && !r.allowDowntime:
-		return finalError{fmt.Errorf("etcd has %s, and without %s fewer than the %d its quorum needs: it and the API server are down while %s reboots; pass --allow-downtime to accept that", count(voters, "voter"), name, quorum, name)}
+		return permanent{fmt.Errorf("etcd has %s, and without %s fewer than the %d its quorum needs: it and the API server are down while %s reboots; pass --allow-downtime to accept that", count(voters, "voter"), name, quorum, name)}
 	case voters-1 < quorum:
 		return nil
 	case healthy < quorum:
@@ -944,34 +929,26 @@ func (r *upgradeRun) uncordon(ctx context.Context, n *upgradeNode) error {
 // the cluster is Ready, or until it fell back.
 func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 	image, target := n.image.name(), n.image.header.RootHash
-	deadline := time.Now().Add(r.timeout)
-	var last error
-	for {
+	if err := waitFor(ctx, fmt.Sprintf("%s to run %s, found healthy", n.name, image), r.timeout, r.poll, func() error {
 		_, st, err := r.probe(ctx, n.name)
 		switch {
 		case err != nil:
-			last = err
+			return err
 		case bytes.Equal(st.GetBoot().GetFailed().GetRootHash(), target):
-			return r.rolledBack(n, st.GetBoot())
+			return permanent{r.rolledBack(n, st.GetBoot())}
 		case !bytes.Equal(st.GetBoot().GetRunning().GetRootHash(), target):
-			last = fmt.Errorf("it runs %s", bootImageName(st.GetBoot().GetRunning()))
+			return fmt.Errorf("it runs %s", bootImageName(st.GetBoot().GetRunning()))
 		case !st.GetBoot().GetBlessed():
-			last = errors.New("its boot was not found healthy yet")
+			return errors.New("its boot was not found healthy yet")
 		case inCluster(st.Kubernetes) && st.Kubernetes.NodeReady != "True":
-			last = fmt.Errorf("its Node is not Ready: %s", st.Kubernetes.NodeReady)
-		default:
-			r.say("%s: runs %s, found healthy", n.name, image)
-			return nil
+			return fmt.Errorf("its Node is not Ready: %s", st.Kubernetes.NodeReady)
 		}
-		if !time.Now().Before(deadline) {
-			return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, image, last)
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, image, context.Cause(ctx))
-		case <-time.After(r.poll):
-		}
+		return nil
+	}); err != nil {
+		return err
 	}
+	r.say("%s: runs %s, found healthy", n.name, image)
+	return nil
 }
 
 // inCluster reports whether a node is part of a cluster, so its Node exists.

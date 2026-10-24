@@ -351,32 +351,9 @@ func (r *rotation) status(ctx context.Context, name string) (*nodev1.StatusRespo
 	return nodes.status(ctx, name)
 }
 
-// stopWaiting is a check's error that waiting does not fix: waitFor returns it at once.
-type stopWaiting struct{ error }
-
-func (s stopWaiting) Unwrap() error { return s.error }
-
-// waitFor checks until check passes, up to the timeout, or until it fails with stopWaiting.
+// waitFor checks until check passes, up to the rotation's timeout.
 func (r *rotation) waitFor(ctx context.Context, what string, check func() error) error {
-	deadline := time.Now().Add(r.timeout)
-	for {
-		err := check()
-		if err == nil {
-			return nil
-		}
-		var stop stopWaiting
-		if errors.As(err, &stop) {
-			return stop.error
-		}
-		if !time.Now().Before(deadline) {
-			return fmt.Errorf("waiting for %s: %w", what, err)
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("waiting for %s: %w", what, context.Cause(ctx))
-		case <-time.After(r.poll):
-		}
-	}
+	return waitFor(ctx, what, r.timeout, r.poll, check)
 }
 
 // waitStatus waits until a node's status passes check.
