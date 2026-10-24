@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -292,6 +293,35 @@ spec: {host: docker.io, username: hub-bot, password: {secretRef: {name: hub, key
 	for _, f := range []string{"config.json", "flags"} {
 		if data, err := os.ReadFile(filepath.Join(out, f)); err != nil || strings.Contains(string(data), "hub-s3cret") {
 			t.Errorf("%s = %s, %v", f, data, err)
+		}
+	}
+}
+
+// TestCommandsRefuseArguments refuses, before running anything, the arguments a command does not
+// take, and knows each command the usage names.
+func TestCommandsRefuseArguments(t *testing.T) {
+	for _, tc := range []struct {
+		command string
+		args    []string
+	}{
+		{"serve", []string{"now"}},
+		{"load-config", []string{"x"}},
+		{"health", []string{"--wait", "0"}},
+		{"health", []string{"now"}},
+		{"prepare-kubernetes", []string{"--vxlan"}},
+		{"prepare-kubernetes", []string{"--vxlan-rule", "x"}},
+		{"vxlan-rule", []string{"a", "b"}},
+		{"containerd-hosts", []string{"x"}},
+		{"registry-credentials", []string{"x"}},
+		{"credential-provider", []string{"x"}},
+	} {
+		if _, ok := errors.AsType[usageError](commands[tc.command](tc.args)); !ok {
+			t.Errorf("%s %q ran", tc.command, tc.args)
+		}
+	}
+	for line := range strings.Lines(usage) {
+		if name, _, _ := strings.Cut(strings.TrimSpace(line), " "); strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "   ") && commands[name] == nil {
+			t.Errorf("the usage names %s, which is no command", name)
 		}
 	}
 }

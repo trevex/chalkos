@@ -65,40 +65,36 @@ commands:
                                    registry credentials from its Registry documents
   credential-provider              answer the kubelet's request for an image's credentials`
 
+// commands are chalkd's commands by name. Each takes the arguments after its name and fails with
+// a usageError when it does not take them.
+var commands = map[string]func(args []string) error{
+	"serve":              noArgs(serve),
+	"load-config":        noArgs(func() error { return nodeconfig.Default().Load() }),
+	"health":             health,
+	"prepare-kubernetes": prepareKubernetes,
+	"vxlan-rule":         vxlanRule,
+	"containerd-hosts":   noArgs(func() error { return containerdHosts(os.Stdout, "/run/chalkos") }),
+	"registry-credentials": noArgs(func() error {
+		return registryCredentials("/run/chalkos", os.Getenv("CREDENTIALS_DIRECTORY"), k8s.CredentialProviderDir)
+	}),
+	"credential-provider": noArgs(func() error {
+		return credprovider.Provide(k8s.CredentialProviderDir, os.Stdin, os.Stdout)
+	}),
+}
+
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("chalkd: ")
-	if len(os.Args) < 2 || !validArgs(os.Args[1], os.Args[2:]) {
+	var run func([]string) error
+	if len(os.Args) >= 2 {
+		run = commands[os.Args[1]]
+	}
+	if run == nil {
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
-	var err error
-	switch os.Args[1] {
-	case "serve":
-		err = serve()
-	case "load-config":
-		err = nodeconfig.Default().Load()
-	case "health":
-		err = health(os.Args[2:])
-	case "prepare-kubernetes":
-		var firewall knode.Firewall
-		if len(os.Args) == 3 {
-			firewall = knode.VXLANRule(vxlan.Default())
-		}
-		err = knode.Prepare(knode.DefaultPaths(), time.Now(), knode.WaitForAddresses, firewall)
-	case "vxlan-rule":
-		var file string
-		if len(os.Args) == 3 {
-			file = os.Args[2]
-		}
-		err = vxlan.Default().Apply(file)
-	case "containerd-hosts":
-		err = containerdHosts(os.Stdout, "/run/chalkos")
-	case "registry-credentials":
-		err = registryCredentials("/run/chalkos", os.Getenv("CREDENTIALS_DIRECTORY"), k8s.CredentialProviderDir)
-	case "credential-provider":
-		err = credprovider.Provide(k8s.CredentialProviderDir, os.Stdin, os.Stdout)
-	default:
+	err := run(os.Args[2:])
+	if _, ok := errors.AsType[usageError](err); ok {
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
@@ -108,18 +104,48 @@ func main() {
 	}
 }
 
-// validArgs reports whether a command has the arguments it takes.
-func validArgs(command string, args []string) bool {
-	switch command {
-	case "prepare-kubernetes":
-		return len(args) == 0 || len(args) == 1 && args[0] == "--vxlan-rule"
-	case "vxlan-rule":
-		return len(args) <= 1
-	case "health":
-		_, err := parseHealthArgs(args)
-		return err == nil
+// usageError is what a command fails with when it does not take its arguments.
+type usageError struct{ error }
+
+// noArgs is a command that takes no arguments.
+func noArgs(run func() error) func([]string) error {
+	return func(args []string) error {
+		if len(args) > 0 {
+			return usageError{fmt.Errorf("takes no argument %q", args[0])}
+		}
+		return run()
 	}
-	return len(args) == 0
+}
+
+// prepareKubernetes prepares the node for Kubernetes, and with --vxlan-rule then fills the
+// firewall's VXLAN table.
+func prepareKubernetes(args []string) error {
+	var firewall knode.Firewall
+	switch {
+	case len(args) == 1 && args[0] == "--vxlan-rule":
+		firewall = knode.VXLANRule(vxlan.Default())
+	case len(args) > 0:
+		return usageError{fmt.Errorf("prepare-kubernetes takes --vxlan-rule alone, not %q", args)}
+	}
+	return knode.Prepare(knode.DefaultPaths(), time.Now(), knode.WaitForAddresses, firewall)
+}
+
+// vxlanRule fills the firewall's VXLAN table from the file given, or empties it without one.
+func vxlanRule(args []string) error {
+	if len(args) > 1 {
+		return usageError{fmt.Errorf("vxlan-rule takes one file, not %q", args)}
+	}
+	var file string
+	if len(args) == 1 {
+		file = args[0]
+	}
+	return vxlan.Default().Apply(file)
+}
+
+// hasKubernetes reports whether the image carries Kubernetes, whose facts it then holds.
+func hasKubernetes() bool {
+	_, err := os.Stat(knode.DefaultPaths().Image)
+	return err == nil
 }
 
 // healthArgs are what chalkd health takes: how long to wait for the boot to become healthy, or
@@ -165,10 +191,10 @@ func parseHealthArgs(args []string) (healthArgs, error) {
 func health(args []string) error {
 	a, err := parseHealthArgs(args)
 	if err != nil {
-		return err
+		return usageError{err}
 	}
 	var k *chalkd.Kubernetes
-	if _, err := os.Stat(knode.DefaultPaths().Image); err == nil {
+	if hasKubernetes() {
 		k = chalkd.NewKubernetes(chalkd.KubernetesOptions{})
 	}
 	h := chalkd.DefaultHealth(k)
@@ -367,7 +393,7 @@ func serve() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
 	// Images with Kubernetes carry its facts; the cluster comes from the node's config.
-	if _, err := os.Stat(knode.DefaultPaths().Image); err == nil && creds.mode == nodev1.Mode_MODE_NORMAL {
+	if hasKubernetes() && creds.mode == nodev1.Mode_MODE_NORMAL {
 		srv.Kubernetes = chalkd.NewKubernetes(chalkd.KubernetesOptions{})
 		srv.Kubernetes.Start()
 		// On every way out the node releases the VIPs, which must not stay on a node whose chalkd
