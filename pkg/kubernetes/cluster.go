@@ -210,7 +210,10 @@ func (c Cluster) validateFlannel(families []nodeip.Family) error {
 // known mode, and the endpoint's address among them when the endpoint names one.
 func (c Cluster) validateVIP(families []nodeip.Family) error {
 	for _, ip := range c.VIP.Addresses {
-		if !ip.IsValid() || ip.Zone() != "" {
+		if !ip.IsValid() {
+			return errors.New("vip: an address is empty")
+		}
+		if ip.Zone() != "" {
 			return fmt.Errorf("vip: %q is not an address", ip)
 		}
 	}

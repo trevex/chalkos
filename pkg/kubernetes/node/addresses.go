@@ -114,8 +114,8 @@ func ReadPin(p Paths) ([]netip.Addr, error) {
 	return pin, err
 }
 
-// readAddresses reads a file of addresses, one per line, as nodeIPFile writes it. A file without
-// an address is refused.
+// readAddresses reads a file of addresses, one per line, as nodeIPFile writes it. IPv4-mapped
+// addresses are returned in their IPv4 form. A file without an address is refused.
 func readAddresses(path string) ([]netip.Addr, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -127,7 +127,7 @@ func readAddresses(path string) ([]netip.Addr, error) {
 		if err != nil || ip.Zone() != "" {
 			return nil, fmt.Errorf("%s holds %q, which is not an address", path, line)
 		}
-		ips = append(ips, ip)
+		ips = append(ips, ip.Unmap())
 	}
 	if len(ips) == 0 {
 		return nil, fmt.Errorf("%s holds no address", path)

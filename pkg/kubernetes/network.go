@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -40,7 +41,10 @@ func (c Cluster) validateRanges(f nodeip.Family) error {
 		return fmt.Errorf("nodeCIDRMaskSizes.%s %d must be longer than the prefix of podCIDRs.%s %s, by at most 16 bits", f, mask, f, pod)
 	}
 	dns := c.DNSIPs.Of(f)
-	if !dns.IsValid() || dns.Zone() != "" || !service.Contains(dns) {
+	if !dns.IsValid() {
+		return fmt.Errorf("dnsIPs.%s is not set", f)
+	}
+	if dns.Zone() != "" || !service.Contains(dns) {
 		return fmt.Errorf("dnsIPs.%s %q is not an address in serviceCIDRs.%s %s", f, dns, f, service)
 	}
 	if dns == service.Addr() || dns == service.Addr().Next() {
@@ -74,6 +78,9 @@ func (c Cluster) validateVXLANSources(families []nodeip.Family) error {
 	sources := c.VXLANSources()
 	have := map[nodeip.Family]bool{}
 	for _, p := range sources {
+		if !p.IsValid() {
+			return errors.New("vxlanSourceSubnets: a range is empty")
+		}
 		f := nodeip.FamilyOf(p.Addr())
 		if err := checkRange("vxlanSourceSubnets", f, p); err != nil {
 			return err
@@ -151,6 +158,7 @@ func (c Cluster) ServiceCIDRList() []netip.Prefix {
 	return c.rangeList(c.ServiceCIDRs)
 }
 
+// rangeList returns the ranges of the cluster's families, the primary family's first.
 func (c Cluster) rangeList(ranges ByFamily[netip.Prefix]) []netip.Prefix {
 	var out []netip.Prefix
 	for _, f := range c.Families() {

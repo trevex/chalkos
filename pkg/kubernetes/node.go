@@ -46,8 +46,8 @@ func ReadNode(path string) (Node, error) {
 	return n, nil
 }
 
-// ParseNode reads the node from its identity. Addresses are kept in their IPv4 form when they
-// are IPv4-mapped.
+// ParseNode reads the node from its identity. IPv4-mapped addresses are stored in their IPv4
+// form.
 func ParseNode(data []byte) (Node, error) {
 	var id identity.Identity
 	if err := json.Unmarshal(data, &id); err != nil {
@@ -102,9 +102,7 @@ func (c Cluster) NodeIPSelector(n Node) (nodeip.Selector, error) {
 	}
 	// flannel uses the interface of the primary family's address for every family.
 	s := nodeip.Selector{Families: families, Filter: filter, SameInterface: c.Flannel != nil && len(families) > 1}
-	for _, ip := range n.FixedIPs {
-		s.Fixed = append(s.Fixed, ip.Unmap())
-	}
+	s.Fixed = slices.Clone(n.FixedIPs)
 	if err := onePerFamily("nodeIPs", s.Fixed, families); err != nil {
 		return nodeip.Selector{}, err
 	}

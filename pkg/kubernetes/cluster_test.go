@@ -134,7 +134,7 @@ func TestClusterRanges(t *testing.T) {
 		}, "nodeCIDRMaskSizes.ipv6 129 is longer than an ipv6 address"},
 		{"ipv6", func(c *Cluster) { c.NodeCIDRMaskSizes.IPv6 = 73 }, "nodeCIDRMaskSizes.ipv6 73 must be longer than the prefix of podCIDRs.ipv6 fd00:10:244::/56, by at most 16 bits"},
 		{"ipv6", func(c *Cluster) { c.NodeCIDRMaskSizes.IPv6 = 0 }, "nodeCIDRMaskSizes.ipv6 0 must be longer"},
-		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = netip.Addr{} }, `dnsIPs.ipv4 "invalid IP" is not an address in serviceCIDRs.ipv4 10.96.0.0/12`},
+		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = netip.Addr{} }, "dnsIPs.ipv4 is not set"},
 		{"ipv6", func(c *Cluster) { c.DNSIPs.IPv6 = netip.MustParseAddr("fd00:10:96::a%eth0") }, `dnsIPs.ipv6 "fd00:10:96::a%eth0" is not an address in serviceCIDRs.ipv6 fd00:10:96::/112`},
 		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = netip.MustParseAddr("10.112.0.10") }, `dnsIPs.ipv4 "10.112.0.10" is not an address in serviceCIDRs.ipv4 10.96.0.0/12`},
 		{"ipv6", func(c *Cluster) { c.DNSIPs.IPv6 = netip.MustParseAddr("10.96.0.10") }, `dnsIPs.ipv6 "10.96.0.10" is not an address in serviceCIDRs.ipv6 fd00:10:96::/112`},
@@ -349,6 +349,11 @@ func TestClusterFamiliesAndVIP(t *testing.T) {
 	named.VIP = VIP{Addresses: mustAddrs("10.0.0.10"), Mode: "l2"}
 	if err := named.Validate(); err != nil {
 		t.Errorf("a host name endpoint with a VIP: %v", err)
+	}
+	empty := valid
+	empty.VIP = VIP{Addresses: []netip.Addr{{}}, Mode: "l2"}
+	if err := empty.Validate(); err == nil || err.Error() != "vip: an address is empty" {
+		t.Errorf("an empty VIP: %v", err)
 	}
 	for name, edit := range map[string]func(c *Cluster){
 		"unknown family":         func(c *Cluster) { c.IPFamilies = []nodeip.Family{"ipv5"} },
@@ -585,6 +590,11 @@ func TestVXLANSources(t *testing.T) {
 		if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: Validate() = %v, want %q", subnets, err, want)
 		}
+	}
+	empty := c
+	empty.Flannel = &Flannel{VXLANSourceSubnets: []netip.Prefix{{}, netip.MustParsePrefix("fd00::/48")}}
+	if err := empty.Validate(); err == nil || err.Error() != "vxlanSourceSubnets: a range is empty" {
+		t.Errorf("an empty range: %v", err)
 	}
 	ipv4 := c
 	ipv4.IPFamilies = []nodeip.Family{"ipv4"}

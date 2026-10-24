@@ -667,6 +667,11 @@ func TestReadNodeIPs(t *testing.T) {
 			t.Errorf("ReadNodeIPs(%q): %v", content, err)
 		}
 	}
+	// An IPv4-mapped address reads as the IPv4 address, as the certificates and flags name it.
+	write(t, p.NodeIP(), "::ffff:10.0.0.1\n")
+	if ips, err := ReadNodeIPs(p); err != nil || !slices.Equal(ips, []netip.Addr{netip.MustParseAddr("10.0.0.1")}) {
+		t.Errorf("ReadNodeIPs() = %v, %v, want 10.0.0.1", ips, err)
+	}
 }
 
 // kubeletKey re-encodes a PKCS #8 key as the SEC 1 key the kubelet writes when it renews.
