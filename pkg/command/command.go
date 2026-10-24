@@ -16,6 +16,9 @@ import (
 // MaxOutput is the most a program may print on standard output.
 const MaxOutput = 1 << 20
 
+// InStore tells whether path is in the Nix store, where an image's own programs are.
+func InStore(path string) bool { return strings.HasPrefix(path, "/nix/store/") }
+
 // maxStderr bounds what an Error keeps of a program's standard error.
 const maxStderr = 4096
 

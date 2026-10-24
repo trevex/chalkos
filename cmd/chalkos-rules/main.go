@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/command"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
@@ -69,8 +70,8 @@ func check(image string, out io.Writer) error {
 	}
 	var errs []error
 	for _, name := range sortedNames(defs) {
-		if err := checkFact(name, defs[name]); err != nil {
-			errs = append(errs, err)
+		if err := defs[name].Check(); err != nil {
+			errs = append(errs, fmt.Errorf("fact %s: %w", name, err))
 		}
 	}
 	set, err := rules.Compile(s)
@@ -136,27 +137,6 @@ func checkUnit(image, unit string) error {
 	return nil
 }
 
-// checkFact refuses a fact that is neither a file nor a program of the image's store with
-// arguments, that takes inputs a file does not, or keeps or hashes fields a command does not.
-func checkFact(name string, d facts.Definition) error {
-	switch {
-	case (d.File == "") == (d.Command == ""):
-		return fmt.Errorf("fact %s: it has either a file or a command", name)
-	case d.Command != "" && (len(d.Fields) > 0 || d.HashOthers):
-		return fmt.Errorf("fact %s: only a file keeps fields or hashes them", name)
-	case d.File != "" && len(d.Inputs) > 0:
-		return fmt.Errorf("fact %s: only a command takes inputs", name)
-	case d.Command != "" && !strings.HasPrefix(d.Command, "/nix/store/"):
-		return fmt.Errorf("fact %s: the command %q is no program of the image's store", name, d.Command)
-	}
-	for _, in := range d.Inputs {
-		if in != facts.FallbackSecret {
-			return fmt.Errorf("fact %s: there is no input %q; the inputs are %s", name, in, facts.FallbackSecret)
-		}
-	}
-	return nil
-}
-
 func declared[V any](m map[string]V) string {
 	names := sortedNames(m)
 	if len(names) == 0 {
@@ -186,7 +166,7 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effects
 	for _, name := range sortedNames(defs) {
 		d := defs[name]
 		for _, p := range []struct{ what, command string }{{"renderer", d.Render}, {"check", d.Check}} {
-			if p.command != "" && !strings.HasPrefix(p.command, "/nix/store/") {
+			if p.command != "" && !command.InStore(p.command) {
 				errs = append(errs, fmt.Errorf("output %s: the %s %q is no program of the image's store", name, p.what, p.command))
 			}
 		}

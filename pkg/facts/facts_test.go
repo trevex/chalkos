@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -64,6 +65,30 @@ func TestRead(t *testing.T) {
 	}
 	if defs, err := Read(filepath.Join(dir, "missing.json")); err != nil || len(defs) != 0 {
 		t.Errorf("a missing file: %v, %v; want no facts", defs, err)
+	}
+}
+
+// Check accepts a file with fields and a program of the store with the fallback secret, and refuses
+// any other shape.
+func TestDefinitionCheck(t *testing.T) {
+	const lock = "/nix/store/x/bin/lock"
+	for name, tc := range map[string]struct {
+		def  Definition
+		want string
+	}{
+		"a file":                {Definition{File: "/state/x.json", Fields: []string{"kind"}, HashOthers: true}, ""},
+		"a command":             {Definition{Command: lock, Inputs: []string{FallbackSecret}}, ""},
+		"neither":               {Definition{}, "it has either a file or a command"},
+		"both":                  {Definition{File: "/state/x.json", Command: lock}, "it has either a file or a command"},
+		"a command with fields": {Definition{Command: lock, Fields: []string{"kind"}}, "only a file keeps fields or hashes them"},
+		"a file with inputs":    {Definition{File: "/state/x.json", Inputs: []string{FallbackSecret}}, "only a command takes inputs"},
+		"outside the store":     {Definition{Command: "/usr/bin/lock"}, `the command "/usr/bin/lock" is no program of the image's store`},
+		"an unknown input":      {Definition{Command: lock, Inputs: []string{"token"}}, `there is no input "token"; the inputs are fallbackSecret`},
+	} {
+		err := tc.def.Check()
+		if got := fmt.Sprint(err); (tc.want == "" && err != nil) || (tc.want != "" && got != tc.want) {
+			t.Errorf("%s: Check = %v, want %q", name, err, tc.want)
+		}
 	}
 }
 

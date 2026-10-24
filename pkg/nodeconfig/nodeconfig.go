@@ -23,6 +23,7 @@ import (
 	"syscall"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/command"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -345,7 +346,7 @@ func (e Effect) Check() error {
 		switch {
 		case len(argv) == 0:
 			return errors.New("the command to run is empty")
-		case strings.Contains(argv[0], "/") && !strings.HasPrefix(argv[0], "/nix/store/"):
+		case strings.Contains(argv[0], "/") && !command.InStore(argv[0]):
 			return fmt.Errorf("the command %q names %s, which is neither a program of the image's store nor a bare program name", e.Run, argv[0])
 		}
 	}
