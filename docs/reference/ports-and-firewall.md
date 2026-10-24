@@ -48,16 +48,17 @@ explains why. The rule has three parts:
 | Table `inet chalkos-vxlan`, chain `clear` | Runs after the firewall and clears the mark, so no later rule sees it. |
 
 With source ranges set, a `forward` chain in the same table also drops UDP 8472 that pods send
-through the node to those ranges. The chain takes the pod range of each family in `ipFamilies`
-from the node's `Cluster` document and the source ranges from its `Flannel` document on every
-run, and skips ranges of a family the image does not use. While those ranges are unknown,
-because the node's config holds no `Cluster` document or chalkcfg cannot read it or the
-`Flannel` document, or when they are not valid ranges, the chain drops all UDP 8472 the node
-forwards.
+through the node to those ranges. On every run, the chain takes the pod range of each family in
+`ipFamilies` and the source ranges from `/run/chalkos/kubernetes/cluster.json`, which chalkd
+builds from the node's `Cluster` and `Flannel` documents. While those ranges are unknown, because
+the node's config holds no `Cluster` document or the file cannot be read, or when a family has no
+pod range, the chain drops all UDP 8472 the node forwards.
 
-`chalkos-vxlan-rule` fills the table from `/run/chalkos/kubernetes/vxlan`, which chalkd writes
-once it picked the node's addresses at boot. Without that file, or with one it cannot parse, the
-table holds no marking rule and the node refuses all VXLAN.
+`chalkd vxlan-rule` empties the table's `input` chain before chalkd picks the node's addresses at
+boot. `chalkd prepare-kubernetes --vxlan-rule` then fills it from `/run/chalkos/kubernetes/vxlan`,
+which it writes once it picked them. Without that file, or with one it cannot parse, the table
+holds no marking rule and the node refuses all VXLAN. When nft refuses the table, the node
+refuses all VXLAN and drops all UDP 8472 it forwards; when nft refuses that too, the table goes.
 
 ## Listeners the firewall keeps closed
 
@@ -148,6 +149,6 @@ control plane that holds it and announces it to the neighbours with ARP or IPv6 
 advertisements.
 
 Sources: the firewall rules of `modules/node/chalkd.nix`, `modules/node/kubernetes`,
-`nix/controlplane-ports.nix` and `nix/vxlan-rule.nix`, and the listeners of
+`nix/controlplane-ports.nix` and `pkg/kubernetes/vxlan`, and the listeners of
 `cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
 `modules/node/kubernetes`.

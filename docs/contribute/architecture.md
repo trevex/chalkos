@@ -64,7 +64,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `cmd/chalklab` | The same for `chalklab.NewCommand()`. |
 | `cmd/chalkbuild` | The same for `chalkbuild.NewCommand()`. |
 | `cmd/chalkcfg` | Runs `chalkcfg.NewCommand()` on a node. |
-| `cmd/chalkd` | Dispatches the four commands the node's units run: `serve` (chalkd.service), `load-config` (chalkos-config.service), `prepare-kubernetes` (chalkos-kubernetes.service) and `health` (chalkos-health.service), and loads the credentials `serve` starts with. |
+| `cmd/chalkd` | Dispatches the commands the node's units run, such as `serve` (chalkd.service), `load-config` (chalkos-config.service), `vxlan-rule` and `prepare-kubernetes` (chalkos-kubernetes.service) and `health` (chalkos-health.service), and loads the credentials `serve` starts with. |
 | `cmd/chalkos-networkd-schema` | Writes the spec schemas of the networkd kinds from systemd's gperf tables, for the image build. |
 | `cmd/chalkos-render` | Renders the outputs of the `lib.chalkos.render.template` and `.documents` renderers and the built-in output `networkd` on a node, in an output's sandbox. |
 | `cmd/chalkos-rules` | Checks an image when it is built: every rule compiles within the cost limit and reads facts the image declares, the effects act on units and outputs the image has, and every output renders its examples and passes its check. |
@@ -102,6 +102,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `kubernetes/nodeip` | Picks the node's address of each family. |
 | `kubernetes/pki` | The Kubernetes certificates: the share, the control plane's leaves, admin kubeconfigs. |
 | `kubernetes/vip` | The etcd election of the control plane that holds the VIPs; adds a VIP to an interface and announces it. |
+| `kubernetes/vxlan` | The nftables table `chalkos-vxlan`: marks VXLAN to the node's addresses for the firewall and drops pods' VXLAN to the source ranges. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the lab's supervisor, for chalklab and the end-to-end tests. |
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
 | `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the granted units, and renders the outputs at boot, networkd's units and chrony's servers among them. |
@@ -275,8 +276,8 @@ The layout follows these rules, so each change has one place to go:
   arguments of `mkImages`. Everything about a cluster or a node is a config kind, not an option.
 - Go code reads a node's config documents and the image's files alone.
 - `nix/` holds packages and tooling: apps, checks, the development shell, the docs build and
-  test fixtures. The scripts the node modules run, such as the VXLAN rule, are packages there;
-  the modules decide where and with which arguments an image runs them.
+  test fixtures. The scripts the node modules run, such as the control plane's ports, are
+  packages there; the modules decide where and with which arguments an image runs them.
 - `cmd/` holds the mains, which wire packages up; logic worth testing lives in `pkg/`.
 
 [Development setup](development.md) lists the commands of a development loop and

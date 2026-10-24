@@ -55,9 +55,10 @@ run them in isolation:
   mount, LUKS, the TPM and the firmware's variables with directories and fakes. They stop an
   install or upgrade before each change it makes and check that the disk still boots, so they
   cover interruptions that a VM test could reach only one at a time.
-- The `vxlan-rule` check loads a worker's firewall as NixOS
-  renders it in a network namespace, with a peer and a pod in namespaces of their own, and sends UDP
-  to check what the VXLAN rule accepts.
+- The `vxlan-rule` check runs `chalkd vxlan-rule` as a worker's unit does, with the worker's
+  firewall as NixOS renders it, in a network namespace, with a peer and a pod in namespaces of
+  their own, and sends UDP to check what the VXLAN rule accepts. The unit tests of
+  `pkg/kubernetes/vxlan` cover what the rule makes of its files.
 
 Prefer this level for anything about partitions, firewall rules or interfaces.
 
@@ -152,7 +153,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, and the build and end-to-end checks of what the module does |
 | `examples/homelab` | `example-homelab` |
 | Kernel modules, closure, image size | `kernel-modules`, `image-size`, `bootspec` |
-| The firewall or VXLAN rule | `vxlan-rule`, `e2e-kubernetes` |
+| The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |
 | `templates/lab` | `template-lab` |
 | `.github/workflows` | `workflows` |
 
