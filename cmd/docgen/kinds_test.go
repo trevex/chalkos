@@ -48,7 +48,7 @@ func TestWriteKinds(t *testing.T) {
 		"| `spec.type` | one of `controlplane`, `worker` or null | `null` | What the node is in Kubernetes. |\n",
 		"### Volume { #volume }\n\nA partition for the node's data.\n\n`apiVersion: storage.chalkos.dev/v1alpha1`\n\nA node's config may hold several, each with a name of its own.\n\n| Field |",
 		// An object with a description keeps its row; one that only groups its fields has none.
-		"| `spec.disk` | object | — | The disk the volume is on. |\n| `spec.disk.path` | string | — | Path below /dev. |\n| `spec.encryption.mode` | one of `tpm2`, `none` | `\"tpm2\"` | Encryption of the volume. |\n| `spec.extra` |",
+		"| `spec.disk` | object | — | The disk the volume is on. |\n| `spec.disk.path` | string | — | Path below /dev, as &lt;path>. |\n| `spec.encryption.mode` | one of `tpm2`, `none` | `\"tpm2\"` | Encryption of the volume. |\n| `spec.extra` |",
 		"| `spec.labels` | map of string | `{}` | Labels \\| with a pipe. |\n",
 		"| `spec.password` | secret reference or null | `null` |  |\n",
 		"| `spec.extra` | object, any fields | — | Any fields, as `a|b`. |\n| `spec.labels` |",

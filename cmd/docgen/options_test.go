@@ -171,6 +171,9 @@ func TestTableCell(t *testing.T) {
 		"`(alpha|beta)` or a | b": "`(alpha|beta)` or a \\| b",
 		"``a ` | b`` |":           "``a ` | b`` \\|",
 		"unclosed ` | pipe":       "unclosed ` \\| pipe",
+		// A placeholder outside a code span would be taken for HTML; one inside shows as it is.
+		"below <path>/v2, as `<path>`": "below &lt;path>/v2, as `<path>`",
+		"a < b, </p>":                  "a < b, &lt;/p>",
 	} {
 		if got := tableCell(in); got != want {
 			t.Errorf("tableCell(%q) = %q, want %q", in, got, want)

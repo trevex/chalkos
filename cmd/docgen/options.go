@@ -404,8 +404,9 @@ func closing(t string) int {
 	return -1
 }
 
-// tableCell escapes the pipes of a table cell's text outside its code spans. The site's tables
-// leave a pipe within a code span to the span, where an escape would show.
+// tableCell escapes the pipes of a table cell's text outside its code spans, and what Markdown
+// would take for an HTML tag there, as <path>, as prose does. The site's tables leave a pipe
+// within a code span to the span, where an escape would show.
 func tableCell(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); {
@@ -424,9 +425,12 @@ func tableCell(s string) string {
 			i += n
 			continue
 		}
-		if s[i] == '|' {
+		switch {
+		case s[i] == '|':
 			b.WriteString(`\|`)
-		} else {
+		case tag.MatchString(s[i:min(i+2, len(s))]):
+			b.WriteString("&lt;")
+		default:
 			b.WriteByte(s[i])
 		}
 		i++

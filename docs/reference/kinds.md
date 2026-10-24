@@ -291,7 +291,7 @@ A node's config may hold several, each with a name of its own. It has a [change 
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.endpoints` | list of string | required | URLs of the mirror's endpoints, which chalkd and containerd try in order before the registry itself. A path is where the endpoint serves the registry API, below <path>/v2 as containerd takes it. chalkd authenticates to an endpoint with the Registry of the endpoint's host, and an http:// endpoint needs that Registry to set insecure. |
+| `spec.endpoints` | list of string | required | URLs of the mirror's endpoints, which chalkd and containerd try in order before the registry itself. A path is where the endpoint serves the registry API, below &lt;path>/v2 as containerd takes it. chalkd authenticates to an endpoint with the Registry of the endpoint's host, and an http:// endpoint needs that Registry to set insecure. |
 | `spec.registry` | string | required | Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. |
 
 ### Registry { #registry }

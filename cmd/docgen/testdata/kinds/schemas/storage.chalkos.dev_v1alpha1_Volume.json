@@ -63,7 +63,7 @@
     "diskRef": {
       "type": "object",
       "additionalProperties": false,
-      "properties": { "path": { "type": "string", "description": "Path below /dev." } }
+      "properties": { "path": { "type": "string", "description": "Path below /dev, as <path>." } }
     }
   },
   "x-chalkos-kind": { "group": "storage.chalkos.dev", "version": "v1alpha1", "kind": "Volume", "multiple": true }
