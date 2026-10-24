@@ -367,7 +367,7 @@ let
   '';
 in
 {
-  imports = [ ./builtin.nix ];
+  imports = [ ./builtin ];
 
   options.chalkos.kinds = lib.mkOption {
     type = lib.types.attrsOf (lib.types.submodule kindModule);
