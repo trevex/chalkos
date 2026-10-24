@@ -11,9 +11,9 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 )
 
-// An Effect is the rule of an effect, as the image's effects.json declares it: a CEL expression
-// that is true when a delivery takes the effect, for a trigger that no output renders.
-type Effect struct {
+// An EffectRule is the rule of an effect, as the image's effects.json declares it: a CEL
+// expression that is true when a delivery takes the effect, for a trigger that no output renders.
+type EffectRule struct {
 	// Name is the effect's.
 	Name, When string
 	// Facts are the names of the facts the rule reads, as facts.<name> after the delivery or
@@ -24,15 +24,15 @@ type Effect struct {
 }
 
 // Where names the effect the rule decides.
-func (e *Effect) Where() string {
+func (e *EffectRule) Where() string {
 	return "effect " + e.Name
 }
 
 // CompileEffect compiles when, the rule of the effect name. It sees config, oldConfig and node
 // as change rules do, and each fact it names as facts.<name> after the delivery and as
 // oldFacts.<name> before it.
-func CompileEffect(name, when string) (*Effect, error) {
-	e := &Effect{Name: name, When: when}
+func CompileEffect(name, when string) (*EffectRule, error) {
+	e := &EffectRule{Name: name, When: when}
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("%s: rule %q: %s", e.Where(), when, fmt.Sprintf(format, args...))
 	}
@@ -81,7 +81,7 @@ type EffectInput struct {
 // whose rule cannot be evaluated, or reads a fact that cannot be loaded, is due too, so a unit
 // restarts once more than it needed to rather than run on config it has not read; errs say why,
 // one for each such effect.
-func Due(effects []*Effect, in EffectInput) (due []*Effect, errs []error) {
+func Due(effects []*EffectRule, in EffectInput) (due []*EffectRule, errs []error) {
 	cfg, oldCfg := ConfigOf(in.Documents), configMap(objectsOf(in.Old, !in.OldHashed))
 	node := nodeOf(in.Node)
 	for _, e := range effects {
@@ -97,7 +97,7 @@ func Due(effects []*Effect, in EffectInput) (due []*Effect, errs []error) {
 	return due, errs
 }
 
-func (e *Effect) evaluate(cfg, oldCfg, node map[string]any, facts, oldFacts Facts) (bool, error) {
+func (e *EffectRule) evaluate(cfg, oldCfg, node map[string]any, facts, oldFacts Facts) (bool, error) {
 	vars := map[string]any{"config": cfg, "oldConfig": oldCfg, "node": node}
 	var factErr error
 	bindFacts(vars, "facts", e.Facts, facts, &factErr)

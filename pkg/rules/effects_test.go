@@ -9,7 +9,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 )
 
-func effect(t *testing.T, when string) *Effect {
+func effect(t *testing.T, when string) *EffectRule {
 	t.Helper()
 	e, err := CompileEffect("demo", when)
 	if err != nil {
@@ -19,7 +19,7 @@ func effect(t *testing.T, when string) *Effect {
 }
 
 // dueUnits evaluates the effects and names the unit and action of each that is due.
-func dueUnits(effects []*Effect, in EffectInput) ([]string, []error) {
+func dueUnits(effects []*EffectRule, in EffectInput) ([]string, []error) {
 	due, errs := Due(effects, in)
 	var out []string
 	for _, e := range due {
@@ -58,7 +58,7 @@ func TestEffectVariables(t *testing.T) {
 				Facts:    &fakeFacts{values: map[string]any{"share": map[string]any{"kind": "worker"}}},
 				OldFacts: &fakeFacts{},
 			}
-			got, errs := dueUnits([]*Effect{effect(t, tc.when)}, in)
+			got, errs := dueUnits([]*EffectRule{effect(t, tc.when)}, in)
 			if len(errs) > 0 || (len(got) == 1) != tc.due {
 				t.Errorf("due = %v, %v; want %v", got, errs, tc.due)
 			}
@@ -70,7 +70,7 @@ func TestEffectVariables(t *testing.T) {
 func TestEffectNodeName(t *testing.T) {
 	e := effect(t, `node.name == "n1"`)
 	for node, due := range map[string]bool{"n1": true, "n2": false, "": false} {
-		if got, errs := dueUnits([]*Effect{e}, EffectInput{Node: node}); len(errs) > 0 || (len(got) == 1) != due {
+		if got, errs := dueUnits([]*EffectRule{e}, EffectInput{Node: node}); len(errs) > 0 || (len(got) == 1) != due {
 			t.Errorf("node %q: due = %v, %v; want %v", node, got, errs, due)
 		}
 	}
@@ -84,13 +84,13 @@ func TestEffectLoadsFactsLazily(t *testing.T) {
 		t.Errorf("facts = %v", e.Facts)
 	}
 	after, before := &fakeFacts{}, &fakeFacts{}
-	if got, errs := dueUnits([]*Effect{e}, EffectInput{Node: "n1", Facts: after, OldFacts: before}); len(errs) > 0 || len(got) != 1 {
+	if got, errs := dueUnits([]*EffectRule{e}, EffectInput{Node: "n1", Facts: after, OldFacts: before}); len(errs) > 0 || len(got) != 1 {
 		t.Errorf("due = %v, %v", got, errs)
 	}
 	if after.loads["share"] != 0 || before.loads["share"] != 0 {
 		t.Errorf("loaded share %d times after and %d before, want neither", after.loads["share"], before.loads["share"])
 	}
-	if got, errs := dueUnits([]*Effect{e}, EffectInput{Facts: after, OldFacts: before}); len(errs) > 0 || len(got) != 0 {
+	if got, errs := dueUnits([]*EffectRule{e}, EffectInput{Facts: after, OldFacts: before}); len(errs) > 0 || len(got) != 0 {
 		t.Errorf("due = %v, %v", got, errs)
 	}
 	if after.loads["share"] != 1 || before.loads["share"] != 1 {
@@ -101,7 +101,7 @@ func TestEffectLoadsFactsLazily(t *testing.T) {
 // An effect that cannot be evaluated is due, and says why without the values it read: a unit
 // restarts once more than it needed to rather than run on config it has not read.
 func TestEffectThatFailsIsDue(t *testing.T) {
-	effects := []*Effect{
+	effects := []*EffectRule{
 		effect(t, `config["t.example.org/v1"].Demo.a.spec.missing == "s3cret"`),
 		effect(t, `facts.share == null`),
 		effect(t, `config["t.example.org/v1"].Demo.a.spec.name`),
@@ -165,12 +165,12 @@ func TestEffectOldHashed(t *testing.T) {
 		"as delivered": {Documents: []config.Document{secret}, Old: []config.Document{secret}},
 		"hashed":       {Documents: []config.Document{secret}, Old: config.Redact([]config.Document{secret}), OldHashed: true},
 	} {
-		if got, errs := dueUnits([]*Effect{e}, in); len(errs) > 0 || len(got) != 1 {
+		if got, errs := dueUnits([]*EffectRule{e}, in); len(errs) > 0 || len(got) != 1 {
 			t.Errorf("%s: due = %v, %v; want the same Secret", name, got, errs)
 		}
 	}
 	in := EffectInput{Documents: []config.Document{secret}, Old: config.Redact([]config.Document{secret})}
-	if got, errs := dueUnits([]*Effect{e}, in); len(errs) > 0 || len(got) != 0 {
+	if got, errs := dueUnits([]*EffectRule{e}, in); len(errs) > 0 || len(got) != 0 {
 		t.Errorf("hashed twice: due = %v, %v; want another Secret", got, errs)
 	}
 }

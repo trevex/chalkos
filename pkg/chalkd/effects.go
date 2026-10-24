@@ -23,7 +23,7 @@ import (
 // since one was last applied whole, as its baseline holds them.
 type pendingEffects struct {
 	defs  map[string]effects.Definition
-	rules []*rules.Effect
+	rules []*rules.EffectRule
 	// node is the node's name, which the rules read as node.name.
 	node      string
 	next, old []config.Document
