@@ -89,7 +89,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `config/withheld` | Names the kinds the node withholds from its services, Secret and Addon, without importing anything, so chalkcfg shares the list with chalkos-rules. |
 | `effects` | Reads the image's `services.json`, the units granted config kinds, and `effects.json`, what a delivery does to those units and to chalkd, and refuses an effect chalkd could not carry out. |
 | `facts` | Loads the facts change rules read: files, and commands of the image's store run in a sandbox. |
-| `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads, and the kinds of Kubernetes nodes. |
+| `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads. |
 | `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |
 | `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
 | `install` | Installs a node in place or from the installer, step by step and repeatable. |

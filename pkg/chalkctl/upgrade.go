@@ -19,8 +19,8 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -483,7 +483,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		if k := st.Kubernetes; k != nil {
 			n.kind, n.inCluster = k.Kind, inCluster(k)
 		}
-		probedCPs[name] = n.kind == identity.KindControlPlane
+		probedCPs[name] = n.kind == kubernetes.KindControlPlane
 		if img != nil && len(named) == 0 && info.Variant != img.Info.Variant() {
 			continue
 		}
@@ -530,13 +530,13 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			if err != nil {
 				return err
 			}
-			probedCPs[name] = st.Kubernetes.GetKind() == identity.KindControlPlane
+			probedCPs[name] = st.Kubernetes.GetKind() == kubernetes.KindControlPlane
 		}
 		kind, err := c.kind(name)
 		if err != nil {
 			return err
 		}
-		if probedCPs[name] || kind == identity.KindControlPlane {
+		if probedCPs[name] || kind == kubernetes.KindControlPlane {
 			r.controlPlanes = append(r.controlPlanes, name)
 		}
 	}
@@ -585,7 +585,7 @@ func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error)
 // split sorts the nodes to upgrade into the control planes and the others, each by name.
 func (r *upgradeRun) split() (controlPlanes, others []string) {
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
-		if r.nodes[name].kind == identity.KindControlPlane {
+		if r.nodes[name].kind == kubernetes.KindControlPlane {
 			controlPlanes = append(controlPlanes, name)
 		} else {
 			others = append(others, name)
@@ -668,12 +668,12 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		if failed {
 			r.say("%s: fell back from %s before; trying it again", n.name, image)
 		}
-		if n.kind == identity.KindControlPlane && !r.noReboot {
+		if n.kind == kubernetes.KindControlPlane && !r.noReboot {
 			if err := r.quorum(ctx, n.name); err != nil {
 				return err
 			}
 		}
-		if n.kind == identity.KindWorker && !r.noReboot {
+		if n.kind == kubernetes.KindWorker && !r.noReboot {
 			if err := r.drain(ctx, n); err != nil {
 				return err
 			}
@@ -688,7 +688,7 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		if r.noReboot {
 			return nil
 		}
-		if n.kind == identity.KindControlPlane {
+		if n.kind == kubernetes.KindControlPlane {
 			if err := r.drain(ctx, n); err != nil {
 				return err
 			}

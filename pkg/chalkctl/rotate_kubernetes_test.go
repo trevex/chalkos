@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -68,7 +68,7 @@ func TestRotateKubernetesCA(t *testing.T) {
 		if n.kubeletServing != ca || n.kubeletClient != ca {
 			t.Errorf("%s's kubelet has certificates of another CA", name)
 		}
-		if n.kind == identity.KindControlPlane && n.share.CA.Certificate != s.Kubernetes.CA.Certificate {
+		if n.kind == kubernetes.KindControlPlane && n.share.CA.Certificate != s.Kubernetes.CA.Certificate {
 			t.Errorf("%s does not issue with the new CA", name)
 		}
 	}

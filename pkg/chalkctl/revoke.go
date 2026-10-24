@@ -12,8 +12,8 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 )
 
 // revokeFlags are the flags of node revoke and node unrevoke.
@@ -96,7 +96,7 @@ func (a *app) controlPlanesRead(ctx context.Context, f revokeFlags, name string)
 	}
 	controlPlanes := []string{f.via}
 	if !c.partial {
-		if controlPlanes, err = c.nodesOf(identity.KindControlPlane, name); err != nil {
+		if controlPlanes, err = c.nodesOf(kubernetes.KindControlPlane, name); err != nil {
 			return err
 		}
 	}
@@ -181,7 +181,7 @@ func (a *app) keepsRevokedNodes(ctx context.Context, f revokeFlags) error {
 	if err != nil || c.partial {
 		return err
 	}
-	switch names, err := c.nodesOf(identity.KindControlPlane, ""); {
+	switch names, err := c.nodesOf(kubernetes.KindControlPlane, ""); {
 	case err != nil:
 		return err
 	case len(names) == 0:
@@ -330,7 +330,7 @@ func (n notInstalledYet) Unwrap() error { return n.error }
 // that does not answer as an installed node counts as not installed yet, so the cluster's first
 // nodes install while the others wait in maintenance mode or are off.
 func installNotRevoked(ctx context.Context, t *target) error {
-	controlPlanes, err := t.cluster.nodesOf(identity.KindControlPlane, t.name)
+	controlPlanes, err := t.cluster.nodesOf(kubernetes.KindControlPlane, t.name)
 	if err != nil {
 		return err
 	}
@@ -376,7 +376,7 @@ func everBootstrapped(k *nodev1.KubernetesStatus) bool {
 // notRevoked refuses to deliver the target what the secrets file issues it, which does, while a
 // control plane lists it as revoked or while no control plane says which nodes are.
 func notRevoked(ctx context.Context, t *target, does string) error {
-	controlPlanes, err := t.cluster.nodesOf(identity.KindControlPlane, "")
+	controlPlanes, err := t.cluster.nodesOf(kubernetes.KindControlPlane, "")
 	if err != nil {
 		return err
 	}

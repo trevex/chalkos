@@ -15,8 +15,8 @@ import (
 	"time"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -178,7 +178,7 @@ func TestValidateRefusesAKeyNoCredentialCanCarry(t *testing.T) {
 // node does, and names a node whose image directory holds no image.
 func TestValidateKubernetes(t *testing.T) {
 	ta := newTestApp(t)
-	path := writeNodes(t, ta.dir, []testNode{{"cp1", identity.KindControlPlane, "k8s"}, {"n1", "", "plain"}}, nil)
+	path := writeNodes(t, ta.dir, []testNode{{"cp1", kubernetes.KindControlPlane, "k8s"}, {"n1", "", "plain"}}, nil)
 	writeImageDir(t, filepath.Join(ta.dir, "images", "k8s-metal"), "k8s", "metal", testRootHash, true)
 	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
 	if err == nil || !strings.Contains(err.Error(), "the config of 1 node is invalid") ||
@@ -431,13 +431,13 @@ func TestSecretsOnlyFromTheFlag(t *testing.T) {
 // TestNodesOfTheInventory lists nodes by the type their Node documents give them.
 func TestNodesOfTheInventory(t *testing.T) {
 	c, err := loadInventory(context.Background(), writeNodes(t, t.TempDir(), []testNode{
-		{"cp3", identity.KindControlPlane, "k8s"}, {"cp1", identity.KindControlPlane, "k8s"},
-		{"w1", identity.KindWorker, "k8s"}, {"n1", "", "plain"},
+		{"cp3", kubernetes.KindControlPlane, "k8s"}, {"cp1", kubernetes.KindControlPlane, "k8s"},
+		{"w1", kubernetes.KindWorker, "k8s"}, {"n1", "", "plain"},
 	}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := c.nodesOf(identity.KindControlPlane, "cp3"); err != nil || !slices.Equal(got, []string{"cp1"}) {
+	if got, err := c.nodesOf(kubernetes.KindControlPlane, "cp3"); err != nil || !slices.Equal(got, []string{"cp1"}) {
 		t.Errorf("control planes but cp3 = %q, %v", got, err)
 	}
 	if got, err := c.nodesOf("", ""); err != nil || !slices.Equal(got, []string{"n1"}) {

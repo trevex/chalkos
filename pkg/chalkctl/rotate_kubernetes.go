@@ -11,7 +11,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -31,7 +31,7 @@ type expectation struct {
 // rotation of kind by, as the secrets file has them now.
 func expectations(s pki.Secrets, kind, nodeKind string) ([]expectation, error) {
 	k := s.Kubernetes
-	controlPlane := nodeKind == identity.KindControlPlane
+	controlPlane := nodeKind == kubernetes.KindControlPlane
 	var list []expectation
 	switch kind {
 	case pki.RotateKubernetesCA:
@@ -95,7 +95,7 @@ func applied(st *nodev1.StatusResponse, want []expectation) error {
 // on its new files with a healthy etcd before the next one restarts; workers follow for the
 // Kubernetes CAs.
 func (r *rotation) applyKubernetes(ctx context.Context, kind, phase string) error {
-	workers := r.nodesOf(identity.KindWorker)
+	workers := r.nodesOf(kubernetes.KindWorker)
 	if phase == pki.PhaseRefresh {
 		switch kind {
 		case pki.RotateKubernetesCA:
@@ -146,11 +146,11 @@ func (r *rotation) restartAddons(ctx context.Context) error {
 // them, answers ready, and etcd has every member healthy again: two control planes restarting at
 // once could take etcd's quorum.
 func (r *rotation) controlPlanesInTurn(ctx context.Context, kind string) error {
-	want, err := expectations(r.file.secrets, kind, identity.KindControlPlane)
+	want, err := expectations(r.file.secrets, kind, kubernetes.KindControlPlane)
 	if err != nil {
 		return err
 	}
-	for _, name := range r.nodesOf(identity.KindControlPlane) {
+	for _, name := range r.nodesOf(kubernetes.KindControlPlane) {
 		if err := r.waitQuorum(ctx, name); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
@@ -223,7 +223,7 @@ func (r *rotation) waitQuorum(ctx context.Context, name string) error {
 
 // workersTrust delivers the workers their shares and waits until their kubelets trust the CAs.
 func (r *rotation) workersTrust(ctx context.Context, workers []string) error {
-	want, err := expectations(r.file.secrets, pki.RotateKubernetesCA, identity.KindWorker)
+	want, err := expectations(r.file.secrets, pki.RotateKubernetesCA, kubernetes.KindWorker)
 	if err != nil {
 		return err
 	}
@@ -260,7 +260,7 @@ func (r *rotation) refreshKubernetesCA(ctx context.Context, workers []string) er
 	}); err != nil {
 		return err
 	}
-	return r.eachNode(append(r.nodesOf(identity.KindControlPlane), workers...), func(name string) error {
+	return r.eachNode(append(r.nodesOf(kubernetes.KindControlPlane), workers...), func(name string) error {
 		if st, err := r.status(ctx, name); err == nil && issuedBy(st, client.NameKubeletServing, ca) == nil {
 			r.say("  %s's kubelet serves a certificate of the new CA already", name)
 			return nil
@@ -371,7 +371,7 @@ func (r *rotation) throughControlPlane(ctx context.Context, fn func(ctx context.
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 	last := errors.New("the cluster has no control-plane node")
-	for _, name := range r.nodesOf(identity.KindControlPlane) {
+	for _, name := range r.nodesOf(kubernetes.KindControlPlane) {
 		err := r.call(name, func(conn *client.Conn, _ *target) error { return fn(ctx, conn) })
 		if err == nil {
 			return nil

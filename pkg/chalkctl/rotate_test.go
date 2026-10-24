@@ -22,7 +22,7 @@ import (
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -110,7 +110,7 @@ func (n *fakeNode) Status(ctx context.Context, _ *connect.Request[nodev1.StatusR
 	nodeCA, _ := x509.ParseCertificate(chain[1])
 	st.Certificates = append(st.Certificates, &nodev1.CertificateStatus{Name: "node", Issuer: pki.Fingerprint(nodeCA.Raw)})
 	if s := n.share; s != nil {
-		cp := n.kind == identity.KindControlPlane
+		cp := n.kind == kubernetes.KindControlPlane
 		bundles := []struct{ name, bundle, issuing string }{{"Kubernetes CA", s.CABundle(), s.CA.Certificate}}
 		if cp {
 			bundles = append(bundles,
@@ -172,7 +172,7 @@ func (n *fakeNode) EtcdMembers(ctx context.Context, _ *connect.Request[nodev1.Et
 	if err := n.refuse(); err != nil {
 		return nil, err
 	}
-	if n.kind != identity.KindControlPlane {
+	if n.kind != kubernetes.KindControlPlane {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is a worker; ask a control-plane node"))
 	}
 	n.lab.record(n.name + " quorum")
@@ -345,8 +345,8 @@ func newRotationLab(t *testing.T) *rotationLab {
 	ta.pollInterval = 5 * time.Millisecond
 	// Two control planes, a worker and a node without Kubernetes.
 	nodes := []testNode{
-		{"cp1", identity.KindControlPlane, "cp"}, {"cp2", identity.KindControlPlane, "cp"},
-		{"w1", identity.KindWorker, "w"}, {"n1", "", "plain"},
+		{"cp1", kubernetes.KindControlPlane, "cp"}, {"cp2", kubernetes.KindControlPlane, "cp"},
+		{"w1", kubernetes.KindWorker, "w"}, {"n1", "", "plain"},
 	}
 	ta.inventory = writeNodes(t, ta.dir, nodes, nil)
 	l := &rotationLab{t: t, ta: ta, nodes: map[string]*fakeNode{}, addrs: map[string]string{}, encrypted: map[string]uint64{pki.DefaultEncryptionKeyName: 3}}
@@ -462,7 +462,7 @@ func TestRotateOSCA(t *testing.T) {
 		if chain := n.cert.Current().TLS.Certificate; fingerprintDER(chain[1]) != nodeCA {
 			t.Errorf("%s does not serve a certificate of the new node CA", name)
 		}
-		if n.kind == identity.KindControlPlane && *n.share.NodeCA != s.NodeCA {
+		if n.kind == kubernetes.KindControlPlane && *n.share.NodeCA != s.NodeCA {
 			t.Errorf("%s does not hold the new node CA", name)
 		}
 	}

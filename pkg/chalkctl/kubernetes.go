@@ -13,8 +13,8 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
@@ -57,7 +57,7 @@ func (a *app) bootstrap(ctx context.Context, n nodeCommand, timeout time.Duratio
 		if err != nil {
 			return err
 		}
-		if kind != identity.KindControlPlane {
+		if kind != kubernetes.KindControlPlane {
 			return fmt.Errorf("%s is not a control-plane node; bootstrap one of the cluster's control-plane nodes", t.name)
 		}
 	}

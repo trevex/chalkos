@@ -26,8 +26,8 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -228,9 +228,9 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 		st.Boot.Journal = []string{"chalkd: not healthy yet: units failed: broken.service"}
 	}
 	switch n.kind {
-	case identity.KindControlPlane:
+	case kubernetes.KindControlPlane:
 		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, NodeReady: ready}
-	case identity.KindWorker:
+	case kubernetes.KindWorker:
 		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED, NodeReady: ready}
 	}
 	return connect.NewResponse(st), nil
@@ -328,7 +328,7 @@ func (n *upgradeFake) EtcdMembers(context.Context, *connect.Request[nodev1.EtcdM
 	if err := n.down(); err != nil {
 		return nil, err
 	}
-	if n.kind != identity.KindControlPlane {
+	if n.kind != kubernetes.KindControlPlane {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is a worker; ask a control-plane node"))
 	}
 	n.lab.record("%s members", n.name)
@@ -336,7 +336,7 @@ func (n *upgradeFake) EtcdMembers(context.Context, *connect.Request[nodev1.EtcdM
 	n.lab.mu.Lock()
 	defer n.lab.mu.Unlock()
 	for name, node := range n.lab.nodes {
-		if node.kind == identity.KindControlPlane {
+		if node.kind == kubernetes.KindControlPlane {
 			m := &nodev1.EtcdMember{Name: name}
 			if slices.Contains(n.lab.unhealthyMembers, name) {
 				m.Unhealthy = "no answer"
@@ -418,10 +418,10 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpVarian
 	ta.pollInterval = 5 * time.Millisecond
 	var nodes []testNode
 	for i := 1; i <= controlPlanes; i++ {
-		nodes = append(nodes, testNode{fmt.Sprintf("cp%d", i), identity.KindControlPlane, cpVariant})
+		nodes = append(nodes, testNode{fmt.Sprintf("cp%d", i), kubernetes.KindControlPlane, cpVariant})
 	}
 	for _, w := range workers {
-		nodes = append(nodes, testNode{w, identity.KindWorker, wVariant})
+		nodes = append(nodes, testNode{w, kubernetes.KindWorker, wVariant})
 	}
 	nodes = append(nodes, testNode{"n1", "", "plain"})
 	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}}

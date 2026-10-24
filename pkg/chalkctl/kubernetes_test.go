@@ -17,7 +17,6 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -56,7 +55,7 @@ func TestInstallSendsShareOfTheNodeKind(t *testing.T) {
 		t.Error("a node whose image has no Kubernetes got a share")
 	}
 
-	withKind(t, ta, identity.KindWorker)
+	withKind(t, ta, k8s.KindWorker)
 	if got, err = installShare(t, ta); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +67,7 @@ func TestInstallSendsShareOfTheNodeKind(t *testing.T) {
 		t.Errorf("worker share for %q of kind %s", share.Node(), share.Kind)
 	}
 
-	withKind(t, ta, identity.KindControlPlane)
+	withKind(t, ta, k8s.KindControlPlane)
 	if got, err = installShare(t, ta); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +111,7 @@ func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 
 func TestApplyConfigDeliversShare(t *testing.T) {
 	ta := newTestApp(t)
-	withKind(t, ta, identity.KindWorker)
+	withKind(t, ta, k8s.KindWorker)
 	s, r := kubernetesNode(t, ta)
 	addr := ta.startNode(t, s)
 
@@ -259,7 +258,7 @@ func TestKubeconfigRefusesEmptyContext(t *testing.T) {
 
 func TestStatusShowsKubernetes(t *testing.T) {
 	ta := newTestApp(t)
-	withKind(t, ta, identity.KindWorker)
+	withKind(t, ta, k8s.KindWorker)
 	s, _ := kubernetesNode(t, ta)
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
@@ -305,14 +304,14 @@ func TestKubernetesLine(t *testing.T) {
 
 func TestBootstrapNeedsControlPlane(t *testing.T) {
 	ta := newTestApp(t)
-	withKind(t, ta, identity.KindWorker)
+	withKind(t, ta, k8s.KindWorker)
 	s, _ := kubernetesNode(t, ta)
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"bootstrap", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "not a control-plane node") {
 		t.Errorf("err = %v, want a refusal for a worker", err)
 	}
 	// A control-plane node that runs no Kubernetes: the node refuses.
-	withKind(t, ta, identity.KindControlPlane)
+	withKind(t, ta, k8s.KindControlPlane)
 	plain, _ := installedNode(t, ta, []byte(`{}`))
 	addr = ta.startNode(t, plain)
 	if err := ta.run(context.Background(), ta.args([]string{"bootstrap", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "has no Kubernetes") {

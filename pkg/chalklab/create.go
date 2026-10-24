@@ -21,11 +21,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/inventory"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -175,7 +175,7 @@ func (a *app) create(ctx context.Context, f createFlags) (err error) {
 	// The ports are picked last, so they are most likely still free when the VMs start.
 	for i := range l.Nodes {
 		n := &l.Nodes[i]
-		if n.Kind == identity.KindControlPlane {
+		if n.Kind == kubernetes.KindControlPlane {
 			if n.APIPort, err = lab.FreePort(); err != nil {
 				return err
 			}
@@ -240,7 +240,7 @@ func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.LabNode, map[string]
 		}
 		macs[mac] = name
 		n := lab.LabNode{Name: name, Kind: nc.Type, MAC: mac, MemoryMB: 2048, CPUs: 2, Disks: []lab.LabDisk{{Size: "16G"}}}
-		if nc.Type == identity.KindControlPlane {
+		if nc.Type == kubernetes.KindControlPlane {
 			n.MemoryMB = 3072
 		}
 		if m.Memory != 0 {
@@ -407,7 +407,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 
 	var cp *lab.LabNode
 	for i, n := range l.Nodes {
-		if n.Kind == identity.KindControlPlane {
+		if n.Kind == kubernetes.KindControlPlane {
 			cp = &l.Nodes[i]
 			break
 		}
@@ -433,14 +433,14 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 // bootstrapped, and the client file as $CHALKOSCONFIG, which chalkctl reads when no --config or
 // --secrets is given, so the commands after it name neither. The lab's inventory names the
 // unsigned builds, of which the lab signed copies, so an upgrade takes a copy chalklab sign signs.
-func (a *app) printNext(dir string, l *lab.Lab, kubernetes bool) {
+func (a *app) printNext(dir string, l *lab.Lab, withKubernetes bool) {
 	inventory := filepath.Join(dir, inventoryFile)
 	fmt.Fprintf(a.stdout, "\nthe lab %s runs %s; next:\n", l.Name, strings.Join(nodeNames(l), ", "))
-	if kubernetes {
+	if withKubernetes {
 		fmt.Fprintf(a.stdout, "  export KUBECONFIG=%s\n", filepath.Join(dir, kubeconfigFile))
 	}
 	fmt.Fprintf(a.stdout, "  export CHALKOSCONFIG=%s\n", filepath.Join(dir, clientFile))
-	if kubernetes {
+	if withKubernetes {
 		fmt.Fprintln(a.stdout, "  kubectl get nodes")
 	}
 	fmt.Fprintf(a.stdout, "  chalkctl status %s --inventory %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, inventory)
@@ -448,7 +448,7 @@ func (a *app) printNext(dir string, l *lab.Lab, kubernetes bool) {
 	// only with --allow-downtime.
 	controlPlanes := 0
 	for _, n := range l.Nodes {
-		if n.Kind == identity.KindControlPlane {
+		if n.Kind == kubernetes.KindControlPlane {
 			controlPlanes++
 		}
 	}

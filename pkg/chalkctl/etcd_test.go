@@ -12,7 +12,6 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
-	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -22,7 +21,7 @@ import (
 // etcdNode is n1 as a bootstrapped control-plane node whose etcd member runs.
 func etcdNode(t *testing.T, ta *testApp) *chalkd.Server {
 	t.Helper()
-	withKind(t, ta, identity.KindControlPlane)
+	withKind(t, ta, k8s.KindControlPlane)
 	s, _ := kubernetesNode(t, ta)
 	k := s.Kubernetes
 	share := kpki.ControlPlaneShare(&ta.secrets.Kubernetes, ta.secrets.NodeCA)

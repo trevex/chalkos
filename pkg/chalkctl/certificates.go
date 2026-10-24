@@ -11,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -101,7 +101,7 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 	if err := c.requireNodes("node-ca rotate"); err != nil {
 		return err
 	}
-	controlPlanes, err := c.nodesOf(identity.KindControlPlane, "")
+	controlPlanes, err := c.nodesOf(kubernetes.KindControlPlane, "")
 	if err != nil {
 		return err
 	}

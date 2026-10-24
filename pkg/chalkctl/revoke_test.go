@@ -19,7 +19,6 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -213,7 +212,7 @@ func TestCertificatesRefusedToRevokedNodes(t *testing.T) {
 // node renew renews a node of a cluster without control planes, which keeps no revoked nodes.
 func TestNodeRenewWithoutControlPlanes(t *testing.T) {
 	ta := newTestApp(t)
-	withKind(t, ta, identity.KindWorker)
+	withKind(t, ta, k8s.KindWorker)
 	s, _ := kubernetesNode(t, ta)
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"node", "renew", "n1"}, addr)); err != nil {

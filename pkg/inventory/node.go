@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -84,7 +84,7 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 		}
 	}
 	for _, d := range docs {
-		if c.Type != identity.KindControlPlane && d.IsAddon() {
+		if c.Type != kubernetes.KindControlPlane && d.IsAddon() {
 			continue
 		}
 		c.Documents = append(c.Documents, d)

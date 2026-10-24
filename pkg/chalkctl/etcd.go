@@ -12,8 +12,8 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 )
 
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
@@ -35,7 +35,7 @@ func (a *app) throughControlPlane(ctx context.Context, n nodeCommand, via, skip 
 		if c.partial {
 			return errors.New("an inventory names the control planes; name one with --via, or pass --inventory")
 		}
-		if names, err = c.nodesOf(identity.KindControlPlane, skip); err != nil {
+		if names, err = c.nodesOf(kubernetes.KindControlPlane, skip); err != nil {
 			return err
 		}
 		if len(names) == 0 {

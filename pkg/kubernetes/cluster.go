@@ -21,8 +21,8 @@ import (
 
 // Kinds of Kubernetes nodes.
 const (
-	KindControlPlane = identity.KindControlPlane
-	KindWorker       = identity.KindWorker
+	KindControlPlane = "controlplane"
+	KindWorker       = "worker"
 )
 
 // Cluster is what the node's image knows about its cluster.
