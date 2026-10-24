@@ -1427,6 +1427,34 @@ lib.runTests {
       ]
     ];
   };
+  # The Extension API page, whose table of lib.chalkos is written in nix/docs.nix, lists each
+  # helper of lib.chalkos: a function, or a type, as the leaves of its attribute sets.
+  testExtensionAPIListsEveryHelper = {
+    expr =
+      let
+        rows = lib.filter (l: lib.hasPrefix "| `lib.chalkos." (lib.trim l)) (
+          lib.splitString "\n" (builtins.readFile ../../nix/docs.nix)
+        );
+      in
+      lib.sort lib.lessThan (
+        map (l: lib.head (builtins.match "[|] `lib[.]chalkos[.]([A-Za-z.]+)`.*" (lib.trim l))) rows
+      );
+    expected =
+      let
+        leaves =
+          prefix: set:
+          lib.concatLists (
+            lib.mapAttrsToList (
+              name: v:
+              if lib.isAttrs v && !lib.isType "option-type" v then
+                leaves "${prefix}${name}." v
+              else
+                [ "${prefix}${name}" ]
+            ) set
+          );
+      in
+      lib.sort lib.lessThan (leaves "" libChalkos);
+  };
   # An option without rules is lib.mkOption's.
   testMkOptionWithoutRules = {
     expr = libChalkos.mkOption { type = types.str; } == mkOption { type = types.str; };

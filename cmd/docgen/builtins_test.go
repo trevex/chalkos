@@ -115,3 +115,26 @@ func TestWriteBuiltinsRefusesWhatOnlyThePlainImageHas(t *testing.T) {
 		t.Errorf("error %v, want one naming the effect ntp", err)
 	}
 }
+
+func TestWriteBuiltinsRefusesARuleOnlyThePlainImageHas(t *testing.T) {
+	plain := t.TempDir()
+	if err := os.CopyFS(plain, os.DirFS("testdata/builtins/plain")); err != nil {
+		t.Fatal(err)
+	}
+	volume := filepath.Join(plain, "schemas", "storage.chalkos.dev_v1alpha1_Volume.json")
+	data, err := os.ReadFile(volume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(data), `"self != ''"`, `"self != 'x'"`, 1)
+	if changed == string(data) {
+		t.Fatal("the plain image's Volume has no rule self != ''")
+	}
+	if err := os.WriteFile(volume, []byte(changed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), "testdata/builtins/default", plain)
+	if err == nil || !strings.Contains(err.Error(), "a rule of Volume that the default image lacks: self != 'x'") {
+		t.Errorf("error %v, want one naming the rule of Volume", err)
+	}
+}
