@@ -630,6 +630,27 @@ func TestInPlaceCanRunAgain(t *testing.T) {
 	}
 }
 
+// TestInstallRecordsTheSectionLast leaves STATE without the storage section until the volumes
+// exist and carry the fallback keyslot: every boot sets up the volumes STATE records.
+func TestInstallRecordsTheSectionLast(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda)
+	r.add(inPlaceRules(i)...)
+	i.Change = func(what string) error {
+		if what == "enroll the fallback key" {
+			return errors.New("stopped")
+		}
+		return nil
+	}
+	err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda")))
+	if err == nil || err.Error() != "stopped" {
+		t.Fatalf("err = %v, want the install stopped before the enrolment", err)
+	}
+	if _, err := os.Stat(filepath.Join(i.StateDir, "storage", "storage.json")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("STATE records the storage section before its volumes are enrolled: %v", err)
+	}
+}
+
 func TestInstallRefusesUnencryptedVolumeMeantToBeEncrypted(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda)

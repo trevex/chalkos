@@ -8,15 +8,15 @@ package install
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -39,8 +39,6 @@ const (
 	stateLabel      = "state"
 	installedMarker = "installed"
 	stateMapperName = "state"
-	contentLUKS     = "crypto_LUKS"
-	contentExt4     = "ext4"
 )
 
 // Installed reports whether STATE, mounted at stateDir, holds the installed marker. Only a
@@ -305,40 +303,27 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 		return err
 	}
 
-	section, err := json.Marshal(req.Section)
-	if err != nil {
-		return err
-	}
-	if err := atomicfile.WriteFile(st.SectionFile(), section, 0o600); err != nil {
-		return err
-	}
 	if err := i.change("apply the storage section"); err != nil {
 		return err
 	}
-	status := storage.Status{Disks: map[string]storage.DiskStatus{}}
-	pins, err := st.Apply(ctx, req.Section, &status)
+	pins, err := st.ApplyAll(ctx, req.Section)
 	if err != nil {
 		return err
 	}
-	if err := diskErrors(status); err != nil {
-		return err
-	}
-
 	if req.Section.Fallback != storage.FallbackNone {
-		table, err := i.readTable(ctx, disk.Device)
-		if err != nil {
-			return err
-		}
-		devices, err := encryptedDevices(req.Section, table, pins, state.Node)
+		devices, err := i.encryptedDevices(ctx, disk, req.Section, pins, state.Node)
 		if err != nil {
 			return err
 		}
 		if err := i.change("enroll the fallback key"); err != nil {
 			return err
 		}
-		if err := Enroll(ctx, i.Run, devices, req.FallbackSecret); err != nil {
+		if err := st.Enroll(ctx, devices, req.FallbackSecret); err != nil {
 			return err
 		}
+	}
+	if err := st.RecordSection(req.Section); err != nil {
+		return err
 	}
 
 	if err := i.change("write the identity"); err != nil {
@@ -413,12 +398,12 @@ func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, de
 	if err != nil {
 		return err
 	}
-	want := contentExt4
+	want := node.ContentExt4
 	if policy == storage.EncryptionTPM2 {
-		want = contentLUKS
+		want = node.ContentLUKS
 	}
 	if state, err := table.find(stateLabel, storage.PartitionType(stateLabel)); err == nil {
-		found, err := content(ctx, i.Run, state.Node)
+		found, err := node.Content(ctx, i.Run, state.Node)
 		if err != nil {
 			return err
 		}
@@ -443,74 +428,26 @@ func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, de
 	return nil
 }
 
-// content returns what blkid finds on a device, such as crypto_LUKS or ext4; empty when it finds
-// nothing.
-func content(ctx context.Context, run tool.Runner, dev string) (string, error) {
-	if _, err := run.Run(ctx, "udevadm", "settle", "--timeout=30"); err != nil {
-		return "", err
-	}
-	out, err := run.Run(ctx, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
-	var te *tool.Error
-	if errors.As(err, &te) && te.Code == 2 && strings.TrimSpace(te.Stderr) == "" {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("probe %s: %w", dev, err)
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
 // encryptedDevices lists the LUKS devices that get the fallback keyslot: STATE and every
-// encrypted volume, by volume name.
-func encryptedDevices(section storage.Section, table partitionTable, pins storage.Pins, state string) (map[string]string, error) {
-	devices := map[string]string{}
+// encrypted volume, by volume name. A volume of the system disk is found in the disk's partition
+// table: udev's links to the boot disk's partitions do not lead to an installer's target, and a
+// PARTUUID may also be on another disk the node was installed on before.
+func (i *Installer) encryptedDevices(ctx context.Context, disk storage.BlockDisk, section storage.Section, pins storage.Pins, state string) (map[string]string, error) {
+	table, err := i.readTable(ctx, disk.Device)
+	if err != nil {
+		return nil, err
+	}
+	devices, err := node.EncryptedVolumes(section, pins, slices.Collect(maps.Keys(section.Volumes)), func(label string) (string, error) {
+		p, err := table.find(label, storage.PartitionType(label))
+		return p.Node, err
+	})
+	if err != nil {
+		return nil, err
+	}
 	if section.Encryption == storage.EncryptionTPM2 {
 		devices[stateLabel] = state
 	}
-	for name, v := range section.Volumes {
-		if v.Encryption != storage.EncryptionTPM2 {
-			continue
-		}
-		if v.Disk == storage.SystemDisk {
-			p, err := table.find(v.Label, storage.PartitionType(v.Label))
-			if err != nil {
-				return nil, fmt.Errorf("volume %s: %w", name, err)
-			}
-			devices[name] = p.Node
-			continue
-		}
-		uuid := pins.Disks[v.Disk].Partitions[name]
-		if uuid == "" {
-			return nil, fmt.Errorf("volume %s was not created", name)
-		}
-		devices[name] = storage.PartUUIDPath(uuid)
-	}
 	return devices, nil
-}
-
-// Enroll adds the fallback keyslot to each LUKS device, by volume name, unlocking it with the TPM. The secret only
-// travels in the environment; replacing earlier password slots keeps a repeated install from
-// piling up keyslots, and TPM2 slots are never wiped.
-func Enroll(ctx context.Context, run tool.Runner, devices map[string]string, secret string) error {
-	names := make([]string, 0, len(devices))
-	for name := range devices {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		dev := devices[name]
-		found, err := content(ctx, run, dev)
-		if err != nil {
-			return err
-		}
-		if found != contentLUKS {
-			return fmt.Errorf("volume %s is meant to be encrypted, but %s holds %q instead of LUKS", name, dev, found)
-		}
-		if _, err := run.RunWithEnv(ctx, []string{"NEWPASSWORD=" + secret}, "systemd-cryptenroll", "--unlock-tpm2-device=auto", "--password", "--wipe-slot=password", dev); err != nil {
-			return fmt.Errorf("enroll the fallback key on %s: %w", name, err)
-		}
-	}
-	return nil
 }
 
 // randomizeESP gives the ESP a random partition UUID: systemd-boot reports it as the boot
@@ -526,19 +463,6 @@ func (i *Installer) randomizeESP(ctx context.Context, disk storage.BlockDisk) er
 	}
 	if _, err := i.Run.Run(ctx, "sfdisk", "--part-uuid", disk.Device, strconv.Itoa(esp.Number), newUUID()); err != nil {
 		return fmt.Errorf("set the ESP's partition UUID: %w", err)
-	}
-	return nil
-}
-
-func diskErrors(status storage.Status) error {
-	var problems []string
-	for _, name := range sortedKeys(status.Disks) {
-		if e := status.Disks[name].Error; e != "" {
-			problems = append(problems, fmt.Sprintf("disk %s: %s", name, e))
-		}
-	}
-	if len(problems) > 0 {
-		return errors.New(strings.Join(problems, "; "))
 	}
 	return nil
 }
@@ -632,15 +556,6 @@ func newUUID() string {
 	b[6] = b[6]&0x0f | 0x40
 	b[8] = b[8]&0x3f | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // isMounted reports whether a file system is mounted at path, per a mountinfo file.

@@ -85,10 +85,10 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, prompt, en
 	}
 	source := dev
 	fsType := strings.TrimSpace(string(out))
-	if encrypted && fsType != "crypto_LUKS" {
+	if encrypted && fsType != ContentLUKS {
 		return fmt.Errorf("volume %s is meant to be encrypted, but %s holds %q instead of LUKS; refusing to mount it", name, dev, fsType)
 	}
-	if fsType == "crypto_LUKS" {
+	if fsType == ContentLUKS {
 		options := "tpm2-device=auto"
 		if !prompt {
 			options += ",headless=true"

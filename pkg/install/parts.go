@@ -221,18 +221,18 @@ func (i *Installer) checkState(ctx context.Context, target storage.BlockDisk, ta
 	if err != nil {
 		return err
 	}
-	found, err := content(ctx, i.Run, state.Node)
+	found, err := node.Content(ctx, i.Run, state.Node)
 	if err != nil {
 		return err
 	}
 	switch found {
 	case "":
 		return nil
-	case contentLUKS, contentExt4:
+	case node.ContentLUKS, node.ContentExt4:
 	default:
 		return fmt.Errorf("STATE on the target disk %s holds %q; pass --wipe-disk to replace it", target, found)
 	}
-	if err := i.openStateReadOnly(ctx, state.Node, found == contentLUKS); err != nil {
+	if err := i.openStateReadOnly(ctx, state.Node, found == node.ContentLUKS); err != nil {
 		return fmt.Errorf("STATE on the target disk %s does not open on this machine, so it belongs to another node: %w; pass --wipe-disk to replace it", target, err)
 	}
 	installed, err := Installed(i.StateDir)

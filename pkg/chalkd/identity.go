@@ -8,15 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/facts"
@@ -30,10 +27,8 @@ import (
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/node"
 )
-
-// cryptsetupPath only names the generator's units here; systemd runs the generator itself.
-const cryptsetupPath = "systemd-cryptsetup"
 
 // delivered is an identity as it arrives, with what chalkd reads from it.
 type delivered struct {
@@ -455,91 +450,26 @@ func (s *Server) applyMachine(ctx context.Context, mc machineChange, secret stri
 	return s.applyStorage(ctx, mc.recorded, mc.section, secret, mc.changes)
 }
 
-// applyStorage applies additive changes: repart creates and grows partitions, new encrypted
-// volumes get the fallback keyslot, and the generator's units for new volumes start. Volumes
-// that moved to another mount point are unmounted first.
+// applyStorage applies additive changes, as node.Storage.Change describes, once it checked that
+// the fallback secret new encrypted volumes are enrolled with was sent.
 func (s *Server) applyStorage(ctx context.Context, recorded, section storage.Section, secret string, changes []storage.Change) error {
 	if err := checkFallback(recorded, section, secret); err != nil {
 		return err
 	}
-	added := map[string]bool{}
-	for name := range section.Volumes {
-		if _, ok := recorded.Volumes[name]; !ok {
-			added[name] = true
-		}
-	}
-	st := s.storage()
-	old, err := st.Generate(cryptsetupPath)
-	if err != nil {
-		return failed(connect.CodeInternal, "%v", err)
-	}
-	var moved []string
-	for _, c := range changes {
-		if _, ok := recorded.Volumes[c.Volume]; ok && recorded.Volumes[c.Volume].MountPoint != section.Volumes[c.Volume].MountPoint {
-			moved = append(moved, c.Volume)
-		}
-	}
-	for _, name := range moved {
-		if err := s.stopUnits(ctx, old.Of(name)); err != nil {
-			return err
-		}
-	}
+	return storageFailed(s.storage().Change(ctx, recorded, section, secret, changes))
+}
 
-	status := storage.Status{Installed: true, Disks: map[string]storage.DiskStatus{}}
-	pins, err := st.Apply(ctx, section, &status)
-	if err != nil {
+// storageFailed gives an error of a change to the node's storage its code: a failure of the node
+// itself is internal, and anything else refuses the request.
+func storageFailed(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case node.IsInternal(err):
+		return failed(connect.CodeInternal, "%v", err)
+	default:
 		return failed(connect.CodeFailedPrecondition, "%v", err)
 	}
-	var problems []string
-	for _, name := range sortedNames(status.Disks) {
-		if e := status.Disks[name].Error; e != "" {
-			problems = append(problems, fmt.Sprintf("disk %s: %s", name, e))
-		}
-	}
-	if len(problems) > 0 {
-		return failed(connect.CodeFailedPrecondition, "%s", strings.Join(problems, "; "))
-	}
-	if section.Fallback != storage.FallbackNone {
-		devices := map[string]string{}
-		for name := range added {
-			v := section.Volumes[name]
-			if v.Encryption != storage.EncryptionTPM2 {
-				continue
-			}
-			if v.Disk == storage.SystemDisk {
-				devices[name] = filepath.Join(s.Paths.BootPartitions, v.Label)
-			} else {
-				devices[name] = storage.PartUUIDPath(pins.Disks[v.Disk].Partitions[name])
-			}
-		}
-		if err := install.Enroll(ctx, s.Run, devices, secret); err != nil {
-			return failed(connect.CodeFailedPrecondition, "%v", err)
-		}
-	}
-	data, err := json.Marshal(section)
-	if err != nil {
-		return err
-	}
-	if err := atomicfile.WriteFile(st.SectionFile(), data, 0o600); err != nil {
-		return failed(connect.CodeInternal, "record the storage section: %v", err)
-	}
-	if _, err := s.Run.Run(ctx, "systemctl", "daemon-reload"); err != nil {
-		return failed(connect.CodeInternal, "%v", err)
-	}
-	units, err := st.Generate(cryptsetupPath)
-	if err != nil {
-		return failed(connect.CodeInternal, "%v", err)
-	}
-	var start []string
-	for _, name := range append(sortedNames(added), moved...) {
-		start = append(start, units.Of(name)...)
-	}
-	if len(start) > 0 {
-		if _, err := s.Run.Run(ctx, "systemctl", append([]string{"start"}, start...)...); err != nil {
-			return failed(connect.CodeFailedPrecondition, "start the units of new volumes: %v", err)
-		}
-	}
-	return nil
 }
 
 // checkFallback refuses before anything changes when a volume the section adds to recorded is
@@ -566,16 +496,6 @@ func enrolled(recorded, section storage.Section) string {
 		}
 	}
 	return ""
-}
-
-func (s *Server) stopUnits(ctx context.Context, units []string) error {
-	if len(units) == 0 {
-		return nil
-	}
-	if _, err := s.Run.Run(ctx, "systemctl", append([]string{"stop"}, units...)...); err != nil {
-		return failed(connect.CodeFailedPrecondition, "stop %s: %v", strings.Join(units, ", "), err)
-	}
-	return nil
 }
 
 // applyIdentity applies the identity data: the networkd units and the time servers it gives,
@@ -670,7 +590,7 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 		return failed(connect.CodeFailedPrecondition, "a reset of volume %s does not carry out the config: %s", name, rules.Refusal(failures, node))
 	}
 
-	if err := s.deleteVolume(ctx, name, v, pins); err != nil {
+	if err := storageFailed(s.storage().DeleteVolume(ctx, name, v, pins)); err != nil {
 		return err
 	}
 	if err := s.applyStorage(ctx, without, d.section, fallback, storage.Changes(without, d.section)); err != nil {
@@ -678,72 +598,6 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 	}
 	log.Printf("volume %s reset", name)
 	return nil
-}
-
-// deleteVolume stops a volume's units, wipes its partition and deletes it, after checking the
-// partition lies on the disk the volume's disk name is pinned to and carries the PARTUUID
-// recorded for the volume. The link is resolved once; the commands act on the partition that
-// was checked.
-func (s *Server) deleteVolume(ctx context.Context, name string, v storage.Volume, pins storage.Pins) error {
-	st := s.storage()
-	units, err := st.Generate(cryptsetupPath)
-	if err != nil {
-		return failed(connect.CodeInternal, "%v", err)
-	}
-	pin, ok := pins.Disks[v.Disk]
-	uuid := strings.ToLower(pin.Partitions[name])
-	if !ok || uuid == "" {
-		return failed(connect.CodeFailedPrecondition, "volume %s has no recorded partition", name)
-	}
-	var link, want string
-	if v.Disk == storage.SystemDisk {
-		link = filepath.Join(s.Paths.BootPartitions, v.Label)
-		boot, err := s.Host.ResolvePath(s.Paths.BootDisk)
-		if err != nil {
-			return failed(connect.CodeFailedPrecondition, "find the boot disk: %v", err)
-		}
-		want = boot.Name
-	} else {
-		link = storage.PartUUIDPath(uuid)
-		disk, found, err := s.Host.Find(pin.Identity)
-		if err != nil || !found {
-			return failed(connect.CodeFailedPrecondition, "the pinned disk of volume %s is missing", name)
-		}
-		want = disk.Name
-	}
-	disk, part, err := s.Host.PartitionOf(link)
-	if err != nil {
-		return failed(connect.CodeFailedPrecondition, "find the partition of volume %s: %v", name, err)
-	}
-	if disk != want {
-		return failed(connect.CodeFailedPrecondition, "the partition of volume %s is on %s, not on its pinned disk %s; refusing to touch it", name, disk, want)
-	}
-	if part.UUID != uuid {
-		return failed(connect.CodeFailedPrecondition, "%s has the PARTUUID %q, not the %s recorded for volume %s; refusing to touch it", part.Device, part.UUID, uuid, name)
-	}
-	if err := s.stopUnits(ctx, reverse(units.Of(name))); err != nil {
-		return err
-	}
-	if _, err := s.Run.Run(ctx, "wipefs", "--all", part.Device); err != nil {
-		return failed(connect.CodeInternal, "wipe volume %s: %v", name, err)
-	}
-	if _, err := s.Run.Run(ctx, "sfdisk", "--lock", "--delete", "/dev/"+disk, strconv.Itoa(part.Number)); err != nil {
-		return failed(connect.CodeInternal, "delete the partition of volume %s: %v", name, err)
-	}
-	delete(pin.Partitions, name)
-	pins.Disks[v.Disk] = pin
-	if err := storage.WritePins(st.PinsFile(), pins); err != nil {
-		return failed(connect.CodeInternal, "%v", err)
-	}
-	return nil
-}
-
-func reverse(s []string) []string {
-	out := make([]string, len(s))
-	for i, v := range s {
-		out[len(s)-1-i] = v
-	}
-	return out
 }
 
 // trustFor returns the OS CAs the node is to trust after the request: those delivered, checked
