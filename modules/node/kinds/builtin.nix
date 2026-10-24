@@ -100,7 +100,7 @@ let
       nts = mkOption {
         type = types.bool;
         default = true;
-        description = "Authenticate the server with Network Time Security (NTS).";
+        description = "Whether the node authenticates the server with Network Time Security (NTS).";
       };
       port = mkOption {
         type = types.nullOr types.port;
@@ -126,7 +126,7 @@ let
           "PreferNoSchedule"
           "NoExecute"
         ];
-        description = "What happens to pods that do not tolerate the taint.";
+        description = "Effect of the taint on pods that do not tolerate it.";
       };
     };
   };
@@ -286,7 +286,7 @@ in
         insecure = mkOption {
           type = types.bool;
           default = false;
-          description = "Allow plain HTTP to this host: chalkd and containerd reach it over HTTP, and a Mirror may name an http:// endpoint on it. Otherwise chalkd pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab.";
+          description = "Whether chalkd and containerd reach this host over plain HTTP, with credentials and images unencrypted, and a Mirror may name an http:// endpoint on it. Without it, chalkd pulls over HTTPS alone, also from private and loopback addresses.";
         };
       };
     };
@@ -365,7 +365,7 @@ in
           encryption.mode = mkOption {
             type = types.nullOr mode;
             default = null;
-            description = "Overrides the node's encryption mode for VAR.";
+            description = "Encryption mode of VAR, over the node's; null takes the node's.";
           };
         };
       };
@@ -450,7 +450,7 @@ in
         encryption.mode = mkOption {
           type = types.nullOr mode;
           default = null;
-          description = "Overrides the node's encryption mode for this volume.";
+          description = "Encryption mode of the volume, over the node's; null takes the node's.";
         };
         repart = mkOption {
           type = types.attrsOf types.str;
@@ -474,7 +474,7 @@ in
         dhcp = mkOption {
           type = types.bool;
           default = false;
-          description = "Also synchronise with the time servers the network announces through DHCP, which are not authenticated.";
+          description = "Whether the node also synchronises with the time servers the network announces through DHCP, which are not authenticated.";
         };
       };
     };
@@ -501,7 +501,7 @@ in
             "controlplane"
             "worker"
           ];
-          description = "What the node is in the cluster; it is fixed once the node holds a Kubernetes share.";
+          description = "Type of the node in the cluster; it is fixed once the node holds a Kubernetes share.";
         };
         labels = lib.chalkos.mkOption {
           type = types.attrsOf types.str;
@@ -555,7 +555,7 @@ in
         allowSchedulingOnControlPlanes = lib.chalkos.mkOption {
           type = types.bool;
           default = false;
-          description = "Let workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share.";
+          description = "Whether workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share.";
           rules = [
             (registered "allowSchedulingOnControlPlanes" "add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead")
           ];
@@ -621,7 +621,7 @@ in
           mode = mkOption {
             type = types.enum [ "l2" ];
             default = "l2";
-            description = "How the holder announces the addresses.";
+            description = "Way the node holding the VIP announces its addresses: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements.";
           };
         };
         extraArgs = {

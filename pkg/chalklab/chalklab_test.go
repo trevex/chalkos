@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -122,6 +123,46 @@ func TestLabNodes(t *testing.T) {
 				t.Errorf("labNodes = %v, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestLabSchemaDefaults gives the defaults that labNodes gives a node whose lab file leaves its
+// machine out, as the page of config kinds shows them from the schema.
+func TestLabSchemaDefaults(t *testing.T) {
+	var s struct {
+		Properties struct {
+			Spec struct {
+				Properties struct {
+					Nodes struct {
+						AdditionalProperties struct {
+							Properties struct {
+								CPUs  struct{ Default int }           `json:"cpus"`
+								Disks struct{ Default []lab.LabDisk } `json:"disks"`
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if err := json.Unmarshal(labSchema, &s); err != nil {
+		t.Fatal(err)
+	}
+	machine := s.Properties.Spec.Properties.Nodes.AdditionalProperties.Properties
+	lf, err := readLabFile(writeLabFiles(t, t.TempDir(), testLab))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := inventory.Load(lf.inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes, _, err := labNodes(inv, lf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp1 := nodes[0]; machine.CPUs.Default != cp1.CPUs || !reflect.DeepEqual(machine.Disks.Default, cp1.Disks) {
+		t.Errorf("the schema's defaults are %d CPUs and the disks %+v, labNodes gives %d and %+v", machine.CPUs.Default, machine.Disks.Default, cp1.CPUs, cp1.Disks)
 	}
 }
 

@@ -27,7 +27,7 @@
       "properties": {
         "allowSchedulingOnControlPlanes": {
           "default": false,
-          "description": "Let workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share.",
+          "description": "Whether workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share.",
           "type": "boolean",
           "x-chalkos-rules": [
             {
@@ -230,7 +230,7 @@
             },
             "mode": {
               "default": "l2",
-              "description": "How the holder announces the addresses.",
+              "description": "Way the node holding the VIP announces its addresses: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements.",
               "enum": [
                 "l2"
               ]

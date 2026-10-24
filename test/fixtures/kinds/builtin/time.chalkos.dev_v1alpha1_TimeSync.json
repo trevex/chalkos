@@ -27,7 +27,7 @@
       "properties": {
         "dhcp": {
           "default": false,
-          "description": "Also synchronise with the time servers the network announces through DHCP, which are not authenticated.",
+          "description": "Whether the node also synchronises with the time servers the network announces through DHCP, which are not authenticated.",
           "type": "boolean"
         },
         "servers": {
@@ -53,7 +53,7 @@
               },
               "nts": {
                 "default": true,
-                "description": "Authenticate the server with Network Time Security (NTS).",
+                "description": "Whether the node authenticates the server with Network Time Security (NTS).",
                 "type": "boolean"
               },
               "port": {

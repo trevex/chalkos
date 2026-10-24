@@ -74,7 +74,7 @@ A node's config holds at most one. It has 5 [change rules](../build/guard-change
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.allowSchedulingOnControlPlanes` | boolean | `false` | Let workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share. |
+| `spec.allowSchedulingOnControlPlanes` | boolean | `false` | Whether workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share. |
 | `spec.dnsIPs.ipv4` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.dnsIPs.ipv6` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.domain` | string | `"cluster.local"` | DNS domain of the cluster. |
@@ -93,7 +93,7 @@ A node's config holds at most one. It has 5 [change rules](../build/guard-change
 | `spec.serviceCIDRs.ipv4` | string | `"10.96.0.0/12"` | Address range of the family's services, at most 2^20 addresses. |
 | `spec.serviceCIDRs.ipv6` | string | `"fd00:10:96::/112"` | Address range of the family's services, at most 2^20 addresses. |
 | `spec.vip.addresses` | list of string | `[]` | Virtual addresses of the API server, at most one per family; empty means no virtual IP. |
-| `spec.vip.mode` | `l2` | `"l2"` | How the holder announces the addresses. |
+| `spec.vip.mode` | `l2` | `"l2"` | Way the node holding the VIP announces its addresses: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements. |
 
 ### Flannel { #flannel }
 
@@ -123,10 +123,10 @@ A node's config holds at most one. It has 3 [change rules](../build/guard-change
 | `spec.nodeIP.addresses` | list of string or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |
 | `spec.nodeIP.validSubnets` | list of string or null | `null` | Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's. |
 | `spec.taints` | list of object | `[]` | Kubernetes taints the node registers with; they are fixed once the node holds a Kubernetes share. |
-| `spec.taints[].effect` | one of `NoSchedule`, `PreferNoSchedule`, `NoExecute` | required | What happens to pods that do not tolerate the taint. |
+| `spec.taints[].effect` | one of `NoSchedule`, `PreferNoSchedule`, `NoExecute` | required | Effect of the taint on pods that do not tolerate it. |
 | `spec.taints[].key` | string | required | Taint key. |
 | `spec.taints[].value` | string or null | `null` | Taint value; null for a taint without a value. |
-| `spec.type` | one of `controlplane`, `worker` | required | What the node is in the cluster; it is fixed once the node holds a Kubernetes share. |
+| `spec.type` | one of `controlplane`, `worker` | required | Type of the node in the cluster; it is fixed once the node holds a Kubernetes share. |
 | `spec.vip.interface` | string or null | `null` | Interface the node adds the Cluster's VIP addresses to while it holds them; null means the one holding the node's address of their family. Only control planes hold the VIP, so a worker's stays null. |
 
 ## networkd.chalkos.dev { #networkd-chalkos-dev }
@@ -305,7 +305,7 @@ A node's config may hold several, each with a name of its own. It has 2 [change 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.host` | string | required | Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials, over plain HTTP when insecure is set. On images that run Kubernetes, the kubelet hands these credentials to containerd for the container images of this host, and containerd sends them to every endpoint of the host's Mirror too, over plain HTTP to an endpoint whose host is insecure. The kubelet compares the host, in lower case and with its port, case-sensitively with the image's host as the pod spec writes it, so pods name the host in lower case. An IPv6 host with credentials needs its port, 443 included, for the kubelet to match it. |
-| `spec.insecure` | boolean | `false` | Allow plain HTTP to this host: chalkd and containerd reach it over HTTP, and a Mirror may name an http:// endpoint on it. Otherwise chalkd pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab. |
+| `spec.insecure` | boolean | `false` | Whether chalkd and containerd reach this host over plain HTTP, with credentials and images unencrypted, and a Mirror may name an http:// endpoint on it. Without it, chalkd pulls over HTTPS alone, also from private and loopback addresses. |
 | `spec.password` | secret reference or null | `null` | Password or token of the user, from a Secret; null pulls anonymously. |
 | `spec.username` | string or null | `null` | User chalkd authenticates to the host as, with the password, and containerd too on images that run Kubernetes; null pulls anonymously. |
 
@@ -332,7 +332,7 @@ A node's config holds at most one. It has a [change rule](../build/guard-changes
 | `spec.disk.wwn` | string or null | `null` | The disk's World Wide Name. |
 | `spec.encryption.fallback` | one of `recovery-key`, `password`, `none` | `"recovery-key"` | Second keyslot asked for on the console when TPM2 unsealing fails. |
 | `spec.encryption.mode` | one of `tpm2`, `none` | `"tpm2"` | Encryption of STATE, VAR and volumes: `tpm2` seals a LUKS2 key to PCR 7, `none` uses no encryption. |
-| `spec.var.encryption.mode` | one of `tpm2`, `none` or null | `null` | Overrides the node's encryption mode for VAR. |
+| `spec.var.encryption.mode` | one of `tpm2`, `none` or null | `null` | Encryption mode of VAR, over the node's; null takes the node's. |
 | `spec.var.size` | string or null | `null` | Size of VAR, such as `20G`, with at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P; null fills the remaining space on the system disk. |
 
 ### Volume { #volume }
@@ -352,7 +352,7 @@ A node's config may hold several, each with a name of its own. It has 7 [change 
 | `spec.disk.size` | string or null | `null` | Comparison the disk's size meets, such as `>= 1T`; the size has at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P. |
 | `spec.disk.type` | one of `nvme`, `ssd`, `hdd` or null | `null` | Kind of disk. |
 | `spec.disk.wwn` | string or null | `null` | The disk's World Wide Name. |
-| `spec.encryption.mode` | one of `tpm2`, `none` or null | `null` | Overrides the node's encryption mode for this volume. |
+| `spec.encryption.mode` | one of `tpm2`, `none` or null | `null` | Encryption mode of the volume, over the node's; null takes the node's. |
 | `spec.format` | one of `ext4`, `xfs`, `btrfs`, `swap`, `raw` | `"ext4"` | File system of the volume; `raw` leaves a raw block device, which has no mountPoint. |
 | `spec.mountPoint` | string or null | `null` | Where the volume is mounted; null leaves it unmounted. |
 | `spec.repart` | map of string | `{}` | Extra repart.d keys of the volume's partition. Type, Label, Encrypt, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options. |
@@ -372,10 +372,10 @@ A node's config holds at most one.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.dhcp` | boolean | `false` | Also synchronise with the time servers the network announces through DHCP, which are not authenticated. |
+| `spec.dhcp` | boolean | `false` | Whether the node also synchronises with the time servers the network announces through DHCP, which are not authenticated. |
 | `spec.servers` | list of object | `[{"host":"ptbtime1.ptb.de"},{"host":"ptbtime2.ptb.de"},{"host":"ptbtime3.ptb.de"}]` | Time servers the node synchronises its clock with, authenticated with NTS unless `nts = false`. |
 | `spec.servers[].host` | string | required | Host name or address of the time server. |
-| `spec.servers[].nts` | boolean | `true` | Authenticate the server with Network Time Security (NTS). |
+| `spec.servers[].nts` | boolean | `true` | Whether the node authenticates the server with Network Time Security (NTS). |
 | `spec.servers[].port` | integer from 0 to 65535 or null | `null` | UDP port of the server's NTP; null is NTP's port, 123. |
 
 ## Inventory and lab files { #inventory-and-lab-files }
@@ -384,7 +384,7 @@ chalkctl reads an inventory and chalklab a lab file. Neither is part of a node's
 
 ### Inventory { #inventory }
 
-The nodes of a cluster, where chalkctl reaches each, the image each runs and the config files each gets. Paths are relative to the inventory's directory; globs are allowed in file lists.
+The nodes of a cluster, where chalkctl reaches each, the image each runs and the config files each gets. Paths are relative to the inventory's directory, and file lists take globs.
 
 `apiVersion: chalkctl.chalkos.dev/v1alpha1`
 
@@ -416,12 +416,12 @@ The nodes of an inventory that chalklab runs as virtual machines, and their mach
 | --- | --- | --- | --- |
 | `spec.inventory` | string | required | The inventory of the cluster, relative to the lab file. |
 | `spec.nodes` | map of object | required | The VMs of the lab by the names of their nodes in the inventory. |
-| `spec.nodes.<name>.cpus` | integer of at least 1 | — | Virtual CPUs; default 2. |
-| `spec.nodes.<name>.disks` | list of object | — | The VM's disks: the first holds the node's image, the others start empty; default one of 16G. |
-| `spec.nodes.<name>.disks[].serial` | string | — | Serial number the disk reports to the node, up to 20 letters, digits, _ and -, for a SystemDisk or Volume to select it by; none by default. |
+| `spec.nodes.<name>.cpus` | integer of at least 1 | `2` | Number of the VM's virtual CPUs. |
+| `spec.nodes.<name>.disks` | list of object | `[{"size":"16G"}]` | The VM's disks: the first holds the node's image, the others start empty. |
+| `spec.nodes.<name>.disks[].serial` | string | — | Serial number the disk reports to the node, up to 20 letters, digits, _ and -, for a SystemDisk or Volume to select it by. |
 | `spec.nodes.<name>.disks[].size` | string | required | Size of the disk in bytes, or with a K, M, G or T suffix, such as 16G. |
 | `spec.nodes.<name>.mac` | string | required | MAC address of the VM's NIC on the lab network, which the node's Network document must match. |
-| `spec.nodes.<name>.memory` | integer of at least 512 | — | Memory in MiB; default 3072 for a control plane, 2048 for another node. |
+| `spec.nodes.<name>.memory` | integer of at least 512 | — | Memory of the VM in MiB; without it, 3072 for a control plane and 2048 for another node. |
 
 Sources: the JSON Schemas in the `schemas` directory of an image
 [build](image-layout.md#outputs-of-an-image-build) of the default variant, from

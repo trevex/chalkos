@@ -35,7 +35,7 @@
         },
         "insecure": {
           "default": false,
-          "description": "Allow plain HTTP to this host: chalkd and containerd reach it over HTTP, and a Mirror may name an http:// endpoint on it. Otherwise chalkd pulls over HTTPS alone, also from private and loopback addresses. Credentials and images then travel unencrypted, so use it only on a trusted network, such as a lab.",
+          "description": "Whether chalkd and containerd reach this host over plain HTTP, with credentials and images unencrypted, and a Mirror may name an http:// endpoint on it. Without it, chalkd pulls over HTTPS alone, also from private and loopback addresses.",
           "type": "boolean"
         },
         "password": {

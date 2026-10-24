@@ -137,7 +137,7 @@
                 }
               ],
               "default": null,
-              "description": "Overrides the node's encryption mode for this volume."
+              "description": "Encryption mode of the volume, over the node's; null takes the node's."
             }
           },
           "type": "object"

@@ -155,7 +155,7 @@
                     }
                   ],
                   "default": null,
-                  "description": "Overrides the node's encryption mode for VAR."
+                  "description": "Encryption mode of VAR, over the node's; null takes the node's."
                 }
               },
               "type": "object"

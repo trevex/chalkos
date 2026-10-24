@@ -93,7 +93,7 @@
             "additionalProperties": false,
             "properties": {
               "effect": {
-                "description": "What happens to pods that do not tolerate the taint.",
+                "description": "Effect of the taint on pods that do not tolerate it.",
                 "enum": [
                   "NoSchedule",
                   "PreferNoSchedule",
@@ -134,7 +134,7 @@
           ]
         },
         "type": {
-          "description": "What the node is in the cluster; it is fixed once the node holds a Kubernetes share.",
+          "description": "Type of the node in the cluster; it is fixed once the node holds a Kubernetes share.",
           "enum": [
             "controlplane",
             "worker"

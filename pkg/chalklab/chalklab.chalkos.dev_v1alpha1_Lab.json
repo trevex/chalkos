@@ -48,13 +48,14 @@
               "memory": {
                 "type": "integer",
                 "minimum": 512,
-                "description": "Memory in MiB; default 3072 for a control plane, 2048 for another node."
+                "description": "Memory of the VM in MiB; without it, 3072 for a control plane and 2048 for another node."
               },
-              "cpus": { "type": "integer", "minimum": 1, "description": "Virtual CPUs; default 2." },
+              "cpus": { "type": "integer", "minimum": 1, "default": 2, "description": "Number of the VM's virtual CPUs." },
               "disks": {
                 "type": "array",
                 "minItems": 1,
-                "description": "The VM's disks: the first holds the node's image, the others start empty; default one of 16G.",
+                "default": [{ "size": "16G" }],
+                "description": "The VM's disks: the first holds the node's image, the others start empty.",
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
@@ -68,7 +69,7 @@
                     "serial": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9_-]{1,20}$",
-                      "description": "Serial number the disk reports to the node, up to 20 letters, digits, _ and -, for a SystemDisk or Volume to select it by; none by default."
+                      "description": "Serial number the disk reports to the node, up to 20 letters, digits, _ and -, for a SystemDisk or Volume to select it by."
                     }
                   }
                 }
