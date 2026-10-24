@@ -168,7 +168,7 @@ anchor. The generated reference has predictable anchors:
 
 | Target | Path and anchor |
 | --- | --- |
-| A command | `reference/cli/` and the command path joined with underscores: `cli/chalkctl_etcd_leave.md`; its flags are under `#options` |
+| A command | `reference/cli/` and the command path joined with underscores: `cli/chalkctl_etcd_leave.md`; a flag is `#flag-` and its long name: `cli/chalkctl_upgrade.md#flag-image` |
 | An option | its name in lower case, keeping only letters, digits, `-` and `_`, with `<name>` and `*` dropped: `options.md#variantsmodules` |
 | An API method, message or enum | `method-`, `message-` or `enum-` and the name in lower case without dots: `api.md#method-upgrade` |
 | A kind | its name in lower case: `kinds.md#systemdisk` |

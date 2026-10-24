@@ -39,7 +39,7 @@ type secretFlags struct {
 
 func (s *secretFlags) register(fs *pflag.FlagSet) {
 	fs.StringVar(&s.path, "secrets", "", "secrets file, encrypted with age or not, or - to read it from standard input")
-	fs.Var(&s.identities, "identity", "age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)")
+	fs.Var(&s.identities, "identity", "file holding an age identity to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)")
 }
 
 // loadSecrets reads the secrets file in whatever format it has. Age identities are read only when
@@ -441,8 +441,8 @@ type changeFlags struct {
 }
 
 func (c *changeFlags) register(fs *pflag.FlagSet) {
-	fs.StringVar(&c.out, "out", "", "write the changed secrets file to this new file instead of updating the secrets file in place")
-	fs.StringVar(&c.publicOut, "public-out", "", "write the public half to this new file instead of updating secrets.pub.json beside the secrets file in place")
+	fs.StringVar(&c.out, "out", "", "new file to write the changed secrets file to, instead of updating the secrets file in place")
+	fs.StringVar(&c.publicOut, "public-out", "", "new file to write the public half to, instead of updating secrets.pub.json beside the secrets file in place")
 	fs.Var(&c.recipients, "recipient", "age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out")
 }
 

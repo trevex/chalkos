@@ -5,10 +5,6 @@ description: "Install and operate chalkos clusters"
 
 # chalkctl
 
-Install and operate chalkos clusters
-
-## Synopsis
-
 chalkctl installs and operates the nodes of a chalkos cluster. It reads the cluster from an
 inventory (chalkos.yaml in the current directory, or --inventory), which names each node, the
 address chalkctl reaches it at, the image it runs and the config files it gets, and talks to chalkd
@@ -26,40 +22,33 @@ argument after it is read as a positional argument.
 
 ## Examples
 
-```
-  # Generate the cluster's secrets, install and bootstrap a control plane, write a kubeconfig.
-  chalkctl gen secrets --recipient age1...
-  chalkctl install cp1 --secrets secrets.age \
-    --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
-  chalkctl bootstrap cp1 --secrets secrets.age
-  chalkctl kubeconfig --secrets secrets.age
-```
-
-## Options
-
-```
-  -h, --help   help for chalkctl
+```sh
+# Generate the cluster's secrets, install and bootstrap a control plane, write a kubeconfig.
+chalkctl gen secrets --recipient age1...
+chalkctl install cp1 --secrets secrets.age \
+  --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+chalkctl bootstrap cp1 --secrets secrets.age
+chalkctl kubeconfig --secrets secrets.age
 ```
 
-## SEE ALSO
+## See also
 
-* [chalkctl apply-config](chalkctl_apply-config.md)	 - Deliver a node's config from the inventory
-* [chalkctl bootstrap](chalkctl_bootstrap.md)	 - Initialise the cluster on a control plane
-* [chalkctl completion](chalkctl_completion.md)	 - Generate the autocompletion script for the specified shell
-* [chalkctl config](chalkctl_config.md)	 - Manage client files
-* [chalkctl disks](chalkctl_disks.md)	 - List a node's disks
-* [chalkctl etcd](chalkctl_etcd.md)	 - Manage the cluster's etcd members
-* [chalkctl gen](chalkctl_gen.md)	 - Generate files of a cluster
-* [chalkctl install](chalkctl_install.md)	 - Install a node that waits in maintenance mode
-* [chalkctl kubeconfig](chalkctl_kubeconfig.md)	 - Write an admin kubeconfig
-* [chalkctl logs](chalkctl_logs.md)	 - Show a node's journal
-* [chalkctl node](chalkctl_node.md)	 - Manage a node's certificate
-* [chalkctl node-ca](chalkctl_node-ca.md)	 - Manage the node CA
-* [chalkctl reboot](chalkctl_reboot.md)	 - Reboot a node
-* [chalkctl recovery-key](chalkctl_recovery-key.md)	 - Print a node's recovery key
-* [chalkctl rotate](chalkctl_rotate.md)	 - Rotate os-ca, kubernetes-ca, service-account-key or encryption-key
-* [chalkctl status](chalkctl_status.md)	 - Show an installed node's status
-* [chalkctl storage](chalkctl_storage.md)	 - Manage a node's volumes
-* [chalkctl upgrade](chalkctl_upgrade.md)	 - Install new images on the cluster's nodes, one control plane at a time
-* [chalkctl validate](chalkctl_validate.md)	 - Check nodes' config against the schemas of their images
-
+- [chalkctl apply-config](chalkctl_apply-config.md): Deliver a node's config from the inventory
+- [chalkctl bootstrap](chalkctl_bootstrap.md): Initialise the cluster on a control plane
+- [chalkctl completion](chalkctl_completion.md): Write a shell completion script
+- [chalkctl config](chalkctl_config.md): Manage client files
+- [chalkctl disks](chalkctl_disks.md): List a node's disks
+- [chalkctl etcd](chalkctl_etcd.md): Manage the cluster's etcd members
+- [chalkctl gen](chalkctl_gen.md): Generate files of a cluster
+- [chalkctl install](chalkctl_install.md): Install a node that waits in maintenance mode
+- [chalkctl kubeconfig](chalkctl_kubeconfig.md): Write an admin kubeconfig
+- [chalkctl logs](chalkctl_logs.md): Show a node's journal
+- [chalkctl node](chalkctl_node.md): Manage a node's certificate
+- [chalkctl node-ca](chalkctl_node-ca.md): Manage the node CA
+- [chalkctl reboot](chalkctl_reboot.md): Reboot a node
+- [chalkctl recovery-key](chalkctl_recovery-key.md): Print a node's recovery key
+- [chalkctl rotate](chalkctl_rotate.md): Rotate os-ca, kubernetes-ca, service-account-key or encryption-key
+- [chalkctl status](chalkctl_status.md): Show an installed node's status
+- [chalkctl storage](chalkctl_storage.md): Manage a node's volumes
+- [chalkctl upgrade](chalkctl_upgrade.md): Install new images on the cluster's nodes, one control plane at a time
+- [chalkctl validate](chalkctl_validate.md): Check nodes' config against the schemas of their images

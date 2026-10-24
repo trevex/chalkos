@@ -5,36 +5,30 @@ description: "Follow a node's serial console"
 
 # chalklab console
 
-Follow a node's serial console
-
-## Synopsis
+```sh
+chalklab console <node> [flags]
+```
 
 Prints a node's serial console log and follows what the node writes until interrupted;
 --follow=false prints the log and exits. The console is read-only. The command needs no
 secrets file or client file.
 
-```
-chalklab console <node> [flags]
-```
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--follow`{ #flag-follow }, `-f` | boolean | `true` | Keep printing what the node writes. |
+| `--name`{ #flag-name } | string | the only lab | Lab of the node. |
 
 ## Examples
 
-```
-  chalklab console cp1
+```sh
+chalklab console cp1
 
-  # Print the log so far.
-  chalklab console w1 -f=false
-```
-
-## Options
-
-```
-  -f, --follow        keep printing what the node writes (default true)
-  -h, --help          help for console
-      --name string   lab of the node (default the only lab)
+# Print the log so far.
+chalklab console w1 -f=false
 ```
 
-## SEE ALSO
+## See also
 
-* [chalklab](chalklab.md)	 - Run a chalkos cluster's nodes as QEMU virtual machines on this machine
-
+- [chalklab](chalklab.md): Run a chalkos cluster's nodes as QEMU virtual machines on this machine

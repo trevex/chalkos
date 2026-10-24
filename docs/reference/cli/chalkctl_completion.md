@@ -1,35 +1,43 @@
 ---
 title: "chalkctl completion"
-description: "Generate the autocompletion script for the specified shell"
+description: "Write a shell completion script"
 ---
 
 # chalkctl completion
 
-Generate the autocompletion script for the specified shell
+```sh
+chalkctl completion bash [flags]
+chalkctl completion fish [flags]
+chalkctl completion powershell [flags]
+chalkctl completion zsh [flags]
+```
 
-## Synopsis
+Writes a script that completes chalkctl's commands and flags in bash, fish, PowerShell or zsh.
+Each shell's command says in its help how to load the script into every new session. The command
+needs no secrets file or client file.
 
-Writes a script that completes chalkctl's commands and flags in a shell. Each shell's command
-says how to load the script. The command needs no secrets file or client file.
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--no-descriptions`{ #flag-no-descriptions } | boolean | `false` | Complete commands and flags without their descriptions. |
+
+## Shells
+
+| Shell | Command that loads the script into the current session |
+| --- | --- |
+| bash | `source <(chalkctl completion bash)` |
+| fish | `chalkctl completion fish \| source` |
+| powershell | `chalkctl completion powershell \| Out-String \| Invoke-Expression` |
+| zsh | `source <(chalkctl completion zsh)` |
 
 ## Examples
 
-```
-  # Complete chalkctl's commands in every new bash session.
-  chalkctl completion bash > ~/.local/share/bash-completion/completions/chalkctl
-```
-
-## Options
-
-```
-  -h, --help   help for completion
+```sh
+# Complete chalkctl's commands in every new bash session.
+chalkctl completion bash > ~/.local/share/bash-completion/completions/chalkctl
 ```
 
-## SEE ALSO
+## See also
 
-* [chalkctl](chalkctl.md)	 - Install and operate chalkos clusters
-* [chalkctl completion bash](chalkctl_completion_bash.md)	 - Generate the autocompletion script for bash
-* [chalkctl completion fish](chalkctl_completion_fish.md)	 - Generate the autocompletion script for fish
-* [chalkctl completion powershell](chalkctl_completion_powershell.md)	 - Generate the autocompletion script for powershell
-* [chalkctl completion zsh](chalkctl_completion_zsh.md)	 - Generate the autocompletion script for zsh
-
+- [chalkctl](chalkctl.md): Install and operate chalkos clusters

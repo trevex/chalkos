@@ -5,9 +5,9 @@ description: "Print the node's documents of a kind, or list the kinds"
 
 # chalkcfg get
 
-Print the node's documents of a kind, or list the kinds
-
-## Synopsis
+```sh
+chalkcfg get [<kind> [<name>]] [flags]
+```
 
 Prints the node's documents of a kind, or the one with the given name. Without a kind, lists the
 kinds the image declares, other than Secret and Addon, with their groups and the node's number
@@ -27,33 +27,27 @@ empty list, or no lines. get exits with 0 on success and with 2 for a usage erro
 of, for a kind in more than one group, for a jsonpath expression or template that fails to parse
 or run, and for an error reading the config.
 
-```
-chalkcfg get [<kind> [<name>]] [flags]
-```
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--output`{ #flag-output }, `-o` | string | — | Output format: json, yaml, jsonpath=&lt;expression> or go-template=&lt;template>; the documents' names without it. |
 
 ## Examples
 
-```
-  # The kinds the image declares and how many documents the node has of each.
-  chalkcfg get
+```sh
+# The kinds the image declares and how many documents the node has of each.
+chalkcfg get
 
-  # The names of the node's volumes, then one of them as YAML.
-  chalkcfg get Volume
-  chalkcfg get Volume data -o yaml
+# The names of the node's volumes, then one of them as YAML.
+chalkcfg get Volume
+chalkcfg get Volume data -o yaml
 
-  # A field of every document of a kind, one line per document.
-  chalkcfg get Node -o jsonpath='{.spec.type}'
-  chalkcfg get Node -o go-template='{{range .spec.taints}}{{.key}} {{end}}'
-```
-
-## Options
-
-```
-  -h, --help            help for get
-  -o, --output string   output format: json, yaml, jsonpath=<expression> or go-template=<template>; the documents' names without it
+# A field of every document of a kind, one line per document.
+chalkcfg get Node -o jsonpath='{.spec.type}'
+chalkcfg get Node -o go-template='{{range .spec.taints}}{{.key}} {{end}}'
 ```
 
-## SEE ALSO
+## See also
 
-* [chalkcfg](chalkcfg.md)	 - Print the config documents of the node chalkcfg runs on
-
+- [chalkcfg](chalkcfg.md): Print the config documents of the node chalkcfg runs on

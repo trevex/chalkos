@@ -5,9 +5,9 @@ description: "Sign a copy of an image directory or an OCI image layout for Secur
 
 # chalkbuild sign
 
-Sign a copy of an image directory or an OCI image layout for Secure Boot
-
-## Synopsis
+```sh
+chalkbuild sign <image dir or layout> <out dir> [flags]
+```
 
 Copies an image directory, as nix build makes it, to a new directory and signs the copy with a
 Secure Boot db key: the boot loader (/EFI/BOOT/BOOT*.EFI) and the UKIs (/EFI/Linux/*.efi) on the
@@ -24,32 +24,26 @@ layers, checks them against --cert, and writes a new layout with them in place o
 and a new manifest; the store, hash tree and contract layers are copied as they are. It prints the
 new manifest's digest.
 
-```
-chalkbuild sign <image dir or layout> <out dir> [flags]
-```
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--cert`{ #flag-cert } | string | — | PEM certificate of the Secure Boot db signer, which the signed copy is checked against. |
+| `--key`{ #flag-key } | string | — | PEM private key of the Secure Boot db signer. |
 
 ## Examples
 
-```
-  # Sign the build of the node-metal image into the directory the inventory names.
-  chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
+```sh
+# Sign the build of the node-metal image into the directory the inventory names.
+chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
 
-  # Sign the installer, raw image and ISO.
-  chalkbuild sign --key db.key --cert db.crt installer installer-signed
+# Sign the installer, raw image and ISO.
+chalkbuild sign --key db.key --cert db.crt installer installer-signed
 
-  # Sign an OCI image layout.
-  chalkbuild sign --key db.key --cert db.crt oci/node-metal oci/node-metal-signed
-```
-
-## Options
-
-```
-      --cert string   PEM certificate of the Secure Boot db signer, which the signed copy is checked against
-  -h, --help          help for sign
-      --key string    PEM private key of the Secure Boot db signer
+# Sign an OCI image layout.
+chalkbuild sign --key db.key --cert db.crt oci/node-metal oci/node-metal-signed
 ```
 
-## SEE ALSO
+## See also
 
-* [chalkbuild](chalkbuild.md)	 - Prepare the images Nix builds for a chalkos cluster's nodes
-
+- [chalkbuild](chalkbuild.md): Prepare the images Nix builds for a chalkos cluster's nodes

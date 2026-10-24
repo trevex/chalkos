@@ -5,9 +5,9 @@ description: "Initialise the cluster on a control plane"
 
 # chalkctl bootstrap
 
-Initialise the cluster on a control plane
-
-## Synopsis
+```sh
+chalkctl bootstrap <node> [flags]
+```
 
 Initialises the cluster on one control plane: the node starts etcd as its first member, starts
 the Kubernetes control-plane components and applies chalkos's add-ons and the objects of its Addon
@@ -15,29 +15,23 @@ documents. chalkctl waits until they are applied, up to --timeout. The node refu
 bootstrapped already or holds etcd data, so a second cluster is never initialised; the other
 control planes join the first. The command needs an admin client file or the secrets file.
 
-```
-chalkctl bootstrap <node> [flags]
-```
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--address`{ #flag-address } | string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
+| `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
+| `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
+| `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
+| `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
+| `--timeout`{ #flag-timeout } | duration | `20m0s` | How long to wait for the control plane to apply its add-ons and Addon objects. |
 
 ## Examples
 
-```
-  chalkctl bootstrap cp1
-```
-
-## Options
-
-```
-      --address string     address of the node's chalkd, host or host:port (default the node's address in the inventory)
-      --config string      client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)
-  -h, --help               help for bootstrap
-      --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --inventory string   inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
-      --secrets string     secrets file, encrypted with age or not, or - to read it from standard input
-      --timeout duration   how long to wait for the control plane to apply its add-ons and Addon objects (default 20m0s)
+```sh
+chalkctl bootstrap cp1
 ```
 
-## SEE ALSO
+## See also
 
-* [chalkctl](chalkctl.md)	 - Install and operate chalkos clusters
-
+- [chalkctl](chalkctl.md): Install and operate chalkos clusters

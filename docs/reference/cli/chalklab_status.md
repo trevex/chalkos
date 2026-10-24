@@ -5,33 +5,27 @@ description: "Show the lab's VMs, ports and files"
 
 # chalklab status
 
-Show the lab's VMs, ports and files
-
-## Synopsis
+```sh
+chalklab status [flags]
+```
 
 Shows the lab's supervisor, each VM with its node's type, whether it runs, the forwarded ports
 of its chalkd and API server and its console log, and the paths of the lab's kubeconfig,
 inventory, client file and Secure Boot db key and certificate. The command needs no secrets file
 or client file.
 
-```
-chalklab status [flags]
-```
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--name`{ #flag-name } | string | the only lab | Lab to show. |
 
 ## Examples
 
-```
-  chalklab status
-```
-
-## Options
-
-```
-  -h, --help          help for status
-      --name string   lab to show (default the only lab)
+```sh
+chalklab status
 ```
 
-## SEE ALSO
+## See also
 
-* [chalklab](chalklab.md)	 - Run a chalkos cluster's nodes as QEMU virtual machines on this machine
-
+- [chalklab](chalklab.md): Run a chalkos cluster's nodes as QEMU virtual machines on this machine

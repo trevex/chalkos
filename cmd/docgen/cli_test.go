@@ -9,15 +9,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// testTree is a program with a command, a group and a hidden command.
+// testTree is a program with a command, a group, a hidden command and a completion command.
 func testTree() *cobra.Command {
 	root := &cobra.Command{Use: "tool", Short: "A tool", Long: "Runs things in <dir>.", RunE: func(*cobra.Command, []string) error { return nil }}
-	run := &cobra.Command{Use: "run <thing>", Short: "Run a thing", Long: "Runs <thing>, writing <file>.prev.", Example: "  tool run x --fast", RunE: func(*cobra.Command, []string) error { return nil }}
+	root.PersistentFlags().Bool("verbose", false, "print more")
+	run := &cobra.Command{Use: "run <thing>", Short: "Run a thing", Long: "Runs <thing>, writing <file>.prev.", Example: "  # Run x fast.\n  tool run x --fast", RunE: func(*cobra.Command, []string) error { return nil }}
 	run.Flags().Bool("fast", false, "run fast")
+	run.Flags().StringP("out", "o", "", "`file` to write, a|b (default the thing's directory)")
+	run.Flags().StringSlice("tag", nil, "tags of the thing")
+	run.Flags().Duration("timeout", 0, "how long to wait")
+	run.Flags().Int("tries", 3, "how often to try")
 	group := &cobra.Command{Use: "group", Short: "Group things"}
 	group.AddCommand(&cobra.Command{Use: "add", Short: "Add a thing", RunE: func(*cobra.Command, []string) error { return nil }})
 	hidden := &cobra.Command{Use: "secret", Short: "Hidden", Hidden: true, RunE: func(*cobra.Command, []string) error { return nil }}
 	root.AddCommand(run, group, hidden)
+	root.InitDefaultCompletionCmd()
+	completion, _, _ := root.Find([]string{"completion"})
+	completion.Short = "Write a shell completion script"
 	return root
 }
 
@@ -36,7 +44,7 @@ func TestWriteCLI(t *testing.T) {
 	for _, e := range entries {
 		names = append(names, e.Name())
 	}
-	if got, want := strings.Join(names, " "), "index.md tool.md tool_group.md tool_group_add.md tool_run.md"; got != want {
+	if got, want := strings.Join(names, " "), "index.md tool.md tool_completion.md tool_group.md tool_group_add.md tool_run.md"; got != want {
 		t.Errorf("pages = %s, want %s", got, want)
 	}
 	index, _ := os.ReadFile(filepath.Join(out, "index.md"))
@@ -44,15 +52,36 @@ func TestWriteCLI(t *testing.T) {
 		t.Errorf("index.md does not say what --help shows:\n%s", index)
 	}
 	page, _ := os.ReadFile(filepath.Join(out, "tool_run.md"))
+	wantPage := "---\ntitle: \"tool run\"\ndescription: \"Run a thing\"\n---\n\n" +
+		"# tool run\n\n" +
+		"```sh\ntool run <thing> [flags]\n```\n\n" +
+		"Runs &lt;thing>, writing &lt;file>.prev.\n\n" +
+		"## Flags\n\n" +
+		"| Flag | Type | Default | Description |\n" +
+		"| --- | --- | --- | --- |\n" +
+		"| `--fast`{ #flag-fast } | boolean | `false` | Run fast. |\n" +
+		"| `--out`{ #flag-out }, `-o` | string | the thing's directory | File to write, a\\|b. |\n" +
+		"| `--tag`{ #flag-tag } | list of string | — | Tags of the thing. |\n" +
+		"| `--timeout`{ #flag-timeout } | duration | `0s` | How long to wait. |\n" +
+		"| `--tries`{ #flag-tries } | integer | `3` | How often to try. |\n\n" +
+		"## Inherited flags\n\n" +
+		"| Flag | Type | Default | Description |\n" +
+		"| --- | --- | --- | --- |\n" +
+		"| `--verbose`{ #flag-verbose } | boolean | `false` | Print more. |\n\n" +
+		"## Examples\n\n" +
+		"```sh\n# Run x fast.\ntool run x --fast\n```\n\n" +
+		"## See also\n\n" +
+		"- [tool](tool.md): A tool\n"
+	if string(page) != wantPage {
+		t.Errorf("tool_run.md =\n%s\nwant\n%s", page, wantPage)
+	}
+	page, _ = os.ReadFile(filepath.Join(out, "tool.md"))
 	for _, want := range []string{
-		"---\ntitle: \"tool run\"\ndescription: \"Run a thing\"\n---\n\n# tool run\n",
-		"## Synopsis\n\nRuns &lt;thing>, writing &lt;file>.prev.",
-		"```\ntool run <thing> [flags]\n```",
-		"## Examples\n\n```\n  tool run x --fast\n```",
-		"* [tool](tool.md)",
+		"# tool\n\nRuns things in &lt;dir>.\n\n## Flags\n",
+		"## See also\n\n- [tool completion](tool_completion.md): Write a shell completion script\n- [tool group](tool_group.md): Group things\n- [tool run](tool_run.md): Run a thing\n",
 	} {
 		if !strings.Contains(string(page), want) {
-			t.Errorf("tool_run.md lacks %q:\n%s", want, page)
+			t.Errorf("tool.md lacks %q:\n%s", want, page)
 		}
 	}
 	nav, _ := os.ReadFile(config)
@@ -63,6 +92,7 @@ func TestWriteCLI(t *testing.T) {
       "reference/cli/index.md",
       { "tool" = [
         { "Overview" = "reference/cli/tool.md" },
+        { "completion" = "reference/cli/tool_completion.md" },
         { "group" = [
           { "Overview" = "reference/cli/tool_group.md" },
           { "add" = "reference/cli/tool_group_add.md" },
@@ -79,6 +109,33 @@ func TestWriteCLI(t *testing.T) {
 	}
 }
 
+// The completion command gets one page, with every shell's usage line and the command that loads
+// its script, and none for each shell.
+func TestCompletionPage(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "zensical.toml")
+	os.WriteFile(config, []byte("# BEGIN docgen cli\n# END docgen cli\n"), 0o644)
+	if err := writeCLI([]*cobra.Command{testTree()}, filepath.Join(dir, "cli"), config); err != nil {
+		t.Fatal(err)
+	}
+	page, _ := os.ReadFile(filepath.Join(dir, "cli", "tool_completion.md"))
+	for _, want := range []string{
+		"description: \"Write a shell completion script\"",
+		"```sh\ntool completion bash [flags]\ntool completion fish [flags]\ntool completion powershell [flags]\ntool completion zsh [flags]\n```\n",
+		"| `--no-descriptions`{ #flag-no-descriptions } | boolean | `false` |",
+		"## Shells\n\n| Shell | Command that loads the script into the current session |\n| --- | --- |\n| bash | `source <(tool completion bash)` |\n",
+		"| powershell | `tool completion powershell \\| Out-String \\| Invoke-Expression` |",
+		"## See also\n\n- [tool](tool.md): A tool\n",
+	} {
+		if !strings.Contains(string(page), want) {
+			t.Errorf("tool_completion.md lacks %q:\n%s", want, page)
+		}
+	}
+	if strings.Contains(string(page), "tool_completion_bash.md") {
+		t.Errorf("tool_completion.md links a page per shell:\n%s", page)
+	}
+}
+
 func TestWriteCLINeedsMarkers(t *testing.T) {
 	dir := t.TempDir()
 	config := filepath.Join(dir, "zensical.toml")
@@ -88,11 +145,11 @@ func TestWriteCLINeedsMarkers(t *testing.T) {
 	}
 }
 
-func TestMarkdownKeepsCode(t *testing.T) {
-	in := "## a <b>\n\n### c\n\n```\n## x <y>\n```\n\n\tsource <(tool completion bash)\n"
-	want := "# a &lt;b>\n\n## c\n\n```\n## x <y>\n```\n\n\tsource <(tool completion bash)\n"
-	if got := markdown(in); got != want {
-		t.Errorf("markdown =\n%q\nwant\n%q", got, want)
+func TestProseKeepsCode(t *testing.T) {
+	in := "a <b>\n\n```\nx <y>\n```\n\n\tsource <(tool completion bash)\n    <z>"
+	want := "a &lt;b>\n\n```\nx <y>\n```\n\n\tsource <(tool completion bash)\n    <z>"
+	if got := prose(in); got != want {
+		t.Errorf("prose =\n%q\nwant\n%q", got, want)
 	}
 }
 
@@ -134,7 +191,7 @@ func TestCompletionDescribed(t *testing.T) {
 			continue
 		}
 		cmd, _, _ := root.Find([]string{"completion"})
-		if strings.Contains(cmd.Long, "autocompletion") || !strings.Contains(cmd.Long, root.Name()+"'s commands") || !strings.Contains(cmd.Example, root.Name()+" completion bash") {
+		if strings.Contains(cmd.Short+cmd.Long, "autocompletion") || !strings.Contains(cmd.Long, root.Name()+"'s commands") || !strings.Contains(cmd.Example, root.Name()+" completion bash") {
 			t.Errorf("%s completion has cobra's description or no example:\n%s\n%s", root.Name(), cmd.Long, cmd.Example)
 		}
 	}
@@ -146,5 +203,14 @@ func TestChalkcfgRootDescribed(t *testing.T) {
 		if root.Name() == "chalkcfg" && strings.Contains(root.Long, "completes") {
 			t.Errorf("chalkcfg's description is the completion command's:\n%s", root.Long)
 		}
+	}
+}
+
+// A link of help to the site becomes a link to the page, which the strict build checks.
+func TestProseLinksSite(t *testing.T) {
+	in := "See https://trevex.github.io/chalkos/how-it-works/node/upgrades/#a-rolled-back-node-stops-the-run."
+	want := "See [https://trevex.github.io/chalkos/how-it-works/node/upgrades/#a-rolled-back-node-stops-the-run](../../how-it-works/node/upgrades.md#a-rolled-back-node-stops-the-run)."
+	if got := prose(in); got != want {
+		t.Errorf("prose =\n%s\nwant\n%s", got, want)
 	}
 }

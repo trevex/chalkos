@@ -5,9 +5,9 @@ description: "Check nodes' config against the schemas of their images"
 
 # chalkctl validate
 
-Check nodes' config against the schemas of their images
-
-## Synopsis
+```sh
+chalkctl validate [<node>...] [flags]
+```
 
 Checks the config of the nodes named, or of every node of the inventory, as each node would
 check it on its image: the files the inventory gives the node form its set, every document is
@@ -22,28 +22,22 @@ node whose config is valid, with the digest of an image in a registry, and names
 config is not, and warns of a node whose SystemDisk leaves STATE, which holds its keys and secrets,
 unencrypted. It reaches no node and needs no secrets file or client file.
 
-```
-chalkctl validate [<node>...] [flags]
-```
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory | Inventory naming the nodes and their config files. |
 
 ## Examples
 
-```
-  # Check every node of chalkos.yaml.
-  chalkctl validate
+```sh
+# Check every node of chalkos.yaml.
+chalkctl validate
 
-  # Check two nodes of another inventory.
-  chalkctl validate cp1 w1 --inventory lab/chalkos.yaml
-```
-
-## Options
-
-```
-  -h, --help               help for validate
-      --inventory string   inventory naming the nodes and their config files (default chalkos.yaml in the current directory)
+# Check two nodes of another inventory.
+chalkctl validate cp1 w1 --inventory lab/chalkos.yaml
 ```
 
-## SEE ALSO
+## See also
 
-* [chalkctl](chalkctl.md)	 - Install and operate chalkos clusters
-
+- [chalkctl](chalkctl.md): Install and operate chalkos clusters

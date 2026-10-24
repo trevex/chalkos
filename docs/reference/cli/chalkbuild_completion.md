@@ -1,35 +1,43 @@
 ---
 title: "chalkbuild completion"
-description: "Generate the autocompletion script for the specified shell"
+description: "Write a shell completion script"
 ---
 
 # chalkbuild completion
 
-Generate the autocompletion script for the specified shell
+```sh
+chalkbuild completion bash [flags]
+chalkbuild completion fish [flags]
+chalkbuild completion powershell [flags]
+chalkbuild completion zsh [flags]
+```
 
-## Synopsis
+Writes a script that completes chalkbuild's commands and flags in bash, fish, PowerShell or zsh.
+Each shell's command says in its help how to load the script into every new session. The command
+needs no secrets file or client file.
 
-Writes a script that completes chalkbuild's commands and flags in a shell. Each shell's command
-says how to load the script. The command needs no secrets file or client file.
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--no-descriptions`{ #flag-no-descriptions } | boolean | `false` | Complete commands and flags without their descriptions. |
+
+## Shells
+
+| Shell | Command that loads the script into the current session |
+| --- | --- |
+| bash | `source <(chalkbuild completion bash)` |
+| fish | `chalkbuild completion fish \| source` |
+| powershell | `chalkbuild completion powershell \| Out-String \| Invoke-Expression` |
+| zsh | `source <(chalkbuild completion zsh)` |
 
 ## Examples
 
-```
-  # Complete chalkbuild's commands in every new bash session.
-  chalkbuild completion bash > ~/.local/share/bash-completion/completions/chalkbuild
-```
-
-## Options
-
-```
-  -h, --help   help for completion
+```sh
+# Complete chalkbuild's commands in every new bash session.
+chalkbuild completion bash > ~/.local/share/bash-completion/completions/chalkbuild
 ```
 
-## SEE ALSO
+## See also
 
-* [chalkbuild](chalkbuild.md)	 - Prepare the images Nix builds for a chalkos cluster's nodes
-* [chalkbuild completion bash](chalkbuild_completion_bash.md)	 - Generate the autocompletion script for bash
-* [chalkbuild completion fish](chalkbuild_completion_fish.md)	 - Generate the autocompletion script for fish
-* [chalkbuild completion powershell](chalkbuild_completion_powershell.md)	 - Generate the autocompletion script for powershell
-* [chalkbuild completion zsh](chalkbuild_completion_zsh.md)	 - Generate the autocompletion script for zsh
-
+- [chalkbuild](chalkbuild.md): Prepare the images Nix builds for a chalkos cluster's nodes

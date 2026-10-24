@@ -5,9 +5,9 @@ description: "Install a node that waits in maintenance mode"
 
 # chalkctl install
 
-Install a node that waits in maintenance mode
-
-## Synopsis
+```sh
+chalkctl install <node> [flags]
+```
 
 Installs a node that waits in maintenance mode: a machine that booted the installer, or a
 node's image booted for the first time. The node serves a self-signed certificate in maintenance
@@ -39,39 +39,33 @@ plane that does not answer as an installed node counts as not installed yet, so 
 first nodes install while the others wait. --force installs without asking. The command needs the
 secrets file.
 
-```
-chalkctl install <node> [flags]
-```
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--address`{ #flag-address } | string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
+| `--fingerprint`{ #flag-fingerprint } | string | — | SHA-256 fingerprint the node prints on its console in maintenance mode. |
+| `--force`{ #flag-force } | boolean | `false` | Install the node without asking the control planes whether its name is revoked. |
+| `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
+| `--image`{ #flag-image } | string | the node's image in the inventory: from its directory, or from a registry, which the installer pulls | Image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory, which chalkctl sends. |
+| `--insecure`{ #flag-insecure } | boolean | `false` | Accept any certificate and print the node's fingerprint. |
+| `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
+| `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |
+| `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
+| `--wipe-disk`{ #flag-wipe-disk } | boolean | `false` | Let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data. |
 
 ## Examples
 
-```
-  # Install cp1, comparing the certificate with the fingerprint on its console.
-  chalkctl install cp1 --secrets secrets.age \
-    --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+```sh
+# Install cp1, comparing the certificate with the fingerprint on its console.
+chalkctl install cp1 --secrets secrets.age \
+  --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 
-  # Install w1 at an address of the network it booted into, with an image chalkbuild signed.
-  chalkctl install w1 --secrets secrets.age --address 192.168.1.50 --insecure \
-    --image ./worker-image
-```
-
-## Options
-
-```
-      --address string         address of the node's chalkd, host or host:port (default the node's address in the inventory)
-      --fingerprint string     SHA-256 fingerprint the node prints on its console in maintenance mode
-      --force                  install the node without asking the control planes whether its name is revoked
-  -h, --help                   help for install
-      --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --image string           image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory, which chalkctl sends (default the node's image in the inventory: from its directory, or from a registry, which the installer pulls)
-      --insecure               accept any certificate and print the node's fingerprint
-      --inventory string       inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
-      --password-file string   file holding the password of a node whose fallback is a password
-      --secrets string         secrets file, encrypted with age or not, or - to read it from standard input
-      --wipe-disk              let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data
+# Install w1 at an address of the network it booted into, with an image chalkbuild signed.
+chalkctl install w1 --secrets secrets.age --address 192.168.1.50 --insecure \
+  --image ./worker-image
 ```
 
-## SEE ALSO
+## See also
 
-* [chalkctl](chalkctl.md)	 - Install and operate chalkos clusters
-
+- [chalkctl](chalkctl.md): Install and operate chalkos clusters

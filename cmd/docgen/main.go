@@ -87,16 +87,26 @@ func programs() []*cobra.Command {
 		}
 		root.InitDefaultCompletionCmd()
 		completion, _, _ := root.Find([]string{"completion"})
+		completion.Short = completionShort
 		completion.Long = fmt.Sprintf(completionLong, root.Name())
 		completion.Example = fmt.Sprintf(completionExample, root.Name())
+		for _, shell := range completion.Commands() {
+			if f := shell.Flags().Lookup("no-descriptions"); f != nil {
+				f.Usage = noDescriptionsUsage
+			}
+		}
 	}
 	return roots
 }
 
-// The description and example of a program's completion command, by the program's name.
+// The description and example of a program's completion command, by the program's name, and the
+// help of its shells' --no-descriptions.
 const (
-	completionLong = `Writes a script that completes %[1]s's commands and flags in a shell. Each shell's command
-says how to load the script. The command needs no secrets file or client file.`
+	completionShort = "Write a shell completion script"
+	completionLong  = `Writes a script that completes %[1]s's commands and flags in bash, fish, PowerShell or zsh.
+Each shell's command says in its help how to load the script into every new session. The command
+needs no secrets file or client file.`
 	completionExample = `  # Complete %[1]s's commands in every new bash session.
   %[1]s completion bash > ~/.local/share/bash-completion/completions/%[1]s`
+	noDescriptionsUsage = "complete commands and flags without their descriptions"
 )

@@ -5,9 +5,9 @@ description: "Deliver a node's config from the inventory"
 
 # chalkctl apply-config
 
-Deliver a node's config from the inventory
-
-## Synopsis
+```sh
+chalkctl apply-config <node> [flags]
+```
 
 Delivers a node's config to the installed node: the documents of the files the inventory gives
 it. chalkctl first asks the node for the contract of the image it runs: its platform, schemas and
@@ -36,42 +36,36 @@ image that adds storage the staged image's config lacks is refused: the staged i
 would then count as removing it, and the node could not write that config again. Deliver the
 config with --staged first. The command needs the secrets file.
 
-```
-chalkctl apply-config <node> [flags]
-```
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--address`{ #flag-address } | string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
+| `--diff`{ #flag-diff } | boolean | `false` | Print what the config changes in the node's config, document by document and field by field, and change nothing. |
+| `--force`{ #flag-force } | boolean | `false` | With --kubernetes-share, deliver the share without asking the control planes whether the node is revoked. |
+| `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
+| `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
+| `--kubernetes-share`{ #flag-kubernetes-share } | boolean | `false` | Also deliver a new Kubernetes share, such as a new kubelet certificate for a worker. |
+| `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |
+| `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
+| `--staged`{ #flag-staged } | boolean | `false` | Deliver the config for the image staged to boot next instead, checked against the node's image in the inventory. |
 
 ## Examples
 
-```
-  # Apply w1's changed network and labels.
-  chalkctl apply-config w1 --secrets secrets.age
+```sh
+# Apply w1's changed network and labels.
+chalkctl apply-config w1 --secrets secrets.age
 
-  # Give w1 a new kubelet certificate.
-  chalkctl apply-config w1 --secrets secrets.age --kubernetes-share
+# Give w1 a new kubelet certificate.
+chalkctl apply-config w1 --secrets secrets.age --kubernetes-share
 
-  # Show what w1's config in the inventory changes on the node, changing nothing.
-  chalkctl apply-config w1 --secrets secrets.age --diff
+# Show what w1's config in the inventory changes on the node, changing nothing.
+chalkctl apply-config w1 --secrets secrets.age --diff
 
-  # Deliver w1's config for the image an upgrade with --no-reboot staged.
-  chalkctl apply-config w1 --secrets secrets.age --staged
-```
-
-## Options
-
-```
-      --address string         address of the node's chalkd, host or host:port (default the node's address in the inventory)
-      --diff                   print what the config changes in the node's config, document by document and field by field, and change nothing
-      --force                  with --kubernetes-share, deliver the share without asking the control planes whether the node is revoked
-  -h, --help                   help for apply-config
-      --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --inventory string       inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
-      --kubernetes-share       also deliver a new Kubernetes share, such as a new kubelet certificate for a worker
-      --password-file string   file holding the password of a node whose fallback is a password
-      --secrets string         secrets file, encrypted with age or not, or - to read it from standard input
-      --staged                 deliver the config for the image staged to boot next instead, checked against the node's image in the inventory
+# Deliver w1's config for the image an upgrade with --no-reboot staged.
+chalkctl apply-config w1 --secrets secrets.age --staged
 ```
 
-## SEE ALSO
+## See also
 
-* [chalkctl](chalkctl.md)	 - Install and operate chalkos clusters
-
+- [chalkctl](chalkctl.md): Install and operate chalkos clusters

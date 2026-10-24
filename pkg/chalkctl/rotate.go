@@ -29,8 +29,8 @@ func (l addressList) String() string {
 	return strings.Join(s, ",")
 }
 
-// Type names the value in help.
-func (l addressList) Type() string { return "node=addr" }
+// Type is pflag's name of a map of strings; help names the value NODE=ADDR, from the flag's usage.
+func (l addressList) Type() string { return "stringToString" }
 
 func (l addressList) Set(v string) error {
 	name, addr, ok := strings.Cut(v, "=")

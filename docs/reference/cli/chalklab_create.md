@@ -5,9 +5,9 @@ description: "Create a lab of the cluster's nodes, install them and bootstrap th
 
 # chalklab create
 
-Create a lab of the cluster's nodes, install them and bootstrap the cluster
-
-## Synopsis
+```sh
+chalklab create [flags]
+```
 
 Creates the lab of a lab file and brings the cluster up. chalklab reads the lab file
 (chalklab.yaml, or --lab) and the inventory it names; each node the lab file names runs the kvm
@@ -31,29 +31,23 @@ reads when a command names no --config or --secrets, so the commands it prints n
 The command needs the cluster's secrets file, --secrets, which chalkctl reads to install the
 nodes and to write the kubeconfig and the client file.
 
-```
-chalklab create [flags]
-```
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--guest-forward`{ #flag-guest-forward } | list of string | — | GUEST=HOST: make a host address (a local registry, for example) reachable at a guest address of the VMs' user-mode network; may be repeated. |
+| `--lab`{ #flag-lab } | string | chalklab.yaml in the current directory | Lab file naming the inventory and the nodes the lab runs. |
+| `--secrets`{ #flag-secrets } | string | — | The cluster's secrets file, which chalkctl reads to install the nodes. |
 
 ## Examples
 
-```
-  chalklab create --secrets secrets.age
+```sh
+chalklab create --secrets secrets.age
 
-  # Make a registry on the host's port 5000 reachable at 10.0.2.100:5000 in the VMs.
-  chalklab create --secrets secrets.age --guest-forward 10.0.2.100:5000=127.0.0.1:5000
-```
-
-## Options
-
-```
-      --guest-forward strings   GUEST=HOST: make a host address (a local registry, for example) reachable at a guest address of the VMs' user-mode network; may be repeated
-  -h, --help                    help for create
-      --lab string              lab file naming the inventory and the nodes the lab runs (default chalklab.yaml in the current directory)
-      --secrets string          the cluster's secrets file, which chalkctl reads to install the nodes
+# Make a registry on the host's port 5000 reachable at 10.0.2.100:5000 in the VMs.
+chalklab create --secrets secrets.age --guest-forward 10.0.2.100:5000=127.0.0.1:5000
 ```
 
-## SEE ALSO
+## See also
 
-* [chalklab](chalklab.md)	 - Run a chalkos cluster's nodes as QEMU virtual machines on this machine
-
+- [chalklab](chalklab.md): Run a chalkos cluster's nodes as QEMU virtual machines on this machine

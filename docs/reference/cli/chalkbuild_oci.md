@@ -5,9 +5,9 @@ description: "Write an image directory as an OCI image layout"
 
 # chalkbuild oci
 
-Write an image directory as an OCI image layout
-
-## Synopsis
+```sh
+chalkbuild oci <image dir> <layout dir>
+```
 
 Writes an image directory, as nix build makes it, as an OCI image layout: one manifest of the
 artifact type application/vnd.chalkos.image.v1. Its config is the image's header: its ID, root
@@ -18,23 +18,12 @@ mkImages's oci outputs run this command. The layout directory must not exist; wh
 fails, or Ctrl-C stops the command, it is removed again. The command needs no secrets file or
 client file.
 
-```
-chalkbuild oci <image dir> <layout dir> [flags]
-```
-
 ## Examples
 
-```
-  chalkbuild oci images/node-metal oci/node-metal
-```
-
-## Options
-
-```
-  -h, --help   help for oci
+```sh
+chalkbuild oci images/node-metal oci/node-metal
 ```
 
-## SEE ALSO
+## See also
 
-* [chalkbuild](chalkbuild.md)	 - Prepare the images Nix builds for a chalkos cluster's nodes
-
+- [chalkbuild](chalkbuild.md): Prepare the images Nix builds for a chalkos cluster's nodes

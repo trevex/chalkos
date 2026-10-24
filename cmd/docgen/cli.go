@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/cobra/doc"
+	"github.com/spf13/pflag"
 )
 
 // The lines of zensical.toml between which docgen writes the command pages' navigation.
@@ -53,17 +52,7 @@ func writeCLI(roots []*cobra.Command, dir, config string) error {
 
 // writePages writes the page of cmd and of each command below it.
 func writePages(cmd *cobra.Command, dir string) error {
-	cmd.DisableAutoGenTag = true
-	// chalkctl, chalklab, chalkbuild and chalkcfg run a command that holds subcommands only to fail
-	// with its usage, so its page lists the subcommands without a usage line of its own.
-	if cmd.HasAvailableSubCommands() {
-		cmd.Run, cmd.RunE = nil, nil
-	}
-	var buf bytes.Buffer
-	if err := doc.GenMarkdownCustom(cmd, &buf, func(s string) string { return s }); err != nil {
-		return err
-	}
-	page := frontMatter(cmd.CommandPath(), cmd.Short) + markdown(buf.String())
+	page := frontMatter(cmd.CommandPath(), cmd.Short) + render(cmd)
 	if err := os.WriteFile(filepath.Join(dir, pageName(cmd)), []byte(page), 0o644); err != nil {
 		return err
 	}
@@ -75,8 +64,156 @@ func writePages(cmd *cobra.Command, dir string) error {
 	return nil
 }
 
-// documented are the commands below cmd that get pages, as cobra's doc package chooses them.
-func documented(cmd *cobra.Command) []*cobra.Command {
+// render is the body of a command's page: its usage line, its description, its flags, its
+// examples and the pages of the commands above and below it. A command that holds subcommands
+// gets no usage line: chalkctl, chalklab, chalkbuild and chalkcfg run one only to fail with its
+// usage. The completion command's page shows each shell's usage line and how to load its script.
+func render(cmd *cobra.Command) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s\n\n", cmd.CommandPath())
+	var usage []string
+	shells := collapsed(cmd)
+	switch {
+	case shells:
+		// cobra leaves [flags] out of bash's usage line alone, though it has the same flags.
+		for _, c := range available(cmd) {
+			line := c.CommandPath()
+			if c.HasAvailableLocalFlags() {
+				line += " [flags]"
+			}
+			usage = append(usage, line)
+		}
+	case !cmd.HasAvailableSubCommands():
+		usage = []string{cmd.UseLine()}
+	}
+	if len(usage) > 0 {
+		fmt.Fprintf(&b, "```sh\n%s\n```\n\n", strings.Join(usage, "\n"))
+	}
+	if cmd.Long != "" {
+		fmt.Fprintf(&b, "%s\n\n", prose(strings.TrimSpace(cmd.Long)))
+	}
+	flags := cmd.LocalFlags()
+	if shells && len(available(cmd)) > 0 {
+		flags = available(cmd)[0].LocalFlags()
+	}
+	b.WriteString(flagTable("Flags", flags))
+	b.WriteString(flagTable("Inherited flags", cmd.InheritedFlags()))
+	if shells {
+		b.WriteString("## Shells\n\n| Shell | Command that loads the script into the current session |\n| --- | --- |\n")
+		for _, c := range available(cmd) {
+			load := "—"
+			if format, ok := completionLoad[c.Name()]; ok {
+				load = "`" + cell(fmt.Sprintf(format, cmd.Root().Name())) + "`"
+			}
+			fmt.Fprintf(&b, "| %s | %s |\n", c.Name(), load)
+		}
+		b.WriteString("\n")
+	}
+	if cmd.Example != "" {
+		fmt.Fprintf(&b, "## Examples\n\n```sh\n%s\n```\n\n", examples(cmd.Example))
+	}
+	var related []*cobra.Command
+	if cmd.HasParent() {
+		related = append(related, cmd.Parent())
+	}
+	related = append(related, documented(cmd)...)
+	if len(related) > 0 {
+		b.WriteString("## See also\n\n")
+		for _, c := range related {
+			fmt.Fprintf(&b, "- [%s](%s): %s\n", c.CommandPath(), pageName(c), prose(c.Short))
+		}
+	}
+	return strings.TrimSuffix(b.String(), "\n") + "\n"
+}
+
+// completionLoad is the command that loads a shell's completion script into the current session,
+// by the program's name, as cobra's help of each shell's completion command says.
+var completionLoad = map[string]string{
+	"bash":       "source <(%s completion bash)",
+	"fish":       "%s completion fish | source",
+	"powershell": "%s completion powershell | Out-String | Invoke-Expression",
+	"zsh":        "source <(%s completion zsh)",
+}
+
+// flagTable is a section of a page that lists flags, each with an anchor of its name, its type,
+// its default and its description. A flag's help names a default that is no value of the flag,
+// such as a file found in the current directory, at its end, as cobra's help would.
+func flagTable(heading string, flags *pflag.FlagSet) string {
+	var rows []string
+	flags.VisitAll(func(f *pflag.Flag) {
+		if f.Hidden || f.Deprecated != "" || f.Name == "help" {
+			return
+		}
+		_, usage := pflag.UnquoteUsage(f)
+		def := "—"
+		if m := describedDefault.FindStringSubmatch(usage); m != nil {
+			usage, def = strings.TrimSuffix(usage, m[0]), prose(m[1])
+		} else if f.DefValue != "" && f.DefValue != "[]" {
+			def = "`" + cell(f.DefValue) + "`"
+		}
+		name := fmt.Sprintf("`--%s`{ #flag-%s }", f.Name, f.Name)
+		if f.Shorthand != "" {
+			name += fmt.Sprintf(", `-%s`", f.Shorthand)
+		}
+		rows = append(rows, fmt.Sprintf("| %s | %s | %s | %s |", name, flagType(f), def, cell(prose(sentence(usage)))))
+	})
+	if len(rows) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("## %s\n\n| Flag | Type | Default | Description |\n| --- | --- | --- | --- |\n%s\n\n", heading, strings.Join(rows, "\n"))
+}
+
+// describedDefault is the default a flag's help names at its end.
+var describedDefault = regexp.MustCompile(`\s*\(default ([^()]*)\)$`)
+
+// flagTypes are the types of flags in the words of the page of config kinds, by pflag's names.
+var flagTypes = map[string]string{
+	"bool":           "boolean",
+	"duration":       "duration",
+	"int":            "integer",
+	"string":         "string",
+	"strings":        "list of string",
+	"stringArray":    "list of string",
+	"stringSlice":    "list of string",
+	"stringToString": "map of string",
+}
+
+func flagType(f *pflag.Flag) string {
+	if t, ok := flagTypes[f.Value.Type()]; ok {
+		return t
+	}
+	return f.Value.Type()
+}
+
+// sentence is a flag's help as a sentence of a table: with a capital and a full stop.
+func sentence(s string) string {
+	if s == "" {
+		return s
+	}
+	s = strings.ToUpper(s[:1]) + s[1:]
+	if !strings.HasSuffix(s, ".") {
+		s += "."
+	}
+	return s
+}
+
+// examples are a command's examples without the two spaces of help's indent.
+func examples(s string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = dedent(line, 2)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// collapsed reports whether cmd is a program's completion command, whose page holds every shell's
+// command instead of a page for each.
+func collapsed(cmd *cobra.Command) bool {
+	return cmd.Name() == "completion" && cmd.HasParent() && !cmd.Parent().HasParent()
+}
+
+// available are the commands below cmd a user can run.
+func available(cmd *cobra.Command) []*cobra.Command {
 	var cmds []*cobra.Command
 	for _, c := range cmd.Commands() {
 		if c.IsAvailableCommand() && !c.IsAdditionalHelpTopicCommand() {
@@ -86,7 +223,15 @@ func documented(cmd *cobra.Command) []*cobra.Command {
 	return cmds
 }
 
-// pageName is the file of a command's page, as cobra's doc package links it.
+// documented are the commands below cmd that get pages of their own.
+func documented(cmd *cobra.Command) []*cobra.Command {
+	if collapsed(cmd) {
+		return nil
+	}
+	return available(cmd)
+}
+
+// pageName is the file of a command's page: its command path joined with underscores.
 func pageName(cmd *cobra.Command) string {
 	return strings.ReplaceAll(cmd.CommandPath(), " ", "_") + ".md"
 }
@@ -147,22 +292,33 @@ func frontMatter(title, description string) string {
 // tag is what Markdown would take for an HTML tag in the help's prose, as <node> or <file>.prev.
 var tag = regexp.MustCompile(`<([A-Za-z/])`)
 
-// markdown makes a page of cobra's doc package fit the site: its headings start at the first
-// level, as the page's title, and placeholders such as <node> in prose are escaped, so they
-// show instead of being taken for HTML. Code blocks stay as they are.
-func markdown(page string) string {
-	lines := strings.Split(page, "\n")
+// prose escapes placeholders such as <node> in the help's prose, so they show instead of being
+// taken for HTML, and makes the links of help to the site links to its pages, which the site's
+// strict build checks. Code blocks, fenced or indented, stay as they are.
+func prose(text string) string {
+	lines := strings.Split(text, "\n")
 	fenced := false
 	for i, line := range lines {
 		switch {
 		case strings.HasPrefix(line, "```"):
 			fenced = !fenced
 		case fenced, strings.HasPrefix(line, "\t"), strings.HasPrefix(line, "    "):
-		case strings.HasPrefix(line, "## "), strings.HasPrefix(line, "### "):
-			lines[i] = tag.ReplaceAllString(line[1:], "&lt;$1")
 		default:
-			lines[i] = tag.ReplaceAllString(line, "&lt;$1")
+			line = tag.ReplaceAllString(line, "&lt;$1")
+			lines[i] = siteLink.ReplaceAllStringFunc(line, func(url string) string {
+				m := siteLink.FindStringSubmatch(url)
+				page := "index"
+				if m[1] != "" {
+					page = strings.TrimSuffix(m[1], "/")
+				}
+				return fmt.Sprintf("[%s](../../%s.md%s)", url, page, m[2])
+			})
 		}
 	}
 	return strings.Join(lines, "\n")
 }
+
+// siteLink is a link of help to a page of the site, which help names by its URL: the page's path
+// below the docs directory without .md, and an anchor. A section's index page has a URL that
+// looks like a page's of that name, so help links the pages of a section and not its index.
+var siteLink = regexp.MustCompile(`https://trevex\.github\.io/chalkos/((?:[a-z0-9-]+/)*)(#[a-z0-9-]+)?`)

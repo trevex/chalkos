@@ -997,7 +997,7 @@ func (a *app) logsCommand() *cobra.Command {
 	f.node.registerClient(fs)
 	f.pin.register(fs)
 	fs.BoolVarP(&f.follow, "follow", "f", false, "keep printing new entries")
-	fs.StringVar(&f.unit, "unit", "", "show only this unit's entries")
+	fs.StringVar(&f.unit, "unit", "", "unit whose entries alone are printed")
 	return cmd
 }
 

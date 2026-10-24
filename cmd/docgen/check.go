@@ -15,7 +15,7 @@ import (
 )
 
 // shellLanguages are the code blocks whose commands are checked; a block without a language,
-// also one with attributes alone, counts as shell, as cobra's pages write them.
+// also one with attributes alone, counts as shell.
 var shellLanguages = []string{"", "sh", "bash", "shell", "zsh", "console", "shell-session"}
 
 // check finds the chalkctl, chalklab, chalkbuild and chalkcfg commands in the shell code blocks of

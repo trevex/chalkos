@@ -91,13 +91,7 @@ nav = [
         { "Overview" = "reference/cli/chalkctl.md" },
         { "apply-config" = "reference/cli/chalkctl_apply-config.md" },
         { "bootstrap" = "reference/cli/chalkctl_bootstrap.md" },
-        { "completion" = [
-          { "Overview" = "reference/cli/chalkctl_completion.md" },
-          { "bash" = "reference/cli/chalkctl_completion_bash.md" },
-          { "fish" = "reference/cli/chalkctl_completion_fish.md" },
-          { "powershell" = "reference/cli/chalkctl_completion_powershell.md" },
-          { "zsh" = "reference/cli/chalkctl_completion_zsh.md" },
-        ] },
+        { "completion" = "reference/cli/chalkctl_completion.md" },
         { "config" = [
           { "Overview" = "reference/cli/chalkctl_config.md" },
           { "new" = "reference/cli/chalkctl_config_new.md" },
@@ -139,13 +133,7 @@ nav = [
       ] },
       { "chalklab" = [
         { "Overview" = "reference/cli/chalklab.md" },
-        { "completion" = [
-          { "Overview" = "reference/cli/chalklab_completion.md" },
-          { "bash" = "reference/cli/chalklab_completion_bash.md" },
-          { "fish" = "reference/cli/chalklab_completion_fish.md" },
-          { "powershell" = "reference/cli/chalklab_completion_powershell.md" },
-          { "zsh" = "reference/cli/chalklab_completion_zsh.md" },
-        ] },
+        { "completion" = "reference/cli/chalklab_completion.md" },
         { "console" = "reference/cli/chalklab_console.md" },
         { "create" = "reference/cli/chalklab_create.md" },
         { "destroy" = "reference/cli/chalklab_destroy.md" },
@@ -155,13 +143,7 @@ nav = [
       ] },
       { "chalkbuild" = [
         { "Overview" = "reference/cli/chalkbuild.md" },
-        { "completion" = [
-          { "Overview" = "reference/cli/chalkbuild_completion.md" },
-          { "bash" = "reference/cli/chalkbuild_completion_bash.md" },
-          { "fish" = "reference/cli/chalkbuild_completion_fish.md" },
-          { "powershell" = "reference/cli/chalkbuild_completion_powershell.md" },
-          { "zsh" = "reference/cli/chalkbuild_completion_zsh.md" },
-        ] },
+        { "completion" = "reference/cli/chalkbuild_completion.md" },
         { "oci" = "reference/cli/chalkbuild_oci.md" },
         { "push" = "reference/cli/chalkbuild_push.md" },
         { "sign" = "reference/cli/chalkbuild_sign.md" },
