@@ -36,7 +36,7 @@ YAML that Go reads. They meet in these places:
   chalkd, which checks them again against its own image's
   schemas, keeps them on STATE and translates them the same
   way.
-- The node's Kubernetes cluster, which chalkd builds from the `Cluster` and `Flannel`
+- The node's Kubernetes cluster, which chalkd writes from the `Cluster` and `Flannel`
   documents and the image's `image.json` into `/run/chalkos/kubernetes/cluster.json`. chalkd renders
   chalkos's add-ons (RBAC, kube-proxy, flannel, CoreDNS) and the kubelet's configuration from it
   in Go (`pkg/kubernetes/addons`, `pkg/kubernetes/node`) and applies the objects of the
@@ -95,20 +95,26 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |
 | `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
 | `install` | Installs a node in place or from the installer, step by step and repeatable: STATE, the ESP, the UEFI boot entries, wiping the target and the system region's definitions each have a file, and `parts.go` holds the steps of an install from the installer. |
+| `internal/cli` | What the command trees of chalkctl, chalklab, chalkbuild and chalkcfg share: usage errors and their exit status, the root and group commands and positional argument checks. |
 | `internal/filecopy` | Copies a disk image without its holes and a plain file to a new one, for chalklab, the lab and image signing. |
+| `inventory` | Reads chalkctl's inventory: the cluster's nodes, the address chalkctl reaches each at, the image each runs and the config files each gets. |
 | `jsonfile` | Reads a JSON file an image may leave out, such as `facts.json`, `effects.json` or `outputs.json`. |
-| `kubernetes` | The node's Kubernetes cluster as chalkd builds it from the config and the image's facts, its flags and address ranges, the node as its identity names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
+| `kubernetes` | The node's Kubernetes cluster as `config` builds it from the config and the image's facts, its flags and address ranges, the node as its identity names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
+| `kubernetes/addons` | Renders the objects chalkos applies to every cluster before its own manifests: RBAC for chalkos's identities, kube-proxy, flannel and CoreDNS. |
 | `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
+| `kubernetes/credprovider` | The kubelet's image credential provider: writes its config and the node's registry credentials from the Registry documents, and answers the kubelet's requests. |
 | `kubernetes/etcd` | etcd membership: learners, promotion, quorum-safe removal, the node's own member; finds the members from etcd's mirror pods and counts encrypted values by key. |
 | `kubernetes/manifests` | The control plane's static pods. |
 | `kubernetes/node` | The node's Kubernetes files at boot: addresses, kubelet credentials and flags, control-plane certificates, the check that they are prepared, the removal of the static pods. |
 | `kubernetes/nodeip` | Picks the node's address of each family. |
 | `kubernetes/pki` | The Kubernetes certificates: the share, the control plane's leaves, admin kubeconfigs. |
+| `kubernetes/revoked` | The ConfigMap of revoked nodes, which control planes read before they renew a node certificate, and the admission policy that shuts those nodes out. |
 | `kubernetes/vip` | The etcd election of the control plane that holds the VIPs; adds a VIP to an interface and announces it. |
 | `kubernetes/vxlan` | The nftables table `chalkos-vxlan`: marks VXLAN to the node's addresses for the firewall and drops pods' VXLAN to the source ranges. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the lab's supervisor, for chalklab and the end-to-end tests. |
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
 | `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the granted units, and renders the outputs at boot, networkd's units and chrony's servers among them. |
+| `ociimage` | Reads, writes, pulls and pushes chalkos images as OCI artifacts: one manifest whose config is the image header and whose layers are the store, hash tree, UKI, boot loader and contract. |
 | `outputs` | Renders and checks the image's outputs in a sandbox of their own, as an unprivileged user, swaps them in by a symlink rename, and records their hashes and failures. |
 | `pki` | The OS CA and node CA, client and node certificates and their checks, client roles, PEM keys and certificate bundles. |
 | `rules` | Compiles the change rules of an image's schemas, with chalkos's CEL functions, and evaluates them against a config, the config it replaces and the node's facts. |
@@ -123,7 +129,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `upgrade` | Writes an image into the inactive slot and makes it the next boot; the image header and the checks of its UKI and boot loader an install shares; the booted entry and the provenance record. |
 | `verity` | Reads and checks dm-verity hash trees. |
 
-`uki/ukitest`, `image/imagetest`, `kubernetes/etcd/etcdtest` and `tool/tooltest` hold test helpers:
+`uki/ukitest`, `image/imagetest`, `kubernetes/etcd/etcdtest`, `ociimage/ocitest` and `tool/tooltest` hold test helpers:
 small UKIs, small disk images and db signers, in-process etcd members, and a fake tool runner that
 records commands and answers them by prefix.
 
