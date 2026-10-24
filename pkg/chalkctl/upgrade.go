@@ -618,13 +618,15 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 // the cluster is Ready, or until it fell back.
 func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 	image, target := n.image.name(), n.image.header.RootHash
-	if err := waitFor(ctx, fmt.Sprintf("%s to run %s, found healthy", n.name, image), r.timeout, r.poll, func() error {
+	var fellBack error
+	err := waitFor(ctx, "", r.timeout, r.poll, func() error {
 		_, st, err := r.probe(ctx, n.name)
 		switch {
 		case err != nil:
 			return err
 		case bytes.Equal(st.GetBoot().GetFailed().GetRootHash(), target):
-			return permanent{r.rolledBack(n, st.GetBoot())}
+			fellBack = r.rolledBack(n, st.GetBoot())
+			return permanent{fellBack}
 		case !bytes.Equal(st.GetBoot().GetRunning().GetRootHash(), target):
 			return fmt.Errorf("it runs %s", bootImageName(st.GetBoot().GetRunning()))
 		case !st.GetBoot().GetBlessed():
@@ -633,8 +635,12 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 			return fmt.Errorf("its Node is not Ready: %s", st.Kubernetes.NodeReady)
 		}
 		return nil
-	}); err != nil {
-		return err
+	})
+	switch {
+	case fellBack != nil:
+		return fellBack
+	case err != nil:
+		return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, image, err)
 	}
 	r.say("%s: runs %s, found healthy", n.name, image)
 	return nil
