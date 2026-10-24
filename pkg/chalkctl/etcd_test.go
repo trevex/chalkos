@@ -18,13 +18,26 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
-// etcdNode is n1 as a bootstrapped control-plane node whose etcd member runs.
-func etcdNode(t *testing.T, ta *testApp) *chalkd.Server {
+// etcdNode is n1 as a bootstrapped control-plane node whose etcd member runs. adjust, when not
+// nil, changes the node's Kubernetes side, whose LocalEtcd is the member's.
+func etcdNode(t *testing.T, ta *testApp, adjust func(*chalkd.KubernetesOptions)) *chalkd.Server {
 	t.Helper()
 	withKind(t, ta, k8s.KindControlPlane)
-	s, _ := kubernetesNode(t, ta)
-	k := s.Kubernetes
 	share := kpki.ControlPlaneShare(&ta.secrets.Kubernetes, ta.secrets.NodeCA)
+	o := chalkd.KubernetesOptions{
+		LocalEtcd: etcdtest.StartNew(t, *share.EtcdCA, "n1").ClientURL,
+		Hooks: chalkd.KubernetesHooks{
+			// No API server lists the other members.
+			EtcdEndpoints: func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
+				return nil, errors.New("connection refused")
+			},
+		},
+	}
+	if adjust != nil {
+		adjust(&o)
+	}
+	s, _ := kubernetesNodeWith(t, ta, o)
+	k := s.Kubernetes
 	data, err := share.Encode()
 	if err != nil {
 		t.Fatal(err)
@@ -35,17 +48,12 @@ func etcdNode(t *testing.T, ta *testApp) *chalkd.Server {
 	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local"}`)
 	writeFile(t, k.Paths.NodeFile, `{"kubernetes": {"nodeName": "n1"}}`)
 	writeFile(t, k.Paths.Bootstrapped(), "")
-	k.LocalEtcd = etcdtest.StartNew(t, *share.EtcdCA, "n1").ClientURL
-	// No API server lists the other members.
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
-		return nil, errors.New("connection refused")
-	}
 	return s
 }
 
 func TestEtcdMembers(t *testing.T) {
 	ta := newTestApp(t)
-	s := etcdNode(t, ta)
+	s := etcdNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"etcd", "members", "--via", "n1"}, addr)); err != nil {
 		t.Fatal(err)
@@ -63,7 +71,7 @@ func TestEtcdMembers(t *testing.T) {
 
 func TestEtcdRemoveMemberRefusesOwnMember(t *testing.T) {
 	ta := newTestApp(t)
-	s := etcdNode(t, ta)
+	s := etcdNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"etcd", "remove-member", "n1", "--via", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "chalkctl etcd leave n1") {
@@ -73,7 +81,7 @@ func TestEtcdRemoveMemberRefusesOwnMember(t *testing.T) {
 
 func TestEtcdLeaveRefusesLastVoter(t *testing.T) {
 	ta := newTestApp(t)
-	s := etcdNode(t, ta)
+	s := etcdNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"etcd", "leave", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "etcd's last voter") {
@@ -88,16 +96,16 @@ func TestEtcdLeaveRefusesLastVoter(t *testing.T) {
 // answer, with it the node goes on to the quorum guard.
 func TestEtcdLeaveForce(t *testing.T) {
 	ta := newTestApp(t)
-	s := etcdNode(t, ta)
-	k := s.Kubernetes
-	local := k.LocalEtcd
-	k.LocalEtcd = etcdtest.Silent(t)
-	// Each leave waits the timeout out for the silent member, while the other one must answer
-	// within it also on a busy machine.
-	k.EtcdTimeout = 10 * time.Second
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
-		return []string{local}, nil
-	}
+	s := etcdNode(t, ta, func(o *chalkd.KubernetesOptions) {
+		local := o.LocalEtcd
+		o.LocalEtcd = etcdtest.Silent(t)
+		// Each leave waits the timeout out for the silent member, while the other one must answer
+		// within it also on a busy machine.
+		o.Timing.EtcdTimeout = 10 * time.Second
+		o.Hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
+			return []string{local}, nil
+		}
+	})
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"etcd", "leave", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "pass --force") {

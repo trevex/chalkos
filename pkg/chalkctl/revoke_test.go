@@ -19,6 +19,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -29,11 +30,12 @@ import (
 // revokeNode is n1 as a bootstrapped control plane whose API server is a fake holding w1's Node.
 func revokeNode(t *testing.T, ta *testApp) (string, *fake.Clientset) {
 	t.Helper()
-	s := etcdNode(t, ta)
+	cs := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "w1"}})
+	s := etcdNode(t, ta, func(o *chalkd.KubernetesOptions) {
+		o.Hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return cs, nil }
+	})
 	// Its status reports it bootstrapped once its Kubernetes files are prepared.
 	writeFile(t, s.Kubernetes.Paths.Prepared(), "")
-	cs := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "w1"}})
-	s.Kubernetes.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return cs, nil }
 	return ta.startNode(t, s), cs
 }
 

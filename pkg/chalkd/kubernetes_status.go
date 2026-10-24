@@ -91,8 +91,8 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 				st.Vip = "holder"
 			}
 		}
-		if share, err := knode.ReadShare(k.Paths); err == nil && k.ControlPlaneState != nil {
-			st.ControlPlane = k.ControlPlaneState(ctx, c, share)
+		if share, err := knode.ReadShare(k.Paths); err == nil {
+			st.ControlPlane = k.hooks.ControlPlaneState(ctx, c, share)
 			st.ControlPlaneCurrent = st.ControlPlane == controlPlaneCurrent
 		}
 	default:
@@ -104,13 +104,13 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 		return st, nil
 	}
 	if c.Kind == k8s.KindControlPlane {
-		rctx, cancel := context.WithTimeout(ctx, k.statusTimeout())
+		rctx, cancel := context.WithTimeout(ctx, k.timing.StatusTimeout)
 		k.revokedStatus(rctx, st)
 		cancel()
 	}
-	ctx, cancel := context.WithTimeout(ctx, k.statusTimeout())
+	ctx, cancel := context.WithTimeout(ctx, k.timing.StatusTimeout)
 	defer cancel()
-	node, err := k.Node(ctx)
+	node, err := k.hooks.Node(ctx)
 	if err != nil {
 		st.NodeReady = fmt.Sprintf("unknown: %v", err)
 		return st, nil
@@ -150,7 +150,7 @@ func (k *Kubernetes) controlPlaneState(ctx context.Context, c k8s.Cluster, share
 			return fmt.Sprintf("%s %v", server.name, err)
 		}
 	}
-	if !k.APIServerReady(ctx, c, share) {
+	if !k.hooks.APIServerReady(ctx, c, share) {
 		return "the API server is not ready"
 	}
 	return controlPlaneCurrent

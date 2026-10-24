@@ -41,11 +41,11 @@ func joiningServer(t *testing.T) (*Server, *etcdtest.Member, *clientv3.Client) {
 		t.Fatal(err)
 	}
 	cp0 := etcdtest.StartNew(t, *share.EtcdCA, "cp0")
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
+	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return []string{cp0.ClientURL}, nil
 	}
-	k.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
-	k.JoinRetry = 50 * time.Millisecond
+	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
+	k.timing.JoinRetry = 50 * time.Millisecond
 	cli, err := etcd.Dial([]string{cp0.ClientURL}, etcdtest.ClientTLS(t, *share.EtcdCA))
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestJoin(t *testing.T) {
 	p := k.Paths
 	share, _ := knode.ReadShare(p)
 	applied := make(chan struct{})
-	k.ControlPlane = func(ctx context.Context, _ kpki.Share, done func(int)) error {
+	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, done func(int)) error {
 		done(19)
 		close(applied)
 		<-ctx.Done()
@@ -206,9 +206,9 @@ func TestJoinResumes(t *testing.T) {
 func TestJoinWaitsForCluster(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	k := s.Kubernetes
-	k.JoinRetry = 10 * time.Millisecond
+	k.timing.JoinRetry = 10 * time.Millisecond
 	var asked atomic.Int32
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
+	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		asked.Add(1)
 		return nil, errors.New("connection refused")
 	}
@@ -234,7 +234,7 @@ func TestJoinWaitsForCluster(t *testing.T) {
 func TestBootstrapRefusedWhileClusterAnswers(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	k := s.Kubernetes
-	k.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
+	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
 	_, err := bootstrap(s, context.Background())
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the cluster's API server answers at https://192.168.100.11:6443") {
 		t.Errorf("bootstrap: %v", err)
@@ -304,7 +304,7 @@ func TestBootstrapRefusedAfterJoinStarted(t *testing.T) {
 	if _, _, err := etcd.AddLearner(context.Background(), cli, "", joinPeerURL); err != nil {
 		t.Fatal(err)
 	}
-	k.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return false }
+	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return false }
 	_, err := bootstrap(s, context.Background())
 	want := "the node started joining the cluster at https://192.168.100.11:6443; finish the join or remove its member and reinstall"
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
@@ -323,8 +323,8 @@ func TestJoinStatusAfterStall(t *testing.T) {
 	s, _, cli := joiningServer(t)
 	k := s.Kubernetes
 	var unreachable atomic.Bool
-	endpoints := k.EtcdEndpoints
-	k.EtcdEndpoints = func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []netip.Addr) ([]string, error) {
+	endpoints := k.hooks.EtcdEndpoints
+	k.hooks.EtcdEndpoints = func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []netip.Addr) ([]string, error) {
 		if unreachable.Load() {
 			return nil, errors.New("connection refused")
 		}
@@ -341,7 +341,7 @@ func TestJoinStatusAfterStall(t *testing.T) {
 	unreachable.Store(true)
 	eventually(t, "the unreachable cluster's state", func() bool { return kubernetesState(t, s) == prefix+"connection refused" })
 	// chalkd started again remembers the join.
-	fresh := &Kubernetes{Paths: k.Paths}
+	fresh := NewKubernetes(KubernetesOptions{Paths: k.Paths})
 	st, err := fresh.status(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -361,11 +361,11 @@ func exists(path string) bool {
 func TestJoinBoundsEtcdRequests(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	k := s.Kubernetes
-	k.JoinRetry = 10 * time.Millisecond
-	k.EtcdTimeout = 100 * time.Millisecond
+	k.timing.JoinRetry = 10 * time.Millisecond
+	k.timing.EtcdTimeout = 100 * time.Millisecond
 	silent := etcdtest.Silent(t)
 	var asked atomic.Int32
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
+	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		asked.Add(1)
 		return []string{silent}, nil
 	}
@@ -390,7 +390,7 @@ func TestJoinRefusesSplitClusters(t *testing.T) {
 	k := s.Kubernetes
 	share, _ := knode.ReadShare(k.Paths)
 	other := etcdtest.StartNew(t, *share.EtcdCA, "other")
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
+	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return []string{cp0.ClientURL, other.ClientURL}, nil
 	}
 	k.Start()
@@ -427,11 +427,11 @@ func TestControlPlaneReportsSplit(t *testing.T) {
 	share, _ := knode.ReadShare(k.Paths)
 	local := etcdtest.StartNew(t, *share.EtcdCA, "n1")
 	other := etcdtest.StartNew(t, *share.EtcdCA, "cp0")
-	k.LocalEtcd = local.ClientURL
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
+	k.etcdURL = local.ClientURL
+	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return []string{other.ClientURL}, nil
 	}
-	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
 		<-ctx.Done()
 		return ctx.Err()
 	}
@@ -522,7 +522,7 @@ func TestJoinStopsWhenLearnerRemoved(t *testing.T) {
 func TestJoinReportsPromoteTimeout(t *testing.T) {
 	s, _, _ := joiningServer(t)
 	k := s.Kubernetes
-	k.PromoteTimeout = 300 * time.Millisecond
+	k.timing.PromoteTimeout = 300 * time.Millisecond
 	k.Start()
 	eventually(t, "the timeout's state", func() bool {
 		return strings.Contains(kubernetesState(t, s), "did not catch up with the leader within 300ms; trying again")

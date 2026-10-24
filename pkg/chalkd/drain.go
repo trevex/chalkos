@@ -237,7 +237,7 @@ func (k *Kubernetes) evictPods(ctx context.Context, cs kubernetes.Interface, nod
 				code = connect.CodeFailedPrecondition
 			}
 			return drained{}, &drainError{code, fmt.Errorf("pods %s still run: %s", strings.Join(left, ", "), msg)}
-		case <-time.After(k.poll()):
+		case <-time.After(k.timing.Poll):
 		}
 	}
 	return d, nil

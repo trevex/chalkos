@@ -55,7 +55,7 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *tooltest
 func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 	t.Helper()
 	root := t.TempDir()
-	s.Kubernetes = &Kubernetes{
+	s.Kubernetes = NewKubernetes(KubernetesOptions{
 		Paths: knode.Paths{
 			State:      filepath.Join(s.Paths.StateDir, "kubernetes"),
 			Cluster:    filepath.Join(root, "etc", "cluster.json"),
@@ -65,18 +65,22 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 			KubeletPKI: filepath.Join(root, "var", "lib", "kubelet", "pki"),
 			EtcdData:   filepath.Join(root, "var", "lib", "etcd"),
 		},
-		Slot:         s.Loader.Slot,
-		Objects:      func(k8s.Cluster) ([]map[string]any, error) { return nil, errors.New("no objects in this test") },
-		ControlPlane: func(_ context.Context, _ kpki.Share, applied func(int)) error { applied(19); return nil },
-		Node:         func(context.Context) (*corev1.Node, error) { return readyNode(), nil },
-		// No cluster answers at the endpoint.
-		EtcdEndpoints: func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
-			return nil, errors.New("connection refused")
+		Hooks: KubernetesHooks{
+			Slot:         s.Loader.Slot,
+			Objects:      func(k8s.Cluster) ([]map[string]any, error) { return nil, errors.New("no objects in this test") },
+			ControlPlane: func(_ context.Context, _ kpki.Share, applied func(int)) error { applied(19); return nil },
+			Node:         func(context.Context) (*corev1.Node, error) { return readyNode(), nil },
+			// No cluster answers at the endpoint.
+			EtcdEndpoints: func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
+				return nil, errors.New("connection refused")
+			},
+			ClusterAnswers: func(context.Context, k8s.Cluster, kpki.Share) bool { return false },
+			// The control plane runs with the certificates the node holds.
+			ControlPlaneState: func(context.Context, k8s.Cluster, kpki.Share) string { return controlPlaneCurrent },
+			// The API server keeps no objects.
+			APIClient: func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return fake.NewClientset(), nil },
 		},
-		ClusterAnswers: func(context.Context, k8s.Cluster, kpki.Share) bool { return false },
-		// The API server keeps no objects.
-		APIClient: func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return fake.NewClientset(), nil },
-	}
+	})
 	// The loops a test started would run on against its removed files, and load the tests after
 	// it, until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
@@ -293,7 +297,7 @@ func files(t *testing.T, dirs ...string) map[string]string {
 
 func TestBootstrapReturnsBeforeManifestsApplied(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	s.Kubernetes.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error { <-ctx.Done(); return ctx.Err() }
+	s.Kubernetes.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error { <-ctx.Done(); return ctx.Err() }
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	_, err := bootstrap(s, ctx)
@@ -325,7 +329,7 @@ func TestStatusKubernetes(t *testing.T) {
 	if err := os.Remove(writing.Kubernetes.Paths.Prepared()); err != nil {
 		t.Fatal(err)
 	}
-	worker.Kubernetes.Node = func(context.Context) (*corev1.Node, error) { return nil, errors.New("connection refused") }
+	worker.Kubernetes.hooks.Node = func(context.Context) (*corev1.Node, error) { return nil, errors.New("connection refused") }
 	// A dual-stack worker whose Node has a pod range of one family only, as when the control plane
 	// runs with that family alone.
 	dualStack := func(podCIDRs ...string) *Server {
@@ -339,7 +343,7 @@ func TestStatusKubernetes(t *testing.T) {
 			`"serviceCIDRs": {`, `"serviceCIDRs": {"ipv6": "fd00:10:96::/112", `, `"dnsIPs": {`, `"dnsIPs": {"ipv6": "fd00:10:96::a", `,
 			`"nodeCIDRMaskSizes": {`, `"nodeCIDRMaskSizes": {"ipv6": 64, `).Replace(string(data))
 		write(t, p.Cluster, cluster)
-		s.Kubernetes.Node = func(context.Context) (*corev1.Node, error) { return readyNode(podCIDRs...), nil }
+		s.Kubernetes.hooks.Node = func(context.Context) (*corev1.Node, error) { return readyNode(podCIDRs...), nil }
 		return s
 	}
 	plain, _ := installedServer(t, section("", ""), false)
@@ -435,7 +439,7 @@ func TestStatusEtcdDataMissing(t *testing.T) {
 func TestControlPlaneLoopRestarts(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	k := s.Kubernetes
-	k.RestartBackoff = 10 * time.Millisecond
+	k.timing.RestartBackoff = 10 * time.Millisecond
 	replaced := testShare(t, k8s.KindControlPlane)
 	want, err := kpki.ParseShare(replaced)
 	if err != nil {
@@ -443,7 +447,7 @@ func TestControlPlaneLoopRestarts(t *testing.T) {
 	}
 	var runs atomic.Int32
 	var second kpki.Share
-	k.ControlPlane = func(_ context.Context, share kpki.Share, applied func(int)) error {
+	k.hooks.ControlPlane = func(_ context.Context, share kpki.Share, applied func(int)) error {
 		if runs.Add(1) == 1 {
 			if err := os.WriteFile(k.Paths.Share(), replaced, 0o600); err != nil {
 				return err
@@ -478,9 +482,9 @@ func TestControlPlaneLoopWaitsForPreparation(t *testing.T) {
 	if err := os.Remove(p.Prepared()); err != nil {
 		t.Fatal(err)
 	}
-	k.RestartBackoff, k.MaxRestartBackoff = 10*time.Millisecond, 20*time.Millisecond
+	k.timing.RestartBackoff, k.timing.MaxRestartBackoff = 10*time.Millisecond, 20*time.Millisecond
 	runs := make(chan struct{}, 1)
-	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
 		select {
 		case runs <- struct{}{}:
 		default:
@@ -511,9 +515,9 @@ func TestControlPlaneLoopPins(t *testing.T) {
 	k := s.Kubernetes
 	write(t, k.Paths.Bootstrapped(), "")
 	share, _ := knode.ReadShare(k.Paths)
-	k.LocalEtcd = etcdtest.StartAdvertising(t, *share.EtcdCA, "n1", "https://192.168.100.11:2380").ClientURL
+	k.etcdURL = etcdtest.StartAdvertising(t, *share.EtcdCA, "n1", "https://192.168.100.11:2380").ClientURL
 	ran := make(chan struct{})
-	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
 		close(ran)
 		<-ctx.Done()
 		return ctx.Err()
@@ -536,10 +540,10 @@ func TestControlPlaneLoopRefusesMismatchedPin(t *testing.T) {
 	k := s.Kubernetes
 	write(t, k.Paths.Bootstrapped(), "")
 	share, _ := knode.ReadShare(k.Paths)
-	k.LocalEtcd = etcdtest.StartAdvertising(t, *share.EtcdCA, "n1", "https://192.168.100.12:2380").ClientURL
-	k.RestartBackoff, k.MaxRestartBackoff = 10*time.Millisecond, 20*time.Millisecond
+	k.etcdURL = etcdtest.StartAdvertising(t, *share.EtcdCA, "n1", "https://192.168.100.12:2380").ClientURL
+	k.timing.RestartBackoff, k.timing.MaxRestartBackoff = 10*time.Millisecond, 20*time.Millisecond
 	var ran atomic.Bool
-	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
 		ran.Store(true)
 		<-ctx.Done()
 		return ctx.Err()
@@ -600,7 +604,7 @@ func TestStartAfterStopDoesNothing(t *testing.T) {
 	k := s.Kubernetes
 	p := k.Paths
 	var runs atomic.Int32
-	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
 		runs.Add(1)
 		<-ctx.Done()
 		return ctx.Err()
@@ -776,8 +780,7 @@ func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
 // cluster, then the objects of the stored Addon documents.
 func TestObjectsAreTheAddOnsThenTheAddonDocuments(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, false)
-	k := NewKubernetes()
-	k.Slot = s.Loader.Slot
+	k := NewKubernetes(KubernetesOptions{Hooks: KubernetesHooks{Slot: s.Loader.Slot}})
 	c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
 	if err != nil {
 		t.Fatal(err)
@@ -793,7 +796,7 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 	if err := slot.Write(slotOf(t, s), slot.Stored{Delivered: docs, Documents: docs, Version: "v1"}); err != nil {
 		t.Fatal(err)
 	}
-	objects, err := k.Objects(c)
+	objects, err := k.hooks.Objects(c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -815,7 +818,7 @@ func TestApproverRunsWhileObjectsFail(t *testing.T) {
 		t.Fatal(err)
 	}
 	approving := make(chan struct{})
-	k.Approve = func(ctx context.Context, _ *rest.Config) {
+	k.hooks.Approve = func(ctx context.Context, _ *rest.Config) {
 		close(approving)
 		<-ctx.Done()
 	}
@@ -849,7 +852,7 @@ func TestApplyOnceLeavesTheRevokedNodesToTheApprover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k.Objects = func(k8s.Cluster) ([]map[string]any, error) { return nil, nil }
+	k.hooks.Objects = func(k8s.Cluster) ([]map[string]any, error) { return nil, nil }
 	if n, err := k.applyOnce(context.Background(), c, cfg); err != nil || n != 0 {
 		t.Errorf("applyOnce = %d, %v", n, err)
 	}

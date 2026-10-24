@@ -71,8 +71,8 @@ func memberServer(t *testing.T, others ...string) (*Server, *clientv3.Client, ma
 	for _, name := range others {
 		members[name] = addMember(t, cli, *share.EtcdCA, name)
 	}
-	k.LocalEtcd = n1.ClientURL
-	k.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
+	k.etcdURL = n1.ClientURL
+	k.hooks.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
 	ips, err := knode.ReadNodeIPs(p)
 	if err != nil {
 		t.Fatal(err)
@@ -212,12 +212,12 @@ func leavingServer(t *testing.T) *Server {
 	t.Helper()
 	s, _, members := memberServer(t, "cp2")
 	k := s.Kubernetes
-	k.EtcdStopped = func(context.Context, k8s.Cluster) error { members["n1"].Stop(); return nil }
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
+	k.hooks.EtcdStopped = func(context.Context, k8s.Cluster) error { members["n1"].Stop(); return nil }
+	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return []string{members["cp2"].ClientURL}, nil
 	}
 	// The node's own etcd does not answer once stopped; asking it ends after the timeout.
-	k.EtcdTimeout = silentEtcdTimeout
+	k.timing.EtcdTimeout = silentEtcdTimeout
 	return s
 }
 
@@ -226,8 +226,8 @@ func leavingServer(t *testing.T) *Server {
 func TestEtcdLeaveRetriedAfterEtcdKeptRunning(t *testing.T) {
 	s := leavingServer(t)
 	k := s.Kubernetes
-	stopped := k.EtcdStopped
-	k.EtcdStopped = func(ctx context.Context, c k8s.Cluster) error {
+	stopped := k.hooks.EtcdStopped
+	k.hooks.EtcdStopped = func(ctx context.Context, c k8s.Cluster) error {
 		_ = stopped(ctx, c)
 		return errors.New("etcd still listens")
 	}
@@ -237,7 +237,7 @@ func TestEtcdLeaveRetriedAfterEtcdKeptRunning(t *testing.T) {
 	if m, l, err := knode.ReadMembership(k.Paths); err != nil || m != knode.MembershipLeft || !l.Pinned || !l.EtcdData {
 		t.Fatalf("after the first leave: %v %+v, %v; want left with the pin and etcd's data", m, l, err)
 	}
-	k.EtcdStopped = stopped
+	k.hooks.EtcdStopped = stopped
 	if err := leave(s, false); err != nil {
 		t.Fatalf("retried leave: %v", err)
 	}
@@ -280,9 +280,9 @@ func TestEtcdLeaveAfterLeftWithJoiningMarker(t *testing.T) {
 func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 	s, _, cli := joiningServer(t)
 	k := s.Kubernetes
-	k.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
+	k.hooks.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
 	// The node's own etcd does not answer; asking it ends after the timeout.
-	k.EtcdTimeout = silentEtcdTimeout
+	k.timing.EtcdTimeout = silentEtcdTimeout
 	k.Start()
 	eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
 	learner := slices.IndexFunc(members(t, cli), func(m etcd.Member) bool { return m.Learner })
@@ -322,10 +322,10 @@ const silentEtcdTimeout = 10 * time.Second
 func otherMembersOnly(t *testing.T, s *Server, others ...*etcdtest.Member) {
 	t.Helper()
 	k := s.Kubernetes
-	k.LocalEtcd = etcdtest.Silent(t)
-	k.EtcdTimeout = silentEtcdTimeout
-	k.EtcdStatusTimeout = liveEtcdTimeout
-	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
+	k.etcdURL = etcdtest.Silent(t)
+	k.timing.EtcdTimeout = silentEtcdTimeout
+	k.timing.EtcdStatusTimeout = liveEtcdTimeout
+	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		var urls []string
 		for _, m := range others {
 			urls = append(urls, m.ClientURL)

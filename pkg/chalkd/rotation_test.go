@@ -40,8 +40,8 @@ func rotationStep(ctx context.Context, s *Server, step nodev1.RotationStep) (*no
 // withAPI makes the node reach a fake API server holding the objects.
 func withAPI(s *Server, objects ...runtimeObject) *fake.Clientset {
 	client := fake.NewClientset(objects...)
-	s.Kubernetes.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return client, nil }
-	s.Kubernetes.RotationPoll = 10 * time.Millisecond
+	s.Kubernetes.hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return client, nil }
+	s.Kubernetes.timing.Poll = 10 * time.Millisecond
 	return client
 }
 
@@ -151,7 +151,7 @@ func TestRestartAddons(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Kubernetes.Objects = objectsOf(t, `[
+	s.Kubernetes.hooks.Objects = objectsOf(t, `[
 	  {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "coredns", "namespace": "kube-system"}},
 	  {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "coredns", "namespace": "kube-system"}},
 	  {"apiVersion": "apps/v1", "kind": "DaemonSet", "metadata": {"name": "kube-flannel-ds", "namespace": "kube-flannel"}}
@@ -368,7 +368,7 @@ func TestRewriteEncryptedErrorsHoldNoData(t *testing.T) {
 func TestUnknownRotationStepMintsNothing(t *testing.T) {
 	s, _, _ := memberServer(t)
 	minted := false
-	s.Kubernetes.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
+	s.Kubernetes.hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
 		minted = true
 		return fake.NewClientset(), nil
 	}
@@ -388,7 +388,7 @@ func TestRestartAddonsDoesNotWaitForWhatNeverRollsOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Kubernetes.Objects = objectsOf(t, `[
+	s.Kubernetes.hooks.Objects = objectsOf(t, `[
 	  {"apiVersion": "apps/v1", "kind": "DaemonSet", "metadata": {"name": "on-delete", "namespace": "apps"}},
 	  {"apiVersion": "apps/v1", "kind": "StatefulSet", "metadata": {"name": "on-delete", "namespace": "apps"}},
 	  {"apiVersion": "apps/v1", "kind": "StatefulSet", "metadata": {"name": "partitioned", "namespace": "apps"}},

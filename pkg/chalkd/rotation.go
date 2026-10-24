@@ -88,14 +88,6 @@ func (s *Server) RotationStep(ctx context.Context, req *connect.Request[nodev1.R
 	return connect.NewResponse(resp), nil
 }
 
-// poll is the time between two looks at what a rotation step waits for.
-func (k *Kubernetes) poll() time.Duration {
-	if k.RotationPoll > 0 {
-		return k.RotationPoll
-	}
-	return 2 * time.Second
-}
-
 // workload is a Deployment, DaemonSet or StatefulSet of the cluster's manifests.
 type workload struct{ kind, namespace, name string }
 
@@ -108,7 +100,7 @@ func (w workload) String() string { return w.namespace + "/" + w.kind + "/" + w.
 // complete by itself, such as one that updates its pods only when they are deleted, is restarted
 // and returned in notWaited instead of being waited for.
 func (k *Kubernetes) restartAddons(ctx context.Context, c k8s.Cluster, client kubernetes.Interface, bundle string) (restarted, notWaited []string, err error) {
-	objects, err := k.Objects(c)
+	objects, err := k.hooks.Objects(c)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -196,7 +188,7 @@ func (k *Kubernetes) waitFor(ctx context.Context, what string, check func() erro
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("waiting for %s: %v", what, err)
-		case <-time.After(k.poll()):
+		case <-time.After(k.timing.Poll):
 		}
 	}
 }

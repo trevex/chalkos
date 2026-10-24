@@ -80,22 +80,36 @@ func TestInstallSendsShareOfTheNodeKind(t *testing.T) {
 // ready.
 func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 	t.Helper()
+	return kubernetesNodeWith(t, ta, chalkd.KubernetesOptions{})
+}
+
+// kubernetesNodeWith is kubernetesNode with the Kubernetes side o sets up. The paths and the
+// hooks o leaves nil are kubernetesNode's.
+func kubernetesNodeWith(t *testing.T, ta *testApp, o chalkd.KubernetesOptions) (*chalkd.Server, *fakeRunner) {
+	t.Helper()
 	current, _ := json.Marshal(ta.identity(t))
 	s, r := installedNode(t, ta, current)
 	root := t.TempDir()
-	s.Kubernetes = &chalkd.Kubernetes{
-		Paths: knode.Paths{
-			State:    filepath.Join(s.Paths.StateDir, "kubernetes"),
-			Cluster:  filepath.Join(root, "cluster.json"),
-			NodeFile: filepath.Join(root, "node.json"),
-			Run:      filepath.Join(root, "run"),
-		},
-		Node: func(context.Context) (*corev1.Node, error) {
-			return &corev1.Node{Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}}, nil
-		},
-		// The API server keeps no objects.
-		APIClient: func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return fake.NewClientset(), nil },
+	o.Paths = knode.Paths{
+		State:    filepath.Join(s.Paths.StateDir, "kubernetes"),
+		Cluster:  filepath.Join(root, "cluster.json"),
+		NodeFile: filepath.Join(root, "node.json"),
+		Run:      filepath.Join(root, "run"),
 	}
+	if o.Hooks.Node == nil {
+		o.Hooks.Node = func(context.Context) (*corev1.Node, error) {
+			return &corev1.Node{Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}}, nil
+		}
+	}
+	if o.Hooks.APIClient == nil {
+		// The API server keeps no objects.
+		o.Hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return fake.NewClientset(), nil }
+	}
+	if o.Hooks.ControlPlaneState == nil {
+		// The control plane runs with the certificates the node holds.
+		o.Hooks.ControlPlaneState = func(context.Context, k8s.Cluster, kpki.Share) string { return "current" }
+	}
+	s.Kubernetes = chalkd.NewKubernetes(o)
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
 	kubernetesImage(t, s)

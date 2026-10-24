@@ -94,7 +94,7 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 		return nil, failed(connect.CodeFailedPrecondition, "the node is joining the cluster at %s; chalkctl status shows its progress", c.Endpoint)
 	}
 	// A second bootstrap would start a second cluster.
-	if k.ClusterAnswers(ctx, c, share) {
+	if k.hooks.ClusterAnswers(ctx, c, share) {
 		return nil, failed(connect.CodeFailedPrecondition, "the cluster's API server answers at %s; this node joins it on its own", c.Endpoint)
 	}
 	// etcd's peers and the certificates know the node by its addresses from now on.

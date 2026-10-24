@@ -188,7 +188,7 @@ func (k *Kubernetes) leaveEndpoints(ctx context.Context, c k8s.Cluster, share kp
 	ips, _ := knode.ReadNodeIPs(k.Paths)
 	rctx, cancel := k.etcdRequest(ctx)
 	defer cancel()
-	others, err := k.EtcdEndpoints(rctx, c, share, ips)
+	others, err := k.hooks.EtcdEndpoints(rctx, c, share, ips)
 	if err != nil {
 		log.Printf("kubernetes: leaving etcd through the node's own member alone: %v", err)
 		return endpoints
@@ -318,7 +318,7 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 	if err := knode.RemoveStaticPods(p); err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd, but stopping its control plane failed: %v", err)
 	}
-	if err := k.EtcdStopped(ctx, c); err != nil {
+	if err := k.hooks.EtcdStopped(ctx, c); err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd, but its etcd did not stop: %v; its data stays in %s until chalkctl etcd leave runs again", err, p.EtcdData)
 	}
 	if err := knode.RemoveEtcdData(p); err != nil {

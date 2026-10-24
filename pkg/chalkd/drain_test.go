@@ -84,8 +84,8 @@ func newDrainLab(t *testing.T, refusals int, nodes ...*corev1.Node) *drainLab {
 		l.evicted = append(l.evicted, ev.Namespace+"/"+ev.Name)
 		return true, nil, l.cs.Tracker().Delete(corev1.SchemeGroupVersion.WithResource("pods"), ev.Namespace, ev.Name)
 	})
-	s.Kubernetes.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return l.cs, nil }
-	s.Kubernetes.RotationPoll = 10 * time.Millisecond
+	s.Kubernetes.hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return l.cs, nil }
+	s.Kubernetes.timing.Poll = 10 * time.Millisecond
 	return l
 }
 

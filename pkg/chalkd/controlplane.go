@@ -52,13 +52,7 @@ func (k *Kubernetes) controlPlaneRenewal() *Renewal {
 // fails, and at once when Reload asks for it. Each start reads the share from STATE, so a share
 // delivered since takes effect.
 func (k *Kubernetes) superviseControlPlane(ctx context.Context, applied func(n int), reload <-chan struct{}) {
-	first, limit := k.RestartBackoff, k.MaxRestartBackoff
-	if first <= 0 {
-		first = 5 * time.Second
-	}
-	if limit <= 0 {
-		limit = time.Minute
-	}
+	first, limit := k.timing.RestartBackoff, k.timing.MaxRestartBackoff
 	backoff := first
 	for {
 		started := time.Now()
@@ -128,7 +122,7 @@ func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int
 		}
 	}
 	go k.watchSplit(ctx, share)
-	return k.ControlPlane(ctx, share, applied)
+	return k.hooks.ControlPlane(ctx, share, applied)
 }
 
 // pinFromEtcd pins a bootstrapped node without a pin, as an older image left it, to its
@@ -193,15 +187,11 @@ func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, appl
 // such as an Addon document's, leave kubelets their serving certificates. It runs until ctx
 // ends.
 func (k *Kubernetes) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *rest.Config, applied func(n int)) error {
-	approve := k.Approve
-	if approve == nil {
-		approve = approveServing
-	}
 	go func() {
 		err := kapply.WaitReady(ctx, cfg)
 		switch {
 		case err == nil:
-			approve(ctx, cfg)
+			k.hooks.Approve(ctx, cfg)
 		case ctx.Err() == nil:
 			log.Printf("kubernetes: approve kubelet serving certificates: %v", err)
 		}
@@ -242,7 +232,7 @@ func (k *Kubernetes) applyOnce(ctx context.Context, c k8s.Cluster, cfg *rest.Con
 	if err := knode.MarkEtcdInitialised(k.Paths, time.Now()); err != nil {
 		return 0, fmt.Errorf("record that etcd is initialised: %w", err)
 	}
-	objects, err := k.Objects(c)
+	objects, err := k.hooks.Objects(c)
 	if err != nil {
 		return 0, err
 	}
@@ -264,7 +254,7 @@ func (k *Kubernetes) objects(c k8s.Cluster) ([]map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("render chalkos's add-ons: %w", err)
 	}
-	dir, err := k.Slot()
+	dir, err := k.hooks.Slot()
 	if err != nil {
 		return nil, fmt.Errorf("find the running image's config slot: %w", err)
 	}
@@ -322,7 +312,7 @@ func (k *Kubernetes) checkSplit(ctx context.Context, share kpki.Share) (*etcd.Sp
 	if err != nil {
 		return nil, err
 	}
-	others, err := k.EtcdEndpoints(ctx, c, share, ips)
+	others, err := k.hooks.EtcdEndpoints(ctx, c, share, ips)
 	if err != nil {
 		return nil, err
 	}

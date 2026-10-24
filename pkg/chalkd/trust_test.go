@@ -269,7 +269,7 @@ func TestStatusReportsTheControlPlanesState(t *testing.T) {
 	if err := knode.MarkBootstrapped(s.Kubernetes.Paths, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	s.Kubernetes.ControlPlaneState = func(context.Context, k8s.Cluster, kpki.Share) string { return "current" }
+	s.Kubernetes.hooks.ControlPlaneState = func(context.Context, k8s.Cluster, kpki.Share) string { return "current" }
 	if got := status(t, s).Kubernetes.ControlPlane; got != "current" {
 		t.Errorf("control plane %q", got)
 	}

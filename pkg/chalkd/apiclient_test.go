@@ -15,8 +15,8 @@ func apiClientLab(t *testing.T) *Kubernetes {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	k := s.Kubernetes
 	write(t, k.Paths.Bootstrapped(), "")
-	k.APIClient = nil
-	k.StatusTimeout = time.Second
+	k.hooks.APIClient = k.ownAPIClient
+	k.timing.StatusTimeout = time.Second
 	return k
 }
 

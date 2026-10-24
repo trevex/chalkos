@@ -36,7 +36,7 @@ func newRevokeLab(t *testing.T) *revokeLab {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	write(t, s.Kubernetes.Paths.Bootstrapped(), "")
 	l := &revokeLab{s: s, cs: fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "w1"}})}
-	s.Kubernetes.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return l.cs, nil }
+	s.Kubernetes.hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return l.cs, nil }
 	return l
 }
 
@@ -280,7 +280,7 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 		t.Errorf("revoked nodes %v, error %q; want w1 at an unknown time and w2 at %s", got, st.RevokedNodesError, cm.Data["w2"])
 	}
 
-	l.s.Kubernetes.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
+	l.s.Kubernetes.hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
 		return nil, errors.New("connection refused")
 	}
 	if st, err = l.s.Kubernetes.status(context.Background()); err != nil {
@@ -366,12 +366,12 @@ func TestRevokeNodeAppliesThePolicy(t *testing.T) {
 func TestStatusReadsTheNodeWhileTheListHangs(t *testing.T) {
 	l := newRevokeLab(t)
 	k := l.s.Kubernetes
-	k.StatusTimeout = 200 * time.Millisecond
+	k.timing.StatusTimeout = 200 * time.Millisecond
 	l.cs.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
-		time.Sleep(k.StatusTimeout)
+		time.Sleep(k.timing.StatusTimeout)
 		return true, nil, context.DeadlineExceeded
 	})
-	k.Node = func(ctx context.Context) (*corev1.Node, error) {
+	k.hooks.Node = func(ctx context.Context) (*corev1.Node, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}

@@ -1,7 +1,6 @@
 package chalkd
 
 import (
-	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -53,7 +52,7 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	addrs, err := k.VIPAddresses(c, k.Paths)
+	addrs, err := k.hooks.VIPAddresses(c, k.Paths)
 	if err != nil {
 		return err
 	}
@@ -68,15 +67,15 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 		if err != nil {
 			current = share
 		}
-		return k.APIServerReady(ctx, c, current)
+		return k.hooks.APIServerReady(ctx, c, current)
 	}
 	election := &vip.Election{
 		Client:    cli,
 		Name:      n.Name,
 		Healthy:   healthy,
 		Addresses: addrs,
-		TTL:       k.VIPTTL,
-		Interval:  k.VIPInterval,
+		TTL:       k.timing.VIPTTL,
+		Interval:  k.timing.VIPInterval,
 		Holding:   &k.vipHolder,
 	}
 	defer election.Close()
@@ -87,7 +86,7 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 	// and resigning, and starts again with the new share.
 	ectx, restart := context.WithCancelCause(ctx)
 	defer restart(nil)
-	go watchEtcdTrust(ectx, k.Paths, share, cmp.Or(k.VIPInterval, vip.DefaultInterval), restart)
+	go watchEtcdTrust(ectx, k.Paths, share, k.timing.VIPInterval, restart)
 	err = election.Run(ectx)
 	if ctx.Err() == nil && errors.Is(context.Cause(ectx), errEtcdTrustChanged) {
 		return errEtcdTrustChanged

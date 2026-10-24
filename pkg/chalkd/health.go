@@ -96,7 +96,7 @@ func (h *Health) Check(ctx context.Context) error {
 		if err := h.kubeletHealthy(ctx); err != nil {
 			return err
 		}
-		if _, err := k.Node(ctx); err != nil {
+		if _, err := k.hooks.Node(ctx); err != nil {
 			return fmt.Errorf("the Node is not registered: %w", err)
 		}
 		return nil
@@ -114,7 +114,7 @@ func (h *Health) Check(ctx context.Context) error {
 	if err := h.etcdHealthy(ctx, c, share); err != nil {
 		return err
 	}
-	if !k.APIServerReady(ctx, c, share) {
+	if !k.hooks.APIServerReady(ctx, c, share) {
 		return errors.New("the API server is not ready")
 	}
 	return h.kubeletHealthy(ctx)

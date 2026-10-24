@@ -199,7 +199,7 @@ func TestRenewNodeCertificateReadsRevokedNodes(t *testing.T) {
 	s.RevokedNodes = nil
 	write(t, s.Kubernetes.Paths.Bootstrapped(), "")
 	cs := fake.NewClientset()
-	s.Kubernetes.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return cs, nil }
+	s.Kubernetes.hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return cs, nil }
 	if _, err := s.RevokeNode(context.Background(), connect.NewRequest(&nodev1.RevokeNodeRequest{Node: "w1"})); err != nil {
 		t.Fatal(err)
 	}

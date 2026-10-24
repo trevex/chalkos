@@ -127,7 +127,7 @@ func TestHealthOfAWorker(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, r := kubernetesServer(t, k8s.KindWorker, tc.share)
-			s.Kubernetes.Node = func(context.Context) (*corev1.Node, error) { return readyNode(), tc.node }
+			s.Kubernetes.hooks.Node = func(context.Context) (*corev1.Node, error) { return readyNode(), tc.node }
 			healthy := tc.kubelet
 			h := &Health{Run: r, Kubernetes: s.Kubernetes, Chalkd: addr, NodeCertificate: cert, Kubelet: kubelet(t, &healthy)}
 			checkHealth(t, h, tc.want)
@@ -144,7 +144,7 @@ func TestHealthOfAControlPlane(t *testing.T) {
 	s, _, members := memberServer(t)
 	k := s.Kubernetes
 	ready, healthy := true, true
-	k.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return ready }
+	k.hooks.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return ready }
 	h := &Health{Run: &tooltest.Runner{}, Kubernetes: k, Chalkd: addr, NodeCertificate: cert, Kubelet: kubelet(t, &healthy)}
 	checkHealth(t, h, "")
 	ready = false
@@ -152,7 +152,7 @@ func TestHealthOfAControlPlane(t *testing.T) {
 	ready, healthy = true, false
 	checkHealth(t, h, "the kubelet is not healthy")
 	healthy = true
-	k.EtcdTimeout = 2 * time.Second
+	k.timing.EtcdTimeout = 2 * time.Second
 	members["n1"].Stop()
 	checkHealth(t, h, "the etcd member is not healthy")
 

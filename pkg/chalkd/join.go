@@ -92,10 +92,7 @@ func (k *Kubernetes) joinStatus(c k8s.Cluster, joining bool) string {
 // control plane's loop. It stops when the node was bootstrapped instead, and closes done once it
 // ended.
 func (k *Kubernetes) superviseJoin(ctx context.Context, done chan struct{}) {
-	retry := k.JoinRetry
-	if retry <= 0 {
-		retry = 10 * time.Second
-	}
+	retry := k.timing.JoinRetry
 	defer func() {
 		k.mu.Lock()
 		// Stop forgot this loop already, and Start may have run another.
@@ -178,7 +175,7 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	endpoints, err := k.EtcdEndpoints(ctx, c, share, ips)
+	endpoints, err := k.hooks.EtcdEndpoints(ctx, c, share, ips)
 	if err != nil {
 		k.setJoinWaiting(err)
 		return waitingError{err}
@@ -267,13 +264,10 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 		return fmt.Errorf("render etcd: %w", err)
 	}
 	k.setJoinStep(fmt.Sprintf("etcd member %x catches up", own.ID))
-	promoteTimeout := k.PromoteTimeout
-	if promoteTimeout <= 0 {
-		promoteTimeout = 10 * time.Minute
-	}
+	promoteTimeout := k.timing.PromoteTimeout
 	pctx, cancel := context.WithTimeout(ctx, promoteTimeout)
 	defer cancel()
-	switch err := etcd.Promote(pctx, cli, own.ID, 2*time.Second, k.etcdTimeout()); {
+	switch err := etcd.Promote(pctx, cli, own.ID, 2*time.Second, k.timing.EtcdTimeout); {
 	case errors.Is(err, etcd.ErrMemberRemoved):
 		return errMemberRemoved
 	case err != nil && ctx.Err() == nil && pctx.Err() != nil:

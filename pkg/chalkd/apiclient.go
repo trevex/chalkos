@@ -34,11 +34,7 @@ func (k *Kubernetes) apiClient(need func() (k8s.Cluster, string, kpki.Share, err
 	if err != nil {
 		return nil, k8s.Cluster{}, kpki.Share{}, err
 	}
-	newClient := k.APIClient
-	if newClient == nil {
-		newClient = k.ownAPIClient
-	}
-	client, err := newClient(c, share)
+	client, err := k.hooks.APIClient(c, share)
 	if err != nil {
 		return nil, k8s.Cluster{}, kpki.Share{}, failed(connect.CodeInternal, "reach the API server: %v", err)
 	}

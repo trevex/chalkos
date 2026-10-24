@@ -157,7 +157,7 @@ func health(args []string) error {
 	}
 	var k *chalkd.Kubernetes
 	if _, err := os.Stat(knode.DefaultPaths().Image); err == nil {
-		k = chalkd.NewKubernetes()
+		k = chalkd.NewKubernetes(chalkd.KubernetesOptions{})
 	}
 	h := chalkd.DefaultHealth(k)
 	h.IgnoreUnits = a.ignore
@@ -356,7 +356,7 @@ func serve() error {
 	defer stop()
 	// Images with Kubernetes carry its facts; the cluster comes from the node's config.
 	if _, err := os.Stat(knode.DefaultPaths().Image); err == nil && creds.mode == nodev1.Mode_MODE_NORMAL {
-		srv.Kubernetes = chalkd.NewKubernetes()
+		srv.Kubernetes = chalkd.NewKubernetes(chalkd.KubernetesOptions{})
 		srv.Kubernetes.Start()
 		// On every way out the node releases the VIPs, which must not stay on a node whose chalkd
 		// no longer holds their lease, and closes its etcd clients.

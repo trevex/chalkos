@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"cmp"
 	"context"
 	"log"
 	"net/netip"
@@ -22,70 +23,12 @@ import (
 
 // Kubernetes is the node's Kubernetes side; nil on a node whose image has no Kubernetes.
 type Kubernetes struct {
-	Paths knode.Paths
-	// Slot returns the running image's config slot on STATE, whose Addon documents the control
-	// plane applies after chalkos's add-ons.
-	Slot func() (string, error)
-	// Objects returns the objects the control plane applies for the cluster: chalkos's add-ons,
-	// then those of the Addon documents. Tests replace it.
-	Objects func(c k8s.Cluster) ([]map[string]any, error)
-	// ControlPlane runs on a bootstrapped control-plane node until ctx ends or it fails: it
-	// applies the manifests, calls applied with their number once that succeeded, and approves
-	// kubelet serving certificates. Tests replace it.
-	ControlPlane func(ctx context.Context, share kpki.Share, applied func(n int)) error
-	// Node returns the node's Node object. Tests replace it.
-	Node func(ctx context.Context) (*corev1.Node, error)
-	// RestartBackoff is the first wait before ControlPlane starts again after it failed; it
-	// doubles up to MaxRestartBackoff. Zero means 5 seconds and a minute.
-	RestartBackoff, MaxRestartBackoff time.Duration
-	// EtcdEndpoints returns the client URLs of the cluster's etcd members other than the node's,
-	// as the API server at the cluster's endpoint lists them; it fails while there is none.
-	// Tests replace it.
-	EtcdEndpoints func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []netip.Addr) ([]string, error)
-	// ClusterAnswers reports whether the API server at the cluster's endpoint answers with the
-	// share's CA. Tests replace it.
-	ClusterAnswers func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
-	// JoinRetry is the wait between two attempts to join the cluster; zero means 10 seconds.
-	JoinRetry time.Duration
-	// PromoteTimeout is how long the join waits for its learner to catch up with the leader before
-	// it starts over; zero means 10 minutes.
-	PromoteTimeout time.Duration
-	// VIPAddresses are the cluster's VIPs on this node's interfaces. Tests replace it.
-	VIPAddresses func(c k8s.Cluster, p knode.Paths) (vip.Holder, error)
-	// APIServerReady reports whether the node's API server answers ready. Tests replace it.
-	APIServerReady func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
-	// VIPTTL is the lifetime in seconds of the lease that holds the VIPs, and VIPInterval the
-	// time between two health checks of the API server; zero means vip.DefaultTTL and
-	// vip.DefaultInterval.
-	VIPTTL      int
-	VIPInterval time.Duration
-	// EtcdTimeout bounds each request to etcd, so an etcd member that does not answer never holds
-	// up a loop or the membership lock; zero means 30 seconds.
-	EtcdTimeout time.Duration
-	// EtcdStatusTimeout is how long a health check waits for each etcd member; zero means three
-	// seconds. Tests raise it: their members share one busy process.
-	EtcdStatusTimeout time.Duration
-	// LocalEtcd is where chalkd reaches the node's own etcd member; empty means the cluster's
-	// LocalEtcd. Tests replace it.
-	LocalEtcd string
-	// EtcdStopped waits until the node's etcd stopped once its static pod is gone. Tests replace
-	// it.
-	EtcdStopped func(ctx context.Context, c k8s.Cluster) error
-	// ControlPlaneState says whether the node's API server and etcd run with the certificates the
-	// node holds now: controlPlaneCurrent, or what is not so. Tests replace it.
-	ControlPlaneState func(ctx context.Context, c k8s.Cluster, share kpki.Share) string
-	// APIClient reaches the node's own API server in place of chalkd's client when set. Tests set
-	// it.
-	APIClient func(c k8s.Cluster, share kpki.Share) (kubernetes.Interface, error)
-	// Approve approves kubelet serving certificates with the API server at cfg until ctx ends; nil
-	// runs chalkd's approver. Tests replace it.
-	Approve func(ctx context.Context, cfg *rest.Config)
-	// RotationPoll is the time between two looks at what a rotation step waits for; zero means
-	// two seconds.
-	RotationPoll time.Duration
-	// StatusTimeout bounds each read of the status from the API server, the revoked nodes and the
-	// Node apart; zero means five seconds.
-	StatusTimeout time.Duration
+	Paths  knode.Paths
+	hooks  KubernetesHooks
+	timing Timing
+	// etcdURL is where chalkd reaches the node's own etcd member; empty means the cluster's
+	// LocalEtcd.
+	etcdURL string
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -94,10 +37,12 @@ type Kubernetes struct {
 	vipHolder atomic.Bool
 
 	mu sync.Mutex
-	// ctx ends the loops; cancel ends it when chalkd stops. vipDone is closed once the VIP
-	// election ended and released the VIPs, joinDone once the join's loop ended, leavesDone
-	// once the renewal of the control plane's certificates ended and controlPlaneDone once the
-	// control plane's loop ended.
+	// ctx ends the loops, and cancel ends ctx when chalkd stops. Each done channel is closed once
+	// its loop ended:
+	//   - vipDone: the VIP election, which released the VIPs by then;
+	//   - joinDone: the join;
+	//   - leavesDone: the renewal of the control plane's certificates;
+	//   - controlPlaneDone: the control plane's loop.
 	ctx              context.Context
 	cancel           context.CancelFunc
 	vipDone          chan struct{}
@@ -129,6 +74,96 @@ type Kubernetes struct {
 	api   *apiConn
 }
 
+// KubernetesHooks are the functions through which the Kubernetes side reaches the cluster, the
+// node and STATE. NewKubernetes fills each nil one with chalkd's own; tests replace them.
+type KubernetesHooks struct {
+	// Slot returns the running image's config slot on STATE. The control plane applies the slot's
+	// Addon documents after chalkos's add-ons.
+	Slot func() (string, error)
+	// Objects returns the objects the control plane applies for the cluster: chalkos's add-ons,
+	// then those of the Addon documents.
+	Objects func(c k8s.Cluster) ([]map[string]any, error)
+	// ControlPlane runs on a bootstrapped control-plane node until ctx ends or it fails. It
+	// applies the manifests, calls applied with their number once that succeeded, and approves
+	// kubelet serving certificates.
+	ControlPlane func(ctx context.Context, share kpki.Share, applied func(n int)) error
+	// Node returns the node's Node object.
+	Node func(ctx context.Context) (*corev1.Node, error)
+	// EtcdEndpoints returns the client URLs of the cluster's etcd members other than the node's,
+	// as the API server at the cluster's endpoint lists them. It fails while there is none.
+	EtcdEndpoints func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []netip.Addr) ([]string, error)
+	// ClusterAnswers reports whether the API server at the cluster's endpoint answers with the
+	// share's CA.
+	ClusterAnswers func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
+	// VIPAddresses are the cluster's VIPs on this node's interfaces.
+	VIPAddresses func(c k8s.Cluster, p knode.Paths) (vip.Holder, error)
+	// APIServerReady reports whether the node's API server answers ready.
+	APIServerReady func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
+	// EtcdStopped waits until the node's etcd stopped once its static pod is gone.
+	EtcdStopped func(ctx context.Context, c k8s.Cluster) error
+	// ControlPlaneState says whether the node's API server and etcd run with the certificates the
+	// node holds now: controlPlaneCurrent, or what is not so.
+	ControlPlaneState func(ctx context.Context, c k8s.Cluster, share kpki.Share) string
+	// APIClient returns a client for the node's own API server.
+	APIClient func(c k8s.Cluster, share kpki.Share) (kubernetes.Interface, error)
+	// Approve approves kubelet serving certificates with the API server at cfg until ctx ends.
+	Approve func(ctx context.Context, cfg *rest.Config)
+}
+
+// Timing holds the waits and timeouts of the Kubernetes side. A zero field means its default.
+type Timing struct {
+	// RestartBackoff is the first wait before the control plane's loop starts again after it
+	// failed; it doubles up to MaxRestartBackoff. The defaults are 5 seconds and a minute.
+	RestartBackoff, MaxRestartBackoff time.Duration
+	// JoinRetry is the wait between two attempts to join the cluster; 10 seconds by default.
+	JoinRetry time.Duration
+	// PromoteTimeout is how long the join waits for its learner to catch up with the leader
+	// before it starts over; 10 minutes by default.
+	PromoteTimeout time.Duration
+	// VIPTTL is the lifetime in seconds of the lease that holds the VIPs, and VIPInterval the
+	// time between two health checks of the API server. The defaults are vip.DefaultTTL and
+	// vip.DefaultInterval.
+	VIPTTL      int
+	VIPInterval time.Duration
+	// EtcdTimeout bounds each request to etcd, so an etcd member that does not answer never holds
+	// up a loop or the membership lock; 30 seconds by default.
+	EtcdTimeout time.Duration
+	// EtcdStatusTimeout is how long a health check waits for each etcd member. Zero leaves etcd's
+	// own three seconds. Tests raise it: their members share one busy process.
+	EtcdStatusTimeout time.Duration
+	// Poll is the time between two looks at what a rotation step or a drain waits for; two
+	// seconds by default.
+	Poll time.Duration
+	// StatusTimeout bounds each read of the status from the API server, the revoked nodes and the
+	// Node apart; five seconds by default.
+	StatusTimeout time.Duration
+}
+
+// withDefaults returns t with each zero field but EtcdStatusTimeout set to its default.
+func (t Timing) withDefaults() Timing {
+	t.RestartBackoff = cmp.Or(t.RestartBackoff, 5*time.Second)
+	t.MaxRestartBackoff = cmp.Or(t.MaxRestartBackoff, time.Minute)
+	t.JoinRetry = cmp.Or(t.JoinRetry, 10*time.Second)
+	t.PromoteTimeout = cmp.Or(t.PromoteTimeout, 10*time.Minute)
+	t.VIPTTL = cmp.Or(t.VIPTTL, vip.DefaultTTL)
+	t.VIPInterval = cmp.Or(t.VIPInterval, vip.DefaultInterval)
+	t.EtcdTimeout = cmp.Or(t.EtcdTimeout, 30*time.Second)
+	t.Poll = cmp.Or(t.Poll, 2*time.Second)
+	t.StatusTimeout = cmp.Or(t.StatusTimeout, 5*time.Second)
+	return t
+}
+
+// KubernetesOptions set up the Kubernetes side NewKubernetes returns. Zero fields mean chalkd's
+// own: the node's paths, chalkd's hooks and the default timing.
+type KubernetesOptions struct {
+	Paths  knode.Paths
+	Hooks  KubernetesHooks
+	Timing Timing
+	// LocalEtcd is where chalkd reaches the node's own etcd member; empty means the cluster's
+	// LocalEtcd.
+	LocalEtcd string
+}
+
 // LeavesProblem says why renewing the control plane's certificates failed last; "" while it
 // did not.
 func (k *Kubernetes) LeavesProblem() string {
@@ -141,18 +176,49 @@ func (k *Kubernetes) LeavesProblem() string {
 	return leaves.Problem()
 }
 
-// NewKubernetes returns the Kubernetes side of a node with the default paths.
-func NewKubernetes() *Kubernetes {
-	k := &Kubernetes{Paths: knode.DefaultPaths(), Slot: nodeconfig.Default().Slot}
-	k.Objects = k.objects
-	k.ControlPlane = k.runControlPlane
-	k.Node = k.node
-	k.EtcdEndpoints = k.etcdEndpoints
-	k.ClusterAnswers = clusterAnswers
-	k.VIPAddresses = vip.NodeAddresses
-	k.APIServerReady = apiServerReady
-	k.EtcdStopped = etcdStopped
-	k.ControlPlaneState = k.controlPlaneState
+// NewKubernetes returns the Kubernetes side of a node.
+func NewKubernetes(o KubernetesOptions) *Kubernetes {
+	k := &Kubernetes{Paths: o.Paths, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd}
+	if k.Paths == (knode.Paths{}) {
+		k.Paths = knode.DefaultPaths()
+	}
+	h := &k.hooks
+	if h.Slot == nil {
+		h.Slot = nodeconfig.Default().Slot
+	}
+	if h.Objects == nil {
+		h.Objects = k.objects
+	}
+	if h.ControlPlane == nil {
+		h.ControlPlane = k.runControlPlane
+	}
+	if h.Node == nil {
+		h.Node = k.node
+	}
+	if h.EtcdEndpoints == nil {
+		h.EtcdEndpoints = k.etcdEndpoints
+	}
+	if h.ClusterAnswers == nil {
+		h.ClusterAnswers = clusterAnswers
+	}
+	if h.VIPAddresses == nil {
+		h.VIPAddresses = vip.NodeAddresses
+	}
+	if h.APIServerReady == nil {
+		h.APIServerReady = apiServerReady
+	}
+	if h.EtcdStopped == nil {
+		h.EtcdStopped = etcdStopped
+	}
+	if h.ControlPlaneState == nil {
+		h.ControlPlaneState = k.controlPlaneState
+	}
+	if h.APIClient == nil {
+		h.APIClient = k.ownAPIClient
+	}
+	if h.Approve == nil {
+		h.Approve = approveServing
+	}
 	return k
 }
 
@@ -306,31 +372,13 @@ func (k *Kubernetes) Reload() {
 
 // etcdRequest bounds one request to etcd, and the health checks in it.
 func (k *Kubernetes) etcdRequest(ctx context.Context) (context.Context, context.CancelFunc) {
-	if k.EtcdStatusTimeout > 0 {
-		ctx = etcd.WithStatusTimeout(ctx, k.EtcdStatusTimeout)
+	if k.timing.EtcdStatusTimeout > 0 {
+		ctx = etcd.WithStatusTimeout(ctx, k.timing.EtcdStatusTimeout)
 	}
-	return context.WithTimeout(ctx, k.etcdTimeout())
-}
-
-func (k *Kubernetes) etcdTimeout() time.Duration {
-	if k.EtcdTimeout <= 0 {
-		return 30 * time.Second
-	}
-	return k.EtcdTimeout
+	return context.WithTimeout(ctx, k.timing.EtcdTimeout)
 }
 
 // localEtcd is where chalkd reaches the node's own etcd member.
 func (k *Kubernetes) localEtcd(c k8s.Cluster) string {
-	if k.LocalEtcd != "" {
-		return k.LocalEtcd
-	}
-	return c.LocalEtcd()
-}
-
-// statusTimeout bounds each read of the status from the API server.
-func (k *Kubernetes) statusTimeout() time.Duration {
-	if k.StatusTimeout > 0 {
-		return k.StatusTimeout
-	}
-	return 5 * time.Second
+	return cmp.Or(k.etcdURL, c.LocalEtcd())
 }

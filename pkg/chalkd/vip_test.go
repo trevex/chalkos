@@ -77,10 +77,10 @@ func vipControlPlane(t *testing.T) (*Kubernetes, *fakeAddresses) {
 	}
 	write(t, k.Paths.Cluster, strings.Replace(string(data), `"extraArgs"`, `"vip": {"addresses": ["192.168.100.11"], "mode": "l2"}, "extraArgs"`, 1))
 	addrs := &fakeAddresses{}
-	k.VIPAddresses = func(k8s.Cluster, knode.Paths) (vip.Holder, error) { return addrs, nil }
-	k.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
+	k.hooks.VIPAddresses = func(k8s.Cluster, knode.Paths) (vip.Holder, error) { return addrs, nil }
+	k.hooks.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
 	// A lease of seconds keeps a busy machine's delays within its renewals.
-	k.VIPTTL, k.VIPInterval = 6, 50*time.Millisecond
+	k.timing.VIPTTL, k.timing.VIPInterval = 6, 50*time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go k.superviseVIP(ctx, done)
@@ -118,7 +118,7 @@ func TestVIPRestartsWhenEtcdTrustChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	changeShare(t, k.Paths, func(s *kpki.Share) { s.Accepted = &pki.KubernetesAccepted{CA: []string{kubernetesCA.Certificate}} })
-	time.Sleep(20 * k.VIPInterval)
+	time.Sleep(20 * k.timing.VIPInterval)
 	if got := addrs.released.Load(); got != released || !held() {
 		t.Fatalf("a share that leaves etcd's trust alone released the VIPs %d times", got-released)
 	}

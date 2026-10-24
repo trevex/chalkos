@@ -247,9 +247,9 @@ func TestApplyConfigRestartsControlPlaneLoopWithNewShare(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	k := s.Kubernetes
 	// Only a reload restarts the loop this quickly.
-	k.RestartBackoff = time.Hour
+	k.timing.RestartBackoff = time.Hour
 	shares := make(chan kpki.Share, 4)
-	k.ControlPlane = func(ctx context.Context, share kpki.Share, applied func(int)) error {
+	k.hooks.ControlPlane = func(ctx context.Context, share kpki.Share, applied func(int)) error {
 		shares <- share
 		applied(19)
 		<-ctx.Done()
@@ -919,7 +919,7 @@ func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
 		defer mu.Unlock()
 		return slices.Clone(events)
 	}
-	k.ControlPlane = func(ctx context.Context, _ kpki.Share, applied func(int)) error {
+	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, applied func(int)) error {
 		record("start")
 		applied(1)
 		<-ctx.Done()
@@ -983,15 +983,15 @@ func TestApplyConfigAppliesChangedAddons(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, p.Bootstrapped(), "")
-	k.Slot = s.Loader.Slot
-	k.Objects = k.objects
+	k.hooks.Slot = s.Loader.Slot
+	k.hooks.Objects = k.objects
 	applied := make(chan string, 10)
-	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
 		c, err := k8s.ReadCluster(p.Cluster)
 		if err != nil {
 			return err
 		}
-		objects, err := k.Objects(c)
+		objects, err := k.hooks.Objects(c)
 		if err != nil {
 			return err
 		}
