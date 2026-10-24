@@ -16,6 +16,7 @@ let
   inherit (config.services.chrony) package;
   dhcpEnabled = config.chalkos.kinds.TimeSync.get { path = "spec.dhcp"; };
   cel = import ../../lib/cel.nix { inherit lib; };
+  inherit (import ../../lib/kinds/api.nix) apiVersions;
   # A server as a line of chrony's sources file.
   server =
     s:
@@ -68,7 +69,7 @@ in
   # TimeSync changes. A path unit does not start an active service again, so a change of the
   # links' state restarts it.
   chalkos.effects.chrony-dhcp = {
-    when = cel.specsChanged "time.chalkos.dev/v1alpha1" "TimeSync";
+    when = cel.specsChanged apiVersions.time "TimeSync";
     restart = [ "chalkos-chrony-dhcp.service" ];
   };
   # A CNI brings up several links at once at boot, each a change of /run/systemd/netif/links, and

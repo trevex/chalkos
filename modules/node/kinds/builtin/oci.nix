@@ -2,7 +2,7 @@
 { lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin dnsName;
+  inherit (import ./lib.nix) builtin dnsName groups;
   # A host as registries are named: a DNS name, an IPv4 address or an IPv6 address in brackets.
   # The closing bracket stays unescaped: POSIX ERE has no \], and a lone ] is literal in ERE,
   # ECMA-262 and Go alike.
@@ -24,7 +24,7 @@ let
 in
 {
   chalkos.kinds = {
-    Registry = builtin "oci.chalkos.dev" // {
+    Registry = builtin groups.oci // {
       multiple = true;
       description = "The credentials and transport of an OCI registry host, with which chalkd pulls OS images and, on images that run Kubernetes, containerd pulls container images.";
       # chalkd authenticates a pull with the Registry of the image's host, so a host has one; it
@@ -65,7 +65,7 @@ in
         };
       };
     };
-    Mirror = builtin "oci.chalkos.dev" // {
+    Mirror = builtin groups.oci // {
       multiple = true;
       description = "The mirror endpoints that chalkd and containerd try, in order, before a registry itself.";
       # chalkd and containerd try one list of endpoints for a registry, so a registry has one.

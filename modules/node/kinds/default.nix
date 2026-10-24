@@ -15,19 +15,16 @@
 let
   schema = import ../../../lib/kinds/schema.nix { inherit lib; };
   getLib = import ../../../lib/kinds/get.nix { inherit lib; };
+  api = import ../../../lib/kinds/api.nix;
   inherit (chalkosPackages) chalkcfg chalkos-rules chalkos-render;
   cfg = config.chalkos.kinds;
 
   # networkd's Network, NetDev and Link, generated from the tables of the systemd the image runs,
   # so their schemas accept exactly the sections and keys its networkd does.
   networkd = {
-    group = "networkd.chalkos.dev";
-    version = "v1alpha1";
-    kinds = [
-      "Link"
-      "NetDev"
-      "Network"
-    ];
+    group = api.groups.networkd;
+    inherit (api) version;
+    kinds = api.networkdKinds;
     # What a document of each kind is, which its schema carries.
     descriptions = {
       Link = "A systemd .link file, which udev applies to the network devices it matches, such as to name them or set their offloads.";
@@ -409,11 +406,7 @@ in
     # offline validator, so the output has no check: the schemas accept exactly the sections and
     # keys the image's networkd does, and the examples render when the image is built.
     chalkos.outputs.networkd = {
-      inputs = [
-        "Link"
-        "NetDev"
-        "Network"
-      ];
+      inputs = networkd.kinds;
       render = "${lib.getExe chalkos-render} networkd ${networkdSchemas}";
       dir = "/run/systemd/network";
       examples = ../examples/networkd;

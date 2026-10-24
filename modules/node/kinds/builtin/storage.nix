@@ -4,7 +4,7 @@
 { lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin;
+  inherit (import ./lib.nix) builtin groups apiVersions;
   # A size as repart reads it, in powers of 1024: at most 18 digits without a suffix and 15, 12, 9,
   # 6 or 3 with K, M, G, T or P, so it stays below 2^63 bytes, which a rule reads as an int.
   sizePattern = "[0-9]{1,18}|[0-9]{1,15}K|[0-9]{1,12}M|[0-9]{1,9}G|[0-9]{1,6}T|[0-9]{1,3}P";
@@ -59,7 +59,7 @@ let
   # slot's config may grow but not undo. Null facts.recorded, as at an install, has nothing to
   # compare with. A recorded value is "" or null where the documents say null; a raw volume's
   # format is recorded as "".
-  storageAPI = "storage.chalkos.dev/v1alpha1";
+  storageAPI = apiVersions.storage;
   systemDiskSpec = ''config["${storageAPI}"].SystemDisk.map(k, config["${storageAPI}"].SystemDisk[k].spec)[0]'';
   orEmpty = x: ''(${x} == null ? "" : ${x})'';
   # A recorded volume's format as the documents write it: an empty one is a raw volume's.
@@ -120,7 +120,7 @@ let
 in
 {
   chalkos.kinds = {
-    SystemDisk = builtin "storage.chalkos.dev" // {
+    SystemDisk = builtin groups.storage // {
       description = "The disk that holds the node's system region and VAR, and the encryption of the node's storage.";
       # VAR holds the running node's data, so a change it would be recreated for takes a
       # reinstall; a larger VAR, or one that fills the disk, only grows. VAR is never raw, so a
@@ -178,7 +178,7 @@ in
         };
       };
     };
-    Volume = builtin "storage.chalkos.dev" // {
+    Volume = builtin groups.storage // {
       multiple = true;
       description = "A partition for the node's data, on the system disk or on a disk of its own, which the node creates and mounts.";
       # chalkctl storage reset recreates a volume in place, on the disk it lives on; moving a volume

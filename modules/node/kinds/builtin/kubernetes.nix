@@ -8,7 +8,7 @@
 }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin;
+  inherit (import ./lib.nix) builtin groups;
   kubernetes = config.chalkos.kubernetes.enable;
   flannel = config.chalkos.cni.provider == "flannel";
   inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) kubernetesObject;
@@ -122,7 +122,7 @@ in
     };
 
     chalkos.kinds = {
-      Node = builtin "kubernetes.chalkos.dev" // {
+      Node = builtin groups.kubernetes // {
         description = "The node's part in the Kubernetes cluster: its type, the labels and taints it registers with, its address, the interface of the VIP and its kubelet's flags.";
         # The share's certificates are those of its kind, and a control plane's etcd data stays its
         # own, until the node is reinstalled; a share of another type delivered with the config
@@ -190,7 +190,7 @@ in
           };
         };
       };
-      Cluster = builtin "kubernetes.chalkos.dev" // {
+      Cluster = builtin groups.kubernetes // {
         description = "The Kubernetes cluster the node belongs to: its API server's endpoint, its address families and ranges, its VIP and the flags of its control-plane components.";
         rules = [
           (fixedRule {
@@ -304,7 +304,7 @@ in
           };
         };
       };
-      Addon = builtin "kubernetes.chalkos.dev" // {
+      Addon = builtin groups.kubernetes // {
         multiple = true;
         description = "Kubernetes objects that the control planes apply to the cluster.";
         spec.objects = mkOption {
@@ -313,7 +313,7 @@ in
         };
       };
       Flannel = lib.mkIf flannel (
-        builtin "kubernetes.chalkos.dev"
+        builtin groups.kubernetes
         // {
           description = "The settings of flannel, the cluster's CNI, for the VXLAN between the nodes.";
           spec = {

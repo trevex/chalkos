@@ -2,7 +2,7 @@
 { lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin;
+  inherit (import ./lib.nix) builtin groups;
   timeServer = types.submodule {
     options = {
       host = mkOption {
@@ -24,7 +24,7 @@ let
 in
 {
   chalkos.kinds = {
-    TimeSync = builtin "time.chalkos.dev" // {
+    TimeSync = builtin groups.time // {
       description = "The time servers the node synchronises its clock with.";
       spec = {
         servers = mkOption {

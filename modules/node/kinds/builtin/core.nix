@@ -2,11 +2,11 @@
 { lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin dnsName;
+  inherit (import ./lib.nix) builtin dnsName groups;
 in
 {
   chalkos.kinds = {
-    Host = builtin "chalkos.dev" // {
+    Host = builtin groups.core // {
       description = "The host name the node sets at boot.";
       spec.hostname = mkOption {
         type = types.nullOr (types.strMatching dnsName);
@@ -14,7 +14,7 @@ in
         description = "Host name set at boot; null takes the node's name in the inventory.";
       };
     };
-    Secret = builtin "chalkos.dev" // {
+    Secret = builtin groups.core // {
       multiple = true;
       description = "Secret values that other documents name by reference, such as a Registry's password.";
       spec.data = mkOption {

@@ -50,11 +50,8 @@ let
       }";
 
   # Every kind of chalkos.kinds, and networkd's, whose names chalkos.kinds may not take.
-  declaredKinds = lib.attrNames config.chalkos.kinds ++ [
-    "Link"
-    "NetDev"
-    "Network"
-  ];
+  declaredKinds =
+    lib.attrNames config.chalkos.kinds ++ (import ../../../lib/kinds/api.nix).networkdKinds;
   # Returns value, or throws, prefixed with `where`, if kinds names a kind the image does not
   # declare, Secret or Addon. A unit must not start without the documents it expects, so a
   # misspelled kind fails the evaluation.
