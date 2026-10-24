@@ -20,7 +20,7 @@ Start at the top of the table and go down only when the level above cannot show 
 | Go unit test | next to the code, `*_test.go` in `pkg/` and `cmd/` | logic, parsing, error paths, command output | seconds |
 | Namespace or disk-image test | `pkg/kubernetes/vip`, `pkg/install/parts_test.go`, `pkg/upgrade/lab_test.go`, the `vxlan-rule` check | network rules, partition tables and file systems written by the real tools | seconds |
 | Evaluation test | `test/nix/eval.nix`, `test/nix/kinds.nix` | the arguments of `mkImages`, option defaults, assertions, what a module sets in an image, config kinds | one evaluation |
-| Build check | `nix/checks.nix` | what an image build produces: kernel modules, sizes, the bootspec | one image build |
+| Build check | `nix/checks/` | what an image build produces: kernel modules, sizes, the bootspec | one image build |
 | End-to-end test | `test/e2e/` | behaviour that needs a booted node: firmware, Secure Boot, the TPM, the initrd, a cluster | minutes and 2 GiB or more per VM |
 
 ## Go unit tests
@@ -71,7 +71,11 @@ testVariantSetsDiskOptions = {
 };
 ```
 
-Build checks in `nix/checks.nix` check what an image build produces, without booting it:
+Build checks test what an image build produces, without booting it. They live in `nix/checks/`:
+`image.nix` checks an image's files, `units.nix` runs an image's unit scripts in namespaces, and
+`repo.nix` validates the lab template and the examples. `e2e.nix` holds the end-to-end checks,
+`eval.nix` the evaluation tests, and `lib.nix` what they share. The test scripts of `units.nix`
+are `writeShellApplication` scripts, so shellcheck runs on them when they build.
 
 | Check | What it checks |
 | --- | --- |
