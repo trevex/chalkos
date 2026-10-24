@@ -20,7 +20,6 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/kubernetes/addons"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -393,7 +392,7 @@ func TestRevokeNodeRefusesPastThePolicysLimit(t *testing.T) {
 	l := newRevokeLab(t)
 	data := map[string]string{}
 	at := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC).Format(revoked.TimeFormat)
-	for i := 0; addons.RevokedLength(asList(data)) <= addons.MaxRevokedLength-200; i++ {
+	for i := 0; revoked.LiteralLength(asList(data)) <= revoked.MaxLiteralLength-200; i++ {
 		data[fmt.Sprintf("node-%05d-%s", i, strings.Repeat("x", 40))] = at
 	}
 	if _, err := l.cs.CoreV1().ConfigMaps(revoked.Namespace).Create(context.Background(), &corev1.ConfigMap{

@@ -1,44 +1,55 @@
 // Package addons renders the Kubernetes objects chalkos applies to every cluster before the
 // cluster's own manifests: RBAC for chalkos's identities, kube-proxy, flannel when it is the pod
-// network, and CoreDNS; and the admission policy that shuts out revoked nodes, which chalkd
-// applies from the revoked nodes as they are listed.
+// network, and CoreDNS.
 package addons
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
-	"strconv"
 	"strings"
-	"unicode/utf8"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
+	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
+	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
+	rbacv1ac "k8s.io/client-go/applyconfigurations/rbac/v1"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
-	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 )
-
-type object = map[string]any
 
 // Render returns the objects in the order the control plane applies them: RBAC, kube-proxy, the
 // pod network, the cluster DNS.
 func Render(c kubernetes.Cluster) ([]map[string]any, error) {
 	families := c.Families()
-	out := rbac()
+	configs := rbac()
 	proxy, err := kubeProxy(c, families)
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, proxy...)
+	configs = append(configs, proxy...)
 	if c.Flannel != nil {
 		f, err := flannel(c, families)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, f...)
+		configs = append(configs, f...)
 	}
-	return append(out, coreDNS(c, families[0])...), nil
+	configs = append(configs, coreDNS(c, families[0])...)
+	objects := make([]map[string]any, len(configs))
+	for i, config := range configs {
+		if objects[i], err = runtime.DefaultUnstructuredConverter.ToUnstructured(config); err != nil {
+			return nil, err
+		}
+	}
+	return objects, nil
 }
 
 // compact is v as JSON on one line, as a ConfigMap carries a configuration file.
@@ -52,30 +63,56 @@ func compact(v any) (string, error) {
 	return strings.TrimSuffix(b.String(), "\n"), nil
 }
 
-func clusterRoleBinding(name, role string, subject object) object {
-	return object{
-		"apiVersion": "rbac.authorization.k8s.io/v1",
-		"kind":       "ClusterRoleBinding",
-		"metadata":   object{"name": name},
-		"roleRef":    object{"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": role},
-		"subjects":   []any{subject},
-	}
+func clusterRoleBinding(name, role string, subject *rbacv1ac.SubjectApplyConfiguration) *rbacv1ac.ClusterRoleBindingApplyConfiguration {
+	return rbacv1ac.ClusterRoleBinding(name).
+		WithRoleRef(rbacv1ac.RoleRef().WithAPIGroup("rbac.authorization.k8s.io").WithKind("ClusterRole").WithName(role)).
+		WithSubjects(subject)
 }
 
-func subject(kind, name string) object {
-	return object{"apiGroup": "rbac.authorization.k8s.io", "kind": kind, "name": name}
+func subject(kind, name string) *rbacv1ac.SubjectApplyConfiguration {
+	return rbacv1ac.Subject().WithAPIGroup("rbac.authorization.k8s.io").WithKind(kind).WithName(name)
 }
 
-func serviceAccount(name, namespace string, labels object) object {
-	meta := object{"name": name, "namespace": namespace}
-	if labels != nil {
-		meta["labels"] = labels
-	}
-	return object{"apiVersion": "v1", "kind": "ServiceAccount", "metadata": meta}
+func serviceAccountSubject(name, namespace string) *rbacv1ac.SubjectApplyConfiguration {
+	return rbacv1ac.Subject().WithKind("ServiceAccount").WithName(name).WithNamespace(namespace)
 }
 
-func rbac() []object {
-	return []object{
+func rule(group string, resources []string, verbs ...string) *rbacv1ac.PolicyRuleApplyConfiguration {
+	return rbacv1ac.PolicyRule().WithAPIGroups(group).WithResources(resources...).WithVerbs(verbs...)
+}
+
+func fieldRef(name, path string) *corev1ac.EnvVarApplyConfiguration {
+	return corev1ac.EnvVar().WithName(name).
+		WithValueFrom(corev1ac.EnvVarSource().WithFieldRef(corev1ac.ObjectFieldSelector().WithFieldPath(path)))
+}
+
+func mount(name, path string) *corev1ac.VolumeMountApplyConfiguration {
+	return corev1ac.VolumeMount().WithName(name).WithMountPath(path)
+}
+
+func hostPath(name, path string) *corev1ac.VolumeApplyConfiguration {
+	return corev1ac.Volume().WithName(name).WithHostPath(corev1ac.HostPathVolumeSource().WithPath(path))
+}
+
+func xtablesLock() *corev1ac.VolumeApplyConfiguration {
+	return corev1ac.Volume().WithName("xtables-lock").
+		WithHostPath(corev1ac.HostPathVolumeSource().WithPath("/run/xtables.lock").WithType(corev1.HostPathFileOrCreate))
+}
+
+func configMapVolume(name, configMap string) *corev1ac.VolumeApplyConfiguration {
+	return corev1ac.Volume().WithName(name).WithConfigMap(corev1ac.ConfigMapVolumeSource().WithName(configMap))
+}
+
+func httpProbe(path, port string) *corev1ac.ProbeApplyConfiguration {
+	return corev1ac.Probe().WithHTTPGet(corev1ac.HTTPGetAction().WithPath(path).WithPort(intstr.FromString(port)))
+}
+
+func port(name string, number int32, protocol corev1.Protocol) *corev1ac.ContainerPortApplyConfiguration {
+	return corev1ac.ContainerPort().WithName(name).WithContainerPort(number).WithProtocol(protocol)
+}
+
+func rbac() []any {
+	return []any{
 		// Admin kubeconfigs from chalkctl kubeconfig carry this group, which RBAC can revoke,
 		// unlike system:masters.
 		clusterRoleBinding("chalkos:cluster-admins", "cluster-admin", subject("Group", "chalkos:cluster-admins")),
@@ -88,82 +125,53 @@ func rbac() []object {
 	}
 }
 
-// RevokedNodes renders the admission policy that denies every write by a revoked node, and its
-// binding: the node's kubelet can no longer update its Node or its pods, renew its client
-// certificate through a CSR or ask for a serving certificate. The policy names the nodes of the
-// list inline, so the API server evaluates it without parameters: with parameters it would deny
-// every request it matches, whoever made it, until its informer had read them. chalkd applies it
-// again whenever the list changes. It fails closed, which a map literal cannot make fail.
-func RevokedNodes(l revoked.List) []map[string]any {
-	return []object{
-		{
-			"apiVersion": "admissionregistration.k8s.io/v1",
-			"kind":       "ValidatingAdmissionPolicy",
-			"metadata":   object{"name": revoked.Name},
-			"spec": object{
-				"failurePolicy": "Fail",
-				// Subresources too: the kubelet writes nodes/status and pods/status.
-				"matchConstraints": object{"resourceRules": []any{object{
-					"apiGroups":   []any{"*"},
-					"apiVersions": []any{"*"},
-					"resources":   []any{"*/*"},
-					"operations":  []any{"CREATE", "UPDATE", "DELETE", "CONNECT"},
-				}}},
-				// Requests by anyone but a node end here.
-				"matchConditions": []any{object{"name": "node", "expression": `request.userInfo.username.startsWith("system:node:")`}},
-				"variables": []any{
-					object{"name": "revoked", "expression": revokedLiteral(l)},
-					object{"name": "node", "expression": "request.userInfo.username.substring(12)"},
-				},
-				"validations": []any{object{
-					"expression":        "!(variables.node in variables.revoked)",
-					"messageExpression": `"node " + variables.node + " is revoked " + variables.revoked[variables.node]`,
-					"message":           "the node is revoked",
-					"reason":            "Forbidden",
-				}},
-			},
-		},
-		{
-			"apiVersion": "admissionregistration.k8s.io/v1",
-			"kind":       "ValidatingAdmissionPolicyBinding",
-			"metadata":   object{"name": revoked.Name},
-			"spec": object{
-				"policyName":        revoked.Name,
-				"validationActions": []any{"Deny"},
-			},
-		},
+// kubeProxyConfiguration is kube-proxy's configuration file, its fields in key order.
+type kubeProxyConfiguration struct {
+	APIVersion       string `json:"apiVersion"`
+	BindAddress      string `json:"bindAddress"`
+	ClientConnection struct {
+		Kubeconfig string `json:"kubeconfig"`
+	} `json:"clientConnection"`
+	ClusterCIDR       string   `json:"clusterCIDR"`
+	Kind              string   `json:"kind"`
+	Mode              string   `json:"mode"`
+	NodePortAddresses []string `json:"nodePortAddresses"`
+}
+
+// The kubeconfig of a pod's service account, its fields in key order.
+type (
+	serviceAccountKubeconfig struct {
+		APIVersion     string         `json:"apiVersion"`
+		Clusters       []namedCluster `json:"clusters"`
+		Contexts       []namedContext `json:"contexts"`
+		CurrentContext string         `json:"current-context"`
+		Kind           string         `json:"kind"`
+		Users          []namedUser    `json:"users"`
 	}
-}
-
-// MaxRevokedLength bounds the length of the policy's map of revoked nodes, in code points. The
-// API server compiles no CEL expression longer than 100,000 code points; the bound leaves room
-// for nodes revoked through other control planes at the same time, each of which checks the list
-// as it read it.
-const MaxRevokedLength = 90_000
-
-// RevokedLength is the length, in code points, of the map of revoked nodes the policy names for
-// the list, which MaxRevokedLength bounds.
-func RevokedLength(l revoked.List) int {
-	return utf8.RuneCountInString(revokedLiteral(l))
-}
-
-// revokedLiteral is a CEL map from each revoked node's name to when it was revoked, in name
-// order. strconv.Quote is safe here: ConfigMap keys are limited to [-._a-zA-Z0-9] and the times
-// are rendered again, so no string holds what Go and CEL quote differently. The one mismatch,
-// Go's \xNN for bytes of invalid UTF-8, which CEL reads as a code point, cannot occur.
-func revokedLiteral(l revoked.List) string {
-	var entries []string
-	for _, name := range slices.Sorted(maps.Keys(l)) {
-		when := "at an unknown time"
-		if at := l[name]; !at.IsZero() {
-			when = "since " + at.UTC().Format(revoked.TimeFormat)
-		}
-		entries = append(entries, strconv.Quote(name)+": "+strconv.Quote(when))
+	namedCluster struct {
+		Cluster struct {
+			CertificateAuthority string `json:"certificate-authority"`
+			Server               string `json:"server"`
+		} `json:"cluster"`
+		Name string `json:"name"`
 	}
-	return "{" + strings.Join(entries, ", ") + "}"
-}
+	namedContext struct {
+		Context struct {
+			Cluster   string `json:"cluster"`
+			Namespace string `json:"namespace"`
+			User      string `json:"user"`
+		} `json:"context"`
+		Name string `json:"name"`
+	}
+	namedUser struct {
+		Name string `json:"name"`
+		User struct {
+			TokenFile string `json:"tokenFile"`
+		} `json:"user"`
+	}
+)
 
-func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]object, error) {
+func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
 	cidrs := make([]string, len(families))
 	for i, f := range families {
 		cidrs[i] = c.PodCIDRs.Of(f).String()
@@ -174,87 +182,84 @@ func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]object, error)
 	if families[0] == nodeip.IPv6 {
 		bind = "::"
 	}
-	config, err := compact(object{
-		"apiVersion": "kubeproxy.config.k8s.io/v1alpha1",
-		"kind":       "KubeProxyConfiguration",
+	proxyConfig := kubeProxyConfiguration{
+		APIVersion: "kubeproxy.config.k8s.io/v1alpha1",
+		Kind:       "KubeProxyConfiguration",
 		// The node's firewall and flannel run on nftables too.
-		"mode":        "nftables",
-		"clusterCIDR": strings.Join(cidrs, ","),
-		"bindAddress": bind,
+		Mode:        "nftables",
+		ClusterCIDR: strings.Join(cidrs, ","),
+		BindAddress: bind,
 		// NodePorts answer on the node's own addresses, one per family, as the kubelet registered
 		// them.
-		"nodePortAddresses": []any{"primary"},
-		"clientConnection":  object{"kubeconfig": "/var/lib/kube-proxy/kubeconfig.conf"},
-	})
+		NodePortAddresses: []string{"primary"},
+	}
+	proxyConfig.ClientConnection.Kubeconfig = "/var/lib/kube-proxy/kubeconfig.conf"
+	config, err := compact(proxyConfig)
 	if err != nil {
 		return nil, err
 	}
 	// Pods reach the API server at the cluster endpoint: the service address needs kube-proxy.
-	kubeconfig, err := compact(object{
-		"apiVersion": "v1",
-		"kind":       "Config",
-		"clusters": []any{object{"name": "default", "cluster": object{
-			"certificate-authority": "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
-			"server":                c.Endpoint,
-		}}},
-		"contexts":        []any{object{"name": "default", "context": object{"cluster": "default", "namespace": "default", "user": "default"}}},
-		"current-context": "default",
-		"users":           []any{object{"name": "default", "user": object{"tokenFile": "/var/run/secrets/kubernetes.io/serviceaccount/token"}}},
+	cluster := namedCluster{Name: "default"}
+	cluster.Cluster.CertificateAuthority = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	cluster.Cluster.Server = c.Endpoint
+	context := namedContext{Name: "default"}
+	context.Context.Cluster = "default"
+	context.Context.Namespace = "default"
+	context.Context.User = "default"
+	user := namedUser{Name: "default"}
+	user.User.TokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	kubeconfig, err := compact(serviceAccountKubeconfig{
+		APIVersion:     "v1",
+		Kind:           "Config",
+		Clusters:       []namedCluster{cluster},
+		Contexts:       []namedContext{context},
+		CurrentContext: "default",
+		Users:          []namedUser{user},
 	})
 	if err != nil {
 		return nil, err
 	}
-	return []object{
-		serviceAccount("kube-proxy", "kube-system", nil),
-		clusterRoleBinding("chalkos:node-proxier", "system:node-proxier",
-			object{"kind": "ServiceAccount", "name": "kube-proxy", "namespace": "kube-system"}),
-		{
-			"apiVersion": "v1",
-			"kind":       "ConfigMap",
-			"metadata":   object{"name": "kube-proxy", "namespace": "kube-system", "labels": object{"app": "kube-proxy"}},
-			"data":       object{"kubeconfig.conf": kubeconfig, "config.conf": config},
-		},
-		{
-			"apiVersion": "apps/v1",
-			"kind":       "DaemonSet",
-			"metadata":   object{"name": "kube-proxy", "namespace": "kube-system", "labels": object{"k8s-app": "kube-proxy"}},
-			"spec": object{
-				"selector":       object{"matchLabels": object{"k8s-app": "kube-proxy"}},
-				"updateStrategy": object{"type": "RollingUpdate"},
-				"template": object{
-					"metadata": object{"labels": object{"k8s-app": "kube-proxy"}},
-					"spec": object{
-						"priorityClassName":  "system-node-critical",
-						"hostNetwork":        true,
-						"serviceAccountName": "kube-proxy",
-						"nodeSelector":       object{"kubernetes.io/os": "linux"},
-						"tolerations":        []any{object{"operator": "Exists"}},
-						"containers": []any{object{
-							"name":  "kube-proxy",
-							"image": c.Images.KubeProxy,
-							"command": []any{
+	labels := map[string]string{"k8s-app": "kube-proxy"}
+	return []any{
+		corev1ac.ServiceAccount("kube-proxy", "kube-system"),
+		clusterRoleBinding("chalkos:node-proxier", "system:node-proxier", serviceAccountSubject("kube-proxy", "kube-system")),
+		corev1ac.ConfigMap("kube-proxy", "kube-system").
+			WithLabels(map[string]string{"app": "kube-proxy"}).
+			WithData(map[string]string{"kubeconfig.conf": kubeconfig, "config.conf": config}),
+		appsv1ac.DaemonSet("kube-proxy", "kube-system").
+			WithLabels(labels).
+			WithSpec(appsv1ac.DaemonSetSpec().
+				WithSelector(metav1ac.LabelSelector().WithMatchLabels(labels)).
+				WithUpdateStrategy(appsv1ac.DaemonSetUpdateStrategy().WithType(appsv1.RollingUpdateDaemonSetStrategyType)).
+				WithTemplate(corev1ac.PodTemplateSpec().
+					WithLabels(labels).
+					WithSpec(corev1ac.PodSpec().
+						WithPriorityClassName("system-node-critical").
+						WithHostNetwork(true).
+						WithServiceAccountName("kube-proxy").
+						WithNodeSelector(map[string]string{"kubernetes.io/os": "linux"}).
+						WithTolerations(corev1ac.Toleration().WithOperator(corev1.TolerationOpExists)).
+						WithContainers(corev1ac.Container().
+							WithName("kube-proxy").
+							WithImage(c.Images.KubeProxy).
+							WithCommand(
 								"/usr/local/bin/kube-proxy",
 								"--config=/var/lib/kube-proxy/config.conf",
 								"--hostname-override=$(NODE_NAME)",
-							},
-							"env":             []any{object{"name": "NODE_NAME", "valueFrom": object{"fieldRef": object{"fieldPath": "spec.nodeName"}}}},
-							"securityContext": object{"privileged": true},
-							"volumeMounts": []any{
-								object{"name": "kube-proxy", "mountPath": "/var/lib/kube-proxy"},
-								object{"name": "xtables-lock", "mountPath": "/run/xtables.lock"},
-								object{"name": "lib-modules", "mountPath": "/lib/modules", "readOnly": true},
-							},
-						}},
-						"volumes": []any{
-							object{"name": "kube-proxy", "configMap": object{"name": "kube-proxy"}},
-							object{"name": "xtables-lock", "hostPath": object{"path": "/run/xtables.lock", "type": "FileOrCreate"}},
+							).
+							WithEnv(fieldRef("NODE_NAME", "spec.nodeName")).
+							WithSecurityContext(corev1ac.SecurityContext().WithPrivileged(true)).
+							WithVolumeMounts(
+								mount("kube-proxy", "/var/lib/kube-proxy"),
+								mount("xtables-lock", "/run/xtables.lock"),
+								mount("lib-modules", "/lib/modules").WithReadOnly(true),
+							)).
+						WithVolumes(
+							configMapVolume("kube-proxy", "kube-proxy"),
+							xtablesLock(),
 							// NixOS keeps the running kernel's modules here, not in /lib/modules.
-							object{"name": "lib-modules", "hostPath": object{"path": "/run/booted-system/kernel-modules/lib/modules"}},
-						},
-					},
-				},
-			},
-		},
+							hostPath("lib-modules", "/run/booted-system/kernel-modules/lib/modules"),
+						)))),
 	}, nil
 }
 
@@ -274,144 +279,148 @@ done
 exec /opt/bin/flanneld "$@"
 `
 
-func flannel(c kubernetes.Cluster, families []nodeip.Family) ([]object, error) {
-	inUse := func(f nodeip.Family) bool {
-		for _, g := range families {
-			if g == f {
-				return true
-			}
-		}
-		return false
+// netConf is flannel's network configuration, its fields in key order.
+type netConf struct {
+	Backend struct {
+		MTU  int    `json:"MTU,omitempty"`
+		Type string `json:"Type"`
+	} `json:"Backend"`
+	// EnableIPv4 is set to false alone, for clusters without IPv4.
+	EnableIPv4     *bool  `json:"EnableIPv4,omitempty"`
+	EnableIPv6     bool   `json:"EnableIPv6,omitempty"`
+	EnableNFTables bool   `json:"EnableNFTables"`
+	IPv6Network    string `json:"IPv6Network,omitempty"`
+	Network        string `json:"Network,omitempty"`
+}
+
+// The CNI network configuration list flannel installs on the node, its fields in key order.
+type (
+	conflist struct {
+		CNIVersion string      `json:"cniVersion"`
+		Name       string      `json:"name"`
+		Plugins    []cniPlugin `json:"plugins"`
 	}
+	cniPlugin struct {
+		Backend      string           `json:"backend,omitempty"`
+		Capabilities *cniCapabilities `json:"capabilities,omitempty"`
+		Delegate     *cniDelegate     `json:"delegate,omitempty"`
+		Type         string           `json:"type"`
+	}
+	cniCapabilities struct {
+		PortMappings bool `json:"portMappings"`
+	}
+	cniDelegate struct {
+		HairpinMode      bool `json:"hairpinMode"`
+		IsDefaultGateway bool `json:"isDefaultGateway"`
+	}
+)
+
+func flannel(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
 	// VXLAN in every family of the cluster (flannel.1 and flannel-v6.1, both on UDP 8472), with
 	// the rules flannel needs in nftables tables of its own.
-	backend := object{"Type": "vxlan"}
-	if c.Flannel.MTU > 0 {
-		backend["MTU"] = c.Flannel.MTU
-	}
-	netConf := object{"EnableNFTables": true, "Backend": backend}
-	if inUse(nodeip.IPv4) {
-		netConf["Network"] = c.PodCIDRs.IPv4.String()
+	var nc netConf
+	nc.Backend.Type = "vxlan"
+	nc.Backend.MTU = c.Flannel.MTU
+	nc.EnableNFTables = true
+	if slices.Contains(families, nodeip.IPv4) {
+		nc.Network = c.PodCIDRs.IPv4.String()
 	} else {
-		netConf["EnableIPv4"] = false
+		nc.EnableIPv4 = new(false)
 	}
-	if inUse(nodeip.IPv6) {
-		netConf["EnableIPv6"] = true
-		netConf["IPv6Network"] = c.PodCIDRs.IPv6.String()
+	if slices.Contains(families, nodeip.IPv6) {
+		nc.EnableIPv6 = true
+		nc.IPv6Network = c.PodCIDRs.IPv6.String()
 	}
-	net, err := compact(netConf)
+	net, err := compact(nc)
 	if err != nil {
 		return nil, err
 	}
-	cni, err := compact(object{
-		"name":       "cbr0",
-		"cniVersion": "0.3.1",
-		"plugins": []any{
-			object{"type": "flannel", "delegate": object{"hairpinMode": true, "isDefaultGateway": true}},
-			object{"type": "portmap", "capabilities": object{"portMappings": true}, "backend": "nftables"},
-		},
-	})
+	cni, err := compact(conflist{CNIVersion: "0.3.1", Name: "cbr0", Plugins: []cniPlugin{
+		{Type: "flannel", Delegate: &cniDelegate{HairpinMode: true, IsDefaultGateway: true}},
+		{Type: "portmap", Capabilities: &cniCapabilities{PortMappings: true}, Backend: "nftables"},
+	}})
 	if err != nil {
 		return nil, err
 	}
-	labels := func() object { return object{"tier": "node", "app": "flannel", "k8s-app": "flannel"} }
-	flannelLabel := func() object { return object{"k8s-app": "flannel"} }
-	return []object{
-		{
-			"apiVersion": "v1",
-			"kind":       "Namespace",
-			"metadata": object{"name": "kube-flannel", "labels": object{
-				"k8s-app":                            "flannel",
-				"pod-security.kubernetes.io/enforce": "privileged",
-			}},
-		},
-		{
-			"apiVersion": "rbac.authorization.k8s.io/v1",
-			"kind":       "ClusterRole",
-			"metadata":   object{"name": "flannel", "labels": flannelLabel()},
-			"rules": []any{
-				object{"apiGroups": []any{""}, "resources": []any{"pods"}, "verbs": []any{"get"}},
-				object{"apiGroups": []any{""}, "resources": []any{"nodes"}, "verbs": []any{"get", "list", "watch"}},
-				object{"apiGroups": []any{""}, "resources": []any{"nodes/status"}, "verbs": []any{"patch"}},
-			},
-		},
-		{
-			"apiVersion": "rbac.authorization.k8s.io/v1",
-			"kind":       "ClusterRoleBinding",
-			"metadata":   object{"name": "flannel", "labels": flannelLabel()},
-			"roleRef":    object{"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "flannel"},
-			"subjects":   []any{object{"kind": "ServiceAccount", "name": "flannel", "namespace": "kube-flannel"}},
-		},
-		serviceAccount("flannel", "kube-flannel", flannelLabel()),
-		{
-			"apiVersion": "v1",
-			"kind":       "ConfigMap",
-			"metadata":   object{"name": "kube-flannel-cfg", "namespace": "kube-flannel", "labels": labels()},
-			"data":       object{"cni-conf.json": cni, "net-conf.json": net},
-		},
-		{
-			"apiVersion": "apps/v1",
-			"kind":       "DaemonSet",
-			"metadata":   object{"name": "kube-flannel-ds", "namespace": "kube-flannel", "labels": labels()},
-			"spec": object{
-				"selector": object{"matchLabels": object{"app": "flannel"}},
-				"template": object{
-					"metadata": object{"labels": labels()},
-					"spec": object{
-						"hostNetwork":        true,
-						"priorityClassName":  "system-node-critical",
-						"serviceAccountName": "flannel",
-						"nodeSelector":       object{"kubernetes.io/os": "linux"},
-						"tolerations":        []any{object{"operator": "Exists", "effect": "NoSchedule"}},
+	labels := map[string]string{"tier": "node", "app": "flannel", "k8s-app": "flannel"}
+	flannelLabel := map[string]string{"k8s-app": "flannel"}
+	return []any{
+		corev1ac.Namespace("kube-flannel").WithLabels(map[string]string{
+			"k8s-app":                            "flannel",
+			"pod-security.kubernetes.io/enforce": "privileged",
+		}),
+		rbacv1ac.ClusterRole("flannel").
+			WithLabels(flannelLabel).
+			WithRules(
+				rule("", []string{"pods"}, "get"),
+				rule("", []string{"nodes"}, "get", "list", "watch"),
+				rule("", []string{"nodes/status"}, "patch"),
+			),
+		rbacv1ac.ClusterRoleBinding("flannel").
+			WithLabels(flannelLabel).
+			WithRoleRef(rbacv1ac.RoleRef().WithAPIGroup("rbac.authorization.k8s.io").WithKind("ClusterRole").WithName("flannel")).
+			WithSubjects(serviceAccountSubject("flannel", "kube-flannel")),
+		corev1ac.ServiceAccount("flannel", "kube-flannel").WithLabels(flannelLabel),
+		corev1ac.ConfigMap("kube-flannel-cfg", "kube-flannel").
+			WithLabels(labels).
+			WithData(map[string]string{"cni-conf.json": cni, "net-conf.json": net}),
+		appsv1ac.DaemonSet("kube-flannel-ds", "kube-flannel").
+			WithLabels(labels).
+			WithSpec(appsv1ac.DaemonSetSpec().
+				WithSelector(metav1ac.LabelSelector().WithMatchLabels(map[string]string{"app": "flannel"})).
+				WithTemplate(corev1ac.PodTemplateSpec().
+					WithLabels(labels).
+					WithSpec(corev1ac.PodSpec().
+						WithHostNetwork(true).
+						WithPriorityClassName("system-node-critical").
+						WithServiceAccountName("flannel").
+						WithNodeSelector(map[string]string{"kubernetes.io/os": "linux"}).
+						WithTolerations(corev1ac.Toleration().WithOperator(corev1.TolerationOpExists).WithEffect(corev1.TaintEffectNoSchedule)).
 						// The flannel CNI plugin comes with the image (containerd's bin_dirs), so
 						// only the network configuration is installed on the host.
-						"initContainers": []any{object{
-							"name":    "install-cni",
-							"image":   c.Images.Flannel,
-							"command": []any{"/opt/bin/install-conf"},
-							"args":    []any{"/etc/kube-flannel/cni-conf.json", "/etc/cni/net.d/10-flannel.conflist"},
-							"volumeMounts": []any{
-								object{"name": "cni", "mountPath": "/etc/cni/net.d"},
-								object{"name": "flannel-cfg", "mountPath": "/etc/kube-flannel/"},
-							},
-						}},
-						"containers": []any{object{
-							"name":           "kube-flannel",
-							"image":          c.Images.Flannel,
-							"command":        []any{"/bin/sh", "-c", flanneld},
-							"ports":          []any{object{"name": "healthz", "containerPort": 8081, "protocol": "TCP"}},
-							"livenessProbe":  object{"httpGet": object{"path": "/healthz", "port": "healthz"}, "initialDelaySeconds": 10, "periodSeconds": 30},
-							"readinessProbe": object{"httpGet": object{"path": "/readyz", "port": "healthz"}, "initialDelaySeconds": 5, "periodSeconds": 10},
-							"resources":      object{"requests": object{"cpu": "100m", "memory": "50Mi"}},
-							"securityContext": object{
-								"privileged":   false,
-								"capabilities": object{"add": []any{"NET_ADMIN", "NET_RAW"}},
-							},
-							"env": []any{
-								object{"name": "POD_NAME", "valueFrom": object{"fieldRef": object{"fieldPath": "metadata.name"}}},
-								object{"name": "POD_NAMESPACE", "valueFrom": object{"fieldRef": object{"fieldPath": "metadata.namespace"}}},
+						WithInitContainers(corev1ac.Container().
+							WithName("install-cni").
+							WithImage(c.Images.Flannel).
+							WithCommand("/opt/bin/install-conf").
+							WithArgs("/etc/kube-flannel/cni-conf.json", "/etc/cni/net.d/10-flannel.conflist").
+							WithVolumeMounts(
+								mount("cni", "/etc/cni/net.d"),
+								mount("flannel-cfg", "/etc/kube-flannel/"),
+							)).
+						WithContainers(corev1ac.Container().
+							WithName("kube-flannel").
+							WithImage(c.Images.Flannel).
+							WithCommand("/bin/sh", "-c", flanneld).
+							WithPorts(port("healthz", 8081, corev1.ProtocolTCP)).
+							WithLivenessProbe(httpProbe("/healthz", "healthz").WithInitialDelaySeconds(10).WithPeriodSeconds(30)).
+							WithReadinessProbe(httpProbe("/readyz", "healthz").WithInitialDelaySeconds(5).WithPeriodSeconds(10)).
+							WithResources(corev1ac.ResourceRequirements().WithRequests(corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("100m"),
+								corev1.ResourceMemory: resource.MustParse("50Mi"),
+							})).
+							WithSecurityContext(corev1ac.SecurityContext().
+								WithPrivileged(false).
+								WithCapabilities(corev1ac.Capabilities().WithAdd("NET_ADMIN", "NET_RAW"))).
+							WithEnv(
+								fieldRef("POD_NAME", "metadata.name"),
+								fieldRef("POD_NAMESPACE", "metadata.namespace"),
 								// The node's addresses, the primary family's first, separated by commas.
-								object{"name": "POD_IPS", "valueFrom": object{"fieldRef": object{"fieldPath": "status.podIPs"}}},
-								object{"name": "EVENT_QUEUE_DEPTH", "value": "5000"},
-								object{"name": "CONT_WHEN_CACHE_NOT_READY", "value": "false"},
-							},
-							"volumeMounts": []any{
-								object{"name": "run", "mountPath": "/run/flannel"},
-								object{"name": "flannel-cfg", "mountPath": "/etc/kube-flannel/"},
-								object{"name": "xtables-lock", "mountPath": "/run/xtables.lock"},
-							},
-						}},
-						"volumes": []any{
-							object{"name": "run", "hostPath": object{"path": "/run/flannel"}},
+								fieldRef("POD_IPS", "status.podIPs"),
+								corev1ac.EnvVar().WithName("EVENT_QUEUE_DEPTH").WithValue("5000"),
+								corev1ac.EnvVar().WithName("CONT_WHEN_CACHE_NOT_READY").WithValue("false"),
+							).
+							WithVolumeMounts(
+								mount("run", "/run/flannel"),
+								mount("flannel-cfg", "/etc/kube-flannel/"),
+								mount("xtables-lock", "/run/xtables.lock"),
+							)).
+						WithVolumes(
+							hostPath("run", "/run/flannel"),
 							// containerd reads CNI configurations from VAR; /etc is read-only.
-							object{"name": "cni", "hostPath": object{"path": "/var/lib/cni/net.d"}},
-							object{"name": "flannel-cfg", "configMap": object{"name": "kube-flannel-cfg"}},
-							object{"name": "xtables-lock", "hostPath": object{"path": "/run/xtables.lock", "type": "FileOrCreate"}},
-						},
-					},
-				},
-			},
-		},
+							hostPath("cni", "/var/lib/cni/net.d"),
+							configMapVolume("flannel-cfg", "kube-flannel-cfg"),
+							xtablesLock(),
+						)))),
 	}, nil
 }
 
@@ -441,117 +450,102 @@ const corefile = `.:53 {
 }
 `
 
-func coreDNS(c kubernetes.Cluster, primary nodeip.Family) []object {
-	labels := func() object { return object{"k8s-app": "kube-dns"} }
-	family := map[nodeip.Family]string{nodeip.IPv4: "IPv4", nodeip.IPv6: "IPv6"}[primary]
-	serviceLabels := labels()
-	serviceLabels["kubernetes.io/cluster-service"] = "true"
-	serviceLabels["kubernetes.io/name"] = "CoreDNS"
-	return []object{
-		serviceAccount("coredns", "kube-system", nil),
-		{
-			"apiVersion": "rbac.authorization.k8s.io/v1",
-			"kind":       "ClusterRole",
-			"metadata":   object{"name": "system:coredns"},
-			"rules": []any{
-				object{"apiGroups": []any{""}, "resources": []any{"endpoints", "services", "pods", "namespaces"}, "verbs": []any{"list", "watch"}},
-				object{"apiGroups": []any{"discovery.k8s.io"}, "resources": []any{"endpointslices"}, "verbs": []any{"list", "watch"}},
-			},
-		},
-		{
-			"apiVersion": "rbac.authorization.k8s.io/v1",
-			"kind":       "ClusterRoleBinding",
-			"metadata":   object{"name": "system:coredns"},
-			"roleRef":    object{"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "system:coredns"},
-			"subjects":   []any{object{"kind": "ServiceAccount", "name": "coredns", "namespace": "kube-system"}},
-		},
-		{
-			"apiVersion": "v1",
-			"kind":       "ConfigMap",
-			"metadata":   object{"name": "coredns", "namespace": "kube-system"},
-			"data":       object{"Corefile": fmt.Sprintf(corefile, c.Domain)},
-		},
-		{
-			"apiVersion": "apps/v1",
-			"kind":       "Deployment",
-			"metadata":   object{"name": "coredns", "namespace": "kube-system", "labels": labels()},
-			"spec": object{
-				"replicas": 2,
-				"strategy": object{"type": "RollingUpdate", "rollingUpdate": object{"maxUnavailable": 1}},
-				"selector": object{"matchLabels": labels()},
-				"template": object{
-					"metadata": object{"labels": labels()},
-					"spec": object{
-						"priorityClassName":  "system-cluster-critical",
-						"serviceAccountName": "coredns",
-						"affinity": object{"podAntiAffinity": object{"preferredDuringSchedulingIgnoredDuringExecution": []any{object{
-							"weight": 100,
-							"podAffinityTerm": object{
-								"labelSelector": object{"matchExpressions": []any{object{"key": "k8s-app", "operator": "In", "values": []any{"kube-dns"}}}},
-								"topologyKey":   "kubernetes.io/hostname",
-							},
-						}}}},
-						"tolerations": []any{
-							object{"key": "CriticalAddonsOnly", "operator": "Exists"},
-							object{"key": "node-role.kubernetes.io/control-plane", "effect": "NoSchedule"},
-						},
-						"nodeSelector": object{"kubernetes.io/os": "linux"},
-						"containers": []any{object{
-							"name":  "coredns",
-							"image": c.Images.CoreDNS,
-							"resources": object{
-								"limits":   object{"memory": "170Mi"},
-								"requests": object{"cpu": "100m", "memory": "70Mi"},
-							},
-							"args":         []any{"-conf", "/etc/coredns/Corefile"},
-							"volumeMounts": []any{object{"name": "config-volume", "mountPath": "/etc/coredns", "readOnly": true}},
-							"ports": []any{
-								object{"containerPort": 53, "name": "dns", "protocol": "UDP"},
-								object{"containerPort": 53, "name": "dns-tcp", "protocol": "TCP"},
-								object{"containerPort": 9153, "name": "metrics", "protocol": "TCP"},
-								object{"containerPort": 8080, "name": "liveness-probe", "protocol": "TCP"},
-								object{"containerPort": 8181, "name": "readiness-probe", "protocol": "TCP"},
-							},
-							"livenessProbe": object{
-								"httpGet":             object{"path": "/health", "port": "liveness-probe", "scheme": "HTTP"},
-								"initialDelaySeconds": 60,
-								"timeoutSeconds":      5,
-								"successThreshold":    1,
-								"failureThreshold":    5,
-							},
-							"readinessProbe": object{"httpGet": object{"path": "/ready", "port": "readiness-probe", "scheme": "HTTP"}},
-							"securityContext": object{
-								"allowPrivilegeEscalation": false,
-								"capabilities":             object{"add": []any{"NET_BIND_SERVICE"}, "drop": []any{"ALL"}},
-								"readOnlyRootFilesystem":   true,
-							},
-						}},
-						"dnsPolicy": "Default",
-						"volumes": []any{object{
-							"name":      "config-volume",
-							"configMap": object{"name": "coredns", "items": []any{object{"key": "Corefile", "path": "Corefile"}}},
-						}},
-					},
-				},
-			},
-		},
-		{
-			"apiVersion": "v1",
-			"kind":       "Service",
-			"metadata":   object{"name": "kube-dns", "namespace": "kube-system", "labels": serviceLabels},
+func coreDNS(c kubernetes.Cluster, primary nodeip.Family) []any {
+	labels := map[string]string{"k8s-app": "kube-dns"}
+	family := map[nodeip.Family]corev1.IPFamily{nodeip.IPv4: corev1.IPv4Protocol, nodeip.IPv6: corev1.IPv6Protocol}[primary]
+	serviceLabels := map[string]string{
+		"k8s-app":                       "kube-dns",
+		"kubernetes.io/cluster-service": "true",
+		"kubernetes.io/name":            "CoreDNS",
+	}
+	servicePort := func(name string, number int32, protocol corev1.Protocol) *corev1ac.ServicePortApplyConfiguration {
+		return corev1ac.ServicePort().WithName(name).WithPort(number).WithProtocol(protocol).WithTargetPort(intstr.FromInt32(number))
+	}
+	return []any{
+		corev1ac.ServiceAccount("coredns", "kube-system"),
+		rbacv1ac.ClusterRole("system:coredns").WithRules(
+			rule("", []string{"endpoints", "services", "pods", "namespaces"}, "list", "watch"),
+			rule("discovery.k8s.io", []string{"endpointslices"}, "list", "watch"),
+		),
+		rbacv1ac.ClusterRoleBinding("system:coredns").
+			WithRoleRef(rbacv1ac.RoleRef().WithAPIGroup("rbac.authorization.k8s.io").WithKind("ClusterRole").WithName("system:coredns")).
+			WithSubjects(serviceAccountSubject("coredns", "kube-system")),
+		corev1ac.ConfigMap("coredns", "kube-system").
+			WithData(map[string]string{"Corefile": fmt.Sprintf(corefile, c.Domain)}),
+		appsv1ac.Deployment("coredns", "kube-system").
+			WithLabels(labels).
+			WithSpec(appsv1ac.DeploymentSpec().
+				WithReplicas(2).
+				WithStrategy(appsv1ac.DeploymentStrategy().
+					WithType(appsv1.RollingUpdateDeploymentStrategyType).
+					WithRollingUpdate(appsv1ac.RollingUpdateDeployment().WithMaxUnavailable(intstr.FromInt32(1)))).
+				WithSelector(metav1ac.LabelSelector().WithMatchLabels(labels)).
+				WithTemplate(corev1ac.PodTemplateSpec().
+					WithLabels(labels).
+					WithSpec(corev1ac.PodSpec().
+						WithPriorityClassName("system-cluster-critical").
+						WithServiceAccountName("coredns").
+						WithAffinity(corev1ac.Affinity().WithPodAntiAffinity(corev1ac.PodAntiAffinity().
+							WithPreferredDuringSchedulingIgnoredDuringExecution(corev1ac.WeightedPodAffinityTerm().
+								WithWeight(100).
+								WithPodAffinityTerm(corev1ac.PodAffinityTerm().
+									WithLabelSelector(metav1ac.LabelSelector().WithMatchExpressions(metav1ac.LabelSelectorRequirement().
+										WithKey("k8s-app").WithOperator(metav1.LabelSelectorOpIn).WithValues("kube-dns"))).
+									WithTopologyKey("kubernetes.io/hostname"))))).
+						WithTolerations(
+							corev1ac.Toleration().WithKey("CriticalAddonsOnly").WithOperator(corev1.TolerationOpExists),
+							corev1ac.Toleration().WithKey("node-role.kubernetes.io/control-plane").WithEffect(corev1.TaintEffectNoSchedule),
+						).
+						WithNodeSelector(map[string]string{"kubernetes.io/os": "linux"}).
+						WithContainers(corev1ac.Container().
+							WithName("coredns").
+							WithImage(c.Images.CoreDNS).
+							WithResources(corev1ac.ResourceRequirements().
+								WithLimits(corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("170Mi")}).
+								WithRequests(corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("70Mi"),
+								})).
+							WithArgs("-conf", "/etc/coredns/Corefile").
+							WithVolumeMounts(mount("config-volume", "/etc/coredns").WithReadOnly(true)).
+							WithPorts(
+								port("dns", 53, corev1.ProtocolUDP),
+								port("dns-tcp", 53, corev1.ProtocolTCP),
+								port("metrics", 9153, corev1.ProtocolTCP),
+								port("liveness-probe", 8080, corev1.ProtocolTCP),
+								port("readiness-probe", 8181, corev1.ProtocolTCP),
+							).
+							WithLivenessProbe(corev1ac.Probe().
+								WithHTTPGet(corev1ac.HTTPGetAction().WithPath("/health").WithPort(intstr.FromString("liveness-probe")).WithScheme(corev1.URISchemeHTTP)).
+								WithInitialDelaySeconds(60).
+								WithTimeoutSeconds(5).
+								WithSuccessThreshold(1).
+								WithFailureThreshold(5)).
+							WithReadinessProbe(corev1ac.Probe().
+								WithHTTPGet(corev1ac.HTTPGetAction().WithPath("/ready").WithPort(intstr.FromString("readiness-probe")).WithScheme(corev1.URISchemeHTTP))).
+							WithSecurityContext(corev1ac.SecurityContext().
+								WithAllowPrivilegeEscalation(false).
+								WithCapabilities(corev1ac.Capabilities().WithAdd("NET_BIND_SERVICE").WithDrop("ALL")).
+								WithReadOnlyRootFilesystem(true))).
+						WithDNSPolicy(corev1.DNSDefault).
+						WithVolumes(corev1ac.Volume().
+							WithName("config-volume").
+							WithConfigMap(corev1ac.ConfigMapVolumeSource().
+								WithName("coredns").
+								WithItems(corev1ac.KeyToPath().WithKey("Corefile").WithPath("Corefile"))))))),
+		corev1ac.Service("kube-dns", "kube-system").
+			WithLabels(serviceLabels).
 			// One address of the primary family, which every pod has, as kubeadm's DNS service
 			// gets: the kubelet hands pods one name server. It still answers A and AAAA queries.
-			"spec": object{
-				"clusterIP":      c.DNSIPs.Of(primary).String(),
-				"ipFamilyPolicy": "SingleStack",
-				"ipFamilies":     []any{family},
-				"selector":       labels(),
-				"ports": []any{
-					object{"name": "dns", "port": 53, "protocol": "UDP", "targetPort": 53},
-					object{"name": "dns-tcp", "port": 53, "protocol": "TCP", "targetPort": 53},
-					object{"name": "metrics", "port": 9153, "protocol": "TCP", "targetPort": 9153},
-				},
-			},
-		},
+			WithSpec(corev1ac.ServiceSpec().
+				WithClusterIP(c.DNSIPs.Of(primary).String()).
+				WithIPFamilyPolicy(corev1.IPFamilyPolicySingleStack).
+				WithIPFamilies(family).
+				WithSelector(labels).
+				WithPorts(
+					servicePort("dns", 53, corev1.ProtocolUDP),
+					servicePort("dns-tcp", 53, corev1.ProtocolTCP),
+					servicePort("metrics", 9153, corev1.ProtocolTCP),
+				)),
 	}
 }

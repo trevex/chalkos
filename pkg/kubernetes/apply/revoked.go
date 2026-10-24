@@ -2,16 +2,13 @@ package apply
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	admissionv1ac "k8s.io/client-go/applyconfigurations/admissionregistration/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/trevex/chalkos/pkg/kubernetes/addons"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 )
 
@@ -43,30 +40,13 @@ func EnforceRevoked(ctx context.Context, cs kubernetes.Interface) error {
 
 // applyRevoked applies the policy naming the list, then its binding, with server-side apply.
 func applyRevoked(ctx context.Context, cs kubernetes.Interface, l revoked.List) error {
-	objects := addons.RevokedNodes(l)
+	policy, binding := revoked.Policy(l)
 	opts := metav1.ApplyOptions{FieldManager: FieldManager, Force: true}
-	var policy admissionv1ac.ValidatingAdmissionPolicyApplyConfiguration
-	if err := convert(objects[0], &policy); err != nil {
-		return err
-	}
-	if _, err := cs.AdmissionregistrationV1().ValidatingAdmissionPolicies().Apply(ctx, &policy, opts); err != nil {
+	if _, err := cs.AdmissionregistrationV1().ValidatingAdmissionPolicies().Apply(ctx, policy, opts); err != nil {
 		return fmt.Errorf("apply the revoked nodes' admission policy: %w", err)
 	}
-	var binding admissionv1ac.ValidatingAdmissionPolicyBindingApplyConfiguration
-	if err := convert(objects[1], &binding); err != nil {
-		return err
-	}
-	if _, err := cs.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().Apply(ctx, &binding, opts); err != nil {
+	if _, err := cs.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().Apply(ctx, binding, opts); err != nil {
 		return fmt.Errorf("apply the revoked nodes' admission policy binding: %w", err)
 	}
 	return nil
-}
-
-// convert turns a rendered object into its apply configuration.
-func convert(object map[string]any, out any) error {
-	data, err := json.Marshal(object)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, out)
 }
