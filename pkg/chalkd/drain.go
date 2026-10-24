@@ -30,7 +30,7 @@ const UpgradeCordon = "chalkos.dev/upgrade-cordon"
 const defaultDrainTimeout = 5 * time.Minute
 
 func (s *Server) DrainNode(ctx context.Context, req *connect.Request[nodev1.DrainNodeRequest]) (*connect.Response[nodev1.DrainNodeResponse], error) {
-	cs, err := s.Kubernetes.upgradeClient()
+	cs, _, _, err := s.Kubernetes.apiClient(s.Kubernetes.member)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (s *Server) DrainNode(ctx context.Context, req *connect.Request[nodev1.Drai
 }
 
 func (s *Server) UncordonNode(ctx context.Context, req *connect.Request[nodev1.UncordonNodeRequest]) (*connect.Response[nodev1.UncordonNodeResponse], error) {
-	cs, err := s.Kubernetes.upgradeClient()
+	cs, _, _, err := s.Kubernetes.apiClient(s.Kubernetes.member)
 	if err != nil {
 		return nil, err
 	}
@@ -66,19 +66,6 @@ func (s *Server) UncordonNode(ctx context.Context, req *connect.Request[nodev1.U
 		return nil, err
 	}
 	return connect.NewResponse(&nodev1.UncordonNodeResponse{Uncordoned: uncordoned}), nil
-}
-
-// upgradeClient reaches the API server of a bootstrapped control-plane node.
-func (k *Kubernetes) upgradeClient() (kubernetes.Interface, error) {
-	c, _, share, err := k.member()
-	if err != nil {
-		return nil, err
-	}
-	cs, err := k.APIClient(c, share)
-	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
-	}
-	return cs, nil
 }
 
 // setCordon cordons a node and marks it, unless it was cordoned unmarked, or uncordons a node

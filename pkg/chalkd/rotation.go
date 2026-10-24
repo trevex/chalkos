@@ -55,23 +55,19 @@ func (s *Server) RotationStep(ctx context.Context, req *connect.Request[nodev1.R
 		}
 		return connect.NewResponse(resp), nil
 	}
-	c, _, share, err := k.member()
-	if err != nil {
-		return nil, err
-	}
 	if step == nodev1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED {
+		c, _, share, err := k.member()
+		if err != nil {
+			return nil, err
+		}
 		if resp.Encrypted, err = k.countEncrypted(ctx, c, share); err != nil {
 			return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 		}
 		return connect.NewResponse(resp), nil
 	}
-	newClient := k.APIClient
-	if newClient == nil {
-		newClient = apiClient
-	}
-	client, err := newClient(c, share)
+	client, c, share, err := k.apiClient(k.member)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "reach the API server: %v", err)
+		return nil, err
 	}
 	switch step {
 	case nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS:
@@ -91,17 +87,6 @@ func (s *Server) RotationStep(ctx context.Context, req *connect.Request[nodev1.R
 		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 	}
 	return connect.NewResponse(resp), nil
-}
-
-// apiClient reaches the node's own API server with chalkd's credential.
-func apiClient(c k8s.Cluster, share kpki.Share) (kubernetes.Interface, error) {
-	cfg, err := newCredential(share, credentialValidity, time.Now).restConfig(c.LocalAPIServer())
-	if err != nil {
-		return nil, err
-	}
-	// Rewriting every encrypted object takes longer than one request.
-	cfg.Timeout = time.Minute
-	return kubernetes.NewForConfig(cfg)
 }
 
 // poll is the time between two looks at what a rotation step waits for.

@@ -91,7 +91,8 @@ type Kubernetes struct {
 	// ControlPlaneState says whether the node's API server and etcd run with the certificates the
 	// node holds now: "current", or what is not so. Tests replace it.
 	ControlPlaneState func(ctx context.Context, c k8s.Cluster, share kpki.Share) string
-	// APIClient reaches the node's own API server with chalkd's credential. Tests replace it.
+	// APIClient reaches the node's own API server in place of chalkd's client when set. Tests set
+	// it.
 	APIClient func(c k8s.Cluster, share kpki.Share) (kubernetes.Interface, error)
 	// Approve approves kubelet serving certificates with the API server at cfg until ctx ends; nil
 	// runs chalkd's approver. Tests replace it.
@@ -139,6 +140,10 @@ type Kubernetes struct {
 	count int
 	// leaves renews the control plane's certificates while the control plane's loop runs.
 	leaves *Renewal
+
+	// apiMu guards api, chalkd's client for the API server; see ownAPIClient.
+	apiMu sync.Mutex
+	api   *apiConn
 }
 
 // LeavesProblem says why renewing the control plane's certificates failed last; "" while it
@@ -165,7 +170,6 @@ func NewKubernetes() *Kubernetes {
 	k.APIServerReady = apiServerReady
 	k.EtcdStopped = etcdStopped
 	k.ControlPlaneState = k.controlPlaneState
-	k.APIClient = apiClient
 	return k
 }
 

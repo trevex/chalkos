@@ -140,20 +140,32 @@ func (c *credential) tlsConfig() (*tls.Config, error) {
 
 // restConfig reaches the API server at server, such as the local one, with the credential.
 func (c *credential) restConfig(server string) (*rest.Config, error) {
+	transport, err := c.transport()
+	if err != nil {
+		return nil, err
+	}
+	return &rest.Config{Host: server, Transport: transport, Timeout: 30 * time.Second}, nil
+}
+
+// transport makes connections that authenticate with the credential and that renew closes.
+func (c *credential) transport() (*http.Transport, error) {
 	tlsConfig, err := c.tlsConfig()
 	if err != nil {
 		return nil, err
 	}
 	dialer := connrotation.NewDialerWithTracker((&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext, c.conns)
-	return &rest.Config{
-		Host: server,
-		Transport: &http.Transport{
-			DialContext:         dialer.DialContext,
-			TLSClientConfig:     tlsConfig,
-			ForceAttemptHTTP2:   true,
-			TLSHandshakeTimeout: 10 * time.Second,
-			IdleConnTimeout:     90 * time.Second,
-		},
-		Timeout: 30 * time.Second,
+	return &http.Transport{
+		DialContext:         dialer.DialContext,
+		TLSClientConfig:     tlsConfig,
+		ForceAttemptHTTP2:   true,
+		TLSHandshakeTimeout: 10 * time.Second,
+		IdleConnTimeout:     90 * time.Second,
 	}, nil
+}
+
+// due reports whether the certificate is at its half-life, or none was issued.
+func (c *credential) due() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cert == nil || !c.now().Before(c.renewAt)
 }
