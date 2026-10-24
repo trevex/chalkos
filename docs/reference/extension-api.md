@@ -57,7 +57,7 @@ Example of `<name>.spec`:
 
 ### `systemd.services.<name>.chalkos.kinds` { #systemdserviceschalkoskinds }
 
-Type: list of string · Default: `[ ]` · Declared in: [modules/node/runtime/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+Type: list of string · Default: `[ ]` · Declared in: [modules/node/runtime/grants.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/grants.nix)
 
 Config kinds the unit reads, by name: attributes of `chalkos.kinds`, or networkd's
 `Network`, `NetDev` and `Link`. The documents of a kind of `chalkos.kinds` are in its
@@ -97,7 +97,7 @@ The files a node renders from its documents at each delivery.
 
 ### `chalkos.outputs` { #chalkosoutputs }
 
-Type: map of submodule · Default: `{ }` · Declared in: [modules/node/runtime/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+Type: map of submodule · Default: `{ }` · Declared in: [modules/node/runtime/outputs.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/outputs.nix)
 
 Config files of the node's services, by a name of the output's own, each rendered from
 documents by a program of the image's store. chalkd renders and checks every output
@@ -125,7 +125,7 @@ What a delivery does to units when outputs, documents or facts change.
 
 ### `chalkos.effects` { #chalkoseffects }
 
-Type: map of submodule · Default: `{ }` · Declared in: [modules/node/runtime/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+Type: map of submodule · Default: `{ }` · Declared in: [modules/node/runtime/effects.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/effects.nix)
 
 What a delivery does to the node's services, by a name of the effect's own. Once a
 delivery is applied, chalkd takes every effect one of whose `outputs` changed, the

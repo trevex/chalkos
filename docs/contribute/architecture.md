@@ -247,11 +247,11 @@ it has no `completion` command.
 
 | Directory | What it holds |
 | --- | --- |
-| `modules/node/` | The NixOS modules of every image: `packages.nix` (chalkos's programs, as the module argument `chalkosPackages`), `base/` (appliance, closure, disk, storage), `kinds/` (`chalkos.kinds` and the built-in kinds), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, Kubernetes, upgrade. |
+| `modules/node/` | The NixOS modules of every image: `packages.nix` (chalkos's programs, as the module argument `chalkosPackages`), `base/` (appliance, closure, disk, storage), `kinds/` (`chalkos.kinds`, `chalkos.facts`, networkd's kinds and the built-in kinds), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, Kubernetes, upgrade. |
 | `modules/platforms/` | `metal` and `kvm`. |
 | `modules/installer/` | The installer image and its ISO. |
 | `modules/testing/` | The test probe, the test image's partition sizes and the test-only config kind `Greeting` with its output and effect. |
-| `lib/` | `mkImages` (`images.nix`), its arguments as module options (`images-arguments.nix`), `chalkos.nix`, the `lib.chalkos` of every image's modules, and the functions the modules share: `kinds/` (the JSON Schema converter, the chalkcfg commands of `get`, the option types both recognise, and the API groups of chalkos's own kinds) and `cel.nix` (CEL that effect rules share). |
+| `lib/` | `mkImages` (`images.nix`), its arguments as module options (`images-arguments.nix`), `chalkos.nix`, the `lib.chalkos` of every image's modules, and the functions the modules share: `kinds/` (the JSON Schema converter, the chalkcfg commands of `get`, the option types both recognise, the API groups of chalkos's own kinds, and the check of the kinds a grant, output or effect names) and `cel.nix` (CEL that effect rules share). |
 
 ## Layout rules
 
