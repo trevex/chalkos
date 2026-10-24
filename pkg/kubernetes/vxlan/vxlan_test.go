@@ -192,6 +192,12 @@ func TestForward(t *testing.T) {
 			t.Errorf("%s: %q", name, rules)
 		}
 	}
+	// So is a source range that is not one, as the zero prefix JSON null decodes to.
+	c = dual("10.0.0.0/24", "fd00::/64")
+	c.Flannel.VXLANSourceSubnets = append(c.Flannel.VXLANSourceSubnets, netip.Prefix{})
+	if rules, err := forwardRules(c); err == nil {
+		t.Errorf("an empty source range: %q", rules)
+	}
 }
 
 // nft records what a Rule runs: each ruleset given, and each other command; it refuses a ruleset
@@ -272,6 +278,7 @@ func TestApplyWithoutRanges(t *testing.T) {
 		"not a source":      `{"podCIDRs":{"ipv4":"10.244.0.0/16"},"flannel":{"vxlanSourceSubnets":["cafe.be/8"]}}`,
 		"a source ruleset":  `{"podCIDRs":{"ipv4":"10.244.0.0/16"},"flannel":{"vxlanSourceSubnets":["10.0.0.0/24\nflush 10.0.0.0/8"]}}`,
 		"pod range is null": `{"podCIDRs":{"ipv4":null}}`,
+		"source is null":    `{"podCIDRs":{"ipv4":"10.244.0.0/16"},"flannel":{"vxlanSourceSubnets":[null]}}`,
 	} {
 		r, n, file := testRule(t)
 		if cluster == "" {
@@ -354,6 +361,15 @@ func TestApplyRefusedByNFT(t *testing.T) {
 	}
 	if len(n.rulesets) != 2 || !reflect.DeepEqual(n.commands, []string{deleteTable, listTable}) {
 		t.Errorf("rulesets %q, commands %q", n.rulesets, n.commands)
+	}
+
+	// A refused file and a refused table both give their reason.
+	r, n, file = testRule(t)
+	writeFile(t, file, "destination 10.0.0.11 eth0\n")
+	n.refuse = 1
+	err := r.Apply(file)
+	if err == nil || !strings.Contains(err.Error(), "does not hold the node's addresses") || !strings.Contains(err.Error(), "forwarded VXLAN is dropped") {
+		t.Errorf("err = %v", err)
 	}
 }
 

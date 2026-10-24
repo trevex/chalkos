@@ -127,6 +127,14 @@ func family(ip netip.Addr) string {
 	return "ip6"
 }
 
+// nftFamily is the nft family of an address family: ip or ip6.
+func nftFamily(f nodeip.Family) string {
+	if f == nodeip.IPv6 {
+		return "ip6"
+	}
+	return "ip"
+}
+
 // dropAll is the forward chain that drops all VXLAN the node forwards, the chain until the
 // cluster's ranges are read and when they cannot be.
 var dropAll = []string{fmt.Sprintf("udp dport %d drop", vxlanPort)}
@@ -135,22 +143,24 @@ var dropAll = []string{fmt.Sprintf("udp dport %d drop", vxlanPort)}
 // pods send to other nodes behind its own address, which is in the source ranges, so pods could
 // send VXLAN the other nodes take as this node's. The chain drops it as the node forwards it, per
 // family of the cluster with source ranges; flannel's own VXLAN is the node's, not forwarded.
-// Source ranges of a family the cluster lacks are skipped. A family without a pod range is an
-// error, which the caller answers with dropAll.
+// Source ranges of a family the cluster lacks are skipped. A family without a pod range, and a
+// source range that is not one, are errors, which the caller answers with dropAll.
 func forwardRules(c kubernetes.Cluster) ([]string, error) {
+	for _, s := range c.VXLANSources() {
+		if !s.IsValid() {
+			return nil, errors.New("a source range is empty")
+		}
+	}
 	var rules []string
 	for _, f := range c.Families() {
-		fam := "ip"
-		if f == nodeip.IPv6 {
-			fam = "ip6"
-		}
+		fam := nftFamily(f)
 		pods := c.PodCIDRs.Of(f)
 		if !pods.IsValid() || family(pods.Addr()) != fam {
 			return nil, fmt.Errorf("no %s pod range", f)
 		}
 		var sources []netip.Prefix
 		for _, s := range c.VXLANSources() {
-			if s.IsValid() && family(s.Addr()) == fam {
+			if family(s.Addr()) == fam {
 				sources = append(sources, s.Masked())
 			}
 		}
@@ -318,7 +328,7 @@ func (r Rule) Apply(file string) error {
 	}
 
 	if err := r.NFT(ruleset(accept, forward), "-f", "-"); err != nil {
-		refused = fmt.Errorf("VXLAN stays refused and forwarded VXLAN is dropped: %w", err)
+		refused = errors.Join(refused, fmt.Errorf("VXLAN stays refused and forwarded VXLAN is dropped: %w", err))
 		if err := r.empty(dropAll); err != nil {
 			return errors.Join(refused, err)
 		}

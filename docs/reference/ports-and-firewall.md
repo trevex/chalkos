@@ -52,7 +52,7 @@ through the node to those ranges. On every run, the chain takes the pod range of
 `ipFamilies` and the source ranges from `/run/chalkos/kubernetes/cluster.json`, which chalkd
 builds from the node's `Cluster` and `Flannel` documents. While those ranges are unknown, because
 the node's config holds no `Cluster` document or the file cannot be read, or when a family has no
-pod range, the chain drops all UDP 8472 the node forwards.
+pod range or a source range is empty, the chain drops all UDP 8472 the node forwards.
 
 `chalkd vxlan-rule` empties the table's `input` chain before chalkd picks the node's addresses at
 boot. `chalkd prepare-kubernetes --vxlan-rule` then fills it from `/run/chalkos/kubernetes/vxlan`,
