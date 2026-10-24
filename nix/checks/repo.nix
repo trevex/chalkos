@@ -3,12 +3,12 @@
   pkgs,
   self,
   checkLib,
+  docs,
   ...
 }:
 let
   inherit (pkgs) lib;
   inherit (checkLib) chalkPkgs testEnv;
-  docs = import ../docs.nix { inherit pkgs self; };
   # The image directories the e2e fixtures' inventories name, by their paths below
   # test/fixtures/clusters. images.json there names, for each path, the variable that names the
   # image in the e2e tests, which read it too.

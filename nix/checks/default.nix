@@ -1,11 +1,16 @@
 # The flake's checks, by what they test. Each file holds checks of its own; a name in two of them
 # fails the evaluation.
-{ pkgs, self }:
+{
+  pkgs,
+  self,
+  testing,
+  docs,
+}:
 let
   inherit (pkgs) lib;
   arguments = {
-    inherit pkgs self;
-    checkLib = import ./lib.nix { inherit pkgs self; };
+    inherit pkgs self docs;
+    checkLib = import ./lib.nix { inherit pkgs self testing; };
   };
 in
 lib.foldl'

@@ -1,12 +1,13 @@
 # What the flake checks share: the test images and their environment, and the builders of the
 # checks that run a node's units, validate a directory of YAML or report evaluation tests.
-{ pkgs, self }:
+{
+  pkgs,
+  self,
+  testing,
+}:
 let
   inherit (pkgs) lib;
   chalkPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
-
-  # The images the e2e tests boot.
-  testing = import ../testing/images.nix { inherit self pkgs; };
   # The Kubernetes test image, whose units the unit checks run.
   worker = testing.nixos.k8s-kvm;
 

@@ -1,9 +1,13 @@
-{ pkgs, self }:
+{
+  pkgs,
+  self,
+  docs,
+  ...
+}:
 let
   inherit (pkgs) lib;
   chalkPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
   testEnv = import ./testing/env.nix { inherit pkgs self; };
-  docs = import ./docs.nix { inherit pkgs self; };
 
   # TestKubernetesCluster without the test's registry: the nodes' mirror is unreachable, so
   # containerd falls back to pulling their images from the upstream registries. It needs network

@@ -1,12 +1,12 @@
 {
   pkgs,
   self,
+  testing,
+  docs,
 }:
 let
   inherit (pkgs) lib;
-  testing = import ./testing/images.nix { inherit self pkgs; };
   goModule = pkgs.callPackage ./go-module.nix { };
-  docs = import ./docs.nix { inherit pkgs self; };
 
   goPaths = [
     ../cmd
