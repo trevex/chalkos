@@ -4,14 +4,14 @@
 # it, and chalkd numbers the UKIs it installs by generation, the highest of which systemd-boot
 # boots first. A boot the boot loader counts is blessed only once chalkd found the node healthy.
 {
+  chalkosPackages,
   config,
   lib,
-  pkgs,
   ...
 }:
 let
   cfg = config.chalkos.upgrade;
-  chalkd = pkgs.callPackage ../../nix/chalkd.nix { };
+  inherit (chalkosPackages) chalkd;
 in
 {
   options.chalkos.upgrade = {

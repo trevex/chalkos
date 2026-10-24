@@ -4,6 +4,7 @@
 # Modules need no signatures: they live in the dm-verity store, whose root hash the signed UKI
 # pins. The initrd's modules come from the same tree.
 {
+  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -12,7 +13,7 @@
 let
   cfg = config.chalkos.kernel;
   inherit (pkgs.stdenv.hostPlatform) isx86_64;
-  tool = pkgs.callPackage ../../nix/kernel-modules.nix { };
+  tool = chalkosPackages.kernel-modules;
   full = lib.getOutput "modules" config.boot.kernelPackages.kernel;
 
   groups = {

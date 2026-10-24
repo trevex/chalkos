@@ -1,6 +1,7 @@
 # System region: ESP, store slots A and B (verity hash + erofs data), and STATE. VAR and further
 # volumes come from the node's storage section (see storage.nix).
 {
+  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -81,7 +82,7 @@ let
     in
     pkgs.runCommand "${name}-fits"
       {
-        nativeBuildInputs = [ (pkgs.callPackage ../../../nix/image-size.nix { }) ];
+        nativeBuildInputs = [ chalkosPackages.image-size ];
         ukis = if cfg.storeSize == null then 1 else 3;
         storeSize = lib.defaultTo "-" cfg.storeSize;
         storeVeritySize = lib.defaultTo "-" cfg.storeVeritySize;

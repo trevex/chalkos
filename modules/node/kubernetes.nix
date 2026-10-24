@@ -3,6 +3,7 @@
 # cluster from them and the node's config, and writes everything node-specific below
 # /run/chalkos/kubernetes before the kubelet starts.
 {
+  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -11,7 +12,7 @@
 let
   k = config.chalkos.kubernetes;
   inherit (k) enable;
-  chalkd = pkgs.callPackage ../../nix/chalkd.nix { };
+  inherit (chalkosPackages) chalkd;
   # The kubelet alone: the package holds every component, which control planes run from images.
   kubelet = pkgs.runCommand "kubelet-${k.package.version}" { } ''
     install -Dm755 ${k.package}/bin/kubelet $out/bin/kubelet

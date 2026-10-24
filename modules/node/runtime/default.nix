@@ -7,14 +7,14 @@
 # of its outputs changed, the documents of one of its kinds did, or its CEL rule holds. chalkcfg
 # prints the documents, on the system path of every image.
 {
+  chalkosPackages,
   config,
   lib,
   pkgs,
   ...
 }:
 let
-  chalkcfg = pkgs.callPackage ../../../nix/chalkcfg.nix { };
-  chalkos-render = pkgs.callPackage ../../../nix/chalkos-render.nix { };
+  inherit (chalkosPackages) chalkcfg chalkos-render;
 
   # The name of the file a renderer of path writes: the path's own, less suffix, and less the hash
   # a file the store holds by itself starts with.

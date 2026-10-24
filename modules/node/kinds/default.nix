@@ -6,6 +6,7 @@
 # a section of theirs may be an object or a list, so a path through them cannot be checked during
 # evaluation.
 {
+  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -14,9 +15,7 @@
 let
   schema = import ../../../lib/kinds/schema.nix { inherit lib; };
   getLib = import ../../../lib/kinds/get.nix { inherit lib; };
-  chalkcfg = pkgs.callPackage ../../../nix/chalkcfg.nix { };
-  chalkos-rules = pkgs.callPackage ../../../nix/chalkos-rules.nix { };
-  chalkos-render = pkgs.callPackage ../../../nix/chalkos-render.nix { };
+  inherit (chalkosPackages) chalkcfg chalkos-rules chalkos-render;
   cfg = config.chalkos.kinds;
 
   # networkd's Network, NetDev and Link, generated from the tables of the systemd the image runs,
@@ -46,7 +45,7 @@ let
     name = "chalkos-networkd-schemas";
     inherit (config.systemd.package) src;
     nativeBuildInputs = [
-      (pkgs.callPackage ../../../nix/chalkos-networkd-schema.nix { })
+      chalkosPackages.chalkos-networkd-schema
       pkgs.jq
     ];
     dontConfigure = true;

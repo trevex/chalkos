@@ -2,6 +2,7 @@
 {
   imports = [
     ./settings.nix
+    ./packages.nix
     ./base
     ./runtime
     ./kinds

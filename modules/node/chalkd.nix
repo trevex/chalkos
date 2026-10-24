@@ -1,13 +1,14 @@
 # chalkd, the node agent, and the unit that applies the node's identity and config at boot. Images
 # built with an OS CA carry it, so chalkd in maintenance mode only accepts that CA's clients.
 {
+  chalkosPackages,
   config,
   lib,
   pkgs,
   ...
 }:
 let
-  chalkd = pkgs.callPackage ../../nix/chalkd.nix { };
+  inherit (chalkosPackages) chalkd;
   inherit (config.chalkos.maintenance) osCA;
 in
 {
