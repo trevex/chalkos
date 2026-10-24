@@ -4,21 +4,38 @@
 { pkgs, self }:
 let
   inherit (pkgs) lib;
+  # The homelab's flake, extensions, inventory and config files, which the pages include as
+  # snippets.
+  homelabSnippets = [
+    "flake.nix"
+    "extensions"
+    "chalkos.yaml"
+    "nodes"
+    "cluster"
+  ];
   src = lib.fileset.toSource {
     root = ../.;
-    fileset = lib.fileset.unions [
-      ../zensical.toml
-      ../docs
-      ../includes
-      # The homelab's flake, extensions, inventory and config files, which the pages include as
-      # snippets.
-      ../examples/homelab/flake.nix
-      ../examples/homelab/extensions
-      ../examples/homelab/chalkos.yaml
-      ../examples/homelab/nodes
-      ../examples/homelab/cluster
-    ];
+    fileset = lib.fileset.unions (
+      [
+        ../zensical.toml
+        ../docs
+        ../includes
+      ]
+      ++ map (path: ../examples/homelab + "/${path}") homelabSnippets
+    );
   };
+  # The pages and files docgen writes, as they lie in the repository.
+  generatedPaths = [
+    "docs/reference/cli"
+    "docs/reference/kinds.md"
+    "docs/reference/mkimages.md"
+    "docs/reference/image-options.md"
+    "docs/reference/extension-api.md"
+    "docs/reference/builtins.md"
+    "docs/reference/api.md"
+    "includes/abbreviations.md"
+    "zensical.toml"
+  ];
 
   # The pages that title the links of command help to the site: every page but the generated
   # command pages, which would otherwise feed their own generation.
@@ -127,110 +144,7 @@ let
 
   # The openings of the options pages, and the end of the extension API's, which docgen options
   # writes the options between.
-  optionsTemplates = pkgs.linkFarm "chalkos-options-templates" {
-    "mkimages.head.md" = pkgs.writeText "mkimages.head.md" ''
-      ---
-      title: "mkImages"
-      description: "The arguments of chalkos.lib.mkImages and what it returns"
-      ---
-
-      # mkImages
-
-      This page is for image authors who call `chalkos.lib.mkImages` in a flake. mkImages builds a
-      cluster's images from its arguments: each variant on each platform, and the installer. The
-      options the images' NixOS modules set are on [Image options](image-options.md) and
-      [Extension API](extension-api.md).
-
-      A flake calls mkImages and exposes the images to build:
-
-      ```nix title="flake.nix"
-      {
-        inputs.chalkos.url = "github:trevex/chalkos";
-
-        outputs =
-          { chalkos, ... }:
-          let
-            images = chalkos.lib.mkImages {
-              osCA = ./secrets.pub.json;
-              platforms = [ "metal" "kvm" ];
-              # Every variant's images carry these.
-              modules = [ ./site.nix ];
-              variants = {
-                node = { };
-                storage = {
-                  kubernetes = false;
-                  modules = [ ./storage.nix ];
-                };
-              };
-              installer.modules = [ ./installer-network.nix ];
-            };
-          in
-          {
-            packages.x86_64-linux = images.images // { inherit (images) installer; };
-          };
-      }
-      ```
-
-      ## Return values { #return-values }
-
-      mkImages returns an attribute set:
-
-      - `images.<variant>-<platform>`: the image directory of a variant on a platform, such as
-        `images.node-metal`, each built only when asked for.
-      - `oci.<variant>-<platform>`: the image directory as an OCI image layout, as
-        [`chalkbuild oci`](cli/chalkbuild_oci.md) writes it, each built only when asked for;
-        [Publish images to a registry](../build/publish-images.md) signs and pushes it.
-      - `installer`: the installer, a raw image and a hybrid ISO in one directory, which installs
-        images of every platform.
-      - `nixos.<variant>-<platform>` and `nixos.installer`: the evaluated NixOS systems, to read an
-        image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`.
-    '';
-    "image-options.head.md" = pkgs.writeText "image-options.head.md" ''
-      ---
-      title: "Image options"
-      description: "The options of chalkos's node modules that a variant's NixOS modules set"
-      ---
-
-      # Image options
-
-      This page is for image authors who set the options of chalkos's node modules in a variant's
-      NixOS modules, the `modules` of [mkImages](mkimages.md). Every image and the installer carry
-      these modules. The options an extension uses to declare kinds, facts, outputs and effects
-      are on [Extension API](extension-api.md).
-    '';
-    "extension-api.head.md" = pkgs.writeText "extension-api.head.md" ''
-      ---
-      title: "Extension API"
-      description: "The options and lib.chalkos helpers that an extension declares kinds, facts, outputs and effects with"
-      ---
-
-      # Extension API
-
-      This page is for authors of extensions, the NixOS modules that declare config kinds of their
-      own, read a node's documents in a service, and react when they change. It lists the options
-      the node modules give an extension and the helpers of `lib.chalkos`. The Build pages show
-      them at work, from [Declare a config kind](../build/declare-a-kind.md) to
-      [React to config changes](../build/react-to-changes.md).
-    '';
-    "extension-api.tail.md" = pkgs.writeText "extension-api.tail.md" ''
-
-      ## lib.chalkos { #lib-chalkos }
-
-      Every image's NixOS modules get `lib.chalkos` as part of `lib`. It holds the type and the
-      `mkOption` of an extension kind's fields, the renderers of `chalkos.outputs.<name>.render`
-      and the common effects.
-
-      | Helper | Arguments | Result |
-      | --- | --- | --- |
-      | `lib.chalkos.mkOption` | `lib.mkOption`'s, and `rules`, a list of `{ rule; message or messageExpression; takes ? "refuse"; description ? null; }` | An option for a field of a kind, with the field's change rules. |
-      | `lib.chalkos.types.secretRef` | — | Type of a field that holds a reference to a key of a Secret: `secretRef` with `name` and `key`. |
-      | `lib.chalkos.render.template` | a path ending in `.tmpl` | Renderer of a Go `text/template` into one file, named as the template less `.tmpl`; a missing or null key prints as nothing. |
-      | `lib.chalkos.render.jq` | a path ending in `.jq` | Renderer of a jq program into one file, named as the program less `.jq`; a string is written raw. |
-      | `lib.chalkos.render.documents` | a list of kind names | Renderer of the documents of those kinds as they are, each as `<Kind>/<name>.json`. |
-      | `lib.chalkos.restartOn` | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that restarts the units when one of the outputs, the documents of one of the kinds or a value of a Secret they reference changed. |
-      | `lib.chalkos.reloadOn` | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that reloads the units when one of the outputs, the documents of one of the kinds or a value of a Secret they reference changed. |
-    '';
-  };
+  optionsTemplates = ./docs-templates;
 in
 rec {
   inherit docgen;
@@ -331,7 +245,7 @@ rec {
   # Fails when the generated pages in the repository differ from what the code generates.
   generated = pkgs.runCommand "chalkos-docs-generated" { } ''
     status=0
-    for path in docs/reference/cli docs/reference/kinds.md docs/reference/mkimages.md docs/reference/image-options.md docs/reference/extension-api.md docs/reference/builtins.md docs/reference/api.md includes/abbreviations.md zensical.toml; do
+    for path in ${lib.escapeShellArgs generatedPaths}; do
       diff -ru ${src}/$path ${reference}/$path || status=1
     done
     if [ $status != 0 ]; then
@@ -349,13 +263,12 @@ rec {
         echo "chalkos-docgen: run it in the repository's root, where zensical.toml is" >&2
         exit 1
       fi
+      # The command pages go first, so a command that no longer exists leaves no page.
       rm -rf docs/reference/cli
-      mkdir -p docs/reference
-      cp -r --no-preserve=mode ${reference}/docs/reference/cli docs/reference/cli
-      cp --no-preserve=mode ${reference}/docs/reference/kinds.md ${reference}/docs/reference/mkimages.md ${reference}/docs/reference/image-options.md ${reference}/docs/reference/extension-api.md ${reference}/docs/reference/builtins.md ${reference}/docs/reference/api.md docs/reference/
-      cp --no-preserve=mode ${reference}/zensical.toml zensical.toml
-      mkdir -p includes
-      cp --no-preserve=mode ${reference}/includes/abbreviations.md includes/
+      for path in ${lib.escapeShellArgs generatedPaths}; do
+        mkdir -p "$(dirname "$path")"
+        cp -r --no-preserve=mode "${reference}/$path" "$(dirname "$path")/"
+      done
     '';
   };
 
@@ -381,11 +294,9 @@ rec {
         rsync -a zensical.toml "$work/zensical.toml"
         rsync -a includes/ "$work/includes/"
         mkdir -p "$work/examples/homelab"
-        rsync -a examples/homelab/flake.nix "$work/examples/homelab/flake.nix"
-        rsync -a --delete examples/homelab/extensions/ "$work/examples/homelab/extensions/"
-        rsync -a examples/homelab/chalkos.yaml "$work/examples/homelab/chalkos.yaml"
-        rsync -a --delete examples/homelab/nodes/ "$work/examples/homelab/nodes/"
-        rsync -a --delete examples/homelab/cluster/ "$work/examples/homelab/cluster/"
+        for path in ${lib.escapeShellArgs homelabSnippets}; do
+          rsync -a --delete "examples/homelab/$path" "$work/examples/homelab/"
+        done
       }
       copy
       while sleep 1; do copy; done &

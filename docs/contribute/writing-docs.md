@@ -63,7 +63,7 @@ These pages are generated and never edited by hand:
 | --- | --- | --- |
 | `docs/reference/cli/` | the command trees of chalkctl, chalklab, chalkbuild and chalkcfg, with their help in `pkg/chalkctl/help.go`, `pkg/chalklab/help.go`, `pkg/chalkbuild/help.go` and `pkg/chalkcfg/help.go` | `docgen cli` |
 | `docs/reference/kinds.md` | the JSON Schemas of the default variant's kinds, declared in `modules/node/kinds/builtin/`, and of the inventory and the lab file, `pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and `pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json` | `docgen kinds` |
-| `docs/reference/mkimages.md`, `docs/reference/image-options.md`, `docs/reference/extension-api.md` | the arguments of `mkImages` in `lib/images-arguments.nix` and the option declarations of the node modules, as nixosOptionsDoc's JSON; their openings in `nix/docs.nix` | `docgen options` |
+| `docs/reference/mkimages.md`, `docs/reference/image-options.md`, `docs/reference/extension-api.md` | the arguments of `mkImages` in `lib/images-arguments.nix` and the option declarations of the node modules, as nixosOptionsDoc's JSON; their openings, and the table of `lib.chalkos` that ends the extension API, in `nix/docs-templates` | `docgen options` |
 | `docs/reference/builtins.md` | the schemas, `facts.json`, `outputs.json` and `effects.json` of an image of the default variant and of one with `kubernetes = false`, which the node modules in `modules/node/` declare | `docgen builtins` |
 | `docs/reference/api.md` | `api/chalkos/node/v1/node.proto`, through the template `api/markdown.tmpl` | protoc-gen-doc in `buf.gen.yaml` |
 | the navigation region of `zensical.toml` | the command trees | `docgen cli` |

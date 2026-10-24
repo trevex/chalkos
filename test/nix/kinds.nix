@@ -1395,13 +1395,13 @@ lib.runTests {
       ]
     ];
   };
-  # The Extension API page, whose table of lib.chalkos is written in nix/docs.nix, lists each
+  # The Extension API page, whose table of lib.chalkos is in nix/docs-templates, lists each
   # helper of lib.chalkos: a function, or a type, as the leaves of its attribute sets.
   testExtensionAPIListsEveryHelper = {
     expr =
       let
         rows = lib.filter (l: lib.hasPrefix "| `lib.chalkos." (lib.trim l)) (
-          lib.splitString "\n" (builtins.readFile ../../nix/docs.nix)
+          lib.splitString "\n" (builtins.readFile ../../nix/docs-templates/extension-api.tail.md)
         );
       in
       lib.sort lib.lessThan (
