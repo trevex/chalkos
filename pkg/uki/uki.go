@@ -99,6 +99,19 @@ func (i Image) UsrHash() ([]byte, error) {
 	return UsrHash(i.Cmdline)
 }
 
+// CheckImageVersion refuses a UKI whose os-release sets IMAGE_VERSION to anything but empty, or
+// sets none: systemd-boot orders an image's entries by that version, or without one by VERSION,
+// before their IDs, so only an empty one leaves the order to the generations the names carry.
+func (i Image) CheckImageVersion() error {
+	switch v, ok := i.OSRelease["IMAGE_VERSION"]; {
+	case !ok:
+		return errors.New("the UKI's os-release has no IMAGE_VERSION, so systemd-boot would order its entry by VERSION before its generation; build the image with chalkos's modules, which set it empty")
+	case v != "":
+		return fmt.Errorf("the UKI's os-release sets IMAGE_VERSION to %q, which systemd-boot would order its entry by before its generation; build the image without system.image.version", v)
+	}
+	return nil
+}
+
 // UsrHash reads usrhash= from a kernel command line: the verity root hash of the store, whose
 // partitions systemd finds by the UUIDs it derives from the hash.
 func UsrHash(cmdline string) ([]byte, error) {

@@ -16,7 +16,6 @@ import (
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/ociimage"
-	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 // diskImage is what install and upgrade send of a disk image: its parts, the UKI and the boot
@@ -60,7 +59,7 @@ func openImage(ctx context.Context, path string, bootLoader bool, stderr io.Writ
 		}
 	}()
 	// The node would refuse the UKI only once it received the image.
-	if err := upgrade.CheckImageVersion(img.Info); err != nil {
+	if err := img.Info.CheckImageVersion(); err != nil {
 		return nil, fmt.Errorf("the image's UKI: %w", err)
 	}
 	if img.Info.Variant() == "" || img.Info.Platform() == "" {

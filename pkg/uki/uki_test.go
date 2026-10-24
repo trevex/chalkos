@@ -300,3 +300,25 @@ func TestArchitecture(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckImageVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		osRelease map[string]string
+		want      string
+	}{
+		{"empty", map[string]string{"IMAGE_VERSION": ""}, ""},
+		{"set", map[string]string{"IMAGE_VERSION": "0.3.0"}, `sets IMAGE_VERSION to "0.3.0"`},
+		{"missing", map[string]string{}, "has no IMAGE_VERSION"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Image{OSRelease: tc.osRelease}.CheckImageVersion()
+			switch {
+			case tc.want == "" && err != nil:
+				t.Errorf("CheckImageVersion() = %v", err)
+			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+				t.Errorf("CheckImageVersion() = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}

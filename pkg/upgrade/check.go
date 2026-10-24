@@ -100,7 +100,7 @@ func CheckUKI(r io.ReaderAt, h Header, efivars string) (int, error) {
 			return 0, fmt.Errorf("the UKI's %s is %q, but the image names %q", field.name, field.uki, field.header)
 		}
 	}
-	if err := CheckImageVersion(img); err != nil {
+	if err := img.CheckImageVersion(); err != nil {
 		return 0, err
 	}
 	if hash, err := img.UsrHash(); err != nil || !bytes.Equal(hash, h.RootHash) {
@@ -171,19 +171,6 @@ func CheckArchitecture(r io.ReaderAt, h Header, what string) error {
 	}
 	if arch != h.Architecture {
 		return fmt.Errorf("the %s is built for %s, but the image names %s", what, arch, h.Architecture)
-	}
-	return nil
-}
-
-// CheckImageVersion refuses a UKI whose os-release sets IMAGE_VERSION to anything but empty, or
-// sets none: systemd-boot orders an image's entries by that version, or without one by VERSION,
-// before their IDs, so only an empty one leaves the order to the generations the names carry.
-func CheckImageVersion(img uki.Image) error {
-	switch v, ok := img.OSRelease["IMAGE_VERSION"]; {
-	case !ok:
-		return errors.New("the UKI's os-release has no IMAGE_VERSION, so systemd-boot would order its entry by VERSION before its generation; build the image with chalkos's modules, which set it empty")
-	case v != "":
-		return fmt.Errorf("the UKI's os-release sets IMAGE_VERSION to %q, which systemd-boot would order its entry by before its generation; build the image without system.image.version", v)
 	}
 	return nil
 }
