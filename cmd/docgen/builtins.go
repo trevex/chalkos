@@ -12,6 +12,11 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/effects"
+	"github.com/trevex/chalkos/pkg/facts"
+	"github.com/trevex/chalkos/pkg/outputs"
+	"github.com/trevex/chalkos/pkg/rules"
 )
 
 // builtinsDescription is the description of the page of built-ins.
@@ -54,33 +59,8 @@ const (
 // builtinRule is a change rule of a kind: of the kind itself, whose field is empty, or of one of its
 // fields.
 type builtinRule struct {
-	field             string
-	Rule              string
-	Message           string
-	MessageExpression string
-	Takes             string
-	Description       string
-}
-
-type builtinFact struct {
-	File       string
-	Fields     []string
-	HashOthers bool
-	Command    string
-	Inputs     []string
-}
-
-type builtinOutput struct {
-	Inputs []string
-	Render string
-	Check  string
-	Dir    string
-}
-
-type builtinEffect struct {
-	Outputs, Kinds, Reload, Restart []string
-	When, Run, Chalkd               string
-	Start                           bool
+	rules.Rule
+	field string
 }
 
 // kindRules are the change rules of a kind.
@@ -93,9 +73,9 @@ type kindRules struct {
 // order of the page of config kinds, and its facts, outputs and effects by name.
 type builtinImage struct {
 	kinds   []kindRules
-	facts   map[string]builtinFact
-	outputs map[string]builtinOutput
-	effects map[string]builtinEffect
+	facts   map[string]facts.Definition
+	outputs map[string]outputs.Definition
+	effects map[string]effects.Definition
 }
 
 // writeBuiltins writes the page of built-ins to page from two rules images, as an image's
@@ -173,22 +153,29 @@ func readBuiltinImage(dir string) (builtinImage, error) {
 	}
 	slices.SortFunc(kinds, compareKinds)
 	for _, k := range kinds {
-		rules, err := schemaRules(k)
+		ruled, err := schemaRules(k)
 		if err != nil {
 			return img, err
 		}
-		if len(rules) > 0 {
-			img.kinds = append(img.kinds, kindRules{k, rules})
+		if len(ruled) > 0 {
+			img.kinds = append(img.kinds, kindRules{k, ruled})
 		}
 	}
-	for name, v := range map[string]any{"facts.json": &img.facts, "outputs.json": &img.outputs, "effects.json": &img.effects} {
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
+	// The readers take a missing file for an image that declares none, but a rules image holds all
+	// three.
+	for _, name := range []string{"facts.json", "outputs.json", "effects.json"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			return img, err
 		}
-		if err := json.Unmarshal(data, v); err != nil {
-			return img, fmt.Errorf("%s: %w", filepath.Join(dir, name), err)
-		}
+	}
+	if img.facts, err = facts.Read(filepath.Join(dir, "facts.json")); err != nil {
+		return img, err
+	}
+	if img.outputs, err = outputs.Read(filepath.Join(dir, "outputs.json"), outputs.DefaultRoot); err != nil {
+		return img, err
+	}
+	if img.effects, err = effects.Read(filepath.Join(dir, "effects.json")); err != nil {
+		return img, err
 	}
 	return img, nil
 }
@@ -261,17 +248,16 @@ func decodeRules(v any, field string) ([]builtinRule, error) {
 	if err != nil {
 		return nil, err
 	}
-	var rules []builtinRule
-	if err := json.Unmarshal(data, &rules); err != nil {
+	var decoded []rules.Rule
+	if err := json.Unmarshal(data, &decoded); err != nil {
 		return nil, fmt.Errorf("the rules of %s: %w", cmp.Or(field, "the kind"), err)
 	}
-	for i := range rules {
-		rules[i].field = field
-		if rules[i].Takes == "" {
-			rules[i].Takes = "refuse"
-		}
+	out := make([]builtinRule, len(decoded))
+	for i, r := range decoded {
+		r.Takes = cmp.Or(r.Takes, rules.Refuse)
+		out[i] = builtinRule{Rule: r, field: field}
 	}
-	return rules, nil
+	return out, nil
 }
 
 // compareKinds orders kinds as the page of config kinds does: chalkos.dev's first, then by group
@@ -299,7 +285,7 @@ func splitRules(def, plain []kindRules) (every, kube []kindRules, err error) {
 		inPlain[k.kind.kind] = k.rules
 		for _, r := range k.rules {
 			if !slices.Contains(inDefault[k.kind.kind], r) {
-				return nil, nil, fmt.Errorf("the image without Kubernetes has a rule of %s that the default image lacks: %s", k.kind.kind, r.Rule)
+				return nil, nil, fmt.Errorf("the image without Kubernetes has a rule of %s that the default image lacks: %s", k.kind.kind, r.Rule.Rule)
 			}
 		}
 	}
@@ -387,10 +373,10 @@ func writeRulesSection(b *strings.Builder, anchor, intro string, kinds []kindRul
 				field = code(r.field)
 			}
 			expr := "after the table"
-			if inline(r.Rule) {
-				expr = code(r.Rule)
+			if inline(r.Rule.Rule) {
+				expr = code(r.Rule.Rule)
 			} else {
-				after = append(after, fmt.Sprintf("\nExpression of rule %d:\n\n%s", n, textBlock(r.Rule)))
+				after = append(after, fmt.Sprintf("\nExpression of rule %d:\n\n%s", n, textBlock(r.Rule.Rule)))
 			}
 			var msg string
 			switch {
@@ -406,7 +392,7 @@ func writeRulesSection(b *strings.Builder, anchor, intro string, kinds []kindRul
 			if r.Description != "" {
 				guards = tableCell(strings.Join(strings.Fields(r.Description), " "))
 			}
-			fmt.Fprintf(b, "| %d | %s | %s | %s | %s | %s |\n", n, field, guards, code(r.Takes), tableCell(expr), tableCell(msg))
+			fmt.Fprintf(b, "| %d | %s | %s | %s | %s | %s |\n", n, field, guards, code(string(r.Takes)), tableCell(expr), tableCell(msg))
 		}
 		b.WriteString(strings.Join(after, ""))
 	}
@@ -501,7 +487,7 @@ func writeFacts(b *strings.Builder, anchor, intro string, names []string, img bu
 		var kinds, effects []string
 		for _, k := range img.kinds {
 			for _, r := range k.rules {
-				if slices.Contains(matches(readFact, r.Rule, r.MessageExpression), name) {
+				if slices.Contains(matches(readFact, r.Rule.Rule, r.MessageExpression), name) {
 					kinds = append(kinds, k.kind.kind)
 					break
 				}
@@ -528,14 +514,14 @@ func writeFacts(b *strings.Builder, anchor, intro string, names []string, img bu
 }
 
 // writeOutputs writes a section of outputs.
-func writeOutputs(b *strings.Builder, anchor, intro string, names []string, outputs map[string]builtinOutput) {
+func writeOutputs(b *strings.Builder, anchor, intro string, names []string, defs map[string]outputs.Definition) {
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return
 	}
 	b.WriteString("| Output | Inputs | Directory | Renderer | Check |\n| --- | --- | --- | --- | --- |\n")
 	for _, name := range names {
-		o := outputs[name]
+		o := defs[name]
 		check := "no"
 		if o.Check != "" {
 			check = "yes"
@@ -561,7 +547,7 @@ func renderer(render string) string {
 }
 
 // writeEffects writes a section of effects, each with when it fires and what it does.
-func writeEffects(b *strings.Builder, anchor, intro string, names []string, effects map[string]builtinEffect) {
+func writeEffects(b *strings.Builder, anchor, intro string, names []string, defs map[string]effects.Definition) {
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return
@@ -569,7 +555,7 @@ func writeEffects(b *strings.Builder, anchor, intro string, names []string, effe
 	b.WriteString("| Effect | Fires when | Does |\n| --- | --- | --- |\n")
 	var after []string
 	for _, name := range names {
-		e := effects[name]
+		e := defs[name]
 		var fires []string
 		switch len(e.Outputs) {
 		case 0:
@@ -619,9 +605,9 @@ func writeEffects(b *strings.Builder, anchor, intro string, names []string, effe
 			does = append(does, sentence(s))
 		}
 		switch e.Chalkd {
-		case "restart":
+		case effects.ChalkdRestart:
 			does = append(does, "Restarts chalkd's Kubernetes loops.")
-		case "reload":
+		case effects.ChalkdReload:
 			does = append(does, "Reloads chalkd's control-plane loop.")
 		}
 		fmt.Fprintf(b, "| `%s`{ #effect-%s } | %s | %s |\n",
