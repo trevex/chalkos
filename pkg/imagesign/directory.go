@@ -5,12 +5,11 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/trevex/chalkos/pkg/image"
+	"github.com/trevex/chalkos/pkg/internal/filecopy"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/secureboot"
@@ -156,42 +155,16 @@ func copyTree(ctx context.Context, src, dst string) error {
 		case !info.Mode().IsRegular():
 			return fmt.Errorf("%s: %w", from, errNotFileOrDir)
 		case filepath.Ext(e.Name()) == ".raw" || filepath.Ext(e.Name()) == ".iso":
-			if err := copySparse(ctx, from, to); err != nil {
+			if err := filecopy.Sparse(ctx, from, to); err != nil {
 				return err
 			}
 		default:
-			if err := copyFile(from, to); err != nil {
+			if err := filecopy.File(from, to, 0o644); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
-}
-
-// copySparse copies a disk image without materialising its holes, writable for signing.
-func copySparse(ctx context.Context, src, dst string) error {
-	if out, err := exec.CommandContext(ctx, "cp", "--sparse=always", src, dst).CombinedOutput(); err != nil {
-		return fmt.Errorf("cp %s: %w: %s", src, err, out)
-	}
-	return os.Chmod(dst, 0o644)
-}
-
-// copyFile copies a file's content to a new file.
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
 }
 
 // verify checks the UKI and the boot loader on the image's ESP against the db certificates, as

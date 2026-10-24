@@ -71,7 +71,7 @@ func TestSignDirectory(t *testing.T) {
 	}
 	write(t, filepath.Join(in, "installer.iso"), string(raw))
 	write(t, filepath.Join(in, "installer.iso.json"), string(partitions))
-	// A store's files are read-only, which proves copySparse's chmod is needed: without it,
+	// A store's files are read-only, which proves filecopy.Sparse's chmod is needed: without it,
 	// signing a disk image copied this way would fail to open it for writing.
 	for _, name := range []string{"chalkos.raw", "installer.iso"} {
 		if err := os.Chmod(filepath.Join(in, name), 0o444); err != nil {

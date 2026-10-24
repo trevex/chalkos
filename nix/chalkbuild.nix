@@ -17,6 +17,7 @@ callPackage ./go-module.nix { } {
     ../pkg/image
     ../pkg/imagesign
     ../pkg/internal/cli
+    ../pkg/internal/filecopy
     ../pkg/ociimage
     ../pkg/pki
     ../pkg/schema

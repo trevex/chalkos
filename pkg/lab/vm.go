@@ -14,6 +14,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/internal/filecopy"
 )
 
 // VMConfig describes one QEMU virtual machine with UEFI firmware and an optional software TPM.
@@ -161,7 +163,7 @@ func StartVM(ctx context.Context, c VMConfig) (*VM, error) {
 		return nil, err
 	}
 	if _, err := os.Stat(c.varsPath()); errors.Is(err, fs.ErrNotExist) {
-		if err := copyFile(c.FirmwareVars, c.varsPath(), 0o644); err != nil {
+		if err := filecopy.File(c.FirmwareVars, c.varsPath(), 0o644); err != nil {
 			return nil, fmt.Errorf("copy firmware variables: %w", err)
 		}
 	}
