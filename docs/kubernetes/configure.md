@@ -39,7 +39,7 @@ document. Its fields fall into groups:
 | `nodeCIDRMaskSizes` | The prefix length of each node's part of the pod range | 24 for IPv4, 64 for IPv6 |
 | `nodeIP` | The subnets nodes without a fixed address pick theirs from, and how long a node waits for it at boot | any global unicast address, 300 seconds |
 | `vip` | The VIPs the control planes hold | none |
-| `allowSchedulingOnControlPlanes` | Whether workloads may run on control planes | `false` |
+| `allowSchedulingOnControlPlanes` | Whether workloads may run on control planes; fixed once the cluster exists | `false` |
 | `extraArgs` | Extra flags of etcd, the API server, the controller-manager and the scheduler | none |
 
 [Plan a cluster](plan.md) covers the endpoint, the VIP and the address families. The sections
@@ -76,13 +76,22 @@ node w1: invalid Kubernetes settings:
 ```
 
 The kubelet applies the labels and taints when it registers its node, the first time the node
-joins. On a node that is registered already, a changed label or taint in the `Node` document does
-not reach its Kubernetes node. Change it with kubectl as well:
+joins, and chalkd never changes the Kubernetes node after that. So `labels` and `taints` are fixed
+once the node holds a Kubernetes share, and a node refuses a delivery that changes them:
+
+```text
+the config is refused: Node "default" spec.labels: the config changes the node's labels; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl label instead, or reinstall the node
+```
+
+Change the labels and taints of a registered node with kubectl, and keep its `Node` document as it
+is:
 
 ```sh
 kubectl label node w1 node.kubernetes.io/storage=nvme --overwrite
 kubectl taint node w1 dedicated=storage:NoSchedule-
 ```
+
+A reinstall registers the node again with the labels and taints of its `Node` document.
 
 The `Node` document also holds the node's own address settings, `nodeIP`, and on a control plane
 the interface it holds the VIP on, `vip.interface`.
@@ -92,8 +101,8 @@ explains both.
 ## Run workloads on control planes
 
 A control plane registers with the taint `node-role.kubernetes.io/control-plane:NoSchedule`, so
-only pods that tolerate it run there. Set `allowSchedulingOnControlPlanes` to leave the taint off
-control planes that register from then on:
+only pods that tolerate it run there. Set `allowSchedulingOnControlPlanes` before the first node
+installs to leave the taint off the control planes:
 
 ```yaml title="cluster/cluster.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
@@ -104,10 +113,19 @@ spec:
   allowSchedulingOnControlPlanes: true
 ```
 
-A control plane that registered before keeps its taint. Remove it with kubectl:
+The taint is part of the control plane's registration, so `allowSchedulingOnControlPlanes` is fixed
+once a node holds a Kubernetes share. Every node gets the same `Cluster` document, so every
+running node refuses a delivery that changes it:
+
+```text
+the config is refused: Cluster "default" spec.allowSchedulingOnControlPlanes: the config changes allowSchedulingOnControlPlanes; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node
+```
+
+On a running cluster, keep the setting and remove or add the taint with kubectl:
 
 ```sh
 kubectl taint node cp1 node-role.kubernetes.io/control-plane:NoSchedule-
+kubectl taint node cp1 node-role.kubernetes.io/control-plane:NoSchedule
 ```
 
 ## Add flags to the control plane's components
@@ -139,6 +157,22 @@ The API server's flags that decide who may do what are refused, also when spelt 
 
 ```text
 node cp1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --authentication-config is set by chalkos and cannot be overridden
+```
+
+The API server refuses to start with some flags next to flags chalkos sets, so `chalkctl validate`
+refuses them too:
+
+| Flags | Conflict with |
+| --- | --- |
+| `oidc-issuer-url`, `oidc-client-id`, `oidc-ca-file`, `oidc-username-claim`, `oidc-username-prefix`, `oidc-groups-claim`, `oidc-groups-prefix`, `oidc-signing-algs`, `oidc-required-claim` | `authentication-config` |
+| `authorization-config`, `authorization-policy-file`, `authorization-webhook-config-file` | `authorization-mode=Node,RBAC` |
+| `admission-control` | `enable-admission-plugins` |
+| `service-account-signing-endpoint` | `service-account-signing-key-file` and `service-account-key-file` |
+
+The error names the flag, the flag it conflicts with and what to do instead:
+
+```text
+node cp1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --admission-control conflicts with --enable-admission-plugins: chalkos sets --enable-admission-plugins, and the API server refuses this flag next to it; give the plugins in enable-admission-plugins and disable-admission-plugins
 ```
 
 From the node, the control plane's pods mount the certificates and kubeconfigs chalkd writes, and
@@ -192,9 +226,12 @@ tokens. Anonymous requests reach only `/livez`, `/readyz` and `/healthz`. chalko
 server's authentication configuration and protects the `authentication-config` flag that names it.
 
 chalkos has no way to add an OIDC issuer or another authenticator today. The API server refuses
-the `oidc-*` flags next to an authentication configuration. `chalkctl validate` accepts a `Cluster`
-with `extraArgs.kube-apiserver.oidc-issuer-url`, but the API server then stops at start with
-`authentication-config file and oidc-* flags are mutually exclusive`.
+the `oidc-*` flags next to an authentication configuration, so `chalkctl validate` refuses them in
+`extraArgs.kube-apiserver`:
+
+```text
+node cp1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --oidc-issuer-url conflicts with --authentication-config: chalkos configures authentication through --authentication-config, and the API server refuses oidc-* flags next to it; chalkos offers no way to add an authenticator today, so grant narrower access with RBAC
+```
 
 For access narrower than `cluster-admin`, bind users and groups to roles with RBAC.
 [Bootstrap and get a kubeconfig](bootstrap.md#give-someone-access-to-the-kubernetes-api) describes

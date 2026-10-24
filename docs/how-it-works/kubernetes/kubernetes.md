@@ -121,8 +121,11 @@ spec:
 ```
 
 A control plane is tainted `node-role.kubernetes.io/control-plane:NoSchedule` unless the `Cluster`
-document sets `allowSchedulingOnControlPlanes: true`. `kubeletExtraArgs` of a node's `Node` document
-adds flags to its kubelet.
+document sets `allowSchedulingOnControlPlanes: true`. The kubelet applies the labels and taints,
+this taint among them, only when it registers the node, so `labels`, `taints` and
+`allowSchedulingOnControlPlanes` are fixed once the node holds a Kubernetes share; kubectl changes
+them on the Kubernetes node. `kubeletExtraArgs` of a node's `Node` document adds flags to its
+kubelet.
 
 containerd pulls through the endpoints of the `Mirror` documents, tried in order before the
 registry itself. Each document names one registry as image references name it, in
