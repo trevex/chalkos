@@ -73,9 +73,7 @@ func (s store) listKinds(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	for kind := range hidden {
-		delete(kinds, kind)
-	}
+	maps.DeleteFunc(kinds, withheldKind)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "KIND\tGROUP\tDOCUMENTS")
 	for _, kind := range slices.Sorted(maps.Keys(kinds)) {

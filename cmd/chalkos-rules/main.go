@@ -19,6 +19,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/command"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/withheld"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -174,7 +175,7 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectD
 			switch {
 			case !kinds[kind]:
 				errs = append(errs, fmt.Errorf("output %s: the image declares no kind %s", name, kind))
-			case kind == "Secret" || kind == "Addon":
+			case withheld.Kind(kind):
 				errs = append(errs, fmt.Errorf("output %s: a renderer does not read %s documents", name, kind))
 			}
 		}
@@ -187,7 +188,7 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectD
 		}
 		for _, kind := range effectDefs[name].Kinds {
 			switch {
-			case kind == "Secret" || kind == "Addon":
+			case withheld.Kind(kind):
 				errs = append(errs, fmt.Errorf("effect %s: an effect does not fire on %s documents", name, kind))
 			case !kinds[kind]:
 				errs = append(errs, fmt.Errorf("effect %s: the image declares no kind %s", name, kind))

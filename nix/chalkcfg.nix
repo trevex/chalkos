@@ -6,6 +6,7 @@ callPackage ./go-module.nix { } {
   paths = [
     ../cmd/chalkcfg
     ../pkg/chalkcfg
+    ../pkg/config/withheld
     ../pkg/internal/cli
   ];
   subPackages = [ "cmd/chalkcfg" ];

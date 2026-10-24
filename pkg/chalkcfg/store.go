@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/config/withheld"
 )
 
 // store is where a node's documents are: chalkd writes each below config as
@@ -45,8 +47,8 @@ var errSecret = errors.New("Secrets are never printed: a service gets the values
 
 var errAddon = errors.New("Addon documents are never printed: chalkd keeps them in the node's stored config, readable by root alone, and applies their objects on control planes")
 
-// hidden are the kinds chalkcfg never prints, by name, with why.
-var hidden = map[string]error{"Secret": errSecret, "Addon": errAddon}
+// hidden says why chalkcfg prints no document of a withheld kind, by kind.
+var hidden = map[string]error{withheld.Secret: errSecret, withheld.Addon: errAddon}
 
 // readDir is os.ReadDir with a directory that does not exist read as empty: a node without config
 // has no /run/chalkos/config, and a test may have no schemas.
@@ -133,9 +135,7 @@ func (s store) group(kind string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for kind := range hidden {
-		delete(kinds, kind)
-	}
+	maps.DeleteFunc(kinds, withheldKind)
 	k, ok := kinds[kind]
 	if !ok {
 		return "", fmt.Errorf("the image declares no kind %s; it declares %s", kind, strings.Join(slices.Sorted(maps.Keys(kinds)), ", "))
@@ -206,3 +206,6 @@ func (s store) resolve() (store, error) {
 	s.config = dir
 	return s, nil
 }
+
+// withheldKind tells whether kind is withheld, for maps.DeleteFunc on the kinds by name.
+func withheldKind(kind string, _ *kindInfo) bool { return withheld.Kind(kind) }
