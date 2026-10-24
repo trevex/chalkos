@@ -128,6 +128,91 @@ nodev1connect.NodeServiceUpgradeProcedure: {[]nodev1.Mode{normal}, pki.RoleOpera
 A new method needs an entry there; the authoriser refuses a method without one. Comments in the
 proto file become the [Node API](../reference/api.md) page, so they are written for users.
 
+## chalkd runs with a narrow sandbox
+
+The unit `chalkd.service` is declared in `modules/node/chalkd.nix`. chalkd runs as root with its
+capabilities, because it partitions disks, enrols TPM keyslots, writes EFI variables, mounts
+volumes the host must see and sets the hostname. Its unit therefore has no file system or
+hostname namespace. `ProtectKernelLogs` stays off too, because systemd would give chalkd a mount
+namespace for it, and chalkd's mounts would not reach the host.
+
+The sandbox it does have:
+
+- `RestrictAddressFamilies` allows only the socket families chalkd uses: Unix, IPv4, IPv6,
+  netlink, the kernel crypto API (`AF_ALG`, for cryptsetup and systemd-cryptenroll) and packet
+  sockets (`AF_PACKET`, for the gratuitous ARP of a VIP).
+- `NoNewPrivileges` forbids new privileges.
+- `SystemCallArchitectures=native` fixes the system call architecture.
+- `ProtectClock` protects the clock, and `LockPersonality` and `RestrictRealtime` are on.
+
+`Restart=always` with no start limit restarts chalkd whenever it stops, because it is the only
+way to reach the node: nodes have no SSH and no login.
+
+## An install runs in fixed steps
+
+`pkg/install` turns a node in maintenance mode into an installed node, and `pkg/chalkd/install.go`
+serves it as the node API's Install method. Every step finds what an earlier, interrupted attempt
+did and continues from there, so running the same `chalkctl install` again continues an install.
+
+[`chalkctl install`](../reference/cli/chalkctl_install.md) connects to the node, compares its
+certificate with the fingerprint from the console, and sends what makes the machine this node.
+[Security model](../how-it-works/node/security.md) explains how the fingerprint and `--insecure`
+protect the secrets on the way.
+
+On a node that runs its image already, the install happens in place (`Installer.InPlace`), and
+chalkctl sends no image. chalkd recreates STATE if its encryption differs from the node's
+`SystemDisk`, opens it, creates VAR and the volumes, and enrols the second keyslot of every
+encrypted volume unless the fallback is `none`. It then writes the config and certificates, gives
+the ESP a random partition UUID and writes the `installed` marker.
+
+On a node that runs the installer (`Installer.FromParts`), chalkctl also sends the image the
+inventory names for the node, or the one `--image` gives, in the same parts an upgrade sends,
+plus the boot loader. The sequence shows what the installer does with them. When the inventory
+names the image in a registry, the header carries the image's reference by digest in place of the
+schemas, `image.json` and repart definitions, and no parts follow it. The installer then reads
+those from the artifact's contract layer before it touches the disk. It pulls the store, hash
+tree, UKI and boot loader from the registry in the steps where the sequence receives them from
+chalkctl.
+
+```mermaid
+sequenceDiagram
+    participant chalkctl
+    participant chalkd as chalkd on the installer
+    participant disk as Target disk and TPM
+    participant fw as Firmware
+    chalkd-->>chalkd: console shows fingerprint and addresses
+    chalkctl->>chalkd: Install header: config, the image's schemas and image.json, node certificate, OS CA, fallback secret, Kubernetes share, image header, repart definitions
+    chalkd->>disk: check the disk is empty or an unfinished install
+    chalkd->>disk: lay out ESP, slot A, slot B and STATE with systemd-repart, STATE sealed to PCR 7
+    chalkctl->>chalkd: store and hash tree
+    chalkd->>disk: write slot A, verify it against the root hash, activate it
+    chalkctl->>chalkd: UKI and boot loader
+    chalkd->>disk: check the UKI, write it to the ESP
+    chalkd->>disk: open STATE, create VAR, enrol the fallback key, write the config
+    chalkd->>disk: write the boot loader
+    chalkd->>fw: add a boot entry and set BootNext
+    chalkd->>disk: write the installed marker
+    chalkd-->>chalkctl: done, rebooting
+```
+
+Before anything is written, the installer checks the config against the image's schemas,
+translates it for the image's platform, and checks that the image is built for the machine's
+architecture. With Secure Boot enforced, it checks the UKI's and the boot loader's signatures
+against the firmware's db and dbx, as the firmware will at the next boot. It checks each when it
+receives it: after slot A is written and before the boot loader is.
+
+The installer takes the disk the node's `SystemDisk` names when blkid finds nothing on it but at
+most an empty GPT, or when it holds an unfinished install of the node, which it continues. It
+takes any other disk only with `--wipe-disk`. Until the boot loader is written the firmware finds
+nothing to boot on the target, so an interrupted install never boots a half-installed node.
+
+The image travels as its parts: the compressed store, its hash tree, the UKI and systemd-boot.
+For an image with Kubernetes that is about 300 MiB, instead of the multi-gigabyte raw image.
+
+After the reboot, the initrd unseals STATE and VAR with the TPM, `chalkos-config.service` applies
+the config, and chalkd finds the `installed` marker and starts in normal mode with the node
+certificate from STATE.
+
 ## The command-line programs
 
 chalkctl, chalklab, chalkbuild and chalkcfg are cobra command trees in importable packages:

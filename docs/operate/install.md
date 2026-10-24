@@ -529,7 +529,7 @@ chalkctl checks no signature. When Secure Boot is enforced, the installer checks
 boot loader against the machine's db and dbx. It refuses an unsigned or wrongly signed image, so
 the machine never reboots into an image its firmware refuses. The installer writes the image to
 the system disk, sets up STATE, VAR and the volumes, and adds a UEFI boot entry named `chalkos`,
-as [The install](../how-it-works/node/architecture.md#the-install) follows step by step.
+as [An install runs in fixed steps](../contribute/architecture.md#an-install-runs-in-fixed-steps) follows step by step.
 
 The boot entry the install creates goes first in the boot order, so the stick may stay in. Remove
 it before the next install elsewhere.
@@ -659,7 +659,7 @@ covers a node that does not come up after the reboot.
 ## What next
 
 - [Add and remove nodes](add-remove-nodes.md) grows or shrinks the cluster later.
-- [Architecture](../how-it-works/node/architecture.md#how-does-a-machine-become-a-node) follows
+- [Architecture for developers](../contribute/architecture.md#an-install-runs-in-fixed-steps) follows
   an install step by step through chalkctl, chalkd and the disk.
 - [Sign images for Secure Boot](../build/sign-images.md) covers the key's life and why it must
   not change for an installed node.

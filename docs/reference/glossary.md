@@ -355,7 +355,7 @@ lives in `$XDG_STATE_HOME/chalklab/<name>`, after the lab file's `metadata.name`
 
 The mode chalkd runs in on a node that is not installed. In it, chalkd serves a self-signed
 certificate, prints its fingerprint and the node's addresses on the console, and accepts only
-reads, reboots and an install. See [Architecture](../how-it-works/node/architecture.md).
+reads, reboots and an install. See [Architecture](../how-it-works/node/architecture.md#maintenance-mode-serves-a-node-that-is-not-installed).
 
 ## Module group { #module-group }
 <!-- abbr: module groups, Module groups -->
@@ -403,7 +403,7 @@ the [recovery key](#recovery-key) derive from it, so renaming a node takes a rei
 
 The mode chalkd runs in on an installed node. In it, chalkd serves its node certificate and
 accepts only clients with a certificate from the [OS CA](#os-ca). See
-[Architecture](../how-it-works/node/architecture.md).
+[Architecture](../how-it-works/node/architecture.md#normal-mode-serves-an-installed-node).
 
 ## OCI image { #oci-image }
 

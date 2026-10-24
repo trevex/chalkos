@@ -1,6 +1,6 @@
 ---
 title: "Reference"
-description: "Commands, config kinds, mkImages and image options, the node API and the layout of images, ports and os-release"
+description: "Commands, config kinds, mkImages and image options, the node API, boot units and the layout of images, ports and os-release"
 ---
 
 # Reference
@@ -49,6 +49,14 @@ chalkos.
     The partitions of an installed node and the files of an image.
 
     [:octicons-arrow-right-24: Read](image-layout.md)
+
+-   :material-restart: __Boot and the image__
+
+    ---
+
+    The units that run at every boot, and what an image fixes versus what its config delivers.
+
+    [:octicons-arrow-right-24: Read](boot.md)
 
 -   :material-lan: __Ports and firewall__
 

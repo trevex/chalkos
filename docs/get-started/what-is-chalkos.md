@@ -81,7 +81,7 @@ serves a self-signed certificate and prints its fingerprint and the node's addre
 share of the secrets, plus the image the inventory names for the node when the node runs the
 installer. chalkd partitions the disk, seals STATE to the
 TPM, marks the node installed and reboots it into normal
-mode. See [Architecture](../how-it-works/node/architecture.md).
+mode. See [How a node works](../how-it-works/node/overview.md).
 
 ## The disk holds two slots and encrypted state
 

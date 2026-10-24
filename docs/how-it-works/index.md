@@ -17,12 +17,19 @@ chalkos adds to run Kubernetes on it.
 
 <div class="grid cards" markdown>
 
+-   :material-map-outline: __How a node works__
+
+    ---
+
+    The machines that build, drive and run a node, and the stages of a node's life.
+
+    [:octicons-arrow-right-24: Read](node/overview.md)
+
 -   :material-sitemap: __Architecture__
 
     ---
 
-    The parts of chalkos, and how images from Nix and YAML config become installed, running
-    nodes.
+    The parts of chalkos, where each one runs, and how chalkd picks its mode.
 
     [:octicons-arrow-right-24: Read](node/architecture.md)
 

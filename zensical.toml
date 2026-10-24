@@ -61,6 +61,7 @@ nav = [
   { "How chalkos works" = [
     "how-it-works/index.md",
     { "The node OS" = [
+      "how-it-works/node/overview.md",
       "how-it-works/node/architecture.md",
       "how-it-works/node/image.md",
       "how-it-works/node/boot-and-rollback.md",
@@ -171,6 +172,7 @@ nav = [
     { "mkImages and image options" = "reference/options.md" },
     { "Node API" = "reference/api.md" },
     "reference/image-layout.md",
+    "reference/boot.md",
     "reference/ports-and-firewall.md",
     "reference/os-release.md",
     "reference/glossary.md",

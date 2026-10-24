@@ -263,5 +263,5 @@ A disk that is missing from the list needs its controller's driver. A machine wh
 - [Add software, drivers and kernel modules](add-software.md) adds the same drivers to the images
   the installed nodes run.
 - [Sign images for Secure Boot](sign-images.md) covers the db key.
-- [Architecture](../how-it-works/node/architecture.md#how-does-a-machine-become-a-node) explains
+- [Architecture for developers](../contribute/architecture.md#an-install-runs-in-fixed-steps) explains
   what the installer does during an install.
