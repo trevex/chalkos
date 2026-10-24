@@ -353,3 +353,28 @@ func TestCredentialsRole(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminCertificateLastsOneRun(t *testing.T) {
+	ta := newTestApp(t)
+	pair, err := adminCertificate(ta.secrets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
+	pool := x509.NewCertPool()
+	pool.AddCert(ca)
+	chains, err := cert.Verify(x509.VerifyOptions{Roots: pool, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role, _ := pki.ClientRole(chains); role != pki.RoleAdmin || cert.Subject.CommonName != "chalkctl" {
+		t.Errorf("certificate %s has role %q", cert.Subject, role)
+	}
+	if got := time.Until(cert.NotAfter); got > time.Hour || got < 59*time.Minute {
+		t.Errorf("the admin certificate lasts another %v, want an hour", got)
+	}
+}

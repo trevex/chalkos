@@ -321,3 +321,133 @@ func TestUnsyncedWriteWarns(t *testing.T) {
 		t.Error("another error became a warning")
 	}
 }
+
+func TestGenSecretsPlaintext(t *testing.T) {
+	ta := newTestApp(t)
+	out := filepath.Join(ta.dir, "new")
+	os.Mkdir(out, 0o755)
+	if err := ta.run(context.Background(), []string{"gen", "secrets", "--plaintext", "--out", out}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ta.stderr.String(), ".gitignore") {
+		t.Errorf("no warning about the unencrypted file: %q", ta.stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clustersecrets.Read(data, nil); err != nil {
+		t.Errorf("the secrets file does not read back: %v", err)
+	}
+	if info, _ := os.Stat(filepath.Join(out, "secrets.json")); info.Mode().Perm() != 0o600 {
+		t.Errorf("secrets.json mode = %v", info.Mode())
+	}
+	var pub clustersecrets.Public
+	pubData, _ := os.ReadFile(filepath.Join(out, "secrets.pub.json"))
+	if err := json.Unmarshal(pubData, &pub); err != nil || pub.OSCA.Certificate == "" || pub.OSCA.Key != "" || pub.NodeCA.Certificate == "" || pub.NodeCA.Key != "" || bytes.Contains(pubData, []byte("PRIVATE")) {
+		t.Errorf("secrets.pub.json = %s, %v", pubData, err)
+	}
+	err = ta.run(context.Background(), []string{"gen", "secrets", "--plaintext", "--out", out})
+	if err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Errorf("err = %v, want a refusal to overwrite the secrets", err)
+	}
+	if err := ta.run(context.Background(), []string{"gen", "secrets", "--out", out}); err == nil {
+		t.Error("generated secrets without recipients or --plaintext")
+	}
+}
+
+func TestGenSecretsAgeAndRecoveryKey(t *testing.T) {
+	ta := newTestApp(t)
+	id, _ := age.GenerateX25519Identity()
+	writeFile(t, filepath.Join(ta.dir, ".config", "chalkos", "age.key"), id.String()+"\n")
+	out := filepath.Join(ta.dir, "cluster")
+	os.Mkdir(out, 0o755)
+	if err := ta.run(context.Background(), []string{"gen", "secrets", "--recipient", id.Recipient().String(), "--out", out}); err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := os.ReadFile(filepath.Join(out, "secrets.age"))
+	if err != nil || !bytes.HasPrefix(encrypted, []byte("age-encryption.org/")) {
+		t.Fatalf("secrets.age = %.20q, %v", encrypted, err)
+	}
+
+	// The encrypted file, decrypted with the default identity.
+	inventory := writeInventory(t, out)
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--secrets", filepath.Join(out, "secrets.age"), "--inventory", inventory}); err != nil {
+		t.Fatal(err)
+	}
+	secrets, _ := clustersecrets.Read(encrypted, func() ([]age.Identity, error) { return []age.Identity{id}, nil })
+	want, _ := clustersecrets.RecoveryKey(secrets.RecoverySecret, "n1")
+	if got := strings.TrimSpace(ta.stdout.String()); got != want {
+		t.Errorf("recovery key = %q, want %q", got, want)
+	}
+
+	// The same file from standard input, as a secret manager would supply it.
+	ta.stdout.Reset()
+	ta.stdin = bytes.NewReader(encrypted)
+	if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--secrets", "-", "--inventory", inventory}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(ta.stdout.String()); got != want {
+		t.Errorf("recovery key from stdin = %q, want %q", got, want)
+	}
+}
+
+func TestReadInterruptible(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	release := make(chan struct{})
+	defer close(release)
+	restored := false
+	done := make(chan error)
+	go func() {
+		_, err := readInterruptible(ctx, func() ([]byte, error) { <-release; return []byte("late"), nil }, func() { restored = true })
+		done <- err
+	}()
+	cancel()
+	if err := <-done; !errors.Is(err, errInterrupted) || !restored {
+		t.Errorf("err = %v, restored = %v, want an interruption that restores the terminal", err, restored)
+	}
+
+	got, err := readInterruptible(context.Background(), func() ([]byte, error) { return []byte("pw"), nil }, func() { t.Error("restored after a completed read") })
+	if err != nil || string(got) != "pw" {
+		t.Errorf("read = %q, %v", got, err)
+	}
+}
+
+func TestDefaultIdentitiesSkipUnreadable(t *testing.T) {
+	ta := newTestApp(t)
+	id, _ := age.GenerateX25519Identity()
+	writeFile(t, filepath.Join(ta.dir, ".config", "chalkos", "age.key"), id.String()+"\n")
+	// An encrypted old-format SSH key without its .pub cannot be used.
+	broken := filepath.Join(ta.dir, ".ssh", "id_rsa")
+	writeFile(t, broken, "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nsecret material\n-----END RSA PRIVATE KEY-----\n")
+	ids, err := ta.ageIdentities(context.Background(), nil)
+	if err != nil || len(ids) != 1 {
+		t.Fatalf("identities = %v, %v, want the age key", ids, err)
+	}
+	warning := ta.stderr.String()
+	if !strings.Contains(warning, broken) || strings.Contains(warning, "secret material") || strings.Count(warning, "\n") != 1 {
+		t.Errorf("warning = %q, want one line naming the file", warning)
+	}
+
+	// No default identity loads.
+	os.Remove(filepath.Join(ta.dir, ".config", "chalkos", "age.key"))
+	if _, err := ta.ageIdentities(context.Background(), nil); err == nil {
+		t.Error("no error without a usable identity")
+	}
+	// An identity named on the command line must load.
+	if _, err := ta.ageIdentities(context.Background(), []string{broken}); err == nil || !strings.Contains(err.Error(), broken) {
+		t.Errorf("err = %v, want the named identity's failure", err)
+	}
+}
+
+func TestOlderSecretsFilesAreRefused(t *testing.T) {
+	ta := newTestApp(t)
+	for _, version := range []string{"1", "2"} {
+		writeFile(t, filepath.Join(ta.dir, "secrets.json"), `{"version": `+version+`, "osCA": {}, "admin": {}}`)
+		err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, "127.0.0.1:1"))
+		if err == nil || !strings.Contains(err.Error(), "version "+version+" is not supported") || !strings.Contains(err.Error(), "chalkctl gen secrets") {
+			t.Errorf("version %s: %v, want a refusal naming chalkctl gen secrets", version, err)
+		}
+	}
+}

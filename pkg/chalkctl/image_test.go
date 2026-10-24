@@ -106,3 +106,10 @@ func TestOpenImageTrustsOnlyItsOwnMetadata(t *testing.T) {
 		t.Errorf("without metadata.json: stderr = %q", stderr.String())
 	}
 }
+
+func TestImageContractNeedsSchemas(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := imageContract(dir); err == nil || !strings.Contains(err.Error(), dir+" has no schemas/") {
+		t.Errorf("err = %v", err)
+	}
+}
