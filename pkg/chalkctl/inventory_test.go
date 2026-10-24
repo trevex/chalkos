@@ -161,6 +161,19 @@ func TestValidateTheCluster(t *testing.T) {
 	}
 }
 
+// TestValidateRefusesAKeyNoCredentialCanCarry refuses a secretRef whose key could not name the
+// credential file the node writes for it, as the node does.
+func TestValidateRefusesAKeyNoCredentialCanCarry(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	secret := "apiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: ghcr}\nspec: {data: {\"a/b\": token}}\n"
+	registry := "apiVersion: oci.chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: ghcr}\nspec: {host: ghcr.io, username: bot, password: {secretRef: {name: ghcr, key: a/b}}}\n"
+	path := writeInventory(t, ta.dir, n1SystemDisk, n1Network, secret, registry)
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err == nil || !strings.Contains(err.Error(), `key "a/b" of Secret "ghcr" cannot name a credential`) {
+		t.Errorf("validate of a key with a slash = %v", err)
+	}
+}
+
 // TestValidateKubernetes checks a Kubernetes node's config against its image's image.json as the
 // node does, and names a node whose image directory holds no image.
 func TestValidateKubernetes(t *testing.T) {

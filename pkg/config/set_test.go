@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -215,5 +217,43 @@ func TestCheckSecretRefsIgnoresAnUnmarkedUserMapEntry(t *testing.T) {
 	}}}
 	if err := checkSecretRefs(docs, extraSchemaDir(t), map[string]map[string]string{}); err != nil {
 		t.Fatalf("err = %v, want nil: the schema never marks spec.data as a secret reference", err)
+	}
+}
+
+// registryOf is a Registry of host whose password is the key of the Secret secret.
+func registryOf(host, secret, key string) string {
+	return fmt.Sprintf("---\napiVersion: oci.chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: %s}\nspec: {host: %s, username: bot, password: {secretRef: {name: %s, key: %s}}}\n", host, host, secret, strconv.Quote(key))
+}
+
+// secretOf is the Secret name holding token under each of keys.
+func secretOf(name string, keys ...string) string {
+	data := make([]string, len(keys))
+	for i, k := range keys {
+		data[i] = strconv.Quote(k) + ": token"
+	}
+	return fmt.Sprintf("---\napiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: %s}\nspec: {data: {%s}}\n", name, strings.Join(data, ", "))
+}
+
+// TestNewSetRefusesAKeyNoCredentialCanCarry refuses a secretRef that could not become a
+// credential file: systemd loads each file as the credential secret_<file> and refuses a unit
+// whose credential IDs are not valid file and fd names, printable ASCII without a colon and at
+// most 255 bytes with the prefix.
+func TestNewSetRefusesAKeyNoCredentialCanCarry(t *testing.T) {
+	if _, err := parseSet(t, minimal+secretOf("ghcr", "token")+registryOf("ghcr.io", "ghcr", "token")); err != nil {
+		t.Errorf("err = %v", err)
+	}
+	for _, key := range []string{"a/b", "a:b", ".hidden", "schlüssel", "tab\there", strings.Repeat("k", 244)} {
+		if _, err := parseSet(t, minimal+secretOf("ghcr", key)+registryOf("ghcr.io", "ghcr", key)); err == nil || !strings.Contains(err.Error(), strconv.Quote(key)+` of Secret "ghcr" cannot name a credential`) {
+			t.Errorf("key %q: %v", key, err)
+		}
+	}
+	// secret_ghcr.<key> is 255 bytes.
+	key := strings.Repeat("k", 243)
+	if _, err := parseSet(t, minimal+secretOf("ghcr", key)+registryOf("ghcr.io", "ghcr", key)); err != nil {
+		t.Errorf("a credential ID of 255 bytes: %v", err)
+	}
+	clash := minimal + secretOf("a.b", "c") + secretOf("a", "b.c") + registryOf("one.example.org", "a.b", "c") + registryOf("two.example.org", "a", "b.c")
+	if _, err := parseSet(t, clash); err == nil || !strings.Contains(err.Error(), "would both be the credential file a.b.c") {
+		t.Errorf("two references of one file: %v", err)
 	}
 }

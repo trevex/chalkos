@@ -65,9 +65,6 @@ func translate(name string, docs []config.Document, schemas *schema.Schemas, t c
 	if err != nil {
 		return nil, identity.Identity{}, err
 	}
-	if err := store.CheckCredentials(set.Documents(), schemas); err != nil {
-		return nil, identity.Identity{}, err
-	}
 	if err := set.CheckRegistries(); err != nil {
 		return nil, identity.Identity{}, err
 	}

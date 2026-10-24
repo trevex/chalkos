@@ -23,9 +23,9 @@ var singletons = []struct{ apiVersion, kind string }{
 
 // NewSet checks docs as a node's config against the image's schemas: each document is valid, its
 // kind is one the image accepts, kinds that are not multiple appear once, names are unique per
-// kind, the SystemDisk is present, and every secretRef names a key of a Secret in the set. The
-// Cluster and Node documents an image with Kubernetes requires are its cluster's, which
-// ClusterOf checks.
+// kind, the SystemDisk is present, and every secretRef names a key of a Secret in the set and a
+// credential file of its own. The Cluster and Node documents an image with Kubernetes requires
+// are its cluster's, which ClusterOf checks.
 func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 	multiple := map[string]bool{}
 	for _, k := range s.Kinds() {
@@ -128,9 +128,11 @@ func (s *Set) ResolveSecret(ref SecretRef) (string, error) {
 
 // checkSecretRefs finds every secretRef a document's own schema marks with
 // "x-chalkos-secret-ref", at whatever depth and shape that schema gives it, and checks that the
-// Secret and its key exist. It never mistakes a user's own data for one: a map entry named
-// secretRef that the schema does not itself mark is just data, not a reference.
+// Secret and its key exist and that the reference can become a credential file of its own, as
+// the node writes one for each unit that reads it. It never mistakes a user's own data for one:
+// a map entry named secretRef that the schema does not itself mark is just data, not a reference.
 func checkSecretRefs(docs []Document, s *schema.Schemas, secrets map[string]map[string]string) error {
+	files := map[string]SecretRef{}
 	for _, d := range docs {
 		raw, ok := s.Raw(d.APIVersion, d.Kind)
 		if !ok {
@@ -147,6 +149,15 @@ func checkSecretRefs(docs []Document, s *schema.Schemas, secrets map[string]map[
 			if _, ok := data[ref.Key]; !ok {
 				return fmt.Errorf("%s names key %q of Secret %q, which it does not hold", d, ref.Key, ref.Name)
 			}
+			if err := CheckCredential(ref); err != nil {
+				return fmt.Errorf("%s: %w", d, err)
+			}
+			// Secret a.b with key c and Secret a with key b.c share the file a.b.c.
+			name := CredentialFile(ref)
+			if other, ok := files[name]; ok && other != ref {
+				return fmt.Errorf("%s: key %q of Secret %q and key %q of Secret %q would both be the credential file %s; rename one", d, ref.Key, ref.Name, other.Key, other.Name, name)
+			}
+			files[name] = ref
 			return nil
 		})
 		if err != nil {

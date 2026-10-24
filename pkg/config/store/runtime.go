@@ -56,26 +56,6 @@ func ReadRuntime(runDir string) ([]config.Document, error) {
 	return readDocuments(root)
 }
 
-// CheckCredentials refuses a set whose secretRefs could not all become credential files: a key
-// that is no file name, or two references that would share a file name. It checks every
-// reference in the set, whichever units read them, so it needs no map of units.
-func CheckCredentials(docs []config.Document, schemas *schema.Schemas) error {
-	seen := map[string]config.SecretRef{}
-	for _, d := range docs {
-		for _, ref := range config.SecretRefs(d, schemas) {
-			if err := checkCredential(ref); err != nil {
-				return fmt.Errorf("%s: %w", d, err)
-			}
-			name := credentialFile(ref)
-			if other, ok := seen[name]; ok && other != ref {
-				return fmt.Errorf("%s: key %q of Secret %q and key %q of Secret %q would both be the credential file %s; rename one", d, ref.Key, ref.Name, other.Key, other.Name, name)
-			}
-			seen[name] = ref
-		}
-	}
-	return nil
-}
-
 // credentials returns, by unit, the files of the values its kinds' secretRefs name.
 func credentials(docs []config.Document, schemas *schema.Schemas, units map[string][]string) (map[string]map[string][]byte, error) {
 	data := map[string]map[string]string{}
@@ -95,53 +75,19 @@ func credentials(docs []config.Document, schemas *schema.Schemas, units map[stri
 				continue
 			}
 			for _, ref := range config.SecretRefs(d, schemas) {
-				if err := checkCredential(ref); err != nil {
+				if err := config.CheckCredential(ref); err != nil {
 					return nil, fmt.Errorf("%s: %w", d, err)
 				}
 				v, ok := data[ref.Name][ref.Key]
 				if !ok {
 					return nil, fmt.Errorf("%s names key %q of Secret %q, which the config does not hold", d, ref.Key, ref.Name)
 				}
-				files[credentialFile(ref)] = []byte(v)
+				files[config.CredentialFile(ref)] = []byte(v)
 			}
 		}
 		out[unit] = files
 	}
 	return out, nil
-}
-
-// CredentialPrefix is the ID a granted unit's LoadCredential= gives its credentials directory. systemd
-// loads each file in it as the credential <CredentialPrefix>_<file>, so the Nix module's
-// LoadCredential= must use the same prefix for checkCredential to hold.
-const CredentialPrefix = "secret"
-
-func credentialFile(ref config.SecretRef) string { return ref.Name + "." + ref.Key }
-
-// checkCredential refuses a reference whose file would not become a credential: systemd fails a
-// unit whose credentials directory holds a file whose credential ID is not valid.
-func checkCredential(ref config.SecretRef) error {
-	if !validName(ref.Name) || !validName(ref.Key) || !validName(credentialFile(ref)) ||
-		!credentialNameValid(CredentialPrefix+"_"+credentialFile(ref)) {
-		return fmt.Errorf("key %q of Secret %q cannot name a credential: use printable ASCII without / or :, at most %d bytes for Secret and key together", ref.Key, ref.Name, maxCredentialName-len(CredentialPrefix)-2)
-	}
-	return nil
-}
-
-// maxCredentialName is systemd's FDNAME_MAX and NAME_MAX, which both bound a credential name.
-const maxCredentialName = 255
-
-// credentialNameValid is systemd's credential_name_valid: a valid file name (not empty, . or ..,
-// no /, at most NAME_MAX bytes) that is also a valid fd name (bytes 32 to 126 alone, no :).
-func credentialNameValid(s string) bool {
-	if s == "" || s == "." || s == ".." || len(s) > maxCredentialName {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		if c := s[i]; c < ' ' || c > '~' || c == ':' || c == '/' {
-			return false
-		}
-	}
-	return true
 }
 
 func secretData(d config.Document) map[string]string {
@@ -191,10 +137,10 @@ func syncFiles(dir string, files map[string][]byte) error {
 // reference reads a file outside dir.
 func CredentialSecrets(dir string) func(config.SecretRef) (string, bool) {
 	return func(ref config.SecretRef) (string, bool) {
-		if dir == "" || checkCredential(ref) != nil {
+		if dir == "" || config.CheckCredential(ref) != nil {
 			return "", false
 		}
-		data, err := os.ReadFile(filepath.Join(dir, CredentialPrefix+"_"+credentialFile(ref)))
+		data, err := os.ReadFile(filepath.Join(dir, config.CredentialPrefix+"_"+config.CredentialFile(ref)))
 		return string(data), err == nil
 	}
 }
