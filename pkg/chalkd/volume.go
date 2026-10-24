@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -91,7 +93,7 @@ func enrolled(recorded, section storage.Section) string {
 	if section.Fallback == storage.FallbackNone {
 		return ""
 	}
-	for _, name := range sortedNames(section.Volumes) {
+	for _, name := range slices.Sorted(maps.Keys(section.Volumes)) {
 		if _, ok := recorded.Volumes[name]; !ok && section.Volumes[name].Encryption == storage.EncryptionTPM2 {
 			return name
 		}
@@ -214,7 +216,7 @@ func (s *Server) elsewhere(err error, section storage.Section, writing []byte) e
 		return err
 	}
 	var notes []string
-	for _, name := range sortedNames(recorded.Volumes) {
+	for _, name := range slices.Sorted(maps.Keys(recorded.Volumes)) {
 		if name == storage.VarVolume || hasVolume(section, name) || hasVolume(ran.section, name) {
 			continue
 		}

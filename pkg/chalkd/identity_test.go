@@ -3,9 +3,11 @@ package chalkd
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -93,7 +95,7 @@ func documentsOf(identity string) []config.Document {
 			"var":        map[string]any{"size": orNull(v.Size), "encryption": map[string]any{"mode": mode(v.Encryption)}},
 		}),
 	}
-	for _, name := range sortedNames(sec.Volumes) {
+	for _, name := range slices.Sorted(maps.Keys(sec.Volumes)) {
 		vol := sec.Volumes[name]
 		if name == storage.VarVolume {
 			continue

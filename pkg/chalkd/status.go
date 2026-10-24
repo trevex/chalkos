@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -40,7 +42,7 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	for _, name := range sortedNames(status.Disks) {
+	for _, name := range slices.Sorted(maps.Keys(status.Disks)) {
 		d := status.Disks[name]
 		resp.Disks = append(resp.Disks, &nodev1.DiskStatus{Name: name, Device: d.Device, Error: d.Error})
 	}
@@ -53,7 +55,7 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	for _, name := range sortedNames(section.Volumes) {
+	for _, name := range slices.Sorted(maps.Keys(section.Volumes)) {
 		v := section.Volumes[name]
 		resp.Volumes = append(resp.Volumes, &nodev1.VolumeStatus{
 			Name:       name,
@@ -118,7 +120,7 @@ func (s *Server) outputStatus() ([]*nodev1.OutputStatus, error) {
 		log.Printf("the outputs' status: %v", err)
 	}
 	var list []*nodev1.OutputStatus
-	for _, name := range sortedNames(defs) {
+	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		list = append(list, &nodev1.OutputStatus{Name: name, Hash: recorded[name].Hash, Error: recorded[name].Error})
 	}
 	return list, nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -399,7 +400,7 @@ func (k *Kubernetes) countEncrypted(ctx context.Context, c k8s.Cluster, share kp
 		if err != nil {
 			return nil, err
 		}
-		for _, key := range sortedNames(byKey) {
+		for _, key := range slices.Sorted(maps.Keys(byKey)) {
 			counts = append(counts, &nodev1.EncryptedObjects{Resource: resource, Key: key, Objects: byKey[key]})
 		}
 	}

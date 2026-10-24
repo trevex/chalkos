@@ -2,8 +2,10 @@ package chalkd
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"connectrpc.com/connect"
 
@@ -95,7 +97,7 @@ func (s *Server) Disks(ctx context.Context, _ *connect.Request[nodev1.DisksReque
 		case bootErr == nil && d.Name == boot.Name:
 			disk.Usage = "boot"
 		default:
-			for _, name := range sortedNames(pins.Disks) {
+			for _, name := range slices.Sorted(maps.Keys(pins.Disks)) {
 				if name != storage.SystemDisk && pins.Disks[name].Identity.Same(d.Identity) {
 					disk.Usage = "disk " + name
 				}
