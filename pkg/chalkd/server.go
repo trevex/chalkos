@@ -158,7 +158,7 @@ type Server struct {
 // permission is where an RPC may be called and the least role it needs.
 type permission struct {
 	modes []nodev1.Mode
-	role  string
+	role  pki.Role
 }
 
 var permissions = map[string]permission{
@@ -206,7 +206,7 @@ func (s *Server) Handler() http.Handler {
 		connect.WithCompression("gzip", nil, nil),
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		role := ""
+		var role pki.Role
 		ctx := r.Context()
 		switch {
 		case r.TLS != nil && len(r.TLS.PeerCertificates) > 0:
@@ -277,8 +277,8 @@ func (a authorizer) check(ctx context.Context, procedure string) error {
 	if err, ok := ctx.Value(unverifiedKey{}).(error); ok {
 		return connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("the client certificate does not verify against the OS CAs the node trusts: %w", err))
 	}
-	role, _ := ctx.Value(roleKey{}).(string)
-	if !pki.Allows(role, r.role) {
+	role, _ := ctx.Value(roleKey{}).(pki.Role)
+	if !role.Allows(r.role) {
 		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("%s needs the %s role", procedure, r.role))
 	}
 	return nil

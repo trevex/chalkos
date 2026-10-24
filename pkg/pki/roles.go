@@ -8,26 +8,32 @@ import (
 	"time"
 )
 
-// Roles a client certificate grants through its Organization, from most to least privileged.
-// RoleNode is the role of every certificate the node CA issued, whatever its Organization; it is
-// none of the others.
+// Role is what a certificate allows its holder to call on a node.
+type Role string
+
+// The roles. RoleNode is the role of every certificate the node CA issued, whatever its
+// Organization; it is none of the others.
 const (
-	RoleAdmin    = "admin"
-	RoleOperator = "operator"
-	RoleReader   = "reader"
-	RoleNode     = "node"
+	RoleAdmin    Role = "admin"
+	RoleOperator Role = "operator"
+	RoleReader   Role = "reader"
+	RoleNode     Role = "node"
 )
+
+// clientRoles are the roles a client certificate grants through its Organization, from most to
+// least privileged.
+var clientRoles = []Role{RoleAdmin, RoleOperator, RoleReader}
 
 // IssueClient issues a client certificate of the OS CA whose Organization grants role, valid
 // for validity and never beyond the CA.
-func IssueClient(osCA CertKey, name, role string, validity time.Duration, now time.Time) (CertKey, error) {
-	if !slices.Contains([]string{RoleAdmin, RoleOperator, RoleReader}, role) {
+func IssueClient(osCA CertKey, name string, role Role, validity time.Duration, now time.Time) (CertKey, error) {
+	if !slices.Contains(clientRoles, role) {
 		return CertKey{}, fmt.Errorf("unknown role %q", role)
 	}
 	if validity <= 0 {
 		return CertKey{}, errors.New("a client certificate needs a validity")
 	}
-	template, err := newTemplate(name, []string{role}, now, validity)
+	template, err := newTemplate(name, []string{string(role)}, now, validity)
 	if err != nil {
 		return CertKey{}, err
 	}
@@ -36,11 +42,11 @@ func IssueClient(osCA CertKey, name, role string, validity time.Duration, now ti
 	return issue(osCA, template, now)
 }
 
-// Role returns the most privileged client role a certificate's Organization grants; ok is
+// RoleOf returns the most privileged client role a certificate's Organization grants; ok is
 // false when it grants none.
-func Role(cert *x509.Certificate) (role string, ok bool) {
-	for _, r := range []string{RoleAdmin, RoleOperator, RoleReader} {
-		if slices.Contains(cert.Subject.Organization, r) {
+func RoleOf(cert *x509.Certificate) (role Role, ok bool) {
+	for _, r := range clientRoles {
+		if slices.Contains(cert.Subject.Organization, string(r)) {
 			return r, true
 		}
 	}
@@ -52,7 +58,7 @@ func Role(cert *x509.Certificate) (role string, ok bool) {
 // intermediate the OS CA issues, so the client is a node whatever its Organization says: control
 // planes hold the node CA and must not be able to issue anything else. A certificate the root
 // issued directly gets the role of its Organization.
-func ClientRole(chains [][]*x509.Certificate) (role string, ok bool) {
+func ClientRole(chains [][]*x509.Certificate) (role Role, ok bool) {
 	if len(chains) == 0 {
 		return "", false
 	}
@@ -66,17 +72,17 @@ func ClientRole(chains [][]*x509.Certificate) (role string, ok bool) {
 			return "", false
 		}
 	}
-	return Role(chains[0][0])
+	return RoleOf(chains[0][0])
 }
 
-// Allows reports whether a client with role may call something that requires the role need. The
-// node role is apart from the others: it allows only what needs it, and only it allows that. An
-// unrecognised need fails closed: Allows reports false rather than letting every role through.
-func Allows(role, need string) bool {
-	if role == RoleNode || need == RoleNode {
-		return role == need && role != ""
+// Allows reports whether a client with the role may call something that requires the role need.
+// The node role is apart from the others: it allows only what needs it, and only it allows that.
+// An unrecognised need fails closed: Allows reports false rather than letting every role through.
+func (r Role) Allows(need Role) bool {
+	if r == RoleNode || need == RoleNode {
+		return r == need
 	}
-	rank := map[string]int{RoleReader: 1, RoleOperator: 2, RoleAdmin: 3}
-	r, ok := rank[need]
-	return ok && rank[role] >= r
+	n := slices.Index(clientRoles, need)
+	i := slices.Index(clientRoles, r)
+	return n >= 0 && i >= 0 && i <= n
 }

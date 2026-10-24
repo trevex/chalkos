@@ -15,7 +15,7 @@ import (
 func TestConfigRoundTrip(t *testing.T) {
 	now := time.Now()
 	osCA, _ := pki.NewOSCA(now)
-	c, err := NewConfig(osCA, osCA.Certificate, "alice", pki.RoleReader, 30*24*time.Hour, now)
+	c, err := NewConfig("alice", pki.RoleReader, osCA, osCA.Certificate, 30*24*time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	if out := fmt.Sprintf("%v %+v %#v", got, got, got); strings.Contains(out, "PRIVATE KEY") {
 		t.Errorf("a formatted client file holds its key: %s", out)
 	}
-	if _, err := NewConfig(osCA, osCA.Certificate, "bob", pki.RoleNode, time.Hour, now); err == nil {
+	if _, err := NewConfig("bob", pki.RoleNode, osCA, osCA.Certificate, time.Hour, now); err == nil {
 		t.Error("issued a client file for the node role")
 	}
 }
@@ -48,11 +48,11 @@ func TestConfigValidate(t *testing.T) {
 	osCA, _ := pki.NewOSCA(now)
 	nodeCA, _ := pki.NewNodeCA(osCA, now)
 	other, _ := pki.NewOSCA(now)
-	valid, err := NewConfig(osCA, osCA.Certificate, "alice", pki.RoleOperator, time.Hour, now)
+	valid, err := NewConfig("alice", pki.RoleOperator, osCA, osCA.Certificate, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fromNodeCA, _ := pki.IssueLeaf(nodeCA, pki.Leaf{CommonName: "alice", Organization: []string{pki.RoleOperator}, Client: true}, now)
+	fromNodeCA, _ := pki.IssueLeaf(nodeCA, pki.Leaf{CommonName: "alice", Organization: []string{string(pki.RoleOperator)}, Client: true}, now)
 	otherKey, _ := pki.IssueClient(osCA, "alice", pki.RoleOperator, time.Hour, now)
 	for name, edit := range map[string]func(c *Config){
 		"another version": func(c *Config) { c.Version = 1 },
@@ -96,7 +96,7 @@ func TestConfigOfVersion1(t *testing.T) {
 func TestConfigOfVersion2(t *testing.T) {
 	now := time.Now()
 	osCA, _ := pki.NewOSCA(now)
-	c, err := NewConfig(osCA, osCA.Certificate, "alice", pki.RoleReader, time.Hour, now)
+	c, err := NewConfig("alice", pki.RoleReader, osCA, osCA.Certificate, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestConfigOfVersion2(t *testing.T) {
 func TestConfigNamesTheUser(t *testing.T) {
 	now := time.Now()
 	osCA, _ := pki.NewOSCA(now)
-	c, err := NewConfig(osCA, osCA.Certificate, "alice", pki.RoleReader, time.Hour, now)
+	c, err := NewConfig("alice", pki.RoleReader, osCA, osCA.Certificate, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}

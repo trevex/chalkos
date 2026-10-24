@@ -62,7 +62,7 @@ func TestIssueClient(t *testing.T) {
 	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool(t, ca), CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
 		t.Errorf("client certificate does not verify: %v", err)
 	}
-	if role, ok := Role(cert); !ok || role != RoleAdmin {
+	if role, ok := RoleOf(cert); !ok || role != RoleAdmin {
 		t.Errorf("role = %q, %v; want admin", role, ok)
 	}
 	if got := cert.NotAfter.Sub(now); got != LeafValidity {
@@ -106,7 +106,7 @@ func TestIssueNode(t *testing.T) {
 	if got := cert.NotAfter.Sub(now); got != LeafValidity {
 		t.Errorf("node certificate valid for %v after now, want %v", got, LeafValidity)
 	}
-	if role, ok := Role(cert); ok {
+	if role, ok := RoleOf(cert); ok {
 		t.Errorf("a node certificate grants the client role %s through its Organization", role)
 	}
 	// The chain is what chalkd presents: without the node CA's certificate the root alone does
@@ -150,7 +150,7 @@ func TestVerifyNode(t *testing.T) {
 	leafOnly += "-----END CERTIFICATE-----\n"
 	expired := now.Add(2 * LeafValidity)
 	// A leaf the OS CA issued itself, followed by a valid node CA it was not signed by.
-	rootIssued, err := IssueLeaf(osCA, Leaf{CommonName: "w1", Organization: []string{RoleNode}, DNSNames: []string{"w1"}, Server: true, Client: true}, now)
+	rootIssued, err := IssueLeaf(osCA, Leaf{CommonName: "w1", Organization: []string{string(RoleNode)}, DNSNames: []string{"w1"}, Server: true, Client: true}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestNormalizeFingerprint(t *testing.T) {
 
 func TestAllows(t *testing.T) {
 	for _, c := range []struct {
-		role, need string
+		role, need Role
 		want       bool
 	}{
 		{RoleAdmin, RoleAdmin, true},
@@ -237,7 +237,7 @@ func TestAllows(t *testing.T) {
 		{"", RoleNode, false},
 		{RoleNode, RoleAdmin, false},
 	} {
-		if got := Allows(c.role, c.need); got != c.want {
+		if got := c.role.Allows(c.need); got != c.want {
 			t.Errorf("Allows(%q, %q) = %v, want %v", c.role, c.need, got, c.want)
 		}
 	}
@@ -474,15 +474,15 @@ func TestClientRole(t *testing.T) {
 		name         string
 		ca           CertKey
 		organization []string
-		role         string
+		role         Role
 		ok           bool
 	}{
-		{"admin from the OS CA", osCA, []string{RoleAdmin}, RoleAdmin, true},
-		{"reader from the OS CA", osCA, []string{RoleReader}, RoleReader, true},
-		{"node organization from the OS CA", osCA, []string{RoleNode}, "", false},
+		{"admin from the OS CA", osCA, []string{string(RoleAdmin)}, RoleAdmin, true},
+		{"reader from the OS CA", osCA, []string{string(RoleReader)}, RoleReader, true},
+		{"node organization from the OS CA", osCA, []string{string(RoleNode)}, "", false},
 		{"no organization from the OS CA", osCA, nil, "", false},
-		{"admin from the node CA", nodeCA, []string{RoleAdmin}, RoleNode, true},
-		{"operator and reader from the node CA", nodeCA, []string{RoleOperator, RoleReader}, RoleNode, true},
+		{"admin from the node CA", nodeCA, []string{string(RoleAdmin)}, RoleNode, true},
+		{"operator and reader from the node CA", nodeCA, []string{string(RoleOperator), string(RoleReader)}, RoleNode, true},
 		{"no organization from the node CA", nodeCA, nil, RoleNode, true},
 	} {
 		leaf := signWith(t, tc.ca, &x509.Certificate{Subject: pkix.Name{CommonName: "c", Organization: tc.organization}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})

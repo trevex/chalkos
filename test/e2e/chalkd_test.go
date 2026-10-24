@@ -51,7 +51,7 @@ func readSecrets() (clustersecrets.Secrets, error) {
 }
 
 // clientCertificate issues a client certificate of the role from the test OS CA.
-func clientCertificate(t *testing.T, role string) *tls.Certificate {
+func clientCertificate(t *testing.T, role pki.Role) *tls.Certificate {
 	t.Helper()
 	cert, err := issueClientCertificate(role)
 	if err != nil {
@@ -60,12 +60,12 @@ func clientCertificate(t *testing.T, role string) *tls.Certificate {
 	return cert
 }
 
-func issueClientCertificate(role string) (*tls.Certificate, error) {
+func issueClientCertificate(role pki.Role) (*tls.Certificate, error) {
 	s, err := readSecrets()
 	if err != nil {
 		return nil, err
 	}
-	ck, err := pki.IssueClient(s.OSCA, role, role, time.Hour, time.Now())
+	ck, err := pki.IssueClient(s.OSCA, string(role), role, time.Hour, time.Now())
 	if err != nil {
 		return nil, err
 	}

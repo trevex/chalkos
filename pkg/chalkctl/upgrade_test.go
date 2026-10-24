@@ -389,9 +389,9 @@ type fakeRoleKey struct{}
 // derives it from the certificate's Organization.
 func withRoles(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		role := ""
+		var role pki.Role
 		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
-			role, _ = pki.Role(r.TLS.PeerCertificates[0])
+			role, _ = pki.RoleOf(r.TLS.PeerCertificates[0])
 		}
 		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), fakeRoleKey{}, role)))
 	})
@@ -399,7 +399,7 @@ func withRoles(h http.Handler) http.Handler {
 
 // needsAdmin refuses what only an admin may do, as chalkd does.
 func needsAdmin(ctx context.Context, what string) error {
-	if role, _ := ctx.Value(fakeRoleKey{}).(string); !pki.Allows(role, pki.RoleAdmin) {
+	if role, _ := ctx.Value(fakeRoleKey{}).(pki.Role); !role.Allows(pki.RoleAdmin) {
 		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("%s needs the admin role", what))
 	}
 	return nil
@@ -1335,7 +1335,7 @@ func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.onPlatform(t, "w3", "kvm")
-	c, err := client.NewConfig(l.ta.secrets.OSCA, l.ta.secrets.OSCABundle(), "ops", pki.RoleAdmin, time.Hour, time.Now())
+	c, err := client.NewConfig("ops", pki.RoleAdmin, l.ta.secrets.OSCA, l.ta.secrets.OSCABundle(), time.Hour, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

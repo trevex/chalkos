@@ -168,7 +168,7 @@ func unnamedChain(t *testing.T) []byte {
 	}
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
-		Subject:      pkix.Name{Organization: []string{pki.RoleNode}},
+		Subject:      pkix.Name{Organization: []string{string(pki.RoleNode)}},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,

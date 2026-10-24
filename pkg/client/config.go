@@ -25,8 +25,8 @@ type Config struct {
 	Version int `json:"version"`
 	// Name is the user's name, the certificate's Common Name, and Role the role its Organization
 	// grants.
-	Name string `json:"name"`
-	Role string `json:"role"`
+	Name string   `json:"name"`
+	Role pki.Role `json:"role"`
 	// Certificate and Key are PEM.
 	Certificate string `json:"certificate"`
 	Key         string `json:"key"`
@@ -35,9 +35,10 @@ type Config struct {
 	OSCA string `json:"osCA"`
 }
 
-// NewConfig issues a client certificate of the role from the OS CA for a new key, valid for
-// validity and never beyond the OS CA, for a cluster whose nodes chain to the OS CAs trusted.
-func NewConfig(osCA pki.CertKey, trusted, name, role string, validity time.Duration, now time.Time) (Config, error) {
+// NewConfig issues the user name a client certificate of the role from the OS CA for a new key,
+// valid for validity and never beyond the OS CA, for a cluster whose nodes chain to the OS CAs
+// trusted.
+func NewConfig(name string, role pki.Role, osCA pki.CertKey, trusted string, validity time.Duration, now time.Time) (Config, error) {
 	ck, err := pki.IssueClient(osCA, name, role, validity, now)
 	if err != nil {
 		return Config{}, err

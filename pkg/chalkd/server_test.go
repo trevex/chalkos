@@ -263,7 +263,7 @@ func identityOf(t *testing.T, s *Server) string {
 type creds struct {
 	ca      pki.CertKey
 	pool    *x509.CertPool
-	clients map[string]*tls.Certificate
+	clients map[pki.Role]*tls.Certificate
 	nodeCA  pki.CertKey
 	node    pki.CertKey
 }
@@ -281,10 +281,10 @@ func newCredsAt(t *testing.T, now time.Time) creds {
 		t.Fatal(err)
 	}
 	cert, _ := pki.ParseCertificate([]byte(ca.Certificate))
-	c := creds{ca: ca, pool: x509.NewCertPool(), clients: map[string]*tls.Certificate{}}
+	c := creds{ca: ca, pool: x509.NewCertPool(), clients: map[pki.Role]*tls.Certificate{}}
 	c.pool.AddCert(cert)
-	for _, role := range []string{pki.RoleAdmin, pki.RoleOperator, pki.RoleReader} {
-		ck, err := pki.IssueClient(ca, role, role, time.Hour, now)
+	for _, role := range []pki.Role{pki.RoleAdmin, pki.RoleOperator, pki.RoleReader} {
+		ck, err := pki.IssueClient(ca, string(role), role, time.Hour, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -303,7 +303,7 @@ func newCredsAt(t *testing.T, now time.Time) creds {
 	c.clients[pki.RoleNode] = &pair
 	c.clients[unknownOrganization] = clientWithOrganization(t, ca, []string{"root"})
 	c.clients[noOrganization] = clientWithOrganization(t, ca, nil)
-	admin := clientWithOrganization(t, nodeCA, []string{pki.RoleAdmin})
+	admin := clientWithOrganization(t, nodeCA, []string{string(pki.RoleAdmin)})
 	nodeCACert, _ := pki.ParseCertificate([]byte(nodeCA.Certificate))
 	admin.Certificate = append(admin.Certificate, nodeCACert.Raw)
 	c.clients[nodeCAAdmin] = admin
@@ -483,9 +483,9 @@ func TestAuthorisation(t *testing.T) {
 		mode      nodev1.Mode
 		clientCAs bool
 		// codes holds, by role (empty: no certificate), the outcome of each procedure.
-		codes map[string]map[string]connect.Code
+		codes map[pki.Role]map[string]connect.Code
 	}{
-		{"normal", normal, true, map[string]map[string]connect.Code{
+		{"normal", normal, true, map[pki.Role]map[string]connect.Code{
 			// The node has no Kubernetes: refusing EtcdMembers means the call got through.
 			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
 				"EtcdMembers": connect.CodeFailedPrecondition, "EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied,
@@ -510,14 +510,14 @@ func TestAuthorisation(t *testing.T) {
 			nodeCAAdmin:  nodeRole,
 			pki.RoleNode: nodeRole,
 		}},
-		{"maintenance with OS CA", maintenance, true, map[string]map[string]connect.Code{
+		{"maintenance with OS CA", maintenance, true, map[pki.Role]map[string]connect.Code{
 			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeFailedPrecondition},
 			// A header without a target is refused after authorisation.
 			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyConfig": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeFailedPrecondition, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeFailedPrecondition,
 				"UncordonNode": connect.CodeFailedPrecondition, "GetConfig": connect.CodeFailedPrecondition, "RevokeNode": connect.CodeFailedPrecondition, "UnrevokeNode": connect.CodeFailedPrecondition},
 			unknownOrganization: {"Info": connect.CodePermissionDenied, "Install": connect.CodePermissionDenied},
 		}},
-		{"maintenance on a generic image", maintenance, false, map[string]map[string]connect.Code{
+		{"maintenance on a generic image", maintenance, false, map[pki.Role]map[string]connect.Code{
 			"": {"Info": 0, "Install": connect.CodeInvalidArgument, "Reboot": 0, "Disks": 0, "Contract": 0, "ResetVolume": connect.CodeFailedPrecondition},
 		}},
 	} {

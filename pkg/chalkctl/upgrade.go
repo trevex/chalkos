@@ -52,7 +52,7 @@ type upgradeRun struct {
 	// so with an inventory withheld is set and the run sends none: each node carries its own over.
 	// A partial cluster has no config to send, and each node says so. A node that refuses to show
 	// its config sets withheld too, should the role chalkctl read be wrong.
-	role         string
+	role         pki.Role
 	withheld     atomic.Bool
 	withholdOnce sync.Once
 	// diffing is set for upgrade --diff, which changes nothing.
@@ -153,7 +153,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 		return err
 	}
 	// The nodes refuse an upgrade below the operator role, but only once a worker is drained.
-	if role := creds.role(); !pki.Allows(role, pki.RoleOperator) {
+	if role := creds.role(); !role.Allows(pki.RoleOperator) {
 		return fmt.Errorf("upgrade needs the %s role; the %s role may not upgrade nodes", pki.RoleOperator, roleLabel(role))
 	}
 	for name := range addresses {
@@ -199,9 +199,9 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	}
 	r.role = creds.role()
 	switch {
-	case !pki.Allows(r.role, pki.RoleAdmin) && f.diff:
+	case !r.role.Allows(pki.RoleAdmin) && f.diff:
 		return r.diffNeedsAdmin()
-	case !pki.Allows(r.role, pki.RoleAdmin):
+	case !r.role.Allows(pki.RoleAdmin):
 		// A partial cluster has no inventory, so there is no config to withhold, and each node
 		// says that it carries its own over.
 		if !r.cluster.partial {
@@ -289,11 +289,11 @@ func (r *upgradeRun) roleName() string {
 }
 
 // roleLabel names a role in messages, as "the ... role".
-func roleLabel(role string) string {
+func roleLabel(role pki.Role) string {
 	if role == "" {
 		return "client file's"
 	}
-	return role
+	return string(role)
 }
 
 // diffNeedsAdmin is the error of upgrade --diff with credentials below admin, which may neither

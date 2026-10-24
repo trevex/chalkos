@@ -54,7 +54,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	if h == nil {
 		return nil, failed(connect.CodeInvalidArgument, "the first upgrade message must be the header")
 	}
-	if role, _ := ctx.Value(roleKey{}).(string); (h.GetConfig() != "" || h.GetFallbackSecret() != "") && !pki.Allows(role, pki.RoleAdmin) {
+	if role, _ := ctx.Value(roleKey{}).(pki.Role); (h.GetConfig() != "" || h.GetFallbackSecret() != "") && !role.Allows(pki.RoleAdmin) {
 		return nil, failed(connect.CodePermissionDenied, "%s with config or a fallback secret needs the %s role; without them the node carries its own config over", stream.Spec().Procedure, pki.RoleAdmin)
 	}
 	img := h.GetImage()

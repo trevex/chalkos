@@ -35,7 +35,7 @@ type credentials struct {
 
 // role is the role the credentials grant: admin for the secrets file, else the role the client
 // file's certificate names, empty for one that names none.
-func (c *credentials) role() string {
+func (c *credentials) role() pki.Role {
 	if c.secrets != nil {
 		return pki.RoleAdmin
 	}
@@ -46,7 +46,7 @@ func (c *credentials) role() string {
 	if err != nil {
 		return ""
 	}
-	role, _ := pki.Role(leaf)
+	role, _ := pki.RoleOf(leaf)
 	return role
 }
 
@@ -189,7 +189,7 @@ func (a *app) configNew(ctx context.Context, f configNewFlags) error {
 	if err != nil {
 		return err
 	}
-	config, err := client.NewConfig(secrets.ClientCA(), secrets.OSCABundle(), f.name, f.role, f.ttl, time.Now())
+	config, err := client.NewConfig(f.name, pki.Role(f.role), secrets.ClientCA(), secrets.OSCABundle(), f.ttl, time.Now())
 	if err != nil {
 		return err
 	}

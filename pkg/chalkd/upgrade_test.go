@@ -155,7 +155,9 @@ func TestUpgradeDeliversConfigOnlyForAdmins(t *testing.T) {
 	c := newCreds(t)
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	for _, tc := range []struct {
-		name, role, config, secret string
+		name           string
+		role           pki.Role
+		config, secret string
 		// want is the config the image's slot keeps; empty for a refused upgrade.
 		want string
 	}{

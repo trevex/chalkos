@@ -94,7 +94,7 @@ func SignNode(nodeCA CertKey, names NodeNames, pub crypto.PublicKey, now time.Ti
 	if names.CommonName == "" {
 		return "", errors.New("a node certificate needs the node's name")
 	}
-	template, err := newTemplate(names.CommonName, []string{RoleNode}, now, LeafValidity)
+	template, err := newTemplate(names.CommonName, []string{string(RoleNode)}, now, LeafValidity)
 	if err != nil {
 		return "", err
 	}

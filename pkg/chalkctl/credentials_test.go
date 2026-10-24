@@ -30,9 +30,9 @@ import (
 
 // writeConfig writes a client file of the test cluster for the role, valid for validity from
 // now, and returns its path.
-func (ta *testApp) writeConfig(t *testing.T, name, role string, validity time.Duration, now time.Time) string {
+func (ta *testApp) writeConfig(t *testing.T, name string, role pki.Role, validity time.Duration, now time.Time) string {
 	t.Helper()
-	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), name, role, validity, now)
+	c, err := client.NewConfig(name, role, ta.secrets.OSCA, ta.secrets.OSCABundle(), validity, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestClientFileOfAnotherCluster(t *testing.T) {
 		t.Fatal(err)
 	}
 	clientFile := func(file, trusted string) string {
-		c, err := client.NewConfig(foreign.OSCA, trusted, "dave", pki.RoleAdmin, time.Hour, time.Now())
+		c, err := client.NewConfig("dave", pki.RoleAdmin, foreign.OSCA, trusted, time.Hour, time.Now())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -311,8 +311,8 @@ func TestUnreachableAddressNamesItsSource(t *testing.T) {
 // role a client file's certificate names in its Organization, and none for one that names none.
 func TestCredentialsRole(t *testing.T) {
 	ta := newTestApp(t)
-	clientFile := func(role string) *client.Config {
-		c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "alice", role, time.Hour, time.Now())
+	clientFile := func(role pki.Role) *client.Config {
+		c, err := client.NewConfig("alice", role, ta.secrets.OSCA, ta.secrets.OSCABundle(), time.Hour, time.Now())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -341,7 +341,7 @@ func TestCredentialsRole(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		creds credentials
-		want  string
+		want  pki.Role
 	}{
 		{"secrets file", credentials{secrets: &ta.secrets}, pki.RoleAdmin},
 		{"admin client file", credentials{config: clientFile(pki.RoleAdmin)}, pki.RoleAdmin},
