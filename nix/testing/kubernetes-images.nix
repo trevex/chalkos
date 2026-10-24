@@ -1,7 +1,7 @@
 # Container images the Kubernetes e2e test serves from its registry, fetched by digest (amd64),
 # so the test runs without network access. images.json maps each reference, as the cluster's
 # nodes pull it, to its docker archive.
-{ pkgs, kubernetesVersion }:
+{ pkgs, pulls }:
 let
   images = [
     {
@@ -68,10 +68,12 @@ let
       finalImageTag = image.tag;
       inherit (image) hash;
     };
+  references = map (image: "${image.name}:${image.tag}") images;
+  unpinned = pkgs.lib.subtractLists references (pkgs.lib.remove "" pulls);
 in
-# The control plane runs the images of its kubelet's release.
-assert pkgs.lib.assertMsg (kubernetesVersion == "1.37.1")
-  "nixpkgs moved Kubernetes to ${kubernetesVersion}; pin that release's images in nix/testing/kubernetes-images.nix";
+# The images follow nixpkgs's Kubernetes release and the image options' defaults.
+assert pkgs.lib.assertMsg (unpinned == [ ])
+  "the Kubernetes test image pulls ${toString unpinned}, which nix/testing/kubernetes-images.nix does not pin";
 pkgs.writeTextDir "images.json" (
   builtins.toJSON (
     builtins.listToAttrs (
