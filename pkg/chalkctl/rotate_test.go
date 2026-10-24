@@ -147,7 +147,11 @@ func (n *fakeNode) Status(ctx context.Context, _ *connect.Request[nodev1.StatusR
 			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, ControlPlane: state, ControlPlaneCurrent: state == "current"}
 			n.lab.mu.Lock()
 			if s, ok := n.lab.states[n.name]; ok {
-				st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: s}
+				phase := nodev1.KubernetesPhase_KUBERNETES_PHASE_WAITING
+				if s == "no share" {
+					phase = nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING
+				}
+				st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: s, Phase: phase}
 			} else {
 				k := st.Kubernetes
 				k.RevokedNodes, k.RevokedNodesError = n.lab.revoked, n.lab.revokedErr[n.name]
