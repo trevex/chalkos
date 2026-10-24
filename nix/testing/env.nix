@@ -1,4 +1,4 @@
-# Tools and variables the Go tests need, shared by the dev shell and the flake checks.
+# Tools and variables the Go tests need, shared by the dev shell, the flake checks and the apps.
 { pkgs, self }:
 let
   chalkPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
@@ -38,5 +38,26 @@ in
     CHALKOS_TEST_REPART = "${pkgs.systemd}/bin/systemd-repart";
     # The install tests also lay out a disk as the test image would be installed.
     CHALKOS_TEST_IMAGE_DEFINITIONS = "${chalkPkgs.test-repart-definitions}";
+  };
+
+  # The variables of every e2e test: they install nodes with the real chalkctl, from the test
+  # clusters' fixtures.
+  e2eVars = {
+    CHALKLAB_CHALKCTL = pkgs.lib.getExe chalkPkgs.chalkctl;
+    CHALKLAB_SECRETS = "${chalkPkgs.test-secrets}/secrets.json";
+    CHALKLAB_FIXTURES = "${../../test/fixtures/clusters}";
+  };
+
+  # The variables that name the image directories the e2e tests boot.
+  imageDirs = pkgs.lib.mapAttrs (_: dir: "${dir}") {
+    CHALKLAB_IMAGE_DIR = chalkPkgs.test-image;
+    CHALKLAB_UPGRADE_IMAGE_DIR = chalkPkgs.test-upgrade-image;
+    CHALKLAB_UNHEALTHY_IMAGE_DIR = chalkPkgs.test-unhealthy-image;
+    CHALKLAB_STORAGE_IMAGE_DIR = chalkPkgs.test-storage-image;
+    CHALKLAB_K8S_IMAGE_DIR = chalkPkgs.test-kubernetes-image;
+    CHALKLAB_K8S_HA_IMAGE_DIR = chalkPkgs.test-kubernetes-ha-image;
+    CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR = chalkPkgs.test-kubernetes-ha-upgrade-image;
+    CHALKLAB_INSTALLER_DIR = chalkPkgs.test-installer;
+    CHALKLAB_GENERIC_INSTALLER_DIR = chalkPkgs.installer;
   };
 }

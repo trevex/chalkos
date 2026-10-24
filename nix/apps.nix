@@ -16,12 +16,10 @@ let
       ${lib.concatStrings (
         lib.mapAttrsToList (name: value: "export ${name}=${lib.escapeShellArg value}\n") (
           testEnv.vars
+          // testEnv.e2eVars
+          // lib.getAttrs [ "CHALKLAB_K8S_IMAGE_DIR" ] testEnv.imageDirs
           // {
-            CHALKLAB_CHALKCTL = lib.getExe chalkPkgs.chalkctl;
             CHALKLAB_CHALKLAB = lib.getExe chalkPkgs.chalklab;
-            CHALKLAB_SECRETS = "${chalkPkgs.test-secrets}/secrets.json";
-            CHALKLAB_FIXTURES = "${../test/fixtures/clusters}";
-            CHALKLAB_K8S_IMAGE_DIR = "${chalkPkgs.test-kubernetes-image}";
             CHALKLAB_K8S_ONLINE = "1";
           }
         )
