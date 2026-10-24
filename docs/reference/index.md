@@ -1,6 +1,6 @@
 ---
 title: "Reference"
-description: "Commands, config kinds, image options, the node API, boot units, roles, certificates, Kubernetes, ports and os-release"
+description: "Commands, config kinds, image options, built-ins, the node API, boot units, roles, certificates, Kubernetes, ports and os-release"
 ---
 
 # Reference
@@ -49,6 +49,14 @@ chalkos.
     The options and `lib.chalkos` helpers an extension declares kinds, facts, outputs and effects with.
 
     [:octicons-arrow-right-24: Read](extension-api.md)
+
+-   :material-format-list-checks: __Built-ins__
+
+    ---
+
+    The change rules, facts, outputs and effects that chalkos's own modules declare.
+
+    [:octicons-arrow-right-24: Read](builtins.md)
 
 -   :material-api: __Node API__
 
@@ -124,6 +132,6 @@ chalkos.
 
 </div>
 
-Sources: the command line, config kinds, mkImages, image options, extension API and node API pages
-are generated from the code, as
+Sources: the command line, config kinds, mkImages, image options, extension API, built-ins and node
+API pages are generated from the code, as
 [Writing documentation](../contribute/writing-docs.md#generated-pages) describes.

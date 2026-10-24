@@ -1,0 +1,20 @@
+{
+  "description": "The node's part in the cluster.",
+  "type": "object",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "labels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "x-chalkos-rules": [{ "rule": "facts.share == null || self == oldSelf", "message": "the labels are fixed", "takes": "refuse" }]
+        }
+      }
+    }
+  },
+  "x-chalkos-kind": {
+    "group": "kubernetes.chalkos.dev", "version": "v1alpha1", "kind": "Node", "multiple": false,
+    "rules": [{ "rule": "facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)", "messageExpression": "\"the type is \" + facts.share.kind", "takes": "refuse" }]
+  }
+}

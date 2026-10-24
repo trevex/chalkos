@@ -33,7 +33,7 @@
           ],
           "default": null
         },
-        "extra": { "type": "object", "description": "Any fields." },
+        "extra": { "type": "object", "description": "Any fields, as `a|b`." },
         "mode": { "enum": ["l2"], "default": "l2" },
         "objects": {
           "type": "array",

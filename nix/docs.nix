@@ -72,12 +72,13 @@ let
     }).optionsJSON;
 
   # The images the documentation is generated and checked against: the default variant, whose
-  # options the reference lists, and one with the homelab's extensions, whose documents the pages
-  # show as an extension's.
+  # options the reference lists, one without Kubernetes, whose built-ins are those of every image,
+  # and one with the homelab's extensions, whose documents the pages show as an extension's.
   docsImages = self.lib.mkImages {
     platforms = [ "metal" ];
     variants = {
       docs = { };
+      plain.kubernetes = false;
       rack.modules = [
         ../examples/homelab/extensions/rack.nix
         ../examples/homelab/extensions/hardware.nix
@@ -100,6 +101,15 @@ let
   '';
   # The schemas of the default variant's kinds, which the page of config kinds lists.
   kindSchemas = imageSystem.config.system.build.chalkosSchemas;
+  # The schemas, facts, outputs and effects of an image, which the page of built-ins lists.
+  builtinsImage =
+    name: system:
+    pkgs.linkFarm "chalkos-docs-builtins-${name}" {
+      schemas = system.config.system.build.chalkosSchemas;
+      "facts.json" = system.config.system.build.chalkosFacts;
+      "outputs.json" = system.config.system.build.chalkosOutputs;
+      "effects.json" = system.config.system.build.chalkosEffects;
+    };
   imageOptions =
     (pkgs.nixosOptionsDoc {
       # chalkos's options, and the grant of a unit, which the node modules add to systemd's.
@@ -247,8 +257,8 @@ rec {
 
   # The generated pages of docs/reference and zensical.toml with their navigation, laid out as
   # in the repository: a page per command of chalkctl, chalklab and chalkbuild, the config kinds,
-  # the arguments of mkImages, the image options, the extension API, the node API, and the
-  # glossary's terms as abbreviations, which every page appends.
+  # the arguments of mkImages, the image options, the extension API, the built-ins, the node API,
+  # and the glossary's terms as abbreviations, which every page appends.
   reference =
     pkgs.runCommand "chalkos-docs-reference"
       {
@@ -275,6 +285,7 @@ rec {
         docgen cli $out/docs/reference/cli $out/zensical.toml ${helpLinkPages}
         docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${inventorySchema} ${labSchema}
         docgen options $out/docs/reference ${optionsTemplates} ${argumentOptions}/share/doc/nixos/options.json ${imageOptions}/share/doc/nixos/options.json
+        docgen builtins $out/docs/reference/builtins.md ${builtinsImage "docs" imageSystem} ${builtinsImage "plain" docsImages.nixos.plain-metal}
         cp -r $api proto
         chmod -R u+w proto
         (cd proto && buf generate)
@@ -320,7 +331,7 @@ rec {
   # Fails when the generated pages in the repository differ from what the code generates.
   generated = pkgs.runCommand "chalkos-docs-generated" { } ''
     status=0
-    for path in docs/reference/cli docs/reference/kinds.md docs/reference/mkimages.md docs/reference/image-options.md docs/reference/extension-api.md docs/reference/api.md includes/abbreviations.md zensical.toml; do
+    for path in docs/reference/cli docs/reference/kinds.md docs/reference/mkimages.md docs/reference/image-options.md docs/reference/extension-api.md docs/reference/builtins.md docs/reference/api.md includes/abbreviations.md zensical.toml; do
       diff -ru ${src}/$path ${reference}/$path || status=1
     done
     if [ $status != 0 ]; then
@@ -341,7 +352,7 @@ rec {
       rm -rf docs/reference/cli
       mkdir -p docs/reference
       cp -r --no-preserve=mode ${reference}/docs/reference/cli docs/reference/cli
-      cp --no-preserve=mode ${reference}/docs/reference/kinds.md ${reference}/docs/reference/mkimages.md ${reference}/docs/reference/image-options.md ${reference}/docs/reference/extension-api.md ${reference}/docs/reference/api.md docs/reference/
+      cp --no-preserve=mode ${reference}/docs/reference/kinds.md ${reference}/docs/reference/mkimages.md ${reference}/docs/reference/image-options.md ${reference}/docs/reference/extension-api.md ${reference}/docs/reference/builtins.md ${reference}/docs/reference/api.md docs/reference/
       cp --no-preserve=mode ${reference}/zensical.toml zensical.toml
       mkdir -p includes
       cp --no-preserve=mode ${reference}/includes/abbreviations.md includes/

@@ -158,6 +158,7 @@ nav = [
     { "mkImages" = "reference/mkimages.md" },
     { "Image options" = "reference/image-options.md" },
     { "Extension API" = "reference/extension-api.md" },
+    { "Built-ins" = "reference/builtins.md" },
     { "Node API" = "reference/api.md" },
     "reference/image-layout.md",
     "reference/boot.md",

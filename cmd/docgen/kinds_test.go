@@ -43,7 +43,7 @@ func TestWriteKinds(t *testing.T) {
 		last = i
 	}
 	for _, want := range []string{
-		"### Node { #node }\n\nThe node's identity.\n\n`apiVersion: chalkos.dev/v1alpha1`\n\nA node's config holds at most one. It has 2 [change rules](../build/guard-changes.md).\n\n| Field | Type | Default | Description |\n| --- | --- | --- | --- |\n",
+		"### Node { #node }\n\nThe node's identity.\n\n`apiVersion: chalkos.dev/v1alpha1`\n\nA node's config holds at most one. It has 2 [change rules](builtins.md#rules-node).\n\n| Field | Type | Default | Description |\n| --- | --- | --- | --- |\n",
 		"| `spec.hostname` | string | required | Host name set at boot. |\n",
 		"| `spec.type` | one of `controlplane`, `worker` or null | `null` | What the node is in Kubernetes. |\n",
 		"### Volume { #volume }\n\nA partition for the node's data.\n\n`apiVersion: storage.chalkos.dev/v1alpha1`\n\nA node's config may hold several, each with a name of its own.\n\n| Field |",
@@ -51,7 +51,7 @@ func TestWriteKinds(t *testing.T) {
 		"| `spec.disk` | object | — | The disk the volume is on. |\n| `spec.disk.path` | string | — | Path below /dev. |\n| `spec.encryption.mode` | one of `tpm2`, `none` | `\"tpm2\"` | Encryption of the volume. |\n| `spec.extra` |",
 		"| `spec.labels` | map of string | `{}` | Labels \\| with a pipe. |\n",
 		"| `spec.password` | secret reference or null | `null` |  |\n",
-		"| `spec.extra` | object, any fields | — | Any fields. |\n| `spec.labels` |",
+		"| `spec.extra` | object, any fields | — | Any fields, as `a|b`. |\n| `spec.labels` |",
 		"| `spec.mode` | `l2` | `\"l2\"` |  |\n| `spec.objects` | list of Kubernetes object | — |  |\n| `spec.password` |",
 		"| `spec.size` | integer from 1 to 100 | — |  |\n",
 		"| `spec.taints` | list of object | — |  |\n| `spec.taints[].effect` | one of `NoSchedule`, `NoExecute` | — |  |\n| `spec.taints[].key` | string | required |  |\n",

@@ -190,13 +190,11 @@ func writeKind(b *strings.Builder, k kindSchema) {
 			counts = append(counts, "A node's config holds at most one.")
 		}
 	}
-	// The rules' expressions, the storage kinds' especially, read as code rather than as a
-	// reference; the How chalkos works page on rules describes what the built-in kinds' rules
-	// decide.
+	// The page of built-ins lists the rules of each kind under #rules-<kind>.
 	if n := countRules(k.root); n == 1 {
-		counts = append(counts, "It has a [change rule](../build/guard-changes.md).")
+		counts = append(counts, fmt.Sprintf("It has a [change rule](builtins.md#rules-%s).", strings.ToLower(k.kind)))
 	} else if n > 1 {
-		counts = append(counts, fmt.Sprintf("It has %d [change rules](../build/guard-changes.md).", n))
+		counts = append(counts, fmt.Sprintf("It has %d [change rules](builtins.md#rules-%s).", n, strings.ToLower(k.kind)))
 	}
 	if len(counts) > 0 {
 		b.WriteString(strings.Join(counts, " ") + "\n\n")
@@ -267,8 +265,8 @@ func fields(root map[string]any, path string, s map[string]any) []row {
 		}
 		rows = append(rows, row{
 			path: fieldPath,
-			typ:  cell(typeOf(root, child)),
-			def:  cell(def),
+			typ:  tableCell(typeOf(root, child)),
+			def:  tableCell(def),
 			desc: text(child["description"]),
 		})
 		rows = append(rows, inner...)
@@ -462,11 +460,8 @@ func sectionObject(root, section map[string]any) map[string]any {
 // text is a description as one line of a table cell.
 func text(v any) string {
 	s, _ := v.(string)
-	return cell(strings.Join(strings.Fields(s), " "))
+	return tableCell(strings.Join(strings.Fields(s), " "))
 }
-
-// cell escapes the pipes of a table cell's text.
-func cell(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
 
 func props(s map[string]any) map[string]any { return asMap(s["properties"]) }
 

@@ -1,0 +1,4 @@
+{"chrony":{"chalkd":"","kinds":[],"outputs":["chrony"],"reload":[],"restart":[],"run":"chalkos-chrony-reload-sources","start":false,"when":""},"networkd":{"chalkd":"","kinds":[],"outputs":["networkd"],"reload":["systemd-networkd.service"],"restart":[],"run":"","start":false,"when":""},
+"chalkd-share":{"chalkd":"reload","kinds":[],"outputs":[],"reload":[],"restart":[],"run":"","start":false,"when":"facts.share != oldFacts.share"},
+"kubernetes":{"chalkd":"","kinds":["Host"],"outputs":[],"reload":[],"restart":["chalkos-kubernetes.service","kubelet.service"],"run":"","start":true,"when":"cel.bind(d, config[\"kubernetes.chalkos.dev/v1alpha1\"].Node, d) != cel.bind(d, oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Node, d) || facts.cluster != oldFacts.cluster || facts.share != oldFacts.share"},
+"chalkd-cluster":{"chalkd":"restart","kinds":[],"outputs":[],"reload":[],"restart":[],"run":"","start":false,"when":"facts.cluster != oldFacts.cluster"}}

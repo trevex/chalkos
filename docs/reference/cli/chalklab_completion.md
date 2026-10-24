@@ -27,8 +27,8 @@ needs no secrets file or client file.
 | Shell | Command that loads the script into the current session |
 | --- | --- |
 | bash | `source <(chalklab completion bash)` |
-| fish | `chalklab completion fish \| source` |
-| powershell | `chalklab completion powershell \| Out-String \| Invoke-Expression` |
+| fish | `chalklab completion fish | source` |
+| powershell | `chalklab completion powershell | Out-String | Invoke-Expression` |
 | zsh | `source <(chalklab completion zsh)` |
 
 ## Examples

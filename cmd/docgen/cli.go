@@ -112,7 +112,7 @@ func render(cmd *cobra.Command, docs string) (string, error) {
 		for _, c := range available(cmd) {
 			load := "—"
 			if format, ok := completionLoad[c.Name()]; ok {
-				load = "`" + cell(fmt.Sprintf(format, cmd.Root().Name())) + "`"
+				load = tableCell(code(fmt.Sprintf(format, cmd.Root().Name())))
 			}
 			fmt.Fprintf(&b, "| %s | %s |\n", c.Name(), load)
 		}
@@ -158,13 +158,13 @@ func flagTable(heading string, flags *pflag.FlagSet) string {
 		if m := describedDefault.FindStringSubmatch(usage); m != nil {
 			usage, def = strings.TrimSuffix(usage, m[0]), prose(m[1])
 		} else if f.DefValue != "" && f.DefValue != "[]" {
-			def = "`" + cell(f.DefValue) + "`"
+			def = tableCell(code(f.DefValue))
 		}
 		name := fmt.Sprintf("`--%s`{ #flag-%s }", f.Name, f.Name)
 		if f.Shorthand != "" {
 			name += fmt.Sprintf(", `-%s`", f.Shorthand)
 		}
-		rows = append(rows, fmt.Sprintf("| %s | %s | %s | %s |", name, flagType(f), def, cell(prose(sentence(usage)))))
+		rows = append(rows, fmt.Sprintf("| %s | %s | %s | %s |", name, flagType(f), def, tableCell(prose(sentence(usage)))))
 	})
 	if len(rows) == 0 {
 		return ""

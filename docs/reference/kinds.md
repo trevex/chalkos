@@ -70,7 +70,7 @@ The Kubernetes cluster the node belongs to: its API server's endpoint, its addre
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
-A node's config holds at most one. It has 5 [change rules](../build/guard-changes.md).
+A node's config holds at most one. It has 5 [change rules](builtins.md#rules-cluster).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -114,7 +114,7 @@ The node's part in the Kubernetes cluster: its type, the labels and taints it re
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
-A node's config holds at most one. It has 3 [change rules](../build/guard-changes.md).
+A node's config holds at most one. It has 3 [change rules](builtins.md#rules-node).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -287,7 +287,7 @@ The mirror endpoints that chalkd and containerd try, in order, before a registry
 
 `apiVersion: oci.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has a [change rule](../build/guard-changes.md).
+A node's config may hold several, each with a name of its own. It has a [change rule](builtins.md#rules-mirror).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -300,7 +300,7 @@ The credentials and transport of an OCI registry host, with which chalkd pulls O
 
 `apiVersion: oci.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 2 [change rules](../build/guard-changes.md).
+A node's config may hold several, each with a name of its own. It has 2 [change rules](builtins.md#rules-registry).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -319,7 +319,7 @@ The disk that holds the node's system region and VAR, and the encryption of the 
 
 `apiVersion: storage.chalkos.dev/v1alpha1`
 
-A node's config holds at most one. It has a [change rule](../build/guard-changes.md).
+A node's config holds at most one. It has a [change rule](builtins.md#rules-systemdisk).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -341,7 +341,7 @@ A partition for the node's data, on the system disk or on a disk of its own, whi
 
 `apiVersion: storage.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 7 [change rules](../build/guard-changes.md).
+A node's config may hold several, each with a name of its own. It has 7 [change rules](builtins.md#rules-volume).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
