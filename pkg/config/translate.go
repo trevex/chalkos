@@ -48,12 +48,14 @@ func Translate(name string, docs []Document, schemas *schema.Schemas, t Target) 
 	return set, id, nil
 }
 
-// Identity translates the set into the identity of the node called name for the image t describes,
-// as the cluster definition rendered it, so every reader of the identity on the node keeps
-// working. Extension kinds stay in the set. The name is the node's name in the inventory, which
-// its node certificate carries; the hostname defaults to it without a Host that gives one, the
-// Kubernetes node is called by it and the storage seeds derive from it, whatever the Node document
-// is called.
+// Identity translates the set into the identity of the node called name on the image t
+// describes. Extension kinds stay in the set.
+//
+// name is the node's name in the inventory, which its node certificate carries. Whatever the Node
+// document is called:
+//   - the hostname defaults to name unless a Host gives one;
+//   - the Kubernetes node is called name;
+//   - the storage seeds derive from name.
 func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 	if name == "" {
 		return identity.Identity{}, fmt.Errorf("the node has no name to translate its config for")

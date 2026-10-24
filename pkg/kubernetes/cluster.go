@@ -1,4 +1,4 @@
-// Package kubernetes describes a chalkos node's Kubernetes cluster, as chalkd builds it from the
+// Package kubernetes describes a chalkos node's Kubernetes cluster, as config builds it from the
 // node's config and its image's facts, and the node itself as its identity names it.
 package kubernetes
 
@@ -20,8 +20,8 @@ const (
 	KindWorker       = "worker"
 )
 
-// Cluster is the node's Kubernetes cluster. chalkd builds it from the node's config and the
-// image's Kubernetes facts (image.json) and writes it to ClusterFile.
+// Cluster is the node's Kubernetes cluster. config.Documents.Cluster builds it from the node's
+// config and the image's Kubernetes facts (image.json), and nodeconfig writes it to ClusterFile.
 type Cluster struct {
 	// Kind is the node's kind: KindControlPlane or KindWorker.
 	Kind string `json:"kind"`

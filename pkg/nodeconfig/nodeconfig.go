@@ -1,9 +1,10 @@
 // Package nodeconfig applies the running image's config slot on the node, at boot in
-// chalkos-config.service and after every ApplyConfig: it writes the identity the config
-// translates to, as /run/chalkos/node.json, which the node's Kubernetes side reads, and sets the
-// hostname. It writes the config's documents for the units granted config kinds, and the
-// Kubernetes cluster it describes for chalkd, and at boot renders the image's outputs, networkd's
-// units and chrony's time servers among them.
+// chalkos-config.service and after every ApplyConfig. It:
+//   - writes the identity the config translates to as /run/chalkos/node.json, which the node's
+//     Kubernetes side reads, and sets the hostname;
+//   - writes the config's documents for the units granted config kinds;
+//   - writes the Kubernetes cluster the config describes, for chalkd;
+//   - at boot, renders the image's outputs, such as networkd's units and chrony's time servers.
 package nodeconfig
 
 import (
@@ -28,7 +29,9 @@ import (
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
-// Loader holds the paths the identity is applied to; tests point them at temporary directories.
+// Loader applies config slots. It holds where it reads the slots and the image's contracts, and
+// where it writes the identity, documents, credentials, cluster and outputs. Tests point the paths
+// at temporary directories.
 type Loader struct {
 	// Slots is the directory of the node's config slots on STATE, one per image, and Cmdline the
 	// running kernel's command line, whose usrhash= names the running image and so its slot.
@@ -53,7 +56,7 @@ type Loader struct {
 	NodeCertificate string
 }
 
-// Default applies the identity on the running node.
+// Default returns the Loader of the running node, with its real paths.
 func Default() Loader {
 	return Loader{
 		RunDir:          "/run/chalkos",
@@ -87,10 +90,12 @@ func (l Loader) Slot() (string, error) {
 }
 
 // Load applies the running image's config slot: the identity it holds, then its documents for
-// the granted units, then the outputs rendered from them. A node without any slot is not installed, as the installer, and nothing is
-// applied. A node whose slots are all another image's, as one booted into an image no install or
-// upgrade wrote config for, fails without applying any: the node runs without config, its health
-// check fails, and a counted boot falls back to an image that has its own.
+// the granted units, then the outputs rendered from them.
+//
+//   - A node without any slot, such as the installer, is not installed: Load applies nothing.
+//   - A node whose slots all belong to other images, such as one booted into an image no install
+//     or upgrade wrote config for, fails without applying any. Its health check then fails, so a
+//     counted boot falls back to an image that has config.
 func (l Loader) Load() error {
 	slots, err := slot.List(l.Slots)
 	if err != nil {

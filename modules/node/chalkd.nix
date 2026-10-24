@@ -12,8 +12,6 @@ let
   inherit (config.chalkos.maintenance) osCA;
 in
 {
-  # The image's own name for the input differs from mkImages's osCA, so the options reference
-  # names each once.
   options.chalkos.maintenance.osCA = lib.mkOption {
     type = lib.types.nullOr lib.types.path;
     default = null;

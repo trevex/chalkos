@@ -5,7 +5,7 @@ const (
 	// RunDir holds the files chalkd and the preparation write at boot: the cluster, the kubelet's
 	// files, the control plane's certificates and static pods, and the credential provider's files.
 	RunDir = "/run/chalkos/kubernetes"
-	// ClusterFile is the cluster chalkd builds from the node's config and image.
+	// ClusterFile is the cluster nodeconfig writes from the node's config and image.
 	ClusterFile = RunDir + "/cluster.json"
 	// PKIDir holds the control plane's certificates, which its static pods mount.
 	PKIDir = RunDir + "/pki"
