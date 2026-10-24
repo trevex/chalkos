@@ -1,7 +1,6 @@
 package chalkd
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	clientv3 "go.etcd.io/etcd/client/v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -24,6 +22,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -382,7 +381,7 @@ func (k *Kubernetes) countEncrypted(ctx context.Context, c k8s.Cluster, share kp
 	defer cli.Close()
 	var counts []*nodev1.EncryptedObjects
 	for _, resource := range kpki.EncryptedResources {
-		byKey, err := countByKey(ctx, cli, "/registry/"+resource+"/")
+		byKey, err := etcd.CountByKey(ctx, cli, "/registry/"+resource+"/")
 		if err != nil {
 			return nil, err
 		}
@@ -391,50 +390,6 @@ func (k *Kubernetes) countEncrypted(ctx context.Context, c k8s.Cluster, share kp
 		}
 	}
 	return counts, nil
-}
-
-// countByKey counts the values below prefix by the key they are encrypted with, "" for those
-// stored unencrypted. It reads them in pages, so no response holds them all, every page at the
-// revision of the first, so writes meanwhile neither add to the count nor move a value past the
-// next page's start.
-func countByKey(ctx context.Context, kv clientv3.KV, prefix string) (map[string]uint64, error) {
-	counts := map[string]uint64{}
-	end := clientv3.GetPrefixRangeEnd(prefix)
-	from := prefix
-	var rev int64
-	for {
-		opts := []clientv3.OpOption{clientv3.WithRange(end), clientv3.WithLimit(200)}
-		if rev > 0 {
-			opts = append(opts, clientv3.WithRev(rev))
-		}
-		resp, err := kv.Get(ctx, from, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("read %s from etcd: %w", prefix, err)
-		}
-		if rev == 0 {
-			rev = resp.Header.Revision
-		}
-		for _, kv := range resp.Kvs {
-			counts[EncryptionKeyOf(kv.Value)]++
-		}
-		if !resp.More || len(resp.Kvs) == 0 {
-			return counts, nil
-		}
-		from = string(resp.Kvs[len(resp.Kvs)-1].Key) + "\x00"
-	}
-}
-
-// EncryptionKeyOf returns the name of the key a value etcd holds is encrypted with, "" for a
-// value stored unencrypted.
-func EncryptionKeyOf(value []byte) string {
-	if !bytes.HasPrefix(value, []byte("k8s:enc:")) {
-		return ""
-	}
-	fields := bytes.SplitN(value, []byte(":"), 6)
-	if len(fields) < 6 {
-		return ""
-	}
-	return string(fields[4])
 }
 
 // renewKubeletServing removes the kubelet's serving certificates and restarts the kubelet, which
