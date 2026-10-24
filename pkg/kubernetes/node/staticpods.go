@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
@@ -105,15 +107,11 @@ func rendersStaticPods(p Paths) (bool, error) {
 
 // certificatesHash returns the hash of the certificates a static pod's manifest names.
 func certificatesHash(manifest []byte) (string, error) {
-	var pod struct {
-		Metadata struct {
-			Annotations map[string]string `json:"annotations"`
-		} `json:"metadata"`
-	}
+	var pod corev1.Pod
 	if err := json.Unmarshal(manifest, &pod); err != nil {
 		return "", err
 	}
-	return pod.Metadata.Annotations[manifests.CertificatesAnnotation], nil
+	return pod.Annotations[manifests.CertificatesAnnotation], nil
 }
 
 // render writes the static pods, or only the one in the file only names.

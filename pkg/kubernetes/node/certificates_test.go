@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -14,7 +13,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -216,15 +214,11 @@ func TestPrepareFailureRemovesOldCertificates(t *testing.T) {
 // certificatesAnnotation returns the certificate hash of the static pod in the file.
 func certificatesAnnotation(t *testing.T, p Paths, file string) string {
 	t.Helper()
-	var pod struct {
-		Metadata struct {
-			Annotations map[string]string `json:"annotations"`
-		} `json:"metadata"`
-	}
-	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(p.Manifests(), file))), &pod); err != nil {
+	hash, err := certificatesHash([]byte(readFile(t, filepath.Join(p.Manifests(), file))))
+	if err != nil {
 		t.Fatal(err)
 	}
-	return pod.Metadata.Annotations[manifests.CertificatesAnnotation]
+	return hash
 }
 
 // A renewal interrupted between replacing the certificates and rendering the static pods leaves

@@ -10,7 +10,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -1310,32 +1309,21 @@ func TestKubeletConfig(t *testing.T) {
 	p := Paths{Run: "/run/chalkos/kubernetes"}
 	c := kubernetes.Cluster{Domain: "lab.local", IPFamilies: []nodeip.Family{nodeip.IPv6, nodeip.IPv4},
 		DNSIPs: kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.100.0.10"), IPv6: netip.MustParseAddr("fd00:10:96::a")}}
-	want := map[string]any{
-		"apiVersion": "kubelet.config.k8s.io/v1beta1",
-		"kind":       "KubeletConfiguration",
-		"authentication": map[string]any{
-			"anonymous": map[string]any{"enabled": false},
-			"webhook":   map[string]any{"enabled": true},
-			"x509":      map[string]any{"clientCAFile": "/run/chalkos/kubernetes/kubelet/ca.crt"},
-		},
-		"authorization":            map[string]any{"mode": "Webhook"},
-		"readOnlyPort":             0,
-		"tlsMinVersion":            "VersionTLS12",
-		"protectKernelDefaults":    true,
-		"cgroupDriver":             "systemd",
-		"clusterDNS":               []any{"fd00:10:96::a"},
-		"clusterDomain":            "lab.local",
-		"containerRuntimeEndpoint": "unix:///run/containerd/containerd.sock",
-		"rotateCertificates":       true,
-		"serverTLSBootstrap":       true,
-		"staticPodPath":            "/run/chalkos/kubernetes/manifests",
-		"resolvConf":               "/run/systemd/resolve/resolv.conf",
+	want := `{"apiVersion":"kubelet.config.k8s.io/v1beta1",` +
+		`"authentication":{"anonymous":{"enabled":false},"webhook":{"enabled":true},"x509":{"clientCAFile":"/run/chalkos/kubernetes/kubelet/ca.crt"}},` +
+		`"authorization":{"mode":"Webhook"},"cgroupDriver":"systemd","clusterDNS":["fd00:10:96::a"],"clusterDomain":"lab.local",` +
+		`"containerRuntimeEndpoint":"unix:///run/containerd/containerd.sock","kind":"KubeletConfiguration","protectKernelDefaults":true,` +
+		`"readOnlyPort":0,"resolvConf":"/run/systemd/resolve/resolv.conf","rotateCertificates":true,"serverTLSBootstrap":true,` +
+		`"staticPodPath":"/run/chalkos/kubernetes/manifests","tlsMinVersion":"VersionTLS12"}`
+	got, err := json.Marshal(kubeletConfig(p, c))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := kubeletConfig(p, c); !reflect.DeepEqual(got, want) {
-		t.Errorf("config =\n%#v\nwant\n%#v", got, want)
+	if string(got) != want {
+		t.Errorf("config =\n%s\nwant\n%s", got, want)
 	}
 	c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
-	if got := kubeletConfig(p, c)["clusterDNS"]; !reflect.DeepEqual(got, []any{"10.100.0.10"}) {
+	if got := kubeletConfig(p, c).ClusterDNS; !slices.Equal(got, []string{"10.100.0.10"}) {
 		t.Errorf("clusterDNS with IPv4 primary = %v", got)
 	}
 }

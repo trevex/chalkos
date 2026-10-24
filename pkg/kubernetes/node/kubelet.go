@@ -48,34 +48,64 @@ func writeKubeletFiles(p Paths, c kubernetes.Cluster, n kubernetes.Node, share k
 	return nil
 }
 
+// kubeletConfiguration is the kubelet's configuration file, its fields in key order.
+type kubeletConfiguration struct {
+	APIVersion     string `json:"apiVersion"`
+	Authentication struct {
+		Anonymous enabled `json:"anonymous"`
+		Webhook   enabled `json:"webhook"`
+		X509      struct {
+			ClientCAFile string `json:"clientCAFile"`
+		} `json:"x509"`
+	} `json:"authentication"`
+	Authorization struct {
+		Mode string `json:"mode"`
+	} `json:"authorization"`
+	CgroupDriver             string   `json:"cgroupDriver"`
+	ClusterDNS               []string `json:"clusterDNS"`
+	ClusterDomain            string   `json:"clusterDomain"`
+	ContainerRuntimeEndpoint string   `json:"containerRuntimeEndpoint"`
+	Kind                     string   `json:"kind"`
+	ProtectKernelDefaults    bool     `json:"protectKernelDefaults"`
+	ReadOnlyPort             int      `json:"readOnlyPort"`
+	ResolvConf               string   `json:"resolvConf"`
+	RotateCertificates       bool     `json:"rotateCertificates"`
+	ServerTLSBootstrap       bool     `json:"serverTLSBootstrap"`
+	StaticPodPath            string   `json:"staticPodPath"`
+	TLSMinVersion            string   `json:"tlsMinVersion"`
+}
+
+type enabled struct {
+	Enabled bool `json:"enabled"`
+}
+
 // kubeletConfig is the kubelet's configuration for the cluster.
-func kubeletConfig(p Paths, c kubernetes.Cluster) map[string]any {
-	return map[string]any{
-		"apiVersion": "kubelet.config.k8s.io/v1beta1",
-		"kind":       "KubeletConfiguration",
-		"authentication": map[string]any{
-			"anonymous": map[string]any{"enabled": false},
-			"webhook":   map[string]any{"enabled": true},
-			"x509":      map[string]any{"clientCAFile": filepath.Join(p.KubeletDir(), "ca.crt")},
-		},
-		"authorization": map[string]any{"mode": "Webhook"},
-		"readOnlyPort":  0,
-		"tlsMinVersion": "VersionTLS12",
+func kubeletConfig(p Paths, c kubernetes.Cluster) kubeletConfiguration {
+	config := kubeletConfiguration{
+		APIVersion:    "kubelet.config.k8s.io/v1beta1",
+		Kind:          "KubeletConfiguration",
+		ReadOnlyPort:  0,
+		TLSMinVersion: "VersionTLS12",
 		// The kubelet refuses to start unless the kernel tunables hold its values, rather than
 		// changing them itself.
-		"protectKernelDefaults":    true,
-		"cgroupDriver":             "systemd",
-		"clusterDNS":               []any{c.DNSIPs.Of(c.Primary()).String()},
-		"clusterDomain":            c.Domain,
-		"containerRuntimeEndpoint": "unix:///run/containerd/containerd.sock",
+		ProtectKernelDefaults:    true,
+		CgroupDriver:             "systemd",
+		ClusterDNS:               []string{c.DNSIPs.Of(c.Primary()).String()},
+		ClusterDomain:            c.Domain,
+		ContainerRuntimeEndpoint: "unix:///run/containerd/containerd.sock",
 		// The client certificate from chalkos is renewed by the kubelet; the serving certificate
 		// is requested from the cluster and approved by chalkd on the control plane.
-		"rotateCertificates": true,
-		"serverTLSBootstrap": true,
-		"staticPodPath":      p.Manifests(),
+		RotateCertificates: true,
+		ServerTLSBootstrap: true,
+		StaticPodPath:      p.Manifests(),
 		// The stub resolver at 127.0.0.53 is unreachable from pods.
-		"resolvConf": "/run/systemd/resolve/resolv.conf",
+		ResolvConf: "/run/systemd/resolve/resolv.conf",
 	}
+	config.Authentication.Anonymous.Enabled = false
+	config.Authentication.Webhook.Enabled = true
+	config.Authentication.X509.ClientCAFile = filepath.Join(p.KubeletDir(), "ca.crt")
+	config.Authorization.Mode = "Webhook"
+	return config
 }
 
 // kubeletFlags are the kubelet's node-specific flags, its name, addresses, labels and taints,
