@@ -93,9 +93,9 @@ func TestLabNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []lab.LabNode{
-		{Name: "cp1", Kind: "controlplane", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, Disks: []lab.LabDisk{{Size: "16G"}}},
-		{Name: "w1", Kind: "worker", MAC: "52:54:00:7b:00:12", MemoryMB: 1024, CPUs: 1, Disks: []lab.LabDisk{{Size: "20G"}, {Size: "1G", Serial: "chalk-data"}}},
+	want := []lab.Node{
+		{Name: "cp1", Kind: "controlplane", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, Disks: []lab.Disk{{Size: "16G"}}},
+		{Name: "w1", Kind: "worker", MAC: "52:54:00:7b:00:12", MemoryMB: 1024, CPUs: 1, Disks: []lab.Disk{{Size: "20G"}, {Size: "1G", Serial: "chalk-data"}}},
 	}
 	if !reflect.DeepEqual(nodes, want) {
 		t.Errorf("nodes = %+v, want %+v", nodes, want)
@@ -136,8 +136,8 @@ func TestLabSchemaDefaults(t *testing.T) {
 					Nodes struct {
 						AdditionalProperties struct {
 							Properties struct {
-								CPUs  struct{ Default int }           `json:"cpus"`
-								Disks struct{ Default []lab.LabDisk } `json:"disks"`
+								CPUs  struct{ Default int }        `json:"cpus"`
+								Disks struct{ Default []lab.Disk } `json:"disks"`
 							}
 						}
 					}
@@ -273,7 +273,7 @@ func TestLabInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "chalkos.yaml")
-	l := &lab.Lab{Nodes: []lab.LabNode{{Name: "cp1", ChalkdPort: 15001}}}
+	l := &lab.Lab{Nodes: []lab.Node{{Name: "cp1", ChalkdPort: 15001}}}
 	if err := writeLabInventory(path, inv, l); err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +438,7 @@ func TestLabDir(t *testing.T) {
 	for _, name := range []string{"lab", "other"} {
 		dir, _ := lab.StateDir(name)
 		os.MkdirAll(dir, 0o700)
-		if err := (&lab.Lab{Name: name}).Write(dir); err != nil {
+		if err := (&lab.Lab{Dir: dir, Name: name}).Write(); err != nil {
 			t.Fatal(err)
 		}
 		if name == "lab" {
@@ -466,8 +466,8 @@ func writeLab(t *testing.T) string {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	l := &lab.Lab{Name: "lab", Nodes: []lab.LabNode{{Name: "cp1", ChalkdPort: 15001, APIPort: 16443}, {Name: "w1", ChalkdPort: 15002}}}
-	if err := l.Write(dir); err != nil {
+	l := &lab.Lab{Dir: dir, Name: "lab", Nodes: []lab.Node{{Name: "cp1", ChalkdPort: 15001, APIPort: 16443}, {Name: "w1", ChalkdPort: 15002}}}
+	if err := l.Write(); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -480,7 +480,7 @@ func TestNameChoosesTheLab(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&lab.Lab{Name: "mylab"}).Write(dir); err != nil {
+	if err := (&lab.Lab{Dir: dir, Name: "mylab"}).Write(); err != nil {
 		t.Fatal(err)
 	}
 	a, out := testApp()
@@ -775,8 +775,8 @@ func TestCommandsDescribed(t *testing.T) {
 // commands after it name no client file, and the kubeconfig only once a control plane runs.
 func TestPrintNext(t *testing.T) {
 	a, out := testApp()
-	l := &lab.Lab{Name: "lab", Nodes: []lab.LabNode{{Name: "cp1", Kind: "controlplane"}, {Name: "w1", Kind: "worker"}}}
-	a.printNext("/state/lab", l, true)
+	l := &lab.Lab{Dir: "/state/lab", Name: "lab", Nodes: []lab.Node{{Name: "cp1", Kind: "controlplane"}, {Name: "w1", Kind: "worker"}}}
+	a.printNext(l, true)
 	want := `
 the lab lab runs cp1, w1; next:
   export KUBECONFIG=/state/lab/kubeconfig
@@ -794,7 +794,7 @@ image with the lab's db key and upgrade the nodes of its variant with it:
 		t.Errorf("output:\n%s\nwant:\n%s", out, want)
 	}
 	out.Reset()
-	a.printNext("/state/lab", l, false)
+	a.printNext(l, false)
 	if s := out.String(); strings.Contains(s, "KUBECONFIG") || strings.Contains(s, "kubectl") || !strings.Contains(s, "export CHALKOSCONFIG=/state/lab/chalkctl.json\n") {
 		t.Errorf("output without Kubernetes:\n%s", s)
 	}
@@ -809,11 +809,11 @@ func TestPrintNextAllowsDowntimeBelowThreeControlPlanes(t *testing.T) {
 		want  bool
 	}{{[]string{"controlplane", "worker"}, true}, {[]string{"controlplane", "controlplane"}, true}, {[]string{"controlplane", "controlplane", "controlplane"}, false}, {[]string{""}, false}} {
 		a, out := testApp()
-		l := &lab.Lab{Name: "lab"}
+		l := &lab.Lab{Dir: "/state/lab", Name: "lab"}
 		for i, k := range tc.kinds {
-			l.Nodes = append(l.Nodes, lab.LabNode{Name: "n" + strconv.Itoa(i), Kind: k})
+			l.Nodes = append(l.Nodes, lab.Node{Name: "n" + strconv.Itoa(i), Kind: k})
 		}
-		a.printNext("/state/lab", l, false)
+		a.printNext(l, false)
 		if got := strings.Contains(out.String(), "--allow-downtime"); got != tc.want {
 			t.Errorf("%v: --allow-downtime %v, want %v:\n%s", tc.kinds, got, tc.want, out)
 		}

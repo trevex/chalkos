@@ -99,7 +99,7 @@ func (a *app) status(name string) error {
 	var stopped []string
 	fmt.Fprintln(w, "NODE\tTYPE\tVM\tCHALKD\tAPI SERVER\tCONSOLE")
 	for _, n := range l.Nodes {
-		c := l.VMConfig(dir, n)
+		c := l.VMConfig(n)
 		state := "running"
 		if !lab.Running(c) {
 			state = "stopped"
@@ -164,7 +164,7 @@ func (a *app) console(ctx context.Context, name string, follow bool, pos []strin
 	if err != nil {
 		return err
 	}
-	f, err := os.Open(l.VMConfig(dir, n).ConsolePath())
+	f, err := os.Open(l.VMConfig(n).ConsolePath())
 	if err != nil {
 		return err
 	}
@@ -315,7 +315,7 @@ func (a *app) start(ctx context.Context, name string) error {
 	} else if running {
 		var stopped []string
 		for _, n := range l.Nodes {
-			if !lab.Running(l.VMConfig(dir, n)) {
+			if !lab.Running(l.VMConfig(n)) {
 				stopped = append(stopped, n.Name)
 			}
 		}

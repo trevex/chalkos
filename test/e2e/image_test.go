@@ -15,7 +15,7 @@ func TestImageBootsWithoutSecureBoot(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
 	disk := prepareDisk(t, dir, diskOpts{})
-	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"), Disks: []lab.Disk{disk}})
+	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"), Disks: []lab.VMDisk{disk}})
 
 	// Maintenance mode: STATE exists, VAR does not.
 	assertFacts(t, readFacts(t, n.vm, 5*time.Minute), map[string]string{

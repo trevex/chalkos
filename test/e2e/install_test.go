@@ -33,8 +33,8 @@ func TestInstallInPlace(t *testing.T) {
 	if err := lab.CreateDisk(context.Background(), extraPath, "1G"); err != nil {
 		t.Fatal(err)
 	}
-	extra := lab.Disk{Path: extraPath, Serial: "chalk-extra"}
-	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"), Disks: []lab.Disk{system, extra}})
+	extra := lab.VMDisk{Path: extraPath, Serial: "chalk-extra"}
+	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"), Disks: []lab.VMDisk{system, extra}})
 	readFacts(t, n.vm, 5*time.Minute)
 
 	// The image carries the OS CA, so even in maintenance mode a client needs its certificate.

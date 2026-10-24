@@ -34,14 +34,14 @@ func testLab(t *testing.T) (string, *Lab) {
 	if err := os.WriteFile(vars, []byte("vars"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	l := &Lab{Name: "lab", FirmwareCode: "/fw/CODE.fd", FirmwareVars: vars, Nodes: []LabNode{
-		{Name: "cp1", Kind: "controlplane", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, ChalkdPort: 15001, APIPort: 16443},
-		{Name: "w1", Kind: "worker", MAC: "52:54:00:7b:00:12", MemoryMB: 2048, CPUs: 2, ChalkdPort: 15002},
+	l := &Lab{Dir: dir, Name: "lab", FirmwareCode: "/fw/CODE.fd", FirmwareVars: vars, Nodes: []Node{
+		{Name: "cp1", Kind: "controlplane", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, ChalkdPort: 15001, APIPort: 16443, Disks: []Disk{{Size: "16G"}}},
+		{Name: "w1", Kind: "worker", MAC: "52:54:00:7b:00:12", MemoryMB: 2048, CPUs: 2, ChalkdPort: 15002, Disks: []Disk{{Size: "16G"}}},
 	}}
-	if err := l.Write(dir); err != nil {
+	if err := l.Write(); err != nil {
 		t.Fatal(err)
 	}
-	if err := l.CheckSockets(dir); err != nil {
+	if err := l.CheckSockets(); err != nil {
 		t.Fatal(err)
 	}
 	// Whatever of the lab a test leaves running, as when it fails halfway, stops once the
@@ -119,7 +119,7 @@ func TestSupervisorRunsTheLab(t *testing.T) {
 		t.Errorf("a second supervisor = %v", err)
 	}
 	for _, n := range l.Nodes {
-		c := l.VMConfig(dir, n)
+		c := l.VMConfig(n)
 		if !Running(c) {
 			t.Errorf("%s does not run", n.Name)
 		}
@@ -131,7 +131,7 @@ func TestSupervisorRunsTheLab(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cp1 := l.VMConfig(dir, l.Nodes[0])
+	cp1 := l.VMConfig(l.Nodes[0])
 	for attach := range 2 {
 		vm, err := AttachVM(ctx, cp1)
 		if err != nil {
@@ -166,7 +166,7 @@ func TestSupervisorRunsTheLab(t *testing.T) {
 		t.Error("the lab is ready without a supervisor")
 	}
 	for _, n := range l.Nodes {
-		c := l.VMConfig(dir, n)
+		c := l.VMConfig(n)
 		if Running(c) {
 			t.Errorf("%s runs on", n.Name)
 		}
@@ -194,7 +194,7 @@ func TestStopLabWithoutSupervisor(t *testing.T) {
 	}
 	t.Cleanup(sw.Stop)
 	for _, n := range l.Nodes {
-		vm, err := StartVM(ctx, l.VMConfig(dir, n))
+		vm, err := StartVM(ctx, l.VMConfig(n))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -204,7 +204,7 @@ func TestStopLabWithoutSupervisor(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, n := range l.Nodes {
-		c := l.VMConfig(dir, n)
+		c := l.VMConfig(n)
 		if Running(c) {
 			t.Errorf("%s runs on", n.Name)
 		}
@@ -237,7 +237,7 @@ func TestStopLabStopsTheSupervisor(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-stopped
-	if Running(l.VMConfig(dir, l.Nodes[1])) {
+	if Running(l.VMConfig(l.Nodes[1])) {
 		t.Error("w1 runs on")
 	}
 }
@@ -257,8 +257,8 @@ func TestStateDir(t *testing.T) {
 	if _, err := StateDir("lab"); err == nil {
 		t.Error("took a relative XDG_STATE_HOME")
 	}
-	l := &Lab{Nodes: []LabNode{{Name: "cp1"}}}
-	if err := l.CheckSockets("/" + strings.Repeat("d", 100)); err == nil || !strings.Contains(err.Error(), "XDG_STATE_HOME") {
+	l := &Lab{Dir: "/" + strings.Repeat("d", 100), Nodes: []Node{{Name: "cp1"}}}
+	if err := l.CheckSockets(); err == nil || !strings.Contains(err.Error(), "XDG_STATE_HOME") {
 		t.Errorf("CheckSockets of a long directory = %v", err)
 	}
 }
@@ -266,11 +266,11 @@ func TestStateDir(t *testing.T) {
 // TestLabVMConfig forwards chalkd and a control plane's API server and attaches the lab's disk,
 // switch, TPM and guest agent.
 func TestLabVMConfig(t *testing.T) {
-	l := &Lab{FirmwareCode: "/fw/CODE.fd", FirmwareVars: "/lab/OVMF_VARS.fd", GuestForwards: []GuestForward{{Guest: "10.0.2.100:5000", Host: "127.0.0.1:5000"}}}
-	c := l.VMConfig("/lab", LabNode{Name: "cp1", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, ChalkdPort: 15001, APIPort: 16443})
+	l := &Lab{Dir: "/lab", FirmwareCode: "/fw/CODE.fd", FirmwareVars: "/lab/OVMF_VARS.fd", GuestForwards: []GuestForward{{Guest: "10.0.2.100:5000", Host: "127.0.0.1:5000"}}}
+	c := l.VMConfig(Node{Name: "cp1", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, ChalkdPort: 15001, APIPort: 16443, Disks: []Disk{{Size: "16G"}}})
 	data, _ := json.Marshal(c)
 	want := VMConfig{Name: "cp1", Dir: "/lab/cp1", FirmwareCode: "/fw/CODE.fd", FirmwareVars: "/lab/OVMF_VARS.fd",
-		Disks: []Disk{{Path: "/lab/cp1/disk.qcow2"}}, MemoryMB: 3072, CPUs: 2, TPM: true,
+		Disks: []VMDisk{{Path: "/lab/cp1/disk.qcow2"}}, MemoryMB: 3072, CPUs: 2, TPM: true,
 		Forwards: []Forward{{Host: 15001, Guest: 50000}, {Host: 16443, Guest: 6443}}, GuestForwards: l.GuestForwards,
 		Switch: "/lab/switch", MAC: "52:54:00:7b:00:11", GuestAgent: true}
 	wantData, _ := json.Marshal(want)
@@ -341,7 +341,7 @@ func TestVMExitKeepsTheLab(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cp1, w1 := l.VMConfig(dir, l.Nodes[0]), l.VMConfig(dir, l.Nodes[1])
+	cp1, w1 := l.VMConfig(l.Nodes[0]), l.VMConfig(l.Nodes[1])
 	cp1PID, _ := runningPID(cp1.pidPath(), cp1.Dir)
 	pid, ok := runningPID(w1.pidPath(), w1.Dir)
 	if !ok {
@@ -400,7 +400,7 @@ func TestStartWhileAVMExits(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	w1 := l.VMConfig(dir, l.Nodes[1])
+	w1 := l.VMConfig(l.Nodes[1])
 	pid, ok := runningPID(w1.pidPath(), w1.Dir)
 	if !ok {
 		t.Fatal("w1 does not run")
@@ -451,7 +451,7 @@ func TestStartAgain(t *testing.T) {
 	}
 	supervise(t, dir, io.Discard)
 	for _, n := range l.Nodes {
-		c := l.VMConfig(dir, n)
+		c := l.VMConfig(n)
 		pid, ok := runningPID(c.pidPath(), c.Dir)
 		if !ok {
 			t.Fatalf("%s does not run after the start", n.Name)
@@ -602,7 +602,7 @@ func TestStartErrorLoggedOnce(t *testing.T) {
 	t.Setenv(fakeQEMUFail, "")
 	var log syncBuffer
 	supervise(t, dir, &log)
-	w1 := l.VMConfig(dir, l.Nodes[1])
+	w1 := l.VMConfig(l.Nodes[1])
 	stopW1 := func() {
 		t.Helper()
 		pid, ok := runningPID(w1.pidPath(), w1.Dir)

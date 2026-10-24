@@ -17,9 +17,9 @@ type QMP struct {
 	dec  *json.Decoder
 }
 
-// DialQMP connects to a QMP socket, retrying until ctx expires because QEMU creates the
+// dialQMP connects to a QMP socket, retrying until ctx expires because QEMU creates the
 // socket shortly after it starts.
-func DialQMP(ctx context.Context, path string) (*QMP, error) {
+func dialQMP(ctx context.Context, path string) (*QMP, error) {
 	var d net.Dialer
 	for {
 		conn, err := d.DialContext(ctx, "unix", path)

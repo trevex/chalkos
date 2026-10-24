@@ -16,7 +16,7 @@ func TestQemuArgs(t *testing.T) {
 		Name:         "cp1",
 		Dir:          "/vm",
 		FirmwareCode: "/fw/CODE.fd",
-		Disks:        []Disk{{Path: "/vm/disk.qcow2"}, {Path: "/vm/data.qcow2", Serial: "chalk-data"}},
+		Disks:        []VMDisk{{Path: "/vm/disk.qcow2"}, {Path: "/vm/data.qcow2", Serial: "chalk-data"}},
 		MemoryMB:     2048,
 		CPUs:         2,
 	}

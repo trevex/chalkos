@@ -33,7 +33,7 @@ func TestUpgrade(t *testing.T) {
 	reg := startImageRegistry(t, filepath.Join(dir, "registry"), "pull-s3cret")
 	disk := prepareDisk(t, dir, diskOpts{sign: true})
 	n := startNode(t, lab.VMConfig{
-		Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"), Disks: []lab.Disk{disk},
+		Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"), Disks: []lab.VMDisk{disk},
 		GuestForwards: []lab.GuestForward{{Guest: registryGuest, Host: reg.host}},
 	})
 	readFacts(t, n.vm, 5*time.Minute)

@@ -867,7 +867,7 @@ func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int,
 		l, _ := lab.ReadLab(state)
 		if t.Failed() && l != nil {
 			for _, n := range l.Nodes {
-				logConsoleTail(t, l.VMConfig(state, n).ConsolePath(), 200)
+				logConsoleTail(t, l.VMConfig(n).ConsolePath(), 200)
 			}
 		}
 		if _, err := chalklab("destroy"); err != nil {
@@ -878,7 +878,7 @@ func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int,
 		}
 		if l != nil {
 			for _, n := range l.Nodes {
-				if lab.Running(l.VMConfig(state, n)) {
+				if lab.Running(l.VMConfig(n)) {
 					t.Errorf("the VM of %s runs after chalklab destroy", n.Name)
 				}
 			}
@@ -917,7 +917,7 @@ func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int,
 	nodes := map[string]*node{}
 	apiPort := 0
 	for _, n := range l.Nodes {
-		c := l.VMConfig(state, n)
+		c := l.VMConfig(n)
 		vm, err := lab.AttachVM(ctx, c)
 		if err != nil {
 			t.Fatal(err)

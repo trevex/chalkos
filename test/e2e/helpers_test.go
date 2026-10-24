@@ -212,7 +212,7 @@ func logConsoleTail(t *testing.T, path string, n int) {
 	t.Logf("last %d lines of %s:\n%s", len(lines), path, strings.Join(lines, "\n"))
 }
 
-func startVM(t *testing.T, dir, vars string, disks ...lab.Disk) *lab.VM {
+func startVM(t *testing.T, dir, vars string, disks ...lab.VMDisk) *lab.VM {
 	t.Helper()
 	return bootVM(t, lab.VMConfig{Dir: dir, FirmwareVars: vars, Disks: disks})
 }
@@ -248,7 +248,7 @@ type diskOpts struct {
 // prepareDisk returns a 16 GiB qcow2 overlay of the test image in dir, so first-boot repart has
 // room for slot B, STATE, and VAR. An image to modify or sign is copied into dir first; otherwise
 // the overlay is backed by the image itself, which QEMU only reads.
-func prepareDisk(t *testing.T, dir string, o diskOpts) lab.Disk {
+func prepareDisk(t *testing.T, dir string, o diskOpts) lab.VMDisk {
 	t.Helper()
 	ctx := context.Background()
 	if o.imageEnv == "" {
@@ -289,7 +289,7 @@ func prepareDisk(t *testing.T, dir string, o diskOpts) lab.Disk {
 	if err := lab.CreateOverlay(ctx, raw, disk, "16G"); err != nil {
 		t.Fatal(err)
 	}
-	return lab.Disk{Path: disk}
+	return lab.VMDisk{Path: disk}
 }
 
 // signedImage signs a copy of the image directory the variable names in dir with the test's db
@@ -305,13 +305,13 @@ func signedImage(t *testing.T, dir, env string) string {
 }
 
 // prepareDataDisk creates the empty second disk the storage image selects by its serial.
-func prepareDataDisk(t *testing.T, dir string) lab.Disk {
+func prepareDataDisk(t *testing.T, dir string) lab.VMDisk {
 	t.Helper()
 	path := filepath.Join(dir, "data.qcow2")
 	if err := lab.CreateDisk(context.Background(), path, "2G"); err != nil {
 		t.Fatal(err)
 	}
-	return lab.Disk{Path: path, Serial: "chalk-data"}
+	return lab.VMDisk{Path: path, Serial: "chalk-data"}
 }
 
 var factRE = regexp.MustCompile(`CHALKTEST ([a-z0-9_]+)=(\S*)`)

@@ -52,7 +52,7 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	n := startNode(t, lab.VMConfig{
 		Dir:           dir,
 		FirmwareVars:  os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"),
-		Disks:         []lab.Disk{installer, {Path: targetPath, Serial: "chalk-target"}},
+		Disks:         []lab.VMDisk{installer, {Path: targetPath, Serial: "chalk-target"}},
 		GuestForwards: []lab.GuestForward{{Guest: registryGuest, Host: reg.host}},
 	})
 
@@ -175,7 +175,7 @@ func TestInstallerISOBoots(t *testing.T) {
 		Dir:          dir,
 		FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"),
 		CDROM:        isos[0],
-		Disks:        []lab.Disk{{Path: blank, Serial: "chalk-blank"}},
+		Disks:        []lab.VMDisk{{Path: blank, Serial: "chalk-blank"}},
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

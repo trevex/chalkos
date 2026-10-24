@@ -66,9 +66,9 @@ func (c *haCluster) start(name, mac string, fresh bool) *haNode {
 			c.t.Fatal(err)
 		}
 	}
-	var disks []lab.Disk
+	var disks []lab.VMDisk
 	if old == nil || fresh {
-		disks = []lab.Disk{prepareDisk(c.t, dir, diskOpts{imageEnv: "CHALKLAB_K8S_HA_IMAGE_DIR"})}
+		disks = []lab.VMDisk{prepareDisk(c.t, dir, diskOpts{imageEnv: "CHALKLAB_K8S_HA_IMAGE_DIR"})}
 	} else {
 		disks = old.vm.Config.Disks
 	}

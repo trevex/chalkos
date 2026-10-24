@@ -50,7 +50,7 @@ func TestQMPExecuteSkipsEvents(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	q, err := DialQMP(ctx, path)
+	q, err := dialQMP(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestQMPExecuteReturnsErrors(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	q, err := DialQMP(ctx, path)
+	q, err := dialQMP(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestDialQMPWaitsForSocket(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing.sock")
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	if _, err := DialQMP(ctx, path); err == nil {
-		t.Fatal("DialQMP succeeded without a server")
+	if _, err := dialQMP(ctx, path); err == nil {
+		t.Fatal("dialQMP succeeded without a server")
 	}
 }

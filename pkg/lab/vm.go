@@ -24,7 +24,7 @@ type VMConfig struct {
 	FirmwareVars string // OVMF variable store template, copied into Dir on first start
 	// CDROM is an ISO image attached as a CD-ROM drive that boots before the disks.
 	CDROM    string
-	Disks    []Disk // attached as virtio-blk devices in boot order
+	Disks    []VMDisk // attached as virtio-blk devices in boot order
 	MemoryMB int
 	CPUs     int
 	TPM      bool
@@ -53,8 +53,8 @@ type Forward struct {
 	Host, Guest int
 }
 
-// Disk is a qcow2 image attached to a VM.
-type Disk struct {
+// VMDisk is a qcow2 image attached to a VM.
+type VMDisk struct {
 	Path string
 	// Serial is reported by the virtio-blk device; empty reports none.
 	Serial string
@@ -145,7 +145,7 @@ type VM struct {
 
 	// cmd and tpm are set on a VM this process started; pid on one it attached to.
 	cmd      *exec.Cmd
-	tpm      *SWTPM
+	tpm      *swtpm
 	pid      int
 	log      *os.File
 	follower *follower
@@ -169,12 +169,12 @@ func StartVM(ctx context.Context, c VMConfig) (*VM, error) {
 	vm := &VM{Config: c, exited: make(chan struct{})}
 	tpmSocket := ""
 	if c.TPM {
-		tpm, err := StartSWTPM(ctx, c.tpmDir())
+		tpm, err := startSWTPM(ctx, c.tpmDir())
 		if err != nil {
 			return nil, err
 		}
 		vm.tpm = tpm
-		tpmSocket = tpm.Socket
+		tpmSocket = tpm.socket
 	}
 
 	console, err := os.OpenFile(c.ConsolePath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
@@ -227,7 +227,7 @@ func StartVM(ctx context.Context, c VMConfig) (*VM, error) {
 		case <-qmpCtx.Done():
 		}
 	}()
-	qmp, err := DialQMP(qmpCtx, c.qmpPath())
+	qmp, err := dialQMP(qmpCtx, c.qmpPath())
 	if err != nil {
 		vm.Stop()
 		if out, _ := os.ReadFile(log.Name()); int64(len(out)) > logStart {
@@ -252,7 +252,7 @@ func AttachVM(ctx context.Context, c VMConfig) (*VM, error) {
 	if vm.Console, vm.follower, err = followConsole(c.ConsolePath(), 0); err != nil {
 		return nil, err
 	}
-	if vm.QMP, err = DialQMP(ctx, c.qmpPath()); err != nil {
+	if vm.QMP, err = dialQMP(ctx, c.qmpPath()); err != nil {
 		vm.follower.Close()
 		return nil, err
 	}

@@ -18,7 +18,7 @@ var factRE = regexp.MustCompile(`CHALKTEST (\w+)=(\S*)`)
 
 func TestConsoleWaitForMatchesInOrder(t *testing.T) {
 	r, w := io.Pipe()
-	c := NewConsole(r, nil)
+	c := newConsole(r, nil, 0, nil)
 	go func() {
 		fmt.Fprint(w, "boot\r\nCHALKTEST a=1\nnoise\nCHALKTEST b=2\n")
 		w.Close()
@@ -41,7 +41,7 @@ func TestConsoleWaitForMatchesInOrder(t *testing.T) {
 
 func TestConsoleWaitForHonoursContext(t *testing.T) {
 	r, _ := io.Pipe()
-	c := NewConsole(r, nil)
+	c := newConsole(r, nil, 0, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
@@ -54,7 +54,7 @@ func TestConsoleWaitForHonoursContext(t *testing.T) {
 func TestConsoleWritesLogWithoutCarriageReturns(t *testing.T) {
 	r, w := io.Pipe()
 	var log bytes.Buffer
-	c := NewConsole(r, &log)
+	c := newConsole(r, &log, 0, nil)
 	go fmt.Fprint(w, "a\r\nb\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -69,7 +69,7 @@ func TestConsoleWritesLogWithoutCarriageReturns(t *testing.T) {
 
 func TestConsoleSkipDiscardsEarlierLines(t *testing.T) {
 	r, w := io.Pipe()
-	c := NewConsole(r, nil)
+	c := newConsole(r, nil, 0, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	fmt.Fprint(w, "CHALKTEST boot=1\nCHALKTEST boot=2\n")

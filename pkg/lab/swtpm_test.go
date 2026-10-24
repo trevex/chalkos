@@ -24,12 +24,12 @@ func TestSWTPMStartsAndStops(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	tpm, err := StartSWTPM(ctx, filepath.Join(dir, "tpm"))
+	tpm, err := startSWTPM(ctx, filepath.Join(dir, "tpm"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(tpm.Stop)
-	if _, err := os.Stat(tpm.Socket); err != nil {
+	if _, err := os.Stat(tpm.socket); err != nil {
 		t.Fatalf("control socket missing: %v", err)
 	}
 	tpm.Stop()

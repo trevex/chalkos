@@ -16,18 +16,20 @@ const ChalkdPort = 50000
 // Lab is a lab cluster as its state directory records it: a VM for each of its nodes, connected
 // by a switch, with ports on 127.0.0.1 that reach chalkd and the API servers.
 type Lab struct {
+	// Dir is the lab's state directory. ReadLab sets it; lab.json does not record it.
+	Dir string `json:"-"`
 	// Name is the lab file's metadata.name, which names the lab's state directory.
 	Name string `json:"name"`
 	// FirmwareCode is the OVMF code every VM runs, and FirmwareVars the variable store with the
 	// lab's Secure Boot keys enrolled, which each VM starts from.
 	FirmwareCode  string         `json:"firmwareCode"`
 	FirmwareVars  string         `json:"firmwareVars"`
-	Nodes         []LabNode      `json:"nodes"`
+	Nodes         []Node         `json:"nodes"`
 	GuestForwards []GuestForward `json:"guestForwards,omitempty"`
 }
 
-// LabNode is the VM of a node of a lab.
-type LabNode struct {
+// Node is the VM of a node of a lab.
+type Node struct {
 	Name string `json:"name"`
 	// Kind is the node's Kubernetes kind: controlplane, worker, or empty.
 	Kind string `json:"kind,omitempty"`
@@ -36,27 +38,26 @@ type LabNode struct {
 	MemoryMB int    `json:"memoryMB"`
 	CPUs     int    `json:"cpus"`
 	// Disks are the VM's disks: the first is backed by the node's image, the others start empty.
-	// A lab recorded without them has the first alone.
-	Disks []LabDisk `json:"disks,omitempty"`
+	Disks []Disk `json:"disks"`
 	// ChalkdPort is the port on 127.0.0.1 that reaches the node's chalkd, and APIPort the one that
 	// reaches its API server; zero on a node without one.
 	ChalkdPort int `json:"chalkdPort"`
 	APIPort    int `json:"apiPort,omitempty"`
 }
 
-// LabDisk is a disk of a lab's VM: its size, as qemu-img takes it, and the serial number the VM
+// Disk is a disk of a lab's VM: its size, as qemu-img takes it, and the serial number the VM
 // sees, empty for none.
-type LabDisk struct {
+type Disk struct {
 	Size   string `json:"size"`
 	Serial string `json:"serial,omitempty"`
 }
 
-// DiskPath is the file of disk i of a node's VM in the lab's state directory dir.
-func DiskPath(dir string, n LabNode, i int) string {
+// DiskPath is the file of disk i of a node's VM in the lab's state directory.
+func (l *Lab) DiskPath(n Node, i int) string {
 	if i == 0 {
-		return filepath.Join(dir, n.Name, "disk.qcow2")
+		return filepath.Join(l.Dir, n.Name, "disk.qcow2")
 	}
-	return filepath.Join(dir, n.Name, fmt.Sprintf("disk%d.qcow2", i))
+	return filepath.Join(l.Dir, n.Name, fmt.Sprintf("disk%d.qcow2", i))
 }
 
 const labFile = "lab.json"
@@ -93,32 +94,24 @@ func ReadLab(dir string) (*Lab, error) {
 	if err != nil {
 		return nil, err
 	}
-	// A chalklab that keyed the state directory by the inventory's cluster recorded the name as
-	// cluster; Write records it as name.
-	var l struct {
-		Lab
-		Cluster string `json:"cluster"`
-	}
-	if err := json.Unmarshal(data, &l); err != nil {
+	l := &Lab{Dir: dir}
+	if err := json.Unmarshal(data, l); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", filepath.Join(dir, labFile), err)
 	}
-	if l.Name == "" {
-		l.Name = l.Cluster
-	}
-	return &l.Lab, nil
+	return l, nil
 }
 
 // Write records the lab in its state directory.
-func (l *Lab) Write(dir string) error {
+func (l *Lab) Write() error {
 	data, err := json.MarshalIndent(l, "", "  ")
 	if err != nil {
 		return err
 	}
-	return atomicfile.WriteFile(filepath.Join(dir, labFile), append(data, '\n'), 0o600)
+	return atomicfile.WriteFile(filepath.Join(l.Dir, labFile), append(data, '\n'), 0o600)
 }
 
 // Node returns the lab's node of the name.
-func (l *Lab) Node(name string) (LabNode, error) {
+func (l *Lab) Node(name string) (Node, error) {
 	for _, n := range l.Nodes {
 		if n.Name == name {
 			return n, nil
@@ -128,42 +121,38 @@ func (l *Lab) Node(name string) (LabNode, error) {
 	for _, n := range l.Nodes {
 		names = append(names, n.Name)
 	}
-	return LabNode{}, fmt.Errorf("the lab %s has no node %s; its nodes are %v", l.Name, name, names)
+	return Node{}, fmt.Errorf("the lab %s has no node %s; its nodes are %v", l.Name, name, names)
 }
 
-// VMConfig is the VM of a node of the lab whose state directory is dir: its disk, firmware
-// variables, TPM state and console log are in dir/<node>, and the switch's sockets in dir/switch.
-func (l *Lab) VMConfig(dir string, n LabNode) VMConfig {
+// VMConfig is the VM of a node of the lab: its disks, firmware variables, TPM state and console
+// log are in the node's directory of the state directory, and the switch's sockets in switch.
+func (l *Lab) VMConfig(n Node) VMConfig {
 	forwards := []Forward{{Host: n.ChalkdPort, Guest: ChalkdPort}}
 	if n.APIPort != 0 {
 		forwards = append(forwards, Forward{Host: n.APIPort, Guest: 6443})
 	}
 	return VMConfig{
 		Name:          n.Name,
-		Dir:           filepath.Join(dir, n.Name),
+		Dir:           filepath.Join(l.Dir, n.Name),
 		FirmwareCode:  l.FirmwareCode,
 		FirmwareVars:  l.FirmwareVars,
-		Disks:         vmDisks(dir, n),
+		Disks:         l.vmDisks(n),
 		MemoryMB:      n.MemoryMB,
 		CPUs:          n.CPUs,
 		TPM:           true,
 		Forwards:      forwards,
 		GuestForwards: l.GuestForwards,
-		Switch:        filepath.Join(dir, "switch"),
+		Switch:        filepath.Join(l.Dir, "switch"),
 		MAC:           n.MAC,
 		GuestAgent:    true,
 	}
 }
 
 // vmDisks are the disks of a node's VM.
-func vmDisks(dir string, n LabNode) []Disk {
-	disks := []Disk{{Path: DiskPath(dir, n, 0)}}
+func (l *Lab) vmDisks(n Node) []VMDisk {
+	var disks []VMDisk
 	for i, d := range n.Disks {
-		if i == 0 {
-			disks[0].Serial = d.Serial
-			continue
-		}
-		disks = append(disks, Disk{Path: DiskPath(dir, n, i), Serial: d.Serial})
+		disks = append(disks, VMDisk{Path: l.DiskPath(n, i), Serial: d.Serial})
 	}
 	return disks
 }
@@ -175,19 +164,19 @@ func Running(c VMConfig) bool {
 }
 
 // socketPaths are the Unix sockets of a lab, which must fit the 107 bytes a socket path holds.
-func (l *Lab) socketPaths(dir string) []string {
+func (l *Lab) socketPaths() []string {
 	// A VM's side of the switch is a socket named after its PID and a counter.
-	paths := []string{filepath.Join(dir, "switch", "ctl"), filepath.Join(dir, "switch", ".0000000-00000")}
+	paths := []string{filepath.Join(l.Dir, "switch", "ctl"), filepath.Join(l.Dir, "switch", ".0000000-00000")}
 	for _, n := range l.Nodes {
-		c := l.VMConfig(dir, n)
+		c := l.VMConfig(n)
 		paths = append(paths, c.qmpPath(), c.GuestAgentSocket(), filepath.Join(c.tpmDir(), "swtpm.sock"))
 	}
 	return paths
 }
 
 // CheckSockets fails when a socket of the lab would not fit a Unix socket's path.
-func (l *Lab) CheckSockets(dir string) error {
-	for _, p := range l.socketPaths(dir) {
+func (l *Lab) CheckSockets() error {
+	for _, p := range l.socketPaths() {
 		if len(p) > 107 {
 			return errors.New("the lab's sockets, such as " + p + ", would be longer than a Unix socket's path may be; set XDG_STATE_HOME to a shorter directory")
 		}

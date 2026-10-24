@@ -16,7 +16,7 @@ func TestStorageVolumes(t *testing.T) {
 	dir := vmDir(t)
 	system := prepareDisk(t, dir, diskOpts{imageEnv: "CHALKLAB_STORAGE_IMAGE_DIR"})
 	data := prepareDataDisk(t, dir)
-	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"), Disks: []lab.Disk{system, data}})
+	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"), Disks: []lab.VMDisk{system, data}})
 	vm := n.vm
 
 	readFacts(t, vm, 5*time.Minute)

@@ -37,26 +37,16 @@ func Supervise(ctx context.Context, dir string, log io.Writer) error {
 	signal.Notify(start, startSignal)
 	defer signal.Stop(start)
 
-	lock, err := os.OpenFile(filepath.Join(dir, supervisorFile), os.O_RDWR|os.O_CREATE, 0o600)
+	s := &supervisor{dir: dir, log: log, vms: map[string]*VM{}, exited: make(chan *VM), failed: map[string]string{}}
+	lock, err := s.lock()
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return fmt.Errorf("a supervisor runs the lab in %s already: %w", dir, err)
-	}
-	if err := lock.Truncate(0); err != nil {
-		return err
-	}
-	if _, err := lock.WriteString(strconv.Itoa(os.Getpid()) + "\n"); err != nil {
-		return err
-	}
-	ready := filepath.Join(dir, readyFile)
-	os.Remove(ready)
-	defer os.Remove(ready)
+	os.Remove(s.readyPath())
+	defer os.Remove(s.readyPath())
 
-	l, err := ReadLab(dir)
-	if err != nil {
+	if s.lab, err = ReadLab(dir); err != nil {
 		return err
 	}
 	sw, err := StartSwitch(ctx, filepath.Join(dir, "switch"))
@@ -64,99 +54,150 @@ func Supervise(ctx context.Context, dir string, log io.Writer) error {
 		return err
 	}
 	defer sw.Stop()
-	vms := map[string]*VM{}
-	defer func() {
-		var wg sync.WaitGroup
-		for _, vm := range vms {
-			wg.Go(func() { vm.Stop() })
-		}
-		wg.Wait()
-	}()
-	watchCtx, cancel := context.WithCancel(ctx)
+	defer s.stopVMs()
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	exited := make(chan *VM)
-	startVM := func(n LabNode) error {
-		vm, err := StartVM(ctx, l.VMConfig(dir, n))
-		if err != nil {
-			return fmt.Errorf("start the VM of %s: %w", n.Name, err)
-		}
-		// The supervisor only keeps the VM running: others read its console and, as QEMU serves one
-		// QMP client at a time, attach to it; it stops the VM with SIGTERM.
-		vm.follower.Close()
-		vm.QMP.Close()
-		vm.QMP = nil
-		vms[n.Name] = vm
-		go func() {
-			select {
-			case <-vm.exited:
-				select {
-				case exited <- vm:
-				case <-watchCtx.Done():
-				}
-			case <-watchCtx.Done():
-			}
-		}()
-		return nil
+	return s.run(ctx, start)
+}
+
+// supervisor keeps the VMs of a lab running.
+type supervisor struct {
+	dir string
+	lab *Lab
+	log io.Writer
+	// vms are the VMs that run, by node.
+	vms map[string]*VM
+	// exited receives each VM that exits.
+	exited chan *VM
+	// failed is the error each VM's last start failed with, by node, until one works.
+	failed map[string]string
+}
+
+func (s *supervisor) readyPath() string { return filepath.Join(s.dir, readyFile) }
+
+// lock takes the lab's lock and records this process's PID in it. The lock holds while the
+// returned file is open.
+func (s *supervisor) lock() (*os.File, error) {
+	lock, err := os.OpenFile(filepath.Join(s.dir, supervisorFile), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, err
 	}
-	// reap lets go of a VM that exited: its TPM stops, and the lab is not ready without it.
-	reap := func(vm *VM) {
-		if vms[vm.Config.Name] != vm {
-			return
-		}
-		vm.Stop()
-		delete(vms, vm.Config.Name)
-		// Logged first, so whoever finds the lab not ready finds the reason in the log.
-		fmt.Fprintf(log, "%s the VM of %s exited; chalklab start starts it again\n", time.Now().Format(time.RFC3339), vm.Config.Name)
-		os.Remove(ready)
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		lock.Close()
+		return nil, fmt.Errorf("a supervisor runs the lab in %s already: %w", s.dir, err)
 	}
-	for _, n := range l.Nodes {
-		if err := startVM(n); err != nil {
+	if err := lock.Truncate(0); err != nil {
+		lock.Close()
+		return nil, err
+	}
+	if _, err := lock.WriteString(strconv.Itoa(os.Getpid()) + "\n"); err != nil {
+		lock.Close()
+		return nil, err
+	}
+	return lock, nil
+}
+
+// run starts every VM, marks the lab ready, and then reaps the VMs that exit and starts those
+// that stopped when asked, until ctx ends.
+func (s *supervisor) run(ctx context.Context, start <-chan os.Signal) error {
+	for _, n := range s.lab.Nodes {
+		if err := s.startVM(ctx, n); err != nil {
 			return err
 		}
 	}
-	if err := os.WriteFile(ready, nil, 0o600); err != nil {
+	if err := os.WriteFile(s.readyPath(), nil, 0o600); err != nil {
 		return err
 	}
-	// failed is the error each VM's last start failed with, by node, until one works.
-	failed := map[string]string{}
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case vm := <-exited:
-			reap(vm)
+		case vm := <-s.exited:
+			s.reap(vm)
 		case <-start:
-			// A VM may have exited before this process heard of it.
-			for _, vm := range vms {
-				select {
-				case <-vm.exited:
-					reap(vm)
-				default:
-				}
-			}
-			for _, n := range l.Nodes {
-				if vms[n.Name] != nil {
-					continue
-				}
-				if err := startVM(n); err != nil {
-					// StartStopped asks every second while it waits: a VM that fails alike each
-					// time is logged once.
-					if failed[n.Name] != err.Error() {
-						fmt.Fprintf(log, "%s %v\n", time.Now().Format(time.RFC3339), err)
-						failed[n.Name] = err.Error()
-					}
-					continue
-				}
-				delete(failed, n.Name)
-				fmt.Fprintf(log, "%s started the VM of %s again\n", time.Now().Format(time.RFC3339), n.Name)
-			}
-			if len(vms) == len(l.Nodes) {
-				if err := os.WriteFile(ready, nil, 0o600); err != nil {
-					return err
-				}
+			if err := s.restartStopped(ctx); err != nil {
+				return err
 			}
 		}
 	}
+}
+
+// startVM starts the VM of a node and watches for it to exit until ctx ends.
+func (s *supervisor) startVM(ctx context.Context, n Node) error {
+	vm, err := StartVM(ctx, s.lab.VMConfig(n))
+	if err != nil {
+		return fmt.Errorf("start the VM of %s: %w", n.Name, err)
+	}
+	// The supervisor only keeps the VM running: others read its console and, as QEMU serves one
+	// QMP client at a time, attach to it; it stops the VM with SIGTERM.
+	vm.follower.Close()
+	vm.QMP.Close()
+	vm.QMP = nil
+	s.vms[n.Name] = vm
+	go func() {
+		select {
+		case <-vm.exited:
+			select {
+			case s.exited <- vm:
+			case <-ctx.Done():
+			}
+		case <-ctx.Done():
+		}
+	}()
+	return nil
+}
+
+// reap lets go of a VM that exited: its TPM stops, and the lab is not ready without it.
+func (s *supervisor) reap(vm *VM) {
+	if s.vms[vm.Config.Name] != vm {
+		return
+	}
+	vm.Stop()
+	delete(s.vms, vm.Config.Name)
+	// Logged first, so whoever finds the lab not ready finds the reason in the log.
+	fmt.Fprintf(s.log, "%s the VM of %s exited; chalklab start starts it again\n", time.Now().Format(time.RFC3339), vm.Config.Name)
+	os.Remove(s.readyPath())
+}
+
+// restartStopped starts the VMs that do not run, and marks the lab ready once they all do.
+func (s *supervisor) restartStopped(ctx context.Context) error {
+	// A VM may have exited before this process heard of it.
+	for _, vm := range s.vms {
+		select {
+		case <-vm.exited:
+			s.reap(vm)
+		default:
+		}
+	}
+	for _, n := range s.lab.Nodes {
+		if s.vms[n.Name] != nil {
+			continue
+		}
+		if err := s.startVM(ctx, n); err != nil {
+			// StartStopped asks every second while it waits: a VM that fails alike each time is
+			// logged once.
+			if s.failed[n.Name] != err.Error() {
+				fmt.Fprintf(s.log, "%s %v\n", time.Now().Format(time.RFC3339), err)
+				s.failed[n.Name] = err.Error()
+			}
+			continue
+		}
+		delete(s.failed, n.Name)
+		fmt.Fprintf(s.log, "%s started the VM of %s again\n", time.Now().Format(time.RFC3339), n.Name)
+	}
+	if len(s.vms) == len(s.lab.Nodes) {
+		return os.WriteFile(s.readyPath(), nil, 0o600)
+	}
+	return nil
+}
+
+// stopVMs stops the VMs that run.
+func (s *supervisor) stopVMs() {
+	var wg sync.WaitGroup
+	for _, vm := range s.vms {
+		wg.Go(func() { vm.Stop() })
+	}
+	wg.Wait()
 }
 
 // StartStopped asks the supervisor that runs the lab in dir to start the VMs of the lab that do
@@ -179,7 +220,7 @@ func StartStopped(ctx context.Context, dir string) error {
 	var signalled time.Time
 	for {
 		// The lab may be ready still while its supervisor has not yet heard that a VM exited.
-		if Ready(dir) && allRunning(dir, l) {
+		if Ready(dir) && allRunning(l) {
 			return nil
 		}
 		if time.Since(signalled) >= time.Second {
@@ -201,9 +242,9 @@ func StartStopped(ctx context.Context, dir string) error {
 	}
 }
 
-func allRunning(dir string, l *Lab) bool {
+func allRunning(l *Lab) bool {
 	for _, n := range l.Nodes {
-		if !Running(l.VMConfig(dir, n)) {
+		if !Running(l.VMConfig(n)) {
 			return false
 		}
 	}
@@ -294,7 +335,7 @@ func StopLab(ctx context.Context, dir string) error {
 	}
 	var left []string
 	for _, n := range l.Nodes {
-		c := l.VMConfig(dir, n)
+		c := l.VMConfig(n)
 		if pid, ok := runningPID(c.pidPath(), c.Dir); ok {
 			syscall.Kill(pid, syscall.SIGTERM)
 			stopProcess(pid, c.Dir, 10*time.Second)

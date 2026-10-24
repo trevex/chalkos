@@ -23,7 +23,7 @@ func TestSecureBootBootsSignedImage(t *testing.T) {
 	requireEnv(t, append(secureBootEnv, chalkdEnv...)...)
 	dir := vmDir(t)
 	disk := prepareDisk(t, dir, diskOpts{sign: true})
-	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"), Disks: []lab.Disk{disk}})
+	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"), Disks: []lab.VMDisk{disk}})
 	vm := n.vm
 
 	assertFacts(t, readFacts(t, vm, 5*time.Minute), map[string]string{"secureboot": "1", "state_tpm2": "1"})

@@ -28,11 +28,8 @@ type Console struct {
 	size         func() int64
 }
 
-// NewConsole reads lines from r until EOF. Each line is also written to log when log is non-nil.
-func NewConsole(r io.Reader, log io.Writer) *Console {
-	return newConsole(r, log, 0, nil)
-}
-
+// newConsole reads lines from r until EOF and writes each to log when log is non-nil. r starts at
+// the offset from of the console's log.
 func newConsole(r io.Reader, log io.Writer, from int64, size func() int64) *Console {
 	c := &Console{read: from, size: size}
 	c.cond = sync.NewCond(&c.mu)
