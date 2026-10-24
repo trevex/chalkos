@@ -93,7 +93,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |
 | `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
 | `install` | Installs a node in place or from the installer, step by step and repeatable. |
-| `kubernetes` | The node's Kubernetes cluster as the image records it, and the node as its config names it. |
+| `kubernetes` | The node's Kubernetes cluster as the image records it, the node as its config names it, and the kinds of Kubernetes nodes: control plane and worker. |
 | `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
 | `kubernetes/etcd` | etcd membership: learners, promotion, quorum-safe removal. |
 | `kubernetes/manifests` | The control plane's static pods. |
