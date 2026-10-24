@@ -15,6 +15,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -28,7 +29,7 @@ var (
 // stagedServer is configServer after an upgrade without a reboot: the running image's slot and
 // the staged image's both hold baseConfig, and the staged image's store, as ReadImage mounts it,
 // holds the schemas given.
-func stagedServer(t *testing.T, schemas map[string][]byte) (*Server, *fakeRunner) {
+func stagedServer(t *testing.T, schemas map[string][]byte) (*Server, *tooltest.Runner) {
 	t.Helper()
 	s, r := configServer(t)
 	_, held, _, err := s.runningSlot()
@@ -82,8 +83,8 @@ func TestApplyConfigStaged(t *testing.T) {
 	if v := slotVersion(t, s, runningImage); v != hashOf(t, baseConfig) {
 		t.Errorf("running version = %q, want it unchanged", v)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("ran %v", r.Calls)
 	}
 	if got := status(t, s); got.StagedConfigVersion != hashOf(t, next) || got.ConfigVersion != hashOf(t, baseConfig) {
 		t.Errorf("status names the versions %q and staged %q", got.ConfigVersion, got.StagedConfigVersion)
@@ -123,8 +124,8 @@ func TestApplyConfigStagedRefuses(t *testing.T) {
 			if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
 				t.Errorf("staged version = %q, want it unchanged", v)
 			}
-			if len(r.calls) != 0 {
-				t.Errorf("ran %v", r.calls)
+			if len(r.Calls) != 0 {
+				t.Errorf("ran %v", r.Calls)
 			}
 		})
 	}
@@ -134,7 +135,7 @@ func TestApplyConfigStagedRefuses(t *testing.T) {
 // machine at once, while the running image runs, with the fallback secret, and says so.
 func TestApplyConfigStagedAddsAVolume(t *testing.T) {
 	s, r := stagedServer(t, fixtureSchemas(t))
-	r.rules = volumeRules(s)
+	r.Rules = volumeRules(s)
 	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), Staged: true, FallbackSecret: secret}))
 	if err != nil {
 		t.Fatal(err)
@@ -142,8 +143,8 @@ func TestApplyConfigStagedAddsAVolume(t *testing.T) {
 	if len(resp.Msg.Changes) != 1 || resp.Msg.Changes[0].Volume != "extra" {
 		t.Errorf("changes = %v, want the new volume", resp.Msg.Changes)
 	}
-	if !contains(r.calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
-		t.Errorf("the volume was not created: %v", r.calls)
+	if !contains(r.Calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
+		t.Errorf("the volume was not created: %v", r.Calls)
 	}
 	if v := slotVersion(t, s, stagedImage); v != hashOf(t, extraConfig("ext4")) {
 		t.Errorf("staged version = %q, want the delivered config's", v)
@@ -159,12 +160,12 @@ func TestApplyConfigStagedAddsAVolume(t *testing.T) {
 // additive change, the running image's config that names it applies.
 func TestApplyConfigRefusesAMachineChangeTheStagedImageWouldUndo(t *testing.T) {
 	s, r := stagedServer(t, fixtureSchemas(t))
-	r.rules = volumeRules(s)
+	r.Rules = volumeRules(s)
 	_, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "would refuse its own config once this config changes the storage, saying: Volume extra: ") || !strings.Contains(err.Error(), "; bring its config along first: run chalkctl apply-config --staged n1 with the new config, then apply it to the running image") || !strings.Contains(err.Error(), "extra") {
 		t.Fatalf("err = %v, want a refusal naming apply-config --staged", err)
 	}
-	if changed := withoutChecks(r.calls); len(changed) != 0 {
+	if changed := withoutChecks(r.Calls); len(changed) != 0 {
 		t.Fatalf("a refused config ran %v", changed)
 	}
 	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), Staged: true, FallbackSecret: secret})); err != nil {

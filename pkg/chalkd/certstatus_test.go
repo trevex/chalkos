@@ -16,6 +16,7 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
 func status(t *testing.T, s *Server) *nodev1.StatusResponse {
@@ -156,7 +157,7 @@ func TestParseTracking(t *testing.T) {
 
 func TestStatusTime(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
-	r.rules = append(r.rules, rule{prefix: "chronyc -n -c tracking", out: "C0A80001,10.0.2.2,2,1791460000.1,-0.5,0,0,0,0,0,0,0,64,Normal\n"})
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "chronyc -n -c tracking", Out: "C0A80001,10.0.2.2,2,1791460000.1,-0.5,0,0,0,0,0,0,0,64,Normal\n"})
 	if st := status(t, s).Time; !st.Synchronised || st.Source != "10.0.2.2" || st.OffsetSeconds != 0.5 || st.Error != "" {
 		t.Errorf("time = %+v", st)
 	}
@@ -242,12 +243,12 @@ func TestStatusReportsAnUnreadableShare(t *testing.T) {
 // status, and not in chalkd's log on each call.
 func TestStatusTimeWhileChronydIsDown(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
-	r.rules = append(r.rules, rule{prefix: "chronyc -n -c tracking", err: &tool.Error{Command: "chronyc -n -c tracking", Code: 1, Stderr: "506 Cannot talk to daemon\n"}})
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "chronyc -n -c tracking", Err: &tool.Error{Command: "chronyc -n -c tracking", Code: 1, Stderr: "506 Cannot talk to daemon\n"}})
 	st := status(t, s).Time
 	if strings.Count(st.Error, "506 Cannot talk to daemon") != 1 {
 		t.Errorf("time error %q, want chronyc's message once", st.Error)
 	}
-	if !r.quiet["chronyc -n -c tracking"] {
+	if !r.Quiet["chronyc -n -c tracking"] {
 		t.Error("chronyc's standard error went to chalkd's log")
 	}
 }

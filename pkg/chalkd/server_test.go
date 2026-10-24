@@ -23,7 +23,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -39,73 +38,8 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
-
-// fakeRunner records commands and answers them from the first rule whose prefix matches.
-type fakeRunner struct {
-	mu    sync.Mutex
-	rules []rule
-	calls []string
-	envs  map[string][]string
-	// inputs holds what commands received on standard input, by command line.
-	inputs map[string]string
-	// quiet holds the command lines run without their standard error reaching the log.
-	quiet map[string]bool
-	// before, when set, sees each command line before the command is answered.
-	before func(line string)
-}
-
-func (f *fakeRunner) RunWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error) {
-	f.mu.Lock()
-	if f.inputs == nil {
-		f.inputs = map[string]string{}
-	}
-	f.inputs[strings.Join(append([]string{name}, args...), " ")] = string(input)
-	f.mu.Unlock()
-	return f.RunWithEnv(ctx, nil, name, args...)
-}
-
-type rule struct {
-	prefix string
-	out    string
-	err    error
-}
-
-func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return f.RunWithEnv(ctx, nil, name, args...)
-}
-
-func (f *fakeRunner) RunQuiet(ctx context.Context, name string, args ...string) ([]byte, error) {
-	f.mu.Lock()
-	if f.quiet == nil {
-		f.quiet = map[string]bool{}
-	}
-	f.quiet[strings.Join(append([]string{name}, args...), " ")] = true
-	f.mu.Unlock()
-	return f.RunWithEnv(ctx, nil, name, args...)
-}
-
-func (f *fakeRunner) RunWithEnv(_ context.Context, env []string, name string, args ...string) ([]byte, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	line := strings.Join(append([]string{name}, args...), " ")
-	f.calls = append(f.calls, line)
-	if f.before != nil {
-		f.before(line)
-	}
-	if env != nil {
-		if f.envs == nil {
-			f.envs = map[string][]string{}
-		}
-		f.envs[line] = env
-	}
-	for _, r := range f.rules {
-		if strings.HasPrefix(line, r.prefix) {
-			return []byte(r.out), r.err
-		}
-	}
-	return nil, nil
-}
 
 func write(t *testing.T, path, content string) {
 	t.Helper()
@@ -129,7 +63,7 @@ var (
 
 // newTestServer returns a server in the mode whose paths point at fixture trees: vda is the
 // boot disk and carries VAR as vda7.
-func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, *fakeRunner) {
+func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, *tooltest.Runner) {
 	t.Helper()
 	root := t.TempDir()
 	h := storage.Host{
@@ -155,7 +89,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 	if err := os.Symlink("../vda", filepath.Join(h.DevRoot, "disk", "chalk-boot-disk")); err != nil {
 		t.Fatal(err)
 	}
-	r := &fakeRunner{}
+	r := &tooltest.Runner{}
 	s := &Server{
 		Mode: mode,
 		Paths: Paths{
@@ -707,7 +641,7 @@ func TestStatus(t *testing.T) {
 	write(t, filepath.Join(s.Paths.StateDir, "storage", "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "p", "size": 1, "type": "hdd"}, "partitions": {"var": "a"}}}}`)
 	write(t, s.Paths.StorageStatus, `{"installed": true, "disks": {"system": {"device": "/dev/disk/chalk-boot-disk"}, "extra": {"error": "no disk matches serial \"chalk-extra\""}}}`)
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
-	r.rules = []rule{{prefix: "systemctl list-units --state=failed", out: "systemd-cryptsetup@extra.service loaded failed failed Unlock chalkos volume extra\nsrv-extra.mount loaded failed failed chalkos volume extra\n"}}
+	r.Rules = []tooltest.Rule{{Prefix: "systemctl list-units --state=failed", Out: "systemd-cryptsetup@extra.service loaded failed failed Unlock chalkos volume extra\nsrv-extra.mount loaded failed failed chalkos volume extra\n"}}
 
 	resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
 	if err != nil {
@@ -797,8 +731,8 @@ func TestRequestSizeLimit(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("err = %v, want resource exhausted", err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("ran %v", r.Calls)
 	}
 	// Below the limit, the request reaches the handler, which refuses what is not config.
 	_, err = conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: large[:maxMessageBytes-1024]}))

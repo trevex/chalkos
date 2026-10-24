@@ -108,8 +108,8 @@ func TestApplyConfigReplacesTheOSCAs(t *testing.T) {
 	if got, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "chalkd", CAFile)); string(got) != both || s.Certificate.OSCA() != both {
 		t.Errorf("the node trusts %q, want both OS CAs", got)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("delivering OS CAs ran %v", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("delivering OS CAs ran %v", r.Calls)
 	}
 	if err := reach(); err != nil {
 		t.Errorf("a client of the new OS CA is refused once it is trusted: %v", err)
@@ -471,7 +471,7 @@ func TestApplyConfigRefusesTheFallbackSecretBeforeItTrusts(t *testing.T) {
 			if s.Certificate.OSCA() != before {
 				t.Error("a refused request changed the OS CAs")
 			}
-			if changed := withoutChecks(r.calls); len(changed) != 0 {
+			if changed := withoutChecks(r.Calls); len(changed) != 0 {
 				t.Errorf("ran %v", changed)
 			}
 		})

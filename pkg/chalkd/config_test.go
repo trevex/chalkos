@@ -25,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
 // baseConfig is a node of the test server's image without Kubernetes, with a Demo whose token is a
@@ -117,7 +118,7 @@ func hashOf(t *testing.T, text string) string {
 // baseConfig: STATE holds the set, the identity it translates to and that identity's storage
 // section, pinned. The image has the built-in effects, and demo.service, granted the Demo kind,
 // which restarts when the output demo, the Demo documents, changes.
-func configServer(t *testing.T) (*Server, *fakeRunner) {
+func configServer(t *testing.T) (*Server, *tooltest.Runner) {
 	t.Helper()
 	s, r := newTestServer(t, normal, vda, vdb)
 	withNodeCertificate(t, s)
@@ -174,8 +175,8 @@ func TestApplyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"systemctl show --property=ActiveState --value demo.service", "systemctl try-restart demo.service"}; !slices.Equal(r.calls, want) {
-		t.Errorf("commands = %v, want %v", r.calls, want)
+	if want := []string{"systemctl show --property=ActiveState --value demo.service", "systemctl try-restart demo.service"}; !slices.Equal(r.Calls, want) {
+		t.Errorf("commands = %v, want %v", r.Calls, want)
 	}
 	if !slices.Equal(resp.RestartedUnits, []string{"demo.service"}) || len(resp.Changes) != 0 {
 		t.Errorf("response = %+v", resp)
@@ -256,11 +257,11 @@ func TestApplyConfigRetriesEffectsOnKinds(t *testing.T) {
 	s, r := configServer(t)
 	writeEffects(t, s, `{"demo-kind": {"kinds": ["Demo"], "restart": ["kind.service"]}}`)
 	renamed := strings.Replace(baseConfig, "name: first", "name: second", 1)
-	r.rules = []rule{{prefix: "systemctl try-restart", err: errors.New("exit status 1")}}
+	r.Rules = []tooltest.Rule{{Prefix: "systemctl try-restart", Err: errors.New("exit status 1")}}
 	if _, err := sendConfig(s, renamed); err == nil || !strings.Contains(err.Error(), "kind.service") {
 		t.Fatalf("err = %v, want kind.service named among the units to restart by hand", err)
 	}
-	r.rules, r.calls = nil, nil
+	r.Rules, r.Calls = nil, nil
 	resp, err := sendConfig(s, renamed)
 	if err != nil {
 		t.Fatal(err)
@@ -271,7 +272,7 @@ func TestApplyConfigRetriesEffectsOnKinds(t *testing.T) {
 	if _, err := os.Stat(s.Paths.EffectsBaseline); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("baseline after a delivery applied whole: %v", err)
 	}
-	r.calls = nil
+	r.Calls = nil
 	resp, err = sendConfig(s, renamed)
 	if err != nil {
 		t.Fatal(err)
@@ -289,14 +290,14 @@ func TestApplyConfigComparesKindsWithTheBaselineOnAKeptDelivery(t *testing.T) {
 	s, r := configServer(t)
 	writeEffects(t, s, `{"demo-kind": {"kinds": ["Demo"], "restart": ["kind.service"]}}`)
 	next := baseConfig + networkConfig
-	r.rules = []rule{{prefix: "systemctl reload systemd-networkd.service", err: errors.New("exit status 1")}}
+	r.Rules = []tooltest.Rule{{Prefix: "systemctl reload systemd-networkd.service", Err: errors.New("exit status 1")}}
 	if _, err := sendConfig(s, next); err == nil {
 		t.Fatal("the failed reload went unreported")
 	}
 	if _, err := os.Stat(s.Paths.EffectsBaseline); err != nil {
 		t.Fatalf("baseline: %v, want one left by the failed reload", err)
 	}
-	r.rules, r.calls = nil, nil
+	r.Rules, r.Calls = nil, nil
 	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())}))
 	if err != nil {
 		t.Fatal(err)
@@ -338,8 +339,8 @@ func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `SystemDisk "system"`) {
 		t.Fatalf("err = %v, want a refusal naming the SystemDisk", err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v for a refused config", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("ran %v for a refused config", r.Calls)
 	}
 	if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
 		t.Error("stored a refused config")
@@ -369,8 +370,8 @@ func TestApplyConfigRefusesMalformedImageFacts(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the image's Kubernetes facts") {
 		t.Fatalf("err = %v, want a failure naming the image's Kubernetes facts", err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("ran %v", r.Calls)
 	}
 }
 
@@ -379,16 +380,16 @@ func TestApplyConfigRefusesMalformedImageFacts(t *testing.T) {
 // which does not tell which of them failed. A failed call does not stop the others.
 func TestApplyConfigFailingRestartNamesTheUnits(t *testing.T) {
 	s, r := configServer(t)
-	r.rules = append(r.rules,
-		rule{prefix: "systemctl show --property=ActiveState --value chalkos-chrony-dhcp.service", out: "failed\n"},
-		rule{prefix: "systemctl try-restart demo.service", err: errors.New("exit status 1")})
+	r.Rules = append(r.Rules,
+		tooltest.Rule{Prefix: "systemctl show --property=ActiveState --value chalkos-chrony-dhcp.service", Out: "failed\n"},
+		tooltest.Rule{Prefix: "systemctl try-restart demo.service", Err: errors.New("exit status 1")})
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1) + timeSyncConfig
 	_, err := sendConfig(s, next)
 	if err == nil || !strings.Contains(err.Error(), "try-restart demo.service: exit status 1; the delivery is applied, so restart demo.service by hand") || strings.Contains(err.Error(), "chalkos-chrony-dhcp.service by hand") {
 		t.Fatalf("err = %v, want it to name demo.service alone", err)
 	}
-	if !slices.Contains(r.calls, "systemctl restart chalkos-chrony-dhcp.service") {
-		t.Errorf("commands = %v; a failed restart must not stop the others", r.calls)
+	if !slices.Contains(r.Calls, "systemctl restart chalkos-chrony-dhcp.service") {
+		t.Errorf("commands = %v; a failed restart must not stop the others", r.Calls)
 	}
 }
 
@@ -409,14 +410,14 @@ func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 	  "broken": {"outputs": ["demo"], "restart": ["broken.service"]},
 	  "idle": {"when": "false", "restart": ["idle.service"]}
 	}`)
-	r.rules = append(r.rules,
-		rule{prefix: "systemctl show --property=ActiveState --value stopped.service", out: "inactive\n"},
-		rule{prefix: "systemctl show --property=ActiveState --value broken.service", out: "failed\n"})
+	r.Rules = append(r.Rules,
+		tooltest.Rule{Prefix: "systemctl show --property=ActiveState --value stopped.service", Out: "inactive\n"},
+		tooltest.Rule{Prefix: "systemctl show --property=ActiveState --value broken.service", Out: "failed\n"})
 	resp, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := r.calls
+	got := r.Calls
 	want := []string{
 		"systemctl show --property=ActiveState --value demo.service",
 		"systemctl show --property=ActiveState --value logger.service",
@@ -460,12 +461,12 @@ func TestApplyConfigReloadsNetworkd(t *testing.T) {
 		{"another Demo", strings.Replace(baseConfig, "name: first", "name: second", 1) + networkConfig, false},
 		{"another address", baseConfig + strings.Replace(networkConfig, "10.0.0.11", "10.0.0.12", 1), true},
 	} {
-		r.calls = nil
+		r.Calls = nil
 		if _, err := sendConfig(s, step.config); err != nil {
 			t.Fatal(err)
 		}
-		if got := slices.Contains(r.calls, "systemctl reload systemd-networkd.service"); got != step.reloads {
-			t.Errorf("%s: reloaded %v, want %v: %v", step.name, got, step.reloads, r.calls)
+		if got := slices.Contains(r.Calls, "systemctl reload systemd-networkd.service"); got != step.reloads {
+			t.Errorf("%s: reloaded %v, want %v: %v", step.name, got, step.reloads, r.Calls)
 		}
 	}
 }
@@ -487,12 +488,12 @@ func TestApplyConfigReloadsTimeServers(t *testing.T) {
 		{"NTS off", baseConfig + strings.Replace(timeSyncConfig, "{host: ntp.lan}", "{host: ntp2.lan, port: 4460, nts: false}", 1), []string{"chalkos-chrony-reload-sources", "systemctl try-restart chalkos-chrony-dhcp.service"}},
 		{"the same servers with another Demo", strings.Replace(baseConfig, "name: first", "name: second", 1) + strings.Replace(timeSyncConfig, "{host: ntp.lan}", "{host: ntp2.lan, port: 4460, nts: false}", 1), []string{"systemctl try-restart demo.service"}},
 	} {
-		r.calls = nil
+		r.Calls = nil
 		if _, err := sendConfig(s, step.config); err != nil {
 			t.Fatal(err)
 		}
 		var got []string
-		for _, c := range r.calls {
+		for _, c := range r.Calls {
 			if !strings.HasPrefix(c, "systemctl show ") {
 				got = append(got, c)
 			}
@@ -514,8 +515,8 @@ func TestApplyConfigActsOnItselfInProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.calls) != 0 || len(resp.RestartedUnits) != 0 {
-		t.Errorf("ran %v, restarted %v", r.calls, resp.RestartedUnits)
+	if len(r.Calls) != 0 || len(resp.RestartedUnits) != 0 {
+		t.Errorf("ran %v, restarted %v", r.Calls, resp.RestartedUnits)
 	}
 	if acted != [2]bool{false, true} {
 		t.Errorf("acted on itself %v, want a restart, which a reload is part of", acted)
@@ -530,13 +531,13 @@ func TestApplyConfigFailingReloadNamesTheUnit(t *testing.T) {
 	  "logger": {"outputs": ["demo"], "reload": ["logger.service"]},
 	  "demo": {"outputs": ["demo"], "restart": ["demo.service"]}
 	}`)
-	r.rules = append(r.rules, rule{prefix: "systemctl reload logger.service", err: errors.New("exit status 1")})
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl reload logger.service", Err: errors.New("exit status 1")})
 	_, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1))
 	if err == nil || !strings.Contains(err.Error(), "reload logger.service: exit status 1; the delivery is applied, so reload logger.service by hand") {
 		t.Fatalf("err = %v, want the reload named", err)
 	}
-	if !slices.Contains(r.calls, "systemctl try-restart demo.service") {
-		t.Errorf("commands = %v; a failed reload must not stop the restarts", r.calls)
+	if !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Errorf("commands = %v; a failed reload must not stop the restarts", r.Calls)
 	}
 }
 
@@ -554,8 +555,8 @@ func TestApplyConfigRestartsOnARuleThatFails(t *testing.T) {
 	if !slices.Equal(resp.Warnings, want) {
 		t.Errorf("warnings = %q, want %q", resp.Warnings, want)
 	}
-	if !slices.Contains(r.calls, "systemctl try-restart demo.service") {
-		t.Errorf("commands = %v", r.calls)
+	if !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Errorf("commands = %v", r.Calls)
 	}
 }
 
@@ -578,12 +579,12 @@ func TestApplyConfigComparesFactsBeforeAndAfter(t *testing.T) {
 		{"the same", baseConfig, false},
 		{"another host name", baseConfig + hostConfig("default", "h2"), true},
 	} {
-		r.calls = nil
+		r.Calls = nil
 		if _, err := sendConfig(s, step.config); err != nil {
 			t.Fatal(err)
 		}
-		if got := slices.Contains(r.calls, "systemctl try-restart namer.service"); got != step.restarts {
-			t.Errorf("%s: restarted %v, want %v: %v", step.name, got, step.restarts, r.calls)
+		if got := slices.Contains(r.Calls, "systemctl try-restart namer.service"); got != step.restarts {
+			t.Errorf("%s: restarted %v, want %v: %v", step.name, got, step.restarts, r.Calls)
 		}
 	}
 }
@@ -603,18 +604,18 @@ func TestApplyConfigFailureToStoreRestartsNothing(t *testing.T) {
 		t.Fatalf("err = %v, want the slot's failure", err)
 	}
 	restart := "systemctl restart chalkos-kubernetes.service kubelet.service"
-	if slices.Contains(r.calls, restart) {
-		t.Errorf("commands = %v, want nothing restarted", r.calls)
+	if slices.Contains(r.Calls, restart) {
+		t.Errorf("commands = %v, want nothing restarted", r.Calls)
 	}
 	if err := os.Chmod(slots, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	r.calls = nil
+	r.Calls = nil
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(r.calls, restart) {
-		t.Errorf("the retry ran %v, want Kubernetes restarted", r.calls)
+	if !slices.Contains(r.Calls, restart) {
+		t.Errorf("the retry ran %v, want Kubernetes restarted", r.Calls)
 	}
 }
 
@@ -677,19 +678,19 @@ func TestResetVolumeThroughConfig(t *testing.T) {
 	  "extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": {"extra": "`+extraUUID+`"}}}}`)
 	writeIdentity(t, s, string(c.Identity))
 	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
-	r.rules = []rule{
-		{prefix: "blkid -p -o export /dev/vdb", err: &tool.Error{Command: "blkid", Code: 2}},
-		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
-		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system"), out: `[{"file":"` + filepath.Join(dir, "disks", "system", "50-var.conf") + `","uuid":"` + varUUID + `"}]`},
-		{prefix: "blkid -p -o value -s TYPE", out: "crypto_LUKS\n"},
-		{prefix: "cryptsetup luksDump --dump-json-metadata", out: luksDump},
+	r.Rules = []tooltest.Rule{
+		{Prefix: "blkid -p -o export /dev/vdb", Err: &tool.Error{Command: "blkid", Code: 2}},
+		{Prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), Out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
+		{Prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system"), Out: `[{"file":"` + filepath.Join(dir, "disks", "system", "50-var.conf") + `","uuid":"` + varUUID + `"}]`},
+		{Prefix: "blkid -p -o value -s TYPE", Out: "crypto_LUKS\n"},
+		{Prefix: "cryptsetup luksDump --dump-json-metadata", Out: luksDump},
 	}
 
 	if _, err := s.ResetVolume(context.Background(), connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "extra", Config: extraConfig("xfs"), FallbackSecret: secret})); err != nil {
 		t.Fatal(err)
 	}
-	if !contains(r.calls, "wipefs --all /dev/vdb1") || !contains(r.calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
-		t.Errorf("the volume was not wiped and created again: %v", r.calls)
+	if !contains(r.Calls, "wipefs --all /dev/vdb1") || !contains(r.Calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
+		t.Errorf("the volume was not wiped and created again: %v", r.Calls)
 	}
 	recorded, err := storage.ReadSection(filepath.Join(dir, "storage.json"))
 	if err != nil || recorded.Volumes["extra"].Format != "xfs" {
@@ -734,7 +735,7 @@ func TestGetConfig(t *testing.T) {
 func TestApplyConfigRetriesAFailedReload(t *testing.T) {
 	s, r := configServer(t)
 	next := baseConfig + networkConfig
-	r.rules = []rule{{prefix: "systemctl reload systemd-networkd.service", err: errors.New("exit status 1")}}
+	r.Rules = []tooltest.Rule{{Prefix: "systemctl reload systemd-networkd.service", Err: errors.New("exit status 1")}}
 	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "reload systemd-networkd.service by hand") {
 		t.Fatalf("err = %v, want the reload named", err)
 	}
@@ -745,22 +746,22 @@ func TestApplyConfigRetriesAFailedReload(t *testing.T) {
 	if b := readFile(t, s.Paths.EffectsBaseline); strings.Contains(b, "s3cret") || !strings.Contains(b, `"name":"first"`) {
 		t.Errorf("baseline = %s, want the config before the delivery with its Secret hashed", b)
 	}
-	r.rules, r.calls = nil, nil
+	r.Rules, r.Calls = nil, nil
 	if _, err := sendConfig(s, next); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(r.calls, "systemctl reload systemd-networkd.service") {
-		t.Errorf("the retry ran %v, want networkd reloaded", r.calls)
+	if !slices.Contains(r.Calls, "systemctl reload systemd-networkd.service") {
+		t.Errorf("the retry ran %v, want networkd reloaded", r.Calls)
 	}
 	if _, err := os.Stat(s.Paths.EffectsBaseline); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("baseline after a delivery applied whole: %v", err)
 	}
-	r.calls = nil
+	r.Calls = nil
 	if _, err := sendConfig(s, next); err != nil {
 		t.Fatal(err)
 	}
-	if slices.Contains(r.calls, "systemctl reload systemd-networkd.service") {
-		t.Errorf("the same config again ran %v", r.calls)
+	if slices.Contains(r.Calls, "systemctl reload systemd-networkd.service") {
+		t.Errorf("the same config again ran %v", r.Calls)
 	}
 }
 
@@ -774,7 +775,7 @@ func TestApplyConfigReplacesATornBaseline(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	write(t, s.Paths.EffectsBaseline, `{"documents": [`)
 	renamed := strings.Replace(baseConfig, "name: first", "name: second", 1)
-	r.rules = []rule{{prefix: "systemctl try-restart demo.service", err: errors.New("exit status 1")}}
+	r.Rules = []tooltest.Rule{{Prefix: "systemctl try-restart demo.service", Err: errors.New("exit status 1")}}
 	if _, err := sendConfig(s, renamed); err == nil || !strings.Contains(err.Error(), "restart demo.service by hand") {
 		t.Fatalf("err = %v, want demo restarted for the change from the running slot", err)
 	}
@@ -807,8 +808,8 @@ func TestApplyConfigRefusesWithoutABaseline(t *testing.T) {
 	if v, err := store.Version(slotOf(t, s)); err != nil || v != hashOf(t, baseConfig) {
 		t.Errorf("stored version = %q, %v; want the config from before", v, err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("a refused delivery ran %v", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("a refused delivery ran %v", r.Calls)
 	}
 }
 
@@ -818,11 +819,11 @@ func TestApplyConfigRefusesWithoutABaseline(t *testing.T) {
 func TestApplyConfigComparesWithTheConfigBeforeAFailure(t *testing.T) {
 	s, r := configServer(t)
 	renamed := strings.Replace(baseConfig, "name: first", "name: second", 1)
-	r.rules = []rule{{prefix: "systemctl try-restart demo.service", err: errors.New("exit status 1")}}
+	r.Rules = []tooltest.Rule{{Prefix: "systemctl try-restart demo.service", Err: errors.New("exit status 1")}}
 	if _, err := sendConfig(s, renamed); err == nil {
 		t.Fatal("the failed restart went unreported")
 	}
-	r.rules, r.calls = nil, nil
+	r.Rules, r.Calls = nil, nil
 	resp, err := sendConfig(s, renamed+timeSyncConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -845,12 +846,12 @@ func TestApplyConfigReloadsNetworkdForUnitsThatDiffer(t *testing.T) {
 	if err := os.Remove(dir); err != nil {
 		t.Fatal(err)
 	}
-	r.calls = nil
+	r.Calls = nil
 	if _, err := sendConfig(s, next); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(r.calls, "systemctl reload systemd-networkd.service") {
-		t.Errorf("ran %v, want networkd reloaded for the units rendered again", r.calls)
+	if !slices.Contains(r.Calls, "systemctl reload systemd-networkd.service") {
+		t.Errorf("ran %v, want networkd reloaded for the units rendered again", r.Calls)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "units.json")); err != nil {
 		t.Errorf("the units are not rendered again: %v", err)
@@ -965,8 +966,8 @@ func TestApplyConfigRefusesAnOutputThatFails(t *testing.T) {
 			if !strings.Contains(logged.String(), "second") {
 				t.Errorf("the journal lacks the program's stderr: %s", logged.String())
 			}
-			if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) || len(r.calls) != 0 {
-				t.Errorf("stored %s, ran %v", v, r.calls)
+			if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) || len(r.Calls) != 0 {
+				t.Errorf("stored %s, ran %v", v, r.Calls)
 			}
 			if got := readFile(t, filepath.Join(s.Loader.Render.Root, "demo", "demo.json")); got != before {
 				t.Errorf("the output the node serves changed to %s", got)
@@ -1026,7 +1027,7 @@ func TestApplyConfigSwapsOutputsAfterTheSlot(t *testing.T) {
 	if err := os.Chmod(slots, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	r.calls = nil
+	r.Calls = nil
 	resp, err := sendConfig(s, next)
 	if err != nil {
 		t.Fatal(err)
@@ -1050,12 +1051,12 @@ func TestApplyConfigStartsFailedUnits(t *testing.T) {
 	} {
 		t.Run(state, func(t *testing.T) {
 			s, r := configServer(t)
-			r.rules = append(r.rules, rule{prefix: "systemctl show --property=ActiveState --value demo.service", out: state + "\n"})
+			r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl show --property=ActiveState --value demo.service", Out: state + "\n"})
 			if _, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1)); err != nil {
 				t.Fatal(err)
 			}
 			var restarts []string
-			for _, c := range r.calls {
+			for _, c := range r.Calls {
 				if strings.HasPrefix(c, "systemctl ") && !strings.HasPrefix(c, "systemctl show ") {
 					restarts = append(restarts, c)
 				}
@@ -1076,8 +1077,8 @@ func TestApplyConfigRefusesEffectsThatDoNotCompile(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), `the running image's effects: effect demo: rule "config =="`) {
 		t.Fatalf("err = %v", err)
 	}
-	if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) || len(r.calls) != 0 {
-		t.Errorf("stored %s, ran %v", v, r.calls)
+	if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) || len(r.Calls) != 0 {
+		t.Errorf("stored %s, ran %v", v, r.Calls)
 	}
 }
 

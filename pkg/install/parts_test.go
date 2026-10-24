@@ -199,10 +199,10 @@ func (l *partsLab) RunWithInput(ctx context.Context, _ []byte, name string, args
 func (l *partsLab) RunWithEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
 	switch {
 	case name == "sfdisk" || name == "systemd-repart" || name == "blkid":
-		l.r.calls = append(l.r.calls, strings.Join(append([]string{name}, args...), " "))
+		l.r.Calls = append(l.r.Calls, strings.Join(append([]string{name}, args...), " "))
 		return l.real(ctx, name, args)
 	case name == "mount":
-		l.r.calls = append(l.r.calls, strings.Join(append([]string{name}, args...), " "))
+		l.r.Calls = append(l.r.Calls, strings.Join(append([]string{name}, args...), " "))
 		source, target := args[len(args)-2], args[len(args)-1]
 		if err := l.mount(source, target); err != nil {
 			return nil, err
@@ -212,10 +212,10 @@ func (l *partsLab) RunWithEnv(ctx context.Context, env []string, name string, ar
 		}
 		return nil, l.countMount(source)
 	case name == "umount":
-		l.r.calls = append(l.r.calls, strings.Join(append([]string{name}, args...), " "))
+		l.r.Calls = append(l.r.Calls, strings.Join(append([]string{name}, args...), " "))
 		return nil, l.umount(args[0])
 	case name == "systemd-cryptsetup" && args[0] == "attach" && l.tpmFails:
-		l.r.calls = append(l.r.calls, strings.Join(append([]string{name}, args...), " "))
+		l.r.Calls = append(l.r.Calls, strings.Join(append([]string{name}, args...), " "))
 		return nil, &tool.Error{Command: name, Code: 1, Stderr: "Failed to unseal secret using TPM2: State not recoverable"}
 	case name == "efibootmgr":
 		// The emulated firmware finds the ESP's partition UUID on the disk.
@@ -527,8 +527,8 @@ func TestFromPartsInstallsOntoEmptyDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.checkInstalled(img)
-	if !hasPrefix(l.r.calls, "systemd-repart --dry-run=no --empty=require --seed=random --definitions="+filepath.Join(l.i.WorkDir, "system")+" --tpm2-pcrs=7 /dev/vdb") {
-		t.Errorf("the target was not laid out with the image's definitions: %q", l.r.calls)
+	if !hasPrefix(l.r.Calls, "systemd-repart --dry-run=no --empty=require --seed=random --definitions="+filepath.Join(l.i.WorkDir, "system")+" --tpm2-pcrs=7 /dev/vdb") {
+		t.Errorf("the target was not laid out with the image's definitions: %q", l.r.Calls)
 	}
 	if l.writes != 2 {
 		t.Errorf("slot A's partitions were opened for writing %d times, want twice", l.writes)
@@ -822,7 +822,7 @@ func TestFromPartsRefuses(t *testing.T) {
 				tc.setup(l)
 			}
 			before, image := l.table(), l.image()
-			l.r.calls = nil
+			l.r.Calls = nil
 			req := l.request(tc.img)
 			if tc.edit != nil {
 				tc.edit(&req)
@@ -841,12 +841,12 @@ func TestFromPartsRefuses(t *testing.T) {
 				if !bytes.Equal(l.image(), image) {
 					t.Error("the refused target changed")
 				}
-				if hasPrefix(l.r.calls, "e2fsck") {
-					t.Errorf("checked a file system of the refused target: %q", l.r.calls)
+				if hasPrefix(l.r.Calls, "e2fsck") {
+					t.Errorf("checked a file system of the refused target: %q", l.r.Calls)
 				}
 			}
-			if l.tpmFails && !hasPrefix(l.r.calls, "systemd-cryptsetup attach state /dev/vdb6 - tpm2-device=auto,headless=true,read-only") {
-				t.Errorf("STATE was not opened read-only: %q", l.r.calls)
+			if l.tpmFails && !hasPrefix(l.r.Calls, "systemd-cryptsetup attach state /dev/vdb6 - tpm2-device=auto,headless=true,read-only") {
+				t.Errorf("STATE was not opened read-only: %q", l.r.Calls)
 			}
 			if tc.name != "an installed disk" && l.installed() {
 				t.Error("the target is installed")
@@ -1051,8 +1051,8 @@ func TestFromPartsRefusesBeforeTouchingTheDisk(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
-			if len(l.r.calls) != 0 || len(l.diskLog.writes) != 0 {
-				t.Errorf("ran %v and wrote %v", l.r.calls, l.diskLog.writes)
+			if len(l.r.Calls) != 0 || len(l.diskLog.writes) != 0 {
+				t.Errorf("ran %v and wrote %v", l.r.Calls, l.diskLog.writes)
 			}
 		})
 	}
@@ -1112,11 +1112,11 @@ func TestFromPartsReleasesTheTarget(t *testing.T) {
 			}
 		}
 	}
-	l.r.calls = nil
+	l.r.Calls = nil
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
-	assertCalls(t, l.r.calls[:2], []string{"umount " + l.i.StateDir, "systemd-cryptsetup detach state"})
+	assertCalls(t, l.r.Calls[:2], []string{"umount " + l.i.StateDir, "systemd-cryptsetup detach state"})
 	l.checkInstalled(img)
 }
 

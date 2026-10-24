@@ -113,8 +113,9 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `upgrade` | Writes an image into the inactive slot and makes it the next boot; the slot writer install shares. |
 | `verity` | Reads and checks dm-verity hash trees. |
 
-`uki/ukitest`, `image/imagetest` and `kubernetes/etcd/etcdtest` hold test helpers: small UKIs, small
-disk images and db signers, and in-process etcd members.
+`uki/ukitest`, `image/imagetest`, `kubernetes/etcd/etcdtest` and `tool/tooltest` hold test helpers:
+small UKIs, small disk images and db signers, in-process etcd members, and a fake tool runner that
+records commands and answers them by prefix.
 
 ## The node API
 

@@ -39,11 +39,12 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
 // kubernetesServer is an installed node of the kind with the files chalkd reads; with a share
 // when share is set. Its control plane applies 19 objects at once.
-func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunner) {
+func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *tooltest.Runner) {
 	t.Helper()
 	s, r := installedServer(t, section("", ""), false)
 	addKubernetes(t, s, kind, share)
@@ -331,8 +332,8 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
 		t.Errorf("share mode %v", info.Mode())
 	}
-	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
-		t.Errorf("commands %v", r.calls)
+	if !slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+		t.Errorf("commands %v", r.Calls)
 	}
 	if !slices.Contains(resp.Msg.RestartedUnits, "kubelet.service") {
 		t.Errorf("restarted %v", resp.Msg.RestartedUnits)
@@ -376,8 +377,8 @@ func TestApplyConfigRefusesShare(t *testing.T) {
 			t.Errorf("%s: %v, want %v", name, err, tc.code)
 		}
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("a refused share ran %v", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("a refused share ran %v", r.Calls)
 	}
 	if _, err := os.Stat(worker.Kubernetes.Paths.Share()); err == nil {
 		t.Error("a refused share was recorded")
@@ -517,8 +518,8 @@ func TestApplyConfigRefusesShareOfAnotherKind(t *testing.T) {
 		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), share) {
 			t.Errorf("%s share on a %s image: %v", share, image, err)
 		}
-		if len(r.calls) != 0 {
-			t.Errorf("%s share on a %s image ran %v", share, image, r.calls)
+		if len(r.Calls) != 0 {
+			t.Errorf("%s share on a %s image ran %v", share, image, r.Calls)
 		}
 		if _, err := os.Stat(s.Kubernetes.Paths.Share()); err == nil {
 			t.Errorf("%s share on a %s image was recorded", share, image)
@@ -726,15 +727,13 @@ func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 			if _, err := sendConfig(s, base); err != nil {
 				t.Fatal(err)
 			}
-			r.mu.Lock()
-			r.calls = nil
-			r.mu.Unlock()
+			r.ResetCalls()
 			resp, err := sendConfig(s, c.config)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service"); got != c.restarts {
-				t.Errorf("restarted %v, want %v: %v", got, c.restarts, r.calls)
+			if got := slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service"); got != c.restarts {
+				t.Errorf("restarted %v, want %v: %v", got, c.restarts, r.Calls)
 			}
 			if restarted := slices.Contains(resp.RestartedUnits, "kubelet.service"); restarted != c.restarts {
 				t.Errorf("restarted units %v", resp.RestartedUnits)
@@ -764,15 +763,13 @@ func TestApplyConfigRestartsKubernetesOnHostChange(t *testing.T) {
 		{"another hostname", base + hostConfig("default", "h2"), true},
 		{"another name", base + hostConfig("host", "h2"), false},
 	} {
-		r.mu.Lock()
-		r.calls = nil
-		r.mu.Unlock()
+		r.ResetCalls()
 		resp, err := sendConfig(s, step.config)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service"); got != step.restarts {
-			t.Errorf("%s: restarted %v, want %v: %v", step.name, got, step.restarts, r.calls)
+		if got := slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service"); got != step.restarts {
+			t.Errorf("%s: restarted %v, want %v: %v", step.name, got, step.restarts, r.Calls)
 		}
 		if restarted := slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes.service", "kubelet.service"}); restarted != step.restarts {
 			t.Errorf("%s: restarted units %v", step.name, resp.RestartedUnits)
@@ -820,7 +817,7 @@ func TestApplyConfigRestartsControlPlaneLoopWithNewShare(t *testing.T) {
 func TestApplyConfigReportsMissingAddress(t *testing.T) {
 	s, r := clusterServer(t, k8s.KindWorker)
 	const reason = "no node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)"
-	r.rules = append([]rule{{prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", err: errors.New("exit status 1")}}, r.rules...)
+	r.Rules = append([]tooltest.Rule{{Prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", Err: errors.New("exit status 1")}}, r.Rules...)
 	withoutAddress(t, s, reason)
 	_, err := sendConfig(s, workerConfig)
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node runs no kubelet: preparation failed: "+reason) {
@@ -832,7 +829,7 @@ func TestApplyConfigReportsMissingAddress(t *testing.T) {
 // names the units to restart by hand, since the config is stored.
 func TestApplyConfigReportsFailedRestart(t *testing.T) {
 	s, r := clusterServer(t, k8s.KindWorker)
-	r.rules = append([]rule{{prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", err: errors.New("exit status 1")}}, r.rules...)
+	r.Rules = append([]tooltest.Rule{{Prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", Err: errors.New("exit status 1")}}, r.Rules...)
 	withoutFirewall(t, s)
 	_, err := sendConfig(s, workerConfig)
 	want := "restart chalkos-kubernetes.service kubelet.service: exit status 1; the node runs no kubelet: preparation failed: accept VXLAN to the node's address: exit status 1; the delivery is applied, so restart chalkos-kubernetes.service kubelet.service by hand"
@@ -842,7 +839,7 @@ func TestApplyConfigReportsFailedRestart(t *testing.T) {
 
 	// The preparation succeeded; the restart failed for another reason.
 	other, r := clusterServer(t, k8s.KindWorker)
-	r.rules = append([]rule{{prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", err: errors.New("exit status 1")}}, r.rules...)
+	r.Rules = append([]tooltest.Rule{{Prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", Err: errors.New("exit status 1")}}, r.Rules...)
 	_, err = sendConfig(other, workerConfig)
 	want = "restart chalkos-kubernetes.service kubelet.service: exit status 1; the delivery is applied, so restart chalkos-kubernetes.service kubelet.service by hand"
 	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "preparation") {
@@ -858,7 +855,7 @@ func TestApplyConfigReportsThePreparationForKubernetesUnitsAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	withoutFirewall(t, s)
-	r.rules = append([]rule{{prefix: "systemctl try-restart demo.service", err: errors.New("exit status 1")}}, r.rules...)
+	r.Rules = append([]tooltest.Rule{{Prefix: "systemctl try-restart demo.service", Err: errors.New("exit status 1")}}, r.Rules...)
 	_, err := sendConfig(s, strings.Replace(workerConfig, "name: first", "name: second", 1))
 	want := "try-restart demo.service: exit status 1; the delivery is applied, so restart demo.service by hand"
 	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "kubelet") {
@@ -877,8 +874,8 @@ func TestApplyConfigRefusesInvalidAddressSettings(t *testing.T) {
 			t.Errorf("%s: %v, want invalid argument", name, err)
 		}
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("a refused identity ran %v", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("a refused identity ran %v", r.Calls)
 	}
 }
 
@@ -948,8 +945,8 @@ func TestApplyConfigRecordsNodeCAWithoutRestarts(t *testing.T) {
 	if got, err := knode.ReadShare(p); err != nil || *got.NodeCA != nodeCA {
 		t.Errorf("the new node CA was not recorded: %v", err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("a new node CA ran %v", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("a new node CA ran %v", r.Calls)
 	}
 
 	// Any other change prepares the node's files again.
@@ -957,8 +954,8 @@ func TestApplyConfigRecordsNodeCAWithoutRestarts(t *testing.T) {
 	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: other})); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
-		t.Errorf("a new share ran %v", r.calls)
+	if !slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+		t.Errorf("a new share ran %v", r.Calls)
 	}
 }
 
@@ -971,13 +968,13 @@ func TestApplyConfigTheSameShareAgainDoesNothing(t *testing.T) {
 	}
 	share := []byte(readFile(t, filepath.Join(s.Paths.StateDir, "kubernetes", "share.json")))
 	acted := loops(s)
-	r.calls = nil
+	r.Calls = nil
 	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Msg.RestartedUnits) != 0 || len(r.calls) != 0 || len(*acted) != 0 {
-		t.Errorf("restarted %v, ran %v, acted on the loops %v", resp.Msg.RestartedUnits, r.calls, *acted)
+	if len(resp.Msg.RestartedUnits) != 0 || len(r.Calls) != 0 || len(*acted) != 0 {
+		t.Errorf("restarted %v, ran %v, acted on the loops %v", resp.Msg.RestartedUnits, r.Calls, *acted)
 	}
 }
 
@@ -1010,7 +1007,7 @@ func TestApplyConfigNodeCAWithConfig(t *testing.T) {
 		{"the Node's subnets", strings.Replace(controlPlane, "nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21], validSubnets: [192.168.100.0/24]}}", 1), []string{"chalkos-controlplane.service", "chalkos-kubernetes.service", "kubelet.service"}},
 		{"a Demo", strings.NewReplacer("nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21], validSubnets: [192.168.100.0/24]}}", "name: first", "name: second").Replace(controlPlane), []string{"demo.service"}},
 	} {
-		r.calls, *acted = nil, nil
+		r.Calls, *acted = nil, nil
 		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: step.config, KubernetesShare: withNodeCA()}))
 		if err != nil {
 			t.Fatal(err)
@@ -1186,7 +1183,7 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 
 // clusterServer is a configured node of the kind with a share whose loader writes the cluster
 // from the image facts and the delivered config into its Kubernetes side's cluster file.
-func clusterServer(t *testing.T, kind string) (*Server, *fakeRunner) {
+func clusterServer(t *testing.T, kind string) (*Server, *tooltest.Runner) {
 	t.Helper()
 	s, r := configServer(t)
 	addKubernetes(t, s, kind, true)
@@ -1214,7 +1211,7 @@ func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
 	}
 
 	// The same config changes no cluster and restarts nothing.
-	r.calls = nil
+	r.Calls = nil
 	resp, err := sendConfig(s, workerConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -1223,15 +1220,15 @@ func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
 		t.Errorf("restarted %v for the same cluster", resp.RestartedUnits)
 	}
 
-	r.calls = nil
+	r.Calls = nil
 	if resp, err = sendConfig(s, withClusterSpec("{domain: lab.local}")); err != nil {
 		t.Fatal(err)
 	}
 	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); c.Domain != "lab.local" {
 		t.Errorf("domain = %q", c.Domain)
 	}
-	if !slices.Contains(resp.RestartedUnits, "kubelet.service") || !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
-		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.calls)
+	if !slices.Contains(resp.RestartedUnits, "kubelet.service") || !slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.Calls)
 	}
 }
 
@@ -1245,26 +1242,26 @@ func TestApplyConfigNamesAFailedClusterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := withClusterSpec("{domain: lab.local}")
-	r.rules = []rule{{prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", err: errors.New("exit status 1")}}
+	r.Rules = []tooltest.Rule{{Prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", Err: errors.New("exit status 1")}}
 	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "restart chalkos-kubernetes.service kubelet.service by hand once that is fixed, or deliver it again") {
 		t.Fatalf("err = %v, want the units named", err)
 	}
 	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); c.Domain != "lab.local" {
 		t.Fatalf("domain = %q, want the cluster file written", c.Domain)
 	}
-	r.rules, r.calls = nil, nil
+	r.Rules, r.Calls = nil, nil
 	resp, err := sendConfig(s, next)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes.service", "kubelet.service"}) || !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
-		t.Errorf("the retry restarted %v, ran %v", resp.RestartedUnits, r.calls)
+	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes.service", "kubelet.service"}) || !slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+		t.Errorf("the retry restarted %v, ran %v", resp.RestartedUnits, r.Calls)
 	}
 	// Applied whole, the delivery leaves no baseline: the next one compares with the slot.
 	if _, err := os.Stat(s.Paths.EffectsBaseline); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("baseline after a delivery applied whole: %v", err)
 	}
-	r.calls = nil
+	r.Calls = nil
 	if resp, err = sendConfig(s, next); err != nil || len(resp.RestartedUnits) != 0 {
 		t.Errorf("the same config again restarted %v: %v", resp.GetRestartedUnits(), err)
 	}
@@ -1307,20 +1304,20 @@ func TestApplyConfigRetriesAShareWhoseSlotFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(slots, 0o755) })
-	r.calls = nil
+	r.Calls = nil
 	if _, err := send(); err == nil || !strings.Contains(err.Error(), "store the config") {
 		t.Fatalf("err = %v, want the slot's failure", err)
 	}
 	if recorded := readFile(t, filepath.Join(s.Paths.StateDir, "kubernetes", "share.json")); !strings.Contains(recorded, "BEGIN CERTIFICATE") {
 		t.Fatalf("share.json = %s, want the delivered share recorded", recorded)
 	}
-	if slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") || !slices.Equal(*acted, []string{"reload"}) {
-		t.Errorf("ran %v, acted on the loops %v; want the loops reloaded alone", r.calls, *acted)
+	if slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") || !slices.Equal(*acted, []string{"reload"}) {
+		t.Errorf("ran %v, acted on the loops %v; want the loops reloaded alone", r.Calls, *acted)
 	}
 	if err := os.Chmod(slots, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	r.calls, *acted = nil, nil
+	r.Calls, *acted = nil, nil
 	resp, err := send()
 	if err != nil {
 		t.Fatal(err)
@@ -1346,7 +1343,7 @@ func TestApplyConfigRetriesAShareWhoseRestartFailed(t *testing.T) {
 		}
 		return resp.Msg, nil
 	}
-	r.rules = []rule{{prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", err: errors.New("exit status 1")}}
+	r.Rules = []tooltest.Rule{{Prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", Err: errors.New("exit status 1")}}
 	if _, err := send(); err == nil || !strings.Contains(err.Error(), "restart chalkos-kubernetes.service kubelet.service by hand") {
 		t.Fatalf("err = %v, want the units named", err)
 	}
@@ -1357,13 +1354,13 @@ func TestApplyConfigRetriesAShareWhoseRestartFailed(t *testing.T) {
 	if b := readFile(t, s.Paths.EffectsBaseline); strings.Contains(b, "BEGIN") || strings.Contains(b, "s3cret") || !strings.Contains(b, `"kind":"worker"`) {
 		t.Errorf("baseline = %s, want the kind and hashes alone", b)
 	}
-	r.rules, r.calls = nil, nil
+	r.Rules, r.Calls = nil, nil
 	resp, err := send()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes.service", "kubelet.service"}) {
-		t.Errorf("the retry restarted %v, ran %v", resp.RestartedUnits, r.calls)
+		t.Errorf("the retry restarted %v, ran %v", resp.RestartedUnits, r.Calls)
 	}
 }
 
@@ -1440,7 +1437,7 @@ func TestApplyConfigActsOnTheLoopsWhenTheNodeCertificateFails(t *testing.T) {
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	r.calls, *acted = nil, nil
+	r.Calls, *acted = nil, nil
 	resp, err := send()
 	if err != nil {
 		t.Fatal(err)
@@ -1476,12 +1473,12 @@ func TestApplyConfigWritesTheGrantedConfigForAShareAfterAFailure(t *testing.T) {
 		}
 		return resp.Msg, nil
 	}
-	r.calls = nil
+	r.Calls = nil
 	if _, err := send(); err == nil || !strings.Contains(err.Error(), "write the config for the granted units") {
 		t.Fatalf("err = %v, want the granted units' config to fail again", err)
 	}
-	if slices.Contains(r.calls, "systemctl try-restart demo.service") {
-		t.Errorf("ran %v, want demo left alone on the files from before", r.calls)
+	if slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Errorf("ran %v, want demo left alone on the files from before", r.Calls)
 	}
 	if _, err := os.Stat(s.Paths.EffectsBaseline); err != nil {
 		t.Fatalf("baseline after a share that failed: %v", err)
@@ -1490,7 +1487,7 @@ func TestApplyConfigWritesTheGrantedConfigForAShareAfterAFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	var credential string
-	r.before = func(line string) {
+	r.Before = func(line string) {
 		if line == "systemctl try-restart demo.service" {
 			b, _ := os.ReadFile(filepath.Join(credentials, "demo.token"))
 			credential = string(b)
@@ -1506,7 +1503,7 @@ func TestApplyConfigWritesTheGrantedConfigForAShareAfterAFailure(t *testing.T) {
 	if _, err := os.Stat(s.Paths.EffectsBaseline); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("baseline after a delivery applied whole: %v", err)
 	}
-	r.before = nil
+	r.Before = nil
 	if resp, err = sendConfig(s, next); err != nil || len(resp.RestartedUnits) != 0 {
 		t.Errorf("the retry of the config restarted %v: %v", resp.GetRestartedUnits(), err)
 	}
@@ -1522,12 +1519,12 @@ func TestApplyConfigRestartsForAClusterFileThatDiffers(t *testing.T) {
 	if err := os.Remove(s.Kubernetes.Paths.Cluster); err != nil {
 		t.Fatal(err)
 	}
-	r.calls = nil
+	r.Calls = nil
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
-		t.Errorf("ran %v", r.calls)
+	if !slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+		t.Errorf("ran %v", r.Calls)
 	}
 }
 
@@ -1548,13 +1545,13 @@ func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
 			if err := os.Remove(s.Kubernetes.Paths.Cluster); err != nil {
 				t.Fatal(err)
 			}
-			r.calls = nil
+			r.Calls = nil
 			_, err := sendConfig(s, withClusterSpec(spec))
 			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cluster's "+field+" from") {
 				t.Fatalf("err = %v", err)
 			}
-			if len(r.calls) != 0 {
-				t.Errorf("ran %v", r.calls)
+			if len(r.Calls) != 0 {
+				t.Errorf("ran %v", r.Calls)
 			}
 			if exists(s.Kubernetes.Paths.Cluster) {
 				t.Error("wrote the refused cluster")
@@ -1591,7 +1588,7 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			r.calls = nil
+			r.Calls = nil
 			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: controlPlane, KubernetesShare: tc.delivered}))
 			if tc.want == "" {
 				if err != nil {
@@ -1605,8 +1602,8 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v", err)
 			}
-			if len(r.calls) != 0 {
-				t.Errorf("ran %v", r.calls)
+			if len(r.Calls) != 0 {
+				t.Errorf("ran %v", r.Calls)
 			}
 			if c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); err != nil || c.Kind != k8s.KindWorker {
 				t.Errorf("cluster = %+v, %v; want the worker's kept", c, err)
@@ -1652,7 +1649,7 @@ func TestApplyConfigRefusesChangedRegistrationFields(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			r.calls = nil
+			r.Calls = nil
 			_, err := sendConfig(s, tc.after)
 			if tc.want == nil {
 				if err != nil {
@@ -1668,8 +1665,8 @@ func TestApplyConfigRefusesChangedRegistrationFields(t *testing.T) {
 					t.Errorf("err = %v, want %q", err, want)
 				}
 			}
-			if len(r.calls) != 0 {
-				t.Errorf("ran %v", r.calls)
+			if len(r.Calls) != 0 {
+				t.Errorf("ran %v", r.Calls)
 			}
 		})
 	}
@@ -1789,7 +1786,7 @@ func TestApplyConfigAppliesChangedAddons(t *testing.T) {
 		t.Errorf("applied up to %s, want chalkos's add-ons alone", got)
 	}
 
-	r.calls = nil
+	r.Calls = nil
 	resp, err := sendConfig(s, config+`---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Addon
@@ -1807,8 +1804,8 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 	case <-time.After(time.Minute):
 		t.Fatal("the changed Addon documents were not applied")
 	}
-	if len(resp.RestartedUnits) != 0 || slices.ContainsFunc(r.calls, func(c string) bool { return strings.HasPrefix(c, "systemctl restart") }) {
-		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.calls)
+	if len(resp.RestartedUnits) != 0 || slices.ContainsFunc(r.Calls, func(c string) bool { return strings.HasPrefix(c, "systemctl restart") }) {
+		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.Calls)
 	}
 }
 
@@ -1853,7 +1850,7 @@ func TestApplyConfigOnAWorkerKeepsChangedAddons(t *testing.T) {
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
-	r.calls = nil
+	r.Calls = nil
 	resp, err := sendConfig(s, workerConfig+`---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Addon
@@ -1863,8 +1860,8 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.RestartedUnits) != 0 || slices.ContainsFunc(r.calls, func(c string) bool { return strings.Contains(c, "restart") }) {
-		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.calls)
+	if len(resp.RestartedUnits) != 0 || slices.ContainsFunc(r.Calls, func(c string) bool { return strings.Contains(c, "restart") }) {
+		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.Calls)
 	}
 }
 

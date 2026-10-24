@@ -20,13 +20,13 @@ import (
 func TestApplyConfigRefusesWhenAFactCannotBeLoaded(t *testing.T) {
 	s, r := clusterServer(t, k8s.KindWorker)
 	write(t, s.Kubernetes.Paths.Share(), "{")
-	r.calls = nil
+	r.Calls = nil
 	_, err := sendConfig(s, workerConfig)
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cannot check: fact share: ") || !strings.Contains(err.Error(), "share.json is not JSON") {
 		t.Fatalf("err = %v", err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("ran %v", r.Calls)
 	}
 }
 

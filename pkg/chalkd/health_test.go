@@ -24,6 +24,7 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
@@ -66,33 +67,33 @@ const bootUnits = "multi-user.target\n  chalkd.service\n  broken.service\n  time
 func TestHealthWithoutKubernetes(t *testing.T) {
 	addr, cert := chalkdServing(t)
 	other, _ := chalkdServing(t)
-	units := rule{prefix: "systemctl list-dependencies --all --plain --no-legend --no-pager multi-user.target sysinit.target", out: bootUnits}
-	failed := func(names ...string) rule {
+	units := tooltest.Rule{Prefix: "systemctl list-dependencies --all --plain --no-legend --no-pager multi-user.target sysinit.target", Out: bootUnits}
+	failed := func(names ...string) tooltest.Rule {
 		var out string
 		for _, n := range names {
 			out += n + " loaded failed failed Something\n"
 		}
-		return rule{prefix: "systemctl list-units --state=failed", out: out}
+		return tooltest.Rule{Prefix: "systemctl list-units --state=failed", Out: out}
 	}
 	for _, tc := range []struct {
 		name   string
 		chalkd string
-		rules  []rule
+		rules  []tooltest.Rule
 		ignore []string
 		want   string
 	}{
-		{"healthy", addr, []rule{units}, nil, ""},
-		{"chalkd not serving", "127.0.0.1:1", []rule{units}, nil, "chalkd does not serve"},
-		{"another server than chalkd", other, []rule{units}, nil, "does not present the node's certificate"},
-		{"config not applied", addr, []rule{{prefix: "systemctl is-active --quiet chalkos-config.service", err: errors.New("inactive")}, units}, nil, "the config was not applied"},
-		{"a failed unit of the boot", addr, []rule{units, failed("broken.service", "cleanup.service")}, nil, "units failed: broken.service"},
+		{"healthy", addr, []tooltest.Rule{units}, nil, ""},
+		{"chalkd not serving", "127.0.0.1:1", []tooltest.Rule{units}, nil, "chalkd does not serve"},
+		{"another server than chalkd", other, []tooltest.Rule{units}, nil, "does not present the node's certificate"},
+		{"config not applied", addr, []tooltest.Rule{{Prefix: "systemctl is-active --quiet chalkos-config.service", Err: errors.New("inactive")}, units}, nil, "the config was not applied"},
+		{"a failed unit of the boot", addr, []tooltest.Rule{units, failed("broken.service", "cleanup.service")}, nil, "units failed: broken.service"},
 		// A job a timer or a socket started is not part of the boot.
-		{"a failed timer job", addr, []rule{units, failed("cleanup.service")}, nil, ""},
-		{"a failed unit ignored", addr, []rule{units, failed("broken.service")}, []string{"broken.service"}, ""},
-		{"the boot's units unknown", addr, []rule{{prefix: "systemctl list-dependencies", err: errors.New("exit status 1")}, failed("broken.service")}, nil, "the units of the boot"},
+		{"a failed timer job", addr, []tooltest.Rule{units, failed("cleanup.service")}, nil, ""},
+		{"a failed unit ignored", addr, []tooltest.Rule{units, failed("broken.service")}, []string{"broken.service"}, ""},
+		{"the boot's units unknown", addr, []tooltest.Rule{{Prefix: "systemctl list-dependencies", Err: errors.New("exit status 1")}, failed("broken.service")}, nil, "the units of the boot"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h := &Health{Run: &fakeRunner{rules: tc.rules}, Chalkd: tc.chalkd, NodeCertificate: cert, IgnoreUnits: tc.ignore}
+			h := &Health{Run: &tooltest.Runner{Rules: tc.rules}, Chalkd: tc.chalkd, NodeCertificate: cert, IgnoreUnits: tc.ignore}
 			checkHealth(t, h, tc.want)
 		})
 	}
@@ -144,7 +145,7 @@ func TestHealthOfAControlPlane(t *testing.T) {
 	k := s.Kubernetes
 	ready, healthy := true, true
 	k.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return ready }
-	h := &Health{Run: &fakeRunner{}, Kubernetes: k, Chalkd: addr, NodeCertificate: cert, Kubelet: kubelet(t, &healthy)}
+	h := &Health{Run: &tooltest.Runner{}, Kubernetes: k, Chalkd: addr, NodeCertificate: cert, Kubelet: kubelet(t, &healthy)}
 	checkHealth(t, h, "")
 	ready = false
 	checkHealth(t, h, "the API server is not ready")
@@ -193,7 +194,7 @@ func writeESP(t *testing.T, esp, efivars, cmdline, booted string, files ...strin
 }
 
 // journalRule is the journal of a boot that never became healthy.
-var journalRule = rule{prefix: "journalctl --boot --no-pager --output=short-iso --lines=30 --unit=chalkd.service --unit=chalkos-health.service", out: "chalkd[1]: not healthy yet: chalkd does not serve\n"}
+var journalRule = tooltest.Rule{Prefix: "journalctl --boot --no-pager --output=short-iso --lines=30 --unit=chalkd.service --unit=chalkos-health.service", Out: "chalkd[1]: not healthy yet: chalkd does not serve\n"}
 
 // failedHeader is the first line of a record of a failed boot of generation 2, as writeESP builds
 // it.
@@ -214,13 +215,13 @@ func TestHealthWaitReboots(t *testing.T) {
 		{"nothing to fall back to", espWith(t, "chalkos_2.efi", "chalkos_2+0-4.efi"), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := &fakeRunner{rules: []rule{journalRule}}
+			r := &tooltest.Runner{Rules: []tooltest.Rule{journalRule}}
 			tc.h.Run, tc.h.Chalkd, tc.h.NodeCertificate, tc.h.Interval = r, "127.0.0.1:1", cert, 10*time.Millisecond
 			err := tc.h.Wait(context.Background(), 50*time.Millisecond)
 			if err == nil || !strings.Contains(err.Error(), "did not become healthy") {
 				t.Errorf("wait = %v", err)
 			}
-			rebooted := strings.Contains(strings.Join(r.calls, "\n"), "systemctl reboot --no-block")
+			rebooted := strings.Contains(strings.Join(r.Calls, "\n"), "systemctl reboot --no-block")
 			if rebooted != tc.reboot {
 				t.Errorf("rebooted: %v, want %v", rebooted, tc.reboot)
 			}
@@ -245,11 +246,11 @@ func TestHealthWaitHealthy(t *testing.T) {
 		{"a blessed boot", espWith(t, "chalkos_2.efi", "chalkos_3+0-3.efi", "chalkos_2.efi"), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := &fakeRunner{}
+			r := &tooltest.Runner{}
 			tc.h.Run, tc.h.Chalkd, tc.h.NodeCertificate = r, addr, cert
 			write(t, tc.h.Record, "usrhash="+strings.Repeat("33", 32)+" generation=3\nchalkd[1]: not healthy yet\n")
-			if err := tc.h.Wait(context.Background(), time.Minute); err != nil || len(r.calls) == 0 || strings.Contains(strings.Join(r.calls, "\n"), "reboot") {
-				t.Errorf("a healthy boot: %v, %q", err, r.calls)
+			if err := tc.h.Wait(context.Background(), time.Minute); err != nil || len(r.Calls) == 0 || strings.Contains(strings.Join(r.Calls, "\n"), "reboot") {
+				t.Errorf("a healthy boot: %v, %q", err, r.Calls)
 			}
 			if _, err := os.Stat(tc.h.Record); errors.Is(err, fs.ErrNotExist) != tc.forget {
 				t.Errorf("the record of the failed boot: %v, want it forgotten: %v", err, tc.forget)
@@ -277,7 +278,7 @@ func TestHealthWaitEndsAtTheDeadline(t *testing.T) {
 		}
 	}()
 	h := espWith(t, "chalkos_2.efi", "chalkos_1.efi", "chalkos_2+2-1.efi")
-	r := &fakeRunner{rules: []rule{journalRule}}
+	r := &tooltest.Runner{Rules: []tooltest.Rule{journalRule}}
 	_, cert := chalkdServing(t)
 	h.Run, h.Chalkd, h.NodeCertificate = r, ln.Addr().String(), cert
 	done := make(chan error, 1)
@@ -291,7 +292,7 @@ func TestHealthWaitEndsAtTheDeadline(t *testing.T) {
 		if took := time.Since(start); took > 2*time.Second {
 			t.Errorf("the wait of 300ms took %v", took)
 		}
-		if !strings.Contains(strings.Join(r.calls, "\n"), "systemctl reboot --no-block") {
+		if !strings.Contains(strings.Join(r.Calls, "\n"), "systemctl reboot --no-block") {
 			t.Error("the node was not rebooted")
 		}
 	case <-time.After(10 * time.Second):
@@ -316,10 +317,10 @@ func TestHealthStopped(t *testing.T) {
 		{"a check timed out with nothing to fall back to", espWith(t, "chalkos_2.efi", "chalkos_2+0-4.efi"), "timeout", "1", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := &fakeRunner{rules: []rule{journalRule}}
+			r := &tooltest.Runner{Rules: []tooltest.Rule{journalRule}}
 			tc.h.Run = r
 			tc.h.Stopped(context.Background(), tc.result, tc.status)
-			if rebooted := strings.Contains(strings.Join(r.calls, "\n"), "systemctl reboot --no-block"); rebooted != tc.reboot {
+			if rebooted := strings.Contains(strings.Join(r.Calls, "\n"), "systemctl reboot --no-block"); rebooted != tc.reboot {
 				t.Errorf("rebooted: %v, want %v", rebooted, tc.reboot)
 			}
 			record, _ := os.ReadFile(tc.h.Record)
@@ -351,7 +352,7 @@ func TestHealthPresentsTheNodeCertificate(t *testing.T) {
 	}}
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
-	checkHealth(t, &Health{Run: &fakeRunner{}, Chalkd: srv.Listener.Addr().String(), NodeCertificate: path}, "")
+	checkHealth(t, &Health{Run: &tooltest.Runner{}, Chalkd: srv.Listener.Addr().String(), NodeCertificate: path}, "")
 	select {
 	case n := <-presented:
 		if n != 1 {

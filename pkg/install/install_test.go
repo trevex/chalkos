@@ -25,19 +25,17 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
-// fakeRunner records commands and answers them from the first matching rule. A rule with
-// times > 0 answers that many times.
+// fakeRunner records commands and answers them as tooltest.Runner does.
 //
 // Commands that succeed also change the host as the real tools would: mount and umount edit
 // the mount table, systemd-cryptsetup creates and removes /dev/mapper entries, sfdisk
 // --part-uuid changes what sfdisk --json reports later, and efibootmgr edits efi when set.
 type fakeRunner struct {
-	rules []*rule
-	calls []string
-	envs  map[string][]string
+	tooltest.Runner
 
 	mountInfo, devRoot string
 	// partUUIDs holds the partition UUIDs sfdisk --part-uuid set, by "<device> <number>".
@@ -45,27 +43,12 @@ type fakeRunner struct {
 	efi       *fakeEFI
 }
 
-type rule struct {
-	prefix string
-	out    string
-	err    error
-	times  int
-}
-
 func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return f.RunWithEnv(ctx, nil, name, args...)
 }
 
-func (f *fakeRunner) RunWithEnv(_ context.Context, env []string, name string, args ...string) ([]byte, error) {
-	line := strings.Join(append([]string{name}, args...), " ")
-	f.calls = append(f.calls, line)
-	if env != nil {
-		if f.envs == nil {
-			f.envs = map[string][]string{}
-		}
-		f.envs[line] = env
-	}
-	out, err := f.answer(line)
+func (f *fakeRunner) RunWithEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+	out, err := f.Runner.RunWithEnv(ctx, env, name, args...)
 	if err != nil {
 		return out, err
 	}
@@ -74,25 +57,6 @@ func (f *fakeRunner) RunWithEnv(_ context.Context, env []string, name string, ar
 
 func (f *fakeRunner) RunWithInput(ctx context.Context, _ []byte, name string, args ...string) ([]byte, error) {
 	return f.RunWithEnv(ctx, nil, name, args...)
-}
-
-func (f *fakeRunner) answer(line string) ([]byte, error) {
-	for _, r := range f.rules {
-		if !strings.HasPrefix(line, r.prefix) {
-			continue
-		}
-		if r.times < 0 {
-			continue
-		}
-		if r.times > 0 {
-			r.times--
-			if r.times == 0 {
-				r.times = -1
-			}
-		}
-		return []byte(r.out), r.err
-	}
-	return nil, nil
 }
 
 // apply makes the host reflect a command that succeeded.
@@ -236,7 +200,7 @@ func (e *fakeEFI) run(f *fakeRunner, args []string) ([]byte, error) {
 	return nil, nil
 }
 
-func (f *fakeRunner) add(rules ...*rule) { f.rules = append(f.rules, rules...) }
+func (f *fakeRunner) add(rules ...tooltest.Rule) { f.Rules = append(f.Rules, rules...) }
 
 // installed reports whether STATE holds the installed marker, failing the test on errors.
 func installed(t *testing.T, stateDir string) bool {
@@ -416,11 +380,11 @@ func testRequest(t *testing.T, section storage.Section) Request {
 
 // inPlaceRules answer like a node booted from vda whose STATE is encrypted and whose TPM
 // unseals: repart creates VAR as vda7.
-func inPlaceRules(i *Installer) []*rule {
-	return []*rule{
-		{prefix: "sfdisk --json /dev/vda", out: sfdisk("/dev/vda", espPart, usrPart, statePart, varPart)},
-		{prefix: "blkid -p -o value -s TYPE", out: "crypto_LUKS\n"},
-		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(i.StateDir, "storage", "disks", "system"), out: repartRow(filepath.Join(i.StateDir, "storage", "disks", "system", "50-var.conf"), varUUID)},
+func inPlaceRules(i *Installer) []tooltest.Rule {
+	return []tooltest.Rule{
+		{Prefix: "sfdisk --json /dev/vda", Out: sfdisk("/dev/vda", espPart, usrPart, statePart, varPart)},
+		{Prefix: "blkid -p -o value -s TYPE", Out: "crypto_LUKS\n"},
+		{Prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(i.StateDir, "storage", "disks", "system"), Out: repartRow(filepath.Join(i.StateDir, "storage", "disks", "system", "50-var.conf"), varUUID)},
 	}
 }
 
@@ -452,7 +416,7 @@ func TestInPlaceInstallsOnBootDisk(t *testing.T) {
 
 	defs := filepath.Join(i.StateDir, "storage", "disks", "system")
 	enroll := "systemd-cryptenroll --unlock-tpm2-device=auto --password --wipe-slot=password "
-	calls := r.calls
+	calls := r.Calls
 	espUUID := calls[len(calls)-1][len(calls[len(calls)-1])-36:]
 	assertCalls(t, calls, []string{
 		"umount " + i.StateDir,
@@ -480,15 +444,15 @@ func TestInPlaceInstallsOnBootDisk(t *testing.T) {
 	if espUUID == "00000001-0000-4000-8000-000000000000" {
 		t.Error("the ESP kept the image's partition UUID")
 	}
-	for line, env := range r.envs {
+	for line, env := range r.Envs {
 		if !reflect.DeepEqual(env, []string{"NEWPASSWORD=" + secret}) {
 			t.Errorf("%s ran with environment %v", line, env)
 		}
 	}
-	if len(r.envs) != 2 {
-		t.Errorf("the fallback secret was passed %d times, want twice", len(r.envs))
+	if len(r.Envs) != 2 {
+		t.Errorf("the fallback secret was passed %d times, want twice", len(r.Envs))
 	}
-	for _, c := range r.calls {
+	for _, c := range r.Calls {
 		if strings.Contains(c, secret) {
 			t.Errorf("the fallback secret is on a command line: %s", c)
 		}
@@ -527,8 +491,8 @@ func TestInPlaceRecreatesStateForPolicy(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda)
 	// The image created STATE encrypted; once deleted and created again it holds ext4.
-	r.add(&rule{prefix: "blkid -p -o value -s TYPE /dev/vda6", out: "crypto_LUKS\n", times: 1},
-		&rule{prefix: "blkid -p -o value -s TYPE", out: "ext4\n"})
+	r.add(tooltest.Rule{Prefix: "blkid -p -o value -s TYPE /dev/vda6", Out: "crypto_LUKS\n", Times: 1},
+		tooltest.Rule{Prefix: "blkid -p -o value -s TYPE", Out: "ext4\n"})
 	r.add(inPlaceRules(i)...)
 	req := testRequest(t, testSection(storage.EncryptionNone, "recovery-key", "/dev/vda"))
 
@@ -541,12 +505,12 @@ func TestInPlaceRecreatesStateForPolicy(t *testing.T) {
 		"systemd-repart --dry-run=no --seed=random --definitions=" + system + " --tpm2-pcrs=7 /dev/vda",
 		"mount -t ext4 /dev/vda6 " + i.StateDir,
 	} {
-		if !hasPrefix(r.calls, want) {
-			t.Errorf("missing %q in %v", want, r.calls)
+		if !hasPrefix(r.Calls, want) {
+			t.Errorf("missing %q in %v", want, r.Calls)
 		}
 	}
-	if hasPrefix(r.calls, "systemd-cryptenroll") || hasPrefix(r.calls, "systemd-cryptsetup attach") {
-		t.Errorf("treated an unencrypted node as encrypted: %v", r.calls)
+	if hasPrefix(r.Calls, "systemd-cryptenroll") || hasPrefix(r.Calls, "systemd-cryptsetup attach") {
+		t.Errorf("treated an unencrypted node as encrypted: %v", r.Calls)
 	}
 	def, err := os.ReadFile(filepath.Join(system, "50-state.conf"))
 	if err != nil || strings.Contains(string(def), "Encrypt") || !strings.Contains(string(def), "Label=state") {
@@ -564,8 +528,8 @@ func TestInPlaceKeepsMatchingState(t *testing.T) {
 	if err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))); err != nil {
 		t.Fatal(err)
 	}
-	if hasPrefix(r.calls, "sfdisk --delete") || hasPrefix(r.calls, "systemd-repart --dry-run=no --seed=random --definitions="+filepath.Join(i.WorkDir, "system")) {
-		t.Errorf("recreated a STATE that matches the policy: %v", r.calls)
+	if hasPrefix(r.Calls, "sfdisk --delete") || hasPrefix(r.Calls, "systemd-repart --dry-run=no --seed=random --definitions="+filepath.Join(i.WorkDir, "system")) {
+		t.Errorf("recreated a STATE that matches the policy: %v", r.Calls)
 	}
 }
 
@@ -618,8 +582,8 @@ func TestInPlaceRefusals(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err = %v, want %q", err, c.want)
 			}
-			if len(r.calls) != 0 {
-				t.Errorf("ran %v before refusing", r.calls)
+			if len(r.Calls) != 0 {
+				t.Errorf("ran %v before refusing", r.Calls)
 			}
 		})
 	}
@@ -628,7 +592,7 @@ func TestInPlaceRefusals(t *testing.T) {
 func TestInPlaceStopsOnDiskError(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda, vdb)
-	r.add(&rule{prefix: "blkid -p -o export /dev/vdb", out: "DEVNAME=/dev/vdb\nTYPE=ext4\n"})
+	r.add(tooltest.Rule{Prefix: "blkid -p -o export /dev/vdb", Out: "DEVNAME=/dev/vdb\nTYPE=ext4\n"})
 	r.add(inPlaceRules(i)...)
 	section := testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda")
 	section.Disks["data"] = storage.Disk{Ref: storage.Ref{Selector: storage.Selector{Serial: "chalk-target"}}, Seed: systemSeed, Repart: map[string]string{"10-data.conf": "[Partition]\nLabel=data\n"}}
@@ -638,7 +602,7 @@ func TestInPlaceStopsOnDiskError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "disk data") || !strings.Contains(err.Error(), "carries data") {
 		t.Fatalf("err = %v, want the data disk's problem", err)
 	}
-	if hasPrefix(r.calls, "systemd-cryptenroll") || installed(t, i.StateDir) {
+	if hasPrefix(r.Calls, "systemd-cryptenroll") || installed(t, i.StateDir) {
 		t.Error("went on installing after a disk could not be set up")
 	}
 }
@@ -646,7 +610,7 @@ func TestInPlaceStopsOnDiskError(t *testing.T) {
 func TestInPlaceCanRunAgain(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda)
-	r.add(&rule{prefix: "systemd-cryptenroll", err: &tool.Error{Command: "systemd-cryptenroll", Code: 1, Stderr: "Failed to unseal secret using TPM2"}, times: 1})
+	r.add(tooltest.Rule{Prefix: "systemd-cryptenroll", Err: &tool.Error{Command: "systemd-cryptenroll", Code: 1, Stderr: "Failed to unseal secret using TPM2"}, Times: 1})
 	r.add(inPlaceRules(i)...)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
 
@@ -657,19 +621,19 @@ func TestInPlaceCanRunAgain(t *testing.T) {
 	if installed(t, i.StateDir) {
 		t.Fatal("an interrupted install wrote the installed marker")
 	}
-	r.calls = nil
+	r.Calls = nil
 	if err := i.InPlace(context.Background(), req); err != nil {
 		t.Fatalf("the install did not run again: %v", err)
 	}
-	if !installed(t, i.StateDir) || hasPrefix(r.calls, "sfdisk --delete") {
-		t.Errorf("second install: installed = %v, commands %v", installed(t, i.StateDir), r.calls)
+	if !installed(t, i.StateDir) || hasPrefix(r.Calls, "sfdisk --delete") {
+		t.Errorf("second install: installed = %v, commands %v", installed(t, i.StateDir), r.Calls)
 	}
 }
 
 func TestInstallRefusesUnencryptedVolumeMeantToBeEncrypted(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda)
-	r.add(&rule{prefix: "blkid -p -o value -s TYPE /dev/vda7", out: "ext4\n"})
+	r.add(tooltest.Rule{Prefix: "blkid -p -o value -s TYPE /dev/vda7", Out: "ext4\n"})
 	r.add(inPlaceRules(i)...)
 	err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda")))
 	if err == nil || !strings.Contains(err.Error(), "volume var is meant to be encrypted") {
@@ -687,8 +651,8 @@ func TestInstallWithoutFallbackEnrollsNothing(t *testing.T) {
 	if err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, storage.FallbackNone, "/dev/vda"))); err != nil {
 		t.Fatal(err)
 	}
-	if hasPrefix(r.calls, "systemd-cryptenroll") {
-		t.Errorf("enrolled a fallback for a node without one: %v", r.calls)
+	if hasPrefix(r.Calls, "systemd-cryptenroll") {
+		t.Errorf("enrolled a fallback for a node without one: %v", r.Calls)
 	}
 }
 
@@ -747,8 +711,8 @@ func TestInstallRefusesInvalidShare(t *testing.T) {
 	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
 		t.Fatalf("err = %v, want the share refused", err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v before refusing the share", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("ran %v before refusing the share", r.Calls)
 	}
 }
 
@@ -773,8 +737,8 @@ func TestInstallRefusesShareForAnotherNode(t *testing.T) {
 	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
 		t.Fatalf("err = %v, want the share refused", err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v before refusing the share", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("ran %v before refusing the share", r.Calls)
 	}
 }
 
@@ -807,8 +771,8 @@ func TestInstallRefusesShareWithExtraFields(t *testing.T) {
 	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
 		t.Fatalf("err = %v, want the share refused", err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v before refusing the share", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("ran %v before refusing the share", r.Calls)
 	}
 }
 
@@ -876,8 +840,8 @@ func TestInstallRefusesForeignNodeCA(t *testing.T) {
 	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "node CA") {
 		t.Fatalf("err = %v, want the node CA refused", err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v before refusing the share", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("ran %v before refusing the share", r.Calls)
 	}
 }
 
@@ -953,8 +917,8 @@ func TestInPlaceNeedsTheRunningImage(t *testing.T) {
 	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "no root hash") {
 		t.Errorf("err = %v", err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("ran %v", r.Calls)
 	}
 }
 
@@ -963,7 +927,7 @@ func TestInPlaceNeedsTheRunningImage(t *testing.T) {
 func TestInPlaceNamesTheRemedyOfAStateTheTPMDoesNotUnseal(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda)
-	r.add(&rule{prefix: "systemd-cryptsetup attach state", err: &tool.Error{Command: "systemd-cryptsetup", Code: 1, Stderr: "No TPM2 metadata matching the current system state found in LUKS2 header, falling back to traditional unlocking.\nPassword querying disabled via 'headless' option.\n"}})
+	r.add(tooltest.Rule{Prefix: "systemd-cryptsetup attach state", Err: &tool.Error{Command: "systemd-cryptsetup", Code: 1, Stderr: "No TPM2 metadata matching the current system state found in LUKS2 header, falling back to traditional unlocking.\nPassword querying disabled via 'headless' option.\n"}})
 	r.add(inPlaceRules(i)...)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
 
@@ -976,7 +940,7 @@ func TestInPlaceNamesTheRemedyOfAStateTheTPMDoesNotUnseal(t *testing.T) {
 			t.Errorf("err = %v names a reset, which cannot recreate STATE", err)
 		}
 	}
-	if hasPrefix(r.calls, "sfdisk --delete") || installed(t, i.StateDir) {
-		t.Errorf("replaced STATE or installed: %v", r.calls)
+	if hasPrefix(r.Calls, "sfdisk --delete") || installed(t, i.StateDir) {
+		t.Errorf("replaced STATE or installed: %v", r.Calls)
 	}
 }

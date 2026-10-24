@@ -252,8 +252,8 @@ func TestRenewKubeletServing(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(p.KubeletPKI, "kubelet-client-current.pem")); err != nil {
 		t.Error("the client certificate was removed")
 	}
-	if !slices.Contains(r.calls, "systemctl restart kubelet.service") {
-		t.Errorf("calls %v, want the kubelet restarted", r.calls)
+	if !slices.Contains(r.Calls, "systemctl restart kubelet.service") {
+		t.Errorf("calls %v, want the kubelet restarted", r.Calls)
 	}
 	// A worker runs none of the control plane's steps.
 	if _, err := rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED); connect.CodeOf(err) != connect.CodeFailedPrecondition {

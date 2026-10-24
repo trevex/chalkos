@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -310,14 +311,14 @@ func TestStageConfigRefuses(t *testing.T) {
 
 // volumeRules answer the commands that create the volume extraConfig adds on vdb, encrypted and
 // enrolled with the fallback secret checked against STATE's keyslot.
-func volumeRules(s *Server) []rule {
+func volumeRules(s *Server) []tooltest.Rule {
 	dir := filepath.Join(s.Paths.StateDir, "storage")
-	return []rule{
-		{prefix: "blkid -p -o export /dev/vdb", err: &tool.Error{Command: "blkid", Code: 2}},
-		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
-		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system"), out: `[{"file":"` + filepath.Join(dir, "disks", "system", "50-var.conf") + `","uuid":"` + varUUID + `"}]`},
-		{prefix: "blkid -p -o value -s TYPE", out: "crypto_LUKS\n"},
-		{prefix: "cryptsetup luksDump --dump-json-metadata", out: luksDump},
+	return []tooltest.Rule{
+		{Prefix: "blkid -p -o export /dev/vdb", Err: &tool.Error{Command: "blkid", Code: 2}},
+		{Prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), Out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
+		{Prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system"), Out: `[{"file":"` + filepath.Join(dir, "disks", "system", "50-var.conf") + `","uuid":"` + varUUID + `"}]`},
+		{Prefix: "blkid -p -o value -s TYPE", Out: "crypto_LUKS\n"},
+		{Prefix: "cryptsetup luksDump --dump-json-metadata", Out: luksDump},
 	}
 }
 
@@ -327,19 +328,19 @@ func volumeRules(s *Server) []rule {
 // Without the fallback secret the volume cannot be enrolled, and nothing changes.
 func TestStageConfigAddsAVolume(t *testing.T) {
 	s, r := configServer(t)
-	r.rules = volumeRules(s)
+	r.Rules = volumeRules(s)
 	err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), "")
 	if err == nil || !strings.Contains(err.Error(), "no fallback secret was sent") {
 		t.Fatalf("err = %v, want the missing secret", err)
 	}
-	if _, found := staged(t, s); found || len(r.calls) != 0 {
-		t.Fatalf("wrote the slot or ran %v", r.calls)
+	if _, found := staged(t, s); found || len(r.Calls) != 0 {
+		t.Fatalf("wrote the slot or ran %v", r.Calls)
 	}
 	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
 		t.Fatal(err)
 	}
-	if !contains(r.calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
-		t.Errorf("the volume was not created: %v", r.calls)
+	if !contains(r.Calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
+		t.Errorf("the volume was not created: %v", r.Calls)
 	}
 	recorded, err := storage.ReadSection(filepath.Join(s.Paths.StateDir, "storage", "storage.json"))
 	if err != nil || recorded.Volumes["extra"].MountPoint != "/srv/extra" {
@@ -358,7 +359,7 @@ func TestStageConfigAddsAVolume(t *testing.T) {
 // records the volume already, so the retry creates nothing again and needs no fallback secret.
 func TestStageConfigRetriedAfterTheVolume(t *testing.T) {
 	s, r := configServer(t)
-	r.rules = volumeRules(s)
+	r.Rules = volumeRules(s)
 	stage := func(secret string) error {
 		return s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret)
 	}
@@ -373,12 +374,12 @@ func TestStageConfigRetriedAfterTheVolume(t *testing.T) {
 	if err := store.Retire(s.Loader.Slots, [][]byte{running}); err != nil {
 		t.Fatal(err)
 	}
-	r.calls = nil
+	r.Calls = nil
 	if err := stage(""); err != nil {
 		t.Fatalf("the retry: %v", err)
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("the retry ran %v", r.calls)
+	if len(r.Calls) != 0 {
+		t.Errorf("the retry ran %v", r.Calls)
 	}
 	if got, found := staged(t, s); !found || got.Version != hashOf(t, extraConfig("ext4")) {
 		t.Errorf("staged slot = %+v, found %v; want the delivered config's", got, found)
@@ -391,7 +392,7 @@ func TestStageConfigRetriedAfterTheVolume(t *testing.T) {
 // While the other image's slot names it, the refusal says so.
 func TestApplyConfigNamesAVolumeAnotherImageAdded(t *testing.T) {
 	s, r := configServer(t)
-	r.rules = volumeRules(s)
+	r.Rules = volumeRules(s)
 	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
 		t.Fatal(err)
 	}
@@ -524,7 +525,7 @@ func TestOneUpgradeAtATime(t *testing.T) {
 
 // lockWatcher runs commands as the fake runner, showing each sfdisk call to check first.
 type lockWatcher struct {
-	*fakeRunner
+	*tooltest.Runner
 	check func(args []string)
 }
 
@@ -532,7 +533,7 @@ func (w lockWatcher) Run(ctx context.Context, name string, args ...string) ([]by
 	if name == "sfdisk" {
 		w.check(args)
 	}
-	return w.fakeRunner.Run(ctx, name, args...)
+	return w.Runner.Run(ctx, name, args...)
 }
 
 // TestUpgradeSharesTheStorageLock reads the boot disk's partition table only while holding the
@@ -570,7 +571,7 @@ func TestUpgradeSharesTheStorageLock(t *testing.T) {
 // slot being written is the one whose config added it.
 func TestStageConfigNamesNoOtherImageForItsOwnVolume(t *testing.T) {
 	s, r := configServer(t)
-	r.rules = volumeRules(s)
+	r.Rules = volumeRules(s)
 	stage := func(config, secret string) error {
 		return s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
 	}

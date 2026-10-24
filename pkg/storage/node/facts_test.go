@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
 // otherDisk has a serial of its own, so a reference can find it instead of the pinned disk.
@@ -90,7 +91,7 @@ func TestDiskFacts(t *testing.T) {
 		}, DiskFact{Ref: `serial "chalk-data"`, Pinned: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			b := newTestBoot(t, &fakeRunner{}, bootDisk, dataDisk, otherDisk)
+			b := newTestBoot(t, &tooltest.Runner{}, bootDisk, dataDisk, otherDisk)
 			writeStorage(t, b, "recovery-key")
 			writePins(t, b)
 			if tc.prepare != nil {
@@ -113,7 +114,7 @@ func TestDiskFacts(t *testing.T) {
 		})
 	}
 	// A disk the node has not pinned is a new one, which nothing compares with.
-	b := newTestBoot(t, &fakeRunner{}, bootDisk, dataDisk)
+	b := newTestBoot(t, &tooltest.Runner{}, bootDisk, dataDisk)
 	writeStorage(t, b, "recovery-key")
 	if got := diskFacts(t, b, selector("chalk-data")); !reflect.DeepEqual(got, DiskFact{Ref: `serial "chalk-data"`}) {
 		t.Errorf("an unpinned disk: %+v", got)
@@ -128,17 +129,17 @@ func TestFallbackFacts(t *testing.T) {
 		name     string
 		secret   string
 		fallback string
-		rules    []rule
+		rules    []tooltest.Rule
 		want     FallbackFact
 		calls    int
 	}{
 		{"no secret", "", "recovery-key", nil, FallbackFact{}, 0},
 		{"a matching secret", "s3cret", "recovery-key", nil, FallbackFact{Sent: true, Matches: &yes}, 2},
-		{"a wrong secret", "wrong", "recovery-key", []rule{{prefix: "cryptsetup open", err: &tool.Error{Command: "cryptsetup open", Code: 2}}}, FallbackFact{Sent: true, Matches: &no}, 2},
+		{"a wrong secret", "wrong", "recovery-key", []tooltest.Rule{{Prefix: "cryptsetup open", Err: &tool.Error{Command: "cryptsetup open", Code: 2}}}, FallbackFact{Sent: true, Matches: &no}, 2},
 		{"no fallback", "s3cret", "none", nil, FallbackFact{Sent: true}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := &fakeRunner{rules: append(tc.rules, rule{prefix: "cryptsetup luksDump", out: `{"keyslots": {"0": {}, "2": {}}, "tokens": {"0": {"keyslots": ["0"]}}}`})}
+			r := &tooltest.Runner{Rules: append(tc.rules, tooltest.Rule{Prefix: "cryptsetup luksDump", Out: `{"keyslots": {"0": {}, "2": {}}, "tokens": {"0": {"keyslots": ["0"]}}}`})}
 			b := newTestBoot(t, r, bootDisk, dataDisk)
 			writeStorage(t, b, tc.fallback)
 			writePins(t, b)
@@ -153,20 +154,20 @@ func TestFallbackFacts(t *testing.T) {
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("fact = %s, want %+v", out, tc.want)
 			}
-			if len(r.calls) != tc.calls || tc.calls > 0 && r.calls[1] != "cryptsetup open --test-passphrase --key-slot=2 --key-file=- /dev/disk/chalk-boot/var" {
-				t.Errorf("ran %v", r.calls)
+			if len(r.Calls) != tc.calls || tc.calls > 0 && r.Calls[1] != "cryptsetup open --test-passphrase --key-slot=2 --key-file=- /dev/disk/chalk-boot/var" {
+				t.Errorf("ran %v", r.Calls)
 			}
 		})
 	}
 	// A check that fails otherwise than for the secret fails the fact.
-	r := &fakeRunner{rules: []rule{{prefix: "cryptsetup luksDump", err: &tool.Error{Command: "cryptsetup luksDump", Code: 4, Stderr: "Device does not exist."}}}}
+	r := &tooltest.Runner{Rules: []tooltest.Rule{{Prefix: "cryptsetup luksDump", Err: &tool.Error{Command: "cryptsetup luksDump", Code: 4, Stderr: "Device does not exist."}}}}
 	b := newTestBoot(t, r, bootDisk)
 	writeStorage(t, b, "recovery-key")
 	if _, err := b.Facts(context.Background(), FactFallback, factsInputOf(t, "s3cret", nil)); err == nil || !strings.Contains(err.Error(), "read the keyslots of /dev/disk/chalk-boot/var") {
 		t.Errorf("err = %v", err)
 	}
 	// Without a recorded section there is nothing to check against.
-	b = newTestBoot(t, &fakeRunner{}, bootDisk)
+	b = newTestBoot(t, &tooltest.Runner{}, bootDisk)
 	out, err := b.Facts(context.Background(), FactFallback, factsInputOf(t, "s3cret", nil))
 	if err != nil || string(out) != `{"sent":true,"matches":null}` {
 		t.Errorf("without storage.json: %s, %v", out, err)
@@ -174,7 +175,7 @@ func TestFallbackFacts(t *testing.T) {
 }
 
 func TestFactsRefusesAnUnknownFact(t *testing.T) {
-	b := newTestBoot(t, &fakeRunner{}, bootDisk)
+	b := newTestBoot(t, &tooltest.Runner{}, bootDisk)
 	if _, err := b.Facts(context.Background(), "partitions", []byte(`{}`)); err == nil || !strings.Contains(err.Error(), `no fact "partitions"`) {
 		t.Errorf("err = %v", err)
 	}
