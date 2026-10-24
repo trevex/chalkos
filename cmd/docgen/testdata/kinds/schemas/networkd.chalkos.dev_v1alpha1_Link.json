@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A systemd .link file.",
   "type": "object",
   "properties": {
     "apiVersion": { "const": "networkd.chalkos.dev/v1alpha1" },

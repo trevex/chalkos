@@ -258,7 +258,8 @@ rec {
   };
 
   # The schema of a whole document of a kind, around the schema of its spec. The kind's rules
-  # over its documents go into x-chalkos-kind, where a kind without rules has none.
+  # over its documents go into x-chalkos-kind, where a kind without rules has none, and its
+  # description, the sentence that says what its documents are for, is the schema's.
   envelope =
     {
       kind,
@@ -267,6 +268,7 @@ rec {
       multiple,
       spec,
       rules ? [ ],
+      description ? null,
     }:
     {
       "$schema" = "https://json-schema.org/draft/2020-12/schema";
@@ -302,7 +304,8 @@ rec {
           ;
       }
       // lib.optionalAttrs (rules != [ ]) { rules = map ruleSchema rules; };
-    };
+    }
+    // lib.optionalAttrs (description != null) { inherit description; };
 
   # The schema of a kind whose spec is declared with options.
   kindSchema =
@@ -313,6 +316,7 @@ rec {
       multiple,
       spec,
       rules ? [ ],
+      description ? null,
     }:
     envelope {
       inherit
@@ -321,6 +325,7 @@ rec {
         version
         multiple
         rules
+        description
         ;
       spec = groupSchema "chalkos.kinds.${kind}.spec" spec;
     };

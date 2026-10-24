@@ -5,21 +5,28 @@ description: "The fields of the config kinds of chalkos's images, of the invento
 
 # Config kinds
 
-This page lists the fields of the config kinds that an image of `chalkos.lib.mkImages`'s
-default variant accepts, and of the inventory and the lab file that chalkctl and chalklab read.
-It is generated from their JSON Schemas: those the image carries in the `schemas` directory of
-its [build](image-layout.md#outputs-of-an-image-build), and those chalkctl and chalklab are
-built with. An image whose modules declare kinds of their own under
-[`chalkos.kinds`](options.md#chalkoskinds) accepts those as well, and its `schemas` directory
-holds their schemas.
+This page is for operators who write a node's config documents, an inventory or a lab file. It
+lists the config kinds that an image of `chalkos.lib.mkImages`'s default variant accepts, by API
+group, and the fields of the inventory and the lab file that chalkctl and chalklab read. An image
+whose modules declare kinds of their own under [`chalkos.kinds`](options.md#chalkoskinds)
+accepts those as well.
 
 Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,
-`-` and `.`, and a `spec`, whose fields the tables list. A field whose default reads "required"
-must be set, and an object whose default reads "see below" takes the defaults of the fields
-that follow it. A field the tables do not list is refused, except within a Kubernetes object or
-an object whose type reads "object, any fields".
+`-` and `.`, and a `spec`, whose fields the tables list. A field within another is listed by its
+whole path, where `<name>` stands for each key of a map and `[]` for each item of a list:
+`spec.vip.addresses` is the field `addresses` of the object `spec.vip`. An object has a row of
+its own only when it has a description, may be null or must be set; an object a document leaves
+out takes the defaults of its fields. A default that reads "required" means the field must be
+set, and `—` means it has no default. A field the tables do not list is refused, except within a
+Kubernetes object or an object whose type reads "object, any fields".
 
-## Host { #host }
+## chalkos.dev { #chalkos-dev }
+
+The kinds of `chalkos.dev` set the node's host name and hold the secrets that other documents name.
+
+### Host { #host }
+
+The host name the node sets at boot.
 
 `apiVersion: chalkos.dev/v1alpha1`
 
@@ -29,7 +36,9 @@ A node's config holds at most one.
 | --- | --- | --- | --- |
 | `spec.hostname` | string or null | `null` | Host name set at boot; null takes the node's name in the inventory. |
 
-## Secret { #secret }
+### Secret { #secret }
+
+Secret values that other documents name by reference, such as a Registry's password.
 
 `apiVersion: chalkos.dev/v1alpha1`
 
@@ -39,7 +48,13 @@ A node's config may hold several, each with a name of its own.
 | --- | --- | --- | --- |
 | `spec.data` | map of string | required | Secret values by key, which secretRef fields of other documents name. |
 
-## Addon { #addon }
+## kubernetes.chalkos.dev { #kubernetes-chalkos-dev }
+
+The kinds of `kubernetes.chalkos.dev` set up the Kubernetes cluster and the node's part in it. Only images that run Kubernetes accept them, and Flannel only those whose CNI is flannel.
+
+### Addon { #addon }
+
+Kubernetes objects that the control planes apply to the cluster.
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
@@ -49,45 +64,40 @@ A node's config may hold several, each with a name of its own.
 | --- | --- | --- | --- |
 | `spec.objects` | list of Kubernetes object | required | Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Addon documents in the order of their names. chalkctl delivers them to control planes alone, and a worker applies none. |
 
-## Cluster { #cluster }
+### Cluster { #cluster }
+
+The Kubernetes cluster the node belongs to: its API server's endpoint, its address families and ranges, its VIP and the flags of its control-plane components.
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
-A node's config holds at most one.
-
-It has 5 [change rules](../build/guard-changes.md).
+A node's config holds at most one. It has 5 [change rules](../build/guard-changes.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.allowSchedulingOnControlPlanes` | boolean | `false` | Let workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share. |
-| `spec.dnsIPs` | object | see below |  |
 | `spec.dnsIPs.ipv4` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.dnsIPs.ipv6` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.domain` | string | `"cluster.local"` | DNS domain of the cluster. |
 | `spec.endpoint` | string | required | URL of the cluster's Kubernetes API server, which every node of the cluster names alike. |
-| `spec.extraArgs` | object | see below |  |
 | `spec.extraArgs.etcd` | map of string | `{}` | Extra flags of etcd, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-apiserver` | map of string | `{}` | Extra flags of the API server, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-controller-manager` | map of string | `{}` | Extra flags of the controller-manager, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-scheduler` | map of string | `{}` | Extra flags of the scheduler, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.ipFamilies` | list of one of `ipv4`, `ipv6` | `["ipv4"]` | Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created. |
-| `spec.nodeCIDRMaskSizes` | object | see below |  |
 | `spec.nodeCIDRMaskSizes.ipv4` | integer from 1 to 128 | `24` | Prefix length of each node's part of the family's pod range. |
 | `spec.nodeCIDRMaskSizes.ipv6` | integer from 1 to 128 | `64` | Prefix length of each node's part of the family's pod range. |
-| `spec.nodeIP` | object | see below |  |
 | `spec.nodeIP.timeout` | integer of at least 1 | `300` | Seconds a node waits at boot for its address. |
 | `spec.nodeIP.validSubnets` | list of string | `[]` | Subnets in CIDR notation that nodes without a fixed address pick theirs from at boot, unless a Node gives its own; a leading `!` excludes one. Empty takes any global unicast address. |
-| `spec.podCIDRs` | object | see below |  |
 | `spec.podCIDRs.ipv4` | string | `"10.244.0.0/16"` | Address range of the family's pods; each node gets a part of it. |
 | `spec.podCIDRs.ipv6` | string | `"fd00:10:244::/56"` | Address range of the family's pods; each node gets a part of it. |
-| `spec.serviceCIDRs` | object | see below |  |
 | `spec.serviceCIDRs.ipv4` | string | `"10.96.0.0/12"` | Address range of the family's services, at most 2^20 addresses. |
 | `spec.serviceCIDRs.ipv6` | string | `"fd00:10:96::/112"` | Address range of the family's services, at most 2^20 addresses. |
-| `spec.vip` | object | see below |  |
 | `spec.vip.addresses` | list of string | `[]` | Virtual addresses of the API server, at most one per family; empty means no virtual IP. |
 | `spec.vip.mode` | `l2` | `"l2"` | How the holder announces the addresses. |
 
-## Flannel { #flannel }
+### Flannel { #flannel }
+
+The settings of flannel, the cluster's CNI, for the VXLAN between the nodes.
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
@@ -98,19 +108,18 @@ A node's config holds at most one.
 | `spec.mtu` | integer of at least 1 or null | `null` | MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the pods get 50 less. null takes the MTU of the interface holding the node's address. |
 | `spec.vxlanSourceSubnets` | list of string | `[]` | Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source. |
 
-## Node { #node }
+### Node { #node }
+
+The node's part in the Kubernetes cluster: its type, the labels and taints it registers with, its address, the interface of the VIP and its kubelet's flags.
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
-A node's config holds at most one.
-
-It has 3 [change rules](../build/guard-changes.md).
+A node's config holds at most one. It has 3 [change rules](../build/guard-changes.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.kubeletExtraArgs` | map of string | `{}` | Extra flags of the kubelet, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.labels` | map of string | `{}` | Kubernetes labels the node registers with; they are fixed once the node holds a Kubernetes share. |
-| `spec.nodeIP` | object | see below |  |
 | `spec.nodeIP.addresses` | list of string or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |
 | `spec.nodeIP.validSubnets` | list of string or null | `null` | Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's. |
 | `spec.taints` | list of object | `[]` | Kubernetes taints the node registers with; they are fixed once the node holds a Kubernetes share. |
@@ -118,10 +127,15 @@ It has 3 [change rules](../build/guard-changes.md).
 | `spec.taints[].key` | string | required | Taint key. |
 | `spec.taints[].value` | string or null | `null` | Taint value; null for a taint without a value. |
 | `spec.type` | one of `controlplane`, `worker` | required | What the node is in the cluster; it is fixed once the node holds a Kubernetes share. |
-| `spec.vip` | object | see below |  |
 | `spec.vip.interface` | string or null | `null` | Interface the node adds the Cluster's VIP addresses to while it holds them; null means the one holding the node's address of their family. Only control planes hold the VIP, so a worker's stays null. |
 
-## Link { #link }
+## networkd.chalkos.dev { #networkd-chalkos-dev }
+
+The kinds of `networkd.chalkos.dev` are the .link, .netdev and .network files of the image's systemd as documents. Their schemas are generated from that systemd, so they accept the sections and keys it reads.
+
+### Link { #link }
+
+A systemd .link file, which udev applies to the network devices it matches, such as to name them or set their offloads.
 
 `apiVersion: networkd.chalkos.dev/v1alpha1`
 
@@ -139,7 +153,9 @@ networkd spells it.
 | `spec.match` | Match | `architecture` (Architecture), `credential` (Credential), `driver` (Driver), `firmware` (Firmware), `host` (Host), `kernelCommandLine` (KernelCommandLine), `kernelVersion` (KernelVersion), `kind` (Kind), `macAddress` (MACAddress), `originalName` (OriginalName), `path` (Path), `permanentMACAddress` (PermanentMACAddress), `property` (Property), `type` (Type), `version` (Version), `virtualization` (Virtualization) |
 | `spec.sriov` | SR-IOV | `linkState` (LinkState), `macAddress` (MACAddress), `macSpoofCheck` (MACSpoofCheck), `qualityOfService` (QualityOfService), `queryReceiveSideScaling` (QueryReceiveSideScaling), `trust` (Trust), `virtualFunction` (VirtualFunction), `vlanId` (VLANId), `vlanProtocol` (VLANProtocol) |
 
-## NetDev { #netdev }
+### NetDev { #netdev }
+
+A systemd-networkd .netdev file, which creates a virtual network device, such as a VLAN, a bond or a bridge.
 
 `apiVersion: networkd.chalkos.dev/v1alpha1`
 
@@ -185,7 +201,9 @@ networkd spells it.
 | `spec.wlan` | WLAN | `physicalDevice` (PhysicalDevice), `type` (Type), `wds` (WDS) |
 | `spec.xfrm` | Xfrm | `independent` (Independent), `interfaceId` (InterfaceId) |
 
-## Network { #network }
+### Network { #network }
+
+A systemd-networkd .network file, which configures the network devices it matches: their addresses, routes, DHCP and the virtual devices on them.
 
 `apiVersion: networkd.chalkos.dev/v1alpha1`
 
@@ -259,26 +277,30 @@ networkd spells it.
 | `spec.trafficControlQueueingDiscipline` | TrafficControlQueueingDiscipline | `networkEmulatorDelayJitterSec` (NetworkEmulatorDelayJitterSec), `networkEmulatorDelaySec` (NetworkEmulatorDelaySec), `networkEmulatorDuplicateRate` (NetworkEmulatorDuplicateRate), `networkEmulatorLossRate` (NetworkEmulatorLossRate), `networkEmulatorPacketLimit` (NetworkEmulatorPacketLimit), `parent` (Parent) |
 | `spec.trivialLinkEqualizer` | TrivialLinkEqualizer | `handle` (Handle), `id` (Id), `parent` (Parent) |
 
-## Mirror { #mirror }
+## oci.chalkos.dev { #oci-chalkos-dev }
+
+The kinds of `oci.chalkos.dev` set how the node reaches OCI registries: the credentials of each host and the mirrors of a registry.
+
+### Mirror { #mirror }
+
+The mirror endpoints that chalkd and containerd try, in order, before a registry itself.
 
 `apiVersion: oci.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own.
-
-It has a [change rule](../build/guard-changes.md).
+A node's config may hold several, each with a name of its own. It has a [change rule](../build/guard-changes.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.endpoints` | list of string | required | URLs of the mirror's endpoints, which chalkd and containerd try in order before the registry itself. A path is where the endpoint serves the registry API, below <path>/v2 as containerd takes it. chalkd authenticates to an endpoint with the Registry of the endpoint's host, and an http:// endpoint needs that Registry to set insecure. |
 | `spec.registry` | string | required | Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. |
 
-## Registry { #registry }
+### Registry { #registry }
+
+The credentials and transport of an OCI registry host, with which chalkd pulls OS images and, on images that run Kubernetes, containerd pulls container images.
 
 `apiVersion: oci.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own.
-
-It has 2 [change rules](../build/guard-changes.md).
+A node's config may hold several, each with a name of its own. It has 2 [change rules](../build/guard-changes.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -287,13 +309,17 @@ It has 2 [change rules](../build/guard-changes.md).
 | `spec.password` | secret reference or null | `null` | Password or token of the user, from a Secret; null pulls anonymously. |
 | `spec.username` | string or null | `null` | User chalkd authenticates to the host as, with the password, and containerd too on images that run Kubernetes; null pulls anonymously. |
 
-## SystemDisk { #systemdisk }
+## storage.chalkos.dev { #storage-chalkos-dev }
+
+The kinds of `storage.chalkos.dev` lay out the node's disks: the system disk and the volumes.
+
+### SystemDisk { #systemdisk }
+
+The disk that holds the node's system region and VAR, and the encryption of the node's storage.
 
 `apiVersion: storage.chalkos.dev/v1alpha1`
 
-A node's config holds at most one.
-
-It has a [change rule](../build/guard-changes.md).
+A node's config holds at most one. It has a [change rule](../build/guard-changes.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -304,21 +330,18 @@ It has a [change rule](../build/guard-changes.md).
 | `spec.disk.size` | string or null | `null` | Comparison the disk's size meets, such as `>= 1T`; the size has at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P. |
 | `spec.disk.type` | one of `nvme`, `ssd`, `hdd` or null | `null` | Kind of disk. |
 | `spec.disk.wwn` | string or null | `null` | The disk's World Wide Name. |
-| `spec.encryption` | object | see below |  |
 | `spec.encryption.fallback` | one of `recovery-key`, `password`, `none` | `"recovery-key"` | Second keyslot asked for on the console when TPM2 unsealing fails. |
 | `spec.encryption.mode` | one of `tpm2`, `none` | `"tpm2"` | Encryption of STATE, VAR and volumes: `tpm2` seals a LUKS2 key to PCR 7, `none` uses no encryption. |
-| `spec.var` | object | see below |  |
-| `spec.var.encryption` | object | see below |  |
 | `spec.var.encryption.mode` | one of `tpm2`, `none` or null | `null` | Overrides the node's encryption mode for VAR. |
 | `spec.var.size` | string or null | `null` | Size of VAR, such as `20G`, with at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P; null fills the remaining space on the system disk. |
 
-## Volume { #volume }
+### Volume { #volume }
+
+A partition for the node's data, on the system disk or on a disk of its own, which the node creates and mounts.
 
 `apiVersion: storage.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own.
-
-It has 7 [change rules](../build/guard-changes.md).
+A node's config may hold several, each with a name of its own. It has 7 [change rules](../build/guard-changes.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -329,14 +352,19 @@ It has 7 [change rules](../build/guard-changes.md).
 | `spec.disk.size` | string or null | `null` | Comparison the disk's size meets, such as `>= 1T`; the size has at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P. |
 | `spec.disk.type` | one of `nvme`, `ssd`, `hdd` or null | `null` | Kind of disk. |
 | `spec.disk.wwn` | string or null | `null` | The disk's World Wide Name. |
-| `spec.encryption` | object | see below |  |
 | `spec.encryption.mode` | one of `tpm2`, `none` or null | `null` | Overrides the node's encryption mode for this volume. |
 | `spec.format` | one of `ext4`, `xfs`, `btrfs`, `swap`, `raw` | `"ext4"` | File system of the volume; `raw` leaves a raw block device, which has no mountPoint. |
 | `spec.mountPoint` | string or null | `null` | Where the volume is mounted; null leaves it unmounted. |
 | `spec.repart` | map of string | `{}` | Extra repart.d keys of the volume's partition. Type, Label, Encrypt, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options. |
 | `spec.size` | string or null | `null` | Size of the volume, such as `100G`, with at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P; null fills the remaining space on its disk. |
 
-## TimeSync { #timesync }
+## time.chalkos.dev { #time-chalkos-dev }
+
+The kinds of `time.chalkos.dev` set how the node synchronises its clock.
+
+### TimeSync { #timesync }
+
+The time servers the node synchronises its clock with.
 
 `apiVersion: time.chalkos.dev/v1alpha1`
 
@@ -350,43 +378,53 @@ A node's config holds at most one.
 | `spec.servers[].nts` | boolean | `true` | Authenticate the server with Network Time Security (NTS). |
 | `spec.servers[].port` | integer from 0 to 65535 or null | `null` | UDP port of the server's NTP; null is NTP's port, 123. |
 
-## Inventory { #inventory }
+## Inventory and lab files { #inventory-and-lab-files }
 
-`apiVersion: chalkctl.chalkos.dev/v1alpha1`
+chalkctl reads an inventory and chalklab a lab file. Neither is part of a node's config.
+
+### Inventory { #inventory }
 
 The nodes of a cluster, where chalkctl reaches each, the image each runs and the config files each gets. Paths are relative to the inventory's directory; globs are allowed in file lists.
 
+`apiVersion: chalkctl.chalkos.dev/v1alpha1`
+
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.all` | object | see below | What every node gets: the image of the nodes that name none and whose groups name none, and the config files every node gets first. |
-| `spec.all.files` | list of string | none | Config files the nodes under it get. |
-| `spec.all.imageName` | string | none | The image of the nodes under it that name none of their own. |
-| `spec.groups` | map of object | none | Groups of nodes by name, which a node joins by naming them in its groups. |
-| `spec.groups.<name>.files` | list of string | none | Config files the nodes under it get. |
-| `spec.groups.<name>.imageName` | string | none | The image of the nodes under it that name none of their own. |
-| `spec.images` | map of object | none | The images the nodes run, by name. |
+| `spec.all` | object | — | What every node gets: the image of the nodes that name none and whose groups name none, and the config files every node gets first. |
+| `spec.all.files` | list of string | — | Config files the nodes under it get. |
+| `spec.all.imageName` | string | — | The image of the nodes under it that name none of their own. |
+| `spec.groups` | map of object | — | Groups of nodes by name, which a node joins by naming them in its groups. |
+| `spec.groups.<name>.files` | list of string | — | Config files the nodes under it get. |
+| `spec.groups.<name>.imageName` | string | — | The image of the nodes under it that name none of their own. |
+| `spec.images` | map of object | — | The images the nodes run, by name. |
 | `spec.images.<name>.source` | object | required | Where the image comes from: exactly one of directory and oci. |
-| `spec.images.<name>.source.directory` | string | none | Directory of an image build as nix build makes it, holding its metadata.json; a relative directory is relative to the inventory's directory. |
-| `spec.images.<name>.source.oci` | string | none | Reference of the image in an OCI registry, naming the registry and a tag or a digest, such as ghcr.io/example/node-metal:v1 or the repository@sha256:… chalkbuild push prints. chalkctl resolves a tag to its digest once per command and reads the image's header and contract layer with the credentials of docker's config; an upgrade, and an install on a node that runs the installer, have the node pull the image by that digest. |
-| `spec.nodes` | map of object | none | The cluster's nodes by name. A node's name is fixed at install, which writes it into the node's certificate; its hostname defaults to it, and the Kubernetes node name, the storage seeds and the recovery key derive from it, so renaming a node takes a reinstall. |
-| `spec.nodes.<name>.address` | string | none | Where chalkctl reaches the node's chalkd: a host or host:port. |
-| `spec.nodes.<name>.files` | list of string | none | The node's own config files. |
-| `spec.nodes.<name>.groups` | list of string | none | Groups whose files the node gets, in this order; the node runs their image unless it names its own. |
-| `spec.nodes.<name>.imageName` | string | none | The image the node runs, over that of its groups and spec.all.imageName. |
+| `spec.images.<name>.source.directory` | string | — | Directory of an image build as nix build makes it, holding its metadata.json; a relative directory is relative to the inventory's directory. |
+| `spec.images.<name>.source.oci` | string | — | Reference of the image in an OCI registry, naming the registry and a tag or a digest, such as ghcr.io/example/node-metal:v1 or the repository@sha256:… chalkbuild push prints. chalkctl resolves a tag to its digest once per command and reads the image's header and contract layer with the credentials of docker's config; an upgrade, and an install on a node that runs the installer, have the node pull the image by that digest. |
+| `spec.nodes` | map of object | — | The cluster's nodes by name. A node's name is fixed at install, which writes it into the node's certificate; its hostname defaults to it, and the Kubernetes node name, the storage seeds and the recovery key derive from it, so renaming a node takes a reinstall. |
+| `spec.nodes.<name>.address` | string | — | Where chalkctl reaches the node's chalkd: a host or host:port. |
+| `spec.nodes.<name>.files` | list of string | — | The node's own config files. |
+| `spec.nodes.<name>.groups` | list of string | — | Groups whose files the node gets, in this order; the node runs their image unless it names its own. |
+| `spec.nodes.<name>.imageName` | string | — | The image the node runs, over that of its groups and spec.all.imageName. |
 
-## Lab { #lab }
-
-`apiVersion: chalklab.chalkos.dev/v1alpha1`
+### Lab { #lab }
 
 The nodes of an inventory that chalklab runs as virtual machines, and their machines.
+
+`apiVersion: chalklab.chalkos.dev/v1alpha1`
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.inventory` | string | required | The inventory of the cluster, relative to the lab file. |
-| `spec.nodes` | map of object | required |  |
-| `spec.nodes.<name>.cpus` | integer of at least 1 | none | Virtual CPUs; default 2. |
-| `spec.nodes.<name>.disks` | list of object | none | The VM's disks: the first holds the node's image, the others start empty; default one of 16G. |
-| `spec.nodes.<name>.disks[].serial` | string | none | Serial number the disk reports to the node, up to 20 letters, digits, _ and -, for a SystemDisk or Volume to select it by; none by default. |
+| `spec.nodes` | map of object | required | The VMs of the lab by the names of their nodes in the inventory. |
+| `spec.nodes.<name>.cpus` | integer of at least 1 | — | Virtual CPUs; default 2. |
+| `spec.nodes.<name>.disks` | list of object | — | The VM's disks: the first holds the node's image, the others start empty; default one of 16G. |
+| `spec.nodes.<name>.disks[].serial` | string | — | Serial number the disk reports to the node, up to 20 letters, digits, _ and -, for a SystemDisk or Volume to select it by; none by default. |
 | `spec.nodes.<name>.disks[].size` | string | required | Size of the disk in bytes, or with a K, M, G or T suffix, such as 16G. |
 | `spec.nodes.<name>.mac` | string | required | MAC address of the VM's NIC on the lab network, which the node's Network document must match. |
-| `spec.nodes.<name>.memory` | integer of at least 512 | none | Memory in MiB; default 3072 for a control plane, 2048 for another node. |
+| `spec.nodes.<name>.memory` | integer of at least 512 | — | Memory in MiB; default 3072 for a control plane, 2048 for another node. |
+
+Sources: the JSON Schemas in the `schemas` directory of an image
+[build](image-layout.md#outputs-of-an-image-build) of the default variant, from
+`modules/node/kinds/builtin.nix` and the tables of the image's systemd-networkd, and
+`pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and
+`pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json`.

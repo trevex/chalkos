@@ -157,6 +157,7 @@ let
         multiple
         spec
         rules
+        description
         ;
     };
 

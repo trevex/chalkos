@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "The credentials and transport of an OCI registry host, with which chalkd pulls OS images and, on images that run Kubernetes, containerd pulls container images.",
   "properties": {
     "apiVersion": {
       "const": "oci.chalkos.dev/v1alpha1"

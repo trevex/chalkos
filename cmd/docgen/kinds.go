@@ -17,21 +17,47 @@ const kindsDescription = "The fields of the config kinds of chalkos's images, of
 
 // kindsIntro opens the page of config kinds, after its front matter.
 const kindsIntro = "# Config kinds\n\n" +
-	"This page lists the fields of the config kinds that an image of `chalkos.lib.mkImages`'s\n" +
-	"default variant accepts, and of the inventory and the lab file that chalkctl and chalklab read.\n" +
-	"It is generated from their JSON Schemas: those the image carries in the `schemas` directory of\n" +
-	"its [build](image-layout.md#outputs-of-an-image-build), and those chalkctl and chalklab are\n" +
-	"built with. An image whose modules declare kinds of their own under\n" +
-	"[`chalkos.kinds`](options.md#chalkoskinds) accepts those as well, and its `schemas` directory\n" +
-	"holds their schemas.\n\n" +
+	"This page is for operators who write a node's config documents, an inventory or a lab file. It\n" +
+	"lists the config kinds that an image of `chalkos.lib.mkImages`'s default variant accepts, by API\n" +
+	"group, and the fields of the inventory and the lab file that chalkctl and chalklab read. An image\n" +
+	"whose modules declare kinds of their own under [`chalkos.kinds`](options.md#chalkoskinds)\n" +
+	"accepts those as well.\n\n" +
 	"Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,\n" +
-	"`-` and `.`, and a `spec`, whose fields the tables list. A field whose default reads \"required\"\n" +
-	"must be set, and an object whose default reads \"see below\" takes the defaults of the fields\n" +
-	"that follow it. A field the tables do not list is refused, except within a Kubernetes object or\n" +
-	"an object whose type reads \"object, any fields\".\n"
+	"`-` and `.`, and a `spec`, whose fields the tables list. A field within another is listed by its\n" +
+	"whole path, where `<name>` stands for each key of a map and `[]` for each item of a list:\n" +
+	"`spec.vip.addresses` is the field `addresses` of the object `spec.vip`. An object has a row of\n" +
+	"its own only when it has a description, may be null or must be set; an object a document leaves\n" +
+	"out takes the defaults of its fields. A default that reads \"required\" means the field must be\n" +
+	"set, and `—` means it has no default. A field the tables do not list is refused, except within a\n" +
+	"Kubernetes object or an object whose type reads \"object, any fields\".\n"
+
+// kindsSources closes the page of config kinds.
+const kindsSources = "\nSources: the JSON Schemas in the `schemas` directory of an image\n" +
+	"[build](image-layout.md#outputs-of-an-image-build) of the default variant, from\n" +
+	"`modules/node/kinds/builtin.nix` and the tables of the image's systemd-networkd, and\n" +
+	"`pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and\n" +
+	"`pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json`.\n"
+
+// groupIntros open the sections of chalkos's API groups.
+var groupIntros = map[string]string{
+	"chalkos.dev":            "The kinds of `chalkos.dev` set the node's host name and hold the secrets that other documents name.",
+	"kubernetes.chalkos.dev": "The kinds of `kubernetes.chalkos.dev` set up the Kubernetes cluster and the node's part in it. Only images that run Kubernetes accept them, and Flannel only those whose CNI is flannel.",
+	"networkd.chalkos.dev":   "The kinds of `networkd.chalkos.dev` are the .link, .netdev and .network files of the image's systemd as documents. Their schemas are generated from that systemd, so they accept the sections and keys it reads.",
+	"oci.chalkos.dev":        "The kinds of `oci.chalkos.dev` set how the node reaches OCI registries: the credentials of each host and the mirrors of a registry.",
+	"storage.chalkos.dev":    "The kinds of `storage.chalkos.dev` lay out the node's disks: the system disk and the volumes.",
+	"time.chalkos.dev":       "The kinds of `time.chalkos.dev` set how the node synchronises its clock.",
+}
+
+// filesHeading and filesIntro open the section of the files given to writeKinds.
+const (
+	filesHeading = "Inventory and lab files"
+	filesAnchor  = "inventory-and-lab-files"
+	filesIntro   = "chalkctl reads an inventory and chalklab a lab file. Neither is part of a node's config."
+)
 
 // kindSchema is the JSON Schema of a kind, as its file holds it, and the kind it declares.
 type kindSchema struct {
+	path                 string
 	group, version, kind string
 	multiple             bool
 	// file tells that the kind is one of chalkctl's or chalklab's own files rather than a
@@ -45,9 +71,10 @@ type row struct {
 	path, typ, def, desc string
 }
 
-// writeKinds writes the page of config kinds to page: the kinds whose schemas are in dir, an
-// image's schemas directory, those of chalkos.dev first and the others by group and kind, then
-// the kinds of the schema files given, chalkctl's and chalklab's own, in their order.
+// writeKinds writes the page of config kinds to page: a section per API group of the kinds whose
+// schemas are in dir, an image's schemas directory, chalkos.dev's first and the others by name,
+// with the kinds of each by name, then a section of the kinds of the schema files given,
+// chalkctl's and chalklab's own, in their order.
 func writeKinds(page, dir string, files []string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -81,7 +108,10 @@ func writeKinds(page, dir string, files []string) error {
 		k.file = true
 		kinds = append(kinds, k)
 	}
-	anchors := map[string]bool{}
+	anchors := map[string]bool{filesAnchor: true}
+	for _, k := range kinds {
+		anchors[groupAnchor(k.group)] = true
+	}
 	for _, k := range kinds {
 		anchor := strings.ToLower(k.kind)
 		if anchors[anchor] {
@@ -89,14 +119,37 @@ func writeKinds(page, dir string, files []string) error {
 		}
 		anchors[anchor] = true
 	}
+	for _, k := range kinds {
+		if text(k.root["description"]) == "" {
+			return fmt.Errorf("%s: the kind %s has no description, which its section opens with", k.path, k.kind)
+		}
+	}
 	var b strings.Builder
 	b.WriteString(frontMatter("Config kinds", kindsDescription))
 	b.WriteString(kindsIntro)
+	group, inFiles := "", false
 	for _, k := range kinds {
+		switch {
+		case k.file && !inFiles:
+			inFiles = true
+			fmt.Fprintf(&b, "\n## %s { #%s }\n\n%s\n", filesHeading, filesAnchor, filesIntro)
+		case !k.file && k.group != group:
+			group = k.group
+			intro, ok := groupIntros[group]
+			if !ok {
+				intro = fmt.Sprintf("The kinds of the API group `%s`.", group)
+			}
+			fmt.Fprintf(&b, "\n## %s { #%s }\n\n%s\n", group, groupAnchor(group), intro)
+		}
 		writeKind(&b, k)
 	}
+	b.WriteString(kindsSources)
 	return os.WriteFile(page, []byte(b.String()), 0o644)
 }
+
+// groupAnchor is the anchor of an API group's section: its name with hyphens for its dots, which
+// no kind's anchor can be, as kind names have neither.
+func groupAnchor(group string) string { return strings.ReplaceAll(group, ".", "-") }
 
 // readKindSchema reads a kind's JSON Schema, keeping numbers as their text, and the kind its
 // "x-chalkos-kind" declares.
@@ -112,7 +165,7 @@ func readKindSchema(path string) (kindSchema, error) {
 		return kindSchema{}, fmt.Errorf("%s: %w", path, err)
 	}
 	xk := asMap(root["x-chalkos-kind"])
-	k := kindSchema{root: root}
+	k := kindSchema{path: path, root: root}
 	k.group, _ = xk["group"].(string)
 	k.version, _ = xk["version"].(string)
 	k.kind, _ = xk["kind"].(string)
@@ -123,27 +176,30 @@ func readKindSchema(path string) (kindSchema, error) {
 	return k, nil
 }
 
-// writeKind writes a kind's section: its apiVersion, how many documents of it a node's config may
-// hold, how many change rules it has, and its fields, or a networkd kind's sections.
+// writeKind writes a kind's section: its purpose, its apiVersion, how many documents of it a
+// node's config may hold, how many change rules it has, and its fields, or a networkd kind's
+// sections.
 func writeKind(b *strings.Builder, k kindSchema) {
-	fmt.Fprintf(b, "\n## %s { #%s }\n\n`apiVersion: %s/%s`\n\n", k.kind, strings.ToLower(k.kind), k.group, k.version)
-	if d := text(k.root["description"]); d != "" {
-		b.WriteString(d + "\n\n")
-	}
+	fmt.Fprintf(b, "\n### %s { #%s }\n\n%s\n\n`apiVersion: %s/%s`\n\n",
+		k.kind, strings.ToLower(k.kind), text(k.root["description"]), k.group, k.version)
+	var counts []string
 	if !k.file {
 		if k.multiple {
-			b.WriteString("A node's config may hold several, each with a name of its own.\n\n")
+			counts = append(counts, "A node's config may hold several, each with a name of its own.")
 		} else {
-			b.WriteString("A node's config holds at most one.\n\n")
+			counts = append(counts, "A node's config holds at most one.")
 		}
 	}
 	// The rules' expressions, the storage kinds' especially, read as code rather than as a
 	// reference; the How chalkos works page on rules describes what the built-in kinds' rules
 	// decide.
 	if n := countRules(k.root); n == 1 {
-		b.WriteString("It has a [change rule](../build/guard-changes.md).\n\n")
+		counts = append(counts, "It has a [change rule](../build/guard-changes.md).")
 	} else if n > 1 {
-		fmt.Fprintf(b, "It has %d [change rules](../build/guard-changes.md).\n\n", n)
+		counts = append(counts, fmt.Sprintf("It has %d [change rules](../build/guard-changes.md).", n))
+	}
+	if len(counts) > 0 {
+		b.WriteString(strings.Join(counts, " ") + "\n\n")
 	}
 	spec := resolve(k.root, asMap(props(k.root)["spec"]))
 	if isNetworkd(spec) {
@@ -186,7 +242,8 @@ func countRules(v any) int {
 }
 
 // fields returns a row for each field of the object schema s, whose path is path, in name order,
-// each followed by the rows of the fields within it.
+// each followed by the rows of the fields within it; an object that only groups its fields has
+// their rows alone.
 func fields(root map[string]any, path string, s map[string]any) []row {
 	s = resolve(root, s)
 	required := map[string]bool{}
@@ -202,10 +259,11 @@ func fields(root map[string]any, path string, s map[string]any) []row {
 		fieldPath := path + "." + name
 		inner := nested(root, fieldPath, child)
 		def := defaultOf(child, required[name])
-		// An object whose fields follow has no default of its own: the defaults of its fields apply.
-		// A list or map of objects has none, whatever its items' fields default to.
-		if _, isObject := child["properties"]; def == "none" && isObject {
-			def = "see below"
+		// An object that only groups its fields, which may be left out and has no description of
+		// its own, would add nothing to the rows of its fields.
+		if _, isObject := child["properties"]; isObject && def == "—" && text(child["description"]) == "" {
+			rows = append(rows, inner...)
+			continue
 		}
 		rows = append(rows, row{
 			path: fieldPath,
@@ -318,7 +376,7 @@ func rangeOf(s map[string]any) string {
 	return ""
 }
 
-// defaultOf is a field's default as JSON, "required" for a required field without one, or "none".
+// defaultOf is a field's default as JSON, "required" for a required field without one, or "—".
 func defaultOf(s map[string]any, required bool) string {
 	if d, ok := s["default"]; ok {
 		data, _ := json.Marshal(d)
@@ -327,7 +385,7 @@ func defaultOf(s map[string]any, required bool) string {
 	if required {
 		return "required"
 	}
-	return "none"
+	return "—"
 }
 
 // display is a value as a table shows it: a string as it is, anything else as JSON.

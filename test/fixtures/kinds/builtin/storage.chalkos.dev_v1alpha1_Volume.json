@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "A partition for the node's data, on the system disk or on a disk of its own, which the node creates and mounts.",
   "properties": {
     "apiVersion": {
       "const": "storage.chalkos.dev/v1alpha1"

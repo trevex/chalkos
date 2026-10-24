@@ -237,6 +237,7 @@ in
 
   chalkos.kinds = {
     Host = builtin "chalkos.dev" // {
+      description = "The host name the node sets at boot.";
       spec.hostname = mkOption {
         type = types.nullOr (types.strMatching "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?");
         default = null;
@@ -245,6 +246,7 @@ in
     };
     Secret = builtin "chalkos.dev" // {
       multiple = true;
+      description = "Secret values that other documents name by reference, such as a Registry's password.";
       spec.data = mkOption {
         type = types.attrsOf types.str;
         description = "Secret values by key, which secretRef fields of other documents name.";
@@ -252,6 +254,7 @@ in
     };
     Registry = builtin "oci.chalkos.dev" // {
       multiple = true;
+      description = "The credentials and transport of an OCI registry host, with which chalkd pulls OS images and, on images that run Kubernetes, containerd pulls container images.";
       # chalkd authenticates a pull with the Registry of the image's host, so a host has one; it
       # sends a user and a password together, so a Registry gives both or neither.
       rules = [
@@ -289,6 +292,7 @@ in
     };
     Mirror = builtin "oci.chalkos.dev" // {
       multiple = true;
+      description = "The mirror endpoints that chalkd and containerd try, in order, before a registry itself.";
       # chalkd and containerd try one list of endpoints for a registry, so a registry has one.
       rules = [
         {
@@ -310,6 +314,7 @@ in
       };
     };
     SystemDisk = builtin "storage.chalkos.dev" // {
+      description = "The disk that holds the node's system region and VAR, and the encryption of the node's storage.";
       # VAR holds the running node's data, so a change it would be recreated for takes a
       # reinstall; a larger VAR, or one that fills the disk, only grows. VAR is never raw, so a
       # recorded VAR without a format shows as none.
@@ -367,6 +372,7 @@ in
     };
     Volume = builtin "storage.chalkos.dev" // {
       multiple = true;
+      description = "A partition for the node's data, on the system disk or on a disk of its own, which the node creates and mounts.";
       # chalkctl storage reset recreates a volume in place, on the disk it lives on; moving a volume
       # to another disk, by its disk or by a reference that finds another disk, and removing it,
       # take a reinstall. A disk reference that cannot be resolved is a mistake in the config, or a
@@ -454,6 +460,7 @@ in
       };
     };
     TimeSync = builtin "time.chalkos.dev" // {
+      description = "The time servers the node synchronises its clock with.";
       spec = {
         servers = mkOption {
           type = types.listOf timeServer;
@@ -474,6 +481,7 @@ in
   }
   // lib.optionalAttrs kubernetes {
     Node = builtin "kubernetes.chalkos.dev" // {
+      description = "The node's part in the Kubernetes cluster: its type, the labels and taints it registers with, its address, the interface of the VIP and its kubelet's flags.";
       # The share's certificates are those of its kind, and a control plane's etcd data stays its
       # own, until the node is reinstalled; a share of another type delivered with the config
       # changes neither.
@@ -528,6 +536,7 @@ in
       };
     };
     Cluster = builtin "kubernetes.chalkos.dev" // {
+      description = "The Kubernetes cluster the node belongs to: its API server's endpoint, its address families and ranges, its VIP and the flags of its control-plane components.";
       rules = [
         (fixedRule "podCIDRs" (s: f: "cidr(${s}.podCIDRs[${f}])") (v: "string(${v})"))
         (fixedRule "serviceCIDRs" (s: f: "cidr(${s}.serviceCIDRs[${f}])") (v: "string(${v})"))
@@ -625,6 +634,7 @@ in
     };
     Addon = builtin "kubernetes.chalkos.dev" // {
       multiple = true;
+      description = "Kubernetes objects that the control planes apply to the cluster.";
       spec.objects = mkOption {
         type = types.listOf kubernetesObject;
         description = "Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Addon documents in the order of their names. chalkctl delivers them to control planes alone, and a worker applies none.";
@@ -633,6 +643,7 @@ in
   }
   // lib.optionalAttrs (kubernetes && flannel) {
     Flannel = builtin "kubernetes.chalkos.dev" // {
+      description = "The settings of flannel, the cluster's CNI, for the VXLAN between the nodes.";
       spec = {
         mtu = mkOption {
           type = types.nullOr types.ints.positive;

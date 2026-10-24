@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "The disk that holds the node's system region and VAR, and the encryption of the node's storage.",
   "properties": {
     "apiVersion": {
       "const": "storage.chalkos.dev/v1alpha1"

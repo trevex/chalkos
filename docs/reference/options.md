@@ -1221,6 +1221,38 @@ attribute set of (submodule)
 
 
 
+### chalkos\.kinds\.\<name>\.description
+
+
+
+Sentence that says what a document of the kind is for, which the kind’s schema carries as its description\.
+
+
+
+*Type:*
+null or string
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
+*Example:*
+
+```nix
+"The rack the node is mounted in."
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
 ### chalkos\.kinds\.\<name>\.dir
 
 

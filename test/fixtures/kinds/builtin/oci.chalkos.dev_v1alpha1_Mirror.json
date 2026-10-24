@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "The mirror endpoints that chalkd and containerd try, in order, before a registry itself.",
   "properties": {
     "apiVersion": {
       "const": "oci.chalkos.dev/v1alpha1"

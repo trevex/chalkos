@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A partition for the node's data.",
   "type": "object",
   "properties": {
     "apiVersion": { "const": "storage.chalkos.dev/v1alpha1" },
@@ -10,6 +11,11 @@
       "additionalProperties": false,
       "properties": {
         "disk": { "$ref": "#/$defs/diskRef", "description": "The disk the volume is on." },
+        "encryption": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "mode": { "enum": ["tpm2", "none"], "default": "tpm2", "description": "Encryption of the volume." } }
+        },
         "labels": {
           "type": "object",
           "additionalProperties": { "type": "string" },

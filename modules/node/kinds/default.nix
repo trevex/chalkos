@@ -29,11 +29,18 @@ let
       "NetDev"
       "Network"
     ];
+    # What a document of each kind is, which its schema carries.
+    descriptions = {
+      Link = "A systemd .link file, which udev applies to the network devices it matches, such as to name them or set their offloads.";
+      NetDev = "A systemd-networkd .netdev file, which creates a virtual network device, such as a VLAN, a bond or a bridge.";
+      Network = "A systemd-networkd .network file, which configures the network devices it matches: their addresses, routes, DHCP and the virtual devices on them.";
+    };
   };
   networkdKind = kind: {
     inherit kind;
     inherit (networkd) group version;
     multiple = true;
+    description = networkd.descriptions.${kind};
   };
   networkdSchemas = pkgs.stdenvNoCC.mkDerivation {
     name = "chalkos-networkd-schemas";
@@ -215,6 +222,12 @@ let
           default = false;
           description = "Whether a node's config may hold more than one document of the kind.";
         };
+        description = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          example = "The rack the node is mounted in.";
+          description = "Sentence that says what a document of the kind is for, which the kind's schema carries as its description.";
+        };
         builtin = lib.mkOption {
           type = lib.types.bool;
           default = false;
@@ -329,6 +342,7 @@ let
           multiple
           spec
           rules
+          description
           ;
       }) cfg;
 

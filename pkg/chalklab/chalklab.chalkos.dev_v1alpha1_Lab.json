@@ -33,6 +33,7 @@
         "nodes": {
           "type": "object",
           "minProperties": 1,
+          "description": "The VMs of the lab by the names of their nodes in the inventory.",
           "propertyNames": { "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" },
           "additionalProperties": {
             "type": "object",
