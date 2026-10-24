@@ -19,6 +19,7 @@
       description = "Rack and height unit the node is mounted in.";
       rules = [
         {
+          description = "A Rack's location is the one the rack survey found.";
           rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
           messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
         }

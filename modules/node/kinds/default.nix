@@ -106,6 +106,12 @@ let
         default = "refuse";
         description = "What a change the rule refuses needs: `refuse` cannot be made, `reset` takes `chalkctl storage reset`, `reinstall` a reinstall of the node.";
       };
+      description = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "A Peer keeps its AS number.";
+        description = "One sentence on what the rule guards, which the reference pages show; the node never reads it.";
+      };
     };
   };
 

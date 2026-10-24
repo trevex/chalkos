@@ -144,7 +144,8 @@ let
   # The kubelet applies the node's labels and taints, the control-plane taint among them, when it
   # registers the node with the cluster, and chalkd never changes the Node object after that. A
   # node holding a Kubernetes share has registered, or registers with the config it holds.
-  registered = what: instead: {
+  registered = description: what: instead: {
+    inherit description;
     rule = "facts.share == null || self == oldSelf";
     message = "the config changes ${what}; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; ${instead}, or reinstall the node";
   };
@@ -154,7 +155,8 @@ let
     "cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], ${expr}))";
   # A rule over one per-family setting, whose value in a spec s and family f is value "s" "f",
   # compared with ==, and shown as show gives it.
-  fixedRule = field: value: show: {
+  fixedRule = description: field: value: show: {
+    inherit description;
     rule = "facts.share == null || size(oldDocuments) == 0 || size(documents) == 0 || ${bindSpecs "was.ipFamilies.filter(f, f in gets.ipFamilies).all(f, ${value "was" "f"} == ${value "gets" "f"})"}";
     messageExpression = bindSpecs ''
       cel.bind(families, was.ipFamilies.filter(f, f in gets.ipFamilies),
@@ -209,8 +211,8 @@ let
   volChanges = "r == null || ${volFormat} != ${orEmpty "r.format"} || ${volEncryption} != r.encryption || ${sizeChanged (orEmpty "v.size") (orEmpty "r.size")} || ${orEmpty "v.mountPoint"} != ${orEmpty "r.mountPoint"}";
   missingDisk = "${ownDisk} && facts.disks[n].pinned && !facts.disks[n].present && (${volChanges})";
   # A rule over each Volume document n: none may be bad, and message names each that is.
-  volumeRule = takes: bad: message: {
-    inherit takes;
+  volumeRule = takes: description: bad: message: {
+    inherit takes description;
     rule = "facts.recorded == null || documents.all(n, ${bindVolume "!(${bad})"})";
     messageExpression = ''documents.filter(n, ${bindVolume bad}).map(n, ${bindVolume message}).join("; ")'';
   };
@@ -259,10 +261,12 @@ in
       # sends a user and a password together, so a Registry gives both or neither.
       rules = [
         {
+          description = "No two Registry documents name the same host.";
           rule = "documents.all(n, documents.all(m, n == m || documents[n].spec.host != documents[m].spec.host))";
           messageExpression = ''"the Registry documents " + documents.filter(n, documents.exists(m, m != n && documents[m].spec.host == documents[n].spec.host)).join(", ") + " name the same host; give one Registry per host"'';
         }
         {
+          description = "A Registry gives username and password together, or neither.";
           rule = "documents.all(n, (documents[n].spec.username == null) == (documents[n].spec.password == null))";
           messageExpression = ''documents.filter(n, (documents[n].spec.username == null) != (documents[n].spec.password == null)).map(n, "Registry " + n).join(", ") + ": give username and password together, or neither to pull anonymously"'';
         }
@@ -296,6 +300,7 @@ in
       # chalkd and containerd try one list of endpoints for a registry, so a registry has one.
       rules = [
         {
+          description = "No two Mirror documents mirror the same registry.";
           rule = "documents.all(n, documents.all(m, n == m || documents[n].spec.registry != documents[m].spec.registry))";
           messageExpression = ''"the Mirror documents " + documents.filter(n, documents.exists(m, m != n && documents[m].spec.registry == documents[n].spec.registry)).join(", ") + " mirror the same registry; give one Mirror per registry"'';
         }
@@ -330,6 +335,7 @@ in
         in
         [
           {
+            description = "VAR keeps its format, encryption and size; a larger VAR, or one that fills the disk, is accepted.";
             takes = "reinstall";
             rule = ''facts.recorded == null || !("var" in facts.recorded.volumes) || size(documents) != 1 || ${bindVar "size(${reasons}) == 0"}'';
             messageExpression = bindVar ''"VAR: " + ${reasons}.join("; ") + ${reinstall}'';
@@ -378,29 +384,43 @@ in
       # take a reinstall. A disk reference that cannot be resolved is a mistake in the config, or a
       # missing disk when it finds none, which neither carries out.
       rules = [
-        (volumeRule "reinstall" "r != null && ${volDisk} != r.disk"
+        (volumeRule "reinstall"
+          "A volume stays on the disk it was created on: the system disk or a disk of its own."
+          "r != null && ${volDisk} != r.disk"
           ''"Volume " + n + ": disk " + ${volDisk} + " instead of " + r.disk + ${reinstall}''
         )
-        (volumeRule "reinstall" movedByRef
+        (volumeRule "reinstall"
+          "A disk reference that differs from the one the volume's disk was pinned by finds that disk."
+          movedByRef
           ''"Volume " + n + ": disk reference " + facts.disks[n].ref + " resolves to " + facts.disks[n].found + ", but the volume lives on " + facts.disks[n].identity + ${reinstall}''
         )
-        (volumeRule "refuse" unresolved ''
-          "Volume " + n + ": disk reference " + facts.disks[n].ref + " cannot be resolved: " + facts.disks[n].error + "; "
-          + (facts.disks[n].errorKind == "noDisk" ? "fix the disk reference or plug in the disk it names"
-            : facts.disks[n].errorKind == "listDisks" ? "try again once the node can list its disks"
-            : "fix the disk reference")
-        '')
-        (volumeRule "reset" needsReset
+        (volumeRule "refuse"
+          "A disk reference that differs from the one the volume's disk was pinned by resolves."
+          unresolved
+          ''
+            "Volume " + n + ": disk reference " + facts.disks[n].ref + " cannot be resolved: " + facts.disks[n].error + "; "
+            + (facts.disks[n].errorKind == "noDisk" ? "fix the disk reference or plug in the disk it names"
+              : facts.disks[n].errorKind == "listDisks" ? "try again once the node can list its disks"
+              : "fix the disk reference")
+          ''
+        )
+        (volumeRule "reset"
+          "A volume keeps its format and encryption, also the encryption it inherits from the SystemDisk, and does not shrink or take a fixed size where it filled its disk."
+          needsReset
           ''"Volume " + n + ": " + ${resetReasons}.join("; ") + "; reset it with chalkctl storage reset " + node.name + " " + n''
         )
-        (volumeRule "refuse" missingDisk ''
-          facts.disks[n].presentError != ""
-            ? "Volume " + n + ": the node cannot find its disk " + n + ": " + facts.disks[n].presentError + "; try again once it can"
-            : "Volume " + n + ": its disk " + n + " (" + facts.disks[n].identity + ") is not plugged in; plug it in"
-        '')
+        (volumeRule "refuse" "The pinned disk of a volume that the config creates or changes is plugged in."
+          missingDisk
+          ''
+            facts.disks[n].presentError != ""
+              ? "Volume " + n + ": the node cannot find its disk " + n + ": " + facts.disks[n].presentError + "; try again once it can"
+              : "Volume " + n + ": its disk " + n + " (" + facts.disks[n].identity + ") is not plugged in; plug it in"
+          ''
+        )
         # A volume the running image's config never named was added by another image's config,
         # or an earlier one of the image a slot is written for, which the running slot is not.
         {
+          description = "No volume the machine records is left out of the config.";
           takes = "reinstall";
           rule = ''facts.recorded == null || facts.recorded.volumes.all(n, n == "var" || n in documents)'';
           messageExpression = ''
@@ -412,6 +432,7 @@ in
         # New encrypted volumes are enrolled with the fallback secret, which must open the node's
         # existing fallback keyslot, so a mistyped one cannot leave volumes whose fallbacks differ.
         {
+          description = "A new TPM2-encrypted volume, on a node with a fallback, comes with the fallback secret, which opens the node's fallback keyslot.";
           rule = ''facts.recorded == null || ${systemDiskSpec}.encryption.fallback == "none" || size(${enrolled}) == 0 || (facts.fallback.sent && facts.fallback.matches != false)'';
           messageExpression = ''
             !facts.fallback.sent
@@ -487,6 +508,7 @@ in
       # changes neither.
       rules = [
         {
+          description = "The node keeps the type its Kubernetes share is for.";
           rule = "facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)";
           messageExpression = ''
             cel.bind(type, documents.map(n, documents[n].spec.type)[0],
@@ -507,13 +529,21 @@ in
           type = types.attrsOf types.str;
           default = { };
           description = "Kubernetes labels the node registers with; they are fixed once the node holds a Kubernetes share.";
-          rules = [ (registered "the node's labels" "change the Node object with kubectl label instead") ];
+          rules = [
+            (registered "The node keeps its labels once it holds a Kubernetes share." "the node's labels"
+              "change the Node object with kubectl label instead"
+            )
+          ];
         };
         taints = lib.chalkos.mkOption {
           type = types.listOf taint;
           default = [ ];
           description = "Kubernetes taints the node registers with; they are fixed once the node holds a Kubernetes share.";
-          rules = [ (registered "the node's taints" "change the Node object with kubectl taint instead") ];
+          rules = [
+            (registered "The node keeps its taints once it holds a Kubernetes share." "the node's taints"
+              "change the Node object with kubectl taint instead"
+            )
+          ];
         };
         kubeletExtraArgs = flags "the kubelet";
         nodeIP = {
@@ -538,9 +568,24 @@ in
     Cluster = builtin "kubernetes.chalkos.dev" // {
       description = "The Kubernetes cluster the node belongs to: its API server's endpoint, its address families and ranges, its VIP and the flags of its control-plane components.";
       rules = [
-        (fixedRule "podCIDRs" (s: f: "cidr(${s}.podCIDRs[${f}])") (v: "string(${v})"))
-        (fixedRule "serviceCIDRs" (s: f: "cidr(${s}.serviceCIDRs[${f}])") (v: "string(${v})"))
-        (fixedRule "dnsIPs" dnsIP (v: "string(${v})"))
+        (fixedRule
+          "The pod range of each family both configs have stays once the node holds a Kubernetes share."
+          "podCIDRs"
+          (s: f: "cidr(${s}.podCIDRs[${f}])")
+          (v: "string(${v})")
+        )
+        (fixedRule
+          "The service range of each family both configs have stays once the node holds a Kubernetes share."
+          "serviceCIDRs"
+          (s: f: "cidr(${s}.serviceCIDRs[${f}])")
+          (v: "string(${v})")
+        )
+        (fixedRule
+          "The cluster DNS's address of each family both configs have, by default the 10th of its service range, stays once the node holds a Kubernetes share."
+          "dnsIPs"
+          dnsIP
+          (v: "string(${v})")
+        )
       ];
       spec = {
         endpoint = mkOption {
@@ -557,7 +602,10 @@ in
           default = false;
           description = "Whether workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share.";
           rules = [
-            (registered "allowSchedulingOnControlPlanes" "add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead")
+            (registered "Whether workloads run on control planes stays once the node holds a Kubernetes share."
+              "allowSchedulingOnControlPlanes"
+              "add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead"
+            )
           ];
         };
         ipFamilies = lib.chalkos.mkOption {
@@ -571,6 +619,7 @@ in
           description = "Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created.";
           rules = [
             {
+              description = "The cluster's address families stay once the node holds a Kubernetes share.";
               rule = "facts.share == null || self == oldSelf";
               messageExpression = ''"the config changes the cluster's ipFamilies from " + oldSelf.join(", ") + " to " + self.join(", ") + "; ${fixed}"'';
             }

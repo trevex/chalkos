@@ -32,6 +32,7 @@ The options within each, by their path below `chalkos.kinds`:
 | `<name>.group`{ #chalkoskindsgroup } | string matching `[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+` | required | API group of the kind: a DNS name its author controls, as for Kubernetes custom resources. Example: `"bgp.example.org"` |
 | `<name>.multiple`{ #chalkoskindsmultiple } | boolean | `false` | Whether a node's config may hold more than one document of the kind. |
 | `<name>.rules`{ #chalkoskindsrules } | list of submodule | `[ ]` | Change rules over the node's documents of the kind, CEL expressions that are true for every config the node accepts. `documents` and `oldDocuments` map document names to the documents of the kind in the delivered config and in the running one; `config`, `oldConfig`, `node.name` and `facts` are as for every rule. A rule that is false refuses the config, or says it takes a reset or a reinstall. Example: `[ { rule = "size(documents) <= 1"; message = "a node is in one rack"; } ]` |
+| `<name>.rules.*.description`{ #chalkoskindsrulesdescription } | string or null | `null` | One sentence on what the rule guards, which the reference pages show; the node never reads it. Example: `"A Peer keeps its AS number."` |
 | `<name>.rules.*.message`{ #chalkoskindsrulesmessage } | string or null | `null` | Why a change is refused and what to do instead. |
 | `<name>.rules.*.messageExpression`{ #chalkoskindsrulesmessageexpression } | string or null | `null` | CEL expression that yields the message, with the rule's variables; `message` is used when it fails. Example: `"\"the rack moves from \" + oldSelf + \" to \" + self"` |
 | `<name>.rules.*.rule`{ #chalkoskindsrulesrule } | non-empty string | required | CEL expression that is true for every change the node accepts. Example: `"self == oldSelf"` |
@@ -153,7 +154,7 @@ and the common effects.
 
 | Helper | Arguments | Result |
 | --- | --- | --- |
-| `lib.chalkos.mkOption` | `lib.mkOption`'s, and `rules`, a list of `{ rule; message or messageExpression; takes ? "refuse"; }` | An option for a field of a kind, with the field's change rules. |
+| `lib.chalkos.mkOption` | `lib.mkOption`'s, and `rules`, a list of `{ rule; message or messageExpression; takes ? "refuse"; description ? null; }` | An option for a field of a kind, with the field's change rules. |
 | `lib.chalkos.types.secretRef` | — | Type of a field that holds a reference to a key of a Secret: `secretRef` with `name` and `key`. |
 | `lib.chalkos.render.template` | a path ending in `.tmpl` | Renderer of a Go `text/template` into one file, named as the template less `.tmpl`; a missing or null key prints as nothing. |
 | `lib.chalkos.render.jq` | a path ending in `.jq` | Renderer of a jq program into one file, named as the program less `.jq`; a string is written raw. |

@@ -86,6 +86,7 @@ and the `description` of `password` are left out:
           "x-chalkos-rules": [
             {
               "rule": "self == oldSelf",
+              "description": "A Peer keeps its AS number.",
               "messageExpression": "\"the AS number stays \" + string(oldSelf) + \"; add a Peer of another name for \" + string(self)",
               "takes": "refuse"
             }

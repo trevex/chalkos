@@ -63,6 +63,7 @@ in
         description = "AS number of the neighbour.";
         rules = [
           {
+            description = "A Peer keeps its AS number.";
             rule = "self == oldSelf";
             messageExpression = ''"the AS number stays " + string(oldSelf) + "; add a Peer of another name for " + string(self)'';
           }

@@ -1,3 +1,4 @@
+| `description` | One sentence on what the rule guards, which the reference pages show. The node never reads it. |
 ---
 title: "Guard changes with rules and facts"
 description: "Refuse a config change a node cannot make, with CEL rules on your kind and facts about the node"
@@ -49,7 +50,7 @@ The error names the node, then the refusal. A field rule's message starts with t
 document's name and the field. The rest comes from `messageExpression`, which builds the message
 from the same variables as the rule.
 
-## A rule has four attributes
+## A rule has five attributes
 
 | Attribute | Meaning |
 | --- | --- |
@@ -57,6 +58,7 @@ from the same variables as the rule.
 | `message` | What the node says when the rule is false: why, and what to do instead. |
 | `messageExpression` | CEL that yields the message. When it fails, the node says `message`, or names the rule's kind or field without one. |
 | `takes` | What the refused change needs instead: `refuse`, the default, `reset` or `reinstall`. |
+| `description` | One sentence on what the rule guards, which the reference pages show. The node never reads it. |
 
 A rule without either message says `the config does not meet a rule of` and the kind or field
 that declares it, such as `the config does not meet a rule of Peer spec.asn`.

@@ -37,6 +37,9 @@ type Rule struct {
 	MessageExpression string `json:"messageExpression,omitempty"`
 	// Takes defaults to Refuse.
 	Takes Takes `json:"takes,omitempty"`
+	// Description says what the rule guards, for the reference pages; the rule never reads or
+	// says it.
+	Description string `json:"description,omitempty"`
 }
 
 // Cost limits. A rule's estimated cost assumes every list, map and string holds sizeHint

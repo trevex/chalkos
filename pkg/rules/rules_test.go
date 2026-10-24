@@ -349,6 +349,20 @@ func TestEvaluateKindRuleError(t *testing.T) {
 	}
 }
 
+// A rule's description annotates it for the reference: the rule neither reads it nor says it.
+func TestDescriptionIgnored(t *testing.T) {
+	set := compiled(t, kindSchema("Demo", true, object(nil), []any{
+		rule("size(documents) <= 1", "", "description", "A node holds one Demo at most."),
+	}))
+	failures, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{}`), doc(t, "Demo", "b", `{}`)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := messages(failures); !slices.Equal(got, []string{"the config does not meet a rule of Demo"}) {
+		t.Errorf("failures = %q", got)
+	}
+}
+
 func TestCompileErrors(t *testing.T) {
 	for name, tc := range map[string]struct {
 		spec  map[string]any

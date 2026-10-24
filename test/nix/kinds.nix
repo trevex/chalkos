@@ -1387,6 +1387,7 @@ lib.runTests {
                   rule = "self == oldSelf";
                   message = "x is fixed";
                   messageExpression = null;
+                  description = "x stays what it was.";
                 }
               ];
             };
@@ -1415,6 +1416,7 @@ lib.runTests {
           rule = "self == oldSelf";
           message = "x is fixed";
           takes = "refuse";
+          description = "x stays what it was.";
         }
       ]
       [
@@ -1442,6 +1444,7 @@ lib.runTests {
                 {
                   rule = "size(documents) <= 1";
                   message = "one Demo";
+                  description = "A node holds one Demo at most.";
                 }
                 {
                   rule = "documents == oldDocuments";
@@ -1462,6 +1465,7 @@ lib.runTests {
           rule = "size(documents) <= 1";
           message = "one Demo";
           takes = "refuse";
+          description = "A node holds one Demo at most.";
         }
         {
           rule = "documents == oldDocuments";

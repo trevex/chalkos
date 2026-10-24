@@ -31,6 +31,7 @@
           "type": "boolean",
           "x-chalkos-rules": [
             {
+              "description": "Whether workloads run on control planes stays once the node holds a Kubernetes share.",
               "message": "the config changes allowSchedulingOnControlPlanes; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node",
               "rule": "facts.share == null || self == oldSelf",
               "takes": "refuse"
@@ -133,6 +134,7 @@
           "type": "array",
           "x-chalkos-rules": [
             {
+              "description": "The cluster's address families stay once the node holds a Kubernetes share.",
               "messageExpression": "\"the config changes the cluster's ipFamilies from \" + oldSelf.join(\", \") + \" to \" + self.join(\", \") + \"; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster\"",
               "rule": "facts.share == null || self == oldSelf",
               "takes": "refuse"
@@ -259,16 +261,19 @@
     "multiple": false,
     "rules": [
       {
+        "description": "The pod range of each family both configs have stays once the node holds a Kubernetes share.",
         "messageExpression": "cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], cel.bind(families, was.ipFamilies.filter(f, f in gets.ipFamilies),\n  \"the config changes the cluster's podCIDRs from \"\n  + families.map(f, f + \" \" + string(cidr(was.podCIDRs[f]))).join(\", \") + \" to \"\n  + families.map(f, f + \" \" + string(cidr(gets.podCIDRs[f]))).join(\", \") + \"; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster\")\n))",
         "rule": "facts.share == null || size(oldDocuments) == 0 || size(documents) == 0 || cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], was.ipFamilies.filter(f, f in gets.ipFamilies).all(f, cidr(was.podCIDRs[f]) == cidr(gets.podCIDRs[f]))))",
         "takes": "refuse"
       },
       {
+        "description": "The service range of each family both configs have stays once the node holds a Kubernetes share.",
         "messageExpression": "cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], cel.bind(families, was.ipFamilies.filter(f, f in gets.ipFamilies),\n  \"the config changes the cluster's serviceCIDRs from \"\n  + families.map(f, f + \" \" + string(cidr(was.serviceCIDRs[f]))).join(\", \") + \" to \"\n  + families.map(f, f + \" \" + string(cidr(gets.serviceCIDRs[f]))).join(\", \") + \"; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster\")\n))",
         "rule": "facts.share == null || size(oldDocuments) == 0 || size(documents) == 0 || cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], was.ipFamilies.filter(f, f in gets.ipFamilies).all(f, cidr(was.serviceCIDRs[f]) == cidr(gets.serviceCIDRs[f]))))",
         "takes": "refuse"
       },
       {
+        "description": "The cluster DNS's address of each family both configs have, by default the 10th of its service range, stays once the node holds a Kubernetes share.",
         "messageExpression": "cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], cel.bind(families, was.ipFamilies.filter(f, f in gets.ipFamilies),\n  \"the config changes the cluster's dnsIPs from \"\n  + families.map(f, f + \" \" + string((was.dnsIPs[f] != null ? ip(was.dnsIPs[f]) : cidr(was.serviceCIDRs[f]).ip(10)))).join(\", \") + \" to \"\n  + families.map(f, f + \" \" + string((gets.dnsIPs[f] != null ? ip(gets.dnsIPs[f]) : cidr(gets.serviceCIDRs[f]).ip(10)))).join(\", \") + \"; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster\")\n))",
         "rule": "facts.share == null || size(oldDocuments) == 0 || size(documents) == 0 || cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], was.ipFamilies.filter(f, f in gets.ipFamilies).all(f, (was.dnsIPs[f] != null ? ip(was.dnsIPs[f]) : cidr(was.serviceCIDRs[f]).ip(10)) == (gets.dnsIPs[f] != null ? ip(gets.dnsIPs[f]) : cidr(gets.serviceCIDRs[f]).ip(10)))))",
         "takes": "refuse"

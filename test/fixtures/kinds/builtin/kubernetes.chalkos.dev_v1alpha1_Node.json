@@ -42,6 +42,7 @@
           "type": "object",
           "x-chalkos-rules": [
             {
+              "description": "The node keeps its labels once it holds a Kubernetes share.",
               "message": "the config changes the node's labels; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl label instead, or reinstall the node",
               "rule": "facts.share == null || self == oldSelf",
               "takes": "refuse"
@@ -127,6 +128,7 @@
           "type": "array",
           "x-chalkos-rules": [
             {
+              "description": "The node keeps its taints once it holds a Kubernetes share.",
               "message": "the config changes the node's taints; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl taint instead, or reinstall the node",
               "rule": "facts.share == null || self == oldSelf",
               "takes": "refuse"
@@ -180,6 +182,7 @@
     "multiple": false,
     "rules": [
       {
+        "description": "The node keeps the type its Kubernetes share is for.",
         "messageExpression": "cel.bind(type, documents.map(n, documents[n].spec.type)[0],\n  \"the config changes the node's type from \\\"\" + facts.share.kind + \"\\\" to \\\"\" + type\n  + \"\\\"; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a \" + type)\n",
         "rule": "facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)",
         "takes": "refuse"

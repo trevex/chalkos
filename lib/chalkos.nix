@@ -21,7 +21,7 @@ in
   types = { inherit (schema.types) secretRef; };
 
   # lib.mkOption, for a field of a kind, with the field's change rules: each { rule; message or
-  # messageExpression; takes ? "refuse"; }, as a kind's rules are.
+  # messageExpression; takes ? "refuse"; description ? null; }, as a kind's rules are.
   mkOption =
     {
       rules ? [ ],
