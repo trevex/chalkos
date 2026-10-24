@@ -79,7 +79,7 @@ func ExtractBootLoader(ctx context.Context, raw string, espOffset int64, dir, ar
 
 // list returns the files of the ESP directory whose upper-cased names match pattern.
 func list(ctx context.Context, raw string, espOffset int64, espDir, pattern string) ([]string, error) {
-	out, err := mtools(ctx, "mdir", "-b", "-i", fmt.Sprintf("%s@@%d", raw, espOffset), espDir)
+	out, err := Mtools(ctx, "mdir", "-b", "-i", fmt.Sprintf("%s@@%d", raw, espOffset), espDir)
 	if err != nil {
 		return nil, err
 	}
@@ -96,15 +96,15 @@ func list(ctx context.Context, raw string, espOffset int64, espDir, pattern stri
 // copyOut copies a file of the ESP into dir.
 func copyOut(ctx context.Context, raw string, espOffset int64, file, dir string) (string, error) {
 	dst := filepath.Join(dir, path.Base(file))
-	if _, err := mtools(ctx, "mcopy", "-n", "-i", fmt.Sprintf("%s@@%d", raw, espOffset), file, dst); err != nil {
+	if _, err := Mtools(ctx, "mcopy", "-n", "-i", fmt.Sprintf("%s@@%d", raw, espOffset), file, dst); err != nil {
 		return "", err
 	}
 	return dst, nil
 }
 
-// mtools runs an mtools command. MTOOLS_SKIP_CHECK stops mtools from rejecting FAT geometry
-// that does not match a physical floppy or disk.
-func mtools(ctx context.Context, name string, args ...string) (string, error) {
+// Mtools runs an mtools command and returns its output. MTOOLS_SKIP_CHECK stops mtools from
+// rejecting FAT geometry that does not match a physical floppy or disk.
+func Mtools(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
 	out, err := cmd.CombinedOutput()

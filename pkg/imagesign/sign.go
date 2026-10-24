@@ -10,6 +10,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/image"
 )
 
 // SignImage signs the boot loader (/EFI/BOOT/BOOT*.EFI) and the UKIs (/EFI/Linux/*.efi) on
@@ -17,14 +19,14 @@ import (
 // else lands on the ESP does not gain the cluster's db signature.
 // The image's verity-protected store is untouched; the UKI's signature covers the store
 // because the UKI command line carries the store's verity root hash.
-func SignImage(ctx context.Context, image string, espOffset int64, key, cert string) error {
-	fat := fmt.Sprintf("%s@@%d", image, espOffset)
+func SignImage(ctx context.Context, raw string, espOffset int64, key, cert string) error {
+	fat := fmt.Sprintf("%s@@%d", raw, espOffset)
 	files, err := listSignedBinaries(ctx, fat)
 	if err != nil {
 		return err
 	}
 	if len(files) == 0 {
-		return fmt.Errorf("no boot loader or UKI on the ESP of %s", image)
+		return fmt.Errorf("no boot loader or UKI on the ESP of %s", raw)
 	}
 
 	tmp, err := os.MkdirTemp("", "imagesign")
@@ -34,15 +36,14 @@ func SignImage(ctx context.Context, image string, espOffset int64, key, cert str
 	defer os.RemoveAll(tmp)
 
 	for i, f := range files {
-		unsigned := filepath.Join(tmp, fmt.Sprintf("%d.efi", i))
-		signed := unsigned + ".signed"
-		if _, err := mtools(ctx, "mcopy", "-n", "-i", fat, f, unsigned); err != nil {
+		local := filepath.Join(tmp, fmt.Sprintf("%d.efi", i))
+		if _, err := image.Mtools(ctx, "mcopy", "-n", "-i", fat, f, local); err != nil {
 			return err
 		}
-		if out, err := exec.CommandContext(ctx, "sbsign", "--key", key, "--cert", cert, "--output", signed, unsigned).CombinedOutput(); err != nil {
-			return fmt.Errorf("sbsign %s: %w: %s", f, err, out)
+		if err := SignFile(ctx, local, key, cert); err != nil {
+			return fmt.Errorf("%s: %w", f, err)
 		}
-		if _, err := mtools(ctx, "mcopy", "-o", "-i", fat, signed, f); err != nil {
+		if _, err := image.Mtools(ctx, "mcopy", "-o", "-i", fat, local, f); err != nil {
 			return err
 		}
 	}
@@ -54,7 +55,7 @@ func SignImage(ctx context.Context, image string, espOffset int64, key, cert str
 var signedPatterns = []string{"::/EFI/BOOT/BOOT*.EFI", "::/EFI/LINUX/*.EFI"}
 
 func listSignedBinaries(ctx context.Context, fat string) ([]string, error) {
-	out, err := mtools(ctx, "mdir", "-/", "-b", "-i", fat, "::/EFI")
+	out, err := image.Mtools(ctx, "mdir", "-/", "-b", "-i", fat, "::/EFI")
 	if err != nil {
 		return nil, err
 	}
@@ -69,18 +70,6 @@ func listSignedBinaries(ctx context.Context, fat string) ([]string, error) {
 		}
 	}
 	return files, nil
-}
-
-// mtools runs an mtools command. MTOOLS_SKIP_CHECK stops mtools from rejecting FAT geometry
-// that does not match a physical floppy or disk.
-func mtools(ctx context.Context, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, out)
-	}
-	return string(out), nil
 }
 
 // SignFile signs an EFI binary in place with sbsign.
