@@ -260,8 +260,8 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 			"oidc-issuer-url", "oidc-client-id", "oidc-ca-file", "oidc-username-claim", "oidc-username-prefix",
 			"oidc-groups-claim", "oidc-groups-prefix", "oidc-signing-algs", "oidc-required-claim",
 		},
-		"chalkos sets --authorization-mode=Node,RBAC":                     {"authorization-config", "authorization-policy-file", "authorization-webhook-config-file"},
-		"chalkos sets --enable-admission-plugins":                         {"admission-control"},
+		"chalkos sets --authorization-mode=Node,RBAC":                                  {"authorization-config", "authorization-policy-file", "authorization-webhook-config-file"},
+		"chalkos sets --enable-admission-plugins":                                      {"admission-control"},
 		"chalkos signs service account tokens with --service-account-signing-key-file": {"service-account-signing-endpoint"},
 	} {
 		for _, flag := range flags {

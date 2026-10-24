@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"cel.dev/cel-go/cel"
-	"cel.dev/cel-go/ext"
 	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/ext"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
