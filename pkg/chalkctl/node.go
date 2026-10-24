@@ -20,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -293,6 +294,7 @@ func (a *app) installCommand() *cobra.Command {
 		Short:   "Install a node that waits in maintenance mode",
 		Long:    installLong,
 		Example: installExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.install(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.register(fs)
@@ -306,9 +308,6 @@ func (a *app) installCommand() *cobra.Command {
 
 func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	n, p := f.node, f.pin
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl install <node> [flags]")
-	}
 	n.needs = "install"
 	t, err := a.target(ctx, n, pos[0])
 	if err != nil {
@@ -519,6 +518,7 @@ func (a *app) disksCommand() *cobra.Command {
 		Short:   "List a node's disks",
 		Long:    disksLong,
 		Example: disksExample,
+		Args:    cli.RangeArgs(0, 1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.disks(ctx, f.node, f.pin, pos) })
 	f.node.registerClient(cmd.Flags())
 	f.pin.register(cmd.Flags())
@@ -557,7 +557,7 @@ func (a *app) disks(ctx context.Context, n nodeCommand, p pinning, pos []string)
 			return err
 		}
 	default:
-		return errors.New("usage: chalkctl disks (<node> | --address ADDR) [--fingerprint FP | --insecure]")
+		return cli.Usagef("disks needs a node or --address")
 	}
 	resp, err := conn.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))
 	if err != nil {
@@ -589,8 +589,8 @@ func size(bytes uint64) string {
 }
 
 type applyConfigFlags struct {
-	node                          nodeCommand
-	passwordFile                  string
+	node                                 nodeCommand
+	passwordFile                         string
 	kubernetesShare, staged, diff, force bool
 }
 
@@ -601,6 +601,7 @@ func (a *app) applyConfigCommand() *cobra.Command {
 		Short:   "Deliver a node's config from the inventory",
 		Long:    applyConfigLong,
 		Example: applyConfigExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.register(fs)
@@ -619,14 +620,11 @@ func registerPasswordFile(fs *pflag.FlagSet, p *string) {
 
 func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
 	n := f.node
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl apply-config <node> [--kubernetes-share [--force] | --staged]")
-	}
 	if f.staged && f.kubernetesShare {
-		return errors.New("--staged delivers config alone; deliver the Kubernetes share to the running image")
+		return cli.Usagef("--staged delivers config alone; deliver the Kubernetes share to the running image")
 	}
 	if f.force && !f.kubernetesShare {
-		return errors.New("--force goes with --kubernetes-share")
+		return cli.Usagef("--force goes with --kubernetes-share")
 	}
 	n.needs = "apply-config"
 	t, err := a.target(ctx, n, pos[0])
@@ -741,6 +739,7 @@ func (a *app) resetVolumeCommand() *cobra.Command {
 		Short:   "Wipe and recreate one volume",
 		Long:    resetVolumeLong,
 		Example: resetVolumeExample,
+		Args:    cli.ExactArgs(2),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.resetVolume(ctx, n, passwordFile, pos) })
 	n.registerClient(cmd.Flags())
 	registerPasswordFile(cmd.Flags(), &passwordFile)
@@ -748,9 +747,6 @@ func (a *app) resetVolumeCommand() *cobra.Command {
 }
 
 func (a *app) resetVolume(ctx context.Context, n nodeCommand, passwordFile string, pos []string) error {
-	if len(pos) != 2 {
-		return errors.New("usage: chalkctl storage reset <node> <volume>")
-	}
 	n.needs = "storage reset"
 	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
@@ -786,15 +782,13 @@ func (a *app) statusCommand() *cobra.Command {
 		Short:   "Show an installed node's status",
 		Long:    statusLong,
 		Example: statusExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.status(ctx, n, pos) })
 	n.registerClient(cmd.Flags())
 	return cmd
 }
 
 func (a *app) status(ctx context.Context, n nodeCommand, pos []string) error {
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl status <node>")
-	}
 	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
 		return err
@@ -992,6 +986,7 @@ func (a *app) logsCommand() *cobra.Command {
 		Short:   "Show a node's journal",
 		Long:    logsLong,
 		Example: logsExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.logs(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.registerClient(fs)
@@ -1003,9 +998,6 @@ func (a *app) logsCommand() *cobra.Command {
 
 func (a *app) logs(ctx context.Context, f logsFlags, pos []string) error {
 	n, p := f.node, f.pin
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl logs <node> [-f] [--unit U]")
-	}
 	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
 		return err
@@ -1039,6 +1031,7 @@ func (a *app) rebootCommand() *cobra.Command {
 		Short:   "Reboot a node",
 		Long:    rebootLong,
 		Example: rebootExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.reboot(ctx, f.node, f.pin, pos) })
 	f.node.registerClient(cmd.Flags())
 	f.pin.register(cmd.Flags())
@@ -1046,9 +1039,6 @@ func (a *app) rebootCommand() *cobra.Command {
 }
 
 func (a *app) reboot(ctx context.Context, n nodeCommand, p pinning, pos []string) error {
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl reboot <node>")
-	}
 	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
 		return err

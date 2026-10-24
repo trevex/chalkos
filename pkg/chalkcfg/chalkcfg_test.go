@@ -115,6 +115,7 @@ func TestGetFails(t *testing.T) {
 		{[]string{"get", "-o", "json"}, 2, "--output needs a kind"},
 		{[]string{"get", "--outptu", "json"}, 2, "unknown flag: --outptu"},
 		{[]string{"list"}, 2, `unknown command "list"`},
+		{[]string{"--bogus"}, 2, "unknown flag: --bogus"},
 	} {
 		out, errOut, status := run(t, s, c.args...)
 		if status != c.status || out != "" || !strings.Contains(errOut, c.want) {

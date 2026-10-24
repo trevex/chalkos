@@ -814,21 +814,10 @@ func TestReadInterruptible(t *testing.T) {
 	if err := <-done; !errors.Is(err, errInterrupted) || !restored {
 		t.Errorf("err = %v, restored = %v, want an interruption that restores the terminal", err, restored)
 	}
-	if exitStatus(fmt.Errorf("read: %w", errInterrupted)) != 130 {
-		t.Error("an interrupted prompt does not exit with status 130")
-	}
 
 	got, err := readInterruptible(context.Background(), func() ([]byte, error) { return []byte("pw"), nil }, func() { t.Error("restored after a completed read") })
 	if err != nil || string(got) != "pw" {
 		t.Errorf("read = %q, %v", got, err)
-	}
-}
-
-func TestExitStatus(t *testing.T) {
-	for err, want := range map[error]int{nil: 0, errUsage: 2, errors.New("x"): 1, errInterrupted: 130} {
-		if got := exitStatus(err); got != want {
-			t.Errorf("exitStatus(%v) = %d, want %d", err, got, want)
-		}
 	}
 }
 
@@ -970,7 +959,16 @@ func (a *app) execute(ctx context.Context, args ...string) int {
 }
 
 func TestExecuteUsageErrors(t *testing.T) {
-	for _, args := range [][]string{nil, {"bogus"}, {"etcd"}, {"etcd", "bogus"}, {"gen"}} {
+	for _, args := range [][]string{
+		nil, {"bogus"}, {"etcd"}, {"etcd", "bogus"}, {"gen"},
+		// Leaves: wrong positional arguments, unknown flags, required flags not set and flags
+		// that do not go together.
+		{"status"}, {"status", "a", "b"}, {"etcd", "members", "x"}, {"node", "revoke"},
+		{"gen", "secrets", "--plaintext", "extra"}, {"gen", "secrets"},
+		{"status", "--bogus"}, {"status", "n1", "--bogus"},
+		{"config", "new"}, {"config", "new", "--name", "ada"},
+		{"upgrade", "--max-unavailable", "0"}, {"rotate", "os-ca", "--resume", "--finish"},
+	} {
 		ta := newTestApp(t)
 		if got := ta.execute(context.Background(), args...); got != 2 {
 			t.Errorf("chalkctl %v exits with %d, want 2", args, got)
@@ -1040,16 +1038,16 @@ func TestCompletion(t *testing.T) {
 
 func TestExecuteFlags(t *testing.T) {
 	ta := newTestApp(t)
-	if got := ta.execute(context.Background(), "install", "n1", "--bogus"); got != 1 {
-		t.Errorf("an unknown flag exits with %d, want 1", got)
+	if got := ta.execute(context.Background(), "install", "n1", "--bogus"); got != 2 {
+		t.Errorf("an unknown flag exits with %d, want 2", got)
 	}
-	if want := "chalkctl: unknown flag: --bogus; chalkctl install --help lists its flags\n"; ta.stderr.String() != want {
-		t.Errorf("stderr = %q, want %q", ta.stderr.String(), want)
+	if want := "chalkctl: usage: unknown flag: --bogus\nUsage:\n  chalkctl install <node> [flags]\n"; !strings.HasPrefix(ta.stderr.String(), want) {
+		t.Errorf("stderr = %q, want it to start with %q", ta.stderr.String(), want)
 	}
 	// Single-dash long flags are shorthands to pflag.
 	ta = newTestApp(t)
-	if got := ta.execute(context.Background(), "install", "n1", "-insecure"); got != 1 {
-		t.Errorf("-insecure exits with %d, want 1", got)
+	if got := ta.execute(context.Background(), "install", "n1", "-insecure"); got != 2 {
+		t.Errorf("-insecure exits with %d, want 2", got)
 	}
 	ta = newTestApp(t)
 	if got := ta.execute(context.Background(), "logs", "--help"); got != 0 {

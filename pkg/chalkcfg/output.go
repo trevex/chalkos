@@ -11,6 +11,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 	"k8s.io/client-go/util/jsonpath"
+
+	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
 // output is a parsed --output: the format, and the expression or template of jsonpath and
@@ -44,7 +46,7 @@ func parseOutput(s string) (output, error) {
 		}
 		return output{format: "go-template", template: t}, nil
 	}
-	return output{}, fmt.Errorf("%w: unknown output format %q: use json, yaml, jsonpath=<expression> or go-template=<template>", errUsage, s)
+	return output{}, cli.Usagef("unknown output format %q: use json, yaml, jsonpath=<expression> or go-template=<template>", s)
 }
 
 func parseJSONPath(expr string) (*jsonpath.JSONPath, error) {

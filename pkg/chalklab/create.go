@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/imagesign"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -58,7 +59,8 @@ func (a *app) createCommand() *cobra.Command {
 		Short:   "Create a lab of the cluster's nodes, install them and bootstrap the cluster",
 		Long:    createLong,
 		Example: createExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.create(ctx, f, pos) })
+		Args:    cli.NoArgs,
+	}, func(a *app, ctx context.Context, pos []string) error { return a.create(ctx, f) })
 	fs := cmd.Flags()
 	fs.StringVar(&f.lab, "lab", "", "lab file naming the inventory and the nodes the lab runs (default "+defaultLabFile+" in the current directory)")
 	fs.StringVar(&f.secrets, "secrets", "", "the cluster's secrets file, which chalkctl reads to install the nodes")
@@ -67,10 +69,7 @@ func (a *app) createCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) create(ctx context.Context, f createFlags, pos []string) (err error) {
-	if len(pos) != 0 {
-		return errors.New("usage: chalklab create --secrets FILE [--lab chalklab.yaml] [--guest-forward GUEST=HOST]")
-	}
+func (a *app) create(ctx context.Context, f createFlags) (err error) {
 	code, vars := os.Getenv("CHALKLAB_OVMF_CODE"), os.Getenv("CHALKLAB_OVMF_VARS")
 	if code == "" || vars == "" {
 		return errors.New("CHALKLAB_OVMF_CODE and CHALKLAB_OVMF_VARS name no firmware; run chalklab from its package, which sets them")

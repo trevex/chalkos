@@ -14,6 +14,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
@@ -38,6 +39,7 @@ func (a *app) bootstrapCommand() *cobra.Command {
 		Short:   "Initialise the cluster on a control plane",
 		Long:    bootstrapLong,
 		Example: bootstrapExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.bootstrap(ctx, n, timeout, pos) })
 	n.registerClient(cmd.Flags())
 	cmd.Flags().DurationVar(&timeout, "timeout", 20*time.Minute, "how long to wait for the control plane to apply its add-ons and Addon objects")
@@ -45,9 +47,6 @@ func (a *app) bootstrapCommand() *cobra.Command {
 }
 
 func (a *app) bootstrap(ctx context.Context, n nodeCommand, timeout time.Duration, pos []string) error {
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl bootstrap <node>")
-	}
 	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
 		return err
@@ -96,9 +95,10 @@ func (a *app) kubeconfigCommand() *cobra.Command {
 		Short:   "Write an admin kubeconfig",
 		Long:    kubeconfigLong,
 		Example: kubeconfigExample,
+		Args:    cli.NoArgs,
 	}, func(a *app, ctx context.Context, pos []string) error {
 		f.contextSet = cmd.Flags().Changed("context")
-		return a.kubeconfig(ctx, f, pos)
+		return a.kubeconfig(ctx, f)
 	})
 	fs := cmd.Flags()
 	f.cluster.register(fs)
@@ -112,11 +112,8 @@ func (a *app) kubeconfigCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) kubeconfig(ctx context.Context, f kubeconfigFlags, pos []string) error {
+func (a *app) kubeconfig(ctx context.Context, f kubeconfigFlags) error {
 	cf, sf := f.cluster, f.secrets
-	if len(pos) != 0 {
-		return errors.New("usage: chalkctl kubeconfig [--ttl 8760h] [--out FILE] [--server URL] [--context NAME]")
-	}
 	c, err := loadCluster(ctx, cf)
 	if err != nil {
 		return err

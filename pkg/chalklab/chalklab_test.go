@@ -708,7 +708,10 @@ func TestExecute(t *testing.T) {
 		t.Fatal(err)
 	}
 	for args, want := range map[string]int{
-		"": 2, "bogus": 2, "status --bogus": 1, "status --help": 0, "console": 1,
+		"": 2, "bogus": 2, "status --help": 0,
+		// Leaves: wrong positional arguments, unknown flags and required flags not set.
+		"status --bogus": 2, "status extra": 2, "console": 2, "console cp1 cp2": 2, "create": 2,
+		"destroy extra": 2, "supervise": 2,
 		"console cp1 -f=false": 0, "console cp1 --follow=false": 0,
 		// A flag before a subcommand's name is a usage error, in either form.
 		"--bogus": 2, "--name=x status": 2, "--name x status": 2,

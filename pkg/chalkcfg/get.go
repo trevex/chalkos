@@ -10,6 +10,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+
+	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
 func getCommand(s store) *cobra.Command {
@@ -19,17 +21,20 @@ func getCommand(s store) *cobra.Command {
 		Short:   "Print the node's documents of a kind, or list the kinds",
 		Long:    getLong,
 		Example: getExample,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) > 2 {
-				return fmt.Errorf("%w: get takes at most a kind and a name", errUsage)
+				return cli.Usagef("get takes at most a kind and a name")
 			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := s.resolve()
 			if err != nil {
 				return err
 			}
 			if len(args) == 0 {
 				if format != "" {
-					return fmt.Errorf("%w: --output needs a kind", errUsage)
+					return cli.Usagef("--output needs a kind")
 				}
 				return s.listKinds(cmd.OutOrStdout())
 			}

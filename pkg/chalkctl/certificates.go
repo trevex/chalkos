@@ -12,6 +12,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -27,6 +28,7 @@ func (a *app) nodeRenewCommand() *cobra.Command {
 		Short:   "Issue a node a new node certificate, also once its own expired",
 		Long:    nodeRenewLong,
 		Example: nodeRenewExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeRenew(ctx, n, force, pos) })
 	n.register(cmd.Flags())
 	cmd.Flags().BoolVar(&force, "force", false, "renew without asking the control planes whether the node is revoked")
@@ -34,9 +36,6 @@ func (a *app) nodeRenewCommand() *cobra.Command {
 }
 
 func (a *app) nodeRenew(ctx context.Context, n nodeCommand, force bool, pos []string) error {
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl node renew <node> [--force]")
-	}
 	// The certificate names the node's addresses, which only its config gives.
 	n.needs = "node renew"
 	t, err := a.target(ctx, n, pos[0])
@@ -87,16 +86,14 @@ func (a *app) nodeCARotateCommand() *cobra.Command {
 		Short:   "Issue a new node CA and deliver it to the control planes",
 		Long:    nodeCARotateLong,
 		Example: nodeCARotateExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeCARotate(ctx, n, change, pos) })
+		Args:    cli.NoArgs,
+	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeCARotate(ctx, n, change) })
 	n.register(cmd.Flags())
 	change.register(cmd.Flags())
 	return cmd
 }
 
-func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlags, pos []string) error {
-	if len(pos) != 0 {
-		return errors.New("usage: chalkctl node-ca rotate [--out FILE] [--public-out FILE] [--recipient R...]")
-	}
+func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlags) error {
 	c, err := loadCluster(ctx, n.cluster)
 	if err != nil {
 		return err

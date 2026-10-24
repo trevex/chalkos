@@ -5,7 +5,6 @@ package chalklab
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/lab"
 )
 
@@ -69,38 +69,20 @@ func (a *app) with(cmd *cobra.Command) *app {
 }
 
 func newCommand(a *app) *cobra.Command {
-	root := &cobra.Command{
-		Use:           "chalklab",
-		Short:         "Run a chalkos cluster's nodes as QEMU virtual machines on this machine",
-		Long:          rootLong,
-		Example:       rootExample,
-		SilenceErrors: true,
-		SilenceUsage:  true,
+	root := cli.Root(&cobra.Command{
+		Use:     "chalklab",
+		Short:   "Run a chalkos cluster's nodes as QEMU virtual machines on this machine",
+		Long:    rootLong,
+		Example: rootExample,
 		// A flag before a subcommand's name is parsed as the root's, which has none: a usage error.
 		TraverseChildren: true,
-		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) > 0 {
-				return fmt.Errorf("%w: unknown command %q for %q", errUsage, args[0], cmd.CommandPath())
-			}
-			return nil
-		},
-		RunE: func(*cobra.Command, []string) error { return errUsage },
-	}
-	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
-		// On the root, the flag may as well be a misplaced subcommand's: a usage error.
-		if cmd.HasSubCommands() {
-			return fmt.Errorf("%w: %w", errUsage, err)
-		}
-		return fmt.Errorf("%w; %s --help lists its flags", err, cmd.CommandPath())
 	})
 	a.supervise = &cobra.Command{
 		Use:    superviseName + " <dir>",
 		Short:  "Run a lab's VMs in the background",
 		Hidden: true,
+		Args:   cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return errUsage
-			}
 			// The supervisor create starts in the background ignores the terminal going away.
 			signal.Ignore(syscall.SIGHUP)
 			if err := lab.DenyIOURing(); err != nil {
@@ -132,27 +114,8 @@ func (a *app) command(cmd *cobra.Command, run func(a *app, ctx context.Context, 
 // Execute runs chalklab's command tree with ctx, prints its error and returns the exit status:
 // 2 and the command's usage after a usage error, 1 after another error.
 func Execute(ctx context.Context, root *cobra.Command) int {
-	cmd, err := root.ExecuteContextC(ctx)
-	// The root fails only with usage errors; another error of its own is a flag before a
-	// subcommand's name, which cobra returns without the flag error function.
-	if err != nil && !errors.Is(err, errUsage) && cmd.HasSubCommands() {
-		err = fmt.Errorf("%w: %w", errUsage, err)
-	}
-	switch {
-	case err == nil:
-		return 0
-	case errors.Is(err, errUsage):
-		if err != errUsage {
-			fmt.Fprintf(cmd.ErrOrStderr(), "%s: %v\n", root.Name(), err)
-		}
-		fmt.Fprint(cmd.ErrOrStderr(), cmd.UsageString())
-		return 2
-	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "%s: %v\n", root.Name(), err)
-	return 1
+	return cli.Execute(ctx, root, cli.Options{})
 }
-
-var errUsage = errors.New("usage")
 
 // superviseArgs are the arguments that run the supervisor of the lab in dir: the path of the
 // supervise command below the root, so a program running chalklab's tree under a root of its

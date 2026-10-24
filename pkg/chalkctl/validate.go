@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -20,6 +21,7 @@ func (a *app) validateCommand() *cobra.Command {
 		Short:   "Check nodes' config against the schemas of their images",
 		Long:    validateLong,
 		Example: validateExample,
+		Args:    cobra.ArbitraryArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.validate(ctx, path, pos) })
 	cmd.Flags().StringVar(&path, "inventory", "", "inventory naming the nodes and their config files (default "+inventory.DefaultFile+" in the current directory)")
 	return cmd
@@ -43,7 +45,7 @@ func (a *app) validate(ctx context.Context, path string, names []string) error {
 	var nodes []string
 	for _, name := range names {
 		if _, ok := inv.Spec.Nodes[name]; !ok {
-			return fmt.Errorf("%w: the inventory %s has no node %s; its nodes are %s", errUsage, path, name, strings.Join(inv.NodeNames(), ", "))
+			return cli.Usagef("the inventory %s has no node %s; its nodes are %s", path, name, strings.Join(inv.NodeNames(), ", "))
 		}
 		if !slices.Contains(nodes, name) {
 			nodes = append(nodes, name)

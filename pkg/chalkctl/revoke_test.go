@@ -21,6 +21,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
@@ -64,7 +65,7 @@ func TestNodeRevoke(t *testing.T) {
 		t.Errorf("revoking W1: %v, want the node's refusal", err)
 	}
 	for _, args := range [][]string{{"node", "revoke"}, {"node", "revoke", "w1", "w2"}, {"node", "unrevoke"}} {
-		if err := ta.run(context.Background(), ta.args(append(args, "--via", "n1"), addr)); err == nil || !strings.Contains(err.Error(), "usage: chalkctl node") {
+		if err := ta.run(context.Background(), ta.args(append(args, "--via", "n1"), addr)); !errors.Is(err, cli.ErrUsage) {
 			t.Errorf("%v: %v, want the usage", args, err)
 		}
 	}

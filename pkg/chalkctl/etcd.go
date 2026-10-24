@@ -13,6 +13,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
@@ -90,16 +91,14 @@ func (a *app) etcdMembersCommand() *cobra.Command {
 		Short:   "List etcd's members and their health",
 		Long:    etcdMembersLong,
 		Example: etcdMembersExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.etcdMembers(ctx, f, pos) })
+		Args:    cli.NoArgs,
+	}, func(a *app, ctx context.Context, pos []string) error { return a.etcdMembers(ctx, f) })
 	f.node.registerClient(cmd.Flags())
 	cmd.Flags().StringVar(&f.via, "via", "", "control plane to ask (default the first one that answers)")
 	return cmd
 }
 
-func (a *app) etcdMembers(ctx context.Context, f etcdFlags, pos []string) error {
-	if len(pos) != 0 {
-		return errors.New("usage: chalkctl etcd members [--via NODE]")
-	}
+func (a *app) etcdMembers(ctx context.Context, f etcdFlags) error {
 	var members []*nodev1.EtcdMember
 	err := a.throughControlPlane(ctx, f.node, f.via, "", func(conn *client.Conn) error {
 		resp, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
@@ -136,6 +135,7 @@ func (a *app) etcdRemoveMemberCommand() *cobra.Command {
 		Short:   "Remove a node's etcd member, such as a stale one",
 		Long:    etcdRemoveMemberLong,
 		Example: etcdRemoveMemberExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.etcdRemoveMember(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.registerClient(fs)
@@ -145,9 +145,6 @@ func (a *app) etcdRemoveMemberCommand() *cobra.Command {
 }
 
 func (a *app) etcdRemoveMember(ctx context.Context, f etcdFlags, pos []string) error {
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl etcd remove-member <node|id> [--via NODE] [--force]")
-	}
 	var removed *nodev1.EtcdMember
 	err := a.throughControlPlane(ctx, f.node, f.via, pos[0], func(conn *client.Conn) error {
 		resp, err := conn.EtcdRemoveMember(ctx, connect.NewRequest(&nodev1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force}))
@@ -170,6 +167,7 @@ func (a *app) etcdLeaveCommand() *cobra.Command {
 		Short:   "Take a control plane out of etcd",
 		Long:    etcdLeaveLong,
 		Example: etcdLeaveExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.etcdLeave(ctx, f, pos) })
 	f.node.registerClient(cmd.Flags())
 	cmd.Flags().BoolVar(&f.force, "force", false, "leave through the other members also when the node's own etcd member does not answer (for example when it lost its pinned address)")
@@ -177,9 +175,6 @@ func (a *app) etcdLeaveCommand() *cobra.Command {
 }
 
 func (a *app) etcdLeave(ctx context.Context, f etcdFlags, pos []string) error {
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl etcd leave <node> [--force]")
-	}
 	t, err := a.clientTarget(ctx, f.node, pos[0])
 	if err != nil {
 		return err

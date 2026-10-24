@@ -15,6 +15,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -58,6 +59,7 @@ func (a *app) rotateCommand() *cobra.Command {
 		Short:   "Rotate os-ca, kubernetes-ca, service-account-key or encryption-key",
 		Long:    rotateLong,
 		Example: rotateExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.rotate(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.cluster.register(fs)
@@ -74,12 +76,15 @@ func (a *app) rotateCommand() *cobra.Command {
 
 func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	cf, sf, change, addresses := f.cluster, f.secrets, f.change, f.addresses
-	if len(pos) != 1 || f.resume && f.finish || f.force && !f.finish {
-		return errors.New("usage: chalkctl rotate " + strings.Join(pki.RotationKinds, "|") + " [--resume | --finish [--force]] [--ignore-revoked]")
+	switch {
+	case f.resume && f.finish:
+		return cli.Usagef("pass --resume or --finish, not both")
+	case f.force && !f.finish:
+		return cli.Usagef("--force goes with --finish")
 	}
 	kind := pos[0]
 	if !slices.Contains(pki.RotationKinds, kind) {
-		return fmt.Errorf("rotate: unknown kind %q; rotate one of %s", kind, strings.Join(pki.RotationKinds, ", "))
+		return cli.Usagef("unknown kind %q; rotate one of %s", kind, strings.Join(pki.RotationKinds, ", "))
 	}
 	c, err := loadCluster(ctx, cf)
 	if err != nil {

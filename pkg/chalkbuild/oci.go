@@ -2,7 +2,6 @@ package chalkbuild
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/ociimage"
 )
 
@@ -19,6 +19,7 @@ func ociCommand() *cobra.Command {
 		Short:   "Write an image directory as an OCI image layout",
 		Long:    ociLong,
 		Example: ociExample,
+		Args:    cli.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return writeOCI(cmd.Context(), cmd.OutOrStdout(), args)
 		},
@@ -28,9 +29,6 @@ func ociCommand() *cobra.Command {
 // writeOCI writes the OCI image layout of the image directory args name and prints its
 // manifest's digest.
 func writeOCI(ctx context.Context, stdout io.Writer, args []string) error {
-	if len(args) != 2 {
-		return errors.New("usage: chalkbuild oci <image dir> <layout dir>")
-	}
 	if err := os.MkdirAll(filepath.Dir(args[1]), 0o755); err != nil {
 		return err
 	}
@@ -53,6 +51,7 @@ func pushCommand() *cobra.Command {
 		Short:   "Push an OCI image layout to a registry",
 		Long:    pushLong,
 		Example: pushExample,
+		Args:    cli.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return push(cmd.Context(), cmd.OutOrStdout(), args)
 		},
@@ -62,9 +61,6 @@ func pushCommand() *cobra.Command {
 // push pushes the image of the layout args name to the reference they name and prints the
 // pushed manifest's reference by digest.
 func push(ctx context.Context, stdout io.Writer, args []string) error {
-	if len(args) != 2 {
-		return errors.New("usage: chalkbuild push <layout dir> <reference>")
-	}
 	img, err := ociimage.ReadLayout(args[0])
 	if err != nil {
 		return err

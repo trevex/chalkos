@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -199,6 +200,7 @@ func (a *app) recoveryKeyCommand() *cobra.Command {
 		Short:   "Print a node's recovery key",
 		Long:    recoveryKeyLong,
 		Example: recoveryKeyExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.recoveryKey(ctx, cf, sf, pos) })
 	cf.register(cmd.Flags())
 	sf.register(cmd.Flags())
@@ -206,9 +208,6 @@ func (a *app) recoveryKeyCommand() *cobra.Command {
 }
 
 func (a *app) recoveryKey(ctx context.Context, cf clusterFlags, sf secretFlags, pos []string) error {
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl recovery-key <node>")
-	}
 	c, err := loadCluster(ctx, cf)
 	if err != nil {
 		return err
@@ -244,6 +243,7 @@ func (a *app) genSecretsCommand() *cobra.Command {
 		Short:   "Generate the cluster's secrets file",
 		Long:    genSecretsLong,
 		Example: genSecretsExample,
+		Args:    cli.NoArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.genSecrets(f) })
 	fs := cmd.Flags()
 	fs.Var(&f.recipients, "recipient", "age recipient to encrypt secrets.age to: an age public key, an SSH public key, or an age plugin recipient; may be repeated")
@@ -256,11 +256,11 @@ func (a *app) genSecretsCommand() *cobra.Command {
 func (a *app) genSecrets(f genSecretsFlags) error {
 	recipients := f.recipients
 	if (len(recipients) == 0) == !f.plaintext {
-		return errors.New("gen secrets: pass --recipient (one or more) or --plaintext")
+		return cli.Usagef("pass --recipient (one or more) or --plaintext")
 	}
 	if f.out == "-" {
 		if f.publicOut == "" {
-			return fmt.Errorf("%w: gen secrets --out - needs --public-out, the file the public half goes to, which images trust the OS CA from", errUsage)
+			return cli.Usagef("gen secrets --out - needs --public-out, the file the public half goes to, which images trust the OS CA from")
 		}
 		if err := publicDirExists(f.publicOut); err != nil {
 			return err

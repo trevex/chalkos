@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/imagesign"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/lab"
 )
 
@@ -71,15 +72,13 @@ func (a *app) statusCommand() *cobra.Command {
 		Short:   "Show the lab's VMs, ports and files",
 		Long:    statusLong,
 		Example: statusExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.status(name, pos) })
+		Args:    cli.NoArgs,
+	}, func(a *app, ctx context.Context, pos []string) error { return a.status(name) })
 	registerName(cmd, &name, "lab to show (default the only lab)")
 	return cmd
 }
 
-func (a *app) status(name string, pos []string) error {
-	if len(pos) != 0 {
-		return errors.New("usage: chalklab status [--name NAME]")
-	}
+func (a *app) status(name string) error {
 	dir, l, err := labDir(name)
 	if err != nil {
 		return err
@@ -146,6 +145,7 @@ func (a *app) consoleCommand() *cobra.Command {
 		Short:   "Follow a node's serial console",
 		Long:    consoleLong,
 		Example: consoleExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.console(ctx, name, follow, pos) })
 	registerName(cmd, &name, "lab of the node (default the only lab)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", true, "keep printing what the node writes")
@@ -153,9 +153,6 @@ func (a *app) consoleCommand() *cobra.Command {
 }
 
 func (a *app) console(ctx context.Context, name string, follow bool, pos []string) error {
-	if len(pos) != 1 {
-		return errors.New("usage: chalklab console <node> [--name NAME] [-f=false]")
-	}
 	dir, l, err := labDir(name)
 	if err != nil {
 		return err
@@ -196,6 +193,7 @@ func (a *app) signCommand() *cobra.Command {
 		Short:   "Sign an image with the lab's Secure Boot keys, for upgrades",
 		Long:    signLong,
 		Example: signExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.sign(ctx, name, out, pos) })
 	registerName(cmd, &name, "lab whose keys to sign with (default the only lab)")
 	cmd.Flags().StringVar(&out, "out", "", "new directory to copy the image directory to, with its schemas and metadata, and sign there; needed for an image in the Nix store, which cannot be signed in place")
@@ -203,9 +201,6 @@ func (a *app) signCommand() *cobra.Command {
 }
 
 func (a *app) sign(ctx context.Context, name, out string, pos []string) error {
-	if len(pos) != 1 {
-		return errors.New("usage: chalklab sign <image> [--out DIR] [--name NAME]")
-	}
 	dir, l, err := labDir(name)
 	if err != nil {
 		return err
@@ -253,15 +248,13 @@ func (a *app) destroyCommand() *cobra.Command {
 		Short:   "Stop the lab and remove its state",
 		Long:    destroyLong,
 		Example: destroyExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.destroy(ctx, name, pos) })
+		Args:    cli.NoArgs,
+	}, func(a *app, ctx context.Context, pos []string) error { return a.destroy(ctx, name) })
 	registerName(cmd, &name, "lab to remove (default the only lab)")
 	return cmd
 }
 
-func (a *app) destroy(ctx context.Context, name string, pos []string) error {
-	if len(pos) != 0 {
-		return errors.New("usage: chalklab destroy [--name NAME]")
-	}
+func (a *app) destroy(ctx context.Context, name string) error {
 	dir, _, err := labDir(name)
 	if e, ok := errors.AsType[noLabError](err); ok {
 		fmt.Fprintf(a.stdout, "%s; nothing to destroy\n", string(e))
@@ -300,15 +293,13 @@ func (a *app) startCommand() *cobra.Command {
 		Short:   "Start a stopped lab, or the VMs of a running lab that stopped",
 		Long:    startLong,
 		Example: startExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.start(ctx, name, pos) })
+		Args:    cli.NoArgs,
+	}, func(a *app, ctx context.Context, pos []string) error { return a.start(ctx, name) })
 	registerName(cmd, &name, "lab to start (default the only lab)")
 	return cmd
 }
 
-func (a *app) start(ctx context.Context, name string, pos []string) error {
-	if len(pos) != 0 {
-		return errors.New("usage: chalklab start [--name NAME]")
-	}
+func (a *app) start(ctx context.Context, name string) error {
 	dir, l, err := labDir(name)
 	if err != nil {
 		return err

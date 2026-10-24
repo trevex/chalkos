@@ -23,6 +23,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -148,7 +149,7 @@ func TestCredentialChoice(t *testing.T) {
 		t.Errorf("with --config: %v, want the reader refused", err)
 	}
 	// Both would leave one unread, as --secrets - would standard input.
-	if err := reboot("--config", reader, "--secrets", secrets); !errors.Is(err, errUsage) || !strings.Contains(err.Error(), "pass --secrets or --config, not both") {
+	if err := reboot("--config", reader, "--secrets", secrets); !errors.Is(err, cli.ErrUsage) || !strings.Contains(err.Error(), "pass --secrets or --config, not both") {
 		t.Errorf("with --config and --secrets: %v, want a usage error", err)
 	}
 	// Without $CHALKOSCONFIG, ~/.config/chalkos/config, else nothing: the secrets file in the

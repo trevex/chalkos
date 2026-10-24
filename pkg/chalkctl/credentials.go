@@ -15,6 +15,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -102,7 +103,7 @@ const configExpiryWarning = 30 * 24 * time.Hour
 func (a *app) loadCredentials(ctx context.Context, s secretFlags, config string) (*credentials, error) {
 	switch {
 	case config != "" && s.path != "":
-		return nil, fmt.Errorf("%w: pass --secrets or --config, not both", errUsage)
+		return nil, cli.Usagef("pass --secrets or --config, not both")
 	case config != "":
 		return a.configCredentials(config)
 	case s.path != "":
@@ -165,7 +166,8 @@ func (a *app) configNewCommand() *cobra.Command {
 		Short:   "Write a client file, which operates the cluster without the secrets file",
 		Long:    configNewLong,
 		Example: configNewExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.configNew(ctx, f, pos) })
+		Args:    cli.NoArgs,
+	}, func(a *app, ctx context.Context, pos []string) error { return a.configNew(ctx, f) })
 	fs := cmd.Flags()
 	f.secrets.register(fs)
 	fs.StringVar(&f.name, "name", "", "the user's name, which the certificate carries")
@@ -178,9 +180,9 @@ func (a *app) configNewCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) configNew(ctx context.Context, f configNewFlags, pos []string) error {
-	if len(pos) != 0 || f.name == "" || f.role == "" {
-		return errors.New("usage: chalkctl config new --name NAME --role admin|operator|reader [--ttl 8760h] [--out FILE] [--force]")
+func (a *app) configNew(ctx context.Context, f configNewFlags) error {
+	if f.name == "" || f.role == "" {
+		return cli.Usagef("config new needs a --name and a --role")
 	}
 	secrets, err := a.loadSecrets(ctx, f.secrets)
 	if err != nil {

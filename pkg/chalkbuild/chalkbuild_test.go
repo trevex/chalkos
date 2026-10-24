@@ -86,9 +86,9 @@ func TestSignNeedsKeyCertAndTwoDirectories(t *testing.T) {
 	}{
 		{[]string{"sign", "--key", "db.key", "in", "out"}, `required flag(s) "cert" not set`},
 		{[]string{"sign", "--cert", "db.crt", "in", "out"}, `required flag(s) "key" not set`},
-		{[]string{"sign", "--key", "db.key", "--cert", "db.crt", "in"}, "usage: chalkbuild sign"},
+		{[]string{"sign", "--key", "db.key", "--cert", "db.crt", "in"}, "accepts 2 arg(s), received 1"},
 	} {
-		if status, _, stderr := run(tc.args...); status != 1 || !strings.Contains(stderr, tc.want) {
+		if status, _, stderr := run(tc.args...); status != 2 || !strings.Contains(stderr, tc.want) || !strings.Contains(stderr, "Usage:") {
 			t.Errorf("%v = %d, %q; want %q", tc.args, status, stderr, tc.want)
 		}
 	}
@@ -130,10 +130,12 @@ func TestOCIAndPushNeedTwoArguments(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"oci", "in"}, "usage: chalkbuild oci"},
-		{[]string{"push", "layout"}, "usage: chalkbuild push"},
+		{[]string{"oci", "in"}, "accepts 2 arg(s), received 1"},
+		{[]string{"oci", "in", "out", "extra"}, "accepts 2 arg(s), received 3"},
+		{[]string{"oci", "in", "out", "--bogus"}, "unknown flag: --bogus"},
+		{[]string{"push", "layout"}, "accepts 2 arg(s), received 1"},
 	} {
-		if status, _, stderr := run(tc.args...); status != 1 || !strings.Contains(stderr, tc.want) {
+		if status, _, stderr := run(tc.args...); status != 2 || !strings.Contains(stderr, tc.want) || !strings.Contains(stderr, "Usage:") {
 			t.Errorf("%v = %d, %q; want %q", tc.args, status, stderr, tc.want)
 		}
 	}

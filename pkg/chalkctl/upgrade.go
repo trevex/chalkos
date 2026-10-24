@@ -8,6 +8,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -88,21 +90,40 @@ type upgradeFlags struct {
 	config, image, nodes                 string
 	passwordFile                         string
 	addresses                            addressList
-	maxUnavailable                       int
+	maxUnavailable                       positiveInt
 	allowDowntime, noReboot, retryFailed bool
 	diff                                 bool
 	deleteEmptyDir                       bool
 	timeout                              time.Duration
 }
 
+// positiveInt is the value of an integer flag that is at least 1.
+type positiveInt int
+
+func (n *positiveInt) Set(s string) error {
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return err
+	}
+	if v < 1 {
+		return errors.New("must be at least 1")
+	}
+	*n = positiveInt(v)
+	return nil
+}
+
+func (n *positiveInt) String() string { return strconv.Itoa(int(*n)) }
+func (n *positiveInt) Type() string   { return "int" }
+
 func (a *app) upgradeCommand() *cobra.Command {
-	f := upgradeFlags{addresses: addressList{}}
+	f := upgradeFlags{addresses: addressList{}, maxUnavailable: 1}
 	cmd := a.command(&cobra.Command{
 		Use:     "upgrade",
 		Short:   "Install new images on the cluster's nodes, one control plane at a time",
 		Long:    upgradeLong,
 		Example: upgradeExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.upgrade(ctx, f, pos) })
+		Args:    cli.NoArgs,
+	}, func(a *app, ctx context.Context, pos []string) error { return a.upgrade(ctx, f) })
 	fs := cmd.Flags()
 	f.cluster.register(fs)
 	f.secrets.register(fs)
@@ -110,7 +131,7 @@ func (a *app) upgradeCommand() *cobra.Command {
 	fs.Var(f.addresses, "address", "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's address in the inventory)")
 	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
 	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)")
-	fs.IntVar(&f.maxUnavailable, "max-unavailable", 1, "how many workers and nodes without Kubernetes upgrade at once")
+	fs.Var(&f.maxUnavailable, "max-unavailable", "how many workers and nodes without Kubernetes upgrade at once")
 	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots")
 	fs.BoolVar(&f.noReboot, "no-reboot", false, "install the images on the nodes without draining or rebooting them; they boot with their next reboot")
 	fs.BoolVar(&f.retryFailed, "retry-failed", false, "install an image again, once, on nodes that fell back from it")
@@ -121,11 +142,8 @@ func (a *app) upgradeCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
+func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	cf, sf, addresses := f.cluster, f.secrets, f.addresses
-	if len(pos) != 0 || f.maxUnavailable < 1 {
-		return errors.New("usage: chalkctl upgrade [--image PATH] [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data] [--password-file FILE] [--diff]")
-	}
 	c, err := loadCluster(ctx, cf)
 	if err != nil {
 		return err
@@ -154,7 +172,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	}
 	r := &upgradeRun{
 		a: a, cluster: c, creds: creds, addresses: addresses,
-		allowDowntime: f.allowDowntime, noReboot: f.noReboot, maxUnavailable: f.maxUnavailable,
+		allowDowntime: f.allowDowntime, noReboot: f.noReboot, maxUnavailable: int(f.maxUnavailable),
 		retryFailed: f.retryFailed, deleteEmptyDir: f.deleteEmptyDir, passwordFile: f.passwordFile,
 		timeout: f.timeout, drainTimeout: f.timeout, poll: a.poll(), quorumWait: min(f.timeout, time.Minute),
 	}

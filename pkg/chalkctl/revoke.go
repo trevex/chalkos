@@ -13,6 +13,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
 // revokeFlags are the flags of node revoke and node unrevoke.
@@ -29,6 +30,7 @@ func (a *app) nodeRevokeCommand() *cobra.Command {
 		Short:   "Cut a node off the cluster by name",
 		Long:    nodeRevokeLong,
 		Example: nodeRevokeExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeRevoke(ctx, f, pos) })
 	f.node.registerClient(cmd.Flags())
 	fs := cmd.Flags()
@@ -38,9 +40,6 @@ func (a *app) nodeRevokeCommand() *cobra.Command {
 }
 
 func (a *app) nodeRevoke(ctx context.Context, f revokeFlags, pos []string) error {
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl node revoke <node> [--via NODE] [--force]")
-	}
 	name := pos[0]
 	if err := a.keepsRevokedNodes(ctx, f); err != nil {
 		return err
@@ -199,6 +198,7 @@ func (a *app) nodeUnrevokeCommand() *cobra.Command {
 		Short:   "Let a revoked node's name join the cluster again",
 		Long:    nodeUnrevokeLong,
 		Example: nodeUnrevokeExample,
+		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeUnrevoke(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.registerClient(fs)
@@ -208,9 +208,6 @@ func (a *app) nodeUnrevokeCommand() *cobra.Command {
 }
 
 func (a *app) nodeUnrevoke(ctx context.Context, f revokeFlags, pos []string) error {
-	if len(pos) != 1 {
-		return errors.New("usage: chalkctl node unrevoke <node> [--via NODE] [--force]")
-	}
 	if err := a.keepsRevokedNodes(ctx, f); err != nil {
 		return err
 	}
