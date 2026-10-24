@@ -4,16 +4,14 @@
 package effects
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/command"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 // Service is a unit granted config kinds, as /etc/chalkos/services.json records it: chalkd
@@ -50,7 +48,7 @@ type Definition struct {
 // ReadServices reads the image's services.json; an image without one grants no unit a kind.
 func ReadServices(path string) (map[string]Service, error) {
 	services := map[string]Service{}
-	if err := readJSON(path, &services); err != nil {
+	if err := jsonfile.Read(path, &services); err != nil {
 		return nil, err
 	}
 	return services, nil
@@ -60,7 +58,7 @@ func ReadServices(path string) (map[string]Service, error) {
 // without one has no effects.
 func Read(path string) (map[string]Definition, error) {
 	effects := map[string]Definition{}
-	if err := readJSON(path, &effects); err != nil {
+	if err := jsonfile.Read(path, &effects); err != nil {
 		return nil, err
 	}
 	var errs []error
@@ -73,20 +71,6 @@ func Read(path string) (map[string]Definition, error) {
 		return nil, errors.Join(errs...)
 	}
 	return effects, nil
-}
-
-func readJSON(path string, v any) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(data, v); err != nil {
-		return fmt.Errorf("parse %s: %w", path, err)
-	}
-	return nil
 }
 
 // Check refuses an effect that nothing triggers or that does nothing, a unit that is no unit

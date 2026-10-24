@@ -7,16 +7,16 @@
 package outputs
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 const (
@@ -47,16 +47,9 @@ type Definition struct {
 // Read reads the outputs an image declares for a node that renders them below root, DefaultRoot
 // on a node; a missing file declares none.
 func Read(path, root string) (map[string]Definition, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return map[string]Definition{}, nil
-	}
-	if err != nil {
+	defs := map[string]Definition{}
+	if err := jsonfile.Read(path, &defs); err != nil {
 		return nil, err
-	}
-	var defs map[string]Definition
-	if err := json.Unmarshal(data, &defs); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	var errs []error
 	names := slices.Sorted(maps.Keys(defs))

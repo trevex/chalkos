@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/command"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 const (
@@ -47,16 +48,9 @@ type Definition struct {
 
 // Read reads the facts an image declares; a missing file declares none.
 func Read(path string) (map[string]Definition, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return map[string]Definition{}, nil
-	}
-	if err != nil {
+	defs := map[string]Definition{}
+	if err := jsonfile.Read(path, &defs); err != nil {
 		return nil, err
-	}
-	var defs map[string]Definition
-	if err := json.Unmarshal(data, &defs); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return defs, nil
 }

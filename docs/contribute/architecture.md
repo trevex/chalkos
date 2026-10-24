@@ -94,6 +94,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |
 | `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
 | `install` | Installs a node in place or from the installer, step by step and repeatable: STATE, the ESP, the UEFI boot entries, wiping the target and the system region's definitions each have a file, and `parts.go` holds the steps of an install from the installer. |
+| `jsonfile` | Reads a JSON file an image may leave out, such as `facts.json`, `effects.json` or `outputs.json`. |
 | `kubernetes` | The node's Kubernetes cluster as chalkd builds it from the config and the image's facts, its flags and address ranges, the node as its identity names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
 | `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
 | `kubernetes/etcd` | etcd membership: learners, promotion, quorum-safe removal, the node's own member; finds the members from etcd's mirror pods and counts encrypted values by key. |

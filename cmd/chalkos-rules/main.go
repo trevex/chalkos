@@ -7,11 +7,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,6 +20,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config/withheld"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -66,7 +65,7 @@ func check(image string, out io.Writer) error {
 		return err
 	}
 	examples := map[string]string{}
-	if err := readJSON(filepath.Join(image, "examples.json"), &examples); err != nil {
+	if err := jsonfile.Read(filepath.Join(image, "examples.json"), &examples); err != nil {
 		return err
 	}
 	var errs []error
@@ -274,21 +273,6 @@ func renderExample(s *schema.Schemas, name string, d outputs.Definition, file st
 	if len(failures) > 0 {
 		// What the program wrote to standard error is in the build's log, above.
 		return errors.New(strings.TrimSuffix(failures[0].Problem, "; see the node's journal"))
-	}
-	return nil
-}
-
-// readJSON decodes the JSON file at path into v; a missing file leaves v as it is.
-func readJSON(path string, v any) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(data, v); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
 	}
 	return nil
 }
