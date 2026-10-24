@@ -2,6 +2,7 @@ package pki
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/sha256"
@@ -22,6 +23,20 @@ func ParseCertificate(data []byte) (*x509.Certificate, error) {
 	return x509.ParseCertificate(block.Bytes)
 }
 
+// FirstCertificate decodes the first certificate of PEM data and skips blocks of other types,
+// such as the key a kubelet's certificate file holds too.
+func FirstCertificate(data []byte) (*x509.Certificate, error) {
+	for {
+		var block *pem.Block
+		if block, data = pem.Decode(data); block == nil {
+			return nil, errors.New("no PEM certificate")
+		}
+		if block.Type == "CERTIFICATE" {
+			return x509.ParseCertificate(block.Bytes)
+		}
+	}
+}
+
 // Fingerprint returns the SHA-256 of a DER certificate in lower-case hex.
 func Fingerprint(der []byte) string {
 	sum := sha256.Sum256(der)
@@ -37,7 +52,7 @@ func NormalizeFingerprint(fp string) string {
 }
 
 // EncodeKey encodes a private key as PKCS #8 PEM, as chalkos stores keys.
-func EncodeKey(key *ecdsa.PrivateKey) (string, error) {
+func EncodeKey(key crypto.PrivateKey) (string, error) {
 	der, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return "", err
@@ -45,10 +60,10 @@ func EncodeKey(key *ecdsa.PrivateKey) (string, error) {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})), nil
 }
 
-// ParseECKey decodes a PEM PKCS#8 ECDSA P-256 private key.
+// ParseECKey decodes a PEM PKCS#8 ECDSA P-256 private key, the only kind chalkos creates.
 func ParseECKey(data string) (*ecdsa.PrivateKey, error) {
 	block, _ := pem.Decode([]byte(data))
-	if block == nil {
+	if block == nil || block.Type != "PRIVATE KEY" {
 		return nil, errors.New("no PEM private key")
 	}
 	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)

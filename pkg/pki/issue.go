@@ -52,23 +52,15 @@ func (c CertKey) GoString() string {
 	return c.String()
 }
 
-// Parse decodes the certificate and the key.
+// Parse decodes the certificate and the key, which must be ECDSA P-256 and belong to it.
 func (c CertKey) Parse() (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	cert, err := ParseCertificate([]byte(c.Certificate))
 	if err != nil {
 		return nil, nil, err
 	}
-	block, _ := pem.Decode([]byte(c.Key))
-	if block == nil {
-		return nil, nil, errors.New("no PEM private key")
-	}
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	key, err := ParseECKey(c.Key)
 	if err != nil {
-		return nil, nil, fmt.Errorf("parse private key: %w", err)
-	}
-	key, ok := parsed.(*ecdsa.PrivateKey)
-	if !ok {
-		return nil, nil, fmt.Errorf("private key is a %T, want ECDSA", parsed)
+		return nil, nil, err
 	}
 	if !key.PublicKey.Equal(cert.PublicKey) {
 		return nil, nil, errors.New("private key does not belong to the certificate")

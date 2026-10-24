@@ -9,9 +9,7 @@ package nodeconfig
 import (
 	"bytes"
 	"context"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -25,6 +23,7 @@ import (
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
+	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
 )
@@ -322,21 +321,12 @@ func (l Loader) nodeName() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for {
-		var block *pem.Block
-		if block, data = pem.Decode(data); block == nil {
-			return "", fmt.Errorf("%s holds no certificate", l.NodeCertificate)
-		}
-		if block.Type != "CERTIFICATE" {
-			continue
-		}
-		cert, err := x509.ParseCertificate(block.Bytes)
-		if err != nil {
-			return "", fmt.Errorf("%s: %w", l.NodeCertificate, err)
-		}
-		if cert.Subject.CommonName == "" {
-			return "", fmt.Errorf("%s names no node", l.NodeCertificate)
-		}
-		return cert.Subject.CommonName, nil
+	cert, err := pki.FirstCertificate(data)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", l.NodeCertificate, err)
 	}
+	if cert.Subject.CommonName == "" {
+		return "", fmt.Errorf("%s names no node", l.NodeCertificate)
+	}
+	return cert.Subject.CommonName, nil
 }

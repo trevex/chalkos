@@ -4,8 +4,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"time"
 
@@ -60,11 +58,9 @@ func NewKubernetesSecrets(now time.Time) (*KubernetesSecrets, error) {
 	if err != nil {
 		return nil, err
 	}
-	der, err := x509.MarshalPKCS8PrivateKey(key)
-	if err != nil {
+	if k.ServiceAccountKey, err = pki.EncodeKey(key); err != nil {
 		return nil, err
 	}
-	k.ServiceAccountKey = string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
 	k.EncryptionKeyName = DefaultEncryptionKeyName
 	k.EncryptionKey = make([]byte, EncryptionKeySize)
 	if _, err := rand.Read(k.EncryptionKey); err != nil {

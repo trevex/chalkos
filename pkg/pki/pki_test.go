@@ -207,6 +207,38 @@ func TestParseRejectsForeignKey(t *testing.T) {
 	}
 }
 
+func TestParseRefusesOtherCurves(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, err := newTemplate("P-384", nil, now, CAValidity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ck, err := sign(template, template, key, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ck.Parse(); err == nil {
+		t.Error("accepted a P-384 key; chalkos keys are P-256")
+	}
+}
+
+func TestFirstCertificate(t *testing.T) {
+	ca := newTestCA(t)
+	cert, err := FirstCertificate([]byte(ca.Key + ca.Certificate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert.Subject.CommonName != "chalkos OS CA" {
+		t.Errorf("FirstCertificate() = %s, want the CA's certificate", cert.Subject)
+	}
+	if _, err := FirstCertificate([]byte(ca.Key)); err == nil {
+		t.Error("found a certificate in a key")
+	}
+}
+
 func TestNormalizeFingerprint(t *testing.T) {
 	want := "ab01cd"
 	for _, in := range []string{"ab01cd", "AB:01:CD", " sha256:ab 01 cd ", "SHA256:AB01CD"} {

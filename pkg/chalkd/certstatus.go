@@ -302,5 +302,5 @@ func readPEMCertificate(path string) (*x509.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pki.ParseCertificate(data)
+	return pki.FirstCertificate(data)
 }

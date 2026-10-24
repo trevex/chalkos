@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // createKeys creates the lab's Secure Boot keys, PK, KEK and db, in dir, and a firmware variable
@@ -43,11 +45,11 @@ func (a *app) createKeys(ctx context.Context, dir, labName, templateVars string)
 		if err != nil {
 			return err
 		}
-		pkcs8, err := x509.MarshalPKCS8PrivateKey(key)
+		keyPEM, err := pki.EncodeKey(key)
 		if err != nil {
 			return err
 		}
-		if err := writeNew(filepath.Join(dir, name+".key"), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8}), 0o600); err != nil {
+		if err := writeNew(filepath.Join(dir, name+".key"), []byte(keyPEM), 0o600); err != nil {
 			return err
 		}
 		if err := writeNew(filepath.Join(dir, name+".crt"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
