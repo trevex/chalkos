@@ -10,6 +10,7 @@ import (
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // Target is the image a set is translated for.
@@ -19,6 +20,31 @@ type Target struct {
 	// Image is the image's Kubernetes facts, its image.json, which the cluster its documents give
 	// is built with; nil on an image without Kubernetes.
 	Image *kubernetes.Image
+}
+
+// Translate checks docs as the set of the node called name and translates them into its identity
+// on the image t describes. It checks the set rules, each document against its schema, the
+// Secrets the secretRefs name, the Registry and Mirror documents and, on an image with
+// Kubernetes, the cluster and manifests they give. chalkctl and chalkd both translate with it, so
+// they accept the same configs.
+func Translate(name string, docs []Document, schemas *schema.Schemas, t Target) (*Set, identity.Identity, error) {
+	set, err := NewSet(docs, schemas)
+	if err != nil {
+		return nil, identity.Identity{}, err
+	}
+	if err := set.CheckRegistries(); err != nil {
+		return nil, identity.Identity{}, err
+	}
+	id, err := set.Identity(name, t)
+	if err != nil {
+		return nil, identity.Identity{}, err
+	}
+	if t.Image != nil {
+		if err := set.CheckKubernetes(*t.Image); err != nil {
+			return nil, identity.Identity{}, err
+		}
+	}
+	return set, id, nil
 }
 
 // Identity translates the set into the identity of the node called name for the image t describes,

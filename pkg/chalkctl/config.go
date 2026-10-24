@@ -128,27 +128,13 @@ func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 	return d, nil
 }
 
-// checkNodeConfig checks a node's config as the node checks it on the image the contract
-// describes: the set's rules, each document against its schema, its Registry and Mirror
-// documents, the identity it translates into, on an image with Kubernetes the cluster it gives,
-// and the image's change rules that chalkctl can check without the node's config. It returns the
-// config as chalkctl delivers it.
+// checkNodeConfig checks a node's config on the image the contract describes as the node does,
+// with config.Translate, and against the image's change rules that chalkctl can check without
+// the node's config. It returns the config as chalkctl delivers it.
 func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
-	set, err := config.NewSet(nc.Documents, c.schemas)
+	set, id, err := config.Translate(nc.Name, nc.Documents, c.schemas, config.Target{Platform: c.platform, Image: c.image})
 	if err != nil {
 		return delivery{}, err
-	}
-	if err := set.CheckRegistries(); err != nil {
-		return delivery{}, err
-	}
-	id, err := set.Identity(nc.Name, config.Target{Platform: c.platform, Image: c.image})
-	if err != nil {
-		return delivery{}, err
-	}
-	if c.image != nil {
-		if err := set.CheckKubernetes(*c.image); err != nil {
-			return delivery{}, err
-		}
 	}
 	if err := checkRules(c, set.Documents(), nil, nc.Name); err != nil {
 		return delivery{}, err

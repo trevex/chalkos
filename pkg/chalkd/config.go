@@ -15,7 +15,6 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
-	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -45,7 +44,7 @@ func translateSlot(name string, docs []config.Document, schemas *schema.Schemas,
 	if err != nil {
 		return store.Stored{}, fmt.Errorf("hash the config: %w", err)
 	}
-	set, id, err := translate(name, docs, schemas, t)
+	set, id, err := config.Translate(name, docs, schemas, t)
 	if err != nil {
 		return store.Stored{}, err
 	}
@@ -54,30 +53,6 @@ func translateSlot(name string, docs []config.Document, schemas *schema.Schemas,
 		return store.Stored{}, fmt.Errorf("encode the identity: %w", err)
 	}
 	return store.Stored{Delivered: docs, Documents: set.Documents(), Version: version, Identity: data}, nil
-}
-
-// translate checks docs as a set against schemas and translates them into the identity of the node
-// called name on the image t describes: the set rules, each document's schema, the Secrets their
-// secretRefs name, the Registry and Mirror documents and, on an image with Kubernetes, the
-// cluster and manifests they give.
-func translate(name string, docs []config.Document, schemas *schema.Schemas, t config.Target) (*config.Set, identity.Identity, error) {
-	set, err := config.NewSet(docs, schemas)
-	if err != nil {
-		return nil, identity.Identity{}, err
-	}
-	if err := set.CheckRegistries(); err != nil {
-		return nil, identity.Identity{}, err
-	}
-	id, err := set.Identity(name, t)
-	if err != nil {
-		return nil, identity.Identity{}, err
-	}
-	if t.Image != nil {
-		if err := set.CheckKubernetes(*t.Image); err != nil {
-			return nil, identity.Identity{}, err
-		}
-	}
-	return set, id, nil
 }
 
 // runningTarget is the running image, as config for it is translated, and its schemas.
