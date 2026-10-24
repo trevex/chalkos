@@ -19,6 +19,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -509,8 +510,8 @@ func TestApplyConfigReloadsTimeServers(t *testing.T) {
 func TestApplyConfigActsOnItselfInProcess(t *testing.T) {
 	s, r := configServer(t)
 	write(t, s.Loader.Effects, `{"cluster": {"when": "true", "chalkd": "restart"}, "share": {"when": "true", "chalkd": "reload"}}`)
-	var acted [2]bool
-	s.actedOnSelf = func(reload, restart bool) { acted = [2]bool{reload, restart} }
+	var acted effects.ChalkdAction
+	s.actedOnSelf = func(a effects.ChalkdAction) { acted = a }
 	resp, err := sendConfig(s, baseConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -518,7 +519,7 @@ func TestApplyConfigActsOnItselfInProcess(t *testing.T) {
 	if len(r.Calls) != 0 || len(resp.RestartedUnits) != 0 {
 		t.Errorf("ran %v, restarted %v", r.Calls, resp.RestartedUnits)
 	}
-	if acted != [2]bool{false, true} {
+	if acted != effects.ChalkdRestart {
 		t.Errorf("acted on itself %v, want a restart, which a reload is part of", acted)
 	}
 }

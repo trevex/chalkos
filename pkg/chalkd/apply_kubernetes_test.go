@@ -18,6 +18,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/effects"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -57,12 +58,9 @@ func withClusterSpec(spec string) string {
 // loops records what deliveries ask of chalkd's own loops.
 func loops(s *Server) *[]string {
 	var acted []string
-	s.actedOnSelf = func(reload, restart bool) {
-		switch {
-		case restart:
-			acted = append(acted, "restart")
-		case reload:
-			acted = append(acted, "reload")
+	s.actedOnSelf = func(a effects.ChalkdAction) {
+		if a != "" {
+			acted = append(acted, string(a))
 		}
 	}
 	return &acted

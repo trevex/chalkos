@@ -20,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
+	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
@@ -144,7 +145,7 @@ type Server struct {
 	// clock is the time client certificates are verified at; nil is the system clock.
 	clock func() time.Time
 	// actedOnSelf, when set, is told what each delivery asked of chalkd's own loops; tests set it.
-	actedOnSelf func(reload, restart bool)
+	actedOnSelf func(effects.ChalkdAction)
 
 	// mu serialises calls that change the node.
 	mu        sync.Mutex

@@ -186,14 +186,14 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 		if err := s.Loader.LoadConfig(); err != nil {
 			// What chalkd's loops read, the slot, the cluster file and the share, is in place.
 			a := actionsOf(e.defs, due)
-			s.actOnSelf(a.chalkd == effects.ChalkdReload, a.chalkd == effects.ChalkdRestart)
+			s.actOnSelf(a.chalkd)
 			return nil, nil, failed(connect.CodeInternal, "write the config for the granted units: %v%s", err, a.byHand())
 		}
 	}
 	// The outputs, checked before the delivery changed anything, follow the documents.
 	if err := staged.Swap(); err != nil {
 		a := actionsOf(e.defs, due)
-		s.actOnSelf(a.chalkd == effects.ChalkdReload, a.chalkd == effects.ChalkdRestart)
+		s.actOnSelf(a.chalkd)
 		return nil, nil, failed(connect.CodeInternal, "%v%s", err, a.byHand())
 	}
 	restarted, err := s.applyEffects(ctx, actionsOf(e.defs, due))
@@ -223,7 +223,7 @@ func (s *Server) failedPartWay(ctx context.Context, e *pendingEffects, secret st
 		return
 	}
 	a := actionsOf(e.defs, due)
-	s.actOnSelf(a.chalkd == effects.ChalkdReload, a.chalkd == effects.ChalkdRestart)
+	s.actOnSelf(a.chalkd)
 }
 
 // actions are what the due effects ask for together: the units to reload and to restart, each
@@ -272,7 +272,7 @@ func actionsOf(defs map[string]effects.Definition, due []string) actions {
 func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) {
 	// Once the units it restarts read the new config, and whether or not they could: the
 	// cluster and the share the loops read are in place.
-	defer s.actOnSelf(a.chalkd == effects.ChalkdReload, a.chalkd == effects.ChalkdRestart)
+	defer s.actOnSelf(a.chalkd)
 	states := map[string]string{}
 	for _, unit := range append(slices.Clone(a.reload), a.restart...) {
 		if _, ok := states[unit]; ok {
@@ -367,17 +367,17 @@ func isKubernetesUnit(unit string) bool {
 
 // actOnSelf reloads or restarts chalkd's Kubernetes loops, on a node with Kubernetes; a restart
 // starts the control plane's loop again too.
-func (s *Server) actOnSelf(reload, restart bool) {
+func (s *Server) actOnSelf(a effects.ChalkdAction) {
 	if s.actedOnSelf != nil {
-		s.actedOnSelf(reload, restart)
+		s.actedOnSelf(a)
 	}
 	if s.Kubernetes == nil {
 		return
 	}
-	switch {
-	case restart:
+	switch a {
+	case effects.ChalkdRestart:
 		s.Kubernetes.Restart()
-	case reload:
+	case effects.ChalkdReload:
 		s.Kubernetes.Reload()
 	}
 }
