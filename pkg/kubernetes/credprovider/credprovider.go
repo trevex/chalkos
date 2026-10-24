@@ -36,12 +36,34 @@ type login struct {
 	Password string `json:"password"`
 }
 
+// providerConfig is the kubelet's CredentialProviderConfig.
+type providerConfig struct {
+	APIVersion string     `json:"apiVersion"`
+	Kind       string     `json:"kind"`
+	Providers  []provider `json:"providers"`
+}
+
 type provider struct {
 	Name                 string   `json:"name"`
 	MatchImages          []string `json:"matchImages"`
 	DefaultCacheDuration string   `json:"defaultCacheDuration"`
 	APIVersion           string   `json:"apiVersion"`
 	Args                 []string `json:"args"`
+}
+
+// request is the kubelet's CredentialProviderRequest.
+type request struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Image      string `json:"image"`
+}
+
+// response is the CredentialProviderResponse the kubelet reads.
+type response struct {
+	APIVersion   string           `json:"apiVersion"`
+	Kind         string           `json:"kind"`
+	CacheKeyType string           `json:"cacheKeyType"`
+	Auth         map[string]login `json:"auth,omitempty"`
 }
 
 // kubeletHost is the host an image's registry is as the kubelet names it: as RegistryHost names
@@ -93,10 +115,10 @@ func Write(dir, bin string, logins []config.RegistryCredentials) error {
 	}
 	// [] rather than null, as the kubelet's config declares a list.
 	matches := append([]string{}, slices.Sorted(maps.Keys(creds))...)
-	cfg, err := json.Marshal(map[string]any{
-		"apiVersion": "kubelet.config.k8s.io/v1",
-		"kind":       "CredentialProviderConfig",
-		"providers": []provider{{
+	cfg, err := json.Marshal(providerConfig{
+		APIVersion: "kubelet.config.k8s.io/v1",
+		Kind:       "CredentialProviderConfig",
+		Providers: []provider{{
 			Name: "chalkd", MatchImages: matches, DefaultCacheDuration: cacheDuration,
 			APIVersion: apiVersion, Args: []string{"credential-provider"},
 		}},
@@ -122,23 +144,14 @@ func Write(dir, bin string, logins []config.RegistryCredentials) error {
 // credentials, matched by host and port, for an image it cannot parse, and before Write wrote
 // any, so that the pull goes on without them.
 func Provide(dir string, in io.Reader, out io.Writer) error {
-	var req struct {
-		APIVersion string `json:"apiVersion"`
-		Kind       string `json:"kind"`
-		Image      string `json:"image"`
-	}
+	var req request
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return fmt.Errorf("read the request: %w", err)
 	}
 	if req.APIVersion != apiVersion || req.Kind != "CredentialProviderRequest" {
 		return fmt.Errorf("the request is a %s %s, not a %s CredentialProviderRequest", req.APIVersion, req.Kind, apiVersion)
 	}
-	resp := struct {
-		APIVersion   string           `json:"apiVersion"`
-		Kind         string           `json:"kind"`
-		CacheKeyType string           `json:"cacheKeyType"`
-		Auth         map[string]login `json:"auth,omitempty"`
-	}{APIVersion: apiVersion, Kind: "CredentialProviderResponse", CacheKeyType: "Registry"}
+	resp := response{APIVersion: apiVersion, Kind: "CredentialProviderResponse", CacheKeyType: "Registry"}
 	creds, err := readCredentials(dir)
 	if err != nil {
 		return err
