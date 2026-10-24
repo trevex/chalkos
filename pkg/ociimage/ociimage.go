@@ -71,9 +71,9 @@ type Blob struct {
 	Open      func() (io.ReadCloser, error)
 }
 
-// NewBlob is the blob of the media type that open reads; NewBlob reads it once for its size and
+// newBlob is the blob of the media type that open reads; newBlob reads it once for its size and
 // digest.
-func NewBlob(mediaType types.MediaType, open func() (io.ReadCloser, error)) (Blob, error) {
+func newBlob(mediaType types.MediaType, open func() (io.ReadCloser, error)) (Blob, error) {
 	r, err := open()
 	if err != nil {
 		return Blob{}, err
@@ -96,12 +96,12 @@ func BytesBlob(mediaType types.MediaType, data []byte) Blob {
 
 // FileBlob is the blob of a file.
 func FileBlob(mediaType types.MediaType, path string) (Blob, error) {
-	return NewBlob(mediaType, func() (io.ReadCloser, error) { return os.Open(path) })
+	return newBlob(mediaType, func() (io.ReadCloser, error) { return os.Open(path) })
 }
 
 // SectionBlob is the blob of a section of a file, such as a raw image's store.
 func SectionBlob(mediaType types.MediaType, s *io.SectionReader) (Blob, error) {
-	return NewBlob(mediaType, func() (io.ReadCloser, error) {
+	return newBlob(mediaType, func() (io.ReadCloser, error) {
 		return io.NopCloser(io.NewSectionReader(s, 0, s.Size())), nil
 	})
 }

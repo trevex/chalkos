@@ -41,13 +41,13 @@ func TestExtractUKI(t *testing.T) {
 	fat := raw + "@@0"
 	mustRun(t, "mmd", "-i", fat, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux")
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/BOOTX64.EFI")
-	if _, err := ExtractUKI(context.Background(), raw, 0, dir); err == nil || !strings.Contains(err.Error(), "holds 0 UKIs") {
+	if _, err := extractUKI(context.Background(), raw, 0, dir); err == nil || !strings.Contains(err.Error(), "holds 0 UKIs") {
 		t.Errorf("an ESP without a UKI: %v", err)
 	}
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_2.efi")
 	out := filepath.Join(dir, "out")
 	os.Mkdir(out, 0o755)
-	uki, err := ExtractUKI(context.Background(), raw, 0, out)
+	uki, err := extractUKI(context.Background(), raw, 0, out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestExtractUKI(t *testing.T) {
 		t.Errorf("extracted %s", uki)
 	}
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/other.efi")
-	if _, err := ExtractUKI(context.Background(), raw, 0, dir); err == nil || !strings.Contains(err.Error(), "holds 2 UKIs") {
+	if _, err := extractUKI(context.Background(), raw, 0, dir); err == nil || !strings.Contains(err.Error(), "holds 2 UKIs") {
 		t.Errorf("an ESP with two UKIs: %v", err)
 	}
 }
@@ -87,16 +87,16 @@ func TestExtractBootLoader(t *testing.T) {
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/fallback.efi")
 	// Another architecture's boot loader is no x86-64 image's.
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/BOOTAA64.EFI")
-	if _, err := ExtractBootLoader(context.Background(), image, 0, dir, "x86-64"); err == nil || !strings.Contains(err.Error(), "has no /EFI/BOOT/BOOTX64.EFI") {
+	if _, err := extractBootLoader(context.Background(), image, 0, dir, "x86-64"); err == nil || !strings.Contains(err.Error(), "has no /EFI/BOOT/BOOTX64.EFI") {
 		t.Errorf("an ESP without a boot loader: %v", err)
 	}
-	if _, err := ExtractBootLoader(context.Background(), image, 0, dir, "riscv64"); err == nil || !strings.Contains(err.Error(), "riscv64") {
+	if _, err := extractBootLoader(context.Background(), image, 0, dir, "riscv64"); err == nil || !strings.Contains(err.Error(), "riscv64") {
 		t.Errorf("an unknown architecture: %v", err)
 	}
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/BOOTX64.EFI")
 	out := filepath.Join(dir, "out")
 	os.Mkdir(out, 0o755)
-	loader, err := ExtractBootLoader(context.Background(), image, 0, out, "x86-64")
+	loader, err := extractBootLoader(context.Background(), image, 0, out, "x86-64")
 	if err != nil {
 		t.Fatal(err)
 	}

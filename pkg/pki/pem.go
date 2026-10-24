@@ -90,8 +90,8 @@ func ServiceAccountPublicKey(private string) (string, error) {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})), nil
 }
 
-// ParsePublicKey decodes a PEM ECDSA P-256 public key, as service accounts' are.
-func ParsePublicKey(data string) (*ecdsa.PublicKey, error) {
+// parsePublicKey decodes a PEM ECDSA P-256 public key, as service accounts' are.
+func parsePublicKey(data string) (*ecdsa.PublicKey, error) {
 	block, rest := pem.Decode([]byte(data))
 	if block == nil || block.Type != "PUBLIC KEY" || len(bytes.TrimSpace(rest)) > 0 {
 		return nil, errors.New("not one PEM public key")
@@ -109,7 +109,7 @@ func ParsePublicKey(data string) (*ecdsa.PublicKey, error) {
 
 // PublicKeyFingerprint is the SHA-256 of a PEM public key's DER form.
 func PublicKeyFingerprint(data string) (string, error) {
-	key, err := ParsePublicKey(data)
+	key, err := parsePublicKey(data)
 	if err != nil {
 		return "", err
 	}

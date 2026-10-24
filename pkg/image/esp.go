@@ -26,7 +26,7 @@ type Binaries struct {
 func ExtractBinaries(ctx context.Context, raw string, espOffset int64, dir string, bootLoader bool) (Binaries, error) {
 	var b Binaries
 	var err error
-	if b.UKI, err = ExtractUKI(ctx, raw, espOffset, dir); err != nil {
+	if b.UKI, err = extractUKI(ctx, raw, espOffset, dir); err != nil {
 		return Binaries{}, err
 	}
 	if b.Architecture, err = fileArchitecture(b.UKI); err != nil {
@@ -35,7 +35,7 @@ func ExtractBinaries(ctx context.Context, raw string, espOffset int64, dir strin
 	if !bootLoader {
 		return b, nil
 	}
-	if b.BootLoader, err = ExtractBootLoader(ctx, raw, espOffset, dir, b.Architecture); err != nil {
+	if b.BootLoader, err = extractBootLoader(ctx, raw, espOffset, dir, b.Architecture); err != nil {
 		return Binaries{}, err
 	}
 	arch, err := fileArchitecture(b.BootLoader)
@@ -48,8 +48,8 @@ func ExtractBinaries(ctx context.Context, raw string, espOffset int64, dir strin
 	return b, nil
 }
 
-// ExtractUKI copies the one UKI on the image's ESP into dir and returns the copy's path.
-func ExtractUKI(ctx context.Context, raw string, espOffset int64, dir string) (string, error) {
+// extractUKI copies the one UKI on the image's ESP into dir and returns the copy's path.
+func extractUKI(ctx context.Context, raw string, espOffset int64, dir string) (string, error) {
 	found, err := list(ctx, raw, espOffset, "::/EFI/Linux", "*.EFI")
 	if err != nil {
 		return "", err
@@ -60,9 +60,9 @@ func ExtractUKI(ctx context.Context, raw string, espOffset int64, dir string) (s
 	return copyOut(ctx, raw, espOffset, found[0], dir)
 }
 
-// ExtractBootLoader copies the boot loader of the architecture off the image's ESP,
+// extractBootLoader copies the boot loader of the architecture off the image's ESP,
 // /EFI/BOOT/BOOTX64.EFI or /EFI/BOOT/BOOTAA64.EFI, into dir and returns the copy's path.
-func ExtractBootLoader(ctx context.Context, raw string, espOffset int64, dir, arch string) (string, error) {
+func extractBootLoader(ctx context.Context, raw string, espOffset int64, dir, arch string) (string, error) {
 	name := uki.BootLoaderName(arch)
 	if name == "" {
 		return "", fmt.Errorf("chalkos builds no images for the architecture %q", arch)
