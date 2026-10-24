@@ -371,7 +371,7 @@ func (r *rotation) pausedKubernetes(ctx context.Context, rot pki.Rotation) error
 func (r *rotation) throughControlPlane(ctx context.Context, fn func(ctx context.Context, conn *client.Conn) error) error {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
-	var last error = errors.New("the cluster has no control-plane node")
+	last := errors.New("the cluster has no control-plane node")
 	for _, name := range r.nodesOf(identity.KindControlPlane) {
 		err := r.call(name, func(conn *client.Conn, _ *target) error { return fn(ctx, conn) })
 		if err == nil {

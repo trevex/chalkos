@@ -88,10 +88,16 @@ func unquote(v string) string {
 	return b.String()
 }
 
-// ID, Variant, Platform and BootTries are the image's os-release values chalkos sets.
-func (i Image) ID() string        { return i.OSRelease["IMAGE_ID"] }
-func (i Image) Variant() string   { return i.OSRelease["CHALKOS_VARIANT"] }
-func (i Image) Platform() string  { return i.OSRelease["CHALKOS_PLATFORM"] }
+// ID is the image's IMAGE_ID in os-release.
+func (i Image) ID() string { return i.OSRelease["IMAGE_ID"] }
+
+// Variant is the image's CHALKOS_VARIANT in os-release.
+func (i Image) Variant() string { return i.OSRelease["CHALKOS_VARIANT"] }
+
+// Platform is the image's CHALKOS_PLATFORM in os-release.
+func (i Image) Platform() string { return i.OSRelease["CHALKOS_PLATFORM"] }
+
+// BootTries is the image's CHALKOS_BOOT_TRIES in os-release.
 func (i Image) BootTries() string { return i.OSRelease["CHALKOS_BOOT_TRIES"] }
 
 // UsrHash is the verity root hash of the store the UKI boots, from usrhash= on its command line.

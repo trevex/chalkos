@@ -227,6 +227,8 @@ func TestParseIdentitiesSSHNilPublicKeyCallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Legacy PEM encryption is the one SSH key format without an embedded public key.
+	//lint:ignore SA1019 the test needs a key that carries no public key
 	block, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key), []byte("hunter2"), x509.PEMCipherAES128)
 	if err != nil {
 		t.Fatal(err)

@@ -114,7 +114,7 @@ func RegistriesOf(docs []Document, secret func(SecretRef) (string, bool)) (Regis
 				return Registries{}, fmt.Errorf("%s: the endpoint %s is plain HTTP, which nothing authenticates; give %s a Registry with insecure: true to allow it", d, e, u.Host)
 			}
 		}
-		r.Mirrors = append(r.Mirrors, RegistryMirror{Registry: spec.Registry, Endpoints: spec.Endpoints})
+		r.Mirrors = append(r.Mirrors, RegistryMirror(spec))
 	}
 	return r, nil
 }

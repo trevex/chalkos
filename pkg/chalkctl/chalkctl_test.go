@@ -891,7 +891,7 @@ func TestAdminCertificateLastsOneRun(t *testing.T) {
 	if role, _ := pki.ClientRole(chains); role != pki.RoleAdmin || cert.Subject.CommonName != "chalkctl" {
 		t.Errorf("certificate %s has role %q", cert.Subject, role)
 	}
-	if got := cert.NotAfter.Sub(time.Now()); got > time.Hour || got < 59*time.Minute {
+	if got := time.Until(cert.NotAfter); got > time.Hour || got < 59*time.Minute {
 		t.Errorf("the admin certificate lasts another %v, want an hour", got)
 	}
 }

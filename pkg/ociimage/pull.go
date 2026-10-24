@@ -157,7 +157,7 @@ func newSource(ref name.Digest, s Source) (source, error) {
 	if err != nil {
 		return source{}, fmt.Errorf("%s: %w", label, err)
 	}
-	var t http.RoundTripper = remote.DefaultTransport
+	t := remote.DefaultTransport
 	if prefix != "" {
 		t = prefixed{next: t, host: host, prefix: prefix}
 	}
