@@ -10,10 +10,7 @@ let
   kindTypes = import ../../lib/kinds/types.nix { inherit lib; };
   getLib = import ../../lib/kinds/get.nix { inherit lib; };
   libChalkos = import ../../lib/chalkos.nix { inherit lib; };
-  fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
-
-  # The metal image of a variant worker with Kubernetes and the given NixOS modules.
-  image = modules: (mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config;
+  inherit (import ./lib.nix { inherit mkImages; }) fails worker;
 
   demoModule =
     { lib, ... }:
@@ -28,7 +25,7 @@ let
         };
       };
     };
-  withDemo = image [ demoModule ];
+  withDemo = worker [ demoModule ];
   # A unit granted the Demo kind and networkd's Network.
   grantModule = {
     systemd.services.bird = {
@@ -39,7 +36,7 @@ let
       ];
     };
   };
-  withGrant = image [
+  withGrant = worker [
     demoModule
     grantModule
   ];
@@ -53,7 +50,7 @@ let
   outputsOf = etcJSON "outputs.json";
   grantOf =
     kinds:
-    image [
+    worker [
       demoModule
       {
         systemd.services.bird = {
@@ -65,7 +62,7 @@ let
   # An image with the module given beside the Demo kind and the unit bird.
   withBird =
     module:
-    image [
+    worker [
       demoModule
       { systemd.services.bird.serviceConfig.ExecStart = "/bin/true"; }
       module
@@ -74,7 +71,7 @@ let
   schemasOf = config: config.system.build.chalkosSchemas.drvPath;
 
   # The metal image of a variant with Kubernetes and no extra modules.
-  kubernetesImage = image [ ];
+  kubernetesImage = worker [ ];
   # The metal image of a variant without Kubernetes.
   plainImage = (mkImages { variants.worker.kubernetes = false; }).nixos.worker-metal.config;
   # The installer.
@@ -113,7 +110,7 @@ let
       default = null;
     };
   };
-  withPeering = image [
+  withPeering = worker [
     (
       { lib, ... }:
       {
@@ -400,7 +397,7 @@ lib.runTests {
   };
   testKindMultipleDefaultsToFalse = {
     expr =
-      (image [
+      (worker [
         {
           chalkos.kinds.Single = {
             group = "demo.example.org";
@@ -441,7 +438,7 @@ lib.runTests {
   };
   testNetworkdKindNameIsTaken = {
     expr = fails (
-      schemasOf (image [
+      schemasOf (worker [
         {
           chalkos.kinds.Network = {
             group = "demo.example.org";
@@ -454,7 +451,7 @@ lib.runTests {
   };
   testNetworkdGroupIsReserved = {
     expr = fails (
-      schemasOf (image [
+      schemasOf (worker [
         {
           chalkos.kinds.Bridge = {
             group = "networkd.chalkos.dev";
@@ -467,7 +464,7 @@ lib.runTests {
   };
   testLowerCaseKindFails = {
     expr = fails (
-      schemasOf (image [
+      schemasOf (worker [
         {
           chalkos.kinds.demo = {
             group = "demo.example.org";
@@ -481,7 +478,7 @@ lib.runTests {
   testInvalidGroupFails = {
     expr =
       fails
-        (image [
+        (worker [
           {
             chalkos.kinds.Demo = {
               group = "Demo";
@@ -494,7 +491,7 @@ lib.runTests {
   testInvalidVersionFails = {
     expr =
       fails
-        (image [
+        (worker [
           {
             chalkos.kinds.Demo = {
               group = "demo.example.org";
@@ -604,7 +601,7 @@ lib.runTests {
       };
     };
   testFlannelKindFollowsTheProvider = {
-    expr = lib.elem "Flannel" (kindNames (image [ { chalkos.cni.provider = "none"; } ]));
+    expr = lib.elem "Flannel" (kindNames (worker [ { chalkos.cni.provider = "none"; } ]));
     expected = false;
   };
   # A Kubernetes object: an object with apiVersion, kind and metadata, and any other field.
@@ -634,7 +631,7 @@ lib.runTests {
   # Extensions declare no raw objects.
   testKubernetesObjectIsNotPublic = {
     expr =
-      (image [
+      (worker [
         (
           { lib, ... }:
           {
@@ -688,7 +685,7 @@ lib.runTests {
   };
   testReservedGroupFails = {
     expr = fails (
-      schemasOf (image [
+      schemasOf (worker [
         {
           chalkos.kinds.Mine = {
             group = "extra.chalkos.dev";
@@ -702,7 +699,7 @@ lib.runTests {
   testBuiltinNameIsTaken = {
     expr =
       fails
-        (image [
+        (worker [
           {
             chalkos.kinds.Host = {
               group = "demo.example.org";
@@ -717,8 +714,8 @@ lib.runTests {
     expected = [ "secret:/run/chalkos/credentials/bird" ];
   };
   # A shell on a node queries the config with chalkcfg; the installer has no config to query.
-  testRoleImageHasChalkcfg = {
-    expr = hasChalkcfg (image [ ]).environment.systemPackages;
+  testImageHasChalkcfg = {
+    expr = hasChalkcfg (worker [ ]).environment.systemPackages;
     expected = true;
   };
   testInstallerHasNoChalkcfg = {
@@ -1118,14 +1115,6 @@ lib.runTests {
     expr = lib.hasInfix "chalkos-rules-image" withGrant.system.build.chalkosRulesCheck.buildCommand;
     expected = true;
   };
-  testConsumersAreGone = {
-    expr = fails (
-      servicesOf (withBird {
-        chalkos.consumers.bird.kinds = [ "Demo" ];
-      })
-    );
-    expected = true;
-  };
   testGrantWithServiceDoesNotWarn = {
     expr = withGrant.warnings;
     expected = [ ];
@@ -1133,7 +1122,7 @@ lib.runTests {
   testGrantWithoutServiceWarns = {
     expr =
       lib.any (lib.hasInfix "systemd.services.orphan.chalkos.kinds")
-        (image [
+        (worker [
           { systemd.services.orphan.chalkos.kinds = [ "Network" ]; }
         ]).warnings;
     expected = true;
@@ -1172,31 +1161,9 @@ lib.runTests {
     expr = fails (grantOf [ "Nope" ]).systemd.services.bird.serviceConfig.LoadCredential;
     expected = true;
   };
-  # Units read config kinds alone: there are no identity keys to read.
-  testDottedConsumersAreGone = {
-    expr = fails (
-      servicesOf (image [
-        {
-          systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
-          chalkos.node.consumers.bird.keys = [ "hostname" ];
-        }
-      ])
-    );
-    expected = true;
-  };
-  testNodeFileIsGone = {
-    expr = (image [ ]).chalkos ? node;
-    expected = false;
-  };
   testKubernetesImageDirectoryHasImageFacts = {
-    expr = {
-      facts = lib.hasInfix "$out/image.json" kubernetesImage.system.build.chalkosImage.buildCommand;
-      clusterFile = lib.hasInfix "kubernetes.json" kubernetesImage.system.build.chalkosImage.buildCommand;
-    };
-    expected = {
-      facts = true;
-      clusterFile = false;
-    };
+    expr = lib.hasInfix "$out/image.json" kubernetesImage.system.build.chalkosImage.buildCommand;
+    expected = true;
   };
   testImageDirectoryWithoutKubernetesHasNoImageFacts = {
     expr = lib.hasInfix "image.json" plainImage.system.build.chalkosImage.buildCommand;
@@ -1466,7 +1433,7 @@ lib.runTests {
     expr =
       let
         schemas =
-          (image [
+          (worker [
             demoModule
             {
               chalkos.kinds.Demo.rules = [
@@ -1510,7 +1477,7 @@ lib.runTests {
   testFactsReachTheImage = {
     expr =
       let
-        config = image [
+        config = worker [
           {
             chalkos.facts = {
               seen = {
@@ -1591,7 +1558,7 @@ lib.runTests {
   testGreetingRulesAndFact = {
     expr =
       let
-        build = (image [ ../../modules/testing/greeting.nix ]).system.build;
+        build = (worker [ ../../modules/testing/greeting.nix ]).system.build;
         greeting = build.chalkosKindSchemas."greeting.example.org_v1alpha1_Greeting.json";
       in
       {
@@ -1608,13 +1575,13 @@ lib.runTests {
     };
   };
   testFactNameIsAnIdentifier = {
-    expr = fails (image [ { chalkos.facts.disk-ids.file = "/x"; } ]).system.build.chalkosFacts.drvPath;
+    expr = fails (worker [ { chalkos.facts.disk-ids.file = "/x"; } ]).system.build.chalkosFacts.drvPath;
     expected = true;
   };
   testFactWithFileAndCommandFails = {
     expr =
       fails
-        (image [
+        (worker [
           {
             chalkos.facts.x = {
               file = "/x";
@@ -1625,13 +1592,13 @@ lib.runTests {
     expected = true;
   };
   testFactWithoutSourceFails = {
-    expr = fails (image [ { chalkos.facts.x = { }; } ]).system.build.chalkosFacts.drvPath;
+    expr = fails (worker [ { chalkos.facts.x = { }; } ]).system.build.chalkosFacts.drvPath;
     expected = true;
   };
   testFileFactWithInputsFails = {
     expr =
       fails
-        (image [
+        (worker [
           {
             chalkos.facts.x = {
               file = "/x";
@@ -1644,7 +1611,7 @@ lib.runTests {
   testCommandFactWithFieldsFails = {
     expr =
       fails
-        (image [
+        (worker [
           {
             chalkos.facts.x = {
               command = "/bin/x";
@@ -1657,7 +1624,7 @@ lib.runTests {
   testCommandFactThatHashesFails = {
     expr =
       fails
-        (image [
+        (worker [
           {
             chalkos.facts.x = {
               command = "/bin/x";

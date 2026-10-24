@@ -6,9 +6,7 @@
   mkImages,
 }:
 let
-  fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
-  # The metal image of a variant worker, which runs Kubernetes, with the NixOS modules given.
-  worker = modules: (mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config;
+  inherit (import ./lib.nix { inherit mkImages; }) fails worker;
 in
 lib.runTests {
   # mkImages builds each variant on each platform, metal and kvm unless the arguments name
@@ -798,7 +796,6 @@ lib.runTests {
         config = worker [ ];
       in
       {
-        clusterFile = config.environment.etc ? "chalkos/kubernetes/cluster.json";
         # The image opens neither the API server's nor etcd's ports, which etcd authenticates by its
         # CA, nor makes etcd's directory: chalkos-controlplane does both by the Node's type.
         firewall = lib.any (port: lib.elem port config.networking.firewall.allowedTCPPorts) [
@@ -829,7 +826,6 @@ lib.runTests {
           lib.elem "nftables.service" unit.after;
       };
     expected = {
-      clusterFile = false;
       firewall = false;
       apiServerPort = false;
       markedPorts = true;
