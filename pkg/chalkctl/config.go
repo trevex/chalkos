@@ -183,16 +183,16 @@ func (c *cluster) imageContractOf(name string) (contract, error) {
 	if err != nil {
 		return contract{}, err
 	}
-	return nodeImageContract(nc)
-}
-
-// nodeImageContract is the contract of a node's image in the inventory, as built for the platform
-// its metadata gives.
-func nodeImageContract(nc *inventory.NodeConfig) (contract, error) {
 	md, err := nc.Resolve()
 	if err != nil {
 		return contract{}, err
 	}
+	return nodeImageContract(nc, md)
+}
+
+// nodeImageContract is the contract of a node's image in the inventory, as built for the platform
+// md, the image's metadata, gives.
+func nodeImageContract(nc *inventory.NodeConfig, md schema.Metadata) (contract, error) {
 	ct, err := inventoryContract(nc)
 	if err != nil {
 		return contract{}, err
