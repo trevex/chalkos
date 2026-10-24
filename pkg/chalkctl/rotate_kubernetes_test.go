@@ -86,14 +86,14 @@ func TestRotateKubernetesCA(t *testing.T) {
 // control plane takes a phase only once etcd is healthy and the control plane before runs on its
 // new files.
 func TestRotateControlPlanesInTurn(t *testing.T) {
-	for _, kind := range []string{clustersecrets.RotateKubernetesCA, clustersecrets.RotateServiceAccountKey, clustersecrets.RotateEncryptionKey} {
-		t.Run(kind, func(t *testing.T) {
+	for _, kind := range []clustersecrets.RotationKind{clustersecrets.RotateKubernetesCA, clustersecrets.RotateServiceAccountKey, clustersecrets.RotateEncryptionKey} {
+		t.Run(string(kind), func(t *testing.T) {
 			l := newRotationLab(t)
-			if err := l.rotate(kind); err != nil {
+			if err := l.rotate(string(kind)); err != nil {
 				t.Fatal(err)
 			}
 			if kind == clustersecrets.RotateKubernetesCA {
-				if err := l.rotate(kind, "--resume"); err != nil {
+				if err := l.rotate(string(kind), "--resume"); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -238,7 +238,7 @@ func TestRotateRewriteTimeoutSuggestsMoreTime(t *testing.T) {
 			t.Errorf("err = %v, want it to say %q", err, want)
 		}
 	}
-	if l.phase() != clustersecrets.PhaseRefresh {
+	if l.phase() != string(clustersecrets.PhaseRefresh) {
 		t.Fatalf("the secrets file records %q, want the refresh phase not applied", l.phase())
 	}
 	l.mu.Lock()
@@ -255,19 +255,19 @@ func TestRotateRewriteTimeoutSuggestsMoreTime(t *testing.T) {
 // TestRotateFinishSaysWhatToReissue checks that the finish of a CA's rotation says that client
 // files or kubeconfigs issued during it still trust the old CA until they are issued again.
 func TestRotateFinishSaysWhatToReissue(t *testing.T) {
-	for kind, want := range map[string][]string{
+	for kind, want := range map[clustersecrets.RotationKind][]string{
 		clustersecrets.RotateOSCA:         {"Client files issued during the rotation still trust the old OS CA", "chalkctl config new"},
 		clustersecrets.RotateKubernetesCA: {"Kubeconfigs issued during the rotation still trust the old Kubernetes CA", "chalkctl kubeconfig"},
 	} {
-		t.Run(kind, func(t *testing.T) {
+		t.Run(string(kind), func(t *testing.T) {
 			l := newRotationLab(t)
-			for _, args := range [][]string{{kind}, {kind, "--resume"}} {
+			for _, args := range [][]string{{string(kind)}, {string(kind), "--resume"}} {
 				if err := l.rotate(args...); err != nil {
 					t.Fatal(err)
 				}
 			}
 			l.ta.stdout.Reset()
-			if err := l.rotate(kind, "--finish"); err != nil {
+			if err := l.rotate(string(kind), "--finish"); err != nil {
 				t.Fatal(err)
 			}
 			for _, w := range want {

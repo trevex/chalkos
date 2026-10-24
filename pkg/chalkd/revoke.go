@@ -224,10 +224,10 @@ func (s *Server) staleCAs(share kpki.Share, at time.Time) ([]string, error) {
 	}
 	var stale []string
 	if madeBefore(osCAs, at) {
-		stale = append(stale, clustersecrets.RotateOSCA)
+		stale = append(stale, string(clustersecrets.RotateOSCA))
 	}
 	if madeBefore(kubernetesCAs, at) {
-		stale = append(stale, clustersecrets.RotateKubernetesCA)
+		stale = append(stale, string(clustersecrets.RotateKubernetesCA))
 	}
 	return stale, nil
 }
@@ -248,7 +248,7 @@ func madeBefore(cas []*x509.Certificate, at time.Time) bool {
 
 // staleWarning says what unrevoking a node revoked at means while the stale CAs are trusted.
 func staleWarning(name string, at time.Time, stale []string) string {
-	described := map[string]string{clustersecrets.RotateOSCA: "the OS CA", clustersecrets.RotateKubernetesCA: "the Kubernetes CA"}
+	described := map[string]string{string(clustersecrets.RotateOSCA): "the OS CA", string(clustersecrets.RotateKubernetesCA): "the Kubernetes CA"}
 	var cas []string
 	for _, ca := range stale {
 		cas = append(cas, fmt.Sprintf("%s (chalkctl rotate %s)", described[ca], ca))

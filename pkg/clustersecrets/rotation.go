@@ -17,20 +17,32 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
+// RotationKind is what chalkctl rotate rotates, as its argument names it.
+type RotationKind string
+
 // What chalkctl rotate rotates.
 const (
-	RotateOSCA              = "os-ca"
-	RotateKubernetesCA      = "kubernetes-ca"
-	RotateServiceAccountKey = "service-account-key"
-	RotateEncryptionKey     = "encryption-key"
+	RotateOSCA              RotationKind = "os-ca"
+	RotateKubernetesCA      RotationKind = "kubernetes-ca"
+	RotateServiceAccountKey RotationKind = "service-account-key"
+	RotateEncryptionKey     RotationKind = "encryption-key"
 )
 
 // RotationKinds lists what can be rotated, in the order chalkctl names them.
-var RotationKinds = []string{RotateOSCA, RotateKubernetesCA, RotateServiceAccountKey, RotateEncryptionKey}
+var RotationKinds = []RotationKind{RotateOSCA, RotateKubernetesCA, RotateServiceAccountKey, RotateEncryptionKey}
 
-// RotationName names what a kind of rotation rotates in prose.
-func RotationName(kind string) string {
-	switch kind {
+// RotationKindList names every kind as chalkctl rotate takes it, separated by commas.
+func RotationKindList() string {
+	names := make([]string, len(RotationKinds))
+	for i, k := range RotationKinds {
+		names[i] = string(k)
+	}
+	return strings.Join(names, ", ")
+}
+
+// Name names what a kind of rotation rotates in prose.
+func (k RotationKind) Name() string {
+	switch k {
 	case RotateOSCA:
 		return "OS CA"
 	case RotateKubernetesCA:
@@ -40,20 +52,23 @@ func RotationName(kind string) string {
 	case RotateEncryptionKey:
 		return "encryption key"
 	}
-	return kind
+	return string(k)
 }
+
+// Phase is a phase of a rotation.
+type Phase string
 
 // The phases of a rotation, in order. Accept makes every node trust the new value besides the
 // old one; Switch issues or signs with the new value; Refresh issues again what the old value
 // issued; Finish removes the old value.
 const (
-	PhaseAccept  = "accept"
-	PhaseSwitch  = "switch"
-	PhaseRefresh = "refresh"
-	PhaseFinish  = "finish"
+	PhaseAccept  Phase = "accept"
+	PhaseSwitch  Phase = "switch"
+	PhaseRefresh Phase = "refresh"
+	PhaseFinish  Phase = "finish"
 )
 
-var phases = []string{PhaseAccept, PhaseSwitch, PhaseRefresh, PhaseFinish}
+var phases = []Phase{PhaseAccept, PhaseSwitch, PhaseRefresh, PhaseFinish}
 
 // DefaultEncryptionKeyName names the encryption key of a secrets file that names none: the name
 // every key had before keys rotated.
@@ -109,8 +124,8 @@ func (k EncryptionKey) Fingerprint() string {
 // Rotation records a rotation that runs: what rotates, the phase it reached, and the new values'
 // keys until the switch makes them the ones that issue.
 type Rotation struct {
-	Kind  string `json:"kind"`
-	Phase string `json:"phase"`
+	Kind  RotationKind `json:"kind"`
+	Phase Phase        `json:"phase"`
 	// Applied is set once every node confirmed the phase.
 	Applied bool `json:"applied,omitempty"`
 	// Switched is when every node applied the switch: tokens signed with the old key until then
@@ -147,8 +162,8 @@ func (n NewValues) String() string { return "clustersecrets.NewValues{redacted}"
 func (n NewValues) GoString() string { return n.String() }
 
 // onlyOf reports whether the new values hold nothing but values of kind.
-func (n NewValues) onlyOf(kind string) bool {
-	of := map[string]bool{
+func (n NewValues) onlyOf(kind RotationKind) bool {
+	of := map[RotationKind]bool{
 		RotateOSCA:              n.OSCA != nil || n.NodeCA != nil,
 		RotateKubernetesCA:      n.CA != nil || n.FrontProxyCA != nil || n.EtcdCA != nil,
 		RotateServiceAccountKey: n.ServiceAccountKey != "",
@@ -333,7 +348,7 @@ func (s Secrets) validateRotation() error {
 	r := s.Rotation
 	if r == nil {
 		if s.accepting() != "" {
-			return fmt.Errorf("the secrets file accepts old values of the %s, but no rotation runs", RotationName(s.accepting()))
+			return fmt.Errorf("the secrets file accepts old values of the %s, but no rotation runs", s.accepting().Name())
 		}
 		return nil
 	}
@@ -344,7 +359,7 @@ func (s Secrets) validateRotation() error {
 		return fmt.Errorf("rotation: unknown phase %q", r.Phase)
 	}
 	if other := s.acceptingOtherThan(r.Kind); other != "" {
-		return fmt.Errorf("the secrets file accepts old values of the %s, but the rotation is of the %s", RotationName(other), RotationName(r.Kind))
+		return fmt.Errorf("the secrets file accepts old values of the %s, but the rotation is of the %s", other.Name(), r.Kind.Name())
 	}
 	switch {
 	case r.Kind == RotateEncryptionKey && r.New != nil:
@@ -352,7 +367,7 @@ func (s Secrets) validateRotation() error {
 	case r.Kind != RotateEncryptionKey && (r.Phase == PhaseAccept) != (r.New != nil):
 		return errors.New("rotation: new values belong to the accept phase only")
 	case r.New != nil && !r.New.onlyOf(r.Kind):
-		return fmt.Errorf("rotation: the new values hold values of another kind than the %s", RotationName(r.Kind))
+		return fmt.Errorf("rotation: the new values hold values of another kind than the %s", r.Kind.Name())
 	}
 
 	if (r.Phase == PhaseSwitch && r.Applied || r.Phase == PhaseRefresh) && r.Switched.IsZero() {
@@ -423,7 +438,7 @@ func requireAccepted(name, value string, accepted []string) error {
 }
 
 // acceptedOf counts the values accepted besides the issuing one for a kind.
-func (s Secrets) acceptedOf(kind string) int {
+func (s Secrets) acceptedOf(kind RotationKind) int {
 	total := 0
 	for _, n := range s.acceptedCounts(kind) {
 		total += n
@@ -433,7 +448,7 @@ func (s Secrets) acceptedOf(kind string) int {
 
 // acceptedCounts counts the values accepted besides each issuing one of a kind: one count per CA
 // or key that rotates.
-func (s Secrets) acceptedCounts(kind string) []int {
+func (s Secrets) acceptedCounts(kind RotationKind) []int {
 	a := s.Kubernetes.Accepted
 	switch kind {
 	case RotateOSCA:
@@ -449,11 +464,11 @@ func (s Secrets) acceptedCounts(kind string) []int {
 }
 
 // accepting names a kind with accepted values, "" when there is none.
-func (s Secrets) accepting() string {
+func (s Secrets) accepting() RotationKind {
 	return s.acceptingOtherThan("")
 }
 
-func (s Secrets) acceptingOtherThan(kind string) string {
+func (s Secrets) acceptingOtherThan(kind RotationKind) RotationKind {
 	for _, k := range RotationKinds {
 		if k != kind && s.acceptedOf(k) > 0 {
 			return k
@@ -463,15 +478,18 @@ func (s Secrets) acceptingOtherThan(kind string) string {
 }
 
 // ErrRotationRuns means a rotation runs already; one rotation runs at a time.
-type ErrRotationRuns struct{ Kind, Phase string }
+type ErrRotationRuns struct {
+	Kind  RotationKind
+	Phase Phase
+}
 
 func (e *ErrRotationRuns) Error() string {
-	return fmt.Sprintf("a rotation of the %s runs, in its %s phase; continue it with chalkctl rotate %s --resume or --finish", RotationName(e.Kind), e.Phase, e.Kind)
+	return fmt.Sprintf("a rotation of the %s runs, in its %s phase; continue it with chalkctl rotate %s --resume or --finish", e.Kind.Name(), e.Phase, e.Kind)
 }
 
 // BeginRotation starts rotating kind: it creates the new value and accepts it besides the one
 // that issues, in the accept phase.
-func (s *Secrets) BeginRotation(kind string, now time.Time) error {
+func (s *Secrets) BeginRotation(kind RotationKind, now time.Time) error {
 	if r := s.Rotation; r != nil {
 		return &ErrRotationRuns{r.Kind, r.Phase}
 	}
@@ -529,14 +547,14 @@ func (s *Secrets) BeginRotation(kind string, now time.Time) error {
 		k.Accepted.EncryptionKeys = append(k.Accepted.EncryptionKeys, EncryptionKey{Name: name, Key: key})
 		n = nil
 	default:
-		return fmt.Errorf("unknown rotation %q; rotate one of %s", kind, strings.Join(RotationKinds, ", "))
+		return fmt.Errorf("unknown rotation %q; rotate one of %s", kind, RotationKindList())
 	}
 	s.Rotation = &Rotation{Kind: kind, Phase: PhaseAccept, New: n}
 	return s.Validate()
 }
 
 // requirePhase refuses the next phase until every node applied phase.
-func (s *Secrets) requirePhase(phase string) error {
+func (s *Secrets) requirePhase(phase Phase) error {
 	r := s.Rotation
 	if r == nil {
 		return errors.New("no rotation runs")
@@ -546,7 +564,7 @@ func (s *Secrets) requirePhase(phase string) error {
 		if r.Applied {
 			state = "applied"
 		}
-		return fmt.Errorf("the rotation of the %s is in its %s phase, %s; the next phase follows the %s phase applied on every node", RotationName(r.Kind), r.Phase, state, phase)
+		return fmt.Errorf("the rotation of the %s is in its %s phase, %s; the next phase follows the %s phase applied on every node", r.Kind.Name(), r.Phase, state, phase)
 	}
 	return nil
 }

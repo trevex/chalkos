@@ -28,7 +28,7 @@ func roundTrip(t *testing.T, s Secrets) Secrets {
 
 // trusted is what each kind's bundle holds, as fingerprints of certificates and public keys and
 // names of encryption keys, the issuing value first.
-func trusted(t *testing.T, s Secrets, kind string) []string {
+func trusted(t *testing.T, s Secrets, kind RotationKind) []string {
 	t.Helper()
 	k := s.Kubernetes
 	var out []string
@@ -71,13 +71,13 @@ func trusted(t *testing.T, s Secrets, kind string) []string {
 // the old one, and nothing else in the file changes.
 func TestRotationPhases(t *testing.T) {
 	for _, kind := range RotationKinds {
-		t.Run(kind, func(t *testing.T) {
+		t.Run(string(kind), func(t *testing.T) {
 			s := generate(t)
 			before := trusted(t, s, kind)
 			if len(before) == 0 || (kind != RotateKubernetesCA && len(before) != 1) {
 				t.Fatalf("trusted before: %v", before)
 			}
-			others := map[string][]string{}
+			others := map[RotationKind][]string{}
 			for _, k := range RotationKinds {
 				if k != kind {
 					others[k] = trusted(t, s, k)
@@ -169,7 +169,7 @@ func TestRotationPhases(t *testing.T) {
 
 // firstOfEach returns the issuing values: for the Kubernetes CAs the first of each of the three
 // bundles, which hold the same number of values; for the others the first.
-func firstOfEach(values []string, kind string) []string {
+func firstOfEach(values []string, kind RotationKind) []string {
 	if kind != RotateKubernetesCA {
 		return values[:1]
 	}
@@ -395,7 +395,7 @@ func TestValidateRefusesInconsistentRotations(t *testing.T) {
 // TestRotationRedacted checks that nothing a rotation adds to the secrets file appears when they
 // are printed.
 func TestRotationRedacted(t *testing.T) {
-	for _, kind := range []string{RotateServiceAccountKey, RotateEncryptionKey, RotateOSCA} {
+	for _, kind := range []RotationKind{RotateServiceAccountKey, RotateEncryptionKey, RotateOSCA} {
 		s := generate(t)
 		if err := s.BeginRotation(kind, now); err != nil {
 			t.Fatal(err)

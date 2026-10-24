@@ -30,7 +30,7 @@ type expectation struct {
 
 // expectations are the trust entries a node of the Kubernetes kind confirms a phase of the
 // rotation of kind by, as the secrets file has them now.
-func expectations(s clustersecrets.Secrets, kind, nodeKind string) ([]expectation, error) {
+func expectations(s clustersecrets.Secrets, kind clustersecrets.RotationKind, nodeKind string) ([]expectation, error) {
 	k := s.Kubernetes
 	controlPlane := nodeKind == kubernetes.KindControlPlane
 	var list []expectation
@@ -95,7 +95,7 @@ func applied(st *nodev1.StatusResponse, want []expectation) error {
 // the encryption key. Control planes take the phase one at a time, each confirming that it runs
 // on its new files with a healthy etcd before the next one restarts; workers follow for the
 // Kubernetes CAs.
-func (r *rotation) applyKubernetes(ctx context.Context, kind, phase string) error {
+func (r *rotation) applyKubernetes(ctx context.Context, kind clustersecrets.RotationKind, phase clustersecrets.Phase) error {
 	workers := r.nodesOf(kubernetes.KindWorker)
 	if phase == clustersecrets.PhaseRefresh {
 		switch kind {
@@ -146,7 +146,7 @@ func (r *rotation) restartAddons(ctx context.Context) error {
 // restarts its static pods on the new files, so the next one waits until the one before runs on
 // them, answers ready, and etcd has every member healthy again: two control planes restarting at
 // once could take etcd's quorum.
-func (r *rotation) controlPlanesInTurn(ctx context.Context, kind string) error {
+func (r *rotation) controlPlanesInTurn(ctx context.Context, kind clustersecrets.RotationKind) error {
 	want, err := expectations(r.file.secrets, kind, kubernetes.KindControlPlane)
 	if err != nil {
 		return err
@@ -310,7 +310,7 @@ func (r *rotation) rewriteEncrypted(ctx context.Context) error {
 // finishGuardKubernetes refuses to remove an old service-account key within the hour after every
 // control plane applied the switch, unless forced, and an old encryption key while etcd holds
 // objects encrypted with it.
-func (r *rotation) finishGuardKubernetes(ctx context.Context, kind string, force bool) error {
+func (r *rotation) finishGuardKubernetes(ctx context.Context, kind clustersecrets.RotationKind, force bool) error {
 	switch kind {
 	case clustersecrets.RotateServiceAccountKey:
 		at := r.file.secrets.Rotation.Switched.Add(tokenRefresh)

@@ -83,9 +83,9 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	case f.force && !f.finish:
 		return cli.Usagef("--force goes with --finish")
 	}
-	kind := pos[0]
+	kind := clustersecrets.RotationKind(pos[0])
 	if !slices.Contains(clustersecrets.RotationKinds, kind) {
-		return cli.Usagef("unknown kind %q; rotate one of %s", kind, strings.Join(clustersecrets.RotationKinds, ", "))
+		return cli.Usagef("unknown kind %q; rotate one of %s", kind, clustersecrets.RotationKindList())
 	}
 	c, err := loadCluster(ctx, cf)
 	if err != nil {
@@ -176,15 +176,15 @@ func (r *rotation) save(change func(s *clustersecrets.Secrets) error) error {
 	return r.a.writeSecretsFile(r.file, s)
 }
 
-func (r *rotation) start(ctx context.Context, kind string) error {
+func (r *rotation) start(ctx context.Context, kind clustersecrets.RotationKind) error {
 	if err := r.save(func(s *clustersecrets.Secrets) error { return s.BeginRotation(kind, r.a.now()) }); err != nil {
 		return err
 	}
-	r.say("%s records the rotation of the %s; %s", r.file.out, clustersecrets.RotationName(kind), r.file.written())
+	r.say("%s records the rotation of the %s; %s", r.file.out, kind.Name(), r.file.written())
 	return r.run(ctx)
 }
 
-func (r *rotation) resume(ctx context.Context, kind string) error {
+func (r *rotation) resume(ctx context.Context, kind clustersecrets.RotationKind) error {
 	if err := r.running(kind); err != nil {
 		return err
 	}
@@ -192,24 +192,24 @@ func (r *rotation) resume(ctx context.Context, kind string) error {
 }
 
 // running checks that the secrets file records a rotation of kind.
-func (r *rotation) running(kind string) error {
+func (r *rotation) running(kind clustersecrets.RotationKind) error {
 	switch rot := r.file.secrets.Rotation; {
 	case rot == nil:
 		return fmt.Errorf("%s records no rotation; start one with chalkctl rotate %s", r.file.path, kind)
 	case rot.Kind != kind:
-		return fmt.Errorf("%s records a rotation of the %s, not of the %s", r.file.path, clustersecrets.RotationName(rot.Kind), clustersecrets.RotationName(kind))
+		return fmt.Errorf("%s records a rotation of the %s, not of the %s", r.file.path, rot.Kind.Name(), kind.Name())
 	}
 	return nil
 }
 
-func (r *rotation) finish(ctx context.Context, kind string, force bool) error {
+func (r *rotation) finish(ctx context.Context, kind clustersecrets.RotationKind, force bool) error {
 	if err := r.running(kind); err != nil {
 		return err
 	}
 	rot := r.file.secrets.Rotation
 	if rot.Phase != clustersecrets.PhaseFinish {
 		if rot.Phase != clustersecrets.PhaseRefresh || !rot.Applied {
-			return fmt.Errorf("the rotation of the %s is in its %s phase; finish it once its refresh phase is applied, after chalkctl rotate %s --resume", clustersecrets.RotationName(kind), rot.Phase, kind)
+			return fmt.Errorf("the rotation of the %s is in its %s phase; finish it once its refresh phase is applied, after chalkctl rotate %s --resume", kind.Name(), rot.Phase, kind)
 		}
 		if err := r.finishGuard(ctx, kind, force); err != nil {
 			return err
@@ -222,7 +222,7 @@ func (r *rotation) finish(ctx context.Context, kind string, force bool) error {
 }
 
 // finishGuard refuses to remove an old value something still needs.
-func (r *rotation) finishGuard(ctx context.Context, kind string, force bool) error {
+func (r *rotation) finishGuard(ctx context.Context, kind clustersecrets.RotationKind, force bool) error {
 	if kind == clustersecrets.RotateOSCA {
 		return nil
 	}
@@ -240,13 +240,13 @@ func (r *rotation) run(ctx context.Context) error {
 		if !rot.Applied {
 			if !first {
 				if err := r.skipRevoked(ctx); err != nil {
-					return fmt.Errorf("the %s phase of the rotation of the %s did not start: %w; continue with chalkctl rotate %s --resume", rot.Phase, clustersecrets.RotationName(rot.Kind), err, rot.Kind)
+					return fmt.Errorf("the %s phase of the rotation of the %s did not start: %w; continue with chalkctl rotate %s --resume", rot.Phase, rot.Kind.Name(), err, rot.Kind)
 				}
 			}
 			first = false
 			r.say("%s: the %s phase", rot.Kind, rot.Phase)
 			if err := r.apply(ctx, rot.Kind, rot.Phase); err != nil {
-				return fmt.Errorf("the %s phase of the rotation of the %s stopped: %w; once that is fixed, continue with chalkctl rotate %s --resume", rot.Phase, clustersecrets.RotationName(rot.Kind), err, rot.Kind)
+				return fmt.Errorf("the %s phase of the rotation of the %s stopped: %w; once that is fixed, continue with chalkctl rotate %s --resume", rot.Phase, rot.Kind.Name(), err, rot.Kind)
 			}
 			if err := r.save(func(s *clustersecrets.Secrets) error { return s.RecordApplied(r.a.now()) }); err != nil {
 				return err
@@ -268,7 +268,7 @@ func (r *rotation) run(ctx context.Context) error {
 			if err := r.save(func(s *clustersecrets.Secrets) error { return s.EndRotation() }); err != nil {
 				return err
 			}
-			r.say("the rotation of the %s is finished: every node trusts the new value alone; %s", clustersecrets.RotationName(rot.Kind), r.file.written())
+			r.say("the rotation of the %s is finished: every node trusts the new value alone; %s", rot.Kind.Name(), r.file.written())
 			// What a client trusts is in its file, which the finish cannot reach.
 			switch rot.Kind {
 			case clustersecrets.RotateOSCA:
@@ -285,7 +285,7 @@ func (r *rotation) run(ctx context.Context) error {
 }
 
 // apply delivers a phase to the nodes and waits until each confirms it.
-func (r *rotation) apply(ctx context.Context, kind, phase string) error {
+func (r *rotation) apply(ctx context.Context, kind clustersecrets.RotationKind, phase clustersecrets.Phase) error {
 	if kind == clustersecrets.RotateOSCA {
 		return r.applyOSCA(ctx, phase)
 	}
@@ -505,7 +505,7 @@ func fingerprintOf(certificate string) (string, error) {
 // applyOSCA runs a phase of the OS CA's rotation: nodes trust both OS CAs, control planes renew
 // node certificates with the new node CA, every node gets a certificate of it, and finally nodes
 // trust the new OS CA alone.
-func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
+func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) error {
 	s := r.file.secrets
 	switch phase {
 	case clustersecrets.PhaseAccept, clustersecrets.PhaseFinish:
@@ -583,7 +583,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 // pausesAfter reports whether the rotation stops after the phase for the operator, besides after
 // the refresh: the OS CA and the Kubernetes CAs after their accept phase, so client files,
 // kubeconfigs and workloads trust the new CA before it issues the servers' certificates.
-func pausesAfter(kind, phase string) bool {
+func pausesAfter(kind clustersecrets.RotationKind, phase clustersecrets.Phase) bool {
 	return phase == clustersecrets.PhaseAccept && (kind == clustersecrets.RotateOSCA || kind == clustersecrets.RotateKubernetesCA)
 }
 

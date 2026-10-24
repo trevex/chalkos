@@ -13,7 +13,7 @@ import (
 
 // rotating returns secrets in the accept phase of a rotation of kind, and, switched, the same
 // rotation after its switch.
-func rotating(t *testing.T, kind string) (accepting, switched *clustersecrets.Secrets) {
+func rotating(t *testing.T, kind clustersecrets.RotationKind) (accepting, switched *clustersecrets.Secrets) {
 	t.Helper()
 	s, err := clustersecrets.Generate(now)
 	if err != nil {
@@ -82,7 +82,7 @@ func TestSharesCarryWhatIsAccepted(t *testing.T) {
 		}
 	}
 
-	for kind := range map[string]bool{clustersecrets.RotateServiceAccountKey: true, clustersecrets.RotateEncryptionKey: true} {
+	for kind := range map[clustersecrets.RotationKind]bool{clustersecrets.RotateServiceAccountKey: true, clustersecrets.RotateEncryptionKey: true} {
 		s, _ := rotating(t, kind)
 		cp, err := ShareFor(s, kubernetes.KindControlPlane, "cp1", now)
 		if err != nil {

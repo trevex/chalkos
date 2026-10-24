@@ -272,7 +272,7 @@ type rotationLab struct {
 	}
 	// failIn makes the failNodes refuse every call while the secrets file records that phase
 	// not yet applied.
-	failIn    string
+	failIn    clustersecrets.Phase
 	failNodes []string
 	// encrypted counts the objects etcd holds by key name.
 	encrypted map[string]uint64
@@ -411,9 +411,9 @@ func (l *rotationLab) phase() string {
 		return ""
 	}
 	if !r.Applied {
-		return r.Phase
+		return string(r.Phase)
 	}
-	return r.Phase + " applied"
+	return string(r.Phase) + " applied"
 }
 
 // TestRotateOSCA runs the OS CA's rotation: every node trusts both OS CAs and the rotation pauses
@@ -553,7 +553,7 @@ func TestRotateResumesAfterAnUnreachableNode(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "w1") || !strings.Contains(err.Error(), "--resume") {
 		t.Fatalf("err = %v, want the phase stopped naming w1 and --resume", err)
 	}
-	if l.phase() != clustersecrets.PhaseAccept {
+	if l.phase() != string(clustersecrets.PhaseAccept) {
 		t.Fatalf("the secrets file records %q, want the accept phase not applied", l.phase())
 	}
 	// The other nodes took the phase.
@@ -609,9 +609,9 @@ func (l *rotationLab) authenticatesWith(config, node string) error {
 // healthy voter: it gets no share while cp1 reports a learner, an unhealthy member or a stale
 // control plane.
 func TestRotateControlPlanesWaitForEachOther(t *testing.T) {
-	for _, kind := range []string{clustersecrets.RotateKubernetesCA, clustersecrets.RotateServiceAccountKey, clustersecrets.RotateEncryptionKey} {
+	for _, kind := range []clustersecrets.RotationKind{clustersecrets.RotateKubernetesCA, clustersecrets.RotateServiceAccountKey, clustersecrets.RotateEncryptionKey} {
 		for _, hold := range []string{"learner", "unhealthy", "stale"} {
-			t.Run(kind+"/"+hold, func(t *testing.T) {
+			t.Run(string(kind)+"/"+hold, func(t *testing.T) {
 				l := newRotationLab(t)
 				var once sync.Once
 				l.onShare = func(node string) {
@@ -619,7 +619,7 @@ func TestRotateControlPlanesWaitForEachOther(t *testing.T) {
 						once.Do(func() { l.holdFor(hold, "cp1", 5) })
 					}
 				}
-				if err := l.rotate(kind); err != nil {
+				if err := l.rotate(string(kind)); err != nil {
 					t.Fatal(err)
 				}
 				events := l.takeEvents()
@@ -645,7 +645,7 @@ func TestRotateTimeoutNamesTheNode(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cp2") || !strings.Contains(err.Error(), "waiting for") || !strings.Contains(err.Error(), "stale") {
 		t.Errorf("err = %v, want the phase stopped naming cp2 and its stale control plane", err)
 	}
-	if l.phase() != clustersecrets.PhaseAccept {
+	if l.phase() != string(clustersecrets.PhaseAccept) {
 		t.Errorf("the secrets file records %q, want the accept phase not applied", l.phase())
 	}
 }
@@ -655,8 +655,8 @@ func TestRotateTimeoutNamesTheNode(t *testing.T) {
 // node answers again.
 func TestRotateResumesEveryPhase(t *testing.T) {
 	for _, kind := range clustersecrets.RotationKinds {
-		for _, phase := range []string{clustersecrets.PhaseAccept, clustersecrets.PhaseSwitch, clustersecrets.PhaseRefresh, clustersecrets.PhaseFinish} {
-			t.Run(kind+"/"+phase, func(t *testing.T) {
+		for _, phase := range []clustersecrets.Phase{clustersecrets.PhaseAccept, clustersecrets.PhaseSwitch, clustersecrets.PhaseRefresh, clustersecrets.PhaseFinish} {
+			t.Run(string(kind)+"/"+string(phase), func(t *testing.T) {
 				l := newRotationLab(t)
 				failing := []string{"cp2"}
 				// The refresh of these kinds runs through whichever control plane answers.
@@ -668,7 +668,7 @@ func TestRotateResumesEveryPhase(t *testing.T) {
 				l.mu.Unlock()
 				// next runs what continues the rotation from where the secrets file is.
 				next := func() error {
-					args := []string{kind, "--timeout", "1s"}
+					args := []string{string(kind), "--timeout", "1s"}
 					switch r := l.secrets().Rotation; {
 					case r == nil:
 					case r.Phase == clustersecrets.PhaseRefresh && r.Applied:
@@ -687,7 +687,7 @@ func TestRotateResumesEveryPhase(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), "--resume") {
 					t.Fatalf("err = %v, want the %s phase stopped naming --resume", err, phase)
 				}
-				if l.phase() != phase {
+				if l.phase() != string(phase) {
 					t.Fatalf("the secrets file records %q, want the %s phase not applied", l.phase(), phase)
 				}
 				l.mu.Lock()

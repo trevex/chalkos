@@ -17,7 +17,7 @@ import (
 )
 
 // beginRotation starts rotating kind in the test cluster's secrets file.
-func (ta *testApp) beginRotation(t *testing.T, kind string) {
+func (ta *testApp) beginRotation(t *testing.T, kind clustersecrets.RotationKind) {
 	t.Helper()
 	if err := ta.secrets.BeginRotation(kind, time.Now()); err != nil {
 		t.Fatal(err)
