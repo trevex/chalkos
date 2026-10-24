@@ -108,7 +108,11 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (sl
 	if err != nil {
 		return slot.Stored{}, err
 	}
-	set, err := compileRules(schemas, !s.Installer)
+	compile := compileRunningRules
+	if s.Installer {
+		compile = compileImageRules
+	}
+	set, err := compile(schemas)
 	if err != nil {
 		return slot.Stored{}, err
 	}

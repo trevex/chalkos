@@ -160,7 +160,7 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 			without.Volumes[n] = vol
 		}
 	}
-	set, err := compileRules(schemas, true)
+	set, err := compileRunningRules(schemas)
 	if err != nil {
 		return err
 	}

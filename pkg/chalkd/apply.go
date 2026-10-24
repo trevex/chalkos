@@ -145,7 +145,7 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 		// The image's rules compare the config with the running slot's and the storage STATE
 		// records, and read the node's facts. A missing or mistyped fallback secret is refused
 		// before the node trusts the delivered OS CAs.
-		set, err := compileRules(r.schemas, true)
+		set, err := compileRunningRules(r.schemas)
 		if err != nil {
 			return nil, err
 		}
