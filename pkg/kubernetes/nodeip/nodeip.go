@@ -33,9 +33,12 @@ type Link struct {
 func (a Address) String() string { return a.IP.String() + " on " + a.Interface }
 
 // kubernetesInterfaces are name prefixes of the interfaces the pod network and kube-proxy
-// create, such as flannel.1 and flannel-v6.1; their addresses are never the node's. The VXLAN
-// rule in nix/vxlan-rule.nix refuses VXLAN arriving on them; keep the two in sync.
+// create, such as flannel.1 and flannel-v6.1; their addresses are never the node's.
 var kubernetesInterfaces = []string{"flannel", "cni", "veth", "kube-"}
+
+// KubernetesInterfaces returns the name prefixes of the interfaces the pod network and
+// kube-proxy create, on which pods could send packets to the node.
+func KubernetesInterfaces() []string { return slices.Clone(kubernetesInterfaces) }
 
 // Filter selects addresses by subnet: an address matches when an included subnet holds it, or
 // no subnet is included, and no excluded subnet holds it.
