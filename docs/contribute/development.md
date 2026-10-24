@@ -7,7 +7,7 @@ description: "The development shell, the repository layout and the commands of a
 
 This page sets up a chalkos checkout for development and lists the commands of a development
 loop: building the tools and images, running the Go tests, regenerating code and pages,
-formatting, and running a lab from the checkout. Everything
+formatting and linting, and running a lab from the checkout. Everything
 runs through Nix, so the only requirements are an x86-64 Linux machine with Nix and flakes
 enabled, and `/dev/kvm` for anything that boots a virtual machine.
 
@@ -23,8 +23,8 @@ nix develop
 
 The shell, defined in `nix/shell.nix`, provides:
 
-- Go, gopls, buf with protoc-gen-go, protoc-gen-connect-go and protoc-gen-doc, openssl, jq,
-  nixfmt and virt-firmware;
+- Go, gopls, staticcheck, buf with protoc-gen-go, protoc-gen-connect-go and protoc-gen-doc,
+  openssl, jq, nixfmt and virt-firmware;
 - the tools the tests run: QEMU, swtpm, mtools, sbsigntool, dosfstools, cryptsetup,
   util-linux, e2fsprogs, vde2, socat and iproute2;
 - the variables the tests read: `CHALKLAB_OVMF_CODE`, `CHALKLAB_OVMF_VARS` and
@@ -144,7 +144,7 @@ nix run .#docgen
 Both write into the working tree, and the results are committed. The `api-generated` and
 `docs-generated` checks fail when they are out of date.
 
-## Format
+## Format and lint
 
 ```sh
 nix fmt
@@ -153,6 +153,18 @@ gofmt -l -w cmd pkg test
 
 `nix fmt` runs nixfmt over the Nix files; `nix fmt -- --ci` checks them without changing
 anything.
+
+Lint the Go code, the end-to-end tests included, with go vet and staticcheck:
+
+```sh
+go vet ./pkg/... ./cmd/... ./test/...
+staticcheck ./pkg/... ./cmd/... ./test/...
+```
+
+staticcheck reads `staticcheck.conf` at the root of the repository, which enables all its checks
+but a few and gives the reason for each one it leaves out. A finding that is wrong for one line
+takes a `//lint:ignore <check> <reason>` comment above that line. The `go-lint` check runs gofmt,
+go vet and staticcheck in the Nix sandbox and fails on any finding.
 
 ## Run a lab from the checkout
 

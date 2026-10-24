@@ -36,6 +36,11 @@ The `go-unit` check runs the same with `-v` in the Nix sandbox and fails when an
 skipped or none ran, because a test skips when a tool or variable it needs is missing; a check
 that passed on skipped tests would prove nothing.
 
+The `go-lint` check fails when gofmt would change a Go file, or when go vet or staticcheck
+reports a finding in `pkg/`, `cmd/` or `test/`. It compiles the end-to-end tests without running
+them, so it also catches their dead code. [Development setup](development.md#format-and-lint)
+shows how to run the same tools in the development shell.
+
 ## Tests in a namespace or on a disk image
 
 Some behaviour depends on the kernel or on real tools, but not on a booted node. These tests
@@ -139,8 +144,9 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 
 | Part changed | Checks |
 | --- | --- |
-| Go code in `pkg/` or `cmd/` | `go-unit`, and the end-to-end checks covering the behaviour |
-| `api/chalkos/node/v1/node.proto` | `api-generated`, `docs-generated`, `go-unit` |
+| Go code in `pkg/` or `cmd/` | `go-unit`, `go-lint`, and the end-to-end checks covering the behaviour |
+| End-to-end tests in `test/e2e` | `go-lint`, and the end-to-end checks of the changed tests |
+| `api/chalkos/node/v1/node.proto` | `api-generated`, `docs-generated`, `go-unit`, `go-lint` |
 | Command help, option descriptions | `docs-generated`, `docs` |
 | Pages in `docs/` | `docs` |
 | Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, and the build and end-to-end checks of what the module does |

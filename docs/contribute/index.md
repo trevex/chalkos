@@ -82,7 +82,8 @@ A change needs:
   description in `modules/`, a comment in `api/chalkos/node/v1/node.proto`, and the hand-written
   pages it affects.
   [Writing documentation](writing-docs.md) explains how.
-- Formatting: `nix fmt` formats the Nix files, and `gofmt` the Go code.
+- Formatting and linting: `nix fmt` formats the Nix files, `gofmt` the Go code, and go vet and
+  staticcheck lint the Go code.
 - The flake checks of what it touches, which [Testing](testing.md#flake-checks) maps to the
   parts of the repository.
 
