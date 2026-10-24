@@ -31,13 +31,13 @@ spec:
   network: {address: [192.168.123.11/24]}
 ```
 
-A node's config is the set of YAML documents that makes it this node: its host name, disks,
-network, time servers and the values of extensions, and on the shipped variant its Kubernetes
-settings. The image is the same on many nodes; the config is what differs. An inventory names the
-cluster's nodes, the address chalkctl reaches each at, the image each runs and the files whose
-documents form each node's config. chalkctl checks the config against the node's image and
-delivers it. chalkd checks it again, keeps it on STATE for the image it is for and applies it at
-every boot of that image.
+A node's config is the set of YAML documents that makes it this node. It gives the host name,
+disks, network, time servers and the values of extensions, and on the shipped variant the
+Kubernetes settings. The image is the same on many nodes, and the config is what differs. An
+inventory names the cluster's nodes and, for each, the address chalkctl reaches it at, the image
+it runs and the files whose documents form its config. chalkctl checks the config against the
+node's image and delivers it. chalkd checks it again, keeps it on STATE for the image it is for
+and applies it at every boot of that image.
 
 ## A config document is an object of one kind
 
@@ -244,7 +244,7 @@ shows an inventory whose GPU workers run an image of their own.
 
 The image stays out of the node's config. chalkctl reads the root hash from `metadata.json` when it
 needs it and never puts it, or the image's name, into the config it delivers. A new build of an
-image or a node's move to another image therefore changes no node's config, and an upgrade needs
+image or a node's move to another image changes no node's config, and an upgrade needs
 no `apply-config` after it.
 
 ## chalkctl and chalkd both check the config
@@ -404,16 +404,11 @@ mounts the new volume, and the next `apply-config` to it must name the volume.
 ## chalkos-config applies the slot at every boot
 
 `chalkos-config.service` applies the running image's slot at every boot, before the network
-starts, and chalkd applies a new set the same way after every `apply-config` to the running image:
-
-- it sets the hostname;
-- it writes each document to `/run/chalkos/config/<group>/<Kind>/<name>.json`, except `Secret`
-  and `Addon` documents;
-- it writes, for each unit granted kinds, the values that the `secretRef` fields of those kinds
-  name into the unit's credentials;
-- it renders the image's outputs, among them the networkd units in `/run/systemd/network` and the
-  time servers for chrony, as [The config pipeline](config-pipeline.md) describes;
-- on images with Kubernetes, it writes the Kubernetes configuration chalkd and the kubelet read.
+starts, as
+[Stage 2 applies the config before the network starts](boot-and-rollback.md#stage-2-applies-the-config-before-the-network-starts)
+describes. chalkd applies a new set the same way after every `apply-config` to the running image,
+through the stages that [The config pipeline](config-pipeline.md) follows. Each document except
+`Secret` and `Addon` documents lands in `/run/chalkos/config/<group>/<Kind>/<name>.json`.
 
 The storage section is machine state: only chalkd writes `storage.json`, when a config that changes
 the storage is delivered, and every boot sets up the volumes it records.

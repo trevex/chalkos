@@ -87,10 +87,12 @@ Stage 2 starts the node's own services in order:
 4. On a boot that systemd-boot counts, `chalkos-health.service` decides whether the boot is
    healthy.
 
-!!! note "On the shipped variant, Kubernetes starts after chalkd"
+!!! note "On the shipped variant, Kubernetes starts once the network is online"
 
-    On an image with Kubernetes, `chalkos-kubernetes.service` waits for the node's addresses and
-    prepares its certificates and configuration. containerd and the kubelet follow.
+    On an image with Kubernetes, `chalkos-kubernetes.service` waits for
+    `chalkos-node-addresses.target`, which follows `network-online.target`, and then prepares the
+    node's certificates and configuration. containerd and the kubelet follow. chalkd does not wait
+    for this preparation, so it answers while the node's addresses settle.
 
 [Boot](../../reference/boot.md#boot-units) lists the units with their commands.
 
@@ -136,9 +138,11 @@ unit. The check repeats every 5 seconds until the node is healthy or
 300 seconds by default.
 
 Every check starts with chalkd. It must complete a TLS handshake with the node's own certificate
-on port 50000, because a node that chalkd cannot serve cannot be managed and must fall back. Then
-the node's config must have been applied, and no unit of the boot may have failed. A unit of the
-boot is one that `multi-user.target` or `sysinit.target` pulls in. Jobs that timers and sockets
+on port 50000, because a node that chalkd cannot serve cannot be managed and must fall back. On a
+node without Kubernetes, and on the shipped variant on a node without a Kubernetes share or a
+control plane not bootstrapped yet, two more criteria follow. The node's config must have been
+applied, and no unit of the boot may have failed. A unit of the boot is one that
+`multi-user.target` or `sysinit.target` pulls in. Jobs that timers and sockets
 start do not count, nor do the units listed in
 [`chalkos.upgrade.healthIgnoreUnits`](../../reference/options.md#chalkosupgradehealthignoreunits).
 

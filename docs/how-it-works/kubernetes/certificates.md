@@ -1,6 +1,6 @@
 ---
 title: "Kubernetes certificates"
-description: "The Kubernetes CAs and keys, the certificates a control plane and the kubelets run on, and how the CAs and keys are rotated"
+description: "The Kubernetes CAs and keys, the certificates a control plane and the kubelets run on, how the CAs and keys are rotated, and how a node is revoked"
 ---
 
 # Kubernetes certificates
@@ -138,12 +138,103 @@ A kubeconfig holds the CA certificates it verifies the API server with, and a ro
 it. Kubeconfigs from before a `kubernetes-ca` rotation stop verifying the API server at the switch
 and are refused at the finish. Kubeconfigs issued after the accept phase carry both CAs and keep
 working through the rotation and after it. They still trust the old CA after the finish, so whoever
-holds the old CA's key could pose as the API server to them. Issue them again once the rotation is
-finished.
+holds the old CA's key could pose as the API server to them, until they are issued again.
 
 Rotating `kubernetes-ca` is also how a leaked kubeconfig is revoked, and it retires every other
 kubeconfig of the old CA. Short `--ttl` values on kubeconfigs limit how long a leak matters.
 [Rotate the Kubernetes CAs and keys](../../kubernetes/rotate-kubernetes-cas.md) gives the steps.
+
+## Revoking a node cuts off its writes and renewals
+
+A revoked node can no longer renew its certificates or change anything in the cluster. A control
+plane lists the revoked nodes in its status:
+
+```text
+revoked nodes:
+  w1  since 2026-10-23T22:42:25Z
+```
+
+[`chalkctl node revoke`](../../reference/cli/chalkctl_node_revoke.md) asks a control plane to add
+the node's name and the time to the ConfigMap `kube-system/chalkos-revoked-nodes`, and to delete
+the node's Node object. The list takes effect in three places:
+
+- A control plane's RenewNodeCertificate refuses a certificate that names a listed node. The
+  node's status shows the refusal on its node certificate:
+  `renewal failing: the control plane at 192.168.100.11:50000: permission_denied: node w1 is revoked since 2026-10-23T22:42:25Z; chalkctl node unrevoke w1 lets it renew again`.
+  The node's certificate has the role `node`, which allows that one method alone, so the node
+  can call nothing else.
+- chalkd's approver leaves the node's kubelet serving certificate requests pending.
+- The ValidatingAdmissionPolicy `chalkos-revoked-nodes` denies every create, update, delete and
+  connect by the user `system:node:<name>` of a listed node, on subresources too. The kubelet can
+  neither register its Node again nor request a new client certificate:
+  `nodes "w1" is forbidden: ValidatingAdmissionPolicy 'chalkos-revoked-nodes' with binding 'chalkos-revoked-nodes' denied request: node w1 is revoked since 2026-10-23T22:42:25Z`.
+
+The policy takes no parameters. chalkd writes the revoked names into the policy's CEL expression
+itself, and the policy fails closed. A control plane writes the policy again from the ConfigMap
+after each revoke and unrevoke. Every control plane also compares the ConfigMap's resource version
+with the one it last applied the policy from, about every 10 seconds, and applies the policy again
+when they differ or its last apply failed. So the policy follows a ConfigMap edited by hand, or a
+revocation whose apply was cancelled, within about 10 seconds. The API server that chalkctl went
+through denies the node's writes within seconds. The other control planes' API servers pick up
+the policy shortly after.
+
+`chalkctl node revoke` first asks every other control plane whether it reads the revoked nodes.
+A control plane whose chalkd predates node revocation renews the node's certificate regardless,
+so the command refuses while one does not answer, cannot read the list, or does not say it read
+it. `--force` revokes the node anyway.
+
+chalkctl reads the list as well. `chalkctl rotate` reads it before each phase and skips the listed
+nodes, so no rotation hands a revoked node a certificate. `chalkctl node renew` and
+`chalkctl apply-config --kubernetes-share` refuse a listed node unless `--force` is given, and
+`chalkctl install` refuses to install a node under a listed name unless `--force` is given. All
+four refuse to run while no control plane says which nodes are revoked. `chalkctl rotate
+--ignore-revoked` rotates without the list, as during an outage of the API server, and every node
+of the inventory then takes part. install counts a control plane that does not answer as an
+installed node as one not installed yet, so a cluster's first nodes install while the others
+wait.
+
+[`chalkctl node unrevoke`](../../reference/cli/chalkctl_node_unrevoke.md) removes the name and
+applies the policy again. A node's old certificates chain to the OS CA, which chalkd trusts with
+every node CA it signed, and to the Kubernetes CA. So the control plane unrevokes the node only
+when every OS CA and Kubernetes CA it trusts was made after the revocation, and refuses otherwise.
+`--force` unrevokes it anyway, and the old certificates work again until they expire. The check
+compares the revocation time, taken from the control plane's clock, with the time chalkctl made
+the CA, taken from the workstation's clock. The two clocks must agree: a workstation clock far
+ahead can make a CA from before the revocation pass the check.
+
+### Revocation leaves reads and the certificates valid
+
+A revocation shuts out a node's writes and renewals. Beside the gaps that
+[A node's access ends with its certificate](../node/security.md#a-nodes-access-ends-with-its-certificate)
+lists for every node, it leaves these:
+
+- The API server's admission sees writes alone. The kubelet can still read what every kubelet
+  may: Services, Endpoints and EndpointSlices, and a few cluster-scoped kinds such as Nodes and
+  RuntimeClasses. The Secrets and ConfigMaps of the pods bound to the node stay readable until the
+  pod garbage collector deletes those pods, shortly after their Node is gone.
+- A control plane's disk holds the Kubernetes CA's key beside the node CA's. Rotating `os-ca` and
+  `kubernetes-ca` cuts off a revoked control plane, or a stolen copy of its disk. A former control
+  plane's etcd and front-proxy certificates stay valid until the `kubernetes-ca` rotation has
+  finished.
+- A renewal already in flight when the revoke lands can still complete, and the node then holds a
+  node certificate valid for a year. The policy still denies its kubelet's writes.
+- A cluster-admin can edit or delete the ConfigMap and the policy with kubectl. Renewals follow
+  the ConfigMap at once, and the policy follows it within about 10 seconds. An edited or deleted
+  policy stays so until the ConfigMap changes or chalkd restarts. Deleting the ConfigMap unrevokes
+  every node. Editing the ConfigMap by hand skips the checks that chalkctl node revoke and
+  chalkctl node unrevoke make.
+- A control plane renews node certificates only while it can read the list from its API server.
+  During a long outage of the API server, renewals stop, the control plane's own included.
+  `chalkctl node renew --force` renews a node's certificate without asking the control planes.
+- A control plane that still runs a chalkd from before node revocation renews a revoked node's
+  node certificate until it is upgraded. The API server denies the node's writes all the same.
+  `chalkctl node revoke` refuses while such a control plane runs, unless `--force` is given.
+- The list has a size limit. The API server compiles no expression longer than 100,000
+  characters, so a control plane refuses a revocation that would make the policy's map longer
+  than 90,000: about 2,000 short names, or about 300 names of the longest length Kubernetes
+  allows. Unrevoking names once the CAs were rotated keeps the list short.
+- Every rotation skips a revoked node left in the inventory, and other commands still reach it
+  until it is removed from the inventory.
 
 ## Limits
 
@@ -161,4 +252,6 @@ kubeconfig of the old CA. Short `--ttl` values on kubeconfigs limit how long a l
 - [Certificates](../../reference/certificates.md) in the reference: every CA and certificate with
   its lifetime.
 - [The control plane](control-plane.md): the static pods that run on these certificates.
+- [Security model](../node/security.md): what a node's certificates grant and how its access ends.
+- [Add and remove nodes](../../operate/add-remove-nodes.md#revoke-a-removed-node): revoking a node.
 - [Rotate the Kubernetes CAs and keys](../../kubernetes/rotate-kubernetes-cas.md).

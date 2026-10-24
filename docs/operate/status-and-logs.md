@@ -244,6 +244,10 @@ kubectl debug node/w1 -it --profile=sysadmin --image=busybox -- \
   chroot /host /run/current-system/sw/bin/bash
 ```
 
+`--profile=sysadmin` makes the pod privileged, which tools such as `nft` need. kubectl's default
+profile leaves the pod without their capabilities. A node has no `/bin/bash`, so the command names
+the bash of the system path.
+
 This needs the node's kubelet and the API server. A node that has not joined the cluster has
 `chalkctl logs` and its console. A variant without Kubernetes brings its own access, which its
 image author adds.

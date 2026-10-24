@@ -194,7 +194,7 @@ An image upgrade or a changed config therefore rolls out changed add-ons without
 An object that an `Addon` document no longer holds is not deleted.
 
 From the moment the API server is ready, chalkd also runs the approver of kubelet serving
-certificates, beside the apply. An object that fails to apply therefore does not leave kubelets
+certificates, beside the apply. An object that fails to apply does not leave kubelets
 without serving certificates.
 
 ## Addon documents stay on the control planes
@@ -204,7 +204,7 @@ every node gets, but chalkctl delivers `Addon` documents only to the nodes whose
 has the type `controlplane`. Workers never hold them. A worker given one anyway applies nothing
 and restarts nothing.
 
-The objects may include Secrets. A control plane therefore keeps its `Addon` documents in its
+The objects may include Secrets. A control plane keeps its `Addon` documents in its
 stored config on STATE, which only root reads. chalkd never writes them below
 `/run/chalkos/config` for the node's services, and `chalkcfg` does not print them.
 
@@ -225,8 +225,8 @@ stateDiagram-v2
     state "left etcd" as Left
     state "etcd data missing" as Missing
     [*] --> NoShare
-    NoShare --> Preparing: install gives a share
-    Preparing --> Failed: no address matched
+    NoShare --> Preparing: share delivered (install or apply-config --kubernetes-share)
+    Preparing --> Failed: a step fails
     Preparing --> Joined: worker
     Preparing --> Waiting: control plane
     Waiting --> Bootstrapped: chalkctl bootstrap

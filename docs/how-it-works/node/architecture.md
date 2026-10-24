@@ -7,10 +7,10 @@ description: "The parts of chalkos, where each one runs, and how chalkd picks it
 
 chalkos builds signed, read-only images with Nix and configures the machines that boot them with
 YAML documents, through one agent on each node. This page names the parts, says where each one
-runs and explains the two modes of the agent. [How a node works](overview.md) follows a node
-through the stages of its life.
-
-The diagram shows how the parts connect.
+runs and explains the two modes of the agent.
+[Three machines take part](overview.md#three-machines-take-part) shows the machines and the trust
+between them. The diagram here shows the parts inside them and what each one drives, chalklab and
+the node's own parts included.
 
 ```mermaid
 flowchart LR
@@ -27,17 +27,8 @@ flowchart LR
     end
 ```
 
-The parts fall into four groups:
-
-- On the operator's machine, a flake calls `chalkos.lib.mkImages`, which Nix evaluates into the
-  images of the cluster's variants, one per platform, and an installer.
-- Also on the operator's machine, chalkctl reads an inventory of the cluster's nodes and their
-  YAML config files and drives the nodes. chalklab runs a whole cluster as local virtual machines.
-- On the machine that holds the Secure Boot db key, the operator's or a build machine,
-  chalkbuild signs a copy of each image directory Nix builds, so the key never enters
-  `/nix/store`.
-- On every node, chalkd serves the node API, installs and upgrades the node and applies its
-  config.
+Nix and chalkbuild run on the build host, chalkctl and chalklab on the operator's workstation, and
+chalkd on every node. The sections below take them in that order.
 
 ## Nix builds the software and the config carries the rest
 
@@ -141,18 +132,11 @@ A machine reaches maintenance mode in one of two ways:
   partitions the image ships with. STATE has no `installed` file, so chalkd starts in maintenance
   mode.
 
-In maintenance mode, chalkd serves a self-signed certificate and prints its SHA-256 fingerprint
-and the node's addresses on the console:
-
-```text
-chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>
-chalkd: addresses <addresses>; certificate fingerprint <fingerprint>
-```
-
-It accepts only reads (node information, disks and logs), a reboot and an install. Whom it
-accepts depends on whether the image carries an OS CA, as
-[A node in maintenance mode is trusted by its fingerprint](security.md#a-node-in-maintenance-mode-is-trusted-by-its-fingerprint)
-explains. [Install a node](../../operate/install.md) covers the install as a task.
+In maintenance mode, chalkd serves a self-signed certificate and accepts only reads (node
+information, disks and logs), a reboot and an install. How chalkctl trusts that certificate by
+the fingerprint on the console, and whom chalkd accepts, is explained in
+[A node in maintenance mode is trusted by its fingerprint](security.md#a-node-in-maintenance-mode-is-trusted-by-its-fingerprint).
+[Install a node](../../operate/install.md) covers the install as a task.
 
 ### Normal mode serves an installed node
 
@@ -174,8 +158,8 @@ explains. [Roles and credentials](../../reference/access.md) lists what each rol
 
 ## Limits
 
-- An image without an OS CA accepts any client in maintenance mode. Build images with mkImages'
-  `osCA` set for machines on a network others can reach.
+- An image without an OS CA accepts any client in maintenance mode, so anyone on the machine's
+  network can install it. mkImages' `osCA` closes that.
 - [How a node works](overview.md#what-chalkos-does-not-do) lists what chalkos leaves to the
   operator, such as enrolling Secure Boot keys.
 

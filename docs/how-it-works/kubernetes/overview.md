@@ -25,7 +25,8 @@ flowchart TB
         pchalkd["chalkd, no Kubernetes"]
     end
     wkubelet -->|registers at the cluster endpoint| pods
-    cpchalkd -->|applies kube-proxy, flannel and CoreDNS| pods
+    addons["Cluster objects: kube-proxy, flannel, CoreDNS"]
+    cpchalkd -->|applies through the API server| addons
 ```
 
 containerd and the kubelet are systemd units of the image. etcd, the API server, the
@@ -43,8 +44,8 @@ Each image runs one Kubernetes version:
 nixpkgs's `kubernetes` by default. Nodes run its kubelet. The control plane runs the upstream
 images of the same version from `registry.k8s.io`, so a node's kubelet and control plane always
 run the same version. etcd, the pause image and CoreDNS have their own images under
-[`chalkos.kubernetes.images`](../../reference/options.md#chalkoskubernetesimagesetcd). A
-Kubernetes upgrade is therefore an image upgrade, which [Kubernetes upgrades](upgrades.md)
+[`chalkos.kubernetes.images`](../../reference/options.md#chalkoskubernetesimagesetcd). So a
+Kubernetes upgrade is an image upgrade, which [Kubernetes upgrades](upgrades.md)
 describes.
 
 ## The type of a node decides what runs
@@ -104,7 +105,7 @@ no Node: the config of a node whose image runs Kubernetes holds one Node documen
 ```
 
 The `Cluster` document names the cluster endpoint, the URL of the API server, which every node
-names alike. Every other field has a default. A cluster on IPv4 with the default ranges therefore
+names alike. Every other field has a default. A cluster on IPv4 with the default ranges
 needs no more than the lab template's document:
 
 ```yaml
@@ -140,7 +141,7 @@ chalkos.yaml: the nodes hold different Flannel specs: spec.mtu is 1400 on cp1 an
 
 A node without the `Flannel` document is named as holding none, as in `none on w1`.
 
-The cluster's documents therefore belong in the files every node gets. What differs from node to
+So the cluster's documents belong in the files every node gets. What differs from node to
 node goes into each node's `Node` document instead, which chalkctl does not compare:
 
 - `type`, `controlplane` or `worker`;
@@ -262,9 +263,9 @@ without a `Registry` that has credentials runs the kubelet without a credential 
 unit fails, the kubelet still starts and pulls without the node's credentials.
 
 The kubelet reads the provider's configuration when it starts, and keeps each answer for 5
-minutes. A change of a `Registry`, or of a password it references, therefore restarts both
-`chalkos-registry-credentials.service` and `kubelet.service`, which empties that cache. Running
-pods keep running.
+minutes. So a change of a `Registry`, or of a password it references, restarts both
+`chalkos-registry-credentials.service` and `kubelet.service`. The restart empties that cache, and
+running pods keep running.
 
 ### A mirror receives the credentials of its registry
 

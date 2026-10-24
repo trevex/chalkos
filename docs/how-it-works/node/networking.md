@@ -61,7 +61,7 @@ its units.
 
 The image brings one unit of its own, NixOS's `99-ethernet-default-dhcp`. It runs DHCP on every
 physical Ethernet interface that no earlier unit matches. A node whose config holds no `Network`
-document therefore still comes up with DHCP, and a node that configures one interface keeps DHCP on
+document still comes up with DHCP, and a node that configures one interface keeps DHCP on
 the others.
 
 ## The firewall drops what it does not accept

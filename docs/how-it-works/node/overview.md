@@ -32,7 +32,7 @@ flowchart LR
         tpm["TPM"]
     end
     chalkbuild -->|signed image| chalkctl
-    chalkctl -->|"image and config, mutual TLS"| chalkd
+    chalkctl -->|"image and config over the node API"| chalkd
     dbkey -.->|db certificate| firmware
     secrets -.->|OS CA| chalkd
     firmware -.->|PCR 7| tpm
@@ -97,15 +97,14 @@ checks every read against it. [The image](image.md) describes what an image hold
 
 ## An install turns a machine in maintenance mode into a node
 
-A machine reaches maintenance mode by booting the installer, a raw image or an ISO that installs
-images of every platform, or by booting a node's image written straight to its disk. chalkd then
-serves a self-signed certificate and prints its fingerprint and the node's addresses on the
-console. `chalkctl install` checks that fingerprint and sends the node its config, its
-certificates and its share of the secrets, and the image the inventory names for it when the
-machine runs the installer.
-chalkd lays out the disk, seals STATE to the TPM and marks the node installed. The node then
-reboots into normal mode. [Architecture](architecture.md) explains the two modes, and
-[Security model](security.md) explains why a node in maintenance mode can be trusted.
+A machine reaches maintenance mode when it boots the installer or a node's image written straight
+to its disk. [Architecture](architecture.md#maintenance-mode-serves-a-node-that-is-not-installed)
+describes both ways and the two modes. `chalkctl install` checks the fingerprint chalkd prints on
+the console, as
+[A node in maintenance mode is trusted by its fingerprint](security.md#a-node-in-maintenance-mode-is-trusted-by-its-fingerprint)
+explains. It sends the node its config, its certificates and its share of the secrets. A machine
+that runs the installer also receives the image the inventory names for it. chalkd lays out the
+disk, seals STATE to the TPM and marks the node installed. The node then reboots into normal mode.
 
 ## The firmware checks the image and the TPM unlocks the disks
 
@@ -134,22 +133,22 @@ storage change that would destroy data.
 
 ## chalkd carries out every operation
 
-A node has no shell, so status, logs, reboots, config, upgrades, etcd membership and rotations
+A node has no login shell. Status, logs, reboots, config, upgrades, etcd membership and rotations
 all go through the node API that chalkd serves on port 50000. Every call carries a client
-certificate, and its role (reader, operator or admin) decides which methods it may call. chalkctl signs itself a short-lived admin
-certificate from the secrets file, or uses a client file that holds a certificate of one role.
-[Security model](security.md) explains the roles, and [Roles and credentials](../../reference/access.md)
-lists who may call what.
+certificate, and its role (reader, operator or admin) decides which methods it may call. chalkctl
+signs itself a short-lived admin certificate from the secrets file, or uses a client file that
+holds a certificate of one role. [Security model](security.md) explains the roles, and
+[Roles and credentials](../../reference/access.md) lists who may call what.
 
 ## An upgrade writes the inactive slot and boots it on trial
 
 A disk holds two slots for the store, A and B. `chalkctl upgrade` streams a new image to the node,
 or has the node pull it from a registry, and sends the node's config with it. chalkd writes the
-image into the inactive slot, checks the config against the new image's schemas and installs the
-image's UKI with a count of boot tries, 3 by default. The node reboots into the new image,
-and a health check decides within 300 seconds by default whether the boot is good. A good boot
-blesses the new image, and the node keeps it from then on. [Upgrades](upgrades.md) explains an
-upgrade from the image to the bless.
+image into the inactive slot and checks the config against the new image's schemas. It then
+installs the image's UKI with a count of boot tries, 3 by default. The node reboots into the new
+image, and a health check decides within 300 seconds by default whether the boot is good. A good
+boot blesses the new image, and the node keeps it from then on. [Upgrades](upgrades.md) explains
+an upgrade from the image to the bless.
 
 ## A node rolls back on its own and recovers at the console
 
@@ -177,7 +176,9 @@ rotation and revocation.
 !!! note "On the shipped variant, chalkctl node revoke shuts out one node"
 
     A revoked node's certificates renew no more, and the API server denies its kubelet every
-    write. [Security model](security.md) lists what revocation leaves open.
+    write.
+    [Revoking a node cuts off its writes and renewals](../kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)
+    lists what revocation leaves open.
 
 ## What chalkos does not do
 
@@ -194,4 +195,5 @@ rotation and revocation.
 - Nothing revokes a single client certificate or kubeconfig. One works until it expires or its CA
   is rotated out, as
   [Access is revoked by rotating its CA](certificates.md#access-is-revoked-by-rotating-its-ca)
-  explains. On the shipped variant, `chalkctl node revoke` revokes a whole node by name.
+  explains. On the shipped variant, `chalkctl node revoke` shuts out a node's writes and renewals
+  by name.

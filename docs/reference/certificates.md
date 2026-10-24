@@ -15,7 +15,7 @@ and backdated by one hour. No two CAs of a secrets file may share a key: the fil
 
 ## CAs and keys
 
-`chalkctl gen secrets` generates each of these once, into the secrets file. The last four exist
+`chalkctl gen secrets` generates each of these once, into the secrets file. The last five exist
 on the shipped variant's Kubernetes.
 
 | CA or key | Lifetime | Issues or does | Held by | Status warns |

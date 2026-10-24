@@ -225,7 +225,7 @@ revoked nodes:
 ```
 
 The revoked node keeps its certificates until they expire, and the API server still answers its
-kubelet's reads. [What revoking a node cuts off](../how-it-works/node/security.md#revoking-a-node-cuts-off-its-writes-and-renewals)
+kubelet's reads. [What revoking a node cuts off](../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)
 lists what the node can still do.
 
 A control plane cannot be cut off this way, because its disk holds the node CA's and the

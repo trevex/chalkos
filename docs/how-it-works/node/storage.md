@@ -195,7 +195,7 @@ wanted, with `nofail`, so a missing disk fails its own units without holding up 
 that is not installed has no storage section on STATE, so `/var` stays on tmpfs until it is.
 
 chalkos refuses to mount VAR when it should be encrypted but holds no LUKS header. It mounts an
-encrypted volume only from its unlocked device. Data meant to be encrypted therefore never lands
+encrypted volume only from its unlocked device, so data meant to be encrypted never lands
 on a plain file system. STATE is exempt from the check, because its encryption mode is recorded on
 STATE itself and cannot be known before it is mounted.
 

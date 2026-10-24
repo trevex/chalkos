@@ -35,10 +35,12 @@ image, installed like any other.
 
 The node receives three parts of the image, in this order:
 
-- the store's data, the compressed erofs file system that the root hash covers, about 250 MiB for
-  an image with Kubernetes;
-- the store's dm-verity hash tree, about 2 MiB;
-- the UKI, about 44 MiB, signed for Secure Boot.
+- the store's data, the compressed erofs file system that the root hash covers;
+- the store's dm-verity hash tree;
+- the UKI, signed for Secure Boot.
+
+[Every build leaves room for the next image](image.md#every-build-leaves-room-for-the-next-image)
+gives the size of each part.
 
 An upgrade never sends a boot loader, and the node refuses one, so systemd-boot stays as it was
 installed. The parts are the ones an install sends, read from the same image, so a node installed
@@ -53,7 +55,9 @@ again continues.
 Without `--image`, each node gets the image the inventory names for it. chalkctl asks every node
 what it runs, refuses a node that runs another platform than that image, and opens each image
 directory once for the nodes that share it. The image in the directory must be the build whose
-root hash its `metadata.json` names, which `chalkctl status` compares the nodes with. The root hash
+root hash its `metadata.json` names, which `chalkctl status` compares the nodes with. A directory
+whose image does not match stays unusable until the image is rebuilt or the directory is linked
+again. The root hash
 stays on the operator's machine, so a new build changes no node's config, and an upgrade needs no
 `chalkctl apply-config` after it.
 
@@ -160,8 +164,9 @@ earlier entry used up its tries, which the retirement then removes.
 The UKI is checked when it arrives, before anything can boot it. Its SHA-256 must match the
 header. Its os-release must name the same image ID and platform as the header and set
 `IMAGE_VERSION` empty. Its `usrhash=` must equal the header's root hash, and its boot tries must be
-a positive number. With Secure Boot enforced, chalkd checks its signature against the firmware's
-db and dbx.
+a positive number. With Secure Boot enforced, chalkd checks its signature as
+[The UKI is checked against db and dbx before anything runs it](image.md#the-uki-is-checked-against-db-and-dbx-before-anything-runs-it)
+describes.
 
 ## chalkd writes the inactive slot in five steps
 
@@ -193,14 +198,14 @@ flowchart TD
    image's root hash. It reads the schemas and `image.json` of the system the UKI boots, and checks
    the config the upgrade carries against them, or without one the running slot's documents. The
    request carries no schemas of its own, so the check always uses those the image will translate
-   the config with. The check is an install's: the set rules, each document's schema and, on an image with Kubernetes,
-   the cluster it gives. chalkd evaluates the image's change rules against the running slot's
-   config, the storage STATE records and the node's facts. It refuses a change they refuse, makes
-   the storage changes they accept, such as a new volume, and writes the image's config slot
-   `/state/config/<root-hash>`. An image that would not accept the config would fail its boot in
-   `chalkos-config`, and boot counting would fall back. When the check refuses, chalkd answers
-   with the reason, removes the UKI and leaves the slot retired. The running image stays the next
-   boot, and the next upgrade reuses or overwrites the slot. A node whose running slot holds no
+   the config with. The check is an install's: the set rules, each document's schema and, on an
+   image with Kubernetes, the cluster it gives. chalkd evaluates the image's change rules against
+   the running slot's config, the storage STATE records and the node's facts. It refuses a change
+   they refuse, makes the storage changes they accept, such as a new volume, and writes the
+   image's config slot `/state/config/<root-hash>`. An image that would not accept the config
+   would fail its boot in `chalkos-config`, and boot counting would fall back. When the check
+   refuses, chalkd answers with the reason, removes the UKI and leaves the slot retired. The
+   running image stays the next boot, and the next upgrade reuses or overwrites the slot. A node whose running slot holds no
    documents and that gets none refuses the upgrade.
 5. Activate. chalkd gives the slot the partition UUIDs derived from the root hash and the labels
    `store_<hash16>` and `store-verity_<hash16>`, from the root hash's first 16 hex characters. It
@@ -259,18 +264,18 @@ chalkd has no notion of older or newer. A downgrade is an upgrade to another roo
 as the next generation, so systemd-boot boots it first like any upgrade. When its tries are used
 up, the node falls back to the image it ran. When the inactive slot still holds the older image,
 as after one upgrade, its store is not written again. Neither chalkctl nor chalkd warns of a
-downgrade. Whether the older image still suits the node's data is for the operator to know.
+downgrade. Whether the older image still suits the node's data, such as etcd's or a workload's,
+is for the operator to know.
 
 ## Secure Boot decides which images a node trusts
 
-chalkd checks that an image is of its platform, that the node's config suits it, and that it boots
-the store it carries. It cannot tell an image to trust from another, and Secure Boot does that:
-with Secure Boot enforced, the node refuses a UKI that the firmware's db does not accept.
+chalkd checks an image's platform, the node's config and the store the UKI boots. Secure Boot
+decides whose images a node runs, as
 [Secure Boot limits a node to images the key holder signed](security.md#secure-boot-limits-a-node-to-images-the-key-holder-signed)
-explains what an operator can install without it.
+explains, together with what an operator can install without it.
 
 An image a node pulls from a registry passes the same checks as a streamed one, against the
-digests and root hash chalkctl read. The registry therefore needs no more trust than a directory
+digests and root hash chalkctl read. The registry needs no more trust than a directory
 an image is streamed from.
 
 After a rotation of the OS CA, images rebuilt from the new `secrets.pub.json` and rolled out with
@@ -279,8 +284,8 @@ again later.
 
 ## Limits
 
-- Every node receives the whole compressed store, about 300 MiB with the hash tree and UKI. There
-  are no delta updates, and nodes do not share a download.
+- Every node receives the whole compressed store with its hash tree and UKI. There are no delta
+  updates, and nodes do not share a download.
 - An image reaches a node only when chalkctl starts an install or an upgrade: streamed from a
   directory, or pulled from a registry.
 - An upgrade never updates systemd-boot.

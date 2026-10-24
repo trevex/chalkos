@@ -483,7 +483,7 @@ A node shut out of the cluster by name with [`chalkctl node revoke`](cli/chalkct
 Control planes list it in the ConfigMap `kube-system/chalkos-revoked-nodes` and refuse to renew
 its node certificate, and the API server denies every write by its kubelet. Its certificates stay valid
 until they expire. [`chalkctl node unrevoke`](cli/chalkctl_node_unrevoke.md) lets the name back in. See
-[Security model](../how-it-works/node/security.md#revoking-a-node-cuts-off-its-writes-and-renewals).
+[Kubernetes certificates](../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals).
 
 ## Rollback { #rollback }
 

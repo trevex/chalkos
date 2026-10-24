@@ -262,8 +262,8 @@ and [Publish images to a registry](../../build/publish-images.md) cover the buil
 
 ## Limits
 
-- An upgrade sends the whole compressed store, about 250 MiB for an image with Kubernetes, to
-  every node. There are no delta updates.
+- An upgrade sends the whole compressed store, its hash tree and the UKI to every node. There are
+  no delta updates.
 - An upgrade never replaces systemd-boot. A node keeps the boot loader it was installed with.
 - Slot sizes are fixed at install. A store that outgrows the slots of installed nodes cannot be
   installed on them.

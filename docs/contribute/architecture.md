@@ -10,7 +10,7 @@ cluster's YAML and install and operate the nodes. This page maps both to the rep
 where they meet. [Architecture](../how-it-works/node/architecture.md) explains the system as a user sees it;
 this page is for changing it.
 
-## Where do Nix and Go meet?
+## Nix and Go meet at the image and the node's config
 
 Go code never evaluates Nix itself. Nix builds images; everything about a cluster or a node is
 YAML that Go reads. They meet in these places:

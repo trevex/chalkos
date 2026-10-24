@@ -150,7 +150,7 @@ the OS CA signed.
 A revoked name stays blocked until `chalkctl node unrevoke` lets it back in. Reusing the name
 takes both rotations first.
 [Add and remove nodes](add-remove-nodes.md#revoke-a-removed-node) shows both commands, and
-[Security model](../how-it-works/node/security.md#revoking-a-node-cuts-off-its-writes-and-renewals)
+[Kubernetes certificates](../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)
 lists what a revoked node can still do.
 
 ## A rotation runs in four phases with pauses

@@ -5,8 +5,11 @@ description: "The OS CA, the node CA and the certificates of the node API, how t
 
 # Certificates
 
-`chalkctl status` lists the certificates a node holds and the CAs it trusts. A node without
-Kubernetes whose node certificate is due for renewal shows:
+`chalkctl status` lists the certificates a node holds and the CAs it trusts. For a node without
+Kubernetes whose node certificate is due for renewal, it prints lines such as these. `<date>` is
+an expiry date, `<fingerprint>` the first 16 hex digits of the CA certificate's SHA-256
+fingerprint, `<server>` the time server the clock follows and `<offset>` the clock's offset from
+it in seconds.
 
 ```text
 certificates:
@@ -165,8 +168,8 @@ media carry the OS CA too, so after an `os-ca` rotation they are built again fro
 `secrets.pub.json`. Older ones fail to install.
 
 Files issued during a rotation still trust the old OS CA when they verify the nodes after the
-finish, so whoever holds the old CA's key could pose as a node to them. Issue them again once the
-rotation is finished.
+finish, so whoever holds the old CA's key could pose as a node to them until they are issued
+again.
 
 ## Access is revoked by rotating its CA
 
@@ -183,7 +186,7 @@ an `os-ca` rotation retires the certificates of the old node CA.
     A node is revoked by name with `chalkctl node revoke`. Its certificates then renew no more, and
     the API server denies its kubelet every write. The certificates themselves stay valid until
     they expire.
-    [Revoking a node cuts off its writes and renewals](security.md#revoking-a-node-cuts-off-its-writes-and-renewals)
+    [Revoking a node cuts off its writes and renewals](../kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)
     explains what that covers.
 
 ## Limits

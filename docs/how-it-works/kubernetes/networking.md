@@ -177,9 +177,10 @@ spec:
 chalkd on every bootstrapped control plane takes part in an election held in etcd under
 `/chalkos/vip`. When it starts, it removes any VIP a chalkd before it left behind. It campaigns only
 while its local API server answers `/readyz`. The winner adds every VIP to an interface as a /32 or
-/128 host address and announces it with gratuitous ARP and unsolicited neighbour advertisements,
-so switches and neighbours send its traffic to the new holder at once. It adds and announces the
-addresses again every 2 seconds while it holds them.
+/128 host address. It announces each address it adds 3 times, 1 second apart, with gratuitous
+ARP and unsolicited neighbour advertisements, so switches and neighbours send its traffic to the
+new holder at once. While it holds the VIPs, it checks every 2 seconds and adds back an address
+that has gone missing, which it then announces again.
 
 The interface is the one `vip.interface` of the node's `Node` document names, or else the one
 holding the node's address of that family. The interface is the node's own, so it goes into the
