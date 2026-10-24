@@ -14,9 +14,9 @@ import (
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
-	"github.com/trevex/chalkos/pkg/storage"
 )
 
 // applyRequest is an ApplyConfig request once its config is translated: the identity the node
@@ -65,33 +65,68 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 
 // apply delivers an ApplyConfig request whose config is translated; the caller holds s.mu.
 func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+	d, err := s.planDelivery(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	defer d.staged.Discard()
+	return d.commit(ctx)
+}
+
+// delivery is an ApplyConfig request that passed every check made before the node changes.
+type delivery struct {
+	s   *Server
+	msg *nodev1.ApplyConfigRequest
+	// keep is set for a request without config: the node keeps its identity and documents.
+	keep bool
+	// dir is the running image's config slot, and stored the config written to it; unset with keep.
+	dir    string
+	stored slot.Stored
+	// identity is the identity the node runs once the delivery is applied.
+	identity delivered
+	// osCA is the OS CAs the node trusts once the delivery is applied.
+	osCA string
+	// cluster is the cluster the config gives; nil with keep or on an image without Kubernetes.
+	cluster *k8s.Cluster
+	// share is the delivered share in its canonical encoding; nil when none was delivered.
+	share []byte
+	// machine is what the config adds to the machine's storage; empty with keep.
+	machine machineChange
+	fx      *pendingEffects
+	staged  *outputs.Staged
+}
+
+// planDelivery checks an ApplyConfig request against the node before anything changes, so a
+// refused request changes nothing. The caller discards the staged outputs of the delivery.
+func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, error) {
 	m := r.msg
 	// Without config the node keeps its own, which the share is checked against.
-	keep := r.identity == ""
-	if keep && len(m.KubernetesShare) == 0 && len(m.NodeCertificate) == 0 && len(m.Trust) == 0 {
+	d := &delivery{s: s, msg: m, keep: r.identity == ""}
+	if d.keep && len(m.KubernetesShare) == 0 && len(m.NodeCertificate) == 0 && len(m.Trust) == 0 {
 		return nil, failed(connect.CodeInvalidArgument, "the request delivers no config, share, node certificate or OS CAs")
 	}
 	// A node certificate is checked against the OS CAs the node trusts when it arrives.
 	if len(m.Trust) > 0 && len(m.NodeCertificate) > 0 {
 		return nil, failed(connect.CodeInvalidArgument, "deliver the OS CAs and a node certificate one after the other")
 	}
-	osCA, err := s.trustFor(ctx, m.Trust)
-	if err != nil {
+	var err error
+	if d.osCA, err = s.trustFor(ctx, m.Trust); err != nil {
 		return nil, err
 	}
 	dir, prev, found, err := s.runningSlot()
 	if err != nil {
 		return nil, err
 	}
-	identity := r.identity
-	if keep {
+	data := r.identity
+	if d.keep {
 		if !found {
 			return nil, failed(connect.CodeFailedPrecondition, "STATE holds no config for the running image, so the node has no identity to keep; deliver config with chalkctl apply-config")
 		}
-		identity = string(prev.Identity)
+		data = string(prev.Identity)
+	} else {
+		d.dir, d.stored = dir, r.next
 	}
-	d, err := parseIdentity(identity)
-	if err != nil {
+	if d.identity, err = parseIdentity(data); err != nil {
 		return nil, err
 	}
 	// The rules, the effects and the renderers see the node by the name its node certificate gives.
@@ -99,145 +134,144 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err != nil {
 		return nil, err
 	}
-	// The cluster the config gives, checked before anything changes; nil on an image without
-	// Kubernetes or without new config.
-	var cluster *k8s.Cluster
 	// The delivery's facts, loaded once for the running slot's check and the staged slot's.
-	var delivered *facts.Loader
-	if !keep {
+	var loaded *facts.Loader
+	if !d.keep {
 		if s.Kubernetes != nil {
-			if cluster, err = s.Loader.Cluster(r.next.Documents); err != nil {
+			if d.cluster, err = s.Loader.Cluster(r.next.Documents); err != nil {
 				return nil, failed(connect.CodeInvalidArgument, "the config: %v", err)
 			}
 		}
 		// The image's rules compare the config with the running slot's and the storage STATE
-		// records, and read the node's facts, which the delivery loads once for this check and the
-		// staged slot's, before anything changes: a missing or mistyped fallback secret is refused
+		// records, and read the node's facts. A missing or mistyped fallback secret is refused
 		// before the node trusts the delivered OS CAs.
 		set, err := compileRules(r.schemas, true)
 		if err != nil {
 			return nil, err
 		}
-		if delivered, err = s.factsFor(ctx, r.next.Documents, prev.Documents, m.FallbackSecret); err != nil {
+		if loaded, err = s.factsFor(ctx, r.next.Documents, prev.Documents, m.FallbackSecret); err != nil {
 			return nil, err
 		}
-		if err := s.checkRules(set, name, r.next.Documents, prev.Documents, delivered); err != nil {
-			return nil, s.elsewhere(err, d.section, nil)
+		if err := s.checkRules(set, name, r.next.Documents, prev.Documents, loaded); err != nil {
+			return nil, s.elsewhere(err, d.identity.section, nil)
 		}
 	}
-	share, err := s.kubernetesShare(d, m.KubernetesShare, osCA, cluster)
-	if err != nil {
+	if d.share, err = s.kubernetesShare(d.identity, m.KubernetesShare, d.osCA, d.cluster); err != nil {
 		return nil, err
 	}
 	if err := s.checkNodeCertificate(m.NodeCertificate, m.NodeKey); err != nil {
 		return nil, err
 	}
-	// The changes the config makes to the machine's storage, which the staged image boots onto
-	// too, are checked against that image's config before the node trusts new OS CAs or changes
-	// anything else, so a refused request changes nothing.
-	var mc machineChange
-	if !keep {
-		if mc, err = s.machineChanges(d.section); err != nil {
+	// The staged image boots onto the machine's storage too, so the config's changes to it are
+	// checked against that image's config as well.
+	if !d.keep {
+		if d.machine, err = s.machineChanges(d.identity.section); err != nil {
 			return nil, err
 		}
-		if len(mc.changes) > 0 {
-			if err := s.checkStaged(r.schemas, name, r.next.Documents, d.section, delivered); err != nil {
+		if len(d.machine.changes) > 0 {
+			if err := s.checkStaged(r.schemas, name, r.next.Documents, d.identity.section, loaded); err != nil {
 				return nil, err
 			}
 		}
 	}
-	// The effects compare the delivery with the running slot, the facts as they are once it is
-	// applied with the facts as they were, which load before anything changes, and the outputs
-	// rendered from it with those the node serves.
+	// The effects compare the delivery with the running slot, the facts once it is applied with
+	// the facts loaded now, and the outputs rendered from it with those the node serves.
 	next := prev.Documents
-	if !keep {
+	if !d.keep {
 		next = r.next.Documents
 	}
-	fx, err := s.effectsOf(ctx, name, next, prev.Documents, r.schemas, m.FallbackSecret)
-	if err != nil {
+	if d.fx, err = s.effectsOf(ctx, name, next, prev.Documents, r.schemas, m.FallbackSecret); err != nil {
 		return nil, err
 	}
-	// Every output renders from the delivered documents and passes its check before anything
-	// changes, so a delivery a service would reject is refused whole. A delivery without config
-	// changes no document, so an output that fails does not refuse it.
-	staged, err := s.renderOutputs(ctx, name, next, r.schemas, !keep)
-	if err != nil {
-		s.refused(fx)
+	// Every output renders from the delivered documents and passes its check, so a delivery a
+	// service would reject is refused whole. A delivery without config changes no document, so an
+	// output that fails does not refuse it.
+	if d.staged, err = s.renderOutputs(ctx, name, next, r.schemas, !d.keep); err != nil {
+		s.refused(d.fx)
 		return nil, err
 	}
-	defer staged.Discard()
+	return d, nil
+}
+
+// commit applies a planned delivery. The changes come in this order:
+//  1. the OS CAs, the last check first: a control plane's node CA must chain to them;
+//  2. the machine's storage, the identity and the cluster file;
+//  3. the node certificate and the share;
+//  4. the running slot, last;
+//  5. the effects.
+//
+// Until the slot is written, STATE holds the identity and the documents the node ran before, which
+// a boot applies whole. A retry applies the identity and the granted units' config again, and its
+// effects compare with the baseline effectsOf recorded, so it restarts what they ask for whatever
+// the failed attempt wrote. storage.json is the machine's rather than an image's: applyStorage
+// records the section once its additive changes are made, so a retry makes none twice.
+func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+	s, m := d.s, d.msg
 	if len(m.Trust) > 0 {
-		if share == nil {
+		if d.share == nil {
 			// A control plane keeps renewing node certificates with the node CA it holds.
-			if err := s.checkKeptNodeCA(osCA); err != nil {
-				s.refused(fx)
+			if err := s.checkKeptNodeCA(d.osCA); err != nil {
+				s.refused(d.fx)
 				return nil, err
 			}
 		}
-		if err := s.Certificate.ReplaceTrust(osCA, peerOf(ctx)...); err != nil {
+		if err := s.Certificate.ReplaceTrust(d.osCA, peerOf(ctx)...); err != nil {
 			if isRefusedTrust(err) {
-				s.refused(fx)
+				s.refused(d.fx)
 				return nil, failed(connect.CodeInvalidArgument, "%v", err)
 			}
 			return nil, failed(connect.CodeInternal, "%v", err)
 		}
-		log.Printf("trusting %s from now on", count(strings.Count(osCA, "-----BEGIN CERTIFICATE-----"), "OS CA"))
+		log.Printf("trusting %s from now on", count(strings.Count(d.osCA, "-----BEGIN CERTIFICATE-----"), "OS CA"))
 	}
-	var changes []storage.Change
-	if !keep {
-		changes = mc.changes
-		if err := s.applyMachine(ctx, mc, m.FallbackSecret); err != nil {
+	if !d.keep {
+		if err := s.applyMachine(ctx, d.machine, m.FallbackSecret); err != nil {
 			return nil, err
 		}
-		if err := s.applyIdentity(d.data); err != nil {
-			return nil, err
+		// networkd and chrony read the identity's units and time servers again as their effects say.
+		if err := s.Loader.Apply(d.identity.data); err != nil {
+			return nil, failed(connect.CodeInternal, "apply the identity: %v", err)
 		}
-		if cluster != nil {
-			if err := s.Loader.WriteCluster(cluster); err != nil {
-				s.failedPartWay(ctx, fx, m.FallbackSecret)
+		if d.cluster != nil {
+			if err := s.Loader.WriteCluster(d.cluster); err != nil {
+				s.failedPartWay(ctx, d.fx, m.FallbackSecret)
 				return nil, failed(connect.CodeInternal, "write the Kubernetes cluster: %v", err)
 			}
 		}
 	}
 	if len(m.NodeCertificate) > 0 {
 		if err := s.Certificate.Replace(string(m.NodeCertificate), string(m.NodeKey), time.Now()); err != nil {
-			s.failedPartWay(ctx, fx, m.FallbackSecret)
+			s.failedPartWay(ctx, d.fx, m.FallbackSecret)
 			return nil, failed(connect.CodeInvalidArgument, "%v", err)
 		}
 		log.Printf("serving a delivered node certificate; it expires %s", s.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339))
 	}
-	if share != nil {
-		if err := install.WriteShare(s.Paths.StateDir, share); err != nil {
-			s.failedPartWay(ctx, fx, m.FallbackSecret)
+	if d.share != nil {
+		if err := install.WriteShare(s.Paths.StateDir, d.share); err != nil {
+			s.failedPartWay(ctx, d.fx, m.FallbackSecret)
 			return nil, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
 		}
 	}
-	// The slot comes last, documents and identity in one rename: until it is written, STATE holds
-	// the identity and the set the node ran before, which a boot applies whole, and a retry applies
-	// the identity and the granted units' config again. Until a delivery is applied whole, its
-	// effects compare with the baseline effectsOf recorded, so a retry restarts what they
-	// ask for whatever the failed attempt wrote. storage.json, written before, is the machine's
-	// rather than an image's: applyStorage records the section once its additive changes are made,
-	// so a retry finds them recorded and makes none twice.
-	if !keep {
-		r.next.Identity = d.data
-		if err := slot.Write(dir, r.next); err != nil {
-			s.failedPartWay(ctx, fx, m.FallbackSecret)
+	// The documents and the identity are written in one rename.
+	if !d.keep {
+		d.stored.Identity = d.identity.data
+		if err := slot.Write(d.dir, d.stored); err != nil {
+			s.failedPartWay(ctx, d.fx, m.FallbackSecret)
 			return nil, failed(connect.CodeInternal, "store the config: %v", err)
 		}
 	}
-	restarted, warnings, err := s.consume(ctx, fx, staged, !keep, m.FallbackSecret)
+	restarted, warnings, err := s.consume(ctx, d.fx, d.staged, !d.keep, m.FallbackSecret)
 	if err != nil {
 		return nil, err
 	}
-	// Deliveries without config, as a rotation's, renew nothing: forced renewals would
-	// restart the control plane's pods on top of the restarts the rotation waits for. They come
-	// after the loops started again, which would end a renewal under way.
-	if s.RenewOnApplyConfig && !keep {
+	// A delivery without config, as a rotation's, renews nothing: forced renewals would restart the
+	// control plane's pods on top of the restarts the rotation waits for. Renewals come after the
+	// loops started again, which would end a renewal under way.
+	if s.RenewOnApplyConfig && !d.keep {
 		s.forceRenewals()
 	}
 	resp := &nodev1.ApplyConfigResponse{RestartedUnits: restarted, Warnings: warnings}
-	for _, c := range changes {
+	for _, c := range d.machine.changes {
 		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
 	}
 	return connect.NewResponse(resp), nil
@@ -259,16 +293,6 @@ func (s *Server) forceRenewals() {
 			leaves.Force()
 		}
 	}
-}
-
-// applyIdentity applies the identity data: the networkd units and the time servers it gives,
-// which networkd and chrony read again as their effects say. The running slot records
-// it, with the config it came from, once the delivery is applied.
-func (s *Server) applyIdentity(data []byte) error {
-	if err := s.Loader.Apply(data); err != nil {
-		return failed(connect.CodeInternal, "apply the identity: %v", err)
-	}
-	return nil
 }
 
 // kubernetesShare validates a delivered share for the node the identity names, a node CA in it
