@@ -86,69 +86,80 @@ const (
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
 type NodeServiceClient interface {
-	// Info describes the node and the agent. Available in both modes to readers.
+	// Info describes the node and the agent. Available in maintenance and normal mode to readers.
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
-	// Disks lists the node's disks and their partitions. Available in both modes to readers.
+	// Disks lists the node's disks and their partitions. Available in maintenance and normal mode to
+	// readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
 	// Contract returns the config contract of the image the node runs: the variant and platform it
 	// was built for, the schemas of the config kinds it accepts and its image.json, which chalkctl
 	// checks config against before it delivers it. The installer refuses it: config is for the
-	// image it installs, whose contract comes with that image. Available in both modes to readers.
+	// image it installs, whose contract comes with that image. Available in maintenance and normal
+	// mode to readers.
 	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
 	// tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
 	// registry, which the installer pulls. An install the installer did not finish continues when
-	// run again, from either.
+	// run again, from either. Available in maintenance mode to admins.
 	Install(context.Context) *connect.ClientStreamForClient[v1.InstallRequest, v1.InstallResponse]
 	// ApplyConfig replaces the config of an installed node, or delivers it a Kubernetes share, a
 	// node certificate or OS CAs. Destructive storage changes are refused; additive ones are
-	// applied live.
+	// applied live. Available in normal mode to admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
-	// The config a slot keeps, the running image's or the staged image's, as it was delivered,
-	// with secret values replaced by their hashes. Allowed for the role ApplyConfig needs.
+	// GetConfig returns the config a slot keeps, the running image's or the staged image's, as it
+	// was delivered, with secret values replaced by their hashes. Available in normal mode to
+	// admins.
 	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error)
-	// ResetVolume wipes one volume and creates it again as the delivered config defines it.
+	// ResetVolume wipes one volume and creates it again as the delivered config defines it. It
+	// refuses VAR, a volume the config no longer has and a volume the config moves to another
+	// disk. Available in normal mode to admins.
 	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
-	// Status reports the config version, the storage, and failed units of an installed node.
+	// Status reports the state of an installed node: its config versions, storage, failed units,
+	// certificates, trust, clock, boot, outputs and Kubernetes. Available in normal mode to readers.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
-	// Logs streams the journal of the current boot, or of one unit in it.
+	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
+	// and normal mode to readers.
 	Logs(context.Context, *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogsResponse], error)
-	// Reboot reboots the node once the response is sent.
+	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
+	// to operators.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
 	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
 	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
-	// is bootstrapped or holds etcd data, so no second cluster is ever initialised.
+	// is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
+	// normal mode to admins.
 	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
-	// EtcdMembers lists etcd's members as the node's own member sees them, with their health.
-	// Available on control-plane nodes that are etcd members.
+	// EtcdMembers lists etcd's members as the node's own member sees them, with their health. It
+	// answers on control-plane nodes that are etcd members. Available in normal mode to readers.
 	EtcdMembers(context.Context, *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error)
 	// EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
-	// have fewer healthy members than their quorum, unless forced.
+	// have fewer healthy members than their quorum, unless forced, and for the node's own member,
+	// which EtcdLeave removes. Available in normal mode to admins.
 	EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error)
 	// EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
 	// still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
 	// unpins its addresses. The node joins the cluster again only once it is reinstalled. A
-	// bootstrapped node whose own member does not answer leaves only when forced.
+	// bootstrapped node whose own member does not answer leaves only when forced. Available in
+	// normal mode to admins.
 	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
 	// RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
-	// the names of the node certificate it authenticated with. Available on control-plane nodes, to
-	// nodes only.
+	// the names of the node certificate it authenticated with. It answers on control-plane nodes
+	// and refuses a revoked node. Available in normal mode to nodes.
 	RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error)
 	// RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
-	// out; chalkctl rotate calls it. Available to admins.
+	// out; chalkctl rotate calls it. Available in normal mode to admins.
 	RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error)
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 	// The first message carries the header; the store, its hash tree and the UKI follow as chunks,
-	// unless the header's source names an image in a registry, which the node pulls. Available to
-	// operators, but delivering config or a fallback secret with the upgrade needs the admin role,
-	// as ApplyConfig does; without them the node carries the running image's config over. The node
-	// checks that the image is of its platform, and, once the store is written and before the
-	// image becomes the next boot, that the schemas in the image accept the config it keeps for the
-	// image. It does not check that the image is one to trust: without Secure Boot, an operator can
-	// run any image as root, with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone.
-	// Secure Boot is what limits upgrades to images signed for db.
+	// unless the header's source names an image in a registry, which the node pulls. Available in
+	// normal mode to operators. Delivering config or a fallback secret with the upgrade needs the
+	// admin role, as ApplyConfig does; without them the node carries the running image's config
+	// over. The node checks that the image is of its platform, and, once the store is written and
+	// before the image becomes the next boot, that the schemas in the image accept the config it
+	// keeps for the image. It does not check that the image is one to trust: without Secure Boot,
+	// an operator can run any image as root, with STATE and VAR unsealed, as their keys are sealed
+	// to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
 	Upgrade(context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse]
 	// DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
 	// eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
@@ -156,14 +167,15 @@ type NodeServiceClient interface {
 	// emptyDir volumes are evicted only when the request accepts losing that data. Pods that
 	// terminate already, as those an earlier drain evicted, are not evicted again, but the call
 	// returns only once they and the pods it evicted have stopped. A node that was cordoned already
-	// stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon.
-	// Available on bootstrapped control-plane nodes, to operators. An eviction refused for good, or
-	// one a PodDisruptionBudget holds back until the timeout, fails the call with
-	// FAILED_PRECONDITION; pods that did not stop in time, or whose evictions the API server kept
-	// failing, with DEADLINE_EXCEEDED.
+	// stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. It
+	// answers on bootstrapped control-plane nodes. Available in normal mode to operators. An
+	// eviction refused for good, or one a PodDisruptionBudget holds back until the timeout, fails
+	// the call with FAILED_PRECONDITION; pods that did not stop in time, or whose evictions the API
+	// server kept failing, with DEADLINE_EXCEEDED.
 	DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error)
 	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
-	// a node cordoned otherwise as it is.
+	// a node cordoned otherwise as it is. It answers on bootstrapped control-plane nodes. Available
+	// in normal mode to operators.
 	UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error)
 	// RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
 	// kube-system/chalkos-revoked-nodes, applies the API server's admission policy
@@ -171,15 +183,15 @@ type NodeServiceClient interface {
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
 	// time of its first revocation. A call that fails after listing the node says so; calling again
 	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-	// map of revoked nodes would grow too long for the API server to compile with it. Available on
-	// bootstrapped control-plane nodes, to admins.
+	// map of revoked nodes would grow too long for the API server to compile with it. It answers on
+	// bootstrapped control-plane nodes. Available in normal mode to admins.
 	RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error)
 	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
 	// it, so a node of that name may join again. The old node's certificates work again too, unless
 	// the CAs they chain to were rotated after the revocation: the call is refused with
 	// FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
-	// that fails after removing the node says so; calling again applies the policy. Available on
-	// bootstrapped control-plane nodes, to admins.
+	// that fails after removing the node says so; calling again applies the policy. It answers on
+	// bootstrapped control-plane nodes. Available in normal mode to admins.
 	UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error)
 }
 
@@ -455,69 +467,80 @@ func (c *nodeServiceClient) UnrevokeNode(ctx context.Context, req *connect.Reque
 
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
-	// Info describes the node and the agent. Available in both modes to readers.
+	// Info describes the node and the agent. Available in maintenance and normal mode to readers.
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
-	// Disks lists the node's disks and their partitions. Available in both modes to readers.
+	// Disks lists the node's disks and their partitions. Available in maintenance and normal mode to
+	// readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
 	// Contract returns the config contract of the image the node runs: the variant and platform it
 	// was built for, the schemas of the config kinds it accepts and its image.json, which chalkctl
 	// checks config against before it delivers it. The installer refuses it: config is for the
-	// image it installs, whose contract comes with that image. Available in both modes to readers.
+	// image it installs, whose contract comes with that image. Available in maintenance and normal
+	// mode to readers.
 	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
 	// tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
 	// registry, which the installer pulls. An install the installer did not finish continues when
-	// run again, from either.
+	// run again, from either. Available in maintenance mode to admins.
 	Install(context.Context, *connect.ClientStream[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
 	// ApplyConfig replaces the config of an installed node, or delivers it a Kubernetes share, a
 	// node certificate or OS CAs. Destructive storage changes are refused; additive ones are
-	// applied live.
+	// applied live. Available in normal mode to admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
-	// The config a slot keeps, the running image's or the staged image's, as it was delivered,
-	// with secret values replaced by their hashes. Allowed for the role ApplyConfig needs.
+	// GetConfig returns the config a slot keeps, the running image's or the staged image's, as it
+	// was delivered, with secret values replaced by their hashes. Available in normal mode to
+	// admins.
 	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error)
-	// ResetVolume wipes one volume and creates it again as the delivered config defines it.
+	// ResetVolume wipes one volume and creates it again as the delivered config defines it. It
+	// refuses VAR, a volume the config no longer has and a volume the config moves to another
+	// disk. Available in normal mode to admins.
 	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
-	// Status reports the config version, the storage, and failed units of an installed node.
+	// Status reports the state of an installed node: its config versions, storage, failed units,
+	// certificates, trust, clock, boot, outputs and Kubernetes. Available in normal mode to readers.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
-	// Logs streams the journal of the current boot, or of one unit in it.
+	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
+	// and normal mode to readers.
 	Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogsResponse]) error
-	// Reboot reboots the node once the response is sent.
+	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
+	// to operators.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
 	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
 	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
-	// is bootstrapped or holds etcd data, so no second cluster is ever initialised.
+	// is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
+	// normal mode to admins.
 	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
-	// EtcdMembers lists etcd's members as the node's own member sees them, with their health.
-	// Available on control-plane nodes that are etcd members.
+	// EtcdMembers lists etcd's members as the node's own member sees them, with their health. It
+	// answers on control-plane nodes that are etcd members. Available in normal mode to readers.
 	EtcdMembers(context.Context, *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error)
 	// EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
-	// have fewer healthy members than their quorum, unless forced.
+	// have fewer healthy members than their quorum, unless forced, and for the node's own member,
+	// which EtcdLeave removes. Available in normal mode to admins.
 	EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error)
 	// EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
 	// still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
 	// unpins its addresses. The node joins the cluster again only once it is reinstalled. A
-	// bootstrapped node whose own member does not answer leaves only when forced.
+	// bootstrapped node whose own member does not answer leaves only when forced. Available in
+	// normal mode to admins.
 	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
 	// RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
-	// the names of the node certificate it authenticated with. Available on control-plane nodes, to
-	// nodes only.
+	// the names of the node certificate it authenticated with. It answers on control-plane nodes
+	// and refuses a revoked node. Available in normal mode to nodes.
 	RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error)
 	// RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
-	// out; chalkctl rotate calls it. Available to admins.
+	// out; chalkctl rotate calls it. Available in normal mode to admins.
 	RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error)
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 	// The first message carries the header; the store, its hash tree and the UKI follow as chunks,
-	// unless the header's source names an image in a registry, which the node pulls. Available to
-	// operators, but delivering config or a fallback secret with the upgrade needs the admin role,
-	// as ApplyConfig does; without them the node carries the running image's config over. The node
-	// checks that the image is of its platform, and, once the store is written and before the
-	// image becomes the next boot, that the schemas in the image accept the config it keeps for the
-	// image. It does not check that the image is one to trust: without Secure Boot, an operator can
-	// run any image as root, with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone.
-	// Secure Boot is what limits upgrades to images signed for db.
+	// unless the header's source names an image in a registry, which the node pulls. Available in
+	// normal mode to operators. Delivering config or a fallback secret with the upgrade needs the
+	// admin role, as ApplyConfig does; without them the node carries the running image's config
+	// over. The node checks that the image is of its platform, and, once the store is written and
+	// before the image becomes the next boot, that the schemas in the image accept the config it
+	// keeps for the image. It does not check that the image is one to trust: without Secure Boot,
+	// an operator can run any image as root, with STATE and VAR unsealed, as their keys are sealed
+	// to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
 	Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error)
 	// DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
 	// eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
@@ -525,14 +548,15 @@ type NodeServiceHandler interface {
 	// emptyDir volumes are evicted only when the request accepts losing that data. Pods that
 	// terminate already, as those an earlier drain evicted, are not evicted again, but the call
 	// returns only once they and the pods it evicted have stopped. A node that was cordoned already
-	// stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon.
-	// Available on bootstrapped control-plane nodes, to operators. An eviction refused for good, or
-	// one a PodDisruptionBudget holds back until the timeout, fails the call with
-	// FAILED_PRECONDITION; pods that did not stop in time, or whose evictions the API server kept
-	// failing, with DEADLINE_EXCEEDED.
+	// stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. It
+	// answers on bootstrapped control-plane nodes. Available in normal mode to operators. An
+	// eviction refused for good, or one a PodDisruptionBudget holds back until the timeout, fails
+	// the call with FAILED_PRECONDITION; pods that did not stop in time, or whose evictions the API
+	// server kept failing, with DEADLINE_EXCEEDED.
 	DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error)
 	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
-	// a node cordoned otherwise as it is.
+	// a node cordoned otherwise as it is. It answers on bootstrapped control-plane nodes. Available
+	// in normal mode to operators.
 	UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error)
 	// RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
 	// kube-system/chalkos-revoked-nodes, applies the API server's admission policy
@@ -540,15 +564,15 @@ type NodeServiceHandler interface {
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
 	// time of its first revocation. A call that fails after listing the node says so; calling again
 	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-	// map of revoked nodes would grow too long for the API server to compile with it. Available on
-	// bootstrapped control-plane nodes, to admins.
+	// map of revoked nodes would grow too long for the API server to compile with it. It answers on
+	// bootstrapped control-plane nodes. Available in normal mode to admins.
 	RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error)
 	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
 	// it, so a node of that name may join again. The old node's certificates work again too, unless
 	// the CAs they chain to were rotated after the revocation: the call is refused with
 	// FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
-	// that fails after removing the node says so; calling again applies the policy. Available on
-	// bootstrapped control-plane nodes, to admins.
+	// that fails after removing the node says so; calling again applies the policy. It answers on
+	// bootstrapped control-plane nodes. Available in normal mode to admins.
 	UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error)
 }
 

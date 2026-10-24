@@ -5,43 +5,66 @@ description: "The API chalkd serves on every node, generated from its protobuf d
 
 # Node API
 
-chalkd serves this API on every node on TCP port 50000 over TLS, as a Connect service that also
-answers gRPC and gRPC-Web; chalkctl is its client. This page is generated from the protobuf
-definition with protoc-gen-doc.
-{{range .Files}}{{$kinds := dict}}{{range .Messages}}{{$_ := set $kinds .FullName "message"}}{{end}}{{range .Enums}}{{$_ := set $kinds .FullName "enum"}}{{end}}
+This page is for authors of clients of the node API, the API chalkd serves on every node; most
+readers want [chalkctl](cli/chalkctl.md), its client, instead. chalkd serves the API on TCP port
+50000 over TLS, as a Connect service that also answers gRPC and gRPC-Web.
+
+Each method names the modes it is available in and the least role it needs, which
+[Roles and credentials](access.md) explains, followed by its request and response messages. The
+messages that fields of other messages hold are under [Messages](#messages), and the enumerations
+under [Enums](#enums). proto3 fields have no defaults: a field a message leaves out reads as the
+zero value of its type, such as an empty string, false, 0 or an unset message. Of the fields whose
+type names a oneof, a message sets at most one.
+{{range .Files}}
+{{- $kinds := dict}}{{$names := dict}}{{$msgs := dict}}{{$entries := dict}}{{$methodTypes := dict}}
+{{- range .Messages}}{{$_ := set $kinds .FullName "message"}}{{$_ := set $names .FullName .LongName}}{{$_ := set $msgs .FullName .}}{{range .Fields}}{{if .IsMap}}{{$_ := set $entries .FullType true}}{{end}}{{end}}{{end}}
+{{- range .Enums}}{{$_ := set $kinds .FullName "enum"}}{{$_ := set $names .FullName .LongName}}{{end}}
+{{- range .Services}}{{range .Methods}}{{$_ := set $methodTypes .RequestFullType true}}{{$_ := set $methodTypes .ResponseFullType true}}{{end}}{{end}}
+{{- $ctx := dict "kinds" $kinds "names" $names "msgs" $msgs "entries" $entries}}
 The definition is `api/{{.Name}}`, package `{{.Package}}`.
 {{range .Services}}
-## {{.Name}}
+## {{.Name}} { #{{.Name | lower}} }
 
-{{.Description}}
-
-| Method | Request | Response |
-| ------ | ------- | -------- |
-{{range .Methods}}| [{{.Name}}](#method-{{.Name | lower}}) | [{{if .RequestStreaming}}stream {{end}}{{.RequestLongType}}](#message-{{.RequestLongType | lower | replace "." ""}}) | [{{if .ResponseStreaming}}stream {{end}}{{.ResponseLongType}}](#message-{{.ResponseLongType | lower | replace "." ""}}) |
-{{end}}{{range .Methods}}
+{{.Description | replace "<" "&lt;"}}
+{{range .Methods}}
 ### {{.Name}} { #method-{{.Name | lower}} }
 
-{{.Description}}
-{{end}}{{end}}
-## Messages
-{{range .Messages}}
-### {{.LongName}} { #message-{{.LongName | lower | replace "." ""}} }
+{{.Description | replace "<" "&lt;"}}
 
-{{.Description}}
-{{if .HasFields}}
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-{{range .Fields}}| `{{.Name}}` | {{if eq .Label "repeated"}}repeated {{end}}{{if eq .Label "optional"}}optional {{end}}{{$kind := index $kinds .FullType}}{{if $kind}}[`{{.LongType}}`](#{{$kind}}-{{.LongType | lower | replace "." ""}}){{else}}`{{.LongType}}`{{end}} | {{nobr .Description}} |
-{{end}}{{else}}
-No fields.
-{{end}}{{end}}
-## Enums
+Request: {{if .RequestStreaming}}a stream of {{end}}{{.RequestLongType}}. Response: {{if .ResponseStreaming}}a stream of {{end}}{{.ResponseLongType}}.
+{{template "message" (merge (dict "m" (index $msgs .RequestFullType) "h" "####") $ctx)}}
+{{- if ne .ResponseFullType .RequestFullType}}{{template "message" (merge (dict "m" (index $msgs .ResponseFullType) "h" "####") $ctx)}}{{end}}
+{{- end}}{{end}}
+## Messages { #messages }
+
+These messages are held by fields of other messages.
+{{range .Messages}}{{if not (or (hasKey $methodTypes .FullName) (hasKey $entries .FullName))}}{{template "message" (merge (dict "m" . "h" "###") $ctx)}}{{end}}{{end}}
+## Enums { #enums }
 {{range .Enums}}
 ### {{.LongName}} { #enum-{{.LongName | lower | replace "." ""}} }
 
-{{.Description}}
+{{.Description | replace "<" "&lt;"}}
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-{{range .Values}}| `{{.Name}}` | {{.Number}} | {{nobr .Description}} |
+{{range .Values}}| `{{.Name}}` | {{.Number}} | {{nobr .Description | replace "<" "&lt;"}} |
 {{end}}{{end}}{{end}}
+Sources: `api/chalkos/node/v1/node.proto`, rendered by protoc-gen-doc with `api/markdown.tmpl`.
+The modes and roles the methods name are those of the permissions in `pkg/chalkd/server.go`.
+{{- /* A message: its heading, description and fields, then links to the messages and enums its
+fields hold. */ -}}
+{{define "message"}}{{$m := .m}}{{$kinds := .kinds}}{{$entries := .entries}}{{$names := .names}}{{$msgs := .msgs}}
+{{.h}} {{$m.LongName}} { #message-{{$m.LongName | lower | replace "." ""}} }
+
+{{$m.Description | replace "<" "&lt;"}}
+{{if $m.HasFields}}
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+{{range $m.Fields}}| `{{.Name}}` | {{template "type" (dict "f" . "msgs" $msgs)}} | {{nobr .Description | replace "<" "&lt;"}} |
+{{end}}{{$refs := list}}{{range $m.Fields}}{{if and (hasKey $kinds .FullType) (not (hasKey $entries .FullType))}}{{$refs = append $refs .FullType}}{{end}}{{end}}{{with $refs | uniq}}
+Field types:{{range $i, $t := .}}{{if $i}},{{end}} [{{index $names $t}}](#{{index $kinds $t}}-{{index $names $t | lower | replace "." ""}}){{end}}.
+{{end}}{{else}}
+No fields.
+{{end}}{{end}}
+{{- /* A field's type, in the words of the config kinds page. */ -}}
+{{define "type"}}{{$f := .f}}{{if $f.IsMap}}map of {{range (index .msgs $f.FullType).Fields}}{{if eq .Name "value"}}{{.LongType}}{{end}}{{end}}{{else if eq $f.Label "repeated"}}list of {{$f.LongType}}{{else}}{{$f.LongType}}{{end}}{{if eq $f.Label "optional"}} or unset{{else if $f.IsOneof}}, oneof {{$f.OneofDecl}}{{end}}{{end}}

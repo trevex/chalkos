@@ -9,73 +9,84 @@ option go_package = "github.com/trevex/chalkos/pkg/api/node/v1;nodev1";
 import "google/protobuf/timestamp.proto";
 
 // NodeService is the API chalkd serves on each node. Each method's comment names the modes it is
-// available in (maintenance, normal or both) and the least role a client certificate needs to call
-// it: reader, operator or admin, where each role may call what the roles before it may. Only
-// nodes call RenewNodeCertificate, with the node role.
+// available in, maintenance mode, normal mode or both, and the least role a client certificate
+// needs to call it: reader, operator or admin, where each role may call what the roles before it
+// may. Only nodes call RenewNodeCertificate, with the node role.
 service NodeService {
-  // Info describes the node and the agent. Available in both modes to readers.
+  // Info describes the node and the agent. Available in maintenance and normal mode to readers.
   rpc Info(InfoRequest) returns (InfoResponse);
-  // Disks lists the node's disks and their partitions. Available in both modes to readers.
+  // Disks lists the node's disks and their partitions. Available in maintenance and normal mode to
+  // readers.
   rpc Disks(DisksRequest) returns (DisksResponse);
   // Contract returns the config contract of the image the node runs: the variant and platform it
   // was built for, the schemas of the config kinds it accepts and its image.json, which chalkctl
   // checks config against before it delivers it. The installer refuses it: config is for the
-  // image it installs, whose contract comes with that image. Available in both modes to readers.
+  // image it installs, whose contract comes with that image. Available in maintenance and normal
+  // mode to readers.
   rpc Contract(ContractRequest) returns (ContractResponse);
   // Install turns a node in maintenance mode into an installed node and reboots it. The first
   // message carries the header; when the node is the installer, the image's store data, hash
   // tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
   // registry, which the installer pulls. An install the installer did not finish continues when
-  // run again, from either.
+  // run again, from either. Available in maintenance mode to admins.
   rpc Install(stream InstallRequest) returns (InstallResponse);
   // ApplyConfig replaces the config of an installed node, or delivers it a Kubernetes share, a
   // node certificate or OS CAs. Destructive storage changes are refused; additive ones are
-  // applied live.
+  // applied live. Available in normal mode to admins.
   rpc ApplyConfig(ApplyConfigRequest) returns (ApplyConfigResponse);
-  // The config a slot keeps, the running image's or the staged image's, as it was delivered,
-  // with secret values replaced by their hashes. Allowed for the role ApplyConfig needs.
+  // GetConfig returns the config a slot keeps, the running image's or the staged image's, as it
+  // was delivered, with secret values replaced by their hashes. Available in normal mode to
+  // admins.
   rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
-  // ResetVolume wipes one volume and creates it again as the delivered config defines it.
+  // ResetVolume wipes one volume and creates it again as the delivered config defines it. It
+  // refuses VAR, a volume the config no longer has and a volume the config moves to another
+  // disk. Available in normal mode to admins.
   rpc ResetVolume(ResetVolumeRequest) returns (ResetVolumeResponse);
-  // Status reports the config version, the storage, and failed units of an installed node.
+  // Status reports the state of an installed node: its config versions, storage, failed units,
+  // certificates, trust, clock, boot, outputs and Kubernetes. Available in normal mode to readers.
   rpc Status(StatusRequest) returns (StatusResponse);
-  // Logs streams the journal of the current boot, or of one unit in it.
+  // Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
+  // and normal mode to readers.
   rpc Logs(LogsRequest) returns (stream LogsResponse);
-  // Reboot reboots the node once the response is sent.
+  // Reboot reboots the node once the response is sent. Available in maintenance and normal mode
+  // to operators.
   rpc Reboot(RebootRequest) returns (RebootResponse);
   // Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
   // chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
-  // is bootstrapped or holds etcd data, so no second cluster is ever initialised.
+  // is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
+  // normal mode to admins.
   rpc Bootstrap(BootstrapRequest) returns (BootstrapResponse);
-  // EtcdMembers lists etcd's members as the node's own member sees them, with their health.
-  // Available on control-plane nodes that are etcd members.
+  // EtcdMembers lists etcd's members as the node's own member sees them, with their health. It
+  // answers on control-plane nodes that are etcd members. Available in normal mode to readers.
   rpc EtcdMembers(EtcdMembersRequest) returns (EtcdMembersResponse);
   // EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
-  // have fewer healthy members than their quorum, unless forced.
+  // have fewer healthy members than their quorum, unless forced, and for the node's own member,
+  // which EtcdLeave removes. Available in normal mode to admins.
   rpc EtcdRemoveMember(EtcdRemoveMemberRequest) returns (EtcdRemoveMemberResponse);
   // EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
   // still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
   // unpins its addresses. The node joins the cluster again only once it is reinstalled. A
-  // bootstrapped node whose own member does not answer leaves only when forced.
+  // bootstrapped node whose own member does not answer leaves only when forced. Available in
+  // normal mode to admins.
   rpc EtcdLeave(EtcdLeaveRequest) returns (EtcdLeaveResponse);
   // RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
-  // the names of the node certificate it authenticated with. Available on control-plane nodes, to
-  // nodes only.
+  // the names of the node certificate it authenticated with. It answers on control-plane nodes
+  // and refuses a revoked node. Available in normal mode to nodes.
   rpc RenewNodeCertificate(RenewNodeCertificateRequest) returns (RenewNodeCertificateResponse);
   // RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
-  // out; chalkctl rotate calls it. Available to admins.
+  // out; chalkctl rotate calls it. Available in normal mode to admins.
   rpc RotationStep(RotationStepRequest) returns (RotationStepResponse);
   // Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
   // the image's boot tries until a boot is found healthy, and reboots the node when asked to.
   // The first message carries the header; the store, its hash tree and the UKI follow as chunks,
-  // unless the header's source names an image in a registry, which the node pulls. Available to
-  // operators, but delivering config or a fallback secret with the upgrade needs the admin role,
-  // as ApplyConfig does; without them the node carries the running image's config over. The node
-  // checks that the image is of its platform, and, once the store is written and before the
-  // image becomes the next boot, that the schemas in the image accept the config it keeps for the
-  // image. It does not check that the image is one to trust: without Secure Boot, an operator can
-  // run any image as root, with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone.
-  // Secure Boot is what limits upgrades to images signed for db.
+  // unless the header's source names an image in a registry, which the node pulls. Available in
+  // normal mode to operators. Delivering config or a fallback secret with the upgrade needs the
+  // admin role, as ApplyConfig does; without them the node carries the running image's config
+  // over. The node checks that the image is of its platform, and, once the store is written and
+  // before the image becomes the next boot, that the schemas in the image accept the config it
+  // keeps for the image. It does not check that the image is one to trust: without Secure Boot,
+  // an operator can run any image as root, with STATE and VAR unsealed, as their keys are sealed
+  // to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
   rpc Upgrade(stream UpgradeRequest) returns (UpgradeResponse);
   // DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
   // eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
@@ -83,14 +94,15 @@ service NodeService {
   // emptyDir volumes are evicted only when the request accepts losing that data. Pods that
   // terminate already, as those an earlier drain evicted, are not evicted again, but the call
   // returns only once they and the pods it evicted have stopped. A node that was cordoned already
-  // stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon.
-  // Available on bootstrapped control-plane nodes, to operators. An eviction refused for good, or
-  // one a PodDisruptionBudget holds back until the timeout, fails the call with
-  // FAILED_PRECONDITION; pods that did not stop in time, or whose evictions the API server kept
-  // failing, with DEADLINE_EXCEEDED.
+  // stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. It
+  // answers on bootstrapped control-plane nodes. Available in normal mode to operators. An
+  // eviction refused for good, or one a PodDisruptionBudget holds back until the timeout, fails
+  // the call with FAILED_PRECONDITION; pods that did not stop in time, or whose evictions the API
+  // server kept failing, with DEADLINE_EXCEEDED.
   rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse);
   // UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
-  // a node cordoned otherwise as it is.
+  // a node cordoned otherwise as it is. It answers on bootstrapped control-plane nodes. Available
+  // in normal mode to operators.
   rpc UncordonNode(UncordonNodeRequest) returns (UncordonNodeResponse);
   // RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
   // kube-system/chalkos-revoked-nodes, applies the API server's admission policy
@@ -98,19 +110,21 @@ service NodeService {
   // Control planes then refuse to renew its node certificate. A node revoked already keeps the
   // time of its first revocation. A call that fails after listing the node says so; calling again
   // finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-  // map of revoked nodes would grow too long for the API server to compile with it. Available on
-  // bootstrapped control-plane nodes, to admins.
+  // map of revoked nodes would grow too long for the API server to compile with it. It answers on
+  // bootstrapped control-plane nodes. Available in normal mode to admins.
   rpc RevokeNode(RevokeNodeRequest) returns (RevokeNodeResponse);
   // UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
   // it, so a node of that name may join again. The old node's certificates work again too, unless
   // the CAs they chain to were rotated after the revocation: the call is refused with
   // FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
-  // that fails after removing the node says so; calling again applies the policy. Available on
-  // bootstrapped control-plane nodes, to admins.
+  // that fails after removing the node says so; calling again applies the policy. It answers on
+  // bootstrapped control-plane nodes. Available in normal mode to admins.
   rpc UnrevokeNode(UnrevokeNodeRequest) returns (UnrevokeNodeResponse);
 }
 
+// The mode chalkd serves the node in.
 enum Mode {
+  // No mode; chalkd never reports it.
   MODE_UNSPECIFIED = 0;
   // The node is not installed: chalkd serves a self-signed certificate.
   MODE_MAINTENANCE = 1;
@@ -118,17 +132,24 @@ enum Mode {
   MODE_NORMAL = 2;
 }
 
+// The state of Secure Boot, as the firmware's EFI variables SecureBoot and SetupMode give it.
 enum SecureBoot {
+  // No state; chalkd never reports it.
   SECURE_BOOT_UNSPECIFIED = 0;
+  // Secure Boot is off, or its EFI variables cannot be read.
   SECURE_BOOT_DISABLED = 1;
+  // Secure Boot is on: the firmware starts only binaries that db allows.
   SECURE_BOOT_ENABLED = 2;
   // The firmware accepts new Secure Boot keys without authentication.
   SECURE_BOOT_SETUP_MODE = 3;
 }
 
+// The request of Info.
 message InfoRequest {}
 
+// The response of Info.
 message InfoResponse {
+  // Mode chalkd serves the node in.
   Mode mode = 1;
   // Image ID of the running image, such as "chalkos".
   string image_id = 3;
@@ -136,10 +157,13 @@ message InfoResponse {
   bool installer = 4;
   // Device of the disk the node booted from; empty on the installer booted from a CD.
   string boot_disk = 5;
+  // Whether the kernel found a TPM, as /sys/class/tpm lists one.
   bool tpm = 6;
+  // State of Secure Boot.
   SecureBoot secure_boot = 7;
   // SHA-256 of the certificate chalkd serves, in lower-case hex.
   string fingerprint = 8;
+  // Host name of the node, as the kernel holds it.
   string hostname = 9;
   // The mkImages variant the running image was built as; empty on the installer.
   string variant = 11;
@@ -149,77 +173,103 @@ message InfoResponse {
   // The verity root hash of the store the node runs, as its kernel command line's usrhash= names
   // it, which identifies the running image; empty when it could not be read.
   bytes root_hash = 13;
-  // The git revision and tag the running image was built from, as the node's record of the
-  // images it installed names them; empty when it does not know them.
+  // The git revision the running image was built from, as the node's record of the images it
+  // installed names it; empty when it does not know it.
   string revision = 14;
+  // The git tag the running image was built from, as the node's record of the images it
+  // installed names it; empty when it does not know it.
   string tag = 15;
   reserved 16, 17;
   reserved "pulls_upgrade_images", "pulls_install_images";
 }
 
+// The request of Disks.
 message DisksRequest {}
 
+// The response of Disks.
 message DisksResponse {
+  // The node's disks, by kernel name.
   repeated Disk disks = 1;
 }
 
+// A disk of the node, as sysfs and the udev database describe it.
 message Disk {
   // Kernel name, such as nvme0n1.
   string name = 1;
+  // Device node, such as /dev/nvme0n1.
   string device = 2;
+  // Model, from udev's ID_MODEL with spaces for underscores, or else from sysfs.
   string model = 3;
+  // Size in bytes.
   uint64 size = 4;
+  // Serial number, from udev's ID_SERIAL_SHORT, or else ID_SERIAL.
   string serial = 5;
+  // World Wide Name, from udev's ID_WWN; empty for a disk without one.
   string wwn = 6;
-  // nvme, ssd or hdd.
+  // Kind of disk: nvme, ssd or hdd.
   string type = 7;
-  // udev's ID_PATH.
+  // Path of the disk's connection, from udev's ID_PATH.
   string path = 8;
+  // The disk's partitions, by number.
   repeated Partition partitions = 9;
   // How chalkos uses the disk: "boot" for the boot disk, "disk <name>" for a pinned disk of the
   // node's storage, empty when chalkos does not use it.
   string usage = 10;
 }
 
+// A partition of a disk, as sysfs and the udev database describe it.
 message Partition {
+  // Device node, such as /dev/nvme0n1p3.
   string device = 1;
+  // Partition number.
   uint32 number = 2;
+  // Size in bytes.
   uint64 size = 3;
-  // GPT partition type UUID.
+  // GPT partition type UUID, in lower case.
   string type = 4;
+  // GPT partition name.
   string label = 5;
+  // GPT partition UUID, in lower case.
   string uuid = 6;
   // File system or other content blkid found, such as ext4 or crypto_LUKS.
   string content = 7;
 }
 
+// The request of Contract.
 message ContractRequest {}
 
+// The response of Contract: the config contract of the image the node runs.
 message ContractResponse {
   reserved 2;
   reserved "kubernetes_cluster";
   // The image's schemas by file name, as /etc/chalkos/schemas holds them.
   map<string, bytes> schemas = 1;
-  // The variant and platform the image was built for, as its os-release names them.
+  // The variant the image was built as, as its os-release names it.
   string variant = 4;
+  // The platform the image was built for, as its os-release names it.
   string platform = 5;
   // The image's image.json: the Kubernetes release, the images of its components and the pod
   // network it ships. Empty on an image without Kubernetes.
   bytes kubernetes_image = 6;
 }
 
+// A message of the Install stream: the header first, then the image's chunks.
 message InstallRequest {
   oneof message {
+    // The install's header, in the stream's first message.
     InstallHeader header = 1;
+    // The next bytes of the image's parts, in every message after the first.
     ImageChunk chunk = 2;
   }
 }
 
+// What an install delivers: the node's credentials and config, the target and the image.
 message InstallHeader {
   reserved 1, 14;
   reserved "identity", "kubernetes_cluster";
-  // PEM certificate and key chalkd serves once the node is installed.
+  // PEM certificate chalkd serves once the node is installed.
   bytes node_certificate = 2;
+  // PEM key of node_certificate.
   bytes node_key = 3;
   // PEM certificates of the OS CAs the node trusts, the one that issues client certificates and
   // the node CA first, then those still trusted while it rotates.
@@ -228,15 +278,15 @@ message InstallHeader {
   // when the node's fallback is none.
   string fallback_secret = 5;
   oneof target {
-    // The node's image already runs from the boot disk.
+    // Target of a node whose image already runs from its boot disk.
     InPlace in_place = 6;
-    // The installer lays out this disk and writes the streamed image to it.
+    // Target disk, which the installer lays out and writes the streamed image to.
     DiskReference disk = 7;
   }
   // The image the installer writes to the target disk; it must name the boot loader. Its parts
   // follow as chunks unless source names where the installer pulls them from. Installer only.
   ImageHeader image = 8;
-  // Let the installer replace whatever the target disk holds, including an installed node.
+  // Whether the installer may replace what the target disk holds, including an installed node.
   bool wipe_disk = 9;
   // The image's repart definitions of the system region (ESP, slots A and B, STATE) by file
   // name, which the installer lays out the target disk with; installer only. Each image chooses
@@ -268,15 +318,22 @@ message InstallHeader {
   ImageSource source = 16;
 }
 
+// The target of an install in place, which the node's own image runs from its boot disk.
 message InPlace {}
 
 // A disk by /dev path, or by a selector whose set fields must all match.
 message DiskReference {
+  // Path of the disk below /dev, such as /dev/disk/by-id/…; set without the selector fields.
   string path = 1;
+  // Glob the disk's model matches, such as "Samsung SSD 870*".
   string model = 2;
+  // The disk's serial number.
   string serial = 3;
+  // The disk's World Wide Name.
   string wwn = 4;
+  // Comparison the disk's size meets, such as ">= 1T"; without an operator, the size it equals.
   string size = 5;
+  // Kind of disk: nvme, ssd or hdd.
   string type = 6;
 }
 
@@ -290,9 +347,11 @@ message ImageHeader {
   string image_id = 2;
   // The verity root hash of the image's store.
   bytes root_hash = 5;
-  // The store data the root hash covers, its hash tree and the signed UKI.
+  // The store data, which the root hash covers.
   ImagePart store = 6;
+  // The store's verity hash tree.
   ImagePart hash_tree = 7;
+  // The signed UKI that boots the image.
   ImagePart uki = 8;
   // The signed systemd-boot, which firmware starts from the ESP's removable-media path.
   ImagePart boot_loader = 9;
@@ -303,16 +362,20 @@ message ImageHeader {
   // refuses an upgrade to an image of another platform than its own, and the installer
   // translates the config for the platform the image names.
   string platform = 11;
-  // The git revision and tag the image was built from, as its directory's metadata.json names
-  // them; empty when the build named none. The node records them to show beside the image's root
-  // hash; nothing compares them.
+  // The git revision the image was built from, as its directory's metadata.json names it; empty
+  // when the build named none. The node records it to show beside the image's root hash; nothing
+  // compares it.
   string revision = 12;
+  // The git tag the image was built from, as its directory's metadata.json names it; empty when
+  // the build named none. The node records it as it does revision.
   string tag = 13;
 }
 
 // The size and SHA-256 of a part of an image.
 message ImagePart {
+  // Size in bytes.
   uint64 size = 1;
+  // SHA-256 of the part's bytes.
   bytes sha256 = 2;
 }
 
@@ -337,24 +400,30 @@ message RegistryImage {
   string reference = 1;
 }
 
+// A piece of an image's parts, which follow the header back to back in the header's order.
 message ImageChunk {
+  // The next bytes of the parts; a chunk may end inside a part or span two. chalkctl sends 1 MiB
+  // per chunk.
   bytes data = 1;
 }
 
+// The response of Install, which the node sends before it reboots.
 message InstallResponse {}
 
+// The request of ApplyConfig: a config, or a share, a node certificate or OS CAs to deliver.
 message ApplyConfigRequest {
   reserved 1;
   reserved "identity";
-  // Enrolled on encrypted volumes the config adds; required when it adds one and the node's
-  // fallback is not none.
+  // Recovery key or password enrolled on the encrypted volumes the config adds; required when it
+  // adds one and the node's fallback is not none.
   string fallback_secret = 2;
   // A new Kubernetes share (JSON) replacing the node's, as InstallHeader carries it; empty
   // keeps the node's share.
   bytes kubernetes_share = 3;
   // A new node certificate for the node, followed by the certificate of the node CA that issued
-  // it (PEM), and its key, which chalkd serves from then on; empty keeps the node's.
+  // it (PEM), which chalkd serves from then on; empty keeps the node's.
   bytes node_certificate = 4;
+  // PEM key of node_certificate; empty keeps the node's.
   bytes node_key = 5;
   // The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them;
   // empty keeps the node's. They must verify the node's certificate, the caller's and a control
@@ -364,19 +433,22 @@ message ApplyConfigRequest {
   // schemas. It replaces the node's config as a whole. Empty keeps the node's config and
   // storage, for a request that delivers only a share, a node certificate or OS CAs.
   string config = 7;
-  // Check the config against the image staged to boot next and keep it in that image's config
-  // slot instead, changing nothing the running image runs but the machine's storage: the config
-  // meets that image's change rules, compared with the running slot's config and the machine as
-  // for the running image, and the storage changes they accept are made at once, with
-  // fallback_secret. It takes the config and the fallback secret alone, and an image staged.
+  // Whether the config is for the image staged to boot next: chalkd checks it against that image
+  // and keeps it in that image's config slot, changing nothing the running image runs but the
+  // machine's storage. The config meets that image's change rules, compared with the running
+  // slot's config and the machine as for the running image, and the storage changes they accept
+  // are made at once, with fallback_secret. It takes the config and the fallback secret alone,
+  // and an image staged.
   bool staged = 8;
 }
 
+// The request of GetConfig.
 message GetConfigRequest {
-  // The staged image's config instead of the running one's.
+  // Whether the response holds the staged image's config instead of the running one's.
   bool staged = 1;
 }
 
+// The response of GetConfig: the config one slot keeps.
 message GetConfigResponse {
   // The slot's documents as delivered, one JSON document each separated by ---, as
   // ApplyConfigRequest.config holds them. The values of Secrets and of the Kubernetes Secrets an
@@ -387,6 +459,7 @@ message GetConfigResponse {
   string version = 2;
 }
 
+// The response of ApplyConfig: what the delivery changed on the node.
 message ApplyConfigResponse {
   // Storage changes that were applied.
   repeated StorageChange changes = 1;
@@ -397,33 +470,48 @@ message ApplyConfigResponse {
   repeated string warnings = 3;
 }
 
+// A change a delivery made to the node's storage.
 message StorageChange {
+  // Name of the volume that changed.
   string volume = 1;
+  // What changed, such as "new volume", "new volume on new disk <disk>", "larger: 200G instead of
+  // 100G" or "mounted at /data instead of null".
   string reason = 2;
+  // Whether the change destroys data; always false, as chalkd refuses destructive changes.
   bool destructive = 3;
 }
 
+// The request of ResetVolume.
 message ResetVolumeRequest {
   reserved 2;
   reserved "identity";
+  // Name of the volume to reset.
   string volume = 1;
+  // Recovery key or password enrolled on the volume when it is encrypted; required then, unless
+  // the node's fallback is none.
   string fallback_secret = 3;
   // The node's config, as ApplyConfigRequest.config holds it, checked against the running
   // image's schemas; the volume is created as it defines. Required.
   string config = 4;
 }
 
+// The response of ResetVolume, once the volume is created again.
 message ResetVolumeResponse {}
 
+// The request of Status.
 message StatusRequest {}
 
+// The response of Status: the state of an installed node.
 message StatusResponse {
   reserved 1;
   reserved "identity_version";
+  // The disks of the node's storage, by name, as the boot's storage setup left them.
   repeated DiskStatus disks = 2;
+  // The volumes of the node's storage, by name.
   repeated VolumeStatus volumes = 3;
+  // Names of the systemd units that failed.
   repeated string failed_units = 4;
-  // Absent on a node whose image has no Kubernetes.
+  // State of the node's Kubernetes; absent on a node whose image has no Kubernetes.
   KubernetesStatus kubernetes = 5;
   // Every certificate the node holds or issues, with its expiry and what needs doing about it.
   repeated CertificateStatus certificates = 6;
@@ -446,6 +534,7 @@ message StatusResponse {
   repeated OutputStatus outputs = 13;
 }
 
+// The state of one output of the running image.
 message OutputStatus {
   // The output's name, as the image declares it.
   string name = 1;
@@ -457,9 +546,12 @@ message OutputStatus {
   string error = 3;
 }
 
+// The images on the node's ESP and how the running one booted.
 message BootStatus {
-  // The image the node runs, and the file of the UKI it booted.
+  // The image the node runs.
   BootImage running = 1;
+  // File name of the UKI the node booted, in the ESP's /EFI/Linux, with its tries counter while
+  // it has one.
   string entry = 2;
   // Whether the boot was found healthy and marked good, or not counted by the boot loader at
   // all; false while the boot loader counts the boot's tries.
@@ -485,12 +577,15 @@ message BootImage {
   // The generation of the UKI's boot entry, from its file name, <image ID>_<generation>.efi;
   // systemd-boot boots the highest first. Zero when the name gives none or the entry is unknown.
   uint64 generation = 2;
-  // The git revision and tag the image was built from, as the node's record of the images it
-  // installed names them; empty when it does not know them.
+  // The git revision the image was built from, as the node's record of the images it installed
+  // names it; empty when it does not know it.
   string revision = 3;
+  // The git tag the image was built from, as the node's record of the images it installed names
+  // it; empty when it does not know it.
   string tag = 4;
 }
 
+// What the node trusts of one kind, and what it issues with.
 message TrustStatus {
   // What is trusted: "OS CA" on every node; "Kubernetes CA" on nodes with Kubernetes; on
   // control-plane nodes also "front-proxy CA", "etcd CA", "service-account keys" and "encryption
@@ -505,25 +600,28 @@ message TrustStatus {
   string issuing = 3;
 }
 
+// A certificate the node holds or issues with.
 message CertificateStatus {
   // What the certificate is: "node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA",
   // "etcd CA", "Kubernetes control plane" (the control plane's leaf certificates, by the one
   // that expires first), "kubelet client" or "kubelet serving"; "Kubernetes share" when the
   // node's share cannot be read, so the certificates it holds are unknown.
   string name = 1;
-  // Unset when the expiry is unknown.
+  // When the certificate expires; unset when the expiry is unknown.
   google.protobuf.Timestamp not_after = 2;
   // Why a renewal fails, such as "renewal failing: <reason>; expires <date>", or a warning, such
   // as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl
   // node-ca rotate"; empty when there is nothing to do. A command it advises names the node, or
   // says <node> when the node cannot tell its name.
   string problem = 3;
-  // The SHA-256 fingerprint of the certificate, and of the certificate that issued it when the
-  // node holds that one, in lower-case hex.
+  // The SHA-256 fingerprint of the certificate, in lower-case hex.
   string fingerprint = 4;
+  // The SHA-256 fingerprint of the certificate that issued it, in lower-case hex; empty when the
+  // node does not hold that one.
   string issuer = 5;
 }
 
+// How the node keeps its clock, as chrony reports it.
 message TimeStatus {
   // Whether chrony synchronises the clock with a server.
   bool synchronised = 1;
@@ -535,8 +633,9 @@ message TimeStatus {
   string error = 4;
 }
 
+// The state of the node's Kubernetes.
 message KubernetesStatus {
-  // controlplane or worker.
+  // The node's part in the cluster: controlplane or worker.
   string kind = 1;
   // What the node waits for or is: "no share", "preparing" while its Kubernetes files are
   // prepared, or why their preparation failed, such as "preparation failed: no ipv4 node address
@@ -570,6 +669,7 @@ message KubernetesStatus {
   bool revoked_nodes_read = 8;
 }
 
+// A node revoked in the cluster.
 message RevokedNode {
   // The node's name in Kubernetes.
   string name = 1;
@@ -577,16 +677,24 @@ message RevokedNode {
   google.protobuf.Timestamp revoked_at = 2;
 }
 
+// A disk of the node's storage, as the boot's storage setup left it.
 message DiskStatus {
+  // The disk's name in the node's storage: system for the system disk, or the name of the Volume
+  // that has the disk to itself.
   string name = 1;
+  // Device node the disk was found at, such as /dev/nvme0n1; empty when it was not found.
   string device = 2;
   // Why the disk's volumes could not be created or opened at boot; empty when they were.
   string error = 3;
 }
 
+// A volume of the node's storage.
 message VolumeStatus {
+  // The volume's name: var for VAR, or the name of its Volume document.
   string name = 1;
+  // Name of the disk the volume is on, as DiskStatus.name gives it.
   string disk = 2;
+  // Where the config mounts the volume; empty for a volume it leaves unmounted.
   string mount_point = 3;
   // Whether the volume's partition exists.
   bool present = 4;
@@ -594,75 +702,99 @@ message VolumeStatus {
   bool mounted = 5;
 }
 
+// The request of Logs.
 message LogsRequest {
   // Unit whose journal to stream; empty streams the whole boot.
   string unit = 1;
-  // Keep streaming new entries until the client cancels.
+  // Whether the stream goes on with new entries until the client cancels it.
   bool follow = 2;
 }
 
+// A message of the Logs stream.
 message LogsResponse {
+  // One journal entry, as journalctl's short-iso output prints it.
   string line = 1;
 }
 
+// The request of Reboot.
 message RebootRequest {}
 
+// The response of Reboot, which the node sends before it reboots.
 message RebootResponse {}
 
+// The request of Bootstrap.
 message BootstrapRequest {}
 
+// The response of Bootstrap, once the add-ons are applied.
 message BootstrapResponse {
   // Objects applied: chalkos's add-ons and those of the node's Addon documents.
   uint32 applied = 1;
 }
 
+// A member of etcd.
 message EtcdMember {
+  // The member's ID.
   uint64 id = 1;
   // The node's name; empty while a member that was added has not started.
   string name = 2;
+  // URLs the other members reach the member at.
   repeated string peer_urls = 3;
+  // Whether the member is a learner: a member without a vote, as a joining control-plane node
+  // is until it catches up.
   bool learner = 4;
   // Why the member did not answer; empty when it is healthy.
   string unhealthy = 5;
 }
 
+// The request of EtcdMembers.
 message EtcdMembersRequest {}
 
+// The response of EtcdMembers.
 message EtcdMembersResponse {
+  // etcd's members, as etcd lists them.
   repeated EtcdMember members = 1;
 }
 
+// The request of EtcdRemoveMember.
 message EtcdRemoveMemberRequest {
   // The member's name or its ID in hex.
   string member = 1;
-  // Remove the member even when the voters left would have no healthy quorum.
+  // Whether the member is removed even when the voters left would have no healthy quorum.
   bool force = 2;
 }
 
+// The response of EtcdRemoveMember.
 message EtcdRemoveMemberResponse {
+  // The member that was removed, without its health.
   EtcdMember removed = 1;
 }
 
+// The request of EtcdLeave.
 message EtcdLeaveRequest {
-  // Leave through the other members also when the node's own etcd member does not answer, as on
-  // a node that lost its pinned address.
+  // Whether the node leaves through the other members also when its own etcd member does not
+  // answer, as on a node that lost its pinned address.
   bool force = 1;
 }
 
+// The response of EtcdLeave, once the node is out of etcd.
 message EtcdLeaveResponse {}
 
+// The request of RenewNodeCertificate.
 message RenewNodeCertificateRequest {
   // PKCS #10 certificate request (DER) signed with the node's new key, which never leaves the
   // node. Only its key is used; the names come from the caller's certificate.
   bytes certificate_request = 1;
 }
 
+// The response of RenewNodeCertificate.
 message RenewNodeCertificateResponse {
   // The new node certificate followed by the certificate of the node CA that issued it (PEM).
   bytes certificate_chain = 1;
 }
 
+// A step of a CA or key rotation that RotationStep runs.
 enum RotationStep {
+  // No step; chalkd refuses it.
   ROTATION_STEP_UNSPECIFIED = 0;
   // On a bootstrapped control-plane node: restart the Deployments, DaemonSets and StatefulSets of
   // chalkos's add-ons and of the node's Addon documents, once the kube-root-ca.crt ConfigMaps of
@@ -682,10 +814,13 @@ enum RotationStep {
   ROTATION_STEP_RENEW_KUBELET_SERVING = 5;
 }
 
+// The request of RotationStep.
 message RotationStepRequest {
+  // The step to run.
   RotationStep step = 1;
 }
 
+// The response of RotationStep; each step sets the fields it reports.
 message RotationStepResponse {
   // The workloads restarted, as namespace/kind/name.
   repeated string restarted = 1;
@@ -701,28 +836,34 @@ message RotationStepResponse {
   repeated string not_waited = 5;
 }
 
+// How many objects of one resource etcd holds under one key.
 message EncryptedObjects {
   // The resource, such as secrets.
   string resource = 1;
   // The name of the key the objects are encrypted with; empty for objects stored unencrypted.
   string key = 2;
+  // Number of objects.
   uint64 objects = 3;
 }
 
+// A message of the Upgrade stream: the header first, then the image's chunks.
 message UpgradeRequest {
   oneof message {
+    // The upgrade's header, in the stream's first message.
     UpgradeHeader header = 1;
+    // The next bytes of the image's parts, in every message after the first.
     ImageChunk chunk = 2;
   }
 }
 
+// What an upgrade delivers: the image and, optionally, the node's config for it.
 message UpgradeHeader {
   reserved 3, 4;
   reserved "schemas", "kubernetes_image";
   // The image to install. The node refuses another ID or platform than its own, and an image that
   // names a boot loader: an upgrade leaves the boot loader as it is.
   ImageHeader image = 1;
-  // Reboot the node into the image once it is installed.
+  // Whether the node reboots into the image once it is installed.
   bool reboot = 2;
   // The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it
   // against the image's schemas and change rules as ApplyConfig does: it refuses what the rules
@@ -731,63 +872,72 @@ message UpgradeHeader {
   // keeps the config in the image's config slot. Empty carries the running image's config over,
   // checked against the image the same way. Only the admin role may set it.
   string config = 5;
-  // Enrolled on encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is;
-  // required when it adds one and the node's fallback is not none. Only the admin role may set it.
+  // Recovery key or password enrolled on the encrypted volumes the config adds, as
+  // ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is
+  // not none. Only the admin role may set it.
   string fallback_secret = 6;
   // Where the node takes the image's parts from. Absent, they follow the header as chunks; for
   // an image in a registry, the node pulls them and the request carries nothing after the header.
   ImageSource source = 7;
 }
 
+// The response of Upgrade.
 message UpgradeResponse {
-  // The node runs the image already; nothing changed.
+  // Whether the node runs the image already, so nothing changed.
   bool already_installed = 1;
   // The file name of the UKI that boots the image next, with its tries.
   string entry = 2;
-  // The node reboots into the image.
+  // Whether the node reboots into the image.
   bool rebooting = 3;
-  // The image boots next already, from entry, as an earlier upgrade without a reboot left it; the
-  // image was not written again, and the config the upgrade carries, or the running image's,
-  // replaced the config kept for it.
+  // Whether the image boots next already, from entry, as an earlier upgrade without a reboot left
+  // it; the image was not written again, and the config the upgrade carries, or the running
+  // image's, replaced the config kept for it.
   bool already_staged = 4;
 }
 
+// The request of DrainNode.
 message DrainNodeRequest {
   // The node's name in Kubernetes.
   string node = 1;
   // How long to wait for the pods to be evicted and gone, in seconds; zero waits five minutes.
   uint32 timeout_seconds = 2;
-  // Evict pods with emptyDir volumes too, whose data is lost.
+  // Whether pods with emptyDir volumes are evicted too, which loses their data.
   bool delete_emptydir_data = 3;
 }
 
+// The response of DrainNode: the pods evicted and the pods that stay.
 message DrainNodeResponse {
   // Whether the node is marked as cordoned for an upgrade, by this call or an earlier one.
   bool marked = 1;
-  // The pods evicted, and those that stay, as namespace/name: DaemonSet, static and finished pods
-  // in kept, and pods without a controller in unmanaged, which nothing starts again elsewhere. The
-  // node lifecycle controller deletes those for good when the node stays down longer than their
-  // tolerations allow.
+  // The pods evicted, as namespace/name.
   repeated string evicted = 2;
+  // The DaemonSet, static and finished pods, which stay on the node, as namespace/name.
   repeated string kept = 3;
+  // The pods without a controller, which stay and which nothing starts again elsewhere, as
+  // namespace/name. The node lifecycle controller deletes them for good when the node stays down
+  // longer than their tolerations allow.
   repeated string unmanaged = 4;
 }
 
+// The request of UncordonNode.
 message UncordonNodeRequest {
   // The node's name in Kubernetes.
   string node = 1;
 }
 
+// The response of UncordonNode.
 message UncordonNodeResponse {
   // Whether the node was cordoned for an upgrade and is schedulable again.
   bool uncordoned = 1;
 }
 
+// The request of RevokeNode.
 message RevokeNodeRequest {
   // The node's name in Kubernetes, which its node certificate carries too.
   string node = 1;
 }
 
+// The response of RevokeNode.
 message RevokeNodeResponse {
   // When the node was revoked: now, or at an earlier revocation.
   google.protobuf.Timestamp revoked_at = 1;
@@ -795,13 +945,16 @@ message RevokeNodeResponse {
   bool node_deleted = 2;
 }
 
+// The request of UnrevokeNode.
 message UnrevokeNodeRequest {
   // The node's name in Kubernetes.
   string node = 1;
-  // Unrevoke the node although the CAs its old certificates chain to predate the revocation.
+  // Whether the node is unrevoked although the CAs its old certificates chain to predate the
+  // revocation.
   bool force = 2;
 }
 
+// The response of UnrevokeNode.
 message UnrevokeNodeResponse {
   // When the node was revoked; unset when the time it is listed with cannot be read, which counts
   // every CA as made before the revocation.

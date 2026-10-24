@@ -25,9 +25,11 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// The mode chalkd serves the node in.
 type Mode int32
 
 const (
+	// No mode; chalkd never reports it.
 	Mode_MODE_UNSPECIFIED Mode = 0
 	// The node is not installed: chalkd serves a self-signed certificate.
 	Mode_MODE_MAINTENANCE Mode = 1
@@ -76,12 +78,16 @@ func (Mode) EnumDescriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{0}
 }
 
+// The state of Secure Boot, as the firmware's EFI variables SecureBoot and SetupMode give it.
 type SecureBoot int32
 
 const (
+	// No state; chalkd never reports it.
 	SecureBoot_SECURE_BOOT_UNSPECIFIED SecureBoot = 0
-	SecureBoot_SECURE_BOOT_DISABLED    SecureBoot = 1
-	SecureBoot_SECURE_BOOT_ENABLED     SecureBoot = 2
+	// Secure Boot is off, or its EFI variables cannot be read.
+	SecureBoot_SECURE_BOOT_DISABLED SecureBoot = 1
+	// Secure Boot is on: the firmware starts only binaries that db allows.
+	SecureBoot_SECURE_BOOT_ENABLED SecureBoot = 2
 	// The firmware accepts new Secure Boot keys without authentication.
 	SecureBoot_SECURE_BOOT_SETUP_MODE SecureBoot = 3
 )
@@ -129,9 +135,11 @@ func (SecureBoot) EnumDescriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{1}
 }
 
+// A step of a CA or key rotation that RotationStep runs.
 type RotationStep int32
 
 const (
+	// No step; chalkd refuses it.
 	RotationStep_ROTATION_STEP_UNSPECIFIED RotationStep = 0
 	// On a bootstrapped control-plane node: restart the Deployments, DaemonSets and StatefulSets of
 	// chalkos's add-ons and of the node's Addon documents, once the kube-root-ca.crt ConfigMaps of
@@ -198,6 +206,7 @@ func (RotationStep) EnumDescriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{2}
 }
 
+// The request of Info.
 type InfoRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -234,20 +243,25 @@ func (*InfoRequest) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{0}
 }
 
+// The response of Info.
 type InfoResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Mode  Mode                   `protobuf:"varint,1,opt,name=mode,proto3,enum=chalkos.node.v1.Mode" json:"mode,omitempty"`
+	// Mode chalkd serves the node in.
+	Mode Mode `protobuf:"varint,1,opt,name=mode,proto3,enum=chalkos.node.v1.Mode" json:"mode,omitempty"`
 	// Image ID of the running image, such as "chalkos".
 	ImageId string `protobuf:"bytes,3,opt,name=image_id,json=imageId,proto3" json:"image_id,omitempty"`
 	// Whether the node runs the installer, which writes a node's image to another disk.
 	Installer bool `protobuf:"varint,4,opt,name=installer,proto3" json:"installer,omitempty"`
 	// Device of the disk the node booted from; empty on the installer booted from a CD.
-	BootDisk   string     `protobuf:"bytes,5,opt,name=boot_disk,json=bootDisk,proto3" json:"boot_disk,omitempty"`
-	Tpm        bool       `protobuf:"varint,6,opt,name=tpm,proto3" json:"tpm,omitempty"`
+	BootDisk string `protobuf:"bytes,5,opt,name=boot_disk,json=bootDisk,proto3" json:"boot_disk,omitempty"`
+	// Whether the kernel found a TPM, as /sys/class/tpm lists one.
+	Tpm bool `protobuf:"varint,6,opt,name=tpm,proto3" json:"tpm,omitempty"`
+	// State of Secure Boot.
 	SecureBoot SecureBoot `protobuf:"varint,7,opt,name=secure_boot,json=secureBoot,proto3,enum=chalkos.node.v1.SecureBoot" json:"secure_boot,omitempty"`
 	// SHA-256 of the certificate chalkd serves, in lower-case hex.
 	Fingerprint string `protobuf:"bytes,8,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
-	Hostname    string `protobuf:"bytes,9,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	// Host name of the node, as the kernel holds it.
+	Hostname string `protobuf:"bytes,9,opt,name=hostname,proto3" json:"hostname,omitempty"`
 	// The mkImages variant the running image was built as; empty on the installer.
 	Variant string `protobuf:"bytes,11,opt,name=variant,proto3" json:"variant,omitempty"`
 	// The platform the running image was built for, such as metal or kvm; empty on the installer,
@@ -256,9 +270,11 @@ type InfoResponse struct {
 	// The verity root hash of the store the node runs, as its kernel command line's usrhash= names
 	// it, which identifies the running image; empty when it could not be read.
 	RootHash []byte `protobuf:"bytes,13,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
-	// The git revision and tag the running image was built from, as the node's record of the
-	// images it installed names them; empty when it does not know them.
-	Revision      string `protobuf:"bytes,14,opt,name=revision,proto3" json:"revision,omitempty"`
+	// The git revision the running image was built from, as the node's record of the images it
+	// installed names it; empty when it does not know it.
+	Revision string `protobuf:"bytes,14,opt,name=revision,proto3" json:"revision,omitempty"`
+	// The git tag the running image was built from, as the node's record of the images it
+	// installed names it; empty when it does not know it.
 	Tag           string `protobuf:"bytes,15,opt,name=tag,proto3" json:"tag,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -385,6 +401,7 @@ func (x *InfoResponse) GetTag() string {
 	return ""
 }
 
+// The request of Disks.
 type DisksRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -421,9 +438,11 @@ func (*DisksRequest) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{2}
 }
 
+// The response of Disks.
 type DisksResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Disks         []*Disk                `protobuf:"bytes,1,rep,name=disks,proto3" json:"disks,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The node's disks, by kernel name.
+	Disks         []*Disk `protobuf:"bytes,1,rep,name=disks,proto3" json:"disks,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -465,19 +484,26 @@ func (x *DisksResponse) GetDisks() []*Disk {
 	return nil
 }
 
+// A disk of the node, as sysfs and the udev database describe it.
 type Disk struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Kernel name, such as nvme0n1.
-	Name   string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Device node, such as /dev/nvme0n1.
 	Device string `protobuf:"bytes,2,opt,name=device,proto3" json:"device,omitempty"`
-	Model  string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
-	Size   uint64 `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
+	// Model, from udev's ID_MODEL with spaces for underscores, or else from sysfs.
+	Model string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
+	// Size in bytes.
+	Size uint64 `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
+	// Serial number, from udev's ID_SERIAL_SHORT, or else ID_SERIAL.
 	Serial string `protobuf:"bytes,5,opt,name=serial,proto3" json:"serial,omitempty"`
-	Wwn    string `protobuf:"bytes,6,opt,name=wwn,proto3" json:"wwn,omitempty"`
-	// nvme, ssd or hdd.
+	// World Wide Name, from udev's ID_WWN; empty for a disk without one.
+	Wwn string `protobuf:"bytes,6,opt,name=wwn,proto3" json:"wwn,omitempty"`
+	// Kind of disk: nvme, ssd or hdd.
 	Type string `protobuf:"bytes,7,opt,name=type,proto3" json:"type,omitempty"`
-	// udev's ID_PATH.
-	Path       string       `protobuf:"bytes,8,opt,name=path,proto3" json:"path,omitempty"`
+	// Path of the disk's connection, from udev's ID_PATH.
+	Path string `protobuf:"bytes,8,opt,name=path,proto3" json:"path,omitempty"`
+	// The disk's partitions, by number.
 	Partitions []*Partition `protobuf:"bytes,9,rep,name=partitions,proto3" json:"partitions,omitempty"`
 	// How chalkos uses the disk: "boot" for the boot disk, "disk <name>" for a pinned disk of the
 	// node's storage, empty when chalkos does not use it.
@@ -586,15 +612,21 @@ func (x *Disk) GetUsage() string {
 	return ""
 }
 
+// A partition of a disk, as sysfs and the udev database describe it.
 type Partition struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	Device string                 `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
-	Number uint32                 `protobuf:"varint,2,opt,name=number,proto3" json:"number,omitempty"`
-	Size   uint64                 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
-	// GPT partition type UUID.
-	Type  string `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Device node, such as /dev/nvme0n1p3.
+	Device string `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	// Partition number.
+	Number uint32 `protobuf:"varint,2,opt,name=number,proto3" json:"number,omitempty"`
+	// Size in bytes.
+	Size uint64 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	// GPT partition type UUID, in lower case.
+	Type string `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
+	// GPT partition name.
 	Label string `protobuf:"bytes,5,opt,name=label,proto3" json:"label,omitempty"`
-	Uuid  string `protobuf:"bytes,6,opt,name=uuid,proto3" json:"uuid,omitempty"`
+	// GPT partition UUID, in lower case.
+	Uuid string `protobuf:"bytes,6,opt,name=uuid,proto3" json:"uuid,omitempty"`
 	// File system or other content blkid found, such as ext4 or crypto_LUKS.
 	Content       string `protobuf:"bytes,7,opt,name=content,proto3" json:"content,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -680,6 +712,7 @@ func (x *Partition) GetContent() string {
 	return ""
 }
 
+// The request of Contract.
 type ContractRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -716,12 +749,14 @@ func (*ContractRequest) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{6}
 }
 
+// The response of Contract: the config contract of the image the node runs.
 type ContractResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The image's schemas by file name, as /etc/chalkos/schemas holds them.
 	Schemas map[string][]byte `protobuf:"bytes,1,rep,name=schemas,proto3" json:"schemas,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// The variant and platform the image was built for, as its os-release names them.
-	Variant  string `protobuf:"bytes,4,opt,name=variant,proto3" json:"variant,omitempty"`
+	// The variant the image was built as, as its os-release names it.
+	Variant string `protobuf:"bytes,4,opt,name=variant,proto3" json:"variant,omitempty"`
+	// The platform the image was built for, as its os-release names it.
 	Platform string `protobuf:"bytes,5,opt,name=platform,proto3" json:"platform,omitempty"`
 	// The image's image.json: the Kubernetes release, the images of its components and the pod
 	// network it ships. Empty on an image without Kubernetes.
@@ -788,6 +823,7 @@ func (x *ContractResponse) GetKubernetesImage() []byte {
 	return nil
 }
 
+// A message of the Install stream: the header first, then the image's chunks.
 type InstallRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Message:
@@ -859,10 +895,12 @@ type isInstallRequest_Message interface {
 }
 
 type InstallRequest_Header struct {
+	// The install's header, in the stream's first message.
 	Header *InstallHeader `protobuf:"bytes,1,opt,name=header,proto3,oneof"`
 }
 
 type InstallRequest_Chunk struct {
+	// The next bytes of the image's parts, in every message after the first.
 	Chunk *ImageChunk `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"`
 }
 
@@ -870,11 +908,13 @@ func (*InstallRequest_Header) isInstallRequest_Message() {}
 
 func (*InstallRequest_Chunk) isInstallRequest_Message() {}
 
+// What an install delivers: the node's credentials and config, the target and the image.
 type InstallHeader struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// PEM certificate and key chalkd serves once the node is installed.
+	// PEM certificate chalkd serves once the node is installed.
 	NodeCertificate []byte `protobuf:"bytes,2,opt,name=node_certificate,json=nodeCertificate,proto3" json:"node_certificate,omitempty"`
-	NodeKey         []byte `protobuf:"bytes,3,opt,name=node_key,json=nodeKey,proto3" json:"node_key,omitempty"`
+	// PEM key of node_certificate.
+	NodeKey []byte `protobuf:"bytes,3,opt,name=node_key,json=nodeKey,proto3" json:"node_key,omitempty"`
 	// PEM certificates of the OS CAs the node trusts, the one that issues client certificates and
 	// the node CA first, then those still trusted while it rotates.
 	CaCertificate []byte `protobuf:"bytes,4,opt,name=ca_certificate,json=caCertificate,proto3" json:"ca_certificate,omitempty"`
@@ -889,7 +929,7 @@ type InstallHeader struct {
 	// The image the installer writes to the target disk; it must name the boot loader. Its parts
 	// follow as chunks unless source names where the installer pulls them from. Installer only.
 	Image *ImageHeader `protobuf:"bytes,8,opt,name=image,proto3" json:"image,omitempty"`
-	// Let the installer replace whatever the target disk holds, including an installed node.
+	// Whether the installer may replace what the target disk holds, including an installed node.
 	WipeDisk bool `protobuf:"varint,9,opt,name=wipe_disk,json=wipeDisk,proto3" json:"wipe_disk,omitempty"`
 	// The image's repart definitions of the system region (ESP, slots A and B, STATE) by file
 	// name, which the installer lays out the target disk with; installer only. Each image chooses
@@ -1067,12 +1107,12 @@ type isInstallHeader_Target interface {
 }
 
 type InstallHeader_InPlace struct {
-	// The node's image already runs from the boot disk.
+	// Target of a node whose image already runs from its boot disk.
 	InPlace *InPlace `protobuf:"bytes,6,opt,name=in_place,json=inPlace,proto3,oneof"`
 }
 
 type InstallHeader_Disk struct {
-	// The installer lays out this disk and writes the streamed image to it.
+	// Target disk, which the installer lays out and writes the streamed image to.
 	Disk *DiskReference `protobuf:"bytes,7,opt,name=disk,proto3,oneof"`
 }
 
@@ -1080,6 +1120,7 @@ func (*InstallHeader_InPlace) isInstallHeader_Target() {}
 
 func (*InstallHeader_Disk) isInstallHeader_Target() {}
 
+// The target of an install in place, which the node's own image runs from its boot disk.
 type InPlace struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1118,13 +1159,19 @@ func (*InPlace) Descriptor() ([]byte, []int) {
 
 // A disk by /dev path, or by a selector whose set fields must all match.
 type DiskReference struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	Model         string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
-	Serial        string                 `protobuf:"bytes,3,opt,name=serial,proto3" json:"serial,omitempty"`
-	Wwn           string                 `protobuf:"bytes,4,opt,name=wwn,proto3" json:"wwn,omitempty"`
-	Size          string                 `protobuf:"bytes,5,opt,name=size,proto3" json:"size,omitempty"`
-	Type          string                 `protobuf:"bytes,6,opt,name=type,proto3" json:"type,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Path of the disk below /dev, such as /dev/disk/by-id/…; set without the selector fields.
+	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// Glob the disk's model matches, such as "Samsung SSD 870*".
+	Model string `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
+	// The disk's serial number.
+	Serial string `protobuf:"bytes,3,opt,name=serial,proto3" json:"serial,omitempty"`
+	// The disk's World Wide Name.
+	Wwn string `protobuf:"bytes,4,opt,name=wwn,proto3" json:"wwn,omitempty"`
+	// Comparison the disk's size meets, such as ">= 1T"; without an operator, the size it equals.
+	Size string `protobuf:"bytes,5,opt,name=size,proto3" json:"size,omitempty"`
+	// Kind of disk: nvme, ssd or hdd.
+	Type          string `protobuf:"bytes,6,opt,name=type,proto3" json:"type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1210,10 +1257,12 @@ type ImageHeader struct {
 	ImageId string `protobuf:"bytes,2,opt,name=image_id,json=imageId,proto3" json:"image_id,omitempty"`
 	// The verity root hash of the image's store.
 	RootHash []byte `protobuf:"bytes,5,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
-	// The store data the root hash covers, its hash tree and the signed UKI.
-	Store    *ImagePart `protobuf:"bytes,6,opt,name=store,proto3" json:"store,omitempty"`
+	// The store data, which the root hash covers.
+	Store *ImagePart `protobuf:"bytes,6,opt,name=store,proto3" json:"store,omitempty"`
+	// The store's verity hash tree.
 	HashTree *ImagePart `protobuf:"bytes,7,opt,name=hash_tree,json=hashTree,proto3" json:"hash_tree,omitempty"`
-	Uki      *ImagePart `protobuf:"bytes,8,opt,name=uki,proto3" json:"uki,omitempty"`
+	// The signed UKI that boots the image.
+	Uki *ImagePart `protobuf:"bytes,8,opt,name=uki,proto3" json:"uki,omitempty"`
 	// The signed systemd-boot, which firmware starts from the ESP's removable-media path.
 	BootLoader *ImagePart `protobuf:"bytes,9,opt,name=boot_loader,json=bootLoader,proto3" json:"boot_loader,omitempty"`
 	// The architecture the image runs on, as systemd and os-release name it: x86-64 or arm64. A
@@ -1223,10 +1272,12 @@ type ImageHeader struct {
 	// refuses an upgrade to an image of another platform than its own, and the installer
 	// translates the config for the platform the image names.
 	Platform string `protobuf:"bytes,11,opt,name=platform,proto3" json:"platform,omitempty"`
-	// The git revision and tag the image was built from, as its directory's metadata.json names
-	// them; empty when the build named none. The node records them to show beside the image's root
-	// hash; nothing compares them.
-	Revision      string `protobuf:"bytes,12,opt,name=revision,proto3" json:"revision,omitempty"`
+	// The git revision the image was built from, as its directory's metadata.json names it; empty
+	// when the build named none. The node records it to show beside the image's root hash; nothing
+	// compares it.
+	Revision string `protobuf:"bytes,12,opt,name=revision,proto3" json:"revision,omitempty"`
+	// The git tag the image was built from, as its directory's metadata.json names it; empty when
+	// the build named none. The node records it as it does revision.
 	Tag           string `protobuf:"bytes,13,opt,name=tag,proto3" json:"tag,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1334,9 +1385,11 @@ func (x *ImageHeader) GetTag() string {
 
 // The size and SHA-256 of a part of an image.
 type ImagePart struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Size          uint64                 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
-	Sha256        []byte                 `protobuf:"bytes,2,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Size in bytes.
+	Size uint64 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
+	// SHA-256 of the part's bytes.
+	Sha256        []byte `protobuf:"bytes,2,opt,name=sha256,proto3" json:"sha256,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1506,9 +1559,12 @@ func (x *RegistryImage) GetReference() string {
 	return ""
 }
 
+// A piece of an image's parts, which follow the header back to back in the header's order.
 type ImageChunk struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The next bytes of the parts; a chunk may end inside a part or span two. chalkctl sends 1 MiB
+	// per chunk.
+	Data          []byte `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1550,6 +1606,7 @@ func (x *ImageChunk) GetData() []byte {
 	return nil
 }
 
+// The response of Install, which the node sends before it reboots.
 type InstallResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1586,18 +1643,20 @@ func (*InstallResponse) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{17}
 }
 
+// The request of ApplyConfig: a config, or a share, a node certificate or OS CAs to deliver.
 type ApplyConfigRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Enrolled on encrypted volumes the config adds; required when it adds one and the node's
-	// fallback is not none.
+	// Recovery key or password enrolled on the encrypted volumes the config adds; required when it
+	// adds one and the node's fallback is not none.
 	FallbackSecret string `protobuf:"bytes,2,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
 	// A new Kubernetes share (JSON) replacing the node's, as InstallHeader carries it; empty
 	// keeps the node's share.
 	KubernetesShare []byte `protobuf:"bytes,3,opt,name=kubernetes_share,json=kubernetesShare,proto3" json:"kubernetes_share,omitempty"`
 	// A new node certificate for the node, followed by the certificate of the node CA that issued
-	// it (PEM), and its key, which chalkd serves from then on; empty keeps the node's.
+	// it (PEM), which chalkd serves from then on; empty keeps the node's.
 	NodeCertificate []byte `protobuf:"bytes,4,opt,name=node_certificate,json=nodeCertificate,proto3" json:"node_certificate,omitempty"`
-	NodeKey         []byte `protobuf:"bytes,5,opt,name=node_key,json=nodeKey,proto3" json:"node_key,omitempty"`
+	// PEM key of node_certificate; empty keeps the node's.
+	NodeKey []byte `protobuf:"bytes,5,opt,name=node_key,json=nodeKey,proto3" json:"node_key,omitempty"`
 	// The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them;
 	// empty keeps the node's. They must verify the node's certificate, the caller's and a control
 	// plane's node CA. Not together with a node certificate.
@@ -1606,11 +1665,12 @@ type ApplyConfigRequest struct {
 	// schemas. It replaces the node's config as a whole. Empty keeps the node's config and
 	// storage, for a request that delivers only a share, a node certificate or OS CAs.
 	Config string `protobuf:"bytes,7,opt,name=config,proto3" json:"config,omitempty"`
-	// Check the config against the image staged to boot next and keep it in that image's config
-	// slot instead, changing nothing the running image runs but the machine's storage: the config
-	// meets that image's change rules, compared with the running slot's config and the machine as
-	// for the running image, and the storage changes they accept are made at once, with
-	// fallback_secret. It takes the config and the fallback secret alone, and an image staged.
+	// Whether the config is for the image staged to boot next: chalkd checks it against that image
+	// and keeps it in that image's config slot, changing nothing the running image runs but the
+	// machine's storage. The config meets that image's change rules, compared with the running
+	// slot's config and the machine as for the running image, and the storage changes they accept
+	// are made at once, with fallback_secret. It takes the config and the fallback secret alone,
+	// and an image staged.
 	Staged        bool `protobuf:"varint,8,opt,name=staged,proto3" json:"staged,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1695,9 +1755,10 @@ func (x *ApplyConfigRequest) GetStaged() bool {
 	return false
 }
 
+// The request of GetConfig.
 type GetConfigRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The staged image's config instead of the running one's.
+	// Whether the response holds the staged image's config instead of the running one's.
 	Staged        bool `protobuf:"varint,1,opt,name=staged,proto3" json:"staged,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1740,6 +1801,7 @@ func (x *GetConfigRequest) GetStaged() bool {
 	return false
 }
 
+// The response of GetConfig: the config one slot keeps.
 type GetConfigResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The slot's documents as delivered, one JSON document each separated by ---, as
@@ -1797,6 +1859,7 @@ func (x *GetConfigResponse) GetVersion() string {
 	return ""
 }
 
+// The response of ApplyConfig: what the delivery changed on the node.
 type ApplyConfigResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Storage changes that were applied.
@@ -1861,11 +1924,16 @@ func (x *ApplyConfigResponse) GetWarnings() []string {
 	return nil
 }
 
+// A change a delivery made to the node's storage.
 type StorageChange struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Volume        string                 `protobuf:"bytes,1,opt,name=volume,proto3" json:"volume,omitempty"`
-	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
-	Destructive   bool                   `protobuf:"varint,3,opt,name=destructive,proto3" json:"destructive,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name of the volume that changed.
+	Volume string `protobuf:"bytes,1,opt,name=volume,proto3" json:"volume,omitempty"`
+	// What changed, such as "new volume", "new volume on new disk <disk>", "larger: 200G instead of
+	// 100G" or "mounted at /data instead of null".
+	Reason string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	// Whether the change destroys data; always false, as chalkd refuses destructive changes.
+	Destructive   bool `protobuf:"varint,3,opt,name=destructive,proto3" json:"destructive,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1921,10 +1989,14 @@ func (x *StorageChange) GetDestructive() bool {
 	return false
 }
 
+// The request of ResetVolume.
 type ResetVolumeRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Volume         string                 `protobuf:"bytes,1,opt,name=volume,proto3" json:"volume,omitempty"`
-	FallbackSecret string                 `protobuf:"bytes,3,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name of the volume to reset.
+	Volume string `protobuf:"bytes,1,opt,name=volume,proto3" json:"volume,omitempty"`
+	// Recovery key or password enrolled on the volume when it is encrypted; required then, unless
+	// the node's fallback is none.
+	FallbackSecret string `protobuf:"bytes,3,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
 	// The node's config, as ApplyConfigRequest.config holds it, checked against the running
 	// image's schemas; the volume is created as it defines. Required.
 	Config        string `protobuf:"bytes,4,opt,name=config,proto3" json:"config,omitempty"`
@@ -1983,6 +2055,7 @@ func (x *ResetVolumeRequest) GetConfig() string {
 	return ""
 }
 
+// The response of ResetVolume, once the volume is created again.
 type ResetVolumeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -2019,6 +2092,7 @@ func (*ResetVolumeResponse) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{24}
 }
 
+// The request of Status.
 type StatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -2055,12 +2129,16 @@ func (*StatusRequest) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{25}
 }
 
+// The response of Status: the state of an installed node.
 type StatusResponse struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	Disks       []*DiskStatus          `protobuf:"bytes,2,rep,name=disks,proto3" json:"disks,omitempty"`
-	Volumes     []*VolumeStatus        `protobuf:"bytes,3,rep,name=volumes,proto3" json:"volumes,omitempty"`
-	FailedUnits []string               `protobuf:"bytes,4,rep,name=failed_units,json=failedUnits,proto3" json:"failed_units,omitempty"`
-	// Absent on a node whose image has no Kubernetes.
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The disks of the node's storage, by name, as the boot's storage setup left them.
+	Disks []*DiskStatus `protobuf:"bytes,2,rep,name=disks,proto3" json:"disks,omitempty"`
+	// The volumes of the node's storage, by name.
+	Volumes []*VolumeStatus `protobuf:"bytes,3,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	// Names of the systemd units that failed.
+	FailedUnits []string `protobuf:"bytes,4,rep,name=failed_units,json=failedUnits,proto3" json:"failed_units,omitempty"`
+	// State of the node's Kubernetes; absent on a node whose image has no Kubernetes.
 	Kubernetes *KubernetesStatus `protobuf:"bytes,5,opt,name=kubernetes,proto3" json:"kubernetes,omitempty"`
 	// Every certificate the node holds or issues, with its expiry and what needs doing about it.
 	Certificates []*CertificateStatus `protobuf:"bytes,6,rep,name=certificates,proto3" json:"certificates,omitempty"`
@@ -2199,6 +2277,7 @@ func (x *StatusResponse) GetOutputs() []*OutputStatus {
 	return nil
 }
 
+// The state of one output of the running image.
 type OutputStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The output's name, as the image declares it.
@@ -2264,11 +2343,14 @@ func (x *OutputStatus) GetError() string {
 	return ""
 }
 
+// The images on the node's ESP and how the running one booted.
 type BootStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The image the node runs, and the file of the UKI it booted.
+	// The image the node runs.
 	Running *BootImage `protobuf:"bytes,1,opt,name=running,proto3" json:"running,omitempty"`
-	Entry   string     `protobuf:"bytes,2,opt,name=entry,proto3" json:"entry,omitempty"`
+	// File name of the UKI the node booted, in the ESP's /EFI/Linux, with its tries counter while
+	// it has one.
+	Entry string `protobuf:"bytes,2,opt,name=entry,proto3" json:"entry,omitempty"`
 	// Whether the boot was found healthy and marked good, or not counted by the boot loader at
 	// all; false while the boot loader counts the boot's tries.
 	Blessed bool `protobuf:"varint,3,opt,name=blessed,proto3" json:"blessed,omitempty"`
@@ -2375,9 +2457,11 @@ type BootImage struct {
 	// The generation of the UKI's boot entry, from its file name, <image ID>_<generation>.efi;
 	// systemd-boot boots the highest first. Zero when the name gives none or the entry is unknown.
 	Generation uint64 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
-	// The git revision and tag the image was built from, as the node's record of the images it
-	// installed names them; empty when it does not know them.
-	Revision      string `protobuf:"bytes,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	// The git revision the image was built from, as the node's record of the images it installed
+	// names it; empty when it does not know it.
+	Revision string `protobuf:"bytes,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	// The git tag the image was built from, as the node's record of the images it installed names
+	// it; empty when it does not know it.
 	Tag           string `protobuf:"bytes,4,opt,name=tag,proto3" json:"tag,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2441,6 +2525,7 @@ func (x *BootImage) GetTag() string {
 	return ""
 }
 
+// What the node trusts of one kind, and what it issues with.
 type TrustStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// What is trusted: "OS CA" on every node; "Kubernetes CA" on nodes with Kubernetes; on
@@ -2509,6 +2594,7 @@ func (x *TrustStatus) GetIssuing() string {
 	return ""
 }
 
+// A certificate the node holds or issues with.
 type CertificateStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// What the certificate is: "node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA",
@@ -2516,16 +2602,17 @@ type CertificateStatus struct {
 	// that expires first), "kubelet client" or "kubelet serving"; "Kubernetes share" when the
 	// node's share cannot be read, so the certificates it holds are unknown.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// Unset when the expiry is unknown.
+	// When the certificate expires; unset when the expiry is unknown.
 	NotAfter *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=not_after,json=notAfter,proto3" json:"not_after,omitempty"`
 	// Why a renewal fails, such as "renewal failing: <reason>; expires <date>", or a warning, such
 	// as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl
 	// node-ca rotate"; empty when there is nothing to do. A command it advises names the node, or
 	// says <node> when the node cannot tell its name.
 	Problem string `protobuf:"bytes,3,opt,name=problem,proto3" json:"problem,omitempty"`
-	// The SHA-256 fingerprint of the certificate, and of the certificate that issued it when the
-	// node holds that one, in lower-case hex.
-	Fingerprint   string `protobuf:"bytes,4,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
+	// The SHA-256 fingerprint of the certificate, in lower-case hex.
+	Fingerprint string `protobuf:"bytes,4,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
+	// The SHA-256 fingerprint of the certificate that issued it, in lower-case hex; empty when the
+	// node does not hold that one.
 	Issuer        string `protobuf:"bytes,5,opt,name=issuer,proto3" json:"issuer,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2596,6 +2683,7 @@ func (x *CertificateStatus) GetIssuer() string {
 	return ""
 }
 
+// How the node keeps its clock, as chrony reports it.
 type TimeStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Whether chrony synchronises the clock with a server.
@@ -2668,9 +2756,10 @@ func (x *TimeStatus) GetError() string {
 	return ""
 }
 
+// The state of the node's Kubernetes.
 type KubernetesStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// controlplane or worker.
+	// The node's part in the cluster: controlplane or worker.
 	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	// What the node waits for or is: "no share", "preparing" while its Kubernetes files are
 	// prepared, or why their preparation failed, such as "preparation failed: no ipv4 node address
@@ -2792,6 +2881,7 @@ func (x *KubernetesStatus) GetRevokedNodesRead() bool {
 	return false
 }
 
+// A node revoked in the cluster.
 type RevokedNode struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The node's name in Kubernetes.
@@ -2846,10 +2936,14 @@ func (x *RevokedNode) GetRevokedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// A disk of the node's storage, as the boot's storage setup left it.
 type DiskStatus struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	Name   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Device string                 `protobuf:"bytes,2,opt,name=device,proto3" json:"device,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The disk's name in the node's storage: system for the system disk, or the name of the Volume
+	// that has the disk to itself.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Device node the disk was found at, such as /dev/nvme0n1; empty when it was not found.
+	Device string `protobuf:"bytes,2,opt,name=device,proto3" json:"device,omitempty"`
 	// Why the disk's volumes could not be created or opened at boot; empty when they were.
 	Error         string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -2907,11 +3001,15 @@ func (x *DiskStatus) GetError() string {
 	return ""
 }
 
+// A volume of the node's storage.
 type VolumeStatus struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Name       string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Disk       string                 `protobuf:"bytes,2,opt,name=disk,proto3" json:"disk,omitempty"`
-	MountPoint string                 `protobuf:"bytes,3,opt,name=mount_point,json=mountPoint,proto3" json:"mount_point,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The volume's name: var for VAR, or the name of its Volume document.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Name of the disk the volume is on, as DiskStatus.name gives it.
+	Disk string `protobuf:"bytes,2,opt,name=disk,proto3" json:"disk,omitempty"`
+	// Where the config mounts the volume; empty for a volume it leaves unmounted.
+	MountPoint string `protobuf:"bytes,3,opt,name=mount_point,json=mountPoint,proto3" json:"mount_point,omitempty"`
 	// Whether the volume's partition exists.
 	Present bool `protobuf:"varint,4,opt,name=present,proto3" json:"present,omitempty"`
 	// Whether the volume is mounted at its mount point.
@@ -2985,11 +3083,12 @@ func (x *VolumeStatus) GetMounted() bool {
 	return false
 }
 
+// The request of Logs.
 type LogsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Unit whose journal to stream; empty streams the whole boot.
 	Unit string `protobuf:"bytes,1,opt,name=unit,proto3" json:"unit,omitempty"`
-	// Keep streaming new entries until the client cancels.
+	// Whether the stream goes on with new entries until the client cancels it.
 	Follow        bool `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3039,9 +3138,11 @@ func (x *LogsRequest) GetFollow() bool {
 	return false
 }
 
+// A message of the Logs stream.
 type LogsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Line          string                 `protobuf:"bytes,1,opt,name=line,proto3" json:"line,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// One journal entry, as journalctl's short-iso output prints it.
+	Line          string `protobuf:"bytes,1,opt,name=line,proto3" json:"line,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3083,6 +3184,7 @@ func (x *LogsResponse) GetLine() string {
 	return ""
 }
 
+// The request of Reboot.
 type RebootRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -3119,6 +3221,7 @@ func (*RebootRequest) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{39}
 }
 
+// The response of Reboot, which the node sends before it reboots.
 type RebootResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -3155,6 +3258,7 @@ func (*RebootResponse) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{40}
 }
 
+// The request of Bootstrap.
 type BootstrapRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -3191,6 +3295,7 @@ func (*BootstrapRequest) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{41}
 }
 
+// The response of Bootstrap, once the add-ons are applied.
 type BootstrapResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Objects applied: chalkos's add-ons and those of the node's Addon documents.
@@ -3236,13 +3341,18 @@ func (x *BootstrapResponse) GetApplied() uint32 {
 	return 0
 }
 
+// A member of etcd.
 type EtcdMember struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Id    uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// The member's ID.
+	Id uint64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	// The node's name; empty while a member that was added has not started.
-	Name     string   `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// URLs the other members reach the member at.
 	PeerUrls []string `protobuf:"bytes,3,rep,name=peer_urls,json=peerUrls,proto3" json:"peer_urls,omitempty"`
-	Learner  bool     `protobuf:"varint,4,opt,name=learner,proto3" json:"learner,omitempty"`
+	// Whether the member is a learner: a member without a vote, as a joining control-plane node
+	// is until it catches up.
+	Learner bool `protobuf:"varint,4,opt,name=learner,proto3" json:"learner,omitempty"`
 	// Why the member did not answer; empty when it is healthy.
 	Unhealthy     string `protobuf:"bytes,5,opt,name=unhealthy,proto3" json:"unhealthy,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -3314,6 +3424,7 @@ func (x *EtcdMember) GetUnhealthy() string {
 	return ""
 }
 
+// The request of EtcdMembers.
 type EtcdMembersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -3350,9 +3461,11 @@ func (*EtcdMembersRequest) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{44}
 }
 
+// The response of EtcdMembers.
 type EtcdMembersResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Members       []*EtcdMember          `protobuf:"bytes,1,rep,name=members,proto3" json:"members,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// etcd's members, as etcd lists them.
+	Members       []*EtcdMember `protobuf:"bytes,1,rep,name=members,proto3" json:"members,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3394,11 +3507,12 @@ func (x *EtcdMembersResponse) GetMembers() []*EtcdMember {
 	return nil
 }
 
+// The request of EtcdRemoveMember.
 type EtcdRemoveMemberRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The member's name or its ID in hex.
 	Member string `protobuf:"bytes,1,opt,name=member,proto3" json:"member,omitempty"`
-	// Remove the member even when the voters left would have no healthy quorum.
+	// Whether the member is removed even when the voters left would have no healthy quorum.
 	Force         bool `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3448,9 +3562,11 @@ func (x *EtcdRemoveMemberRequest) GetForce() bool {
 	return false
 }
 
+// The response of EtcdRemoveMember.
 type EtcdRemoveMemberResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Removed       *EtcdMember            `protobuf:"bytes,1,opt,name=removed,proto3" json:"removed,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The member that was removed, without its health.
+	Removed       *EtcdMember `protobuf:"bytes,1,opt,name=removed,proto3" json:"removed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3492,10 +3608,11 @@ func (x *EtcdRemoveMemberResponse) GetRemoved() *EtcdMember {
 	return nil
 }
 
+// The request of EtcdLeave.
 type EtcdLeaveRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Leave through the other members also when the node's own etcd member does not answer, as on
-	// a node that lost its pinned address.
+	// Whether the node leaves through the other members also when its own etcd member does not
+	// answer, as on a node that lost its pinned address.
 	Force         bool `protobuf:"varint,1,opt,name=force,proto3" json:"force,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3538,6 +3655,7 @@ func (x *EtcdLeaveRequest) GetForce() bool {
 	return false
 }
 
+// The response of EtcdLeave, once the node is out of etcd.
 type EtcdLeaveResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -3574,6 +3692,7 @@ func (*EtcdLeaveResponse) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{49}
 }
 
+// The request of RenewNodeCertificate.
 type RenewNodeCertificateRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// PKCS #10 certificate request (DER) signed with the node's new key, which never leaves the
@@ -3620,6 +3739,7 @@ func (x *RenewNodeCertificateRequest) GetCertificateRequest() []byte {
 	return nil
 }
 
+// The response of RenewNodeCertificate.
 type RenewNodeCertificateResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The new node certificate followed by the certificate of the node CA that issued it (PEM).
@@ -3665,9 +3785,11 @@ func (x *RenewNodeCertificateResponse) GetCertificateChain() []byte {
 	return nil
 }
 
+// The request of RotationStep.
 type RotationStepRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Step          RotationStep           `protobuf:"varint,1,opt,name=step,proto3,enum=chalkos.node.v1.RotationStep" json:"step,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The step to run.
+	Step          RotationStep `protobuf:"varint,1,opt,name=step,proto3,enum=chalkos.node.v1.RotationStep" json:"step,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3709,6 +3831,7 @@ func (x *RotationStepRequest) GetStep() RotationStep {
 	return RotationStep_ROTATION_STEP_UNSPECIFIED
 }
 
+// The response of RotationStep; each step sets the fields it reports.
 type RotationStepResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The workloads restarted, as namespace/kind/name.
@@ -3792,12 +3915,14 @@ func (x *RotationStepResponse) GetNotWaited() []string {
 	return nil
 }
 
+// How many objects of one resource etcd holds under one key.
 type EncryptedObjects struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The resource, such as secrets.
 	Resource string `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
 	// The name of the key the objects are encrypted with; empty for objects stored unencrypted.
-	Key           string `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	Key string `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	// Number of objects.
 	Objects       uint64 `protobuf:"varint,3,opt,name=objects,proto3" json:"objects,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3854,6 +3979,7 @@ func (x *EncryptedObjects) GetObjects() uint64 {
 	return 0
 }
 
+// A message of the Upgrade stream: the header first, then the image's chunks.
 type UpgradeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Message:
@@ -3925,10 +4051,12 @@ type isUpgradeRequest_Message interface {
 }
 
 type UpgradeRequest_Header struct {
+	// The upgrade's header, in the stream's first message.
 	Header *UpgradeHeader `protobuf:"bytes,1,opt,name=header,proto3,oneof"`
 }
 
 type UpgradeRequest_Chunk struct {
+	// The next bytes of the image's parts, in every message after the first.
 	Chunk *ImageChunk `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"`
 }
 
@@ -3936,12 +4064,13 @@ func (*UpgradeRequest_Header) isUpgradeRequest_Message() {}
 
 func (*UpgradeRequest_Chunk) isUpgradeRequest_Message() {}
 
+// What an upgrade delivers: the image and, optionally, the node's config for it.
 type UpgradeHeader struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The image to install. The node refuses another ID or platform than its own, and an image that
 	// names a boot loader: an upgrade leaves the boot loader as it is.
 	Image *ImageHeader `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
-	// Reboot the node into the image once it is installed.
+	// Whether the node reboots into the image once it is installed.
 	Reboot bool `protobuf:"varint,2,opt,name=reboot,proto3" json:"reboot,omitempty"`
 	// The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it
 	// against the image's schemas and change rules as ApplyConfig does: it refuses what the rules
@@ -3950,8 +4079,9 @@ type UpgradeHeader struct {
 	// keeps the config in the image's config slot. Empty carries the running image's config over,
 	// checked against the image the same way. Only the admin role may set it.
 	Config string `protobuf:"bytes,5,opt,name=config,proto3" json:"config,omitempty"`
-	// Enrolled on encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is;
-	// required when it adds one and the node's fallback is not none. Only the admin role may set it.
+	// Recovery key or password enrolled on the encrypted volumes the config adds, as
+	// ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is
+	// not none. Only the admin role may set it.
 	FallbackSecret string `protobuf:"bytes,6,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
 	// Where the node takes the image's parts from. Absent, they follow the header as chunks; for
 	// an image in a registry, the node pulls them and the request carries nothing after the header.
@@ -4025,17 +4155,18 @@ func (x *UpgradeHeader) GetSource() *ImageSource {
 	return nil
 }
 
+// The response of Upgrade.
 type UpgradeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The node runs the image already; nothing changed.
+	// Whether the node runs the image already, so nothing changed.
 	AlreadyInstalled bool `protobuf:"varint,1,opt,name=already_installed,json=alreadyInstalled,proto3" json:"already_installed,omitempty"`
 	// The file name of the UKI that boots the image next, with its tries.
 	Entry string `protobuf:"bytes,2,opt,name=entry,proto3" json:"entry,omitempty"`
-	// The node reboots into the image.
+	// Whether the node reboots into the image.
 	Rebooting bool `protobuf:"varint,3,opt,name=rebooting,proto3" json:"rebooting,omitempty"`
-	// The image boots next already, from entry, as an earlier upgrade without a reboot left it; the
-	// image was not written again, and the config the upgrade carries, or the running image's,
-	// replaced the config kept for it.
+	// Whether the image boots next already, from entry, as an earlier upgrade without a reboot left
+	// it; the image was not written again, and the config the upgrade carries, or the running
+	// image's, replaced the config kept for it.
 	AlreadyStaged bool `protobuf:"varint,4,opt,name=already_staged,json=alreadyStaged,proto3" json:"already_staged,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4099,13 +4230,14 @@ func (x *UpgradeResponse) GetAlreadyStaged() bool {
 	return false
 }
 
+// The request of DrainNode.
 type DrainNodeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The node's name in Kubernetes.
 	Node string `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
 	// How long to wait for the pods to be evicted and gone, in seconds; zero waits five minutes.
 	TimeoutSeconds uint32 `protobuf:"varint,2,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
-	// Evict pods with emptyDir volumes too, whose data is lost.
+	// Whether pods with emptyDir volumes are evicted too, which loses their data.
 	DeleteEmptydirData bool `protobuf:"varint,3,opt,name=delete_emptydir_data,json=deleteEmptydirData,proto3" json:"delete_emptydir_data,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
@@ -4162,16 +4294,18 @@ func (x *DrainNodeRequest) GetDeleteEmptydirData() bool {
 	return false
 }
 
+// The response of DrainNode: the pods evicted and the pods that stay.
 type DrainNodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Whether the node is marked as cordoned for an upgrade, by this call or an earlier one.
 	Marked bool `protobuf:"varint,1,opt,name=marked,proto3" json:"marked,omitempty"`
-	// The pods evicted, and those that stay, as namespace/name: DaemonSet, static and finished pods
-	// in kept, and pods without a controller in unmanaged, which nothing starts again elsewhere. The
-	// node lifecycle controller deletes those for good when the node stays down longer than their
-	// tolerations allow.
-	Evicted       []string `protobuf:"bytes,2,rep,name=evicted,proto3" json:"evicted,omitempty"`
-	Kept          []string `protobuf:"bytes,3,rep,name=kept,proto3" json:"kept,omitempty"`
+	// The pods evicted, as namespace/name.
+	Evicted []string `protobuf:"bytes,2,rep,name=evicted,proto3" json:"evicted,omitempty"`
+	// The DaemonSet, static and finished pods, which stay on the node, as namespace/name.
+	Kept []string `protobuf:"bytes,3,rep,name=kept,proto3" json:"kept,omitempty"`
+	// The pods without a controller, which stay and which nothing starts again elsewhere, as
+	// namespace/name. The node lifecycle controller deletes them for good when the node stays down
+	// longer than their tolerations allow.
 	Unmanaged     []string `protobuf:"bytes,4,rep,name=unmanaged,proto3" json:"unmanaged,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4235,6 +4369,7 @@ func (x *DrainNodeResponse) GetUnmanaged() []string {
 	return nil
 }
 
+// The request of UncordonNode.
 type UncordonNodeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The node's name in Kubernetes.
@@ -4280,6 +4415,7 @@ func (x *UncordonNodeRequest) GetNode() string {
 	return ""
 }
 
+// The response of UncordonNode.
 type UncordonNodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Whether the node was cordoned for an upgrade and is schedulable again.
@@ -4325,6 +4461,7 @@ func (x *UncordonNodeResponse) GetUncordoned() bool {
 	return false
 }
 
+// The request of RevokeNode.
 type RevokeNodeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The node's name in Kubernetes, which its node certificate carries too.
@@ -4370,6 +4507,7 @@ func (x *RevokeNodeRequest) GetNode() string {
 	return ""
 }
 
+// The response of RevokeNode.
 type RevokeNodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// When the node was revoked: now, or at an earlier revocation.
@@ -4424,11 +4562,13 @@ func (x *RevokeNodeResponse) GetNodeDeleted() bool {
 	return false
 }
 
+// The request of UnrevokeNode.
 type UnrevokeNodeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The node's name in Kubernetes.
 	Node string `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
-	// Unrevoke the node although the CAs its old certificates chain to predate the revocation.
+	// Whether the node is unrevoked although the CAs its old certificates chain to predate the
+	// revocation.
 	Force         bool `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4478,6 +4618,7 @@ func (x *UnrevokeNodeRequest) GetForce() bool {
 	return false
 }
 
+// The response of UnrevokeNode.
 type UnrevokeNodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// When the node was revoked; unset when the time it is listed with cannot be read, which counts
