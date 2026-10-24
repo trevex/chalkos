@@ -2,15 +2,16 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"net/netip"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/storage"
 )
 
 // Target is the image a set is translated for.
@@ -132,34 +133,48 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 			return err
 		}
 	}
-	families := c.Families()
-	var errs []string
-	add := func(format string, args ...any) { errs = append(errs, fmt.Sprintf(format, args...)) }
-
-	labels := make([]string, 0, len(spec.Labels))
-	for key, value := range spec.Labels {
-		labels = append(labels, key)
-		id.Labels[key] = value
-	}
-	sort.Strings(labels)
-	for _, key := range labels {
-		if refusedLabel(key) {
-			add("Node: label %q: the kubelet sets labels in the kubernetes.io and k8s.io namespaces on its own node only under kubelet.kubernetes.io/ and node.kubernetes.io/ or from the list %s", key, strings.Join(kubeletLabels, ", "))
-		}
-	}
+	maps.Copy(id.Labels, spec.Labels)
 	for _, t := range spec.Taints {
 		id.Taints = append(id.Taints, identity.Taint{Key: t.Key, Value: deref(t.Value), Effect: t.Effect})
 	}
-	volumes := make([]string, 0, len(id.Storage.Volumes))
-	for v := range id.Storage.Volumes {
-		volumes = append(volumes, v)
+	ips, ipErrs := nodeIPs(spec, c, id.StaticAddresses())
+	errs := slices.Concat(checkLabels(spec.Labels), checkSwap(id.Storage.Volumes), ipErrs)
+	if len(errs) > 0 {
+		return fmt.Errorf("invalid Kubernetes settings:\n- %s", strings.Join(errs, "\n- "))
 	}
-	sort.Strings(volumes)
-	for _, v := range volumes {
-		if id.Storage.Volumes[v].Format == "swap" {
-			add("Volume %s: a swap volume on a Kubernetes node; the kubelet refuses to run with swap (failSwapOn)", v)
+	id.Kubernetes = &identity.Kubernetes{NodeName: name, NodeIPs: ips, ValidSubnets: spec.NodeIP.ValidSubnets}
+	return nil
+}
+
+// checkLabels refuses the labels a kubelet may not set on its own Node, by key.
+func checkLabels(labels map[string]string) []string {
+	var errs []string
+	for _, key := range slices.Sorted(maps.Keys(labels)) {
+		if refusedLabel(key) {
+			errs = append(errs, fmt.Sprintf("Node: label %q: the kubelet sets labels in the kubernetes.io and k8s.io namespaces on its own node only under kubelet.kubernetes.io/ and node.kubernetes.io/ or from the list %s", key, strings.Join(kubeletLabels, ", ")))
 		}
 	}
+	return errs
+}
+
+// checkSwap refuses swap volumes, by name, which the kubelet does not run with.
+func checkSwap(volumes map[string]storage.Volume) []string {
+	var errs []string
+	for _, v := range slices.Sorted(maps.Keys(volumes)) {
+		if volumes[v].Format == "swap" {
+			errs = append(errs, fmt.Sprintf("Volume %s: a swap volume on a Kubernetes node; the kubelet refuses to run with swap (failSwapOn)", v))
+		}
+	}
+	return errs
+}
+
+// nodeIPs are the addresses the node of spec registers with in the cluster c: those its Node
+// document gives, or else defaultNodeIPs of static. It also returns why they, or the subnets the
+// node picks its addresses from, do not fit the cluster.
+func nodeIPs(spec nodeSpec, c kubernetes.Cluster, static []string) ([]string, []string) {
+	families := c.Families()
+	var errs []string
+	add := func(format string, args ...any) { errs = append(errs, fmt.Sprintf(format, args...)) }
 
 	subnets := c.NodeIP.ValidSubnets
 	// The node's own subnets replace the cluster's as a whole.
@@ -170,13 +185,13 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	if subnetErr != nil {
 		add("Node: nodeIP: %v", subnetErr)
 	}
-	nodeIPs := spec.NodeIP.Addresses
-	if nodeIPs == nil {
-		nodeIPs = defaultNodeIPs(id.StaticAddresses(), families, subnets)
+	ips := spec.NodeIP.Addresses
+	if ips == nil {
+		ips = defaultNodeIPs(static, families, subnets)
 	}
 	var seen []nodeip.Family
 	var addrs []netip.Addr
-	for _, a := range nodeIPs {
+	for _, a := range ips {
 		if ip, err := netip.ParseAddr(a); err == nil {
 			seen = append(seen, nodeip.FamilyOf(ip))
 			addrs = append(addrs, ip)
@@ -220,11 +235,7 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 			}
 		}
 	}
-	if len(errs) > 0 {
-		return fmt.Errorf("invalid Kubernetes settings:\n- %s", strings.Join(errs, "\n- "))
-	}
-	id.Kubernetes = &identity.Kubernetes{NodeName: name, NodeIPs: nodeIPs, ValidSubnets: spec.NodeIP.ValidSubnets}
-	return nil
+	return ips, errs
 }
 
 // defaultNodeIPs are the first static address of each of the cluster's families, or none when
