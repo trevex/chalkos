@@ -121,7 +121,7 @@ let
         opt:
         linkDeclarations opt
         // {
-          visible = opt.visible && opt.name != "chalkos" && declaredIn "modules/node" opt;
+          visible = opt.visible && declaredIn "modules/node" opt;
         };
     }).optionsJSON;
 

@@ -187,305 +187,298 @@ in
     };
   };
 
-  config = lib.mkMerge [
-    # Apart from the rest: the condition reads chalkos, so it can guard values below chalkos but
-    # not a definition of chalkos as a whole.
-    {
-      chalkos.effects = lib.mkIf enable {
-        # The registry mirrors read the Mirror and Registry documents when they start; no
-        # password reaches hosts.toml, so a changed Secret alone restarts nothing.
-        registry-mirrors = {
-          when = "${cel.specsChanged ociAPI "Mirror"} || ${cel.specsChanged ociAPI "Registry"}";
-          restart = [ "chalkos-registry-mirrors.service" ];
-        };
-        # The kubelet reads its credential provider's config when it starts and caches answers, so
-        # a Registry change, or a change of a password it references, writes the files again and
-        # starts the kubelet again, which empties the cache; its pods keep running.
-        registry-credentials = {
-          kinds = [ "Registry" ];
-          restart = [
-            "chalkos-registry-credentials.service"
-            "kubelet.service"
-          ];
-        };
-        # The control plane's ports read the Node document when they start; it references no
-        # Secret.
-        controlplane-ports = {
-          when = cel.specsChanged kubernetesAPI "Node";
-          restart = [ "chalkos-controlplane.service" ];
-        };
-        # Both start too: a node runs no kubelet until it holds a share, which the delivery of
-        # its first one changes.
-        kubernetes = {
-          when = kubernetesChanged;
-          restart = [
-            "chalkos-kubernetes.service"
-            "kubelet.service"
-          ];
-          start = true;
-        };
-        # chalkd's Kubernetes loops, which chalkd starts again itself: every loop reads the
-        # cluster when it starts, and the control plane's loop reads the share and applies the
-        # control plane's objects.
-        chalkd-cluster = {
-          when = clusterChanged;
-          chalkd = "restart";
-        };
-        chalkd-share = {
-          when = "${shareChanged} || ${addonsApplied}";
-          chalkd = "reload";
-        };
+  config = lib.mkIf enable {
+    chalkos.effects = {
+      # The registry mirrors read the Mirror and Registry documents when they start; no
+      # password reaches hosts.toml, so a changed Secret alone restarts nothing.
+      registry-mirrors = {
+        when = "${cel.specsChanged ociAPI "Mirror"} || ${cel.specsChanged ociAPI "Registry"}";
+        restart = [ "chalkos-registry-mirrors.service" ];
       };
-      # The cluster file chalkd writes, which the kubelet's rules compare.
-      chalkos.facts = lib.mkIf enable {
-        cluster.file = "${run}/cluster.json";
-      };
-    }
-    (lib.mkIf enable {
-      boot.kernelModules = [
-        "overlay"
-        "br_netfilter"
-        "vxlan"
-      ];
-      boot.kernel.sysctl = {
-        "net.ipv4.ip_forward" = 1;
-        "net.ipv6.conf.all.forwarding" = 1;
-        "net.bridge.bridge-nf-call-iptables" = 1;
-        "net.bridge.bridge-nf-call-ip6tables" = 1;
-        # What the kubelet's protectKernelDefaults checks.
-        "vm.overcommit_memory" = 1;
-        "vm.panic_on_oom" = 0;
-        "kernel.panic" = 10;
-        "kernel.panic_on_oops" = 1;
-        "kernel.keys.root_maxkeys" = 1000000;
-        "kernel.keys.root_maxbytes" = 25000000;
-      };
-
-      # containerd and its runc shim alone: ctr and containerd-stress are half of the package. A copy,
-      # so the store holds these two alone.
-      nixpkgs.overlays = [
-        (_: prev: {
-          containerd =
-            prev.runCommand "containerd-${prev.containerd.version}"
-              {
-                pname = "containerd";
-                inherit (prev.containerd) version;
-                # The copy has out alone; containerd's meta names man too, for the system path.
-                meta = prev.containerd.meta // {
-                  outputsToInstall = [ "out" ];
-                };
-                binaries = [
-                  "containerd"
-                  "containerd-shim-runc-v2"
-                ];
-              }
-              ''
-                mkdir -p $out/bin
-                for binary in $binaries; do
-                  cp ${prev.containerd}/bin/$binary $out/bin/
-                done
-              '';
-        })
-      ];
-
-      system.build.chalkosCNIPlugins = cniPlugins;
-      # What the image fixes about Kubernetes, which its image directory's metadata.json names.
-      system.build.chalkosKubernetesImage = imageFile;
-      # The scripts of the units that read the config, which checks run with documents of their
-      # own.
-      system.build.chalkosVxlanRule = vxlanRule;
-
-      # containerd runs the CNI plugins, and portmap programs nftables with nft.
-      systemd.services.containerd.path = [ pkgs.nftables ];
-
-      environment.systemPackages = lib.mkIf config.chalkos.debug.tools [ pkgs.cri-tools ];
-
-      virtualisation.containerd = {
-        enable = true;
-        settings = lib.mkForce {
-          version = 4;
-          plugins."io.containerd.cri.v1.images" = {
-            # The hosts.toml files of the Mirror and Registry documents, which containerd reads on
-            # every pull.
-            registry.config_path = "/run/containerd/certs.d";
-            pinned_images.sandbox = k.images.pause;
-          };
-          plugins."io.containerd.cri.v1.runtime" = {
-            # /etc is read-only, so the pod network's configuration lives on VAR.
-            cni = {
-              bin_dirs = [ "${cniPlugins}/bin" ];
-              conf_dir = "/var/lib/cni/net.d";
-            };
-            containerd.runtimes.runc.options.SystemdCgroup = true;
-          };
-        };
-      };
-
-      environment.etc = {
-        "chalkos/kubernetes/image.json".text = builtins.toJSON imageFile;
-      };
-
-      systemd.services.chalkos-registry-mirrors = {
-        description = "Write containerd's registry hosts from the config";
-        chalkos.kinds = [
-          "Mirror"
-          "Registry"
-        ];
-        wantedBy = [ "containerd.service" ];
-        before = [ "containerd.service" ];
-        after = [ "chalkos-config.service" ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          ExecStart = lib.getExe registryMirrors;
-        };
-      };
-
-      # The kubelet's credential provider, which is chalkd, and the node's registry credentials,
-      # from the Registry documents and the passwords chalkd gives the unit. chalkd keeps the
-      # credentials in a directory readable by root alone.
-      systemd.services.chalkos-registry-credentials = {
-        description = "Write the kubelet's registry credentials from the config";
-        chalkos.kinds = [ "Registry" ];
-        wantedBy = [ "multi-user.target" ];
-        before = [ "kubelet.service" ];
-        after = [ "chalkos-config.service" ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          ExecStart = "${lib.getExe chalkd} registry-credentials";
-        };
-      };
-
-      systemd.tmpfiles.rules = [
-        "d /var/lib/cni/net.d 0755 root root -"
-      ];
-
-      # The node's addresses have settled. A unit that configures or announces addresses, such as a
-      # routing daemon's, orders itself before the target and is wanted by it; the preparation picks
-      # the node's addresses after it, and still waits up to nodeIP.timeout for them.
-      systemd.targets.chalkos-node-addresses = {
-        description = "The node's addresses have settled";
-        wants = [ "network-online.target" ];
-        after = [ "network-online.target" ];
-      };
-
-      # Certificates, kubeconfigs and kubelet flags from the node's share and identity.
-      systemd.services.chalkos-kubernetes = {
-        description = "Prepare the node's Kubernetes certificates and configuration";
-        wantedBy = [ "multi-user.target" ];
-        wants = [ "chalkos-node-addresses.target" ];
-        after = [
-          "chalkos-config.service"
-          "local-fs.target"
-          "chalkos-node-addresses.target"
-        ]
-        ++ lib.optional vxlanFirewall "nftables.service";
-        before = [ "kubelet.service" ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          ExecStart = "${lib.getExe chalkd} prepare-kubernetes";
-        }
-        // lib.optionalAttrs vxlanFirewall {
-          # No VXLAN is accepted while the addresses are picked, nor when none are found.
-          ExecStartPre = [ (lib.getExe vxlanRule) ];
-          # The preparation fills the table last, so the node is marked prepared only with the rules
-          # in place, and a failure to fill it is the preparation's, which chalkd reports.
-          ExecStart = "${lib.getExe chalkd} prepare-kubernetes ${lib.getExe vxlanRule}";
-        };
-      };
-
-      systemd.services.kubelet = {
-        description = "Kubernetes kubelet";
-        wantedBy = [ "multi-user.target" ];
-        # Without the credential provider's files the kubelet pulls anonymously, so a failure to
-        # write them leaves the node running pods.
-        wants = [
-          "containerd.service"
-          "network-online.target"
+      # The kubelet reads its credential provider's config when it starts and caches answers, so
+      # a Registry change, or a change of a password it references, writes the files again and
+      # starts the kubelet again, which empties the cache; its pods keep running.
+      registry-credentials = {
+        kinds = [ "Registry" ];
+        restart = [
           "chalkos-registry-credentials.service"
+          "kubelet.service"
         ];
-        requires = [ "chalkos-kubernetes.service" ];
-        after = [
-          "containerd.service"
-          "chalkos-kubernetes.service"
-          "chalkos-registry-credentials.service"
-          "network-online.target"
-        ];
-        unitConfig = {
-          # A node without a share has no kubeconfig and runs no kubelet.
-          ConditionPathExists = "${run}/kubelet/kubeconfig";
-          # A control plane's etcd pod would make its directory on the file system below a volume
-          # that is missing, and start empty there.
-          RequiresMountsFor = "/var/lib/etcd";
-        };
-        path = [
-          pkgs.util-linux
-          pkgs.iproute2
-        ];
-        serviceConfig = {
-          EnvironmentFile = [
-            "${run}/kubelet/flags"
-            "-${run}/credential-provider/flags"
-          ];
-          # chalkd's preparation writes the configuration and the flags, the cluster's extra flags
-          # of the kubelet last; chalkos-registry-credentials the credential provider's flags.
-          ExecStart = lib.concatStringsSep " " [
-            "${kubelet}/bin/kubelet"
-            "--config=${run}/kubelet/config.json"
-            "--kubeconfig=${run}/kubelet/kubeconfig"
-            "--cert-dir=/var/lib/kubelet/pki"
-            "$KUBELET_CREDENTIAL_PROVIDER_ARGS"
-            "$KUBELET_ARGS"
-          ];
-          Restart = "always";
-          RestartSec = 10;
-        };
-        startLimitIntervalSec = 0;
       };
-
-      systemd.services.chalkos-controlplane = {
-        description = "Open the control plane's ports and make etcd's directory by the node's type";
-        chalkos.kinds = [ "Node" ];
-        wantedBy = [ "multi-user.target" ];
-        after = [
-          "chalkos-config.service"
-          "local-fs.target"
-        ]
-        ++ lib.optional config.networking.firewall.enable "nftables.service";
-        unitConfig.RequiresMountsFor = "/var/lib/etcd";
-        before = [
+      # The control plane's ports read the Node document when they start; it references no
+      # Secret.
+      controlplane-ports = {
+        when = cel.specsChanged kubernetesAPI "Node";
+        restart = [ "chalkos-controlplane.service" ];
+      };
+      # Both start too: a node runs no kubelet until it holds a share, which the delivery of
+      # its first one changes.
+      kubernetes = {
+        when = kubernetesChanged;
+        restart = [
           "chalkos-kubernetes.service"
           "kubelet.service"
         ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          ExecStart = lib.getExe controlPlanePorts;
+        start = true;
+      };
+      # chalkd's Kubernetes loops, which chalkd starts again itself: every loop reads the
+      # cluster when it starts, and the control plane's loop reads the share and applies the
+      # control plane's objects.
+      chalkd-cluster = {
+        when = clusterChanged;
+        chalkd = "restart";
+      };
+      chalkd-share = {
+        when = "${shareChanged} || ${addonsApplied}";
+        chalkd = "reload";
+      };
+    };
+    # The cluster file chalkd writes, which the kubelet's rules compare.
+    chalkos.facts.cluster.file = "${run}/cluster.json";
+
+    boot.kernelModules = [
+      "overlay"
+      "br_netfilter"
+      "vxlan"
+    ];
+    boot.kernel.sysctl = {
+      "net.ipv4.ip_forward" = 1;
+      "net.ipv6.conf.all.forwarding" = 1;
+      "net.bridge.bridge-nf-call-iptables" = 1;
+      "net.bridge.bridge-nf-call-ip6tables" = 1;
+      # What the kubelet's protectKernelDefaults checks.
+      "vm.overcommit_memory" = 1;
+      "vm.panic_on_oom" = 0;
+      "kernel.panic" = 10;
+      "kernel.panic_on_oops" = 1;
+      "kernel.keys.root_maxkeys" = 1000000;
+      "kernel.keys.root_maxbytes" = 25000000;
+    };
+
+    # containerd and its runc shim alone: ctr and containerd-stress are half of the package. A copy,
+    # so the store holds these two alone.
+    nixpkgs.overlays = [
+      (_: prev: {
+        containerd =
+          prev.runCommand "containerd-${prev.containerd.version}"
+            {
+              pname = "containerd";
+              inherit (prev.containerd) version;
+              # The copy has out alone; containerd's meta names man too, for the system path.
+              meta = prev.containerd.meta // {
+                outputsToInstall = [ "out" ];
+              };
+              binaries = [
+                "containerd"
+                "containerd-shim-runc-v2"
+              ];
+            }
+            ''
+              mkdir -p $out/bin
+              for binary in $binaries; do
+                cp ${prev.containerd}/bin/$binary $out/bin/
+              done
+            '';
+      })
+    ];
+
+    system.build.chalkosCNIPlugins = cniPlugins;
+    # What the image fixes about Kubernetes, which its image directory's metadata.json names.
+    system.build.chalkosKubernetesImage = imageFile;
+    # The scripts of the units that read the config, which checks run with documents of their
+    # own.
+    system.build.chalkosVxlanRule = vxlanRule;
+
+    # containerd runs the CNI plugins, and portmap programs nftables with nft.
+    systemd.services.containerd.path = [ pkgs.nftables ];
+
+    environment.systemPackages = lib.mkIf config.chalkos.debug.tools [ pkgs.cri-tools ];
+
+    virtualisation.containerd = {
+      enable = true;
+      settings = lib.mkForce {
+        version = 4;
+        plugins."io.containerd.cri.v1.images" = {
+          # The hosts.toml files of the Mirror and Registry documents, which containerd reads on
+          # every pull.
+          registry.config_path = "/run/containerd/certs.d";
+          pinned_images.sandbox = k.images.pause;
+        };
+        plugins."io.containerd.cri.v1.runtime" = {
+          # /etc is read-only, so the pod network's configuration lives on VAR.
+          cni = {
+            bin_dirs = [ "${cniPlugins}/bin" ];
+            conf_dir = "/var/lib/cni/net.d";
+          };
+          containerd.runtimes.runc.options.SystemdCgroup = true;
         };
       };
+    };
 
-      networking.firewall = {
-        allowedTCPPorts = [ 10250 ];
-        allowedTCPPortRanges = [
-          {
-            from = 30000;
-            to = 32767;
-          }
-        ];
-        # Accept what chalkos-controlplane and chalkos-vxlan marked. Their tables clear the marks
-        # after this chain, so neither these packets nor those they carry keep them. etcd's
-        # clients and peers on the other control-plane nodes need 2379 and 2380; etcd accepts only
-        # certificates of its CA there. Known limitation: the ports are open to every source, not
-        # only to the cluster's node addresses.
-        extraInputRules = lib.concatStringsSep "\n" (
-          [
-            "tcp dport { 6443, 2379, 2380 } meta mark & ${controlPlaneMark} == ${controlPlaneMark} accept"
-          ]
-          ++ lib.optional flannel "udp dport 8472 meta mark & ${vxlanMark} == ${vxlanMark} accept"
-        );
+    environment.etc = {
+      "chalkos/kubernetes/image.json".text = builtins.toJSON imageFile;
+    };
+
+    systemd.services.chalkos-registry-mirrors = {
+      description = "Write containerd's registry hosts from the config";
+      chalkos.kinds = [
+        "Mirror"
+        "Registry"
+      ];
+      wantedBy = [ "containerd.service" ];
+      before = [ "containerd.service" ];
+      after = [ "chalkos-config.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = lib.getExe registryMirrors;
       };
-    })
-  ];
+    };
+
+    # The kubelet's credential provider, which is chalkd, and the node's registry credentials,
+    # from the Registry documents and the passwords chalkd gives the unit. chalkd keeps the
+    # credentials in a directory readable by root alone.
+    systemd.services.chalkos-registry-credentials = {
+      description = "Write the kubelet's registry credentials from the config";
+      chalkos.kinds = [ "Registry" ];
+      wantedBy = [ "multi-user.target" ];
+      before = [ "kubelet.service" ];
+      after = [ "chalkos-config.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${lib.getExe chalkd} registry-credentials";
+      };
+    };
+
+    systemd.tmpfiles.rules = [
+      "d /var/lib/cni/net.d 0755 root root -"
+    ];
+
+    # The node's addresses have settled. A unit that configures or announces addresses, such as a
+    # routing daemon's, orders itself before the target and is wanted by it; the preparation picks
+    # the node's addresses after it, and still waits up to nodeIP.timeout for them.
+    systemd.targets.chalkos-node-addresses = {
+      description = "The node's addresses have settled";
+      wants = [ "network-online.target" ];
+      after = [ "network-online.target" ];
+    };
+
+    # Certificates, kubeconfigs and kubelet flags from the node's share and identity.
+    systemd.services.chalkos-kubernetes = {
+      description = "Prepare the node's Kubernetes certificates and configuration";
+      wantedBy = [ "multi-user.target" ];
+      wants = [ "chalkos-node-addresses.target" ];
+      after = [
+        "chalkos-config.service"
+        "local-fs.target"
+        "chalkos-node-addresses.target"
+      ]
+      ++ lib.optional vxlanFirewall "nftables.service";
+      before = [ "kubelet.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${lib.getExe chalkd} prepare-kubernetes";
+      }
+      // lib.optionalAttrs vxlanFirewall {
+        # No VXLAN is accepted while the addresses are picked, nor when none are found.
+        ExecStartPre = [ (lib.getExe vxlanRule) ];
+        # The preparation fills the table last, so the node is marked prepared only with the rules
+        # in place, and a failure to fill it is the preparation's, which chalkd reports.
+        ExecStart = "${lib.getExe chalkd} prepare-kubernetes ${lib.getExe vxlanRule}";
+      };
+    };
+
+    systemd.services.kubelet = {
+      description = "Kubernetes kubelet";
+      wantedBy = [ "multi-user.target" ];
+      # Without the credential provider's files the kubelet pulls anonymously, so a failure to
+      # write them leaves the node running pods.
+      wants = [
+        "containerd.service"
+        "network-online.target"
+        "chalkos-registry-credentials.service"
+      ];
+      requires = [ "chalkos-kubernetes.service" ];
+      after = [
+        "containerd.service"
+        "chalkos-kubernetes.service"
+        "chalkos-registry-credentials.service"
+        "network-online.target"
+      ];
+      unitConfig = {
+        # A node without a share has no kubeconfig and runs no kubelet.
+        ConditionPathExists = "${run}/kubelet/kubeconfig";
+        # A control plane's etcd pod would make its directory on the file system below a volume
+        # that is missing, and start empty there.
+        RequiresMountsFor = "/var/lib/etcd";
+      };
+      path = [
+        pkgs.util-linux
+        pkgs.iproute2
+      ];
+      serviceConfig = {
+        EnvironmentFile = [
+          "${run}/kubelet/flags"
+          "-${run}/credential-provider/flags"
+        ];
+        # chalkd's preparation writes the configuration and the flags, the cluster's extra flags
+        # of the kubelet last; chalkos-registry-credentials the credential provider's flags.
+        ExecStart = lib.concatStringsSep " " [
+          "${kubelet}/bin/kubelet"
+          "--config=${run}/kubelet/config.json"
+          "--kubeconfig=${run}/kubelet/kubeconfig"
+          "--cert-dir=/var/lib/kubelet/pki"
+          "$KUBELET_CREDENTIAL_PROVIDER_ARGS"
+          "$KUBELET_ARGS"
+        ];
+        Restart = "always";
+        RestartSec = 10;
+      };
+      startLimitIntervalSec = 0;
+    };
+
+    systemd.services.chalkos-controlplane = {
+      description = "Open the control plane's ports and make etcd's directory by the node's type";
+      chalkos.kinds = [ "Node" ];
+      wantedBy = [ "multi-user.target" ];
+      after = [
+        "chalkos-config.service"
+        "local-fs.target"
+      ]
+      ++ lib.optional config.networking.firewall.enable "nftables.service";
+      unitConfig.RequiresMountsFor = "/var/lib/etcd";
+      before = [
+        "chalkos-kubernetes.service"
+        "kubelet.service"
+      ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = lib.getExe controlPlanePorts;
+      };
+    };
+
+    networking.firewall = {
+      allowedTCPPorts = [ 10250 ];
+      allowedTCPPortRanges = [
+        {
+          from = 30000;
+          to = 32767;
+        }
+      ];
+      # Accept what chalkos-controlplane and chalkos-vxlan marked. Their tables clear the marks
+      # after this chain, so neither these packets nor those they carry keep them. etcd's
+      # clients and peers on the other control-plane nodes need 2379 and 2380; etcd accepts only
+      # certificates of its CA there. Known limitation: the ports are open to every source, not
+      # only to the cluster's node addresses.
+      extraInputRules = lib.concatStringsSep "\n" (
+        [
+          "tcp dport { 6443, 2379, 2380 } meta mark & ${controlPlaneMark} == ${controlPlaneMark} accept"
+        ]
+        ++ lib.optional flannel "udp dport 8472 meta mark & ${vxlanMark} == ${vxlanMark} accept"
+      );
+    };
+  };
 }
