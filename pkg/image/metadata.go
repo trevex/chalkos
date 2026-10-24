@@ -2,7 +2,6 @@ package image
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -25,8 +24,8 @@ func Provenance(dir string, rootHash []byte) (revision, tag string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	var md schema.Metadata
-	if err := json.Unmarshal(data, &md); err != nil {
+	md, err := schema.ParseMetadata(data)
+	if err != nil {
 		return "", "", err
 	}
 	if !strings.EqualFold(md.RootHash, hex.EncodeToString(rootHash)) {
