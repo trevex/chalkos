@@ -18,13 +18,12 @@ flowchart LR
 
 ## A Kubernetes upgrade is an image upgrade
 
-The image fixes the Kubernetes release: its kubelet, and the upstream images of the same version
-that the control plane runs. A node's kubelet and control plane therefore always run the same
-version. There is no separate Kubernetes upgrade. A new Kubernetes release is a new image built
-with a new [`chalkos.kubernetes.package`](../../reference/options.md#chalkoskubernetespackage),
-installed like any other. [How Kubernetes runs on a node](overview.md#the-image-fixes-one-kubernetes-version)
-describes what the image fixes. The steps a single node takes, from the image to the bless, are
-on [Upgrades](../node/upgrades.md).
+There is no separate Kubernetes upgrade. A new Kubernetes release is a new image built with a new
+[`chalkos.kubernetes.package`](../../reference/options.md#chalkoskubernetespackage), installed like
+any other, because the image fixes the release of the kubelet and the control plane, as
+[The image fixes one Kubernetes version](overview.md#the-image-fixes-one-kubernetes-version)
+describes. The steps a single node takes, from the image to the bless, are on
+[Upgrades](../node/upgrades.md).
 
 The config an upgrade carries meets the new image's change rules, and a change of a fixed
 Kubernetes setting is refused. The check of the config against the image includes the cluster it

@@ -372,7 +372,9 @@ change needs, as [Guard changes with rules and facts](../../build/guard-changes.
     The Kubernetes share is machine state too. Once a node holds it, the rules refuse a
     `Node.spec.type` other than the one the node was installed with, which takes a reinstall as the
     new type. They also refuse a change of the cluster's IP families, pod or service ranges or DNS
-    addresses, which stay for the cluster's life. The cluster file
+    addresses, which stay for the cluster's life, as
+    [The ranges of a cluster are fixed once it exists](../kubernetes/overview.md#the-ranges-of-a-cluster-are-fixed-once-it-exists)
+    explains. The cluster file
     `/run/chalkos/kubernetes/cluster.json` is not machine state: `chalkos-config` writes it from the
     slot of the image that boots, and chalkd writes it again when `apply-config` changes the running
     image's config. A control plane's addresses are not refused, but they are pinned once it

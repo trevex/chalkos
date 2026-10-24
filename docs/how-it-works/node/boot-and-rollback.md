@@ -56,7 +56,7 @@ previous generation. chalkd sets no EFI variable to choose the entry.
 
 ## The initrd opens the store and the node's partitions
 
-The initrd prepares the root file system in four steps:
+The initrd prepares the root file system in three steps:
 
 - systemd-repart compares the boot disk with the image's partition definitions. On the first boot
   of an image it adds slot B and an empty STATE. On later boots everything is there, and it
@@ -65,15 +65,11 @@ The initrd prepares the root file system in four steps:
 - The kernel command line's `usrhash=` names the store's root hash. systemd finds the data and
   hash partitions whose UUIDs derive from it, opens them with dm-verity and mounts the store
   read-only.
-- `chalkos-state.service` unlocks STATE and mounts it. The TPM unseals the key when PCR 7 holds
-  the value it was sealed to, which it does after an upgrade signed by the same key. When the TPM
-  refuses, systemd-cryptsetup asks on the console for the second key: the node's recovery key or a
-  password, as the node's storage settings chose.
-- `chalkos-storage.service` reads the storage section recorded on STATE, creates any volume that
-  is missing, and unlocks and mounts VAR the same way. A node that is not installed has no storage
-  section, so `/var` stays in memory.
-
-[Storage and encryption](storage.md) explains the keys, the volumes and the unlock.
+- `chalkos-state.service` unlocks and mounts STATE, and `chalkos-storage.service` then creates any
+  missing volume and unlocks and mounts VAR. The TPM unseals their keys, and when it refuses, the
+  console asks for the second key: the node's recovery key or a password.
+  [The initrd unlocks STATE first, then VAR](storage.md#the-initrd-unlocks-state-first-then-var)
+  describes both units.
 
 ## Stage 2 applies the config before the network starts
 
@@ -186,10 +182,10 @@ which would let someone at the console install it anew.
 [Storage and encryption](storage.md#a-changed-pcr-7-sends-the-unlock-to-the-console) explains the
 causes.
 
-chalkd decides its mode from STATE alone. STATE that holds no `installed` marker, as on a first
-boot, starts chalkd in maintenance mode, where it waits for an install. When chalkd cannot read
-STATE to tell whether the node is installed, it fails and restarts. It does not fall back to
-maintenance mode.
+chalkd decides its mode from STATE alone. When it cannot read STATE to tell whether the node is
+installed, it fails and restarts, as
+[The installed marker decides chalkd's mode](architecture.md#the-installed-marker-decides-chalkds-mode)
+describes.
 
 ### A boot that hangs is never decided
 

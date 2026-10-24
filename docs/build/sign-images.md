@@ -200,11 +200,12 @@ chalkctl upgrade --image images/node-kvm-signed \
 
 ## The key stays the same for an installed node
 
-A node's STATE, VAR and encrypted volumes are sealed to PCR 7. PCR 7 measures the Secure Boot
-state and the db certificate that verified the boot binaries. An image signed with the same key
-boots with the same PCR 7, so upgrades unlock the disks without anyone typing a key. An image
-signed with another key that db also trusts boots too, but PCR 7 differs, the TPM does not
-unseal, and the console asks for the node's recovery key.
+A node's STATE, VAR and encrypted volumes are sealed to PCR 7, which includes the db certificate
+that verified the boot binaries. An image signed with the same key unlocks the disks without
+anyone typing a key. An image signed with another key that db also trusts boots too, but the
+console asks for the node's recovery key, as
+[A changed PCR 7 sends the unlock to the console](../how-it-works/node/storage.md#a-changed-pcr-7-sends-the-unlock-to-the-console)
+explains.
 
 That has three consequences:
 

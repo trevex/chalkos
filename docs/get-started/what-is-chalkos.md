@@ -54,9 +54,7 @@ A node's name in the inventory goes into its node certificate at install and sta
 Kubernetes node name, its partition UUIDs, its recovery key and by default its hostname derive from
 it. `chalkctl validate` checks every node's documents against its image's schemas without reaching
 a node; chalkctl delivers them at install and with `chalkctl apply-config`, and chalkd applies them
-at every boot. chalkctl reads only these files and the image directories, so a machine without Nix,
-an airgapped one included, manages the cluster. See
-[Config and the inventory](../how-it-works/node/config.md).
+at every boot. See [Config and the inventory](../how-it-works/node/config.md).
 
 ## The secrets file stays with the operator
 
@@ -73,15 +71,11 @@ client role reader, operator or admin. See
 
 ## A node starts in maintenance mode
 
-`mkImages` also builds the installer: a raw image and an ISO
-that install images of every platform. A machine booted from the installer, or a disk written with a
-node's image, comes up in maintenance mode: chalkd
-serves a self-signed certificate and prints its fingerprint and the node's addresses on the console.
-`chalkctl install` checks that fingerprint and sends the node its config, its certificates and its
-share of the secrets, plus the image the inventory names for the node when the node runs the
-installer. chalkd partitions the disk, seals STATE to the
-TPM, marks the node installed and reboots it into normal
-mode. See [How a node works](../how-it-works/node/overview.md).
+`mkImages` also builds the installer. A machine booted from the installer, or from a disk written
+with a node's image, comes up in maintenance mode and waits for `chalkctl install`, which makes it
+a node of the cluster. From then on the node runs in normal mode until it is reinstalled.
+[How a node works](../how-it-works/node/overview.md) follows a node through the install, its boots,
+upgrades and recoveries.
 
 ## The disk holds two slots and encrypted state
 
@@ -116,26 +110,18 @@ through it. See [Architecture](../how-it-works/node/architecture.md) and
 ## Upgrades replace the whole image
 
 An upgrade starts with a new build: `nix build` writes a new image directory where the inventory's
-images point. `chalkctl upgrade` streams each node the image the inventory names for it, or has
-the node pull it from a registry, and sends the node's config with it. chalkd writes the image
-into the inactive slot. The node checks the config against the
-new image's schemas before the image becomes its next boot, then reboots into it with boot
-counting: a boot that passes the health
-check is blessed,
-and an image that uses up its tries, three by default, without one gives way to the image before.
+images point. `chalkctl upgrade` gives each node the image the inventory names for it. The node
+writes the image into its inactive slot and boots it on trial: a boot that passes the health
+check is blessed, and a node whose new image never passes falls back to the image before.
 chalkctl upgrades control planes one at a time and workers in batches, and stops at the first
-rollback. A Kubernetes upgrade is an image upgrade too. See
-[Upgrades](../how-it-works/node/upgrades.md) and [Boot, health and
-rollback](../how-it-works/node/boot-and-rollback.md).
+rollback. A Kubernetes upgrade is an image upgrade too. See [Upgrades](../how-it-works/node/upgrades.md).
 
 ## Certificates renew themselves, CAs rotate on command
 
-Each node renews its node certificate through a
-control plane, which signs it with the node CA, and control planes renew the Kubernetes leaf
-certificates in place, so no certificate of a running cluster expires unattended. A CA or key
-changes only when an operator runs `chalkctl rotate`, which replaces it in
-rotation phases that keep every node reachable; rotating is
-also how access is revoked. See [Certificates](../how-it-works/node/certificates.md).
+Each node renews its node certificate through a control plane, and control planes renew the
+Kubernetes leaf certificates in place, so no certificate of a running cluster expires unattended.
+A CA or key changes only when an operator runs `chalkctl rotate`, and rotating is also how access
+is revoked. See [Certificates](../how-it-works/node/certificates.md).
 
 ## Where chalkos fits
 
@@ -144,12 +130,11 @@ KVM. Every node of a variant boots the same verified image, and nobody logs in t
 upgrade either becomes healthy or rolls back by itself. Today its nodes run Kubernetes. It suits
 teams that already describe systems in Nix, because a variant can use any NixOS module. Only the
 images need Nix. chalkctl reads the YAML files and the image directories a build produced, so the
-machine that installs and operates the nodes needs no Nix.
+machine that installs and operates the nodes needs no Nix, an airgapped one included.
 
 chalkos is a poor fit where a node needs hand changes or interactive logins. Today it is also a
-poor fit for machines that are neither x86-64 bare metal nor KVM virtual machines. Nodes have no
-SSH and no shell. Debugging goes through the node API and, on a Kubernetes node,
-`kubectl debug node/<node>`.
+poor fit for machines that are neither x86-64 bare metal nor KVM virtual machines. Debugging goes
+through the node API and, on a Kubernetes node, a privileged pod from `kubectl debug node/<node>`.
 
 ## Compared with Talos
 

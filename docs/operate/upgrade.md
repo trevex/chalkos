@@ -31,36 +31,10 @@ You also need the new image. The image author builds it into an image directory,
 
 ## Each node takes the new image in one reboot
 
-An upgrade writes the new image into the node's inactive slot and reboots the node into it. The
-node keeps its current image in the other slot, so it can fall back:
-
-```mermaid
-flowchart TD
-    send["chalkctl sends the image"] --> slot["chalkd writes and checks the inactive slot"]
-    slot --> entry["New boot entry with 3 tries"]
-    entry --> reboot["Node reboots into the new image"]
-    reboot --> health{"Health check passes in time?"}
-    health -->|yes| bless["Entry blessed: the node keeps the image"]
-    health -->|no, tries left| reboot
-    health -->|no tries left| back["systemd-boot boots the previous image"]
-```
-
-The diagram shows one node's upgrade:
-
-1. chalkctl sends the image. chalkd writes it into the inactive slot and verifies it against its
-   root hash. On a node that enforces Secure Boot, chalkd refuses a UKI that the firmware's db
-   does not accept, before it writes anything.
-2. chalkd adds a boot entry for the new image, one generation above the entry the node booted,
-   with three tries. systemd-boot boots the newest generation first.
-3. chalkctl reboots the node.
-4. The new image's health check decides whether the boot is healthy. A healthy boot is blessed: the
-   entry loses its counter, and the node keeps the image.
-5. A boot that is not healthy within the image's health timeout, 300 seconds by default, reboots.
-   Each boot uses a try. After the last try, systemd-boot boots the previous image.
-
-An upgrade leaves the node's boot loader as it is. Only an install writes systemd-boot, and chalkd
-refuses an upgrade that carries a boot loader.
-
+An upgrade writes the new image into the node's inactive slot and reboots the node into it, with
+three tries by default. A boot that passes the health check within 300 seconds, by default, is
+blessed, and the node keeps the image. After the last failed try, the node boots the previous
+image, which the other slot still holds. An upgrade leaves the node's boot loader as it is.
 [Upgrades](../how-it-works/node/upgrades.md) and
 [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md) explain the mechanism.
 

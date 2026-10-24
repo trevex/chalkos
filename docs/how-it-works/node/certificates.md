@@ -43,15 +43,15 @@ over can therefore issue node certificates, but no client certificate of a role 
 gives any certificate that chains through the node CA the role `node`, whatever its subject says,
 as [Security model](security.md#chalkd-checks-the-role-of-every-request) explains.
 
+The diagram shows the two branches below the OS CA: node certificates through the node CA, and
+client certificates directly.
+
 ```mermaid
 flowchart TD
     osca["OS CA"] --> nodeca["node CA"]
     nodeca --> nodecert["node certificates"]
     osca --> client["client certificates: client files, chalkctl's admin certificate"]
 ```
-
-The diagram shows the two branches below the OS CA: node certificates through the node CA, and
-client certificates directly.
 
 Every CA has an ECDSA P-256 key, and no two CAs of a secrets file may share one. Every certificate
 chalkos issues is capped at its CA's own expiry and backdated by an hour, so a node whose clock

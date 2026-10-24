@@ -58,9 +58,9 @@ builds and signs one image per platform. A change to what the image fixes, such 
 service, is a new image and an [upgrade](upgrades.md). A change to the config, such as the
 hostname or the time servers, is a change to YAML files, delivered with
 [`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md) without a reboot. A storage
-change that would destroy data, such as a volume formatted otherwise, is refused there and needs
-[`chalkctl storage reset`](../../reference/cli/chalkctl_storage_reset.md). Removing a volume or
-moving it to another disk takes a reinstall.
+change that would destroy data is refused there and takes a reset or a reinstall, as
+[Additive changes apply while the node runs](storage.md#additive-changes-apply-while-the-node-runs)
+describes.
 [Boot and the image](../../reference/boot.md#what-an-image-fixes-and-what-config-delivers) lists
 what falls on each side, and
 [Variants and platforms](../../build/variants-and-platforms.md#add-a-variant-only-for-other-software)
@@ -75,14 +75,12 @@ the image directory when a command needs the image. Without an inventory, a comm
 reaches a node works with a client file and `--address`. [Config and the inventory](config.md)
 describes the files.
 
-chalkctl authenticates in one of two ways:
-
-- With the secrets file, which holds every CA key of the cluster. chalkctl signs itself a
-  short-lived admin certificate from it for each run. Installs, config changes and rotations need
-  it.
-- With a client file, which holds one certificate of the reader, operator or admin role.
-  Upgrades, reboots, status and logs work with one, so the people who operate a cluster need not
-  hold its CA keys.
+chalkctl authenticates with the secrets file, which holds every CA key of the cluster, or with a
+client file, which holds one certificate of the reader, operator or admin role. Installs, config
+changes and rotations need the secrets file. Upgrades, reboots, status and logs work with a client
+file, so the people who operate a cluster need not hold its CA keys.
+[Clients authenticate with the secrets file or a client file](security.md#clients-authenticate-with-the-secrets-file-or-a-client-file)
+explains both.
 
 chalklab runs the nodes a lab file names as QEMU virtual machines on one machine, each with
 Secure Boot and a TPM. It never builds images. It copies the `kvm` image the inventory names for
@@ -151,10 +149,10 @@ chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprin
 chalkd: addresses <addresses>; certificate fingerprint <fingerprint>
 ```
 
-It accepts only reads (node information, disks and logs), a reboot and an install. An image built
-with [`osCA`](../../reference/options.md#osca) carries that OS CA and accepts only clients with a
-certificate from it. An image built without one prints `accepting any client` and accepts anyone
-until it is installed. [Install a node](../../operate/install.md) covers the install as a task.
+It accepts only reads (node information, disks and logs), a reboot and an install. Whom it
+accepts depends on whether the image carries an OS CA, as
+[A node in maintenance mode is trusted by its fingerprint](security.md#a-node-in-maintenance-mode-is-trusted-by-its-fingerprint)
+explains. [Install a node](../../operate/install.md) covers the install as a task.
 
 ### Normal mode serves an installed node
 
@@ -169,13 +167,10 @@ install.
 ## chalkctl and chalkd talk over the node API
 
 They use the [node API](../../reference/api.md): Connect RPC over HTTPS with TLS 1.3 on TCP port
-50000, with a client certificate on every call. chalkd reads the client's role from its
-certificate's Organization. It checks the certificate for every request against the OS CAs it
-trusts at that moment, so a client whose CA was rotated out loses access on its next request, not
-when its connection closes. The one exception is maintenance mode on an image built without an
-OS CA: chalkd checks no certificate there and treats every client as admin.
-[Security model](security.md) explains the roles, and
-[Roles and credentials](../../reference/access.md) lists what each may call.
+50000, with a client certificate on every call. chalkd takes the client's role from the
+certificate and checks the certificate again for every request, as
+[chalkd checks the role of every request](security.md#chalkd-checks-the-role-of-every-request)
+explains. [Roles and credentials](../../reference/access.md) lists what each role may call.
 
 ## Limits
 

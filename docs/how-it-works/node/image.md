@@ -91,7 +91,7 @@ brings them back into the system's closure.
 dm-verity checks every block of the store against a hash tree when it is read, so a modified block
 fails to read. The tree's top hash, the root hash, is on the UKI's kernel command line as
 `usrhash=`. The firmware verifies the UKI's signature before it starts it, so its check covers the
-whole store.
+whole store. The diagram shows the chain from the firmware's db to the blocks of the store.
 
 ```mermaid
 flowchart LR

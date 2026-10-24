@@ -33,13 +33,9 @@ which further volumes exist, on which disks, encrypted or not.
 
 ## The system region comes first and VAR fills the rest
 
-The system disk starts with the system region, which every node of an image shares:
-
-- the ESP, which holds systemd-boot and the UKIs of both slots, 1 GiB by default;
-- two slots, A and B, each a pair of partitions for an image's erofs store and its dm-verity hash
-  tree, 3 GiB and 128 MiB by default;
-- STATE, 128 MiB by default.
-
+The system disk starts with the system region, which every node of an image shares: the ESP, the
+two slots A and B, and STATE, as
+[An image holds the ESP and one slot](image.md#an-image-holds-the-esp-and-one-slot) describes.
 Their sizes are options of the image, such as
 [`chalkos.disk.stateSize`](../../reference/options.md#chalkosdiskstatesize), because every node of
 the image must agree on them. VAR follows on the system disk and fills the rest of it by default.

@@ -264,11 +264,10 @@ downgrade. Whether the older image still suits the node's data is for the operat
 ## Secure Boot decides which images a node trusts
 
 chalkd checks that an image is of its platform, that the node's config suits it, and that it boots
-the store it carries. It cannot tell an image to trust from another, and Secure Boot does that.
-With Secure Boot enforced, the node refuses a UKI that the firmware's db does not accept, so only
-images signed by a trusted signer run. Without Secure Boot, an operator can upgrade a node to any
-image. That image then runs as root with STATE and VAR unsealed, because their keys are sealed to
-PCR 7 alone. [Security model](security.md) explains the consequences.
+the store it carries. It cannot tell an image to trust from another, and Secure Boot does that:
+with Secure Boot enforced, the node refuses a UKI that the firmware's db does not accept.
+[Secure Boot limits a node to images the key holder signed](security.md#secure-boot-limits-a-node-to-images-the-key-holder-signed)
+explains what an operator can install without it.
 
 An image a node pulls from a registry passes the same checks as a streamed one, against the
 digests and root hash chalkctl read. The registry therefore needs no more trust than a directory

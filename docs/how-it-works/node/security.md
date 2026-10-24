@@ -273,8 +273,9 @@ fingerprint was printed. Every command that reaches a node in maintenance mode a
 The node in turn decides whom it accepts. The images and the installer of an mkImages call with
 [`osCA`](../../reference/options.md#osca) carry that OS CA and accept in maintenance mode only
 clients with a certificate from it, so only the holder of the secrets file or a client file can
-install them. An image built without one accepts any client as an admin until it is installed.
-Use images with the OS CA on any network other people can reach.
+install them. An image built without one says `accepting any client` on the console, checks no
+client certificate and treats every client as an admin until it is installed. Use images with the
+OS CA on any network other people can reach.
 
 ## Nobody logs in to a node
 

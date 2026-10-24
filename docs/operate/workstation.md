@@ -218,9 +218,10 @@ others take a client file of a high enough role, or the secrets file, which coun
 chalkctl: pass the secrets file with --secrets FILE, or --secrets - to read it from standard input
 ```
 
-`chalkctl upgrade` with an operator client file sends no config. Each node carries its own config
-over to the new image, and chalkctl prints
-`config not delivered: the operator role cannot deliver config; each node carries its own over`.
+`chalkctl upgrade` with an operator client file sends no config, and each node carries its own
+config over to the new image, as
+[Operator upgrades carry no config](../how-it-works/node/upgrades.md#operator-upgrades-carry-no-config)
+explains.
 
 !!! note "On the shipped variant, the Kubernetes commands need credentials too"
 
