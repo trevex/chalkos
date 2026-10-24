@@ -41,6 +41,7 @@ in
 {
   # What the storage kinds' rules read of the machine: the storage section STATE records, what
   # the delivered disk references find, and whether the fallback secret opens the node's keyslot.
+  # The rules are in kinds/builtin/storage.nix.
   chalkos.facts = {
     recorded.file = "/state/storage/storage.json";
     disks.command = "${facts} disks";

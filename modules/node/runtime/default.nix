@@ -55,8 +55,9 @@ let
     "NetDev"
     "Network"
   ];
-  # value once every kind of kinds is one a unit may read, which where names: a unit must not
-  # start without the documents it expects, so a misspelled kind fails the evaluation.
+  # Returns value, or throws, prefixed with `where`, if kinds names a kind the image does not
+  # declare, Secret or Addon. A unit must not start without the documents it expects, so a
+  # misspelled kind fails the evaluation.
   checkKinds =
     where: kinds: value:
     let
@@ -71,8 +72,9 @@ let
     else
       value;
 
-  # kinds once an effect may fire on each: Secret values count for the kinds whose secretRef
-  # fields name them, and Addon documents stay in the node's stored config.
+  # Returns kinds, or throws, prefixed with `where`, if kinds names a kind the image does not
+  # declare, Secret or Addon. A Secret's values count for the kinds whose secretRef fields name
+  # them, and Addon documents stay in the node's stored config.
   effectKinds =
     where: kinds:
     if lib.elem "Secret" kinds then
