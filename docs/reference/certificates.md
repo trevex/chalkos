@@ -75,5 +75,5 @@ so the certificates it issues get shorter in its last year.
 The clock's line is `time: synchronised to <source>, offset <seconds> s`, or
 `time: not synchronised; certificates are checked against this clock`.
 
-Sources: `pkg/pki/pki.go`, `pkg/pki/kubernetes.go`, `pkg/kubernetes/pki`, `pkg/chalkd/renew.go`,
+Sources: `pkg/pki`, `pkg/clustersecrets/kubernetes.go`, `pkg/kubernetes/pki`, `pkg/chalkd/renew.go`,
 `pkg/chalkd/certstatus.go`, `pkg/chalkctl/credentials.go` and `pkg/chalkctl/node.go`.

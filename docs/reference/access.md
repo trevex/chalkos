@@ -81,5 +81,5 @@ chalkctl refuses a client file whose certificate expired, with
 `the certificate of <path> expired on <date>; issue a new one with chalkctl config new`. It warns
 during the certificate's last 30 days.
 
-Sources: `pkg/chalkd/server.go`, `pkg/chalkd/upgrade.go`, `pkg/pki/pki.go` and
+Sources: `pkg/chalkd/server.go`, `pkg/chalkd/upgrade.go`, `pkg/pki/roles.go` and
 `pkg/chalkctl/credentials.go`.
