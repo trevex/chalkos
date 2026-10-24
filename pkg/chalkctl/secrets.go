@@ -2,7 +2,6 @@ package chalkctl
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +17,6 @@ import (
 	"filippo.io/age/plugin"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
@@ -436,21 +434,16 @@ type secretsFile struct {
 	// outNew and publicNew are set while out and publicOut are new files that were not written
 	// yet; once written, later writes replace them in place.
 	outNew, publicNew bool
-	// lock holds the secrets file's lock until Close; nil for standard input.
-	lock *os.File
-	// sum is the SHA-256 of what the file held when it was read or last written, so a change by
-	// anything but this command is noticed before it is overwritten.
-	sum [sha256.Size]byte
+	// file holds the secrets file's lock until Close; nil for standard input.
+	file *clustersecrets.File
 }
 
 // Close releases the secrets file's lock.
 func (f *secretsFile) Close() error {
-	if f.lock == nil {
+	if f.file == nil {
 		return nil
 	}
-	err := f.lock.Close()
-	f.lock = nil
-	return err
+	return f.file.Close()
 }
 
 // inPlace reports whether the changes go back to the file they were read from.
@@ -468,60 +461,33 @@ func (a *app) openSecrets(ctx context.Context, s secretFlags, change changeFlags
 	if path == "-" && change.out == "" {
 		return nil, errors.New("the secrets file from standard input cannot be updated in place; pass --out")
 	}
-	var lock *os.File
-	// The lock is taken before the file is read, also with --out: a second command would read a
-	// rotation's state while the first one moves it on, and drive the nodes from it.
-	if path != "-" {
-		if lock, err = lockSecrets(path); err != nil {
-			return nil, err
+	if path == "-" {
+		data, err := io.ReadAll(a.stdin)
+		if err != nil {
+			return nil, fmt.Errorf("read the secrets file: %w", err)
 		}
+		return a.readSecretsFile(ctx, s, path, data, change)
 	}
-	f, err := a.readSecretsFile(ctx, s, path, change)
+	// The file is locked also with --out: a second command would read a rotation's state while
+	// the first one moves it on, and drive the nodes from it.
+	file, data, err := clustersecrets.Open(path)
+	if errors.Is(err, clustersecrets.ErrLocked) {
+		return nil, fmt.Errorf("another chalkctl command is changing %s; wait for it to end, then run this one again", path)
+	}
 	if err != nil {
-		if lock != nil {
-			lock.Close()
-		}
 		return nil, err
 	}
-	f.lock = lock
+	f, err := a.readSecretsFile(ctx, s, path, data, change)
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+	f.file = file
 	return f, nil
 }
 
-// lockSecrets takes an exclusive lock on <file>.lock beside the file a link points to, held
-// until the returned file is closed or the process ends. The lock file is never removed: a
-// command that removed it could leave the next two to lock different files.
-func lockSecrets(path string) (*os.File, error) {
-	name := path
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		name = real
-	}
-	name += ".lock"
-	lock, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("lock the secrets file: %w", err)
-	}
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		lock.Close()
-		if errors.Is(err, unix.EWOULDBLOCK) {
-			return nil, fmt.Errorf("another chalkctl command is changing %s; wait for it to end, then run this one again", path)
-		}
-		return nil, fmt.Errorf("lock the secrets file with %s: %w", name, err)
-	}
-	return lock, nil
-}
-
-// readSecretsFile is openSecrets once the file is locked.
-func (a *app) readSecretsFile(ctx context.Context, s secretFlags, path string, c changeFlags) (*secretsFile, error) {
-	var data []byte
-	var err error
-	if path == "-" {
-		data, err = io.ReadAll(a.stdin)
-	} else {
-		data, err = os.ReadFile(path)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read the secrets file: %w", err)
-	}
+// readSecretsFile is openSecrets once the file is read.
+func (a *app) readSecretsFile(ctx context.Context, s secretFlags, path string, data []byte, c changeFlags) (*secretsFile, error) {
 	format, err := clustersecrets.DetectFormat(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
@@ -530,7 +496,7 @@ func (a *app) readSecretsFile(ctx context.Context, s secretFlags, path string, c
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	f := &secretsFile{secrets: secrets, path: path, out: path, format: format, recipients: secrets.Recipients, sum: sha256.Sum256(data)}
+	f := &secretsFile{secrets: secrets, path: path, out: path, format: format, recipients: secrets.Recipients}
 	public := ""
 	if path != "-" {
 		public = filepath.Join(filepath.Dir(path), "secrets.pub.json")
@@ -616,7 +582,7 @@ func matchesPublic(path string, secrets clustersecrets.Secrets) error {
 func (f *secretsFile) written() string {
 	var what []string
 	if f.inPlace() {
-		what = append(what, "the previous version is "+previousOf(f.path))
+		what = append(what, "the previous version is "+clustersecrets.PreviousOf(f.path))
 	} else {
 		what = append(what, "replace the secrets file with it")
 	}
@@ -626,15 +592,6 @@ func (f *secretsFile) written() string {
 		what = append(what, f.publicOut+" holds the new public half")
 	}
 	return strings.Join(what, "; ")
-}
-
-// previousOf is where replaceFile keeps the previous version of path: beside the file a link
-// points to.
-func previousOf(path string) string {
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		path = real
-	}
-	return path + ".prev"
 }
 
 // mustNotExist refuses a file a command was asked to create.
@@ -677,15 +634,15 @@ func (a *app) writeSecretsFile(f *secretsFile, secrets clustersecrets.Secrets) e
 		return err
 	}
 	if f.inPlace() {
-		if err := f.unchanged(); err != nil {
-			return err
+		err = f.file.Replace(data)
+		if errors.Is(err, clustersecrets.ErrChanged) {
+			return fmt.Errorf("%s changed since chalkctl read it and was left as it is; look at what changed it, then run the command again", f.path)
 		}
+	} else {
+		err = a.writeOrReplace(f.out, data, 0o600, &f.outNew)
 	}
-	if err := a.writeOrReplace(f.out, data, 0o600, &f.outNew); err != nil {
+	if err := a.warnUnsynced(err); err != nil {
 		return err
-	}
-	if f.inPlace() {
-		f.sum = sha256.Sum256(data)
 	}
 	if f.format != clustersecrets.FormatJSON {
 		a.sayRecipients(f.out, f.recipients)
@@ -698,122 +655,30 @@ func (a *app) writeSecretsFile(f *secretsFile, secrets clustersecrets.Secrets) e
 	if err != nil {
 		return err
 	}
-	return a.writeOrReplace(f.publicOut, public, 0o644, &f.publicNew)
-}
-
-// unchanged refuses to replace a secrets file that changed since this command read or wrote it:
-// the lock keeps other chalkctl commands out, but not an editor or a checkout, whose change would
-// be lost.
-func (f *secretsFile) unchanged() error {
-	data, err := os.ReadFile(f.path)
-	if err != nil {
-		return fmt.Errorf("read the secrets file again before replacing it: %w", err)
-	}
-	if sha256.Sum256(data) != f.sum {
-		return fmt.Errorf("%s changed since chalkctl read it and was left as it is; look at what changed it, then run the command again", f.path)
-	}
-	return nil
+	return a.warnUnsynced(a.writeOrReplace(f.publicOut, public, 0o644, &f.publicNew))
 }
 
 // writeOrReplace creates a file while *create is set, and clears it, or replaces the file in
-// place keeping its previous version. Either way the directory is synced afterwards; once the
-// file is in place, a failed sync is a warning: the command did what it was asked, and the next
-// write retries it.
+// place keeping its previous version. Either way the directory is synced afterwards.
 func (a *app) writeOrReplace(path string, data []byte, perm fs.FileMode, create *bool) error {
-	var err error
-	if *create {
-		if err = atomicfile.WriteNew(path, data, perm); err != nil {
-			return err
-		}
-		*create = false
-		if serr := syncDir(filepath.Dir(path)); serr != nil {
-			err = &unsyncedError{path, serr}
-		}
-	} else {
-		err = replaceFile(path, data, perm)
+	if !*create {
+		return clustersecrets.Replace(path, data, perm)
 	}
-	var unsynced *unsyncedError
+	err := clustersecrets.Create(path, data, perm)
+	var unsynced *clustersecrets.UnsyncedError
+	if err == nil || errors.As(err, &unsynced) {
+		*create = false
+	}
+	return err
+}
+
+// warnUnsynced turns a file written in place whose directory could not be synced into a warning:
+// the command did what it was asked, and the next write retries the sync.
+func (a *app) warnUnsynced(err error) error {
+	var unsynced *clustersecrets.UnsyncedError
 	if errors.As(err, &unsynced) {
 		fmt.Fprintf(a.stderr, "chalkctl: warning: %v\n", err)
 		return nil
 	}
 	return err
 }
-
-// unsyncedError is a file written in place whose directory could not be synced, so a crash may
-// still bring back what the directory held before.
-type unsyncedError struct {
-	path string
-	err  error
-}
-
-func (e *unsyncedError) Error() string {
-	return fmt.Sprintf("%s is written, but its directory was not synced, so a crash may undo that: %v", e.path, e.err)
-}
-
-func (e *unsyncedError) Unwrap() error { return e.err }
-
-// replaceFile replaces path with data in one step and keeps what it held as path.prev. The data
-// goes to a temporary file beside path and is synced; path.prev becomes a link to the current
-// file, and the temporary file is renamed over path. path exists throughout, and a crash leaves
-// one version or the other, never part of one. A file that does not exist yet is created with
-// perm; an existing one keeps its mode. A symbolic link is followed: the file it points to is
-// replaced and the link kept. A directory that cannot be synced after the rename is an
-// *unsyncedError.
-func replaceFile(path string, data []byte, perm fs.FileMode) error {
-	switch real, err := filepath.EvalSymlinks(path); {
-	case err == nil:
-		path = real
-	case !errors.Is(err, fs.ErrNotExist):
-		return err
-	default:
-		if _, err := os.Lstat(path); err == nil {
-			return fmt.Errorf("%s is a link to a file that does not exist", path)
-		}
-	}
-	info, err := os.Stat(path)
-	exists := err == nil
-	switch {
-	case exists:
-		perm = info.Mode().Perm()
-	case !errors.Is(err, fs.ErrNotExist):
-		return err
-	}
-	tmp, err := atomicfile.Stage(path, data, perm)
-	if err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	defer os.Remove(tmp)
-	if exists {
-		if err := keepPrevious(path, perm); err != nil {
-			return fmt.Errorf("keep the previous version of %s: %w", path, err)
-		}
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return err
-	}
-	if err := syncDir(filepath.Dir(path)); err != nil {
-		return &unsyncedError{path, err}
-	}
-	return nil
-}
-
-// keepPrevious makes path.prev what path holds now, replacing an older path.prev in one step: a
-// hard link where the file system has them, a synced copy otherwise.
-func keepPrevious(path string, perm fs.FileMode) error {
-	next := path + ".prev.new"
-	os.Remove(next)
-	if err := os.Link(path, next); err != nil {
-		data, rerr := os.ReadFile(path)
-		if rerr != nil {
-			return rerr
-		}
-		if err := atomicfile.WriteNew(next, data, perm); err != nil {
-			return err
-		}
-	}
-	return os.Rename(next, path+".prev")
-}
-
-// syncDir syncs a directory after a rename into it; tests replace it.
-var syncDir = atomicfile.SyncDir

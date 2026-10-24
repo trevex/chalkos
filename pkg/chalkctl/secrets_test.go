@@ -17,41 +17,6 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 )
 
-func TestReplaceFileKeepsThePreviousVersion(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "secrets.json")
-	if err := replaceFile(path, []byte("one"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path + ".prev"); !os.IsNotExist(err) {
-		t.Errorf("a new file has a previous version: %v", err)
-	}
-	if err := os.Chmod(path, 0o640); err != nil {
-		t.Fatal(err)
-	}
-	for _, next := range []string{"two", "three"} {
-		before, _ := os.ReadFile(path)
-		if err := replaceFile(path, []byte(next), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if got, _ := os.ReadFile(path); string(got) != next {
-			t.Errorf("file holds %q, want %q", got, next)
-		}
-		if prev, _ := os.ReadFile(path + ".prev"); string(prev) != string(before) {
-			t.Errorf("previous version holds %q, want %q", prev, before)
-		}
-	}
-	for _, p := range []string{path, path + ".prev"} {
-		if info, err := os.Stat(p); err != nil || info.Mode().Perm() != 0o640 {
-			t.Errorf("%s: mode %v, %v; want the file's own 0640", p, info.Mode(), err)
-		}
-	}
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 2 {
-		t.Errorf("left behind %v", entries)
-	}
-}
-
 // only returns the identities given, as the age keys a reader of the secrets file holds.
 func only(ids ...age.Identity) func() ([]age.Identity, error) {
 	return func() ([]age.Identity, error) { return ids, nil }
@@ -255,78 +220,6 @@ func TestSecretsRefuseAnotherPublicFile(t *testing.T) {
 	}
 }
 
-// TestReplaceFileFollowsLinks checks that a secrets file that is a symbolic link is replaced
-// where it points, keeping the link.
-func TestReplaceFileFollowsLinks(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "real", "secrets.json")
-	writeFile(t, target, "one")
-	link := filepath.Join(dir, "secrets.json")
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatal(err)
-	}
-	if err := replaceFile(link, []byte("two"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
-		t.Errorf("the link was replaced: %v", err)
-	}
-	if got, _ := os.ReadFile(target); string(got) != "two" {
-		t.Errorf("the target holds %q", got)
-	}
-	if prev, _ := os.ReadFile(target + ".prev"); string(prev) != "one" {
-		t.Errorf("the previous version beside the target holds %q", prev)
-	}
-}
-
-// TestDirectorySyncedAfterWrites checks that the directory of a new or replaced secrets file is
-// synced, and that a sync failing once the file is in place is a warning, not a failure.
-func TestDirectorySyncedAfterWrites(t *testing.T) {
-	ta := newTestApp(t)
-	var synced []string
-	failing := false
-	defer func(orig func(string) error) { syncDir = orig }(syncDir)
-	syncDir = func(dir string) error {
-		synced = append(synced, dir)
-		if failing {
-			return errors.New("sync failed")
-		}
-		return nil
-	}
-	outDir := filepath.Join(ta.dir, "out")
-	os.Mkdir(outDir, 0o755)
-	f, err := ta.openUnlocked(context.Background(), secretFlags{path: filepath.Join(ta.dir, "secrets.json")}, changeFlags{out: filepath.Join(outDir, "secrets.json")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ta.writeSecretsFile(f, f.secrets); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Contains(synced, outDir) {
-		t.Errorf("synced %v, not the directory of the new file", synced)
-	}
-
-	failing = true
-	f, err = ta.openUnlocked(context.Background(), secretFlags{path: filepath.Join(ta.dir, "secrets.json")}, changeFlags{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	changed := f.secrets
-	if err := changed.BeginRotation(clustersecrets.RotateEncryptionKey, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if err := ta.writeSecretsFile(f, changed); err != nil {
-		t.Errorf("a failed sync after the rename failed the write: %v", err)
-	}
-	if !strings.Contains(ta.stderr.String(), "warning") {
-		t.Errorf("no warning: %q", ta.stderr.String())
-	}
-	data, _ := os.ReadFile(filepath.Join(ta.dir, "secrets.json"))
-	if read, err := clustersecrets.Read(data, only()); err != nil || read.Rotation == nil {
-		t.Errorf("the file was not replaced: %v", err)
-	}
-}
-
 // openUnlocked is openSecrets with the lock released at once, for tests that open one secrets
 // file several times in turn.
 func (ta *testApp) openUnlocked(ctx context.Context, s secretFlags, c changeFlags) (*secretsFile, error) {
@@ -411,5 +304,20 @@ func TestGenSecretsPublicOut(t *testing.T) {
 	data, _ := os.ReadFile(public)
 	if _, err := clustersecrets.ReadPublic(data); err != nil {
 		t.Errorf("%s: %v", public, err)
+	}
+}
+
+// TestUnsyncedWriteWarns checks that a secrets file written in place whose directory was not
+// synced draws a warning, not an error, and that other errors stay errors.
+func TestUnsyncedWriteWarns(t *testing.T) {
+	ta := newTestApp(t)
+	if err := ta.warnUnsynced(&clustersecrets.UnsyncedError{Path: "secrets.json", Err: errors.New("sync failed")}); err != nil {
+		t.Errorf("err = %v, want a warning", err)
+	}
+	if !strings.Contains(ta.stderr.String(), "warning: secrets.json is written") {
+		t.Errorf("no warning: %q", ta.stderr.String())
+	}
+	if err := ta.warnUnsynced(errors.New("disk full")); err == nil {
+		t.Error("another error became a warning")
 	}
 }

@@ -1,5 +1,6 @@
 // Package clustersecrets holds the cluster's secrets file: the CAs and keys of chalkos and of
-// Kubernetes, the recovery secret, the file's age encryption, and the rotation of what it holds.
+// Kubernetes, the recovery secret, the file's age encryption, the rotation of what it holds, and
+// how a command locks the file and replaces it, keeping its previous version.
 package clustersecrets
 
 import (
