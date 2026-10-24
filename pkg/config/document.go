@@ -15,6 +15,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/trevex/chalkos/pkg/config/withheld"
 )
 
 // Document is one config document.
@@ -229,12 +231,12 @@ func FromObject(m map[string]any) Document {
 
 // IsSecret tells whether d is a Secret, whose values reach only the units whose kinds reference
 // them.
-func (d Document) IsSecret() bool { return d.APIVersion == CoreAPI && d.Kind == "Secret" }
+func (d Document) IsSecret() bool { return d.APIVersion == CoreAPI && d.Kind == withheld.Secret }
 
 // IsAddon tells whether d is an Addon. An Addon stays in the node's stored set alone and is never
 // written below /run for the node's services: chalkd reads its objects, Secrets among them, from
 // the stored set and applies them on control planes, and no service reads it.
-func (d Document) IsAddon() bool { return d.APIVersion == KubernetesAPI && d.Kind == "Addon" }
+func (d Document) IsAddon() bool { return d.APIVersion == KubernetesAPI && d.Kind == withheld.Addon }
 
 // SortDocuments orders docs by apiVersion, kind and name.
 func SortDocuments(docs []Document) {
