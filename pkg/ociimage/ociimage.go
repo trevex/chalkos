@@ -10,12 +10,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"slices"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // ArtifactType is the artifact type of a chalkos image's manifest.
@@ -50,16 +51,13 @@ type Header struct {
 	Tag      string `json:"tag"`
 }
 
-// rootHash is a store's root hash as a header writes it.
-var rootHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
 // check refuses a header that names no image ID, architecture or platform, or no root hash of 64
 // lower-case hex digits.
 func (h Header) check() error {
 	switch {
 	case h.ImageID == "" || h.Architecture == "" || h.Platform == "":
 		return fmt.Errorf("its header names no image ID, architecture or platform: %+v", h)
-	case !rootHash.MatchString(h.RootHash):
+	case !schema.IsRootHash(h.RootHash):
 		return fmt.Errorf("its header names the root hash %q, which is not 64 lower-case hex digits", h.RootHash)
 	}
 	return nil

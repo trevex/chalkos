@@ -8,7 +8,6 @@ import (
 	"maps"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -92,9 +91,6 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 	return c, nil
 }
 
-// rootHash is a store's dm-verity root hash as metadata.json writes it.
-var rootHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
 // StaticAddresses are the node's static addresses, as its Network documents give them.
 func (c *NodeConfig) StaticAddresses() []string { return config.StaticAddresses(c.Documents) }
 
@@ -139,7 +135,7 @@ func (c *NodeConfig) Resolve() (schema.Metadata, error) {
 	switch {
 	case md.RootHash == "":
 		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %s names no root hash", c.ImageName, c.Name, file)
-	case !rootHash.MatchString(md.RootHash):
+	case !schema.IsRootHash(md.RootHash):
 		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %s names the root hash %q, which is not 64 lower-case hex digits", c.ImageName, c.Name, file, md.RootHash)
 	case md.Platform == "":
 		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %s names no platform", c.ImageName, c.Name, file)

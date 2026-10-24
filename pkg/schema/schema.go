@@ -15,6 +15,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -59,6 +60,13 @@ type MetadataKubernetes struct {
 	Version string `json:"version"`
 	CNI     string `json:"cni"`
 }
+
+// rootHash is a store's dm-verity root hash as metadata.json and an image's header write it.
+var rootHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// IsRootHash tells whether s is a store's dm-verity root hash as metadata.json writes it: 64
+// lower-case hex digits.
+func IsRootHash(s string) bool { return rootHash.MatchString(s) }
 
 // Schemas is the compiled schema of every kind named by the *.json files of a schemas directory,
 // such as an image's schemas/ in its build output or /etc/chalkos/schemas on a running node, or by
