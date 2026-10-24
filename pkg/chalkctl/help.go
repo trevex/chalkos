@@ -31,8 +31,8 @@ const genSecretsLong = `Generates the cluster's secrets once: the OS CA, the nod
 the secret that nodes' recovery keys derive from. They go to secrets.age, encrypted to the age
 recipients --recipient gives (age public keys, SSH public keys or age plugin recipients), or with
 --plaintext to secrets.json unencrypted. The public half goes to secrets.pub.json, or to
---public-out, which the osCA argument of mkImages names. How chalkos works describes the CAs:
-https://trevex.github.io/chalkos/how-it-works/node/certificates/
+--public-out, which the osCA argument of mkImages names. See
+https://trevex.github.io/chalkos/how-it-works/node/certificates/.
 
 The command refuses to overwrite any of these files, because new secrets would lock out every
 installed node. With --out - the secrets file goes to standard output, for a secret manager to
@@ -64,9 +64,8 @@ handshake, which chalkctl reports as a node that does not accept the client file
 A client file works for status, logs, disks, reboot, storage reset, bootstrap, the etcd commands
 and upgrade; every other command needs the secrets file. A reader may read nodes' information,
 disks, status and logs and etcd's members; an operator may also reboot, upgrade, drain and
-uncordon nodes; an admin may call every method of chalkd but the node's own renewal. How chalkos
-works describes the roles:
-https://trevex.github.io/chalkos/how-it-works/node/security/#chalkd-checks-the-role-of-every-request
+uncordon nodes; an admin may call every method of chalkd but the node's own renewal. See
+https://trevex.github.io/chalkos/how-it-works/node/security/#chalkd-checks-the-role-of-every-request.
 
 The command needs the secrets file and no inventory.`
 
@@ -95,8 +94,8 @@ node, with the time of its first revocation, in the ConfigMap kube-system/chalko
 deletes its Node object. From then on
 the control planes renew none of its certificates, the API server denies every write by its
 kubelet, and chalkctl rotate skips it. Its certificates stay valid until they expire, so its kubelet
-can still read what every kubelet may. How chalkos works describes what a revocation cuts off:
-https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-a-node-cuts-off-its-writes-and-renewals
+can still read what every kubelet may. See
+https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-a-node-cuts-off-its-writes-and-renewals.
 
 Revoking a control plane does not cut it off, because its disk holds the node CA's and the
 Kubernetes CA's keys. The command refuses a node that is still an etcd member, and the control
@@ -116,8 +115,8 @@ const nodeUnrevokeLong = `Removes a node from the revoked nodes, so a node of th
 node's certificates would work again too, so the control plane refuses while the OS CA or the
 Kubernetes CA predates the revocation, and names the rotations missing. To reuse the name, run
 chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish, first; a node
-installed afresh under the name then joins as usual. How chalkos works describes the check:
-https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-a-node-cuts-off-its-writes-and-renewals
+installed afresh under the name then joins as usual. See
+https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-a-node-cuts-off-its-writes-and-renewals.
 
 --force unrevokes the node anyway, and its old certificates work again until they expire. The old
 node does not come back by itself: its kubelet registers its Node once as it starts, so reboot it
@@ -230,8 +229,8 @@ keyslot and, on a Kubernetes node, its Kubernetes share. A node that runs its im
 installs in place. A node that runs the installer also gets the image --image names, or the node's
 image in the inventory, and writes it to the disk its SystemDisk names: a disk on which blkid finds
 no signature, one holding an unfinished install of the node, or any disk with --wipe-disk. The node
-then reboots into the image. How chalkos works describes an install:
-https://trevex.github.io/chalkos/how-it-works/node/overview/#an-install-turns-a-machine-in-maintenance-mode-into-a-node
+then reboots into the image. See
+https://trevex.github.io/chalkos/how-it-works/node/overview/#an-install-turns-a-machine-in-maintenance-mode-into-a-node.
 
 A name revoked with chalkctl node revoke is refused, as is any node while control planes were
 bootstrapped and none says which nodes are revoked; --force installs without asking. The command
@@ -263,9 +262,8 @@ it. chalkctl checks them against the contract of the image the node runs, with t
 rules that read no facts, and the node checks them again. The node replaces its config as a whole,
 applies additive storage changes such as a new volume while it runs, and restarts the units that
 read what changed; chalkctl prints the changes and the units. When the image's rules refuse a
-change, the node refuses the whole config and names the remedy. How chalkos works lists what each
-change takes:
-https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts
+change, the node refuses the whole config and names the remedy. See
+https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts.
 
 Each image on a node keeps its own config. --staged delivers the config for the image staged to
 boot next, as an upgrade with --no-reboot leaves it, and nothing restarts. Without --staged,
@@ -349,16 +347,16 @@ config over. A new volume is enrolled with the recovery key, which only the secr
 the password --password-file holds.
 
 Run again, the command continues where it stopped, and --retry-failed installs the image once more
-on nodes that fell back from it. How chalkos works describes a node's upgrade,
-https://trevex.github.io/chalkos/how-it-works/node/upgrades/, and the roll through a cluster,
-https://trevex.github.io/chalkos/how-it-works/kubernetes/upgrades/. The command needs an operator
-client file or the secrets file.`
+on nodes that fell back from it. See
+https://trevex.github.io/chalkos/how-it-works/node/upgrades/ and
+https://trevex.github.io/chalkos/how-it-works/kubernetes/upgrades/. The command needs an
+operator client file or the secrets file.`
 
 const rotateLong = `Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
 status before the next one starts: accept, switch, refresh and, with --finish, finish. A rotation
 that stopped, at an unreachable node for example, or paused for the operator continues with
---resume. How chalkos works describes the phases:
-https://trevex.github.io/chalkos/how-it-works/node/certificates/#a-rotation-replaces-a-ca-in-four-phases
+--resume. See
+https://trevex.github.io/chalkos/how-it-works/node/certificates/#a-rotation-replaces-a-ca-in-four-phases.
 
 The secrets file records the phase reached and is updated in place, keeping its previous version
 as <file>.prev, unless --out names a new file. An encrypted file is encrypted again to the
@@ -385,9 +383,8 @@ const validateLong = `Checks the config of the nodes named, or of every node of 
 check it on its image: the set the inventory gives the node, every document against the schemas of
 the node's image in the inventory, and the set's translation. The image's change rules that read no
 facts and compare with no running value run too. Every node whose files hold a Kubernetes Cluster
-document must hold the same Cluster spec, and the same Flannel spec or none. How chalkos works
-describes the checks:
-https://trevex.github.io/chalkos/how-it-works/node/config/#chalkctl-and-chalkd-both-check-the-config
+document must hold the same Cluster spec, and the same Flannel spec or none. See
+https://trevex.github.io/chalkos/how-it-works/node/config/#chalkctl-and-chalkd-both-check-the-config.
 
 The command prints a line for each node whose config is valid, with the digest of an image in a
 registry, names each node whose config is not, and warns of a node whose SystemDisk leaves STATE,

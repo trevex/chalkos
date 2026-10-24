@@ -2,11 +2,12 @@
 // line tools and config schemas, and checks the commands, config documents and Nix files its pages
 // show.
 //
-//	docgen cli DIR ZENSICAL_TOML
+//	docgen cli DIR ZENSICAL_TOML DOCS_DIR
 //
 // writes a page per command of chalkctl, chalklab, chalkbuild and chalkcfg to DIR and their
 // navigation to the region of ZENSICAL_TOML between the lines "# BEGIN docgen cli" and
-// "# END docgen cli".
+// "# END docgen cli". A link of the help to the site links the page of DOCS_DIR it names, titled
+// by the page's title or the heading its anchor names.
 //
 //	docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...]
 //
@@ -57,8 +58,8 @@ func main() {
 
 func run(args []string) error {
 	switch {
-	case len(args) == 3 && args[0] == "cli":
-		return writeCLI(programs(), args[1], args[2])
+	case len(args) == 4 && args[0] == "cli":
+		return writeCLI(programs(), args[1], args[2], args[3])
 	case len(args) >= 3 && args[0] == "kinds":
 		return writeKinds(args[1], args[2], args[3:])
 	case len(args) == 2 && args[0] == "check":
@@ -70,7 +71,7 @@ func run(args []string) error {
 	case len(args) == 3 && args[0] == "abbr":
 		return writeAbbr(args[1], args[2])
 	}
-	return errors.New("usage: docgen cli DIR ZENSICAL_TOML | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen abbr GLOSSARY OUT")
+	return errors.New("usage: docgen cli DIR ZENSICAL_TOML DOCS_DIR | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen abbr GLOSSARY OUT")
 }
 
 // programs are the command trees of chalkctl, chalklab, chalkbuild and chalkcfg, with the help and

@@ -21,8 +21,8 @@ keyslot and, on a Kubernetes node, its Kubernetes share. A node that runs its im
 installs in place. A node that runs the installer also gets the image --image names, or the node's
 image in the inventory, and writes it to the disk its SystemDisk names: a disk on which blkid finds
 no signature, one holding an unfinished install of the node, or any disk with --wipe-disk. The node
-then reboots into the image. How chalkos works describes an install:
-[https://trevex.github.io/chalkos/how-it-works/node/overview/#an-install-turns-a-machine-in-maintenance-mode-into-a-node](../../how-it-works/node/overview.md#an-install-turns-a-machine-in-maintenance-mode-into-a-node)
+then reboots into the image. See
+[An install turns a machine in maintenance mode into a node](../../how-it-works/node/overview.md#an-install-turns-a-machine-in-maintenance-mode-into-a-node).
 
 A name revoked with chalkctl node revoke is refused, as is any node while control planes were
 bootstrapped and none says which nodes are revoked; --force installs without asking. The command

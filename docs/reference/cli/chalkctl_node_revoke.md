@@ -14,8 +14,8 @@ node, with the time of its first revocation, in the ConfigMap kube-system/chalko
 deletes its Node object. From then on
 the control planes renew none of its certificates, the API server denies every write by its
 kubelet, and chalkctl rotate skips it. Its certificates stay valid until they expire, so its kubelet
-can still read what every kubelet may. How chalkos works describes what a revocation cuts off:
-[https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-a-node-cuts-off-its-writes-and-renewals](../../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)
+can still read what every kubelet may. See
+[Revoking a node cuts off its writes and renewals](../../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals).
 
 Revoking a control plane does not cut it off, because its disk holds the node CA's and the
 Kubernetes CA's keys. The command refuses a node that is still an etcd member, and the control

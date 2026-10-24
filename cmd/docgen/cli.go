@@ -23,7 +23,8 @@ const navPrefix = "reference/cli/"
 
 // writeCLI writes a page per command of the programs, an index of the programs, and the pages'
 // navigation into the Zensical configuration. Pages of commands that no longer exist are removed.
-func writeCLI(roots []*cobra.Command, dir, config string) error {
+// docs is the site's docs directory, whose pages title the links of help to the site.
+func writeCLI(roots []*cobra.Command, dir, config, docs string) error {
 	if err := os.RemoveAll(dir); err != nil {
 		return err
 	}
@@ -35,7 +36,7 @@ func writeCLI(roots []*cobra.Command, dir, config string) error {
 	nav := []string{fmt.Sprintf("{ %q = [", "Command line"), fmt.Sprintf("  %q,", navPrefix+"index.md")}
 	for _, root := range roots {
 		index += fmt.Sprintf("- [%s](%s): %s\n", root.Name(), pageName(root), root.Short)
-		if err := writePages(root, dir); err != nil {
+		if err := writePages(root, dir, docs); err != nil {
 			return err
 		}
 		for _, line := range navEntry(root) {
@@ -51,13 +52,17 @@ func writeCLI(roots []*cobra.Command, dir, config string) error {
 }
 
 // writePages writes the page of cmd and of each command below it.
-func writePages(cmd *cobra.Command, dir string) error {
-	page := frontMatter(cmd.CommandPath(), cmd.Short) + render(cmd)
+func writePages(cmd *cobra.Command, dir, docs string) error {
+	body, err := render(cmd, docs)
+	if err != nil {
+		return fmt.Errorf("%s: %w", cmd.CommandPath(), err)
+	}
+	page := frontMatter(cmd.CommandPath(), cmd.Short) + body
 	if err := os.WriteFile(filepath.Join(dir, pageName(cmd)), []byte(page), 0o644); err != nil {
 		return err
 	}
 	for _, c := range documented(cmd) {
-		if err := writePages(c, dir); err != nil {
+		if err := writePages(c, dir, docs); err != nil {
 			return err
 		}
 	}
@@ -68,7 +73,7 @@ func writePages(cmd *cobra.Command, dir string) error {
 // examples and the pages of the commands above and below it. A command that holds subcommands
 // gets no usage line: chalkctl, chalklab, chalkbuild and chalkcfg run one only to fail with its
 // usage. The completion command's page shows each shell's usage line and how to load its script.
-func render(cmd *cobra.Command) string {
+func render(cmd *cobra.Command, docs string) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", cmd.CommandPath())
 	var usage []string
@@ -90,7 +95,11 @@ func render(cmd *cobra.Command) string {
 		fmt.Fprintf(&b, "```sh\n%s\n```\n\n", strings.Join(usage, "\n"))
 	}
 	if cmd.Long != "" {
-		fmt.Fprintf(&b, "%s\n\n", prose(strings.TrimSpace(cmd.Long)))
+		long, err := siteLinks(prose(strings.TrimSpace(cmd.Long)), docs)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&b, "%s\n\n", long)
 	}
 	flags := cmd.LocalFlags()
 	if shells && len(available(cmd)) > 0 {
@@ -123,7 +132,7 @@ func render(cmd *cobra.Command) string {
 			fmt.Fprintf(&b, "- [%s](%s): %s\n", c.CommandPath(), pageName(c), prose(c.Short))
 		}
 	}
-	return strings.TrimSuffix(b.String(), "\n") + "\n"
+	return strings.TrimSuffix(b.String(), "\n") + "\n", nil
 }
 
 // completionLoad is the command that loads a shell's completion script into the current session,
@@ -293,8 +302,7 @@ func frontMatter(title, description string) string {
 var tag = regexp.MustCompile(`<([A-Za-z/])`)
 
 // prose escapes placeholders such as <node> in the help's prose, so they show instead of being
-// taken for HTML, and makes the links of help to the site links to its pages, which the site's
-// strict build checks. Code blocks, fenced or indented, stay as they are.
+// taken for HTML. Code blocks, fenced or indented, stay as they are.
 func prose(text string) string {
 	lines := strings.Split(text, "\n")
 	fenced := false
@@ -304,21 +312,70 @@ func prose(text string) string {
 			fenced = !fenced
 		case fenced, strings.HasPrefix(line, "\t"), strings.HasPrefix(line, "    "):
 		default:
-			line = tag.ReplaceAllString(line, "&lt;$1")
-			lines[i] = siteLink.ReplaceAllStringFunc(line, func(url string) string {
-				m := siteLink.FindStringSubmatch(url)
-				page := "index"
-				if m[1] != "" {
-					page = strings.TrimSuffix(m[1], "/")
-				}
-				return fmt.Sprintf("[%s](../../%s.md%s)", url, page, m[2])
-			})
+			lines[i] = tag.ReplaceAllString(line, "&lt;$1")
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-// siteLink is a link of help to a page of the site, which help names by its URL: the page's path
-// below the docs directory without .md, and an anchor. A section's index page has a URL that
-// looks like a page's of that name, so help links the pages of a section and not its index.
+// siteLink is a link of help to a page of the site, which help names by its URL, so it reads in a
+// terminal: the page's path below the docs directory without .md, and an anchor. A section's index
+// page has a URL that looks like a page's of that name, so help links the pages of a section and
+// not its index.
 var siteLink = regexp.MustCompile(`https://trevex\.github\.io/chalkos/((?:[a-z0-9-]+/)*)(#[a-z0-9-]+)?`)
+
+// siteLinks makes the links of help to the site links to its pages in docs, titled by the heading
+// the anchor names or else by the page's title. A page or anchor that does not exist is an error.
+func siteLinks(text, docs string) (string, error) {
+	var err error
+	out := siteLink.ReplaceAllStringFunc(text, func(url string) string {
+		m := siteLink.FindStringSubmatch(url)
+		page := "index"
+		if m[1] != "" {
+			page = strings.TrimSuffix(m[1], "/")
+		}
+		title, e := linkTitle(filepath.Join(docs, page+".md"), strings.TrimPrefix(m[2], "#"))
+		if e != nil && err == nil {
+			err = fmt.Errorf("help links %s: %w", url, e)
+		}
+		return fmt.Sprintf("[%s](../../%s.md%s)", title, page, m[2])
+	})
+	return out, err
+}
+
+// The front matter's title, a heading with its text and an explicit anchor, and the Markdown of
+// code and links in a heading's text.
+var (
+	titleLine  = regexp.MustCompile(`(?m)^title:\s*"?(.*?)"?\s*$`)
+	heading    = regexp.MustCompile(`(?m)^#{2,6}\s+(.*?)(?:\s*\{\s*#([A-Za-z0-9_-]+)\s*\})?\s*$`)
+	inlineLink = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+	nonSlug    = regexp.MustCompile(`[^a-z0-9_\s-]`)
+	slugBreak  = regexp.MustCompile(`[\s-]+`)
+)
+
+// linkTitle is the text of the heading of the page at path whose anchor is anchor, or the page's
+// title without an anchor. A heading's anchor is its explicit one, or its text as the site's table
+// of contents makes it a slug.
+func linkTitle(path, anchor string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	if anchor == "" {
+		if m := titleLine.FindSubmatch(data); m != nil {
+			return string(m[1]), nil
+		}
+		return "", fmt.Errorf("%s has no title", path)
+	}
+	for _, m := range heading.FindAllStringSubmatch(string(data), -1) {
+		text := strings.ReplaceAll(inlineLink.ReplaceAllString(m[1], "$1"), "`", "")
+		id := m[2]
+		if id == "" {
+			id = slugBreak.ReplaceAllString(strings.TrimSpace(nonSlug.ReplaceAllString(strings.ToLower(text), "")), "-")
+		}
+		if id == anchor {
+			return text, nil
+		}
+	}
+	return "", fmt.Errorf("%s has no heading #%s", path, anchor)
+}

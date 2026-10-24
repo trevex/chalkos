@@ -24,10 +24,10 @@ config over. A new volume is enrolled with the recovery key, which only the secr
 the password --password-file holds.
 
 Run again, the command continues where it stopped, and --retry-failed installs the image once more
-on nodes that fell back from it. How chalkos works describes a node's upgrade,
-[https://trevex.github.io/chalkos/how-it-works/node/upgrades/](../../how-it-works/node/upgrades.md), and the roll through a cluster,
-[https://trevex.github.io/chalkos/how-it-works/kubernetes/upgrades/](../../how-it-works/kubernetes/upgrades.md). The command needs an operator
-client file or the secrets file.
+on nodes that fell back from it. See
+[Upgrades](../../how-it-works/node/upgrades.md) and
+[Kubernetes upgrades](../../how-it-works/kubernetes/upgrades.md). The command needs an
+operator client file or the secrets file.
 
 ## Flags
 

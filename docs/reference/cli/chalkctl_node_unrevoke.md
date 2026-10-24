@@ -13,8 +13,8 @@ Removes a node from the revoked nodes, so a node of that name may join the clust
 node's certificates would work again too, so the control plane refuses while the OS CA or the
 Kubernetes CA predates the revocation, and names the rotations missing. To reuse the name, run
 chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish, first; a node
-installed afresh under the name then joins as usual. How chalkos works describes the check:
-[https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-a-node-cuts-off-its-writes-and-renewals](../../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)
+installed afresh under the name then joins as usual. See
+[Revoking a node cuts off its writes and renewals](../../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals).
 
 --force unrevokes the node anyway, and its old certificates work again until they expire. The old
 node does not come back by itself: its kubelet registers its Node once as it starts, so reboot it

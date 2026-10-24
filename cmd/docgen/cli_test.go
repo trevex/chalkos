@@ -36,7 +36,7 @@ func TestWriteCLI(t *testing.T) {
 	out := filepath.Join(dir, "cli")
 	os.MkdirAll(out, 0o755)
 	os.WriteFile(filepath.Join(out, "tool_gone.md"), nil, 0o644)
-	if err := writeCLI([]*cobra.Command{testTree()}, out, config); err != nil {
+	if err := writeCLI([]*cobra.Command{testTree()}, out, config, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	var names []string
@@ -115,7 +115,7 @@ func TestCompletionPage(t *testing.T) {
 	dir := t.TempDir()
 	config := filepath.Join(dir, "zensical.toml")
 	os.WriteFile(config, []byte("# BEGIN docgen cli\n# END docgen cli\n"), 0o644)
-	if err := writeCLI([]*cobra.Command{testTree()}, filepath.Join(dir, "cli"), config); err != nil {
+	if err := writeCLI([]*cobra.Command{testTree()}, filepath.Join(dir, "cli"), config, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	page, _ := os.ReadFile(filepath.Join(dir, "cli", "tool_completion.md"))
@@ -140,7 +140,7 @@ func TestWriteCLINeedsMarkers(t *testing.T) {
 	dir := t.TempDir()
 	config := filepath.Join(dir, "zensical.toml")
 	os.WriteFile(config, []byte("nav = []\n"), 0o644)
-	if err := writeCLI([]*cobra.Command{testTree()}, filepath.Join(dir, "cli"), config); err == nil || !strings.Contains(err.Error(), "BEGIN docgen cli") {
+	if err := writeCLI([]*cobra.Command{testTree()}, filepath.Join(dir, "cli"), config, t.TempDir()); err == nil || !strings.Contains(err.Error(), "BEGIN docgen cli") {
 		t.Errorf("err = %v, want one naming the markers", err)
 	}
 }
@@ -175,7 +175,7 @@ func TestGroupPageHasNoUsageLine(t *testing.T) {
 	dir := t.TempDir()
 	config := filepath.Join(dir, "zensical.toml")
 	os.WriteFile(config, []byte("# BEGIN docgen cli\n# END docgen cli\n"), 0o644)
-	if err := writeCLI([]*cobra.Command{testTree()}, filepath.Join(dir, "cli"), config); err != nil {
+	if err := writeCLI([]*cobra.Command{testTree()}, filepath.Join(dir, "cli"), config, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	page, _ := os.ReadFile(filepath.Join(dir, "cli", "tool.md"))
@@ -206,11 +206,27 @@ func TestChalkcfgRootDescribed(t *testing.T) {
 	}
 }
 
-// A link of help to the site becomes a link to the page, which the strict build checks.
-func TestProseLinksSite(t *testing.T) {
-	in := "See https://trevex.github.io/chalkos/how-it-works/node/upgrades/#a-rolled-back-node-stops-the-run."
-	want := "See [https://trevex.github.io/chalkos/how-it-works/node/upgrades/#a-rolled-back-node-stops-the-run](../../how-it-works/node/upgrades.md#a-rolled-back-node-stops-the-run)."
-	if got := prose(in); got != want {
-		t.Errorf("prose =\n%s\nwant\n%s", got, want)
+// A link of help to the site becomes a link to the page, titled by the heading it points to or
+// else by the page's title.
+func TestSiteLinks(t *testing.T) {
+	docs := t.TempDir()
+	os.MkdirAll(filepath.Join(docs, "how-it-works", "node"), 0o755)
+	os.WriteFile(filepath.Join(docs, "how-it-works", "node", "upgrades.md"), []byte("---\ntitle: \"Upgrades\"\n---\n\n# Upgrades\n\n## A rolled-back node stops the run\n\n## The `chalkd` [slot](x.md) writes { #slot-writes }\n"), 0o644)
+	in := "See https://trevex.github.io/chalkos/how-it-works/node/upgrades/ and\nhttps://trevex.github.io/chalkos/how-it-works/node/upgrades/#a-rolled-back-node-stops-the-run,\nhttps://trevex.github.io/chalkos/how-it-works/node/upgrades/#slot-writes."
+	want := "See [Upgrades](../../how-it-works/node/upgrades.md) and\n[A rolled-back node stops the run](../../how-it-works/node/upgrades.md#a-rolled-back-node-stops-the-run),\n[The chalkd slot writes](../../how-it-works/node/upgrades.md#slot-writes)."
+	got, err := siteLinks(in, docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Errorf("siteLinks =\n%s\nwant\n%s", got, want)
+	}
+	for _, bad := range []string{
+		"https://trevex.github.io/chalkos/how-it-works/node/gone/",
+		"https://trevex.github.io/chalkos/how-it-works/node/upgrades/#gone",
+	} {
+		if _, err := siteLinks(bad, docs); err == nil {
+			t.Errorf("siteLinks(%s) found a page", bad)
+		}
 	}
 }

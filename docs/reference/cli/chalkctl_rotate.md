@@ -12,8 +12,8 @@ chalkctl rotate <kind> [flags]
 Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
 status before the next one starts: accept, switch, refresh and, with --finish, finish. A rotation
 that stopped, at an unreachable node for example, or paused for the operator continues with
---resume. How chalkos works describes the phases:
-[https://trevex.github.io/chalkos/how-it-works/node/certificates/#a-rotation-replaces-a-ca-in-four-phases](../../how-it-works/node/certificates.md#a-rotation-replaces-a-ca-in-four-phases)
+--resume. See
+[A rotation replaces a CA in four phases](../../how-it-works/node/certificates.md#a-rotation-replaces-a-ca-in-four-phases).
 
 The secrets file records the phase reached and is updated in place, keeping its previous version
 as &lt;file>.prev, unless --out names a new file. An encrypted file is encrypted again to the

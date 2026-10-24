@@ -20,6 +20,13 @@ let
     ];
   };
 
+  # The pages that title the links of command help to the site: every page but the generated
+  # command pages, which would otherwise feed their own generation.
+  helpLinkPages = lib.fileset.toSource {
+    root = ../docs;
+    fileset = lib.fileset.difference ../docs ../docs/reference/cli;
+  };
+
   docgen = pkgs.callPackage ./go-module.nix { } {
     pname = "docgen";
     paths = [
@@ -224,7 +231,7 @@ rec {
         export HOME=$TMPDIR
         mkdir -p $out/docs/reference $out/includes
         install -m 644 ${../zensical.toml} $out/zensical.toml
-        docgen cli $out/docs/reference/cli $out/zensical.toml
+        docgen cli $out/docs/reference/cli $out/zensical.toml ${helpLinkPages}
         docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${inventorySchema} ${labSchema}
         {
           cat ${optionsHead}

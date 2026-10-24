@@ -14,9 +14,8 @@ it. chalkctl checks them against the contract of the image the node runs, with t
 rules that read no facts, and the node checks them again. The node replaces its config as a whole,
 applies additive storage changes such as a new volume while it runs, and restarts the units that
 read what changed; chalkctl prints the changes and the units. When the image's rules refuse a
-change, the node refuses the whole config and names the remedy. How chalkos works lists what each
-change takes:
-[https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts](../../how-it-works/node/config.md#change-rules-decide-which-changes-a-node-accepts)
+change, the node refuses the whole config and names the remedy. See
+[Change rules decide which changes a node accepts](../../how-it-works/node/config.md#change-rules-decide-which-changes-a-node-accepts).
 
 Each image on a node keeps its own config. --staged delivers the config for the image staged to
 boot next, as an upgrade with --no-reboot leaves it, and nothing restarts. Without --staged,

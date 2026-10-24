@@ -13,8 +13,8 @@ Generates the cluster's secrets once: the OS CA, the node CA, the Kubernetes CAs
 the secret that nodes' recovery keys derive from. They go to secrets.age, encrypted to the age
 recipients --recipient gives (age public keys, SSH public keys or age plugin recipients), or with
 --plaintext to secrets.json unencrypted. The public half goes to secrets.pub.json, or to
---public-out, which the osCA argument of mkImages names. How chalkos works describes the CAs:
-[https://trevex.github.io/chalkos/how-it-works/node/certificates/](../../how-it-works/node/certificates.md)
+--public-out, which the osCA argument of mkImages names. See
+[Certificates](../../how-it-works/node/certificates.md).
 
 The command refuses to overwrite any of these files, because new secrets would lock out every
 installed node. With --out - the secrets file goes to standard output, for a secret manager to
