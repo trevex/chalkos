@@ -105,9 +105,20 @@ in
   # The test images on each platform and the installer within their ceilings
   # (testing/image-sizes.nix). An image over one fails the check with the largest paths of its
   # system's closure, read from closureInfo, as the build has no Nix daemon to ask. The images' own
-  # fit check is tried on the test image too.
+  # fit check is tried on the test image too, and its measure of each image agrees with package
+  # verity, which an upgrade reads the sizes with.
   image-size =
     let
+      veritysize = pkgs.callPackage ../go-module.nix { } {
+        pname = "veritysize";
+        paths = [
+          ../../test/veritysize
+          ../../pkg/verity
+        ];
+        subPackages = [ "test/veritysize" ];
+        # The go-unit check runs package verity's tests.
+        doCheck = false;
+      };
       ceilings = import ../testing/image-sizes.nix;
       measure =
         name: config: ceiling:
@@ -139,15 +150,23 @@ in
     in
     pkgs.runCommand "chalkos-image-size"
       {
-        nativeBuildInputs = [ (pkgs.callPackage ../image-size.nix { }) ];
+        nativeBuildInputs = [
+          (pkgs.callPackage ../image-size.nix { })
+          veritysize
+        ];
       }
       ''
         mib() { awk -v b="$1" 'BEGIN { printf "%.1f MiB", b / 1048576 }'; }
         failed=0
         check() {
-          local name=$1 raw=$2 partitions=$3 uki=$4 closure=$5 sizes data hash over=()
+          local name=$1 raw=$2 partitions=$3 uki=$4 closure=$5 sizes verity data hash over=()
           local -A ceiling=([storeData]=$6 [hashTree]=$7 [uki]=$8)
           sizes=$(chalkos-image-size measure "$raw" "$partitions")
+          verity=$(veritysize "$raw" "$partitions")
+          if [[ $verity != "$sizes" ]]; then
+            echo "error: $name: chalkos-image-size measures $sizes bytes of data and hash tree, package verity $verity" >&2
+            failed=1
+          fi
           read -r data hash <<<"$sizes"
           local -A size=([storeData]=$data [hashTree]=$hash [uki]=$(stat -L -c %s "$uki"))
           for part in storeData hashTree uki; do

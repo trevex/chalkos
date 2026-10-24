@@ -53,6 +53,7 @@ use the same tools and variables from `nix/testing/env.nix`.
 | `examples/homelab/` | An example cluster: a flake that builds its image with an extension, an inventory and its YAML, which the `example-homelab` check builds and validates. |
 | `test/e2e/` | The end-to-end tests, which boot virtual machines. |
 | `test/nix/` | The Nix evaluation tests. |
+| `test/veritysize/` | A helper of the `image-size` check that reads an image's store and hash tree sizes with `pkg/verity`. |
 | `test/fixtures/` | Static test data: the e2e clusters' YAML, kind schemas and config documents. |
 | `docs/` | The documentation site's pages. |
 
