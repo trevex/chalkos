@@ -547,7 +547,7 @@ func TestUpgradeFromARegistry(t *testing.T) {
 	if want := "n1: installing " + shortOf(t, dir) + ", which it pulls from " + pinned; !strings.Contains(l.ta.stdout.String(), want) {
 		t.Errorf("output lacks %q:\n%s", want, l.ta.stdout)
 	}
-	streamed, err := openUpgradeImage(ctx, dir, io.Discard)
+	streamed, err := openImage(ctx, dir, false, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

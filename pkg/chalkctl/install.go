@@ -99,10 +99,11 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		}
 		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
 	} else {
-		if img, c, err = a.installerImage(ctx, t, f.image); err != nil {
+		if img, err = a.installerImage(ctx, t, f.image); err != nil {
 			return err
 		}
 		defer img.Close()
+		c = *img.contract
 		if err := checkInstallImage(t, img); err != nil {
 			return err
 		}
@@ -183,43 +184,33 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	return nil
 }
 
-// installerImage is the image an installer writes and its contract: the image the path names,
+// installerImage is the image an installer writes, with its contract: the image the path names,
 // or without one the node's image in the inventory. That image comes from its directory, which
 // must hold the build its metadata.json names, or from a registry, which the installer pulls by
 // the digest chalkctl resolved.
-func (a *app) installerImage(ctx context.Context, t *target, path string) (*diskImage, contract, error) {
+func (a *app) installerImage(ctx context.Context, t *target, path string) (*diskImage, error) {
 	fromInventory := path == ""
 	if fromInventory {
 		nc, err := t.cluster.inventoryImage(t.name)
 		if err != nil {
-			return nil, contract{}, err
+			return nil, err
 		}
 		if nc.ImageOCI != "" {
-			img, err := ociImage(nc, true)
-			if err != nil {
-				return nil, contract{}, err
-			}
-			return img, *img.contract, nil
+			return ociImage(nc, true)
 		}
 		path = nc.ImageDir
 	}
 	img, err := openImage(ctx, path, true, a.stderr)
 	if err != nil {
-		return nil, contract{}, err
+		return nil, err
 	}
 	if fromInventory {
 		if err := t.cluster.sameBuild(t.name, img); err != nil {
 			img.Close()
-			return nil, contract{}, err
+			return nil, err
 		}
 	}
-	c, err := imageContract(filepath.Dir(img.definitions))
-	if err != nil {
-		img.Close()
-		return nil, contract{}, err
-	}
-	c.platform = img.Info.Platform()
-	return img, c, nil
+	return img, nil
 }
 
 // maintenanceError explains why a node in maintenance mode did not answer. A node in maintenance

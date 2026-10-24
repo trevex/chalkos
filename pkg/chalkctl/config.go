@@ -177,13 +177,18 @@ func checkRules(c contract, next, old []config.Document, node string) error {
 	return nil
 }
 
-// imageContractOf is the contract of the node's image in the inventory, as built for the platform
-// its metadata.json gives.
+// imageContractOf is the contract of the node's image in the inventory.
 func (c *cluster) imageContractOf(name string) (contract, error) {
 	nc, err := c.config(name)
 	if err != nil {
 		return contract{}, err
 	}
+	return nodeImageContract(nc)
+}
+
+// nodeImageContract is the contract of a node's image in the inventory, as built for the platform
+// its metadata gives.
+func nodeImageContract(nc *inventory.NodeConfig) (contract, error) {
 	md, err := nc.Resolve()
 	if err != nil {
 		return contract{}, err

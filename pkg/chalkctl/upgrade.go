@@ -160,7 +160,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	}
 	var img *diskImage
 	if f.image != "" {
-		if img, err = openUpgradeImage(ctx, f.image, a.stderr); err != nil {
+		if img, err = openImage(ctx, f.image, false, a.stderr); err != nil {
 			return err
 		}
 		defer img.Close()
@@ -182,7 +182,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	}
 	for _, g := range r.groups {
 		if g.image == nil {
-			if g.image, err = openUpgradeImage(ctx, g.dir, a.stderr); err != nil {
+			if g.image, err = openImage(ctx, g.dir, false, a.stderr); err != nil {
 				return err
 			}
 			defer g.image.Close()

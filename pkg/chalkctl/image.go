@@ -24,8 +24,8 @@ type diskImage struct {
 	*image.Parts
 	// header describes the image to the nodes.
 	header *nodev1.ImageHeader
-	// contract is what an upgrade's image directory says the image accepts as config, which
-	// chalkctl checks the inventory's config against; nil for an install's image from a directory.
+	// contract is what the image accepts as config, as its directory or its contract layer says,
+	// which chalkctl checks the inventory's config against.
 	contract *contract
 	// definitions is the directory of the image's repart definitions of its system region.
 	definitions string
@@ -38,7 +38,10 @@ type diskImage struct {
 }
 
 // openImage reads an image for an install, with its boot loader, or an upgrade: a raw image with
-// repart-output.json next to it, or the directory nix build makes. Warnings go to stderr.
+// repart-output.json next to it, or the directory nix build makes. Its contract comes from that
+// directory, which chalkctl checks the inventory's config against before any node is drained;
+// the node checks the config it gets, or without one its own, against the image's own schemas.
+// Warnings go to stderr.
 func openImage(ctx context.Context, path string, bootLoader bool, stderr io.Writer) (_ *diskImage, err error) {
 	raw, definitions, err := imageFiles(path)
 	if err != nil {
@@ -87,6 +90,12 @@ func openImage(ctx context.Context, path string, bootLoader bool, stderr io.Writ
 		}
 	}
 	img.header = h
+	c, err := imageContract(filepath.Dir(raw))
+	if err != nil {
+		return nil, err
+	}
+	c.platform = img.Info.Platform()
+	img.contract = &c
 	return img, nil
 }
 
@@ -107,24 +116,6 @@ func sumFile(path string) (*nodev1.ImagePart, error) {
 	}
 	defer f.Close()
 	return sum(f)
-}
-
-// openUpgradeImage opens an upgrade's image with the contract its directory holds, which chalkctl
-// checks the inventory's config against before any node is drained. The node checks the config it
-// gets, or without one its own, against the schemas in the image itself.
-func openUpgradeImage(ctx context.Context, path string, stderr io.Writer) (*diskImage, error) {
-	img, err := openImage(ctx, path, false, stderr)
-	if err != nil {
-		return nil, err
-	}
-	c, err := imageContract(filepath.Dir(img.definitions))
-	if err != nil {
-		img.Close()
-		return nil, err
-	}
-	c.platform = img.Info.Platform()
-	img.contract = &c
-	return img, nil
 }
 
 // Close closes the image's parts; an image in a registry has none open.
