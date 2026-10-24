@@ -13,8 +13,8 @@ chalkbuild completion zsh [flags]
 ```
 
 Writes a script that completes chalkbuild's commands and flags in bash, fish, PowerShell or zsh.
-Each shell's command says in its help how to load the script into every new session. The command
-needs no secrets file or client file.
+The table of shells says how to load it into the current session and into every new one. The
+command needs no secrets file or client file.
 
 ## Flags
 
@@ -24,12 +24,12 @@ needs no secrets file or client file.
 
 ## Shells
 
-| Shell | Command that loads the script into the current session |
-| --- | --- |
-| bash | `source <(chalkbuild completion bash)` |
-| fish | `chalkbuild completion fish | source` |
-| powershell | `chalkbuild completion powershell | Out-String | Invoke-Expression` |
-| zsh | `source <(chalkbuild completion zsh)` |
+| Shell | Current session | Every new session |
+| --- | --- | --- |
+| bash | `source <(chalkbuild completion bash)` | With the bash-completion package installed, `chalkbuild completion bash > ~/.local/share/bash-completion/completions/chalkbuild` once. |
+| fish | `chalkbuild completion fish | source` | `chalkbuild completion fish > ~/.config/fish/completions/chalkbuild.fish` once. |
+| powershell | `chalkbuild completion powershell | Out-String | Invoke-Expression` | `chalkbuild completion powershell | Out-String | Invoke-Expression` in the PowerShell profile, `$PROFILE`. |
+| zsh | `source <(chalkbuild completion zsh)` | With completion enabled by `autoload -U compinit; compinit` in `~/.zshrc`, `chalkbuild completion zsh > "${fpath[1]}/_chalkbuild"` once. |
 
 ## Examples
 

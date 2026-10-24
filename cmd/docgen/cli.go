@@ -108,13 +108,14 @@ func render(cmd *cobra.Command, docs string) (string, error) {
 	b.WriteString(flagTable("Flags", flags))
 	b.WriteString(flagTable("Inherited flags", cmd.InheritedFlags()))
 	if shells {
-		b.WriteString("## Shells\n\n| Shell | Command that loads the script into the current session |\n| --- | --- |\n")
+		b.WriteString("## Shells\n\n| Shell | Current session | Every new session |\n| --- | --- | --- |\n")
 		for _, c := range available(cmd) {
-			load := "—"
-			if format, ok := completionLoad[c.Name()]; ok {
-				load = tableCell(code(fmt.Sprintf(format, cmd.Root().Name())))
+			current, every := "—", "—"
+			if load, ok := completionLoad[c.Name()]; ok {
+				current = tableCell(code(fmt.Sprintf(load.current, cmd.Root().Name())))
+				every = tableCell(fmt.Sprintf(load.every, cmd.Root().Name()))
 			}
-			fmt.Fprintf(&b, "| %s | %s |\n", c.Name(), load)
+			fmt.Fprintf(&b, "| %s | %s | %s |\n", c.Name(), current, every)
 		}
 		b.WriteString("\n")
 	}
@@ -135,13 +136,18 @@ func render(cmd *cobra.Command, docs string) (string, error) {
 	return strings.TrimSuffix(b.String(), "\n") + "\n", nil
 }
 
-// completionLoad is the command that loads a shell's completion script into the current session,
-// by the program's name, as cobra's help of each shell's completion command says.
-var completionLoad = map[string]string{
-	"bash":       "source <(%s completion bash)",
-	"fish":       "%s completion fish | source",
-	"powershell": "%s completion powershell | Out-String | Invoke-Expression",
-	"zsh":        "source <(%s completion zsh)",
+// completionLoad is how a shell loads its completion script, by the program's name: the command
+// that loads it into the current session, and the setup that loads it into every new one,
+// after cobra's help of each shell's completion command.
+var completionLoad = map[string]struct{ current, every string }{
+	"bash": {"source <(%[1]s completion bash)",
+		"With the bash-completion package installed, `%[1]s completion bash > ~/.local/share/bash-completion/completions/%[1]s` once."},
+	"fish": {"%[1]s completion fish | source",
+		"`%[1]s completion fish > ~/.config/fish/completions/%[1]s.fish` once."},
+	"powershell": {"%[1]s completion powershell | Out-String | Invoke-Expression",
+		"`%[1]s completion powershell | Out-String | Invoke-Expression` in the PowerShell profile, `$PROFILE`."},
+	"zsh": {"source <(%[1]s completion zsh)",
+		"With completion enabled by `autoload -U compinit; compinit` in `~/.zshrc`, `%[1]s completion zsh > \"${fpath[1]}/_%[1]s\"` once."},
 }
 
 // flagTable is a section of a page that lists flags, each with an anchor of its name, its type,

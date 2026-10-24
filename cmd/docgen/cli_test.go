@@ -123,8 +123,11 @@ func TestCompletionPage(t *testing.T) {
 		"description: \"Write a shell completion script\"",
 		"```sh\ntool completion bash [flags]\ntool completion fish [flags]\ntool completion powershell [flags]\ntool completion zsh [flags]\n```\n",
 		"| `--no-descriptions`{ #flag-no-descriptions } | boolean | `false` |",
-		"## Shells\n\n| Shell | Command that loads the script into the current session |\n| --- | --- |\n| bash | `source <(tool completion bash)` |\n",
-		"| powershell | `tool completion powershell | Out-String | Invoke-Expression` |",
+		"## Shells\n\n| Shell | Current session | Every new session |\n| --- | --- | --- |\n" +
+			"| bash | `source <(tool completion bash)` | With the bash-completion package installed, `tool completion bash > ~/.local/share/bash-completion/completions/tool` once. |\n",
+		"| fish | `tool completion fish | source` | `tool completion fish > ~/.config/fish/completions/tool.fish` once. |\n",
+		"| powershell | `tool completion powershell | Out-String | Invoke-Expression` | `tool completion powershell | Out-String | Invoke-Expression` in the PowerShell profile, `$PROFILE`. |\n",
+		"| zsh | `source <(tool completion zsh)` | With completion enabled by `autoload -U compinit; compinit` in `~/.zshrc`, `tool completion zsh > \"${fpath[1]}/_tool\"` once. |\n",
 		"## See also\n\n- [tool](tool.md): A tool\n",
 	} {
 		if !strings.Contains(string(page), want) {

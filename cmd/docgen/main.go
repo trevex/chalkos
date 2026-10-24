@@ -123,8 +123,8 @@ func programs() []*cobra.Command {
 const (
 	completionShort = "Write a shell completion script"
 	completionLong  = `Writes a script that completes %[1]s's commands and flags in bash, fish, PowerShell or zsh.
-Each shell's command says in its help how to load the script into every new session. The command
-needs no secrets file or client file.`
+The table of shells says how to load it into the current session and into every new one. The
+command needs no secrets file or client file.`
 	completionExample = `  # Complete %[1]s's commands in every new bash session.
   %[1]s completion bash > ~/.local/share/bash-completion/completions/%[1]s`
 	noDescriptionsUsage = "complete commands and flags without their descriptions"
