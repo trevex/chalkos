@@ -76,10 +76,11 @@ let
   # not read as another.
   volFormat = ''(v.format == "raw" ? "" : v.format)'';
   volEncryption = "(v.encryption.mode != null ? v.encryption.mode : sd.encryption.mode)";
-  # What a change of encryption, size or format needs a volume to be recreated for, "" for none.
-  # A larger size, and filling the disk instead of a size, only grow the partition; sizes of the
-  # same bytes are the same. A size bytes() cannot read, as a recorded section an older image wrote
-  # can hold, is a change the volume is recreated for.
+  # The reason a change from the recorded size needs the volume recreated, or "" if it does not.
+  # - A larger size, or filling the disk instead of a size, only grows the partition.
+  # - Sizes of the same bytes, such as 1G and 1024M, are the same size.
+  # - A size bytes() cannot read, which a section an older image recorded can hold, needs the
+  #   volume recreated.
   sizeReason =
     size: recorded:
     ''(${size} == ${recorded} || ${size} == "" ? "" : ${recorded} == "" ? "size " + ${size} + " instead of filling its disk" : !isSize(${size}) || !isSize(${recorded}) ? "size " + ${size} + " instead of " + ${recorded} : bytes(${size}) < bytes(${recorded}) ? "smaller: " + ${size} + " instead of " + ${recorded} : "")'';
@@ -99,12 +100,20 @@ let
   needsReset = "r != null && ${volDisk} == r.disk && !(${movedByRef}) && !(${unresolved}) && size(${resetReasons}) > 0";
   volChanges = "r == null || ${volFormat} != ${orEmpty "r.format"} || ${volEncryption} != r.encryption || ${sizeChanged (orEmpty "v.size") (orEmpty "r.size")} || ${orEmpty "v.mountPoint"} != ${orEmpty "r.mountPoint"}";
   missingDisk = "${ownDisk} && facts.disks[n].pinned && !facts.disks[n].present && (${volChanges})";
-  # A rule over each Volume document n: none may be bad, and message names each that is.
-  volumeRule = takes: description: bad: message: {
-    inherit takes description;
-    rule = "facts.recorded == null || documents.all(n, ${bindVolume "!(${bad})"})";
-    messageExpression = ''documents.filter(n, ${bindVolume bad}).map(n, ${bindVolume message}).join("; ")'';
-  };
+  # A rule over each Volume document n: `bad` holds for none, and `message` describes each it
+  # holds for. Both are CEL expressions over n and the names bindVolume binds.
+  volumeRule =
+    {
+      takes,
+      description,
+      bad,
+      message,
+    }:
+    {
+      inherit takes description;
+      rule = "facts.recorded == null || documents.all(n, ${bindVolume "!(${bad})"})";
+      messageExpression = ''documents.filter(n, ${bindVolume bad}).map(n, ${bindVolume message}).join("; ")'';
+    };
   reinstall = ''"; only a reinstall of " + node.name + " carries it out"'';
   # The new volumes that get the fallback keyslot, encrypted with TPM2 on a node with a fallback.
   enrolled = "documents.filter(n, !(n in facts.recorded.volumes) && ${bindVolume ''${volEncryption} == "tpm2"''})";
@@ -177,39 +186,45 @@ in
       # take a reinstall. A disk reference that cannot be resolved is a mistake in the config, or a
       # missing disk when it finds none, which neither carries out.
       rules = [
-        (volumeRule "reinstall"
-          "A volume stays on the disk it was created on: the system disk or a disk of its own."
-          "r != null && ${volDisk} != r.disk"
-          ''"Volume " + n + ": disk " + ${volDisk} + " instead of " + r.disk + ${reinstall}''
-        )
-        (volumeRule "reinstall"
-          "A disk reference that differs from the one the volume's disk was pinned by finds that disk."
-          movedByRef
-          ''"Volume " + n + ": disk reference " + facts.disks[n].ref + " resolves to " + facts.disks[n].found + ", but the volume lives on " + facts.disks[n].identity + ${reinstall}''
-        )
-        (volumeRule "refuse"
-          "A disk reference that differs from the one the volume's disk was pinned by resolves."
-          unresolved
-          ''
+        (volumeRule {
+          takes = "reinstall";
+          description = "A volume stays on the disk it was created on: the system disk or a disk of its own.";
+          bad = "r != null && ${volDisk} != r.disk";
+          message = ''"Volume " + n + ": disk " + ${volDisk} + " instead of " + r.disk + ${reinstall}'';
+        })
+        (volumeRule {
+          takes = "reinstall";
+          description = "A disk reference that differs from the one the volume's disk was pinned by finds that disk.";
+          bad = movedByRef;
+          message = ''"Volume " + n + ": disk reference " + facts.disks[n].ref + " resolves to " + facts.disks[n].found + ", but the volume lives on " + facts.disks[n].identity + ${reinstall}'';
+        })
+        (volumeRule {
+          takes = "refuse";
+          description = "A disk reference that differs from the one the volume's disk was pinned by resolves.";
+          bad = unresolved;
+          message = ''
             "Volume " + n + ": disk reference " + facts.disks[n].ref + " cannot be resolved: " + facts.disks[n].error + "; "
             + (facts.disks[n].errorKind == "noDisk" ? "fix the disk reference or plug in the disk it names"
               : facts.disks[n].errorKind == "listDisks" ? "try again once the node can list its disks"
               : "fix the disk reference")
-          ''
-        )
-        (volumeRule "reset"
-          "A volume keeps its format and encryption, also the encryption it inherits from the SystemDisk, and does not shrink or take a fixed size where it filled its disk."
-          needsReset
-          ''"Volume " + n + ": " + ${resetReasons}.join("; ") + "; reset it with chalkctl storage reset " + node.name + " " + n''
-        )
-        (volumeRule "refuse" "The pinned disk of a volume that the config creates or changes is plugged in."
-          missingDisk
-          ''
+          '';
+        })
+        (volumeRule {
+          takes = "reset";
+          description = "A volume keeps its format and encryption, also the encryption it inherits from the SystemDisk, and does not shrink or take a fixed size where it filled its disk.";
+          bad = needsReset;
+          message = ''"Volume " + n + ": " + ${resetReasons}.join("; ") + "; reset it with chalkctl storage reset " + node.name + " " + n'';
+        })
+        (volumeRule {
+          takes = "refuse";
+          description = "The pinned disk of a volume that the config creates or changes is plugged in.";
+          bad = missingDisk;
+          message = ''
             facts.disks[n].presentError != ""
               ? "Volume " + n + ": the node cannot find its disk " + n + ": " + facts.disks[n].presentError + "; try again once it can"
               : "Volume " + n + ": its disk " + n + " (" + facts.disks[n].identity + ") is not plugged in; plug it in"
-          ''
-        )
+          '';
+        })
         # A volume the running image's config never named was added by another image's config,
         # or an earlier one of the image a slot is written for, which the running slot is not.
         {

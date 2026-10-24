@@ -58,35 +58,52 @@ let
       };
     };
   };
-  # What a cluster was set up with stays once the node holds a Kubernetes share: its
-  # certificates, etcd and the ranges its control plane allocated were made for it. The node
-  # holds one Cluster document, compared with the running config's whatever its name, in the
-  # families both configs have; ipFamilies, compared as a whole, refuses a change of the families.
+  # The end of the message of a rule that keeps a setting the cluster was created with.
   fixed = "they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster";
-  # The kubelet applies the node's labels and taints, the control-plane taint among them, when it
-  # registers the node with the cluster, and chalkd never changes the Node object after that. A
-  # node holding a Kubernetes share has registered, or registers with the config it holds.
-  registered = description: what: instead: {
-    inherit description;
-    rule = "facts.share == null || self == oldSelf";
-    message = "the config changes ${what}; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; ${instead}, or reinstall the node";
-  };
+  # A rule that keeps a setting the node registers with once it holds a Kubernetes share. The
+  # message names `what` the config changes and suggests `instead`.
+  # The kubelet applies the node's labels and taints, the control-plane taint among them, only when
+  # it registers the node, and chalkd never changes the Node object after that. A node that holds
+  # a Kubernetes share has registered, or registers with the config it holds.
+  registered =
+    {
+      description,
+      what,
+      instead,
+    }:
+    {
+      inherit description;
+      rule = "facts.share == null || self == oldSelf";
+      message = "the config changes ${what}; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; ${instead}, or reinstall the node";
+    };
   # Binds was and gets to the running and the delivered Cluster spec around expr.
   bindSpecs =
     expr:
     "cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], ${expr}))";
-  # A rule over one per-family setting, whose value in a spec s and family f is value "s" "f",
-  # compared with ==, and shown as show gives it.
-  fixedRule = description: field: value: show: {
-    inherit description;
-    rule = "facts.share == null || size(oldDocuments) == 0 || size(documents) == 0 || ${bindSpecs "was.ipFamilies.filter(f, f in gets.ipFamilies).all(f, ${value "was" "f"} == ${value "gets" "f"})"}";
-    messageExpression = bindSpecs ''
-      cel.bind(families, was.ipFamilies.filter(f, f in gets.ipFamilies),
-        "the config changes the cluster's ${field} from "
-        + families.map(f, f + " " + ${show (value "was" "f")}).join(", ") + " to "
-        + families.map(f, f + " " + ${show (value "gets" "f")}).join(", ") + "; ${fixed}")
-    '';
-  };
+  # A rule that keeps the Cluster's per-family setting `field` once the node holds a Kubernetes
+  # share. `value s f` is the setting in spec s and family f; the rule compares it with ==, and the
+  # message shows it with string().
+  # - The node holds one Cluster document, compared with the running config's whatever its name.
+  # - The rule compares the families both configs have; the ipFamilies rule refuses a change of
+  #   the families.
+  # The cluster's certificates, etcd and the ranges its control plane allocated were made for these
+  # settings.
+  fixedRule =
+    {
+      description,
+      field,
+      value,
+    }:
+    {
+      inherit description;
+      rule = "facts.share == null || size(oldDocuments) == 0 || size(documents) == 0 || ${bindSpecs "was.ipFamilies.filter(f, f in gets.ipFamilies).all(f, ${value "was" "f"} == ${value "gets" "f"})"}";
+      messageExpression = bindSpecs ''
+        cel.bind(families, was.ipFamilies.filter(f, f in gets.ipFamilies),
+          "the config changes the cluster's ${field} from "
+          + families.map(f, f + " " + string(${value "was" "f"})).join(", ") + " to "
+          + families.map(f, f + " " + string(${value "gets" "f"})).join(", ") + "; ${fixed}")
+      '';
+    };
 
   # The cluster DNS's address: the one given, or the 10th of the family's service range.
   dnsIP =
@@ -134,9 +151,11 @@ in
             default = { };
             description = "Kubernetes labels the node registers with; they are fixed once the node holds a Kubernetes share.";
             rules = [
-              (registered "The node keeps its labels once it holds a Kubernetes share." "the node's labels"
-                "change the Node object with kubectl label instead"
-              )
+              (registered {
+                description = "The node keeps its labels once it holds a Kubernetes share.";
+                what = "the node's labels";
+                instead = "change the Node object with kubectl label instead";
+              })
             ];
           };
           taints = lib.chalkos.mkOption {
@@ -144,9 +163,11 @@ in
             default = [ ];
             description = "Kubernetes taints the node registers with; they are fixed once the node holds a Kubernetes share.";
             rules = [
-              (registered "The node keeps its taints once it holds a Kubernetes share." "the node's taints"
-                "change the Node object with kubectl taint instead"
-              )
+              (registered {
+                description = "The node keeps its taints once it holds a Kubernetes share.";
+                what = "the node's taints";
+                instead = "change the Node object with kubectl taint instead";
+              })
             ];
           };
           kubeletExtraArgs = flags "the kubelet";
@@ -172,24 +193,21 @@ in
       Cluster = builtin "kubernetes.chalkos.dev" // {
         description = "The Kubernetes cluster the node belongs to: its API server's endpoint, its address families and ranges, its VIP and the flags of its control-plane components.";
         rules = [
-          (fixedRule
-            "The pod range of each family both configs have stays once the node holds a Kubernetes share."
-            "podCIDRs"
-            (s: f: "cidr(${s}.podCIDRs[${f}])")
-            (v: "string(${v})")
-          )
-          (fixedRule
-            "The service range of each family both configs have stays once the node holds a Kubernetes share."
-            "serviceCIDRs"
-            (s: f: "cidr(${s}.serviceCIDRs[${f}])")
-            (v: "string(${v})")
-          )
-          (fixedRule
-            "The cluster DNS's address of each family both configs have, by default the 10th of its service range, stays once the node holds a Kubernetes share."
-            "dnsIPs"
-            dnsIP
-            (v: "string(${v})")
-          )
+          (fixedRule {
+            description = "The pod range of each family both configs have stays once the node holds a Kubernetes share.";
+            field = "podCIDRs";
+            value = s: f: "cidr(${s}.podCIDRs[${f}])";
+          })
+          (fixedRule {
+            description = "The service range of each family both configs have stays once the node holds a Kubernetes share.";
+            field = "serviceCIDRs";
+            value = s: f: "cidr(${s}.serviceCIDRs[${f}])";
+          })
+          (fixedRule {
+            description = "The cluster DNS's address of each family both configs have, by default the 10th of its service range, stays once the node holds a Kubernetes share.";
+            field = "dnsIPs";
+            value = dnsIP;
+          })
         ];
         spec = {
           endpoint = mkOption {
@@ -206,10 +224,11 @@ in
             default = false;
             description = "Whether workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share.";
             rules = [
-              (registered "Whether workloads run on control planes stays once the node holds a Kubernetes share."
-                "allowSchedulingOnControlPlanes"
-                "add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead"
-              )
+              (registered {
+                description = "Whether workloads run on control planes stays once the node holds a Kubernetes share.";
+                what = "allowSchedulingOnControlPlanes";
+                instead = "add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead";
+              })
             ];
           };
           ipFamilies = lib.chalkos.mkOption {
