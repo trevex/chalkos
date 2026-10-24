@@ -23,8 +23,12 @@ const (
 	// EncryptionTPM2 seals the volume's LUKS2 key to the TPM; EncryptionNone leaves it unencrypted.
 	EncryptionTPM2 = "tpm2"
 	EncryptionNone = "none"
-	// FallbackNone means a volume whose TPM2 unsealing fails can only be reset.
-	FallbackNone = "none"
+	// FallbackRecoveryKey unlocks a volume whose TPM2 unsealing fails with the node's recovery
+	// key, FallbackPassword with the operator's password. FallbackNone means such a volume can
+	// only be reset.
+	FallbackRecoveryKey = "recovery-key"
+	FallbackPassword    = "password"
+	FallbackNone        = "none"
 )
 
 // Section is the storage section of a node identity, as the node's config gives it and

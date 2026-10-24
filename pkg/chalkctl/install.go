@@ -137,7 +137,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	}
 	header.NodeCertificate, header.NodeKey = []byte(nodeCert.Certificate), []byte(nodeCert.Key)
 	fallback := d.identity.Storage.Fallback
-	if header.FallbackSecret, err = a.fallbackSecret(ctx, t, fallback, f.passwordFile, true); err != nil {
+	if header.FallbackSecret, err = a.fallbackSecret(ctx, t, fallback, f.passwordFile); err != nil {
 		return err
 	}
 	if header.KubernetesShare, err = kubernetesShare(t, time.Now()); err != nil {
@@ -178,7 +178,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		return fmt.Errorf("install %s: %w", t.name, err)
 	}
 	fmt.Fprintf(a.stdout, "%s is installed and reboots\n", t.name)
-	if fallback == "recovery-key" {
+	if fallback == storage.FallbackRecoveryKey {
 		fmt.Fprintf(a.stdout, "chalkctl recovery-key %s prints the key that unlocks it when its TPM fails\n", t.name)
 	}
 	return nil

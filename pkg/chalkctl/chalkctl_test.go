@@ -494,7 +494,7 @@ func TestPasswordFileTrimsOneNewline(t *testing.T) {
 	} {
 		path := filepath.Join(ta.dir, "password")
 		writeFile(t, path, content)
-		if got, err := ta.fallbackSecret(context.Background(), tg, "password", path, true); err != nil || got != want {
+		if got, err := ta.fallbackSecret(context.Background(), tg, "password", path); err != nil || got != want {
 			t.Errorf("password from %q = %q, %v, want %q", content, got, err, want)
 		}
 	}
@@ -698,7 +698,7 @@ func TestPasswordPromptConfirms(t *testing.T) {
 	tg := &target{cluster: &cluster{name: "lab"}, name: "n1", secrets: ta.secrets}
 
 	ta.answers = []string{"secret one", "secret one"}
-	if got, err := ta.fallbackSecret(context.Background(), tg, "password", "", true); err != nil || got != "secret one" {
+	if got, err := ta.fallbackSecret(context.Background(), tg, "password", ""); err != nil || got != "secret one" {
 		t.Errorf("password = %q, %v", got, err)
 	}
 	if len(ta.prompts) != 2 {
@@ -706,12 +706,12 @@ func TestPasswordPromptConfirms(t *testing.T) {
 	}
 
 	ta.prompts, ta.answers = nil, []string{"secret one", "secret on"}
-	if _, err := ta.fallbackSecret(context.Background(), tg, "password", "", true); err == nil || !strings.Contains(err.Error(), "differ") {
+	if _, err := ta.fallbackSecret(context.Background(), tg, "password", ""); err == nil || !strings.Contains(err.Error(), "differ") {
 		t.Errorf("err = %v, want the typo noticed", err)
 	}
 
 	ta.prompts, ta.answers = nil, nil
-	if _, err := ta.fallbackSecret(context.Background(), tg, "password", "", true); err == nil || !strings.Contains(err.Error(), "--password-file") {
+	if _, err := ta.fallbackSecret(context.Background(), tg, "password", ""); err == nil || !strings.Contains(err.Error(), "--password-file") {
 		t.Errorf("err = %v, want --password-file suggested without a terminal", err)
 	}
 }

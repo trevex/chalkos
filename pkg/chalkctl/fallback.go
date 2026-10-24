@@ -19,17 +19,17 @@ import (
 
 // fallbackSecret returns the secret enrolled as the second keyslot of the node's encrypted
 // volumes: its derived recovery key, or the operator's password. A password typed on the
-// terminal is asked twice when confirm is set.
-func (a *app) fallbackSecret(ctx context.Context, t *target, fallback, passwordFile string, confirm bool) (string, error) {
+// terminal is asked twice.
+func (a *app) fallbackSecret(ctx context.Context, t *target, fallback, passwordFile string) (string, error) {
 	switch fallback {
 	case storage.FallbackNone:
 		return "", nil
-	case "recovery-key":
+	case storage.FallbackRecoveryKey:
 		if t.creds.secrets == nil {
 			return "", fmt.Errorf("node %s unlocks with its recovery key when its TPM fails, which only the secrets file gives; pass --secrets", t.name)
 		}
 		return clustersecrets.RecoveryKey(t.secrets.RecoverySecret, t.name)
-	case "password":
+	case storage.FallbackPassword:
 		if passwordFile != "" {
 			data, err := os.ReadFile(passwordFile)
 			if err != nil {
@@ -43,12 +43,12 @@ func (a *app) fallbackSecret(ctx context.Context, t *target, fallback, passwordF
 			}
 			return password, nil
 		}
-		return a.askPassword(ctx, t.name, confirm)
+		return a.askPassword(ctx, t.name)
 	}
 	return "", fmt.Errorf("node %s has the unknown fallback %q", t.name, fallback)
 }
 
-func (a *app) askPassword(ctx context.Context, node string, confirm bool) (string, error) {
+func (a *app) askPassword(ctx context.Context, node string) (string, error) {
 	read := func(prompt string) (string, error) {
 		p, err := a.readSecret(ctx, prompt)
 		if errors.Is(err, errNoTerminal) {
@@ -63,14 +63,12 @@ func (a *app) askPassword(ctx context.Context, node string, confirm bool) (strin
 	if password == "" {
 		return "", errors.New("the password is empty")
 	}
-	if confirm {
-		again, err := read("Repeat the password: ")
-		if err != nil {
-			return "", err
-		}
-		if again != password {
-			return "", errors.New("the passwords differ")
-		}
+	again, err := read("Repeat the password: ")
+	if err != nil {
+		return "", err
+	}
+	if again != password {
+		return "", errors.New("the passwords differ")
 	}
 	return password, nil
 }
@@ -81,6 +79,7 @@ func (a *app) askPassword(ctx context.Context, node string, confirm bool) (strin
 // terminal is confirmed: the node checks it against its existing fallback keyslot only when it
 // has one.
 func (a *app) fallbackFor(ctx context.Context, conn *client.Conn, t *target, section storage.Section, passwordFile, reset string) (string, error) {
+	// Without a fallback the node is not asked for its volumes.
 	if section.Fallback == storage.FallbackNone {
 		return "", nil
 	}
@@ -93,9 +92,6 @@ func (a *app) fallbackFor(ctx context.Context, conn *client.Conn, t *target, sec
 
 // fallbackOf is fallbackFor with the node's status at hand.
 func (a *app) fallbackOf(ctx context.Context, st *nodev1.StatusResponse, t *target, section storage.Section, passwordFile, reset string) (string, error) {
-	if section.Fallback == storage.FallbackNone {
-		return "", nil
-	}
 	var existing []string
 	for _, v := range st.Volumes {
 		existing = append(existing, v.Name)
@@ -103,7 +99,7 @@ func (a *app) fallbackOf(ctx context.Context, st *nodev1.StatusResponse, t *targ
 	if !fallbackNeeded(section, existing, reset) {
 		return "", nil
 	}
-	return a.fallbackSecret(ctx, t, section.Fallback, passwordFile, true)
+	return a.fallbackSecret(ctx, t, section.Fallback, passwordFile)
 }
 
 // fallbackNeeded tells whether the section enrolls the fallback keyslot on a volume besides the
