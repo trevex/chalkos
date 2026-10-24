@@ -142,8 +142,7 @@ idle, so a power cut rarely finds its FAT file system in use.
 | `/EFI/Linux/chalkos_<generation>.efi` | A UKI without a boot counter: `chalkos_1.efi` as the image holds it and an install from the installer writes it, or one whose boot was blessed. |
 | `/EFI/Linux/chalkos_<generation>+<left>.efi` | A UKI an upgrade installed, one generation above the highest on the ESP, with `chalkos.upgrade.bootTries` tries left, such as `chalkos_2+3.efi`. |
 | `/EFI/Linux/chalkos_<generation>+<left>-<done>.efi` | The same UKI after systemd-boot counted a boot that was not blessed, such as `chalkos_2+2-1.efi`. `+0-3` means no tries left: systemd-boot boots another entry. |
-| `/EFI/Linux/.upgrade-<root-hash>.efi` | A UKI an upgrade is receiving, named by the image's full root hash. systemd-boot ignores names starting with a dot. |
-| `/EFI/Linux/.install-<root-hash>.efi` | A UKI an install from the installer is receiving. |
+| `/EFI/Linux/.chalkos-<root-hash>.efi` | A UKI an upgrade or an install from the installer is receiving, named by the image's full root hash. systemd-boot ignores names starting with a dot. |
 | `/EFI/BOOT/.boot-loader.tmp` | The boot loader an install from the installer is writing. |
 
 `chalkos` is the image ID, `system.image.id`; the installer's UKI is
@@ -348,5 +347,5 @@ another disk carrying the same image or the same labels for its own.
 Sources: `modules/node/base/disk.nix` for the system region and the device links,
 `modules/node/base/image-directory.nix` for the outputs of an image build,
 `pkg/config/storage.go` for VAR and the volumes, `pkg/ociimage` for the OCI artifact, and
-`pkg/upgrade`, `pkg/install`, `pkg/storage` and `pkg/chalkd` for the files on the ESP and STATE
+`pkg/esp`, `pkg/upgrade`, `pkg/install`, `pkg/storage` and `pkg/chalkd` for the files on the ESP and STATE
 and the paths on a running node.

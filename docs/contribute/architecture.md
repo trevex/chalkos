@@ -88,11 +88,12 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `config/slot` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
 | `config/withheld` | Names the kinds the node withholds from its services, Secret and Addon, without importing anything, so chalkcfg shares the list with chalkos-rules and `config`. |
 | `effects` | Reads the image's `services.json`, the units granted config kinds, and `effects.json`, what a delivery does to those units and to chalkd, and refuses an effect chalkd could not carry out. |
+| `esp` | Lists the UKIs on an ESP with the image and generation each boots, and stages, removes and names a UKI, for an install and an upgrade. |
 | `facts` | Loads the facts change rules read: files, and commands of the image's store run in a sandbox. |
 | `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads. |
 | `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |
 | `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
-| `install` | Installs a node in place or from the installer, step by step and repeatable. |
+| `install` | Installs a node in place or from the installer, step by step and repeatable: STATE, the ESP, the UEFI boot entries, wiping the target and the system region's definitions each have a file, and `parts.go` holds the steps of an install from the installer. |
 | `kubernetes` | The node's Kubernetes cluster as chalkd builds it from the config and the image's facts, its flags and address ranges, the node as its identity names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
 | `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
 | `kubernetes/etcd` | etcd membership: learners, promotion, quorum-safe removal, the node's own member; finds the members from etcd's mirror pods and counts encrypted values by key. |
@@ -109,10 +110,12 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `rules` | Compiles the change rules of an image's schemas, with chalkos's CEL functions, and evaluates them against a config, the config it replaces and the node's facts. |
 | `schema` | Reads an image's config contract: `metadata.json` and the JSON Schemas of its kinds, and validates documents against them. |
 | `storage` | Storage sections, disk references and pins, repart definitions, and the changes a delivered section makes to the recorded one. |
-| `storage/node` | Storage on the node: STATE, volumes, VAR and the generator's units. |
+| `storage/gpt` | Reads and changes partition tables with sfdisk under the disk's lock, waiting a bounded time for it, and names the partition types of the system region. |
+| `storage/node` | Storage on the node: STATE, volumes, VAR and the generator's units; the storage changes chalkd makes and the volumes an install creates and enrols; the blkid probe. |
+| `storeslot` | The store slots of a disk and the writer an upgrade and an install share: retire a slot, write and verify the store, activate the slot. |
 | `tool` | Runs the command-line tools chalkd, the installer and the storage code drive, such as cryptsetup, sfdisk and systemctl. |
 | `uki` | Reads a UKI's os-release and command line, checks its signature as firmware does, and refuses an image version systemd-boot would order its entry by. |
-| `upgrade` | Writes an image into the inactive slot and makes it the next boot; the slot writer install shares. |
+| `upgrade` | Writes an image into the inactive slot and makes it the next boot; the image header and the checks of its UKI and boot loader an install shares; the booted entry and the provenance record. |
 | `verity` | Reads and checks dm-verity hash trees. |
 
 `uki/ukitest`, `image/imagetest`, `kubernetes/etcd/etcdtest` and `tool/tooltest` hold test helpers:

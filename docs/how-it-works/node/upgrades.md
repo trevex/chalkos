@@ -192,7 +192,7 @@ flowchart TD
 2. Write and verify. chalkd writes the store and hash tree into the slot, checks their SHA-256
    sums and verifies the store read back from the disk against the root hash. A slot that already
    holds this store is not written again.
-3. Receive the UKI. chalkd writes it to the ESP as `/EFI/Linux/.upgrade-<root-hash>.efi`, a name
+3. Receive the UKI. chalkd writes it to the ESP as `/EFI/Linux/.chalkos-<root-hash>.efi`, a name
    systemd-boot ignores, and checks it.
 4. Check and keep the config. chalkd opens the written store read-only through dm-verity with the
    image's root hash. It reads the schemas and `image.json` of the system the UKI boots, and checks
