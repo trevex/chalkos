@@ -144,7 +144,7 @@ func (n *fakeNode) Status(ctx context.Context, _ *connect.Request[nodev1.StatusR
 			if n.lab.held("stale", n.name) {
 				state = "stale"
 			}
-			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", ControlPlane: state}
+			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, ControlPlane: state, ControlPlaneCurrent: state == "current"}
 			n.lab.mu.Lock()
 			if s, ok := n.lab.states[n.name]; ok {
 				st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: s}
@@ -155,7 +155,7 @@ func (n *fakeNode) Status(ctx context.Context, _ *connect.Request[nodev1.StatusR
 			}
 			n.lab.mu.Unlock()
 		} else {
-			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined"}
+			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED}
 		}
 		st.Certificates = append(st.Certificates,
 			&nodev1.CertificateStatus{Name: "kubelet client", Issuer: n.kubeletClient},

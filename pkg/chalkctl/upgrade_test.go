@@ -229,9 +229,9 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 	}
 	switch n.kind {
 	case identity.KindControlPlane:
-		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", NodeReady: ready}
+		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, NodeReady: ready}
 	case identity.KindWorker:
-		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined", NodeReady: ready}
+		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED, NodeReady: ready}
 	}
 	return connect.NewResponse(st), nil
 }

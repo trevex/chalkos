@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -350,6 +351,32 @@ func TestEtcdNeedsMember(t *testing.T) {
 		}
 		if err := leave(s, false); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("leaving on %s: %v", name, err)
+		}
+	}
+}
+
+// A control plane that is no etcd member says so in an error detail, which tells chalkctl to ask
+// the next one; a worker's refusal has no such detail.
+func TestNotEtcdMemberDetail(t *testing.T) {
+	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
+	waiting, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	for name, tc := range map[string]struct {
+		s    *Server
+		want bool
+	}{"worker": {worker, false}, "not bootstrapped": {waiting, true}} {
+		_, err := tc.s.EtcdMembers(context.Background(), connect.NewRequest(&nodev1.EtcdMembersRequest{}))
+		ce := new(connect.Error)
+		if !errors.As(err, &ce) {
+			t.Fatalf("%s: %v", name, err)
+		}
+		got := false
+		for _, d := range ce.Details() {
+			if v, err := d.Value(); err == nil {
+				_, got = v.(*nodev1.NotEtcdMember)
+			}
+		}
+		if got != tc.want {
+			t.Errorf("%s: %v has the NotEtcdMember detail: %v, want %v", name, err, got, tc.want)
 		}
 	}
 }

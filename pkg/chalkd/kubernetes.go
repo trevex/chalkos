@@ -89,7 +89,7 @@ type Kubernetes struct {
 	// it.
 	EtcdStopped func(ctx context.Context, c k8s.Cluster) error
 	// ControlPlaneState says whether the node's API server and etcd run with the certificates the
-	// node holds now: "current", or what is not so. Tests replace it.
+	// node holds now: controlPlaneCurrent, or what is not so. Tests replace it.
 	ControlPlaneState func(ctx context.Context, c k8s.Cluster, share kpki.Share) string
 	// APIClient reaches the node's own API server in place of chalkd's client when set. Tests set
 	// it.
@@ -173,6 +173,10 @@ func NewKubernetes() *Kubernetes {
 	return k
 }
 
+// controlPlaneCurrent is the control plane's state once its API server and etcd serve the
+// certificates the node holds now and the API server answers ready.
+const controlPlaneCurrent = "current"
+
 // controlPlaneState checks that the API server and etcd present the certificates in the
 // control plane's files and that the API server answers ready: after the files were replaced,
 // the kubelet starts the static pods again, and until then they run on the ones before.
@@ -194,7 +198,7 @@ func (k *Kubernetes) controlPlaneState(ctx context.Context, c k8s.Cluster, share
 	if !k.APIServerReady(ctx, c, share) {
 		return "the API server is not ready"
 	}
-	return "current"
+	return controlPlaneCurrent
 }
 
 // servesFile checks that the TLS server at addr presents the certificate the file holds. The
@@ -811,7 +815,7 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 	if err != nil {
 		return nil, err
 	}
-	st := &nodev1.KubernetesStatus{Kind: c.Kind}
+	st := &nodev1.KubernetesStatus{Kind: c.Kind, Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING}
 	if _, err := os.Stat(k.Paths.Share()); errors.Is(err, os.ErrNotExist) {
 		st.State = "no share"
 		return st, nil
@@ -828,15 +832,15 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 	}
 	switch {
 	case c.Kind == k8s.KindWorker:
-		st.State = "joined"
+		st.State, st.Phase = "joined", nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED
 	case m == knode.MembershipLeft:
-		st.State = "left etcd; reinstall the node to join the cluster again"
+		st.State, st.Phase = "left etcd; reinstall the node to join the cluster again", nodev1.KubernetesPhase_KUBERNETES_PHASE_LEFT
 		return st, nil
 	case m == knode.MembershipBootstrapped && leftovers.EtcdDataMissing:
-		st.State = "etcd data missing: restore etcd or reinstall the node"
+		st.State, st.Phase = "etcd data missing: restore etcd or reinstall the node", nodev1.KubernetesPhase_KUBERNETES_PHASE_ETCD_DATA_MISSING
 		return st, nil
 	case m == knode.MembershipBootstrapped:
-		st.State = "bootstrapped"
+		st.State, st.Phase = "bootstrapped", nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED
 		k.mu.Lock()
 		for _, problem := range []string{k.pinProblem, k.split} {
 			if problem != "" {
@@ -852,9 +856,14 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 		}
 		if share, err := knode.ReadShare(k.Paths); err == nil && k.ControlPlaneState != nil {
 			st.ControlPlane = k.ControlPlaneState(ctx, c, share)
+			st.ControlPlaneCurrent = st.ControlPlane == controlPlaneCurrent
 		}
 	default:
 		st.State = k.joinStatus(c, m == knode.MembershipJoining)
+		st.Phase = nodev1.KubernetesPhase_KUBERNETES_PHASE_WAITING
+		if m == knode.MembershipJoining {
+			st.Phase = nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINING
+		}
 		return st, nil
 	}
 	if c.Kind == k8s.KindControlPlane {

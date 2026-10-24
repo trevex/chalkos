@@ -994,7 +994,11 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 
 // inCluster reports whether a node is part of a cluster, so its Node exists.
 func inCluster(k *nodev1.KubernetesStatus) bool {
-	return k != nil && (strings.HasPrefix(k.State, "bootstrapped") || strings.HasPrefix(k.State, "joined"))
+	switch k.GetPhase() {
+	case nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED:
+		return true
+	}
+	return false
 }
 
 // rolledBack is the error of a node that fell back from the image, with what its boots logged. A

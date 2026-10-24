@@ -161,7 +161,7 @@ func (r *rotation) controlPlanesInTurn(ctx context.Context, kind string) error {
 			if err := applied(st, want); err != nil {
 				return err
 			}
-			if k := st.Kubernetes; k != nil && strings.HasPrefix(k.State, "bootstrapped") && k.ControlPlane != "current" {
+			if k := st.Kubernetes; k.GetPhase() == nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED && !k.ControlPlaneCurrent {
 				return fmt.Errorf("control plane: %s", k.ControlPlane)
 			}
 			return nil
@@ -194,9 +194,8 @@ func (r *rotation) waitQuorum(ctx context.Context, name string) error {
 			answer = err
 			return err
 		})
-		var ce *connect.Error
 		switch {
-		case errors.As(answer, &ce) && connect.IsWireError(ce) && ce.Code() == connect.CodeFailedPrecondition && strings.Contains(ce.Message(), "is not an etcd member"):
+		case connect.IsWireError(answer) && notEtcdMember(answer):
 			return nil
 		case err != nil && (answer == nil || !connect.IsWireError(answer)):
 			if silent.IsZero() {

@@ -630,27 +630,58 @@ message KubernetesStatus {
   // node"; "joined" on a worker, followed by ": the Node has no <family> pod range; ..." when the
   // control plane allocated it no pod range of one of the worker's families.
   string state = 2;
+  // Where the node stands, as state describes it in words. Clients decide on the phase; state is
+  // for people to read.
+  KubernetesPhase phase = 3;
   // The status of the Node's Ready condition (True, False or Unknown), or why it could not be
   // read.
-  string node_ready = 3;
+  string node_ready = 4;
   // On a bootstrapped control-plane node of a cluster with VIPs: "holder" while the node holds
   // them, "standby" otherwise. Empty on other nodes.
-  string vip = 4;
+  string vip = 5;
   // On a bootstrapped control-plane node: "current" once its API server and etcd serve the
   // certificates the node holds now and the API server answers ready, otherwise what is not so,
   // such as "the API server serves certificates the node replaced". Empty on other nodes.
-  string control_plane = 5;
+  string control_plane = 6;
+  // Whether control_plane is "current": the node's API server and etcd serve the certificates
+  // the node holds now and the API server answers ready. False on other nodes.
+  bool control_plane_current = 7;
   // On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the
   // ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty when none is revoked, and when
   // the list was not reported; revoked_nodes_read tells the two apart.
-  repeated RevokedNode revoked_nodes = 6;
+  repeated RevokedNode revoked_nodes = 8;
   // On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when
   // they were.
-  string revoked_nodes_error = 7;
+  string revoked_nodes_error = 9;
   // Whether the node read the revoked nodes, so that an empty revoked_nodes means none is
   // revoked. False on other nodes, when revoked_nodes_error is set, and from a chalkd that
   // predates node revocation.
-  bool revoked_nodes_read = 8;
+  bool revoked_nodes_read = 10;
+}
+
+// Where a node stands in its Kubernetes cluster. On a control-plane node it follows the node's
+// etcd membership.
+enum KubernetesPhase {
+  // No phase; chalkd never reports it.
+  KUBERNETES_PHASE_UNSPECIFIED = 0;
+  // The node has no share yet, or its Kubernetes files are being prepared, or their preparation
+  // failed.
+  KUBERNETES_PHASE_PREPARING = 1;
+  // A control-plane node that is no etcd member and has not started joining. It waits for a
+  // bootstrap or for the cluster, or tries to reach the cluster to join it.
+  KUBERNETES_PHASE_WAITING = 2;
+  // A control-plane node that started joining the cluster and has not finished. It may be an
+  // etcd member already.
+  KUBERNETES_PHASE_JOINING = 3;
+  // A control-plane node that is an etcd member: it initialised etcd or finished joining.
+  KUBERNETES_PHASE_BOOTSTRAPPED = 4;
+  // A bootstrapped control-plane node whose etcd data is missing, as after VAR was reset. Its
+  // control plane does not start until etcd is restored or the node is reinstalled.
+  KUBERNETES_PHASE_ETCD_DATA_MISSING = 5;
+  // A control-plane node that left etcd. It joins the cluster again only once reinstalled.
+  KUBERNETES_PHASE_LEFT = 6;
+  // A worker node whose Kubernetes files are prepared: its kubelet joins the cluster.
+  KUBERNETES_PHASE_JOINED = 7;
 }
 
 // A node revoked in the cluster.
@@ -714,6 +745,12 @@ message BootstrapResponse {
   // Objects applied: chalkos's add-ons and those of the node's Addon documents.
   uint32 applied = 1;
 }
+
+// The error detail of a request that needs an etcd member, from a control-plane node that is
+// none, as before it joined the cluster. The request fails with FAILED_PRECONDITION, and another
+// control-plane node may answer it. EtcdMembers, EtcdRemoveMember, RotationStep, DrainNode,
+// UncordonNode, RevokeNode and UnrevokeNode give it.
+message NotEtcdMember {}
 
 // A member of etcd.
 message EtcdMember {

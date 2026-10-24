@@ -426,18 +426,18 @@ func TestStatusKubernetes(t *testing.T) {
 		s    *Server
 		want *nodev1.KubernetesStatus
 	}{
-		"waiting":               {waiting, &nodev1.KubernetesStatus{Kind: "controlplane", State: "waiting for bootstrap or for the cluster at https://192.168.100.11:6443"}},
-		"bootstrapped":          {bootstrapped, &nodev1.KubernetesStatus{Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
-		"no share":              {noShare, &nodev1.KubernetesStatus{Kind: "worker", State: "no share"}},
-		"no address":            {noAddress, &nodev1.KubernetesStatus{Kind: "worker", State: "preparation failed: no node address matches the default filter (the node has no addresses)"}},
-		"share of another kind": {otherKind, &nodev1.KubernetesStatus{Kind: "worker", State: "preparation failed: the node's share is for a controlplane node, but its config gives it the type worker"}},
-		"firewall":              {noFirewall, &nodev1.KubernetesStatus{Kind: "worker", State: "preparation failed: accept VXLAN to the node's address: exit status 1"}},
-		"preparing":             {preparing, &nodev1.KubernetesStatus{Kind: "controlplane", State: "preparing"}},
-		"writing":               {writing, &nodev1.KubernetesStatus{Kind: "worker", State: "preparing"}},
-		"worker":                {worker, &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "unknown: connection refused"}},
-		"dual-stack worker":     {dualStack("10.244.1.0/24", "fd00:10:244:1::/64"), &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "True"}},
-		"no pod range yet":      {dualStack(), &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "True"}},
-		"no ipv6 pod range": {dualStack("10.244.1.0/24"), &nodev1.KubernetesStatus{Kind: "worker", NodeReady: "True",
+		"waiting":               {waiting, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_WAITING, Kind: "controlplane", State: "waiting for bootstrap or for the cluster at https://192.168.100.11:6443"}},
+		"bootstrapped":          {bootstrapped, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
+		"no share":              {noShare, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "worker", State: "no share"}},
+		"no address":            {noAddress, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "worker", State: "preparation failed: no node address matches the default filter (the node has no addresses)"}},
+		"share of another kind": {otherKind, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "worker", State: "preparation failed: the node's share is for a controlplane node, but its config gives it the type worker"}},
+		"firewall":              {noFirewall, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "worker", State: "preparation failed: accept VXLAN to the node's address: exit status 1"}},
+		"preparing":             {preparing, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "controlplane", State: "preparing"}},
+		"writing":               {writing, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "worker", State: "preparing"}},
+		"worker":                {worker, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED, Kind: "worker", State: "joined", NodeReady: "unknown: connection refused"}},
+		"dual-stack worker":     {dualStack("10.244.1.0/24", "fd00:10:244:1::/64"), &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED, Kind: "worker", State: "joined", NodeReady: "True"}},
+		"no pod range yet":      {dualStack(), &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED, Kind: "worker", State: "joined", NodeReady: "True"}},
+		"no ipv6 pod range": {dualStack("10.244.1.0/24"), &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED, Kind: "worker", NodeReady: "True",
 			State: "joined: the Node has no ipv6 pod range; the control plane allocates ranges of the families the cluster was created with"}},
 		"no Kubernetes": {plain, nil},
 	} {
@@ -446,7 +446,7 @@ func TestStatusKubernetes(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 		got := resp.Msg.Kubernetes
-		if (got == nil) != (tc.want == nil) || got != nil && (got.Kind != tc.want.Kind || got.State != tc.want.State || got.NodeReady != tc.want.NodeReady) {
+		if (got == nil) != (tc.want == nil) || got != nil && (got.Kind != tc.want.Kind || got.State != tc.want.State || got.Phase != tc.want.Phase || got.NodeReady != tc.want.NodeReady) {
 			t.Errorf("%s: kubernetes status %v, want %v", name, got, tc.want)
 		}
 	}

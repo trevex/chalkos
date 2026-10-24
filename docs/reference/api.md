@@ -798,14 +798,25 @@ The state of the node's Kubernetes.
 | ----- | ---- | ----------- |
 | `kind` | string | The node's part in the cluster: controlplane or worker. |
 | `state` | string | What the node waits for or is: "no share", "preparing" while its Kubernetes files are prepared, or why their preparation failed, such as "preparation failed: no ipv4 node address matches validSubnets 10.0.0.0/8 (the node has ...)"; then on a control-plane node "waiting for bootstrap or for the cluster at &lt;endpoint>", what joining that cluster does or waits for, such as "joining the cluster at &lt;endpoint>: etcd member &lt;id> catches up" or a stale member and how to remove it, "bootstrapped" or "etcd data missing: restore etcd or reinstall the node"; "joined" on a worker, followed by ": the Node has no &lt;family> pod range; ..." when the control plane allocated it no pod range of one of the worker's families. |
+| `phase` | KubernetesPhase | Where the node stands, as state describes it in words. Clients decide on the phase; state is for people to read. |
 | `node_ready` | string | The status of the Node's Ready condition (True, False or Unknown), or why it could not be read. |
 | `vip` | string | On a bootstrapped control-plane node of a cluster with VIPs: "holder" while the node holds them, "standby" otherwise. Empty on other nodes. |
 | `control_plane` | string | On a bootstrapped control-plane node: "current" once its API server and etcd serve the certificates the node holds now and the API server answers ready, otherwise what is not so, such as "the API server serves certificates the node replaced". Empty on other nodes. |
+| `control_plane_current` | bool | Whether control_plane is "current": the node's API server and etcd serve the certificates the node holds now and the API server answers ready. False on other nodes. |
 | `revoked_nodes` | list of RevokedNode | On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty when none is revoked, and when the list was not reported; revoked_nodes_read tells the two apart. |
 | `revoked_nodes_error` | string | On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when they were. |
 | `revoked_nodes_read` | bool | Whether the node read the revoked nodes, so that an empty revoked_nodes means none is revoked. False on other nodes, when revoked_nodes_error is set, and from a chalkd that predates node revocation. |
 
-Field types: [RevokedNode](#message-revokednode).
+Field types: [KubernetesPhase](#enum-kubernetesphase), [RevokedNode](#message-revokednode).
+
+### NotEtcdMember { #message-notetcdmember }
+
+The error detail of a request that needs an etcd member, from a control-plane node that is
+none, as before it joined the cluster. The request fails with FAILED_PRECONDITION, and another
+control-plane node may answer it. EtcdMembers, EtcdRemoveMember, RotationStep, DrainNode,
+UncordonNode, RevokeNode and UnrevokeNode give it.
+
+No fields.
 
 ### OutputStatus { #message-outputstatus }
 
@@ -905,6 +916,22 @@ A volume of the node's storage.
 | `mounted` | bool | Whether the volume is mounted at its mount point. |
 
 ## Enums { #enums }
+
+### KubernetesPhase { #enum-kubernetesphase }
+
+Where a node stands in its Kubernetes cluster. On a control-plane node it follows the node's
+etcd membership.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| `KUBERNETES_PHASE_UNSPECIFIED` | 0 | No phase; chalkd never reports it. |
+| `KUBERNETES_PHASE_PREPARING` | 1 | The node has no share yet, or its Kubernetes files are being prepared, or their preparation failed. |
+| `KUBERNETES_PHASE_WAITING` | 2 | A control-plane node that is no etcd member and has not started joining. It waits for a bootstrap or for the cluster, or tries to reach the cluster to join it. |
+| `KUBERNETES_PHASE_JOINING` | 3 | A control-plane node that started joining the cluster and has not finished. It may be an etcd member already. |
+| `KUBERNETES_PHASE_BOOTSTRAPPED` | 4 | A control-plane node that is an etcd member: it initialised etcd or finished joining. |
+| `KUBERNETES_PHASE_ETCD_DATA_MISSING` | 5 | A bootstrapped control-plane node whose etcd data is missing, as after VAR was reset. Its control plane does not start until etcd is restored or the node is reinstalled. |
+| `KUBERNETES_PHASE_LEFT` | 6 | A control-plane node that left etcd. It joins the cluster again only once reinstalled. |
+| `KUBERNETES_PHASE_JOINED` | 7 | A worker node whose Kubernetes files are prepared: its kubelet joins the cluster. |
 
 ### Mode { #enum-mode }
 

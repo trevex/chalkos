@@ -301,12 +301,12 @@ func TestNodeRevokeRefusesUnlessEveryControlPlaneReads(t *testing.T) {
 
 func TestEveryControlPlaneReadsRevoked(t *testing.T) {
 	statuses := map[string]*nodev1.StatusResponse{
-		"read":     {Kubernetes: &nodev1.KubernetesStatus{State: "bootstrapped", RevokedNodesRead: true}},
-		"old":      {Kubernetes: &nodev1.KubernetesStatus{State: "bootstrapped"}},
-		"unread":   {Kubernetes: &nodev1.KubernetesStatus{State: "etcd data missing: restore etcd", RevokedNodesError: "read the revoked nodes: connection refused"}},
-		"waiting":  {Kubernetes: &nodev1.KubernetesStatus{State: "waiting for bootstrap"}},
-		"left":     {Kubernetes: &nodev1.KubernetesStatus{State: "left etcd: reinstall the node"}},
-		"no share": {Kubernetes: &nodev1.KubernetesStatus{State: "no share"}},
+		"read":     {Kubernetes: &nodev1.KubernetesStatus{State: "bootstrapped", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, RevokedNodesRead: true}},
+		"old":      {Kubernetes: &nodev1.KubernetesStatus{State: "bootstrapped", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED}},
+		"unread":   {Kubernetes: &nodev1.KubernetesStatus{State: "etcd data missing: restore etcd", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_ETCD_DATA_MISSING, RevokedNodesError: "read the revoked nodes: connection refused"}},
+		"waiting":  {Kubernetes: &nodev1.KubernetesStatus{State: "waiting for bootstrap", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_WAITING}},
+		"left":     {Kubernetes: &nodev1.KubernetesStatus{State: "left etcd: reinstall the node", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_LEFT}},
+		"no share": {Kubernetes: &nodev1.KubernetesStatus{State: "no share", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING}},
 	}
 	status := func(_ context.Context, name string) (*nodev1.StatusResponse, error) {
 		if st, ok := statuses[name]; ok {

@@ -55,10 +55,19 @@ func (k *Kubernetes) member() (k8s.Cluster, string, kpki.Share, error) {
 	case err != nil:
 		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeInternal, "%v", err)
 	case m != knode.MembershipBootstrapped:
-		// chalkctl asks the next control plane on this answer.
-		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeFailedPrecondition, "the node is not an etcd member; ask another control-plane node")
+		return k8s.Cluster{}, "", kpki.Share{}, errNotEtcdMember()
 	}
 	return c, name, share, nil
+}
+
+// errNotEtcdMember refuses a request that needs an etcd member. Its NotEtcdMember detail tells
+// clients, such as chalkctl, to ask the next control-plane node.
+func errNotEtcdMember() error {
+	err := connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is not an etcd member; ask another control-plane node"))
+	if detail, derr := connect.NewErrorDetail(&nodev1.NotEtcdMember{}); derr == nil {
+		err.AddDetail(detail)
+	}
+	return err
 }
 
 // mayBeMember reports whether the node is, or may be, an etcd member: it was bootstrapped, or it

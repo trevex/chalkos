@@ -140,7 +140,7 @@ func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name st
 			continue
 		}
 		switch k := st.Kubernetes; {
-		case k == nil || !everBootstrapped(k.State) || strings.HasPrefix(k.State, "left etcd"):
+		case !everBootstrapped(k) || k.Phase == nodev1.KubernetesPhase_KUBERNETES_PHASE_LEFT:
 		case k.RevokedNodesError != "":
 			why = append(why, fmt.Sprintf("%s: cannot read the revoked nodes: %s", cp, k.RevokedNodesError))
 		case !k.RevokedNodesRead:
@@ -293,7 +293,7 @@ func revokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx
 			continue
 		}
 		switch k := st.Kubernetes; {
-		case k == nil || !everBootstrapped(k.State):
+		case !everBootstrapped(k):
 			state := "no Kubernetes"
 			if k != nil {
 				state = k.State
@@ -363,13 +363,12 @@ func installNotRevoked(ctx context.Context, t *target) error {
 	return nil
 }
 
-// everBootstrapped reports whether a control plane in the Kubernetes state was bootstrapped,
+// everBootstrapped reports whether a control plane of the Kubernetes status was bootstrapped,
 // whether or not it serves now.
-func everBootstrapped(state string) bool {
-	for _, prefix := range []string{"bootstrapped", "etcd data missing", "left etcd"} {
-		if strings.HasPrefix(state, prefix) {
-			return true
-		}
+func everBootstrapped(k *nodev1.KubernetesStatus) bool {
+	switch k.GetPhase() {
+	case nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, nodev1.KubernetesPhase_KUBERNETES_PHASE_ETCD_DATA_MISSING, nodev1.KubernetesPhase_KUBERNETES_PHASE_LEFT:
+		return true
 	}
 	return false
 }

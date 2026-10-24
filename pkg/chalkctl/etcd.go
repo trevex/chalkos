@@ -71,8 +71,24 @@ func tryNextControlPlane(err error) bool {
 	case connect.CodeUnavailable, connect.CodeDeadlineExceeded:
 		return true
 	case connect.CodeFailedPrecondition:
-		var ce *connect.Error
-		return errors.As(err, &ce) && strings.Contains(ce.Message(), "is not an etcd member")
+		return notEtcdMember(err)
+	}
+	return false
+}
+
+// notEtcdMember reports whether chalkd refused a request because the node is no etcd member, by
+// the NotEtcdMember detail of its error.
+func notEtcdMember(err error) bool {
+	var ce *connect.Error
+	if !errors.As(err, &ce) {
+		return false
+	}
+	for _, d := range ce.Details() {
+		if v, err := d.Value(); err == nil {
+			if _, ok := v.(*nodev1.NotEtcdMember); ok {
+				return true
+			}
+		}
 	}
 	return false
 }
