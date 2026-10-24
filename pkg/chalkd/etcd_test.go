@@ -206,6 +206,75 @@ func TestEtcdLeave(t *testing.T) {
 	checkLeft(t, s)
 }
 
+// leavingServer is a bootstrapped node n1 with the member cp2 beside it, whose etcd stops once
+// its static pod is gone and which reaches the cluster through cp2 once its own member is removed.
+func leavingServer(t *testing.T) *Server {
+	t.Helper()
+	s, _, members := memberServer(t, "cp2")
+	k := s.Kubernetes
+	k.EtcdStopped = func(context.Context, k8s.Cluster) error { members["n1"].Stop(); return nil }
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+		return []string{members["cp2"].ClientURL}, nil
+	}
+	// The node's own etcd does not answer once stopped; asking it ends after the timeout.
+	k.EtcdTimeout = silentEtcdTimeout
+	return s
+}
+
+// A leave whose etcd did not stop is retried: the node's member is gone and its markers say it
+// left, and the retry deletes what the first leave kept.
+func TestEtcdLeaveRetriedAfterEtcdKeptRunning(t *testing.T) {
+	s := leavingServer(t)
+	k := s.Kubernetes
+	stopped := k.EtcdStopped
+	k.EtcdStopped = func(ctx context.Context, c k8s.Cluster) error {
+		_ = stopped(ctx, c)
+		return errors.New("etcd still listens")
+	}
+	if err := leave(s, false); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "its etcd did not stop") {
+		t.Fatalf("first leave: %v, want its etcd named", err)
+	}
+	if m, l, err := knode.ReadMembership(k.Paths); err != nil || m != knode.MembershipLeft || !l.Pinned || !l.EtcdData {
+		t.Fatalf("after the first leave: %v %+v, %v; want left with the pin and etcd's data", m, l, err)
+	}
+	k.EtcdStopped = stopped
+	if err := leave(s, false); err != nil {
+		t.Fatalf("retried leave: %v", err)
+	}
+	checkLeft(t, s)
+}
+
+// A leave interrupted while it cleared the membership is retried: the bootstrapped marker and
+// the pin it had not removed yet go too.
+func TestEtcdLeaveRetriedAfterPartialClear(t *testing.T) {
+	s := leavingServer(t)
+	p := s.Kubernetes.Paths
+	if err := leave(s, false); err != nil {
+		t.Fatal(err)
+	}
+	write(t, p.Bootstrapped(), "")
+	write(t, p.Pin(), "192.168.100.11\n")
+	if err := leave(s, false); err != nil {
+		t.Fatalf("retried leave: %v", err)
+	}
+	checkLeft(t, s)
+}
+
+// A node that left and holds nothing of its membership but the joining marker left already: a
+// leave again is refused as such.
+func TestEtcdLeaveAfterLeftWithJoiningMarker(t *testing.T) {
+	s := leavingServer(t)
+	p := s.Kubernetes.Paths
+	if err := leave(s, false); err != nil {
+		t.Fatal(err)
+	}
+	write(t, p.Joining(), "https://192.168.100.11:6443\n")
+	err := leave(s, false)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node left etcd already") {
+		t.Fatalf("leave again: %v, want a refusal saying it left already", err)
+	}
+}
+
 // A node whose member an operator removed while it joined still leaves: etcd has nothing left to
 // remove, and the node deletes what the join left behind.
 func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
