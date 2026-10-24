@@ -138,22 +138,25 @@ let
   outputs = config.chalkos.outputs;
   # Where chalkd renders the outputs, outputs.DefaultRoot.
   outputsRoot = "/run/chalkos/outputs";
-  # Why chalkd may not replace dir, the dir of the output name, with a link, or null: dir must be a
-  # clean path below /run, a tmpfs, whose components start with no dot, as the links and
-  # directories chalkd keeps beside the outputs' do, and stay out of /run/chalkos, which holds the
-  # node's config and credentials, but for /run/chalkos/outputs/<name> and the paths below it.
+  # Why chalkd may not replace dir, the dir of the output name, with a link, or null. As in
+  # outputs.checkDir, dir must:
+  # - be a clean path below /run, a tmpfs;
+  # - have no component that starts with a dot, as the links and directories chalkd keeps beside
+  #   the outputs' do;
+  # - stay out of /run/chalkos, which holds the node's config and credentials, except for
+  #   /run/chalkos/outputs/<name> and the paths below it.
   dirProblem =
     name: dir:
     let
       own = "/run/chalkos/outputs/${name}";
     in
     if builtins.match "/run(/[^/.][^/]*)+" dir == null then
-      "is no clean path below /run whose components start with no dot"
+      "must be a clean path below /run with no component that starts with a dot"
     else if
       (dir == "/run/chalkos" || lib.hasPrefix "/run/chalkos/" dir)
       && !(dir == own || lib.hasPrefix "${own}/" dir)
     then
-      "is in /run/chalkos, of which an output takes ${own} alone"
+      "is in /run/chalkos, where an output may take only ${own}"
     else
       null;
   # An output's dir that is another's, or inside another's, whose link a swap of the other would

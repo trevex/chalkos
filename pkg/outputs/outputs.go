@@ -97,21 +97,23 @@ func (d Definition) check(name, root string) error {
 	return nil
 }
 
-// checkDir refuses a dir of the output name that a swap could not safely replace by a link, root
-// being /run/chalkos/outputs: one outside /run, a tmpfs, or not clean, one with a component that
-// starts with a dot, as the links and directories chalkd keeps beside the outputs' do, and one in
-// /run/chalkos, where chalkd keeps the node's config and credentials, other than
-// /run/chalkos/outputs/<name> or a path below it.
+// checkDir refuses a dir of the output name that a swap could not safely replace by a link. root
+// is /run/chalkos/outputs. It refuses a dir that:
+//   - lies outside /run, a tmpfs, or is not clean;
+//   - has a component that starts with a dot, as the links and directories chalkd keeps beside
+//     the outputs' do;
+//   - lies in /run/chalkos, where chalkd keeps the node's config and credentials, other than
+//     /run/chalkos/outputs/<name> or a path below it.
 func checkDir(name, dir, root string) error {
 	chalkos := filepath.Dir(root)
 	run := filepath.Dir(chalkos)
 	rest, ok := strings.CutPrefix(dir, run+"/")
 	if !ok || filepath.Clean(dir) != dir || slices.ContainsFunc(strings.Split(rest, "/"), func(c string) bool { return strings.HasPrefix(c, ".") }) {
-		return fmt.Errorf("the dir %q is no clean path below %s whose components start with no dot", dir, run)
+		return fmt.Errorf("the dir %q must be a clean path below %s with no component that starts with a dot", dir, run)
 	}
 	own := filepath.Join(root, name)
 	if (dir == chalkos || strings.HasPrefix(dir, chalkos+"/")) && dir != own && !strings.HasPrefix(dir, own+"/") {
-		return fmt.Errorf("the dir %q is in %s, of which an output takes %s alone", dir, chalkos, own)
+		return fmt.Errorf("the dir %q is in %s, where an output may take only %s", dir, chalkos, own)
 	}
 	return nil
 }
