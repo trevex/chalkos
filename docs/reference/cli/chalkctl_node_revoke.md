@@ -11,10 +11,9 @@ chalkctl node revoke <node> [flags]
 
 Cuts a node off the cluster by name, at once and without a rotation. A control plane lists the
 node, with the time of its first revocation, in the ConfigMap kube-system/chalkos-revoked-nodes and
-deletes its Node object. From then on
-the control planes renew none of its certificates, the API server denies every write by its
-kubelet, and chalkctl rotate skips it. Its certificates stay valid until they expire, so its kubelet
-can still read what every kubelet may. See
+deletes its Node object. From then on the control planes renew none of its certificates, the API
+server denies every write by its kubelet, and chalkctl rotate skips it. Its certificates stay valid
+until they expire, so its kubelet can still read what every kubelet may. See
 [Revoking a node cuts off its writes and renewals](../../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals).
 
 Revoking a control plane does not cut it off, because its disk holds the node CA's and the

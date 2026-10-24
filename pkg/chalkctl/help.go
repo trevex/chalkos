@@ -91,10 +91,9 @@ const nodeRenewExample = `  chalkctl node renew w1`
 
 const nodeRevokeLong = `Cuts a node off the cluster by name, at once and without a rotation. A control plane lists the
 node, with the time of its first revocation, in the ConfigMap kube-system/chalkos-revoked-nodes and
-deletes its Node object. From then on
-the control planes renew none of its certificates, the API server denies every write by its
-kubelet, and chalkctl rotate skips it. Its certificates stay valid until they expire, so its kubelet
-can still read what every kubelet may. See
+deletes its Node object. From then on the control planes renew none of its certificates, the API
+server denies every write by its kubelet, and chalkctl rotate skips it. Its certificates stay valid
+until they expire, so its kubelet can still read what every kubelet may. See
 https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-a-node-cuts-off-its-writes-and-renewals.
 
 Revoking a control plane does not cut it off, because its disk holds the node CA's and the
@@ -364,9 +363,9 @@ recipients it records, which --recipient replaces. One rotation runs at a time, 
 command at a time changes the secrets file, holding <file>.lock.
 
 Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while no control plane
-says which nodes are revoked, unless none was bootstrapped yet. --ignore-revoked rotates without the list, and every node of the
-inventory takes part, so remove revoked nodes from the inventory first. The command needs the
-secrets file.`
+says which nodes are revoked, unless none was bootstrapped yet. --ignore-revoked rotates without
+the list, and every node of the inventory takes part, so remove revoked nodes from the inventory
+first. The command needs the secrets file.`
 
 const nodeRenewLong = `Issues the node a new node certificate and key from the node CA and delivers them, also once the
 node's own certificate expired. Such a node is verified by the OS CA as of its certificate's

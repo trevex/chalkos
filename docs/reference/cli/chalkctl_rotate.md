@@ -21,9 +21,9 @@ recipients it records, which --recipient replaces. One rotation runs at a time, 
 command at a time changes the secrets file, holding &lt;file>.lock.
 
 Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while no control plane
-says which nodes are revoked, unless none was bootstrapped yet. --ignore-revoked rotates without the list, and every node of the
-inventory takes part, so remove revoked nodes from the inventory first. The command needs the
-secrets file.
+says which nodes are revoked, unless none was bootstrapped yet. --ignore-revoked rotates without
+the list, and every node of the inventory takes part, so remove revoked nodes from the inventory
+first. The command needs the secrets file.
 
 ## Flags
 
