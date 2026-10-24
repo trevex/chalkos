@@ -28,14 +28,14 @@ type Registries struct {
 // It refuses two Registry or two Mirror documents of one registry, also when they name it
 // differently, such as docker.io and index.docker.io, an endpoint with a user in its URL, and an
 // http:// endpoint unless the Registry of its host allows plain HTTP.
-func RegistriesOf(docs []Document, secret func(SecretRef) (string, bool)) (Registries, error) {
+func RegistriesOf(docs Documents, secret func(SecretRef) (string, bool)) (Registries, error) {
 	var r Registries
 	type named struct {
 		doc  Document
 		host string
 	}
 	logins := map[string]named{}
-	for _, d := range Documents(docs).Of(OCIAPI, "Registry") {
+	for _, d := range docs.Of(OCIAPI, "Registry") {
 		var spec registrySpec
 		if err := d.decodeSpec(&spec); err != nil {
 			return Registries{}, err
@@ -66,7 +66,7 @@ func RegistriesOf(docs []Document, secret func(SecretRef) (string, bool)) (Regis
 		r.Logins = append(r.Logins, c)
 	}
 	mirrors := map[string]named{}
-	for _, d := range Documents(docs).Of(OCIAPI, "Mirror") {
+	for _, d := range docs.Of(OCIAPI, "Mirror") {
 		var spec mirrorSpec
 		if err := d.decodeSpec(&spec); err != nil {
 			return Registries{}, err

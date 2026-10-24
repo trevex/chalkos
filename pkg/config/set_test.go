@@ -146,7 +146,7 @@ func TestSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	secrets := Secrets(s.Documents())
+	secrets := s.Documents().Secrets()
 	if v, ok := secrets.Lookup(SecretRef{Name: "bgp", Key: "password"}); !ok || v != "s3cret" {
 		t.Fatalf("Lookup = %q, %v", v, ok)
 	}

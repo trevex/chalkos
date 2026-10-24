@@ -3,9 +3,9 @@ package config
 // SecretValues are the values of a config's Secrets, by Secret name and key.
 type SecretValues map[string]map[string]string
 
-// Secrets returns the values of the Secrets among docs. A value that is not a string is left
+// Secrets returns the values of the Secrets among the documents. A value that is not a string is left
 // out: the schema of a Secret allows strings alone.
-func Secrets(docs []Document) SecretValues {
+func (docs Documents) Secrets() SecretValues {
 	out := SecretValues{}
 	for _, d := range docs {
 		if !d.IsSecret() {

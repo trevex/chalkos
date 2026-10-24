@@ -59,7 +59,7 @@ func ReadRuntime(runDir string) ([]config.Document, error) {
 
 // credentials returns, by unit, the files of the values its kinds' secretRefs name.
 func credentials(docs []config.Document, schemas *schema.Schemas, units map[string][]string) (map[string]map[string][]byte, error) {
-	secrets := config.Secrets(docs)
+	secrets := config.Documents(docs).Secrets()
 	out := map[string]map[string][]byte{}
 	for unit, kinds := range units {
 		if !validName(unit) {

@@ -59,7 +59,7 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 		}
 	}
 	SortDocuments(set.docs)
-	if err := checkSecretRefs(set.docs, s, Secrets(set.docs)); err != nil {
+	if err := checkSecretRefs(set.docs, s, set.docs.Secrets()); err != nil {
 		return nil, err
 	}
 	return set, nil

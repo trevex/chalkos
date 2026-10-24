@@ -83,7 +83,7 @@ func pullSources(ref string, docs []config.Document) ([]ociimage.Source, error) 
 	if err != nil {
 		return nil, fmt.Errorf("%q is no image reference by digest, repository@sha256:…: %w", ref, err)
 	}
-	regs, err := config.RegistriesOf(docs, config.Secrets(docs).Lookup)
+	regs, err := config.RegistriesOf(docs, config.Documents(docs).Secrets().Lookup)
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: the Registry and Mirror documents: %w", ref, err)
 	}

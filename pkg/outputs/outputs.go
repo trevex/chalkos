@@ -356,7 +356,7 @@ type State struct {
 // secrets hashes the values the secretRefs of the output's input documents name, by Secret and
 // key; empty for documents that reference none.
 func (d Definition) secrets(in Input) string {
-	secrets := config.Secrets(in.Documents)
+	secrets := config.Documents(in.Documents).Secrets()
 	var lines []string
 	for _, doc := range d.documents(in) {
 		for _, ref := range config.SecretRefs(doc, in.Schemas) {

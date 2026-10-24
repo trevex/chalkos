@@ -27,7 +27,7 @@ metadata: {name: hub}
 spec: {data: {token: s3cret}}
 `
 
-func parseRegistries(t *testing.T, text string) []Document {
+func parseRegistries(t *testing.T, text string) Documents {
 	t.Helper()
 	docs, err := Parse(strings.NewReader(text))
 	if err != nil {
@@ -41,7 +41,7 @@ func parseRegistries(t *testing.T, text string) []Document {
 // Secrets to take them from.
 func TestRegistriesOf(t *testing.T) {
 	docs := parseRegistries(t, registriesDocs)
-	got, err := RegistriesOf(docs, Secrets(docs).Lookup)
+	got, err := RegistriesOf(docs, docs.Secrets().Lookup)
 	want := Registries{
 		Logins:  []RegistryCredentials{{Host: "docker.io", Username: "ci-bot", Password: "s3cret"}, {Host: "10.0.0.5:5000", Insecure: true}},
 		Mirrors: []RegistryMirror{{Registry: "index.docker.io", Endpoints: []string{"https://mirror.example/cache", "http://10.0.0.5:5000"}}},
@@ -91,7 +91,7 @@ func TestRegistriesOfRefuses(t *testing.T) {
 			`Registry "hub" names key "nope" of Secret "hub", which the config does not hold`},
 	} {
 		docs := parseRegistries(t, tc.docs)
-		if _, err := RegistriesOf(docs, Secrets(docs).Lookup); err == nil || err.Error() != tc.want {
+		if _, err := RegistriesOf(docs, docs.Secrets().Lookup); err == nil || err.Error() != tc.want {
 			t.Errorf("%s: %v, want %q", tc.name, err, tc.want)
 		}
 	}
