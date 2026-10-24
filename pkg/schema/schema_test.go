@@ -130,7 +130,7 @@ func TestLoadSchemasRejectsDuplicateKind(t *testing.T) {
 // A kind present in schemas/ but not listed by metadata is as much a mismatch as the reverse.
 func TestLoadFailsOnUndeclaredSchema(t *testing.T) {
 	dir := t.TempDir()
-	if err := copyDir(fixture, dir); err != nil {
+	if err := os.CopyFS(dir, os.DirFS(fixture)); err != nil {
 		t.Fatal(err)
 	}
 	writeSchema(t, filepath.Join(dir, "schemas"), "b.example.org_v1_Extra.json",
@@ -145,7 +145,7 @@ func TestLoadFailsOnUndeclaredSchema(t *testing.T) {
 // are meaningful in a URL. Load must not mistake the directory for one.
 func TestLoadFromDirWithURLMetacharacters(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "d #1 100%?")
-	if err := copyDir(fixture, dir); err != nil {
+	if err := os.CopyFS(dir, os.DirFS(fixture)); err != nil {
 		t.Fatal(err)
 	}
 	img, err := Load(dir)
@@ -159,23 +159,6 @@ func TestLoadFromDirWithURLMetacharacters(t *testing.T) {
 	if err := img.Validate(doc); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func copyDir(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, strings.TrimPrefix(path, src))
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, b, 0o644)
-	})
 }
 
 func TestValidateAcceptsDocument(t *testing.T) {
