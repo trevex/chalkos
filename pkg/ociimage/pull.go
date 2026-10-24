@@ -2,23 +2,14 @@ package ociimage
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
-	"net/url"
-	"path"
-	"strings"
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/trevex/chalkos/pkg/schema"
@@ -37,10 +28,6 @@ var stallTimeout = 2 * time.Minute
 // sources together.
 var sourceTimeout = 30 * time.Second
 
-// retryBackoff is how often, and after how long, a source's fetch is retried after a temporary
-// error or a 429 or 5xx answer, before the source is passed over: go-containerregistry's default.
-var retryBackoff = remote.Backoff{Duration: time.Second, Factor: 3, Jitter: 0.1, Steps: 3}
-
 // Part is a layer an image is pulled for: its media type, and the size and SHA-256 of its content.
 type Part struct {
 	MediaType types.MediaType
@@ -48,23 +35,22 @@ type Part struct {
 	SHA256    []byte
 }
 
-// Pull reads the parts of the chalkos image a reference names by its manifest's digest, one after
-// the other, as one stream: an install or an upgrade reads it as it reads the chunks of an image
-// streamed to it. The first read fetches the manifest and the header and refuses an image whose
-// header is not the one wanted, or that has no layer of a part's media type with the part's size
-// and SHA-256 as its digest. A layer is fetched once the one before it was read to its end, and
-// ends after exactly its part's size, once go-containerregistry checked its digest. A layer whose
-// source sends no data for two minutes is canceled. Every error names the reference.
+// Pull reads the parts of the chalkos image a reference names by digest as one stream, one part
+// after the other, as an install or an upgrade reads a streamed image. Every error names the
+// reference.
 //
-// The image comes from the first of its sources that serves the manifest, the header and, for
-// Contract, the contract layer: mirror endpoints in order, then the registry itself. A source that
-// cannot be reached, answers 401, 403, 404, 429 or 5xx, or does not answer within sourceTimeout
-// is passed over, for the manifest and for each layer, which starts at the source of the manifest.
-// A layer that sends no data for stallTimeout as it is opened is too. Other errors, such as bytes
-// that do not match the digest, fail the pull.
-//
-// Contract fetches the manifest, the header and the contract layer up front, as an install needs
-// them before it reads a part.
+//   - The first read fetches the manifest and the header. Contract fetches them up front, with
+//     the contract layer, as an install needs it before it reads a part. Either refuses an image
+//     of another header, or without a layer of each part's media type, size and SHA-256.
+//   - The image comes from the first source that serves the manifest, the header and, for
+//     Contract, the contract layer: the mirrors in order, then the registry. A source that cannot
+//     be reached, answers 401, 403, 404, 429 or 5xx, or gives no answer within sourceTimeout is
+//     passed over. Other errors, such as a digest mismatch, fail the pull.
+//   - A layer is fetched once the one before it is read to its end, starting at the source of the
+//     manifest and passing over sources as the manifest does. It ends after exactly its part's
+//     size, once go-containerregistry checked its digest.
+//   - A layer's fetch is canceled when its source sends no data for stallTimeout. While the layer
+//     is being opened, that passes the source over.
 type Pull struct {
 	ctx context.Context
 	ref name.Digest
@@ -77,36 +63,23 @@ type Pull struct {
 	// next is the part read next; checked is set once the manifest was checked.
 	next    int
 	checked bool
-	// cur is the layer being read, left the bytes of it not read yet; cancel cancels its fetch
-	// with a cause, and stall does once the registry sent no data for stallTimeout.
-	cur     io.ReadCloser
-	left    int64
-	cancel  context.CancelCauseFunc
-	stall   *time.Timer
-	ctxCur  context.Context
-	stalled error
+	// cur is the layer being read; nil between layers.
+	cur *pullLayer
 	// err is the error a read failed with, which every later read returns.
 	err error
 }
 
-// Source is where a Pull fetches an image from, and how.
-type Source struct {
-	// Endpoint is the URL of a mirror's endpoint, http:// or https://, with the path the registry
-	// API is below if it has one: the API is at <path>/v2, or at <path> when it ends in /v2, as
-	// containerd's hosts.toml takes it. Empty is the registry the reference names.
-	Endpoint string
-	// Auth authenticates to the source; authn.Anonymous pulls without credentials.
-	Auth authn.Authenticator
-	// Insecure allows plain HTTP: to the registry the reference names, which is otherwise reached
-	// over HTTPS alone, and to an http:// endpoint, which needs it.
-	Insecure bool
-}
-
-// source is a Source ready to fetch from: the reference on its host, and its puller.
-type source struct {
-	name   string
-	ref    name.Digest
-	puller *remote.Puller
+// pullLayer is the fetch of one layer of a Pull.
+type pullLayer struct {
+	rc io.ReadCloser
+	// left is the number of bytes of the layer's part not read yet.
+	left int64
+	// ctx is the fetch's context; cancel cancels it with a cause, and stall does, with stalled,
+	// once the source sent no data for stallTimeout.
+	ctx     context.Context
+	cancel  context.CancelCauseFunc
+	stall   *time.Timer
+	stalled error
 }
 
 // NewPull is the Pull of the parts of the image at ref, which must name a manifest by digest,
@@ -130,118 +103,6 @@ func NewPull(ctx context.Context, ref string, sources []Source, want Header, par
 	return p, nil
 }
 
-// newSource is s ready to fetch the image ref names: on an endpoint, the same repository and
-// digest on the endpoint's host, below its path.
-func newSource(ref name.Digest, s Source) (source, error) {
-	host, prefix := ref.Context().RegistryStr(), ""
-	https := !s.Insecure
-	label := "the registry " + host
-	if s.Endpoint != "" {
-		u, err := url.Parse(s.Endpoint)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return source{}, fmt.Errorf("the mirror %q is no http:// or https:// URL", s.Endpoint)
-		}
-		if u.Scheme == "http" && !s.Insecure {
-			return source{}, fmt.Errorf("the mirror %s is plain HTTP; set insecure: true in the Registry of %s to allow it", s.Endpoint, u.Host)
-		}
-		host, https, label = u.Host, u.Scheme == "https", "the mirror "+s.Endpoint
-		if p := path.Clean("/" + u.Path); p != "/" {
-			prefix = strings.TrimSuffix(p, "/v2")
-		}
-	}
-	opts := []name.Option{name.StrictValidation}
-	if !https {
-		opts = append(opts, name.Insecure)
-	}
-	d, err := name.NewDigest(host+"/"+ref.Context().RepositoryStr()+"@"+ref.DigestStr(), opts...)
-	if err != nil {
-		return source{}, fmt.Errorf("%s: %w", label, err)
-	}
-	t := remote.DefaultTransport
-	if prefix != "" {
-		t = prefixed{next: t, host: host, prefix: prefix}
-	}
-	if https {
-		t = httpsOnly{next: t}
-	}
-	pl, err := remote.NewPuller(remote.WithAuth(s.Auth), remote.WithTransport(t), remote.WithRetryBackoff(retryBackoff))
-	if err != nil {
-		return source{}, err
-	}
-	return source{name: label, ref: d, puller: pl}, nil
-}
-
-// prefixed puts prefix before the path of each request to host's registry API, below /v2, as
-// containerd reaches an endpoint with a path. Other requests, such as to a token service, pass
-// as they are.
-type prefixed struct {
-	next         http.RoundTripper
-	host, prefix string
-}
-
-func (t prefixed) RoundTrip(r *http.Request) (*http.Response, error) {
-	if strings.EqualFold(r.URL.Host, t.host) && (r.URL.Path == "/v2" || strings.HasPrefix(r.URL.Path, "/v2/")) {
-		r = r.Clone(r.Context())
-		r.URL.Path, r.URL.RawPath = t.prefix+r.URL.Path, ""
-	}
-	return t.next.RoundTrip(r)
-}
-
-// passable reports whether err says a source cannot serve the image, so a fetch tries the next
-// source: it could not be reached, the connection failed before a response, or it answered 401,
-// 403, 404, 429 or a 5xx status, as containerd passes over a host.
-func passable(err error) bool {
-	var te *transport.Error
-	if errors.As(err, &te) {
-		c := te.StatusCode
-		return c == http.StatusUnauthorized || c == http.StatusForbidden || c == http.StatusNotFound ||
-			c == http.StatusTooManyRequests || c >= http.StatusInternalServerError
-	}
-	// The HTTP client wraps the errors of a request that got no response in a url.Error: a
-	// connection closed before or during the TLS handshake, a timeout, or a plain HTTP answer to
-	// HTTPS. A body cut short is no url.Error and fails the pull.
-	var ue *url.Error
-	if errors.As(err, &ue) && (ue.Timeout() || errors.Is(ue.Err, io.EOF) || errors.Is(ue.Err, io.ErrUnexpectedEOF)) {
-		return true
-	}
-	var op *net.OpError
-	var dns *net.DNSError
-	var cert *tls.CertificateVerificationError
-	var alert tls.AlertError
-	return errors.As(err, &op) || errors.As(err, &dns) || errors.As(err, &cert) || errors.As(err, &alert) ||
-		errors.Is(err, http.ErrSchemeMismatch)
-}
-
-// after is err, the error of the source a fetch ended at, naming the sources passed over before
-// it and why.
-func after(err error, passed []string) error {
-	if len(passed) == 0 {
-		return err
-	}
-	return fmt.Errorf("%w, after %s", err, strings.Join(passed, "; "))
-}
-
-// passedOver is how after names a source passed over: its name and its error, cut to 512 bytes,
-// as a source may answer with any text.
-func passedOver(s source, err error) string {
-	msg := err.Error()
-	if len(msg) > 512 {
-		msg = strings.ToValidUTF8(msg[:512], "") + "…"
-	}
-	return s.name + ": " + msg
-}
-
-// httpsOnly refuses every request but one over HTTPS, as go-containerregistry falls back to plain
-// HTTP for a loopback or private registry host, and follows redirects to any scheme.
-type httpsOnly struct{ next http.RoundTripper }
-
-func (t httpsOnly) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.URL.Scheme != "https" {
-		return nil, fmt.Errorf("plain HTTP to %s is refused: set insecure: true in the Registry of the host to allow it", r.URL.Host)
-	}
-	return t.next.RoundTrip(r)
-}
-
 func (p *Pull) Read(b []byte) (int, error) {
 	if p.err != nil {
 		return 0, p.err
@@ -263,27 +124,27 @@ func (p *Pull) read(b []byte) (int, error) {
 			return 0, err
 		}
 	}
-	part := p.parts[p.next]
-	if int64(len(b)) > p.left {
-		b = b[:p.left]
+	part, l := p.parts[p.next], p.cur
+	if int64(len(b)) > l.left {
+		b = b[:l.left]
 	}
-	p.stall.Reset(stallTimeout)
-	n, err := p.cur.Read(b)
-	p.left -= int64(n)
-	if p.left == 0 && err == nil {
-		err = p.end()
+	l.stall.Reset(stallTimeout)
+	n, err := l.rc.Read(b)
+	l.left -= int64(n)
+	if l.left == 0 && err == nil {
+		err = l.end()
 	}
-	p.stall.Stop()
+	l.stall.Stop()
 	switch {
-	case err == io.EOF && p.left == 0:
+	case err == io.EOF && l.left == 0:
 	case err == io.EOF:
-		return n, fmt.Errorf("pull %s: the %s layer ends after %d of %d bytes", p.ref, part.MediaType, part.Size-p.left, part.Size)
+		return n, fmt.Errorf("pull %s: the %s layer ends after %d of %d bytes", p.ref, part.MediaType, part.Size-l.left, part.Size)
 	case err != nil:
 		if errors.Is(err, errTooLong) {
 			return n, fmt.Errorf("pull %s: the %s layer is longer than %d bytes", p.ref, part.MediaType, part.Size)
 		}
-		if context.Cause(p.ctxCur) == p.stalled {
-			return n, p.stalled
+		if context.Cause(l.ctx) == l.stalled {
+			return n, l.stalled
 		}
 		return n, fmt.Errorf("pull %s: the %s layer: %w", p.ref, part.MediaType, err)
 	default:
@@ -297,12 +158,12 @@ func (p *Pull) read(b []byte) (int, error) {
 // errTooLong is the error of a layer longer than its part.
 var errTooLong = errors.New("the layer is longer than its part")
 
-// end reads the layer being read past the bytes of its part and returns io.EOF if it ends there,
+// end reads the layer past the bytes of its part and returns io.EOF if it ends there,
 // which go-containerregistry returns only once the layer's digest matched.
-func (p *Pull) end() error {
+func (l *pullLayer) end() error {
 	var one [1]byte
 	for {
-		n, err := p.cur.Read(one[:])
+		n, err := l.rc.Read(one[:])
 		if n > 0 {
 			return errTooLong
 		}
@@ -328,10 +189,11 @@ func (p *Pull) Close() error {
 	if p.cur == nil {
 		return nil
 	}
-	p.stall.Stop()
-	err := p.cur.Close()
-	p.cancel(nil)
-	p.cur, p.cancel, p.stall, p.ctxCur, p.stalled = nil, nil, nil, nil, nil
+	l := p.cur
+	p.cur = nil
+	l.stall.Stop()
+	err := l.rc.Close()
+	l.cancel(nil)
 	return err
 }
 
@@ -358,7 +220,7 @@ func (p *Pull) open() error {
 		}
 		stall.Stop()
 		if err == nil {
-			p.cur, p.left, p.cancel, p.stall, p.ctxCur, p.stalled = rc, part.Size, cancel, stall, ctx, stalled
+			p.cur = &pullLayer{rc: rc, left: part.Size, ctx: ctx, cancel: cancel, stall: stall, stalled: stalled}
 			return nil
 		}
 		if context.Cause(ctx) == stalled {
