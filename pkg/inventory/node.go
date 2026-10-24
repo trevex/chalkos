@@ -59,7 +59,7 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 		for _, d := range read {
 			// The inventory reads a file once for every node that gets it; each node gets its own
 			// copy, so that changing one node's documents changes no other's.
-			d.Object = cloneValue(d.Object).(map[string]any)
+			d.Object = schema.DeepCopy(d.Object).(map[string]any)
 			key := d.APIVersion + " " + d.Kind + " " + d.Name
 			if other, ok := seen[key]; ok {
 				return nil, fmt.Errorf("node %s: %s and %s both hold %s", name, inv.rel(other), inv.rel(f), d)
@@ -90,25 +90,6 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 		c.Documents = append(c.Documents, d)
 	}
 	return c, nil
-}
-
-// cloneValue copies a document's value, its maps and lists included.
-func cloneValue(v any) any {
-	switch v := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(v))
-		for k, e := range v {
-			out[k] = cloneValue(e)
-		}
-		return out
-	case []any:
-		out := make([]any, len(v))
-		for i, e := range v {
-			out[i] = cloneValue(e)
-		}
-		return out
-	}
-	return v
 }
 
 // rootHash is a store's dm-verity root hash as metadata.json writes it.

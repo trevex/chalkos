@@ -44,7 +44,7 @@ func fill(sch *jsonschema.Schema, v any) any {
 			if val, ok := out[name]; ok {
 				out[name] = fill(prop, val)
 			} else if d := defaultOf(prop); d != nil {
-				out[name] = fill(prop, deepCopy(*d))
+				out[name] = fill(prop, DeepCopy(*d))
 			} else if isGroup(prop) {
 				// A group of options, such as encryption, has no default of its own but exists
 				// whenever its options have defaults, as in the module system.
@@ -123,18 +123,19 @@ func hasType(t *jsonschema.Types, jsonType string) bool {
 	return slices.Contains(t.ToStrings(), jsonType)
 }
 
-func deepCopy(v any) any {
+// DeepCopy copies a decoded JSON value, its objects and arrays included.
+func DeepCopy(v any) any {
 	switch v := v.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(v))
 		for k, val := range v {
-			out[k] = deepCopy(val)
+			out[k] = DeepCopy(val)
 		}
 		return out
 	case []any:
 		out := make([]any, len(v))
 		for i, val := range v {
-			out[i] = deepCopy(val)
+			out[i] = DeepCopy(val)
 		}
 		return out
 	default:
