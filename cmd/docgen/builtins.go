@@ -34,11 +34,11 @@ const builtinsSources = "\nSources: the schemas, `facts.json`, `outputs.json` an
 const (
 	rulesIntro = "A change rule refuses a config that breaks it before the node applies any of it.\n" +
 		"[Guard changes with rules and facts](../build/guard-changes.md) describes how rules are written\n" +
-		"and where they run. Each table holds a kind's rules: the field a field rule guards, or `—` for a\n" +
-		"kind rule, which sees all of the kind's documents; what a change the rule refuses takes,\n" +
-		"`refuse`, `reset` or `reinstall`; the CEL expression, which holds for a config the rule accepts;\n" +
-		"and the message, or the CEL expression that builds it. An expression too long for its row\n" +
-		"follows the table.\n"
+		"and where they run. Each table holds a kind's rules: the field a field rule sits on, or `—` for\n" +
+		"a kind rule, which sees all of the kind's documents; what the rule guards; what a change it\n" +
+		"refuses takes, `refuse`, `reset` or `reinstall`; the CEL expression, which holds for a config\n" +
+		"the rule accepts; and the message, or the CEL expression that builds it. An expression too long\n" +
+		"for its row follows the table.\n"
 	factsIntro = "A fact is node state that change rules and the `when` of effects read as `facts.<name>`. A\n" +
 		"file fact is the JSON content of a file, and null while the file is missing; a command fact is\n" +
 		"the JSON a program prints.\n"
@@ -59,6 +59,7 @@ type builtinRule struct {
 	Message           string
 	MessageExpression string
 	Takes             string
+	Description       string
 }
 
 type builtinFact struct {
@@ -377,7 +378,7 @@ func writeRulesSection(b *strings.Builder, anchor, intro string, kinds []kindRul
 		}
 		taken[id] = true
 		fmt.Fprintf(b, "\n#### %s { #%s }\n\n", k.kind.kind, id)
-		b.WriteString("| Rule | Field | Takes | Expression | Message |\n| --- | --- | --- | --- | --- |\n")
+		b.WriteString("| Rule | Field | Guards | Takes | Expression | Message |\n| --- | --- | --- | --- | --- | --- |\n")
 		var after []string
 		for i, r := range k.rules {
 			n := i + 1
@@ -401,7 +402,11 @@ func writeRulesSection(b *strings.Builder, anchor, intro string, kinds []kindRul
 				msg = "after the table"
 				after = append(after, fmt.Sprintf("\nMessage of rule %d:\n\n%s", n, textBlock(r.MessageExpression)))
 			}
-			fmt.Fprintf(b, "| %d | %s | %s | %s | %s |\n", n, field, code(r.Takes), tableCell(expr), tableCell(msg))
+			guards := "—"
+			if r.Description != "" {
+				guards = tableCell(strings.Join(strings.Fields(r.Description), " "))
+			}
+			fmt.Fprintf(b, "| %d | %s | %s | %s | %s | %s |\n", n, field, guards, code(r.Takes), tableCell(expr), tableCell(msg))
 		}
 		b.WriteString(strings.Join(after, ""))
 	}

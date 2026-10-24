@@ -15,11 +15,11 @@ effects take names other than these.
 
 A change rule refuses a config that breaks it before the node applies any of it.
 [Guard changes with rules and facts](../build/guard-changes.md) describes how rules are written
-and where they run. Each table holds a kind's rules: the field a field rule guards, or `—` for a
-kind rule, which sees all of the kind's documents; what a change the rule refuses takes,
-`refuse`, `reset` or `reinstall`; the CEL expression, which holds for a config the rule accepts;
-and the message, or the CEL expression that builds it. An expression too long for its row
-follows the table.
+and where they run. Each table holds a kind's rules: the field a field rule sits on, or `—` for
+a kind rule, which sees all of the kind's documents; what the rule guards; what a change it
+refuses takes, `refuse`, `reset` or `reinstall`; the CEL expression, which holds for a config
+the rule accepts; and the message, or the CEL expression that builds it. An expression too long
+for its row follows the table.
 
 ### Every image { #rules-every-image }
 
@@ -27,9 +27,9 @@ The rules of the kinds every image accepts.
 
 #### Mirror { #rules-mirror }
 
-| Rule | Field | Takes | Expression | Message |
-| --- | --- | --- | --- | --- |
-| 1 | — | `refuse` | after the table | after the table |
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | No two Mirror documents mirror the same registry. | `refuse` | after the table | after the table |
 
 Expression of rule 1:
 
@@ -45,10 +45,10 @@ Message of rule 1:
 
 #### Registry { #rules-registry }
 
-| Rule | Field | Takes | Expression | Message |
-| --- | --- | --- | --- | --- |
-| 1 | — | `refuse` | `documents.all(n, documents.all(m, n == m || documents[n].spec.host != documents[m].spec.host))` | after the table |
-| 2 | — | `refuse` | `documents.all(n, (documents[n].spec.username == null) == (documents[n].spec.password == null))` | after the table |
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | No two Registry documents name the same host. | `refuse` | `documents.all(n, documents.all(m, n == m || documents[n].spec.host != documents[m].spec.host))` | after the table |
+| 2 | — | A Registry gives username and password together, or neither. | `refuse` | `documents.all(n, (documents[n].spec.username == null) == (documents[n].spec.password == null))` | after the table |
 
 Message of rule 1:
 
@@ -64,9 +64,9 @@ documents.filter(n, (documents[n].spec.username == null) != (documents[n].spec.p
 
 #### SystemDisk { #rules-systemdisk }
 
-| Rule | Field | Takes | Expression | Message |
-| --- | --- | --- | --- | --- |
-| 1 | — | `reinstall` | after the table | after the table |
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | VAR keeps its format, encryption and size; a larger VAR, or one that fills the disk, is accepted. | `reinstall` | after the table | after the table |
 
 Expression of rule 1:
 
@@ -86,15 +86,15 @@ cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.
 
 #### Volume { #rules-volume }
 
-| Rule | Field | Takes | Expression | Message |
-| --- | --- | --- | --- | --- |
-| 1 | — | `reinstall` | after the table | after the table |
-| 2 | — | `reinstall` | after the table | after the table |
-| 3 | — | `refuse` | after the table | after the table |
-| 4 | — | `reset` | after the table | after the table |
-| 5 | — | `refuse` | after the table | after the table |
-| 6 | — | `reinstall` | `facts.recorded == null || facts.recorded.volumes.all(n, n == "var" || n in documents)` | after the table |
-| 7 | — | `refuse` | after the table | after the table |
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | A volume stays on the disk it was created on: the system disk or a disk of its own. | `reinstall` | after the table | after the table |
+| 2 | — | A disk reference that differs from the one the volume's disk was pinned by finds that disk. | `reinstall` | after the table | after the table |
+| 3 | — | A disk reference that differs from the one the volume's disk was pinned by resolves. | `refuse` | after the table | after the table |
+| 4 | — | A volume keeps its format and encryption, also the encryption it inherits from the SystemDisk, and does not shrink or take a fixed size where it filled its disk. | `reset` | after the table | after the table |
+| 5 | — | The pinned disk of a volume that the config creates or changes is plugged in. | `refuse` | after the table | after the table |
+| 6 | — | No volume the machine records is left out of the config. | `reinstall` | `facts.recorded == null || facts.recorded.volumes.all(n, n == "var" || n in documents)` | after the table |
+| 7 | — | A new TPM2-encrypted volume, on a node with a fallback, comes with the fallback secret, which opens the node's fallback keyslot. | `refuse` | after the table | after the table |
 
 Expression of rule 1:
 
@@ -197,13 +197,13 @@ The rules of the kinds that images with Kubernetes accept, and those they add to
 
 #### Cluster { #rules-cluster }
 
-| Rule | Field | Takes | Expression | Message |
-| --- | --- | --- | --- | --- |
-| 1 | — | `refuse` | after the table | after the table |
-| 2 | — | `refuse` | after the table | after the table |
-| 3 | — | `refuse` | after the table | after the table |
-| 4 | `spec.allowSchedulingOnControlPlanes` | `refuse` | `facts.share == null || self == oldSelf` | the config changes allowSchedulingOnControlPlanes; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node |
-| 5 | `spec.ipFamilies` | `refuse` | `facts.share == null || self == oldSelf` | after the table |
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | The pod range of each family both configs have stays once the node holds a Kubernetes share. | `refuse` | after the table | after the table |
+| 2 | — | The service range of each family both configs have stays once the node holds a Kubernetes share. | `refuse` | after the table | after the table |
+| 3 | — | The cluster DNS's address of each family both configs have, by default the 10th of its service range, stays once the node holds a Kubernetes share. | `refuse` | after the table | after the table |
+| 4 | `spec.allowSchedulingOnControlPlanes` | Whether workloads run on control planes stays once the node holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes allowSchedulingOnControlPlanes; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node |
+| 5 | `spec.ipFamilies` | The cluster's address families stay once the node holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | after the table |
 
 Expression of rule 1:
 
@@ -261,11 +261,11 @@ Message of rule 5:
 
 #### Node { #rules-node }
 
-| Rule | Field | Takes | Expression | Message |
-| --- | --- | --- | --- | --- |
-| 1 | — | `refuse` | `facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)` | after the table |
-| 2 | `spec.labels` | `refuse` | `facts.share == null || self == oldSelf` | the config changes the node's labels; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl label instead, or reinstall the node |
-| 3 | `spec.taints` | `refuse` | `facts.share == null || self == oldSelf` | the config changes the node's taints; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl taint instead, or reinstall the node |
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | The node keeps the type its Kubernetes share is for. | `refuse` | `facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)` | after the table |
+| 2 | `spec.labels` | The node keeps its labels once it holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes the node's labels; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl label instead, or reinstall the node |
+| 3 | `spec.taints` | The node keeps its taints once it holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes the node's taints; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl taint instead, or reinstall the node |
 
 Message of rule 1:
 

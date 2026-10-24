@@ -55,16 +55,17 @@ func TestWriteBuiltins(t *testing.T) {
 		last = i
 	}
 	for _, want := range []string{
-		// A kind rule comes first, then the field rules by path, also those of a $ref. A long
-		// expression follows the table; a pipe outside a code span is escaped, and one inside is not.
-		"| Rule | Field | Takes | Expression | Message |\n| --- | --- | --- | --- | --- |\n" +
-			"| 1 | — | `reset` | after the table | after the table |\n" +
-			"| 2 | `spec.size` | `refuse` | `self == oldSelf || facts.recorded == null` | the size \\| stays |\n" +
-			"| 3 | `spec.taints[].key` | `refuse` | `self != ''` | a key |\n",
+		// A kind rule comes first, then the field rules by path, also those of a $ref, each with
+		// what it guards, or — without a description. A long expression follows the table; a pipe
+		// outside a code span is escaped, and one inside is not, and so is a placeholder.
+		"| Rule | Field | Guards | Takes | Expression | Message |\n| --- | --- | --- | --- | --- | --- |\n" +
+			"| 1 | — | A volume keeps its recorded size, and its disk is plugged in. | `reset` | after the table | after the table |\n" +
+			"| 2 | `spec.size` | A volume keeps its size, &lt;size>. | `refuse` | `self == oldSelf || facts.recorded == null` | the size \\| stays |\n" +
+			"| 3 | `spec.taints[].key` | — | `refuse` | `self != ''` | a key |\n",
 		"\nExpression of rule 1:\n\n```text\nfacts.recorded == null || documents.all(n, documents[n].spec.size == facts.recorded.volumes[n].size && facts.disks[n].present)\n```\n",
 		"\nMessage of rule 1:\n\n```text\ndocuments.filter(n, true)\n  .join(\"; \")\n```\n",
-		"| 1 | — | `refuse` | `facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)` | `\"the type is \" + facts.share.kind` |\n" +
-			"| 2 | `spec.labels` | `refuse` | `facts.share == null || self == oldSelf` | the labels are fixed |\n",
+		"| 1 | — | The node keeps the type of its share. | `refuse` | `facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)` | `\"the type is \" + facts.share.kind` |\n" +
+			"| 2 | `spec.labels` | — | `refuse` | `facts.share == null || self == oldSelf` | the labels are fixed |\n",
 		// Store paths show as the names of their programs and files.
 		"| Fact | Reads | Read by |\n| --- | --- | --- |\n" +
 			"| `disks`{ #fact-disks } | What `chalkos-storage-facts disks` prints. | The rules of `Volume`. |\n" +

@@ -15,6 +15,6 @@
   },
   "x-chalkos-kind": {
     "group": "kubernetes.chalkos.dev", "version": "v1alpha1", "kind": "Node", "multiple": false,
-    "rules": [{ "rule": "facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)", "messageExpression": "\"the type is \" + facts.share.kind", "takes": "refuse" }]
+    "rules": [{ "rule": "facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)", "messageExpression": "\"the type is \" + facts.share.kind", "takes": "refuse", "description": "The node keeps the type of its share." }]
   }
 }
