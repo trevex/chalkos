@@ -210,7 +210,7 @@ image of another platform, and translates its config for its own.
 
 ### `chalkos.provenance.revision` { #chalkosprovenancerevision }
 
-Type: string or null · Default: `null` · Declared in: [modules/node/base/disk.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/disk.nix)
+Type: string or null · Default: `null` · Declared in: [modules/node/base/image-directory.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/image-directory.nix)
 
 The git revision the image is built from, as `metadata.json` records it; mkImages sets
 it from its `revision` argument. It never reaches the store, so it changes no root hash,
@@ -218,7 +218,7 @@ and nothing orders or refuses images by it.
 
 ### `chalkos.provenance.tag` { #chalkosprovenancetag }
 
-Type: string or null · Default: `null` · Declared in: [modules/node/base/disk.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/disk.nix)
+Type: string or null · Default: `null` · Declared in: [modules/node/base/image-directory.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/image-directory.nix)
 
 The git tag the image is built from, as `metadata.json` records it; mkImages sets it
 from its `tag` argument. Like the revision, it only says where the image came from.

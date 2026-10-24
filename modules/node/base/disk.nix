@@ -1,7 +1,6 @@
 # System region: ESP, store slots A and B (verity hash + erofs data), and STATE. VAR and further
 # volumes come from the node's storage section (see storage.nix).
 {
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -52,12 +51,7 @@ let
       };
     in
     if m == null then null else builtins.fromJSON (builtins.elemAt m 0) * units.${builtins.elemAt m 2};
-  # systemd-repart formats a vfat ESP with no less than 260 MiB, whatever its definition says, so
-  # a smaller one would not match the definitions an installed disk is compared with.
   espBytes = bytes cfg.espSize;
-  # systemd-repart makes a new ext4 partition no smaller than 32 MiB, and an encrypted one 32 MiB
-  # larger for LUKS2's metadata, so a smaller STATE would be enlarged and no longer match its
-  # definition.
   stateBytes = bytes cfg.stateSize;
   arch =
     {
@@ -71,57 +65,6 @@ let
     SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_PART_GPT_AUTO_ROOT_DISK}=="1", SYMLINK+="disk/chalk-boot-disk"
     SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_PART_GPT_AUTO_ROOT_DISK}=="1", ENV{ID_PART_ENTRY_NAME}=="?*", SYMLINK+="disk/chalk-boot/$env{ID_PART_ENTRY_NAME}"
   '';
-  # An image leaves room for the next one: the build fails when the store's data takes more than
-  # 80% of a slot, its hash tree more than 80% of the slot's verity partition, or the UKIs the ESP
-  # holds more than 80% of it. That is three UKIs on an image that is upgraded, both slots' and an
-  # upgrade's temporary file, and one otherwise.
-  fits =
-    let
-      name = lib.defaultTo config.image.repart.name config.chalkos.variant.name;
-      image = config.system.build.image;
-    in
-    pkgs.runCommand "${name}-fits"
-      {
-        nativeBuildInputs = [ chalkosPackages.image-size ];
-        ukis = if cfg.storeSize == null then 1 else 3;
-        storeSize = lib.defaultTo "-" cfg.storeSize;
-        storeVeritySize = lib.defaultTo "-" cfg.storeVeritySize;
-        inherit (cfg) espSize;
-      }
-      ''
-        chalkos-image-size fits ${name} ${image}/${config.image.fileName} ${image}/repart-output.json \
-          ${config.system.build.uki}/${config.system.boot.loader.ukiFile} "$ukis" "$storeSize" "$storeVeritySize" "$espSize"
-        touch $out
-      '';
-  # What chalkctl reads about an image before it validates config or installs it; the root hash
-  # is added from systemd-repart's output once the image is built. The revision and tag reach
-  # metadata.json alone, never the store, so they change no root hash.
-  metadataFields = pkgs.writeText "chalkos-metadata.json" (
-    builtins.toJSON {
-      schemaVersion = 0;
-      inherit (config.system.image) id;
-      inherit (config.chalkos.provenance) revision tag;
-      variant = config.chalkos.variant.name;
-      platform = config.chalkos.platform.name;
-      # The Kubernetes release and pod network, null on an image without Kubernetes.
-      kubernetes =
-        let
-          facts = config.system.build.chalkosKubernetesImage or null;
-        in
-        if facts == null then null else { inherit (facts) version cni; };
-      kinds = config.system.build.chalkosKinds;
-    }
-  );
-  metadata =
-    pkgs.runCommand "${config.image.repart.name}-metadata.json" { nativeBuildInputs = [ pkgs.jq ]; }
-      ''
-        jq --slurpfile repart ${config.system.build.image}/repart-output.json \
-          '. + { rootHash: ([$repart[0][] | .roothash // empty] | first) }' \
-          ${metadataFields} > $out
-      '';
-  # What the image fixes about Kubernetes, which chalkctl sends with the schemas, so a node checks
-  # config against the image it is for; null on an image without Kubernetes.
-  kubernetesImage = config.environment.etc."chalkos/kubernetes/image.json".source or null;
 in
 {
   imports = [ "${modulesPath}/image/repart.nix" ];
@@ -155,32 +98,18 @@ in
       description = "Size of the STATE partition holding the node's config and secrets; at least 64M, the smallest encrypted ext4 partition systemd-repart makes.";
     };
   };
-  options.chalkos.provenance = {
-    revision = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = ''
-        The git revision the image is built from, as `metadata.json` records it; mkImages sets
-        it from its `revision` argument. It never reaches the store, so it changes no root hash,
-        and nothing orders or refuses images by it.
-      '';
-    };
-    tag = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = ''
-        The git tag the image is built from, as `metadata.json` records it; mkImages sets it
-        from its `tag` argument. Like the revision, it only says where the image came from.
-      '';
-    };
-  };
 
   config = {
     assertions = [
+      # systemd-repart formats a vfat ESP with no less than 260 MiB, whatever its definition says,
+      # so a smaller one would not match the definitions an installed disk is compared with.
       {
         assertion = espBytes != null && espBytes >= 260 * 1024 * 1024;
         message = "chalkos.disk.espSize must be at least 260M, the smallest ESP systemd-repart formats as vfat; it is ${builtins.toJSON cfg.espSize}";
       }
+      # systemd-repart makes a new ext4 partition no smaller than 32 MiB, and an encrypted one 32
+      # MiB larger for LUKS2's metadata, so a smaller STATE would be enlarged and no longer match
+      # its definition.
       {
         assertion = stateBytes != null && stateBytes >= 64 * 1024 * 1024;
         message = "chalkos.disk.stateSize must be at least 64M, the smallest encrypted ext4 partition systemd-repart makes; it is ${builtins.toJSON cfg.stateSize}";
@@ -303,47 +232,5 @@ in
     # Install recreates STATE from these definitions, and the installer lays out the target disk
     # with them, so they travel with the image.
     environment.etc."chalkos/repart.d".source = systemDefinitions;
-    system.build.chalkosImageFits = fits;
-    system.build.chalkosMetadata = metadata;
-    system.build.chalkosImage =
-      let
-        image = config.system.build.image;
-        raw = config.image.fileName;
-      in
-      pkgs.runCommand "${config.image.repart.name}-image"
-        {
-          inherit fits;
-          nativeBuildInputs = [
-            pkgs.jq
-            pkgs.util-linux
-          ];
-        }
-        ''
-          mkdir $out
-          # Slot A's labels name its store by the root hash's first 16 hex digits, which only the
-          # built image knows: the raw image is copied, keeping its holes, and its slot relabelled
-          # by the partition UUIDs repart reported, which repart-output.json names as well.
-          id=$(jq -r '[.[] | .roothash // empty] | first | .[0:16]' ${image}/repart-output.json)
-          cp --sparse=always ${image}/${raw} $out/${raw}
-          chmod u+w $out/${raw}
-          sfdisk --json $out/${raw} > table.json
-          jq -r --arg id "$id" '.[] | select(.roothash != null)
-            | [(.uuid | ascii_downcase), (if (.type | endswith("-verity")) then "store-verity_" else "store_" end) + $id]
-            | @tsv' ${image}/repart-output.json > labels.tsv
-          while IFS=$'\t' read -r uuid label; do
-            n=$(jq -r --arg uuid "$uuid" \
-              '.partitiontable.partitions[] | select((.uuid | ascii_downcase) == $uuid) | .node | capture("(?<n>[0-9]+)$").n' table.json)
-            sfdisk --part-label $out/${raw} "$n" "$label"
-          done < labels.tsv
-          jq --arg id "$id" 'map(
-              if .roothash == null then .
-              elif (.type | endswith("-verity")) then .label = "store-verity_" + $id
-              else .label = "store_" + $id end)' \
-            ${image}/repart-output.json > $out/repart-output.json
-          ln -s ${systemDefinitions} $out/repart.d
-          ln -s ${config.system.build.chalkosSchemas} $out/schemas
-          ${lib.optionalString (kubernetesImage != null) "ln -s ${kubernetesImage} $out/image.json"}
-          cp ${metadata} $out/metadata.json
-        '';
   };
 }

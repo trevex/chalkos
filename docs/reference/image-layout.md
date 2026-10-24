@@ -345,7 +345,8 @@ another disk carrying the same image or the same labels for its own.
 | `/var/lib/kubelet/pki` | The kubelet's client and serving certificates. |
 | `/var/lib/chalkd/failed-boot` | The log lines of the last boot that was not found healthy. |
 
-Sources: `modules/node/base/disk.nix` for the system region, the outputs of an image build and the
-device links, `pkg/config/storage.go` for VAR and the volumes, `pkg/ociimage` for the OCI
-artifact, and `pkg/upgrade`, `pkg/install`, `pkg/storage` and `pkg/chalkd` for the files on the
-ESP and STATE and the paths on a running node.
+Sources: `modules/node/base/disk.nix` for the system region and the device links,
+`modules/node/base/image-directory.nix` for the outputs of an image build,
+`pkg/config/storage.go` for VAR and the volumes, `pkg/ociimage` for the OCI artifact, and
+`pkg/upgrade`, `pkg/install`, `pkg/storage` and `pkg/chalkd` for the files on the ESP and STATE
+and the paths on a running node.

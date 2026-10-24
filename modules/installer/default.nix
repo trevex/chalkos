@@ -6,6 +6,7 @@
 # the raw image's ESP as its El Torito boot image, followed by the store partitions, with a GPT
 # describing the ESP and the store, so it boots from a CD as well as written to a USB disk.
 {
+  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -30,6 +31,7 @@ let
           pkgs.xorriso
           pkgs.jq
           pkgs.util-linux
+          chalkosPackages.relabel-partitions
         ];
       }
       ''
@@ -60,13 +62,8 @@ let
 
         # The initrd finds the store by the PARTUUIDs derived from its verity root hash, so the
         # GPT must carry the image's partition UUIDs and labels.
-        sfdisk --json $iso > table.json
-        while IFS=$'\t' read -r type gpt uuid label offset size; do
-          n=$(jq -r --arg gpt "$gpt" \
-            '.partitiontable.partitions[] | select(.type == $gpt) | .node | capture("(?<n>[0-9]+)$").n' table.json)
-          sfdisk --part-uuid $iso "$n" "$uuid"
-          sfdisk --part-label $iso "$n" "$label"
-        done < partitions.tsv
+        awk -F '\t' -v OFS='\t' '{ print $2, $4, $3 }' partitions.tsv |
+          chalkos-relabel-partitions $iso type
 
         # The ISO's partitions in the format of repart-output.json, for chalkbuild sign.
         sfdisk --json $iso | jq --argjson types '${builtins.toJSON gptTypes}' '

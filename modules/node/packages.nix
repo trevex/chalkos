@@ -11,5 +11,6 @@
     chalkos-storage = pkgs.callPackage ../../nix/chalkos-storage.nix { };
     image-size = pkgs.callPackage ../../nix/image-size.nix { };
     kernel-modules = pkgs.callPackage ../../nix/kernel-modules.nix { };
+    relabel-partitions = pkgs.callPackage ../../nix/relabel-partitions.nix { };
   };
 }
