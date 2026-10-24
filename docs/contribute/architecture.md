@@ -129,9 +129,15 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `upgrade` | Writes an image into the inactive slot and makes it the next boot; the image header and the checks of its UKI and boot loader an install shares; the booted entry and the provenance record. |
 | `verity` | Reads and checks dm-verity hash trees. |
 
-`uki/ukitest`, `image/imagetest`, `kubernetes/etcd/etcdtest`, `ociimage/ocitest` and `tool/tooltest` hold test helpers:
-small UKIs, small disk images and db signers, in-process etcd members, and a fake tool runner that
-records commands and answers them by prefix.
+Test helpers live in packages of their own:
+
+- `uki/ukitest`: small UKIs.
+- `image/imagetest`: small disk images, db signers and `sbsign`.
+- `kubernetes/etcd/etcdtest`: in-process etcd members.
+- `ociimage/ocitest`: in-memory OCI registries and small chalkos images.
+- `pki/pkitest`: node CAs.
+- `storage/storagetest`: the sysfs, udev and `/dev` trees of a host's disks.
+- `tool/tooltest`: a fake tool runner that records commands and answers them by prefix.
 
 ## The node API
 
