@@ -1,20 +1,20 @@
-package pki
+package clustersecrets
 
 import (
-	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // What chalkctl rotate rotates.
@@ -78,7 +78,7 @@ type KubernetesAccepted struct {
 
 // String counts what is accepted and never prints an encryption key.
 func (a KubernetesAccepted) String() string {
-	return fmt.Sprintf("pki.KubernetesAccepted{ca: %d, frontProxyCA: %d, etcdCA: %d, serviceAccountKeys: %d, encryptionKeys: %v}",
+	return fmt.Sprintf("clustersecrets.KubernetesAccepted{ca: %d, frontProxyCA: %d, etcdCA: %d, serviceAccountKeys: %d, encryptionKeys: %v}",
 		len(a.CA), len(a.FrontProxyCA), len(a.EtcdCA), len(a.ServiceAccountKeys), a.EncryptionKeys)
 }
 
@@ -93,7 +93,7 @@ type EncryptionKey struct {
 
 // String names the key and never prints it.
 func (k EncryptionKey) String() string {
-	return fmt.Sprintf("pki.EncryptionKey{name: %s, redacted}", k.Name)
+	return fmt.Sprintf("clustersecrets.EncryptionKey{name: %s, redacted}", k.Name)
 }
 
 // GoString redacts like String.
@@ -124,7 +124,7 @@ type Rotation struct {
 
 // String names the rotation and its phase.
 func (r Rotation) String() string {
-	return fmt.Sprintf("pki.Rotation{kind: %s, phase: %s, applied: %v}", r.Kind, r.Phase, r.Applied)
+	return fmt.Sprintf("clustersecrets.Rotation{kind: %s, phase: %s, applied: %v}", r.Kind, r.Phase, r.Applied)
 }
 
 // GoString redacts like String.
@@ -132,16 +132,16 @@ func (r Rotation) GoString() string { return r.String() }
 
 // NewValues are the new values of a rotation in its accept phase.
 type NewValues struct {
-	OSCA              *CertKey `json:"osCA,omitempty"`
-	NodeCA            *CertKey `json:"nodeCA,omitempty"`
-	CA                *CertKey `json:"ca,omitempty"`
-	FrontProxyCA      *CertKey `json:"frontProxyCA,omitempty"`
-	EtcdCA            *CertKey `json:"etcdCA,omitempty"`
-	ServiceAccountKey string   `json:"serviceAccountKey,omitempty"`
+	OSCA              *pki.CertKey `json:"osCA,omitempty"`
+	NodeCA            *pki.CertKey `json:"nodeCA,omitempty"`
+	CA                *pki.CertKey `json:"ca,omitempty"`
+	FrontProxyCA      *pki.CertKey `json:"frontProxyCA,omitempty"`
+	EtcdCA            *pki.CertKey `json:"etcdCA,omitempty"`
+	ServiceAccountKey string       `json:"serviceAccountKey,omitempty"`
 }
 
 // String never prints a key.
-func (n NewValues) String() string { return "pki.NewValues{redacted}" }
+func (n NewValues) String() string { return "clustersecrets.NewValues{redacted}" }
 
 // GoString redacts like String.
 func (n NewValues) GoString() string { return n.String() }
@@ -163,21 +163,21 @@ func (n NewValues) onlyOf(kind string) bool {
 
 // OSCABundle is the OS CAs nodes and chalkctl trust: the one that issues, then those accepted.
 func (s Secrets) OSCABundle() string {
-	return Bundle(append([]string{s.OSCA.Certificate}, s.Accepted.OSCA...)...)
+	return pki.Bundle(append([]string{s.OSCA.Certificate}, s.Accepted.OSCA...)...)
 }
 
 // CABundle is the Kubernetes CAs trusted, the one that issues first; FrontProxyCABundle and
 // EtcdCABundle are those of the front-proxy and etcd CAs.
 func (k KubernetesSecrets) CABundle() string {
-	return Bundle(append([]string{k.CA.Certificate}, k.Accepted.CA...)...)
+	return pki.Bundle(append([]string{k.CA.Certificate}, k.Accepted.CA...)...)
 }
 
 func (k KubernetesSecrets) FrontProxyCABundle() string {
-	return Bundle(append([]string{k.FrontProxyCA.Certificate}, k.Accepted.FrontProxyCA...)...)
+	return pki.Bundle(append([]string{k.FrontProxyCA.Certificate}, k.Accepted.FrontProxyCA...)...)
 }
 
 func (k KubernetesSecrets) EtcdCABundle() string {
-	return Bundle(append([]string{k.EtcdCA.Certificate}, k.Accepted.EtcdCA...)...)
+	return pki.Bundle(append([]string{k.EtcdCA.Certificate}, k.Accepted.EtcdCA...)...)
 }
 
 // KeyName is the name of the encryption key that encrypts.
@@ -193,53 +193,10 @@ func (k KubernetesSecrets) EncryptionKeys() []EncryptionKey {
 	return append([]EncryptionKey{{Name: k.KeyName(), Key: k.EncryptionKey}}, k.Accepted.EncryptionKeys...)
 }
 
-// ServiceAccountPublicKey returns the PEM public key of a PEM private service-account key.
-func ServiceAccountPublicKey(private string) (string, error) {
-	key, err := ParseECKey(private)
-	if err != nil {
-		return "", err
-	}
-	der, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
-	if err != nil {
-		return "", err
-	}
-	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})), nil
-}
-
-// ParsePublicKey decodes a PEM ECDSA P-256 public key, as service accounts' are.
-func ParsePublicKey(data string) (*ecdsa.PublicKey, error) {
-	block, rest := pem.Decode([]byte(data))
-	if block == nil || block.Type != "PUBLIC KEY" || len(bytes.TrimSpace(rest)) > 0 {
-		return nil, errors.New("not one PEM public key")
-	}
-	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-	key, ok := parsed.(*ecdsa.PublicKey)
-	if !ok || key.Curve != elliptic.P256() {
-		return nil, errors.New("the public key is not ECDSA P-256")
-	}
-	return key, nil
-}
-
-// PublicKeyFingerprint is the SHA-256 of a PEM public key's DER form.
-func PublicKeyFingerprint(data string) (string, error) {
-	key, err := ParsePublicKey(data)
-	if err != nil {
-		return "", err
-	}
-	der, err := x509.MarshalPKIXPublicKey(key)
-	if err != nil {
-		return "", err
-	}
-	return Fingerprint(der), nil
-}
-
 // ServiceAccountPublicKeys are the public keys the API server accepts tokens of, the signing
 // key's first.
 func (k KubernetesSecrets) ServiceAccountPublicKeys() ([]string, error) {
-	pub, err := ServiceAccountPublicKey(k.ServiceAccountKey)
+	pub, err := pki.ServiceAccountPublicKey(k.ServiceAccountKey)
 	if err != nil {
 		return nil, err
 	}
@@ -278,13 +235,13 @@ func (k KubernetesSecrets) ValidateAccepted() error {
 		}
 		return nil
 	}
-	signing, err := ServiceAccountPublicKey(k.ServiceAccountKey)
+	signing, err := pki.ServiceAccountPublicKey(k.ServiceAccountKey)
 	if err != nil {
 		return fmt.Errorf("kubernetes.serviceAccountKey: %w", err)
 	}
 	seen := map[string]bool{}
 	for i, pub := range append([]string{signing}, k.Accepted.ServiceAccountKeys...) {
-		fp, err := PublicKeyFingerprint(pub)
+		fp, err := pki.PublicKeyFingerprint(pub)
 		if err != nil {
 			return fmt.Errorf("kubernetes.accepted.serviceAccountKeys[%d]: %w", i-1, err)
 		}
@@ -325,11 +282,11 @@ func validateRoot(certificate string) error {
 	if err := validateCACertificate(certificate); err != nil {
 		return err
 	}
-	cert, err := ParseCertificate([]byte(certificate))
+	cert, err := pki.ParseCertificate([]byte(certificate))
 	if err != nil {
 		return err
 	}
-	if IsNodeCA(cert) || cert.CheckSignatureFrom(cert) != nil {
+	if pki.IsNodeCA(cert) || cert.CheckSignatureFrom(cert) != nil {
 		return errors.New("not a self-signed root CA")
 	}
 	return nil
@@ -337,7 +294,7 @@ func validateRoot(certificate string) error {
 
 // validateCACertificate checks one CA certificate without its key.
 func validateCACertificate(certificate string) error {
-	certs, err := ParseBundle(certificate)
+	certs, err := pki.ParseBundle(certificate)
 	if err != nil {
 		return err
 	}
@@ -352,11 +309,11 @@ func validateCACertificate(certificate string) error {
 }
 
 // cas lists every CA of the secrets file, also those accepted and new, for RequireDistinctCAs.
-func (s Secrets) cas() []NamedCA {
-	cas := append([]NamedCA{{"osCA", s.OSCA}, {"nodeCA", s.NodeCA}}, s.Kubernetes.cas()...)
+func (s Secrets) cas() []pki.NamedCA {
+	cas := append([]pki.NamedCA{{Name: "osCA", CA: s.OSCA}, {Name: "nodeCA", CA: s.NodeCA}}, s.Kubernetes.cas()...)
 	add := func(name string, certs []string) {
 		for i, c := range certs {
-			cas = append(cas, NamedCA{fmt.Sprintf("%s[%d]", name, i), CertKey{Certificate: c}})
+			cas = append(cas, pki.NamedCA{Name: fmt.Sprintf("%s[%d]", name, i), CA: pki.CertKey{Certificate: c}})
 		}
 	}
 	add("accepted.osCA", s.Accepted.OSCA)
@@ -364,7 +321,7 @@ func (s Secrets) cas() []NamedCA {
 	add("kubernetes.accepted.frontProxyCA", s.Kubernetes.Accepted.FrontProxyCA)
 	add("kubernetes.accepted.etcdCA", s.Kubernetes.Accepted.EtcdCA)
 	if r := s.Rotation; r != nil && r.New != nil && r.New.NodeCA != nil {
-		cas = append(cas, NamedCA{"rotation.new.nodeCA", *r.New.NodeCA})
+		cas = append(cas, pki.NamedCA{Name: "rotation.new.nodeCA", CA: *r.New.NodeCA})
 	}
 	return cas
 }
@@ -424,23 +381,23 @@ func (s Secrets) validateRotation() error {
 		if n.OSCA == nil || n.NodeCA == nil {
 			return errors.New("rotation: the new OS CA and node CA are missing")
 		}
-		if err := ValidateCA(*n.OSCA); err != nil {
+		if err := pki.ValidateCA(*n.OSCA); err != nil {
 			return fmt.Errorf("rotation.new.osCA: %w", err)
 		}
-		if err := ValidateNodeCA(*n.NodeCA, n.OSCA.Certificate); err != nil {
+		if err := pki.ValidateNodeCA(*n.NodeCA, n.OSCA.Certificate); err != nil {
 			return fmt.Errorf("rotation.new.nodeCA: %w", err)
 		}
 		return requireAccepted("rotation.new.osCA", n.OSCA.Certificate, s.Accepted.OSCA)
 	case RotateKubernetesCA:
 		for _, ca := range []struct {
 			name     string
-			ca       *CertKey
+			ca       *pki.CertKey
 			accepted []string
 		}{{"ca", n.CA, s.Kubernetes.Accepted.CA}, {"frontProxyCA", n.FrontProxyCA, s.Kubernetes.Accepted.FrontProxyCA}, {"etcdCA", n.EtcdCA, s.Kubernetes.Accepted.EtcdCA}} {
 			if ca.ca == nil {
 				return fmt.Errorf("rotation.new.%s is missing", ca.name)
 			}
-			if err := ValidateCA(*ca.ca); err != nil {
+			if err := pki.ValidateCA(*ca.ca); err != nil {
 				return fmt.Errorf("rotation.new.%s: %w", ca.name, err)
 			}
 			if err := requireAccepted("rotation.new."+ca.name, ca.ca.Certificate, ca.accepted); err != nil {
@@ -448,7 +405,7 @@ func (s Secrets) validateRotation() error {
 			}
 		}
 	case RotateServiceAccountKey:
-		pub, err := ServiceAccountPublicKey(n.ServiceAccountKey)
+		pub, err := pki.ServiceAccountPublicKey(n.ServiceAccountKey)
 		if err != nil {
 			return fmt.Errorf("rotation.new.serviceAccountKey: %w", err)
 		}
@@ -522,11 +479,11 @@ func (s *Secrets) BeginRotation(kind string, now time.Time) error {
 	n := &NewValues{}
 	switch kind {
 	case RotateOSCA:
-		root, err := NewOSCA(now)
+		root, err := pki.NewOSCA(now)
 		if err != nil {
 			return err
 		}
-		nodeCA, err := NewNodeCA(root, now)
+		nodeCA, err := pki.NewNodeCA(root, now)
 		if err != nil {
 			return err
 		}
@@ -535,10 +492,10 @@ func (s *Secrets) BeginRotation(kind string, now time.Time) error {
 	case RotateKubernetesCA:
 		for _, ca := range []struct {
 			name     string
-			new      **CertKey
+			new      **pki.CertKey
 			accepted *[]string
 		}{{"chalkos Kubernetes CA", &n.CA, &k.Accepted.CA}, {"chalkos front-proxy CA", &n.FrontProxyCA, &k.Accepted.FrontProxyCA}, {"chalkos etcd CA", &n.EtcdCA, &k.Accepted.EtcdCA}} {
-			created, err := NewCA(ca.name, now)
+			created, err := pki.NewCA(ca.name, now)
 			if err != nil {
 				return err
 			}
@@ -550,10 +507,10 @@ func (s *Secrets) BeginRotation(kind string, now time.Time) error {
 		if err != nil {
 			return err
 		}
-		if n.ServiceAccountKey, err = EncodeKey(key); err != nil {
+		if n.ServiceAccountKey, err = pki.EncodeKey(key); err != nil {
 			return err
 		}
-		pub, err := ServiceAccountPublicKey(n.ServiceAccountKey)
+		pub, err := pki.ServiceAccountPublicKey(n.ServiceAccountKey)
 		if err != nil {
 			return err
 		}
@@ -611,7 +568,7 @@ func (s *Secrets) RecordApplied(now time.Time) error {
 
 // ClientCA is the OS CA client files are issued from: the new one once every node accepts it, so
 // a client file issued during the rotation keeps working after its finish, else the issuing one.
-func (s Secrets) ClientCA() CertKey {
+func (s Secrets) ClientCA() pki.CertKey {
 	if r := s.Rotation; r != nil && r.Kind == RotateOSCA && r.Phase == PhaseAccept && r.Applied && r.New != nil && r.New.OSCA != nil {
 		return *r.New.OSCA
 	}
@@ -620,7 +577,7 @@ func (s Secrets) ClientCA() CertKey {
 
 // KubeconfigCA is the Kubernetes CA kubeconfigs' client certificates are issued from, chosen as
 // ClientCA chooses the OS CA.
-func (s Secrets) KubeconfigCA() CertKey {
+func (s Secrets) KubeconfigCA() pki.CertKey {
 	if r := s.Rotation; r != nil && r.Kind == RotateKubernetesCA && r.Phase == PhaseAccept && r.Applied && r.New != nil && r.New.CA != nil {
 		return *r.New.CA
 	}
@@ -643,7 +600,7 @@ func (s *Secrets) SwitchRotation() error {
 		k.Accepted.CA, k.Accepted.FrontProxyCA, k.Accepted.EtcdCA = []string{k.CA.Certificate}, []string{k.FrontProxyCA.Certificate}, []string{k.EtcdCA.Certificate}
 		k.CA, k.FrontProxyCA, k.EtcdCA = *r.New.CA, *r.New.FrontProxyCA, *r.New.EtcdCA
 	case RotateServiceAccountKey:
-		old, err := ServiceAccountPublicKey(k.ServiceAccountKey)
+		old, err := pki.ServiceAccountPublicKey(k.ServiceAccountKey)
 		if err != nil {
 			return err
 		}

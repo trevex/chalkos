@@ -6,15 +6,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // rotating returns secrets in the accept phase of a rotation of kind, and, switched, the same
 // rotation after its switch.
-func rotating(t *testing.T, kind string) (accepting, switched *pki.Secrets) {
+func rotating(t *testing.T, kind string) (accepting, switched *clustersecrets.Secrets) {
 	t.Helper()
-	s, err := pki.GenerateSecrets(now)
+	s, err := clustersecrets.Generate(now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,8 +45,8 @@ func fingerprints(t *testing.T, bundle string) []string {
 // worker shares the Kubernetes CAs alone, that both read back, and that their bundles put the
 // issuing value first.
 func TestSharesCarryWhatIsAccepted(t *testing.T) {
-	accepting, switched := rotating(t, pki.RotateKubernetesCA)
-	for name, s := range map[string]*pki.Secrets{"accepting": accepting, "switched": switched} {
+	accepting, switched := rotating(t, clustersecrets.RotateKubernetesCA)
+	for name, s := range map[string]*clustersecrets.Secrets{"accepting": accepting, "switched": switched} {
 		k := s.Kubernetes
 		cp, err := ShareFor(s, kubernetes.KindControlPlane, "cp1", now)
 		if err != nil {
@@ -81,7 +82,7 @@ func TestSharesCarryWhatIsAccepted(t *testing.T) {
 		}
 	}
 
-	for kind := range map[string]bool{pki.RotateServiceAccountKey: true, pki.RotateEncryptionKey: true} {
+	for kind := range map[string]bool{clustersecrets.RotateServiceAccountKey: true, clustersecrets.RotateEncryptionKey: true} {
 		s, _ := rotating(t, kind)
 		cp, err := ShareFor(s, kubernetes.KindControlPlane, "cp1", now)
 		if err != nil {
@@ -97,7 +98,9 @@ func TestSharesCarryWhatIsAccepted(t *testing.T) {
 			t.Fatal(err)
 		}
 		want, _ := s.Kubernetes.ServiceAccountPublicKeys()
-		if !slices.Equal(pubs, want) || !slices.EqualFunc(read.EncryptionKeys(), s.Kubernetes.EncryptionKeys(), func(a, b pki.EncryptionKey) bool { return a.Name == b.Name && string(a.Key) == string(b.Key) }) {
+		if !slices.Equal(pubs, want) || !slices.EqualFunc(read.EncryptionKeys(), s.Kubernetes.EncryptionKeys(), func(a, b clustersecrets.EncryptionKey) bool {
+			return a.Name == b.Name && string(a.Key) == string(b.Key)
+		}) {
 			t.Errorf("%s: the share's keys differ from the secrets file's", kind)
 		}
 	}
@@ -105,7 +108,7 @@ func TestSharesCarryWhatIsAccepted(t *testing.T) {
 
 // TestShareRefusesWhatItMustNotAccept checks the shares a node refuses.
 func TestShareRefusesWhatItMustNotAccept(t *testing.T) {
-	accepting, _ := rotating(t, pki.RotateKubernetesCA)
+	accepting, _ := rotating(t, clustersecrets.RotateKubernetesCA)
 	other := secrets(t)
 	for name, edit := range map[string]func(cp, w *Share){
 		"a worker accepting an etcd CA": func(_, w *Share) { w.Accepted.EtcdCA = []string{other.EtcdCA.Certificate} },
@@ -115,10 +118,10 @@ func TestShareRefusesWhatItMustNotAccept(t *testing.T) {
 		"a control plane accepting its issuing CA": func(cp, _ *Share) { cp.Accepted.CA = []string{cp.CA.Certificate} },
 		"an accepted CA holding a key":             func(cp, _ *Share) { cp.Accepted.CA = []string{other.CA.Certificate + other.CA.Key} },
 		"two encryption keys of one name": func(cp, _ *Share) {
-			cp.Accepted.EncryptionKeys = []pki.EncryptionKey{{Name: pki.DefaultEncryptionKeyName, Key: other.EncryptionKey}}
+			cp.Accepted.EncryptionKeys = []clustersecrets.EncryptionKey{{Name: clustersecrets.DefaultEncryptionKeyName, Key: other.EncryptionKey}}
 		},
 		"an accepted encryption key that is short": func(cp, _ *Share) {
-			cp.Accepted.EncryptionKeys = []pki.EncryptionKey{{Name: "old", Key: []byte("short")}}
+			cp.Accepted.EncryptionKeys = []clustersecrets.EncryptionKey{{Name: "old", Key: []byte("short")}}
 		},
 	} {
 		cp, err := ShareFor(accepting, kubernetes.KindControlPlane, "cp1", now)
@@ -146,8 +149,8 @@ func TestShareRefusesWhatItMustNotAccept(t *testing.T) {
 // key accepted, the issuing one first, while their certificates come from the issuing CAs and
 // the controller-manager signs with the issuing CA alone.
 func TestControlPlaneFilesHoldBundles(t *testing.T) {
-	accepting, switched := rotating(t, pki.RotateKubernetesCA)
-	for name, s := range map[string]*pki.Secrets{"accepting": accepting, "switched": switched} {
+	accepting, switched := rotating(t, clustersecrets.RotateKubernetesCA)
+	for name, s := range map[string]*clustersecrets.Secrets{"accepting": accepting, "switched": switched} {
 		k := s.Kubernetes
 		cp, _ := ShareFor(s, kubernetes.KindControlPlane, "cp1", now)
 		files, err := ControlPlane(cp, testCluster(), testNode, now)
@@ -185,7 +188,7 @@ func TestControlPlaneFilesHoldBundles(t *testing.T) {
 		}
 	}
 
-	_, switchedKey := rotating(t, pki.RotateServiceAccountKey)
+	_, switchedKey := rotating(t, clustersecrets.RotateServiceAccountKey)
 	cp, _ := ShareFor(switchedKey, kubernetes.KindControlPlane, "cp1", now)
 	files, err := ControlPlane(cp, testCluster(), testNode, now)
 	if err != nil {
@@ -196,8 +199,8 @@ func TestControlPlaneFilesHoldBundles(t *testing.T) {
 		t.Error("the API server does not accept both service-account keys, or signs with another")
 	}
 
-	acceptingEnc, switchedEnc := rotating(t, pki.RotateEncryptionKey)
-	for name, s := range map[string]*pki.Secrets{"accepting": acceptingEnc, "switched": switchedEnc} {
+	acceptingEnc, switchedEnc := rotating(t, clustersecrets.RotateEncryptionKey)
+	for name, s := range map[string]*clustersecrets.Secrets{"accepting": acceptingEnc, "switched": switchedEnc} {
 		cp, _ := ShareFor(s, kubernetes.KindControlPlane, "cp1", now)
 		files, err := ControlPlane(cp, testCluster(), testNode, now)
 		if err != nil {

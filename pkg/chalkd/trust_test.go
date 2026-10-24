@@ -20,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -156,7 +157,7 @@ func TestTrustKeepsTheControlPlanesNodeCA(t *testing.T) {
 	osCA, _ := testOSCA()
 	next, _ := pki.NewOSCA(time.Now())
 	nextNodeCA, _ := pki.NewNodeCA(next, time.Now())
-	k, _ := pki.NewKubernetesSecrets(time.Now())
+	k, _ := clustersecrets.NewKubernetesSecrets(time.Now())
 	share, _ := kpki.ControlPlaneShare(k, nextNodeCA).Encode()
 	write(t, s.Kubernetes.Paths.Share(), string(share))
 	_, admin := adminOf(t, osCA)
@@ -177,7 +178,7 @@ func TestRefusedTrustLeavesTheBaseline(t *testing.T) {
 	osCA, _ := testOSCA()
 	next, _ := pki.NewOSCA(time.Now())
 	nextNodeCA, _ := pki.NewNodeCA(next, time.Now())
-	k, _ := pki.NewKubernetesSecrets(time.Now())
+	k, _ := clustersecrets.NewKubernetesSecrets(time.Now())
 	share, _ := kpki.ControlPlaneShare(k, nextNodeCA).Encode()
 	write(t, s.Kubernetes.Paths.Share(), string(share))
 	_, admin := adminOf(t, osCA)
@@ -213,11 +214,11 @@ func trustOf(t *testing.T, s *Server) map[string]*nodev1.TrustStatus {
 // components run with, the issuing ones marked, and a worker the CAs its kubelet trusts.
 func TestStatusReportsKubernetesTrust(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, false)
-	secrets, err := pki.GenerateSecrets(time.Now())
+	secrets, err := clustersecrets.Generate(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := secrets.BeginRotation(pki.RotateEncryptionKey, time.Now()); err != nil {
+	if err := secrets.BeginRotation(clustersecrets.RotateEncryptionKey, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	secrets.NodeCA = testNodeCA(t)

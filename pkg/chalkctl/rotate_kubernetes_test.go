@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // TestRotateOneAtATime checks that a rotation refuses another, and the finish of another kind.
@@ -86,13 +86,13 @@ func TestRotateKubernetesCA(t *testing.T) {
 // control plane takes a phase only once etcd is healthy and the control plane before runs on its
 // new files.
 func TestRotateControlPlanesInTurn(t *testing.T) {
-	for _, kind := range []string{pki.RotateKubernetesCA, pki.RotateServiceAccountKey, pki.RotateEncryptionKey} {
+	for _, kind := range []string{clustersecrets.RotateKubernetesCA, clustersecrets.RotateServiceAccountKey, clustersecrets.RotateEncryptionKey} {
 		t.Run(kind, func(t *testing.T) {
 			l := newRotationLab(t)
 			if err := l.rotate(kind); err != nil {
 				t.Fatal(err)
 			}
-			if kind == pki.RotateKubernetesCA {
+			if kind == clustersecrets.RotateKubernetesCA {
 				if err := l.rotate(kind, "--resume"); err != nil {
 					t.Fatal(err)
 				}
@@ -110,7 +110,7 @@ func TestRotateControlPlanesInTurn(t *testing.T) {
 				t.Errorf("events %v, want %v for the accept and the switch phases", turns, want)
 			}
 			// Only the Kubernetes CAs reach other nodes, after the control planes.
-			if kind != pki.RotateKubernetesCA && slices.ContainsFunc(events, func(e string) bool { return strings.HasPrefix(e, "w1") || strings.HasPrefix(e, "n1") }) {
+			if kind != clustersecrets.RotateKubernetesCA && slices.ContainsFunc(events, func(e string) bool { return strings.HasPrefix(e, "w1") || strings.HasPrefix(e, "n1") }) {
 				t.Errorf("a node without a control plane took part: %v", events)
 			}
 		})
@@ -125,11 +125,11 @@ func TestRotateEncryptionKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := l.secrets()
-	if l.encrypted[pki.DefaultEncryptionKeyName] != 0 || l.encrypted[s.Kubernetes.KeyName()] != 3 {
+	if l.encrypted[clustersecrets.DefaultEncryptionKeyName] != 0 || l.encrypted[s.Kubernetes.KeyName()] != 3 {
 		t.Fatalf("etcd holds %v, want the 3 objects under the new key", l.encrypted)
 	}
 	// An object written under the old key, as from a backup, stops the finish.
-	l.encrypted[pki.DefaultEncryptionKeyName] = 1
+	l.encrypted[clustersecrets.DefaultEncryptionKeyName] = 1
 	if err := l.rotate("encryption-key", "--finish"); err == nil || !strings.Contains(err.Error(), "1 object encrypted with the old key") {
 		t.Fatalf("err = %v, want the finish refused", err)
 	}
@@ -140,7 +140,7 @@ func TestRotateEncryptionKey(t *testing.T) {
 	if l.phase() != "refresh applied" {
 		t.Errorf("a refused finish left %q", l.phase())
 	}
-	delete(l.encrypted, pki.DefaultEncryptionKeyName)
+	delete(l.encrypted, clustersecrets.DefaultEncryptionKeyName)
 	if err := l.rotate("encryption-key", "--finish"); err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestRotateRewriteTimeoutSuggestsMoreTime(t *testing.T) {
 			t.Errorf("err = %v, want it to say %q", err, want)
 		}
 	}
-	if l.phase() != pki.PhaseRefresh {
+	if l.phase() != clustersecrets.PhaseRefresh {
 		t.Fatalf("the secrets file records %q, want the refresh phase not applied", l.phase())
 	}
 	l.mu.Lock()
@@ -256,8 +256,8 @@ func TestRotateRewriteTimeoutSuggestsMoreTime(t *testing.T) {
 // files or kubeconfigs issued during it still trust the old CA until they are issued again.
 func TestRotateFinishSaysWhatToReissue(t *testing.T) {
 	for kind, want := range map[string][]string{
-		pki.RotateOSCA:         {"Client files issued during the rotation still trust the old OS CA", "chalkctl config new"},
-		pki.RotateKubernetesCA: {"Kubeconfigs issued during the rotation still trust the old Kubernetes CA", "chalkctl kubeconfig"},
+		clustersecrets.RotateOSCA:         {"Client files issued during the rotation still trust the old OS CA", "chalkctl config new"},
+		clustersecrets.RotateKubernetesCA: {"Kubeconfigs issued during the rotation still trust the old Kubernetes CA", "chalkctl kubeconfig"},
 	} {
 		t.Run(kind, func(t *testing.T) {
 			l := newRotationLab(t)

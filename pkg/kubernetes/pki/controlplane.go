@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -213,11 +214,11 @@ type (
 // encryptionConfig encrypts secrets with secretbox and the first of the keys; the others decrypt
 // what was encrypted with them. identity still reads secrets written before encryption was
 // configured.
-func encryptionConfig(keys []pki.EncryptionKey) ([]byte, error) {
+func encryptionConfig(keys []clustersecrets.EncryptionKey) ([]byte, error) {
 	var box secretbox
 	for _, key := range keys {
-		if len(key.Key) != pki.EncryptionKeySize {
-			return nil, fmt.Errorf("the encryption key %s must be %d bytes", key.Name, pki.EncryptionKeySize)
+		if len(key.Key) != clustersecrets.EncryptionKeySize {
+			return nil, fmt.Errorf("the encryption key %s must be %d bytes", key.Name, clustersecrets.EncryptionKeySize)
 		}
 		box.Keys = append(box.Keys, secretboxKey{Name: key.Name, Secret: key.Key})
 	}
@@ -233,7 +234,7 @@ func encryptionConfig(keys []pki.EncryptionKey) ([]byte, error) {
 
 // ParseEncryptionConfig reads the secretbox keys of an encryption configuration encryptionConfig
 // wrote, the encrypting one first.
-func ParseEncryptionConfig(data []byte) ([]pki.EncryptionKey, error) {
+func ParseEncryptionConfig(data []byte) ([]clustersecrets.EncryptionKey, error) {
 	var config encryptionConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
 		// The configuration holds keys: the error does not quote it.
@@ -244,9 +245,9 @@ func ParseEncryptionConfig(data []byte) ([]pki.EncryptionKey, error) {
 			if p.Secretbox == nil {
 				continue
 			}
-			var keys []pki.EncryptionKey
+			var keys []clustersecrets.EncryptionKey
 			for _, k := range p.Secretbox.Keys {
-				keys = append(keys, pki.EncryptionKey{Name: k.Name, Key: k.Secret})
+				keys = append(keys, clustersecrets.EncryptionKey{Name: k.Name, Key: k.Secret})
 			}
 			return keys, nil
 		}

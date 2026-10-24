@@ -25,6 +25,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
@@ -41,7 +42,7 @@ type testApp struct {
 	dir string
 	// inventory is the test cluster's inventory in dir.
 	inventory string
-	secrets   pki.Secrets
+	secrets   clustersecrets.Secrets
 	stdout    *bytes.Buffer
 	stderr    *bytes.Buffer
 	// kind is n1's Kubernetes kind, which withKind gives it.
@@ -60,7 +61,7 @@ func newTestApp(t *testing.T) *testApp {
 func newTestAppAt(t *testing.T, now time.Time) *testApp {
 	t.Helper()
 	dir := t.TempDir()
-	secrets, err := pki.GenerateSecrets(now)
+	secrets, err := clustersecrets.Generate(now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,13 +257,13 @@ func TestGenSecretsPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pki.ReadSecrets(data, nil); err != nil {
+	if _, err := clustersecrets.Read(data, nil); err != nil {
 		t.Errorf("the secrets file does not read back: %v", err)
 	}
 	if info, _ := os.Stat(filepath.Join(out, "secrets.json")); info.Mode().Perm() != 0o600 {
 		t.Errorf("secrets.json mode = %v", info.Mode())
 	}
-	var pub pki.Public
+	var pub clustersecrets.Public
 	pubData, _ := os.ReadFile(filepath.Join(out, "secrets.pub.json"))
 	if err := json.Unmarshal(pubData, &pub); err != nil || pub.OSCA.Certificate == "" || pub.OSCA.Key != "" || pub.NodeCA.Certificate == "" || pub.NodeCA.Key != "" || bytes.Contains(pubData, []byte("PRIVATE")) {
 		t.Errorf("secrets.pub.json = %s, %v", pubData, err)
@@ -296,8 +297,8 @@ func TestGenSecretsAgeAndRecoveryKey(t *testing.T) {
 	if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--secrets", filepath.Join(out, "secrets.age"), "--inventory", inventory}); err != nil {
 		t.Fatal(err)
 	}
-	secrets, _ := pki.ReadSecrets(encrypted, func() ([]age.Identity, error) { return []age.Identity{id}, nil })
-	want, _ := pki.RecoveryKey(secrets.RecoverySecret, "n1")
+	secrets, _ := clustersecrets.Read(encrypted, func() ([]age.Identity, error) { return []age.Identity{id}, nil })
+	want, _ := clustersecrets.RecoveryKey(secrets.RecoverySecret, "n1")
 	if got := strings.TrimSpace(ta.stdout.String()); got != want {
 		t.Errorf("recovery key = %q, want %q", got, want)
 	}
@@ -333,7 +334,7 @@ func TestInstallInPlace(t *testing.T) {
 	if got.Config.Version != want || got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
 		t.Errorf("install request config = %+v, section = %+v; want the config of version %s", got.Config, got.Section, want)
 	}
-	key, _ := pki.RecoveryKey(ta.secrets.RecoverySecret, "n1")
+	key, _ := clustersecrets.RecoveryKey(ta.secrets.RecoverySecret, "n1")
 	if got.FallbackSecret != key {
 		t.Errorf("fallback secret = %q, want the node's recovery key", got.FallbackSecret)
 	}

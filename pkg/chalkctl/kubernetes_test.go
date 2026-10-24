@@ -17,6 +17,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -339,7 +340,7 @@ func TestBootstrapNeedsControlPlane(t *testing.T) {
 // does not refuse it.
 func TestKubeconfigTrustsBothCAs(t *testing.T) {
 	ta := newTestApp(t)
-	ta.beginRotation(t, pki.RotateKubernetesCA)
+	ta.beginRotation(t, clustersecrets.RotateKubernetesCA)
 	issue := func() (ca []byte, client *x509.Certificate) {
 		t.Helper()
 		out := filepath.Join(t.TempDir(), "kubeconfig")

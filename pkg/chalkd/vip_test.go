@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -117,7 +118,9 @@ func TestVIPRestartsWhenEtcdTrustChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changeShare(t, k.Paths, func(s *kpki.Share) { s.Accepted = &pki.KubernetesAccepted{CA: []string{kubernetesCA.Certificate}} })
+	changeShare(t, k.Paths, func(s *kpki.Share) {
+		s.Accepted = &clustersecrets.KubernetesAccepted{CA: []string{kubernetesCA.Certificate}}
+	})
 	time.Sleep(20 * k.timing.VIPInterval)
 	if got := addrs.released.Load(); got != released || !held() {
 		t.Fatalf("a share that leaves etcd's trust alone released the VIPs %d times", got-released)

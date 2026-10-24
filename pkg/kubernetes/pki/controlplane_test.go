@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -390,8 +391,8 @@ func TestConfigFilesBytes(t *testing.T) {
 	if string(auth) != wantAuth {
 		t.Errorf("authentication configuration =\n%s\nwant\n%s", auth, wantAuth)
 	}
-	enc, err := encryptionConfig([]pki.EncryptionKey{
-		{Name: "k1", Key: make([]byte, pki.EncryptionKeySize)},
+	enc, err := encryptionConfig([]clustersecrets.EncryptionKey{
+		{Name: "k1", Key: make([]byte, clustersecrets.EncryptionKeySize)},
 		{Name: "k0", Key: []byte("0123456789abcdef0123456789abcdef")},
 	})
 	if err != nil {

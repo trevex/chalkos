@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -68,7 +69,7 @@ func TestStatusCertificatesOfAWorker(t *testing.T) {
 
 	// VAR lost the kubelet's renewed certificate and the share's expired too.
 	past := time.Now().Add(-2 * pki.LeafValidity)
-	k, err := pki.NewKubernetesSecrets(past)
+	k, err := clustersecrets.NewKubernetesSecrets(past)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +181,7 @@ func kubeletStatus(t *testing.T, s *Server) *nodev1.CertificateStatus {
 func TestStatusKubeletCertificatesWarnLate(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	// A CA from before the certificates it issues, so they keep their dates.
-	k, err := pki.NewKubernetesSecrets(time.Now().Add(-2 * pki.LeafValidity))
+	k, err := clustersecrets.NewKubernetesSecrets(time.Now().Add(-2 * pki.LeafValidity))
 	if err != nil {
 		t.Fatal(err)
 	}

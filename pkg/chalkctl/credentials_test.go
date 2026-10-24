@@ -23,6 +23,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -224,7 +225,7 @@ func TestClientFileOfAnotherCluster(t *testing.T) {
 	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
 	addr := ta.startNode(t, s)
-	foreign, err := pki.GenerateSecrets(time.Now())
+	foreign, err := clustersecrets.Generate(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

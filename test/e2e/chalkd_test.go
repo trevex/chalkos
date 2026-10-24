@@ -16,6 +16,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -41,12 +42,12 @@ func startNode(t *testing.T, c lab.VMConfig) *node {
 	return &node{vm: bootVM(t, c), addr: fmt.Sprintf("127.0.0.1:%d", port)}
 }
 
-func readSecrets() (pki.Secrets, error) {
+func readSecrets() (clustersecrets.Secrets, error) {
 	data, err := os.ReadFile(os.Getenv("CHALKLAB_SECRETS"))
 	if err != nil {
-		return pki.Secrets{}, err
+		return clustersecrets.Secrets{}, err
 	}
-	return pki.ReadSecrets(data, nil)
+	return clustersecrets.Read(data, nil)
 }
 
 // clientCertificate issues a client certificate of the role from the test OS CA.

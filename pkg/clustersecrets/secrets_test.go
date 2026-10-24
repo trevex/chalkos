@@ -1,33 +1,78 @@
-package pki
+package clustersecrets
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"filippo.io/age"
 	"filippo.io/age/armor"
 	"filippo.io/age/plugin"
+
+	"github.com/trevex/chalkos/pkg/pki"
 	"golang.org/x/crypto/ssh"
 )
 
 func generate(t *testing.T) Secrets {
 	t.Helper()
-	s, err := GenerateSecrets(now)
+	s, err := Generate(now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return s
+}
+
+var now = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+
+func newTestCA(t *testing.T) pki.CertKey {
+	t.Helper()
+	ca, err := pki.NewCA("chalkos OS CA", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ca
+}
+
+// caWithoutCertSign is a CA certificate that lacks the certificate signing key usage.
+func caWithoutCertSign(t *testing.T) pki.CertKey {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "no cert sign"},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.Add(pki.CAValidity),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCRLSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPEM, err := pki.EncodeKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pki.CertKey{Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), Key: keyPEM}
 }
 
 func noIdentities() ([]age.Identity, error) { return nil, errors.New("asked for an identity") }
@@ -41,7 +86,7 @@ func TestGenerateSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !IsNodeCA(nodeCA) {
+	if !pki.IsNodeCA(nodeCA) {
 		t.Error("the node CA is no node CA")
 	}
 	pub := s.Public()
@@ -56,7 +101,7 @@ func TestReadSecretsPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := ReadSecrets(data, noIdentities)
+	got, err := Read(data, noIdentities)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +137,7 @@ func TestReadSecretsAge(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, data := range map[string][]byte{"binary": encrypted, "armored": armored.Bytes()} {
-		got, err := ReadSecrets(data, func() ([]age.Identity, error) { return ids, nil })
+		got, err := Read(data, func() ([]age.Identity, error) { return ids, nil })
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -102,7 +147,7 @@ func TestReadSecretsAge(t *testing.T) {
 	}
 
 	other, _ := age.GenerateX25519Identity()
-	if _, err := ReadSecrets(encrypted, func() ([]age.Identity, error) { return []age.Identity{other}, nil }); err == nil {
+	if _, err := Read(encrypted, func() ([]age.Identity, error) { return []age.Identity{other}, nil }); err == nil {
 		t.Error("decrypted with an identity that is not a recipient")
 	}
 }
@@ -141,7 +186,7 @@ func TestReadSecretsSSH(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if _, err := ReadSecrets(encrypted, func() ([]age.Identity, error) { return ids, nil }); err != nil {
+		if _, err := Read(encrypted, func() ([]age.Identity, error) { return ids, nil }); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
@@ -160,7 +205,7 @@ func TestReadSecretsRejects(t *testing.T) {
 		"short secret":    short,
 		"empty version 3": []byte(`{"version": 3}`),
 	} {
-		if _, err := ReadSecrets(data, noIdentities); err == nil {
+		if _, err := Read(data, noIdentities); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
@@ -263,14 +308,14 @@ func TestReadSecretsArmoredLeadingWhitespace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReadSecrets(padded, func() ([]age.Identity, error) { return ids, nil }); err != nil {
+	if _, err := Read(padded, func() ([]age.Identity, error) { return ids, nil }); err != nil {
 		t.Errorf("armored file with leading whitespace did not decrypt: %v", err)
 	}
 }
 
 func TestSecretsValidateRejectsNonCAOSCA(t *testing.T) {
 	s := generate(t)
-	leaf, err := SelfSigned("not-a-ca", now)
+	leaf, err := pki.SelfSigned("not-a-ca", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +357,7 @@ func TestReadSecretsRefusesOlderVersions(t *testing.T) {
 		old := s
 		old.Version = version
 		data, _ := old.Encode()
-		_, err := ReadSecrets(data, noIdentities)
+		_, err := Read(data, noIdentities)
 		if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("version %d is not supported", version)) || !strings.Contains(err.Error(), "chalkctl gen secrets") {
 			t.Errorf("version %d: %v, want a refusal naming chalkctl gen secrets", version, err)
 		}
@@ -320,18 +365,18 @@ func TestReadSecretsRefusesOlderVersions(t *testing.T) {
 }
 
 func TestSecretsValidateRejectsNodeCA(t *testing.T) {
-	other, err := NewOSCA(now)
+	other, err := pki.NewOSCA(now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	foreign, err := NewNodeCA(other, now)
+	foreign, err := pki.NewNodeCA(other, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	leafCA := newTestCA(t)
 	rootWithoutIntermediates := generate(t)
 	rootWithoutIntermediates.OSCA = leafCA
-	if rootWithoutIntermediates.NodeCA, err = NewNodeCA(leafCA, now); err != nil {
+	if rootWithoutIntermediates.NodeCA, err = pki.NewNodeCA(leafCA, now); err != nil {
 		t.Fatal(err)
 	}
 	for name, edit := range map[string]func(s *Secrets){
@@ -340,7 +385,7 @@ func TestSecretsValidateRejectsNodeCA(t *testing.T) {
 		"a Kubernetes CA":               func(s *Secrets) { s.NodeCA = s.Kubernetes.CA },
 		"without its key":               func(s *Secrets) { s.NodeCA.Key = "" },
 		"under an OS CA of leaves only": func(s *Secrets) { *s = rootWithoutIntermediates },
-		"missing":                       func(s *Secrets) { s.NodeCA = CertKey{} },
+		"missing":                       func(s *Secrets) { s.NodeCA = pki.CertKey{} },
 	} {
 		s := generate(t)
 		edit(&s)
@@ -370,7 +415,7 @@ func TestEncodeAs(t *testing.T) {
 		if got, err := DetectFormat(data); err != nil || got != format {
 			t.Errorf("format %d encodes as %d, %v", format, got, err)
 		}
-		read, err := ReadSecrets(data, func() ([]age.Identity, error) { return []age.Identity{id}, nil })
+		read, err := Read(data, func() ([]age.Identity, error) { return []age.Identity{id}, nil })
 		if err != nil || read.OSCA != s.OSCA {
 			t.Errorf("format %d does not read back: %v", format, err)
 		}

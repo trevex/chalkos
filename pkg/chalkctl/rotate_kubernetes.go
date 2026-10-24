@@ -11,6 +11,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -29,12 +30,12 @@ type expectation struct {
 
 // expectations are the trust entries a node of the Kubernetes kind confirms a phase of the
 // rotation of kind by, as the secrets file has them now.
-func expectations(s pki.Secrets, kind, nodeKind string) ([]expectation, error) {
+func expectations(s clustersecrets.Secrets, kind, nodeKind string) ([]expectation, error) {
 	k := s.Kubernetes
 	controlPlane := nodeKind == kubernetes.KindControlPlane
 	var list []expectation
 	switch kind {
-	case pki.RotateKubernetesCA:
+	case clustersecrets.RotateKubernetesCA:
 		cas := []struct{ name, bundle, issuing string }{{client.NameKubernetesCA, k.CABundle(), k.CA.Certificate}}
 		if controlPlane {
 			cas = append(cas,
@@ -54,7 +55,7 @@ func expectations(s pki.Secrets, kind, nodeKind string) ([]expectation, error) {
 			}
 			list = append(list, e)
 		}
-	case pki.RotateServiceAccountKey:
+	case clustersecrets.RotateServiceAccountKey:
 		pubs, err := k.ServiceAccountPublicKeys()
 		if err != nil {
 			return nil, err
@@ -69,7 +70,7 @@ func expectations(s pki.Secrets, kind, nodeKind string) ([]expectation, error) {
 		}
 		e.issuing = e.values[0]
 		list = append(list, e)
-	case pki.RotateEncryptionKey:
+	case clustersecrets.RotateEncryptionKey:
 		e := expectation{name: client.NameEncryptionKeys}
 		for _, key := range k.EncryptionKeys() {
 			e.values = append(e.values, key.Fingerprint())
@@ -96,11 +97,11 @@ func applied(st *nodev1.StatusResponse, want []expectation) error {
 // Kubernetes CAs.
 func (r *rotation) applyKubernetes(ctx context.Context, kind, phase string) error {
 	workers := r.nodesOf(kubernetes.KindWorker)
-	if phase == pki.PhaseRefresh {
+	if phase == clustersecrets.PhaseRefresh {
 		switch kind {
-		case pki.RotateKubernetesCA:
+		case clustersecrets.RotateKubernetesCA:
 			return r.refreshKubernetesCA(ctx, workers)
-		case pki.RotateEncryptionKey:
+		case clustersecrets.RotateEncryptionKey:
 			return r.rewriteEncrypted(ctx)
 		}
 		// Kubelets renew their pods' tokens with the new service-account key within the hour;
@@ -111,16 +112,16 @@ func (r *rotation) applyKubernetes(ctx context.Context, kind, phase string) erro
 	if err := r.controlPlanesInTurn(ctx, kind); err != nil {
 		return err
 	}
-	if kind != pki.RotateKubernetesCA {
+	if kind != clustersecrets.RotateKubernetesCA {
 		return nil
 	}
 	// A worker's share holds the CAs it trusts; which one issues matters to control planes alone.
-	if phase != pki.PhaseSwitch {
+	if phase != clustersecrets.PhaseSwitch {
 		if err := r.workersTrust(ctx, workers); err != nil {
 			return err
 		}
 	}
-	if phase == pki.PhaseAccept {
+	if phase == clustersecrets.PhaseAccept {
 		return r.restartAddons(ctx)
 	}
 	return nil
@@ -223,7 +224,7 @@ func (r *rotation) waitQuorum(ctx context.Context, name string) error {
 
 // workersTrust delivers the workers their shares and waits until their kubelets trust the CAs.
 func (r *rotation) workersTrust(ctx context.Context, workers []string) error {
-	want, err := expectations(r.file.secrets, pki.RotateKubernetesCA, kubernetes.KindWorker)
+	want, err := expectations(r.file.secrets, clustersecrets.RotateKubernetesCA, kubernetes.KindWorker)
 	if err != nil {
 		return err
 	}
@@ -295,7 +296,7 @@ func (r *rotation) rewriteEncrypted(ctx context.Context) error {
 	// A cluster with many Secrets takes longer to rewrite than the default allows. Whatever
 	// stopped once the time was up, the node's error or the call's own, the time is the cause.
 	if err != nil && (connect.CodeOf(err) == connect.CodeDeadlineExceeded || !time.Now().Before(deadline)) {
-		return fmt.Errorf("%w; the rewrite of the encrypted objects took longer than --timeout %v, so give it more time, as with chalkctl rotate %s --resume --timeout %v. --resume repeats the rewrite safely: it writes every object back unchanged, those rewritten already included", err, r.timeout, pki.RotateEncryptionKey, 2*r.timeout)
+		return fmt.Errorf("%w; the rewrite of the encrypted objects took longer than --timeout %v, so give it more time, as with chalkctl rotate %s --resume --timeout %v. --resume repeats the rewrite safely: it writes every object back unchanged, those rewritten already included", err, r.timeout, clustersecrets.RotateEncryptionKey, 2*r.timeout)
 	}
 	if err != nil {
 		return err
@@ -311,12 +312,12 @@ func (r *rotation) rewriteEncrypted(ctx context.Context) error {
 // objects encrypted with it.
 func (r *rotation) finishGuardKubernetes(ctx context.Context, kind string, force bool) error {
 	switch kind {
-	case pki.RotateServiceAccountKey:
+	case clustersecrets.RotateServiceAccountKey:
 		at := r.file.secrets.Rotation.Switched.Add(tokenRefresh)
 		if r.a.now().Before(at) && !force {
 			return fmt.Errorf("tokens signed with the old service-account key are renewed until %s, an hour after every control plane applied the switch; finish then, or pass --force to refuse the tokens not renewed yet", at.Local().Format(time.RFC3339))
 		}
-	case pki.RotateEncryptionKey:
+	case clustersecrets.RotateEncryptionKey:
 		old := r.file.secrets.Kubernetes.Accepted.EncryptionKeys
 		if len(old) != 1 {
 			return errors.New("the secrets file accepts no single old encryption key")
@@ -334,15 +335,15 @@ func (r *rotation) finishGuardKubernetes(ctx context.Context, kind string, force
 
 // pausedKubernetes says what the operator does before the rotation of a Kubernetes CA or key
 // continues.
-func (r *rotation) pausedKubernetes(ctx context.Context, rot pki.Rotation) error {
+func (r *rotation) pausedKubernetes(ctx context.Context, rot clustersecrets.Rotation) error {
 	kind := rot.Kind
 	switch {
-	case kind == pki.RotateKubernetesCA && rot.Phase == pki.PhaseAccept:
+	case kind == clustersecrets.RotateKubernetesCA && rot.Phase == clustersecrets.PhaseAccept:
 		r.say("Every node trusts the old and the new Kubernetes CAs, and chalkos's addons and the workloads of the Addon documents, StatefulSets included, restarted. Restart your other workloads that talk to the API server, so they trust both CAs too; pods started from now on do. Issue new kubeconfigs now with chalkctl kubeconfig: they carry both CAs and work throughout the rotation and after it; kubeconfigs from before the rotation stop verifying the API server at the switch. Then continue with chalkctl rotate %s --resume, which makes the new CAs issue.", kind)
 		return nil
-	case kind == pki.RotateKubernetesCA:
+	case kind == clustersecrets.RotateKubernetesCA:
 		r.say("The new Kubernetes CAs issue every certificate of the cluster, and the kubelets requested new serving certificates. Kubeconfigs from before the rotation cannot verify the API server any more and are refused after the finish: issue them again with chalkctl kubeconfig. Then remove the old CAs with chalkctl rotate %s --finish.", kind)
-	case kind == pki.RotateServiceAccountKey:
+	case kind == clustersecrets.RotateServiceAccountKey:
 		at := rot.Switched.Add(tokenRefresh)
 		r.say("The API server signs tokens with the new service-account key, and chalkos's addons and the workloads of the Addon documents, StatefulSets included, restarted with new tokens. Kubelets renew the tokens of other pods within the hour after every control plane applied the switch; finish from %s with chalkctl rotate %s --finish.", at.Local().Format(time.RFC3339), kind)
 		var secrets []string
@@ -359,7 +360,7 @@ func (r *rotation) pausedKubernetes(ctx context.Context, rot pki.Rotation) error
 		if len(secrets) > 0 {
 			r.say("These Secrets of type kubernetes.io/service-account-token hold tokens of the old key, which nothing signs again and which are refused after the finish; recreate them: %s", strings.Join(secrets, ", "))
 		}
-	case kind == pki.RotateEncryptionKey:
+	case kind == clustersecrets.RotateEncryptionKey:
 		r.say("etcd holds every encrypted object under the new key; remove the old key with chalkctl rotate %s --finish.", kind)
 	}
 	return nil

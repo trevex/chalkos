@@ -15,6 +15,7 @@ import (
 	"time"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -406,7 +407,7 @@ func TestAddressFromTheInventory(t *testing.T) {
 func TestSecretsOnlyFromTheFlag(t *testing.T) {
 	ta := newTestApp(t)
 	path := writeInventory(t, ta.dir)
-	want, _ := pki.RecoveryKey(ta.secrets.RecoverySecret, "n1")
+	want, _ := clustersecrets.RecoveryKey(ta.secrets.RecoverySecret, "n1")
 	recoveryKey := []string{"recovery-key", "n1", "--inventory", path}
 	// The app's own run names no secrets file of the test's.
 	if err := ta.app.run(context.Background(), recoveryKey); err == nil || !strings.Contains(err.Error(), "--secrets") {

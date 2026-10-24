@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -164,11 +165,11 @@ func testShare(t *testing.T, kind string) []byte {
 
 func testShareFor(t *testing.T, kind, nodeName string) []byte {
 	t.Helper()
-	k, err := pki.NewKubernetesSecrets(time.Now())
+	k, err := clustersecrets.NewKubernetesSecrets(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	share, err := kpki.ShareFor(&pki.Secrets{Kubernetes: *k, NodeCA: testNodeCA(t)}, kind, nodeName, time.Now())
+	share, err := kpki.ShareFor(&clustersecrets.Secrets{Kubernetes: *k, NodeCA: testNodeCA(t)}, kind, nodeName, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

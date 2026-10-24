@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
@@ -697,7 +698,7 @@ func TestInPlaceStoresKubernetesShare(t *testing.T) {
 	i := newTestInstaller(t, r, vda, vdb)
 	r.add(inPlaceRules(i)...)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
-	k, err := pki.NewKubernetesSecrets(time.Now())
+	k, err := clustersecrets.NewKubernetesSecrets(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -744,7 +745,7 @@ func TestInstallRefusesShareForAnotherNode(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda, vdb)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
-	k, err := pki.NewKubernetesSecrets(time.Now())
+	k, err := clustersecrets.NewKubernetesSecrets(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -769,7 +770,7 @@ func TestInstallRefusesShareWithExtraFields(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda, vdb)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
-	k, err := pki.NewKubernetesSecrets(time.Now())
+	k, err := clustersecrets.NewKubernetesSecrets(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -804,7 +805,7 @@ func TestInPlaceStoresCanonicalShare(t *testing.T) {
 	i := newTestInstaller(t, r, vda, vdb)
 	r.add(inPlaceRules(i)...)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
-	k, err := pki.NewKubernetesSecrets(time.Now())
+	k, err := clustersecrets.NewKubernetesSecrets(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -843,7 +844,7 @@ func TestInstallRefusesForeignNodeCA(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda, vdb)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
-	k, err := pki.NewKubernetesSecrets(time.Now())
+	k, err := clustersecrets.NewKubernetesSecrets(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

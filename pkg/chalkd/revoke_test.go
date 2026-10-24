@@ -19,6 +19,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
@@ -62,7 +63,7 @@ func (l *revokeLab) trustOSCAs(t *testing.T, at time.Time) {
 // Kubernetes CA made at each of accepted.
 func (l *revokeLab) kubernetesCAs(t *testing.T, at time.Time, accepted ...time.Time) {
 	t.Helper()
-	k, err := pki.NewKubernetesSecrets(at)
+	k, err := clustersecrets.NewKubernetesSecrets(at)
 	if err != nil {
 		t.Fatal(err)
 	}

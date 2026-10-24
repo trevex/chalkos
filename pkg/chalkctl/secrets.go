@@ -22,6 +22,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -46,10 +47,10 @@ func (s *secretFlags) register(fs *pflag.FlagSet) {
 
 // loadSecrets reads the secrets file in whatever format it has. Age identities are read only when
 // the file is encrypted.
-func (a *app) loadSecrets(ctx context.Context, s secretFlags) (pki.Secrets, error) {
+func (a *app) loadSecrets(ctx context.Context, s secretFlags) (clustersecrets.Secrets, error) {
 	path, err := secretsPath(s)
 	if err != nil {
-		return pki.Secrets{}, err
+		return clustersecrets.Secrets{}, err
 	}
 	var data []byte
 	if path == "-" {
@@ -58,11 +59,11 @@ func (a *app) loadSecrets(ctx context.Context, s secretFlags) (pki.Secrets, erro
 		data, err = os.ReadFile(path)
 	}
 	if err != nil {
-		return pki.Secrets{}, fmt.Errorf("read the secrets file: %w", err)
+		return clustersecrets.Secrets{}, fmt.Errorf("read the secrets file: %w", err)
 	}
-	secrets, err := pki.ReadSecrets(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.identities) })
+	secrets, err := clustersecrets.Read(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.identities) })
 	if err != nil {
-		return pki.Secrets{}, fmt.Errorf("%s: %w", path, err)
+		return clustersecrets.Secrets{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return secrets, nil
 }
@@ -120,7 +121,7 @@ func (a *app) parseIdentity(ctx context.Context, file string) ([]age.Identity, e
 	if err != nil {
 		return nil, err
 	}
-	ids, err := pki.ParseIdentities(data, a.pluginUI(), a.passphrase(ctx, file), func() ([]byte, error) {
+	ids, err := clustersecrets.ParseIdentities(data, a.pluginUI(), a.passphrase(ctx, file), func() ([]byte, error) {
 		return os.ReadFile(file + ".pub")
 	})
 	if err != nil {
@@ -138,7 +139,7 @@ func (a *app) pluginUI() *plugin.ClientUI {
 }
 
 // passphrase asks for an SSH key's passphrase on the terminal.
-func (a *app) passphrase(ctx context.Context, file string) pki.SSHPassphrase {
+func (a *app) passphrase(ctx context.Context, file string) clustersecrets.SSHPassphrase {
 	return func() ([]byte, error) {
 		pass, err := a.readSecret(ctx, fmt.Sprintf("Passphrase for %s: ", file))
 		if errors.Is(err, errNoTerminal) {
@@ -223,7 +224,7 @@ func (a *app) recoveryKey(ctx context.Context, cf clusterFlags, sf secretFlags, 
 	if err != nil {
 		return err
 	}
-	key, err := pki.RecoveryKey(secrets.RecoverySecret, pos[0])
+	key, err := clustersecrets.RecoveryKey(secrets.RecoverySecret, pos[0])
 	if err != nil {
 		return err
 	}
@@ -287,7 +288,7 @@ func (a *app) genSecrets(f genSecretsFlags) error {
 		return err
 	}
 
-	secrets, err := pki.GenerateSecrets(time.Now())
+	secrets, err := clustersecrets.Generate(time.Now())
 	if err != nil {
 		return err
 	}
@@ -316,7 +317,7 @@ func publicDirExists(path string) error {
 // first, and removed again when the secrets cannot be written, so it never belongs to secrets
 // nobody kept.
 func (a *app) genSecretsToStdout(recipients []string, plaintext bool, publicPath string) error {
-	secrets, err := pki.GenerateSecrets(time.Now())
+	secrets, err := clustersecrets.Generate(time.Now())
 	if err != nil {
 		return err
 	}
@@ -377,7 +378,7 @@ func createNew(path string, perm fs.FileMode, write func(w io.Writer) error) err
 // writeSecrets writes the secrets file, encrypted to the recipients, which it records inside it,
 // unless plaintext, and its public half when publicPath is set. Neither may exist: a secrets file
 // is never overwritten.
-func (a *app) writeSecrets(secrets pki.Secrets, recipients []string, plaintext bool, path, publicPath string) error {
+func (a *app) writeSecrets(secrets clustersecrets.Secrets, recipients []string, plaintext bool, path, publicPath string) error {
 	for _, p := range []string{path, publicPath} {
 		if p == "" {
 			continue
@@ -408,7 +409,7 @@ func (a *app) writeSecrets(secrets pki.Secrets, recipients []string, plaintext b
 
 // encodeSecrets encodes the secrets as a secrets file: encrypted to the recipients, which it
 // records inside it, unless plaintext.
-func (a *app) encodeSecrets(secrets pki.Secrets, recipients []string, plaintext bool) ([]byte, error) {
+func (a *app) encodeSecrets(secrets clustersecrets.Secrets, recipients []string, plaintext bool) ([]byte, error) {
 	if plaintext {
 		return secrets.Encode()
 	}
@@ -427,7 +428,7 @@ func (a *app) sayRecipients(path string, recipients []string) {
 }
 
 // encodePublic encodes the public half of the secrets.
-func encodePublic(secrets pki.Secrets) ([]byte, error) {
+func encodePublic(secrets clustersecrets.Secrets) ([]byte, error) {
 	data, err := json.MarshalIndent(secrets.Public(), "", "  ")
 	if err != nil {
 		return nil, err
@@ -451,12 +452,12 @@ func (c *changeFlags) register(fs *pflag.FlagSet) {
 // back to the file in place, keeping its previous version as <file>.prev, or to new files; in the
 // format the file had, an encrypted file to the recipients it records.
 type secretsFile struct {
-	secrets pki.Secrets
+	secrets clustersecrets.Secrets
 	// path is the file the secrets were read from, out the one they are written to.
 	path, out string
 	// publicOut receives the public half; empty leaves it alone.
 	publicOut  string
-	format     pki.Format
+	format     clustersecrets.Format
 	recipients []string
 	// outNew and publicNew are set while out and publicOut are new files that were not written
 	// yet; once written, later writes replace them in place.
@@ -547,11 +548,11 @@ func (a *app) readSecretsFile(ctx context.Context, s secretFlags, path string, c
 	if err != nil {
 		return nil, fmt.Errorf("read the secrets file: %w", err)
 	}
-	format, err := pki.DetectFormat(data)
+	format, err := clustersecrets.DetectFormat(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	secrets, err := pki.ReadSecrets(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.identities) })
+	secrets, err := clustersecrets.Read(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.identities) })
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -579,21 +580,21 @@ func (a *app) readSecretsFile(ctx context.Context, s secretFlags, path string, c
 		}
 	}
 	toAge := strings.HasSuffix(c.out, ".age")
-	if format == pki.FormatJSON {
+	if format == clustersecrets.FormatJSON {
 		switch {
 		case len(c.recipients) > 0 && !toAge:
 			return nil, fmt.Errorf("%s is plaintext; --recipient encrypts it only to a new .age file given with --out", path)
 		case len(c.recipients) == 0 && toAge:
 			return nil, fmt.Errorf("%s is plaintext; pass --recipient to encrypt it to %s", path, c.out)
 		case toAge:
-			f.format = pki.FormatAge
+			f.format = clustersecrets.FormatAge
 			fmt.Fprintf(a.stdout, "%s is plaintext; %s is age-encrypted to %s\n", path, c.out, strings.Join(c.recipients, ", "))
 		}
 	}
 	if len(c.recipients) > 0 {
 		f.recipients = c.recipients
 	}
-	if f.format != pki.FormatJSON && len(f.recipients) == 0 {
+	if f.format != clustersecrets.FormatJSON && len(f.recipients) == 0 {
 		return nil, fmt.Errorf("%s is encrypted and records no recipients to encrypt it to again; pass --recipient", path)
 	}
 	// A recipient that does not parse fails now, before anything changed.
@@ -606,7 +607,7 @@ func (a *app) readSecretsFile(ctx context.Context, s secretFlags, path string, c
 // matchesPublic refuses to update a secrets.pub.json in place that belongs to other secrets: its
 // OS CA must be the secrets' or one they accept, as after a rotation's switch written with --out.
 // None is fine; it is created.
-func matchesPublic(path string, secrets pki.Secrets) error {
+func matchesPublic(path string, secrets clustersecrets.Secrets) error {
 	if path == "" {
 		return nil
 	}
@@ -617,7 +618,7 @@ func matchesPublic(path string, secrets pki.Secrets) error {
 	if err != nil {
 		return err
 	}
-	public, err := pki.ReadPublic(data)
+	public, err := clustersecrets.ReadPublic(data)
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
@@ -675,7 +676,7 @@ func mustNotExist(path string) error {
 func (a *app) ageRecipients(recipients []string) ([]age.Recipient, error) {
 	var parsed []age.Recipient
 	for _, r := range recipients {
-		rec, err := pki.ParseRecipient(r, a.pluginUI())
+		rec, err := clustersecrets.ParseRecipient(r, a.pluginUI())
 		if err != nil {
 			return nil, err
 		}
@@ -686,8 +687,8 @@ func (a *app) ageRecipients(recipients []string) ([]age.Recipient, error) {
 
 // writeSecretsFile writes the secrets, and their public half, where openSecrets decided. An
 // encrypted file records its recipients inside and names them.
-func (a *app) writeSecretsFile(f *secretsFile, secrets pki.Secrets) error {
-	if f.format != pki.FormatJSON {
+func (a *app) writeSecretsFile(f *secretsFile, secrets clustersecrets.Secrets) error {
+	if f.format != clustersecrets.FormatJSON {
 		secrets.Recipients = f.recipients
 	}
 	if err := secrets.Validate(); err != nil {
@@ -712,7 +713,7 @@ func (a *app) writeSecretsFile(f *secretsFile, secrets pki.Secrets) error {
 	if f.inPlace() {
 		f.sum = sha256.Sum256(data)
 	}
-	if f.format != pki.FormatJSON {
+	if f.format != clustersecrets.FormatJSON {
 		a.sayRecipients(f.out, f.recipients)
 	}
 	f.secrets = secrets

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
@@ -75,7 +76,7 @@ func withCluster(t *testing.T, p Paths, edit func(c *kubernetes.Cluster)) {
 }
 
 // testNode prepares the files of a node of the kind named name, with a share issued from k.
-func testNode(t *testing.T, kind, name string, k *pki.KubernetesSecrets) Paths {
+func testNode(t *testing.T, kind, name string, k *clustersecrets.KubernetesSecrets) Paths {
 	t.Helper()
 	root := t.TempDir()
 	p := Paths{
@@ -91,7 +92,7 @@ func testNode(t *testing.T, kind, name string, k *pki.KubernetesSecrets) Paths {
 	write(t, p.NodeFile, `{"hostname": "`+name+`", "network": {"networks": {"10-lan": {"address": ["192.168.100.11/24"]}}},
 	  "labels": {"zone": "a", "disk": "ssd"}, "taints": [], "kubernetes": {"nodeName": "`+name+`", "nodeIPs": ["192.168.100.11"]}}`)
 	if k != nil {
-		share, err := kpki.ShareFor(&pki.Secrets{Kubernetes: *k, NodeCA: testNodeCA(t)}, kind, name, now)
+		share, err := kpki.ShareFor(&clustersecrets.Secrets{Kubernetes: *k, NodeCA: testNodeCA(t)}, kind, name, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,9 +117,9 @@ func onNode(addrs ...string) Resolver {
 // picked finds the fixed address of the nodes testNode prepares.
 var picked = onNode("10.0.2.15", "192.168.100.11")
 
-func secrets(t *testing.T) *pki.KubernetesSecrets {
+func secrets(t *testing.T) *clustersecrets.KubernetesSecrets {
 	t.Helper()
-	k, err := pki.NewKubernetesSecrets(now)
+	k, err := clustersecrets.NewKubernetesSecrets(now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -747,32 +748,32 @@ func TestPrepareReplacesUntrustedRenewedCertificate(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		// renewed returns the stored certificate and key.
-		renewed func(t *testing.T, k *pki.KubernetesSecrets) (cert, key string)
+		renewed func(t *testing.T, k *clustersecrets.KubernetesSecrets) (cert, key string)
 		at      time.Time
 	}{
-		{"foreign CA", func(t *testing.T, _ *pki.KubernetesSecrets) (string, string) {
+		{"foreign CA", func(t *testing.T, _ *clustersecrets.KubernetesSecrets) (string, string) {
 			ck := issue(t, secrets(t).CA, "system:node:w1", []string{kpki.NodesGroup}, false)
 			return ck.Certificate, ck.Key
 		}, later},
-		{"other node", func(t *testing.T, k *pki.KubernetesSecrets) (string, string) {
+		{"other node", func(t *testing.T, k *clustersecrets.KubernetesSecrets) (string, string) {
 			ck := issue(t, k.CA, "system:node:w2", []string{kpki.NodesGroup}, false)
 			return ck.Certificate, ck.Key
 		}, later},
-		{"extra group", func(t *testing.T, k *pki.KubernetesSecrets) (string, string) {
+		{"extra group", func(t *testing.T, k *clustersecrets.KubernetesSecrets) (string, string) {
 			ck := issue(t, k.CA, "system:node:w1", []string{kpki.NodesGroup, kpki.MastersGroup}, false)
 			return ck.Certificate, ck.Key
 		}, later},
-		{"no client authentication", func(t *testing.T, k *pki.KubernetesSecrets) (string, string) {
+		{"no client authentication", func(t *testing.T, k *clustersecrets.KubernetesSecrets) (string, string) {
 			ck := issue(t, k.CA, "system:node:w1", []string{kpki.NodesGroup}, true)
 			return ck.Certificate, ck.Key
 		}, later},
-		{"mismatched key", func(t *testing.T, k *pki.KubernetesSecrets) (string, string) {
+		{"mismatched key", func(t *testing.T, k *clustersecrets.KubernetesSecrets) (string, string) {
 			ck := issue(t, k.CA, "system:node:w1", []string{kpki.NodesGroup}, false)
 			other := issue(t, k.CA, "system:node:w1", []string{kpki.NodesGroup}, false)
 			return ck.Certificate, other.Key
 		}, later},
 		// It expires after the share's certificate, which has expired too.
-		{"expired", func(t *testing.T, k *pki.KubernetesSecrets) (string, string) {
+		{"expired", func(t *testing.T, k *clustersecrets.KubernetesSecrets) (string, string) {
 			ck := issue(t, k.CA, "system:node:w1", []string{kpki.NodesGroup}, false)
 			return ck.Certificate, ck.Key
 		}, later.Add(pki.LeafValidity + time.Hour)},
@@ -1229,7 +1230,7 @@ func testNodeCA(t *testing.T) pki.CertKey {
 // TestPrepareGivesTheKubeletEveryCA checks that while the Kubernetes CAs rotate, the kubelet
 // trusts both, and keeps no client certificate of a CA that no longer issues.
 func TestPrepareGivesTheKubeletEveryCA(t *testing.T) {
-	s, err := pki.GenerateSecrets(now)
+	s, err := clustersecrets.Generate(now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1238,7 +1239,7 @@ func TestPrepareGivesTheKubeletEveryCA(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := currentClient(t, p)
-	if err := s.BeginRotation(pki.RotateKubernetesCA, now); err != nil {
+	if err := s.BeginRotation(clustersecrets.RotateKubernetesCA, now); err != nil {
 		t.Fatal(err)
 	}
 	s.Rotation.Applied = true

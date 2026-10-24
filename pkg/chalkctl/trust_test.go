@@ -11,6 +11,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -32,7 +33,7 @@ func (ta *testApp) beginRotation(t *testing.T, kind string) {
 // verify nodes by both OS CAs and installed nodes trust both.
 func TestClientFilesAndInstallsTrustBothOSCAs(t *testing.T) {
 	ta := newTestApp(t)
-	ta.beginRotation(t, pki.RotateOSCA)
+	ta.beginRotation(t, clustersecrets.RotateOSCA)
 	bundle := ta.secrets.OSCABundle()
 	if certs, _ := pki.ParseBundle(bundle); len(certs) != 2 {
 		t.Fatalf("the secrets file trusts %d OS CAs, want 2", len(certs))

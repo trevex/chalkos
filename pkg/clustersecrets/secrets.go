@@ -1,9 +1,10 @@
-package pki
+// Package clustersecrets holds the cluster's secrets file: the CAs and keys of chalkos and of
+// Kubernetes, the recovery secret, the file's age encryption, and the rotation of what it holds.
+package clustersecrets
 
 import (
 	"bytes"
 	"crypto/rand"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,10 +13,12 @@ import (
 
 	"filippo.io/age"
 	"filippo.io/age/armor"
+
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// SecretsVersion is the only version of the secrets file this package reads and writes.
-const SecretsVersion = 3
+// Version is the only version of the secrets file this package reads and writes.
+const Version = 3
 
 // Secrets is the cluster's secrets file. chalkctl gen secrets writes it; chalkctl node-ca rotate
 // and chalkctl rotate change it.
@@ -23,9 +26,9 @@ type Secrets struct {
 	Version int `json:"version"`
 	// OSCA is the root every node and client of chalkd trusts. It issues client certificates and
 	// the node CA, and never leaves the secrets file with its key.
-	OSCA CertKey `json:"osCA"`
+	OSCA pki.CertKey `json:"osCA"`
 	// NodeCA issues node certificates; control-plane nodes hold it to renew them.
-	NodeCA CertKey `json:"nodeCA"`
+	NodeCA pki.CertKey `json:"nodeCA"`
 	// RecoverySecret is what each node's recovery key is derived from.
 	RecoverySecret []byte `json:"recoverySecret"`
 	// Kubernetes holds the secrets of the Kubernetes control plane.
@@ -44,8 +47,8 @@ type Secrets struct {
 // bake the OS CA into images.
 type Public struct {
 	Version    int              `json:"version"`
-	OSCA       CertKey          `json:"osCA"`
-	NodeCA     CertKey          `json:"nodeCA"`
+	OSCA       pki.CertKey      `json:"osCA"`
+	NodeCA     pki.CertKey      `json:"nodeCA"`
 	Kubernetes KubernetesPublic `json:"kubernetes"`
 }
 
@@ -55,23 +58,23 @@ func ReadPublic(data []byte) (Public, error) {
 	if err := json.Unmarshal(data, &p); err != nil {
 		return Public{}, fmt.Errorf("parse the public secrets file: %w", err)
 	}
-	if p.Version != SecretsVersion {
-		return Public{}, fmt.Errorf("the public secrets file is version %d; chalkos reads version %d only", p.Version, SecretsVersion)
+	if p.Version != Version {
+		return Public{}, fmt.Errorf("the public secrets file is version %d; chalkos reads version %d only", p.Version, Version)
 	}
-	if _, err := ParseCertificate([]byte(p.OSCA.Certificate)); err != nil {
+	if _, err := pki.ParseCertificate([]byte(p.OSCA.Certificate)); err != nil {
 		return Public{}, fmt.Errorf("the public secrets file's OS CA: %w", err)
 	}
 	return p, nil
 }
 
-// GenerateSecrets creates the OS CA, the node CA, the recovery secret and the Kubernetes
+// Generate creates the OS CA, the node CA, the recovery secret and the Kubernetes
 // secrets.
-func GenerateSecrets(now time.Time) (Secrets, error) {
-	ca, err := NewOSCA(now)
+func Generate(now time.Time) (Secrets, error) {
+	ca, err := pki.NewOSCA(now)
 	if err != nil {
 		return Secrets{}, err
 	}
-	nodeCA, err := NewNodeCA(ca, now)
+	nodeCA, err := pki.NewNodeCA(ca, now)
 	if err != nil {
 		return Secrets{}, err
 	}
@@ -83,7 +86,7 @@ func GenerateSecrets(now time.Time) (Secrets, error) {
 	if err != nil {
 		return Secrets{}, err
 	}
-	return Secrets{Version: SecretsVersion, OSCA: ca, NodeCA: nodeCA, RecoverySecret: secret, Kubernetes: *k}, nil
+	return Secrets{Version: Version, OSCA: ca, NodeCA: nodeCA, RecoverySecret: secret, Kubernetes: *k}, nil
 }
 
 // String returns a redacted summary, so logging or an error wrapping a Secrets never leaks the
@@ -97,7 +100,7 @@ func (s Secrets) String() string {
 	if s.Rotation != nil {
 		rotation = ", rotation: " + s.Rotation.String()
 	}
-	return fmt.Sprintf("pki.Secrets{version: %d, osCA: %s%s, redacted}", s.Version, subject, rotation)
+	return fmt.Sprintf("clustersecrets.Secrets{version: %d, osCA: %s%s, redacted}", s.Version, subject, rotation)
 }
 
 // GoString redacts a Secrets the same way String does, so %#v in a log or test failure never
@@ -110,8 +113,8 @@ func (s Secrets) GoString() string {
 func (s Secrets) Public() Public {
 	return Public{
 		Version:    s.Version,
-		OSCA:       CertKey{Certificate: s.OSCA.Certificate},
-		NodeCA:     CertKey{Certificate: s.NodeCA.Certificate},
+		OSCA:       pki.CertKey{Certificate: s.OSCA.Certificate},
+		NodeCA:     pki.CertKey{Certificate: s.NodeCA.Certificate},
 		Kubernetes: *s.Kubernetes.Public(),
 	}
 }
@@ -121,13 +124,13 @@ func (s Secrets) Public() Public {
 // issued, that the Kubernetes secrets and the accepted values are valid, that no two CAs share a
 // key, and that a running rotation is consistent.
 func (s Secrets) Validate() error {
-	if s.Version != SecretsVersion {
-		return fmt.Errorf("version %d is not supported; chalkos reads version %d only, so generate new secrets with chalkctl gen secrets", s.Version, SecretsVersion)
+	if s.Version != Version {
+		return fmt.Errorf("version %d is not supported; chalkos reads version %d only, so generate new secrets with chalkctl gen secrets", s.Version, Version)
 	}
-	if err := ValidateCA(s.OSCA); err != nil {
+	if err := pki.ValidateCA(s.OSCA); err != nil {
 		return fmt.Errorf("osCA: %w", err)
 	}
-	if err := ValidateNodeCA(s.NodeCA, s.OSCA.Certificate); err != nil {
+	if err := pki.ValidateNodeCA(s.NodeCA, s.OSCA.Certificate); err != nil {
 		return fmt.Errorf("nodeCA: %w", err)
 	}
 	if len(s.RecoverySecret) != RecoverySecretSize {
@@ -139,51 +142,10 @@ func (s Secrets) Validate() error {
 	if err := s.validateAccepted(); err != nil {
 		return err
 	}
-	if err := RequireDistinctCAs(s.cas()...); err != nil {
+	if err := pki.RequireDistinctCAs(s.cas()...); err != nil {
 		return err
 	}
 	return s.validateRotation()
-}
-
-// ValidateNodeCA checks that nodeCA, with its key, is a node CA that an OS CA of the bundle osCA
-// issued, and that this OS CA may issue it. Dates are not checked: an expired node CA is
-// replaced, not refused.
-func ValidateNodeCA(nodeCA CertKey, osCA string) error {
-	if err := ValidateCA(nodeCA); err != nil {
-		return err
-	}
-	return verifyNodeCA(nodeCA.Certificate, osCA)
-}
-
-// verifyNodeCA checks the certificate of a node CA against the bundle of OS CAs.
-func verifyNodeCA(nodeCA, osCA string) error {
-	cert, err := ParseCertificate([]byte(nodeCA))
-	if err != nil {
-		return err
-	}
-	roots, err := ParseBundle(osCA)
-	if err != nil {
-		return fmt.Errorf("the OS CA: %w", err)
-	}
-	if !IsNodeCA(cert) {
-		return errors.New("not a node CA: it must be a CA for TLS servers and clients that issues no CA")
-	}
-	pool := x509.NewCertPool()
-	issuers := 0
-	for _, root := range roots {
-		// A root that issues leaves only would refuse every node certificate's chain.
-		if !root.MaxPathLenZero {
-			pool.AddCert(root)
-			issuers++
-		}
-	}
-	if issuers == 0 {
-		return errors.New("the OS CA issues no intermediate CA, so it cannot have a node CA")
-	}
-	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool, KeyUsages: nodeCAUsages, CurrentTime: cert.NotBefore}); err != nil {
-		return fmt.Errorf("does not verify against the OS CA: %w", err)
-	}
-	return nil
 }
 
 // Encode returns the plaintext secrets file.
@@ -267,9 +229,9 @@ func DetectFormat(data []byte) (Format, error) {
 	return 0, errors.New("the secrets file is neither age-encrypted nor JSON")
 }
 
-// ReadSecrets decodes a secrets file in any format. identities is called only for age files,
+// Read decodes a secrets file in any format. identities is called only for age files,
 // so reading plaintext never asks for a key.
-func ReadSecrets(data []byte, identities func() ([]age.Identity, error)) (Secrets, error) {
+func Read(data []byte, identities func() ([]age.Identity, error)) (Secrets, error) {
 	format, err := DetectFormat(data)
 	if err != nil {
 		return Secrets{}, err

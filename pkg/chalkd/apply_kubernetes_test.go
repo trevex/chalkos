@@ -18,6 +18,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/effects"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -106,7 +107,7 @@ func TestApplyConfigRefusesShare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, err := pki.NewKubernetesSecrets(time.Now())
+	k, err := clustersecrets.NewKubernetesSecrets(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

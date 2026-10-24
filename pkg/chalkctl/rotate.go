@@ -14,6 +14,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -83,8 +84,8 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 		return cli.Usagef("--force goes with --finish")
 	}
 	kind := pos[0]
-	if !slices.Contains(pki.RotationKinds, kind) {
-		return cli.Usagef("unknown kind %q; rotate one of %s", kind, strings.Join(pki.RotationKinds, ", "))
+	if !slices.Contains(clustersecrets.RotationKinds, kind) {
+		return cli.Usagef("unknown kind %q; rotate one of %s", kind, strings.Join(clustersecrets.RotationKinds, ", "))
 	}
 	c, err := loadCluster(ctx, cf)
 	if err != nil {
@@ -163,7 +164,7 @@ func (r *rotation) say(format string, args ...any) {
 
 // save changes a copy of the secrets and writes it, so the file and what chalkctl holds never
 // differ.
-func (r *rotation) save(change func(s *pki.Secrets) error) error {
+func (r *rotation) save(change func(s *clustersecrets.Secrets) error) error {
 	s := r.file.secrets
 	if s.Rotation != nil {
 		copied := *s.Rotation
@@ -176,10 +177,10 @@ func (r *rotation) save(change func(s *pki.Secrets) error) error {
 }
 
 func (r *rotation) start(ctx context.Context, kind string) error {
-	if err := r.save(func(s *pki.Secrets) error { return s.BeginRotation(kind, r.a.now()) }); err != nil {
+	if err := r.save(func(s *clustersecrets.Secrets) error { return s.BeginRotation(kind, r.a.now()) }); err != nil {
 		return err
 	}
-	r.say("%s records the rotation of the %s; %s", r.file.out, pki.RotationName(kind), r.file.written())
+	r.say("%s records the rotation of the %s; %s", r.file.out, clustersecrets.RotationName(kind), r.file.written())
 	return r.run(ctx)
 }
 
@@ -196,7 +197,7 @@ func (r *rotation) running(kind string) error {
 	case rot == nil:
 		return fmt.Errorf("%s records no rotation; start one with chalkctl rotate %s", r.file.path, kind)
 	case rot.Kind != kind:
-		return fmt.Errorf("%s records a rotation of the %s, not of the %s", r.file.path, pki.RotationName(rot.Kind), pki.RotationName(kind))
+		return fmt.Errorf("%s records a rotation of the %s, not of the %s", r.file.path, clustersecrets.RotationName(rot.Kind), clustersecrets.RotationName(kind))
 	}
 	return nil
 }
@@ -206,14 +207,14 @@ func (r *rotation) finish(ctx context.Context, kind string, force bool) error {
 		return err
 	}
 	rot := r.file.secrets.Rotation
-	if rot.Phase != pki.PhaseFinish {
-		if rot.Phase != pki.PhaseRefresh || !rot.Applied {
-			return fmt.Errorf("the rotation of the %s is in its %s phase; finish it once its refresh phase is applied, after chalkctl rotate %s --resume", pki.RotationName(kind), rot.Phase, kind)
+	if rot.Phase != clustersecrets.PhaseFinish {
+		if rot.Phase != clustersecrets.PhaseRefresh || !rot.Applied {
+			return fmt.Errorf("the rotation of the %s is in its %s phase; finish it once its refresh phase is applied, after chalkctl rotate %s --resume", clustersecrets.RotationName(kind), rot.Phase, kind)
 		}
 		if err := r.finishGuard(ctx, kind, force); err != nil {
 			return err
 		}
-		if err := r.save(func(s *pki.Secrets) error { return s.FinishRotation() }); err != nil {
+		if err := r.save(func(s *clustersecrets.Secrets) error { return s.FinishRotation() }); err != nil {
 			return err
 		}
 	}
@@ -222,7 +223,7 @@ func (r *rotation) finish(ctx context.Context, kind string, force bool) error {
 
 // finishGuard refuses to remove an old value something still needs.
 func (r *rotation) finishGuard(ctx context.Context, kind string, force bool) error {
-	if kind == pki.RotateOSCA {
+	if kind == clustersecrets.RotateOSCA {
 		return nil
 	}
 	return r.finishGuardKubernetes(ctx, kind, force)
@@ -239,15 +240,15 @@ func (r *rotation) run(ctx context.Context) error {
 		if !rot.Applied {
 			if !first {
 				if err := r.skipRevoked(ctx); err != nil {
-					return fmt.Errorf("the %s phase of the rotation of the %s did not start: %w; continue with chalkctl rotate %s --resume", rot.Phase, pki.RotationName(rot.Kind), err, rot.Kind)
+					return fmt.Errorf("the %s phase of the rotation of the %s did not start: %w; continue with chalkctl rotate %s --resume", rot.Phase, clustersecrets.RotationName(rot.Kind), err, rot.Kind)
 				}
 			}
 			first = false
 			r.say("%s: the %s phase", rot.Kind, rot.Phase)
 			if err := r.apply(ctx, rot.Kind, rot.Phase); err != nil {
-				return fmt.Errorf("the %s phase of the rotation of the %s stopped: %w; once that is fixed, continue with chalkctl rotate %s --resume", rot.Phase, pki.RotationName(rot.Kind), err, rot.Kind)
+				return fmt.Errorf("the %s phase of the rotation of the %s stopped: %w; once that is fixed, continue with chalkctl rotate %s --resume", rot.Phase, clustersecrets.RotationName(rot.Kind), err, rot.Kind)
 			}
-			if err := r.save(func(s *pki.Secrets) error { return s.RecordApplied(r.a.now()) }); err != nil {
+			if err := r.save(func(s *clustersecrets.Secrets) error { return s.RecordApplied(r.a.now()) }); err != nil {
 				return err
 			}
 			r.say("%s: every node applied the %s phase", rot.Kind, rot.Phase)
@@ -257,22 +258,22 @@ func (r *rotation) run(ctx context.Context) error {
 		}
 		var err error
 		switch rot.Phase {
-		case pki.PhaseAccept:
-			err = r.save(func(s *pki.Secrets) error { return s.SwitchRotation() })
-		case pki.PhaseSwitch:
-			err = r.save(func(s *pki.Secrets) error { return s.RefreshRotation() })
-		case pki.PhaseRefresh:
+		case clustersecrets.PhaseAccept:
+			err = r.save(func(s *clustersecrets.Secrets) error { return s.SwitchRotation() })
+		case clustersecrets.PhaseSwitch:
+			err = r.save(func(s *clustersecrets.Secrets) error { return s.RefreshRotation() })
+		case clustersecrets.PhaseRefresh:
 			return r.paused(ctx, rot)
-		case pki.PhaseFinish:
-			if err := r.save(func(s *pki.Secrets) error { return s.EndRotation() }); err != nil {
+		case clustersecrets.PhaseFinish:
+			if err := r.save(func(s *clustersecrets.Secrets) error { return s.EndRotation() }); err != nil {
 				return err
 			}
-			r.say("the rotation of the %s is finished: every node trusts the new value alone; %s", pki.RotationName(rot.Kind), r.file.written())
+			r.say("the rotation of the %s is finished: every node trusts the new value alone; %s", clustersecrets.RotationName(rot.Kind), r.file.written())
 			// What a client trusts is in its file, which the finish cannot reach.
 			switch rot.Kind {
-			case pki.RotateOSCA:
+			case clustersecrets.RotateOSCA:
 				r.say("Client files issued during the rotation still trust the old OS CA besides the new one when they verify the nodes, so whoever holds the old OS CA's key could pose as a node to them; issue them again with chalkctl config new.")
-			case pki.RotateKubernetesCA:
+			case clustersecrets.RotateKubernetesCA:
 				r.say("Kubeconfigs issued during the rotation still trust the old Kubernetes CA besides the new one when they verify the API server, so whoever holds the old CA's key could pose as the API server to them; issue them again with chalkctl kubeconfig.")
 			}
 			return nil
@@ -285,7 +286,7 @@ func (r *rotation) run(ctx context.Context) error {
 
 // apply delivers a phase to the nodes and waits until each confirms it.
 func (r *rotation) apply(ctx context.Context, kind, phase string) error {
-	if kind == pki.RotateOSCA {
+	if kind == clustersecrets.RotateOSCA {
 		return r.applyOSCA(ctx, phase)
 	}
 	return r.applyKubernetes(ctx, kind, phase)
@@ -507,7 +508,7 @@ func fingerprintOf(certificate string) (string, error) {
 func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 	s := r.file.secrets
 	switch phase {
-	case pki.PhaseAccept, pki.PhaseFinish:
+	case clustersecrets.PhaseAccept, clustersecrets.PhaseFinish:
 		bundle := s.OSCABundle()
 		want, err := pki.Fingerprints(bundle)
 		if err != nil {
@@ -525,7 +526,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 			r.say("  %s trusts the %s of the secrets file", name, count(len(want), "OS CA"))
 			return nil
 		})
-	case pki.PhaseSwitch:
+	case clustersecrets.PhaseSwitch:
 		nodeCA, err := fingerprintOf(s.NodeCA.Certificate)
 		if err != nil {
 			return err
@@ -545,7 +546,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 			r.say("  %s renews node certificates with the new node CA", name)
 			return nil
 		})
-	case pki.PhaseRefresh:
+	case clustersecrets.PhaseRefresh:
 		nodeCA, err := fingerprintOf(s.NodeCA.Certificate)
 		if err != nil {
 			return err
@@ -583,15 +584,15 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 // the refresh: the OS CA and the Kubernetes CAs after their accept phase, so client files,
 // kubeconfigs and workloads trust the new CA before it issues the servers' certificates.
 func pausesAfter(kind, phase string) bool {
-	return phase == pki.PhaseAccept && (kind == pki.RotateOSCA || kind == pki.RotateKubernetesCA)
+	return phase == clustersecrets.PhaseAccept && (kind == clustersecrets.RotateOSCA || kind == clustersecrets.RotateKubernetesCA)
 }
 
 // paused says what the operator does before the rotation continues.
-func (r *rotation) paused(ctx context.Context, rot pki.Rotation) error {
+func (r *rotation) paused(ctx context.Context, rot clustersecrets.Rotation) error {
 	switch {
-	case rot.Kind != pki.RotateOSCA:
+	case rot.Kind != clustersecrets.RotateOSCA:
 		return r.pausedKubernetes(ctx, rot)
-	case rot.Phase == pki.PhaseAccept:
+	case rot.Phase == clustersecrets.PhaseAccept:
 		r.say("Every node trusts the old and the new OS CA. Issue new client files now with chalkctl config new: they carry both OS CAs and work throughout the rotation and after it. Client files from before the rotation stop verifying the nodes from the switch on and are refused at the finish. Then continue with chalkctl rotate %s --resume, which makes the new OS CA issue.", rot.Kind)
 	default:
 		r.say("Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl config new. Build images and installer media again from %s; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate %s --finish.", r.publicFile(), rot.Kind)

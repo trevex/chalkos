@@ -15,6 +15,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -23,7 +24,7 @@ import (
 // certificate it issues itself from the secrets file, or a client file's certificate.
 type credentials struct {
 	// secrets is set when the credentials come from the secrets file.
-	secrets *pki.Secrets
+	secrets *clustersecrets.Secrets
 	// config is set, with the path it was read from, when they come from a client file.
 	config     *client.Config
 	configPath string
@@ -63,7 +64,7 @@ func (c *credentials) roots() (*x509.CertPool, error) {
 const adminValidity = time.Hour
 
 // adminCertificate issues chalkctl an admin certificate from the OS CA for this run.
-func adminCertificate(s pki.Secrets) (*tls.Certificate, error) {
+func adminCertificate(s clustersecrets.Secrets) (*tls.Certificate, error) {
 	ck, err := pki.IssueClient(s.OSCA, "chalkctl", pki.RoleAdmin, adminValidity, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("issue an admin certificate: %w", err)
@@ -76,7 +77,7 @@ func adminCertificate(s pki.Secrets) (*tls.Certificate, error) {
 }
 
 // secretCredentials are the credentials of the secrets file.
-func secretCredentials(s pki.Secrets) (*credentials, error) {
+func secretCredentials(s clustersecrets.Secrets) (*credentials, error) {
 	cert, err := adminCertificate(s)
 	if err != nil {
 		return nil, err

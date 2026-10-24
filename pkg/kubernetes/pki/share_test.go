@@ -12,15 +12,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
 var now = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
 
-func secrets(t *testing.T) *pki.KubernetesSecrets {
+func secrets(t *testing.T) *clustersecrets.KubernetesSecrets {
 	t.Helper()
-	k, err := pki.NewKubernetesSecrets(now)
+	k, err := clustersecrets.NewKubernetesSecrets(now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,12 +129,12 @@ func TestShareValidateRefuses(t *testing.T) {
 		"worker accepting a service-account key": func() Share {
 			s := w
 			pub, _ := pki.ServiceAccountPublicKey(other.ServiceAccountKey)
-			s.Accepted = &pki.KubernetesAccepted{ServiceAccountKeys: []string{pub}}
+			s.Accepted = &clustersecrets.KubernetesAccepted{ServiceAccountKeys: []string{pub}}
 			return s
 		},
 		"worker accepting an encryption key": func() Share {
 			s := w
-			s.Accepted = &pki.KubernetesAccepted{EncryptionKeys: []pki.EncryptionKey{{Name: "old", Key: other.EncryptionKey}}}
+			s.Accepted = &clustersecrets.KubernetesAccepted{EncryptionKeys: []clustersecrets.EncryptionKey{{Name: "old", Key: other.EncryptionKey}}}
 			return s
 		},
 	} {
@@ -356,9 +357,9 @@ func testNodeCA(t *testing.T) pki.CertKey {
 }
 
 // withNodeCA returns secrets with the Kubernetes secrets and a node CA.
-func withNodeCA(t *testing.T, k *pki.KubernetesSecrets) *pki.Secrets {
+func withNodeCA(t *testing.T, k *clustersecrets.KubernetesSecrets) *clustersecrets.Secrets {
 	t.Helper()
-	return &pki.Secrets{Kubernetes: *k, NodeCA: testNodeCA(t)}
+	return &clustersecrets.Secrets{Kubernetes: *k, NodeCA: testNodeCA(t)}
 }
 
 func TestShareNodeCA(t *testing.T) {
@@ -412,7 +413,7 @@ func TestControlPlaneShareAcceptsNoCAOfTheNodeCAsKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := ControlPlaneShare(k, nodeCA)
-	s.Accepted = &pki.KubernetesAccepted{CA: []string{string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))}, FrontProxyCA: []string{next.Certificate}, EtcdCA: []string{etcd.Certificate}}
+	s.Accepted = &clustersecrets.KubernetesAccepted{CA: []string{string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))}, FrontProxyCA: []string{next.Certificate}, EtcdCA: []string{etcd.Certificate}}
 	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "nodeCA") {
 		t.Errorf("err = %v, want a refusal naming the node CA", err)
 	}

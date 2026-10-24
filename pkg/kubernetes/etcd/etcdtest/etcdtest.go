@@ -18,13 +18,14 @@ import (
 	"go.etcd.io/etcd/server/v3/storage/wal"
 	"go.uber.org/zap"
 
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // NewCA returns a CA for the members and their clients.
 func NewCA(t testing.TB) pki.CertKey {
 	t.Helper()
-	k, err := pki.NewKubernetesSecrets(time.Now())
+	k, err := clustersecrets.NewKubernetesSecrets(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

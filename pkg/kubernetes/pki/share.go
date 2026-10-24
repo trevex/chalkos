@@ -16,6 +16,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation"
 
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -45,16 +46,16 @@ type Share struct {
 	// certificates. Workers do not hold it.
 	NodeCA *pki.CertKey `json:"nodeCA,omitempty"`
 	// EncryptionKeyName is the name the encryption key encrypts under; empty is
-	// pki.DefaultEncryptionKeyName.
+	// clustersecrets.DefaultEncryptionKeyName.
 	EncryptionKeyName string `json:"encryptionKeyName,omitempty"`
 	// Accepted holds what the node still trusts besides the values above while one of them
 	// rotates: on a worker the Kubernetes CAs alone.
-	Accepted *pki.KubernetesAccepted `json:"accepted,omitempty"`
+	Accepted *clustersecrets.KubernetesAccepted `json:"accepted,omitempty"`
 }
 
 // ControlPlaneShare is what a control-plane node receives: every Kubernetes CA with its key, the
 // keys, the node CA, and what is accepted besides them.
-func ControlPlaneShare(k *pki.KubernetesSecrets, nodeCA pki.CertKey) Share {
+func ControlPlaneShare(k *clustersecrets.KubernetesSecrets, nodeCA pki.CertKey) Share {
 	front, etcd := k.FrontProxyCA, k.EtcdCA
 	s := Share{
 		Kind:              kubernetes.KindControlPlane,
@@ -65,7 +66,7 @@ func ControlPlaneShare(k *pki.KubernetesSecrets, nodeCA pki.CertKey) Share {
 		EncryptionKey:     k.EncryptionKey,
 		NodeCA:            &nodeCA,
 	}
-	if k.EncryptionKeyName != pki.DefaultEncryptionKeyName {
+	if k.EncryptionKeyName != clustersecrets.DefaultEncryptionKeyName {
 		s.EncryptionKeyName = k.EncryptionKeyName
 	}
 	if accepted := k.Accepted; !isZero(accepted) {
@@ -76,26 +77,26 @@ func ControlPlaneShare(k *pki.KubernetesSecrets, nodeCA pki.CertKey) Share {
 
 // WorkerShare is what a worker receives: the CA certificate, those accepted besides it, and a
 // kubelet client certificate for the node, issued now.
-func WorkerShare(k *pki.KubernetesSecrets, node string, now time.Time) (Share, error) {
+func WorkerShare(k *clustersecrets.KubernetesSecrets, node string, now time.Time) (Share, error) {
 	kubelet, err := IssueKubeletClient(k.CA, node, now)
 	if err != nil {
 		return Share{}, err
 	}
 	s := Share{Kind: kubernetes.KindWorker, CA: pki.CertKey{Certificate: k.CA.Certificate}, Kubelet: &kubelet}
 	if len(k.Accepted.CA) > 0 {
-		s.Accepted = &pki.KubernetesAccepted{CA: k.Accepted.CA}
+		s.Accepted = &clustersecrets.KubernetesAccepted{CA: k.Accepted.CA}
 	}
 	return s, nil
 }
 
-func isZero(a pki.KubernetesAccepted) bool {
+func isZero(a clustersecrets.KubernetesAccepted) bool {
 	return len(a.CA)+len(a.FrontProxyCA)+len(a.EtcdCA)+len(a.ServiceAccountKeys)+len(a.EncryptionKeys) == 0
 }
 
 // secrets returns the share as the Kubernetes secrets it holds, without the CAs and keys it
 // lacks.
-func (s Share) secrets() pki.KubernetesSecrets {
-	k := pki.KubernetesSecrets{CA: s.CA, ServiceAccountKey: s.ServiceAccountKey, EncryptionKey: s.EncryptionKey, EncryptionKeyName: s.EncryptionKeyName}
+func (s Share) secrets() clustersecrets.KubernetesSecrets {
+	k := clustersecrets.KubernetesSecrets{CA: s.CA, ServiceAccountKey: s.ServiceAccountKey, EncryptionKey: s.EncryptionKey, EncryptionKeyName: s.EncryptionKeyName}
 	if s.FrontProxyCA != nil {
 		k.FrontProxyCA = *s.FrontProxyCA
 	}
@@ -133,12 +134,12 @@ func (s Share) ServiceAccountPublicKeys() ([]string, error) {
 }
 
 // EncryptionKeys are the keys the API server decrypts with, the one that encrypts first.
-func (s Share) EncryptionKeys() []pki.EncryptionKey {
+func (s Share) EncryptionKeys() []clustersecrets.EncryptionKey {
 	return s.secrets().EncryptionKeys()
 }
 
 // ShareFor returns the share of a node of the kind from the secrets file.
-func ShareFor(s *pki.Secrets, kind, node string, now time.Time) (Share, error) {
+func ShareFor(s *clustersecrets.Secrets, kind, node string, now time.Time) (Share, error) {
 	switch kind {
 	case kubernetes.KindControlPlane:
 		return ControlPlaneShare(&s.Kubernetes, s.NodeCA), nil
@@ -196,8 +197,8 @@ func (s Share) Validate() error {
 		if _, err := pki.ParseECKey(s.ServiceAccountKey); err != nil {
 			return fmt.Errorf("Kubernetes share: service account key: %w", err)
 		}
-		if len(s.EncryptionKey) != pki.EncryptionKeySize {
-			return fmt.Errorf("Kubernetes share: the encryption key must be %d bytes", pki.EncryptionKeySize)
+		if len(s.EncryptionKey) != clustersecrets.EncryptionKeySize {
+			return fmt.Errorf("Kubernetes share: the encryption key must be %d bytes", clustersecrets.EncryptionKeySize)
 		}
 		if err := s.validateAccepted(); err != nil {
 			return err

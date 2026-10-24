@@ -14,6 +14,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -159,7 +160,7 @@ func TestNodeCARotate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rotated, err := pki.ReadSecrets(data, nil)
+	rotated, err := clustersecrets.Read(data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +170,7 @@ func TestNodeCARotate(t *testing.T) {
 	if rotated.OSCA != ta.secrets.OSCA || string(rotated.RecoverySecret) != string(ta.secrets.RecoverySecret) || rotated.Kubernetes.CA != ta.secrets.Kubernetes.CA {
 		t.Error("the rotation changed more than the node CA")
 	}
-	var public pki.Public
+	var public clustersecrets.Public
 	pubData, _ := os.ReadFile(pub)
 	if err := json.Unmarshal(pubData, &public); err != nil || public.NodeCA.Certificate != rotated.NodeCA.Certificate || strings.Contains(string(pubData), "PRIVATE") {
 		t.Errorf("public file: %v", err)
@@ -203,7 +204,7 @@ func TestNodeCARotate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s, err := pki.ReadSecrets(next, nil); err != nil || s.NodeCA == rotated.NodeCA {
+	if s, err := clustersecrets.Read(next, nil); err != nil || s.NodeCA == rotated.NodeCA {
 		t.Errorf("--out did not get another node CA: %v", err)
 	}
 	if _, err := os.Stat(newPub); err != nil {

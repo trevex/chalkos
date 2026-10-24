@@ -14,7 +14,7 @@ import (
 
 	"filippo.io/age"
 
-	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 )
 
 func TestReplaceFileKeepsThePreviousVersion(t *testing.T) {
@@ -73,7 +73,7 @@ func TestSecretsEncryptedToTheRecipientsInside(t *testing.T) {
 	}
 	path := filepath.Join(dir, "secrets.age")
 	before, _ := os.ReadFile(path)
-	generated, err := pki.ReadSecrets(before, only(id))
+	generated, err := clustersecrets.Read(before, only(id))
 	if err != nil || !slices.Equal(generated.Recipients, []string{id.Recipient().String()}) {
 		t.Fatalf("the secrets file records the recipients %v, %v", generated.Recipients, err)
 	}
@@ -91,21 +91,21 @@ func TestSecretsEncryptedToTheRecipientsInside(t *testing.T) {
 		t.Fatal(err)
 	}
 	changed := f.secrets
-	if err := changed.BeginRotation(pki.RotateServiceAccountKey, time.Now()); err != nil {
+	if err := changed.BeginRotation(clustersecrets.RotateServiceAccountKey, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if err := ta.writeSecretsFile(f, changed); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(path)
-	read, err := pki.ReadSecrets(after, only(id))
+	read, err := clustersecrets.Read(after, only(id))
 	if err != nil || read.Rotation == nil {
 		t.Fatalf("the changed file does not decrypt to the change: %v", err)
 	}
 	if prev, _ := os.ReadFile(path + ".prev"); !bytes.Equal(prev, before) {
 		t.Error("secrets.age.prev is not the previous file")
 	}
-	if _, err := pki.ReadSecrets(after, only(other)); err == nil {
+	if _, err := clustersecrets.Read(after, only(other)); err == nil {
 		t.Error("a recipient from secrets.pub.json decrypts the changed file")
 	}
 	if !strings.Contains(ta.stdout.String(), id.Recipient().String()) {
@@ -121,10 +121,10 @@ func TestSecretsEncryptedToTheRecipientsInside(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, _ = os.ReadFile(path)
-	if _, err := pki.ReadSecrets(after, only(id)); err == nil {
+	if _, err := clustersecrets.Read(after, only(id)); err == nil {
 		t.Error("a replaced recipient still decrypts")
 	}
-	read, err = pki.ReadSecrets(after, only(other))
+	read, err = clustersecrets.Read(after, only(other))
 	if err != nil || !slices.Equal(read.Recipients, []string{other.Recipient().String()}) {
 		t.Errorf("the new recipient: %v, recorded %v", err, read.Recipients)
 	}
@@ -138,7 +138,7 @@ func TestSecretsKeepTheirFormat(t *testing.T) {
 	writeFile(t, filepath.Join(ta.dir, ".config", "chalkos", "age.key"), id.String()+"\n")
 	secrets := ta.secrets
 	secrets.Recipients = []string{id.Recipient().String()}
-	armored, err := secrets.EncodeAs(pki.FormatArmoredAge, id.Recipient())
+	armored, err := secrets.EncodeAs(clustersecrets.FormatArmoredAge, id.Recipient())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestSecretsKeepTheirFormat(t *testing.T) {
 			t.Fatal(err)
 		}
 		data, _ := os.ReadFile(path)
-		if got, _ := pki.DetectFormat(data); got != want {
+		if got, _ := clustersecrets.DetectFormat(data); got != want {
 			t.Errorf("%s: written as %d, read as %d", path, got, want)
 		}
 	}
@@ -169,7 +169,7 @@ func TestChangedSecretsNeedTheirRecipients(t *testing.T) {
 	encrypted, _ := ta.secrets.Encrypt(id.Recipient())
 	path := filepath.Join(ta.dir, "enc", "secrets.age")
 	writeFile(t, path, string(encrypted))
-	public, _ := json.Marshal(map[string]any{"version": pki.SecretsVersion, "osCA": ta.secrets.Public().OSCA, "recipients": []string{id.Recipient().String()}})
+	public, _ := json.Marshal(map[string]any{"version": clustersecrets.Version, "osCA": ta.secrets.Public().OSCA, "recipients": []string{id.Recipient().String()}})
 	writeFile(t, filepath.Join(ta.dir, "enc", "secrets.pub.json"), string(public))
 	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{}); err == nil || !strings.Contains(err.Error(), "--recipient") {
 		t.Errorf("err = %v, want a refusal naming --recipient", err)
@@ -209,10 +209,10 @@ func TestPlaintextSecretsEncryptedOnlyOnRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(out)
-	if format, _ := pki.DetectFormat(data); format != pki.FormatAge {
+	if format, _ := clustersecrets.DetectFormat(data); format != clustersecrets.FormatAge {
 		t.Fatalf("%s is written as format %d", out, format)
 	}
-	if read, err := pki.ReadSecrets(data, only(id)); err != nil || !slices.Equal(read.Recipients, []string(recipient)) {
+	if read, err := clustersecrets.Read(data, only(id)); err != nil || !slices.Equal(read.Recipients, []string(recipient)) {
 		t.Errorf("%s: %v, recipients %v", out, err, read.Recipients)
 	}
 	if !strings.Contains(ta.stdout.String(), "encrypted") {
@@ -226,7 +226,7 @@ func TestSecretsRefuseAnotherPublicFile(t *testing.T) {
 	ta := newTestApp(t)
 	path := filepath.Join(ta.dir, "secrets.json")
 	publicPath := filepath.Join(ta.dir, "secrets.pub.json")
-	other, _ := pki.GenerateSecrets(time.Now())
+	other, _ := clustersecrets.Generate(time.Now())
 	otherPublic, _ := encodePublic(other)
 	writeFile(t, publicPath, string(otherPublic))
 	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{}); err == nil || !strings.Contains(err.Error(), "secrets.pub.json") {
@@ -241,7 +241,7 @@ func TestSecretsRefuseAnotherPublicFile(t *testing.T) {
 	public, _ := encodePublic(ta.secrets)
 	writeFile(t, publicPath, string(public))
 	rotated := ta.secrets
-	if err := rotated.BeginRotation(pki.RotateOSCA, time.Now()); err != nil {
+	if err := rotated.BeginRotation(clustersecrets.RotateOSCA, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	rotated.Rotation.Applied = true
@@ -312,7 +312,7 @@ func TestDirectorySyncedAfterWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	changed := f.secrets
-	if err := changed.BeginRotation(pki.RotateEncryptionKey, time.Now()); err != nil {
+	if err := changed.BeginRotation(clustersecrets.RotateEncryptionKey, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if err := ta.writeSecretsFile(f, changed); err != nil {
@@ -322,7 +322,7 @@ func TestDirectorySyncedAfterWrites(t *testing.T) {
 		t.Errorf("no warning: %q", ta.stderr.String())
 	}
 	data, _ := os.ReadFile(filepath.Join(ta.dir, "secrets.json"))
-	if read, err := pki.ReadSecrets(data, only()); err != nil || read.Rotation == nil {
+	if read, err := clustersecrets.Read(data, only()); err != nil || read.Rotation == nil {
 		t.Errorf("the file was not replaced: %v", err)
 	}
 }
@@ -351,7 +351,7 @@ func TestGenSecretsToStandardOutput(t *testing.T) {
 	if err := ta.run(context.Background(), []string{"gen", "secrets", "--recipient", id.Recipient().String(), "--out", "-", "--public-out", public}); err != nil {
 		t.Fatal(err)
 	}
-	secrets, err := pki.ReadSecrets(ta.stdout.Bytes(), only(id))
+	secrets, err := clustersecrets.Read(ta.stdout.Bytes(), only(id))
 	if err != nil || !slices.Equal(secrets.Recipients, []string{id.Recipient().String()}) {
 		t.Errorf("standard output holds secrets of the recipients %v, %v", secrets.Recipients, err)
 	}
@@ -362,7 +362,7 @@ func TestGenSecretsToStandardOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p, err := pki.ReadPublic(data); err != nil || p.OSCA.Certificate != secrets.OSCA.Certificate {
+	if p, err := clustersecrets.ReadPublic(data); err != nil || p.OSCA.Certificate != secrets.OSCA.Certificate {
 		t.Errorf("%s holds %+v, %v; want the public half of the secrets on standard output", public, p, err)
 	}
 	ta.stdout.Reset()
@@ -372,7 +372,7 @@ func TestGenSecretsToStandardOutput(t *testing.T) {
 	if err := ta.run(context.Background(), []string{"gen", "secrets", "--plaintext", "--out", "-", "--public-out", filepath.Join(ta.dir, "plain.pub.json")}); err != nil {
 		t.Fatal(err)
 	}
-	if format, err := pki.DetectFormat(ta.stdout.Bytes()); err != nil || format != pki.FormatJSON {
+	if format, err := clustersecrets.DetectFormat(ta.stdout.Bytes()); err != nil || format != clustersecrets.FormatJSON {
 		t.Errorf("plaintext secrets on standard output: %v, %v", format, err)
 	}
 	if _, err := os.Stat(filepath.Join(ta.dir, "-")); !errors.Is(err, os.ErrNotExist) {
@@ -409,7 +409,7 @@ func TestGenSecretsPublicOut(t *testing.T) {
 		t.Errorf("secrets.pub.json was written beside the secrets file as well: %v", err)
 	}
 	data, _ := os.ReadFile(public)
-	if _, err := pki.ReadPublic(data); err != nil {
+	if _, err := clustersecrets.ReadPublic(data); err != nil {
 		t.Errorf("%s: %v", public, err)
 	}
 }

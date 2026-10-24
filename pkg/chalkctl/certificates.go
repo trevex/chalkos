@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -120,7 +121,7 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 	secrets := f.secrets
 	// A rotation delivers its own shares, one control plane at a time.
 	if r := secrets.Rotation; r != nil {
-		return fmt.Errorf("node-ca rotate: %v", &pki.ErrRotationRuns{Kind: r.Kind, Phase: r.Phase})
+		return fmt.Errorf("node-ca rotate: %v", &clustersecrets.ErrRotationRuns{Kind: r.Kind, Phase: r.Phase})
 	}
 	if secrets.NodeCA, err = pki.NewNodeCA(secrets.OSCA, time.Now()); err != nil {
 		return err
@@ -154,7 +155,7 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 }
 
 // deliverNodeCA delivers the control-plane share with the new node CA to a node, and nothing else.
-func (a *app) deliverNodeCA(ctx context.Context, c *cluster, address, name string, secrets pki.Secrets, share []byte) error {
+func (a *app) deliverNodeCA(ctx context.Context, c *cluster, address, name string, secrets clustersecrets.Secrets, share []byte) error {
 	creds, err := secretCredentials(secrets)
 	if err != nil {
 		return err

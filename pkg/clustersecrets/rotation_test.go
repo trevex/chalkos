@@ -1,4 +1,4 @@
-package pki
+package clustersecrets
 
 import (
 	"encoding/base64"
@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // roundTrip encodes the secrets and reads them back, as chalkctl does between two phases.
@@ -17,7 +19,7 @@ func roundTrip(t *testing.T, s Secrets) Secrets {
 	if err != nil {
 		t.Fatal(err)
 	}
-	read, err := ReadSecrets(data, noIdentities)
+	read, err := Read(data, noIdentities)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +34,7 @@ func trusted(t *testing.T, s Secrets, kind string) []string {
 	var out []string
 	certs := func(bundles ...string) {
 		for _, b := range bundles {
-			fps, err := Fingerprints(b)
+			fps, err := pki.Fingerprints(b)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -50,7 +52,7 @@ func trusted(t *testing.T, s Secrets, kind string) []string {
 			t.Fatal(err)
 		}
 		for _, p := range pubs {
-			fp, err := PublicKeyFingerprint(p)
+			fp, err := pki.PublicKeyFingerprint(p)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -198,15 +200,15 @@ func TestOSCARotationIssuesFromTheNewRoot(t *testing.T) {
 	if s.OSCA.Certificate != newRoot || !slices.Equal(s.Accepted.OSCA, []string{oldRoot}) {
 		t.Error("the switch did not make the new OS CA the issuing one")
 	}
-	if err := ValidateNodeCA(s.NodeCA, newRoot); err != nil {
+	if err := pki.ValidateNodeCA(s.NodeCA, newRoot); err != nil {
 		t.Errorf("the node CA after the switch: %v", err)
 	}
-	node, err := IssueNode(s.NodeCA, NodeNames{CommonName: "w1"}, now)
+	node, err := pki.IssueNode(s.NodeCA, pki.NodeNames{CommonName: "w1"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Nodes trust both roots until the finish.
-	if _, err := VerifyNode(node.Certificate, node.Key, s.OSCABundle(), now); err != nil {
+	if _, err := pki.VerifyNode(node.Certificate, node.Key, s.OSCABundle(), now); err != nil {
 		t.Error(err)
 	}
 }
@@ -264,7 +266,7 @@ func generatePtr(t *testing.T) *Secrets {
 // write that way is refused for.
 func TestValidateRefusesInconsistentRotations(t *testing.T) {
 	other := generate(t)
-	leaf, err := IssueLeaf(other.Kubernetes.CA, Leaf{CommonName: "leaf", Client: true}, now)
+	leaf, err := pki.IssueLeaf(other.Kubernetes.CA, pki.Leaf{CommonName: "leaf", Client: true}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,17 +312,17 @@ func TestValidateRefusesInconsistentRotations(t *testing.T) {
 			s.Rotation = &Rotation{Kind: RotateEncryptionKey, Phase: PhaseRefresh, Switched: now}
 		},
 		"a repeated service-account key": func(s *Secrets) {
-			pub, _ := ServiceAccountPublicKey(s.Kubernetes.ServiceAccountKey)
+			pub, _ := pki.ServiceAccountPublicKey(s.Kubernetes.ServiceAccountKey)
 			s.Kubernetes.Accepted.ServiceAccountKeys = []string{pub}
 			s.Rotation = &Rotation{Kind: RotateServiceAccountKey, Phase: PhaseRefresh, Switched: now}
 		},
 		"a switch without its time": func(s *Secrets) {
-			pub, _ := ServiceAccountPublicKey(other.Kubernetes.ServiceAccountKey)
+			pub, _ := pki.ServiceAccountPublicKey(other.Kubernetes.ServiceAccountKey)
 			s.Kubernetes.Accepted.ServiceAccountKeys = []string{pub}
 			s.Rotation = &Rotation{Kind: RotateServiceAccountKey, Phase: PhaseSwitch, Applied: true}
 		},
 		"a refresh without the switch's time": func(s *Secrets) {
-			pub, _ := ServiceAccountPublicKey(other.Kubernetes.ServiceAccountKey)
+			pub, _ := pki.ServiceAccountPublicKey(other.Kubernetes.ServiceAccountKey)
 			s.Kubernetes.Accepted.ServiceAccountKeys = []string{pub}
 			s.Rotation = &Rotation{Kind: RotateServiceAccountKey, Phase: PhaseRefresh}
 		},

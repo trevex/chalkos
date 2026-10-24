@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -38,7 +39,7 @@ import (
 func controlPlaneOf(t *testing.T, c creds) *Server {
 	t.Helper()
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	k, err := pki.NewKubernetesSecrets(time.Now())
+	k, err := clustersecrets.NewKubernetesSecrets(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

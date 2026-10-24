@@ -20,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -58,7 +59,7 @@ type target struct {
 	cluster *cluster
 	name    string
 	creds   *credentials
-	secrets pki.Secrets
+	secrets clustersecrets.Secrets
 	addr    string
 	// source says where addr comes from, for errors reaching it.
 	source string
@@ -180,7 +181,7 @@ func (a *app) fallbackSecret(ctx context.Context, t *target, fallback, passwordF
 		if t.creds.secrets == nil {
 			return "", fmt.Errorf("node %s unlocks with its recovery key when its TPM fails, which only the secrets file gives; pass --secrets", t.name)
 		}
-		return pki.RecoveryKey(t.secrets.RecoverySecret, t.name)
+		return clustersecrets.RecoveryKey(t.secrets.RecoverySecret, t.name)
 	case "password":
 		if passwordFile != "" {
 			data, err := os.ReadFile(passwordFile)

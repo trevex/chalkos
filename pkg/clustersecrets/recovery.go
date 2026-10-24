@@ -1,4 +1,4 @@
-package pki
+package clustersecrets
 
 import (
 	"crypto/hkdf"

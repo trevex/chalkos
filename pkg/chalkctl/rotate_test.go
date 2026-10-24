@@ -22,6 +22,7 @@ import (
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -327,7 +328,7 @@ func (l *rotationLab) failing(node string) bool {
 	if err != nil {
 		return false
 	}
-	s, err := pki.ReadSecrets(data, nil)
+	s, err := clustersecrets.Read(data, nil)
 	return err == nil && s.Rotation != nil && s.Rotation.Phase == phase && !s.Rotation.Applied
 }
 
@@ -349,7 +350,7 @@ func newRotationLab(t *testing.T) *rotationLab {
 		{"w1", kubernetes.KindWorker, "w"}, {"n1", "", "plain"},
 	}
 	ta.inventory = writeNodes(t, ta.dir, nodes, nil)
-	l := &rotationLab{t: t, ta: ta, nodes: map[string]*fakeNode{}, addrs: map[string]string{}, encrypted: map[string]uint64{pki.DefaultEncryptionKeyName: 3}}
+	l := &rotationLab{t: t, ta: ta, nodes: map[string]*fakeNode{}, addrs: map[string]string{}, encrypted: map[string]uint64{clustersecrets.DefaultEncryptionKeyName: 3}}
 	for _, node := range nodes {
 		name := node.name
 		n := &fakeNode{lab: l, name: name, kind: node.kind}
@@ -390,13 +391,13 @@ func (l *rotationLab) rotate(args ...string) error {
 }
 
 // secrets reads the lab's secrets file.
-func (l *rotationLab) secrets() pki.Secrets {
+func (l *rotationLab) secrets() clustersecrets.Secrets {
 	l.t.Helper()
 	data, err := os.ReadFile(filepath.Join(l.ta.dir, "secrets.json"))
 	if err != nil {
 		l.t.Fatal(err)
 	}
-	s, err := pki.ReadSecrets(data, nil)
+	s, err := clustersecrets.Read(data, nil)
 	if err != nil {
 		l.t.Fatal(err)
 	}
@@ -552,7 +553,7 @@ func TestRotateResumesAfterAnUnreachableNode(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "w1") || !strings.Contains(err.Error(), "--resume") {
 		t.Fatalf("err = %v, want the phase stopped naming w1 and --resume", err)
 	}
-	if l.phase() != pki.PhaseAccept {
+	if l.phase() != clustersecrets.PhaseAccept {
 		t.Fatalf("the secrets file records %q, want the accept phase not applied", l.phase())
 	}
 	// The other nodes took the phase.
@@ -608,7 +609,7 @@ func (l *rotationLab) authenticatesWith(config, node string) error {
 // healthy voter: it gets no share while cp1 reports a learner, an unhealthy member or a stale
 // control plane.
 func TestRotateControlPlanesWaitForEachOther(t *testing.T) {
-	for _, kind := range []string{pki.RotateKubernetesCA, pki.RotateServiceAccountKey, pki.RotateEncryptionKey} {
+	for _, kind := range []string{clustersecrets.RotateKubernetesCA, clustersecrets.RotateServiceAccountKey, clustersecrets.RotateEncryptionKey} {
 		for _, hold := range []string{"learner", "unhealthy", "stale"} {
 			t.Run(kind+"/"+hold, func(t *testing.T) {
 				l := newRotationLab(t)
@@ -644,7 +645,7 @@ func TestRotateTimeoutNamesTheNode(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cp2") || !strings.Contains(err.Error(), "waiting for") || !strings.Contains(err.Error(), "stale") {
 		t.Errorf("err = %v, want the phase stopped naming cp2 and its stale control plane", err)
 	}
-	if l.phase() != pki.PhaseAccept {
+	if l.phase() != clustersecrets.PhaseAccept {
 		t.Errorf("the secrets file records %q, want the accept phase not applied", l.phase())
 	}
 }
@@ -653,13 +654,13 @@ func TestRotateTimeoutNamesTheNode(t *testing.T) {
 // and checks that the phase stays unapplied and that --resume completes the rotation once the
 // node answers again.
 func TestRotateResumesEveryPhase(t *testing.T) {
-	for _, kind := range pki.RotationKinds {
-		for _, phase := range []string{pki.PhaseAccept, pki.PhaseSwitch, pki.PhaseRefresh, pki.PhaseFinish} {
+	for _, kind := range clustersecrets.RotationKinds {
+		for _, phase := range []string{clustersecrets.PhaseAccept, clustersecrets.PhaseSwitch, clustersecrets.PhaseRefresh, clustersecrets.PhaseFinish} {
 			t.Run(kind+"/"+phase, func(t *testing.T) {
 				l := newRotationLab(t)
 				failing := []string{"cp2"}
 				// The refresh of these kinds runs through whichever control plane answers.
-				if phase == pki.PhaseRefresh && (kind == pki.RotateServiceAccountKey || kind == pki.RotateEncryptionKey) {
+				if phase == clustersecrets.PhaseRefresh && (kind == clustersecrets.RotateServiceAccountKey || kind == clustersecrets.RotateEncryptionKey) {
 					failing = []string{"cp1", "cp2"}
 				}
 				l.mu.Lock()
@@ -670,7 +671,7 @@ func TestRotateResumesEveryPhase(t *testing.T) {
 					args := []string{kind, "--timeout", "1s"}
 					switch r := l.secrets().Rotation; {
 					case r == nil:
-					case r.Phase == pki.PhaseRefresh && r.Applied:
+					case r.Phase == clustersecrets.PhaseRefresh && r.Applied:
 						args = append(args, "--finish", "--force")
 					default:
 						args = append(args, "--resume")
@@ -702,7 +703,7 @@ func TestRotateResumesEveryPhase(t *testing.T) {
 				}
 				s := l.secrets()
 				for name, n := range l.nodes {
-					if fps, _ := pki.Fingerprints(n.cert.OSCA()); kind == pki.RotateOSCA && len(fps) != 1 {
+					if fps, _ := pki.Fingerprints(n.cert.OSCA()); kind == clustersecrets.RotateOSCA && len(fps) != 1 {
 						t.Errorf("%s trusts %d OS CAs after the rotation", name, len(fps))
 					}
 					if n.share != nil && n.share.Accepted != nil {

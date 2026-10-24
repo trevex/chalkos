@@ -1,4 +1,4 @@
-package pki
+package clustersecrets
 
 import (
 	"encoding/base64"
@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 func TestGenerateSecretsHasKubernetes(t *testing.T) {
@@ -14,16 +16,16 @@ func TestGenerateSecretsHasKubernetes(t *testing.T) {
 		t.Errorf("version = %d, want 3", s.Version)
 	}
 	k := s.Kubernetes
-	for name, ca := range map[string]CertKey{"ca": k.CA, "frontProxyCA": k.FrontProxyCA, "etcdCA": k.EtcdCA} {
+	for name, ca := range map[string]pki.CertKey{"ca": k.CA, "frontProxyCA": k.FrontProxyCA, "etcdCA": k.EtcdCA} {
 		cert, _, err := ca.Parse()
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if !cert.IsCA || cert.NotAfter.Sub(cert.NotBefore) < CAValidity {
+		if !cert.IsCA || cert.NotAfter.Sub(cert.NotBefore) < pki.CAValidity {
 			t.Errorf("%s: IsCA %v, valid %v", name, cert.IsCA, cert.NotAfter.Sub(cert.NotBefore))
 		}
 	}
-	if _, err := ParseECKey(k.ServiceAccountKey); err != nil {
+	if _, err := pki.ParseECKey(k.ServiceAccountKey); err != nil {
 		t.Errorf("service account key: %v", err)
 	}
 	if len(k.EncryptionKey) != EncryptionKeySize {
@@ -37,7 +39,7 @@ func TestGenerateSecretsHasKubernetes(t *testing.T) {
 }
 
 func TestValidateRejectsKubernetesMismatch(t *testing.T) {
-	leaf, err := SelfSigned("leaf", now)
+	leaf, err := pki.SelfSigned("leaf", now)
 	if err != nil {
 		t.Fatal(err)
 	}
