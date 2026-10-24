@@ -293,6 +293,15 @@ func revocation(t *testing.T, ctx context.Context, nodes map[string]*node, kubec
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The API server picks up the policy's change asynchronously, within seconds; a dry run
+	// passes admission without registering the Node.
+	waitFor(t, time.Minute, "the API server to deny w1's writes", func() error {
+		_, err := kcs.CoreV1().Nodes().Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "w1"}}, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+		if !apierrors.IsForbidden(err) {
+			return fmt.Errorf("registering w1's Node: %s", describe(err))
+		}
+		return nil
+	})
 	_, err = kcs.CoreV1().Nodes().Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "w1"}}, metav1.CreateOptions{})
 	t.Logf("w1's kubelet registering its Node: %s", describe(err))
 	if !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "node w1 is revoked since ") {
