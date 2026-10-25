@@ -172,8 +172,9 @@ The options within each, by their path below `variants`:
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `<name>.kubernetes`{ #variantskubernetes } | boolean | `true` | Whether the variant's images run Kubernetes. One image serves control planes and workers: each node's Kubernetes Node document makes it one or the other. |
+| `<name>.kubernetes`{ #variantskubernetes } | boolean | `true` | Whether the variant's images carry the Kubernetes layer and run Kubernetes. One image serves control planes and workers: each node's Kubernetes Node document makes it one or the other. |
 | `<name>.modules`{ #variantsmodules } | list of module | `[ ]` | NixOS modules of the variant's images, after those of its platform and of every variant. |
+| `<name>.router`{ #variantsrouter } | boolean | `false` | Whether the variant's images carry the router layer, which forwards packets between the node's interfaces. An image carries one layer at most, so a router variant also sets `kubernetes = false`. |
 
 Sources: the options of `lib/images-arguments.nix`, which check mkImages's arguments,
 through nixosOptionsDoc.

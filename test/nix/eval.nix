@@ -7,6 +7,20 @@
 }:
 let
   inherit (import ./lib.nix { inherit mkImages; }) fails worker;
+  # A variant of each set of layers on metal: node has the Kubernetes layer, plain none, edge the
+  # router layer.
+  layered =
+    (mkImages {
+      platforms = [ "metal" ];
+      variants = {
+        node = { };
+        plain.kubernetes = false;
+        edge = {
+          kubernetes = false;
+          router = true;
+        };
+      };
+    }).nixos;
 in
 lib.runTests {
   # mkImages builds each variant on each platform, metal and kvm unless the arguments name
@@ -62,8 +76,8 @@ lib.runTests {
       ociBuild = true;
     };
   };
-  # Each image names its variant and platform, runs Kubernetes as its variant says and carries the
-  # OS CA; the installer is no variant, belongs to no platform and runs no Kubernetes.
+  # Each image names its variant and platform, carries the layers its variant asks for and the OS
+  # CA; the installer is no variant, belongs to no platform and carries no layer.
   testMkImagesDescribesEachImage = {
     expr =
       let
@@ -73,6 +87,10 @@ lib.runTests {
           variants = {
             node = { };
             storage.kubernetes = false;
+            edge = {
+              kubernetes = false;
+              router = true;
+            };
           };
           platforms = [ "metal" ];
         };
@@ -80,6 +98,7 @@ lib.runTests {
           variant = n.config.chalkos.variant.name;
           platform = n.config.chalkos.platform.name;
           kubernetes = n.config.chalkos.kubernetes.enable;
+          router = n.config.chalkos.router.enable;
           osCA = n.config.environment.etc ? "chalkos/os-ca.crt";
         };
       in
@@ -89,20 +108,76 @@ lib.runTests {
         variant = null;
         platform = null;
         kubernetes = false;
+        router = false;
+        osCA = true;
+      };
+      edge-metal = {
+        variant = "edge";
+        platform = "metal";
+        kubernetes = false;
+        router = true;
         osCA = true;
       };
       node-metal = {
         variant = "node";
         platform = "metal";
         kubernetes = true;
+        router = false;
         osCA = true;
       };
       storage-metal = {
         variant = "storage";
         platform = "metal";
         kubernetes = false;
+        router = false;
         osCA = true;
       };
+    };
+  };
+  # Each layer of an image writes an empty marker below /etc/chalkos/layers, which chalkd reads; an
+  # image of the base alone and the installer have none.
+  testLayerMarkers = {
+    expr =
+      let
+        markers =
+          c:
+          lib.mapAttrs (_: e: e.text) (
+            lib.filterAttrs (name: _: lib.hasPrefix "chalkos/layers/" name) c.environment.etc
+          );
+      in
+      {
+        node = markers layered.node-metal.config;
+        plain = markers layered.plain-metal.config;
+        edge = markers layered.edge-metal.config;
+        installer = markers (mkImages { }).nixos.installer.config;
+      };
+    expected = {
+      node."chalkos/layers/kubernetes" = "";
+      plain = { };
+      edge."chalkos/layers/router" = "";
+      installer = { };
+    };
+  };
+  # An image carries one layer at most: a variant with both the Kubernetes and the router layer
+  # fails to build, naming the variant.
+  testLayersExcludeEachOther = {
+    expr =
+      let
+        message = "the variant both enables the kubernetes and router layers; an image carries one layer at most, so set kubernetes = false or router = false";
+        refused = c: lib.any (a: !a.assertion && a.message == message) c.assertions;
+        both = (mkImages { variants.both.router = true; }).nixos.both-metal.config;
+      in
+      {
+        both = refused both;
+        node = refused layered.node-metal.config;
+        plain = refused layered.plain-metal.config;
+        edge = refused layered.edge-metal.config;
+      };
+    expected = {
+      both = true;
+      node = false;
+      plain = false;
+      edge = false;
     };
   };
   # A variant's images carry their platform's modules, those of every variant and the variant's

@@ -37,6 +37,7 @@ let
           chalkos.variant.name = variant;
           chalkos.platform.name = platform;
           chalkos.kubernetes.enable = v.kubernetes;
+          chalkos.router.enable = v.router;
           chalkos.maintenance.osCA = cfg.osCA;
           chalkos.provenance = { inherit (cfg) revision tag; };
         }

@@ -47,6 +47,7 @@ var imagePages = []optionPage{
 			{"Disk", "disk", "The sizes of the partitions an image's build lays out.", []string{"chalkos.disk"}},
 			{"Kernel", "kernel", "The kernel modules an image carries.", []string{"chalkos.kernel"}},
 			{"Kubernetes and CNI", "kubernetes-and-cni", "Whether an image runs Kubernetes, the packages and images it runs it with, and its CNI.", []string{"chalkos.kubernetes", "chalkos.cni"}},
+			{"Router", "router", "Whether an image carries the router layer.", []string{"chalkos.router"}},
 			{"Upgrade and health", "upgrade-and-health", "How many times systemd-boot boots a new image before it falls back, and when a boot of it is healthy.", []string{"chalkos.upgrade"}},
 			{"Debug and maintenance", "debug-and-maintenance", "The debug tools an image carries, and the OS CA whose clients its maintenance mode accepts.", []string{"chalkos.debug", "chalkos.maintenance"}},
 			{"Set by mkImages", "set-by-mkimages", "mkImages sets these from its arguments; a module reads them rather than setting them.", []string{"chalkos.variant", "chalkos.platform", "chalkos.provenance"}},

@@ -1,7 +1,8 @@
-# Kubernetes on images that run it: containerd and the kubelet of the image's Kubernetes release,
-# and the image's Kubernetes facts in /etc/chalkos/kubernetes/image.json. chalkd builds the node's
-# cluster from them and the node's config, and writes everything node-specific below
-# /run/chalkos/kubernetes before the kubelet starts.
+# The Kubernetes layer, on images that run Kubernetes: containerd and the kubelet of the image's
+# Kubernetes release, the layer's marker /etc/chalkos/layers/kubernetes, and the image's Kubernetes
+# facts in /etc/chalkos/kubernetes/image.json. chalkd builds the node's cluster from them and the
+# node's config, and writes everything node-specific below /run/chalkos/kubernetes before the
+# kubelet starts.
 {
   chalkosPackages,
   config,
@@ -84,6 +85,7 @@ in
   };
 
   config = lib.mkIf enable {
+    chalkos.layers.kubernetes = "";
     # The cluster file chalkd writes, which the kubelet's rules compare.
     chalkos.facts.cluster.file = "${run}/cluster.json";
 

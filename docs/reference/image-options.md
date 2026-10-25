@@ -136,6 +136,18 @@ VXLAN, configured by the node's Flannel document; `none` installs no network, fo
 clusters whose Addon documents bring their own, and ships every CNI reference plugin
 (see `chalkos.cni.plugins`).
 
+## Router { #router }
+
+Whether an image carries the router layer.
+
+### `chalkos.router.enable` { #chalkosrouterenable }
+
+Type: boolean · Default: `false` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
+
+Whether the image carries the router layer, which forwards IPv4 and IPv6 packets between
+the node's interfaces. An image carries the Kubernetes layer or the router layer, not both.
+mkImages sets it from the variant's `router`; the installer carries no layer.
+
 ## Upgrade and health { #upgrade-and-health }
 
 How many times systemd-boot boots a new image before it falls back, and when a boot of it is healthy.

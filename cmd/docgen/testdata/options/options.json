@@ -59,6 +59,26 @@
     "readOnly": false,
     "type": "boolean"
   },
+  "chalkos.router.enable": {
+    "declarations": [
+      {
+        "name": "modules/node/router/default.nix",
+        "url": "https://example.org/modules/node/router/default.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "false"
+    },
+    "description": "Whether the image carries the router layer.",
+    "loc": [
+      "chalkos",
+      "router",
+      "enable"
+    ],
+    "readOnly": false,
+    "type": "boolean"
+  },
   "chalkos.variant.name": {
     "declarations": [
       {
