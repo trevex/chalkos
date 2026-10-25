@@ -57,6 +57,7 @@ in
     CHALKLAB_K8S_IMAGE_DIR = chalkPkgs.test-kubernetes-image;
     CHALKLAB_K8S_HA_IMAGE_DIR = chalkPkgs.test-kubernetes-ha-image;
     CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR = chalkPkgs.test-kubernetes-ha-upgrade-image;
+    CHALKLAB_ROUTER_IMAGE_DIR = chalkPkgs.test-router-image;
     CHALKLAB_INSTALLER_DIR = chalkPkgs.test-installer;
     CHALKLAB_GENERIC_INSTALLER_DIR = chalkPkgs.installer;
   };

@@ -1,0 +1,10 @@
+# The router e2e test's lab: r1 and r2 of the main cluster, routers on the lab's switch, with the
+# MAC addresses of their switch NICs and the memory the test's budget gives them.
+apiVersion: chalklab.chalkos.dev/v1alpha1
+kind: Lab
+metadata: {name: chalklab-router}
+spec:
+  inventory: ./chalkos.yaml
+  nodes:
+    r1: {mac: "52:54:00:00:02:01", memory: 768}
+    r2: {mac: "52:54:00:00:02:02", memory: 768}

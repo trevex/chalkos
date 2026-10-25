@@ -8,11 +8,13 @@ spec:
     test-metal: {source: {directory: images/test-metal}}
     storage-metal: {source: {directory: images/storage-metal}}
     k8s-kvm: {source: {directory: images/k8s-kvm}}
+    router-kvm: {source: {directory: images/router-kvm}}
   all: {files: [cluster/*.yaml]}
   groups:
     test: {imageName: test-metal}
     storage: {imageName: storage-metal}
     k8s: {imageName: k8s-kvm, files: [groups/k8s.yaml]}
+    router: {imageName: router-kvm, files: [groups/router.yaml]}
   nodes:
     chalklab:
       groups: [test]
@@ -21,3 +23,5 @@ spec:
     chalklab-storage: {groups: [storage], files: [nodes/chalklab-storage.yaml]}
     cp1: {address: 192.168.100.11, groups: [k8s], files: [nodes/cp1.yaml]}
     w1: {address: 192.168.100.12, groups: [k8s], files: [nodes/w1.yaml]}
+    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-bgp.yaml]}
+    r2: {groups: [router], files: [nodes/r2.yaml]}

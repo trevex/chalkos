@@ -5,6 +5,7 @@
 //	export CHALKLAB_STORAGE_IMAGE_DIR=$(nix build .#test-storage-image --no-link --print-out-paths)
 //	export CHALKLAB_UPGRADE_IMAGE_DIR=$(nix build .#test-upgrade-image --no-link --print-out-paths)
 //	export CHALKLAB_UNHEALTHY_IMAGE_DIR=$(nix build .#test-unhealthy-image --no-link --print-out-paths)
+//	export CHALKLAB_ROUTER_IMAGE_DIR=$(nix build .#test-router-image --no-link --print-out-paths)
 //	export CHALKLAB_CHALKCTL=$(nix build .#chalkctl --no-link --print-out-paths)/bin/chalkctl
 //	export CHALKLAB_CHALKLAB=$(nix build .#chalklab --no-link --print-out-paths)/bin/chalklab
 //	export CHALKLAB_SECRETS=$(nix build .#test-secrets --no-link --print-out-paths)/secrets.json
@@ -145,12 +146,14 @@ func copyTree(src, dst string) error {
 
 // inventories are the fixtures' inventories by the names the tests give them: the main cluster,
 // the same with an additive and with a destructive change of chalklab's storage, the same with
-// chalklab on the upgrade image with config only that image accepts, and the HA cluster.
+// chalklab on the upgrade image with config only that image accepts, its router r1 announcing a
+// network, and the HA cluster.
 var inventories = map[string]string{
 	"base":        "chalklab/chalkos.yaml",
 	"added":       "chalklab/added.yaml",
 	"destructive": "chalklab/destructive.yaml",
 	"upgrade":     "chalklab/upgrade.yaml",
+	"announce":    "chalklab/router-announce.yaml",
 	"ha":          "chalklab-ha/chalkos.yaml",
 }
 

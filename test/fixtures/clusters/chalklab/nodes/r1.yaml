@@ -1,0 +1,27 @@
+# The edge: it peers unnumbered with the routers on its fabric links and sends them a default
+# route, whatever its own table holds. edge0 holds the address it announces once
+# nodes/r1-announce.yaml gives its BGP the network.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-edge0}
+spec:
+  netDev: {kind: dummy, name: edge0}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-edge0}
+spec:
+  match: {name: edge0}
+  network: {address: ["2001:db8:ffff::1/128"]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: fabric}
+spec:
+  interfaces: [enp0s3]
+  remoteAS: external
+  bfd: true
+  extendedNextHop: true
+  password: {secretRef: {name: bgp, key: fabric}}
+  families:
+    ipv6: {defaultOriginate: true}

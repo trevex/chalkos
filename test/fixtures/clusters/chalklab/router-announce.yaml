@@ -1,0 +1,13 @@
+# The main cluster's r1, announcing the address of edge0: a change of FRR's config that a reload
+# applies, without restarting the session.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  images:
+    router-kvm: {source: {directory: images/router-kvm}}
+  all: {files: [cluster/*.yaml]}
+  groups:
+    router: {imageName: router-kvm, files: [groups/router.yaml]}
+  nodes:
+    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-announce.yaml]}

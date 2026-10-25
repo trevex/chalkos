@@ -1,0 +1,6 @@
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: bgp}
+spec:
+  asn: 64512
+  routerID: 192.0.2.1

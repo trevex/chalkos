@@ -1,0 +1,36 @@
+# The routers' system disk, their links and the password of their BGP session. enp0s3, their link
+# to each other on the lab's switch, carries IPv6 link-local addresses alone. enp0s2, the
+# user-mode NIC, takes IPv4 from DHCP and no router advertisements: zebra would prefer the default
+# route they give over BGP's.
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk:
+    path: /dev/vda
+  encryption:
+    fallback: recovery-key
+    mode: tpm2
+  var:
+    encryption:
+      mode: tpm2
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-uplink}
+spec:
+  match: {name: enp0s2}
+  network: {dhcp: ipv4, ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-fabric}
+spec:
+  match: {name: enp0s3}
+  network: {ipv6AcceptRA: false}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: bgp}
+spec:
+  data: {fabric: lab-s3cret}

@@ -95,6 +95,8 @@ in
   test-unhealthy-image = testing.unhealthyImage;
   test-kubernetes-ha-upgrade-image = testing.haUpgradeImage;
   test-kubernetes-images = testing.kubernetesImages;
+  # The router test's routers run the router image on KVM.
+  test-router-image = testing.images.router-kvm;
 
   # The installer without an OS CA: it accepts any client until it installs a node.
   installer = (self.lib.mkImages { variants = { }; }).installer;

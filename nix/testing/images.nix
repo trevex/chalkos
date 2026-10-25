@@ -5,7 +5,8 @@ let
   secrets = import ./secrets.nix { inherit pkgs; };
   # Every variant has the test image's small partitions and the probe the tests read. test, which
   # most VM tests boot, carries chalklab's Greeting kind; storage is the storage test's; k8s is the
-  # image of the Kubernetes tests' control planes and workers.
+  # image of the Kubernetes tests' control planes and workers; router that of the router test's
+  # routers.
   arguments = {
     osCA = "${secrets}/secrets.pub.json";
     modules = [ ../../modules/testing/test-image.nix ];
@@ -16,6 +17,27 @@ let
       };
       storage.kubernetes = false;
       k8s = { };
+      router = {
+        kubernetes = false;
+        router = true;
+        # The test reads who owns the filled frr.conf, which holds the peers' passwords, and its
+        # mode; /run/frr lets anyone look into it.
+        modules = [
+          {
+            chalkos.diagnostics.chalktest-frr-conf = {
+              description = "The owner, group and mode of /run/frr/frr.conf.";
+              command = [
+                "${pkgs.coreutils}/bin/stat"
+                "-c"
+                "%U %G %a"
+                "/run/frr/frr.conf"
+              ];
+              role = "reader";
+              timeout = "10s";
+            };
+          }
+        ];
+      };
     };
   };
   images = self.lib.mkImages arguments;

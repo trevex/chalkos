@@ -16,6 +16,12 @@
         uki = 51;
       };
     };
+    # FRR and the Python of frr-reload.py take about 100 MiB of the router image's store.
+    router.kvm = {
+      storeData = 351;
+      hashTree = 2.8;
+      uki = 51;
+    };
     test = {
       metal = {
         storeData = 222;
