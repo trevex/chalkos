@@ -69,8 +69,25 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		port:     port,
 		closed:   closed,
 	}
+	if m := f.router.Management.Interfaces; m != nil {
+		if err := checkInterfaces("Router: management.interfaces", m); err != nil {
+			return nil, err
+		}
+	}
 	for _, z := range d.Zones {
+		if err := checkInterfaces("FirewallZone "+z.Name, z.Spec.Interfaces); err != nil {
+			return nil, err
+		}
 		f.zones[z.Name] = z.Spec.Interfaces
+	}
+	for _, n := range d.NAT {
+		for _, place := range []*natPlace{n.Spec.In, n.Spec.Out} {
+			if place != nil && place.Interface != nil {
+				if err := checkInterfaces("NATRule "+n.Name, []string{*place.Interface}); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 	for _, s := range d.Sets {
 		if s.Spec.Family != "ipv4" && s.Spec.Family != "ipv6" {
@@ -380,6 +397,9 @@ func (f *firewall) ruleLines(policy string, n int, r firewallRule) ([]string, er
 	}
 	families := []string{"ipv4", "ipv6"}
 	if r.Family != nil {
+		if _, ok := familyWords[*r.Family]; !ok {
+			return nil, fmt.Errorf("family %q is neither ipv4 nor ipv6", *r.Family)
+		}
 		families = []string{*r.Family}
 	}
 	switch {
@@ -470,6 +490,10 @@ func prefixes(l []string, fam string) ([]string, error) {
 // without /etc/protocols.
 var protocolNumbers = map[string]string{"gre": "47", "esp": "50", "ah": "51"}
 
+// icmpTypeNames are the ICMP and ICMPv6 types a rule may match, which nftables names alike for
+// both protocols; packet-too-big is ICMPv6's alone.
+var icmpTypeNames = []string{"echo-request", "echo-reply", "destination-unreachable", "time-exceeded", "parameter-problem", "packet-too-big"}
+
 // protocolMatch matches the protocol with its ports or ICMP types.
 func protocolMatch(protocol string, sourcePorts, destinationPorts []portRange, icmpTypes []string) (string, error) {
 	switch protocol {
@@ -493,6 +517,11 @@ func protocolMatch(protocol string, sourcePorts, destinationPorts []portRange, i
 	case "icmp", "icmpv6":
 		if len(sourcePorts) > 0 || len(destinationPorts) > 0 {
 			return "", fmt.Errorf("ports need the protocol tcp, udp or sctp")
+		}
+		for _, t := range icmpTypes {
+			if !slices.Contains(icmpTypeNames, t) {
+				return "", fmt.Errorf("%q is no ICMP type the firewall matches", t)
+			}
 		}
 		if protocol == "icmp" && slices.Contains(icmpTypes, "packet-too-big") {
 			return "", fmt.Errorf("packet-too-big is an ICMPv6 type")

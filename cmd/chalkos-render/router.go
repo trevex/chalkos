@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -152,6 +153,9 @@ func decodeKind[T any](byKind map[string]any, kind string) ([]named[T], error) {
 		if err != nil {
 			return nil, err
 		}
+		if !routerName.MatchString(name) {
+			return nil, fmt.Errorf("a %s document: %q is no document name, which nftables takes in the names of sets and chains", kind, name)
+		}
 		data, err := json.Marshal(obj["spec"])
 		if err != nil {
 			return nil, err
@@ -171,4 +175,25 @@ func (d routerDocuments) router() routerSpec {
 		return defaultRouter()
 	}
 	return d.Routers[0].Spec
+}
+
+// routerName is a document's name as the schemas take it, which the ruleset writes unquoted in
+// the names of its sets and chains.
+var routerName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
+
+// interfaceName is an interface name as the schemas take it, or a prefix of one with the one
+// trailing * that nftables matches.
+var interfaceName = regexp.MustCompile(`^(?:[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*])$`)
+
+// checkInterfaces refuses an empty list of interfaces and a name or glob the schemas refuse.
+func checkInterfaces(what string, l []string) error {
+	if len(l) == 0 {
+		return fmt.Errorf("%s names no interface", what)
+	}
+	for _, n := range l {
+		if !interfaceName.MatchString(n) {
+			return fmt.Errorf("%s: %q is no interface name or glob", what, n)
+		}
+	}
+	return nil
 }
