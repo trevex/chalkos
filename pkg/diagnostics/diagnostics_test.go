@@ -76,6 +76,14 @@ func TestReadRefuses(t *testing.T) {
 		"optional with a default":   {"routes", table(`{"type": "int", "optional": true, "default": "1"}`), "parameter table: it is optional and has a default"},
 		"a default of another type": {"routes", table(`{"type": "int", "min": 1, "default": "0"}`), "parameter table: its default: 0 is not at least 1"},
 		"accepted":                  {"routes", table(`{"type": "pattern", "regex": "^(main|[0-9]+)$", "default": "main"}`), ""},
+		"a long name":               {strings.Repeat("a", 65), `{"command": ["/nix/store/x/bin/ip"], ` + ok + `}`, "diagnostic " + strings.Repeat("a", 65) + ": the name is longer than 64 characters"},
+		"a compound timeout":        {"routes", `{"command": ["/nix/store/x/bin/ip"], "role": "reader", "timeout": "1m30s"}`, `its timeout is "1m30s", not a duration from 1s to 10m`},
+		"a timeout in hours":        {"routes", `{"command": ["/nix/store/x/bin/ip"], "role": "reader", "timeout": "1h"}`, `its timeout is "1h", not a duration from 1s to 10m`},
+		"an unknown capability":     {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "capabilities": ["CAP_NET_FOO"]}`, `"CAP_NET_FOO" is no capability, such as CAP_NET_RAW`},
+		"a group":                   {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "groups": ["bird admins"]}`, `group "bird admins" is not of the form [a-z_][a-z0-9_-]*`},
+		"a value as an option":      {"routes", table(`{"type": "enum", "values": ["main", "-x"]}`), `parameter table: its value "-x" starts with "-"`},
+		"a negative default":        {"routes", table(`{"type": "int", "default": "-1"}`), `parameter table: its default: "-1" starts with "-"`},
+		"capabilities and groups":   {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "capabilities": ["CAP_NET_RAW", "CAP_NET_ADMIN"], "groups": ["_bird", "bird-ctl"]}`, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := write(t, `{"`+tc.name+`": `+tc.diagnostic+`}`)

@@ -45,11 +45,31 @@ var roles = []string{"reader", "operator", "admin"}
 // nameForm is the form of a diagnostic's name and a parameter's.
 const nameForm = "[a-z][a-z0-9-]*"
 
+// MaxName bounds the length of a diagnostic's name, which its runs' unit names hold.
+const MaxName = 64
+
+// groupForm is the form of a group a diagnostic's process belongs to.
+const groupForm = "[a-z_][a-z0-9_-]*"
+
+// capabilities are the names of the Linux capabilities.
+var capabilities = []string{
+	"CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_DAC_READ_SEARCH", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL",
+	"CAP_SETGID", "CAP_SETUID", "CAP_SETPCAP", "CAP_LINUX_IMMUTABLE", "CAP_NET_BIND_SERVICE",
+	"CAP_NET_BROADCAST", "CAP_NET_ADMIN", "CAP_NET_RAW", "CAP_IPC_LOCK", "CAP_IPC_OWNER",
+	"CAP_SYS_MODULE", "CAP_SYS_RAWIO", "CAP_SYS_CHROOT", "CAP_SYS_PTRACE", "CAP_SYS_PACCT",
+	"CAP_SYS_ADMIN", "CAP_SYS_BOOT", "CAP_SYS_NICE", "CAP_SYS_RESOURCE", "CAP_SYS_TIME",
+	"CAP_SYS_TTY_CONFIG", "CAP_MKNOD", "CAP_LEASE", "CAP_AUDIT_WRITE", "CAP_AUDIT_CONTROL",
+	"CAP_SETFCAP", "CAP_MAC_OVERRIDE", "CAP_MAC_ADMIN", "CAP_SYSLOG", "CAP_WAKE_ALARM",
+	"CAP_BLOCK_SUSPEND", "CAP_AUDIT_READ", "CAP_PERFMON", "CAP_BPF", "CAP_CHECKPOINT_RESTORE",
+}
+
 var (
 	namePattern = regexp.MustCompile("^" + nameForm + "$")
 	// placeholder is a parameter's place in an argument of a command.
-	placeholder = regexp.MustCompile(`\{(` + nameForm + `)\}`)
-	capability  = regexp.MustCompile(`^CAP_[A-Z_]+$`)
+	placeholder  = regexp.MustCompile(`\{(` + nameForm + `)\}`)
+	groupPattern = regexp.MustCompile("^" + groupForm + "$")
+	// timeoutPattern is the form of a timeout: seconds or minutes, as the image's option takes it.
+	timeoutPattern = regexp.MustCompile(`^[1-9][0-9]*[sm]$`)
 )
 
 // Definition is a diagnostic as diagnostics.json records it: the command chalkd runs, the
@@ -89,8 +109,11 @@ func Read(path string) (map[string]Definition, error) {
 	var errs []error
 	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		err := defs[name].Check()
-		if !namePattern.MatchString(name) {
+		switch {
+		case !namePattern.MatchString(name):
 			err = fmt.Errorf("the name is not of the form %s", nameForm)
+		case len(name) > MaxName:
+			err = fmt.Errorf("the name is longer than %d characters", MaxName)
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: diagnostic %s: %w", path, name, err))
@@ -103,9 +126,9 @@ func Read(path string) (map[string]Definition, error) {
 }
 
 // Check refuses a diagnostic chalkd could not run as declared: a command that runs no program
-// of the image's store, a role, timeout or capability chalkd does not know, a placeholder without
-// its parameter or a parameter without its placeholder, and a parameter whose declaration does
-// not fit its type.
+// of the image's store, a role, timeout, capability or group chalkd does not know, a placeholder
+// without its parameter or a parameter without its placeholder, and a parameter whose declaration
+// does not fit its type.
 func (d Definition) Check() error {
 	if len(d.Command) == 0 {
 		return errors.New("its command is empty")
@@ -116,12 +139,17 @@ func (d Definition) Check() error {
 	if !slices.Contains(roles, d.Role) {
 		return fmt.Errorf("its role is %q, not reader, operator or admin", d.Role)
 	}
-	if t, err := time.ParseDuration(d.Timeout); err != nil || t < time.Second || t > MaxTimeout {
+	if t, err := time.ParseDuration(d.Timeout); !timeoutPattern.MatchString(d.Timeout) || err != nil || t < time.Second || t > MaxTimeout {
 		return fmt.Errorf("its timeout is %q, not a duration from 1s to 10m", d.Timeout)
 	}
 	for _, c := range d.Capabilities {
-		if !capability.MatchString(c) {
+		if !slices.Contains(capabilities, c) {
 			return fmt.Errorf("%q is no capability, such as CAP_NET_RAW", c)
+		}
+	}
+	for _, g := range d.Groups {
+		if !groupPattern.MatchString(g) {
+			return fmt.Errorf("group %q is not of the form %s", g, groupForm)
 		}
 	}
 	named := d.named()

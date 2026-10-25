@@ -32,7 +32,8 @@ const (
 )
 
 // Runner runs a diagnostic, writing what it prints to stdout and stderr as it prints it, from two
-// goroutines. A run whose ctx ends is stopped, and returns ctx's error. Tests replace it.
+// goroutines. A run whose ctx ends is stopped, and returns ctx's error. The runner does not limit
+// the output: the caller cancels ctx when its writers reach MaxOutput. Tests replace it.
 type Runner interface {
 	Run(ctx context.Context, r Run, stdout, stderr io.Writer) (Exit, error)
 }

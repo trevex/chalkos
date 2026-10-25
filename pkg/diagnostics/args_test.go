@@ -17,6 +17,16 @@ var (
 			"count":   {Type: TypeInt, Min: bound(1), Max: bound(10), Default: "4"},
 		},
 	}
+	// loose takes any integer, any string and values a declaration should not hold, which Argv
+	// refuses still where they could read as options or break a line.
+	loose = Definition{
+		Command: []string{"/nix/store/x/bin/t", "{n}", "{p}", "{e}"},
+		Parameters: map[string]Parameter{
+			"n": {Type: TypeInt, Optional: true},
+			"p": {Type: TypePattern, Regex: "^.*$", Optional: true},
+			"e": {Type: TypeEnum, Values: []string{"-a", "b\n"}, Optional: true},
+		},
+	}
 	// dig has a required name and two optional parameters, one of them within an argument.
 	dig = Definition{
 		Command: []string{"/nix/store/x-dig/bin/dig", "{name}", "{type}", "@{server}"},
@@ -59,15 +69,22 @@ func TestArgvRefuses(t *testing.T) {
 		args map[string]string
 		want string
 	}{
-		"a missing argument":   {ping, nil, "it needs address=<address>"},
-		"an unknown parameter": {ping, map[string]string{"address": "192.0.2.1", "size": "56"}, "it has no parameter size; it takes address, count"},
-		"no address":           {ping, map[string]string{"address": "example.org"}, `address: "example.org" is no IPv4 or IPv6 address`},
-		"an option":            {dig, map[string]string{"name": "-x"}, `name: "-x" is no DNS name`},
-		"a hyphen at the end":  {dig, map[string]string{"name": "a-.example"}, `name: "a-.example" is no DNS name`},
-		"out of range":         {ping, map[string]string{"address": "192.0.2.1", "count": "11"}, "count: 11 is not from 1 to 10"},
-		"no integer":           {ping, map[string]string{"address": "192.0.2.1", "count": "four"}, `count: "four" is no integer`},
-		"not a value":          {dig, map[string]string{"name": "example.org", "type": "ANY"}, `type: "ANY" is not one of A, AAAA`},
-		"an empty optional":    {dig, map[string]string{"name": "example.org", "server": ""}, `server: "" is no IPv4 or IPv6 address`},
+		"a missing argument":     {ping, nil, "it needs address=<address>"},
+		"an unknown parameter":   {ping, map[string]string{"address": "192.0.2.1", "size": "56"}, "it has no parameter size; it takes address, count"},
+		"no address":             {ping, map[string]string{"address": "example.org"}, `address: "example.org" is no IPv4 or IPv6 address`},
+		"an option":              {dig, map[string]string{"name": "-x"}, `name: "-x" is no DNS name`},
+		"a hyphen at the end":    {dig, map[string]string{"name": "a-.example"}, `name: "a-.example" is no DNS name`},
+		"out of range":           {ping, map[string]string{"address": "192.0.2.1", "count": "11"}, "count: 11 is not from 1 to 10"},
+		"no integer":             {ping, map[string]string{"address": "192.0.2.1", "count": "four"}, `count: "four" is no integer`},
+		"not a value":            {dig, map[string]string{"name": "example.org", "type": "ANY"}, `type: "ANY" is not one of A, AAAA`},
+		"an empty optional":      {dig, map[string]string{"name": "example.org", "server": ""}, `server: "" is no IPv4 or IPv6 address`},
+		"a zone with a variable": {ping, map[string]string{"address": "fe80::1%${PATH}"}, `address: "fe80::1%${PATH}" has a zone that is no interface name`},
+		"a zone with a newline":  {ping, map[string]string{"address": "fe80::1%a b\n-c"}, `address: "fe80::1%a b\n-c" has a zone that is no interface name`},
+		"a negative int":         {loose, map[string]string{"n": "-1"}, `n: "-1" starts with "-"`},
+		"an option of a pattern": {loose, map[string]string{"p": "-rf"}, `p: "-rf" starts with "-"`},
+		"a NUL":                  {loose, map[string]string{"p": "a\x00b"}, `p: "a\x00b" holds a control character`},
+		"a DEL":                  {loose, map[string]string{"p": "a\x7fb"}, `p: "a\x7fb" holds a control character`},
+		"a newline of an enum":   {loose, map[string]string{"e": "b\n"}, `e: "b\n" holds a control character`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := tc.d.Argv(tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -92,6 +109,7 @@ func TestValues(t *testing.T) {
 		{Parameter{Type: TypeInt, Max: bound(5)}, "6", "", "6 is not at most 5"},
 		{Parameter{Type: TypePattern, Regex: "^[a-z]+$"}, "main", "main", ""},
 		{Parameter{Type: TypePattern, Regex: "^a|b$"}, "ab", "", `"ab" does not match ^a|b$`},
+		{Parameter{Type: TypePattern, Regex: "^[a$"}, "a", "", "error parsing regexp"},
 	} {
 		got, err := tc.p.value(tc.in)
 		if tc.err == "" && (err != nil || got != tc.want) || tc.err != "" && (err == nil || !strings.Contains(err.Error(), tc.err)) {

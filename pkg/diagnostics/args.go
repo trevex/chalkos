@@ -37,6 +37,11 @@ func (p Parameter) check() error {
 	if (len(p.Values) > 0) != (p.Type == TypeEnum) {
 		return errors.New("an enum parameter has values, and no other does")
 	}
+	for _, v := range p.Values {
+		if err := argument(v); err != nil {
+			return fmt.Errorf("its value %w", err)
+		}
+	}
 	if (p.Regex != "") != (p.Type == TypePattern) {
 		return errors.New("a pattern parameter has a regex, and no other does")
 	}
@@ -44,7 +49,7 @@ func (p Parameter) check() error {
 		if !strings.HasPrefix(p.Regex, "^") || !strings.HasSuffix(p.Regex, "$") {
 			return fmt.Errorf("its regex %q is not anchored with ^ and $", p.Regex)
 		}
-		if _, err := regexp.Compile(p.Regex); err != nil {
+		if _, err := p.whole(); err != nil {
 			return fmt.Errorf("its regex: %w", err)
 		}
 	}
@@ -59,13 +64,29 @@ func (p Parameter) check() error {
 	return nil
 }
 
-// value checks s against the parameter's type and returns the form the command gets.
+// value checks s against the parameter's type and returns the form the command gets, which never
+// reads as an option and holds no control character.
 func (p Parameter) value(s string) (string, error) {
+	v, err := p.typed(s)
+	if err != nil {
+		return "", err
+	}
+	if err := argument(v); err != nil {
+		return "", err
+	}
+	return v, nil
+}
+
+// typed checks s against the parameter's type and returns its canonical form.
+func (p Parameter) typed(s string) (string, error) {
 	switch p.Type {
 	case TypeAddress:
 		a, err := netip.ParseAddr(s)
 		if err != nil {
 			return "", fmt.Errorf("%q is no IPv4 or IPv6 address", s)
+		}
+		if a.Zone() != "" && !interfaceName.MatchString(a.Zone()) {
+			return "", fmt.Errorf("%q has a zone that is no interface name", s)
 		}
 		return a.String(), nil
 	case TypePrefix:
@@ -105,13 +126,35 @@ func (p Parameter) value(s string) (string, error) {
 		}
 		return s, nil
 	case TypePattern:
-		// The regex matches the whole value, whatever alternatives it holds.
-		if !regexp.MustCompile("^(?:" + p.Regex + ")$").MatchString(s) {
+		re, err := p.whole()
+		if err != nil {
+			return "", fmt.Errorf("its regex: %w", err)
+		}
+		if !re.MatchString(s) {
 			return "", fmt.Errorf("%q does not match %s", s, p.Regex)
 		}
 		return s, nil
 	}
 	return "", fmt.Errorf("the type %q is unknown", p.Type)
+}
+
+// whole is a pattern parameter's regex made to match the whole value, whatever alternatives it
+// holds.
+func (p Parameter) whole() (*regexp.Regexp, error) {
+	return regexp.Compile("^(?:" + p.Regex + ")$")
+}
+
+// argument refuses a value that a program could read as an option, or whose control characters
+// could break a line of its output or end the argument early, whatever the parameter's
+// declaration allows.
+func argument(s string) error {
+	if strings.HasPrefix(s, "-") {
+		return fmt.Errorf("%q starts with \"-\"", s)
+	}
+	if strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return fmt.Errorf("%q holds a control character", s)
+	}
+	return nil
 }
 
 // bounds says which integers an int parameter with a bound takes.

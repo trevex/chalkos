@@ -121,7 +121,7 @@ func TestSandboxArgs(t *testing.T) {
 		Groups:       []string{"bird", "wheel"},
 		Timeout:      20 * time.Second,
 	})
-	want := append(append([]string{"--pipe", "--wait", "--quiet", "--unit=chalkos-diagnostic-ping-0123456789ab.service"}, sandbox...),
+	want := append(append([]string{"--pipe", "--wait", "--quiet", "--expand-environment=no", "--unit=chalkos-diagnostic-ping-0123456789ab.service"}, sandbox...),
 		"--property=CapabilityBoundingSet=CAP_NET_RAW",
 		"--property=AmbientCapabilities=CAP_NET_RAW",
 		"--property=RuntimeMaxSec=20000ms",
@@ -136,5 +136,16 @@ func TestSandboxArgs(t *testing.T) {
 	}
 	if slices.ContainsFunc(none, func(a string) bool { return strings.HasPrefix(a, "--property=SupplementaryGroups") }) {
 		t.Errorf("a run without groups gets some: %q", none)
+	}
+}
+
+// A run without a time limit is refused before systemd-run starts.
+func TestSandboxRefusesARunWithoutATimeout(t *testing.T) {
+	dir := fakeSystemd(t, "")
+	if _, err := (Sandbox{}).Run(context.Background(), Run{Name: "ping", Argv: []string{"/bin/true"}}, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "timeout") {
+		t.Errorf("err = %v, want a refusal of the timeout", err)
+	}
+	if unit := recorded(t, dir, "unit"); unit != "" {
+		t.Errorf("systemd-run ran %q", unit)
 	}
 }

@@ -60,7 +60,9 @@ var sandbox = []string{
 // sandboxArgs are the arguments of systemd-run that run r as unit.
 func sandboxArgs(unit string, r Run) []string {
 	caps := strings.Join(r.Capabilities, " ")
-	args := append([]string{"--pipe", "--wait", "--quiet", "--unit=" + unit}, sandbox...)
+	// Without --expand-environment=no, systemd-run would expand $NAME and ${NAME} in the
+	// command's arguments, which hold the call's values.
+	args := append([]string{"--pipe", "--wait", "--quiet", "--expand-environment=no", "--unit=" + unit}, sandbox...)
 	args = append(args,
 		"--property=CapabilityBoundingSet="+caps,
 		"--property=AmbientCapabilities="+caps,
@@ -87,6 +89,9 @@ func systemctl(args ...string) ([]byte, error) {
 }
 
 func (Sandbox) Run(ctx context.Context, r Run, stdout, stderr io.Writer) (Exit, error) {
+	if r.Timeout <= 0 {
+		return Exit{}, fmt.Errorf("diagnostic %s: its timeout %v is not positive", r.Name, r.Timeout)
+	}
 	unit := unitName(r.Name)
 	waitCtx, cancel := context.WithTimeout(ctx, r.Timeout+stopMargin)
 	defer cancel()
