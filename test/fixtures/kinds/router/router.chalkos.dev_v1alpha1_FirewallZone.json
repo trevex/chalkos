@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A zone of the router's firewall: interfaces whose connections the FirewallPolicy documents treat alike. The zone local is the router itself and has no document.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "FirewallZone"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "interfaces": {
+          "description": "Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`.",
+          "examples": [
+            [
+              "eth1",
+              "vlan*"
+            ]
+          ],
+          "items": {
+            "pattern": "^(?:[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*])$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "interfaces"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "FirewallZone",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "FirewallZone",
+    "multiple": true,
+    "rules": [
+      {
+        "description": "No FirewallZone is named local, the router itself.",
+        "message": "a FirewallZone is named local, which is the router itself: FirewallPolicy documents name it without a document, so give the zone another name",
+        "rule": "!(\"local\" in documents)",
+        "takes": "refuse"
+      },
+      {
+        "description": "An interface or glob is in one FirewallZone, once; globs compare as written.",
+        "messageExpression": "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), \"the interface \" + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + \" is in more than one FirewallZone, or twice in one; give each interface one zone\")",
+        "rule": "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, size(all.filter(j, j == i)) == 1))",
+        "takes": "refuse"
+      }
+    ],
+    "version": "v1alpha1"
+  }
+}

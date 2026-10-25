@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Address ranges of one family, which firewall rules name as `set:<name>`.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "AddressSet"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "family": {
+          "description": "Address family of the set.",
+          "enum": [
+            "ipv4",
+            "ipv6"
+          ]
+        },
+        "prefixes": {
+          "description": "Address ranges of the set.",
+          "examples": [
+            [
+              "2001:db8:1::/48"
+            ]
+          ],
+          "items": {
+            "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "family",
+        "prefixes"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "AddressSet",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "AddressSet",
+    "multiple": true,
+    "rules": [
+      {
+        "description": "An AddressSet's ranges are of its family.",
+        "messageExpression": "documents.filter(n, !documents[n].spec.prefixes.all(p, cidr(p).ip(0).family() == documents[n].spec.family)).map(n, \"AddressSet \" + n + \" holds ranges of another family than \" + documents[n].spec.family).join(\"; \")",
+        "rule": "documents.all(n, documents[n].spec.prefixes.all(p, cidr(p).ip(0).family() == documents[n].spec.family))",
+        "takes": "refuse"
+      }
+    ],
+    "version": "v1alpha1"
+  }
+}

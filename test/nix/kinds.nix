@@ -74,6 +74,21 @@ let
   kubernetesImage = worker [ ];
   # The metal image of a variant without Kubernetes.
   plainImage = (mkImages { variants.worker.kubernetes = false; }).nixos.worker-metal.config;
+  # A router image, and the kinds it adds.
+  routerImage =
+    (mkImages {
+      variants.edge = {
+        kubernetes = false;
+        router = true;
+      };
+    }).nixos.edge-metal.config;
+  routerKinds = [
+    "AddressSet"
+    "FirewallPolicy"
+    "FirewallZone"
+    "NATRule"
+    "Router"
+  ];
   # The installer.
   installer = (mkImages { variants = { }; }).nixos.installer.config;
   hasChalkcfg = packages: lib.any (p: lib.getName p == "chalkcfg") packages;
@@ -546,6 +561,32 @@ lib.runTests {
       "Flannel"
     ] (kindNames plainImage);
     expected = [ ];
+  };
+  # The kinds of router.chalkos.dev exist on router images alone.
+  testRouterKindsOnRouterImagesAlone = {
+    expr = {
+      router = lib.intersectLists routerKinds (kindNames routerImage);
+      kubernetes = lib.intersectLists routerKinds (kindNames kubernetesImage);
+      plain = lib.intersectLists routerKinds (kindNames plainImage);
+    };
+    expected = {
+      router = routerKinds;
+      kubernetes = [ ];
+      plain = [ ];
+    };
+  };
+  # chalkos-render's golden test and the router rules' tests read these fixtures, so they are the
+  # router image's schemas.
+  testRouterSchemasMatchFixtures = {
+    expr = map (
+      kind: routerImage.system.build.chalkosKindSchemas."router.chalkos.dev_v1alpha1_${kind}.json"
+    ) routerKinds;
+    expected = map (
+      kind:
+      builtins.fromJSON (
+        builtins.readFile (../fixtures/kinds/router + "/router.chalkos.dev_v1alpha1_${kind}.json")
+      )
+    ) routerKinds;
   };
   testImageWithoutKubernetesHasRegistryAndMirror = {
     expr = lib.subtractLists (kindNames plainImage) [

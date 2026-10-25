@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "How the router forwards: the families it forwards, its reverse-path filter, how it spreads flows over equal-cost routes, its connection table and the interfaces that reach its node API.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Router"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "conntrackMax": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Connections the router tracks at most, `net.netfilter.nf_conntrack_max`; null keeps the kernel's default, which follows the memory."
+        },
+        "ecmpHash": {
+          "default": "l4",
+          "description": "What the router hashes to pick one of several equal-cost routes for a flow, in both families: the addresses (`l3`), or the addresses, the protocol and the ports (`l4`).",
+          "enum": [
+            "l3",
+            "l4"
+          ]
+        },
+        "forwarding": {
+          "additionalProperties": false,
+          "properties": {
+            "ipv4": {
+              "default": true,
+              "description": "Whether the router forwards IPv4 packets between its interfaces.",
+              "type": "boolean"
+            },
+            "ipv6": {
+              "default": true,
+              "description": "Whether the router forwards IPv6 packets between its interfaces.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "management": {
+          "additionalProperties": false,
+          "properties": {
+            "interfaces": {
+              "anyOf": [
+                {
+                  "items": {
+                    "pattern": "^(?:[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*])$",
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Interfaces, by name or glob, a glob being a prefix followed by `*`, on which the firewall accepts the node API, chalkd's TCP port 50000; null accepts it on every interface.",
+              "examples": [
+                [
+                  "eth0"
+                ]
+              ],
+              "x-chalkos-rules": [
+                {
+                  "description": "A delivery that keeps the management interfaces leaves each one that a running Network's [Match] Name= value names a delivered Network that names it.",
+                  "messageExpression": "cel.bind(was, cel.bind(nets, ((\"networkd.chalkos.dev/v1alpha1\" in oldConfig && \"Network\" in oldConfig[\"networkd.chalkos.dev/v1alpha1\"]) ? oldConfig[\"networkd.chalkos.dev/v1alpha1\"].Network : {}), cel.bind(matches, dyn(nets.map(n, \"match\" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), dyn(matches.map(m, \"name\" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).map(v, string(v)))), cel.bind(gets, cel.bind(nets, ((\"networkd.chalkos.dev/v1alpha1\" in config && \"Network\" in config[\"networkd.chalkos.dev/v1alpha1\"]) ? config[\"networkd.chalkos.dev/v1alpha1\"].Network : {}), cel.bind(matches, dyn(nets.map(n, \"match\" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), dyn(matches.map(m, \"name\" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).map(v, string(v)))), cel.bind(lost, oldSelf.filter(i, i in was && !(i in gets)), \"the config leaves the management interfaces \" + lost.join(\", \") + \" without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery\")))",
+                  "rule": "self != oldSelf || oldSelf == null || cel.bind(was, cel.bind(nets, ((\"networkd.chalkos.dev/v1alpha1\" in oldConfig && \"Network\" in oldConfig[\"networkd.chalkos.dev/v1alpha1\"]) ? oldConfig[\"networkd.chalkos.dev/v1alpha1\"].Network : {}), cel.bind(matches, dyn(nets.map(n, \"match\" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), dyn(matches.map(m, \"name\" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).map(v, string(v)))), cel.bind(gets, cel.bind(nets, ((\"networkd.chalkos.dev/v1alpha1\" in config && \"Network\" in config[\"networkd.chalkos.dev/v1alpha1\"]) ? config[\"networkd.chalkos.dev/v1alpha1\"].Network : {}), cel.bind(matches, dyn(nets.map(n, \"match\" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), dyn(matches.map(m, \"name\" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).map(v, string(v)))), cel.bind(lost, oldSelf.filter(i, i in was && !(i in gets)), size(lost) == 0)))",
+                  "takes": "refuse"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "rpFilter": {
+          "default": "loose",
+          "description": "Reverse-path filter of the packets the router receives, in both families: `strict` drops a packet whose source the router would not route back out of the interface it came in on, `loose` one whose source it has no route to, and `off` drops none. DHCPv4 between ports 67 and 68 passes.",
+          "enum": [
+            "off",
+            "loose",
+            "strict"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Router",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "Router",
+    "multiple": false,
+    "version": "v1alpha1"
+  }
+}

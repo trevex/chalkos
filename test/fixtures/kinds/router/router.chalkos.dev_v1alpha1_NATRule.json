@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "An address translation of the router, which applies whether or not any FirewallPolicy exists: masquerade or source NAT of connections that leave, destination NAT of connections that arrive.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "NATRule"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "family": {
+          "default": "ipv4",
+          "description": "Address family the rule translates.",
+          "enum": [
+            "ipv4",
+            "ipv6"
+          ]
+        },
+        "in": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "interface": {
+                  "anyOf": [
+                    {
+                      "pattern": "^(?:[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*])$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Interface the connections use, by name or glob, a glob being a prefix followed by `*`; excludes `zone`."
+                },
+                "zone": {
+                  "anyOf": [
+                    {
+                      "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "FirewallZone whose interfaces the connections use; excludes `interface`."
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where the connections arrive, for `dnat`."
+        },
+        "match": {
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "default": [],
+              "description": "Destination address ranges of the connections; empty matches every destination.",
+              "items": {
+                "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "destinationPorts": {
+              "default": [],
+              "description": "Destination ports, each a port or a range `<first>-<last>`, with `protocol`; empty matches every port.",
+              "items": {
+                "anyOf": [
+                  {
+                    "maximum": 65535,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "pattern": "^(?:[0-9]{1,5}-[0-9]{1,5})$",
+                    "type": "string"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "protocol": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "tcp",
+                    "udp",
+                    "sctp"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Protocol of the connections; null matches every protocol."
+            },
+            "source": {
+              "default": [],
+              "description": "Source address ranges of the connections; empty matches every source.",
+              "items": {
+                "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "out": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "interface": {
+                  "anyOf": [
+                    {
+                      "pattern": "^(?:[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*])$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Interface the connections use, by name or glob, a glob being a prefix followed by `*`; excludes `zone`."
+                },
+                "zone": {
+                  "anyOf": [
+                    {
+                      "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "FirewallZone whose interfaces the connections use; excludes `interface`."
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where the connections leave, for `masquerade` and `snat`."
+        },
+        "to": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "address": {
+                  "description": "Address the rule translates to.",
+                  "pattern": "^(?:[0-9A-Fa-f:.]+)$",
+                  "type": "string"
+                },
+                "port": {
+                  "anyOf": [
+                    {
+                      "maximum": 65535,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Port the rule translates to, with `match.protocol`; null keeps the port."
+                }
+              },
+              "required": [
+                "address"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What `snat` and `dnat` translate to."
+        },
+        "type": {
+          "description": "`masquerade` translates the source of a leaving connection to the address of the interface it leaves through, `snat` to `to.address`, and `dnat` the destination of an arriving connection to `to.address`.",
+          "enum": [
+            "masquerade",
+            "snat",
+            "dnat"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "NATRule",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "NATRule",
+    "multiple": true,
+    "rules": [
+      {
+        "description": "masquerade and snat name out alone, dnat names in alone.",
+        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, !(s.type == \"dnat\" ? s[\"in\"] != null && s.out == null : s.out != null && s[\"in\"] == null))).map(n, \"NATRule \" + n).join(\", \") + \": a masquerade or snat rule names out alone, a dnat rule in alone\"",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, s.type == \"dnat\" ? s[\"in\"] != null && s.out == null : s.out != null && s[\"in\"] == null))",
+        "takes": "refuse"
+      },
+      {
+        "description": "out and in name a zone or an interface, one of them.",
+        "messageExpression": "documents.filter(n, ![documents[n].spec.out, documents[n].spec[\"in\"]].all(p, p == null || (p.zone == null) != (p.interface == null))).map(n, \"NATRule \" + n).join(\", \") + \": out and in name a zone or an interface, one of them\"",
+        "rule": "documents.all(n, [documents[n].spec.out, documents[n].spec[\"in\"]].all(p, p == null || (p.zone == null) != (p.interface == null)))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A NATRule's zone is a FirewallZone document.",
+        "messageExpression": "cel.bind(zones, ((\"router.chalkos.dev/v1alpha1\" in config && \"FirewallZone\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].FirewallZone : {}), documents.filter(n, ![documents[n].spec.out, documents[n].spec[\"in\"]].all(p, p == null || p.zone == null || p.zone in zones)).map(n, \"NATRule \" + n).join(\", \") + \" names a zone that no FirewallZone document declares\")",
+        "rule": "cel.bind(zones, ((\"router.chalkos.dev/v1alpha1\" in config && \"FirewallZone\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].FirewallZone : {}), documents.all(n, [documents[n].spec.out, documents[n].spec[\"in\"]].all(p, p == null || p.zone == null || p.zone in zones)))",
+        "takes": "refuse"
+      },
+      {
+        "description": "snat and dnat give to, masquerade does not.",
+        "messageExpression": "documents.filter(n, (documents[n].spec.type == \"masquerade\") != (documents[n].spec.to == null)).map(n, \"NATRule \" + n).join(\", \") + \": snat and dnat translate to the address of to, masquerade to that of the interface and has no to\"",
+        "rule": "documents.all(n, (documents[n].spec.type == \"masquerade\") == (documents[n].spec.to == null))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A NATRule's addresses are of its family.",
+        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, !((s.match.source + s.match.destination).all(a, cidr(a).ip(0).family() == s.family) && (s.to == null || ip(s.to.address).family() == s.family)))).map(n, \"NATRule \" + n + \" has addresses of another family than \" + documents[n].spec.family).join(\"; \")",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, (s.match.source + s.match.destination).all(a, cidr(a).ip(0).family() == s.family) && (s.to == null || ip(s.to.address).family() == s.family)))",
+        "takes": "refuse"
+      },
+      {
+        "description": "Ports go with match.protocol.",
+        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, s.match.protocol == null && (size(s.match.destinationPorts) > 0 || s.to != null && s.to.port != null))).map(n, \"NATRule \" + n).join(\", \") + \": ports need match.protocol\"",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, s.match.protocol != null || size(s.match.destinationPorts) == 0 && (s.to == null || s.to.port == null)))",
+        "takes": "refuse"
+      }
+    ],
+    "version": "v1alpha1"
+  }
+}
