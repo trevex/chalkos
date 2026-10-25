@@ -42,7 +42,7 @@ let
         if [[ $line =~ ^(\ neighbor\ peer-[a-z0-9.-]+\ password\ )@(secret_[A-Za-z0-9._-]+)@$ ]]; then
           head=''${BASH_REMATCH[1]}
           name=''${BASH_REMATCH[2]}
-          file=''${CREDENTIALS_DIRECTORY-}/$name
+          file=''${CREDENTIALS_DIRECTORY:?frr.service has no credentials}/$name
           if [[ ! -f $file ]]; then
             echo "frr.conf names the credential $name, which frr.service does not have" >&2
             exit 1
@@ -109,11 +109,12 @@ in
       serviceConfig = {
         ExecStartPre = lib.getExe credentials;
         # A reload loads the credentials again, so a rotated password reaches FRR without a
-        # restart. frr-reload.py logs to the journal.
+        # restart. frr-reload.py logs to the journal, and reads the filled config through
+        # /etc/frr/frr.conf: given another file, it would write the running config over that one.
         RefreshOnReload = "credentials";
         ExecReload = lib.mkForce [
           (lib.getExe credentials)
-          "${frr}/libexec/frr/frr-reload.py --reload --stdout --bindir ${frr}/bin --confdir /etc/frr --rundir /run/frr /run/frr/frr.conf"
+          "${frr}/libexec/frr/frr-reload.py --reload --stdout --bindir ${frr}/bin --confdir /etc/frr --rundir /run/frr /etc/frr/frr.conf"
         ];
       };
     };

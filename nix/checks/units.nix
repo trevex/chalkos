@@ -689,7 +689,7 @@ in
   # without a rendered one. Only a peer group's password line takes a value: a placeholder
   # elsewhere stays as written. A password with a line break, a trailing one too, white space, a
   # NUL or more than 80 characters, and a credential the unit lacks, fail the unit and leave the
-  # filled config as it was.
+  # filled config as it was, as does a fill without a credentials directory.
   frr-credentials =
     let
       fill = checkLib.router.config.systemd.services.frr.serviceConfig.ExecStartPre;
@@ -715,6 +715,9 @@ in
       grep -qx ' neighbor peer-fabric description x password @secret_bgp.fabric@' /run/frr/frr.conf || fail "the fill replaced a placeholder in a description"
       [ "$(find /run/frr -name 'frr.conf.*' | wc -l)" = 0 ] || fail "the fill left a temporary file"
       cp /run/frr/frr.conf good.conf
+      if env -u CREDENTIALS_DIRECTORY ${fill} 2>err; then fail "the fill took a placeholder without credentials"; fi
+      grep -q 'frr.service has no credentials' err || fail "the fill without credentials failed for another reason: $(cat err)"
+      cmp -s good.conf /run/frr/frr.conf || fail "a fill without credentials changed the filled config"
 
       for bad in $'two\nlines' $'trailing\n' 'two words' $'tab\there' "$(printf 'x%.0s' $(seq 81))" ''' 'ünïcode'; do
         printf '%s' "$bad" >credentials/secret_bgp.fabric

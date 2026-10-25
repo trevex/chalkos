@@ -353,6 +353,10 @@ lib.runTests {
         condition = frr.unitConfig.ConditionPathIsDirectory;
         reload = lib.length frr.serviceConfig.ExecReload;
         fillsAlike = frr.serviceConfig.ExecStartPre == lib.head frr.serviceConfig.ExecReload;
+        # frr-reload.py writes the running config over any other file than confdir's frr.conf.
+        reloadsLink = lib.hasSuffix " --confdir /etc/frr --rundir /run/frr /etc/frr/frr.conf" (
+          lib.last frr.serviceConfig.ExecReload
+        );
         refresh = frr.serviceConfig.RefreshOnReload;
         vtysh = lib.any (p: lib.getName p == "frr") edge.systemd.services.chalkd.path;
         networkd = edge.systemd.network.config.networkConfig;
@@ -387,6 +391,7 @@ lib.runTests {
       condition = "/run/chalkos/credentials/frr";
       reload = 2;
       fillsAlike = true;
+      reloadsLink = true;
       refresh = "credentials";
       vtysh = true;
       networkd = {
