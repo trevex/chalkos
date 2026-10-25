@@ -49,4 +49,4 @@ chalkctl node diag w1 tcp-connect address=2001:db8::5000 port=443
 
 ## See also
 
-- [chalkctl node](chalkctl_node.md): Manage a node's access and run its diagnostics
+- [chalkctl node](chalkctl_node.md): Manage a node's access and show its diagnostics and routes

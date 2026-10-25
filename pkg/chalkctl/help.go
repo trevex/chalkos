@@ -51,14 +51,16 @@ const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
   chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
     --out - --public-out secrets.pub.json | pass insert --multiline chalkos/secrets`
 
-const nodeLong = `Manages a node's access to the cluster and runs its diagnostics: renews its node certificate,
-revokes and unrevokes it by name, and lists and runs the diagnostics its image declares. node renew
-needs the secrets file; node revoke and node unrevoke need an admin client file or the secrets
-file; node diag needs a reader client file or the secrets file.`
+const nodeLong = `Manages a node's access to the cluster and shows its state: renews its node certificate, revokes
+and unrevokes it by name, lists and runs the diagnostics its image declares, and shows a router's
+routes. node renew needs the secrets file; node revoke and node unrevoke need an admin client
+file or the secrets file; node diag and node routes need a reader client file or the secrets
+file.`
 
 const nodeExample = `  chalkctl node renew w1
   chalkctl node revoke w1
-  chalkctl node diag w1 route-get address=2001:db8::1`
+  chalkctl node diag w1 route-get address=2001:db8::1
+  chalkctl node routes r1 ::/0`
 
 const nodeDiagLong = `Lists the diagnostics a node's image declares, or runs one. A diagnostic is a read-only command of
 the image, such as ip route get, that chalkd runs on the node in a sandbox of its own. Without a
@@ -72,6 +74,22 @@ Every image declares addresses, links, routes, route-get, neighbours, ping, dns-
 tcp-connect and nft-ruleset; layers and extensions add more. Listing needs a reader client file
 or the secrets file, and running a diagnostic the role it lists. A node in maintenance mode is
 reached with --fingerprint or --insecure as well.`
+
+const nodeRoutesLong = `Shows the routes of a node of a router image: the routes in its kernel, of the main table unless
+--table names another or all, and the paths its BGP instance selected, the best of a prefix
+marked *. With a prefix, it shows the routes to that range and to ranges within it; with
+--protocol, the kernel's routes of that protocol alone, and BGP's paths only for bgp. A node of
+another image answers that the router layer is not in its image. The command needs a reader
+client file or the secrets file.`
+
+const nodeRoutesExample = `  # Every route of r1's main table and BGP's paths.
+  chalkctl node routes r1
+
+  # The default route, in the kernel and in BGP.
+  chalkctl node routes r1 ::/0
+
+  # The routes zebra installed from BGP in every table.
+  chalkctl node routes r1 --protocol bgp --table all`
 
 const nodeDiagExample = `  # List w1's diagnostics.
   chalkctl node diag w1
@@ -309,8 +327,9 @@ was built from as far as the node knows them, the boot entry and whether that bo
 healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled back,
 with the journal of the boot that failed; whether its store is the image the inventory names for
 it; its volumes and their state; Kubernetes, with the nodes revoked in the cluster on a control
-plane; the certificates it serves and when they expire; the CAs it trusts; its clock; and the
-units that failed. The command needs a reader client file or the secrets file.`
+plane; a router's BGP sessions; the certificates it serves and when they expire; the CAs it
+trusts; its clock; and the units that failed. The command needs a reader client file or the
+secrets file.`
 
 const statusExample = `  chalkctl status cp1
 

@@ -15,8 +15,9 @@ was built from as far as the node knows them, the boot entry and whether that bo
 healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled back,
 with the journal of the boot that failed; whether its store is the image the inventory names for
 it; its volumes and their state; Kubernetes, with the nodes revoked in the cluster on a control
-plane; the certificates it serves and when they expire; the CAs it trusts; its clock; and the
-units that failed. The command needs a reader client file or the secrets file.
+plane; a router's BGP sessions; the certificates it serves and when they expire; the CAs it
+trusts; its clock; and the units that failed. The command needs a reader client file or the
+secrets file.
 
 ## Flags
 

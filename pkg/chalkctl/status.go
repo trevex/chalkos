@@ -99,6 +99,11 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 			return err
 		}
 	}
+	if r := s.Router; r != nil {
+		if err := a.routerStatus(r); err != nil {
+			return err
+		}
+	}
 	if len(s.Certificates) > 0 {
 		fmt.Fprintln(a.stdout, "certificates:")
 		w := a.table()
@@ -126,6 +131,29 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 		fmt.Fprintf(a.stdout, "failed unit %s\n", u)
 	}
 	return nil
+}
+
+// routerStatus prints a router's BGP sessions, or why their state is unknown.
+func (a *app) routerStatus(r *nodev1.RouterStatus) error {
+	switch {
+	case r.BgpError != "":
+		fmt.Fprintf(a.stdout, "bgp: unknown: %s\n", r.BgpError)
+		return nil
+	case len(r.Peers) == 0:
+		fmt.Fprintln(a.stdout, "bgp: no sessions")
+		return nil
+	}
+	fmt.Fprintln(a.stdout, "bgp:")
+	w := a.table()
+	fmt.Fprintln(w, "  PEER\tNEIGHBOR\tSTATE\tUPTIME\tRECEIVED\tSENT\tBFD")
+	for _, p := range r.Peers {
+		uptime := "-"
+		if p.State == "Established" {
+			uptime = (time.Duration(p.UptimeSeconds) * time.Second).String()
+		}
+		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%d\t%d\t%s\n", p.Name, p.Neighbor, p.State, uptime, p.PrefixesReceived, p.PrefixesSent, cmp.Or(p.Bfd, "-"))
+	}
+	return w.Flush()
 }
 
 // bootLines are the status lines of the node's boot: the image it runs, an upgrade it boots next,
