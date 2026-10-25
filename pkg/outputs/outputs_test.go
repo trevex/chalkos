@@ -343,8 +343,9 @@ func TestRenderTimeout(t *testing.T) {
 }
 
 // A renderer runs as the unprivileged user, without capabilities or devices and with STATE, /var,
-// and chalkd's config, credentials and Kubernetes keys hidden; it may write $OUT alone, and a
-// check may write nothing. systemd stops it at its timeout.
+// and chalkd's config, credentials and Kubernetes keys hidden; it may write $OUT alone and open
+// Unix sockets alone. A check may write nothing, and may open netlink sockets too. systemd stops
+// either at its timeout.
 func TestSandboxArgs(t *testing.T) {
 	p := Program{Argv: []string{"/nix/store/x/bin/r", "a"}, Out: "/run/chalkos/outputs/.staging/demo.1", Write: true, Timeout: 30 * time.Second}
 	args := strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in"), "\n")
@@ -360,6 +361,7 @@ func TestSandboxArgs(t *testing.T) {
 		"--property=TimeoutStartSec=30000ms",
 		"--property=ReadWritePaths=/run/chalkos/outputs/.staging/demo.1",
 		"--property=StandardInput=file:/in",
+		"--property=RestrictAddressFamilies=AF_UNIX",
 		"--\n/nix/store/x/bin/r\na",
 	} {
 		if !strings.Contains(args+"\n", want+"\n") {
@@ -367,7 +369,12 @@ func TestSandboxArgs(t *testing.T) {
 		}
 	}
 	p.Write = false
-	if args := strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in"), "\n"); strings.Contains(args, "ReadWritePaths") {
+	args = strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in"), "\n")
+	if strings.Contains(args, "ReadWritePaths") {
 		t.Errorf("a check may write:\n%s", args)
+	}
+	// A check talks netlink, as nft --check does; a renderer does not.
+	if !strings.Contains(args+"\n", "--property=RestrictAddressFamilies=AF_UNIX AF_NETLINK\n") {
+		t.Errorf("a check may not talk netlink:\n%s", args)
 	}
 }

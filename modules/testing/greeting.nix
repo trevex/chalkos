@@ -5,8 +5,8 @@
 # chalkd restarts the unit when the output changes, the token's Secret among it. The Greeting's
 # rules, which the image's rules check compiles, refuse a message too long for one log line, and
 # a new message while the fact greetingLock, a file no test writes, holds one; the output's check
-# refuses a message of more than one line and fails outside an unprivileged sandbox, and the build
-# renders its examples.
+# refuses a message of more than one line, fails outside an unprivileged sandbox and checks an
+# nftables table in a user and network namespace of its own, and the build renders its examples.
 {
   config,
   lib,
@@ -53,6 +53,9 @@
       [ "$(id -u)" -ne 0 ]
       grep -q '^CapEff:[[:space:]]*0*$' /proc/self/status
       [ ! -e /state/chalkd ]
+      # A check may talk netlink in a user and network namespace of its own, as the router's
+      # nft --check does.
+      echo 'table inet greeting { }' | ${pkgs.util-linux}/bin/unshare --map-root-user --net ${pkgs.nftables}/bin/nft --check --file -
     '';
     examples = ./greeting-examples;
   };

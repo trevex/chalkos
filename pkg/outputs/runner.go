@@ -62,7 +62,8 @@ const RenderUser = "chalkos-render"
 // Sandbox runs programs as oneshot transient units that write standard error to the journal, in a
 // sandbox of their own: as RenderUser without capabilities, devices or network, on a read-only
 // system without STATE, /var, or the config, credentials and Kubernetes keys chalkd writes below
-// /run/chalkos, so a program reads no Secret's value; a renderer may write $OUT alone.
+// /run/chalkos, so a program reads no Secret's value; a renderer may write $OUT alone, and a check
+// may open netlink sockets besides Unix ones.
 // chalkos-config renders before sysinit.target, where the system bus does not run yet, so
 // systemd-run reaches the manager on its private socket, on which it cannot follow a unit as
 // --wait and --pipe do: the start job of a oneshot unit finishes when the program exits, the
@@ -98,7 +99,6 @@ var sandbox = []string{
 	"--property=ProtectKernelModules=yes",
 	"--property=ProtectKernelLogs=yes",
 	"--property=ProtectControlGroups=yes",
-	"--property=RestrictAddressFamilies=AF_UNIX",
 	"--property=InaccessiblePaths=-/state -/var -/run/chalkos/config -/run/chalkos/credentials -/run/chalkos/kubernetes",
 	"--property=DefaultDependencies=no",
 }
@@ -115,7 +115,11 @@ func sandboxArgs(unit string, p Program, input string) []string {
 		"--property=StandardError=journal",
 	)
 	if p.Write {
-		args = append(args, "--property=ReadWritePaths="+p.Out)
+		args = append(args, "--property=ReadWritePaths="+p.Out, "--property=RestrictAddressFamilies=AF_UNIX")
+	} else {
+		// A check may also talk netlink, which reaches the network namespace PrivateNetwork gives
+		// it or one of its own, so nft --check can take a ruleset to the kernel.
+		args = append(args, "--property=RestrictAddressFamilies=AF_UNIX AF_NETLINK")
 	}
 	return append(append(args, "--"), p.Argv...)
 }

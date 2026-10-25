@@ -88,9 +88,11 @@ let
           description = ''
             Shell commands, run by bash with `set -e` in the renderer's sandbox, with coreutils, grep
             and sed on the `PATH`, that check the rendered files in `$OUT`; they read the renderer's
-            input on standard input and may not write `$OUT`. The files are as the renderer wrote
-            them, before they get the output's owner and mode. A failure refuses the delivery
-            before it changes anything, and at boot fails `chalkos-config.service`.
+            input on standard input and may not write `$OUT`. Unlike the renderer they may open
+            netlink sockets, so `unshare --map-root-user --net nft --check --file "$OUT/…"` checks
+            an nftables ruleset in a user and network namespace of its own. The files are as the
+            renderer wrote them, before they get the output's owner and mode. A failure refuses
+            the delivery before it changes anything, and at boot fails `chalkos-config.service`.
           '';
         };
         examples = lib.mkOption {
