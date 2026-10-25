@@ -54,10 +54,10 @@ let
       rule = "cel.bind(sets, ${delivered "AddressSet"}, self.all(r, cel.bind(src, ${setOf "r.source"}, cel.bind(dst, ${setOf "r.destination"}, ${ok}))))";
     };
   # Whether the address list l, whose AddressSet is s, leaves the family f: it is empty, s is an
-  # AddressSet of f, or l holds a range of f.
+  # AddressSet of f or one the config lacks, which has its own rule, or l holds a range of f.
   leaves =
     l: s: f:
-    ''(size(${l}) == 0 || (${s} != "" ? ${s} in sets && sets[${s}].spec.family == "${f}" : ${l}.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "${f}")))'';
+    ''(size(${l}) == 0 || (${s} != "" ? !(${s} in sets) || sets[${s}].spec.family == "${f}" :${l}.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "${f}")))'';
   # Whether the firewall rule r matches connections of the family f: its family, its protocol and
   # both of its address lists leave f.
   matchesFamily =
@@ -72,19 +72,27 @@ let
     l: s:
     ''(${s} != "" ? !(${s} in sets) || sets[${s}].spec.family == r.family : ${l}.all(a, a.startsWith("set:") || cidr(a).ip(0).family() == r.family))'';
 
-  # The values of Name= in the [Match] sections of the Network documents of the config c, as
-  # written.
+  # The names and globs of Name= in the [Match] sections of the Network documents of the config c,
+  # each value, or each of a list, as one string between spaces: systemd splits a value at spaces
+  # and tabs. A list of names would cost a loop more than a string.
   matchNames =
     c:
     let
       networks = cel.documents c apiVersions.networkd "Network";
     in
-    ''cel.bind(nets, ${networks}, cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? ${cel.oneOrMany "nets[n].spec.match"} : []).flatten()), dyn(matches.map(m, "name" in m ? ${cel.oneOrMany "m.name"} : []).flatten()).map(v, string(v))))'';
-  # The running management interfaces, oldSelf, that a running Network document matches and no
-  # delivered one does, bound to lost around expr.
+    ''cel.bind(nets, ${networks}, cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? ${cel.oneOrMany "nets[n].spec.match"} : []).flatten()), " " + dyn(matches.map(m, "name" in m ? ${cel.oneOrMany "m.name"} : []).flatten()).join(" ").replace("\t", " ") + " "))'';
+  # Whether the names s, from matchNames, name the management interface i: they hold i, a name
+  # that the glob i's prefix starts, or a glob whose prefix starts i, which globs, the alternatives
+  # of a regular expression, matches.
+  names =
+    s:
+    ''(${s}.contains(" " + i + " ") || i.endsWith("*") && ${s}.contains(" " + i.substring(0, size(i) - 1)) || ${s}.matches(" (" + globs + ")[*] "))'';
+  # The running management interfaces, oldSelf, that a running Network document names and no
+  # delivered one does, bound to lost around expr. globs holds the prefixes of i's name, empty
+  # included, with dots escaped.
   bindLost =
     expr:
-    "cel.bind(was, ${matchNames "oldConfig"}, cel.bind(gets, ${matchNames "config"}, cel.bind(lost, oldSelf.filter(i, i in was && !(i in gets)), ${expr})))";
+    ''cel.bind(was, ${matchNames "oldConfig"}, cel.bind(gets, ${matchNames "config"}, cel.bind(lost, oldSelf.filter(i, cel.bind(globs, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].filter(k, k < size(i)).map(k, i.substring(0, k).replace(".", "[.]")).join("|"), ${names "was"} && !${names "gets"})), ${expr})))'';
 
   # Where a NAT rule's connections come in or go out: a zone or an interface.
   place = types.submodule {
@@ -227,7 +235,7 @@ in
             # through cuts the operator off, unless it moves the node API too.
             rules = [
               {
-                description = "A delivery that keeps the management interfaces leaves each one that a running Network's [Match] Name= value names a delivered Network that names it.";
+                description = "A delivery that keeps the management interfaces keeps a Network naming each management interface that a running Network names, in a [Match] section's Name=; a glob names every interface its prefix starts.";
                 rule = "self != oldSelf || oldSelf == null || ${bindLost "size(lost) == 0"}";
                 messageExpression = bindLost ''"the config leaves the management interfaces " + lost.join(", ") + " without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery"'';
               }
@@ -449,7 +457,7 @@ in
                     description = "Address the rule translates to.";
                   };
                   port = mkOption {
-                    type = types.nullOr types.port;
+                    type = types.nullOr (types.ints.between 1 65535);
                     default = null;
                     description = "Port the rule translates to, with `match.protocol`; null keeps the port.";
                   };

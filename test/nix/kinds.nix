@@ -262,18 +262,19 @@ lib.runTests {
       maximum = 65535;
     };
   };
-  # A port or a range of ports, as the router kinds take them: a number, or "<first>-<last>".
+  # A port or a range of ports, as the router kinds take them: a number, or "<first>-<last>", from
+  # port 1.
   testPortRange = {
     expr = propOf kindTypes.portRange;
     expected.anyOf = [
       {
         type = "integer";
-        minimum = 0;
+        minimum = 1;
         maximum = 65535;
       }
       {
         type = "string";
-        pattern = "^(?:[0-9]{1,5}-[0-9]{1,5})$";
+        pattern = "^(?:[1-9][0-9]{0,4}-[1-9][0-9]{0,4})$";
       }
     ];
   };
@@ -587,6 +588,16 @@ lib.runTests {
         builtins.readFile (../fixtures/kinds/router + "/router.chalkos.dev_v1alpha1_${kind}.json")
       )
     ) routerKinds;
+  };
+  # A NAT rule translates to a port from 1, as nftables takes it.
+  testNATRulePortFromOne = {
+    expr =
+      (builtins.head
+        (builtins.head
+          routerImage.system.build.chalkosKindSchemas."router.chalkos.dev_v1alpha1_NATRule.json".properties.spec.properties.to.anyOf
+        ).properties.port.anyOf
+      ).minimum;
+    expected = 1;
   };
   testImageWithoutKubernetesHasRegistryAndMirror = {
     expr = lib.subtractLists (kindNames plainImage) [

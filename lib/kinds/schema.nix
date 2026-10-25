@@ -120,12 +120,12 @@ let
         anyOf = [
           {
             type = "integer";
-            minimum = 0;
+            minimum = 1;
             maximum = 65535;
           }
           {
             type = "string";
-            pattern = "^(?:[0-9]{1,5}-[0-9]{1,5})$";
+            pattern = "^(?:[1-9][0-9]{0,4}-[1-9][0-9]{0,4})$";
           }
         ];
       }

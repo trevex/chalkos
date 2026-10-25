@@ -80,11 +80,11 @@
                   "anyOf": [
                     {
                       "maximum": 65535,
-                      "minimum": 0,
+                      "minimum": 1,
                       "type": "integer"
                     },
                     {
-                      "pattern": "^(?:[0-9]{1,5}-[0-9]{1,5})$",
+                      "pattern": "^(?:[1-9][0-9]{0,4}-[1-9][0-9]{0,4})$",
                       "type": "string"
                     }
                   ]
@@ -173,11 +173,11 @@
                   "anyOf": [
                     {
                       "maximum": 65535,
-                      "minimum": 0,
+                      "minimum": 1,
                       "type": "integer"
                     },
                     {
-                      "pattern": "^(?:[0-9]{1,5}-[0-9]{1,5})$",
+                      "pattern": "^(?:[1-9][0-9]{0,4}-[1-9][0-9]{0,4})$",
                       "type": "string"
                     }
                   ]
@@ -213,7 +213,7 @@
             {
               "description": "A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one.",
               "message": "a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6",
-              "rule": "cel.bind(sets, ((\"router.chalkos.dev/v1alpha1\" in config && \"AddressSet\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith(\"set:\") ? r.source[0].substring(4) : \"\"), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith(\"set:\") ? r.destination[0].substring(4) : \"\"), ((r.family == null || r.family == \"ipv4\") && r.protocol != \"icmpv6\" && (size(r.source) == 0 || (src != \"\" ? src in sets && sets[src].spec.family == \"ipv4\" : r.source.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv4\"))) && (size(r.destination) == 0 || (dst != \"\" ? dst in sets && sets[dst].spec.family == \"ipv4\" : r.destination.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv4\")))) || ((r.family == null || r.family == \"ipv6\") && r.protocol != \"icmp\" && (size(r.source) == 0 || (src != \"\" ? src in sets && sets[src].spec.family == \"ipv6\" : r.source.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv6\"))) && (size(r.destination) == 0 || (dst != \"\" ? dst in sets && sets[dst].spec.family == \"ipv6\" : r.destination.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv6\"))))))))",
+              "rule": "cel.bind(sets, ((\"router.chalkos.dev/v1alpha1\" in config && \"AddressSet\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith(\"set:\") ? r.source[0].substring(4) : \"\"), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith(\"set:\") ? r.destination[0].substring(4) : \"\"), ((r.family == null || r.family == \"ipv4\") && r.protocol != \"icmpv6\" && (size(r.source) == 0 || (src != \"\" ? !(src in sets) || sets[src].spec.family == \"ipv4\" :r.source.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv4\"))) && (size(r.destination) == 0 || (dst != \"\" ? !(dst in sets) || sets[dst].spec.family == \"ipv4\" :r.destination.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv4\")))) || ((r.family == null || r.family == \"ipv6\") && r.protocol != \"icmp\" && (size(r.source) == 0 || (src != \"\" ? !(src in sets) || sets[src].spec.family == \"ipv6\" :r.source.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv6\"))) && (size(r.destination) == 0 || (dst != \"\" ? !(dst in sets) || sets[dst].spec.family == \"ipv6\" :r.destination.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv6\"))))))))",
               "takes": "refuse"
             },
             {

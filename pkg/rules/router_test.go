@@ -88,8 +88,19 @@ func TestRouterRules(t *testing.T) {
 		{"a set beside ranges", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"source": ["set:office", "2001:db8:2::/48"], "action": "accept"}]}`)),
 			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule's source or destination holds set:<name> beside other entries; a set stands alone, so give the other ranges a rule of their own or add them to the set`}},
 		{"a set the config lacks", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"destination": ["set:servers"], "action": "accept"}]}`)),
-			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule names an AddressSet that the config does not hold`,
-				`FirewallPolicy "fabric-wan" spec.rules: a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6`}},
+			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule names an AddressSet that the config does not hold`}},
+		{"a set of one family and addresses of the other", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"source": ["set:office"], "destination": ["192.0.2.0/24"], "action": "accept"}]}`)),
+			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6`}},
+		{"ICMP types without a protocol", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"icmpTypes": ["echo-request"], "action": "accept"}]}`)),
+			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule has ports without the protocol tcp, udp or sctp, or ICMP types its protocol lacks`}},
+		{"an interface twice in one zone", replace(edge, doc("FirewallZone", "fabric", `{"interfaces": ["eth1", "eth1"]}`)),
+			[]string{"the interface eth1 is in more than one FirewallZone, or twice in one; give each interface one zone"}},
+		{"dnat with out", replace(edge, doc("NATRule", "web", `{"type": "dnat", "in": {"interface": "eth0"}, "out": {"interface": "eth1"}, "to": {"address": "192.0.2.10"}}`)),
+			[]string{"NATRule web: a masquerade or snat rule names out alone, a dnat rule in alone"}},
+		{"an empty place", replace(edge, doc("NATRule", "wan", `{"type": "masquerade", "out": {}}`)),
+			[]string{"NATRule wan: out and in name a zone or an interface, one of them"}},
+		{"masquerade with to", replace(edge, doc("NATRule", "wan", `{"type": "masquerade", "out": {"zone": "wan"}, "to": {"address": "192.0.2.1"}}`)),
+			[]string{"NATRule wan: snat and dnat translate to the address of to, masquerade to that of the interface and has no to"}},
 		{"a family and addresses of the other", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"family": "ipv4", "source": ["set:office"], "action": "accept"}]}`)),
 			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule has addresses or a set of another family than its own`,
 				`FirewallPolicy "fabric-wan" spec.rules: a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6`}},
@@ -125,8 +136,10 @@ func TestRouterRules(t *testing.T) {
 }
 
 // A delivery that keeps the management interfaces keeps a Network for each one a running Network
-// matches. One that renames the Network, keeps another that matches, or changes the management
-// interfaces passes, and so does a router whose node API answers on every interface.
+// names, whether by a name of a list or of a value of several, or by a glob either way. One that
+// renames the Network, keeps another that matches, or changes the management interfaces passes,
+// and so does a router whose node API answers on every interface, a first delivery and one
+// without a Router.
 func TestManagementGuard(t *testing.T) {
 	set, doc := routerRules(t)
 	router := func(mgmt string) config.Document {
@@ -138,23 +151,45 @@ func TestManagementGuard(t *testing.T) {
 		network(t, "20-mgmt", `[{"name": ["mgmt*", "eth9"]}]`),
 		network(t, "30-eth1", `{"name": "eth1"}`),
 	}
+	lost := func(names string) []string {
+		return []string{`Router "router" spec.management.interfaces: the config leaves the management interfaces ` + names + ` without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery`}
+	}
 	for _, tc := range []struct {
 		name string
+		old  []config.Document
 		docs []config.Document
 		want []string
 	}{
-		{"unchanged", running, nil},
-		{"another interface's Network removed", running[:3], nil},
-		{"the Network renamed", []config.Document{running[0], network(t, "11-eth0", `{"name": "eth0"}`), running[2], running[3]}, nil},
-		{"the management Network removed", []config.Document{running[0], running[2], running[3]},
-			[]string{`Router "router" spec.management.interfaces: the config leaves the management interfaces eth0 without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery`}},
-		{"both removed", []config.Document{running[0], running[3]},
-			[]string{`Router "router" spec.management.interfaces: the config leaves the management interfaces eth0, mgmt* without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery`}},
-		{"the management interfaces changed too", []config.Document{router(`["eth1"]`), running[3]}, nil},
-		{"the node API on every interface", []config.Document{router(`null`), running[3]}, nil},
+		{"unchanged", running, running, nil},
+		{"another interface's Network removed", running, running[:3], nil},
+		{"the Network renamed", running, []config.Document{running[0], network(t, "11-eth0", `{"name": "eth0"}`), running[2], running[3]}, nil},
+		{"the management Network removed", running, []config.Document{running[0], running[2], running[3]}, lost("eth0")},
+		{"both removed", running, []config.Document{running[0], running[3]}, lost("eth0, mgmt*")},
+		{"the management interfaces changed too", running, []config.Document{router(`["eth1"]`), running[3]}, nil},
+		{"the node API on every interface", running, []config.Document{router(`null`), running[3]}, nil},
+		{"the Router removed", running, running[1:], nil},
+		{"a first delivery", nil, []config.Document{running[0]}, nil},
+		{"a Network of several names removed",
+			[]config.Document{router(`["eth0"]`), network(t, "10-uplinks", `{"name": " eth0  eth9"}`)},
+			[]config.Document{router(`["eth0"]`)}, lost("eth0")},
+		{"a Network of several names kept",
+			[]config.Document{router(`["eth0"]`), network(t, "10-eth0", `{"name": "eth0"}`)},
+			[]config.Document{router(`["eth0"]`), network(t, "10-uplinks", `{"name": "eth9\teth0"}`)}, nil},
+		{"a Network the management glob matches removed",
+			[]config.Document{router(`["eth*"]`), network(t, "10-eth0", `{"name": "eth0"}`)},
+			[]config.Document{router(`["eth*"]`)}, lost("eth*")},
+		{"a Network whose glob matches the interface removed",
+			[]config.Document{router(`["eth0"]`), network(t, "10-e", `{"name": "e*"}`)},
+			[]config.Document{router(`["eth0"]`)}, lost("eth0")},
+		{"a Network replaced by a glob that matches it",
+			[]config.Document{router(`["eth0"]`), network(t, "10-eth0", `{"name": "eth0"}`)},
+			[]config.Document{router(`["eth0"]`), network(t, "10-eth", `{"name": "eth*"}`)}, nil},
+		{"a Network of another interface's glob removed",
+			[]config.Document{router(`["eth0"]`), network(t, "10-en", `{"name": "en*"}`)},
+			[]config.Document{router(`["eth0"]`)}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: tc.docs, Old: running, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: tc.docs, Old: tc.old, Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}

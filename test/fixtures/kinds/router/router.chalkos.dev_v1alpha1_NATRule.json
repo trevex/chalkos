@@ -93,11 +93,11 @@
                 "anyOf": [
                   {
                     "maximum": 65535,
-                    "minimum": 0,
+                    "minimum": 1,
                     "type": "integer"
                   },
                   {
-                    "pattern": "^(?:[0-9]{1,5}-[0-9]{1,5})$",
+                    "pattern": "^(?:[1-9][0-9]{0,4}-[1-9][0-9]{0,4})$",
                     "type": "string"
                   }
                 ]
@@ -187,7 +187,7 @@
                   "anyOf": [
                     {
                       "maximum": 65535,
-                      "minimum": 0,
+                      "minimum": 1,
                       "type": "integer"
                     },
                     {
