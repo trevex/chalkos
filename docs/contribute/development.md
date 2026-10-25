@@ -97,6 +97,7 @@ it exposes as packages. The repository's own flake exposes its test images, whic
 | `test-installer` | The test images' installer. |
 | `test-kubernetes-image` | The `k8s` variant on `kvm`, which the Kubernetes test's control plane and worker boot. |
 | `test-kubernetes-ha-image` | The `k8s` variant on `metal`, which the HA test's control planes boot. |
+| `test-router-image` | The `router` variant on `kvm`, which the router test's routers boot. |
 | `test-upgrade-image`, `test-unhealthy-image`, `test-kubernetes-ha-upgrade-image` | Images the upgrade tests install. |
 | `installer` | An installer of a cluster without an OS CA, which accepts any client until it installs a node. |
 
