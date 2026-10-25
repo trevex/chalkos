@@ -3,6 +3,7 @@ package diagnostics
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/netip"
 	"regexp"
 	"slices"
@@ -123,4 +124,72 @@ func (p Parameter) bounds() string {
 	default:
 		return fmt.Sprintf("at most %d", *p.Max)
 	}
+}
+
+// Argv checks a call's arguments, by parameter name, and returns the command line to run. Each
+// placeholder becomes its argument, in the form its type gives it, or the parameter's default. An
+// argument of the command that names an optional parameter the call leaves out is dropped.
+func (d Definition) Argv(args map[string]string) ([]string, error) {
+	for _, name := range slices.Sorted(maps.Keys(args)) {
+		if _, ok := d.Parameters[name]; !ok {
+			return nil, fmt.Errorf("it has no parameter %s; %s", name, d.takes())
+		}
+	}
+	values := map[string]string{}
+	for _, name := range d.ParameterNames() {
+		p := d.Parameters[name]
+		v, given := args[name]
+		switch {
+		case !given && p.Default != "":
+			v = p.Default
+		case !given && p.Optional:
+			continue
+		case !given:
+			return nil, fmt.Errorf("it needs %s=<%s>", name, p.Type)
+		}
+		v, err := p.value(v)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		values[name] = v
+	}
+	argv := []string{d.Command[0]}
+	for _, arg := range d.Command[1:] {
+		dropped := false
+		filled := placeholder.ReplaceAllStringFunc(arg, func(m string) string {
+			v, ok := values[m[1:len(m)-1]]
+			dropped = dropped || !ok
+			return v
+		})
+		if !dropped {
+			argv = append(argv, filled)
+		}
+	}
+	return argv, nil
+}
+
+// ParameterNames are the parameters a call must give, then the others, each in the order the
+// command first names them.
+func (d Definition) ParameterNames() []string {
+	var required, others []string
+	for _, name := range d.named() {
+		p, ok := d.Parameters[name]
+		switch {
+		case !ok:
+		case p.Required():
+			required = append(required, name)
+		default:
+			others = append(others, name)
+		}
+	}
+	return append(required, others...)
+}
+
+// takes names the parameters a call may give.
+func (d Definition) takes() string {
+	names := d.ParameterNames()
+	if len(names) == 0 {
+		return "it takes none"
+	}
+	return "it takes " + strings.Join(names, ", ")
 }
