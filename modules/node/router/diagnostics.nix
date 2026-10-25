@@ -14,6 +14,8 @@
       command = [
         "${pkgs.traceroute}/bin/traceroute"
         "-n"
+        "-m"
+        "30"
         "-q"
         "1"
         "-w"
@@ -24,6 +26,8 @@
         type = "address";
         description = "IPv4 or IPv6 address.";
       };
+      # It sends traffic.
+      role = "operator";
       timeout = "90s";
     };
   };

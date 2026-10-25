@@ -302,11 +302,22 @@ lib.runTests {
       edge = layered.edge-metal.config.chalkos.diagnostics ? traceroute;
       plain = layered.plain-metal.config.chalkos.diagnostics ? traceroute;
       role = layered.edge-metal.config.chalkos.diagnostics.traceroute.role or null;
+      arguments = lib.tail (layered.edge-metal.config.chalkos.diagnostics.traceroute.command or [ null ]);
     };
     expected = {
       edge = true;
       plain = false;
       role = "operator";
+      arguments = [
+        "-n"
+        "-m"
+        "30"
+        "-q"
+        "1"
+        "-w"
+        "2"
+        "{address}"
+      ];
     };
   };
   # Forwarding belongs to the base: both layers turn it on, an image of the base alone forwards
