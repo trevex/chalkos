@@ -10,6 +10,7 @@
     ./chalkd.nix
     ./time.nix
     ./cni.nix
+    ./network.nix
     ./layers.nix
     ./kubernetes
     ./router

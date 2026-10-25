@@ -47,7 +47,7 @@ func TestWriteOptions(t *testing.T) {
 				"\n## Kubernetes and CNI { #kubernetes-and-cni }\n\n",
 				"\n### `chalkos.kubernetes.enable` { #chalkoskubernetesenable }\n",
 				"\n### `chalkos.cni.provider` { #chalkoscniprovider }\n",
-				"\n## Router { #router }\n\n",
+				"\n## Router and forwarding { #router-and-forwarding }\n\n",
 				"\n### `chalkos.router.enable` { #chalkosrouterenable }\n",
 				"\n## Upgrade and health { #upgrade-and-health }\n\n",
 				"\n## Debug and maintenance { #debug-and-maintenance }\n\n",

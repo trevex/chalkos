@@ -136,9 +136,9 @@ VXLAN, configured by the node's Flannel document; `none` installs no network, fo
 clusters whose Addon documents bring their own, and ships every CNI reference plugin
 (see `chalkos.cni.plugins`).
 
-## Router { #router }
+## Router and forwarding { #router-and-forwarding }
 
-Whether an image carries the router layer.
+Whether an image carries the router layer, and whether its node forwards packets between its interfaces.
 
 ### `chalkos.router.enable` { #chalkosrouterenable }
 
@@ -147,6 +147,14 @@ Type: boolean · Default: `false` · Declared in: [modules/node/router/default.n
 Whether the image carries the router layer, which forwards IPv4 and IPv6 packets between
 the node's interfaces. An image carries the Kubernetes layer or the router layer, not both.
 mkImages sets it from the variant's `router`; the installer carries no layer.
+
+### `chalkos.forwarding.enable` { #chalkosforwardingenable }
+
+Type: boolean · Default: `false` · Declared in: [modules/node/network.nix](https://github.com/trevex/chalkos/blob/main/modules/node/network.nix)
+
+Whether the node forwards IPv4 and IPv6 packets between its interfaces, as a Kubernetes node
+does for its pods and a router for its networks. The Kubernetes and the router layer turn it
+on.
 
 ## Upgrade and health { #upgrade-and-health }
 

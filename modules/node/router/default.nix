@@ -13,5 +13,6 @@
 
   config = lib.mkIf config.chalkos.router.enable {
     chalkos.layers.router = "";
+    chalkos.forwarding.enable = true;
   };
 }

@@ -180,6 +180,46 @@ lib.runTests {
       edge = false;
     };
   };
+  # Forwarding belongs to the base: both layers turn it on, an image of the base alone forwards
+  # only when its modules ask for it.
+  testForwarding = {
+    expr =
+      let
+        forwarding =
+          c:
+          lib.filterAttrs (
+            k: _:
+            lib.elem k [
+              "net.ipv4.ip_forward"
+              "net.ipv6.conf.all.forwarding"
+            ]
+          ) c.boot.kernel.sysctl;
+        plainForwarding =
+          (mkImages {
+            platforms = [ "metal" ];
+            variants.plain = {
+              kubernetes = false;
+              modules = [ { chalkos.forwarding.enable = true; } ];
+            };
+          }).nixos.plain-metal.config;
+        on = {
+          "net.ipv4.ip_forward" = 1;
+          "net.ipv6.conf.all.forwarding" = 1;
+        };
+      in
+      {
+        node = forwarding layered.node-metal.config == on;
+        edge = forwarding layered.edge-metal.config == on;
+        plain = forwarding layered.plain-metal.config;
+        asked = forwarding plainForwarding == on;
+      };
+    expected = {
+      node = true;
+      edge = true;
+      plain = { };
+      asked = true;
+    };
+  };
   # A variant's images carry their platform's modules, those of every variant and the variant's
   # own; the installer carries its own modules alone.
   testMkImagesAppliesModules = {
@@ -1304,10 +1344,12 @@ lib.runTests {
     };
   };
   # The preparation picks the node's addresses once they settled: after network-online.target by
-  # default, and after the units of extensions that add addresses.
+  # default, and after the units of extensions that add addresses. Every image defines the target,
+  # also one without Kubernetes.
   testNodeAddressesTarget = {
     expr =
       let
+        plainTarget = layered.plain-metal.config.systemd.targets.chalkos-node-addresses;
         # An extension announcing addresses, as a BGP daemon would.
         bgp = {
           systemd.services.bgp = {
@@ -1330,6 +1372,7 @@ lib.runTests {
         extensionBefore =
           lib.hasInfix "\nBefore=chalkos-node-addresses.target\n"
             config.systemd.units."bgp.service".text;
+        plainAfter = plainTarget.after;
       };
     expected = {
       targetAfter = [ "network-online.target" ];
@@ -1338,6 +1381,7 @@ lib.runTests {
       prepareWants = true;
       extension = true;
       extensionBefore = true;
+      plainAfter = [ "network-online.target" ];
     };
   };
   # The installer is no variant, and its os-release names none.

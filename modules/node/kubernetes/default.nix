@@ -86,6 +86,7 @@ in
 
   config = lib.mkIf enable {
     chalkos.layers.kubernetes = "";
+    chalkos.forwarding.enable = true;
     # The cluster file chalkd writes, which the kubelet's rules compare.
     chalkos.facts.cluster.file = "${run}/cluster.json";
 
@@ -95,8 +96,6 @@ in
       "vxlan"
     ];
     boot.kernel.sysctl = {
-      "net.ipv4.ip_forward" = 1;
-      "net.ipv6.conf.all.forwarding" = 1;
       "net.bridge.bridge-nf-call-iptables" = 1;
       "net.bridge.bridge-nf-call-ip6tables" = 1;
       # What the kubelet's protectKernelDefaults checks.
@@ -115,17 +114,9 @@ in
       "chalkos/kubernetes/image.json".text = builtins.toJSON imageFile;
     };
 
-    # The node's addresses have settled. A unit that configures or announces addresses, such as a
-    # routing daemon's, orders itself before the target and is wanted by it; the preparation picks
-    # the node's addresses after it, and still waits up to nodeIP.timeout for them.
-    systemd.targets.chalkos-node-addresses = {
-      description = "The node's addresses have settled";
-      wants = [ "network-online.target" ];
-      after = [ "network-online.target" ];
-    };
-
-    # Certificates, kubeconfigs and kubelet flags from the node's share and identity. With
-    # flannel's VXLAN rule, firewall.nix has chalkd fill its table too.
+    # Certificates, kubeconfigs and kubelet flags from the node's share and identity, prepared once
+    # the node's addresses settled, waiting up to nodeIP.timeout for them. With flannel's VXLAN
+    # rule, firewall.nix has chalkd fill its table too.
     systemd.services.chalkos-kubernetes = {
       description = "Prepare the node's Kubernetes certificates and configuration";
       wantedBy = [ "multi-user.target" ];
