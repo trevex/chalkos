@@ -28,6 +28,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -102,6 +103,8 @@ type upgradeFake struct {
 	name, variant, platform string
 	// kind is the node's Kubernetes kind, "" without Kubernetes.
 	kind string
+	// layers are the layers of the image the node runs, as Info reports them.
+	layers []string
 
 	mu                    sync.Mutex
 	image, staged, failed string
@@ -195,7 +198,7 @@ func (n *upgradeFake) Info(context.Context, *connect.Request[nodev1.InfoRequest]
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return connect.NewResponse(&nodev1.InfoResponse{RootHash: n.root, ImageId: "chalkos", Variant: n.variant, Platform: n.platform}), nil
+	return connect.NewResponse(&nodev1.InfoResponse{RootHash: n.root, ImageId: "chalkos", Variant: n.variant, Platform: n.platform, Layers: n.layers}), nil
 }
 
 func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
@@ -428,6 +431,9 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpVarian
 	for _, node := range nodes {
 		name := node.name
 		n := &upgradeFake{lab: l, name: name, variant: node.variant, platform: "metal", kind: node.kind, image: "0.1.0", root: bytes.Repeat([]byte{1}, 32), generation: 1}
+		if node.kind != "" {
+			n.layers = []string{layers.Kubernetes}
+		}
 		dir := filepath.Join(t.TempDir(), "chalkd")
 		cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
 		if err != nil {
@@ -1223,6 +1229,24 @@ func TestUpgradeDrainsAsAsked(t *testing.T) {
 	}
 	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: keeps pods without a controller: default/bare") || !strings.Contains(out, "tolerations") {
 		t.Errorf("output:\n%s", out)
+	}
+}
+
+// TestUpgradeDrainsOnlyNodesWithTheKubernetesLayer upgrades a worker whose image lacks the
+// Kubernetes layer as a node without Kubernetes: it is neither drained nor uncordoned, whatever
+// its status says of Kubernetes.
+func TestUpgradeDrainsOnlyNodesWithTheKubernetesLayer(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	l.nodes["w1"].layers = nil
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	events := l.takeEvents()
+	if !slices.Contains(events, "w1 upgrade") {
+		t.Errorf("w1 was not upgraded: %q", events)
+	}
+	if slices.Contains(events, "w1 drain") || slices.Contains(events, "w1 uncordon") {
+		t.Errorf("a node without the Kubernetes layer was drained: %q", events)
 	}
 }
 
