@@ -268,17 +268,19 @@ or no session. `bgp: unknown:` gives vtysh's error when chalkd could not read FR
 FRR.
 
 `chalkctl node routes` shows the kernel's routes and the paths BGP selected, to a prefix and
-within it when one is given. A leaf `r2` with sessions to two edges of AS 64512, each of which
-originates a default route, shows:
+within it when one is given, so `::/0` lists every IPv6 route. A leaf `r2` has sessions to two
+edges of AS 64512. Each edge originates a default route and announces 2001:db8:ffff::1/128, and
+`r2` announces its own 2001:db8:2::/48:
 
 ```sh
 chalkctl node routes r2 ::/0 --secrets secrets.age
 ```
 
 ```text
-DESTINATION      TYPE       PROTOCOL  TABLE  METRIC  NEXT HOPS
-::/0             unicast    bgp       254    20      fe80::1 on eth2 (weight 1), fe80::2 on eth1 (weight 1)
-2001:db8:2::/48  blackhole  boot      254    1024    -
+DESTINATION           TYPE       PROTOCOL  TABLE  METRIC  NEXT HOPS
+::/0                  unicast    bgp       254    20      fe80::e06b:dcff:fe54:f465 on eth2 (weight 1), fe80::b817:4cff:fe8b:9cf on eth1 (weight 1)
+2001:db8:2::/48       blackhole  boot      254    1024    -
+2001:db8:ffff::1/128  unicast    bgp       254    20      fe80::e06b:dcff:fe54:f465 on eth2 (weight 1), fe80::b817:4cff:fe8b:9cf on eth1 (weight 1)
 
 BGP PREFIX            BEST  AS PATH  PEER   NEXT HOPS                  LOCAL PREF  MED  COMMUNITIES
 ::/0                  *     64512    eth2   fe80::e06b:dcff:fe54:f465  200         0    64512:1 64512:1:2
@@ -288,8 +290,8 @@ BGP PREFIX            BEST  AS PATH  PEER   NEXT HOPS                  LOCAL PRE
 2001:db8:ffff::1/128        64512    eth1   fe80::b817:4cff:fe8b:9cf   200         0    -
 ```
 
-The kernel's default route has two next hops, one for each path BGP installed. `*` marks the
-best path of a prefix, and `local` a path of the router's own networks. `--protocol` and
+The kernel's routes from BGP have two next hops each, one for each path BGP installed. `*` marks
+the best path of a prefix, and `local` a path of the router's own networks. `--protocol` and
 `--table` narrow the kernel's routes, as
 [chalkctl node routes](../reference/cli/chalkctl_node_routes.md) describes.
 

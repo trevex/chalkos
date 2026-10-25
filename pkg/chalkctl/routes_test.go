@@ -16,7 +16,8 @@ import (
 )
 
 // routerNode serves n1 as a router whose FRR answers with the recordings of package router's
-// tests, and whose kernel holds a default route over two links and a blackhole.
+// tests, and whose kernel holds the default route and an edge's address that BGP installed over
+// two links, to the recordings' next hops, and a blackhole.
 func routerNode(t *testing.T, ta *testApp) string {
 	t.Helper()
 	current, _ := json.Marshal(ta.identity(t))
@@ -35,10 +36,14 @@ func routerNode(t *testing.T, ta *testApp) string {
 		{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: frr("ipv6-detail.json")},
 	}}
 	s.Router = &chalkd.Router{Run: r, KernelRoutes: func() ([]*nodev1.KernelRoute, error) {
+		hops := func() []*nodev1.NextHop {
+			return []*nodev1.NextHop{
+				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
+		}
 		return []*nodev1.KernelRoute{
-			{Destination: "::/0", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20, NextHops: []*nodev1.NextHop{
-				{Gateway: "fe80::1", Interface: "eth2", Weight: 1}, {Gateway: "fe80::2", Interface: "eth1", Weight: 1}}},
+			{Destination: "::/0", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20, NextHops: hops()},
 			{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254, Metric: 1024},
+			{Destination: "2001:db8:ffff::1/128", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20, NextHops: hops()},
 		}, nil
 	}}
 	return ta.startNode(t, s)
@@ -51,9 +56,10 @@ func TestNodeRoutes(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"node", "routes", "n1", "::/0"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	want := "DESTINATION      TYPE       PROTOCOL  TABLE  METRIC  NEXT HOPS\n" +
-		"::/0             unicast    bgp       254    20      fe80::1 on eth2 (weight 1), fe80::2 on eth1 (weight 1)\n" +
-		"2001:db8:2::/48  blackhole  boot      254    1024    -\n" +
+	want := "DESTINATION           TYPE       PROTOCOL  TABLE  METRIC  NEXT HOPS\n" +
+		"::/0                  unicast    bgp       254    20      fe80::e06b:dcff:fe54:f465 on eth2 (weight 1), fe80::b817:4cff:fe8b:9cf on eth1 (weight 1)\n" +
+		"2001:db8:2::/48       blackhole  boot      254    1024    -\n" +
+		"2001:db8:ffff::1/128  unicast    bgp       254    20      fe80::e06b:dcff:fe54:f465 on eth2 (weight 1), fe80::b817:4cff:fe8b:9cf on eth1 (weight 1)\n" +
 		"\n" +
 		"BGP PREFIX            BEST  AS PATH  PEER   NEXT HOPS                  LOCAL PREF  MED  COMMUNITIES\n" +
 		"::/0                  *     64512    eth2   fe80::e06b:dcff:fe54:f465  200         0    64512:1 64512:1:2\n" +
