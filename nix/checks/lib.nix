@@ -11,7 +11,7 @@ let
   # The Kubernetes test image, whose units the unit checks run.
   worker = testing.nixos.k8s-kvm;
   # A router image, evaluated alone, whose rules, outputs and kernel modules the rules check
-  # checks.
+  # checks, and whose firewall unit the check router-firewall runs.
   router =
     (self.lib.mkImages {
       platforms = [ "metal" ];

@@ -1,4 +1,5 @@
-# Checks that run the worker's units' scripts as on a node, in namespaces of their own.
+# Checks that run the units' scripts of the worker and of a router image as on a node, in
+# namespaces of their own.
 { pkgs, checkLib, ... }:
 let
   inherit (pkgs) lib;
@@ -518,5 +519,168 @@ in
       [ ! -s chronyc.log ] || fail "reloaded the sources of a chronyd that does not run"
       ACTIVE=0 ${reloadSources}
       grep -qx "reload sources" chronyc.log || fail "did not reload the sources of a running chronyd"
+    '';
+
+  # The router's firewall unit in network namespaces, with a LAN peer on lan0 and a WAN peer on
+  # wan0, each over a veth pair. Without a rendered ruleset chalkos-firewall loads the fallback,
+  # which accepts chalkd's port on every interface and forwards nothing. With the LAN example's
+  # ruleset, which chalkos-render's golden test keeps as the renderer writes it, the peers probe
+  # chalkd's port on the management interface alone, the protected ping past policies that drop
+  # everything else and on dmz0, an interface of no zone, an AddressSet, forwarding by zone,
+  # masquerade, destination NAT and the strict reverse-path filter. A reload replaces the table
+  # alone, in one transaction, and keeps it when nft refuses the new one. The leaf example, loaded
+  # as at boot, forwards everything.
+  router-firewall =
+    let
+      inherit (checkLib.router.config.systemd.services.chalkos-firewall.serviceConfig)
+        ExecStart
+        ExecReload
+        ;
+      dir = checkLib.router.config.chalkos.outputs.router-nftables.dir;
+      goldens = ../../cmd/chalkos-render/testdata/router;
+      # Answers a connection with the address it came from.
+      whoami = pkgs.writeShellScript "whoami" ''echo "$SOCAT_PEERADDR"'';
+    in
+    unitCheck "router-firewall" (checkLib.networkTools ++ [ pkgs.iputils ]) ''
+      fail() {
+        echo "error: $*" >&2
+        nft list ruleset >&2
+        exit 1
+      }
+      ip link set lo up
+      unshare -n sh -c 'touch lan-ready; exec sleep 600' &
+      lan=$!
+      unshare -n sh -c 'touch wan-ready; exec sleep 600' &
+      wan=$!
+      until [ -e lan-ready ] && [ -e wan-ready ]; do sleep 0.1; done
+      on_lan() { nsenter -t "$lan" -n "$@"; }
+      on_wan() { nsenter -t "$wan" -n "$@"; }
+      ip link add lan0 type veth peer name eth0 netns "$lan"
+      ip link add wan0 type veth peer name eth0 netns "$wan"
+      ip addr add 192.0.2.1/24 dev lan0
+      ip addr add 2001:db8:1::1/64 dev lan0 nodad
+      ip addr add 198.51.100.1/24 dev wan0
+      ip addr add 2001:db8:2::1/64 dev wan0 nodad
+      ip link set lan0 up
+      ip link set wan0 up
+      # The LAN peer reaches the node over dmz0 too, an interface of no zone.
+      ip link add dmz0 type veth peer name eth1 netns "$lan"
+      ip addr add 203.0.113.1/24 dev dmz0
+      ip link set dmz0 up
+      on_lan ip link set lo up
+      on_lan ip addr add 192.0.2.2/24 dev eth0
+      on_lan ip addr add 2001:db8:1::2/64 dev eth0 nodad
+      on_lan ip link set eth0 up
+      on_lan ip addr add 203.0.113.2/24 dev eth1
+      on_lan ip link set eth1 up
+      on_lan ip route add default via 192.0.2.1
+      on_lan ip route add default via 2001:db8:1::1
+      # The WAN peer has an IPv6 route to the LAN and none in IPv4, where the router masquerades.
+      on_wan ip link set lo up
+      on_wan ip addr add 198.51.100.2/24 dev eth0
+      on_wan ip addr add 2001:db8:2::2/64 dev eth0 nodad
+      on_wan ip link set eth0 up
+      on_wan ip route add 2001:db8:1::/64 via 2001:db8:2::1
+      echo 1 >/proc/sys/net/ipv4/ip_forward
+      echo 1 >/proc/sys/net/ipv6/conf/all/forwarding
+      # The firewall's reverse-path filter is the only one, as router-sysctl sets it.
+      for conf in all default lan0 wan0 dmz0; do
+        echo 0 >/proc/sys/net/ipv4/conf/$conf/rp_filter
+      done
+
+      for port in 50000 22 8080; do
+        socat TCP4-LISTEN:$port,fork,reuseaddr /dev/null &
+        socat TCP6-LISTEN:$port,fork,reuseaddr,ipv6only=1 /dev/null &
+      done
+      for ns in on_lan on_wan; do
+        $ns socat TCP4-LISTEN:80,fork,reuseaddr EXEC:${whoami} &
+        $ns socat TCP6-LISTEN:80,fork,reuseaddr,ipv6only=1 EXEC:${whoami} &
+      done
+      for try in $(seq 100); do
+        [ "$(ss -Hltn | wc -l)" = 6 ] && [ "$(on_lan ss -Hltn | wc -l)" = 2 ] && [ "$(on_wan ss -Hltn | wc -l)" = 2 ] && break
+        [ "$try" != 100 ] || fail "the listeners did not start"
+        sleep 0.1
+      done
+      # reaches <namespace> <address> <port>: whether a connection from the namespace is accepted.
+      reaches() { "$1" socat -u /dev/null "TCP:$2:$3,connect-timeout=1" 2>/dev/null; }
+      refused() { if reaches "$@"; then fail "$1 reached $2 port $3 $where"; fi; }
+      accepted() { reaches "$@" || fail "$1 did not reach $2 port $3 $where"; }
+      # seen <namespace> <address> [<port>]: the address the listener of port 80 saw the connection
+      # to the address and port, 80 unless given, come from.
+      seen() { "$1" socat -t 2 - "TCP:$2:''${3:-80},connect-timeout=1" </dev/null 2>/dev/null; }
+      pings() { "$1" ping -c 1 -W 1 "$2" >/dev/null || fail "$1 got no answer from $2 $where"; }
+
+      # Counts what reaches the input hook from a spoofed source, and from the WAN peer's own.
+      nft -f - <<'NFT'
+      table inet count {
+        chain input {
+          type filter hook input priority filter - 10; policy accept;
+          ip saddr 192.0.2.99 counter name spoofed
+          ip saddr 198.51.100.2 icmp type echo-request counter name wan
+        }
+        counter spoofed {}
+        counter wan {}
+      }
+      NFT
+
+      where="with the fallback ruleset"
+      ${ExecStart} || fail "chalkos-firewall did not load the fallback ruleset"
+      accepted on_lan 192.0.2.1 50000
+      accepted on_wan 198.51.100.1 50000
+      accepted on_wan '[2001:db8:2::1]' 50000
+      refused on_lan '[2001:db8:2::2]' 80
+      pings on_wan 198.51.100.1
+
+      where="with the LAN example's ruleset"
+      mkdir -p ${dir}
+      install -m 644 ${goldens}/lan.nft ${dir}/ruleset.nft
+      ${ExecReload} || fail "chalkos-firewall did not reload the LAN ruleset"
+      [ "$(nft list tables | grep -c 'table inet chalkos$')" = 1 ] || fail "the reload left two tables"
+      nft list tables | grep -qx 'table inet count' || fail "the reload removed another table"
+      accepted on_lan 192.0.2.1 50000
+      accepted on_lan '[2001:db8:1::1]' 50000
+      refused on_wan 198.51.100.1 50000
+      refused on_wan '[2001:db8:2::1]' 50000
+      # lan-local drops everything else, and the protected rules still answer pings.
+      refused on_lan 192.0.2.1 22
+      pings on_lan 192.0.2.1
+      pings on_lan 2001:db8:1::1
+      pings on_wan 198.51.100.1
+      pings on_wan 2001:db8:2::1
+      # The input chain drops what comes from an interface of no zone, past the protected rules.
+      refused on_lan 203.0.113.1 22
+      pings on_lan 203.0.113.1
+      # wan-local accepts 8080 from the trusted AddressSet, an IPv6 address.
+      accepted on_wan '[2001:db8:2::1]' 8080
+      refused on_wan 198.51.100.1 8080
+      # lan-wan forwards, masquerading IPv4; nothing forwards from the WAN to the LAN.
+      [ "$(seen on_lan 198.51.100.2)" = 198.51.100.1 ] || fail "the LAN's IPv4 was not masqueraded"
+      # socat writes an IPv6 peer in full, in brackets.
+      [ "$(seen on_lan '[2001:db8:2::2]')" = '[2001:0db8:0001:0000:0000:0000:0000:0002]' ] || fail "the LAN's IPv6 did not reach the WAN unchanged"
+      refused on_wan '[2001:db8:1::2]' 80
+      # The destination NAT of 8081 reaches the LAN peer's port 80.
+      [ "$(seen on_wan 198.51.100.1 8081)" = 198.51.100.2 ] || fail "the destination NAT did not reach the LAN"
+      # The strict reverse-path filter drops a WAN packet from a LAN source before input.
+      on_wan ip addr add 192.0.2.99/32 dev eth0
+      on_wan ping -c 1 -W 1 -I 192.0.2.99 198.51.100.1 >/dev/null 2>&1 || true
+      nft list counter inet count spoofed | grep -q 'packets 0 ' || fail "the reverse-path filter passed a spoofed source"
+      if nft list counter inet count wan | grep -q 'packets 0 '; then fail "the WAN peer's pings did not reach input"; fi
+
+      where="after nft refused a ruleset"
+      echo 'table inet chalkos { chain input { bogus } }' >${dir}/ruleset.nft
+      if ${ExecReload} 2>/dev/null; then fail "the reload of a broken ruleset succeeded"; fi
+      refused on_wan 198.51.100.1 50000
+      accepted on_lan 192.0.2.1 50000
+      # At boot, a ruleset nft refuses fails the unit and leaves the fallback.
+      if ${ExecStart} 2>/dev/null; then fail "chalkos-firewall loaded a broken ruleset"; fi
+      accepted on_wan 198.51.100.1 50000
+
+      where="with the leaf example's ruleset"
+      install -m 644 ${goldens}/leaf.nft ${dir}/ruleset.nft
+      # At boot, with no table loaded yet, chalkos-firewall loads the rendered ruleset.
+      nft delete table inet chalkos
+      ${ExecStart} || fail "chalkos-firewall did not load the leaf ruleset"
+      accepted on_wan '[2001:db8:1::2]' 80
+      refused on_lan 192.0.2.1 50000
     '';
 }
