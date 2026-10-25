@@ -11,6 +11,7 @@
 }:
 let
   ip = lib.getExe chalkosPackages.iproute2-ip;
+  bash = "${pkgs.bash}/bin/bash";
   address = {
     type = "address";
     description = "IPv4 or IPv6 address.";
@@ -82,7 +83,9 @@ in
         "get"
         "{address}"
       ];
-      parameters.address = address;
+      parameters.address = address // {
+        description = "IPv4 or IPv6 address, without a zone: ip route get takes none, and finds a link-local address's interface by the routes.";
+      };
       role = "reader";
       timeout = "10s";
     };
@@ -168,15 +171,24 @@ in
       timeout = "15s";
     };
     # bash opens the connection and closes it on exit; the address and port are its arguments,
-    # never part of the script. timeout ends a connect that would wait for TCP's own timeout.
+    # never part of the script. timeout ends a connect that would wait for TCP's own timeout, and
+    # exits with 124 without a word, so the outer bash says so.
     tcp-connect = {
       description = "Opens a TCP connection to an address and port, closes it again and says whether it connected.";
       command = [
-        "${pkgs.coreutils}/bin/timeout"
-        "5"
-        "${pkgs.bash}/bin/bash"
+        bash
         "-c"
-        '': <>"/dev/tcp/$1/$2" && echo "connected to $1 port $2"''
+        ''
+          if ${pkgs.coreutils}/bin/timeout 5 ${bash} -c ': <>"/dev/tcp/$1/$2"' tcp-connect "$1" "$2"; then
+            echo "connected to $1 port $2"
+          else
+            status=$?
+            if [ "$status" = 124 ]; then
+              echo "no connection to $1 port $2 within 5 seconds" >&2
+            fi
+            exit "$status"
+          fi
+        ''
         "tcp-connect"
         "{address}"
         "{port}"

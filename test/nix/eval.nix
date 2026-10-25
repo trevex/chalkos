@@ -2139,7 +2139,14 @@ lib.runTests {
         routes = lib.tail node.routes.command;
         ping = lib.tail node.ping.command;
         dnsQuery = lib.tail node.dns-query.command;
-        tcpConnect = lib.drop 2 node.tcp-connect.command;
+        tcpConnect = {
+          program = lib.head node.tcp-connect.command;
+          arguments = lib.drop 3 node.tcp-connect.command;
+          # bash runs timeout itself, so it can say when the connect timed out.
+          timeout = lib.hasInfix (builtins.unsafeDiscardStringContext "${pkgs.coreutils}/bin/timeout 5 ") (
+            lib.elemAt node.tcp-connect.command 2
+          );
+        };
       };
       expected = {
         inherit names;
@@ -2171,7 +2178,7 @@ lib.runTests {
           ];
           parameters.address = {
             type = "address";
-            description = "IPv4 or IPv6 address.";
+            description = "IPv4 or IPv6 address, without a zone: ip route get takes none, and finds a link-local address's interface by the routes.";
             optional = false;
             default = "";
             min = null;
@@ -2206,15 +2213,16 @@ lib.runTests {
           "{type}"
           "@{server}"
         ];
-        # After timeout's own program and its time: bash, its script, $0 and the arguments.
-        tcpConnect = [
-          "${pkgs.bash}/bin/bash"
-          "-c"
-          '': <>"/dev/tcp/$1/$2" && echo "connected to $1 port $2"''
-          "tcp-connect"
-          "{address}"
-          "{port}"
-        ];
+        # After bash, -c and its script: $0 and the arguments.
+        tcpConnect = {
+          program = "${pkgs.bash}/bin/bash";
+          arguments = [
+            "tcp-connect"
+            "{address}"
+            "{port}"
+          ];
+          timeout = true;
+        };
       };
     };
 }
