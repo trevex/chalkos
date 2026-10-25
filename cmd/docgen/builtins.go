@@ -28,14 +28,15 @@ const builtinsIntro = "# Built-ins\n\n" +
 	"This page is for image authors and operators who want to know why a node refused a config,\n" +
 	"what a delivery reloads and restarts, or what `chalkctl node diag` runs. It lists the change\n" +
 	"rules, facts, outputs, effects and diagnostics that chalkos's own modules declare: those of every\n" +
-	"image, and those that images with Kubernetes add. An extension declares more with the\n" +
-	"[Extension API](extension-api.md), and its outputs, effects and diagnostics take names other\n" +
-	"than these.\n"
+	"image, and those that images with Kubernetes and router images add. An extension declares more\n" +
+	"with the [Extension API](extension-api.md), and its outputs, effects and diagnostics take names\n" +
+	"other than these.\n"
 
 // builtinsSources closes the page of built-ins.
 const builtinsSources = "\nSources: the schemas, `facts.json`, `outputs.json`, `effects.json` and `diagnostics.json` that\n" +
-	"an image holds in `/etc/chalkos`, of an image of the default variant and of one with\n" +
-	"`kubernetes = false`, which the node modules in `modules/node/` declare.\n"
+	"an image holds in `/etc/chalkos`, of an image of the default variant, of one with\n" +
+	"`kubernetes = false` and of one with `router = true`, which the node modules in `modules/node/`\n" +
+	"declare.\n"
 
 // The openings of the page's sections.
 const (
@@ -86,11 +87,12 @@ type builtinImage struct {
 	diagnostics map[string]diagnostics.Definition
 }
 
-// writeBuiltins writes the page of built-ins to page from two rules images, as an image's
-// system.build.chalkosRulesImage lays them out: that of the default variant, at def, and that of
-// an image without Kubernetes, at plain. A built-in of the plain image is one of every image; one
-// the default image alone has is one of images with Kubernetes.
-func writeBuiltins(page, def, plain string) error {
+// writeBuiltins writes the page of built-ins to page from three rules images, as an image's
+// system.build.chalkosRulesImage lays them out: that of the default variant, at def, that of an
+// image without Kubernetes, at plain, and that of a router image, at router. A built-in of the
+// plain image is one of every image; one the default image alone has is one of images with
+// Kubernetes, and one the router image alone has one of router images.
+func writeBuiltins(page, def, plain, router string) error {
 	d, err := readBuiltinImage(def)
 	if err != nil {
 		return err
@@ -99,12 +101,20 @@ func writeBuiltins(page, def, plain string) error {
 	if err != nil {
 		return err
 	}
+	r, err := readBuiltinImage(router)
+	if err != nil {
+		return err
+	}
 
 	var b strings.Builder
 	b.WriteString(frontMatter("Built-ins", builtinsDescription))
 	b.WriteString(builtinsIntro)
 
-	everyRules, kubeRules, err := splitRules(d.kinds, p.kinds)
+	everyRules, kubeRules, err := splitRules(d.kinds, p.kinds, "the default image")
+	if err != nil {
+		return err
+	}
+	_, routerRules, err := splitRules(r.kinds, p.kinds, "the router image")
 	if err != nil {
 		return err
 	}
@@ -112,38 +122,59 @@ func writeBuiltins(page, def, plain string) error {
 	taken := map[string]bool{}
 	writeRulesSection(&b, "rules-every-image", "The rules of the kinds every image accepts.", everyRules, taken)
 	writeRulesSection(&b, "rules-kubernetes", "The rules of the kinds that images with Kubernetes accept, and those they add to other kinds.", kubeRules, taken)
+	writeRulesSection(&b, "rules-router-images", "The rules of the kinds that router images accept, and those they add to other kinds.", routerRules, taken)
 
-	everyFacts, kubeFacts, err := split("fact", d.facts, p.facts)
+	everyFacts, kubeFacts, err := split("fact", "the default image", d.facts, p.facts)
+	if err != nil {
+		return err
+	}
+	_, routerFacts, err := split("fact", "the router image", r.facts, p.facts)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(&b, "\n## Facts { #facts }\n\n%s", factsIntro)
 	writeFacts(&b, "facts-every-image", "The facts every image declares.", everyFacts, d)
 	writeFacts(&b, "facts-kubernetes", "The facts images with Kubernetes add.", kubeFacts, d)
+	writeFacts(&b, "facts-router-images", "The facts router images add.", routerFacts, r)
 
-	everyOutputs, kubeOutputs, err := split("output", d.outputs, p.outputs)
+	everyOutputs, kubeOutputs, err := split("output", "the default image", d.outputs, p.outputs)
+	if err != nil {
+		return err
+	}
+	_, routerOutputs, err := split("output", "the router image", r.outputs, p.outputs)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(&b, "\n## Outputs { #outputs }\n\n%s", outputsIntro)
 	writeOutputs(&b, "outputs-every-image", "The outputs every image renders.", everyOutputs, d.outputs)
 	writeOutputs(&b, "outputs-kubernetes", "The outputs images with Kubernetes add.", kubeOutputs, d.outputs)
+	writeOutputs(&b, "outputs-router-images", "The outputs router images add.", routerOutputs, r.outputs)
 
-	everyEffects, kubeEffects, err := split("effect", d.effects, p.effects)
+	everyEffects, kubeEffects, err := split("effect", "the default image", d.effects, p.effects)
+	if err != nil {
+		return err
+	}
+	_, routerEffects, err := split("effect", "the router image", r.effects, p.effects)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(&b, "\n## Effects { #effects }\n\n%s", effectsIntro)
 	writeEffects(&b, "effects-every-image", "The effects every image declares.", everyEffects, d.effects)
 	writeEffects(&b, "effects-kubernetes", "The effects images with Kubernetes add.", kubeEffects, d.effects)
+	writeEffects(&b, "effects-router-images", "The effects router images add.", routerEffects, r.effects)
 
-	everyDiagnostics, kubeDiagnostics, err := split("diagnostic", d.diagnostics, p.diagnostics)
+	everyDiagnostics, kubeDiagnostics, err := split("diagnostic", "the default image", d.diagnostics, p.diagnostics)
+	if err != nil {
+		return err
+	}
+	_, routerDiagnostics, err := split("diagnostic", "the router image", r.diagnostics, p.diagnostics)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(&b, "\n## Diagnostics { #diagnostics }\n\n%s", diagnosticsIntro)
 	writeDiagnostics(&b, "diagnostics-every-image", "The diagnostics every image declares.", everyDiagnostics, d.diagnostics)
 	writeDiagnostics(&b, "diagnostics-kubernetes", "The diagnostics images with Kubernetes add.", kubeDiagnostics, d.diagnostics)
+	writeDiagnostics(&b, "diagnostics-router-images", "The diagnostics router images add.", routerDiagnostics, r.diagnostics)
 
 	b.WriteString(builtinsSources)
 	return os.WriteFile(page, []byte(b.String()), 0o644)
@@ -292,10 +323,10 @@ func compareKinds(a, b kindSchema) int {
 	return strings.Compare(a.group+"\x00"+a.kind, b.group+"\x00"+b.kind)
 }
 
-// splitRules splits the rules of the default image's kinds into those of every image, which the
-// plain image has as well, and those of images with Kubernetes. A rule of the plain image that the
-// default image lacks fails it.
-func splitRules(def, plain []kindRules) (every, kube []kindRules, err error) {
+// splitRules splits the rules of the kinds of def, the image named image, into those of every
+// image, which the plain image has as well, and those its layer adds. A rule of the plain image
+// that def lacks fails it.
+func splitRules(def, plain []kindRules, image string) (every, added []kindRules, err error) {
 	inDefault := map[string][]builtinRule{}
 	for _, k := range def {
 		inDefault[k.kind.kind] = k.rules
@@ -305,47 +336,47 @@ func splitRules(def, plain []kindRules) (every, kube []kindRules, err error) {
 		inPlain[k.kind.kind] = k.rules
 		for _, r := range k.rules {
 			if !slices.Contains(inDefault[k.kind.kind], r) {
-				return nil, nil, fmt.Errorf("the image without Kubernetes has a rule of %s that the default image lacks: %s", k.kind.kind, r.Rule.Rule)
+				return nil, nil, fmt.Errorf("the image without Kubernetes has a rule of %s that %s lacks: %s", k.kind.kind, image, r.Rule.Rule)
 			}
 		}
 	}
 	for _, k := range def {
-		var shared, added []builtinRule
+		var shared, more []builtinRule
 		for _, r := range k.rules {
 			if slices.Contains(inPlain[k.kind.kind], r) {
 				shared = append(shared, r)
 			} else {
-				added = append(added, r)
+				more = append(more, r)
 			}
 		}
 		if len(shared) > 0 {
 			every = append(every, kindRules{k.kind, shared})
 		}
-		if len(added) > 0 {
-			kube = append(kube, kindRules{k.kind, added})
+		if len(more) > 0 {
+			added = append(added, kindRules{k.kind, more})
 		}
 	}
-	return every, kube, nil
+	return every, added, nil
 }
 
-// split splits the default image's built-ins of a sort into those of every image, which the plain
-// image has alike, and those of images with Kubernetes, each by name. A built-in of the plain image
-// that the default image lacks, or has otherwise, fails it.
-func split[T any](sort string, def, plain map[string]T) (every, kube []string, err error) {
+// split splits the built-ins of a sort of def, the image named image, into those of every image,
+// which the plain image has alike, and those its layer adds, each by name. A built-in of the plain
+// image that def lacks, or has otherwise, fails it.
+func split[T any](sort, image string, def, plain map[string]T) (every, added []string, err error) {
 	for _, name := range slices.Sorted(maps.Keys(plain)) {
 		d, ok := def[name]
 		if !ok || !reflect.DeepEqual(d, plain[name]) {
-			return nil, nil, fmt.Errorf("the image without Kubernetes has the %s %s, which the default image lacks or declares otherwise", sort, name)
+			return nil, nil, fmt.Errorf("the image without Kubernetes has the %s %s, which %s lacks or declares otherwise", sort, name, image)
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(def)) {
 		if _, ok := plain[name]; ok {
 			every = append(every, name)
 		} else {
-			kube = append(kube, name)
+			added = append(added, name)
 		}
 	}
-	return every, kube, nil
+	return every, added, nil
 }
 
 // inlineLimit is the length of the longest CEL expression a table's row holds; longer ones, and
@@ -364,14 +395,10 @@ func textBlock(s string) string {
 }
 
 // writeRulesSection writes a section of change rules: a heading and a table per kind. A kind's
-// anchor is #rules-<kind>, or #rules-kubernetes-<kind> for the rules images with Kubernetes add to
-// a kind of every image, whose anchors are in taken.
+// anchor is #rules-<kind>, or #<anchor>-<kind>, such as #rules-kubernetes-<kind>, for the rules a
+// layer adds to a kind whose anchor is in taken already.
 func writeRulesSection(b *strings.Builder, anchor, intro string, kinds []kindRules, taken map[string]bool) {
-	heading := "Every image"
-	if anchor == "rules-kubernetes" {
-		heading = "Images with Kubernetes"
-	}
-	fmt.Fprintf(b, "\n### %s { #%s }\n\n", heading, anchor)
+	fmt.Fprintf(b, "\n### %s { #%s }\n\n", sectionHeading(anchor), anchor)
 	if len(kinds) == 0 {
 		b.WriteString("None.\n")
 		return
@@ -380,7 +407,7 @@ func writeRulesSection(b *strings.Builder, anchor, intro string, kinds []kindRul
 	for _, k := range kinds {
 		id := "rules-" + strings.ToLower(k.kind.kind)
 		if taken[id] {
-			id = "rules-kubernetes-" + strings.ToLower(k.kind.kind)
+			id = anchor + "-" + strings.ToLower(k.kind.kind)
 		}
 		taken[id] = true
 		fmt.Fprintf(b, "\n#### %s { #%s }\n\n", k.kind.kind, id)
@@ -707,14 +734,24 @@ func parameterCell(name string, p diagnostics.Parameter) string {
 	return s
 }
 
-// writeSubsection writes the heading of a section's built-ins of every image, or of images with
-// Kubernetes, and its opening.
+// sectionHeadings are the headings of a part's sections, by their anchors less the part's name:
+// the built-ins of every image, and those images with a layer add.
+var sectionHeadings = map[string]string{
+	"every-image":   "Every image",
+	"kubernetes":    "Images with Kubernetes",
+	"router-images": "Router images",
+}
+
+// sectionHeading is the heading of the section anchor, such as outputs-router-images.
+func sectionHeading(anchor string) string {
+	_, section, _ := strings.Cut(anchor, "-")
+	return sectionHeadings[section]
+}
+
+// writeSubsection writes the heading of a section's built-ins of every image, or of the images
+// with a layer, and its opening.
 func writeSubsection(b *strings.Builder, anchor, intro string, n int) {
-	heading := "Every image"
-	if strings.HasSuffix(anchor, "-kubernetes") {
-		heading = "Images with Kubernetes"
-	}
-	fmt.Fprintf(b, "\n### %s { #%s }\n\n", heading, anchor)
+	fmt.Fprintf(b, "\n### %s { #%s }\n\n", sectionHeading(anchor), anchor)
 	if n == 0 {
 		b.WriteString("None.\n")
 		return

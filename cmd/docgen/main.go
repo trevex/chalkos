@@ -21,12 +21,12 @@
 // options at OPTIONS_JSON. Each page opens with TEMPLATES_DIR/<page>.head.md and may end with
 // <page>.tail.md before its sources. An option that no section of the pages holds fails it.
 //
-//	docgen builtins PAGE DEFAULT_IMAGE PLAIN_IMAGE
+//	docgen builtins PAGE DEFAULT_IMAGE PLAIN_IMAGE ROUTER_IMAGE
 //
 // writes the page of built-in change rules, facts, outputs, effects and diagnostics to PAGE from
-// two images' system.build.chalkosRulesImage: DEFAULT_IMAGE, of the default variant, and
-// PLAIN_IMAGE, of an image without Kubernetes. Those of PLAIN_IMAGE are every image's, and the
-// others those of images with Kubernetes.
+// three images' system.build.chalkosRulesImage: DEFAULT_IMAGE, of the default variant,
+// PLAIN_IMAGE, of an image without Kubernetes, and ROUTER_IMAGE, of a router image. Those of
+// PLAIN_IMAGE are every image's, the others those of images with Kubernetes or of router images.
 //
 //	docgen check DOCS_DIR
 //
@@ -78,8 +78,8 @@ func run(args []string) error {
 		return writeKinds(args[1], args[2], args[3:])
 	case len(args) == 5 && args[0] == "options":
 		return writeOptions(args[1], args[2], args[3], args[4])
-	case len(args) == 4 && args[0] == "builtins":
-		return writeBuiltins(args[1], args[2], args[3])
+	case len(args) == 5 && args[0] == "builtins":
+		return writeBuiltins(args[1], args[2], args[3], args[4])
 	case len(args) == 2 && args[0] == "check":
 		return check(programs, args[1])
 	case len(args) == 3 && args[0] == "yaml":
@@ -89,7 +89,7 @@ func run(args []string) error {
 	case len(args) == 3 && args[0] == "abbr":
 		return writeAbbr(args[1], args[2])
 	}
-	return errors.New("usage: docgen cli DIR ZENSICAL_TOML DOCS_DIR | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen options DIR TEMPLATES_DIR ARGUMENTS_JSON OPTIONS_JSON | docgen builtins PAGE DEFAULT_IMAGE PLAIN_IMAGE | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen abbr GLOSSARY OUT")
+	return errors.New("usage: docgen cli DIR ZENSICAL_TOML DOCS_DIR | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen options DIR TEMPLATES_DIR ARGUMENTS_JSON OPTIONS_JSON | docgen builtins PAGE DEFAULT_IMAGE PLAIN_IMAGE ROUTER_IMAGE | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen abbr GLOSSARY OUT")
 }
 
 // programs are the command trees of chalkctl, chalklab, chalkbuild and chalkcfg, with the help and

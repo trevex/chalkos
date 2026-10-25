@@ -18,10 +18,10 @@ const kindsDescription = "The fields of the config kinds of chalkos's images, of
 // kindsIntro opens the page of config kinds, after its front matter.
 const kindsIntro = "# Config kinds\n\n" +
 	"This page is for operators who write a node's config documents, an inventory or a lab file. It\n" +
-	"lists the config kinds that an image of `chalkos.lib.mkImages`'s default variant accepts, by API\n" +
-	"group, and the fields of the inventory and the lab file that chalkctl and chalklab read. An image\n" +
-	"whose modules declare kinds of their own under [`chalkos.kinds`](extension-api.md#chalkoskinds)\n" +
-	"accepts those as well.\n\n" +
+	"lists the config kinds that an image of `chalkos.lib.mkImages`'s default variant accepts, and\n" +
+	"those a router image adds, by API group, and the fields of the inventory and the lab file that\n" +
+	"chalkctl and chalklab read. An image whose modules declare kinds of their own under\n" +
+	"[`chalkos.kinds`](extension-api.md#chalkoskinds) accepts those as well.\n\n" +
 	"Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,\n" +
 	"`-` and `.`, and a `spec`, whose fields the tables list. A field within another is listed by its\n" +
 	"whole path, where `<name>` stands for each key of a map and `[]` for each item of a list:\n" +
@@ -33,8 +33,8 @@ const kindsIntro = "# Config kinds\n\n" +
 
 // kindsSources closes the page of config kinds.
 const kindsSources = "\nSources: the JSON Schemas in the `schemas` directory of an image\n" +
-	"[build](image-layout.md#outputs-of-an-image-build) of the default variant, from\n" +
-	"`modules/node/kinds/builtin/` and the tables of the image's systemd-networkd, and\n" +
+	"[build](image-layout.md#outputs-of-an-image-build) of the default variant and of a router\n" +
+	"image, from `modules/node/kinds/builtin/` and the tables of the image's systemd-networkd, and\n" +
 	"`pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and\n" +
 	"`pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json`.\n"
 
@@ -44,6 +44,7 @@ var groupIntros = map[string]string{
 	"kubernetes.chalkos.dev": "The kinds of `kubernetes.chalkos.dev` set up the Kubernetes cluster and the node's part in it. Only images that run Kubernetes accept them, and Flannel only those whose CNI is flannel.",
 	"networkd.chalkos.dev":   "The kinds of `networkd.chalkos.dev` are the .link, .netdev and .network files of the image's systemd as documents. Their schemas are generated from that systemd, so they accept the sections and keys it reads.",
 	"oci.chalkos.dev":        "The kinds of `oci.chalkos.dev` set how the node reaches OCI registries: the credentials of each host and the mirrors of a registry.",
+	"router.chalkos.dev":     "The kinds of `router.chalkos.dev` set how a router forwards and filters: its forwarding and reverse-path filter, its firewall's zones, policies and address sets, and its NAT rules. Only router images accept them.",
 	"storage.chalkos.dev":    "The kinds of `storage.chalkos.dev` lay out the node's disks: the system disk and the volumes.",
 	"time.chalkos.dev":       "The kinds of `time.chalkos.dev` set how the node synchronises its clock.",
 }

@@ -1,0 +1,38 @@
+{
+  "description": "A partition for the node's data.",
+  "type": "object",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "size": {
+          "type": "string",
+          "x-chalkos-rules": [{ "rule": "self == oldSelf || facts.recorded == null", "message": "the size | stays", "takes": "refuse", "description": "A volume keeps its size, <size>." }]
+        },
+        "taints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/taint"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "taint": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "x-chalkos-rules": [{ "rule": "self != ''", "message": "a key", "takes": "refuse" }] }
+      }
+    }
+  },
+  "x-chalkos-kind": {
+    "group": "storage.chalkos.dev", "version": "v1alpha1", "kind": "Volume", "multiple": true,
+    "rules": [{
+      "rule": "facts.recorded == null || documents.all(n, documents[n].spec.size == facts.recorded.volumes[n].size && facts.disks[n].present)",
+      "messageExpression": "documents.filter(n, true)\n  .join(\"; \")",
+      "takes": "reset",
+      "description": "A volume keeps its recorded size, and its disk is plugged in."
+    }]
+  }
+}

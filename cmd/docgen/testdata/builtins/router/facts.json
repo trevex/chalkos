@@ -1,0 +1,1 @@
+{"disks":{"command":"/nix/store/0123456789abcdfghijklmnpqrsvwxyz-chalkos-storage-facts disks"},"fallback":{"command":"/nix/store/0123456789abcdfghijklmnpqrsvwxyz-chalkos-storage-facts fallback","inputs":["fallbackSecret"]},"recorded":{"file":"/state/storage/storage.json"}}

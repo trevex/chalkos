@@ -1,0 +1,9 @@
+{
+  "description": "A zone of the router's firewall.",
+  "type": "object",
+  "properties": { "spec": { "type": "object", "properties": { "interfaces": { "type": "array", "items": { "type": "string" } } } } },
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev", "version": "v1alpha1", "kind": "FirewallZone", "multiple": true,
+    "rules": [{ "rule": "!(\"local\" in documents)", "message": "a zone is named local", "takes": "refuse", "description": "No FirewallZone is named local." }]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "description": "The node's host name.",
+  "type": "object",
+  "properties": { "spec": { "type": "object", "properties": { "hostname": { "type": "string" } } } },
+  "x-chalkos-kind": { "group": "chalkos.dev", "version": "v1alpha1", "kind": "Host", "multiple": false }
+}

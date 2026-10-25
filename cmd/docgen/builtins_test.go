@@ -9,7 +9,7 @@ import (
 
 func TestWriteBuiltins(t *testing.T) {
 	page := filepath.Join(t.TempDir(), "builtins.md")
-	if err := writeBuiltins(page, "testdata/builtins/default", "testdata/builtins/plain"); err != nil {
+	if err := writeBuiltins(page, "testdata/builtins/default", "testdata/builtins/plain", "testdata/builtins/router"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(page)
@@ -20,8 +20,8 @@ func TestWriteBuiltins(t *testing.T) {
 	if !strings.HasPrefix(got, "---\ntitle: \"Built-ins\"\n") {
 		t.Errorf("front matter: %q", got[:min(len(got), 80)])
 	}
-	// Each section has the built-ins of every image, those of the image without Kubernetes, and
-	// then those only the default image has.
+	// Each section has the built-ins of every image, those of the image without Kubernetes, then
+	// those only the default image has, and those only the router image has.
 	order := []string{
 		"\n# Built-ins\n\nThis page is for ",
 		"\n## Change rules { #change-rules }\n\n",
@@ -29,26 +29,35 @@ func TestWriteBuiltins(t *testing.T) {
 		"\n#### Volume { #rules-volume }\n\n",
 		"\n### Images with Kubernetes { #rules-kubernetes }\n\n",
 		"\n#### Node { #rules-node }\n\n",
+		"\n### Router images { #rules-router-images }\n\n",
+		"\n#### FirewallZone { #rules-firewallzone }\n\n",
 		"\n## Facts { #facts }\n\n",
 		"\n### Every image { #facts-every-image }\n\n",
 		"| `disks`{ #fact-disks } |",
 		"\n### Images with Kubernetes { #facts-kubernetes }\n\n",
 		"| `share`{ #fact-share } |",
+		"\n### Router images { #facts-router-images }\n\nNone.\n",
 		"\n## Outputs { #outputs }\n\n",
 		"\n### Every image { #outputs-every-image }\n\n",
 		"| `chrony`{ #output-chrony } |",
 		"\n### Images with Kubernetes { #outputs-kubernetes }\n\n",
 		"| `kubelet`{ #output-kubelet } |",
+		"\n### Router images { #outputs-router-images }\n\n",
+		"| `router-nftables`{ #output-router-nftables } |",
 		"\n## Effects { #effects }\n\n",
 		"\n### Every image { #effects-every-image }\n\n",
 		"| `chrony`{ #effect-chrony } |",
 		"\n### Images with Kubernetes { #effects-kubernetes }\n\n",
 		"| `kubernetes`{ #effect-kubernetes } |",
+		"\n### Router images { #effects-router-images }\n\n",
+		"| `router-nftables`{ #effect-router-nftables } |",
 		"\n## Diagnostics { #diagnostics }\n\n",
 		"\n### Every image { #diagnostics-every-image }\n\n",
 		"| `ping`{ #diagnostic-ping } |",
 		"\n### Images with Kubernetes { #diagnostics-kubernetes }\n\n",
 		"| `crictl-pods`{ #diagnostic-crictl-pods } |",
+		"\n### Router images { #diagnostics-router-images }\n\n",
+		"| `traceroute`{ #diagnostic-traceroute } |",
 		"\nSources: ",
 	}
 	last := -1
@@ -100,6 +109,11 @@ func TestWriteBuiltins(t *testing.T) {
 			"| `tcp-connect`{ #diagnostic-tcp-connect } | Opens a TCP connection to an address and port. Runs `bash -c <script> tcp-connect {address} {port}`, with the script after the table. | `address`, address; `port`, int from 1 to 65535 | operator | — |\n" +
 			"\nScript of `tcp-connect`:\n\n```text\nif : <>\"/dev/tcp/$1/$2\"; then\n  echo \"connected to $1 port $2\"\nfi\n```\n",
 		"| `crictl-pods`{ #diagnostic-crictl-pods } | The pods the kubelet runs, as crictl pods prints them. Runs `crictl pods`. | — | reader | — |\n",
+		// The router image's built-ins are those it adds to the image without Kubernetes.
+		"| 1 | — | No FirewallZone is named local. | `refuse` | `!(\"local\" in documents)` | a zone is named local |\n",
+		"| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |\n",
+		"| `router-nftables`{ #effect-router-nftables } | The output `router-nftables` changed. | Reloads `chalkos-firewall.service`. |\n",
+		"| `traceroute`{ #diagnostic-traceroute } | The routers on the path to an address. Runs `traceroute -n -m 30 {address}`. | `address`, address | operator | — |\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the page lacks:\n%s", want)
@@ -125,7 +139,7 @@ func TestWriteBuiltinsRefusesWhatOnlyThePlainImageHas(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(plain, "effects.json"), []byte(effects), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), "testdata/builtins/default", plain)
+	err := writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), "testdata/builtins/default", plain, "testdata/builtins/router")
 	if err == nil || !strings.Contains(err.Error(), "effect ntp") {
 		t.Errorf("error %v, want one naming the effect ntp", err)
 	}
@@ -148,7 +162,7 @@ func TestWriteBuiltinsRefusesARuleOnlyThePlainImageHas(t *testing.T) {
 	if err := os.WriteFile(volume, []byte(changed), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err = writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), "testdata/builtins/default", plain)
+	err = writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), "testdata/builtins/default", plain, "testdata/builtins/router")
 	if err == nil || !strings.Contains(err.Error(), "a rule of Volume that the default image lacks: self != 'x'") {
 		t.Errorf("error %v, want one naming the rule of Volume", err)
 	}

@@ -90,12 +90,17 @@ let
 
   # The images the documentation is generated and checked against: the default variant, whose
   # options the reference lists, one without Kubernetes, whose built-ins are those of every image,
-  # and one with the homelab's extensions, whose documents the pages show as an extension's.
+  # a router image, whose kinds and built-ins router images add, and one with the homelab's
+  # extensions, whose documents the pages show as an extension's.
   docsImages = self.lib.mkImages {
     platforms = [ "metal" ];
     variants = {
       docs = { };
       plain.kubernetes = false;
+      edge = {
+        kubernetes = false;
+        router = true;
+      };
       rack.modules = [
         ../examples/homelab/extensions/rack.nix
         ../examples/homelab/extensions/hardware.nix
@@ -108,16 +113,23 @@ let
   # The schemas of chalkctl's inventory and chalklab's lab file, which they are built with.
   inventorySchema = ../pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json;
   labSchema = ../pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json;
+  # The schemas of the kinds router images add.
+  routerSchemas = "${docsImages.nixos.edge-metal.config.system.build.chalkosSchemas}/router.chalkos.dev_*.json";
   # The schemas the pages' config documents are checked against: the kinds of the image with the
-  # Rack, Hardware and BGP extensions, the inventory and the lab file.
+  # Rack, Hardware and BGP extensions, those router images add, the inventory and the lab file.
   snippetSchemas = pkgs.runCommand "chalkos-docs-schemas" { } ''
     mkdir $out
     ln -s ${docsImages.nixos.rack-metal.config.system.build.chalkosSchemas}/*.json $out/
+    ln -s ${routerSchemas} $out/
     ln -s ${inventorySchema} $out/chalkctl.chalkos.dev_v1alpha1_Inventory.json
     ln -s ${labSchema} $out/chalklab.chalkos.dev_v1alpha1_Lab.json
   '';
-  # The schemas of the default variant's kinds, which the page of config kinds lists.
-  kindSchemas = imageSystem.config.system.build.chalkosSchemas;
+  # The schemas of the default variant's kinds and of those router images add, which the page of
+  # config kinds lists.
+  kindSchemas = pkgs.runCommand "chalkos-docs-kind-schemas" { } ''
+    mkdir $out
+    ln -s ${imageSystem.config.system.build.chalkosSchemas}/*.json ${routerSchemas} $out/
+  '';
   # The schemas, facts, outputs, effects and diagnostics of an image, which the page of built-ins
   # lists.
   builtinsImage =
@@ -201,7 +213,7 @@ rec {
         docgen cli $out/docs/reference/cli $out/zensical.toml ${helpLinkPages}
         docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${inventorySchema} ${labSchema}
         docgen options $out/docs/reference ${optionsTemplates} ${argumentOptions}/share/doc/nixos/options.json ${imageOptions}/share/doc/nixos/options.json
-        docgen builtins $out/docs/reference/builtins.md ${builtinsImage "docs" imageSystem} ${builtinsImage "plain" docsImages.nixos.plain-metal}
+        docgen builtins $out/docs/reference/builtins.md ${builtinsImage "docs" imageSystem} ${builtinsImage "plain" docsImages.nixos.plain-metal} ${builtinsImage "edge" docsImages.nixos.edge-metal}
         cp -r $api proto
         chmod -R u+w proto
         (cd proto && buf generate)
