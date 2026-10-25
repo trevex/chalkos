@@ -529,7 +529,7 @@ func TestAuthorisation(t *testing.T) {
 			pki.RoleNode: nodeRole,
 		}},
 		{"maintenance with OS CA", maintenance, true, map[pki.Role]map[string]connect.Code{
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Diagnostics": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeUnimplemented},
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeUnimplemented},
 			// A header without a target is refused after authorisation.
 			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyConfig": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeUnimplemented, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeUnimplemented,
 				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodeFailedPrecondition, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented},

@@ -84,7 +84,7 @@ func (f *fakeDiagnose) recorded() []diagnostics.Run {
 
 // diagnosticsNode is a node in normal mode that declares testDiagnostics and runs them with f,
 // and a connection to it with the role given.
-func diagnosticsNode(t *testing.T, f *fakeDiagnose, role pki.Role) (*Server, *client.Conn) {
+func diagnosticsNode(t *testing.T, f diagnostics.Runner, role pki.Role) (*Server, *client.Conn) {
 	t.Helper()
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
@@ -224,5 +224,91 @@ func TestRunDiagnosticLimitsAndFailures(t *testing.T) {
 	s.diagnosticRuns.Store(maxDiagnosticRuns)
 	if _, _, _, err := runDiagnostic(conn, "route-get", map[string]string{"address": "192.0.2.1"}); connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Errorf("err = %v, want resource exhausted", err)
+	}
+}
+
+// runnerFunc is a function as a diagnostics.Runner.
+type runnerFunc func(ctx context.Context, r diagnostics.Run, stdout, stderr io.Writer) (diagnostics.Exit, error)
+
+func (f runnerFunc) Run(ctx context.Context, r diagnostics.Run, stdout, stderr io.Writer) (diagnostics.Exit, error) {
+	return f(ctx, r, stdout, stderr)
+}
+
+// A run can end while its output is still being copied, as the sandbox's does once it gives up
+// waiting for its pipes: what is written after that is dropped, and the stream ends with how the
+// run ended.
+func TestRunDiagnosticDropsOutputAfterTheEnd(t *testing.T) {
+	done := make(chan struct{})
+	var copying sync.WaitGroup
+	t.Cleanup(func() { close(done); copying.Wait() })
+	run := runnerFunc(func(_ context.Context, _ diagnostics.Run, stdout, _ io.Writer) (diagnostics.Exit, error) {
+		started := make(chan struct{})
+		copying.Go(func() {
+			for i := 0; ; i++ {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				if _, err := io.WriteString(stdout, "x"); err != nil {
+					t.Errorf("write: %v", err)
+					return
+				}
+				if i == 0 {
+					close(started)
+				}
+			}
+		})
+		<-started
+		return diagnostics.Exit{Stopped: "signal"}, nil
+	})
+	_, conn := diagnosticsNode(t, run, pki.RoleReader)
+	for range 20 {
+		stream, err := conn.RunDiagnostic(context.Background(), connect.NewRequest(&nodev1.RunDiagnosticRequest{Name: "route-get", Arguments: map[string]string{"address": "192.0.2.1"}}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var exit *nodev1.DiagnosticExit
+		for stream.Receive() {
+			if exit != nil {
+				t.Fatalf("a message after the exit: %v", stream.Msg())
+			}
+			exit = stream.Msg().GetExit()
+		}
+		if err := stream.Err(); err != nil || exit.GetStopped() != "signal" {
+			t.Fatalf("route-get = %v, %v", exit, err)
+		}
+	}
+}
+
+// A client that goes away stops its run, and the run no longer counts.
+func TestRunDiagnosticStopsWhenTheClientGoesAway(t *testing.T) {
+	started, stopped := make(chan struct{}), make(chan struct{})
+	run := runnerFunc(func(ctx context.Context, _ diagnostics.Run, stdout, _ io.Writer) (diagnostics.Exit, error) {
+		io.WriteString(stdout, "started\n")
+		close(started)
+		<-ctx.Done()
+		close(stopped)
+		return diagnostics.Exit{}, ctx.Err()
+	})
+	s, conn := diagnosticsNode(t, run, pki.RoleReader)
+	ctx, cancel := context.WithCancel(context.Background())
+	stream, err := conn.RunDiagnostic(ctx, connect.NewRequest(&nodev1.RunDiagnosticRequest{Name: "route-get", Arguments: map[string]string{"address": "192.0.2.1"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	cancel()
+	for stream.Receive() {
+	}
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the run was not stopped")
+	}
+	for deadline := time.Now().Add(10 * time.Second); s.diagnosticRuns.Load() != 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d runs counted after the client went away", s.diagnosticRuns.Load())
+		}
 	}
 }

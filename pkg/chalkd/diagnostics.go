@@ -74,21 +74,7 @@ func (s *Server) RunDiagnostic(ctx context.Context, req *connect.Request[nodev1.
 	out := &diagnosticOutput{stream: stream, stop: stop, left: diagnostics.MaxOutput}
 	run := diagnostics.Run{Name: name, Argv: argv, Capabilities: d.Capabilities, Groups: d.Groups, Timeout: d.RunTime()}
 	exit, err := s.diagnose().Run(runCtx, run, out.writer(false), out.writer(true))
-	limited, sendErr := out.result()
-	switch {
-	case sendErr != nil:
-		return sendErr
-	case limited:
-		// The run returns runCtx's error once stopped, or how it ended if it ended first.
-		exit = diagnostics.Exit{Stopped: diagnostics.StoppedOutputLimit}
-	case ctx.Err() != nil:
-		return ctx.Err()
-	case err != nil:
-		return failed(connect.CodeInternal, "run the diagnostic %s: %v", name, err)
-	}
-	return stream.Send(&nodev1.RunDiagnosticResponse{Output: &nodev1.RunDiagnosticResponse_Exit{
-		Exit: &nodev1.DiagnosticExit{Code: int32(exit.Code), Stopped: exit.Stopped},
-	}})
+	return out.finish(ctx, name, exit, err)
 }
 
 func (s *Server) diagnose() diagnostics.Runner {
@@ -101,7 +87,8 @@ func (s *Server) diagnose() diagnostics.Runner {
 // diagnosticOutput sends what a run prints as messages of the stream, from the goroutines that
 // read its standard output and error, up to diagnostics.MaxOutput bytes together. Once the output
 // passes that, or a send fails, it stops the run and discards what the run prints until it ends,
-// so that its pipes never fill.
+// so that its pipes never fill. A run may return while its output is still being copied, so the
+// stream's last message is sent under the same lock, and what is written after it is discarded.
 type diagnosticOutput struct {
 	stream *connect.ServerStream[nodev1.RunDiagnosticResponse]
 	stop   context.CancelFunc
@@ -109,6 +96,7 @@ type diagnosticOutput struct {
 	mu      sync.Mutex
 	left    int
 	limited bool
+	done    bool
 	err     error
 }
 
@@ -116,7 +104,7 @@ func (o *diagnosticOutput) writer(stderr bool) io.Writer {
 	return writerFunc(func(p []byte) (int, error) {
 		o.mu.Lock()
 		defer o.mu.Unlock()
-		if o.limited || o.err != nil {
+		if o.done || o.limited || o.err != nil {
 			return len(p), nil
 		}
 		n := min(len(p), o.left)
@@ -140,11 +128,26 @@ func (o *diagnosticOutput) writer(stderr bool) io.Writer {
 	})
 }
 
-// result tells whether the output passed the limit, and the error a send failed with.
-func (o *diagnosticOutput) result() (bool, error) {
+// finish ends the output once the run returned, with how the run ended: the stream's last
+// message, or the error the call fails with.
+func (o *diagnosticOutput) finish(ctx context.Context, name string, exit diagnostics.Exit, err error) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return o.limited, o.err
+	o.done = true
+	switch {
+	case o.err != nil:
+		return o.err
+	case o.limited:
+		// The run returns its context's error once stopped, or how it ended if it ended first.
+		exit = diagnostics.Exit{Stopped: diagnostics.StoppedOutputLimit}
+	case ctx.Err() != nil:
+		return ctx.Err()
+	case err != nil:
+		return failed(connect.CodeInternal, "run the diagnostic %s: %v", name, err)
+	}
+	return o.stream.Send(&nodev1.RunDiagnosticResponse{Output: &nodev1.RunDiagnosticResponse_Exit{
+		Exit: &nodev1.DiagnosticExit{Code: int32(exit.Code), Stopped: exit.Stopped},
+	}})
 }
 
 // writerFunc is a function as an io.Writer.
