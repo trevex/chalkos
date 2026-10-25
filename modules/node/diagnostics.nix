@@ -15,6 +15,17 @@ let
   # The form of a diagnostic's name and a parameter's, and a parameter's place in an argument.
   nameForm = "[a-z][a-z0-9-]*";
   placeholder = "[{](${nameForm})[}]";
+  # The longest name of a diagnostic, which the unit names of its runs hold.
+  maxName = 64;
+  # The form of a group a diagnostic's process belongs to.
+  groupForm = "[a-z_][a-z0-9_-]*";
+  # A timeout in seconds, of the form the option takes.
+  seconds =
+    t:
+    let
+      n = lib.toInt (lib.substring 0 (lib.stringLength t - 1) t);
+    in
+    if lib.hasSuffix "m" t then n * 60 else n;
 
   parameter = types.submodule {
     options = {
@@ -151,6 +162,10 @@ let
       builtins.match nameForm name == null
     ) "${where}: the name is not of the form ${nameForm}"
     ++ lib.optional (
+      lib.stringLength name > maxName
+    ) "${where}: the name is longer than ${toString maxName} characters"
+    ++ lib.optional (seconds d.timeout > 600) "${where}.timeout: ${d.timeout} is longer than 10m"
+    ++ lib.optional (
       !lib.hasPrefix "${builtins.storeDir}/" program
     ) "${where}.command: its first argument, ${program}, is no program of the image's store"
     ++ map (p: "${where}.command names {${p}}, which is no parameter") (
@@ -166,6 +181,9 @@ let
       p:
       "${where}.parameters.${p}: it is optional and has a default; a default fills the arguments that name it, optional drops them"
     ) (lib.filter (p: d.parameters.${p}.optional && d.parameters.${p}.default != null) parameters)
+    ++ map (g: "${where}.groups: ${g} is not of the form ${groupForm}") (
+      lib.filter (g: builtins.match groupForm g == null) d.groups
+    )
     ++ map (g: "${where}.groups: the image has no group ${g}") (
       lib.filter (g: !(config.users.groups ? ${g})) d.groups
     );

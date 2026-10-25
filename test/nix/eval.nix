@@ -1869,7 +1869,8 @@ lib.runTests {
   # A diagnostic chalkd could not run fails the image's build, with a message that names its
   # option: a name not of [a-z][a-z0-9-]*, a program outside the store, a placeholder without its
   # parameter or a parameter without its placeholder, a parameter both optional and with a
-  # default, and a group the image lacks.
+  # default, a group not of [a-z_][a-z0-9_-]* or one the image lacks, a name longer than 64
+  # characters, and a timeout longer than 10m.
   testDiagnosticsRefuseWhatChalkdCannotRun =
     let
       ip = "${pkgs.iproute2}/bin/ip";
@@ -1972,6 +1973,29 @@ lib.runTests {
             groups = [ "chalkos-no-such-group" ];
           };
         };
+        groupForm = refusals {
+          route = plain // {
+            command = [ ip ];
+            groups = [ "Wheel" ];
+          };
+        };
+        longName = refusals {
+          ${lib.strings.replicate 65 "a"} = plain // {
+            command = [ ip ];
+          };
+        };
+        longTimeout = refusals {
+          route = plain // {
+            command = [ ip ];
+            timeout = "601s";
+          };
+        };
+        longestTimeout = refusals {
+          route = plain // {
+            command = [ ip ];
+            timeout = "10m";
+          };
+        };
       };
       expected = {
         accepted = [ ];
@@ -1989,6 +2013,15 @@ lib.runTests {
           "chalkos.diagnostics.route.parameters.table: it is optional and has a default; a default fills the arguments that name it, optional drops them"
         ];
         group = [ "chalkos.diagnostics.route.groups: the image has no group chalkos-no-such-group" ];
+        groupForm = [
+          "chalkos.diagnostics.route.groups: Wheel is not of the form [a-z_][a-z0-9_-]*"
+          "chalkos.diagnostics.route.groups: the image has no group Wheel"
+        ];
+        longName = [
+          "chalkos.diagnostics.${lib.strings.replicate 65 "a"}: the name is longer than 64 characters"
+        ];
+        longTimeout = [ "chalkos.diagnostics.route.timeout: 601s is longer than 10m" ];
+        longestTimeout = [ ];
       };
     };
   # The image writes its diagnostics to /etc/chalkos/diagnostics.json and system.build, as chalkd
