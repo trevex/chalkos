@@ -63,7 +63,9 @@ const RenderUser = "chalkos-render"
 // sandbox of their own: as RenderUser without capabilities, devices or network, on a read-only
 // system without STATE, /var, or the config, credentials and Kubernetes keys chalkd writes below
 // /run/chalkos, so a program reads no Secret's value; a renderer may write $OUT alone, and a check
-// may open netlink sockets besides Unix ones.
+// may open netlink sockets besides Unix ones. Through netlink a check reaches only its own
+// network namespace, but nf_tables there makes the kernel load the modules of the expressions a
+// ruleset uses, ProtectKernelModules notwithstanding.
 // chalkos-config renders before sysinit.target, where the system bus does not run yet, so
 // systemd-run reaches the manager on its private socket, on which it cannot follow a unit as
 // --wait and --pipe do: the start job of a oneshot unit finishes when the program exits, the
