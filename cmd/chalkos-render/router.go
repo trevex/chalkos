@@ -272,7 +272,8 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 
 // networkLinks are the interface names in the [Match] sections' Name= of the Network documents
 // of byKind, sorted and once each. A value, or each of a list, holds names between spaces and
-// tabs, as systemd splits it; a glob or a negation, starting with !, names no link.
+// tabs, as systemd splits it; a glob or a negation, starting with !, names no link, and a value
+// whose first name starts with ! negates all of its names.
 func networkLinks(byKind map[string]any) []string {
 	docs, _ := byKind["Network"].([]any)
 	seen := map[string]bool{}
@@ -283,7 +284,11 @@ func networkLinks(byKind map[string]any) []string {
 			section, _ := m.(map[string]any)
 			for _, v := range oneOrMany(section["name"]) {
 				value, _ := v.(string)
-				for _, name := range strings.Fields(value) {
+				names := strings.Fields(value)
+				if len(names) > 0 && strings.HasPrefix(names[0], "!") {
+					continue
+				}
+				for _, name := range names {
 					if !strings.ContainsAny(name, "*?[!") && interfaceName.MatchString(name) {
 						seen[name] = true
 					}

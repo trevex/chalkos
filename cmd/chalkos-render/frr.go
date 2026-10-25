@@ -69,11 +69,11 @@ func frrConfig(d routerDocuments, node string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for _, step := range []func(*strings.Builder) error{c.prefixLists, c.communityLists, c.routeMaps, c.router, c.bfd} {
-		if err := step(&b); err != nil {
-			return "", err
-		}
-	}
+	c.prefixLists(&b)
+	c.communityLists(&b)
+	c.routeMaps(&b)
+	c.router(&b)
+	c.bfd(&b)
 	b.WriteString("end\n")
 	return b.String(), nil
 }
@@ -89,6 +89,8 @@ type frr struct {
 	// large communities, by name.
 	families map[string]string
 	large    map[string]bool
+	// entries are each PrefixList's entries as frr.conf writes them, by name.
+	entries map[string][]string
 	// policyFamily is each RoutingPolicy's family, that of its PrefixLists; "" for a policy that
 	// matches none.
 	policyFamily map[string]string
@@ -182,8 +184,10 @@ func checkASPath(r string) error {
 var credential = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // description is a BGPPeer's description as the schema takes it, without the spaces at its ends
-// or in a row that FRR's parser would drop; 80 characters at most.
-var description = regexp.MustCompile(`^[!-~]+( [!-~]+)*$`)
+// or in a row that FRR's parser would drop, and without an @, so that it never holds a password
+// placeholder the credentials helper would fill in for every reader of the config; 80 characters
+// at most.
+var description = regexp.MustCompile(`^[!-?A-~]+( [!-?A-~]+)*$`)
 
 // plainInterface is an interface's name without a glob.
 var plainInterface = regexp.MustCompile(`^[A-Za-z0-9_.:@-]{1,15}$`)
@@ -199,6 +203,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 		policies:     d.RoutingPolicies,
 		families:     map[string]string{},
 		large:        map[string]bool{},
+		entries:      map[string][]string{},
 		policyFamily: map[string]string{},
 		neighbours:   map[string][]neighbour{},
 		links:        d.Links,
@@ -207,8 +212,8 @@ func newFRR(d routerDocuments) (*frr, error) {
 	if b.ASN == 0 {
 		return nil, fmt.Errorf("BGP: asn 0 is no AS number")
 	}
-	if a, err := netip.ParseAddr(b.RouterID); err != nil || !a.Is4() {
-		return nil, fmt.Errorf("BGP: routerID %q is no IPv4 address", b.RouterID)
+	if a, err := netip.ParseAddr(b.RouterID); err != nil || !a.Is4() || a.IsUnspecified() || a.IsMulticast() || a == netip.AddrFrom4([4]byte{255, 255, 255, 255}) {
+		return nil, fmt.Errorf("BGP: routerID %q is no IPv4 unicast address", b.RouterID)
 	}
 	for _, m := range []struct {
 		what      string
@@ -223,26 +228,30 @@ func newFRR(d routerDocuments) (*frr, error) {
 		}
 	}
 	for _, l := range d.Prefixes {
-		if l.Spec.Family != "ipv4" && l.Spec.Family != "ipv6" {
-			return nil, fmt.Errorf("PrefixList %s: family %q is neither ipv4 nor ipv6", l.Name, l.Spec.Family)
-		}
-		if len(l.Spec.Entries) == 0 {
-			return nil, fmt.Errorf("PrefixList %s has no entries", l.Name)
+		entries, err := prefixEntries(l.Spec)
+		if err != nil {
+			return nil, fmt.Errorf("PrefixList %s: %w", l.Name, err)
 		}
 		c.families[l.Name] = l.Spec.Family
+		c.entries[l.Name] = entries
 	}
 	for _, l := range d.Communities {
 		if len(l.Spec.Communities) == 0 {
 			return nil, fmt.Errorf("CommunityList %s holds no community", l.Name)
 		}
+		seen := map[string]bool{}
 		for i, v := range l.Spec.Communities {
-			_, large, err := community(v)
+			v, large, err := community(v)
 			if err != nil {
 				return nil, fmt.Errorf("CommunityList %s: %w", l.Name, err)
 			}
 			if i > 0 && large != c.large[l.Name] {
 				return nil, fmt.Errorf("CommunityList %s holds standard and large communities", l.Name)
 			}
+			if seen[v] {
+				return nil, fmt.Errorf("CommunityList %s holds %s twice", l.Name, v)
+			}
+			seen[v] = true
 			c.large[l.Name] = large
 		}
 	}
@@ -251,11 +260,17 @@ func newFRR(d routerDocuments) (*frr, error) {
 			return nil, fmt.Errorf("RoutingPolicy %s: %w", p.Name, err)
 		}
 	}
+	// The network of each range, so two never announce one.
+	announced := map[netip.Prefix]string{}
 	for _, n := range b.Networks {
 		p, err := netip.ParsePrefix(n.Prefix)
 		if err != nil {
 			return nil, fmt.Errorf("BGP: network %q is no address range", n.Prefix)
 		}
+		if other, ok := announced[p.Masked()]; ok {
+			return nil, fmt.Errorf("BGP: networks %s and %s both announce %s; give each range one network", other, n.Prefix, p.Masked())
+		}
+		announced[p.Masked()] = n.Prefix
 		if n.Policy != nil {
 			if err := c.policyOfFamily(*n.Policy, familyOf(p.Addr())); err != nil {
 				return nil, fmt.Errorf("BGP: network %s: %w", n.Prefix, err)
@@ -381,7 +396,7 @@ func (c *frr) peerNeighbours(p named[peerSpec]) ([]neighbour, error) {
 		return nil, fmt.Errorf("the password's Secret %q and key %q are letters, digits, '.', '_' and '-' alone", s.Password.SecretRef.Name, s.Password.SecretRef.Key)
 	}
 	if s.Description != nil && (len(*s.Description) > 80 || !description.MatchString(*s.Description)) {
-		return nil, fmt.Errorf("the description is 1 to 80 printable ASCII characters, with single spaces between words")
+		return nil, fmt.Errorf("the description is 1 to 80 printable ASCII characters but @, with single spaces between words")
 	}
 	if s.Families.IPv4 == nil && s.Families.IPv6 == nil {
 		return nil, fmt.Errorf("it exchanges the routes of no family")
@@ -407,8 +422,12 @@ func (c *frr) peerNeighbours(p named[peerSpec]) ([]neighbour, error) {
 	switch {
 	case s.Address != nil:
 		a, err := netip.ParseAddr(*s.Address)
-		if err != nil || a.Zone() != "" || a.IsUnspecified() || a.IsMulticast() {
-			return nil, fmt.Errorf("address %q is no neighbour address: an IPv4 or IPv6 unicast address without a zone", *s.Address)
+		if err != nil || a.Zone() != "" || a.IsUnspecified() || a.IsMulticast() || a.IsLinkLocalUnicast() || a.IsLoopback() || a.Is4In6() {
+			return nil, fmt.Errorf("address %q is no neighbour address: an IPv4 or IPv6 unicast address beyond the router, neither link-local nor IPv4-mapped; a neighbour on a link takes interface or interfaces", *s.Address)
+		}
+		// An IPv6 session carries IPv4 routes with IPv6 next hops alone.
+		if a.Is6() && s.Families.IPv4 != nil && !s.ExtendedNextHop {
+			return nil, fmt.Errorf("families.ipv4 at the IPv6 address %s needs extendedNextHop, as the routes' next hops are IPv6 addresses", a)
 		}
 		return []neighbour{{name: a.String()}}, nil
 	case s.Interface != nil:
@@ -452,49 +471,73 @@ func matchesGlob(glob, link string) bool {
 	return glob == link
 }
 
+// ipWord is the word of FRR's IPv4 or IPv6 commands for a family.
+func ipWord(family string) string {
+	if family == "ipv4" {
+		return "ip"
+	}
+	return "ipv6"
+}
+
+// prefixEntries checks a PrefixList's entries and returns each as frr.conf writes it after the
+// sequence number: its action, its masked prefix, and its ge and le.
+func prefixEntries(l prefixListSpec) ([]string, error) {
+	longest := map[string]int{"ipv4": 32, "ipv6": 128}[l.Family]
+	if longest == 0 {
+		return nil, fmt.Errorf("family %q is neither ipv4 nor ipv6", l.Family)
+	}
+	if len(l.Entries) == 0 {
+		return nil, fmt.Errorf("it has no entries")
+	}
+	// seen holds the index of each entry by what it matches.
+	seen := map[string]int{}
+	var entries []string
+	for i, e := range l.Entries {
+		p, err := netip.ParsePrefix(e.Prefix)
+		if err != nil || familyOf(p.Addr()) != l.Family {
+			return nil, fmt.Errorf("%q is no %s address range", e.Prefix, l.Family)
+		}
+		if e.Action != "permit" && e.Action != "deny" {
+			return nil, fmt.Errorf("action %q is neither permit nor deny", e.Action)
+		}
+		match := p.Masked().String()
+		// mgmtd refuses the whole of a config whose ge or le lie outside the prefix's length and
+		// the family's longest prefix, or whose ge passes its le.
+		if e.GE != nil {
+			if *e.GE < p.Bits() || *e.GE > longest || (e.LE != nil && *e.GE > *e.LE) {
+				return nil, fmt.Errorf("ge %d of %s lies outside %d to %d, or above le", *e.GE, e.Prefix, p.Bits(), longest)
+			}
+			match += fmt.Sprintf(" ge %d", *e.GE)
+		}
+		if e.LE != nil {
+			if *e.LE < p.Bits() || *e.LE > longest {
+				return nil, fmt.Errorf("le %d of %s lies outside %d to %d", *e.LE, e.Prefix, p.Bits(), longest)
+			}
+			match += fmt.Sprintf(" le %d", *e.LE)
+		}
+		// An entry equal to an earlier one never decides, and FRR's prefix-list commands take one
+		// for the other.
+		if j, ok := seen[match]; ok {
+			return nil, fmt.Errorf("entries %d and %d both match %s; the later never decides", j+1, i+1, match)
+		}
+		seen[match] = i
+		entries = append(entries, e.Action+" "+match)
+	}
+	return entries, nil
+}
+
 // prefixLists renders each PrefixList as a prefix-list of its family, an entry a sequence number.
-func (c *frr) prefixLists(b *strings.Builder) error {
+// The numbers follow the entries' positions, so an entry put before others renumbers those after
+// it, which frr-reload.py then rewrites.
+func (c *frr) prefixLists(b *strings.Builder) {
 	for _, l := range c.prefixes {
-		word := map[string]string{"ipv4": "ip", "ipv6": "ipv6"}[l.Spec.Family]
-		max := map[string]int{"ipv4": 32, "ipv6": 128}[l.Spec.Family]
-		// seen holds the index of each entry by what it matches.
-		seen := map[string]int{}
-		for i, e := range l.Spec.Entries {
-			p, err := netip.ParsePrefix(e.Prefix)
-			if err != nil || familyOf(p.Addr()) != l.Spec.Family {
-				return fmt.Errorf("PrefixList %s: %q is no %s address range", l.Name, e.Prefix, l.Spec.Family)
-			}
-			if e.Action != "permit" && e.Action != "deny" {
-				return fmt.Errorf("PrefixList %s: action %q is neither permit nor deny", l.Name, e.Action)
-			}
-			match := p.Masked().String()
-			// mgmtd refuses the whole of a config whose ge or le lie outside the prefix's length
-			// and the family's longest prefix, or whose ge passes its le.
-			if e.GE != nil {
-				if *e.GE < p.Bits() || *e.GE > max || (e.LE != nil && *e.GE > *e.LE) {
-					return fmt.Errorf("PrefixList %s: ge %d of %s lies outside %d to %d, or above le", l.Name, *e.GE, e.Prefix, p.Bits(), max)
-				}
-				match += fmt.Sprintf(" ge %d", *e.GE)
-			}
-			if e.LE != nil {
-				if *e.LE < p.Bits() || *e.LE > max {
-					return fmt.Errorf("PrefixList %s: le %d of %s lies outside %d to %d", l.Name, *e.LE, e.Prefix, p.Bits(), max)
-				}
-				match += fmt.Sprintf(" le %d", *e.LE)
-			}
-			// An entry equal to an earlier one never decides, and FRR's prefix-list commands take
-			// one for the other.
-			if j, ok := seen[match]; ok {
-				return fmt.Errorf("PrefixList %s: entries %d and %d both match %s; the later never decides", l.Name, j+1, i+1, match)
-			}
-			seen[match] = i
-			fmt.Fprintf(b, "%s prefix-list %s%s seq %d %s %s\n", word, prefixListPrefix, l.Name, 5*(i+1), e.Action, match)
+		for i, e := range c.entries[l.Name] {
+			fmt.Fprintf(b, "%s prefix-list %s%s seq %d %s\n", ipWord(l.Spec.Family), prefixListPrefix, l.Name, 5*(i+1), e)
 		}
 	}
 	if len(c.prefixes) > 0 {
 		b.WriteString("!\n")
 	}
-	return nil
 }
 
 // communityList is the community-list line of a community, standard or large, as FRR writes it.
@@ -509,7 +552,7 @@ func communityList(name string, seq int, value string) string {
 
 // communityLists renders each CommunityList, the communities a term removes and a term's AS path
 // as FRR's lists.
-func (c *frr) communityLists(b *strings.Builder) error {
+func (c *frr) communityLists(b *strings.Builder) {
 	written := false
 	for _, l := range c.communities {
 		for i, v := range l.Spec.Communities {
@@ -532,25 +575,26 @@ func (c *frr) communityLists(b *strings.Builder) error {
 	if written {
 		b.WriteString("!\n")
 	}
-	return nil
 }
 
 // removeList and asPathList name the lists of term i of a policy.
 func removeList(policy string, i int) string { return fmt.Sprintf("rm-%s-%d", policy, termSeq(i)) }
 func asPathList(policy string, i int) string { return fmt.Sprintf("asp-%s-%d", policy, termSeq(i)) }
 
-// termSeq is the route-map sequence number of term i; the default is 65535.
+// termSeq is the route-map sequence number of term i; the default is 65535. The numbers follow
+// the terms' positions, so a term put before others renumbers those after it, which
+// frr-reload.py then rewrites.
 func termSeq(i int) int { return 10 * (i + 1) }
 
 // routeMaps renders each RoutingPolicy as a route-map: an entry per term, and its default last,
 // and the route-map that accepts every route when a peer's family needs it.
-func (c *frr) routeMaps(b *strings.Builder) error {
+func (c *frr) routeMaps(b *strings.Builder) {
 	for _, p := range c.policies {
 		for i, t := range p.Spec.Terms {
 			action := map[string]string{"accept": "permit", "reject": "deny"}[t.Then.Action]
 			fmt.Fprintf(b, "route-map %s%s %s %d\n", policyPrefix, p.Name, action, termSeq(i))
 			if l := t.Match.PrefixList; l != nil {
-				fmt.Fprintf(b, " match %s address prefix-list %s%s\n", map[string]string{"ipv4": "ip", "ipv6": "ipv6"}[c.families[*l]], prefixListPrefix, *l)
+				fmt.Fprintf(b, " match %s address prefix-list %s%s\n", ipWord(c.families[*l]), prefixListPrefix, *l)
 			}
 			if l := t.Match.CommunityList; l != nil {
 				kind := "community"
@@ -614,7 +658,6 @@ func (c *frr) routeMaps(b *strings.Builder) error {
 	if len(c.policies) > 0 || c.needsAcceptAll() {
 		b.WriteString("!\n")
 	}
-	return nil
 }
 
 // needsAcceptAll reports whether a peer's family names no import or export policy.
@@ -631,7 +674,7 @@ func (c *frr) needsAcceptAll() bool {
 
 // router renders the BGP instance: its settings, a peer group per peer with its sessions, and
 // both address families with the networks and each peer's policies.
-func (c *frr) router(b *strings.Builder) error {
+func (c *frr) router(b *strings.Builder) {
 	g := c.bgp
 	fmt.Fprintf(b, "router bgp %d\n bgp router-id %s\n no bgp default ipv4-unicast\n", g.ASN, g.RouterID)
 	if g.Multipath.ASPathRelax {
@@ -711,16 +754,14 @@ func (c *frr) router(b *strings.Builder) error {
 		b.WriteString(" exit-address-family\n")
 	}
 	b.WriteString("exit\n!\n")
-	return nil
 }
 
 // bfd renders the BFD profile of the BGP document's timers, which the peers with bfd use.
-func (c *frr) bfd(b *strings.Builder) error {
+func (c *frr) bfd(b *strings.Builder) {
 	if !slices.ContainsFunc(c.peers, func(p named[peerSpec]) bool { return p.Spec.BFD }) {
-		return nil
+		return
 	}
 	t := c.bgp.BFD
 	fmt.Fprintf(b, "bfd\n profile %s\n  receive-interval %d\n  transmit-interval %d\n  detect-multiplier %d\n exit\nexit\n!\n",
 		bfdProfile, t.ReceiveMs, t.TransmitMs, t.Multiplier)
-	return nil
 }
