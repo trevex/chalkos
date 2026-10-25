@@ -16,8 +16,9 @@ var Tables = map[string]uint32{"default": 253, "main": 254, "local": 255}
 
 // protocols are the route protocols the kernel names, as iproute2 does.
 var protocols = map[uint8]string{
-	1: "redirect", 2: "kernel", 3: "boot", 4: "static", 9: "ra", 11: "zebra", 12: "bird", 16: "dhcp",
-	42: "babel", 186: "bgp", 187: "isis", 188: "ospf", 189: "rip", 192: "eigrp",
+	1: "redirect", 2: "kernel", 3: "boot", 4: "static", 8: "gated", 9: "ra", 10: "mrt", 11: "zebra", 12: "bird",
+	13: "dnrouted", 14: "xorp", 15: "ntk", 16: "dhcp", 17: "mrouted", 18: "keepalived", 42: "babel", 99: "openr",
+	186: "bgp", 187: "isis", 188: "ospf", 189: "rip", 192: "eigrp",
 }
 
 // routeTypes are the kernel's route types, by number.

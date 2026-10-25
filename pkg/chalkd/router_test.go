@@ -12,6 +12,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/router"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
@@ -134,5 +135,16 @@ func TestRouterStatusWhileFRRHangs(t *testing.T) {
 	st := status(t, s).Router
 	if st == nil || len(st.Peers) != 0 || !strings.Contains(st.BgpError, "vtysh did not answer within 10ms") {
 		t.Errorf("router status while FRR hangs = %v", st)
+	}
+}
+
+// A request that ends before vtysh answers is no timeout of vtysh's.
+func TestVtyshCancelled(t *testing.T) {
+	s, r := routerServer(t)
+	s.Router.Run = hangingRunner{r}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.Router.vtysh(ctx, router.NeighborsCommand); err == nil || strings.Contains(err.Error(), "did not answer") {
+		t.Errorf("err = %v", err)
 	}
 }

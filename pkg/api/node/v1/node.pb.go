@@ -2319,7 +2319,8 @@ type StatusResponse struct {
 	StagedConfigVersion string `protobuf:"bytes,11,opt,name=staged_config_version,json=stagedConfigVersion,proto3" json:"staged_config_version,omitempty"`
 	// The image's outputs, by name.
 	Outputs []*OutputStatus `protobuf:"bytes,12,rep,name=outputs,proto3" json:"outputs,omitempty"`
-	// State of the node's routing daemons; absent on a node whose image has no router layer.
+	// State of the node's routing daemons; absent in maintenance mode and on a node whose image
+	// has no router layer.
 	Router        *RouterStatus `protobuf:"bytes,13,opt,name=router,proto3" json:"router,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2518,8 +2519,7 @@ type BGPPeerStatus struct {
 	PrefixesReceived uint32 `protobuf:"varint,5,opt,name=prefixes_received,json=prefixesReceived,proto3" json:"prefixes_received,omitempty"`
 	// Routes the router sends the neighbour, of every family.
 	PrefixesSent uint32 `protobuf:"varint,6,opt,name=prefixes_sent,json=prefixesSent,proto3" json:"prefixes_sent,omitempty"`
-	// The state of the session's BFD: up, down, init, admin-down or unknown; empty for a peer
-	// without bfd.
+	// The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd.
 	Bfd           string `protobuf:"bytes,7,opt,name=bfd,proto3" json:"bfd,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -34,7 +35,7 @@ func (r *Router) vtysh(ctx context.Context, command string) ([]byte, error) {
 		run = quiet.RunQuiet
 	}
 	out, err := run(ctx, "vtysh", "-c", command)
-	if err != nil && ctx.Err() != nil {
+	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return nil, fmt.Errorf("vtysh did not answer within %v", vtyshTimeout)
 	}
 	return out, err

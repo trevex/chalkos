@@ -254,7 +254,7 @@ The response of Status: the state of an installed node.
 | `config_version` | string | SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by its own SHA-256. Empty on a node that runs no config. |
 | `staged_config_version` | string | The version of the config kept for the image staged to boot next, as config_version gives the running one's; empty without a staged image or config for it. |
 | `outputs` | list of OutputStatus | The image's outputs, by name. |
-| `router` | RouterStatus | State of the node's routing daemons; absent on a node whose image has no router layer. |
+| `router` | RouterStatus | State of the node's routing daemons; absent in maintenance mode and on a node whose image has no router layer. |
 
 Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [KubernetesStatus](#message-kubernetesstatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [RouterStatus](#message-routerstatus).
 
@@ -719,7 +719,7 @@ One BGP session of a router: a BGPPeer's address, or one of its interfaces.
 | `uptime_seconds` | uint64 | How long the session has been established, in seconds; 0 while it is not. |
 | `prefixes_received` | uint32 | Routes the router accepted from the neighbour, of every family. |
 | `prefixes_sent` | uint32 | Routes the router sends the neighbour, of every family. |
-| `bfd` | string | The state of the session's BFD: up, down, init, admin-down or unknown; empty for a peer without bfd. |
+| `bfd` | string | The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd. |
 
 ### BGPRoute { #message-bgproute }
 

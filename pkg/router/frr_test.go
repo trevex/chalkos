@@ -52,6 +52,13 @@ func TestParsePeersWithout(t *testing.T) {
 	if _, err := ParsePeers([]byte("% Unknown command")); err == nil || !strings.Contains(err.Error(), "read FRR's BGP neighbours") {
 		t.Errorf("err = %v", err)
 	}
+	// vtysh prints nothing while bgpd is not running.
+	if _, err := ParsePeers([]byte(" \n")); err == nil || !strings.Contains(err.Error(), "bgpd did not answer") {
+		t.Errorf("err of no output = %v", err)
+	}
+	if _, err := ParseRoutes(nil); err == nil || !strings.Contains(err.Error(), "bgpd did not answer") {
+		t.Errorf("err of no paths = %v", err)
+	}
 }
 
 // The selected paths of show bgp ipv6 unicast detail json, recorded from FRR 10.7 on an inner
@@ -97,6 +104,15 @@ func TestParseBGPRoutes(t *testing.T) {
 		}
 		if got := describe(routes); got != strings.Join(c.want, "\n") {
 			t.Errorf("%s:\n%s\nwant:\n%s", c.file, got, strings.Join(c.want, "\n"))
+		}
+	}
+}
+
+// FRR 10.7 names a session's BFD status Up, Down, Admin Down or Unknown.
+func TestBFDState(t *testing.T) {
+	for in, want := range map[string]string{"Up": "up", "Down": "down", "Admin Down": "admin-down", "Unknown": "unknown", "": "unknown"} {
+		if got := bfdState(in); got != want {
+			t.Errorf("bfdState(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

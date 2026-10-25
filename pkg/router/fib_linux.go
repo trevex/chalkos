@@ -23,7 +23,9 @@ const (
 )
 
 // KernelRoutes lists the routes of every table of the kernel, both families, in the order of
-// their tables, families and destinations.
+// their tables, families and destinations. zebra installs routes with nexthop objects; their next
+// hops are those the kernel adds to the dump while net.ipv4.nexthop_compat_mode is 1, its
+// default, as RTA_NH_ID is not resolved here.
 func KernelRoutes() ([]*nodev1.KernelRoute, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {

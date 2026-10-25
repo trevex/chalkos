@@ -3,8 +3,10 @@
 package router
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -41,6 +43,9 @@ type neighbor struct {
 // the peers of a router's status, by BGPPeer document and then by neighbour. A session of no
 // BGPPeer's peer group is left out; FRR prints {} without a BGP instance.
 func ParsePeers(data []byte) ([]*nodev1.BGPPeerStatus, error) {
+	if err := answered(data); err != nil {
+		return nil, err
+	}
 	var neighbors map[string]neighbor
 	if err := json.Unmarshal(data, &neighbors); err != nil {
 		return nil, fmt.Errorf("read FRR's BGP neighbours: %w", err)
@@ -70,12 +75,21 @@ func ParsePeers(data []byte) ([]*nodev1.BGPPeerStatus, error) {
 	return peers, nil
 }
 
-// bfdState is FRR's BFD status as the status names it: up, down, init, admin-down or unknown.
+// answered refuses vtysh's empty output, which it prints while bgpd is not running.
+func answered(data []byte) error {
+	if len(bytes.TrimSpace(data)) == 0 {
+		return errors.New("bgpd did not answer")
+	}
+	return nil
+}
+
+// bfdState is FRR's BFD status, Up, Down, Admin Down or Unknown, as the status names it: up, down,
+// admin-down or unknown.
 func bfdState(s string) string {
 	switch s := strings.ToLower(s); s {
-	case "up", "down", "init":
+	case "up", "down":
 		return s
-	case "admindown", "admin-down", "adm-down":
+	case "admin down":
 		return "admin-down"
 	}
 	return "unknown"
@@ -113,6 +127,9 @@ type path struct {
 // selected: the best path of each prefix and the equal paths installed beside it, by prefix.
 // FRR prints a warning and no routes without a BGP instance.
 func ParseRoutes(data []byte) ([]*nodev1.BGPRoute, error) {
+	if err := answered(data); err != nil {
+		return nil, err
+	}
 	var table struct {
 		Routes map[string][]path `json:"routes"`
 	}

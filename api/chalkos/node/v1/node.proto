@@ -547,7 +547,8 @@ message StatusResponse {
   string staged_config_version = 11;
   // The image's outputs, by name.
   repeated OutputStatus outputs = 12;
-  // State of the node's routing daemons; absent on a node whose image has no router layer.
+  // State of the node's routing daemons; absent in maintenance mode and on a node whose image
+  // has no router layer.
   RouterStatus router = 13;
 }
 
@@ -575,8 +576,7 @@ message BGPPeerStatus {
   uint32 prefixes_received = 5;
   // Routes the router sends the neighbour, of every family.
   uint32 prefixes_sent = 6;
-  // The state of the session's BFD: up, down, init, admin-down or unknown; empty for a peer
-  // without bfd.
+  // The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd.
   string bfd = 7;
 }
 
