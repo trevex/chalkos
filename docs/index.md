@@ -9,7 +9,8 @@ description: "An image-based NixOS for nodes that run as appliances"
 # chalkos
 
 <p class="ck-tagline" markdown>
-chalkos is an image-based NixOS for nodes that run as appliances, today as Kubernetes nodes.
+chalkos is an image-based NixOS for nodes that run as appliances, today as Kubernetes nodes and
+routers.
 Nix builds the images, and Secure Boot verifies them at every boot.
 </p>
 
@@ -87,6 +88,15 @@ from it, and reload or restart the service when those files change.
     virtual IP.
 
     [:octicons-arrow-right-24: Run](kubernetes/index.md)
+
+-   :material-router-network: __Run a router__
+
+    ---
+
+    Forward between a node's networks, and filter and translate what passes with zones, policies
+    and NAT rules.
+
+    [:octicons-arrow-right-24: Run](router/index.md)
 
 -   :material-package-variant-closed: __Build images__
 

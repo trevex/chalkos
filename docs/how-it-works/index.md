@@ -14,7 +14,8 @@ protection stops. For the whole model on one page first, read
 
 These pages describe the operating system of a node: the base that every image carries. A layer
 adds one role on top of the base, and an image carries one layer at most. The Kubernetes layer
-below describes what chalkos adds to run Kubernetes on it.
+and the router layer below describe what chalkos adds to run Kubernetes on it, or to route
+between networks.
 
 <div class="grid cards" markdown>
 
@@ -160,5 +161,32 @@ These pages describe what chalkos adds to a node to run Kubernetes on the shippe
     How a new Kubernetes version rolls through the control planes first.
 
     [:octicons-arrow-right-24: Read](kubernetes/upgrades.md)
+
+</div>
+
+## Router layer
+
+These pages describe what chalkos adds to a node of a router image to forward between its
+networks and filter what passes.
+
+<div class="grid cards" markdown>
+
+-   :material-router-network: __How a router works__
+
+    ---
+
+    The router kinds, the Router document's kernel settings, the boot order and the guard of the
+    management interfaces.
+
+    [:octicons-arrow-right-24: Read](router/overview.md)
+
+-   :material-wall-fire: __The router's firewall__
+
+    ---
+
+    The one nftables table of a router: the protected rules, zones and policies, NAT, the
+    reverse-path filter and the fallback ruleset.
+
+    [:octicons-arrow-right-24: Read](router/firewall.md)
 
 </div>

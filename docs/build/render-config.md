@@ -248,6 +248,10 @@ fails refuses the files. The check runs after the renderer, in the same sandbox:
 - Standard input holds the renderer's input, so a check can compare the files with the documents.
 - `PATH` holds coreutils, grep and sed alone. Name any other program by its store path, as
   `${bird}/bin/bird` does.
+- Unlike the renderer, the check may open netlink sockets. They reach the sandbox's own network
+  namespace, or one the check creates: the router's check runs
+  `unshare --map-root-user --net nft --check --file "$OUT/ruleset.nft"`, so the kernel checks the
+  ruleset.
 
 The best check is the service's own validator, such as `bird -p`, `nginx -t` or `chronyd -p`.
 `bird-conf`'s check defines each password constant before it runs `bird -p`, because the
@@ -332,7 +336,7 @@ hash of the files the node still serves.
 chalkd runs every renderer and check as a transient unit with these limits:
 
 - It runs as the unprivileged system user `chalkos-render`, without capabilities, devices or
-  network.
+  network. A check may open netlink sockets, which reach no network but a namespace's own.
 - The system is read-only. STATE, `/var`, and the config, credentials and Kubernetes keys chalkd
   writes below `/run/chalkos` are hidden, so a renderer cannot read a secret even by its path.
 - The renderer may write `$OUT` and a private `/tmp` of 16 MiB alone.

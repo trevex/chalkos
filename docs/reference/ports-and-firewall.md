@@ -16,7 +16,8 @@ listen on locally, the nftables tables on a node and the connections a node make
 
 The firewall accepts new connections on these ports alone. Every node has the first; the others
 depend on whether the image has Kubernetes, on the node's type (`Node.spec.type`:
-`controlplane` or `worker`) and on the CNI.
+`controlplane` or `worker`) and on the CNI. A router image filters with a table of its own,
+which [Router images](#router-images) describes.
 
 | Port | Protocol | Service | Nodes | Connects to it |
 | --- | --- | --- | --- | --- |
@@ -123,6 +124,28 @@ the node's `Node` document changes. The table clears the bit on every packet the
 before it marks, and again after the firewall's chain, so a network plugin of the cluster's own
 must not use it.
 
+## Router images
+
+A router image has no NixOS firewall. The router layer's table `inet chalkos` filters instead, and
+no other table of chalkos filters the router's traffic.
+[The router's firewall](../how-it-works/router/firewall.md) describes its chains.
+
+| Port | Protocol | Service | Accepted on |
+| --- | --- | --- | --- |
+| 50000 | TCP | chalkd's node API, mutual TLS | the interfaces of `Router.spec.management.interfaces`, or every interface while it is null; every interface while the node has no rendered ruleset, as in maintenance mode |
+
+The table also accepts the loopback interface, established and related connections, ICMP and
+ICMPv6 errors and echo requests, ICMPv6 neighbour discovery, router solicitations and
+advertisements and multicast listener discovery, and DHCPv6 replies from port 547 to port 546 of
+a link-local address. A `FirewallPolicy` whose `to` is `local` accepts more. Of the
+[listeners the firewall keeps closed](#listeners-the-firewall-keeps-closed), a router has those
+of every node. The image ignores `networking.firewall` options, such as `allowedTCPPorts`, and its
+build warns of each one set.
+
+| Table | Owner | Contents |
+| --- | --- | --- |
+| `inet chalkos` | `chalkos-firewall.service` | The `AddressSet` sets, a chain per `FirewallPolicy`, the reverse-path filter, the `input` and `forward` chains and the NAT chains, which the output `router-nftables` renders. |
+
 ## Connections a node makes
 
 A network firewall in front of the nodes needs to let these through, besides the open ports
@@ -149,6 +172,7 @@ control plane that holds it and announces it to the neighbours with ARP or IPv6 
 advertisements.
 
 Sources: the firewall rules of `modules/node/chalkd.nix`, `modules/node/kubernetes`,
-`nix/controlplane-ports.nix` and `pkg/kubernetes/vxlan`, and the listeners of
+`modules/node/router`, `cmd/chalkos-render/nftables.go`, `nix/controlplane-ports.nix` and
+`pkg/kubernetes/vxlan`, and the listeners of
 `cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
 `modules/node/kubernetes`.

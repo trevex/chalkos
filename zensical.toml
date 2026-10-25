@@ -42,6 +42,11 @@ nav = [
     "kubernetes/rotate-kubernetes-cas.md",
     "kubernetes/troubleshooting.md",
   ] },
+  { "Run a router" = [
+    "router/index.md",
+    "router/set-up.md",
+    "router/firewall-and-nat.md",
+  ] },
   { "Build images" = [
     "build/index.md",
     "build/first-image.md",
@@ -80,6 +85,10 @@ nav = [
       "how-it-works/kubernetes/networking.md",
       "how-it-works/kubernetes/certificates.md",
       "how-it-works/kubernetes/upgrades.md",
+    ] },
+    { "Router layer" = [
+      "how-it-works/router/overview.md",
+      "how-it-works/router/firewall.md",
     ] },
   ] },
   { "Reference" = [

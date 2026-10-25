@@ -18,7 +18,7 @@ Start at the top of the table and go down only when the level above cannot show 
 | Kind | Where | Proves | Cost |
 | --- | --- | --- | --- |
 | Go unit test | next to the code, `*_test.go` in `pkg/` and `cmd/` | logic, parsing, error paths, command output | seconds |
-| Namespace or disk-image test | `pkg/kubernetes/vip`, `pkg/install/parts_test.go`, `pkg/upgrade/lab_test.go`, the `vxlan-rule` check | network rules, partition tables and file systems written by the real tools | seconds |
+| Namespace or disk-image test | `pkg/kubernetes/vip`, `pkg/install/parts_test.go`, `pkg/upgrade/lab_test.go`, the `vxlan-rule` and `router-firewall` checks | network rules, partition tables and file systems written by the real tools | seconds |
 | Evaluation test | `test/nix/eval.nix`, `test/nix/kinds.nix` | the arguments of `mkImages`, option defaults, assertions, what a module sets in an image, config kinds | one evaluation |
 | Build check | `nix/checks/` | what an image build produces: kernel modules, sizes, the bootspec | one image build |
 | End-to-end test | `test/e2e/` | behaviour that needs a booted node: firmware, Secure Boot, the TPM, the initrd, a cluster | minutes and 2 GiB or more per VM |
@@ -59,6 +59,10 @@ run them in isolation:
   firewall as NixOS renders it, in a network namespace, with a peer and a pod in namespaces of
   their own, and sends UDP to check what the VXLAN rule accepts. The unit tests of
   `pkg/kubernetes/vxlan` cover what the rule makes of its files.
+- The `router-firewall` check runs a router image's `chalkos-firewall.service` with the rulesets
+  that chalkos-render's golden test keeps, in a network namespace with a LAN peer and a WAN peer
+  in namespaces of their own. It connects, pings and spoofs between them to check what the
+  ruleset accepts, forwards and translates, and that a reload replaces the table alone.
 
 Prefer this level for anything about partitions, firewall rules or interfaces.
 
@@ -90,6 +94,8 @@ are `writeShellApplication` scripts, so shellcheck runs on them when they build.
 | `image-size` | The test images stay within the ceilings in `nix/testing/image-sizes.nix`, and the fit check every image build runs refuses images that leave no room. Its measure of each image agrees with `pkg/verity`. |
 | `bootspec` | An image's bootspec names the UKI on the ESP and no initrd. |
 | `vxlan-rule` | The VXLAN firewall rule, in network namespaces. |
+| `router-firewall` | A router's firewall unit and rulesets, in network namespaces. |
+| `rules` | The images' rules compile, their outputs render their examples and pass their checks, and a broken rule, effect, output or diagnostic fails its image. |
 | `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
 | `example-homelab` | The homelab example's image builds, and `chalkctl validate` accepts its YAML, `Rack` documents included, with it. |
 
@@ -154,6 +160,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | `examples/homelab` | `example-homelab` |
 | Kernel modules, closure, image size | `kernel-modules`, `image-size`, `bootspec` |
 | The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |
+| The router's kinds, outputs or firewall | `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit` |
 | `templates/lab` | `template-lab` |
 | `.github/workflows` | `workflows` |
 

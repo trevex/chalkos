@@ -75,6 +75,9 @@ to link-local addresses. A reverse-path check drops packets from a source addres
 route back to.
 [Ports and firewall](../../reference/ports-and-firewall.md) lists each port and who needs it.
 
+A router image has no NixOS firewall. The router layer's own table, rendered from the node's
+router documents, takes its place, as [The router's firewall](../router/firewall.md) describes.
+
 !!! note "On the shipped variant, Kubernetes opens more ports"
 
     A node with Kubernetes also accepts the kubelet's port, the NodePort range and VXLAN sent to its
@@ -113,7 +116,8 @@ explains.
 - The network kinds accept the keys of the image's own networkd. A key that only a newer systemd
   knows is refused until the image carries that systemd.
 - The firewall opens only the ports chalkos's modules open. A service a variant adds opens its
-  ports in the variant's NixOS modules.
+  ports in the variant's NixOS modules. On a router image, a `FirewallPolicy` to `local` opens
+  them.
 - Time servers that DHCP announces are not authenticated.
 
 ## Related pages
