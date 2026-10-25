@@ -44,6 +44,11 @@ func TestWriteBuiltins(t *testing.T) {
 		"| `chrony`{ #effect-chrony } |",
 		"\n### Images with Kubernetes { #effects-kubernetes }\n\n",
 		"| `kubernetes`{ #effect-kubernetes } |",
+		"\n## Diagnostics { #diagnostics }\n\n",
+		"\n### Every image { #diagnostics-every-image }\n\n",
+		"| `ping`{ #diagnostic-ping } |",
+		"\n### Images with Kubernetes { #diagnostics-kubernetes }\n\n",
+		"| `crictl-pods`{ #diagnostic-crictl-pods } |",
 		"\nSources: ",
 	}
 	last := -1
@@ -85,6 +90,16 @@ func TestWriteBuiltins(t *testing.T) {
 			"| `chalkd-share`{ #effect-chalkd-share } | `facts.share != oldFacts.share` holds. | Reloads chalkd's control-plane loop. |\n" +
 			"| `kubernetes`{ #effect-kubernetes } | The documents of `Host`, or a value of a Secret they reference, changed, or the `when` after the table holds, which reads the documents of `Node` and the facts `cluster` and `share`. | Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |\n",
 		"\n`when` of `kubernetes`:\n\n```text\ncel.bind(d, config[\"kubernetes.chalkos.dev/v1alpha1\"].Node, d)",
+		// A diagnostic's command shows without store paths, and a script of several lines follows
+		// the table; its parameters list the required ones first, each with its range, values or
+		// pattern and its default.
+		"| Diagnostic | Does | Parameters | Role | Capabilities |\n| --- | --- | --- | --- | --- |\n" +
+			"| `ping`{ #diagnostic-ping } | Sends ICMP echo requests to an address. Runs `ping -n -w 10 -c {count} {address}`. | `address`, address; `count`, int from 1 to 10, default `4` | operator | `CAP_NET_RAW` |\n" +
+			"| `route-get`{ #diagnostic-route-get } | The route the kernel takes to an address. Runs `ip -json route get {address}`. | `address`, address | reader | — |\n" +
+			"| `routes`{ #diagnostic-routes } | The routes of one family in one table. Runs `ip -json -family {family} route show table {table}`. | `family`, enum of `inet` or `inet6`, default `inet`; `table`, pattern `^(main|local|default|all|[0-9]+)$`, default `main` | reader | — |\n" +
+			"| `tcp-connect`{ #diagnostic-tcp-connect } | Opens a TCP connection to an address and port. Runs `bash -c <script> tcp-connect {address} {port}`, with the script after the table. | `address`, address; `port`, int from 1 to 65535 | operator | — |\n" +
+			"\nScript of `tcp-connect`:\n\n```text\nif : <>\"/dev/tcp/$1/$2\"; then\n  echo \"connected to $1 port $2\"\nfi\n```\n",
+		"| `crictl-pods`{ #diagnostic-crictl-pods } | The pods the kubelet runs, as crictl pods prints them. Runs `crictl pods`. | — | reader | — |\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the page lacks:\n%s", want)

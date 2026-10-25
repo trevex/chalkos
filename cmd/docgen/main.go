@@ -23,10 +23,10 @@
 //
 //	docgen builtins PAGE DEFAULT_IMAGE PLAIN_IMAGE
 //
-// writes the page of built-in change rules, facts, outputs and effects to PAGE from two images'
-// system.build.chalkosRulesImage: DEFAULT_IMAGE, of the default variant, and PLAIN_IMAGE, of an
-// image without Kubernetes. Those of PLAIN_IMAGE are every image's, and the others those of images
-// with Kubernetes.
+// writes the page of built-in change rules, facts, outputs, effects and diagnostics to PAGE from
+// two images' system.build.chalkosRulesImage: DEFAULT_IMAGE, of the default variant, and
+// PLAIN_IMAGE, of an image without Kubernetes. Those of PLAIN_IMAGE are every image's, and the
+// others those of images with Kubernetes.
 //
 //	docgen check DOCS_DIR
 //

@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -20,20 +21,21 @@ import (
 )
 
 // builtinsDescription is the description of the page of built-ins.
-const builtinsDescription = "The change rules, facts, outputs and effects that chalkos's images declare"
+const builtinsDescription = "The change rules, facts, outputs, effects and diagnostics that chalkos's images declare"
 
 // builtinsIntro opens the page of built-ins, after its front matter.
 const builtinsIntro = "# Built-ins\n\n" +
-	"This page is for image authors and operators who want to know why a node refused a config, or\n" +
-	"what a delivery reloads and restarts. It lists the change rules, facts, outputs and effects that\n" +
-	"chalkos's own modules declare: those of every image, and those that images with Kubernetes add.\n" +
-	"An extension declares more with the [Extension API](extension-api.md), and its outputs and\n" +
-	"effects take names other than these.\n"
+	"This page is for image authors and operators who want to know why a node refused a config,\n" +
+	"what a delivery reloads and restarts, or what `chalkctl node diag` runs. It lists the change\n" +
+	"rules, facts, outputs, effects and diagnostics that chalkos's own modules declare: those of every\n" +
+	"image, and those that images with Kubernetes add. An extension declares more with the\n" +
+	"[Extension API](extension-api.md), and its outputs, effects and diagnostics take names other\n" +
+	"than these.\n"
 
 // builtinsSources closes the page of built-ins.
-const builtinsSources = "\nSources: the schemas, `facts.json`, `outputs.json` and `effects.json` that an image holds in\n" +
-	"`/etc/chalkos`, of an image of the default variant and of one with `kubernetes = false`, which\n" +
-	"the node modules in `modules/node/` declare.\n"
+const builtinsSources = "\nSources: the schemas, `facts.json`, `outputs.json`, `effects.json` and `diagnostics.json` that\n" +
+	"an image holds in `/etc/chalkos`, of an image of the default variant and of one with\n" +
+	"`kubernetes = false`, which the node modules in `modules/node/` declare.\n"
 
 // The openings of the page's sections.
 const (
@@ -54,6 +56,11 @@ const (
 	effectsIntro = "An effect is what a delivery does to the node's services once it is applied.\n" +
 		"[React to changes](../build/react-to-changes.md) describes them and the order chalkd takes them\n" +
 		"in. A `when` too long for its row follows the table.\n"
+	diagnosticsIntro = "A diagnostic is a read-only command of the image that chalkd runs on the node for a client,\n" +
+		"in a transient systemd unit with a sandbox of its own, as\n" +
+		"[`chalkctl node diag`](cli/chalkctl_node_diag.md) does. Each table gives what a diagnostic\n" +
+		"shows and the command it runs, its parameters, the least client role that runs it and the\n" +
+		"capabilities its run gets. A script of several lines follows the table.\n"
 )
 
 // builtinRule is a change rule of a kind: of the kind itself, whose field is empty, or of one of
@@ -70,12 +77,13 @@ type kindRules struct {
 }
 
 // builtinImage is what an image's rules image holds of its built-ins: its kinds' rules, in the
-// order of the page of config kinds, and its facts, outputs and effects by name.
+// order of the page of config kinds, and its facts, outputs, effects and diagnostics by name.
 type builtinImage struct {
-	kinds   []kindRules
-	facts   map[string]facts.Definition
-	outputs map[string]outputs.Definition
-	effects map[string]effects.Definition
+	kinds       []kindRules
+	facts       map[string]facts.Definition
+	outputs     map[string]outputs.Definition
+	effects     map[string]effects.Definition
+	diagnostics map[string]diagnostics.Definition
 }
 
 // writeBuiltins writes the page of built-ins to page from two rules images, as an image's
@@ -129,11 +137,20 @@ func writeBuiltins(page, def, plain string) error {
 	writeEffects(&b, "effects-every-image", "The effects every image declares.", everyEffects, d.effects)
 	writeEffects(&b, "effects-kubernetes", "The effects images with Kubernetes add.", kubeEffects, d.effects)
 
+	everyDiagnostics, kubeDiagnostics, err := split("diagnostic", d.diagnostics, p.diagnostics)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(&b, "\n## Diagnostics { #diagnostics }\n\n%s", diagnosticsIntro)
+	writeDiagnostics(&b, "diagnostics-every-image", "The diagnostics every image declares.", everyDiagnostics, d.diagnostics)
+	writeDiagnostics(&b, "diagnostics-kubernetes", "The diagnostics images with Kubernetes add.", kubeDiagnostics, d.diagnostics)
+
 	b.WriteString(builtinsSources)
 	return os.WriteFile(page, []byte(b.String()), 0o644)
 }
 
-// readBuiltinImage reads the schemas, facts.json, outputs.json and effects.json of a rules image.
+// readBuiltinImage reads the schemas, facts.json, outputs.json, effects.json and diagnostics.json
+// of a rules image.
 func readBuiltinImage(dir string) (builtinImage, error) {
 	var img builtinImage
 	entries, err := os.ReadDir(filepath.Join(dir, "schemas"))
@@ -162,8 +179,8 @@ func readBuiltinImage(dir string) (builtinImage, error) {
 		}
 	}
 	// The readers take a missing file for an image that declares none, but a rules image holds all
-	// three.
-	for _, name := range []string{"facts.json", "outputs.json", "effects.json"} {
+	// four.
+	for _, name := range []string{"facts.json", "outputs.json", "effects.json", "diagnostics.json"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			return img, err
 		}
@@ -175,6 +192,9 @@ func readBuiltinImage(dir string) (builtinImage, error) {
 		return img, err
 	}
 	if img.effects, err = effects.Read(filepath.Join(dir, "effects.json")); err != nil {
+		return img, err
+	}
+	if img.diagnostics, err = diagnostics.Read(filepath.Join(dir, "diagnostics.json")); err != nil {
 		return img, err
 	}
 	return img, nil
@@ -614,6 +634,77 @@ func writeEffects(b *strings.Builder, anchor, intro string, names []string, defs
 			name, name, tableCell(sentence(strings.Join(fires, ", or "))), tableCell(strings.Join(does, " ")))
 	}
 	b.WriteString(strings.Join(after, ""))
+}
+
+// writeDiagnostics writes a section of diagnostics, each with what it shows and runs, its
+// parameters, its role and the capabilities of its run.
+func writeDiagnostics(b *strings.Builder, anchor, intro string, names []string, defs map[string]diagnostics.Definition) {
+	writeSubsection(b, anchor, intro, len(names))
+	if len(names) == 0 {
+		return
+	}
+	b.WriteString("| Diagnostic | Does | Parameters | Role | Capabilities |\n| --- | --- | --- | --- | --- |\n")
+	var after []string
+	for _, name := range names {
+		d := defs[name]
+		// An argument of several lines, such as a shell's script, follows the table.
+		var args, scripts []string
+		for _, arg := range d.Command {
+			if strings.Contains(arg, "\n") {
+				scripts = append(scripts, stripStore(arg))
+				arg = "<script>"
+			}
+			args = append(args, stripStore(arg))
+		}
+		does := strings.Join(strings.Fields(d.Description), " ") + " Runs " + code(strings.Join(args, " "))
+		if len(scripts) > 0 {
+			does += ", with the script after the table"
+			after = append(after, fmt.Sprintf("\nScript of `%s`:\n\n%s", name, textBlock(strings.Join(scripts, "\n"))))
+		}
+		does += "."
+		params := "—"
+		if ps := d.ParameterNames(); len(ps) > 0 {
+			cells := make([]string, len(ps))
+			for i, p := range ps {
+				cells[i] = parameterCell(p, d.Parameters[p])
+			}
+			params = strings.Join(cells, "; ")
+		}
+		caps := "—"
+		if len(d.Capabilities) > 0 {
+			caps = strings.Join(codes(d.Capabilities), ", ")
+		}
+		fmt.Fprintf(b, "| `%s`{ #diagnostic-%s } | %s | %s | %s | %s |\n", name, name, tableCell(does), tableCell(params), d.Role, caps)
+	}
+	b.WriteString(strings.Join(after, ""))
+}
+
+// parameterCell describes a diagnostic's parameter: its name, its type with its range, values or
+// pattern, and its default, or that a call may leave it out.
+func parameterCell(name string, p diagnostics.Parameter) string {
+	s := code(name) + ", " + p.Type
+	switch p.Type {
+	case diagnostics.TypeInt:
+		switch {
+		case p.Min != nil && p.Max != nil:
+			s += fmt.Sprintf(" from %d to %d", *p.Min, *p.Max)
+		case p.Min != nil:
+			s += fmt.Sprintf(" of at least %d", *p.Min)
+		case p.Max != nil:
+			s += fmt.Sprintf(" of at most %d", *p.Max)
+		}
+	case diagnostics.TypeEnum:
+		s += " of " + andList(codes(p.Values), "or")
+	case diagnostics.TypePattern:
+		s += " " + code(p.Regex)
+	}
+	switch {
+	case p.Default != "":
+		s += ", default " + code(p.Default)
+	case p.Optional:
+		s += ", optional"
+	}
+	return s
 }
 
 // writeSubsection writes the heading of a section's built-ins of every image, or of images with

@@ -1,15 +1,16 @@
 ---
 title: "Built-ins"
-description: "The change rules, facts, outputs and effects that chalkos's images declare"
+description: "The change rules, facts, outputs, effects and diagnostics that chalkos's images declare"
 ---
 
 # Built-ins
 
-This page is for image authors and operators who want to know why a node refused a config, or
-what a delivery reloads and restarts. It lists the change rules, facts, outputs and effects that
-chalkos's own modules declare: those of every image, and those that images with Kubernetes add.
-An extension declares more with the [Extension API](extension-api.md), and its outputs and
-effects take names other than these.
+This page is for image authors and operators who want to know why a node refused a config,
+what a delivery reloads and restarts, or what `chalkctl node diag` runs. It lists the change
+rules, facts, outputs, effects and diagnostics that chalkos's own modules declare: those of every
+image, and those that images with Kubernetes add. An extension declares more with the
+[Extension API](extension-api.md), and its outputs, effects and diagnostics take names other
+than these.
 
 ## Change rules { #change-rules }
 
@@ -385,6 +386,48 @@ cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Node" in config["k
 cel.bind(d, (("oci.chalkos.dev/v1alpha1" in config && "Mirror" in config["oci.chalkos.dev/v1alpha1"]) ? config["oci.chalkos.dev/v1alpha1"].Mirror : {}), d.map(n, d[n].spec)) != cel.bind(d, (("oci.chalkos.dev/v1alpha1" in oldConfig && "Mirror" in oldConfig["oci.chalkos.dev/v1alpha1"]) ? oldConfig["oci.chalkos.dev/v1alpha1"].Mirror : {}), d.map(n, d[n].spec)) || cel.bind(d, (("oci.chalkos.dev/v1alpha1" in config && "Registry" in config["oci.chalkos.dev/v1alpha1"]) ? config["oci.chalkos.dev/v1alpha1"].Registry : {}), d.map(n, d[n].spec)) != cel.bind(d, (("oci.chalkos.dev/v1alpha1" in oldConfig && "Registry" in oldConfig["oci.chalkos.dev/v1alpha1"]) ? oldConfig["oci.chalkos.dev/v1alpha1"].Registry : {}), d.map(n, d[n].spec))
 ```
 
-Sources: the schemas, `facts.json`, `outputs.json` and `effects.json` that an image holds in
-`/etc/chalkos`, of an image of the default variant and of one with `kubernetes = false`, which
-the node modules in `modules/node/` declare.
+## Diagnostics { #diagnostics }
+
+A diagnostic is a read-only command of the image that chalkd runs on the node for a client,
+in a transient systemd unit with a sandbox of its own, as
+[`chalkctl node diag`](cli/chalkctl_node_diag.md) does. Each table gives what a diagnostic
+shows and the command it runs, its parameters, the least client role that runs it and the
+capabilities its run gets. A script of several lines follows the table.
+
+### Every image { #diagnostics-every-image }
+
+The diagnostics every image declares.
+
+| Diagnostic | Does | Parameters | Role | Capabilities |
+| --- | --- | --- | --- | --- |
+| `addresses`{ #diagnostic-addresses } | The addresses of the node's interfaces, as ip -json address show prints them. Runs `ip -json address show`. | — | reader | — |
+| `dns-query`{ #diagnostic-dns-query } | Looks up a name in DNS, through the node's resolver or the server given. Runs `drill {name} {type} @{server}`. | `name`, hostname; `type`, enum of `A`, `AAAA`, `CAA`, `CNAME`, `DS`, `DNSKEY`, `MX`, `NS`, `PTR`, `SOA`, `SRV` or `TXT`, optional; `server`, address, optional | operator | — |
+| `links`{ #diagnostic-links } | The node's network interfaces and their state, as ip -json link show prints them. Runs `ip -json link show`. | — | reader | — |
+| `neighbours`{ #diagnostic-neighbours } | The neighbour table of IPv4 ARP and IPv6 neighbour discovery, as ip -json neighbour show prints it. Runs `ip -json neighbour show`. | — | reader | — |
+| `nft-ruleset`{ #diagnostic-nft-ruleset } | The node's nftables ruleset, as nft list ruleset prints it. Runs `nft list ruleset`. | — | operator | `CAP_NET_ADMIN` |
+| `ping`{ #diagnostic-ping } | Sends ICMP echo requests to an address and prints the replies, for at most 10 seconds. Runs `ping -n -w 10 -c {count} {address}`. | `address`, address; `count`, int from 1 to 10, default `4` | operator | `CAP_NET_RAW` |
+| `route-get`{ #diagnostic-route-get } | The route the kernel takes to an address. Runs `ip -json route get {address}`. | `address`, address | reader | — |
+| `routes`{ #diagnostic-routes } | The routes of one family in one routing table, as ip -json route show prints them. Runs `ip -json -family {family} route show table {table}`. | `family`, enum of `inet` or `inet6`, default `inet`; `table`, pattern `^(main|local|default|all|[0-9]+)$`, default `main` | reader | — |
+| `tcp-connect`{ #diagnostic-tcp-connect } | Opens a TCP connection to an address and port, closes it again and says whether it connected. Runs `bash -c <script> tcp-connect {address} {port}`, with the script after the table. | `address`, address; `port`, int from 1 to 65535 | operator | — |
+
+Script of `tcp-connect`:
+
+```text
+if timeout 5 bash -c ': <>"/dev/tcp/$1/$2"' tcp-connect "$1" "$2"; then
+  echo "connected to $1 port $2"
+else
+  status=$?
+  if [ "$status" = 124 ]; then
+    echo "no connection to $1 port $2 within 5 seconds" >&2
+  fi
+  exit "$status"
+fi
+```
+
+### Images with Kubernetes { #diagnostics-kubernetes }
+
+None.
+
+Sources: the schemas, `facts.json`, `outputs.json`, `effects.json` and `diagnostics.json` that
+an image holds in `/etc/chalkos`, of an image of the default variant and of one with
+`kubernetes = false`, which the node modules in `modules/node/` declare.

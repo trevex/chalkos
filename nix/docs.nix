@@ -118,7 +118,8 @@ let
   '';
   # The schemas of the default variant's kinds, which the page of config kinds lists.
   kindSchemas = imageSystem.config.system.build.chalkosSchemas;
-  # The schemas, facts, outputs and effects of an image, which the page of built-ins lists.
+  # The schemas, facts, outputs, effects and diagnostics of an image, which the page of built-ins
+  # lists.
   builtinsImage =
     name: system:
     pkgs.linkFarm "chalkos-docs-builtins-${name}" {
@@ -126,6 +127,7 @@ let
       "facts.json" = system.config.system.build.chalkosFacts;
       "outputs.json" = system.config.system.build.chalkosOutputs;
       "effects.json" = system.config.system.build.chalkosEffects;
+      "diagnostics.json" = system.config.system.build.chalkosDiagnostics;
     };
   imageOptions =
     (pkgs.nixosOptionsDoc {
