@@ -6,10 +6,10 @@ description: "The fields of the config kinds of chalkos's images, of the invento
 # Config kinds
 
 This page is for operators who write a node's config documents, an inventory or a lab file. It
-lists the config kinds that an image of `chalkos.lib.mkImages`'s default variant accepts, by API
-group, and the fields of the inventory and the lab file that chalkctl and chalklab read. An image
-whose modules declare kinds of their own under [`chalkos.kinds`](extension-api.md#chalkoskinds)
-accepts those as well.
+lists the config kinds that an image of `chalkos.lib.mkImages`'s default variant accepts, and
+those a router image adds, by API group, and the fields of the inventory and the lab file that
+chalkctl and chalklab read. An image whose modules declare kinds of their own under
+[`chalkos.kinds`](extension-api.md#chalkoskinds) accepts those as well.
 
 Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,
 `-` and `.`, and a `spec`, whose fields the tables list. A field within another is listed by its
@@ -309,6 +309,102 @@ A node's config may hold several, each with a name of its own. It has 2 [change 
 | `spec.password` | secret reference or null | `null` | Password or token of the user, from a Secret; null pulls anonymously. |
 | `spec.username` | string or null | `null` | User chalkd authenticates to the host as, with the password, and containerd too on images that run Kubernetes; null pulls anonymously. |
 
+## router.chalkos.dev { #router-chalkos-dev }
+
+The kinds of `router.chalkos.dev` set how a router forwards and filters: its forwarding and reverse-path filter, its firewall's zones, policies and address sets, and its NAT rules. Only router images accept them.
+
+### AddressSet { #addressset }
+
+Address ranges of one family, which firewall rules name as `set:<name>`.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has a [change rule](builtins.md#rules-addressset).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.family` | one of `ipv4`, `ipv6` | required | Address family of the set. |
+| `spec.prefixes` | list of string | required | Address ranges of the set. |
+
+### FirewallPolicy { #firewallpolicy }
+
+What the router's firewall does with new connections from one zone to another, or to the router itself: rules in order, then a default.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 8 [change rules](builtins.md#rules-firewallpolicy).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.default` | one of `accept`, `drop`, `reject` | `"drop"` | What happens to a connection no rule matches; `reject` answers with an administratively prohibited error. |
+| `spec.from` | string | required | FirewallZone the connections come from. |
+| `spec.rules` | list of object | `[]` | Rules in order: the first that matches a connection decides. |
+| `spec.rules[].action` | one of `accept`, `drop`, `reject` | required | What happens to a connection the rule matches; `reject` answers with an administratively prohibited error. |
+| `spec.rules[].destination` | list of string | `[]` | Destination address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every destination. |
+| `spec.rules[].destinationPorts` | list of integer from 1 to 65535 or string | `[]` | Destination ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
+| `spec.rules[].family` | one of `ipv4`, `ipv6` or null | `null` | Address family the rule matches; null matches each family its protocol and addresses leave. |
+| `spec.rules[].icmpTypes` | list of one of `echo-request`, `echo-reply`, `destination-unreachable`, `time-exceeded`, `parameter-problem`, `packet-too-big` | `[]` | ICMP or ICMPv6 types, with the protocol `icmp` or `icmpv6`; empty matches every type. `packet-too-big` is ICMPv6's. |
+| `spec.rules[].log` | boolean | `false` | Whether the kernel logs each packet the rule matches, prefixed with the policy's name and the rule's number. |
+| `spec.rules[].protocol` | one of `tcp`, `udp`, `sctp`, `icmp`, `icmpv6`, `gre`, `esp`, `ah` or null | `null` | Protocol the rule matches; null matches every protocol. `icmp` is IPv4's and `icmpv6` IPv6's. |
+| `spec.rules[].source` | list of string | `[]` | Source address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every source. In each family the rule matches the ranges of that family. |
+| `spec.rules[].sourcePorts` | list of integer from 1 to 65535 or string | `[]` | Source ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
+| `spec.to` | string | required | FirewallZone the connections go to, or `local` for connections to the router itself. |
+
+### FirewallZone { #firewallzone }
+
+A zone of the router's firewall: interfaces whose connections the FirewallPolicy documents treat alike. The zone local is the router itself and has no document.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 2 [change rules](builtins.md#rules-firewallzone).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.interfaces` | list of string | required | Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. |
+
+### NATRule { #natrule }
+
+An address translation of the router, which applies whether or not any FirewallPolicy exists: masquerade or source NAT of connections that leave, destination NAT of connections that arrive.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 6 [change rules](builtins.md#rules-natrule).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.family` | one of `ipv4`, `ipv6` | `"ipv4"` | Address family the rule translates. |
+| `spec.in` | object or null | `null` | Where the connections arrive, for `dnat`. |
+| `spec.in.interface` | string or null | `null` | Interface the connections use, by name or glob, a glob being a prefix followed by `*`; excludes `zone`. |
+| `spec.in.zone` | string or null | `null` | FirewallZone whose interfaces the connections use; excludes `interface`. |
+| `spec.match.destination` | list of string | `[]` | Destination address ranges of the connections; empty matches every destination. |
+| `spec.match.destinationPorts` | list of integer from 1 to 65535 or string | `[]` | Destination ports, each a port or a range `<first>-<last>`, with `protocol`; empty matches every port. |
+| `spec.match.protocol` | one of `tcp`, `udp`, `sctp` or null | `null` | Protocol of the connections; null matches every protocol. |
+| `spec.match.source` | list of string | `[]` | Source address ranges of the connections; empty matches every source. |
+| `spec.out` | object or null | `null` | Where the connections leave, for `masquerade` and `snat`. |
+| `spec.out.interface` | string or null | `null` | Interface the connections use, by name or glob, a glob being a prefix followed by `*`; excludes `zone`. |
+| `spec.out.zone` | string or null | `null` | FirewallZone whose interfaces the connections use; excludes `interface`. |
+| `spec.to` | object or null | `null` | What `snat` and `dnat` translate to. |
+| `spec.to.address` | string | required | Address the rule translates to. |
+| `spec.to.port` | integer from 1 to 65535 or null | `null` | Port the rule translates to, with `match.protocol`; null keeps the port. |
+| `spec.type` | one of `masquerade`, `snat`, `dnat` | required | `masquerade` translates the source of a leaving connection to the address of the interface it leaves through, `snat` to `to.address`, and `dnat` the destination of an arriving connection to `to.address`. |
+
+### Router { #router }
+
+How the router forwards: the families it forwards, its reverse-path filter, how it spreads flows over equal-cost routes, its connection table and the interfaces that reach its node API.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config holds at most one. It has a [change rule](builtins.md#rules-router).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.conntrackMax` | integer of at least 1 or null | `null` | Connections the router tracks at most, `net.netfilter.nf_conntrack_max`; null keeps the kernel's default, which follows the memory. |
+| `spec.ecmpHash` | one of `l3`, `l4` | `"l4"` | What the router hashes to pick one of several equal-cost routes for a flow, in both families: the addresses (`l3`), or the addresses, the protocol and the ports (`l4`). |
+| `spec.forwarding.ipv4` | boolean | `true` | Whether the router forwards IPv4 packets between its interfaces. |
+| `spec.forwarding.ipv6` | boolean | `true` | Whether the router forwards IPv6 packets between its interfaces. |
+| `spec.management.interfaces` | list of string or null | `null` | Interfaces, by name or glob, a glob being a prefix followed by `*`, on which the firewall accepts the node API, chalkd's TCP port 50000; null accepts it on every interface. |
+| `spec.rpFilter` | one of `off`, `loose`, `strict` | `"loose"` | Reverse-path filter of the packets the router receives, in both families: `strict` drops a packet whose source the router would not route back out of the interface it came in on, `loose` one whose source it has no route to, and `off` drops none. DHCPv4 between ports 67 and 68 passes. |
+
 ## storage.chalkos.dev { #storage-chalkos-dev }
 
 The kinds of `storage.chalkos.dev` lay out the node's disks: the system disk and the volumes.
@@ -424,7 +520,7 @@ The nodes of an inventory that chalklab runs as virtual machines, and their mach
 | `spec.nodes.<name>.memory` | integer of at least 512 | — | Memory of the VM in MiB; without it, 3072 for a control plane and 2048 for another node. |
 
 Sources: the JSON Schemas in the `schemas` directory of an image
-[build](image-layout.md#outputs-of-an-image-build) of the default variant, from
-`modules/node/kinds/builtin/` and the tables of the image's systemd-networkd, and
+[build](image-layout.md#outputs-of-an-image-build) of the default variant and of a router
+image, from `modules/node/kinds/builtin/` and the tables of the image's systemd-networkd, and
 `pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and
 `pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json`.

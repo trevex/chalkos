@@ -8,9 +8,9 @@ description: "The change rules, facts, outputs, effects and diagnostics that cha
 This page is for image authors and operators who want to know why a node refused a config,
 what a delivery reloads and restarts, or what `chalkctl node diag` runs. It lists the change
 rules, facts, outputs, effects and diagnostics that chalkos's own modules declare: those of every
-image, and those that images with Kubernetes add. An extension declares more with the
-[Extension API](extension-api.md), and its outputs, effects and diagnostics take names other
-than these.
+image, and those that images with Kubernetes and router images add. An extension declares more
+with the [Extension API](extension-api.md), and its outputs, effects and diagnostics take names
+other than these.
 
 ## Change rules { #change-rules }
 
@@ -276,6 +276,215 @@ cel.bind(type, documents.map(n, documents[n].spec.type)[0],
   + "\"; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a " + type)
 ```
 
+### Router images { #rules-router-images }
+
+The rules of the kinds that router images accept, and those they add to other kinds.
+
+#### AddressSet { #rules-addressset }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | An AddressSet's ranges are of its family. | `refuse` | after the table | after the table |
+
+Expression of rule 1:
+
+```text
+documents.all(n, documents[n].spec.prefixes.all(p, cidr(p).ip(0).family() == documents[n].spec.family))
+```
+
+Message of rule 1:
+
+```text
+documents.filter(n, !documents[n].spec.prefixes.all(p, cidr(p).ip(0).family() == documents[n].spec.family)).map(n, "AddressSet " + n + " holds ranges of another family than " + documents[n].spec.family).join("; ")
+```
+
+#### FirewallPolicy { #rules-firewallpolicy }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | A FirewallPolicy comes from a FirewallZone, not from local. | `refuse` | `documents.all(n, documents[n].spec.from != "local")` | after the table |
+| 2 | — | A FirewallPolicy's zones are FirewallZone documents, or local for its to. | `refuse` | after the table | after the table |
+| 3 | — | One FirewallPolicy at most goes from a zone to another. | `refuse` | after the table | after the table |
+| 4 | `spec.rules` | A set:&lt;name> is the one entry of its source or destination. | `refuse` | after the table | a rule's source or destination holds set:&lt;name> beside other entries; a set stands alone, so give the other ranges a rule of their own or add them to the set |
+| 5 | `spec.rules` | A rule's sets are AddressSet documents. | `refuse` | after the table | a rule names an AddressSet that the config does not hold |
+| 6 | `spec.rules` | A rule with a family has addresses and sets of that family alone. | `refuse` | after the table | a rule has addresses or a set of another family than its own |
+| 7 | `spec.rules` | A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one. | `refuse` | after the table | a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6 |
+| 8 | `spec.rules` | Ports go with tcp, udp or sctp, ICMP types with icmp or icmpv6, and packet-too-big with icmpv6. | `refuse` | after the table | a rule has ports without the protocol tcp, udp or sctp, or ICMP types its protocol lacks |
+
+Message of rule 1:
+
+```text
+documents.filter(n, documents[n].spec.from == "local").map(n, "FirewallPolicy " + n).join(", ") + " comes from local, the router itself, whose own connections the firewall accepts; a policy comes from a FirewallZone"
+```
+
+Expression of rule 2:
+
+```text
+cel.bind(zones, (("router.chalkos.dev/v1alpha1" in config && "FirewallZone" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].FirewallZone : {}), documents.all(n, (documents[n].spec.from == "local" || documents[n].spec.from in zones) && (documents[n].spec.to == "local" || documents[n].spec.to in zones)))
+```
+
+Message of rule 2:
+
+```text
+cel.bind(zones, (("router.chalkos.dev/v1alpha1" in config && "FirewallZone" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].FirewallZone : {}), documents.filter(n, !((documents[n].spec.from == "local" || documents[n].spec.from in zones) && (documents[n].spec.to == "local" || documents[n].spec.to in zones))).map(n, "FirewallPolicy " + n + " names the zone " + (documents[n].spec.from == "local" || documents[n].spec.from in zones ? documents[n].spec.to : documents[n].spec.from) + ", which no FirewallZone document declares").join("; "))
+```
+
+Expression of rule 3:
+
+```text
+cel.bind(pairs, documents.map(n, documents[n].spec.from + " to " + documents[n].spec.to), pairs.all(p, size(pairs.filter(q, q == p)) == 1))
+```
+
+Message of rule 3:
+
+```text
+cel.bind(pairs, documents.map(n, documents[n].spec.from + " to " + documents[n].spec.to), "more than one FirewallPolicy goes from " + pairs.filter(p, size(pairs.filter(q, q == p)) > 1)[0] + "; give each pair of zones one policy")
+```
+
+Expression of rule 4:
+
+```text
+cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), [r.source, r.destination].all(l, size(l) == 1 || !l.exists(a, a.startsWith("set:")))))))
+```
+
+Expression of rule 5:
+
+```text
+cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), (src == "" || src in sets) && (dst == "" || dst in sets)))))
+```
+
+Expression of rule 6:
+
+```text
+cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), r.family == null || (src != "" ? !(src in sets) || sets[src].spec.family == r.family : r.source.all(a, a.startsWith("set:") || cidr(a).ip(0).family() == r.family)) && (dst != "" ? !(dst in sets) || sets[dst].spec.family == r.family : r.destination.all(a, a.startsWith("set:") || cidr(a).ip(0).family() == r.family))))))
+```
+
+Expression of rule 7:
+
+```text
+cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (size(r.source) == 0 || (src != "" ? !(src in sets) || sets[src].spec.family == "ipv4" :r.source.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv4"))) && (size(r.destination) == 0 || (dst != "" ? !(dst in sets) || sets[dst].spec.family == "ipv4" :r.destination.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv4")))) || ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (size(r.source) == 0 || (src != "" ? !(src in sets) || sets[src].spec.family == "ipv6" :r.source.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv6"))) && (size(r.destination) == 0 || (dst != "" ? !(dst in sets) || sets[dst].spec.family == "ipv6" :r.destination.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv6"))))))))
+```
+
+Expression of rule 8:
+
+```text
+cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), (size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.protocol in ["tcp", "udp", "sctp"]) && (size(r.icmpTypes) == 0 || r.protocol in ["icmp", "icmpv6"]) && !(r.protocol == "icmp" && "packet-too-big" in r.icmpTypes)))))
+```
+
+#### FirewallZone { #rules-firewallzone }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | No FirewallZone is named local, the router itself. | `refuse` | `!("local" in documents)` | a FirewallZone is named local, which is the router itself: FirewallPolicy documents name it without a document, so give the zone another name |
+| 2 | — | An interface or glob is in one FirewallZone, once; globs compare as written. | `refuse` | after the table | after the table |
+
+Expression of rule 2:
+
+```text
+cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, size(all.filter(j, j == i)) == 1))
+```
+
+Message of rule 2:
+
+```text
+cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), "the interface " + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each interface one zone")
+```
+
+#### NATRule { #rules-natrule }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | masquerade and snat name out alone, dnat names in alone. | `refuse` | after the table | after the table |
+| 2 | — | out and in name a zone or an interface, one of them. | `refuse` | after the table | after the table |
+| 3 | — | A NATRule's zone is a FirewallZone document. | `refuse` | after the table | after the table |
+| 4 | — | snat and dnat give to, masquerade does not. | `refuse` | `documents.all(n, (documents[n].spec.type == "masquerade") == (documents[n].spec.to == null))` | after the table |
+| 5 | — | A NATRule's addresses are of its family. | `refuse` | after the table | after the table |
+| 6 | — | Ports go with match.protocol. | `refuse` | after the table | after the table |
+
+Expression of rule 1:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, s.type == "dnat" ? s["in"] != null && s.out == null : s.out != null && s["in"] == null))
+```
+
+Message of rule 1:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, !(s.type == "dnat" ? s["in"] != null && s.out == null : s.out != null && s["in"] == null))).map(n, "NATRule " + n).join(", ") + ": a masquerade or snat rule names out alone, a dnat rule in alone"
+```
+
+Expression of rule 2:
+
+```text
+documents.all(n, [documents[n].spec.out, documents[n].spec["in"]].all(p, p == null || (p.zone == null) != (p.interface == null)))
+```
+
+Message of rule 2:
+
+```text
+documents.filter(n, ![documents[n].spec.out, documents[n].spec["in"]].all(p, p == null || (p.zone == null) != (p.interface == null))).map(n, "NATRule " + n).join(", ") + ": out and in name a zone or an interface, one of them"
+```
+
+Expression of rule 3:
+
+```text
+cel.bind(zones, (("router.chalkos.dev/v1alpha1" in config && "FirewallZone" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].FirewallZone : {}), documents.all(n, [documents[n].spec.out, documents[n].spec["in"]].all(p, p == null || p.zone == null || p.zone in zones)))
+```
+
+Message of rule 3:
+
+```text
+cel.bind(zones, (("router.chalkos.dev/v1alpha1" in config && "FirewallZone" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].FirewallZone : {}), documents.filter(n, ![documents[n].spec.out, documents[n].spec["in"]].all(p, p == null || p.zone == null || p.zone in zones)).map(n, "NATRule " + n).join(", ") + " names a zone that no FirewallZone document declares")
+```
+
+Message of rule 4:
+
+```text
+documents.filter(n, (documents[n].spec.type == "masquerade") != (documents[n].spec.to == null)).map(n, "NATRule " + n).join(", ") + ": snat and dnat translate to the address of to, masquerade to that of the interface and has no to"
+```
+
+Expression of rule 5:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, (s.match.source + s.match.destination).all(a, cidr(a).ip(0).family() == s.family) && (s.to == null || ip(s.to.address).family() == s.family)))
+```
+
+Message of rule 5:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, !((s.match.source + s.match.destination).all(a, cidr(a).ip(0).family() == s.family) && (s.to == null || ip(s.to.address).family() == s.family)))).map(n, "NATRule " + n + " has addresses of another family than " + documents[n].spec.family).join("; ")
+```
+
+Expression of rule 6:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, s.match.protocol != null || size(s.match.destinationPorts) == 0 && (s.to == null || s.to.port == null)))
+```
+
+Message of rule 6:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, s.match.protocol == null && (size(s.match.destinationPorts) > 0 || s.to != null && s.to.port != null))).map(n, "NATRule " + n).join(", ") + ": ports need match.protocol"
+```
+
+#### Router { #rules-router }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `spec.management.interfaces` | A delivery that keeps the management interfaces keeps a Network naming each management interface that a running Network names, in a [Match] section's Name=; a glob names every interface its prefix starts, so with `*` a delivery keeps one Network at least. | `refuse` | after the table | after the table |
+
+Expression of rule 1:
+
+```text
+self != oldSelf || oldSelf == null || cel.bind(was, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in oldConfig && "Network" in oldConfig["networkd.chalkos.dev/v1alpha1"]) ? oldConfig["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")), cel.bind(gets, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")), cel.bind(lost, oldSelf.filter(i, cel.bind(globs, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].filter(k, k < size(i) || k == size(i) && !i.endsWith("*")).map(k, i.substring(0, k).replace(".", "[.]")).join("|"), (was.contains(" " + i + " ") || i.endsWith("*") && (size(i) > 1 ? was.contains(" " + i.substring(0, size(i) - 1)) : was.trim() != "") || was.matches(" (" + globs + ")[*] ")) && !(gets.contains(" " + i + " ") || i.endsWith("*") && (size(i) > 1 ? gets.contains(" " + i.substring(0, size(i) - 1)) : gets.trim() != "") || gets.matches(" (" + globs + ")[*] ")))), size(lost) == 0)))
+```
+
+Message of rule 1:
+
+```text
+cel.bind(was, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in oldConfig && "Network" in oldConfig["networkd.chalkos.dev/v1alpha1"]) ? oldConfig["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")), cel.bind(gets, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")), cel.bind(lost, oldSelf.filter(i, cel.bind(globs, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].filter(k, k < size(i) || k == size(i) && !i.endsWith("*")).map(k, i.substring(0, k).replace(".", "[.]")).join("|"), (was.contains(" " + i + " ") || i.endsWith("*") && (size(i) > 1 ? was.contains(" " + i.substring(0, size(i) - 1)) : was.trim() != "") || was.matches(" (" + globs + ")[*] ")) && !(gets.contains(" " + i + " ") || i.endsWith("*") && (size(i) > 1 ? gets.contains(" " + i.substring(0, size(i) - 1)) : gets.trim() != "") || gets.matches(" (" + globs + ")[*] ")))), "the config leaves the management interfaces " + lost.join(", ") + " without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery")))
+```
+
 ## Facts { #facts }
 
 A fact is node state that change rules and the `when` of effects read as `facts.<name>`. A
@@ -301,6 +510,10 @@ The facts images with Kubernetes add.
 | `cluster`{ #fact-cluster } | File `/run/chalkos/kubernetes/cluster.json`. | The effects `chalkd-cluster` and `kubernetes`. |
 | `share`{ #fact-share } | The key `kind` of the file `/state/kubernetes/share.json`, and the SHA-256 of each other key. | The rules of `Cluster` and `Node`, and the effects `chalkd-share` and `kubernetes`. |
 
+### Router images { #facts-router-images }
+
+None.
+
 ## Outputs { #outputs }
 
 An output is a set of config files that chalkd renders from the node's documents at every
@@ -320,6 +533,15 @@ The outputs every image renders.
 ### Images with Kubernetes { #outputs-kubernetes }
 
 None.
+
+### Router images { #outputs-router-images }
+
+The outputs router images add.
+
+| Output | Inputs | Directory | Renderer | Check |
+| --- | --- | --- | --- | --- |
+| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
+| `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |
 
 ## Effects { #effects }
 
@@ -386,6 +608,15 @@ cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Node" in config["k
 cel.bind(d, (("oci.chalkos.dev/v1alpha1" in config && "Mirror" in config["oci.chalkos.dev/v1alpha1"]) ? config["oci.chalkos.dev/v1alpha1"].Mirror : {}), d.map(n, d[n].spec)) != cel.bind(d, (("oci.chalkos.dev/v1alpha1" in oldConfig && "Mirror" in oldConfig["oci.chalkos.dev/v1alpha1"]) ? oldConfig["oci.chalkos.dev/v1alpha1"].Mirror : {}), d.map(n, d[n].spec)) || cel.bind(d, (("oci.chalkos.dev/v1alpha1" in config && "Registry" in config["oci.chalkos.dev/v1alpha1"]) ? config["oci.chalkos.dev/v1alpha1"].Registry : {}), d.map(n, d[n].spec)) != cel.bind(d, (("oci.chalkos.dev/v1alpha1" in oldConfig && "Registry" in oldConfig["oci.chalkos.dev/v1alpha1"]) ? oldConfig["oci.chalkos.dev/v1alpha1"].Registry : {}), d.map(n, d[n].spec))
 ```
 
+### Router images { #effects-router-images }
+
+The effects router images add.
+
+| Effect | Fires when | Does |
+| --- | --- | --- |
+| `router-nftables`{ #effect-router-nftables } | The output `router-nftables` changed. | Reloads `chalkos-firewall.service`. |
+| `router-sysctl`{ #effect-router-sysctl } | The output `router-sysctl` changed. | Restarts `systemd-sysctl.service`. |
+
 ## Diagnostics { #diagnostics }
 
 A diagnostic is a read-only command of the image that chalkd runs on the node for a client,
@@ -428,6 +659,15 @@ fi
 
 None.
 
+### Router images { #diagnostics-router-images }
+
+The diagnostics router images add.
+
+| Diagnostic | Does | Parameters | Role | Capabilities |
+| --- | --- | --- | --- | --- |
+| `traceroute`{ #diagnostic-traceroute } | The routers on the path to an address, as traceroute -n prints them: one probe a hop, 30 hops at most. Runs `traceroute -n -m 30 -q 1 -w 2 {address}`. | `address`, address | operator | — |
+
 Sources: the schemas, `facts.json`, `outputs.json`, `effects.json` and `diagnostics.json` that
-an image holds in `/etc/chalkos`, of an image of the default variant and of one with
-`kubernetes = false`, which the node modules in `modules/node/` declare.
+an image holds in `/etc/chalkos`, of an image of the default variant, of one with
+`kubernetes = false` and of one with `router = true`, which the node modules in `modules/node/`
+declare.
