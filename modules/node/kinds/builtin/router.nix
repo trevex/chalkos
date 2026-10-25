@@ -82,17 +82,17 @@ let
     in
     ''cel.bind(nets, ${networks}, cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? ${cel.oneOrMany "nets[n].spec.match"} : []).flatten()), " " + dyn(matches.map(m, "name" in m ? ${cel.oneOrMany "m.name"} : []).flatten()).join(" ").replace("\t", " ") + " "))'';
   # Whether the names s, from matchNames, name the management interface i: they hold i, a name
-  # that the glob i's prefix starts, or a glob whose prefix starts i, which globs, the alternatives
-  # of a regular expression, matches.
+  # that the glob i's prefix starts, any name for the glob `*`, or a glob whose prefix starts i,
+  # which globs, the alternatives of a regular expression, matches.
   names =
     s:
-    ''(${s}.contains(" " + i + " ") || i.endsWith("*") && ${s}.contains(" " + i.substring(0, size(i) - 1)) || ${s}.matches(" (" + globs + ")[*] "))'';
+    ''(${s}.contains(" " + i + " ") || i.endsWith("*") && (size(i) > 1 ? ${s}.contains(" " + i.substring(0, size(i) - 1)) : ${s}.trim() != "") || ${s}.matches(" (" + globs + ")[*] "))'';
   # The running management interfaces, oldSelf, that a running Network document names and no
-  # delivered one does, bound to lost around expr. globs holds the prefixes of i's name, empty
-  # included, with dots escaped.
+  # delivered one does, bound to lost around expr. globs holds the prefixes of i's name, from the
+  # empty one to the whole of a name and to the `*` of a glob, with dots escaped.
   bindLost =
     expr:
-    ''cel.bind(was, ${matchNames "oldConfig"}, cel.bind(gets, ${matchNames "config"}, cel.bind(lost, oldSelf.filter(i, cel.bind(globs, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].filter(k, k < size(i)).map(k, i.substring(0, k).replace(".", "[.]")).join("|"), ${names "was"} && !${names "gets"})), ${expr})))'';
+    ''cel.bind(was, ${matchNames "oldConfig"}, cel.bind(gets, ${matchNames "config"}, cel.bind(lost, oldSelf.filter(i, cel.bind(globs, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].filter(k, k < size(i) || k == size(i) && !i.endsWith("*")).map(k, i.substring(0, k).replace(".", "[.]")).join("|"), ${names "was"} && !${names "gets"})), ${expr})))'';
 
   # Where a NAT rule's connections come in or go out: a zone or an interface.
   place = types.submodule {
@@ -235,7 +235,7 @@ in
             # through cuts the operator off, unless it moves the node API too.
             rules = [
               {
-                description = "A delivery that keeps the management interfaces keeps a Network naming each management interface that a running Network names, in a [Match] section's Name=; a glob names every interface its prefix starts.";
+                description = "A delivery that keeps the management interfaces keeps a Network naming each management interface that a running Network names, in a [Match] section's Name=; a glob names every interface its prefix starts, so with `*` a delivery keeps one Network at least.";
                 rule = "self != oldSelf || oldSelf == null || ${bindLost "size(lost) == 0"}";
                 messageExpression = bindLost ''"the config leaves the management interfaces " + lost.join(", ") + " without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery"'';
               }

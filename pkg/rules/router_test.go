@@ -187,6 +187,18 @@ func TestManagementGuard(t *testing.T) {
 		{"a Network of another interface's glob removed",
 			[]config.Document{router(`["eth0"]`), network(t, "10-en", `{"name": "en*"}`)},
 			[]config.Document{router(`["eth0"]`)}, nil},
+		{"a Network whose glob is the interface's name removed",
+			[]config.Document{router(`["eth0"]`), network(t, "10-eth0", `{"name": "eth0*"}`)},
+			[]config.Document{router(`["eth0"]`)}, lost("eth0")},
+		{"a Network replaced by a glob of the interface's name",
+			[]config.Document{router(`["eth0"]`), network(t, "10-eth0", `{"name": "eth0"}`)},
+			[]config.Document{router(`["eth0"]`), network(t, "10-eth0", `{"name": "eth0*"}`)}, nil},
+		{"the last Network of a router managed on every interface removed",
+			[]config.Document{router(`["*"]`), network(t, "10-eth1", `{"name": "eth1"}`)},
+			[]config.Document{router(`["*"]`)}, lost("*")},
+		{"a Network of a router managed on every interface replaced",
+			[]config.Document{router(`["*"]`), network(t, "10-eth1", `{"name": "eth1"}`)},
+			[]config.Document{router(`["*"]`), network(t, "10-eth2", `{"name": "eth2"}`)}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Old: tc.old, Node: "r1"})
