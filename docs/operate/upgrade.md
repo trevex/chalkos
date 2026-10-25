@@ -156,8 +156,10 @@ The last line counts the nodes upgraded.
 ## Control planes go first, then the other nodes in batches
 
 chalkctl upgrades the control planes first, one at a time, and the other nodes after them in
-batches. Within each group the nodes go in the order of their names. A node whose image lacks the
-Kubernetes layer counts with the workers, and chalkctl does not drain it. These flags change which nodes go and how:
+batches. Within each group the nodes go in the order of their names. A node without Kubernetes
+counts with the workers, and chalkctl does not drain it. chalkctl counts a node as one with
+Kubernetes when its image has the Kubernetes layer, or when its chalkd predates layers and its
+status shows Kubernetes. These flags change which nodes go and how:
 
 | Flag | Effect |
 | --- | --- |
