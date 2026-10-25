@@ -112,6 +112,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `kubernetes/vip` | The etcd election of the control plane that holds the VIPs; adds a VIP to an interface and announces it. |
 | `kubernetes/vxlan` | The nftables table `chalkos-vxlan`: marks VXLAN to the node's addresses for the firewall and drops pods' VXLAN to the source ranges. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the lab's supervisor, for chalklab and the end-to-end tests. |
+| `layers` | Reads the layers an image carries from their markers in `/etc/chalkos/layers`, for the layer of each method in chalkd's permissions and the `layers` of Info and Contract. |
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
 | `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the granted units, and renders the outputs at boot, networkd's units and chrony's servers among them. |
 | `ociimage` | Reads, writes, pulls and pushes chalkos images as OCI artifacts: one manifest whose config is the image header and whose layers are the store, hash tree, UKI, boot loader and contract. |
@@ -142,16 +143,19 @@ Test helpers live in packages of their own:
 ## The node API
 
 The API is defined in `api/chalkos/node/v1/node.proto` and served by chalkd over Connect on
-TCP port 50000 with mutual TLS. Which client role may
-call a method, and in which mode, is one table: `permissions` in `pkg/chalkd/server.go`.
+TCP port 50000 with mutual TLS. Which client role may call a method, in which mode and on which
+layer, is one table: `permissions` in `pkg/chalkd/server.go`.
 
 ```go
-nodev1connect.NodeServiceInfoProcedure:    {anyMode, pki.RoleReader},
-nodev1connect.NodeServiceInstallProcedure: {maintenanceOnly, pki.RoleAdmin},
-nodev1connect.NodeServiceUpgradeProcedure: {normalOnly, pki.RoleOperator},
+nodev1connect.NodeServiceInfoProcedure:      {anyMode, pki.RoleReader, layers.Base},
+nodev1connect.NodeServiceInstallProcedure:   {maintenanceOnly, pki.RoleAdmin, layers.Base},
+nodev1connect.NodeServiceBootstrapProcedure: {normalOnly, pki.RoleAdmin, layers.Kubernetes},
 ```
 
-A new method needs an entry there; the authoriser refuses a method without one. One check sits
+A new method needs an entry there; the authoriser refuses a method without one. It refuses a
+method of a layer the image lacks with `Unimplemented` before it checks the mode. A handler of a
+layer's method therefore runs only on a node in normal mode whose `Server` has that layer's side,
+such as `Server.Kubernetes`, and does not check for a missing layer itself. One check sits
 outside the table: `Upgrade` needs the admin role when its header carries config or a fallback
 secret, as `ApplyConfig` does. The table cannot see the header, so `Upgrade` checks that
 itself. Comments in the proto file become the [Node API](../reference/api.md) page, so they

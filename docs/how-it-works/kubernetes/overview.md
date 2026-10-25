@@ -54,8 +54,9 @@ describes.
 in Kubernetes, so control planes and workers boot the same image. A `controlplane` runs
 containerd, the kubelet, and etcd and the control plane as static pods. A `worker` runs containerd
 and the kubelet. The images of a variant built with
-[`kubernetes = false`](../../reference/mkimages.md#variantskubernetes) run no Kubernetes and have no
-`Node` kind, so their nodes have no type.
+[`kubernetes = false`](../../reference/mkimages.md#variantskubernetes) lack the Kubernetes layer.
+They run no Kubernetes and have no `Node` kind, so their nodes have no type. Their chalkd answers
+the Kubernetes methods of the node API, such as Bootstrap, with `UNIMPLEMENTED`.
 [Components by node type](../../reference/kubernetes.md#components-by-node-type) lists them in one
 table.
 

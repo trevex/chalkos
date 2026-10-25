@@ -104,6 +104,21 @@ describes its sandbox.
     certificates of the cluster and drains nodes for upgrades.
     [The control plane](../kubernetes/control-plane.md) covers that side.
 
+## An image carries the base and at most one layer
+
+Every image carries the base: chalkd, the config pipeline, storage, upgrades and the node API. A
+layer adds one role on top of it. The Kubernetes layer runs containerd and the kubelet and makes a
+node a control plane or a worker. Every variant carries it unless it sets
+[`kubernetes = false`](../../reference/mkimages.md#variantskubernetes). The router layer, which
+[`router = true`](../../reference/mkimages.md#variantsrouter) adds, forwards packets between the
+node's interfaces. An image carries one layer at most, and mkImages refuses a variant that asks
+for two.
+
+Each layer writes an empty marker, `/etc/chalkos/layers/<layer>`. chalkd reads the directory when
+it starts and reports the layers in `Info` and `Contract`. It serves the methods of a layer only
+on an image with that layer. On any other image, such a method fails with `UNIMPLEMENTED` and the
+message `the kubernetes layer is not in this image`, before chalkd checks the mode or the role.
+
 ## The installed marker decides chalkd's mode
 
 chalkd runs in one of two modes, and the file `installed` on STATE decides which. The flowchart

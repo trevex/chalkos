@@ -318,6 +318,7 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; chalkcfg reads their names to know the kinds. |
 | `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the image is built with the mkImages argument `osCA`. |
 | `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
+| `/etc/chalkos/layers/<layer>` | An empty marker of each layer the image carries: `kubernetes` or `router`. chalkd reads the directory when it starts and serves the methods of those layers alone. |
 | `/etc/chalkos/services.json` | The units granted config kinds, from `systemd.services.<unit>.chalkos.kinds`. |
 | `/etc/chalkos/outputs.json` | The image's outputs, from `chalkos.outputs`: each one's input kinds, renderer, check, directory, owner and mode. |
 | `/etc/chalkos/effects.json` | What a delivery does to the node's services, from `chalkos.effects`, with the outputs, the kinds and the rules that fire each effect. |

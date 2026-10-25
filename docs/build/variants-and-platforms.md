@@ -44,13 +44,18 @@ It returns `images.node-metal`, `images.node-kvm`, `images.storage-metal` and
 nix build .#storage-metal -o images/storage-metal
 ```
 
-A variant declares two things:
+A variant declares three things:
 
 - `modules`, the NixOS modules of the variant's images: a monitoring agent, a storage daemon, more
   kernel module groups or an extension's kinds and services.
-- `kubernetes`, whether the variant's images run Kubernetes, `true` by default. An image without
-  Kubernetes runs no kubelet, etcd or containerd, and its nodes accept none of the kinds of
+- `kubernetes`, whether the variant's images carry the Kubernetes layer, `true` by default. An
+  image without it runs no kubelet, etcd or containerd, and its nodes accept none of the kinds of
   `kubernetes.chalkos.dev`: `Node`, `Cluster`, `Flannel` and `Addon`.
+- `router`, whether the variant's images carry the router layer, `false` by default. Its images
+  forward IPv4 and IPv6 packets between their interfaces.
+
+An image carries one layer at most. A router variant therefore also sets `kubernetes = false`, and
+`mkImages` refuses a variant with both layers and names it.
 
 A variant's name is lower-case letters, digits and dashes, and starts with a letter or digit. It
 becomes `CHALKOS_VARIANT` in its images' os-release and `variant` in their `metadata.json`. A name

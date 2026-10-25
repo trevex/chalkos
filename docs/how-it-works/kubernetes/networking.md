@@ -96,8 +96,9 @@ kubernetes worker: preparation failed: no ipv4 node address matches validSubnets
 
 A node's addresses do not have to come from networkd. A routing daemon, such as a BGP speaker an
 extension adds to a variant, can announce an address on a loopback or dummy interface. Such a unit
-orders itself before `chalkos-node-addresses.target` and is wanted by it. The preparation starts
-after the target and still waits up to `nodeIP.timeout` for the addresses.
+orders itself before `chalkos-node-addresses.target`, which every image defines, and is wanted by
+it. The preparation starts after the target and still waits up to `nodeIP.timeout` for the
+addresses.
 
 An address on a loopback interface needs the `Flannel` document's `spec.mtu`, because flannel would
 take the loopback's MTU. When it is set, a dummy interface holding a node's address needs an MTU of

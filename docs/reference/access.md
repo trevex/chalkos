@@ -27,36 +27,38 @@ maintenance mode whose image was built without an OS CA treats every client as a
 
 ## Methods
 
-chalkd checks the mode first, then the certificate, then the role. A method called in a mode it is
-not served in fails with `the node is in maintenance mode; install it first` or
-`the node is installed`. A certificate that does not chain to an OS CA the node trusts at that
-moment fails with `the client certificate does not verify against the OS CAs the node trusts: ...`.
-A call whose role is too low fails with a message that names the role it
-needs, such as `/chalkos.node.v1.NodeService/Reboot needs the operator role`.
+chalkd checks the image's layers first, then the mode, then the certificate, then the role. A
+method of a layer the image lacks fails with `UNIMPLEMENTED` and
+`the kubernetes layer is not in this image`. A method called in a mode it is not served in fails
+with `the node is in maintenance mode; install it first` or `the node is installed`. A
+certificate that does not chain to an OS CA the node trusts at that moment fails with
+`the client certificate does not verify against the OS CAs the node trusts: ...`. A call whose
+role is too low fails with a message that names the role it needs, such as
+`/chalkos.node.v1.NodeService/Reboot needs the operator role`.
 
-| Method | Least role | Served in |
-| --- | --- | --- |
-| ApplyConfig | admin | normal mode |
-| Bootstrap | admin | normal mode |
-| Contract | reader | maintenance and normal mode |
-| Disks | reader | maintenance and normal mode |
-| DrainNode | operator | normal mode |
-| EtcdLeave | admin | normal mode |
-| EtcdMembers | reader | normal mode |
-| EtcdRemoveMember | admin | normal mode |
-| GetConfig | admin | normal mode |
-| Info | reader | maintenance and normal mode |
-| Install | admin | maintenance mode |
-| Logs | reader | maintenance and normal mode |
-| Reboot | operator | maintenance and normal mode |
-| RenewNodeCertificate | `node` | normal mode, on control planes |
-| ResetVolume | admin | normal mode |
-| RevokeNode | admin | normal mode |
-| RotationStep | admin | normal mode |
-| Status | reader | normal mode |
-| UncordonNode | operator | normal mode |
-| UnrevokeNode | admin | normal mode |
-| Upgrade | operator; admin when the request carries config or a fallback secret | normal mode |
+| Method | Least role | Served in | Layer |
+| --- | --- | --- | --- |
+| ApplyConfig | admin | normal mode | base |
+| Bootstrap | admin | normal mode | Kubernetes |
+| Contract | reader | maintenance and normal mode | base |
+| Disks | reader | maintenance and normal mode | base |
+| DrainNode | operator | normal mode | Kubernetes |
+| EtcdLeave | admin | normal mode | Kubernetes |
+| EtcdMembers | reader | normal mode | Kubernetes |
+| EtcdRemoveMember | admin | normal mode | Kubernetes |
+| GetConfig | admin | normal mode | base |
+| Info | reader | maintenance and normal mode | base |
+| Install | admin | maintenance mode | base |
+| Logs | reader | maintenance and normal mode | base |
+| Reboot | operator | maintenance and normal mode | base |
+| RenewNodeCertificate | `node` | normal mode, on control planes | base |
+| ResetVolume | admin | normal mode | base |
+| RevokeNode | admin | normal mode | Kubernetes |
+| RotationStep | admin | normal mode | Kubernetes |
+| Status | reader | normal mode | base |
+| UncordonNode | operator | normal mode | Kubernetes |
+| UnrevokeNode | admin | normal mode | Kubernetes |
+| Upgrade | operator; admin when the request carries config or a fallback secret | normal mode | base |
 
 An Upgrade with config or a fallback secret from an operator fails with
 `/chalkos.node.v1.NodeService/Upgrade with config or a fallback secret needs the admin role; without them the node carries its own config over`.

@@ -237,6 +237,13 @@ then rotate `os-ca` and `kubernetes-ca` with `chalkctl rotate`, as
 [Rotate the Kubernetes CAs and keys](../kubernetes/rotate-kubernetes-cas.md) describe.
 `--force` revokes an etcd member all the same.
 
+Revocation needs the Kubernetes layer. A node whose image lacks it answers
+`chalkctl node revoke` and `chalkctl node unrevoke` with `UNIMPLEMENTED` and
+`the kubernetes layer is not in this image`, so `--via` must name a control plane. A cluster
+without Kubernetes keeps no revoked nodes. There, a removed node loses its access when nobody
+renews its node certificate, within a year, or at once with `chalkctl rotate os-ca`, as
+[Remove a node from the cluster](#remove-a-node-from-the-cluster) describes.
+
 ## Reuse a removed node's name
 
 A revoked name stays blocked for every machine, so a node installed afresh as `w1` is shut out as
