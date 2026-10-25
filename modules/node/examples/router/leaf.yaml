@@ -1,8 +1,55 @@
 # A pure routing role: no firewall documents, no reverse-path filter, and the node API on the
-# management interface alone.
+# management interface alone. It peers unnumbered with the spines on each swp link its Network
+# documents name, in both families, and installs two equal paths.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Router
 metadata: {name: router}
 spec:
   rpFilter: "off"
   management: {interfaces: [mgmt0]}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-mgmt}
+spec:
+  match: {name: mgmt0}
+  network: {dhcp: "yes"}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-swp1}
+spec:
+  match: {name: swp1}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-swp2}
+spec:
+  match: {name: swp2}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 30-swp}
+spec:
+  match: {name: "swp*"}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: bgp}
+spec:
+  asn: 65101
+  routerID: 192.0.2.11
+  multipath: {ebgp: 2}
+  bfd: {receiveMs: 100, transmitMs: 100}
+  gracefulRestart: true
+  networks: [{prefix: "2001:db8:11::/64"}, {prefix: 198.51.100.0/24}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: spines}
+spec:
+  interfaces: ["swp*"]
+  remoteAS: external
+  bfd: true
+  extendedNextHop: true
+  families: {ipv4: {}, ipv6: {}}

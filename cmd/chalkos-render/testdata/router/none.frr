@@ -1,0 +1,8 @@
+! FRR's config, rendered by chalkos-render frr. frr.service fills in the passwords, and
+! frr-reload.py applies the changes.
+frr defaults traditional
+hostname r1
+log syslog informational
+service integrated-vtysh-config
+!
+end

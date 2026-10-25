@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -106,6 +108,105 @@ func (p *portRange) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type bgpSpec struct {
+	ASN       uint32 `json:"asn"`
+	RouterID  string `json:"routerID"`
+	Multipath struct {
+		EBGP        int  `json:"ebgp"`
+		IBGP        int  `json:"ibgp"`
+		ASPathRelax bool `json:"asPathRelax"`
+	} `json:"multipath"`
+	BFD struct {
+		ReceiveMs  int `json:"receiveMs"`
+		TransmitMs int `json:"transmitMs"`
+		Multiplier int `json:"multiplier"`
+	} `json:"bfd"`
+	GracefulRestart bool `json:"gracefulRestart"`
+	Networks        []struct {
+		Prefix string  `json:"prefix"`
+		Policy *string `json:"policy"`
+	} `json:"networks"`
+}
+
+type peerSpec struct {
+	Address   *string `json:"address"`
+	Interface *string `json:"interface"`
+	// Interfaces is nil when the peer names an address or an interface.
+	Interfaces []string `json:"interfaces"`
+	RemoteAS   peerAS   `json:"remoteAS"`
+	Password   *struct {
+		SecretRef struct {
+			Name string `json:"name"`
+			Key  string `json:"key"`
+		} `json:"secretRef"`
+	} `json:"password"`
+	BFD             bool `json:"bfd"`
+	ExtendedNextHop bool `json:"extendedNextHop"`
+	Families        struct {
+		IPv4 *peerFamily `json:"ipv4"`
+		IPv6 *peerFamily `json:"ipv6"`
+	} `json:"families"`
+	Description *string `json:"description"`
+	Shutdown    bool    `json:"shutdown"`
+}
+
+type peerFamily struct {
+	Import           *string `json:"import"`
+	Export           *string `json:"export"`
+	DefaultOriginate bool    `json:"defaultOriginate"`
+	MaxPrefix        *uint32 `json:"maxPrefix"`
+}
+
+// peerAS is a BGPPeer's remoteAS as FRR's remote-as takes it: external, internal or a number.
+type peerAS string
+
+func (a *peerAS) UnmarshalJSON(data []byte) error {
+	var n uint32
+	if err := json.Unmarshal(data, &n); err == nil && n > 0 {
+		*a = peerAS(strconv.FormatUint(uint64(n), 10))
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil || (s != "external" && s != "internal") {
+		return fmt.Errorf("remoteAS is external, internal or an AS number from 1 to 4294967295, not %s", data)
+	}
+	*a = peerAS(s)
+	return nil
+}
+
+type prefixListSpec struct {
+	Family  string `json:"family"`
+	Entries []struct {
+		Prefix string `json:"prefix"`
+		GE     *int   `json:"ge"`
+		LE     *int   `json:"le"`
+		Action string `json:"action"`
+	} `json:"entries"`
+}
+
+type communityListSpec struct {
+	Communities []string `json:"communities"`
+}
+
+type routingPolicySpec struct {
+	Terms []struct {
+		Match struct {
+			PrefixList    *string `json:"prefixList"`
+			CommunityList *string `json:"communityList"`
+			ASPath        *string `json:"asPath"`
+		} `json:"match"`
+		Then struct {
+			Action            string   `json:"action"`
+			LocalPref         *uint32  `json:"localPref"`
+			MED               *uint32  `json:"med"`
+			AddCommunities    []string `json:"addCommunities"`
+			RemoveCommunities []string `json:"removeCommunities"`
+			Prepend           *int     `json:"prepend"`
+		} `json:"then"`
+	} `json:"terms"`
+	Default string `json:"default"`
+}
+
 // named is the spec of a document, with the document's name.
 type named[T any] struct {
 	Name string
@@ -119,6 +220,14 @@ type routerDocuments struct {
 	Policies []named[policySpec]
 	Sets     []named[addressSetSpec]
 	NAT      []named[natSpec]
+	BGP      []named[bgpSpec]
+	Peers    []named[peerSpec]
+	Prefixes []named[prefixListSpec]
+	// Communities are the CommunityList documents and RoutingPolicies the RoutingPolicy ones.
+	Communities     []named[communityListSpec]
+	RoutingPolicies []named[routingPolicySpec]
+	// Links are the interface names the Network documents' [Match] sections name, sorted.
+	Links []string
 }
 
 // readRouterDocuments decodes the router kinds' documents of in; a kind the output does not read
@@ -139,8 +248,50 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 	if d.Sets, err = decodeKind[addressSetSpec](byKind, "AddressSet"); err != nil {
 		return d, err
 	}
-	d.NAT, err = decodeKind[natSpec](byKind, "NATRule")
-	return d, err
+	if d.NAT, err = decodeKind[natSpec](byKind, "NATRule"); err != nil {
+		return d, err
+	}
+	if d.BGP, err = decodeKind[bgpSpec](byKind, "BGP"); err != nil {
+		return d, err
+	}
+	if d.Peers, err = decodeKind[peerSpec](byKind, "BGPPeer"); err != nil {
+		return d, err
+	}
+	if d.Prefixes, err = decodeKind[prefixListSpec](byKind, "PrefixList"); err != nil {
+		return d, err
+	}
+	if d.Communities, err = decodeKind[communityListSpec](byKind, "CommunityList"); err != nil {
+		return d, err
+	}
+	if d.RoutingPolicies, err = decodeKind[routingPolicySpec](byKind, "RoutingPolicy"); err != nil {
+		return d, err
+	}
+	d.Links = networkLinks(byKind)
+	return d, nil
+}
+
+// networkLinks are the interface names in the [Match] sections' Name= of the Network documents
+// of byKind, sorted and once each. A value, or each of a list, holds names between spaces and
+// tabs, as systemd splits it; a glob or a negation, starting with !, names no link.
+func networkLinks(byKind map[string]any) []string {
+	docs, _ := byKind["Network"].([]any)
+	seen := map[string]bool{}
+	for _, d := range docs {
+		doc, _ := d.(map[string]any)
+		spec, _ := doc["spec"].(map[string]any)
+		for _, m := range oneOrMany(spec["match"]) {
+			section, _ := m.(map[string]any)
+			for _, v := range oneOrMany(section["name"]) {
+				value, _ := v.(string)
+				for _, name := range strings.Fields(value) {
+					if !strings.ContainsAny(name, "*?[!") && interfaceName.MatchString(name) {
+						seen[name] = true
+					}
+				}
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // decodeKind decodes the specs of the documents of kind in byKind, in their order.

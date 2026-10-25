@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -20,9 +21,12 @@ var update = flag.Bool("update", false, "rewrite the golden files")
 const (
 	// routerSchemas are the router kinds' schemas, as a router image generates them.
 	routerSchemas = "../../test/fixtures/kinds/router"
-	// routerExamples are the examples of the outputs router-sysctl and router-nftables.
+	// routerExamples are the examples of the outputs router-sysctl, router-nftables and frr.
 	routerExamples = "../../modules/node/examples/router"
 )
+
+// routerKinds are the kinds of router.chalkos.dev.
+var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy"}
 
 // routerInput is the input of the router outputs for the config file path, as chalkd builds it:
 // the documents of each router kind with their schema defaults, sorted by name.
@@ -42,11 +46,17 @@ func routerInput(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	byKind := map[string][]any{}
-	for _, kind := range []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule"} {
+	for _, kind := range append(slices.Clone(routerKinds), "Network") {
 		byKind[kind] = []any{}
 	}
 	slices.SortStableFunc(docs, func(a, b config.Document) int { return cmp.Compare(a.Name, b.Name) })
 	for _, d := range docs {
+		// The Network documents' [Match] names the links a BGPPeer's interfaces expand to; the
+		// renderers read nothing a default fills in.
+		if d.APIVersion == config.NetworkdAPI && d.Kind == "Network" {
+			byKind[d.Kind] = append(byKind[d.Kind], d.Object)
+			continue
+		}
 		if d.APIVersion != config.RouterAPI {
 			continue
 		}
@@ -99,8 +109,8 @@ func renderedFile(t *testing.T, args []string, input, file string) string {
 	return string(data)
 }
 
-// Each example of the router outputs renders its golden sysctl file and ruleset: no documents, a
-// leaf that only routes, a fabric edge and a LAN router.
+// Each example of the router outputs renders its golden sysctl file, ruleset and FRR config: no
+// documents, a leaf that only routes, a fabric edge and a LAN router.
 func TestRouterGolden(t *testing.T) {
 	examples, err := filepath.Glob(filepath.Join(routerExamples, "*.yaml"))
 	if err != nil {
@@ -115,6 +125,7 @@ func TestRouterGolden(t *testing.T) {
 			input := routerInput(t, path)
 			golden(t, name+".conf", renderedFile(t, []string{"router-sysctl"}, input, sysctlFile))
 			golden(t, name+".nft", renderedFile(t, []string{"router-nftables", "50000"}, input, rulesetFile))
+			golden(t, name+".frr", renderedFile(t, []string{"frr"}, input, frrFile))
 		})
 	}
 }
@@ -228,5 +239,148 @@ func TestRouterRefusals(t *testing.T) {
 				t.Errorf("err = %v, want %q", err, c.want)
 			}
 		})
+	}
+}
+
+// The FRR renderer refuses what the schemas and rules refuse, should a document bypass them, and
+// what FRR's mgmtd refuses when it applies the config at boot, which would leave all of the
+// config's lists and route-maps out.
+func TestFRRRefusals(t *testing.T) {
+	doc := func(kind, name, spec string) any {
+		var s any
+		dec := json.NewDecoder(strings.NewReader(spec))
+		dec.UseNumber()
+		if err := dec.Decode(&s); err != nil {
+			t.Fatal(err)
+		}
+		return map[string]any{"apiVersion": config.RouterAPI, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
+	}
+	bgp := func(more string) any {
+		return doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false},
+			"bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}, "gracefulRestart": false, "networks": [`+more+`]}`)
+	}
+	peer := func(name, spec string) any { return doc("BGPPeer", name, spec) }
+	list := func(name, family, entries string) any {
+		return doc("PrefixList", name, `{"family": "`+family+`", "entries": [`+entries+`]}`)
+	}
+	policy := func(name, terms string) any {
+		return doc("RoutingPolicy", name, `{"terms": [`+terms+`], "default": "reject"}`)
+	}
+	v6 := list("v6", "ipv6", `{"prefix": "2001:db8::/32", "action": "permit"}`)
+	v4 := list("v4", "ipv4", `{"prefix": "192.0.2.0/24", "action": "permit"}`)
+	for name, c := range map[string]struct {
+		docs map[string][]any
+		want string
+	}{
+		"peers without BGP":      {map[string][]any{"BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "the config holds BGPPeer documents but no BGP document"},
+		"two BGP documents":      {map[string][]any{"BGP": {bgp(""), doc("BGP", "other", `{}`)}}, "the config holds 2 BGP documents"},
+		"an IPv6 router ID":      {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "2001:db8::1"}`)}}, `routerID "2001:db8::1" is no IPv4 address`},
+		"an unknown remote AS":   {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "anyone", "families": {"ipv6": {}}}`)}}, "remoteAS is external, internal or an AS number"},
+		"a community of 17 bits": {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["65536:1"]}`)}}, `"65536:1" is no community`},
+		"ge below the prefix":    {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24", "ge": 16, "action": "permit"}`)}}, "ge 16 of 192.0.2.0/24 lies outside 24 to 32"},
+		"a policy of both families": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {v4, v6},
+			"RoutingPolicy": {policy("p", `{"match": {"prefixList": "v4"}, "then": {"action": "accept"}}, {"match": {"prefixList": "v6"}, "then": {"action": "accept"}}`)}}, "it matches PrefixLists of both families"},
+		"a network's policy of the other family": {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24", "policy": "p"}`)}, "PrefixList": {v6},
+			"RoutingPolicy": {policy("p", `{"match": {"prefixList": "v6"}, "then": {"action": "accept"}}`)}}, "the RoutingPolicy p matches PrefixLists of ipv6, not ipv4"},
+		"two peers of one session": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {
+			peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`),
+			peer("b", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer a and BGPPeer b both name eth1"},
+		"an interface of a peer group's name": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {
+			peer("fabric", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`),
+			peer("x", `{"interface": "peer-fabric", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer x names peer-fabric, the peer group of BGPPeer fabric"},
+		"a password's key with a space":         {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "password": {"secretRef": {"name": "bgp", "key": "fab ric"}}, "families": {"ipv6": {}}}`)}}, `the password's Secret "bgp" and key "fab ric"`},
+		"an AS path that adds a command":        {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "^1$\n neighbor x shutdown"}, "then": {"action": "accept"}}`)}}, "holds more than digits, spaces and"},
+		"a description of two lines":            {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "a\nb", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
+		"a peer of no family":                   {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external"}`)}}, "it exchanges the routes of no family"},
+		"65 equal paths":                        {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "multipath": {"ebgp": 65, "ibgp": 1}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}}`)}}, "multipath.ebgp 65 lies outside 1 to 64"},
+		"a prepend of 11":                       {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "prepend": 11}}`)}}, "prepend 11 lies outside 1 to 10"},
+		"an AS path that does not compile":      {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "(1"}, "then": {"action": "accept"}}`)}}, `asPath "(1" is no regular expression`},
+		"a maximum of no prefix":                {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"maxPrefix": 0}}}`)}}, "maxPrefix 0 accepts no route"},
+		"an interface that reads as an address": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "192.0.2.9", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `interface "192.0.2.9" is an address`},
+		"a link that reads as an address": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interfaces": ["*"], "remoteAS": "external", "families": {"ipv6": {}}}`)},
+			"Network": {map[string]any{"apiVersion": config.NetworkdAPI, "kind": "Network", "metadata": map[string]any{"name": "n"}, "spec": map[string]any{"match": map[string]any{"name": "2001:db8::9"}}}}}, `interface "2001:db8::9" is an address`},
+		"a description of spaces":              {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "  ", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
+		"a description of two spaces in a row": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "a  b", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
+		"a description that ends in a space":   {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "a ", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
+		"a description of 81 characters":       {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "`+strings.Repeat("a", 81)+`", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
+		"a large community of 33 bits":         {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["1:4294967296:1"]}`)}}, `"1:4294967296:1" is no community`},
+		"a router ID of five parts":            {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1.1"}`)}}, `routerID "192.0.2.1.1" is no IPv4 address`},
+		// mgmtd refuses a prefix-list entry equal to another of its list.
+		"two equal entries":                {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.1/24", "action": "permit"}, {"prefix": "192.0.2.0/24", "action": "deny"}`)}}, "entries 1 and 2 both match 192.0.2.0/24"},
+		"two equal entries with ge and le": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv6", `{"prefix": "2001:db8::/32", "action": "permit"}, {"prefix": "2001:db8::/32", "ge": 48, "le": 64, "action": "permit"}, {"prefix": "2001:db8::/32", "ge": 48, "le": 64, "action": "permit"}`)}}, "entries 2 and 3 both match 2001:db8::/32 ge 48 le 64"},
+		// AS paths bgpd's regcomp refuses, which would leave the term matching no route.
+		"an AS path with a parenthesis too many": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1)"}, "then": {"action": "accept"}}`)}}, `asPath "1)" is no regular expression`},
+		"an AS path that starts with a star":     {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "*1"}, "then": {"action": "accept"}}`)}}, `asPath "*1" is no regular expression`},
+		"an AS path that repeats an anchor":      {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "^*1"}, "then": {"action": "accept"}}`)}}, `asPath "^*1" is no regular expression`},
+		"an AS path that repeats an alternative": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "(1|+2)"}, "then": {"action": "accept"}}`)}}, `asPath "(1|+2)" is no regular expression`},
+		"an AS path with an AS set's brace":      {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "_{64512"}, "then": {"action": "accept"}}`)}}, `asPath "_{64512" is no regular expression`},
+		"an AS path with an open interval":       {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1{,5}"}, "then": {"action": "accept"}}`)}}, `asPath "1{,5}" is no regular expression`},
+		"an AS path with an inverted interval":   {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1{3,2}"}, "then": {"action": "accept"}}`)}}, `asPath "1{3,2}" is no regular expression`},
+		"an AS path with an unclosed interval":   {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1{2"}, "then": {"action": "accept"}}`)}}, `asPath "1{2" is no regular expression`},
+		// Values FRR would read as further commands or arguments of the config.
+		"a description that adds a neighbour":         {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "x\n neighbor 192.0.2.9 remote-as 64999", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
+		"a description that ends the router":          {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "x\rexit\r", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
+		"a remote AS that adds a neighbour":           {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external\n neighbor 192.0.2.9 remote-as 64999", "families": {"ipv6": {}}}`)}}, "remoteAS is external, internal or an AS number"},
+		"a fractional remote AS":                      {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": 64512.5, "families": {"ipv6": {}}}`)}}, "remoteAS is external, internal or an AS number"},
+		"an address that adds an argument":            {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "192.0.2.9 remote-as 64999", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `address "192.0.2.9 remote-as 64999" is no neighbour address`},
+		"an address with a zone":                      {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "fe80::1%eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `address "fe80::1%eth1" is no neighbour address`},
+		"a multicast address":                         {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "ff02::1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `address "ff02::1" is no neighbour address`},
+		"an interface that adds a command":            {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1\n neighbor 192.0.2.9 remote-as 64999", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "is no interface name"},
+		"interfaces that add a command":               {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interfaces": ["eth1 remote-as 64999"], "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "is no interface name or glob"},
+		"a password that adds a command":              {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "password": {"secretRef": {"name": "bgp@\n neighbor 192.0.2.9 remote-as 64999\n", "key": "k"}}, "families": {"ipv6": {}}}`)}}, "the password's Secret"},
+		"a password's key with an @":                  {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "password": {"secretRef": {"name": "bgp", "key": "a@b"}}, "families": {"ipv6": {}}}`)}}, `the password's Secret "bgp" and key "a@b"`},
+		"a router ID that adds a command":             {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1\n neighbor 192.0.2.9 remote-as 64999"}`)}}, "is no IPv4 address"},
+		"a network that adds an argument":             {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24 route-map x"}`)}}, `network "192.0.2.0/24 route-map x" is no address range`},
+		"a prefix that adds an argument":              {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24 le 32", "action": "permit"}`)}}, `"192.0.2.0/24 le 32" is no ipv4 address range`},
+		"a prefix list action that adds a prefix":     {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24", "action": "permit 0.0.0.0/0\nip prefix-list pl-l seq 1 permit"}`)}}, "is neither permit nor deny"},
+		"a family that adds a word":                   {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4 x", `{"prefix": "192.0.2.0/24", "action": "permit"}`)}}, `family "ipv4 x" is neither ipv4 nor ipv6`},
+		"a community that adds an argument":           {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "addCommunities": ["64512:1 no-export"]}}`)}}, `"64512:1 no-export" is no community`},
+		"a community with a sign":                     {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["+1:1"]}`)}}, `"+1:1" is no community`},
+		"a term's action that adds a command":         {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept\nexit\nrouter bgp 64999"}}`)}}, "is neither accept nor reject"},
+		"a policy's default that adds a command":      {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {doc("RoutingPolicy", "p", `{"terms": [], "default": "reject 1\nexit"}`)}}, "is neither accept nor reject"},
+		"a policy name that adds a command":           {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {doc("RoutingPolicy", "p 10\nexit\nrouter bgp 64999", `{"terms": [], "default": "reject"}`)}}, "is no document name"},
+		"a peer name that adds a command":             {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a remote-as 64999", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "is no document name"},
+		"a list a term names that adds a command":     {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"prefixList": "v4\n set metric 1"}, "then": {"action": "accept"}}`)}}, "does not exist"},
+		"a policy a family names that adds a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"import": "p in\n neighbor 192.0.2.9 remote-as 64999"}}}`)}}, "does not exist"},
+		"a network's policy that adds a command":      {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24", "policy": "p\n neighbor 192.0.2.9 remote-as 64999"}`)}}, "does not exist"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": c.docs})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := render(t, []string{"frr"}, string(input)); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+}
+
+// A node name FRR's hostname does not take renders no hostname, whatever it holds.
+func TestFRRHostname(t *testing.T) {
+	for name, want := range map[string]string{"r1": "hostname r1\n", "r1\nrouter bgp 64999": "", "-r1": ""} {
+		input, err := json.Marshal(map[string]any{"node": map[string]any{"name": name}, "documents": map[string]any{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := renderedFile(t, []string{"frr"}, string(input), frrFile)
+		if got := regexp.MustCompile(`(?m)^hostname.*\n`).FindString(text); got != want || strings.Contains(text, "router bgp") {
+			t.Errorf("node %q renders\n%s", name, text)
+		}
+	}
+}
+
+// checkASPath refuses each AS path glibc's regcomp refuses once bgpd has replaced its _, and takes
+// the common ones it compiles.
+func TestCheckASPath(t *testing.T) {
+	for _, r := range []string{"^65001_", "_64512$", "^(64512|64513)_.*$", "^1{1,2}?$", "^$", ".*", "_6451(2|3)_", "(|1)", "1|", "}", "_*", "1{0}", "1{2,}", "1{1,2}{3}", "_^"} {
+		if err := checkASPath(r); err != nil {
+			t.Errorf("checkASPath(%q) = %v", r, err)
+		}
+	}
+	for _, r := range []string{"(1", "*1", "^*1", "$*", "(1|+2)", "_{64512", "1{3,2}", "1{2", "{1}", "(*1)", "^+", "^?", "|*", "1{1000}"} {
+		if err := checkASPath(r); err == nil {
+			t.Errorf("checkASPath(%q) takes it", r)
+		}
 	}
 }

@@ -1,8 +1,8 @@
 // Command chalkos-render is the renderer of the outputs the helpers of lib.chalkos.render build,
-// and of the built-in outputs networkd, router-sysctl and router-nftables. chalkd runs it in the
-// sandbox of an output: it reads the output's input as JSON on standard input, {"node": {"name":
-// …}, "documents": {"<Kind>": [<document>, …]}}, and writes files into $OUT, the only path it may
-// write. A router image's build runs it once more for the image's fallback ruleset.
+// and of the built-in outputs networkd, router-sysctl, router-nftables and frr. chalkd runs it in
+// the sandbox of an output: it reads the output's input as JSON on standard input, {"node":
+// {"name": …}, "documents": {"<Kind>": [<document>, …]}}, and writes files into $OUT, the only
+// path it may write. A router image's build runs it once more for the image's fallback ruleset.
 package main
 
 import (
@@ -26,6 +26,7 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render router-sysctl
        chalkos-render router-nftables PORT
        chalkos-render router-nftables-fallback PORT
+       chalkos-render frr
 
 template executes the Go text/template TEMPLATE on the input and writes the result to $OUT/FILE;
 the template has the functions join, quote, json and default. documents writes each document of
@@ -35,7 +36,7 @@ kinds' schemas in the directory SCHEMAS. router-sysctl writes the kernel setting
 document as $OUT/90-chalkos-router.conf. router-nftables writes the firewall of the documents of
 the router kinds as the nftables table inet chalkos in $OUT/ruleset.nft, which accepts chalkd's TCP
 port PORT; router-nftables-fallback writes the table of a node without a rendered ruleset, which
-forwards nothing.`
+forwards nothing. frr writes FRR's config of the BGP documents as $OUT/frr.conf.`
 
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Getenv("OUT")); err != nil {
@@ -74,6 +75,8 @@ func run(args []string, stdin io.Reader, out string) error {
 		return renderRouterNftables(args[1], false, in, out)
 	case args[0] == "router-nftables-fallback" && len(args) == 2:
 		return renderRouterNftables(args[1], true, in, out)
+	case args[0] == "frr" && len(args) == 1:
+		return renderFRR(in, out)
 	}
 	return errUsage
 }

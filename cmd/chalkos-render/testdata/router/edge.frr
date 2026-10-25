@@ -1,0 +1,103 @@
+! FRR's config, rendered by chalkos-render frr. frr.service fills in the passwords, and
+! frr-reload.py applies the changes.
+frr defaults traditional
+hostname r1
+log syslog informational
+service integrated-vtysh-config
+!
+ipv6 prefix-list pl-edge-originated seq 5 permit 2001:db8:ffff::/48 le 128
+ipv6 prefix-list pl-edge-originated seq 10 permit 64:ff9b::/96
+ipv6 prefix-list pl-edge-originated seq 15 deny ::/0
+ipv6 prefix-list pl-fabric seq 5 permit 2001:db8::/32 le 128
+ip prefix-list pl-transit-out seq 5 permit 192.0.2.0/24 ge 25 le 32
+ip prefix-list pl-transit-out seq 10 permit 192.0.2.0/24
+!
+bgp community-list standard cl-blackhole seq 5 permit 65001:666
+bgp community-list standard rm-from-transit-20 seq 5 permit 65001:100
+bgp as-path access-list asp-from-transit-20 seq 5 permit ^65001_
+!
+route-map rp-from-fabric permit 10
+ match ipv6 address prefix-list pl-fabric
+exit
+route-map rp-from-fabric deny 65535
+exit
+route-map rp-from-transit deny 10
+ match community cl-blackhole
+exit
+route-map rp-from-transit permit 20
+ match as-path asp-from-transit-20
+ set local-preference 200
+ set comm-list rm-from-transit-20 delete
+exit
+route-map rp-from-transit permit 30
+ set community 64512:100 additive
+ set large-community 64512:100:1 additive
+exit
+route-map rp-from-transit deny 65535
+exit
+route-map rp-nat64 permit 10
+ set community 64512:64 additive
+exit
+route-map rp-nat64 deny 65535
+exit
+route-map rp-to-fabric permit 10
+ match ipv6 address prefix-list pl-edge-originated
+exit
+route-map rp-to-fabric deny 65535
+exit
+route-map rp-to-transit permit 10
+ match ip address prefix-list pl-transit-out
+ set metric 50
+ set as-path prepend 64512 64512
+exit
+route-map rp-to-transit deny 65535
+exit
+!
+router bgp 64512
+ bgp router-id 192.0.2.1
+ no bgp default ipv4-unicast
+ bgp bestpath as-path multipath-relax
+ neighbor peer-fabric peer-group
+ neighbor peer-fabric remote-as external
+ neighbor peer-fabric description the fabric's leaves
+ neighbor peer-fabric password @secret_bgp.fabric@
+ neighbor peer-fabric bfd
+ neighbor peer-fabric bfd profile chalkos
+ neighbor peer-fabric capability extended-nexthop
+ neighbor eth1 interface peer-group peer-fabric
+ neighbor eth2 interface peer-group peer-fabric
+ neighbor peer-transit peer-group
+ neighbor peer-transit remote-as 65001
+ neighbor 203.0.113.254 peer-group peer-transit
+ !
+ address-family ipv4 unicast
+  network 192.0.2.0/24
+  maximum-paths 64
+  maximum-paths ibgp 1
+  neighbor peer-transit activate
+  neighbor peer-transit route-map rp-from-transit in
+  neighbor peer-transit route-map rp-to-transit out
+  neighbor peer-transit maximum-prefix 1000
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  network 2001:db8:ffff::1/128
+  network 64:ff9b::/96 route-map rp-nat64
+  maximum-paths 64
+  maximum-paths ibgp 1
+  neighbor peer-fabric activate
+  neighbor peer-fabric default-originate
+  neighbor peer-fabric route-map rp-from-fabric in
+  neighbor peer-fabric route-map rp-to-fabric out
+ exit-address-family
+exit
+!
+bfd
+ profile chalkos
+  receive-interval 300
+  transmit-interval 300
+  detect-multiplier 3
+ exit
+exit
+!
+end

@@ -1,0 +1,50 @@
+! FRR's config, rendered by chalkos-render frr. frr.service fills in the passwords, and
+! frr-reload.py applies the changes.
+frr defaults traditional
+hostname r1
+log syslog informational
+service integrated-vtysh-config
+!
+route-map accept-all permit 10
+exit
+!
+router bgp 65101
+ bgp router-id 192.0.2.11
+ no bgp default ipv4-unicast
+ bgp graceful-restart
+ neighbor peer-spines peer-group
+ neighbor peer-spines remote-as external
+ neighbor peer-spines bfd
+ neighbor peer-spines bfd profile chalkos
+ neighbor peer-spines capability extended-nexthop
+ neighbor swp1 interface peer-group peer-spines
+ neighbor swp2 interface peer-group peer-spines
+ !
+ address-family ipv4 unicast
+  network 198.51.100.0/24
+  maximum-paths 2
+  maximum-paths ibgp 1
+  neighbor peer-spines activate
+  neighbor peer-spines route-map accept-all in
+  neighbor peer-spines route-map accept-all out
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  network 2001:db8:11::/64
+  maximum-paths 2
+  maximum-paths ibgp 1
+  neighbor peer-spines activate
+  neighbor peer-spines route-map accept-all in
+  neighbor peer-spines route-map accept-all out
+ exit-address-family
+exit
+!
+bfd
+ profile chalkos
+  receive-interval 100
+  transmit-interval 100
+  detect-multiplier 3
+ exit
+exit
+!
+end

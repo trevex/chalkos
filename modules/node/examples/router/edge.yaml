@@ -1,5 +1,7 @@
 # A fabric edge: the node API from the WAN, SSH from an office's set, forwarding from the fabric
-# to the WAN, masquerade out of the WAN and a web server behind a destination NAT.
+# to the WAN, masquerade out of the WAN and a web server behind a destination NAT. It peers
+# unnumbered with the fabric's leaves on eth1 and eth2, with BFD and a password, sends them a
+# default route, and takes IPv4 routes from a transit peer on the WAN.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Router
 metadata: {name: router}
@@ -53,3 +55,126 @@ spec:
   in: {interface: eth0}
   match: {destination: ["203.0.113.1/32"], protocol: tcp, destinationPorts: [80, 443]}
   to: {address: 192.0.2.10}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-wan}
+spec:
+  match: {name: eth0}
+  network: {address: [203.0.113.1/24]}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-fabric}
+spec:
+  match: {name: [eth1, eth2]}
+  network: {ipv6AcceptRA: false}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: bgp}
+spec:
+  asn: 64512
+  routerID: 192.0.2.1
+  multipath: {ebgp: 64, asPathRelax: true}
+  networks:
+    - {prefix: "2001:db8:ffff::1/128"}
+    - {prefix: "64:ff9b::/96", policy: nat64}
+    - {prefix: 192.0.2.0/24}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: fabric}
+spec:
+  interfaces: [eth1, eth2]
+  remoteAS: external
+  bfd: true
+  extendedNextHop: true
+  password: {secretRef: {name: bgp, key: fabric}}
+  description: the fabric's leaves
+  families:
+    ipv6: {defaultOriginate: true, import: from-fabric, export: to-fabric}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: transit}
+spec:
+  address: 203.0.113.254
+  remoteAS: 65001
+  families:
+    ipv4: {import: from-transit, export: to-transit, maxPrefix: 1000}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: RoutingPolicy
+metadata: {name: from-fabric}
+spec:
+  terms:
+    - {match: {prefixList: fabric}, then: {action: accept}}
+  default: reject
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: RoutingPolicy
+metadata: {name: to-fabric}
+spec:
+  terms:
+    - {match: {prefixList: edge-originated}, then: {action: accept}}
+  default: reject
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: RoutingPolicy
+metadata: {name: from-transit}
+spec:
+  terms:
+    - {match: {communityList: blackhole}, then: {action: reject}}
+    - match: {asPath: "^65001_"}
+      then: {action: accept, localPref: 200, removeCommunities: ["65001:100"]}
+    - then: {action: accept, addCommunities: ["64512:100", "64512:100:1"]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: RoutingPolicy
+metadata: {name: nat64}
+spec:
+  terms:
+    - then: {action: accept, addCommunities: ["64512:64"]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: RoutingPolicy
+metadata: {name: to-transit}
+spec:
+  terms:
+    - {match: {prefixList: transit-out}, then: {action: accept, med: 50, prepend: 2}}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PrefixList
+metadata: {name: fabric}
+spec:
+  family: ipv6
+  entries: [{prefix: "2001:db8::/32", le: 128}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PrefixList
+metadata: {name: edge-originated}
+spec:
+  family: ipv6
+  entries:
+    - {prefix: "2001:db8:ffff::/48", le: 128}
+    - {prefix: "64:ff9b::/96"}
+    - {prefix: "::/0", action: deny}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PrefixList
+metadata: {name: transit-out}
+spec:
+  family: ipv4
+  entries: [{prefix: 192.0.2.0/24, ge: 25, le: 32}, {prefix: 192.0.2.0/24}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: CommunityList
+metadata: {name: blackhole}
+spec: {communities: ["65001:666"]}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: bgp}
+spec:
+  data: {fabric: example-password}
