@@ -13,7 +13,7 @@ table inet chalkos {
 		ip6 daddr fe80::/64 udp sport 547 udp dport 546 accept
 		iifname { "mgmt0" } tcp dport 50000 accept
 		iifname { "swp*" } tcp dport { 179 } accept comment "BGPPeer spines"
-		iifname { "swp*" } udp dport { 3784, 3785, 4784 } accept comment "BGPPeer spines"
+		iifname { "swp*" } udp dport { 3784, 3785 } accept comment "BGPPeer spines"
 	}
 	chain forward {
 		type filter hook forward priority filter; policy accept;

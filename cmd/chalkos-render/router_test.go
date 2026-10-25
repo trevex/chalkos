@@ -188,6 +188,30 @@ func TestRouterOpenings(t *testing.T) {
 	}
 }
 
+// A BGPPeer opens BGP's port, and with bfd BFD's single-hop ports, on its links or from its
+// address, and BFD's multi-hop port from its address alone.
+func TestBGPOpenings(t *testing.T) {
+	addr, link := "192.0.2.9", "eth1"
+	got, err := bgpOpenings([]named[peerSpec]{
+		{Name: "far", Spec: peerSpec{Address: &addr, BFD: true}},
+		{Name: "near", Spec: peerSpec{Interface: &link, BFD: true}},
+		{Name: "plain", Spec: peerSpec{Interfaces: []string{"swp*"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []opening{
+		{comment: "BGPPeer far", protocol: "tcp", ports: []portRange{"179"}, sources: []string{"192.0.2.9/32"}},
+		{comment: "BGPPeer far", protocol: "udp", ports: []portRange{"3784", "3785", "4784"}, sources: []string{"192.0.2.9/32"}},
+		{comment: "BGPPeer near", protocol: "tcp", ports: []portRange{"179"}, interfaces: []string{"eth1"}},
+		{comment: "BGPPeer near", protocol: "udp", ports: []portRange{"3784", "3785"}, interfaces: []string{"eth1"}},
+		{comment: "BGPPeer plain", protocol: "tcp", ports: []portRange{"179"}, interfaces: []string{"swp*"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("bgpOpenings =\n%+v\nwant\n%+v", got, want)
+	}
+}
+
 // The renderers refuse what the schemas and rules refuse, should a document bypass them.
 func TestRouterRefusals(t *testing.T) {
 	doc := func(kind, name, spec string) any {

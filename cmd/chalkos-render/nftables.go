@@ -50,8 +50,8 @@ type opening struct {
 }
 
 // bgpOpenings are the ports of each BGPPeer, on its interfaces or from its address alone: BGP's
-// TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of single-hop and 4784 of multi-hop
-// sessions.
+// TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of single-hop sessions, and 4784 of
+// multi-hop ones from an address peer; a peer on a link is one hop away.
 func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 	var out []opening
 	for _, p := range peers {
@@ -84,7 +84,10 @@ func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 		out = append(out, bgp)
 		if s.BFD {
 			bfd := o
-			bfd.protocol, bfd.ports = "udp", []portRange{"3784", "3785", "4784"}
+			bfd.protocol, bfd.ports = "udp", []portRange{"3784", "3785"}
+			if s.Address != nil {
+				bfd.ports = append(bfd.ports, "4784")
+			}
 			out = append(out, bfd)
 		}
 	}
