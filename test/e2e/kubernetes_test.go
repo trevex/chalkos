@@ -861,61 +861,18 @@ func vxlanRules(t *testing.T, n *node, inventory, name string) (marks, drops []s
 	return marks, drops
 }
 
-// createLab brings the cluster's control plane and worker up with chalklab create, in a state
-// directory below dir, and attaches to their VMs; it returns the nodes, the forwarded port of the
-// API server and the kubeconfig chalklab wrote. It checks that cp1 waited for its bootstrap at the
-// cluster's endpoint and that the lab's inventory reaches it. chalklab destroy removes the lab
-// once the test ends, after the console of each VM was logged on a failure.
+// createLab creates the main cluster's lab of chalklab/lab.yaml through chalklab, as startLab
+// does, which bootstraps cp1, and returns its nodes, the forwarded port of cp1's API server and the
+// lab's kubeconfig. chalklab printed the endpoint cp1 waited for, and chalkctl reaches cp1 with the
+// lab's inventory and client file.
 func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int, string) {
 	t.Helper()
-	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
-	state, err := lab.StateDir(labName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	chalklab := func(args ...string) (string, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-		defer cancel()
-		out, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKLAB"), args...).CombinedOutput()
-		t.Logf("chalklab %s:\n%s", strings.Join(args, " "), out)
-		return string(out), err
-	}
-	t.Cleanup(func() {
-		// Read before destroy removes it, so a create that failed logs the consoles too.
-		l, _ := lab.ReadLab(state)
-		if t.Failed() && l != nil {
-			for _, n := range l.Nodes {
-				logConsoleTail(t, l.VMConfig(n).ConsolePath(), 200)
-			}
-		}
-		if _, err := chalklab("destroy"); err != nil {
-			t.Errorf("chalklab destroy: %v", err)
-		}
-		if _, err := os.Stat(state); !errors.Is(err, os.ErrNotExist) {
-			t.Errorf("chalklab destroy left %s: %v", state, err)
-		}
-		if l != nil {
-			for _, n := range l.Nodes {
-				if lab.Running(l.VMConfig(n)) {
-					t.Errorf("the VM of %s runs after chalklab destroy", n.Name)
-				}
-			}
-		}
-	})
-	create := []string{"create", "--lab", filepath.Join(fixtures, "chalklab", "lab.yaml"), "--secrets", os.Getenv("CHALKLAB_SECRETS")}
-	out, err := chalklab(append(create, args...)...)
-	if err != nil {
-		t.Fatalf("chalklab create: %v", err)
-	}
+	nodes, l, out, state := startLab(t, dir, labName, "lab.yaml", args...)
 	// The status chalklab saw before the bootstrap names the cluster's endpoint.
 	if want := "cp1: kubernetes controlplane: waiting for bootstrap or for the cluster at https://192.168.100.11:6443"; !strings.Contains(out, want) {
 		t.Errorf("chalklab create did not print %q", want)
 	}
-	l, err := lab.ReadLab(state)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out, err := chalklab("status"); err != nil {
+	if out, err := runChalklab(t, "status"); err != nil {
 		t.Errorf("chalklab status: %v", err)
 	} else if !strings.Contains(out, "its supervisor runs") {
 		t.Error("chalklab status does not say that its supervisor runs the lab")
@@ -932,16 +889,8 @@ func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int,
 	} else if !strings.Contains(string(statusOut), "kubernetes controlplane: ") {
 		t.Error("chalkctl status with the lab's inventory and client file shows no Kubernetes status of cp1")
 	}
-	nodes := map[string]*node{}
 	apiPort := 0
 	for _, n := range l.Nodes {
-		c := l.VMConfig(n)
-		vm, err := lab.AttachVM(ctx, c)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(vm.Detach)
-		nodes[n.Name] = &node{vm: vm, addr: fmt.Sprintf("127.0.0.1:%d", n.ChalkdPort)}
 		if n.APIPort != 0 {
 			apiPort = n.APIPort
 		}
