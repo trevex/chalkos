@@ -1067,6 +1067,40 @@ func TestApplyConfigStartsFailedUnits(t *testing.T) {
 	}
 }
 
+// TestApplyConfigStartsFailedUnitsItReloads: a unit to reload that failed, such as a firewall
+// whose ruleset nft refused at boot, is started again with the new config after reset-failed, as
+// a failed unit to restart is, since systemctl does not reload a failed unit. One that is inactive
+// is left alone.
+func TestApplyConfigStartsFailedUnitsItReloads(t *testing.T) {
+	for state, want := range map[string][]string{
+		"failed":   {"systemctl reset-failed demo.service", "systemctl restart demo.service"},
+		"active":   {"systemctl reload demo.service"},
+		"inactive": nil,
+	} {
+		t.Run(state, func(t *testing.T) {
+			s, r := configServer(t)
+			write(t, s.Loader.Effects, `{"demo": {"outputs": ["demo"], "reload": ["demo.service"]}}`)
+			r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl show --property=ActiveState --value demo.service", Out: state + "\n"})
+			resp, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var acts []string
+			for _, c := range r.Calls {
+				if strings.HasPrefix(c, "systemctl ") && !strings.HasPrefix(c, "systemctl show ") {
+					acts = append(acts, c)
+				}
+			}
+			if !slices.Equal(acts, want) {
+				t.Errorf("commands = %v, want %v", acts, want)
+			}
+			if restarted := state == "failed"; restarted != slices.Equal(resp.RestartedUnits, []string{"demo.service"}) {
+				t.Errorf("restarted %v", resp.RestartedUnits)
+			}
+		})
+	}
+}
+
 // TestApplyConfigRefusesEffectsThatDoNotCompile: the running image's effects are its own, so one
 // whose rule does not compile fails the delivery before it changes anything.
 func TestApplyConfigRefusesEffectsThatDoNotCompile(t *testing.T) {

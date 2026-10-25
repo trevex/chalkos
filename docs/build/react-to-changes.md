@@ -164,7 +164,7 @@ flowchart TD
     due -->|no| skip["Effect not taken"]
     due -->|yes| reload["1. Reload the units of reload that are neither inactive nor failed"]
     reload --> run["2. Run the commands of run"]
-    run --> failed["3. reset-failed the failed units of restart"]
+    run --> failed["3. reset-failed the failed units of restart and reload"]
     failed --> start["4. restart them and the units of an effect with start"]
     start --> try["5. try-restart the other units of restart"]
     try --> loops["6. Act on chalkd's own loops"]
@@ -173,11 +173,13 @@ flowchart TD
 The diagram shows the decision for each effect and the order of the actions of all due effects:
 
 1. chalkd reloads, in one `systemctl reload`, the units of `reload` that are neither inactive nor
-   failed, such as an active unit or one that is starting. An inactive or failed unit reads its
-   config when it starts, and a unit chalkd also restarts gets no reload.
+   failed, such as an active unit or one that is starting. An inactive unit reads its config when
+   it starts, a failed one chalkd restarts in step 4, and a unit chalkd also restarts gets no
+   reload.
 2. It runs the `run` commands, each once, in the order of their effects' names.
-3. It runs `systemctl reset-failed` on the units of `restart` that failed. The new config may be
-   what they lacked, and their earlier failures would count against their start limit.
+3. It runs `systemctl reset-failed` on the units of `restart` and `reload` that failed. The new
+   config may be what they lacked, systemd reloads no failed unit, and their earlier failures
+   would count against their start limit.
 4. It restarts, in one `systemctl restart`, those failed units and the units of an effect with
    `start`. `systemctl restart` starts a unit that does not run.
 5. It restarts the other units in one `systemctl try-restart`. A unit that runs, or ran and stays

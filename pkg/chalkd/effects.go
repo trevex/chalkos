@@ -275,7 +275,9 @@ func actionsOf(defs map[string]effects.Definition, due []string) actions {
 
 // applyEffects reloads the units of a.reload that run, runs a.run, then restarts the units of
 // a.restart, and returns the restarted units. chalkd acts on its own loops last. A unit it
-// restarts is not reloaded, because the restart reads all a reload would.
+// restarts is not reloaded, because the restart reads all a reload would. A unit of a.reload that
+// failed is restarted as a failed unit of a.restart is: systemctl reloads no failed unit, and its
+// start, such as a firewall's that loads the new ruleset, is what the new config needs.
 //
 // The restarts take one systemctl call for each way of restarting:
 //   - try-restart for a unit that runs, or ran and stays active, so a unit that never started,
@@ -300,10 +302,17 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 		states[unit] = strings.TrimSpace(string(out))
 	}
 	var errs []error
-	var reload []string
+	var reload, failedUnits []string
 	for _, unit := range a.reload {
-		// A unit that does not run reads its config when it starts.
-		if slices.Contains(a.restart, unit) || states[unit] == "inactive" || states[unit] == "failed" {
+		if slices.Contains(a.restart, unit) {
+			continue
+		}
+		// A unit that does not run reads its config when it starts; a failed one is restarted.
+		if states[unit] == "failed" {
+			failedUnits = append(failedUnits, unit)
+			continue
+		}
+		if states[unit] == "inactive" {
 			continue
 		}
 		reload = append(reload, unit)
@@ -322,7 +331,7 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 			errs = append(errs, fmt.Errorf("run %s: %w", command, err))
 		}
 	}
-	var failedUnits, start, try []string
+	var start, try []string
 	for _, unit := range a.restart {
 		switch {
 		case states[unit] == "failed":
