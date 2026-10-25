@@ -6,12 +6,15 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // The BGP kinds' rules accept a fabric edge's documents and refuse a peer with two ways to reach
 // it or with no family, peers without BGP, policies and lists the config lacks, lists of another
-// family than a peer's family, a policy of both families, ge and le outside their range, a list of
-// both kinds of community and a rejecting term that sets attributes.
+// family than a peer's family, a policy of both families, ge and le outside their range, entries
+// that match alike, a list of both kinds of community, a rejecting term that sets attributes, an
+// AS path or a description too long, a neighbour address that is no unicast address, an interface
+// named like an address and a password whose Secret names no credential.
 func TestBGPRules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -65,7 +68,27 @@ func TestBGPRules(t *testing.T) {
 			doc("RoutingPolicy", "from-fabric", `{"terms": [{"match": {"prefixList": "fabric"}, "then": {"action": "accept"}}, {"match": {"prefixList": "v4"}, "then": {"action": "accept"}}]}`)),
 			[]string{`RoutingPolicy "from-fabric" spec.terms: the terms match PrefixLists of both families; a policy serves the routes of one family, so give each family a policy of its own`}},
 		{"a list the config lacks", replace(edge, doc("RoutingPolicy", "from-fabric", `{"terms": [{"match": {"prefixList": "leaves"}, "then": {"action": "accept"}}]}`)),
-			[]string{`RoutingPolicy "from-fabric" spec.terms: a term names a PrefixList or a CommunityList that the config does not hold`}},
+			[]string{`RoutingPolicy "from-fabric" spec.terms: a term names the PrefixList leaves, which the config does not hold`}},
+		{"a community list the config lacks", replace(edge, doc("RoutingPolicy", "from-fabric", `{"terms": [{"match": {"prefixList": "fabric", "communityList": "drop"}, "then": {"action": "reject"}}]}`)),
+			[]string{`RoutingPolicy "from-fabric" spec.terms: a term names the CommunityList drop, which the config does not hold`}},
+		{"an AS path past 200 characters", replace(edge, doc("RoutingPolicy", "to-fabric", `{"terms": [{"match": {"prefixList": "edge", "asPath": "`+strings.Repeat("_64512", 34)+`"}, "then": {"action": "accept"}}]}`)),
+			[]string{`RoutingPolicy "to-fabric" spec.terms: a term's asPath holds more than 200 characters`}},
+		{"two entries that match alike", replace(edge, doc("PrefixList", "edge", `{"family": "ipv6", "entries": [{"prefix": "2001:db8:ffff::/48", "le": 128}, {"prefix": "2001:db8:ffff::1/48", "le": 128, "action": "deny"}]}`)),
+			[]string{`PrefixList "edge" spec.entries: two entries match 2001:db8:ffff::/48 le 128, and the later never decides; drop one`}},
+		{"entries that differ in ge", replace(edge, doc("PrefixList", "edge", `{"family": "ipv6", "entries": [{"prefix": "2001:db8:ffff::/48", "le": 128}, {"prefix": "2001:db8:ffff::/48", "ge": 64, "le": 128}]}`)), nil},
+		{"a multicast neighbour", replace(edge, doc("BGPPeer", "upstream", `{"address": "ff02::1", "remoteAS": 64496, "families": {"ipv6": {}}}`)),
+			[]string{`BGPPeer "upstream" spec.address: the address ff02::1 is no neighbour's: give a unicast address`}},
+		{"an unspecified neighbour", replace(edge, doc("BGPPeer", "upstream", `{"address": "0.0.0.0", "remoteAS": 64496, "families": {"ipv4": {}}}`)),
+			[]string{`BGPPeer "upstream" spec.address: the address 0.0.0.0 is no neighbour's: give a unicast address`}},
+		{"an interface named as an address", replace(edge, doc("BGPPeer", "upstream", `{"interface": "198.51.100.1", "remoteAS": 64496, "families": {"ipv4": {}}}`)),
+			[]string{`BGPPeer "upstream" spec.interface: the interface 198.51.100.1 is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface`}},
+		{"interfaces named as addresses", replace(edge, doc("BGPPeer", "fabric", `{"interfaces": ["eth1", "fe80::1"], "remoteAS": "external", "families": {"ipv6": {}}}`)),
+			[]string{`BGPPeer "fabric" spec.interfaces: the interface fe80::1 is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface`}},
+		{"an interface with a colon", replace(edge, doc("BGPPeer", "fabric", `{"interfaces": ["eth1:1"], "remoteAS": "external", "families": {"ipv6": {}}}`)), nil},
+		{"a password that is no credential", replace(edge, doc("BGPPeer", "upstream", `{"address": "198.51.100.1", "remoteAS": 64496, "password": {"secretRef": {"name": "bgp", "key": "up stream"}}, "families": {"ipv4": {}}}`)),
+			[]string{`BGPPeer "upstream" spec.password: the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do`}},
+		{"a description past 80 characters", replace(edge, doc("BGPPeer", "upstream", `{"address": "198.51.100.1", "remoteAS": 64496, "description": "`+strings.Repeat("transit ", 10)+`x", "families": {"ipv4": {}}}`)),
+			[]string{`BGPPeer "upstream" spec.description: the description holds more than 80 characters`}},
 		{"a rejecting term that sets", replace(edge, doc("RoutingPolicy", "from-fabric", `{"terms": [{"match": {"prefixList": "fabric"}, "then": {"action": "reject", "med": 10}}]}`)),
 			[]string{`RoutingPolicy "from-fabric" spec.terms: a term that rejects routes sets local preference, MED, communities or a prepend, which no route it rejects keeps; drop them or accept`}},
 		{"ge below the prefix length", replace(edge, doc("PrefixList", "edge", `{"family": "ipv6", "entries": [{"prefix": "2001:db8:ffff::/48", "ge": 40}]}`)),
@@ -108,6 +131,70 @@ func TestBGPKeepsItsAS(t *testing.T) {
 	for _, old := range [][]config.Document{nil, changed} {
 		if failures, err := set.Evaluate(Input{Documents: changed, Old: old, Node: "r1"}); err != nil || len(failures) != 0 {
 			t.Errorf("from %v: %v, %v", old, messages(failures), err)
+		}
+	}
+}
+
+// The rules refuse the config with the error of ip() or cidr() for a neighbour's address or a
+// network that is none.
+func TestBGPRulesReadAddresses(t *testing.T) {
+	set, doc := routerRules(t)
+	bgp := doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1"}`)
+	for _, tc := range []struct {
+		name string
+		docs []config.Document
+		want string
+	}{
+		{"a network that is no address range", []config.Document{doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "2001:db8::/129"}]}`)},
+			`cannot check: BGP "bgp" spec.networks: a rule cannot be evaluated: ` + errNotCIDR},
+		{"a neighbour address that is none", []config.Document{bgp, doc("BGPPeer", "upstream", `{"address": "198.51.100.300", "remoteAS": 64496, "families": {"ipv4": {}}}`)},
+			`cannot check: BGPPeer "upstream" spec.address: a rule cannot be evaluated: ` + errNotIP},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// The BGP kinds' schemas take router IDs of four octets without leading zeros, communities whose
+// parts fit 16 bits, or 32 bits in a large one, descriptions without @, which marks a password's
+// placeholder in FRR's config, and descriptions and AS paths with single spaces between words.
+func TestBGPSchemas(t *testing.T) {
+	s, err := schema.LoadSchemas("../../test/fixtures/kinds/router")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		kind, spec string
+		ok         bool
+	}{
+		{"BGP", `{"asn": 64512, "routerID": "192.0.2.1"}`, true},
+		{"BGP", `{"asn": 64512, "routerID": "255.255.255.255"}`, true},
+		{"BGP", `{"asn": 64512, "routerID": "192.0.2.256"}`, false},
+		{"BGP", `{"asn": 64512, "routerID": "192.0.2.01"}`, false},
+		{"BGP", `{"asn": 64512, "routerID": "999.0.2.1"}`, false},
+		{"CommunityList", `{"communities": ["65535:65535", "0:0"]}`, true},
+		{"CommunityList", `{"communities": ["65536:1"]}`, false},
+		{"CommunityList", `{"communities": ["64512:70000"]}`, false},
+		{"CommunityList", `{"communities": ["4294967295:4294967295:1"]}`, true},
+		{"CommunityList", `{"communities": ["4294967296:1:1"]}`, false},
+		{"CommunityList", `{"communities": ["64512:1:9999999999"]}`, false},
+		{"RoutingPolicy", `{"terms": [{"then": {"action": "accept", "addCommunities": ["64512:65536"]}}]}`, false},
+		{"RoutingPolicy", `{"terms": [{"then": {"action": "accept", "removeCommunities": ["64512:1:4294967296"]}}]}`, false},
+		{"RoutingPolicy", `{"terms": [{"match": {"asPath": "^64512_ 64513$"}, "then": {"action": "accept"}}]}`, true},
+		{"RoutingPolicy", `{"terms": [{"match": {"asPath": "^64512  64513$"}, "then": {"action": "accept"}}]}`, false},
+		{"RoutingPolicy", `{"terms": [{"match": {"asPath": " ^64512$"}, "then": {"action": "accept"}}]}`, false},
+		{"BGPPeer", `{"address": "198.51.100.1", "remoteAS": 64496, "description": "transit of AS 64496"}`, true},
+		{"BGPPeer", `{"address": "198.51.100.1", "remoteAS": 64496, "description": "transit  of AS 64496"}`, false},
+		{"BGPPeer", `{"address": "198.51.100.1", "remoteAS": 64496, "description": "transit "}`, false},
+		{"BGPPeer", `{"address": "198.51.100.1", "remoteAS": 64496, "description": "x password @secret_bgp.fabric@"}`, false},
+	} {
+		d := builtinDoc(t, config.RouterAPI, tc.kind, "a", tc.spec)
+		if err := s.Validate(d.Object); (err == nil) != tc.ok {
+			t.Errorf("%s %s: err = %v, want accepted %v", tc.kind, tc.spec, err, tc.ok)
 		}
 	}
 }

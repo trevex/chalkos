@@ -36,9 +36,17 @@
             }
           ],
           "default": null,
-          "description": "Address of the neighbour; excludes `interface` and `interfaces`.",
+          "description": "Unicast address of the neighbour; excludes `interface` and `interfaces`.",
           "examples": [
             "2001:db8:ffff::2"
+          ],
+          "x-chalkos-rules": [
+            {
+              "description": "A BGPPeer's address is a unicast address.",
+              "messageExpression": "\"the address \" + self + \" is no neighbour's: give a unicast address\"",
+              "rule": "self == null || cel.bind(a, ip(self), a != ip(\"0.0.0.0\") && a != ip(\"::\") && !cidr(\"224.0.0.0/4\").contains(a) && !cidr(\"ff00::/8\").contains(a))",
+              "takes": "refuse"
+            }
           ]
         },
         "bfd": {
@@ -49,7 +57,7 @@
         "description": {
           "anyOf": [
             {
-              "pattern": "^(?:[ -~]{1,80})$",
+              "pattern": "^(?:[!-?A-~]+( [!-?A-~]+)*)$",
               "type": "string"
             },
             {
@@ -57,7 +65,15 @@
             }
           ],
           "default": null,
-          "description": "What the neighbour is, in up to 80 printable ASCII characters."
+          "description": "What the neighbour is, in up to 80 printable ASCII characters other than `@`, with a single space between two words.",
+          "x-chalkos-rules": [
+            {
+              "description": "A BGPPeer's description holds 80 characters at most.",
+              "message": "the description holds more than 80 characters",
+              "rule": "self == null || size(self) <= 80",
+              "takes": "refuse"
+            }
+          ]
         },
         "extendedNextHop": {
           "default": false,
@@ -223,9 +239,17 @@
             }
           ],
           "default": null,
-          "description": "Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address` and `interfaces`.",
+          "description": "Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address` and `interfaces`. A name that reads as an address is refused.",
           "examples": [
             "eth1"
+          ],
+          "x-chalkos-rules": [
+            {
+              "description": "A BGPPeer's interfaces are not named like addresses.",
+              "messageExpression": "\"the interface \" + [self].filter(i, i.matches(\"^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$\"))[0] + \" is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface\"",
+              "rule": "self == null || [self].all(i, !i.matches(\"^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$\"))",
+              "takes": "refuse"
+            }
           ]
         },
         "interfaces": {
@@ -249,6 +273,14 @@
               "eth1",
               "eth2"
             ]
+          ],
+          "x-chalkos-rules": [
+            {
+              "description": "A BGPPeer's interfaces are not named like addresses.",
+              "messageExpression": "\"the interface \" + self.filter(i, i.matches(\"^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$\"))[0] + \" is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface\"",
+              "rule": "self == null || self.all(i, !i.matches(\"^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$\"))",
+              "takes": "refuse"
+            }
           ]
         },
         "password": {
@@ -286,13 +318,21 @@
             }
           ],
           "default": null,
-          "description": "Key of a Secret that holds the session's TCP MD5 password, of 80 characters at most and no white space; null for none.",
+          "description": "Key of a Secret that holds the session's TCP MD5 password, of 80 characters at most and no white space; null for none. The Secret's name and key hold letters, digits, `.`, `_` and `-` alone.",
           "examples": [
             {
               "secretRef": {
                 "key": "fabric",
                 "name": "bgp"
               }
+            }
+          ],
+          "x-chalkos-rules": [
+            {
+              "description": "A BGPPeer's password names its Secret and key as credentials' names.",
+              "message": "the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do",
+              "rule": "self == null || self.secretRef.name.matches(\"^[A-Za-z0-9._-]+$\") && self.secretRef.key.matches(\"^[A-Za-z0-9._-]+$\")",
+              "takes": "refuse"
             }
           ]
         },

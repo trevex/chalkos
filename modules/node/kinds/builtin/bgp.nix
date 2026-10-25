@@ -29,10 +29,29 @@ let
   cel = import ../../../../lib/cel.nix { inherit lib; };
 
   name = types.strMatching documentName;
-  asNumber = types.ints.between 1 4294967295;
+  # A number from 1 to 2^32 - 1, as AS numbers and BGP's counts are.
+  positive32 = types.ints.between 1 4294967295;
+  # Numbers of 16 and of 32 bits in decimal, as a community's parts are.
+  uint16 = "[0-5]?[0-9]{1,4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]";
+  uint32 = "[0-9]{1,9}|[0-3][0-9]{9}|4[01][0-9]{8}|42[0-8][0-9]{7}|429[0-3][0-9]{6}|4294[0-8][0-9]{5}|42949[0-5][0-9]{4}|429496[0-6][0-9]{3}|4294967[01][0-9]{2}|42949672[0-8][0-9]|429496729[0-5]";
   # A standard community, <AS>:<value>, or a large one, <AS>:<value>:<value>.
-  community = types.strMatching "[0-9]{1,5}:[0-9]{1,5}|[0-9]{1,10}:[0-9]{1,10}:[0-9]{1,10}";
+  community = types.strMatching "(${uint16}):(${uint16})|(${uint32}):(${uint32}):(${uint32})";
   communityText = "standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers";
+  # An octet of an IPv4 address in decimal, without leading zeros.
+  octet = "25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9]";
+  # A name of an interface that reads as an address: four numbers with dots, or hex digits and dots
+  # with two colons at least.
+  addressLike = "^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$";
+  # The rule that refuses an interface's name that reads as an address, for the field of
+  # interfaces given.
+  notAddressLike = interfaces: {
+    description = "A BGPPeer's interfaces are not named like addresses.";
+    rule = ''self == null || ${interfaces}.all(i, !i.matches("${addressLike}"))'';
+    messageExpression = ''"the interface " + ${interfaces}.filter(i, i.matches("${addressLike}"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"'';
+  };
+
+  # Whether the PrefixList entry e is the one of its list, self, that matches what it matches.
+  sameEntry = "self.exists_one(x, cidr(x.prefix) == cidr(e.prefix) && x.ge == e.ge && x.le == e.le)";
 
   # The documents of a router kind in the delivered config, by name.
   delivered = kind: cel.documents "config" apiVersions.router kind;
@@ -105,7 +124,7 @@ let
         description = "Whether the router sends the peer a default route of the family, whatever its own table holds.";
       };
       maxPrefix = mkOption {
-        type = types.nullOr asNumber;
+        type = types.nullOr positive32;
         default = null;
         description = "Routes the router accepts from the peer at most; past them it ends the session. null sets no limit.";
       };
@@ -119,9 +138,9 @@ in
         description = "The node's BGP instance: its AS number and router ID, how many equal paths it installs, its BFD timers and the networks it announces.";
         spec = {
           asn = lib.chalkos.mkOption {
-            type = asNumber;
+            type = positive32;
             example = 64512;
-            description = "AS number of the router.";
+            description = "AS number of the router. It stays while the BGP document keeps its name; a BGP document of another name replaces the old one, AS number included.";
             rules = [
               {
                 description = "BGP keeps its AS number.";
@@ -131,7 +150,7 @@ in
             ];
           };
           routerID = mkOption {
-            type = types.strMatching "([0-9]{1,3}[.]){3}[0-9]{1,3}";
+            type = types.strMatching "(${octet})([.](${octet})){3}";
             example = "192.0.2.1";
             description = "Router ID, in IPv4 notation, which the router's peers know it by; give an IPv6-only router one too.";
           };
@@ -195,6 +214,11 @@ in
             description = "Networks the router announces to its peers.";
             rules = [
               {
+                description = "A network's prefix is an address range.";
+                rule = "self.all(w, cidr(w.prefix).prefix() >= 0)";
+                message = "a network is no address range";
+              }
+              {
                 description = "A network's policy is a RoutingPolicy document.";
                 rule = "cel.bind(pols, ${delivered "RoutingPolicy"}, self.all(w, w.policy == null || w.policy in pols))";
                 messageExpression = ''cel.bind(pols, ${delivered "RoutingPolicy"}, "a network names the RoutingPolicy " + self.filter(w, w.policy != null && !(w.policy in pols))[0].policy + ", which the config does not hold")'';
@@ -220,19 +244,27 @@ in
           }
         ];
         spec = {
-          address = mkOption {
+          address = lib.chalkos.mkOption {
             type = types.nullOr address;
             default = null;
             example = "2001:db8:ffff::2";
-            description = "Address of the neighbour; excludes `interface` and `interfaces`.";
+            description = "Unicast address of the neighbour; excludes `interface` and `interfaces`.";
+            rules = [
+              {
+                description = "A BGPPeer's address is a unicast address.";
+                rule = ''self == null || cel.bind(a, ip(self), a != ip("0.0.0.0") && a != ip("::") && !cidr("224.0.0.0/4").contains(a) && !cidr("ff00::/8").contains(a))'';
+                messageExpression = ''"the address " + self + " is no neighbour's: give a unicast address"'';
+              }
+            ];
           };
-          interface = mkOption {
+          interface = lib.chalkos.mkOption {
             type = types.nullOr interfaceName;
             default = null;
             example = "eth1";
-            description = "Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address` and `interfaces`.";
+            description = "Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address` and `interfaces`. A name that reads as an address is refused.";
+            rules = [ (notAddressLike "[self]") ];
           };
-          interfaces = mkOption {
+          interfaces = lib.chalkos.mkOption {
             type = types.nullOr (types.nonEmptyListOf interface);
             default = null;
             example = [
@@ -240,13 +272,14 @@ in
               "eth2"
             ];
             description = "Interfaces, ${interfaceText}, with a session each, as for `interface`; a glob stands for the interfaces the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address` and `interface`.";
+            rules = [ (notAddressLike "self") ];
           };
           remoteAS = mkOption {
             type = peerAS;
             example = "external";
             description = "AS of the neighbour: a number, `external` for any AS but the router's, or `internal` for the router's own.";
           };
-          password = mkOption {
+          password = lib.chalkos.mkOption {
             type = types.nullOr secretRef;
             default = null;
             example = {
@@ -255,7 +288,14 @@ in
                 key = "fabric";
               };
             };
-            description = "Key of a Secret that holds the session's TCP MD5 password, of 80 characters at most and no white space; null for none.";
+            description = "Key of a Secret that holds the session's TCP MD5 password, of 80 characters at most and no white space; null for none. The Secret's name and key hold letters, digits, `.`, `_` and `-` alone.";
+            rules = [
+              {
+                description = "A BGPPeer's password names its Secret and key as credentials' names.";
+                rule = ''self == null || self.secretRef.name.matches("^[A-Za-z0-9._-]+$") && self.secretRef.key.matches("^[A-Za-z0-9._-]+$")'';
+                message = "the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do";
+              }
+            ];
           };
           bfd = mkOption {
             type = types.bool;
@@ -304,10 +344,17 @@ in
               }
             ];
           };
-          description = mkOption {
-            type = types.nullOr (types.strMatching "[ -~]{1,80}");
+          description = lib.chalkos.mkOption {
+            type = types.nullOr (types.strMatching "[!-?A-~]+( [!-?A-~]+)*");
             default = null;
-            description = "What the neighbour is, in up to 80 printable ASCII characters.";
+            description = "What the neighbour is, in up to 80 printable ASCII characters other than `@`, with a single space between two words.";
+            rules = [
+              {
+                description = "A BGPPeer's description holds 80 characters at most.";
+                rule = "self == null || size(self) <= 80";
+                message = "the description holds more than 80 characters";
+              }
+            ];
           };
           shutdown = mkOption {
             type = types.bool;
@@ -332,7 +379,7 @@ in
             type = family;
             description = "Address family of the list.";
           };
-          entries = mkOption {
+          entries = lib.chalkos.mkOption {
             type = types.nonEmptyListOf (
               types.submodule {
                 options = {
@@ -363,6 +410,13 @@ in
               }
             );
             description = "Entries in order; a route no entry matches does not match the list.";
+            rules = [
+              {
+                description = "A PrefixList's entries match apart: no two have one prefix, ge and le.";
+                rule = "self.all(e, ${sameEntry})";
+                messageExpression = ''cel.bind(d, self.filter(e, !${sameEntry})[0], "two entries match " + string(cidr(d.prefix)) + (d.ge != null ? " ge " + string(d.ge) : "") + (d.le != null ? " le " + string(d.le) : "") + ", and the later never decides; drop one")'';
+              }
+            ];
           };
         };
       };
@@ -404,10 +458,10 @@ in
                       description = "CommunityList one of whose communities the route carries; null matches every route.";
                     };
                     asPath = mkOption {
-                      type = types.nullOr (types.strMatching "[0-9 _^$.*+?()|{},-]{1,200}");
+                      type = types.nullOr (types.strMatching "[0-9_^$.*+?()|{},-]+( [0-9_^$.*+?()|{},-]+)*");
                       default = null;
                       example = "^64513_";
-                      description = "Regular expression the route's AS path matches, with `_` for the start, the end or a space between two ASes; null matches every path.";
+                      description = "Regular expression the route's AS path matches, with `_` for the start, the end or a space between two ASes; null matches every path. It holds up to 200 digits, single spaces and `_^$.*+?()|{},-`. The schema and rules check these characters alone; the output frr refuses an expression that bgpd cannot compile.";
                     };
                   };
                   "then" = {
@@ -453,7 +507,12 @@ in
               {
                 description = "A term's lists are PrefixList and CommunityList documents.";
                 rule = "cel.bind(lists, ${delivered "PrefixList"}, cel.bind(clists, ${delivered "CommunityList"}, self.all(t, (t.match.prefixList == null || t.match.prefixList in lists) && (t.match.communityList == null || t.match.communityList in clists))))";
-                message = "a term names a PrefixList or a CommunityList that the config does not hold";
+                messageExpression = ''cel.bind(lists, ${delivered "PrefixList"}, cel.bind(clists, ${delivered "CommunityList"}, cel.bind(m, self.filter(t, !((t.match.prefixList == null || t.match.prefixList in lists) && (t.match.communityList == null || t.match.communityList in clists)))[0].match, m.prefixList != null && !(m.prefixList in lists) ? "a term names the PrefixList " + m.prefixList + ", which the config does not hold" : "a term names the CommunityList " + m.communityList + ", which the config does not hold")))'';
+              }
+              {
+                description = "A term's asPath holds 200 characters at most.";
+                rule = "self.all(t, t.match.asPath == null || size(t.match.asPath) <= 200)";
+                message = "a term's asPath holds more than 200 characters";
               }
               {
                 description = "A RoutingPolicy's PrefixLists are of one family.";

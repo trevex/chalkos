@@ -81,7 +81,15 @@
             "type": "object"
           },
           "minItems": 1,
-          "type": "array"
+          "type": "array",
+          "x-chalkos-rules": [
+            {
+              "description": "A PrefixList's entries match apart: no two have one prefix, ge and le.",
+              "messageExpression": "cel.bind(d, self.filter(e, !self.exists_one(x, cidr(x.prefix) == cidr(e.prefix) && x.ge == e.ge && x.le == e.le))[0], \"two entries match \" + string(cidr(d.prefix)) + (d.ge != null ? \" ge \" + string(d.ge) : \"\") + (d.le != null ? \" le \" + string(d.le) : \"\") + \", and the later never decides; drop one\")",
+              "rule": "self.all(e, self.exists_one(x, cidr(x.prefix) == cidr(e.prefix) && x.ge == e.ge && x.le == e.le))",
+              "takes": "refuse"
+            }
+          ]
         },
         "family": {
           "description": "Address family of the list.",

@@ -45,7 +45,7 @@
                   "asPath": {
                     "anyOf": [
                       {
-                        "pattern": "^(?:[0-9 _^$.*+?()|{},-]{1,200})$",
+                        "pattern": "^(?:[0-9_^$.*+?()|{},-]+( [0-9_^$.*+?()|{},-]+)*)$",
                         "type": "string"
                       },
                       {
@@ -53,7 +53,7 @@
                       }
                     ],
                     "default": null,
-                    "description": "Regular expression the route's AS path matches, with `_` for the start, the end or a space between two ASes; null matches every path.",
+                    "description": "Regular expression the route's AS path matches, with `_` for the start, the end or a space between two ASes; null matches every path. It holds up to 200 digits, single spaces and `_^$.*+?()|{},-`. The schema and rules check these characters alone; the output frr refuses an expression that bgpd cannot compile.",
                     "examples": [
                       "^64513_"
                     ]
@@ -101,7 +101,7 @@
                     "default": [],
                     "description": "Communities added to the route: standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers.",
                     "items": {
-                      "pattern": "^(?:[0-9]{1,5}:[0-9]{1,5}|[0-9]{1,10}:[0-9]{1,10}:[0-9]{1,10})$",
+                      "pattern": "^(?:([0-5]?[0-9]{1,4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]):([0-5]?[0-9]{1,4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])|([0-9]{1,9}|[0-3][0-9]{9}|4[01][0-9]{8}|42[0-8][0-9]{7}|429[0-3][0-9]{6}|4294[0-8][0-9]{5}|42949[0-5][0-9]{4}|429496[0-6][0-9]{3}|4294967[01][0-9]{2}|42949672[0-8][0-9]|429496729[0-5]):([0-9]{1,9}|[0-3][0-9]{9}|4[01][0-9]{8}|42[0-8][0-9]{7}|429[0-3][0-9]{6}|4294[0-8][0-9]{5}|42949[0-5][0-9]{4}|429496[0-6][0-9]{3}|4294967[01][0-9]{2}|42949672[0-8][0-9]|429496729[0-5]):([0-9]{1,9}|[0-3][0-9]{9}|4[01][0-9]{8}|42[0-8][0-9]{7}|429[0-3][0-9]{6}|4294[0-8][0-9]{5}|42949[0-5][0-9]{4}|429496[0-6][0-9]{3}|4294967[01][0-9]{2}|42949672[0-8][0-9]|429496729[0-5]))$",
                       "type": "string"
                     },
                     "type": "array"
@@ -152,7 +152,7 @@
                     "default": [],
                     "description": "Communities removed from the route.",
                     "items": {
-                      "pattern": "^(?:[0-9]{1,5}:[0-9]{1,5}|[0-9]{1,10}:[0-9]{1,10}:[0-9]{1,10})$",
+                      "pattern": "^(?:([0-5]?[0-9]{1,4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]):([0-5]?[0-9]{1,4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])|([0-9]{1,9}|[0-3][0-9]{9}|4[01][0-9]{8}|42[0-8][0-9]{7}|429[0-3][0-9]{6}|4294[0-8][0-9]{5}|42949[0-5][0-9]{4}|429496[0-6][0-9]{3}|4294967[01][0-9]{2}|42949672[0-8][0-9]|429496729[0-5]):([0-9]{1,9}|[0-3][0-9]{9}|4[01][0-9]{8}|42[0-8][0-9]{7}|429[0-3][0-9]{6}|4294[0-8][0-9]{5}|42949[0-5][0-9]{4}|429496[0-6][0-9]{3}|4294967[01][0-9]{2}|42949672[0-8][0-9]|429496729[0-5]):([0-9]{1,9}|[0-3][0-9]{9}|4[01][0-9]{8}|42[0-8][0-9]{7}|429[0-3][0-9]{6}|4294[0-8][0-9]{5}|42949[0-5][0-9]{4}|429496[0-6][0-9]{3}|4294967[01][0-9]{2}|42949672[0-8][0-9]|429496729[0-5]))$",
                       "type": "string"
                     },
                     "type": "array"
@@ -173,8 +173,14 @@
           "x-chalkos-rules": [
             {
               "description": "A term's lists are PrefixList and CommunityList documents.",
-              "message": "a term names a PrefixList or a CommunityList that the config does not hold",
+              "messageExpression": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(clists, ((\"router.chalkos.dev/v1alpha1\" in config && \"CommunityList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].CommunityList : {}), cel.bind(m, self.filter(t, !((t.match.prefixList == null || t.match.prefixList in lists) && (t.match.communityList == null || t.match.communityList in clists)))[0].match, m.prefixList != null && !(m.prefixList in lists) ? \"a term names the PrefixList \" + m.prefixList + \", which the config does not hold\" : \"a term names the CommunityList \" + m.communityList + \", which the config does not hold\")))",
               "rule": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(clists, ((\"router.chalkos.dev/v1alpha1\" in config && \"CommunityList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].CommunityList : {}), self.all(t, (t.match.prefixList == null || t.match.prefixList in lists) && (t.match.communityList == null || t.match.communityList in clists))))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A term's asPath holds 200 characters at most.",
+              "message": "a term's asPath holds more than 200 characters",
+              "rule": "self.all(t, t.match.asPath == null || size(t.match.asPath) <= 200)",
               "takes": "refuse"
             },
             {
