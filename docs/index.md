@@ -93,8 +93,8 @@ from it, and reload or restart the service when those files change.
 
     ---
 
-    Forward between a node's networks, and filter and translate what passes with zones, policies
-    and NAT rules.
+    Forward between a node's networks, filter and translate what passes with zones, policies
+    and NAT rules, and exchange routes over BGP.
 
     [:octicons-arrow-right-24: Run](router/index.md)
 

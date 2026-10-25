@@ -106,5 +106,6 @@ that before the delivery.
 ## What next
 
 - [Filter and translate traffic](firewall-and-nat.md) adds zones, policies and NAT.
+- [Route with BGP](bgp.md) peers with the router's neighbours.
 - [How a router works](../how-it-works/router/overview.md) explains the outputs and the boot
   order.

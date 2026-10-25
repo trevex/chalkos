@@ -189,4 +189,13 @@ networks and filter what passes.
 
     [:octicons-arrow-right-24: Read](router/firewall.md)
 
+-   :material-transit-connection-variant: __BGP on a router__
+
+    ---
+
+    FRR's config of the BGP kinds, the passwords as credentials, the reload, the boot order and
+    the state chalkd reads.
+
+    [:octicons-arrow-right-24: Read](router/bgp.md)
+
 </div>

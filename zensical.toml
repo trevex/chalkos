@@ -46,6 +46,7 @@ nav = [
     "router/index.md",
     "router/set-up.md",
     "router/firewall-and-nat.md",
+    "router/bgp.md",
   ] },
   { "Build images" = [
     "build/index.md",
@@ -89,6 +90,7 @@ nav = [
     { "Router layer" = [
       "how-it-works/router/overview.md",
       "how-it-works/router/firewall.md",
+      "how-it-works/router/bgp.md",
     ] },
   ] },
   { "Reference" = [

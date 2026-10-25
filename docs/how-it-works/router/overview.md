@@ -1,6 +1,6 @@
 ---
 title: "How a router works"
-description: "What the router layer adds to a node: the router kinds, forwarding set by a Router document, the firewall, the boot order and the management guard"
+description: "What the router layer adds to a node: the router kinds, forwarding set by a Router document, the firewall, BGP, the boot order and the management guard"
 ---
 
 # How a router works
@@ -19,15 +19,16 @@ parts:
 
 | Part | What it is |
 | --- | --- |
-| Kinds | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet` and `NATRule`, which only router images accept. |
-| Outputs | `router-sysctl`, the kernel settings of the `Router` document, and `router-nftables`, the firewall of all five kinds. |
-| Effects | `router-sysctl` restarts `systemd-sysctl.service`, and `router-nftables` reloads `chalkos-firewall.service`. |
+| Kinds | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGP`, `BGPPeer`, `PrefixList`, `CommunityList` and `RoutingPolicy`, which only router images accept. |
+| Outputs | `router-sysctl`, the kernel settings of the `Router` document; `router-nftables`, the firewall of the firewall kinds and the ports of the `BGPPeer` documents; and `frr`, FRR's config of the BGP kinds. |
+| Effects | `router-sysctl` restarts `systemd-sysctl.service`, `router-nftables` reloads `chalkos-firewall.service`, and `frr` reloads `frr.service`. |
 | Firewall | The nftables table `inet chalkos` in place of NixOS's firewall. |
-| Diagnostic | `traceroute`, the routers on the path to an address. |
+| FRR | zebra, bgpd, bfdd and staticd, and vtysh, which chalkd asks for the router's BGP sessions and paths. |
+| Diagnostics | `traceroute`, the routers on the path to an address, and `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers`, FRR's views of BGP and BFD. |
 
-[The router's firewall](firewall.md) describes the table.
-[Built-ins](../../reference/builtins.md#outputs-router-images) lists the outputs, effects, rules
-and the diagnostic.
+[The router's firewall](firewall.md) describes the table, and [BGP on a router](bgp.md) FRR's
+config. [Built-ins](../../reference/builtins.md#outputs-router-images) lists the outputs,
+effects, rules and diagnostics.
 
 ## The Router document sets the kernel's forwarding
 
@@ -80,6 +81,8 @@ flowchart LR
     config --> firewall["chalkos-firewall loads router-nftables"]
     firewall --> pre["network-pre.target"]
     pre --> networkd["networkd configures the interfaces"]
+    config --> frr["frr.service fills in the passwords and starts FRR"]
+    firewall --> frr
 ```
 
 `chalkos-firewall.service` loads the rendered ruleset. When the node has none, it loads a fallback
@@ -93,7 +96,7 @@ ruleset restarts the failed unit, which loads the new ruleset.
 
 ## A delivery reloads the firewall in one transaction
 
-A delivery renders and checks both outputs before it changes anything. The check of
+A delivery renders and checks the outputs before it changes anything. The check of
 `router-nftables` runs `nft --check` on the rendered ruleset in a user and network namespace of
 its own, so the kernel refuses a ruleset it would not load before the node stores the config.
 Once the config is stored, chalkd reloads `chalkos-firewall.service` and then restarts
@@ -102,6 +105,8 @@ The reload loads the ruleset in one nftables transaction. The transaction replac
 `inet chalkos` and leaves every other table alone. A ruleset that nft refuses at that point
 leaves the loaded one in place and fails the delivery. chalkd still restarts
 `systemd-sysctl.service`, so the delivery's kernel settings apply with the old table.
+A delivery that changes FRR's config reloads `frr.service` in the same call as the firewall, and
+after it. [BGP on a router](bgp.md#a-delivery-reloads-frr) describes that reload.
 
 ## The management guard keeps the node API reachable
 
@@ -140,6 +145,7 @@ so `chalkctl apply-config` and the node run it, and `chalkctl validate` does not
 ## Related pages
 
 - [The router's firewall](firewall.md): the table, its chains and what each default does.
+- [BGP on a router](bgp.md): FRR's config, the passwords and the state chalkd reads.
 - [Run a router](../../router/index.md): set up a router and its firewall.
 - [Config kinds](../../reference/kinds.md#router-chalkos-dev) for every field of the router kinds.
 - [Ports and firewall](../../reference/ports-and-firewall.md#router-images).

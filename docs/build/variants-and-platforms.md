@@ -53,7 +53,8 @@ A variant declares three things:
   `kubernetes.chalkos.dev`: `Node`, `Cluster`, `Flannel` and `Addon`.
 - `router`, whether the variant's images carry the router layer, `false` by default. Its images
   forward IPv4 and IPv6 packets between their interfaces, accept the kinds of
-  `router.chalkos.dev` and filter with the router's own firewall in place of NixOS's.
+  `router.chalkos.dev`, filter with the router's own firewall in place of NixOS's and run FRR
+  for BGP.
   [How a router works](../how-it-works/router/overview.md) describes the layer.
 
 An image carries one layer at most. A router variant therefore also sets `kubernetes = false`, and

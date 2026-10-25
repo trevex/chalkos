@@ -33,11 +33,12 @@ It holds these rules, in order:
 | --- | --- |
 | Protected | The loopback interface; established and related connections, after conntrack's invalid packets are dropped; ICMPv6 errors, echo requests, neighbour discovery, router solicitations and advertisements and multicast listener discovery; ICMP errors and echo requests; DHCPv6 replies from the server port to the client port of a link-local address. |
 | chalkd | TCP port 50000 on the interfaces of `Router.spec.management.interfaces`, or on every interface while it is null. |
-| Services | The ports of the router's own services, from the interfaces and sources their documents name. None of the router kinds runs a service, so the chain holds no such rule. |
+| Services | The ports of the router's own services, from the interfaces and sources their documents name: BGP's TCP port 179 of each `BGPPeer` and, for each with `bfd`, BFD's UDP ports 3784 and 3785, from its interfaces or its address, and 4784 from its address. |
 | Policies to `local` | A jump to the chain of each `FirewallPolicy` whose `to` is `local`, for the interfaces of its `from` zone. |
 
-A policy to `local` may accept more. It cannot drop what the earlier rules accepted. The input
-chain of a LAN router whose node API answers on `lan0` reads:
+[BGP on a router](bgp.md#the-firewall-accepts-each-peers-ports) shows the rules of the `BGPPeer`
+documents. A policy to `local` may accept more. It cannot drop what the earlier rules accepted.
+The input chain of a LAN router whose node API answers on `lan0` reads:
 
 ```text
 chain input {
