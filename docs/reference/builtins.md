@@ -735,6 +735,7 @@ The outputs router images add.
 
 | Output | Inputs | Directory | Renderer | Check |
 | --- | --- | --- | --- | --- |
+| `frr`{ #output-frr } | `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `Network` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
 | `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGPPeer` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
 | `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |
 
@@ -809,6 +810,7 @@ The effects router images add.
 
 | Effect | Fires when | Does |
 | --- | --- | --- |
+| `frr`{ #effect-frr } | The output `frr` changed. | Reloads `frr.service`. |
 | `router-nftables`{ #effect-router-nftables } | The output `router-nftables` changed. | Reloads `chalkos-firewall.service`. |
 | `router-sysctl`{ #effect-router-sysctl } | The output `router-sysctl` changed. | Restarts `systemd-sysctl.service`. |
 
@@ -860,6 +862,10 @@ The diagnostics router images add.
 
 | Diagnostic | Does | Parameters | Role | Capabilities |
 | --- | --- | --- | --- | --- |
+| `bfd-peers`{ #diagnostic-bfd-peers } | FRR's BFD sessions and their state, as show bfd peers prints them. Runs `vtysh -c show bfd peers`. | — | reader | — |
+| `bgp-neighbor`{ #diagnostic-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp neighbors {peer}`. | `peer`, pattern `^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$` | reader | — |
+| `bgp-route`{ #diagnostic-bgp-route } | BGP's paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best. Runs `vtysh -c show bgp {family} unicast {prefix}`. | `prefix`, prefix; `family`, enum of `ipv4` or `ipv6`, default `ipv6` | reader | — |
+| `bgp-summary`{ #diagnostic-bgp-summary } | FRR's BGP sessions of each address family, as show bgp summary prints them. Runs `vtysh -c show bgp summary`. | — | reader | — |
 | `traceroute`{ #diagnostic-traceroute } | The routers on the path to an address, as traceroute -n prints them: one probe a hop, 30 hops at most. Runs `traceroute -n -m 30 -q 1 -w 2 {address}`. | `address`, address | operator | — |
 
 Sources: the schemas, `facts.json`, `outputs.json`, `effects.json` and `diagnostics.json` that

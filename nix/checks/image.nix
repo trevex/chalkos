@@ -261,8 +261,8 @@ in
   # whose check refuses an example fail the check of their image. The homelab's Hardware output
   # renders hardware-examples/server.yaml, and its bird-conf output renders
   # bgp-examples/two-peers.yaml, which bird -p parses. A router image checks its rules, renders its
-  # router examples and holds the modules of its firewall, and its firewall check refuses what the
-  # kernel would.
+  # router examples and holds the modules of its firewall, its firewall check refuses what the
+  # kernel would, and its FRR check what vtysh would.
   rules =
     let
       build =
@@ -417,6 +417,22 @@ in
         fi
         if ! grep -q 'Error: Interface does not exist' err; then
           echo "error: the router's check refused the ruleset for another reason:" >&2
+          cat err >&2
+          exit 1
+        fi
+        # The check of FRR's config passes the edge example's and refuses a command no daemon
+        # takes, with vtysh alone.
+        check=$(jq -r .frr.check ${router.chalkosOutputs})
+        mkdir frr
+        install -m 644 ${../../cmd/chalkos-render/testdata/router/edge.frr} frr/frr.conf
+        OUT=$PWD/frr $check </dev/null
+        sed -i 's/^ neighbor peer-fabric bfd$/ neighbor peer-fabric bfd sometimes/' frr/frr.conf
+        if OUT=$PWD/frr $check </dev/null >err 2>&1; then
+          echo "error: the router's FRR check accepted a command no daemon takes" >&2
+          exit 1
+        fi
+        if ! grep -q 'Unknown command.*neighbor peer-fabric bfd sometimes' err; then
+          echo "error: the router's FRR check refused the config for another reason:" >&2
           cat err >&2
           exit 1
         fi

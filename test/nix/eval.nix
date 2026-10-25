@@ -320,6 +320,90 @@ lib.runTests {
       ];
     };
   };
+  # Router images run FRR with bgpd and bfdd, whose config the output frr renders from the BGP
+  # kinds and the Network documents' names, checked by vtysh, and whose reload the effect asks
+  # for. frr.service reads the BGPPeers' passwords as credentials, starts after the firewall and
+  # before the node's addresses settle, on a node with config alone, and fills its config in
+  # before it starts, a restart of a failed unit included, and on reload; the firewall opens the
+  # peers' ports. chalkd asks vtysh for FRR's state, networkd keeps zebra's routes, and the image
+  # adds the BGP diagnostics. Other images run no FRR.
+  testRouterBGP = {
+    expr =
+      let
+        edge = layered.edge-metal.config;
+        frr = edge.systemd.services.frr;
+      in
+      {
+        daemons = {
+          inherit (edge.services.frr.bgpd) enable;
+          bfdd = edge.services.frr.bfdd.enable;
+        };
+        inputs = edge.chalkos.outputs.frr.inputs;
+        firewallReads = lib.elem "BGPPeer" edge.chalkos.outputs.router-nftables.inputs;
+        check = lib.hasInfix "vtysh --dryrun" edge.chalkos.outputs.frr.check;
+        effect = edge.chalkos.effects.frr.reload;
+        grant = frr.chalkos.kinds;
+        after = lib.subtractLists frr.after [
+          "chalkos-config.service"
+          "chalkos-firewall.service"
+        ];
+        before = lib.elem "chalkos-node-addresses.target" frr.before;
+        wantedBy = lib.elem "chalkos-node-addresses.target" frr.wantedBy;
+        filled = edge.environment.etc."frr/frr.conf".source;
+        condition = frr.unitConfig.ConditionPathIsDirectory;
+        reload = lib.length frr.serviceConfig.ExecReload;
+        fillsAlike = frr.serviceConfig.ExecStartPre == lib.head frr.serviceConfig.ExecReload;
+        refresh = frr.serviceConfig.RefreshOnReload;
+        vtysh = lib.any (p: lib.getName p == "frr") edge.systemd.services.chalkd.path;
+        networkd = edge.systemd.network.config.networkConfig;
+        diagnostics = lib.filter (n: lib.hasPrefix "bgp-" n || lib.hasPrefix "bfd-" n) (
+          lib.attrNames edge.chalkos.diagnostics
+        );
+        groups = edge.chalkos.diagnostics.bgp-summary.groups;
+        plain = layered.plain-metal.config.services.frr.bgpd.enable;
+        node = layered.node-metal.config.chalkos.outputs ? frr;
+      };
+    expected = {
+      daemons = {
+        enable = true;
+        bfdd = true;
+      };
+      inputs = [
+        "BGP"
+        "BGPPeer"
+        "PrefixList"
+        "CommunityList"
+        "RoutingPolicy"
+        "Network"
+      ];
+      firewallReads = true;
+      check = true;
+      effect = [ "frr.service" ];
+      grant = [ "BGPPeer" ];
+      after = [ ];
+      before = true;
+      wantedBy = true;
+      filled = "/run/frr/frr.conf";
+      condition = "/run/chalkos/credentials/frr";
+      reload = 2;
+      fillsAlike = true;
+      refresh = "credentials";
+      vtysh = true;
+      networkd = {
+        ManageForeignNextHops = false;
+        ManageForeignRoutes = false;
+      };
+      diagnostics = [
+        "bfd-peers"
+        "bgp-neighbor"
+        "bgp-route"
+        "bgp-summary"
+      ];
+      groups = [ "frrvty" ];
+      plain = false;
+      node = false;
+    };
+  };
   # Forwarding belongs to the base: both layers turn it on, an image of the base alone forwards
   # only when its modules ask for it.
   testForwarding = {
