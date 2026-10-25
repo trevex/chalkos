@@ -61,6 +61,7 @@ var imagePages = []optionPage{
 			{"Facts", "facts", "The values a node reads at a delivery, which change rules and effects compare.", []string{"chalkos.facts"}},
 			{"Outputs", "outputs", "The files a node renders from its documents at each delivery.", []string{"chalkos.outputs"}},
 			{"Effects", "effects", "What a delivery does to units when outputs, documents or facts change.", []string{"chalkos.effects"}},
+			{"Diagnostics", "diagnostics", "The read-only commands a client of the node API runs on a node with chalkctl node diag.", []string{"chalkos.diagnostics"}},
 		},
 		sources: "Sources: the option declarations of the node modules in `modules/node/`, through\nnixosOptionsDoc, and `lib/chalkos.nix`.\n",
 	},

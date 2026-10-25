@@ -1866,4 +1866,204 @@ lib.runTests {
     };
   };
 
+  # A diagnostic chalkd could not run fails the image's build, with a message that names its
+  # option: a name not of [a-z][a-z0-9-]*, a program outside the store, a placeholder without its
+  # parameter or a parameter without its placeholder, a parameter both optional and with a
+  # default, and a group the image lacks.
+  testDiagnosticsRefuseWhatChalkdCannotRun =
+    let
+      ip = "${pkgs.iproute2}/bin/ip";
+      # The messages of the failed assertions about chalkos.diagnostics of an image with d.
+      refusals =
+        d:
+        lib.filter (lib.hasPrefix "chalkos.diagnostics.") (
+          map (a: a.message) (
+            lib.filter (a: !a.assertion) (worker [ { chalkos.diagnostics = d; } ]).assertions
+          )
+        );
+      plain = {
+        description = "A test.";
+        role = "reader";
+      };
+      table = {
+        type = "pattern";
+        regex = "^[a-z]+$";
+        description = "A table.";
+      };
+    in
+    {
+      expr = {
+        accepted = refusals {
+          route = plain // {
+            command = [
+              ip
+              "route"
+              "get"
+              "{address}"
+            ];
+            parameters.address = {
+              type = "address";
+              description = "An address.";
+            };
+          };
+        };
+        name = refusals {
+          Route_Get = plain // {
+            command = [ ip ];
+          };
+        };
+        program = refusals {
+          route = plain // {
+            command = [
+              "ip"
+              "route"
+            ];
+          };
+        };
+        placeholder = refusals {
+          route = plain // {
+            command = [
+              ip
+              "route"
+              "get"
+              "{address}"
+            ];
+          };
+        };
+        parameter = refusals {
+          route = plain // {
+            command = [
+              ip
+              "route"
+              "show"
+            ];
+            parameters.table = table;
+          };
+        };
+        parameterName = refusals {
+          route = plain // {
+            command = [
+              ip
+              "route"
+              "show"
+              "{Table}"
+            ];
+            parameters.Table = table;
+          };
+        };
+        optionalDefault = refusals {
+          route = plain // {
+            command = [
+              ip
+              "route"
+              "show"
+              "table"
+              "{table}"
+            ];
+            parameters.table = table // {
+              optional = true;
+              default = "main";
+            };
+          };
+        };
+        group = refusals {
+          route = plain // {
+            command = [ ip ];
+            groups = [ "chalkos-no-such-group" ];
+          };
+        };
+      };
+      expected = {
+        accepted = [ ];
+        name = [ "chalkos.diagnostics.Route_Get: the name is not of the form [a-z][a-z0-9-]*" ];
+        program = [
+          "chalkos.diagnostics.route.command: its first argument, ip, is no program of the image's store"
+        ];
+        placeholder = [ "chalkos.diagnostics.route.command names {address}, which is no parameter" ];
+        parameter = [ "chalkos.diagnostics.route.parameters.table: the command names no {table}" ];
+        parameterName = [
+          "chalkos.diagnostics.route.parameters.Table: the command names no {Table}"
+          "chalkos.diagnostics.route.parameters.Table: the name is not of the form [a-z][a-z0-9-]*"
+        ];
+        optionalDefault = [
+          "chalkos.diagnostics.route.parameters.table: it is optional and has a default; a default fills the arguments that name it, optional drops them"
+        ];
+        group = [ "chalkos.diagnostics.route.groups: the image has no group chalkos-no-such-group" ];
+      };
+    };
+  # The image writes its diagnostics to /etc/chalkos/diagnostics.json and system.build, as chalkd
+  # and chalkos-rules read them, with a default and a regex as empty strings when there is none.
+  testDiagnosticsReachChalkd =
+    let
+      c = worker [
+        (
+          { pkgs, ... }:
+          {
+            chalkos.diagnostics.mine = {
+              description = "A test.";
+              command = [
+                "${pkgs.iproute2}/bin/ip"
+                "-json"
+                "route"
+                "show"
+                "table"
+                "{table}"
+              ];
+              parameters.table = {
+                type = "int";
+                min = 1;
+                max = 254;
+                default = "254";
+                description = "A table.";
+              };
+              role = "reader";
+              timeout = "5s";
+            };
+          }
+        )
+      ];
+      etc = builtins.fromJSON (
+        builtins.unsafeDiscardStringContext c.environment.etc."chalkos/diagnostics.json".text
+      );
+      # writeText keeps its text as an attribute, so no build runs during evaluation.
+      build = builtins.fromJSON (
+        builtins.unsafeDiscardStringContext c.system.build.chalkosDiagnostics.text
+      );
+      mine = etc.mine // {
+        command = lib.tail etc.mine.command;
+      };
+    in
+    {
+      expr = {
+        inherit mine;
+        same = etc == build;
+      };
+      expected = {
+        mine = {
+          description = "A test.";
+          command = [
+            "-json"
+            "route"
+            "show"
+            "table"
+            "{table}"
+          ];
+          parameters.table = {
+            type = "int";
+            description = "A table.";
+            optional = false;
+            default = "254";
+            min = 1;
+            max = 254;
+            values = [ ];
+            regex = "";
+          };
+          role = "reader";
+          timeout = "5s";
+          capabilities = [ ];
+          groups = [ ];
+        };
+        same = true;
+      };
+    };
 }

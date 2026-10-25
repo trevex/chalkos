@@ -146,6 +146,43 @@ The options within each, by their path below `chalkos.effects`:
 | `<name>.start`{ #chalkoseffectsstart } | boolean | `false` | Start the units of `restart` that do not run, with `systemctl restart` instead of `try-restart`, as for a unit whose condition only the delivery meets. |
 | `<name>.when`{ #chalkoseffectswhen } | non-empty string or null | `null` | CEL expression that is true when a delivery takes the effect, for a trigger that no output renders; the effect fires when `when` holds, one of `outputs` changed or the documents of one of `kinds` did. It reads `config` and `oldConfig`, the node's config after and before the delivery, each by apiVersion, kind and name with every Secret value replaced by its SHA-256, the node's name as `node.name`, and `facts.<name>` after the delivery and `oldFacts.<name>` before it. Example: `"facts.share != oldFacts.share"` |
 
+## Diagnostics { #diagnostics }
+
+The read-only commands a client of the node API runs on a node with chalkctl node diag.
+
+### `chalkos.diagnostics` { #chalkosdiagnostics }
+
+Type: map of submodule · Default: `{ }` · Declared in: [modules/node/diagnostics.nix](https://github.com/trevex/chalkos/blob/main/modules/node/diagnostics.nix)
+
+Read-only commands of the image that a client of the node API runs with
+`chalkctl node diag`, by names of the form `[a-z][a-z0-9-]*`. chalkd checks the caller's
+role and each argument against its parameter's type, then runs the command as a transient
+systemd unit. The unit runs under a dynamic user, without new privileges, with only the
+`capabilities` and `groups` given. It sees a read-only file system with a private `/tmp`,
+without STATE, `/var/lib`, or the config and credentials chalkd writes, and runs for at
+most `timeout`. chalkd sends at most 1 MiB of what the command prints. Every image declares
+the base diagnostics, whose names are taken.
+
+The options within each, by their path below `chalkos.diagnostics`:
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `<name>.capabilities`{ #chalkosdiagnosticscapabilities } | list of string matching `CAP_[A-Z_]+` | `[ ]` | Capabilities of the run's process, as its bounding and ambient sets; it has no other. Example: `[ "CAP_NET_RAW" ]` |
+| `<name>.command`{ #chalkosdiagnosticscommand } | non-empty (list of string) | required | The command chalkd runs, as a list of arguments that no shell reads. The first is a program of the image's store. `{<parameter>}` in an argument becomes the parameter's value within that argument alone, and an argument that names an optional parameter a call leaves out is dropped. Every placeholder names a parameter, and every parameter has a placeholder. Example: `[ "${pkgs.iproute2}/bin/ip" "-json" "route" "get" "{address}" ]` |
+| `<name>.description`{ #chalkosdiagnosticsdescription } | non-empty string | required | One sentence on what the diagnostic shows, which `chalkctl node diag` lists. Example: `"The route the kernel takes to an address."` |
+| `<name>.groups`{ #chalkosdiagnosticsgroups } | list of non-empty string | `[ ]` | Groups of the image the run's process belongs to, as for a daemon's control socket. Example: `[ "bird" ]` |
+| `<name>.parameters`{ #chalkosdiagnosticsparameters } | map of submodule | `{ }` | The values a call passes, by names of the form `[a-z][a-z0-9-]*`. |
+| `<name>.parameters.<name>.default`{ #chalkosdiagnosticsparametersdefault } | non-empty string or null | `null` | Value the parameter takes when a call leaves it out, of the parameter's type; null for none. A parameter with a default is not `optional` as well. Example: `"main"` |
+| `<name>.parameters.<name>.description`{ #chalkosdiagnosticsparametersdescription } | non-empty string | required | One sentence on the value, which `chalkctl node diag` lists. Example: `"IPv4 or IPv6 address."` |
+| `<name>.parameters.<name>.max`{ #chalkosdiagnosticsparametersmax } | integer or null | `null` | Greatest value of an `int` parameter; null for none. |
+| `<name>.parameters.<name>.min`{ #chalkosdiagnosticsparametersmin } | integer or null | `null` | Least value of an `int` parameter; null for none. |
+| `<name>.parameters.<name>.optional`{ #chalkosdiagnosticsparametersoptional } | boolean | `false` | Whether a call may leave the parameter out, which drops every argument of `command` that names it. |
+| `<name>.parameters.<name>.regex`{ #chalkosdiagnosticsparametersregex } | non-empty string or null | `null` | Regular expression in Go's RE2 syntax, from `^` to `$`, that the value of a `pattern` parameter matches whole. Example: `"^[a-z0-9]+$"` |
+| `<name>.parameters.<name>.type`{ #chalkosdiagnosticsparameterstype } | one of `address`, `prefix`, `hostname`, `interface`, `int`, `enum`, `pattern` | required | What the value is. chalkd refuses a value of another type, and passes the command its canonical form: `address` is an IPv4 or IPv6 address, with a zone for a link-local one; `prefix` an address with a prefix length; `hostname` a DNS name; `interface` a network interface's name; `int` a decimal integer from `min` to `max`; `enum` one of `values`; `pattern` a string that `regex` matches whole. Example: `"address"` |
+| `<name>.parameters.<name>.values`{ #chalkosdiagnosticsparametersvalues } | list of non-empty string | `[ ]` | Values of an `enum` parameter. Example: `[ "inet" "inet6" ]` |
+| `<name>.role`{ #chalkosdiagnosticsrole } | one of `reader`, `operator`, `admin` | `"operator"` | Least client role that runs the diagnostic, which chalkd checks on top of the reader role that RunDiagnostic needs. |
+| `<name>.timeout`{ #chalkosdiagnosticstimeout } | string matching `[1-9][0-9]*[sm]` | `"30s"` | How long a run may take, in seconds or minutes, from `1s` to `10m`; systemd stops the run then. Example: `"10s"` |
+
 ## lib.chalkos { #lib-chalkos }
 
 Every image's NixOS modules get `lib.chalkos` as part of `lib`. It holds the type and the

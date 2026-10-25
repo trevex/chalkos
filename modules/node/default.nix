@@ -5,6 +5,7 @@
     ./packages.nix
     ./base
     ./runtime
+    ./diagnostics.nix
     ./kinds
     ./kernel.nix
     ./chalkd.nix

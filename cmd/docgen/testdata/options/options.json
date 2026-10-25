@@ -367,5 +367,24 @@
     ],
     "readOnly": false,
     "type": "attribute set of (submodule)"
+  },
+  "chalkos.diagnostics": {
+    "declarations": [
+      {
+        "name": "modules/node/diagnostics.nix",
+        "url": "https://example.org/modules/node/diagnostics.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "{ }"
+    },
+    "description": "Diagnostics.",
+    "loc": [
+      "chalkos",
+      "diagnostics"
+    ],
+    "readOnly": false,
+    "type": "attribute set of (submodule)"
   }
 }
