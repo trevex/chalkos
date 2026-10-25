@@ -22,8 +22,8 @@ import (
 
 // TestInstallInPlace installs the test image where it runs and checks the installed node: VAR
 // is mounted, STATE and VAR have a TPM2 and a fallback keyslot, chalkd requires client
-// certificates of the OS CA and honours their roles, and config applies additive storage
-// changes live and refuse destructive ones. An extension kind reaches the unit granted it, with
+// certificates of the OS CA and honours their roles, the base diagnostics run in their sandbox,
+// and config applies additive storage changes live and refuse destructive ones. An extension kind reaches the unit granted it, with
 // its secret, and an apply that changes it restarts the unit.
 func TestInstallInPlace(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
@@ -91,6 +91,37 @@ func TestInstallInPlace(t *testing.T) {
 	_, err = reader.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: "{}"}))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("ApplyConfig as a reader: %v, want permission denied", err)
+	}
+
+	// The image's base diagnostics run in transient units of their own: one without arguments,
+	// one with, two with a capability under a dynamic user, and bash's /dev/tcp to chalkd's own
+	// port. A reader may not run one that needs an operator.
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"addresses"}, `"ifname":"lo"`},
+		{[]string{"route-get", "address=10.0.2.2"}, `"dst":"10.0.2.2"`},
+		{[]string{"ping", "address=127.0.0.1", "count=1"}, "1 received"},
+		{[]string{"nft-ruleset"}, "table inet nixos-fw"},
+		{[]string{"tcp-connect", "address=127.0.0.1", "port=50000"}, "connected to 127.0.0.1 port 50000"},
+	} {
+		out, err := chalkctl(t, n, "base", append([]string{"node", "diag", "chalklab"}, tc.args...)...)
+		if err != nil || !strings.Contains(out, tc.want) {
+			t.Errorf("node diag %s: %v, want output holding %s", strings.Join(tc.args, " "), err, tc.want)
+		}
+	}
+	if out, err := chalkctl(t, n, "base", "node", "diag", "chalklab"); err != nil || !strings.Contains(out, "tcp-connect") {
+		t.Errorf("node diag lists no tcp-connect: %v", err)
+	}
+	diag, err := reader.RunDiagnostic(ctx, connect.NewRequest(&nodev1.RunDiagnosticRequest{Name: "nft-ruleset"}))
+	if err == nil {
+		for diag.Receive() {
+		}
+		err = diag.Err()
+	}
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("nft-ruleset as a reader: %v, want permission denied", err)
 	}
 
 	if out, err := chalkctl(t, n, "destructive", "apply-config", "chalklab"); err == nil || !strings.Contains(out, "only a reinstall of chalklab carries it out") {
