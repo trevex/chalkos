@@ -134,7 +134,7 @@ type Server struct {
 	// Layers are the layers the image carries, as its markers name them.
 	Layers layers.Set
 	// Kubernetes is the node's Kubernetes side; nil in maintenance mode and on an image without
-	// the Kubernetes layer.
+	// the Kubernetes layer. The handlers of that layer's methods rely on it being set otherwise.
 	Kubernetes *Kubernetes
 	// Renewal renews the node certificate; nil on a node that renews none.
 	Renewal *Renewal
