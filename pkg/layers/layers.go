@@ -23,11 +23,13 @@ const (
 // Set is the layers of an image; the zero Set holds the base alone.
 type Set map[string]struct{}
 
-// Of is the set of the layers named.
+// Of is the set of the layers named; the base, which every Set has, takes no entry.
 func Of(names ...string) Set {
 	s := Set{}
 	for _, name := range names {
-		s[name] = struct{}{}
+		if name != Base {
+			s[name] = struct{}{}
+		}
 	}
 	return s
 }

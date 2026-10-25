@@ -57,7 +57,7 @@ func TestReadFails(t *testing.T) {
 	}
 }
 
-// The zero Set holds the base alone; Of holds what it names.
+// The zero Set holds the base alone; Of holds what it names but the base, which needs no name.
 func TestOf(t *testing.T) {
 	var none Set
 	if !none.Has(Base) || none.Has(Kubernetes) || len(none.Names()) != 0 {
@@ -65,5 +65,8 @@ func TestOf(t *testing.T) {
 	}
 	if s := Of(Kubernetes); !s.Has(Kubernetes) || !slices.Equal(s.Names(), []string{Kubernetes}) {
 		t.Errorf("Of(kubernetes) has %q", s.Names())
+	}
+	if s := Of(Base); !s.Has(Base) || len(s.Names()) != 0 {
+		t.Errorf("Of(base) has %q", s.Names())
 	}
 }
