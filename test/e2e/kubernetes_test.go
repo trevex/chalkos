@@ -861,8 +861,8 @@ func vxlanRules(t *testing.T, n *node, inventory, name string) (marks, drops []s
 	return marks, drops
 }
 
-// createLab creates the main cluster's lab of chalklab/lab.yaml through chalklab, as startLab
-// does, which bootstraps cp1, and returns its nodes, the forwarded port of cp1's API server and the
+// createLab creates the main cluster's lab of chalklab/lab.yaml through startLab; chalklab
+// bootstraps cp1, and createLab returns the nodes, the forwarded port of cp1's API server and the
 // lab's kubeconfig. chalklab printed the endpoint cp1 waited for, and chalkctl reaches cp1 with the
 // lab's inventory and client file.
 func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int, string) {

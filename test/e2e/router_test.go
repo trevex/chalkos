@@ -39,7 +39,7 @@ const bgpPassword = "lab-s3cret"
 //     session stays up: FRR reloads, its password filled in again into a frr.conf that is still
 //     root's with mode 0600, and restarts nothing.
 //
-// Two VMs of 768 MiB and 2 CPUs each; about 90 s once chalklab installed both, about 5 minutes
+// Two VMs of 768 MiB and 2 CPUs each; about 80 s once chalklab installed both, about 5 minutes
 // with the copies of the images. chalklab destroy removes the lab when the test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
@@ -168,6 +168,7 @@ func TestRouterLab(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		start := time.Now()
 		if _, err := chalkctl(t, nodes["r1"], "announce", "apply-config", "r1"); err != nil {
 			t.Fatal(err)
 		}
@@ -176,8 +177,10 @@ func TestRouterLab(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if after.State != "Established" || after.UptimeSeconds < before.UptimeSeconds {
-			t.Errorf("the session restarted: up %ds before the delivery, %s and up %ds after", before.UptimeSeconds, after.State, after.UptimeSeconds)
+		// A session that stayed up aged by the time the delivery took, give or take the whole
+		// seconds FRR rounds its uptime to.
+		if elapsed := time.Since(start); after.State != "Established" || after.UptimeSeconds+2 < before.UptimeSeconds+uint64(elapsed.Seconds()) {
+			t.Errorf("the session restarted: up %ds before the delivery, %s and up %ds %v later", before.UptimeSeconds, after.State, after.UptimeSeconds, elapsed.Round(time.Second))
 		}
 		rootsConfig(t)
 	})
