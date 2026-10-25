@@ -631,8 +631,8 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 			return fmt.Errorf("it runs %s", bootImageName(st.GetBoot().GetRunning()))
 		case !st.GetBoot().GetBlessed():
 			return errors.New("its boot was not found healthy yet")
-		case inCluster(st.Kubernetes) && st.Kubernetes.NodeReady != "True":
-			return fmt.Errorf("its Node is not Ready: %s", st.Kubernetes.NodeReady)
+		case n.inCluster && st.GetKubernetes().GetNodeReady() != "True":
+			return fmt.Errorf("its Node is not Ready: %s", st.GetKubernetes().GetNodeReady())
 		}
 		return nil
 	})

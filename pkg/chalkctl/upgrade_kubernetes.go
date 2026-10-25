@@ -12,6 +12,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/layers"
 )
 
 // quorum checks that etcd keeps its quorum while the control plane reboots: its other voters
@@ -140,4 +141,13 @@ func inCluster(k *nodev1.KubernetesStatus) bool {
 		return true
 	}
 	return false
+}
+
+// hasKubernetes reports whether a node runs Kubernetes: its image has the Kubernetes layer, or
+// its chalkd predates layers, reports none, and its status carries Kubernetes.
+func hasKubernetes(info *nodev1.InfoResponse, st *nodev1.StatusResponse) bool {
+	if l := info.GetLayers(); len(l) > 0 {
+		return slices.Contains(l, layers.Kubernetes)
+	}
+	return st.GetKubernetes() != nil
 }

@@ -1232,12 +1232,12 @@ func TestUpgradeDrainsAsAsked(t *testing.T) {
 	}
 }
 
-// TestUpgradeDrainsOnlyNodesWithTheKubernetesLayer upgrades a worker whose image lacks the
-// Kubernetes layer as a node without Kubernetes: it is neither drained nor uncordoned, whatever
-// its status says of Kubernetes.
+// TestUpgradeDrainsOnlyNodesWithTheKubernetesLayer upgrades a worker whose image carries the
+// router layer as a node without Kubernetes: it is neither drained nor uncordoned, whatever its
+// status says of Kubernetes.
 func TestUpgradeDrainsOnlyNodesWithTheKubernetesLayer(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	l.nodes["w1"].layers = nil
+	l.nodes["w1"].layers = []string{"router"}
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
@@ -1247,6 +1247,58 @@ func TestUpgradeDrainsOnlyNodesWithTheKubernetesLayer(t *testing.T) {
 	}
 	if slices.Contains(events, "w1 drain") || slices.Contains(events, "w1 uncordon") {
 		t.Errorf("a node without the Kubernetes layer was drained: %q", events)
+	}
+}
+
+// TestUpgradeNodesWhoseChalkdReportsNoLayers upgrades nodes whose chalkd predates layers by what
+// their status says of Kubernetes: the control planes one at a time with a check of etcd's quorum,
+// and the workers drained.
+func TestUpgradeNodesWhoseChalkdReportsNoLayers(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	for _, n := range l.nodes {
+		n.layers = nil
+	}
+	if err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0"), "--max-unavailable", "3"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	var want []string
+	for _, cp := range []string{"cp1", "cp2", "cp3"} {
+		want = append(want, cp+" members", cp+" upgrade", cp+" drain", cp+" reboot", cp+" uncordon")
+	}
+	if got := l.takeEvents(); !slices.Equal(got, want) {
+		t.Errorf("events:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if events := l.takeEvents(); !slices.Contains(events, "w1 drain") || !slices.Contains(events, "w1 uncordon") {
+		t.Errorf("w1 was not drained: %q", events)
+	}
+}
+
+// TestUpgradeAsksOnlyControlPlanesWithTheKubernetesLayer upgrades a worker of a partial cluster
+// through the control plane --address names, which the run leaves alone, only when that node's
+// image has the Kubernetes layer.
+func TestUpgradeAsksOnlyControlPlanesWithTheKubernetesLayer(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
+	upgrade := func() error {
+		args := []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config, "--nodes", "w1"}
+		for _, name := range []string{"cp1", "w1"} {
+			args = append(args, "--address", name+"="+l.addrs[name])
+		}
+		return l.ta.run(context.Background(), args)
+	}
+	l.nodes["cp1"].layers = []string{"router"}
+	if err := upgrade(); err == nil || !strings.Contains(err.Error(), "give a control plane's address with --address") {
+		t.Errorf("upgrade through a node without the Kubernetes layer = %v", err)
+	}
+	l.nodes["cp1"].layers = []string{layers.Kubernetes}
+	if err := upgrade(); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if events := l.takeEvents(); !slices.Contains(events, "w1 drain") {
+		t.Errorf("w1 was not drained: %q", events)
 	}
 }
 

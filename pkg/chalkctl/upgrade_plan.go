@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/layers"
 )
 
 // upgradeNode is a node to upgrade, by its part in Kubernetes: its kind, and whether it is part
@@ -124,8 +123,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			}
 		}
 		n := &upgradeNode{name: name}
-		// Only a node whose image has the Kubernetes layer is drained or holds an etcd member.
-		if k := st.Kubernetes; k != nil && slices.Contains(info.GetLayers(), layers.Kubernetes) {
+		if k := st.Kubernetes; k != nil && hasKubernetes(info, st) {
 			n.kind, n.inCluster = k.Kind, inCluster(k)
 		}
 		probedCPs[name] = n.kind == kubernetes.KindControlPlane
@@ -175,7 +173,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			if err != nil {
 				return err
 			}
-			probedCPs[name] = slices.Contains(info.GetLayers(), layers.Kubernetes) && st.Kubernetes.GetKind() == kubernetes.KindControlPlane
+			probedCPs[name] = hasKubernetes(info, st) && st.Kubernetes.GetKind() == kubernetes.KindControlPlane
 		}
 		kind, err := c.kind(name)
 		if err != nil {
