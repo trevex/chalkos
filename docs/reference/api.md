@@ -56,6 +56,7 @@ The response of Info.
 | `root_hash` | bytes | The verity root hash of the store the node runs, as its kernel command line's usrhash= names it, which identifies the running image; empty when it could not be read. |
 | `revision` | string | The git revision the running image was built from, as the node's record of the images it installed names it; empty when it does not know it. |
 | `tag` | string | The git tag the running image was built from, as the node's record of the images it installed names it; empty when it does not know it. |
+| `layers` | list of string | The layers the running image carries beside the base every image has, such as "kubernetes", in name order; empty on the installer and on an image of the base alone. |
 
 Field types: [Mode](#enum-mode), [SecureBoot](#enum-secureboot).
 
@@ -85,10 +86,10 @@ Field types: [Disk](#message-disk).
 ### Contract { #method-contract }
 
 Contract returns the config contract of the image the node runs: the variant and platform it
-was built for, the schemas of the config kinds it accepts and its image.json, which chalkctl
-checks config against before it delivers it. The installer refuses it: config is for the
-image it installs, whose contract comes with that image. Available in maintenance and normal
-mode to readers.
+was built for, its layers, the schemas of the config kinds it accepts and its image.json, which
+chalkctl checks config against before it delivers it. The installer refuses it: config is for
+the image it installs, whose contract comes with that image. Available in maintenance and
+normal mode to readers.
 
 Request: ContractRequest. Response: ContractResponse.
 
@@ -108,6 +109,7 @@ The response of Contract: the config contract of the image the node runs.
 | `variant` | string | The variant the image was built as, as its os-release names it. |
 | `platform` | string | The platform the image was built for, as its os-release names it. |
 | `kubernetes_image` | bytes | The image's image.json: the Kubernetes release, the images of its components and the pod network it ships. Empty on an image without Kubernetes. |
+| `layers` | list of string | The layers the image carries beside the base every image has, such as "kubernetes", in name order. |
 
 ### Install { #method-install }
 

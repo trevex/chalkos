@@ -20,6 +20,7 @@ callPackage ./go-module.nix { } {
     ../pkg/install
     ../pkg/jsonfile
     ../pkg/kubernetes
+    ../pkg/layers
     ../pkg/networkdschema
     ../pkg/nodeconfig
     ../pkg/ociimage

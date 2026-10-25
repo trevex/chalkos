@@ -30,6 +30,7 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 		Schemas:  map[string][]byte{},
 		Variant:  release["CHALKOS_VARIANT"],
 		Platform: release["CHALKOS_PLATFORM"],
+		Layers:   s.Layers.Names(),
 	}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {

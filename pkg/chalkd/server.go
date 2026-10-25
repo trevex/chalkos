@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -130,7 +131,10 @@ type Server struct {
 	RebootNode func()
 	// Facts runs the commands of facts; nil runs them with systemd-run. Tests replace it.
 	Facts facts.Runner
-	// Kubernetes is the node's Kubernetes side; nil on a node whose image has no Kubernetes.
+	// Layers are the layers the image carries, as its markers name them.
+	Layers layers.Set
+	// Kubernetes is the node's Kubernetes side; nil in maintenance mode and on an image without
+	// the Kubernetes layer.
 	Kubernetes *Kubernetes
 	// Renewal renews the node certificate; nil on a node that renews none.
 	Renewal *Renewal

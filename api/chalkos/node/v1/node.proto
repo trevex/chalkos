@@ -19,10 +19,10 @@ service NodeService {
   // readers.
   rpc Disks(DisksRequest) returns (DisksResponse);
   // Contract returns the config contract of the image the node runs: the variant and platform it
-  // was built for, the schemas of the config kinds it accepts and its image.json, which chalkctl
-  // checks config against before it delivers it. The installer refuses it: config is for the
-  // image it installs, whose contract comes with that image. Available in maintenance and normal
-  // mode to readers.
+  // was built for, its layers, the schemas of the config kinds it accepts and its image.json, which
+  // chalkctl checks config against before it delivers it. The installer refuses it: config is for
+  // the image it installs, whose contract comes with that image. Available in maintenance and
+  // normal mode to readers.
   rpc Contract(ContractRequest) returns (ContractResponse);
   // Install turns a node in maintenance mode into an installed node and reboots it. The first
   // message carries the header; when the node is the installer, the image's store data, hash
@@ -179,6 +179,9 @@ message InfoResponse {
   // The git tag the running image was built from, as the node's record of the images it
   // installed names it; empty when it does not know it.
   string tag = 13;
+  // The layers the running image carries beside the base every image has, such as "kubernetes",
+  // in name order; empty on the installer and on an image of the base alone.
+  repeated string layers = 14;
 }
 
 // The request of Disks.
@@ -247,6 +250,9 @@ message ContractResponse {
   // The image's image.json: the Kubernetes release, the images of its components and the pod
   // network it ships. Empty on an image without Kubernetes.
   bytes kubernetes_image = 4;
+  // The layers the image carries beside the base every image has, such as "kubernetes", in name
+  // order.
+  repeated string layers = 5;
 }
 
 // A message of the Install stream: the header first, then the image's chunks.

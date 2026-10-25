@@ -27,6 +27,7 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 		Fingerprint: s.CurrentFingerprint(),
 		Variant:     release["CHALKOS_VARIANT"],
 		Platform:    release["CHALKOS_PLATFORM"],
+		Layers:      s.Layers.Names(),
 	}
 	// An image is its store's root hash; the record of installed images gives its provenance.
 	if root, err := uki.RunningHash(s.Paths.Cmdline); err == nil {

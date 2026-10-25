@@ -353,7 +353,10 @@ type InfoResponse struct {
 	Revision string `protobuf:"bytes,12,opt,name=revision,proto3" json:"revision,omitempty"`
 	// The git tag the running image was built from, as the node's record of the images it
 	// installed names it; empty when it does not know it.
-	Tag           string `protobuf:"bytes,13,opt,name=tag,proto3" json:"tag,omitempty"`
+	Tag string `protobuf:"bytes,13,opt,name=tag,proto3" json:"tag,omitempty"`
+	// The layers the running image carries beside the base every image has, such as "kubernetes",
+	// in name order; empty on the installer and on an image of the base alone.
+	Layers        []string `protobuf:"bytes,14,rep,name=layers,proto3" json:"layers,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -477,6 +480,13 @@ func (x *InfoResponse) GetTag() string {
 		return x.Tag
 	}
 	return ""
+}
+
+func (x *InfoResponse) GetLayers() []string {
+	if x != nil {
+		return x.Layers
+	}
+	return nil
 }
 
 // The request of Disks.
@@ -839,8 +849,11 @@ type ContractResponse struct {
 	// The image's image.json: the Kubernetes release, the images of its components and the pod
 	// network it ships. Empty on an image without Kubernetes.
 	KubernetesImage []byte `protobuf:"bytes,4,opt,name=kubernetes_image,json=kubernetesImage,proto3" json:"kubernetes_image,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The layers the image carries beside the base every image has, such as "kubernetes", in name
+	// order.
+	Layers        []string `protobuf:"bytes,5,rep,name=layers,proto3" json:"layers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ContractResponse) Reset() {
@@ -897,6 +910,13 @@ func (x *ContractResponse) GetPlatform() string {
 func (x *ContractResponse) GetKubernetesImage() []byte {
 	if x != nil {
 		return x.KubernetesImage
+	}
+	return nil
+}
+
+func (x *ContractResponse) GetLayers() []string {
+	if x != nil {
+		return x.Layers
 	}
 	return nil
 }
@@ -4881,7 +4901,7 @@ var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x1achalkos/node/v1/node.proto\x12\x0fchalkos.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\r\n" +
-	"\vInfoRequest\"\x9e\x03\n" +
+	"\vInfoRequest\"\xb6\x03\n" +
 	"\fInfoResponse\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.chalkos.node.v1.ModeR\x04mode\x12\x19\n" +
 	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x1c\n" +
@@ -4897,7 +4917,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	" \x01(\tR\bplatform\x12\x1b\n" +
 	"\troot_hash\x18\v \x01(\fR\brootHash\x12\x1a\n" +
 	"\brevision\x18\f \x01(\tR\brevision\x12\x10\n" +
-	"\x03tag\x18\r \x01(\tR\x03tag\"\x0e\n" +
+	"\x03tag\x18\r \x01(\tR\x03tag\x12\x16\n" +
+	"\x06layers\x18\x0e \x03(\tR\x06layers\"\x0e\n" +
 	"\fDisksRequest\"<\n" +
 	"\rDisksResponse\x12+\n" +
 	"\x05disks\x18\x01 \x03(\v2\x15.chalkos.node.v1.DiskR\x05disks\"\x80\x02\n" +
@@ -4923,12 +4944,13 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x05label\x18\x05 \x01(\tR\x05label\x12\x12\n" +
 	"\x04uuid\x18\x06 \x01(\tR\x04uuid\x12\x18\n" +
 	"\acontent\x18\a \x01(\tR\acontent\"\x11\n" +
-	"\x0fContractRequest\"\xf9\x01\n" +
+	"\x0fContractRequest\"\x91\x02\n" +
 	"\x10ContractResponse\x12H\n" +
 	"\aschemas\x18\x01 \x03(\v2..chalkos.node.v1.ContractResponse.SchemasEntryR\aschemas\x12\x18\n" +
 	"\avariant\x18\x02 \x01(\tR\avariant\x12\x1a\n" +
 	"\bplatform\x18\x03 \x01(\tR\bplatform\x12)\n" +
-	"\x10kubernetes_image\x18\x04 \x01(\fR\x0fkubernetesImage\x1a:\n" +
+	"\x10kubernetes_image\x18\x04 \x01(\fR\x0fkubernetesImage\x12\x16\n" +
+	"\x06layers\x18\x05 \x03(\tR\x06layers\x1a:\n" +
 	"\fSchemasEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"\x8a\x01\n" +

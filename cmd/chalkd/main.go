@@ -35,6 +35,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/credprovider"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/vxlan"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -143,12 +144,6 @@ func vxlanRule(args []string) error {
 	return vxlan.Default().Apply(file)
 }
 
-// hasKubernetes reports whether the image carries Kubernetes, whose facts it then holds.
-func hasKubernetes() bool {
-	_, err := os.Stat(knode.DefaultPaths().Image)
-	return err == nil
-}
-
 // healthArgs are what chalkd health takes: how long to wait for the boot to become healthy, or
 // whether systemd stopped such a wait, and the units whose failure does not count.
 type healthArgs struct {
@@ -194,8 +189,12 @@ func health(args []string) error {
 	if err != nil {
 		return usageError{err}
 	}
+	l, err := layers.Read(layers.Dir)
+	if err != nil {
+		return err
+	}
 	var k *chalkd.Kubernetes
-	if hasKubernetes() {
+	if l.Has(layers.Kubernetes) {
 		k = chalkd.NewKubernetes(chalkd.KubernetesOptions{})
 	}
 	h := chalkd.DefaultHealth(k)
@@ -360,8 +359,13 @@ func serve() error {
 	if err != nil {
 		return err
 	}
+	l, err := layers.Read(layers.Dir)
+	if err != nil {
+		return err
+	}
 	srv := &chalkd.Server{
 		Mode:        creds.mode,
+		Layers:      l,
 		Installer:   os.Getenv("CHALKD_INSTALLER") == "1",
 		AnyClient:   creds.clientCAs == nil,
 		ClientCAs:   creds.clientCAs,
@@ -394,7 +398,7 @@ func serve() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
 	// Images with Kubernetes carry its facts; the cluster comes from the node's config.
-	if hasKubernetes() && creds.mode == nodev1.Mode_MODE_NORMAL {
+	if l.Has(layers.Kubernetes) && creds.mode == nodev1.Mode_MODE_NORMAL {
 		srv.Kubernetes = chalkd.NewKubernetes(chalkd.KubernetesOptions{})
 		srv.Kubernetes.Start()
 		// On every way out the node releases the VIPs, which must not stay on a node whose chalkd
