@@ -1,0 +1,358 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A BGP neighbour of the router, or the neighbours on a set of interfaces: where to reach them, their AS, and what the router accepts from them and sends them in each address family.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "BGPPeer"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "anyOf": [
+            {
+              "pattern": "^(?:[0-9A-Fa-f:.]+)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Address of the neighbour; excludes `interface` and `interfaces`.",
+          "examples": [
+            "2001:db8:ffff::2"
+          ]
+        },
+        "bfd": {
+          "default": false,
+          "description": "Whether the router checks the session's link with BFD, at the timers of the BGP document, and ends the session when BFD finds it down.",
+          "type": "boolean"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "pattern": "^(?:[ -~]{1,80})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the neighbour is, in up to 80 printable ASCII characters."
+        },
+        "extendedNextHop": {
+          "default": false,
+          "description": "Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). FRR negotiates it on sessions of `interface` and `interfaces` whatever this says.",
+          "type": "boolean"
+        },
+        "families": {
+          "additionalProperties": false,
+          "default": {},
+          "description": "The address families the session exchanges routes of, and how.",
+          "properties": {
+            "ipv4": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "defaultOriginate": {
+                      "default": false,
+                      "description": "Whether the router sends the peer a default route of the family, whatever its own table holds.",
+                      "type": "boolean"
+                    },
+                    "export": {
+                      "anyOf": [
+                        {
+                          "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has."
+                    },
+                    "import": {
+                      "anyOf": [
+                        {
+                          "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route."
+                    },
+                    "maxPrefix": {
+                      "anyOf": [
+                        {
+                          "maximum": 4294967295,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Routes the router accepts from the peer at most; past them it ends the session. null sets no limit."
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "IPv4 routes of the session; null exchanges none."
+            },
+            "ipv6": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "defaultOriginate": {
+                      "default": false,
+                      "description": "Whether the router sends the peer a default route of the family, whatever its own table holds.",
+                      "type": "boolean"
+                    },
+                    "export": {
+                      "anyOf": [
+                        {
+                          "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has."
+                    },
+                    "import": {
+                      "anyOf": [
+                        {
+                          "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route."
+                    },
+                    "maxPrefix": {
+                      "anyOf": [
+                        {
+                          "maximum": 4294967295,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Routes the router accepts from the peer at most; past them it ends the session. null sets no limit."
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "IPv6 routes of the session; null exchanges none."
+            }
+          },
+          "type": "object",
+          "x-chalkos-rules": [
+            {
+              "description": "A BGPPeer exchanges the routes of one family at least.",
+              "message": "the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route",
+              "rule": "self.ipv4 != null || self.ipv6 != null",
+              "takes": "refuse"
+            },
+            {
+              "description": "A family's policies are RoutingPolicy documents.",
+              "messageExpression": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4[\"import\"] == null || self.ipv4[\"import\"] in pols ? [] : [self.ipv4[\"import\"], \"ipv4\"]), (self.ipv4 == null || self.ipv4[\"export\"] == null || self.ipv4[\"export\"] in pols ? [] : [self.ipv4[\"export\"], \"ipv4\"]), (self.ipv6 == null || self.ipv6[\"import\"] == null || self.ipv6[\"import\"] in pols ? [] : [self.ipv6[\"import\"], \"ipv6\"]), (self.ipv6 == null || self.ipv6[\"export\"] == null || self.ipv6[\"export\"] in pols ? [] : [self.ipv6[\"export\"], \"ipv6\"])].filter(u, size(u) > 0)[0], \"the \" + u[1] + \" family names the RoutingPolicy \" + u[0] + \", which the config does not hold\"))",
+              "rule": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), (self.ipv4 == null || self.ipv4[\"import\"] == null || self.ipv4[\"import\"] in pols) && (self.ipv4 == null || self.ipv4[\"export\"] == null || self.ipv4[\"export\"] in pols) && (self.ipv6 == null || self.ipv6[\"import\"] == null || self.ipv6[\"import\"] in pols) && (self.ipv6 == null || self.ipv6[\"export\"] == null || self.ipv6[\"export\"] in pols))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A family's policies match PrefixLists of that family alone.",
+              "messageExpression": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4[\"import\"] == null || (!(self.ipv4[\"import\"] in pols) || cel.bind(named, pols[self.ipv4[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\")) ? [] : [self.ipv4[\"import\"], \"ipv4\"]), (self.ipv4 == null || self.ipv4[\"export\"] == null || (!(self.ipv4[\"export\"] in pols) || cel.bind(named, pols[self.ipv4[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\")) ? [] : [self.ipv4[\"export\"], \"ipv4\"]), (self.ipv6 == null || self.ipv6[\"import\"] == null || (!(self.ipv6[\"import\"] in pols) || cel.bind(named, pols[self.ipv6[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\")) ? [] : [self.ipv6[\"import\"], \"ipv6\"]), (self.ipv6 == null || self.ipv6[\"export\"] == null || (!(self.ipv6[\"export\"] in pols) || cel.bind(named, pols[self.ipv6[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\")) ? [] : [self.ipv6[\"export\"], \"ipv6\"])].filter(u, size(u) > 0)[0], \"the \" + u[1] + \" family's RoutingPolicy \" + u[0] + \" matches a PrefixList of another family\")))",
+              "rule": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), (self.ipv4 == null || self.ipv4[\"import\"] == null || (!(self.ipv4[\"import\"] in pols) || cel.bind(named, pols[self.ipv4[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\"))) && (self.ipv4 == null || self.ipv4[\"export\"] == null || (!(self.ipv4[\"export\"] in pols) || cel.bind(named, pols[self.ipv4[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\"))) && (self.ipv6 == null || self.ipv6[\"import\"] == null || (!(self.ipv6[\"import\"] in pols) || cel.bind(named, pols[self.ipv6[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\"))) && (self.ipv6 == null || self.ipv6[\"export\"] == null || (!(self.ipv6[\"export\"] in pols) || cel.bind(named, pols[self.ipv6[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\")))))",
+              "takes": "refuse"
+            }
+          ]
+        },
+        "interface": {
+          "anyOf": [
+            {
+              "pattern": "^(?:[A-Za-z0-9_.:@-]{1,15})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address` and `interfaces`.",
+          "examples": [
+            "eth1"
+          ]
+        },
+        "interfaces": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^(?:[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*])$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Interfaces, by name or glob, a glob being a prefix followed by `*`, with a session each, as for `interface`; a glob stands for the interfaces the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address` and `interface`.",
+          "examples": [
+            [
+              "eth1",
+              "eth2"
+            ]
+          ]
+        },
+        "password": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "secretRef": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "key": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "name"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "secretRef"
+              ],
+              "type": "object",
+              "x-chalkos-secret-ref": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Key of a Secret that holds the session's TCP MD5 password, of 80 characters at most and no white space; null for none.",
+          "examples": [
+            {
+              "secretRef": {
+                "key": "fabric",
+                "name": "bgp"
+              }
+            }
+          ]
+        },
+        "remoteAS": {
+          "anyOf": [
+            {
+              "enum": [
+                "external",
+                "internal"
+              ]
+            },
+            {
+              "maximum": 4294967295,
+              "minimum": 1,
+              "type": "integer"
+            }
+          ],
+          "description": "AS of the neighbour: a number, `external` for any AS but the router's, or `internal` for the router's own.",
+          "examples": [
+            "external"
+          ]
+        },
+        "shutdown": {
+          "default": false,
+          "description": "Whether the router keeps the session down while the document stays.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "remoteAS"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "BGPPeer",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "BGPPeer",
+    "multiple": true,
+    "rules": [
+      {
+        "description": "A BGPPeer names exactly one of address, interface and interfaces.",
+        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() != 1)).map(n, \"BGPPeer \" + n).join(\", \") + \" names not exactly one of address, interface and interfaces; a peer is reached at an address, on an interface or on each interface of a list\"",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() == 1))",
+        "takes": "refuse"
+      },
+      {
+        "description": "BGPPeer documents need the node's BGP document.",
+        "message": "the config holds BGPPeer documents but no BGP document, which gives the router its AS number; add one",
+        "rule": "size(documents) == 0 || size(((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {})) > 0",
+        "takes": "refuse"
+      }
+    ],
+    "version": "v1alpha1"
+  }
+}

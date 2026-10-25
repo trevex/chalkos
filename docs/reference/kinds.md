@@ -326,6 +326,72 @@ A node's config may hold several, each with a name of its own. It has a [change 
 | `spec.family` | one of `ipv4`, `ipv6` | required | Address family of the set. |
 | `spec.prefixes` | list of string | required | Address ranges of the set. |
 
+### BGP { #bgp }
+
+The node's BGP instance: its AS number and router ID, how many equal paths it installs, its BFD timers and the networks it announces.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config holds at most one. It has 2 [change rules](builtins.md#rules-bgp).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.asn` | integer from 1 to 4294967295 | required | AS number of the router. |
+| `spec.bfd.multiplier` | integer from 2 to 255 | `3` | BFD packets in a row a peer may miss before the router takes it for down and ends the session. |
+| `spec.bfd.receiveMs` | integer from 10 to 60000 | `300` | Shortest interval in milliseconds at which the router accepts BFD packets of the peers with `bfd`. |
+| `spec.bfd.transmitMs` | integer from 10 to 60000 | `300` | Shortest interval in milliseconds at which the router sends BFD packets. |
+| `spec.gracefulRestart` | boolean | `false` | Whether the router keeps a peer's routes while the peer restarts and asks its peers to keep its own. |
+| `spec.multipath.asPathRelax` | boolean | `false` | Whether paths through different neighbouring ASes count as equal when their AS paths are equally long, as for two leaves of a fabric. |
+| `spec.multipath.ebgp` | integer from 1 to 64 | `1` | Equal paths from external peers the router installs for one prefix at most. |
+| `spec.multipath.ibgp` | integer from 1 to 64 | `1` | Equal paths from internal peers the router installs for one prefix at most. |
+| `spec.networks` | list of object | `[]` | Networks the router announces to its peers. |
+| `spec.networks[].policy` | string or null | `null` | RoutingPolicy whose terms set the announcement's attributes; null announces it as it is. |
+| `spec.networks[].prefix` | string | required | Address range the router announces while its table holds a route to it. |
+| `spec.routerID` | string | required | Router ID, in IPv4 notation, which the router's peers know it by; give an IPv6-only router one too. |
+
+### BGPPeer { #bgppeer }
+
+A BGP neighbour of the router, or the neighbours on a set of interfaces: where to reach them, their AS, and what the router accepts from them and sends them in each address family.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 5 [change rules](builtins.md#rules-bgppeer).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.address` | string or null | `null` | Address of the neighbour; excludes `interface` and `interfaces`. |
+| `spec.bfd` | boolean | `false` | Whether the router checks the session's link with BFD, at the timers of the BGP document, and ends the session when BFD finds it down. |
+| `spec.description` | string or null | `null` | What the neighbour is, in up to 80 printable ASCII characters. |
+| `spec.extendedNextHop` | boolean | `false` | Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). FRR negotiates it on sessions of `interface` and `interfaces` whatever this says. |
+| `spec.families` | object | `{}` | The address families the session exchanges routes of, and how. |
+| `spec.families.ipv4` | object or null | `null` | IPv4 routes of the session; null exchanges none. |
+| `spec.families.ipv4.defaultOriginate` | boolean | `false` | Whether the router sends the peer a default route of the family, whatever its own table holds. |
+| `spec.families.ipv4.export` | string or null | `null` | RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has. |
+| `spec.families.ipv4.import` | string or null | `null` | RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route. |
+| `spec.families.ipv4.maxPrefix` | integer from 1 to 4294967295 or null | `null` | Routes the router accepts from the peer at most; past them it ends the session. null sets no limit. |
+| `spec.families.ipv6` | object or null | `null` | IPv6 routes of the session; null exchanges none. |
+| `spec.families.ipv6.defaultOriginate` | boolean | `false` | Whether the router sends the peer a default route of the family, whatever its own table holds. |
+| `spec.families.ipv6.export` | string or null | `null` | RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has. |
+| `spec.families.ipv6.import` | string or null | `null` | RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route. |
+| `spec.families.ipv6.maxPrefix` | integer from 1 to 4294967295 or null | `null` | Routes the router accepts from the peer at most; past them it ends the session. null sets no limit. |
+| `spec.interface` | string or null | `null` | Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address` and `interfaces`. |
+| `spec.interfaces` | list of string or null | `null` | Interfaces, by name or glob, a glob being a prefix followed by `*`, with a session each, as for `interface`; a glob stands for the interfaces the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address` and `interface`. |
+| `spec.password` | secret reference or null | `null` | Key of a Secret that holds the session's TCP MD5 password, of 80 characters at most and no white space; null for none. |
+| `spec.remoteAS` | one of `external`, `internal` or integer from 1 to 4294967295 | required | AS of the neighbour: a number, `external` for any AS but the router's, or `internal` for the router's own. |
+| `spec.shutdown` | boolean | `false` | Whether the router keeps the session down while the document stays. |
+
+### CommunityList { #communitylist }
+
+BGP communities that a RoutingPolicy term matches routes against: a route that carries one of them matches.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has a [change rule](builtins.md#rules-communitylist).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.communities` | list of string | required | The communities: standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers. |
+
 ### FirewallPolicy { #firewallpolicy }
 
 What the router's firewall does with new connections from one zone to another, or to the router itself: rules in order, then a default.
@@ -388,6 +454,23 @@ A node's config may hold several, each with a name of its own. It has 6 [change 
 | `spec.to.port` | integer from 1 to 65535 or null | `null` | Port the rule translates to, with `match.protocol`; null keeps the port. |
 | `spec.type` | one of `masquerade`, `snat`, `dnat` | required | `masquerade` translates the source of a leaving connection to the address of the interface it leaves through, `snat` to `to.address`, and `dnat` the destination of an arriving connection to `to.address`. |
 
+### PrefixList { #prefixlist }
+
+Address ranges of one family that a RoutingPolicy term matches routes against: entries in order, the first that matches a route deciding.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has a [change rule](builtins.md#rules-prefixlist).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.entries` | list of object | required | Entries in order; a route no entry matches does not match the list. |
+| `spec.entries[].action` | one of `permit`, `deny` | `"permit"` | Whether a route the entry matches matches the list. |
+| `spec.entries[].ge` | integer from 0 to 128 or null | `null` | Shortest prefix length of a route within `prefix` that the entry matches, from the prefix's length; null matches `prefix` alone, unless `le` is given. |
+| `spec.entries[].le` | integer from 0 to 128 or null | `null` | Longest prefix length of a route within `prefix` that the entry matches; null matches `prefix` alone, unless `ge` is given. |
+| `spec.entries[].prefix` | string | required | Address range the entry matches. |
+| `spec.family` | one of `ipv4`, `ipv6` | required | Address family of the list. |
+
 ### Router { #router }
 
 How the router forwards: the families it forwards, its reverse-path filter, how it spreads flows over equal-cost routes, its connection table and the interfaces that reach its node API.
@@ -404,6 +487,29 @@ A node's config holds at most one. It has a [change rule](builtins.md#rules-rout
 | `spec.forwarding.ipv6` | boolean | `true` | Whether the router forwards IPv6 packets between its interfaces. |
 | `spec.management.interfaces` | list of string or null | `null` | Interfaces, by name or glob, a glob being a prefix followed by `*`, on which the firewall accepts the node API, chalkd's TCP port 50000; null accepts it on every interface. |
 | `spec.rpFilter` | one of `off`, `loose`, `strict` | `"loose"` | Reverse-path filter of the packets the router receives, in both families: `strict` drops a packet whose source the router would not route back out of the interface it came in on, `loose` one whose source it has no route to, and `off` drops none. DHCPv4 between ports 67 and 68 passes. |
+
+### RoutingPolicy { #routingpolicy }
+
+What the router does with the routes of a peer's family or of a network: terms in order, the first that matches a route deciding, then a default.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 3 [change rules](builtins.md#rules-routingpolicy).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.default` | one of `accept`, `reject` | `"reject"` | What the router does with a route no term matches. |
+| `spec.terms` | list of object | `[]` | Terms in order: the first whose match holds for a route decides. |
+| `spec.terms[].match.asPath` | string or null | `null` | Regular expression the route's AS path matches, with `_` for the start, the end or a space between two ASes; null matches every path. |
+| `spec.terms[].match.communityList` | string or null | `null` | CommunityList one of whose communities the route carries; null matches every route. |
+| `spec.terms[].match.prefixList` | string or null | `null` | PrefixList the route's prefix matches; null matches every prefix. |
+| `spec.terms[].then` | object | required |  |
+| `spec.terms[].then.action` | one of `accept`, `reject` | required | Whether the router takes a route the term matches. |
+| `spec.terms[].then.addCommunities` | list of string | `[]` | Communities added to the route: standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers. |
+| `spec.terms[].then.localPref` | integer from 0 to 4294967295 or null | `null` | Local preference the route gets; null keeps it. |
+| `spec.terms[].then.med` | integer from 0 to 4294967295 or null | `null` | Multi-exit discriminator the route gets; null keeps it. |
+| `spec.terms[].then.prepend` | integer from 1 to 10 or null | `null` | How often the router puts its own AS number in front of the route's AS path; null puts none. |
+| `spec.terms[].then.removeCommunities` | list of string | `[]` | Communities removed from the route. |
 
 ## storage.chalkos.dev { #storage-chalkos-dev }
 

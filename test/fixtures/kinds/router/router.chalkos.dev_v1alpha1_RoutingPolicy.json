@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "What the router does with the routes of a peer's family or of a network: terms in order, the first that matches a route deciding, then a default.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "RoutingPolicy"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "default": "reject",
+          "description": "What the router does with a route no term matches.",
+          "enum": [
+            "accept",
+            "reject"
+          ]
+        },
+        "terms": {
+          "default": [],
+          "description": "Terms in order: the first whose match holds for a route decides.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "match": {
+                "additionalProperties": false,
+                "properties": {
+                  "asPath": {
+                    "anyOf": [
+                      {
+                        "pattern": "^(?:[0-9 _^$.*+?()|{},-]{1,200})$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Regular expression the route's AS path matches, with `_` for the start, the end or a space between two ASes; null matches every path.",
+                    "examples": [
+                      "^64513_"
+                    ]
+                  },
+                  "communityList": {
+                    "anyOf": [
+                      {
+                        "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "CommunityList one of whose communities the route carries; null matches every route."
+                  },
+                  "prefixList": {
+                    "anyOf": [
+                      {
+                        "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "PrefixList the route's prefix matches; null matches every prefix."
+                  }
+                },
+                "type": "object"
+              },
+              "then": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "description": "Whether the router takes a route the term matches.",
+                    "enum": [
+                      "accept",
+                      "reject"
+                    ]
+                  },
+                  "addCommunities": {
+                    "default": [],
+                    "description": "Communities added to the route: standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers.",
+                    "items": {
+                      "pattern": "^(?:[0-9]{1,5}:[0-9]{1,5}|[0-9]{1,10}:[0-9]{1,10}:[0-9]{1,10})$",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "localPref": {
+                    "anyOf": [
+                      {
+                        "maximum": 4294967295,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Local preference the route gets; null keeps it."
+                  },
+                  "med": {
+                    "anyOf": [
+                      {
+                        "maximum": 4294967295,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Multi-exit discriminator the route gets; null keeps it."
+                  },
+                  "prepend": {
+                    "anyOf": [
+                      {
+                        "maximum": 10,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "How often the router puts its own AS number in front of the route's AS path; null puts none."
+                  },
+                  "removeCommunities": {
+                    "default": [],
+                    "description": "Communities removed from the route.",
+                    "items": {
+                      "pattern": "^(?:[0-9]{1,5}:[0-9]{1,5}|[0-9]{1,10}:[0-9]{1,10}:[0-9]{1,10})$",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "action"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "then"
+            ],
+            "type": "object"
+          },
+          "type": "array",
+          "x-chalkos-rules": [
+            {
+              "description": "A term's lists are PrefixList and CommunityList documents.",
+              "message": "a term names a PrefixList or a CommunityList that the config does not hold",
+              "rule": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(clists, ((\"router.chalkos.dev/v1alpha1\" in config && \"CommunityList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].CommunityList : {}), self.all(t, (t.match.prefixList == null || t.match.prefixList in lists) && (t.match.communityList == null || t.match.communityList in clists))))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A RoutingPolicy's PrefixLists are of one family.",
+              "message": "the terms match PrefixLists of both families; a policy serves the routes of one family, so give each family a policy of its own",
+              "rule": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(families, self.filter(t, t.match.prefixList != null && t.match.prefixList in lists).map(t, lists[t.match.prefixList].spec.family), families.all(f, f == families[0])))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A term that rejects sets nothing.",
+              "message": "a term that rejects routes sets local preference, MED, communities or a prepend, which no route it rejects keeps; drop them or accept",
+              "rule": "self.all(t, t[\"then\"].action == \"accept\" || t[\"then\"].localPref == null && t[\"then\"].med == null && size(t[\"then\"].addCommunities) == 0 && size(t[\"then\"].removeCommunities) == 0 && t[\"then\"].prepend == null)",
+              "takes": "refuse"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "RoutingPolicy",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "RoutingPolicy",
+    "multiple": true,
+    "version": "v1alpha1"
+  }
+}

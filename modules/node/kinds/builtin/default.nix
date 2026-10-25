@@ -11,5 +11,6 @@
     ./time.nix
     ./kubernetes.nix
     ./router.nix
+    ./bgp.nix
   ];
 }

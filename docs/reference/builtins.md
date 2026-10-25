@@ -298,6 +298,101 @@ Message of rule 1:
 documents.filter(n, !documents[n].spec.prefixes.all(p, cidr(p).ip(0).family() == documents[n].spec.family)).map(n, "AddressSet " + n + " holds ranges of another family than " + documents[n].spec.family).join("; ")
 ```
 
+#### BGP { #rules-bgp }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `spec.asn` | BGP keeps its AS number. | `refuse` | `self == oldSelf` | after the table |
+| 2 | `spec.networks` | A network's policy is a RoutingPolicy document. | `refuse` | after the table | after the table |
+
+Message of rule 1:
+
+```text
+"the AS number stays " + string(oldSelf) + "; to change it, deliver the config without the BGP document, which ends the router's sessions, and then with the new AS number"
+```
+
+Expression of rule 2:
+
+```text
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), self.all(w, w.policy == null || w.policy in pols))
+```
+
+Message of rule 2:
+
+```text
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), "a network names the RoutingPolicy " + self.filter(w, w.policy != null && !(w.policy in pols))[0].policy + ", which the config does not hold")
+```
+
+#### BGPPeer { #rules-bgppeer }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | A BGPPeer names exactly one of address, interface and interfaces. | `refuse` | after the table | after the table |
+| 2 | — | BGPPeer documents need the node's BGP document. | `refuse` | after the table | the config holds BGPPeer documents but no BGP document, which gives the router its AS number; add one |
+| 3 | `spec.families` | A BGPPeer exchanges the routes of one family at least. | `refuse` | `self.ipv4 != null || self.ipv6 != null` | the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route |
+| 4 | `spec.families` | A family's policies are RoutingPolicy documents. | `refuse` | after the table | after the table |
+| 5 | `spec.families` | A family's policies match PrefixLists of that family alone. | `refuse` | after the table | after the table |
+
+Expression of rule 1:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() == 1))
+```
+
+Message of rule 1:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() != 1)).map(n, "BGPPeer " + n).join(", ") + " names not exactly one of address, interface and interfaces; a peer is reached at an address, on an interface or on each interface of a list"
+```
+
+Expression of rule 2:
+
+```text
+size(documents) == 0 || size((("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {})) > 0
+```
+
+Expression of rule 4:
+
+```text
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), (self.ipv4 == null || self.ipv4["import"] == null || self.ipv4["import"] in pols) && (self.ipv4 == null || self.ipv4["export"] == null || self.ipv4["export"] in pols) && (self.ipv6 == null || self.ipv6["import"] == null || self.ipv6["import"] in pols) && (self.ipv6 == null || self.ipv6["export"] == null || self.ipv6["export"] in pols))
+```
+
+Message of rule 4:
+
+```text
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4["import"] == null || self.ipv4["import"] in pols ? [] : [self.ipv4["import"], "ipv4"]), (self.ipv4 == null || self.ipv4["export"] == null || self.ipv4["export"] in pols ? [] : [self.ipv4["export"], "ipv4"]), (self.ipv6 == null || self.ipv6["import"] == null || self.ipv6["import"] in pols ? [] : [self.ipv6["import"], "ipv6"]), (self.ipv6 == null || self.ipv6["export"] == null || self.ipv6["export"] in pols ? [] : [self.ipv6["export"], "ipv6"])].filter(u, size(u) > 0)[0], "the " + u[1] + " family names the RoutingPolicy " + u[0] + ", which the config does not hold"))
+```
+
+Expression of rule 5:
+
+```text
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), (self.ipv4 == null || self.ipv4["import"] == null || (!(self.ipv4["import"] in pols) || cel.bind(named, pols[self.ipv4["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4"))) && (self.ipv4 == null || self.ipv4["export"] == null || (!(self.ipv4["export"] in pols) || cel.bind(named, pols[self.ipv4["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4"))) && (self.ipv6 == null || self.ipv6["import"] == null || (!(self.ipv6["import"] in pols) || cel.bind(named, pols[self.ipv6["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6"))) && (self.ipv6 == null || self.ipv6["export"] == null || (!(self.ipv6["export"] in pols) || cel.bind(named, pols[self.ipv6["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")))))
+```
+
+Message of rule 5:
+
+```text
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4["import"] == null || (!(self.ipv4["import"] in pols) || cel.bind(named, pols[self.ipv4["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4")) ? [] : [self.ipv4["import"], "ipv4"]), (self.ipv4 == null || self.ipv4["export"] == null || (!(self.ipv4["export"] in pols) || cel.bind(named, pols[self.ipv4["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4")) ? [] : [self.ipv4["export"], "ipv4"]), (self.ipv6 == null || self.ipv6["import"] == null || (!(self.ipv6["import"] in pols) || cel.bind(named, pols[self.ipv6["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")) ? [] : [self.ipv6["import"], "ipv6"]), (self.ipv6 == null || self.ipv6["export"] == null || (!(self.ipv6["export"] in pols) || cel.bind(named, pols[self.ipv6["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")) ? [] : [self.ipv6["export"], "ipv6"])].filter(u, size(u) > 0)[0], "the " + u[1] + " family's RoutingPolicy " + u[0] + " matches a PrefixList of another family")))
+```
+
+#### CommunityList { #rules-communitylist }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | A CommunityList holds standard or large communities, not both. | `refuse` | after the table | after the table |
+
+Expression of rule 1:
+
+```text
+documents.all(n, cel.bind(c, documents[n].spec.communities, cel.bind(large, c[0].indexOf(":") != c[0].lastIndexOf(":"), c.all(x, (x.indexOf(":") != x.lastIndexOf(":")) == large))))
+```
+
+Message of rule 1:
+
+```text
+documents.filter(n, cel.bind(c, documents[n].spec.communities, cel.bind(large, c[0].indexOf(":") != c[0].lastIndexOf(":"), !c.all(x, (x.indexOf(":") != x.lastIndexOf(":")) == large)))).map(n, "CommunityList " + n).join(", ") + " holds standard and large communities; give each kind a list of its own"
+```
+
 #### FirewallPolicy { #rules-firewallpolicy }
 
 | Rule | Field | Guards | Takes | Expression | Message |
@@ -467,6 +562,24 @@ Message of rule 6:
 documents.filter(n, cel.bind(s, documents[n].spec, s.match.protocol == null && (size(s.match.destinationPorts) > 0 || s.to != null && s.to.port != null))).map(n, "NATRule " + n).join(", ") + ": ports need match.protocol"
 ```
 
+#### PrefixList { #rules-prefixlist }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | A PrefixList's entries are of its family, with ge and le from the prefix length to the family's longest prefix, ge no more than le. | `refuse` | after the table | after the table |
+
+Expression of rule 1:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, s.entries.all(e, cel.bind(c, cidr(e.prefix), cel.bind(max, s.family == "ipv4" ? 32 : 128, c.ip(0).family() == s.family && (e.ge == null || e.ge >= c.prefix() && e.ge <= max) && (e.le == null || e.le >= c.prefix() && e.le <= max) && (e.ge == null || e.le == null || e.ge <= e.le))))))
+```
+
+Message of rule 1:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, !s.entries.all(e, cel.bind(c, cidr(e.prefix), cel.bind(max, s.family == "ipv4" ? 32 : 128, c.ip(0).family() == s.family && (e.ge == null || e.ge >= c.prefix() && e.ge <= max) && (e.le == null || e.le >= c.prefix() && e.le <= max) && (e.ge == null || e.le == null || e.ge <= e.le)))))).map(n, "PrefixList " + n).join(", ") + " has an entry of another family, or a ge or le outside its range: both lie from the prefix length to 32 for IPv4 or 128 for IPv6, and ge no higher than le"
+```
+
 #### Router { #rules-router }
 
 | Rule | Field | Guards | Takes | Expression | Message |
@@ -483,6 +596,32 @@ Message of rule 1:
 
 ```text
 cel.bind(was, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in oldConfig && "Network" in oldConfig["networkd.chalkos.dev/v1alpha1"]) ? oldConfig["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")), cel.bind(gets, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")), cel.bind(lost, oldSelf.filter(i, cel.bind(globs, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].filter(k, k < size(i) || k == size(i) && !i.endsWith("*")).map(k, i.substring(0, k).replace(".", "[.]")).join("|"), (was.contains(" " + i + " ") || i.endsWith("*") && (size(i) > 1 ? was.contains(" " + i.substring(0, size(i) - 1)) : was.trim() != "") || was.matches(" (" + globs + ")[*] ")) && !(gets.contains(" " + i + " ") || i.endsWith("*") && (size(i) > 1 ? gets.contains(" " + i.substring(0, size(i) - 1)) : gets.trim() != "") || gets.matches(" (" + globs + ")[*] ")))), "the config leaves the management interfaces " + lost.join(", ") + " without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery")))
+```
+
+#### RoutingPolicy { #rules-routingpolicy }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `spec.terms` | A term's lists are PrefixList and CommunityList documents. | `refuse` | after the table | a term names a PrefixList or a CommunityList that the config does not hold |
+| 2 | `spec.terms` | A RoutingPolicy's PrefixLists are of one family. | `refuse` | after the table | the terms match PrefixLists of both families; a policy serves the routes of one family, so give each family a policy of its own |
+| 3 | `spec.terms` | A term that rejects sets nothing. | `refuse` | after the table | a term that rejects routes sets local preference, MED, communities or a prepend, which no route it rejects keeps; drop them or accept |
+
+Expression of rule 1:
+
+```text
+cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), cel.bind(clists, (("router.chalkos.dev/v1alpha1" in config && "CommunityList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].CommunityList : {}), self.all(t, (t.match.prefixList == null || t.match.prefixList in lists) && (t.match.communityList == null || t.match.communityList in clists))))
+```
+
+Expression of rule 2:
+
+```text
+cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), cel.bind(families, self.filter(t, t.match.prefixList != null && t.match.prefixList in lists).map(t, lists[t.match.prefixList].spec.family), families.all(f, f == families[0])))
+```
+
+Expression of rule 3:
+
+```text
+self.all(t, t["then"].action == "accept" || t["then"].localPref == null && t["then"].med == null && size(t["then"].addCommunities) == 0 && size(t["then"].removeCommunities) == 0 && t["then"].prepend == null)
 ```
 
 ## Facts { #facts }

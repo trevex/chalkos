@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The node's BGP instance: its AS number and router ID, how many equal paths it installs, its BFD timers and the networks it announces.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "BGP"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "asn": {
+          "description": "AS number of the router.",
+          "examples": [
+            64512
+          ],
+          "maximum": 4294967295,
+          "minimum": 1,
+          "type": "integer",
+          "x-chalkos-rules": [
+            {
+              "description": "BGP keeps its AS number.",
+              "messageExpression": "\"the AS number stays \" + string(oldSelf) + \"; to change it, deliver the config without the BGP document, which ends the router's sessions, and then with the new AS number\"",
+              "rule": "self == oldSelf",
+              "takes": "refuse"
+            }
+          ]
+        },
+        "bfd": {
+          "additionalProperties": false,
+          "properties": {
+            "multiplier": {
+              "default": 3,
+              "description": "BFD packets in a row a peer may miss before the router takes it for down and ends the session.",
+              "maximum": 255,
+              "minimum": 2,
+              "type": "integer"
+            },
+            "receiveMs": {
+              "default": 300,
+              "description": "Shortest interval in milliseconds at which the router accepts BFD packets of the peers with `bfd`.",
+              "maximum": 60000,
+              "minimum": 10,
+              "type": "integer"
+            },
+            "transmitMs": {
+              "default": 300,
+              "description": "Shortest interval in milliseconds at which the router sends BFD packets.",
+              "maximum": 60000,
+              "minimum": 10,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "gracefulRestart": {
+          "default": false,
+          "description": "Whether the router keeps a peer's routes while the peer restarts and asks its peers to keep its own.",
+          "type": "boolean"
+        },
+        "multipath": {
+          "additionalProperties": false,
+          "properties": {
+            "asPathRelax": {
+              "default": false,
+              "description": "Whether paths through different neighbouring ASes count as equal when their AS paths are equally long, as for two leaves of a fabric.",
+              "type": "boolean"
+            },
+            "ebgp": {
+              "default": 1,
+              "description": "Equal paths from external peers the router installs for one prefix at most.",
+              "maximum": 64,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "ibgp": {
+              "default": 1,
+              "description": "Equal paths from internal peers the router installs for one prefix at most.",
+              "maximum": 64,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "networks": {
+          "default": [],
+          "description": "Networks the router announces to its peers.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "policy": {
+                "anyOf": [
+                  {
+                    "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "RoutingPolicy whose terms set the announcement's attributes; null announces it as it is."
+              },
+              "prefix": {
+                "description": "Address range the router announces while its table holds a route to it.",
+                "examples": [
+                  "2001:db8:ffff::/48"
+                ],
+                "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "prefix"
+            ],
+            "type": "object"
+          },
+          "type": "array",
+          "x-chalkos-rules": [
+            {
+              "description": "A network's policy is a RoutingPolicy document.",
+              "messageExpression": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), \"a network names the RoutingPolicy \" + self.filter(w, w.policy != null && !(w.policy in pols))[0].policy + \", which the config does not hold\")",
+              "rule": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), self.all(w, w.policy == null || w.policy in pols))",
+              "takes": "refuse"
+            }
+          ]
+        },
+        "routerID": {
+          "description": "Router ID, in IPv4 notation, which the router's peers know it by; give an IPv6-only router one too.",
+          "examples": [
+            "192.0.2.1"
+          ],
+          "pattern": "^(?:([0-9]{1,3}[.]){3}[0-9]{1,3})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asn",
+        "routerID"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "BGP",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "BGP",
+    "multiple": false,
+    "version": "v1alpha1"
+  }
+}

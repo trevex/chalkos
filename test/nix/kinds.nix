@@ -84,10 +84,15 @@ let
     }).nixos.edge-metal.config;
   routerKinds = [
     "AddressSet"
+    "BGP"
+    "BGPPeer"
+    "CommunityList"
     "FirewallPolicy"
     "FirewallZone"
     "NATRule"
+    "PrefixList"
     "Router"
+    "RoutingPolicy"
   ];
   # The installer.
   installer = (mkImages { variants = { }; }).nixos.installer.config;

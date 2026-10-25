@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "BGP communities that a RoutingPolicy term matches routes against: a route that carries one of them matches.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "CommunityList"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "communities": {
+          "description": "The communities: standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers.",
+          "examples": [
+            [
+              "64512:100"
+            ]
+          ],
+          "items": {
+            "pattern": "^(?:[0-9]{1,5}:[0-9]{1,5}|[0-9]{1,10}:[0-9]{1,10}:[0-9]{1,10})$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "communities"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "CommunityList",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "CommunityList",
+    "multiple": true,
+    "rules": [
+      {
+        "description": "A CommunityList holds standard or large communities, not both.",
+        "messageExpression": "documents.filter(n, cel.bind(c, documents[n].spec.communities, cel.bind(large, c[0].indexOf(\":\") != c[0].lastIndexOf(\":\"), !c.all(x, (x.indexOf(\":\") != x.lastIndexOf(\":\")) == large)))).map(n, \"CommunityList \" + n).join(\", \") + \" holds standard and large communities; give each kind a list of its own\"",
+        "rule": "documents.all(n, cel.bind(c, documents[n].spec.communities, cel.bind(large, c[0].indexOf(\":\") != c[0].lastIndexOf(\":\"), c.all(x, (x.indexOf(\":\") != x.lastIndexOf(\":\")) == large))))",
+        "takes": "refuse"
+      }
+    ],
+    "version": "v1alpha1"
+  }
+}
