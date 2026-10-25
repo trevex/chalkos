@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -145,6 +146,17 @@ func TestVtyshCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := s.Router.vtysh(ctx, router.NeighborsCommand); err == nil || strings.Contains(err.Error(), "did not answer") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// A caller's deadline shorter than vtysh's timeout is the caller's, not vtysh's.
+func TestVtyshCallerDeadline(t *testing.T) {
+	s, r := routerServer(t)
+	s.Router.Run = hangingRunner{r}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := s.Router.vtysh(ctx, router.NeighborsCommand); !errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "did not answer") {
 		t.Errorf("err = %v", err)
 	}
 }

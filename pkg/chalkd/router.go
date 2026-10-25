@@ -28,15 +28,21 @@ var vtyshTimeout = 5 * time.Second
 // vtysh runs one of the fixed show commands of package router, whose standard error, while FRR is
 // down, goes into the error alone rather than into chalkd's log as well.
 func (r *Router) vtysh(ctx context.Context, command string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, vtyshTimeout)
+	runCtx, cancel := context.WithTimeout(ctx, vtyshTimeout)
 	defer cancel()
 	run := r.Run.Run
 	if quiet, ok := r.Run.(tool.QuietRunner); ok {
 		run = quiet.RunQuiet
 	}
-	out, err := run(ctx, "vtysh", "-c", command)
-	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return nil, fmt.Errorf("vtysh did not answer within %v", vtyshTimeout)
+	out, err := run(runCtx, "vtysh", "-c", command)
+	if err != nil {
+		// The caller's own end is not vtysh's timeout.
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("vtysh did not answer within %v", vtyshTimeout)
+		}
 	}
 	return out, err
 }
