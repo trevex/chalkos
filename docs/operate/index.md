@@ -108,7 +108,7 @@ These pages read what a node does and bring back a node that fails.
 
     ---
 
-    Read what `chalkctl status` reports, follow a unit's journal and reach a node's tools.
+    Read what `chalkctl status` reports, follow a unit's journal, run the image's diagnostics and reach a node's tools.
 
     [:octicons-arrow-right-24: Read](status-and-logs.md)
 

@@ -153,8 +153,10 @@ CA, so nobody else can install an image on a machine that waits for its install.
 describes the argument, and [Your first image flake](../build/first-image.md) shows the flake that
 takes it.
 
-Images built without `osCA` accept any client until they are installed. The homelab's flake leaves
-it out, which suits a lab on a private network alone.
+Images built without `osCA` accept any client until they are installed, as an admin. Anyone on
+the machine's network may then install it, reboot it and run every diagnostic on it, those for
+operators such as `nft-ruleset` included. The homelab's flake leaves `osCA` out, which suits a lab
+on a private network alone.
 
 ## Secret documents hold the services' secrets
 

@@ -51,6 +51,7 @@ nav = [
     "build/read-config.md",
     "build/render-config.md",
     "build/react-to-changes.md",
+    "build/add-a-diagnostic.md",
     "build/pass-secrets.md",
     "build/guard-changes.md",
     "build/customise-installer.md",

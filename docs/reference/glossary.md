@@ -178,6 +178,15 @@ refuses. Both hold certificates and hashes of binaries. A chalkos image boots un
 when its signer's certificate is in db and nothing of it is in dbx. See
 [The image](../how-it-works/node/image.md#the-uki-is-checked-against-db-and-dbx-before-anything-runs-it).
 
+## Diagnostic { #diagnostic }
+<!-- abbr: Diagnostics, diagnostics -->
+
+A read-only command of an image that chalkd runs on a node for a client, such as `ip route get`.
+Its image declares it in [`chalkos.diagnostics`](extension-api.md#chalkosdiagnostics), with typed
+parameters and the least [client role](#client-role) that runs it, and chalkd runs it in a
+transient systemd unit with a sandbox of its own. See
+[`chalkctl node diag`](cli/chalkctl_node_diag.md).
+
 ## dm-verity { #dm-verity }
 
 The kernel's block-level integrity check, which makes a modified block of the store fail to

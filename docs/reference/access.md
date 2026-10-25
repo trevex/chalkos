@@ -23,7 +23,8 @@ role its Organization names. A certificate whose chain passes through the node C
 | `node` | a node certificate, which chains through the node CA | RenewNodeCertificate alone |
 
 No other role allows a method that needs `node`, and `node` allows no other method. A node in
-maintenance mode whose image was built without an OS CA treats every client as an admin.
+maintenance mode whose image was built without an OS CA treats every client as an admin, so a
+caller without a certificate may install it and run every diagnostic.
 
 ## Methods
 
@@ -41,6 +42,7 @@ role is too low fails with a message that names the role it needs, such as
 | ApplyConfig | admin | normal mode | base |
 | Bootstrap | admin | normal mode | Kubernetes |
 | Contract | reader | maintenance and normal mode | base |
+| Diagnostics | reader | maintenance and normal mode | base |
 | Disks | reader | maintenance and normal mode | base |
 | DrainNode | operator | normal mode | Kubernetes |
 | EtcdLeave | admin | normal mode | Kubernetes |
@@ -55,6 +57,7 @@ role is too low fails with a message that names the role it needs, such as
 | ResetVolume | admin | normal mode | base |
 | RevokeNode | admin | normal mode | Kubernetes |
 | RotationStep | admin | normal mode | Kubernetes |
+| RunDiagnostic | reader, and the diagnostic's own role | maintenance and normal mode | base |
 | Status | reader | normal mode | base |
 | UncordonNode | operator | normal mode | Kubernetes |
 | UnrevokeNode | admin | normal mode | Kubernetes |
@@ -62,6 +65,9 @@ role is too low fails with a message that names the role it needs, such as
 
 An Upgrade with config or a fallback secret from an operator fails with
 `/chalkos.node.v1.NodeService/Upgrade with config or a fallback secret needs the admin role; without them the node carries its own config over`.
+
+RunDiagnostic also needs the role the diagnostic names, which `chalkctl node diag` lists. A
+reader who runs `ping` fails with `the diagnostic ping needs the operator role`.
 
 ## Where chalkctl finds its credentials
 

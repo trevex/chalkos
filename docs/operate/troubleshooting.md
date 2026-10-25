@@ -41,13 +41,35 @@ fixes.
 ## The node stops in the initrd, or a NIC or disk is missing
 
 The console shows the node stopping in the initrd because it finds no system disk. Or a network
-card or disk is missing from `ip link` or `lsblk` in a shell on the node. `ip`, `lsblk` and
-`dmesg` are on images built with `chalkos.debug.tools`, as
+card is missing from `chalkctl node diag w1 links`, or a disk from `lsblk` in a shell on the node.
+`lsblk` and `dmesg` are on images built with `chalkos.debug.tools`, as
 [Debug tools reach the node through kubectl debug](status-and-logs.md#debug-tools-reach-the-node-through-kubectl-debug)
 describes. The image lacks the device's driver, or the firmware the driver loads, and `dmesg`
 names a firmware file that failed to load. A disk controller's driver must also be in the initrd.
 The image author adds it, as [Add software, drivers and kernel modules](../build/add-software.md)
 describes.
+
+## The node cannot reach an address
+
+An image pull, a time server or a peer times out, and the journal names an address. The node's
+diagnostics narrow it down without a shell on the node. Check the route, then the address, then
+the port, then the name:
+
+```sh
+chalkctl node diag w1 route-get address=2001:db8::5000
+chalkctl node diag w1 ping address=2001:db8::5000
+chalkctl node diag w1 tcp-connect address=2001:db8::5000 port=443
+chalkctl node diag w1 dns-query name=registry.example.org type=AAAA
+```
+
+`route-get` names the interface and gateway the kernel picks for the address. It fails with
+`RTNETLINK answers: Network is unreachable` when no route covers the address. A missing route or
+a wrong interface comes from the node's network documents, which
+[Write a node's config](node-config.md) covers. A route that is right while `ping` and
+`tcp-connect` fail points at the network past the node, or at a firewall. `nft-ruleset` shows the
+node's own. `ping`, `dns-query`, `tcp-connect` and `nft-ruleset` need an operator client file.
+[chalkctl node diag runs the image's diagnostics](status-and-logs.md#chalkctl-node-diag-runs-the-images-diagnostics)
+lists every diagnostic.
 
 ## A volume is missing or not mounted
 

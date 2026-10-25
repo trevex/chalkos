@@ -55,20 +55,24 @@
 *[Client file]: A JSON file that lets someone operate nodes without the secrets file.
 *[Client role]: The permission a client certificate grants on the node API: reader, operator or admin.
 *[Config slot]: The directory on STATE that holds a node's config for one image, named by the image's root hash.
+*[Diagnostics]: A read-only command of an image that chalkd runs on a node for a client, such as ip route get.
 *[Normal mode]: The mode chalkd runs in on an installed node.
 *[Secure Boot]: The UEFI firmware's check that a boot binary is signed by a certificate in db.
 *[change rule]: A CEL expression that a config must make true for the image to accept it.
 *[client file]: A JSON file that lets someone operate nodes without the secrets file.
 *[client role]: The permission a client certificate grants on the node API: reader, operator or admin.
 *[config slot]: The directory on STATE that holds a node's config for one image, named by the image's root hash.
+*[diagnostics]: A read-only command of an image that chalkd runs on a node for a client, such as ip route get.
 *[etcd member]: A control plane that belongs to the cluster's etcd.
 *[normal mode]: The mode chalkd runs in on an installed node.
+*[Diagnostic]: A read-only command of an image that chalkd runs on a node for a client, such as ip route get.
 *[Extensions]: NixOS modules outside chalkos that add services to a variant's images and may declare config kinds.
 *[Generation]: The number in a UKI's file name that orders a node's boot entries, the highest first.
 *[Node names]: A node's key in the inventory's spec.nodes, such as cp1.
 *[Provenance]: The git revision and tag an image was built from.
 *[chalkbuild]: The command that prepares the images Nix builds for a cluster's nodes.
 *[db and dbx]: The UEFI firmware's Secure Boot databases: db lists what the firmware boots, dbx what it refuses.
+*[diagnostic]: A read-only command of an image that chalkd runs on a node for a client, such as ip route get.
 *[extensions]: NixOS modules outside chalkos that add services to a variant's images and may declare config kinds.
 *[generation]: The number in a UKI's file name that orders a node's boot entries, the highest first.
 *[node names]: A node's key in the inventory's spec.nodes, such as cp1.

@@ -1,18 +1,20 @@
 ---
 title: "Status, logs and the console"
-description: "Read what chalkctl status reports, follow a unit's journal, watch the console and reach a node's tools"
+description: "Read what chalkctl status reports, follow a unit's journal, run the image's diagnostics, watch the console and reach a node's tools"
 ---
 
 # Status, logs and the console
 
 This page is for an operator who wants to know what a node is doing. It explains each line of
-`chalkctl status`, then the three places that tell more: a unit's journal, the console and a
-shell on the node. The examples read the homelab's worker `w1`.
+`chalkctl status`, then the four places that tell more: a unit's journal, the image's
+diagnostics, the console and a shell on the node. The examples read the homelab's worker `w1`.
 
 ## Before you begin
 
 You need the workstation that [Set up your workstation](workstation.md) describes.
-`chalkctl status` and `chalkctl logs` need a reader client file or the secrets file. The console
+`chalkctl status`, `chalkctl logs` and `chalkctl node diag` need a reader client file or the
+secrets file. The diagnostics that send traffic from the node or show its firewall need an
+operator's. The console
 needs the machine's BMC, a screen, or `chalklab console` in a lab.
 
 ## chalkctl status reads the node from the top
@@ -217,6 +219,83 @@ A node in maintenance mode answers `chalkctl logs` too, with `--fingerprint` or 
 chalkctl logs w1 --insecure --unit=chalkd.service
 ```
 
+## chalkctl node diag runs the image's diagnostics
+
+A diagnostic is a read-only command that the node's image declares, such as `ip route get`.
+chalkd runs it on the node and sends back what it prints, so a node without a login still shows
+its addresses, routes and firewall. Without a diagnostic, `chalkctl node diag` lists them:
+
+```console
+$ chalkctl node diag w1 --secrets secrets.age
+DIAGNOSTIC            ROLE      DESCRIPTION
+addresses             reader    The addresses of the node's interfaces, as ip -json address show prints them.
+bird-protocols        reader    The protocols bird runs and the state of their BGP sessions.
+  [peer=<pattern>]              Name of a Peer document, whose session alone is shown; every protocol when left out. Matches ^[a-z0-9][a-z0-9.-]*$.
+dns-query             operator  Looks up a name in DNS, through the node's resolver or the server given.
+  name=<hostname>               Name to look up.
+  [type=<enum>]                 Record type; A when left out. One of A, AAAA, CAA, CNAME, DS, DNSKEY, MX, NS, PTR, SOA, SRV, TXT.
+  [server=<address>]            Address of the DNS server to ask; the node's resolver when left out.
+links                 reader    The node's network interfaces and their state, as ip -json link show prints them.
+neighbours            reader    The neighbour table of IPv4 ARP and IPv6 neighbour discovery, as ip -json neighbour show prints it.
+nft-ruleset           operator  The node's nftables ruleset, as nft list ruleset prints it.
+ping                  operator  Sends ICMP echo requests to an address and prints the replies, for at most 10 seconds.
+  address=<address>             IPv4 or IPv6 address to ping.
+  [count=<1-10>]                Number of echo requests. Default: 4.
+route-get             reader    The route the kernel takes to an address.
+  address=<address>             IPv4 or IPv6 address, without a zone: ip route get takes none, and finds a link-local address's interface by the routes.
+routes                reader    The routes of one family in one routing table, as ip -json route show prints them.
+  [family=<enum>]               Address family: inet for IPv4, inet6 for IPv6. One of inet, inet6. Default: inet.
+  [table=<pattern>]             Routing table: main, local, default, all or a table's number. Matches ^(main|local|default|all|[0-9]+)$. Default: main.
+tcp-connect           operator  Opens a TCP connection to an address and port, closes it again and says whether it connected.
+  address=<address>             IPv4 or IPv6 address.
+  port=<1-65535>                TCP port.
+```
+
+Each diagnostic names the least role that runs it. Readers run those that read the node's state.
+`ping`, `dns-query` and `tcp-connect` send traffic from the node, and `nft-ruleset` shows its
+firewall, so they need an operator. A parameter in brackets may be left out. `bird-protocols`
+comes from the homelab's BGP extension. Every image has the others.
+
+Name the diagnostic and give each parameter as `<parameter>=<value>`:
+
+```sh
+chalkctl node diag w1 route-get address=2001:db8::1
+chalkctl node diag w1 routes family=inet6
+chalkctl node diag w1 tcp-connect address=192.0.2.10 port=443
+```
+
+The command's output goes to standard output and its errors to standard error. chalkctl fails
+when the command fails. A `tcp-connect` to a port that nothing listens on prints:
+
+```text
+tcp-connect: connect: Connection refused
+tcp-connect: line 1: /dev/tcp/192.0.2.10/443: Connection refused
+chalkctl: tcp-connect exited with status 1
+```
+
+A connect that gets no answer within 5 seconds prints
+`no connection to 192.0.2.10 port 443 within 5 seconds` and exits with status 124.
+
+chalkd checks each value against its parameter's type before it runs anything. It also refuses
+any value that starts with `-` or holds a control character. A misspelt address fails with
+`invalid_argument: diagnostic route-get: address: "2001:db8::g" is no IPv4 or IPv6 address`. A
+`hostname` reaches the command fully qualified: `dns-query name=registry` asks for `registry.`,
+and the node's DNS search domains do not apply. A command that runs longer than its timeout
+fails with `route-get ran longer than its timeout, and the node stopped it`. chalkd sends at most
+1 MiB of output, and a node runs four diagnostics at a time.
+
+A node in maintenance mode answers `chalkctl node diag` too, with `--fingerprint` or
+`--insecure`. The installer then shows whether the machine reaches a registry before it installs:
+
+```sh
+chalkctl node diag w1 --insecure tcp-connect address=2001:db8::5000 port=443
+```
+
+An image built without an OS CA accepts any client in maintenance mode and treats it as an admin.
+A caller without a certificate may then run every diagnostic, `nft-ruleset` and the other
+operator diagnostics included. It may call Install and Reboot as well. An image with the OS CA
+takes only the client files of its cluster in maintenance mode, each with its own role.
+
 ## The console shows the boot before chalkd serves
 
 The console shows the boot loader, the initrd, a passphrase prompt for an encrypted disk, and
@@ -249,12 +328,14 @@ profile leaves the pod without their capabilities. A node has no `/bin/bash`, so
 the bash of the system path.
 
 This needs the node's kubelet and the API server. A node that has not joined the cluster has
-`chalkctl logs` and its console. A variant without Kubernetes brings its own access, which its
-image author adds.
+`chalkctl logs`, `chalkctl node diag` and its console. On a variant without Kubernetes, the image
+author adds diagnostics for its services, as [Add a diagnostic](../build/add-a-diagnostic.md)
+describes.
 
 ## What next
 
 - [Troubleshooting](troubleshooting.md) starts from a symptom and links its fix.
 - [Recover a node](recover-node.md) brings back a node that does not unlock, boot or renew.
-- [`chalkctl status`](../reference/cli/chalkctl_status.md) and
-  [`chalkctl logs`](../reference/cli/chalkctl_logs.md) list their flags.
+- [`chalkctl status`](../reference/cli/chalkctl_status.md),
+  [`chalkctl logs`](../reference/cli/chalkctl_logs.md) and
+  [`chalkctl node diag`](../reference/cli/chalkctl_node_diag.md) list their flags.

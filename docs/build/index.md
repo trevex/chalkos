@@ -90,6 +90,14 @@ changes them.
 
     [:octicons-arrow-right-24: Read](react-to-changes.md)
 
+-   :material-stethoscope: __Add a diagnostic__
+
+    ---
+
+    Declare a read-only command that operators run on a node with `chalkctl node diag`.
+
+    [:octicons-arrow-right-24: Read](add-a-diagnostic.md)
+
 -   :material-key-chain: __Pass secrets to a service__
 
     ---

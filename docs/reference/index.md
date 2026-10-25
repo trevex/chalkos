@@ -45,7 +45,7 @@ and do with it.
 
     ---
 
-    The change rules, facts, outputs and effects that chalkos's own modules declare.
+    The change rules, facts, outputs, effects and diagnostics that chalkos's own modules declare.
 
     [:octicons-arrow-right-24: Read](builtins.md)
 

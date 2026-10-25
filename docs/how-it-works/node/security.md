@@ -214,6 +214,15 @@ assembled at boot, `/etc` is a read-only overlay built from the image, and the s
 and checked by dm-verity, so a node changes only through chalkd. Logs come through
 [`chalkctl logs`](../../reference/cli/chalkctl_logs.md).
 
+The image's diagnostics show the node's addresses, routes and firewall through
+[`chalkctl node diag`](../../reference/cli/chalkctl_node_diag.md). The image fixes each command,
+and a client passes only values that chalkd checks against each parameter's type; no shell reads
+them. chalkd runs each command as a transient systemd unit under a user of its own, without new
+privileges and with only the capabilities the diagnostic names. The unit sees a read-only file
+system without STATE, `/var/lib`, or the config and credentials chalkd writes. Each diagnostic
+names the least role that runs it, so a reader sees the node's addresses but cannot ping from
+it.
+
 The `kvm` platform's images run the QEMU guest agent, which a hypervisor reaches through a
 virtio-serial channel. It answers only `guest-sync-delimited`, `guest-sync`, `guest-ping`,
 `guest-info`, `guest-get-osinfo`, `guest-get-host-name`, `guest-get-time`, `guest-get-timezone`,
