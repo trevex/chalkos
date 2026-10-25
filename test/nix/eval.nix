@@ -244,6 +244,20 @@ lib.runTests {
       conntrack = true;
     };
   };
+  # Router images add traceroute to every image's diagnostics; it sends traffic, so it takes an
+  # operator.
+  testRouterDiagnostics = {
+    expr = {
+      edge = layered.edge-metal.config.chalkos.diagnostics ? traceroute;
+      plain = layered.plain-metal.config.chalkos.diagnostics ? traceroute;
+      role = layered.edge-metal.config.chalkos.diagnostics.traceroute.role or null;
+    };
+    expected = {
+      edge = true;
+      plain = false;
+      role = "operator";
+    };
+  };
   # Forwarding belongs to the base: both layers turn it on, an image of the base alone forwards
   # only when its modules ask for it.
   testForwarding = {
