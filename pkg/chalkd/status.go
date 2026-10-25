@@ -80,6 +80,9 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 			return nil, failed(connect.CodeInternal, "kubernetes: %v", err)
 		}
 	}
+	if s.Router != nil {
+		resp.Router = s.Router.status(ctx)
+	}
 	if resp.Outputs, err = s.outputStatus(); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}

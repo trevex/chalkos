@@ -139,6 +139,10 @@ service NodeService {
   // names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
   // a time. Available in maintenance and normal mode to readers.
   rpc RunDiagnostic(RunDiagnosticRequest) returns (stream RunDiagnosticResponse);
+  // Routes lists the routes in the node's kernel, of the main table unless another is asked for,
+  // and the paths its BGP instance selected, each within an address range when one is given.
+  // Available in normal mode to readers, on images with the router layer.
+  rpc Routes(RoutesRequest) returns (RoutesResponse);
 }
 
 // The mode chalkd serves the node in.
@@ -543,6 +547,37 @@ message StatusResponse {
   string staged_config_version = 11;
   // The image's outputs, by name.
   repeated OutputStatus outputs = 12;
+  // State of the node's routing daemons; absent on a node whose image has no router layer.
+  RouterStatus router = 13;
+}
+
+// The state of a router's routing daemons.
+message RouterStatus {
+  // The router's BGP sessions, by BGPPeer document and then by interface or address.
+  repeated BGPPeerStatus peers = 1;
+  // Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is
+  // then empty.
+  string bgp_error = 2;
+}
+
+// One BGP session of a router: a BGPPeer's address, or one of its interfaces.
+message BGPPeerStatus {
+  // Name of the BGPPeer document.
+  string name = 1;
+  // The interface the session runs on, for a peer of interface or interfaces, or the neighbour's
+  // address.
+  string neighbor = 2;
+  // The session's BGP state: Idle, Connect, Active, OpenSent, OpenConfirm or Established.
+  string state = 3;
+  // How long the session has been established, in seconds; 0 while it is not.
+  uint64 uptime_seconds = 4;
+  // Routes the router accepted from the neighbour, of every family.
+  uint32 prefixes_received = 5;
+  // Routes the router sends the neighbour, of every family.
+  uint32 prefixes_sent = 6;
+  // The state of the session's BFD: up, down, init, admin-down or unknown; empty for a peer
+  // without bfd.
+  string bfd = 7;
 }
 
 // The state of one output of the running image.
@@ -1086,4 +1121,76 @@ message DiagnosticExit {
   // than the diagnostic's timeout, "output-limit" once it printed more than 1 MiB, of which the
   // stream holds the first 1 MiB, or systemd's result of its unit, such as "signal".
   string stopped = 2;
+}
+
+// The request of Routes.
+message RoutesRequest {
+  // An address range, such as 2001:db8::/32: only the routes to it and to ranges within it.
+  // Empty for every route.
+  string prefix = 1;
+  // Only the kernel's routes of this protocol: kernel, boot, static, ra, dhcp, bgp or another the
+  // kernel names, or its number. BGP's paths are listed for bgp and for an empty protocol alone.
+  string protocol = 2;
+  // The kernel's routing table: main, local, default, all, or a table's number. Empty for main.
+  string table = 3;
+}
+
+// The response of Routes.
+message RoutesResponse {
+  // The kernel's routes, in the order of their tables, families and destinations.
+  repeated KernelRoute kernel = 1;
+  // The paths BGP selected and installs, in the order of their families and prefixes.
+  repeated BGPRoute bgp = 2;
+  // Why BGP's paths could not be read, such as vtysh's error; empty when they were.
+  string bgp_error = 3;
+}
+
+// A route in the kernel's routing tables.
+message KernelRoute {
+  // Destination address range, such as ::/0.
+  string destination = 1;
+  // The route's type: unicast, local, broadcast, anycast, multicast, blackhole, unreachable,
+  // prohibit or throw, or its number.
+  string type = 2;
+  // What installed it: kernel, boot, static, ra, dhcp, bgp and others the kernel names, or its
+  // number.
+  string protocol = 3;
+  // The routing table, by number: 254 is main, 255 local and 253 default.
+  uint32 table = 4;
+  // The route's metric.
+  uint32 metric = 5;
+  // Where the route leads; several for a route over equal-cost paths.
+  repeated NextHop next_hops = 6;
+}
+
+// A next hop of a kernel route.
+message NextHop {
+  // The gateway's address, which may be of the other family; empty for a route on the link
+  // alone.
+  string gateway = 1;
+  // The interface the route leaves through.
+  string interface = 2;
+  // The next hop's weight among several, from 1; 0 for a route of one next hop.
+  uint32 weight = 3;
+}
+
+// A path of BGP's for a prefix, which its best path selection took.
+message BGPRoute {
+  // The prefix, such as ::/0.
+  string prefix = 1;
+  // The ASes of the path, separated by spaces; empty for a route the router originates.
+  string as_path = 2;
+  // The next hop addresses FRR resolved for the path.
+  repeated string next_hops = 3;
+  // The neighbour the path came from: its interface, for a session of an interface, or its
+  // address; empty for a route the router originates.
+  string peer = 4;
+  // The path's local preference, when it carries one.
+  optional uint32 local_pref = 5;
+  // The path's multi-exit discriminator.
+  uint32 med = 6;
+  // The path's standard and large communities.
+  repeated string communities = 7;
+  // Whether it is the best path; otherwise one of the equal paths BGP installs beside it.
+  bool best = 8;
 }

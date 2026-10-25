@@ -1,0 +1,84 @@
+{
+  "eth1": {
+    "bgpNeighborAddr": "fe80::c8f2:f3ff:fe5a:3cc8",
+    "remoteAs": 64513,
+    "localAs": 64512,
+    "nbrExternalLink": true,
+    "hostname": "fw13",
+    "peerGroup": "peer-fabric",
+    "bgpVersion": 4,
+    "remoteRouterId": "192.0.2.2",
+    "bgpState": "Established",
+    "bgpTimerUpMsec": 3723000,
+    "bgpTimerUpString": "01:02:03",
+    "addressFamilyInfo": {
+      "ipv6Unicast": {
+        "peerGroupMember": "peer-fabric",
+        "acceptedPrefixCounter": 1,
+        "sentPrefixCounter": 2
+      }
+    },
+    "connectionsEstablished": 1,
+    "connectionsDropped": 0,
+    "lastResetDueTo": "No path to specified Neighbor",
+    "peerBfdInfo": {
+      "type": "single hop",
+      "detectMultiplier": 3,
+      "rxMinInterval": 300,
+      "txMinInterval": 300,
+      "profile": "chalkos",
+      "status": "Up",
+      "lastUpdate": "0:00:00:20"
+    }
+  },
+  "eth2": {
+    "bgpNeighborAddr": "fe80::c8db:3ff:fe7a:ba75",
+    "remoteAs": 64513,
+    "localAs": 64512,
+    "nbrExternalLink": true,
+    "hostname": "fw13",
+    "peerGroup": "peer-fabric",
+    "bgpVersion": 4,
+    "remoteRouterId": "192.0.2.2",
+    "bgpState": "Idle",
+    "addressFamilyInfo": {
+      "ipv6Unicast": {
+        "peerGroupMember": "peer-fabric",
+        "acceptedPrefixCounter": 0,
+        "sentPrefixCounter": 0
+      }
+    },
+    "connectionsEstablished": 1,
+    "connectionsDropped": 0,
+    "lastResetDueTo": "BFD down received",
+    "peerBfdInfo": {
+      "type": "single hop",
+      "detectMultiplier": 3,
+      "rxMinInterval": 300,
+      "txMinInterval": 300,
+      "profile": "chalkos",
+      "status": "Down",
+      "lastUpdate": "0:00:00:19"
+    }
+  },
+  "203.0.113.254": {
+    "remoteAs": 65001,
+    "localAs": 64512,
+    "nbrExternalLink": true,
+    "hostname": "Unknown",
+    "peerGroup": "peer-transit",
+    "bgpVersion": 4,
+    "remoteRouterId": "0.0.0.0",
+    "bgpState": "Active",
+    "addressFamilyInfo": {
+      "ipv4Unicast": {
+        "peerGroupMember": "peer-transit",
+        "acceptedPrefixCounter": 0,
+        "prefixAllowedMax": 1000
+      }
+    },
+    "connectionsEstablished": 0,
+    "connectionsDropped": 0,
+    "lastResetDueTo": "No path to specified Neighbor"
+  }
+}

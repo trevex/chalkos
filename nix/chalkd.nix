@@ -27,6 +27,7 @@ callPackage ./go-module.nix { } {
     ../pkg/ociimage
     ../pkg/outputs
     ../pkg/pki
+    ../pkg/router
     ../pkg/rules
     ../pkg/schema
     ../pkg/secureboot

@@ -476,6 +476,8 @@ func call(c *client.Conn, procedure string) connect.Code {
 			}
 			err = s.Err()
 		}
+	case "Routes":
+		_, err = c.Routes(ctx, connect.NewRequest(&nodev1.RoutesRequest{}))
 	case "GetConfig":
 		_, err = c.GetConfig(ctx, connect.NewRequest(&nodev1.GetConfigRequest{}))
 	case "UpgradeWithConfig":

@@ -146,6 +146,9 @@ type Server struct {
 	// Kubernetes is the node's Kubernetes side; nil in maintenance mode and on an image without
 	// the Kubernetes layer. The handlers of that layer's methods rely on it being set otherwise.
 	Kubernetes *Kubernetes
+	// Router is the node's router side; nil in maintenance mode and on an image without the
+	// router layer. Routes relies on it being set otherwise.
+	Router *Router
 	// Renewal renews the node certificate; nil on a node that renews none.
 	Renewal *Renewal
 	// RenewOnApplyConfig renews the node certificate and the control plane's certificates after
@@ -218,6 +221,7 @@ var permissions = map[string]permission{
 	// Upgrade needs the admin role when its header carries config or a fallback secret, as
 	// ApplyConfig does; Upgrade checks that itself, as the table cannot see the header.
 	nodev1connect.NodeServiceUpgradeProcedure: {normalOnly, pki.RoleOperator, layers.Base},
+	nodev1connect.NodeServiceRoutesProcedure:  {normalOnly, pki.RoleReader, layers.Router},
 }
 
 type roleKey struct{}

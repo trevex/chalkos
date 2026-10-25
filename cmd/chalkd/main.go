@@ -409,6 +409,10 @@ func serve() error {
 		srv.Renewal = chalkd.NewNodeRenewal(creds.node, srv.IssueNodeCertificate)
 		go srv.Renewal.Run(ctx)
 	}
+	// Router images read FRR's state with vtysh and the kernel's routes through netlink.
+	if l.Has(layers.Router) && creds.mode == nodev1.Mode_MODE_NORMAL {
+		srv.Router = &chalkd.Router{Run: srv.Run}
+	}
 	go announceAddresses(srv.CurrentFingerprint)
 
 	ln, err := net.Listen("tcp", ":50000")

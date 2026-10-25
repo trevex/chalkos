@@ -1,0 +1,211 @@
+{
+ "vrfId": 0,
+ "vrfName": "default",
+ "tableVersion": 7,
+ "routerId": "192.0.2.2",
+ "defaultLocPrf": 100,
+ "localAS": 64513,
+ "routes": {
+  "::/0": [
+   {
+    "aspath": {
+     "string": "64512",
+     "length": 1
+    },
+    "origin": "IGP",
+    "metric": 0,
+    "locPrf": 200,
+    "valid": true,
+    "multipath": true,
+    "bestpath": {
+     "overall": true,
+     "selectionReason": "Older Path"
+    },
+    "nexthops": [
+     {
+      "ip": "fe80::e06b:dcff:fe54:f465",
+      "afi": "ipv6",
+      "scope": "link-local"
+     },
+     {
+      "ip": "fe80::e06b:dcff:fe54:f465",
+      "afi": "ipv6",
+      "scope": "link-local",
+      "used": true
+     }
+    ],
+    "peer": {
+     "peerId": "fe80::e06b:dcff:fe54:f465",
+     "routerId": "192.0.2.1",
+     "hostname": "fw13",
+     "interface": "eth2",
+     "type": "external"
+    },
+    "community": {
+     "string": "64512:1",
+     "list": [
+      "64512:1"
+     ]
+    },
+    "largeCommunity": {
+     "string": "64512:1:2",
+     "list": [
+      "64512:1:2"
+     ]
+    }
+   },
+   {
+    "aspath": {
+     "string": "64512",
+     "length": 1
+    },
+    "origin": "IGP",
+    "metric": 0,
+    "locPrf": 200,
+    "valid": true,
+    "multipath": true,
+    "nexthops": [
+     {
+      "ip": "fe80::b817:4cff:fe8b:9cf",
+      "afi": "ipv6",
+      "scope": "link-local"
+     },
+     {
+      "ip": "fe80::b817:4cff:fe8b:9cf",
+      "afi": "ipv6",
+      "scope": "link-local",
+      "used": true
+     }
+    ],
+    "peer": {
+     "peerId": "fe80::b817:4cff:fe8b:9cf",
+     "routerId": "192.0.2.1",
+     "hostname": "fw13",
+     "interface": "eth1",
+     "type": "external"
+    }
+   },
+   {
+    "aspath": {
+     "string": "64999 64512",
+     "length": 2
+    },
+    "origin": "IGP",
+    "metric": 0,
+    "locPrf": 200,
+    "valid": true,
+    "nexthops": [
+     {
+      "ip": "2001:db8:ffff::9",
+      "afi": "ipv6",
+      "scope": "global",
+      "used": true
+     }
+    ],
+    "peer": {
+     "peerId": "2001:db8:ffff::9",
+     "routerId": "192.0.2.9",
+     "type": "external"
+    }
+   }
+  ],
+  "2001:db8:2::/48": [
+   {
+    "aspath": {
+     "string": "Local",
+     "length": 0
+    },
+    "origin": "IGP",
+    "metric": 0,
+    "weight": 32768,
+    "valid": true,
+    "sourced": true,
+    "local": true,
+    "bestpath": {
+     "overall": true,
+     "selectionReason": "First path received"
+    },
+    "nexthops": [
+     {
+      "ip": "::",
+      "afi": "ipv6",
+      "scope": "global",
+      "used": true
+     }
+    ],
+    "peer": {
+     "peerId": "::",
+     "routerId": "192.0.2.2"
+    }
+   }
+  ],
+  "2001:db8:ffff::1/128": [
+   {
+    "aspath": {
+     "string": "64512",
+     "length": 1
+    },
+    "origin": "IGP",
+    "metric": 0,
+    "locPrf": 200,
+    "valid": true,
+    "multipath": true,
+    "bestpath": {
+     "overall": true,
+     "selectionReason": "Older Path"
+    },
+    "nexthops": [
+     {
+      "ip": "fe80::e06b:dcff:fe54:f465",
+      "afi": "ipv6",
+      "scope": "link-local"
+     },
+     {
+      "ip": "fe80::e06b:dcff:fe54:f465",
+      "afi": "ipv6",
+      "scope": "link-local",
+      "used": true
+     }
+    ],
+    "peer": {
+     "peerId": "fe80::e06b:dcff:fe54:f465",
+     "routerId": "192.0.2.1",
+     "hostname": "fw13",
+     "interface": "eth2",
+     "type": "external"
+    }
+   },
+   {
+    "aspath": {
+     "string": "64512",
+     "length": 1
+    },
+    "origin": "IGP",
+    "metric": 0,
+    "locPrf": 200,
+    "valid": true,
+    "multipath": true,
+    "nexthops": [
+     {
+      "ip": "fe80::b817:4cff:fe8b:9cf",
+      "afi": "ipv6",
+      "scope": "link-local"
+     },
+     {
+      "ip": "fe80::b817:4cff:fe8b:9cf",
+      "afi": "ipv6",
+      "scope": "link-local",
+      "used": true
+     }
+    ],
+    "peer": {
+     "peerId": "fe80::b817:4cff:fe8b:9cf",
+     "routerId": "192.0.2.1",
+     "hostname": "fw13",
+     "interface": "eth1",
+     "type": "external"
+    }
+   }
+  ]
+ }
+}

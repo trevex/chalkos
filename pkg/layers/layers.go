@@ -18,6 +18,8 @@ const (
 	Base = ""
 	// Kubernetes runs containerd and the kubelet and makes a node a control plane or a worker.
 	Kubernetes = "kubernetes"
+	// Router forwards between the node's interfaces, filters with its firewall and runs FRR.
+	Router = "router"
 )
 
 // Set is the layers of an image; the zero Set holds the base alone.

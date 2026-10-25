@@ -254,8 +254,9 @@ The response of Status: the state of an installed node.
 | `config_version` | string | SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by its own SHA-256. Empty on a node that runs no config. |
 | `staged_config_version` | string | The version of the config kept for the image staged to boot next, as config_version gives the running one's; empty without a staged image or config for it. |
 | `outputs` | list of OutputStatus | The image's outputs, by name. |
+| `router` | RouterStatus | State of the node's routing daemons; absent on a node whose image has no router layer. |
 
-Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [KubernetesStatus](#message-kubernetesstatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus).
+Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [KubernetesStatus](#message-kubernetesstatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [RouterStatus](#message-routerstatus).
 
 ### Logs { #method-logs }
 
@@ -672,9 +673,68 @@ A message of the RunDiagnostic stream: output as the command prints it, then how
 
 Field types: [DiagnosticExit](#message-diagnosticexit).
 
+### Routes { #method-routes }
+
+Routes lists the routes in the node's kernel, of the main table unless another is asked for,
+and the paths its BGP instance selected, each within an address range when one is given.
+Available in normal mode to readers, on images with the router layer.
+
+Request: RoutesRequest. Response: RoutesResponse.
+
+#### RoutesRequest { #message-routesrequest }
+
+The request of Routes.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `prefix` | string | An address range, such as 2001:db8::/32: only the routes to it and to ranges within it. Empty for every route. |
+| `protocol` | string | Only the kernel's routes of this protocol: kernel, boot, static, ra, dhcp, bgp or another the kernel names, or its number. BGP's paths are listed for bgp and for an empty protocol alone. |
+| `table` | string | The kernel's routing table: main, local, default, all, or a table's number. Empty for main. |
+
+#### RoutesResponse { #message-routesresponse }
+
+The response of Routes.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `kernel` | list of KernelRoute | The kernel's routes, in the order of their tables, families and destinations. |
+| `bgp` | list of BGPRoute | The paths BGP selected and installs, in the order of their families and prefixes. |
+| `bgp_error` | string | Why BGP's paths could not be read, such as vtysh's error; empty when they were. |
+
+Field types: [KernelRoute](#message-kernelroute), [BGPRoute](#message-bgproute).
+
 ## Messages { #messages }
 
 These messages are held by fields of other messages.
+
+### BGPPeerStatus { #message-bgppeerstatus }
+
+One BGP session of a router: a BGPPeer's address, or one of its interfaces.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | string | Name of the BGPPeer document. |
+| `neighbor` | string | The interface the session runs on, for a peer of interface or interfaces, or the neighbour's address. |
+| `state` | string | The session's BGP state: Idle, Connect, Active, OpenSent, OpenConfirm or Established. |
+| `uptime_seconds` | uint64 | How long the session has been established, in seconds; 0 while it is not. |
+| `prefixes_received` | uint32 | Routes the router accepted from the neighbour, of every family. |
+| `prefixes_sent` | uint32 | Routes the router sends the neighbour, of every family. |
+| `bfd` | string | The state of the session's BFD: up, down, init, admin-down or unknown; empty for a peer without bfd. |
+
+### BGPRoute { #message-bgproute }
+
+A path of BGP's for a prefix, which its best path selection took.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `prefix` | string | The prefix, such as ::/0. |
+| `as_path` | string | The ASes of the path, separated by spaces; empty for a route the router originates. |
+| `next_hops` | list of string | The next hop addresses FRR resolved for the path. |
+| `peer` | string | The neighbour the path came from: its interface, for a session of an interface, or its address; empty for a route the router originates. |
+| `local_pref` | uint32 or unset | The path's local preference, when it carries one. |
+| `med` | uint32 | The path's multi-exit discriminator. |
+| `communities` | list of string | The path's standard and large communities. |
+| `best` | bool | Whether it is the best path; otherwise one of the equal paths BGP installs beside it. |
 
 ### BootImage { #message-bootimage }
 
@@ -903,6 +963,21 @@ What an install delivers: the node's credentials and config, the target and the 
 
 Field types: [InPlace](#message-inplace), [DiskReference](#message-diskreference), [ImageHeader](#message-imageheader), [ImageContract](#message-imagecontract), [ImageSource](#message-imagesource).
 
+### KernelRoute { #message-kernelroute }
+
+A route in the kernel's routing tables.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `destination` | string | Destination address range, such as ::/0. |
+| `type` | string | The route's type: unicast, local, broadcast, anycast, multicast, blackhole, unreachable, prohibit or throw, or its number. |
+| `protocol` | string | What installed it: kernel, boot, static, ra, dhcp, bgp and others the kernel names, or its number. |
+| `table` | uint32 | The routing table, by number: 254 is main, 255 local and 253 default. |
+| `metric` | uint32 | The route's metric. |
+| `next_hops` | list of NextHop | Where the route leads; several for a route over equal-cost paths. |
+
+Field types: [NextHop](#message-nexthop).
+
 ### KubernetesStatus { #message-kubernetesstatus }
 
 The state of the node's Kubernetes.
@@ -921,6 +996,16 @@ The state of the node's Kubernetes.
 | `revoked_nodes_read` | bool | Whether the node read the revoked nodes, so that an empty revoked_nodes means none is revoked. False on other nodes, when revoked_nodes_error is set, and from a chalkd that predates node revocation. |
 
 Field types: [KubernetesPhase](#enum-kubernetesphase), [RevokedNode](#message-revokednode).
+
+### NextHop { #message-nexthop }
+
+A next hop of a kernel route.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `gateway` | string | The gateway's address, which may be of the other family; empty for a route on the link alone. |
+| `interface` | string | The interface the route leaves through. |
+| `weight` | uint32 | The next hop's weight among several, from 1; 0 for a route of one next hop. |
 
 ### NotEtcdMember { #message-notetcdmember }
 
@@ -971,6 +1056,17 @@ A node revoked in the cluster.
 | ----- | ---- | ----------- |
 | `name` | string | The node's name in Kubernetes. |
 | `revoked_at` | google.protobuf.Timestamp | When the node was revoked; unset when the time it is listed with cannot be read. |
+
+### RouterStatus { #message-routerstatus }
+
+The state of a router's routing daemons.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `peers` | list of BGPPeerStatus | The router's BGP sessions, by BGPPeer document and then by interface or address. |
+| `bgp_error` | string | Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is then empty. |
+
+Field types: [BGPPeerStatus](#message-bgppeerstatus).
 
 ### StorageChange { #message-storagechange }
 

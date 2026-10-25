@@ -1,0 +1,78 @@
+{
+ "vrfId": 0,
+ "vrfName": "default",
+ "tableVersion": 2,
+ "routerId": "192.0.2.2",
+ "defaultLocPrf": 100,
+ "localAS": 64513,
+ "routes": {
+  "192.0.2.1/32": [
+   {
+    "aspath": {
+     "string": "64512",
+     "length": 1
+    },
+    "origin": "IGP",
+    "metric": 0,
+    "valid": true,
+    "multipath": true,
+    "bestpath": {
+     "overall": true,
+     "selectionReason": "Older Path"
+    },
+    "nexthops": [
+     {
+      "ip": "fe80::e06b:dcff:fe54:f465",
+      "afi": "ipv6",
+      "scope": "link-local"
+     },
+     {
+      "ip": "fe80::e06b:dcff:fe54:f465",
+      "afi": "ipv6",
+      "scope": "link-local",
+      "used": true
+     }
+    ],
+    "peer": {
+     "peerId": "fe80::e06b:dcff:fe54:f465",
+     "routerId": "192.0.2.1",
+     "interface": "eth2",
+     "type": "external"
+    }
+   }
+  ],
+  "198.51.100.0/24": [
+   {
+    "aspath": {
+     "string": "65001 65002",
+     "length": 2
+    },
+    "origin": "IGP",
+    "metric": 50,
+    "valid": true,
+    "bestpath": {
+     "overall": true,
+     "selectionReason": "First path received"
+    },
+    "nexthops": [
+     {
+      "ip": "203.0.113.254",
+      "afi": "ipv4",
+      "used": true
+     }
+    ],
+    "community": {
+     "string": "65001:100",
+     "list": [
+      "65001:100"
+     ]
+    },
+    "peer": {
+     "peerId": "203.0.113.254",
+     "routerId": "203.0.113.254",
+     "type": "external"
+    }
+   }
+  ]
+ }
+}

@@ -87,6 +87,8 @@ const (
 	// NodeServiceRunDiagnosticProcedure is the fully-qualified name of the NodeService's RunDiagnostic
 	// RPC.
 	NodeServiceRunDiagnosticProcedure = "/chalkos.node.v1.NodeService/RunDiagnostic"
+	// NodeServiceRoutesProcedure is the fully-qualified name of the NodeService's Routes RPC.
+	NodeServiceRoutesProcedure = "/chalkos.node.v1.NodeService/Routes"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -215,6 +217,10 @@ type NodeServiceClient interface {
 	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
 	// a time. Available in maintenance and normal mode to readers.
 	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest]) (*connect.ServerStreamForClient[v1.RunDiagnosticResponse], error)
+	// Routes lists the routes in the node's kernel, of the main table unless another is asked for,
+	// and the paths its BGP instance selected, each within an address range when one is given.
+	// Available in normal mode to readers, on images with the router layer.
+	Routes(context.Context, *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -366,6 +372,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("RunDiagnostic")),
 			connect.WithClientOptions(opts...),
 		),
+		routes: connect.NewClient[v1.RoutesRequest, v1.RoutesResponse](
+			httpClient,
+			baseURL+NodeServiceRoutesProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("Routes")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -394,6 +406,7 @@ type nodeServiceClient struct {
 	unrevokeNode         *connect.Client[v1.UnrevokeNodeRequest, v1.UnrevokeNodeResponse]
 	diagnostics          *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
 	runDiagnostic        *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
+	routes               *connect.Client[v1.RoutesRequest, v1.RoutesResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -509,6 +522,11 @@ func (c *nodeServiceClient) Diagnostics(ctx context.Context, req *connect.Reques
 // RunDiagnostic calls chalkos.node.v1.NodeService.RunDiagnostic.
 func (c *nodeServiceClient) RunDiagnostic(ctx context.Context, req *connect.Request[v1.RunDiagnosticRequest]) (*connect.ServerStreamForClient[v1.RunDiagnosticResponse], error) {
 	return c.runDiagnostic.CallServerStream(ctx, req)
+}
+
+// Routes calls chalkos.node.v1.NodeService.Routes.
+func (c *nodeServiceClient) Routes(ctx context.Context, req *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error) {
+	return c.routes.CallUnary(ctx, req)
 }
 
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
@@ -637,6 +655,10 @@ type NodeServiceHandler interface {
 	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
 	// a time. Available in maintenance and normal mode to readers.
 	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest], *connect.ServerStream[v1.RunDiagnosticResponse]) error
+	// Routes lists the routes in the node's kernel, of the main table unless another is asked for,
+	// and the paths its BGP instance selected, each within an address range when one is given.
+	// Available in normal mode to readers, on images with the router layer.
+	Routes(context.Context, *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -784,6 +806,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("RunDiagnostic")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceRoutesHandler := connect.NewUnaryHandler(
+		NodeServiceRoutesProcedure,
+		svc.Routes,
+		connect.WithSchema(nodeServiceMethods.ByName("Routes")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -832,6 +860,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceDiagnosticsHandler.ServeHTTP(w, r)
 		case NodeServiceRunDiagnosticProcedure:
 			nodeServiceRunDiagnosticHandler.ServeHTTP(w, r)
+		case NodeServiceRoutesProcedure:
+			nodeServiceRoutesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -931,4 +961,8 @@ func (UnimplementedNodeServiceHandler) Diagnostics(context.Context, *connect.Req
 
 func (UnimplementedNodeServiceHandler) RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest], *connect.ServerStream[v1.RunDiagnosticResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RunDiagnostic is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) Routes(context.Context, *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Routes is not implemented"))
 }

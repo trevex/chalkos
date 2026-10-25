@@ -58,6 +58,10 @@ func TestLayerGate(t *testing.T) {
 		if want := "the kubernetes layer is not in this image"; err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("bootstrap in %v: %v, want %q", mode, err, want)
 		}
+		_, err = conn.Routes(context.Background(), connect.NewRequest(&nodev1.RoutesRequest{}))
+		if want := "the router layer is not in this image"; connect.CodeOf(err) != connect.CodeUnimplemented || !strings.Contains(err.Error(), want) {
+			t.Errorf("routes in %v without the router layer: %v, want %q", mode, err, want)
+		}
 	}
 	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
 	addr := serve(t, worker, c, c.pool)
