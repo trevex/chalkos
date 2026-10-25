@@ -27,9 +27,9 @@ var (
 			"e": {Type: TypeEnum, Values: []string{"-a", "b\n"}, Optional: true},
 		},
 	}
-	// dig has a required name and two optional parameters, one of them within an argument.
-	dig = Definition{
-		Command: []string{"/nix/store/x-dig/bin/dig", "{name}", "{type}", "@{server}"},
+	// drill has a required name and two optional parameters, one of them within an argument.
+	drill = Definition{
+		Command: []string{"/nix/store/x-ldns/bin/drill", "{name}", "{type}", "@{server}"},
 		Parameters: map[string]Parameter{
 			"name":   {Type: TypeHostname},
 			"type":   {Type: TypeEnum, Values: []string{"A", "AAAA"}, Optional: true},
@@ -49,8 +49,8 @@ func TestArgv(t *testing.T) {
 		"a default":       {ping, map[string]string{"address": "192.0.2.1"}, []string{"/nix/store/x-iputils/bin/ping", "-n", "-c", "4", "192.0.2.1"}},
 		"canonical forms": {ping, map[string]string{"address": "2001:DB8:0::1", "count": "007"}, []string{"/nix/store/x-iputils/bin/ping", "-n", "-c", "7", "2001:db8::1"}},
 		"a zone":          {ping, map[string]string{"address": "fe80::1%eth0"}, []string{"/nix/store/x-iputils/bin/ping", "-n", "-c", "4", "fe80::1%eth0"}},
-		"left out":        {dig, map[string]string{"name": "example.org"}, []string{"/nix/store/x-dig/bin/dig", "example.org."}},
-		"in an argument":  {dig, map[string]string{"name": "example.org.", "type": "AAAA", "server": "192.0.2.53"}, []string{"/nix/store/x-dig/bin/dig", "example.org.", "AAAA", "@192.0.2.53"}},
+		"left out":        {drill, map[string]string{"name": "example.org"}, []string{"/nix/store/x-ldns/bin/drill", "example.org."}},
+		"in an argument":  {drill, map[string]string{"name": "example.org.", "type": "AAAA", "server": "192.0.2.53"}, []string{"/nix/store/x-ldns/bin/drill", "example.org.", "AAAA", "@192.0.2.53"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := tc.d.Argv(tc.args)
@@ -72,12 +72,12 @@ func TestArgvRefuses(t *testing.T) {
 		"a missing argument":     {ping, nil, "it needs address=<address>"},
 		"an unknown parameter":   {ping, map[string]string{"address": "192.0.2.1", "size": "56"}, "it has no parameter size; it takes address, count"},
 		"no address":             {ping, map[string]string{"address": "example.org"}, `address: "example.org" is no IPv4 or IPv6 address`},
-		"an option":              {dig, map[string]string{"name": "-x"}, `name: "-x" is no DNS name`},
-		"a hyphen at the end":    {dig, map[string]string{"name": "a-.example"}, `name: "a-.example" is no DNS name`},
+		"an option":              {drill, map[string]string{"name": "-x"}, `name: "-x" is no DNS name`},
+		"a hyphen at the end":    {drill, map[string]string{"name": "a-.example"}, `name: "a-.example" is no DNS name`},
 		"out of range":           {ping, map[string]string{"address": "192.0.2.1", "count": "11"}, "count: 11 is not from 1 to 10"},
 		"no integer":             {ping, map[string]string{"address": "192.0.2.1", "count": "four"}, `count: "four" is no integer`},
-		"not a value":            {dig, map[string]string{"name": "example.org", "type": "ANY"}, `type: "ANY" is not one of A, AAAA`},
-		"an empty optional":      {dig, map[string]string{"name": "example.org", "server": ""}, `server: "" is no IPv4 or IPv6 address`},
+		"not a value":            {drill, map[string]string{"name": "example.org", "type": "ANY"}, `type: "ANY" is not one of A, AAAA`},
+		"an empty optional":      {drill, map[string]string{"name": "example.org", "server": ""}, `server: "" is no IPv4 or IPv6 address`},
 		"a zone with a variable": {ping, map[string]string{"address": "fe80::1%${PATH}"}, `address: "fe80::1%${PATH}" has a zone that is no interface name`},
 		"a zone with a newline":  {ping, map[string]string{"address": "fe80::1%a b\n-c"}, `address: "fe80::1%a b\n-c" has a zone that is no interface name`},
 		"a negative int":         {loose, map[string]string{"n": "-1"}, `n: "-1" starts with "-"`},
@@ -125,7 +125,7 @@ func TestParameterNames(t *testing.T) {
 	if got := ping.ParameterNames(); !slices.Equal(got, []string{"address", "count"}) {
 		t.Errorf("ping: %q", got)
 	}
-	if got := dig.ParameterNames(); !slices.Equal(got, []string{"name", "type", "server"}) {
-		t.Errorf("dig: %q", got)
+	if got := drill.ParameterNames(); !slices.Equal(got, []string{"name", "type", "server"}) {
+		t.Errorf("drill: %q", got)
 	}
 }

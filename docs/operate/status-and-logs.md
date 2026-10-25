@@ -14,8 +14,7 @@ diagnostics, the console and a shell on the node. The examples read the homelab'
 You need the workstation that [Set up your workstation](workstation.md) describes.
 `chalkctl status`, `chalkctl logs` and `chalkctl node diag` need a reader client file or the
 secrets file. The diagnostics that send traffic from the node or show its firewall need an
-operator's. The console
-needs the machine's BMC, a screen, or `chalklab console` in a lab.
+operator's. The console needs the machine's BMC, a screen, or `chalklab console` in a lab.
 
 ## chalkctl status reads the node from the top
 
