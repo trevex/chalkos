@@ -22,6 +22,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -110,6 +111,7 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o chalkd.KubernetesOptions) (
 		// The control plane runs with the certificates the node holds.
 		o.Hooks.CheckControlPlane = func(context.Context, k8s.Cluster, kpki.Share) error { return nil }
 	}
+	s.Layers = layers.Of(layers.Kubernetes)
 	s.Kubernetes = chalkd.NewKubernetes(o)
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
@@ -325,11 +327,11 @@ func TestBootstrapNeedsControlPlane(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"bootstrap", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "not a control-plane node") {
 		t.Errorf("err = %v, want a refusal for a worker", err)
 	}
-	// A control-plane node that runs no Kubernetes: the node refuses.
+	// A control-plane node whose image lacks the Kubernetes layer: the node refuses.
 	withKind(t, ta, k8s.KindControlPlane)
 	plain, _ := installedNode(t, ta, []byte(`{}`))
 	addr = ta.startNode(t, plain)
-	if err := ta.run(context.Background(), ta.args([]string{"bootstrap", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "has no Kubernetes") {
+	if err := ta.run(context.Background(), ta.args([]string{"bootstrap", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "the kubernetes layer is not in this image") {
 		t.Errorf("err = %v, want the node's refusal", err)
 	}
 }

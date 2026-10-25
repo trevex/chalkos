@@ -127,27 +127,30 @@ type NodeServiceClient interface {
 	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
 	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
 	// is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
-	// normal mode to admins.
+	// normal mode to admins, on images with the Kubernetes layer.
 	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
 	// EtcdMembers lists etcd's members as the node's own member sees them, with their health. It
-	// answers on control-plane nodes that are etcd members. Available in normal mode to readers.
+	// answers on control-plane nodes that are etcd members. Available in normal mode to readers, on
+	// images with the Kubernetes layer.
 	EtcdMembers(context.Context, *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error)
 	// EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
 	// have fewer healthy members than their quorum, unless forced, and for the node's own member,
-	// which EtcdLeave removes. Available in normal mode to admins.
+	// which EtcdLeave removes. Available in normal mode to admins, on images with the Kubernetes
+	// layer.
 	EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error)
 	// EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
 	// still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
 	// unpins its addresses. The node joins the cluster again only once it is reinstalled. A
 	// bootstrapped node whose own member does not answer leaves only when forced. Available in
-	// normal mode to admins.
+	// normal mode to admins, on images with the Kubernetes layer.
 	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
 	// RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
 	// the names of the node certificate it authenticated with. It answers on control-plane nodes
 	// and refuses a revoked node. Available in normal mode to nodes.
 	RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error)
 	// RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
-	// out; chalkctl rotate calls it. Available in normal mode to admins.
+	// out; chalkctl rotate calls it. Available in normal mode to admins, on images with the
+	// Kubernetes layer.
 	RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error)
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
@@ -168,14 +171,14 @@ type NodeServiceClient interface {
 	// terminate already, as those an earlier drain evicted, are not evicted again, but the call
 	// returns only once they and the pods it evicted have stopped. A node that was cordoned already
 	// stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. It
-	// answers on bootstrapped control-plane nodes. Available in normal mode to operators. An
-	// eviction refused for good, or one a PodDisruptionBudget holds back until the timeout, fails
-	// the call with FAILED_PRECONDITION; pods that did not stop in time, or whose evictions the API
-	// server kept failing, with DEADLINE_EXCEEDED.
+	// answers on bootstrapped control-plane nodes. Available in normal mode to operators, on images
+	// with the Kubernetes layer. An eviction refused for good, or one a PodDisruptionBudget holds
+	// back until the timeout, fails the call with FAILED_PRECONDITION; pods that did not stop in
+	// time, or whose evictions the API server kept failing, with DEADLINE_EXCEEDED.
 	DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error)
 	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
 	// a node cordoned otherwise as it is. It answers on bootstrapped control-plane nodes. Available
-	// in normal mode to operators.
+	// in normal mode to operators, on images with the Kubernetes layer.
 	UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error)
 	// RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
 	// kube-system/chalkos-revoked-nodes, applies the API server's admission policy
@@ -184,14 +187,16 @@ type NodeServiceClient interface {
 	// time of its first revocation. A call that fails after listing the node says so; calling again
 	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
 	// map of revoked nodes would grow too long for the API server to compile with it. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins.
+	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+	// Kubernetes layer.
 	RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error)
 	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
 	// it, so a node of that name may join again. The old node's certificates work again too, unless
 	// the CAs they chain to were rotated after the revocation: the call is refused with
 	// FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
 	// that fails after removing the node says so; calling again applies the policy. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins.
+	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+	// Kubernetes layer.
 	UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error)
 }
 
@@ -508,27 +513,30 @@ type NodeServiceHandler interface {
 	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
 	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
 	// is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
-	// normal mode to admins.
+	// normal mode to admins, on images with the Kubernetes layer.
 	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
 	// EtcdMembers lists etcd's members as the node's own member sees them, with their health. It
-	// answers on control-plane nodes that are etcd members. Available in normal mode to readers.
+	// answers on control-plane nodes that are etcd members. Available in normal mode to readers, on
+	// images with the Kubernetes layer.
 	EtcdMembers(context.Context, *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error)
 	// EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
 	// have fewer healthy members than their quorum, unless forced, and for the node's own member,
-	// which EtcdLeave removes. Available in normal mode to admins.
+	// which EtcdLeave removes. Available in normal mode to admins, on images with the Kubernetes
+	// layer.
 	EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error)
 	// EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
 	// still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
 	// unpins its addresses. The node joins the cluster again only once it is reinstalled. A
 	// bootstrapped node whose own member does not answer leaves only when forced. Available in
-	// normal mode to admins.
+	// normal mode to admins, on images with the Kubernetes layer.
 	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
 	// RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
 	// the names of the node certificate it authenticated with. It answers on control-plane nodes
 	// and refuses a revoked node. Available in normal mode to nodes.
 	RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error)
 	// RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
-	// out; chalkctl rotate calls it. Available in normal mode to admins.
+	// out; chalkctl rotate calls it. Available in normal mode to admins, on images with the
+	// Kubernetes layer.
 	RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error)
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
@@ -549,14 +557,14 @@ type NodeServiceHandler interface {
 	// terminate already, as those an earlier drain evicted, are not evicted again, but the call
 	// returns only once they and the pods it evicted have stopped. A node that was cordoned already
 	// stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. It
-	// answers on bootstrapped control-plane nodes. Available in normal mode to operators. An
-	// eviction refused for good, or one a PodDisruptionBudget holds back until the timeout, fails
-	// the call with FAILED_PRECONDITION; pods that did not stop in time, or whose evictions the API
-	// server kept failing, with DEADLINE_EXCEEDED.
+	// answers on bootstrapped control-plane nodes. Available in normal mode to operators, on images
+	// with the Kubernetes layer. An eviction refused for good, or one a PodDisruptionBudget holds
+	// back until the timeout, fails the call with FAILED_PRECONDITION; pods that did not stop in
+	// time, or whose evictions the API server kept failing, with DEADLINE_EXCEEDED.
 	DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error)
 	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
 	// a node cordoned otherwise as it is. It answers on bootstrapped control-plane nodes. Available
-	// in normal mode to operators.
+	// in normal mode to operators, on images with the Kubernetes layer.
 	UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error)
 	// RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
 	// kube-system/chalkos-revoked-nodes, applies the API server's admission policy
@@ -565,14 +573,16 @@ type NodeServiceHandler interface {
 	// time of its first revocation. A call that fails after listing the node says so; calling again
 	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
 	// map of revoked nodes would grow too long for the API server to compile with it. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins.
+	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+	// Kubernetes layer.
 	RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error)
 	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
 	// it, so a node of that name may join again. The old node's certificates work again too, unless
 	// the CAs they chain to were rotated after the revocation: the call is refused with
 	// FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
 	// that fails after removing the node says so; calling again applies the policy. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins.
+	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+	// Kubernetes layer.
 	UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error)
 }
 

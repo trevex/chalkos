@@ -23,7 +23,9 @@ The definition is `api/chalkos/node/v1/node.proto`, package `chalkos.node.v1`.
 NodeService is the API chalkd serves on each node. Each method's comment names the modes it is
 available in, maintenance mode, normal mode or both, and the least role a client certificate
 needs to call it: reader, operator or admin, where each role may call what the roles before it
-may. Only nodes call RenewNodeCertificate, with the node role.
+may. Only nodes call RenewNodeCertificate, with the node role. A method of a layer, such as the
+Kubernetes layer, says so; on an image without that layer it fails with UNIMPLEMENTED, before
+the mode and the role are checked.
 
 ### Info { #method-info }
 
@@ -303,7 +305,7 @@ No fields.
 Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
 chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
 is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
-normal mode to admins.
+normal mode to admins, on images with the Kubernetes layer.
 
 Request: BootstrapRequest. Response: BootstrapResponse.
 
@@ -324,7 +326,8 @@ The response of Bootstrap, once the add-ons are applied.
 ### EtcdMembers { #method-etcdmembers }
 
 EtcdMembers lists etcd's members as the node's own member sees them, with their health. It
-answers on control-plane nodes that are etcd members. Available in normal mode to readers.
+answers on control-plane nodes that are etcd members. Available in normal mode to readers, on
+images with the Kubernetes layer.
 
 Request: EtcdMembersRequest. Response: EtcdMembersResponse.
 
@@ -348,7 +351,8 @@ Field types: [EtcdMember](#message-etcdmember).
 
 EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
 have fewer healthy members than their quorum, unless forced, and for the node's own member,
-which EtcdLeave removes. Available in normal mode to admins.
+which EtcdLeave removes. Available in normal mode to admins, on images with the Kubernetes
+layer.
 
 Request: EtcdRemoveMemberRequest. Response: EtcdRemoveMemberResponse.
 
@@ -377,7 +381,7 @@ EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own memb
 still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
 unpins its addresses. The node joins the cluster again only once it is reinstalled. A
 bootstrapped node whose own member does not answer leaves only when forced. Available in
-normal mode to admins.
+normal mode to admins, on images with the Kubernetes layer.
 
 Request: EtcdLeaveRequest. Response: EtcdLeaveResponse.
 
@@ -422,7 +426,8 @@ The response of RenewNodeCertificate.
 ### RotationStep { #method-rotationstep }
 
 RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
-out; chalkctl rotate calls it. Available in normal mode to admins.
+out; chalkctl rotate calls it. Available in normal mode to admins, on images with the
+Kubernetes layer.
 
 Request: RotationStepRequest. Response: RotationStepResponse.
 
@@ -497,10 +502,10 @@ emptyDir volumes are evicted only when the request accepts losing that data. Pod
 terminate already, as those an earlier drain evicted, are not evicted again, but the call
 returns only once they and the pods it evicted have stopped. A node that was cordoned already
 stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. It
-answers on bootstrapped control-plane nodes. Available in normal mode to operators. An
-eviction refused for good, or one a PodDisruptionBudget holds back until the timeout, fails
-the call with FAILED_PRECONDITION; pods that did not stop in time, or whose evictions the API
-server kept failing, with DEADLINE_EXCEEDED.
+answers on bootstrapped control-plane nodes. Available in normal mode to operators, on images
+with the Kubernetes layer. An eviction refused for good, or one a PodDisruptionBudget holds
+back until the timeout, fails the call with FAILED_PRECONDITION; pods that did not stop in
+time, or whose evictions the API server kept failing, with DEADLINE_EXCEEDED.
 
 Request: DrainNodeRequest. Response: DrainNodeResponse.
 
@@ -529,7 +534,7 @@ The response of DrainNode: the pods evicted and the pods that stay.
 
 UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
 a node cordoned otherwise as it is. It answers on bootstrapped control-plane nodes. Available
-in normal mode to operators.
+in normal mode to operators, on images with the Kubernetes layer.
 
 Request: UncordonNodeRequest. Response: UncordonNodeResponse.
 
@@ -558,7 +563,8 @@ Control planes then refuse to renew its node certificate. A node revoked already
 time of its first revocation. A call that fails after listing the node says so; calling again
 finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
 map of revoked nodes would grow too long for the API server to compile with it. It answers on
-bootstrapped control-plane nodes. Available in normal mode to admins.
+bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+Kubernetes layer.
 
 Request: RevokeNodeRequest. Response: RevokeNodeResponse.
 
@@ -586,7 +592,8 @@ it, so a node of that name may join again. The old node's certificates work agai
 the CAs they chain to were rotated after the revocation: the call is refused with
 FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
 that fails after removing the node says so; calling again applies the policy. It answers on
-bootstrapped control-plane nodes. Available in normal mode to admins.
+bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+Kubernetes layer.
 
 Request: UnrevokeNodeRequest. Response: UnrevokeNodeResponse.
 

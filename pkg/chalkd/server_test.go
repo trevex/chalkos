@@ -322,24 +322,25 @@ const (
 	nodeCAAdmin = "admin organization from the node CA"
 )
 
-// deniedEverything is what a client without a role gets in normal mode.
+// deniedEverything is what a client without a role gets in normal mode; the RPCs of the
+// Kubernetes layer, which the test image lacks, are unimplemented before any role is checked.
 var deniedEverything = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Disks": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied,
 	"Logs": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied,
-	"ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "Bootstrap": connect.CodePermissionDenied,
-	"RenewNodeCertificate": connect.CodePermissionDenied, "RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied,
-	"DrainNode": connect.CodePermissionDenied, "UncordonNode": connect.CodePermissionDenied, "GetConfig": connect.CodePermissionDenied,
-	"RevokeNode": connect.CodePermissionDenied, "UnrevokeNode": connect.CodePermissionDenied,
+	"ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeUnimplemented,
+	"RenewNodeCertificate": connect.CodePermissionDenied, "RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied,
+	"DrainNode": connect.CodeUnimplemented, "UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied,
+	"RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented,
 }
 
 // nodeRole is what a node gets in normal mode: RenewNodeCertificate alone, which a node without
-// Kubernetes refuses after authorisation.
+// Kubernetes refuses after authorisation, and the unimplemented RPCs of the Kubernetes layer.
 var nodeRole = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied,
-	"ApplyConfig": connect.CodePermissionDenied, "EtcdMembers": connect.CodePermissionDenied, "RenewNodeCertificate": connect.CodeFailedPrecondition,
-	"RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodePermissionDenied,
-	"UncordonNode": connect.CodePermissionDenied, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodePermissionDenied,
-	"UnrevokeNode": connect.CodePermissionDenied,
+	"ApplyConfig": connect.CodePermissionDenied, "EtcdMembers": connect.CodeUnimplemented, "RenewNodeCertificate": connect.CodeFailedPrecondition,
+	"RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented,
+	"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented,
+	"UnrevokeNode": connect.CodeUnimplemented,
 }
 
 // clientWithOrganization issues a client certificate with the Organization given, bypassing the
@@ -490,23 +491,23 @@ func TestAuthorisation(t *testing.T) {
 		codes map[pki.Role]map[string]connect.Code
 	}{
 		{"normal", normal, true, map[pki.Role]map[string]connect.Code{
-			// The node has no Kubernetes: refusing EtcdMembers means the call got through.
+			// The test image has no Kubernetes layer, whose RPCs are unimplemented for every role.
 			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
-				"EtcdMembers": connect.CodeFailedPrecondition, "EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied,
-				"RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodePermissionDenied,
-				"UncordonNode": connect.CodePermissionDenied, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodePermissionDenied, "UnrevokeNode": connect.CodePermissionDenied},
+				"EtcdMembers": connect.CodeUnimplemented, "EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented,
+				"RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented,
+				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented},
 			// A request without a header is refused after authorisation, an upgrade with config for
 			// the role.
-			pki.RoleOperator: {"Reboot": 0, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Bootstrap": connect.CodePermissionDenied,
-				"EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied, "RotationStep": connect.CodePermissionDenied,
-				"Upgrade": connect.CodeInvalidArgument, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeFailedPrecondition, "UncordonNode": connect.CodeFailedPrecondition,
-				"GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodePermissionDenied, "UnrevokeNode": connect.CodePermissionDenied},
-			// An empty request and a reset without config are refused after authorisation, and the
-			// node has no Kubernetes; refusing them means the call got through.
-			pki.RoleAdmin: {"ApplyConfig": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeFailedPrecondition,
-				"EtcdRemoveMember": connect.CodeFailedPrecondition, "EtcdLeave": connect.CodeFailedPrecondition, "RenewNodeCertificate": connect.CodePermissionDenied,
-				"RotationStep": connect.CodeFailedPrecondition, "GetConfig": 0, "UpgradeWithConfig": connect.CodeInvalidArgument, "RevokeNode": connect.CodeFailedPrecondition,
-				"UnrevokeNode": connect.CodeFailedPrecondition},
+			pki.RoleOperator: {"Reboot": 0, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Bootstrap": connect.CodeUnimplemented,
+				"EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented, "RotationStep": connect.CodeUnimplemented,
+				"Upgrade": connect.CodeInvalidArgument, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented, "UncordonNode": connect.CodeUnimplemented,
+				"GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented},
+			// An empty request and a reset without config are refused after authorisation; refusing
+			// them means the call got through.
+			pki.RoleAdmin: {"ApplyConfig": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeUnimplemented,
+				"EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented, "RenewNodeCertificate": connect.CodePermissionDenied,
+				"RotationStep": connect.CodeUnimplemented, "GetConfig": 0, "UpgradeWithConfig": connect.CodeInvalidArgument, "RevokeNode": connect.CodeUnimplemented,
+				"UnrevokeNode": connect.CodeUnimplemented},
 			// A certificate of the OS CA without a role's Organization grants nothing.
 			unknownOrganization: deniedEverything,
 			noOrganization:      deniedEverything,
@@ -515,10 +516,10 @@ func TestAuthorisation(t *testing.T) {
 			pki.RoleNode: nodeRole,
 		}},
 		{"maintenance with OS CA", maintenance, true, map[pki.Role]map[string]connect.Code{
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeFailedPrecondition},
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeUnimplemented},
 			// A header without a target is refused after authorisation.
-			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyConfig": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeFailedPrecondition, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeFailedPrecondition,
-				"UncordonNode": connect.CodeFailedPrecondition, "GetConfig": connect.CodeFailedPrecondition, "RevokeNode": connect.CodeFailedPrecondition, "UnrevokeNode": connect.CodeFailedPrecondition},
+			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyConfig": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeUnimplemented, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeUnimplemented,
+				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodeFailedPrecondition, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented},
 			unknownOrganization: {"Info": connect.CodePermissionDenied, "Install": connect.CodePermissionDenied},
 		}},
 		{"maintenance on a generic image", maintenance, false, map[pki.Role]map[string]connect.Code{
@@ -725,13 +726,13 @@ func TestEveryProcedureHasPermissions(t *testing.T) {
 }
 
 // TestRPCCommentsNamePermissions holds each RPC's comment in node.proto, which the API reference
-// shows, to the modes and role the permissions table gives the RPC.
+// shows, to the modes, role and layer the permissions table gives the RPC.
 func TestRPCCommentsNamePermissions(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "api", "chalkos", "node", "v1", "node.proto"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	available := regexp.MustCompile(`Available in (maintenance and normal|maintenance|normal) mode to (readers|operators|admins|nodes)\.`)
+	available := regexp.MustCompile(`Available in (maintenance and normal|maintenance|normal) mode to (readers|operators|admins|nodes)(?:, on images with the (\w+) layer)?\.`)
 	rpc := regexp.MustCompile(`^rpc (\w+)\(`)
 	modes := map[string][]nodev1.Mode{"maintenance and normal": anyMode, "maintenance": maintenanceOnly, "normal": normalOnly}
 	roles := map[string]pki.Role{"readers": pki.RoleReader, "operators": pki.RoleOperator, "admins": pki.RoleAdmin, "nodes": pki.RoleNode}
@@ -750,8 +751,8 @@ func TestRPCCommentsNamePermissions(t *testing.T) {
 			p := permissions[procedure]
 			if a == nil {
 				t.Errorf("the comment of %s names no modes and role", m[1])
-			} else if !slices.Equal(modes[a[1]], p.modes) || roles[a[2]] != p.role {
-				t.Errorf("the comment of %s says %q, the permissions are %v to %s", m[1], a[0], p.modes, p.role)
+			} else if !slices.Equal(modes[a[1]], p.modes) || roles[a[2]] != p.role || strings.ToLower(a[3]) != p.layer {
+				t.Errorf("the comment of %s says %q, the permissions are %v to %s of the layer %q", m[1], a[0], p.modes, p.role, p.layer)
 			}
 		}
 		comment = nil

@@ -38,6 +38,7 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
@@ -56,6 +57,7 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *tooltest
 func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 	t.Helper()
 	root := t.TempDir()
+	s.Layers = layers.Of(layers.Kubernetes)
 	s.Kubernetes = NewKubernetes(KubernetesOptions{
 		Paths: knode.Paths{
 			State:      filepath.Join(s.Paths.StateDir, "kubernetes"),
