@@ -380,13 +380,7 @@ func (c *frr) policyOfFamily(policy, f string) error {
 // name, globs matching the links the Network documents name.
 func (c *frr) peerNeighbours(p named[peerSpec]) ([]neighbour, error) {
 	s := p.Spec
-	given := 0
-	for _, set := range []bool{s.Address != nil, s.Interface != nil, s.Interfaces != nil} {
-		if set {
-			given++
-		}
-	}
-	if given != 1 {
+	if !s.namesOneNeighbour() {
 		return nil, fmt.Errorf("it names not exactly one of address, interface and interfaces")
 	}
 	if s.RemoteAS == "" {
@@ -421,9 +415,9 @@ func (c *frr) peerNeighbours(p named[peerSpec]) ([]neighbour, error) {
 	}
 	switch {
 	case s.Address != nil:
-		a, err := netip.ParseAddr(*s.Address)
-		if err != nil || a.Zone() != "" || a.IsUnspecified() || a.IsMulticast() || a.IsLinkLocalUnicast() || a.IsLoopback() || a.Is4In6() {
-			return nil, fmt.Errorf("address %q is no neighbour address: an IPv4 or IPv6 unicast address beyond the router, neither link-local nor IPv4-mapped; a neighbour on a link takes interface or interfaces", *s.Address)
+		a, err := neighbourAddress(*s.Address)
+		if err != nil {
+			return nil, err
 		}
 		// An IPv6 session carries IPv4 routes with IPv6 next hops alone.
 		if a.Is6() && s.Families.IPv4 != nil && !s.ExtendedNextHop {
@@ -452,6 +446,27 @@ func (c *frr) peerNeighbours(p named[peerSpec]) ([]neighbour, error) {
 		}
 	}
 	return ns, nil
+}
+
+// namesOneNeighbour reports whether the peer names exactly one of address, interface and
+// interfaces.
+func (s peerSpec) namesOneNeighbour() bool {
+	given := 0
+	for _, set := range []bool{s.Address != nil, s.Interface != nil, s.Interfaces != nil} {
+		if set {
+			given++
+		}
+	}
+	return given == 1
+}
+
+// neighbourAddress parses a peer's address, which is a unicast address beyond the router.
+func neighbourAddress(s string) (netip.Addr, error) {
+	a, err := netip.ParseAddr(s)
+	if err != nil || a.Zone() != "" || a.IsUnspecified() || a.IsMulticast() || a.IsLinkLocalUnicast() || a.IsLoopback() || a.Is4In6() {
+		return netip.Addr{}, fmt.Errorf("address %q is no neighbour address: an IPv4 or IPv6 unicast address beyond the router, neither link-local nor IPv4-mapped; a neighbour on a link takes interface or interfaces", s)
+	}
+	return a, nil
 }
 
 // linkNeighbour refuses an interface whose name is an address: bgpd names a session on a link

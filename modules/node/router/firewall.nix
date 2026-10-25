@@ -89,6 +89,7 @@ in
         "FirewallPolicy"
         "AddressSet"
         "NATRule"
+        "BGPPeer"
       ];
       render = "${render} router-nftables ${chalkdPort}";
       # nft checks a ruleset with the kernel, which takes CAP_NET_ADMIN; the check has it in a

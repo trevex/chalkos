@@ -33,6 +33,9 @@ table inet chalkos {
 		icmp type { destination-unreachable, time-exceeded, parameter-problem, echo-request } accept
 		ip6 daddr fe80::/64 udp sport 547 udp dport 546 accept
 		iifname { "eth0" } tcp dport 50000 accept
+		iifname { "eth1", "eth2" } tcp dport { 179 } accept comment "BGPPeer fabric"
+		iifname { "eth1", "eth2" } udp dport { 3784, 3785, 4784 } accept comment "BGPPeer fabric"
+		ip saddr { 203.0.113.254/32 } tcp dport { 179 } accept comment "BGPPeer transit"
 		iifname { "eth0" } jump policy-wan-local
 	}
 	chain forward {

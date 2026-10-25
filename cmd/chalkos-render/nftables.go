@@ -28,6 +28,9 @@ func renderRouterNftables(port string, closed bool, in map[string]any, out strin
 	if err != nil {
 		return err
 	}
+	if fw.openings, err = bgpOpenings(d.Peers); err != nil {
+		return err
+	}
 	text, err := fw.ruleset()
 	if err != nil {
 		return err
@@ -44,6 +47,48 @@ type opening struct {
 	ports      []portRange
 	interfaces []string
 	sources    []string
+}
+
+// bgpOpenings are the ports of each BGPPeer, on its interfaces or from its address alone: BGP's
+// TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of single-hop and 4784 of multi-hop
+// sessions.
+func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
+	var out []opening
+	for _, p := range peers {
+		what := "BGPPeer " + p.Name
+		o := opening{comment: what}
+		s := p.Spec
+		if !s.namesOneNeighbour() {
+			return nil, fmt.Errorf("%s names not exactly one of address, interface and interfaces", what)
+		}
+		switch {
+		case s.Address != nil:
+			a, err := neighbourAddress(*s.Address)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", what, err)
+			}
+			o.sources = []string{netip.PrefixFrom(a, a.BitLen()).String()}
+		case s.Interface != nil:
+			o.interfaces = []string{*s.Interface}
+		default:
+			o.interfaces = s.Interfaces
+		}
+		// An opening without interfaces and sources would accept the port from anywhere.
+		if s.Address == nil {
+			if err := checkInterfaces(what, o.interfaces); err != nil {
+				return nil, err
+			}
+		}
+		bgp := o
+		bgp.protocol, bgp.ports = "tcp", []portRange{"179"}
+		out = append(out, bgp)
+		if s.BFD {
+			bfd := o
+			bfd.protocol, bfd.ports = "udp", []portRange{"3784", "3785", "4784"}
+			out = append(out, bfd)
+		}
+	}
+	return out, nil
 }
 
 // firewall is what the ruleset is rendered from.
