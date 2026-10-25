@@ -17,6 +17,8 @@ let
     ../api/chalkos/node/v1/node.proto
     # The lab template's YAML, which a chalklab test reads.
     (lib.fileset.fileFilter (f: f.hasExt "yaml") ../templates/lab)
+    # The router outputs' examples, which chalkos-render's golden test renders.
+    ../modules/node/examples/router
   ];
 in
 {

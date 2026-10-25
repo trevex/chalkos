@@ -1,0 +1,8 @@
+# A pure routing role: no firewall documents, no reverse-path filter, and the node API on the
+# management interface alone.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Router
+metadata: {name: router}
+spec:
+  rpFilter: "off"
+  management: {interfaces: [mgmt0]}

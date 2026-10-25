@@ -1,0 +1,61 @@
+# A LAN router: the LAN reaches the WAN, masqueraded in IPv4, the WAN reaches a server on the LAN
+# through a destination NAT, and the router itself answers the node API on the LAN alone and
+# port 8080 to a trusted WAN host. The namespace check router-firewall probes this ruleset.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Router
+metadata: {name: router}
+spec:
+  rpFilter: strict
+  ecmpHash: l3
+  management: {interfaces: [lan0]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: lan}
+spec: {interfaces: [lan0, "vlan*"]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: wan}
+spec: {interfaces: [wan0]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: AddressSet
+metadata: {name: trusted}
+spec: {family: ipv6, prefixes: ["2001:db8:2::2/128"]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: lan-local}
+spec: {from: lan, to: local}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: wan-local}
+spec:
+  from: wan
+  to: local
+  rules:
+    - {protocol: tcp, destinationPorts: [8080], source: ["set:trusted"], action: accept}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: lan-wan}
+spec: {from: lan, to: wan, default: accept}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NATRule
+metadata: {name: masquerade}
+spec:
+  type: masquerade
+  out: {zone: wan}
+  match: {source: [192.0.2.0/24]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NATRule
+metadata: {name: web}
+spec:
+  type: dnat
+  in: {zone: wan}
+  match: {protocol: tcp, destinationPorts: [8081]}
+  to: {address: 192.0.2.2, port: 80}

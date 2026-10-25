@@ -1,0 +1,6 @@
+# No router document: the router forwards both families and its firewall accepts what it
+# forwards, chalkd's port on every interface and the protected traffic.
+apiVersion: chalkos.dev/v1alpha1
+kind: Host
+metadata: {name: host}
+spec: {hostname: r1}

@@ -1,0 +1,55 @@
+# A fabric edge: the node API from the WAN, SSH from an office's set, forwarding from the fabric
+# to the WAN, masquerade out of the WAN and a web server behind a destination NAT.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Router
+metadata: {name: router}
+spec:
+  conntrackMax: 262144
+  management: {interfaces: [eth0]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: wan}
+spec: {interfaces: [eth0]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: fabric}
+spec: {interfaces: [eth1, eth2]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: AddressSet
+metadata: {name: office}
+spec:
+  family: ipv6
+  prefixes: ["2001:db8:1::/48", "2001:db8:1:2::/64"]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: wan-local}
+spec:
+  from: wan
+  to: local
+  rules:
+    - {protocol: tcp, destinationPorts: [22], source: ["set:office"], action: accept, log: true}
+    - {protocol: udp, sourcePorts: [123], destinationPorts: ["1024-65535"], action: accept}
+    - {source: ["192.0.2.0/24", "2001:db8:ffff::/48"], action: reject}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: fabric-wan}
+spec: {from: fabric, to: wan, default: accept}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NATRule
+metadata: {name: wan}
+spec: {type: masquerade, out: {zone: wan}}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NATRule
+metadata: {name: web}
+spec:
+  type: dnat
+  in: {interface: eth0}
+  match: {destination: ["203.0.113.1/32"], protocol: tcp, destinationPorts: [80, 443]}
+  to: {address: 192.0.2.10}
