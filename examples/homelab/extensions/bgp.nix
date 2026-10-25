@@ -1,8 +1,9 @@
 # BGP sessions with bird, the running example of the image guides. The Peer kind holds a node's
-# neighbours, the output bird-conf renders bird's config from them, and bird reloads when that
-# config changes. A Peer's password comes from a Secret: bird gets it as a credential, and the
-# rendered config names the credential, never the value. A variant that carries this module
-# accepts Peer documents. The comments # --8<-- mark the sections the guides include.
+# neighbours, the output bird-conf renders bird's config from them, bird reloads when that config
+# changes, and the diagnostic bird-protocols shows bird's sessions. A Peer's password comes from a
+# Secret: bird gets it as a credential, and the rendered config names the credential, never the
+# value. A variant that carries this module accepts Peer documents. The comments # --8<-- mark
+# the sections the guides include.
 {
   config,
   lib,
@@ -133,4 +134,29 @@ in
   # bird reads its config again on birdc configure, which keeps the sessions a restart would drop.
   chalkos.effects.bird = lib.chalkos.reloadOn { outputs = [ "bird-conf" ]; } [ "bird.service" ];
   # --8<-- [end:effect]
+
+  # --8<-- [start:diagnostic]
+  # chalkctl node diag <node> bird-protocols shows bird's sessions. birdc -r asks bird read-only,
+  # on bird's socket, which bird makes writable for its group. bird names each protocol after its
+  # Peer, in quotes, as a name with a hyphen needs them.
+  chalkos.diagnostics.bird-protocols = {
+    description = "The protocols bird runs and the state of their BGP sessions.";
+    command = [
+      "${bird}/bin/birdc"
+      "-r"
+      "show"
+      "protocols"
+      "'{peer}'"
+    ];
+    parameters.peer = {
+      type = "pattern";
+      regex = "^[a-z0-9][a-z0-9.-]*$";
+      optional = true;
+      description = "Name of a Peer document, whose session alone is shown; every protocol when left out.";
+    };
+    role = "reader";
+    timeout = "10s";
+    groups = [ "bird" ];
+  };
+  # --8<-- [end:diagnostic]
 }
