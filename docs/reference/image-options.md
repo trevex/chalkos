@@ -145,8 +145,9 @@ Whether an image carries the router layer, and whether its node forwards packets
 Type: boolean · Default: `false` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
 
 Whether the image carries the router layer, which forwards IPv4 and IPv6 packets between
-the node's interfaces. An image carries the Kubernetes layer or the router layer, not both.
-mkImages sets it from the variant's `router`; the installer carries no layer.
+the node's interfaces and accepts the kinds of `router.chalkos.dev`. An image carries the
+Kubernetes layer or the router layer, not both. mkImages sets it from the variant's
+`router`; the installer carries no layer.
 
 ### `chalkos.forwarding.enable` { #chalkosforwardingenable }
 

@@ -10,6 +10,16 @@ let
   chalkPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
   # The Kubernetes test image, whose units the unit checks run.
   worker = testing.nixos.k8s-kvm;
+  # A router image, evaluated alone, whose rules, outputs and kernel modules the rules check
+  # checks.
+  router =
+    (self.lib.mkImages {
+      platforms = [ "metal" ];
+      variants.router = {
+        kubernetes = false;
+        router = true;
+      };
+    }).nixos.router-metal;
 
   # Runs the script as root of user and network namespaces of its own. In there:
   # - run/ and var/ of the build directory are /run and /var;
@@ -31,6 +41,7 @@ in
 {
   inherit
     chalkPkgs
+    router
     testing
     worker
     ;

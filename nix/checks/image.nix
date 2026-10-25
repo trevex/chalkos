@@ -260,7 +260,8 @@ in
   # an effect on a unit the image lacks, a diagnostic whose regex does not compile and an output
   # whose check refuses an example fail the check of their image. The homelab's Hardware output
   # renders hardware-examples/server.yaml, and its bird-conf output renders
-  # bgp-examples/two-peers.yaml, which bird -p parses.
+  # bgp-examples/two-peers.yaml, which bird -p parses. A router image checks its rules, renders its
+  # router examples and holds nf_conntrack, and its firewall check refuses what the kernel would.
   rules =
     let
       build =
@@ -271,6 +272,11 @@ in
         ../../examples/homelab/extensions/hardware.nix
         ../../examples/homelab/extensions/bgp.nix
       ];
+      router = checkLib.router.config.system.build;
+      # The router image loads nf_conntrack, which its module tree must hold.
+      routerModules = lib.findFirst (
+        d: d.name == "kernel-modules-check"
+      ) (throw "the router image runs no kernel-modules-check") checkLib.router.config.system.checks;
       demo = rule: {
         chalkos.kinds.Demo = {
           group = "demo.example.org";
@@ -359,6 +365,8 @@ in
         checked = [
           testing.nixos.test-metal.config.system.build.chalkosRulesCheck
           homelab.chalkosRulesCheck
+          router.chalkosRulesCheck
+          routerModules
         ];
       }
       ''
@@ -394,6 +402,17 @@ in
             exit 1
           fi
         done
+        # The check of the router's firewall passes the LAN example's ruleset and refuses one the
+        # kernel would not load, with nft in a user and network namespace of its own.
+        check=$(jq -r '."router-nftables".check' ${router.chalkosOutputs})
+        mkdir nftables
+        install -m 644 ${../../cmd/chalkos-render/testdata/router/lan.nft} nftables/ruleset.nft
+        OUT=$PWD/nftables $check </dev/null
+        printf 'table inet chalkos {\n  chain input {\n    iif "nosuchif0" accept\n  }\n}\n' >nftables/ruleset.nft
+        if OUT=$PWD/nftables $check </dev/null 2>err; then
+          echo "error: the router's check accepted a ruleset the kernel refuses" >&2
+          exit 1
+        fi
         touch $out
       '';
 

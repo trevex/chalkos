@@ -180,6 +180,70 @@ lib.runTests {
       edge = false;
     };
   };
+  # On a router image the router layer owns the firewall: NixOS's firewall and nftables service are
+  # off, chalkos-firewall loads the table after chalkos-config renders it and before the network
+  # comes up, the outputs router-sysctl and router-nftables render the router kinds, and their
+  # effects restart systemd-sysctl, which waits for the rendered file, and reload the firewall.
+  # Other images keep NixOS's firewall.
+  testRouterFirewall = {
+    expr =
+      let
+        of = c: {
+          firewall = c.networking.firewall.enable;
+          nftables = c.networking.nftables.enable;
+          unit = c.systemd.services ? chalkos-firewall;
+          outputs = lib.filter (lib.hasPrefix "router-") (lib.attrNames c.chalkos.outputs);
+        };
+        edge = layered.edge-metal.config;
+        unit = edge.systemd.services.chalkos-firewall;
+      in
+      {
+        edge = of edge;
+        plain = of layered.plain-metal.config;
+        node = of layered.node-metal.config;
+        after = lib.elem "chalkos-config.service" unit.after;
+        before = lib.elem "network-pre.target" unit.before;
+        sysctlDir = edge.chalkos.outputs.router-sysctl.dir;
+        sysctlAfter = edge.systemd.services.systemd-sysctl.after;
+        effects = {
+          inherit (edge.chalkos.effects.router-sysctl) restart;
+          inherit (edge.chalkos.effects.router-nftables) reload;
+        };
+        conntrack = lib.elem "nf_conntrack" edge.boot.kernelModules;
+      };
+    expected = {
+      edge = {
+        firewall = false;
+        nftables = false;
+        unit = true;
+        outputs = [
+          "router-nftables"
+          "router-sysctl"
+        ];
+      };
+      plain = {
+        firewall = true;
+        nftables = true;
+        unit = false;
+        outputs = [ ];
+      };
+      node = {
+        firewall = true;
+        nftables = true;
+        unit = false;
+        outputs = [ ];
+      };
+      after = true;
+      before = true;
+      sysctlDir = "/run/sysctl.d";
+      sysctlAfter = [ "chalkos-config.service" ];
+      effects = {
+        restart = [ "systemd-sysctl.service" ];
+        reload = [ "chalkos-firewall.service" ];
+      };
+      conntrack = true;
+    };
+  };
   # Forwarding belongs to the base: both layers turn it on, an image of the base alone forwards
   # only when its modules ask for it.
   testForwarding = {
