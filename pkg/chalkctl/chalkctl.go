@@ -58,8 +58,8 @@ func newCommand(a *app) *cobra.Command {
 
 	gen := cli.Group(&cobra.Command{Use: "gen", Short: "Generate files of a cluster", Long: genLong, Example: genExample})
 	gen.AddCommand(a.genSecretsCommand())
-	node := cli.Group(&cobra.Command{Use: "node", Short: "Manage a node's certificate", Long: nodeLong, Example: nodeExample})
-	node.AddCommand(a.nodeRenewCommand(), a.nodeRevokeCommand(), a.nodeUnrevokeCommand())
+	node := cli.Group(&cobra.Command{Use: "node", Short: "Manage a node's access and run its diagnostics", Long: nodeLong, Example: nodeExample})
+	node.AddCommand(a.nodeRenewCommand(), a.nodeRevokeCommand(), a.nodeUnrevokeCommand(), a.nodeDiagCommand())
 	nodeCA := cli.Group(&cobra.Command{Use: "node-ca", Short: "Manage the node CA", Long: nodeCALong, Example: nodeCAExample})
 	nodeCA.AddCommand(a.nodeCARotateCommand())
 	config := cli.Group(&cobra.Command{Use: "config", Short: "Manage client files", Long: configLong, Example: configExample})

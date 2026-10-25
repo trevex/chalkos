@@ -25,6 +25,8 @@ func TestExecuteUsageErrors(t *testing.T) {
 		// Leaves: wrong positional arguments, unknown flags, required flags not set and flags
 		// that do not go together.
 		{"status"}, {"status", "a", "b"}, {"etcd", "members", "x"}, {"node", "revoke"},
+		{"node", "diag"}, {"node", "diag", "n1", "ping", "address"}, {"node", "diag", "n1", "ping", "=1"},
+		{"node", "diag", "n1", "ping", "count=1", "count=2"},
 		{"gen", "secrets", "--plaintext", "extra"}, {"gen", "secrets"},
 		{"status", "--bogus"}, {"status", "n1", "--bogus"},
 		{"config", "new"}, {"config", "new", "--name", "ada"},

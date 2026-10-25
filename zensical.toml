@@ -112,6 +112,7 @@ nav = [
         { "logs" = "reference/cli/chalkctl_logs.md" },
         { "node" = [
           { "Overview" = "reference/cli/chalkctl_node.md" },
+          { "diag" = "reference/cli/chalkctl_node_diag.md" },
           { "renew" = "reference/cli/chalkctl_node_renew.md" },
           { "revoke" = "reference/cli/chalkctl_node_revoke.md" },
           { "unrevoke" = "reference/cli/chalkctl_node_unrevoke.md" },

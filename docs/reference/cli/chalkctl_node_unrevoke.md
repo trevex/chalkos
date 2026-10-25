@@ -48,4 +48,4 @@ chalkctl reboot w1
 
 ## See also
 
-- [chalkctl node](chalkctl_node.md): Manage a node's certificate
+- [chalkctl node](chalkctl_node.md): Manage a node's access and run its diagnostics

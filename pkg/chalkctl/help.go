@@ -51,12 +51,36 @@ const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
   chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
     --out - --public-out secrets.pub.json | pass insert --multiline chalkos/secrets`
 
-const nodeLong = `Manages a node's access to the cluster: renews its node certificate, and revokes and unrevokes
-it by name. node renew needs the secrets file; node revoke and node unrevoke need an admin client
-file or the secrets file.`
+const nodeLong = `Manages a node's access to the cluster and runs its diagnostics: renews its node certificate,
+revokes and unrevokes it by name, and lists and runs the diagnostics its image declares. node renew
+needs the secrets file; node revoke and node unrevoke need an admin client file or the secrets
+file; node diag needs a reader client file or the secrets file.`
 
 const nodeExample = `  chalkctl node renew w1
-  chalkctl node revoke w1`
+  chalkctl node revoke w1
+  chalkctl node diag w1 route-get address=2001:db8::1`
+
+const nodeDiagLong = `Lists the diagnostics a node's image declares, or runs one. A diagnostic is a read-only command of
+the image, such as ip route get, that chalkd runs on the node in a sandbox of its own. Without a
+diagnostic, the command lists each one's role and description, and below it each parameter: in
+brackets when it may be left out. With one, it passes the parameters given as
+<parameter>=<value>, which the node checks against their types, and prints what the command
+prints on standard output and standard error. It fails when the command fails, runs longer than
+its timeout or prints more than 1 MiB.
+
+Every image declares addresses, links, routes, route-get, neighbours, ping, dns-query,
+tcp-connect and nft-ruleset; layers and extensions add more. Listing needs a reader client file
+or the secrets file, and running a diagnostic the role it lists. A node in maintenance mode is
+reached with --fingerprint or --insecure as well.`
+
+const nodeDiagExample = `  # List w1's diagnostics.
+  chalkctl node diag w1
+
+  # The route w1 takes to an address.
+  chalkctl node diag w1 route-get address=2001:db8::1
+
+  # Whether w1 reaches a registry's port.
+  chalkctl node diag w1 tcp-connect address=2001:db8::5000 port=443`
 
 const nodeRenewLong = `Issues the node a new node certificate and key from the node CA and delivers them, also once the
 node's own certificate expired. Such a node is verified by the OS CA as of its certificate's
