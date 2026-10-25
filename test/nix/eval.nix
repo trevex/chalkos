@@ -2066,4 +2066,122 @@ lib.runTests {
         same = true;
       };
     };
+  # Every image declares the base diagnostics, the installer among them, each running a program of
+  # the store. Readers run those that read the node's state; ping, dns-query and tcp-connect send
+  # traffic and nft-ruleset shows the firewall, so they need an operator, and ping and nft-ruleset
+  # alone get a capability. ip is the ip-only build, which leaves iproute2's other tools and arpd's
+  # Berkeley DB out of the images.
+  testBaseDiagnostics =
+    let
+      read =
+        c:
+        builtins.fromJSON (
+          builtins.unsafeDiscardStringContext c.environment.etc."chalkos/diagnostics.json".text
+        );
+      node = read (worker [ ]);
+      installer = read (mkImages { }).nixos.installer.config;
+      names = [
+        "addresses"
+        "dns-query"
+        "links"
+        "neighbours"
+        "nft-ruleset"
+        "ping"
+        "route-get"
+        "routes"
+        "tcp-connect"
+      ];
+    in
+    {
+      expr = {
+        names = lib.attrNames node;
+        installer = lib.attrNames installer;
+        inStore = lib.all (d: lib.hasPrefix "/nix/store/" (lib.head d.command)) (lib.attrValues node);
+        ip = lib.hasSuffix "-iproute2-ip-${pkgs.iproute2.version}/bin/ip" (lib.head node.route-get.command);
+        roles = lib.mapAttrs (_: d: d.role) node;
+        capabilities = lib.filterAttrs (_: c: c != [ ]) (lib.mapAttrs (_: d: d.capabilities) node);
+        routeGet = node.route-get // {
+          command = lib.tail node.route-get.command;
+        };
+        routes = lib.tail node.routes.command;
+        ping = lib.tail node.ping.command;
+        dnsQuery = lib.tail node.dns-query.command;
+        tcpConnect = lib.drop 2 node.tcp-connect.command;
+      };
+      expected = {
+        inherit names;
+        installer = names;
+        inStore = true;
+        ip = true;
+        roles = {
+          addresses = "reader";
+          dns-query = "operator";
+          links = "reader";
+          neighbours = "reader";
+          nft-ruleset = "operator";
+          ping = "operator";
+          route-get = "reader";
+          routes = "reader";
+          tcp-connect = "operator";
+        };
+        capabilities = {
+          nft-ruleset = [ "CAP_NET_ADMIN" ];
+          ping = [ "CAP_NET_RAW" ];
+        };
+        routeGet = {
+          description = "The route the kernel takes to an address.";
+          command = [
+            "-json"
+            "route"
+            "get"
+            "{address}"
+          ];
+          parameters.address = {
+            type = "address";
+            description = "IPv4 or IPv6 address.";
+            optional = false;
+            default = "";
+            min = null;
+            max = null;
+            values = [ ];
+            regex = "";
+          };
+          role = "reader";
+          timeout = "10s";
+          capabilities = [ ];
+          groups = [ ];
+        };
+        routes = [
+          "-json"
+          "-family"
+          "{family}"
+          "route"
+          "show"
+          "table"
+          "{table}"
+        ];
+        ping = [
+          "-n"
+          "-w"
+          "10"
+          "-c"
+          "{count}"
+          "{address}"
+        ];
+        dnsQuery = [
+          "{name}"
+          "{type}"
+          "@{server}"
+        ];
+        # After timeout's own program and its time: bash, its script, $0 and the arguments.
+        tcpConnect = [
+          "${pkgs.bash}/bin/bash"
+          "-c"
+          '': <>"/dev/tcp/$1/$2" && echo "connected to $1 port $2"''
+          "tcp-connect"
+          "{address}"
+          "{port}"
+        ];
+      };
+    };
 }
