@@ -29,9 +29,6 @@ type controlPlaneNode struct {
 
 // controlPlane checks that the node is a control plane and reads its cluster, name and share.
 func (k *Kubernetes) controlPlane() (controlPlaneNode, error) {
-	if k == nil {
-		return controlPlaneNode{}, failed(connect.CodeFailedPrecondition, "the node's image has no Kubernetes")
-	}
 	c, err := k8s.ReadCluster(k.Paths.Cluster)
 	if err != nil {
 		return controlPlaneNode{}, failed(connect.CodeInternal, "%v", err)

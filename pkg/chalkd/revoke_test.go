@@ -145,14 +145,12 @@ func TestRevokeNode(t *testing.T) {
 func TestRevokeNodeOnControlPlanesOnly(t *testing.T) {
 	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
 	unbootstrapped, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	plain, _ := installedServer(t, section("", ""), false)
 	for name, tc := range map[string]struct {
 		s    *Server
 		want string
 	}{
 		"a worker":                  {worker, "ask a control-plane node"},
 		"an unbootstrapped control": {unbootstrapped, "not an etcd member"},
-		"a node without Kubernetes": {plain, "chalkctl rotate os-ca"},
 	} {
 		_, err := tc.s.RevokeNode(context.Background(), connect.NewRequest(&nodev1.RevokeNodeRequest{Node: "w1"}))
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {

@@ -412,8 +412,7 @@ func TestEtcdLeaveRefusedWithoutQuorum(t *testing.T) {
 func TestEtcdNeedsMember(t *testing.T) {
 	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
 	waiting, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	plain, _ := installedServer(t, section("", ""), false)
-	for name, s := range map[string]*Server{"worker": worker, "not bootstrapped": waiting, "no Kubernetes": plain} {
+	for name, s := range map[string]*Server{"worker": worker, "not bootstrapped": waiting} {
 		_, err := s.EtcdMembers(context.Background(), connect.NewRequest(&nodev1.EtcdMembersRequest{}))
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("members on %s: %v", name, err)

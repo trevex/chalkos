@@ -159,10 +159,6 @@ func (s *Server) notRevoked(ctx context.Context, name string) error {
 // revokedClient reaches the API server of a bootstrapped control-plane node, which keeps the
 // revoked nodes, and returns the node's share.
 func (k *Kubernetes) revokedClient() (kubernetes.Interface, kpki.Share, error) {
-	if k == nil {
-		return nil, kpki.Share{}, failed(connect.CodeFailedPrecondition, "the node's image has no Kubernetes, so the node keeps no revoked nodes; "+
-			"a node without Kubernetes is revoked by not renewing its node certificate, and chalkctl rotate os-ca cuts it off at once")
-	}
 	cs, cp, err := k.apiClient(k.etcdMember)
 	return cs, cp.share, err
 }

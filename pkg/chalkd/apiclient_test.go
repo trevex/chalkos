@@ -89,11 +89,3 @@ func TestAPIClientRenewsAtHalfLife(t *testing.T) {
 			old.cred.issued, old.cred.closed, k.api.cred.issued)
 	}
 }
-
-// TestAPIClientWithoutKubernetes refuses on a node whose image has no Kubernetes.
-func TestAPIClientWithoutKubernetes(t *testing.T) {
-	var k *Kubernetes
-	if _, _, err := k.apiClient(k.controlPlane); err == nil {
-		t.Error("reached an API server without Kubernetes")
-	}
-}

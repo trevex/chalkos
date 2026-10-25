@@ -14,9 +14,6 @@ import (
 
 func (s *Server) Bootstrap(ctx context.Context, _ *connect.Request[nodev1.BootstrapRequest]) (*connect.Response[nodev1.BootstrapResponse], error) {
 	k := s.Kubernetes
-	if k == nil {
-		return nil, failed(connect.CodeFailedPrecondition, "the node's image has no Kubernetes")
-	}
 	c, err := k8s.ReadCluster(k.Paths.Cluster)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)

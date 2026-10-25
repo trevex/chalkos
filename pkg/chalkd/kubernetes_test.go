@@ -217,7 +217,6 @@ func TestBootstrap(t *testing.T) {
 }
 
 func TestBootstrapRefusals(t *testing.T) {
-	plain, _ := installedServer(t, section("", ""), false)
 	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
 	noShare, _ := kubernetesServer(t, k8s.KindControlPlane, false)
 	etcdData, _ := kubernetesServer(t, k8s.KindControlPlane, true)
@@ -238,7 +237,6 @@ func TestBootstrapRefusals(t *testing.T) {
 		s    *Server
 		want string
 	}{
-		"no Kubernetes":         {plain, "the node's image has no Kubernetes"},
 		"worker":                {worker, "is a worker"},
 		"no share":              {noShare, "no Kubernetes share"},
 		"etcd with data":        {etcdData, "holds etcd data"},
