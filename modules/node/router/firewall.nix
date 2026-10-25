@@ -42,6 +42,31 @@ in
     # would load nothing.
     networking.firewall.enable = false;
     networking.nftables.enable = lib.mkForce false;
+    # What modules ask of NixOS's firewall reaches no rule, besides chalkd's port, which the
+    # table accepts on the management interfaces.
+    warnings =
+      let
+        fw = config.networking.firewall;
+        ports =
+          p:
+          p.allowedTCPPorts != [ ]
+          || p.allowedUDPPorts != [ ]
+          || p.allowedTCPPortRanges != [ ]
+          || p.allowedUDPPortRanges != [ ];
+        ignored =
+          lib.optional (lib.remove (lib.toInt chalkdPort) fw.allowedTCPPorts != [ ]) "allowedTCPPorts"
+          ++ lib.optional (fw.allowedUDPPorts != [ ]) "allowedUDPPorts"
+          ++ lib.optional (fw.allowedTCPPortRanges != [ ]) "allowedTCPPortRanges"
+          ++ lib.optional (fw.allowedUDPPortRanges != [ ]) "allowedUDPPortRanges"
+          ++ lib.optional (fw.extraInputRules != "") "extraInputRules"
+          ++ lib.optional (fw.extraForwardRules != "") "extraForwardRules"
+          ++ lib.optional (fw.trustedInterfaces != [ ]) "trustedInterfaces"
+          ++ lib.mapAttrsToList (name: _: "interfaces.${name}") (lib.filterAttrs (_: ports) fw.interfaces);
+      in
+      lib.optional (ignored != [ ])
+        "the router layer filters with the table its router documents render and ignores ${
+          lib.concatMapStringsSep ", " (o: "networking.firewall.${o}") ignored
+        }; accept a port with a FirewallPolicy to local";
     # The modules of what the rulesets use: conntrack, fib, NAT, reject and log. The kernel would
     # load them on demand too; naming them makes the image's module check prove it holds them.
     boot.kernelModules = [

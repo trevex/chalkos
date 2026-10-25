@@ -258,6 +258,43 @@ lib.runTests {
       missingModules = [ ];
     };
   };
+  # A router image ignores NixOS's firewall, so it warns of each of its options a module set
+  # besides chalkd's port, which every image opens.
+  testRouterWarnsOfNixosFirewall = {
+    expr =
+      let
+        warned =
+          modules:
+          lib.filter (lib.hasInfix "networking.firewall") (
+            (mkImages {
+              platforms = [ "metal" ];
+              variants.edge = {
+                kubernetes = false;
+                router = true;
+                inherit modules;
+              };
+            }).nixos.edge-metal.config.warnings
+          );
+      in
+      {
+        edge = warned [ ];
+        set = warned [
+          {
+            networking.firewall.allowedTCPPorts = [ 22 ];
+            networking.firewall.interfaces.eth0.allowedUDPPorts = [ 53 ];
+            networking.firewall.extraInputRules = "tcp dport 80 accept";
+          }
+        ];
+        plain = lib.filter (lib.hasInfix "networking.firewall") layered.plain-metal.config.warnings;
+      };
+    expected = {
+      edge = [ ];
+      set = [
+        "the router layer filters with the table its router documents render and ignores networking.firewall.allowedTCPPorts, networking.firewall.extraInputRules, networking.firewall.interfaces.eth0; accept a port with a FirewallPolicy to local"
+      ];
+      plain = [ ];
+    };
+  };
   # Router images add traceroute to every image's diagnostics; it sends traffic, so it takes an
   # operator.
   testRouterDiagnostics = {
