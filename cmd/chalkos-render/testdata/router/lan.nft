@@ -31,7 +31,7 @@ table inet chalkos {
 		ct state invalid drop
 		icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, echo-request, mld-listener-query, mld-listener-report, mld-listener-done, nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert, mld2-listener-report } accept
 		icmp type { destination-unreachable, time-exceeded, parameter-problem, echo-request } accept
-		ip6 daddr fe80::/64 udp dport 546 accept
+		ip6 daddr fe80::/64 udp sport 547 udp dport 546 accept
 		iifname { "lan0" } tcp dport 50000 accept
 		iifname { "lan0", "vlan*" } jump policy-lan-local
 		iifname { "wan0" } jump policy-wan-local

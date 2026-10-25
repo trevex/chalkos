@@ -167,6 +167,8 @@ func (f *firewall) ruleset() (string, error) {
 }
 
 // prerouting is the reverse-path filter, which NixOS's firewall applies on every other image.
+// The kernel's fib expression passes ICMPv6 from :: to link-scope addresses: the neighbour
+// solicitations of duplicate address detection and the MLD reports of an address not yet assigned.
 func (f *firewall) prerouting(b *strings.Builder) error {
 	var fib string
 	switch f.router.RPFilter {
@@ -197,7 +199,7 @@ func (f *firewall) input(b *strings.Builder) error {
 		"\t\tct state invalid drop\n" +
 		"\t\ticmpv6 type { " + icmpv6Local + " } accept\n" +
 		"\t\ticmp type { " + icmpErrors + ", echo-request } accept\n" +
-		"\t\tip6 daddr fe80::/64 udp dport 546 accept\n")
+		"\t\tip6 daddr fe80::/64 udp sport 547 udp dport 546 accept\n")
 	api := fmt.Sprintf("tcp dport %d accept", f.port)
 	if f.router.Management.Interfaces != nil {
 		api = "iifname " + interfaceSet(f.router.Management.Interfaces) + " " + api
