@@ -261,7 +261,8 @@ in
   # whose check refuses an example fail the check of their image. The homelab's Hardware output
   # renders hardware-examples/server.yaml, and its bird-conf output renders
   # bgp-examples/two-peers.yaml, which bird -p parses. A router image checks its rules, renders its
-  # router examples and holds nf_conntrack, and its firewall check refuses what the kernel would.
+  # router examples and holds the modules of its firewall, and its firewall check refuses what the
+  # kernel would.
   rules =
     let
       build =
@@ -273,7 +274,8 @@ in
         ../../examples/homelab/extensions/bgp.nix
       ];
       router = checkLib.router.config.system.build;
-      # The router image loads nf_conntrack, which its module tree must hold.
+      # The router image loads nf_conntrack and the modules of its firewall, which its module tree
+      # must hold.
       routerModules = lib.findFirst (
         d: d.name == "kernel-modules-check"
       ) (throw "the router image runs no kernel-modules-check") checkLib.router.config.system.checks;

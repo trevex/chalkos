@@ -42,6 +42,20 @@ in
     # would load nothing.
     networking.firewall.enable = false;
     networking.nftables.enable = lib.mkForce false;
+    # The modules of what the rulesets use: conntrack, fib, NAT, reject and log. The kernel would
+    # load them on demand too; naming them makes the image's module check prove it holds them.
+    boot.kernelModules = [
+      "nf_tables"
+      "nft_chain_nat"
+      "nft_ct"
+      "nft_fib_inet"
+      "nft_fib_ipv4"
+      "nft_fib_ipv6"
+      "nft_log"
+      "nft_masq"
+      "nft_nat"
+      "nft_reject_inet"
+    ];
 
     chalkos.outputs.router-nftables = {
       inputs = [

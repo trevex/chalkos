@@ -183,7 +183,8 @@ lib.runTests {
   # On a router image the router layer owns the firewall: NixOS's firewall and nftables service are
   # off, chalkos-firewall loads the table after chalkos-config renders it and before the network
   # comes up, the outputs router-sysctl and router-nftables render the router kinds, and their
-  # effects restart systemd-sysctl, which waits for the rendered file, and reload the firewall.
+  # effects restart systemd-sysctl, which waits for the rendered file, and reload the firewall. The
+  # image loads the kernel modules of its rulesets.
   # Other images keep NixOS's firewall.
   testRouterFirewall = {
     expr =
@@ -209,7 +210,20 @@ lib.runTests {
           inherit (edge.chalkos.effects.router-sysctl) restart;
           inherit (edge.chalkos.effects.router-nftables) reload;
         };
-        conntrack = lib.elem "nf_conntrack" edge.boot.kernelModules;
+        # The modules the rulesets need, which the kernel-modules-check finds in the tree.
+        missingModules = lib.subtractLists edge.boot.kernelModules [
+          "nf_conntrack"
+          "nf_tables"
+          "nft_chain_nat"
+          "nft_ct"
+          "nft_fib_inet"
+          "nft_fib_ipv4"
+          "nft_fib_ipv6"
+          "nft_log"
+          "nft_masq"
+          "nft_nat"
+          "nft_reject_inet"
+        ];
       };
     expected = {
       edge = {
@@ -241,7 +255,7 @@ lib.runTests {
         restart = [ "systemd-sysctl.service" ];
         reload = [ "chalkos-firewall.service" ];
       };
-      conntrack = true;
+      missingModules = [ ];
     };
   };
   # Router images add traceroute to every image's diagnostics; it sends traffic, so it takes an
