@@ -3,6 +3,7 @@ package chalkctl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"path/filepath"
 	"reflect"
@@ -18,8 +19,13 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// testDiagnostics declares route-get, which readers run, and ping, which needs an operator.
+// testDiagnostics declares route-get and journal, which readers run, and ping, which needs an
+// operator.
 const testDiagnostics = `{
+  "journal": {"description": "A unit's journal.",
+    "command": ["/nix/store/x-systemd/bin/journalctl", "--unit", "{unit}"],
+    "parameters": {"unit": {"type": "pattern", "description": "A service.", "regex": "^[a-z-]+\\.service$"}},
+    "role": "reader", "timeout": "10s"},
   "route-get": {"description": "The route the kernel takes to an address.",
     "command": ["/nix/store/x-iproute2/bin/ip", "-json", "route", "get", "{address}"],
     "parameters": {"address": {"type": "address", "description": "IPv4 or IPv6 address."}},
@@ -65,7 +71,7 @@ func diagNode(t *testing.T, ta *testApp, f *fakeDiagnose) string {
 }
 
 // node diag <node> lists each diagnostic with its role and description, and below it each
-// parameter: in brackets when a call may leave it out, with its range, values and default.
+// parameter: in brackets when a call may leave it out, with its range, values, regex and default.
 func TestNodeDiagLists(t *testing.T) {
 	ta := newTestApp(t)
 	addr := diagNode(t, ta, &fakeDiagnose{})
@@ -73,6 +79,8 @@ func TestNodeDiagLists(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "DIAGNOSTIC           ROLE      DESCRIPTION\n" +
+		"journal              reader    A unit's journal.\n" +
+		"  unit=<pattern>               A service. Matches ^[a-z-]+\\.service$.\n" +
 		"ping                 operator  Pings an address.\n" +
 		"  address=<address>            Address to ping.\n" +
 		"  [count=<1-10>]               Echo requests. Default: 4.\n" +
@@ -134,5 +142,29 @@ func TestNodeDiagRefusals(t *testing.T) {
 	err = ta.run(context.Background(), ta.args([]string{"node", "diag", "n1", "route-get", "address=example.org"}, addr))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("route-get address=example.org: %v", err)
+	}
+}
+
+// failingWriter fails every write, as standard output does once the reader of its pipe is gone.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+// node diag stops once it cannot print what the diagnostic prints.
+func TestNodeDiagStopsWhenItCannotPrint(t *testing.T) {
+	for _, stderr := range []bool{false, true} {
+		ta := newTestApp(t)
+		f := &fakeDiagnose{stdout: "out\n"}
+		if stderr {
+			f = &fakeDiagnose{stderr: "err\n"}
+			ta.app.stderr = failingWriter{}
+		} else {
+			ta.app.stdout = failingWriter{}
+		}
+		addr := diagNode(t, ta, f)
+		err := ta.run(context.Background(), ta.args([]string{"node", "diag", "n1", "route-get", "address=192.0.2.1"}, addr))
+		if err == nil || !strings.Contains(err.Error(), "broken pipe") {
+			t.Errorf("stderr %v: err = %v, want broken pipe", stderr, err)
+		}
 	}
 }

@@ -98,11 +98,15 @@ func parameterUsage(p *nodev1.DiagnosticParameter) string {
 	return usage
 }
 
-// parameterNotes is a parameter's description, with an enum's values and the default.
+// parameterNotes is a parameter's description, with an enum's values, a pattern's regex and
+// the default.
 func parameterNotes(p *nodev1.DiagnosticParameter) string {
 	notes := p.Description
 	if len(p.Values) > 0 {
 		notes += " One of " + strings.Join(p.Values, ", ") + "."
+	}
+	if p.Regex != "" {
+		notes += " Matches " + p.Regex + "."
 	}
 	if p.DefaultValue != "" {
 		notes += " Default: " + p.DefaultValue + "."
@@ -115,15 +119,21 @@ func (a *app) runDiagnostic(ctx context.Context, conn *client.Conn, name string,
 	if err != nil {
 		return err
 	}
+	// Closing the stream early ends the call, and the node stops the run.
+	defer stream.Close()
 	var exit *nodev1.DiagnosticExit
 	for stream.Receive() {
+		var err error
 		switch o := stream.Msg().Output.(type) {
 		case *nodev1.RunDiagnosticResponse_Stdout:
-			a.stdout.Write(o.Stdout)
+			_, err = a.stdout.Write(o.Stdout)
 		case *nodev1.RunDiagnosticResponse_Stderr:
-			a.stderr.Write(o.Stderr)
+			_, err = a.stderr.Write(o.Stderr)
 		case *nodev1.RunDiagnosticResponse_Exit:
 			exit = o.Exit
+		}
+		if err != nil {
+			return fmt.Errorf("print what %s prints: %w", name, err)
 		}
 	}
 	if err := stream.Err(); err != nil {
