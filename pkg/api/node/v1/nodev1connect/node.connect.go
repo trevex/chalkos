@@ -82,6 +82,11 @@ const (
 	// NodeServiceUnrevokeNodeProcedure is the fully-qualified name of the NodeService's UnrevokeNode
 	// RPC.
 	NodeServiceUnrevokeNodeProcedure = "/chalkos.node.v1.NodeService/UnrevokeNode"
+	// NodeServiceDiagnosticsProcedure is the fully-qualified name of the NodeService's Diagnostics RPC.
+	NodeServiceDiagnosticsProcedure = "/chalkos.node.v1.NodeService/Diagnostics"
+	// NodeServiceRunDiagnosticProcedure is the fully-qualified name of the NodeService's RunDiagnostic
+	// RPC.
+	NodeServiceRunDiagnosticProcedure = "/chalkos.node.v1.NodeService/RunDiagnostic"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -198,6 +203,18 @@ type NodeServiceClient interface {
 	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
 	// Kubernetes layer.
 	UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error)
+	// Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
+	// ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
+	Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error)
+	// RunDiagnostic runs one of the image's diagnostics with the arguments given and streams what
+	// its command prints on standard output and standard error, then how it ended. It is refused
+	// with PERMISSION_DENIED unless the caller also has the diagnostic's own role, and with
+	// INVALID_ARGUMENT unless each argument is of its parameter's type and every parameter without
+	// a default or optional is given. chalkd runs the command as a transient systemd unit under a
+	// user of its own, on a read-only file system, with no capabilities but those the diagnostic
+	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
+	// a time. Available in maintenance and normal mode to readers.
+	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest]) (*connect.ServerStreamForClient[v1.RunDiagnosticResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -337,6 +354,18 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("UnrevokeNode")),
 			connect.WithClientOptions(opts...),
 		),
+		diagnostics: connect.NewClient[v1.DiagnosticsRequest, v1.DiagnosticsResponse](
+			httpClient,
+			baseURL+NodeServiceDiagnosticsProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("Diagnostics")),
+			connect.WithClientOptions(opts...),
+		),
+		runDiagnostic: connect.NewClient[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse](
+			httpClient,
+			baseURL+NodeServiceRunDiagnosticProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("RunDiagnostic")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -363,6 +392,8 @@ type nodeServiceClient struct {
 	uncordonNode         *connect.Client[v1.UncordonNodeRequest, v1.UncordonNodeResponse]
 	revokeNode           *connect.Client[v1.RevokeNodeRequest, v1.RevokeNodeResponse]
 	unrevokeNode         *connect.Client[v1.UnrevokeNodeRequest, v1.UnrevokeNodeResponse]
+	diagnostics          *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
+	runDiagnostic        *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -468,6 +499,16 @@ func (c *nodeServiceClient) RevokeNode(ctx context.Context, req *connect.Request
 // UnrevokeNode calls chalkos.node.v1.NodeService.UnrevokeNode.
 func (c *nodeServiceClient) UnrevokeNode(ctx context.Context, req *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error) {
 	return c.unrevokeNode.CallUnary(ctx, req)
+}
+
+// Diagnostics calls chalkos.node.v1.NodeService.Diagnostics.
+func (c *nodeServiceClient) Diagnostics(ctx context.Context, req *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error) {
+	return c.diagnostics.CallUnary(ctx, req)
+}
+
+// RunDiagnostic calls chalkos.node.v1.NodeService.RunDiagnostic.
+func (c *nodeServiceClient) RunDiagnostic(ctx context.Context, req *connect.Request[v1.RunDiagnosticRequest]) (*connect.ServerStreamForClient[v1.RunDiagnosticResponse], error) {
+	return c.runDiagnostic.CallServerStream(ctx, req)
 }
 
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
@@ -584,6 +625,18 @@ type NodeServiceHandler interface {
 	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
 	// Kubernetes layer.
 	UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error)
+	// Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
+	// ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
+	Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error)
+	// RunDiagnostic runs one of the image's diagnostics with the arguments given and streams what
+	// its command prints on standard output and standard error, then how it ended. It is refused
+	// with PERMISSION_DENIED unless the caller also has the diagnostic's own role, and with
+	// INVALID_ARGUMENT unless each argument is of its parameter's type and every parameter without
+	// a default or optional is given. chalkd runs the command as a transient systemd unit under a
+	// user of its own, on a read-only file system, with no capabilities but those the diagnostic
+	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
+	// a time. Available in maintenance and normal mode to readers.
+	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest], *connect.ServerStream[v1.RunDiagnosticResponse]) error
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -719,6 +772,18 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("UnrevokeNode")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceDiagnosticsHandler := connect.NewUnaryHandler(
+		NodeServiceDiagnosticsProcedure,
+		svc.Diagnostics,
+		connect.WithSchema(nodeServiceMethods.ByName("Diagnostics")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nodeServiceRunDiagnosticHandler := connect.NewServerStreamHandler(
+		NodeServiceRunDiagnosticProcedure,
+		svc.RunDiagnostic,
+		connect.WithSchema(nodeServiceMethods.ByName("RunDiagnostic")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -763,6 +828,10 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceRevokeNodeHandler.ServeHTTP(w, r)
 		case NodeServiceUnrevokeNodeProcedure:
 			nodeServiceUnrevokeNodeHandler.ServeHTTP(w, r)
+		case NodeServiceDiagnosticsProcedure:
+			nodeServiceDiagnosticsHandler.ServeHTTP(w, r)
+		case NodeServiceRunDiagnosticProcedure:
+			nodeServiceRunDiagnosticHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -854,4 +923,12 @@ func (UnimplementedNodeServiceHandler) RevokeNode(context.Context, *connect.Requ
 
 func (UnimplementedNodeServiceHandler) UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.UnrevokeNode is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Diagnostics is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest], *connect.ServerStream[v1.RunDiagnosticResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RunDiagnostic is not implemented"))
 }

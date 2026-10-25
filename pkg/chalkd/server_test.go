@@ -109,6 +109,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 			Cmdline:         filepath.Join(root, "cmdline"),
 			FailedBoot:      filepath.Join(root, "var", "failed-boot"),
 			Facts:           filepath.Join(root, "facts.json"),
+			Diagnostics:     filepath.Join(root, "diagnostics.json"),
 			EffectsBaseline: filepath.Join(root, "run", "chalkd", "effects-baseline.json"),
 		},
 		Run:  r,
@@ -330,7 +331,8 @@ var deniedEverything = map[string]connect.Code{
 	"ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeUnimplemented,
 	"RenewNodeCertificate": connect.CodePermissionDenied, "RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied,
 	"DrainNode": connect.CodeUnimplemented, "UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied,
-	"RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented,
+	"RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented, "Diagnostics": connect.CodePermissionDenied,
+	"RunDiagnostic": connect.CodePermissionDenied,
 }
 
 // nodeRole is what a node gets in normal mode: RenewNodeCertificate alone, which a node without
@@ -340,7 +342,8 @@ var nodeRole = map[string]connect.Code{
 	"ApplyConfig": connect.CodePermissionDenied, "EtcdMembers": connect.CodeUnimplemented, "RenewNodeCertificate": connect.CodeFailedPrecondition,
 	"RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented,
 	"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented,
-	"UnrevokeNode": connect.CodeUnimplemented,
+	"UnrevokeNode": connect.CodeUnimplemented, "Diagnostics": connect.CodePermissionDenied,
+	"RunDiagnostic": connect.CodePermissionDenied,
 }
 
 // clientWithOrganization issues a client certificate with the Organization given, bypassing the
@@ -463,6 +466,16 @@ func call(c *client.Conn, procedure string) connect.Code {
 		_, err = c.RevokeNode(ctx, connect.NewRequest(&nodev1.RevokeNodeRequest{Node: "w1"}))
 	case "UnrevokeNode":
 		_, err = c.UnrevokeNode(ctx, connect.NewRequest(&nodev1.UnrevokeNodeRequest{Node: "w1"}))
+	case "Diagnostics":
+		_, err = c.Diagnostics(ctx, connect.NewRequest(&nodev1.DiagnosticsRequest{}))
+	case "RunDiagnostic":
+		// A diagnostic the test image lacks: refused after authorisation.
+		var s *connect.ServerStreamForClient[nodev1.RunDiagnosticResponse]
+		if s, err = c.RunDiagnostic(ctx, connect.NewRequest(&nodev1.RunDiagnosticRequest{Name: "nope"})); err == nil {
+			for s.Receive() {
+			}
+			err = s.Err()
+		}
 	case "GetConfig":
 		_, err = c.GetConfig(ctx, connect.NewRequest(&nodev1.GetConfigRequest{}))
 	case "UpgradeWithConfig":
@@ -492,7 +505,7 @@ func TestAuthorisation(t *testing.T) {
 	}{
 		{"normal", normal, true, map[pki.Role]map[string]connect.Code{
 			// The test image has no Kubernetes layer, whose RPCs are unimplemented for every role.
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
 				"EtcdMembers": connect.CodeUnimplemented, "EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented,
 				"RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented,
 				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented},
@@ -516,14 +529,14 @@ func TestAuthorisation(t *testing.T) {
 			pki.RoleNode: nodeRole,
 		}},
 		{"maintenance with OS CA", maintenance, true, map[pki.Role]map[string]connect.Code{
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeUnimplemented},
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Diagnostics": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeUnimplemented},
 			// A header without a target is refused after authorisation.
 			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyConfig": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeUnimplemented, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeUnimplemented,
 				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodeFailedPrecondition, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented},
 			unknownOrganization: {"Info": connect.CodePermissionDenied, "Install": connect.CodePermissionDenied},
 		}},
 		{"maintenance on a generic image", maintenance, false, map[pki.Role]map[string]connect.Code{
-			"": {"Info": 0, "Install": connect.CodeInvalidArgument, "Reboot": 0, "Disks": 0, "Contract": 0, "ResetVolume": connect.CodeFailedPrecondition},
+			"": {"Info": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Install": connect.CodeInvalidArgument, "Reboot": 0, "Disks": 0, "Contract": 0, "ResetVolume": connect.CodeFailedPrecondition},
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

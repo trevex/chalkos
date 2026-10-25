@@ -4896,6 +4896,505 @@ func (x *UnrevokeNodeResponse) GetStaleCas() []string {
 	return nil
 }
 
+// The request of Diagnostics.
+type DiagnosticsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiagnosticsRequest) Reset() {
+	*x = DiagnosticsRequest{}
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiagnosticsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiagnosticsRequest) ProtoMessage() {}
+
+func (x *DiagnosticsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiagnosticsRequest.ProtoReflect.Descriptor instead.
+func (*DiagnosticsRequest) Descriptor() ([]byte, []int) {
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{68}
+}
+
+// The response of Diagnostics.
+type DiagnosticsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The image's diagnostics, in name order.
+	Diagnostics   []*Diagnostic `protobuf:"bytes,1,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiagnosticsResponse) Reset() {
+	*x = DiagnosticsResponse{}
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiagnosticsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiagnosticsResponse) ProtoMessage() {}
+
+func (x *DiagnosticsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiagnosticsResponse.ProtoReflect.Descriptor instead.
+func (*DiagnosticsResponse) Descriptor() ([]byte, []int) {
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *DiagnosticsResponse) GetDiagnostics() []*Diagnostic {
+	if x != nil {
+		return x.Diagnostics
+	}
+	return nil
+}
+
+// A diagnostic the image declares.
+type Diagnostic struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name RunDiagnostic takes, such as "route-get".
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// One sentence on what the diagnostic shows.
+	Description string `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	// Its parameters: those a call must give, then the others, each in the order its command names
+	// them.
+	Parameters []*DiagnosticParameter `protobuf:"bytes,3,rep,name=parameters,proto3" json:"parameters,omitempty"`
+	// Least role that runs it: reader, operator or admin.
+	Role string `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	// How long it may run before systemd stops it, such as "10s".
+	Timeout       string `protobuf:"bytes,5,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Diagnostic) Reset() {
+	*x = Diagnostic{}
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Diagnostic) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Diagnostic) ProtoMessage() {}
+
+func (x *Diagnostic) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Diagnostic.ProtoReflect.Descriptor instead.
+func (*Diagnostic) Descriptor() ([]byte, []int) {
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *Diagnostic) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Diagnostic) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Diagnostic) GetParameters() []*DiagnosticParameter {
+	if x != nil {
+		return x.Parameters
+	}
+	return nil
+}
+
+func (x *Diagnostic) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *Diagnostic) GetTimeout() string {
+	if x != nil {
+		return x.Timeout
+	}
+	return ""
+}
+
+// A parameter of a diagnostic.
+type DiagnosticParameter struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name the arguments of RunDiagnostic give it by.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// What its value is: address, prefix, hostname, interface, int, enum or pattern.
+	Type string `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	// One sentence on the value.
+	Description string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	// Whether a call may leave it out.
+	Optional bool `protobuf:"varint,4,opt,name=optional,proto3" json:"optional,omitempty"`
+	// The value it takes when a call leaves it out; empty when leaving it out drops the arguments
+	// of the command that name it.
+	DefaultValue string `protobuf:"bytes,5,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
+	// Least value of an int parameter, when it has one.
+	Min *int64 `protobuf:"varint,6,opt,name=min,proto3,oneof" json:"min,omitempty"`
+	// Greatest value of an int parameter, when it has one.
+	Max *int64 `protobuf:"varint,7,opt,name=max,proto3,oneof" json:"max,omitempty"`
+	// The values of an enum parameter.
+	Values []string `protobuf:"bytes,8,rep,name=values,proto3" json:"values,omitempty"`
+	// The RE2 regular expression a pattern parameter's value matches whole.
+	Regex         string `protobuf:"bytes,9,opt,name=regex,proto3" json:"regex,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiagnosticParameter) Reset() {
+	*x = DiagnosticParameter{}
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiagnosticParameter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiagnosticParameter) ProtoMessage() {}
+
+func (x *DiagnosticParameter) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiagnosticParameter.ProtoReflect.Descriptor instead.
+func (*DiagnosticParameter) Descriptor() ([]byte, []int) {
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *DiagnosticParameter) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DiagnosticParameter) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *DiagnosticParameter) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *DiagnosticParameter) GetOptional() bool {
+	if x != nil {
+		return x.Optional
+	}
+	return false
+}
+
+func (x *DiagnosticParameter) GetDefaultValue() string {
+	if x != nil {
+		return x.DefaultValue
+	}
+	return ""
+}
+
+func (x *DiagnosticParameter) GetMin() int64 {
+	if x != nil && x.Min != nil {
+		return *x.Min
+	}
+	return 0
+}
+
+func (x *DiagnosticParameter) GetMax() int64 {
+	if x != nil && x.Max != nil {
+		return *x.Max
+	}
+	return 0
+}
+
+func (x *DiagnosticParameter) GetValues() []string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+func (x *DiagnosticParameter) GetRegex() string {
+	if x != nil {
+		return x.Regex
+	}
+	return ""
+}
+
+// The request of RunDiagnostic.
+type RunDiagnosticRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name of the diagnostic, as Diagnostics lists it.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The value of each parameter given, by parameter name.
+	Arguments     map[string]string `protobuf:"bytes,2,rep,name=arguments,proto3" json:"arguments,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunDiagnosticRequest) Reset() {
+	*x = RunDiagnosticRequest{}
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[72]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunDiagnosticRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunDiagnosticRequest) ProtoMessage() {}
+
+func (x *RunDiagnosticRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[72]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunDiagnosticRequest.ProtoReflect.Descriptor instead.
+func (*RunDiagnosticRequest) Descriptor() ([]byte, []int) {
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{72}
+}
+
+func (x *RunDiagnosticRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RunDiagnosticRequest) GetArguments() map[string]string {
+	if x != nil {
+		return x.Arguments
+	}
+	return nil
+}
+
+// A message of the RunDiagnostic stream: output as the command prints it, then how it ended.
+type RunDiagnosticResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Output:
+	//
+	//	*RunDiagnosticResponse_Stdout
+	//	*RunDiagnosticResponse_Stderr
+	//	*RunDiagnosticResponse_Exit
+	Output        isRunDiagnosticResponse_Output `protobuf_oneof:"output"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunDiagnosticResponse) Reset() {
+	*x = RunDiagnosticResponse{}
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunDiagnosticResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunDiagnosticResponse) ProtoMessage() {}
+
+func (x *RunDiagnosticResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunDiagnosticResponse.ProtoReflect.Descriptor instead.
+func (*RunDiagnosticResponse) Descriptor() ([]byte, []int) {
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *RunDiagnosticResponse) GetOutput() isRunDiagnosticResponse_Output {
+	if x != nil {
+		return x.Output
+	}
+	return nil
+}
+
+func (x *RunDiagnosticResponse) GetStdout() []byte {
+	if x != nil {
+		if x, ok := x.Output.(*RunDiagnosticResponse_Stdout); ok {
+			return x.Stdout
+		}
+	}
+	return nil
+}
+
+func (x *RunDiagnosticResponse) GetStderr() []byte {
+	if x != nil {
+		if x, ok := x.Output.(*RunDiagnosticResponse_Stderr); ok {
+			return x.Stderr
+		}
+	}
+	return nil
+}
+
+func (x *RunDiagnosticResponse) GetExit() *DiagnosticExit {
+	if x != nil {
+		if x, ok := x.Output.(*RunDiagnosticResponse_Exit); ok {
+			return x.Exit
+		}
+	}
+	return nil
+}
+
+type isRunDiagnosticResponse_Output interface {
+	isRunDiagnosticResponse_Output()
+}
+
+type RunDiagnosticResponse_Stdout struct {
+	// Bytes the command printed on standard output.
+	Stdout []byte `protobuf:"bytes,1,opt,name=stdout,proto3,oneof"`
+}
+
+type RunDiagnosticResponse_Stderr struct {
+	// Bytes the command printed on standard error.
+	Stderr []byte `protobuf:"bytes,2,opt,name=stderr,proto3,oneof"`
+}
+
+type RunDiagnosticResponse_Exit struct {
+	// How the command ended; the stream's last message.
+	Exit *DiagnosticExit `protobuf:"bytes,3,opt,name=exit,proto3,oneof"`
+}
+
+func (*RunDiagnosticResponse_Stdout) isRunDiagnosticResponse_Output() {}
+
+func (*RunDiagnosticResponse_Stderr) isRunDiagnosticResponse_Output() {}
+
+func (*RunDiagnosticResponse_Exit) isRunDiagnosticResponse_Output() {}
+
+// How a diagnostic's command ended.
+type DiagnosticExit struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Its exit status, while stopped is empty.
+	Code int32 `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
+	// Why the command ended without exiting by itself, else empty: "timeout" once it ran longer
+	// than the diagnostic's timeout, "output-limit" once it printed more than 1 MiB, of which the
+	// stream holds the first 1 MiB, or systemd's result of its unit, such as "signal".
+	Stopped       string `protobuf:"bytes,2,opt,name=stopped,proto3" json:"stopped,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiagnosticExit) Reset() {
+	*x = DiagnosticExit{}
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[74]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiagnosticExit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiagnosticExit) ProtoMessage() {}
+
+func (x *DiagnosticExit) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[74]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiagnosticExit.ProtoReflect.Descriptor instead.
+func (*DiagnosticExit) Descriptor() ([]byte, []int) {
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{74}
+}
+
+func (x *DiagnosticExit) GetCode() int32 {
+	if x != nil {
+		return x.Code
+	}
+	return 0
+}
+
+func (x *DiagnosticExit) GetStopped() string {
+	if x != nil {
+		return x.Stopped
+	}
+	return ""
+}
+
 var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
@@ -5212,7 +5711,45 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x14UnrevokeNodeResponse\x129\n" +
 	"\n" +
 	"revoked_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\x12\x1b\n" +
-	"\tstale_cas\x18\x02 \x03(\tR\bstaleCas*C\n" +
+	"\tstale_cas\x18\x02 \x03(\tR\bstaleCas\"\x14\n" +
+	"\x12DiagnosticsRequest\"T\n" +
+	"\x13DiagnosticsResponse\x12=\n" +
+	"\vdiagnostics\x18\x01 \x03(\v2\x1b.chalkos.node.v1.DiagnosticR\vdiagnostics\"\xb6\x01\n" +
+	"\n" +
+	"Diagnostic\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12D\n" +
+	"\n" +
+	"parameters\x18\x03 \x03(\v2$.chalkos.node.v1.DiagnosticParameterR\n" +
+	"parameters\x12\x12\n" +
+	"\x04role\x18\x04 \x01(\tR\x04role\x12\x18\n" +
+	"\atimeout\x18\x05 \x01(\tR\atimeout\"\x8c\x02\n" +
+	"\x13DiagnosticParameter\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1a\n" +
+	"\boptional\x18\x04 \x01(\bR\boptional\x12#\n" +
+	"\rdefault_value\x18\x05 \x01(\tR\fdefaultValue\x12\x15\n" +
+	"\x03min\x18\x06 \x01(\x03H\x00R\x03min\x88\x01\x01\x12\x15\n" +
+	"\x03max\x18\a \x01(\x03H\x01R\x03max\x88\x01\x01\x12\x16\n" +
+	"\x06values\x18\b \x03(\tR\x06values\x12\x14\n" +
+	"\x05regex\x18\t \x01(\tR\x05regexB\x06\n" +
+	"\x04_minB\x06\n" +
+	"\x04_max\"\xbc\x01\n" +
+	"\x14RunDiagnosticRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12R\n" +
+	"\targuments\x18\x02 \x03(\v24.chalkos.node.v1.RunDiagnosticRequest.ArgumentsEntryR\targuments\x1a<\n" +
+	"\x0eArgumentsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8c\x01\n" +
+	"\x15RunDiagnosticResponse\x12\x18\n" +
+	"\x06stdout\x18\x01 \x01(\fH\x00R\x06stdout\x12\x18\n" +
+	"\x06stderr\x18\x02 \x01(\fH\x00R\x06stderr\x125\n" +
+	"\x04exit\x18\x03 \x01(\v2\x1f.chalkos.node.v1.DiagnosticExitH\x00R\x04exitB\b\n" +
+	"\x06output\">\n" +
+	"\x0eDiagnosticExit\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\x05R\x04code\x12\x18\n" +
+	"\astopped\x18\x02 \x01(\tR\astopped*C\n" +
 	"\x04Mode\x12\x14\n" +
 	"\x10MODE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10MODE_MAINTENANCE\x10\x01\x12\x0f\n" +
@@ -5238,7 +5775,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	" ROTATION_STEP_LIST_TOKEN_SECRETS\x10\x02\x12#\n" +
 	"\x1fROTATION_STEP_REWRITE_ENCRYPTED\x10\x03\x12!\n" +
 	"\x1dROTATION_STEP_COUNT_ENCRYPTED\x10\x04\x12'\n" +
-	"#ROTATION_STEP_RENEW_KUBELET_SERVING\x10\x052\x92\x0e\n" +
+	"#ROTATION_STEP_RENEW_KUBELET_SERVING\x10\x052\xce\x0f\n" +
 	"\vNodeService\x12C\n" +
 	"\x04Info\x12\x1c.chalkos.node.v1.InfoRequest\x1a\x1d.chalkos.node.v1.InfoResponse\x12F\n" +
 	"\x05Disks\x12\x1d.chalkos.node.v1.DisksRequest\x1a\x1e.chalkos.node.v1.DisksResponse\x12O\n" +
@@ -5261,7 +5798,9 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fUncordonNode\x12$.chalkos.node.v1.UncordonNodeRequest\x1a%.chalkos.node.v1.UncordonNodeResponse\x12U\n" +
 	"\n" +
 	"RevokeNode\x12\".chalkos.node.v1.RevokeNodeRequest\x1a#.chalkos.node.v1.RevokeNodeResponse\x12[\n" +
-	"\fUnrevokeNode\x12$.chalkos.node.v1.UnrevokeNodeRequest\x1a%.chalkos.node.v1.UnrevokeNodeResponseB2Z0github.com/trevex/chalkos/pkg/api/node/v1;nodev1b\x06proto3"
+	"\fUnrevokeNode\x12$.chalkos.node.v1.UnrevokeNodeRequest\x1a%.chalkos.node.v1.UnrevokeNodeResponse\x12X\n" +
+	"\vDiagnostics\x12#.chalkos.node.v1.DiagnosticsRequest\x1a$.chalkos.node.v1.DiagnosticsResponse\x12`\n" +
+	"\rRunDiagnostic\x12%.chalkos.node.v1.RunDiagnosticRequest\x1a&.chalkos.node.v1.RunDiagnosticResponse0\x01B2Z0github.com/trevex/chalkos/pkg/api/node/v1;nodev1b\x06proto3"
 
 var (
 	file_chalkos_node_v1_node_proto_rawDescOnce sync.Once
@@ -5276,7 +5815,7 @@ func file_chalkos_node_v1_node_proto_rawDescGZIP() []byte {
 }
 
 var file_chalkos_node_v1_node_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_chalkos_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 71)
+var file_chalkos_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 79)
 var file_chalkos_node_v1_node_proto_goTypes = []any{
 	(Mode)(0),                            // 0: chalkos.node.v1.Mode
 	(SecureBoot)(0),                      // 1: chalkos.node.v1.SecureBoot
@@ -5350,17 +5889,25 @@ var file_chalkos_node_v1_node_proto_goTypes = []any{
 	(*RevokeNodeResponse)(nil),           // 69: chalkos.node.v1.RevokeNodeResponse
 	(*UnrevokeNodeRequest)(nil),          // 70: chalkos.node.v1.UnrevokeNodeRequest
 	(*UnrevokeNodeResponse)(nil),         // 71: chalkos.node.v1.UnrevokeNodeResponse
-	nil,                                  // 72: chalkos.node.v1.ContractResponse.SchemasEntry
-	nil,                                  // 73: chalkos.node.v1.ImageContract.SystemDefinitionsEntry
-	nil,                                  // 74: chalkos.node.v1.ImageContract.SchemasEntry
-	(*timestamppb.Timestamp)(nil),        // 75: google.protobuf.Timestamp
+	(*DiagnosticsRequest)(nil),           // 72: chalkos.node.v1.DiagnosticsRequest
+	(*DiagnosticsResponse)(nil),          // 73: chalkos.node.v1.DiagnosticsResponse
+	(*Diagnostic)(nil),                   // 74: chalkos.node.v1.Diagnostic
+	(*DiagnosticParameter)(nil),          // 75: chalkos.node.v1.DiagnosticParameter
+	(*RunDiagnosticRequest)(nil),         // 76: chalkos.node.v1.RunDiagnosticRequest
+	(*RunDiagnosticResponse)(nil),        // 77: chalkos.node.v1.RunDiagnosticResponse
+	(*DiagnosticExit)(nil),               // 78: chalkos.node.v1.DiagnosticExit
+	nil,                                  // 79: chalkos.node.v1.ContractResponse.SchemasEntry
+	nil,                                  // 80: chalkos.node.v1.ImageContract.SystemDefinitionsEntry
+	nil,                                  // 81: chalkos.node.v1.ImageContract.SchemasEntry
+	nil,                                  // 82: chalkos.node.v1.RunDiagnosticRequest.ArgumentsEntry
+	(*timestamppb.Timestamp)(nil),        // 83: google.protobuf.Timestamp
 }
 var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	0,  // 0: chalkos.node.v1.InfoResponse.mode:type_name -> chalkos.node.v1.Mode
 	1,  // 1: chalkos.node.v1.InfoResponse.secure_boot:type_name -> chalkos.node.v1.SecureBoot
 	8,  // 2: chalkos.node.v1.DisksResponse.disks:type_name -> chalkos.node.v1.Disk
 	9,  // 3: chalkos.node.v1.Disk.partitions:type_name -> chalkos.node.v1.Partition
-	72, // 4: chalkos.node.v1.ContractResponse.schemas:type_name -> chalkos.node.v1.ContractResponse.SchemasEntry
+	79, // 4: chalkos.node.v1.ContractResponse.schemas:type_name -> chalkos.node.v1.ContractResponse.SchemasEntry
 	13, // 5: chalkos.node.v1.InstallRequest.header:type_name -> chalkos.node.v1.InstallHeader
 	21, // 6: chalkos.node.v1.InstallRequest.chunk:type_name -> chalkos.node.v1.ImageChunk
 	15, // 7: chalkos.node.v1.InstallHeader.in_place:type_name -> chalkos.node.v1.InPlace
@@ -5368,8 +5915,8 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	17, // 9: chalkos.node.v1.InstallHeader.image:type_name -> chalkos.node.v1.ImageHeader
 	14, // 10: chalkos.node.v1.InstallHeader.contract:type_name -> chalkos.node.v1.ImageContract
 	19, // 11: chalkos.node.v1.InstallHeader.source:type_name -> chalkos.node.v1.ImageSource
-	73, // 12: chalkos.node.v1.ImageContract.system_definitions:type_name -> chalkos.node.v1.ImageContract.SystemDefinitionsEntry
-	74, // 13: chalkos.node.v1.ImageContract.schemas:type_name -> chalkos.node.v1.ImageContract.SchemasEntry
+	80, // 12: chalkos.node.v1.ImageContract.system_definitions:type_name -> chalkos.node.v1.ImageContract.SystemDefinitionsEntry
+	81, // 13: chalkos.node.v1.ImageContract.schemas:type_name -> chalkos.node.v1.ImageContract.SchemasEntry
 	18, // 14: chalkos.node.v1.ImageHeader.store:type_name -> chalkos.node.v1.ImagePart
 	18, // 15: chalkos.node.v1.ImageHeader.hash_tree:type_name -> chalkos.node.v1.ImagePart
 	18, // 16: chalkos.node.v1.ImageHeader.uki:type_name -> chalkos.node.v1.ImagePart
@@ -5387,10 +5934,10 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	34, // 28: chalkos.node.v1.BootStatus.running:type_name -> chalkos.node.v1.BootImage
 	34, // 29: chalkos.node.v1.BootStatus.staged:type_name -> chalkos.node.v1.BootImage
 	34, // 30: chalkos.node.v1.BootStatus.failed:type_name -> chalkos.node.v1.BootImage
-	75, // 31: chalkos.node.v1.CertificateStatus.not_after:type_name -> google.protobuf.Timestamp
+	83, // 31: chalkos.node.v1.CertificateStatus.not_after:type_name -> google.protobuf.Timestamp
 	2,  // 32: chalkos.node.v1.KubernetesStatus.phase:type_name -> chalkos.node.v1.KubernetesPhase
 	39, // 33: chalkos.node.v1.KubernetesStatus.revoked_nodes:type_name -> chalkos.node.v1.RevokedNode
-	75, // 34: chalkos.node.v1.RevokedNode.revoked_at:type_name -> google.protobuf.Timestamp
+	83, // 34: chalkos.node.v1.RevokedNode.revoked_at:type_name -> google.protobuf.Timestamp
 	49, // 35: chalkos.node.v1.EtcdMembersResponse.members:type_name -> chalkos.node.v1.EtcdMember
 	49, // 36: chalkos.node.v1.EtcdRemoveMemberResponse.removed:type_name -> chalkos.node.v1.EtcdMember
 	3,  // 37: chalkos.node.v1.RotationStepRequest.step:type_name -> chalkos.node.v1.RotationStep
@@ -5399,55 +5946,63 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	21, // 40: chalkos.node.v1.UpgradeRequest.chunk:type_name -> chalkos.node.v1.ImageChunk
 	17, // 41: chalkos.node.v1.UpgradeHeader.image:type_name -> chalkos.node.v1.ImageHeader
 	19, // 42: chalkos.node.v1.UpgradeHeader.source:type_name -> chalkos.node.v1.ImageSource
-	75, // 43: chalkos.node.v1.RevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
-	75, // 44: chalkos.node.v1.UnrevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
-	4,  // 45: chalkos.node.v1.NodeService.Info:input_type -> chalkos.node.v1.InfoRequest
-	6,  // 46: chalkos.node.v1.NodeService.Disks:input_type -> chalkos.node.v1.DisksRequest
-	10, // 47: chalkos.node.v1.NodeService.Contract:input_type -> chalkos.node.v1.ContractRequest
-	12, // 48: chalkos.node.v1.NodeService.Install:input_type -> chalkos.node.v1.InstallRequest
-	23, // 49: chalkos.node.v1.NodeService.ApplyConfig:input_type -> chalkos.node.v1.ApplyConfigRequest
-	24, // 50: chalkos.node.v1.NodeService.GetConfig:input_type -> chalkos.node.v1.GetConfigRequest
-	28, // 51: chalkos.node.v1.NodeService.ResetVolume:input_type -> chalkos.node.v1.ResetVolumeRequest
-	30, // 52: chalkos.node.v1.NodeService.Status:input_type -> chalkos.node.v1.StatusRequest
-	42, // 53: chalkos.node.v1.NodeService.Logs:input_type -> chalkos.node.v1.LogsRequest
-	44, // 54: chalkos.node.v1.NodeService.Reboot:input_type -> chalkos.node.v1.RebootRequest
-	46, // 55: chalkos.node.v1.NodeService.Bootstrap:input_type -> chalkos.node.v1.BootstrapRequest
-	50, // 56: chalkos.node.v1.NodeService.EtcdMembers:input_type -> chalkos.node.v1.EtcdMembersRequest
-	52, // 57: chalkos.node.v1.NodeService.EtcdRemoveMember:input_type -> chalkos.node.v1.EtcdRemoveMemberRequest
-	54, // 58: chalkos.node.v1.NodeService.EtcdLeave:input_type -> chalkos.node.v1.EtcdLeaveRequest
-	56, // 59: chalkos.node.v1.NodeService.RenewNodeCertificate:input_type -> chalkos.node.v1.RenewNodeCertificateRequest
-	58, // 60: chalkos.node.v1.NodeService.RotationStep:input_type -> chalkos.node.v1.RotationStepRequest
-	61, // 61: chalkos.node.v1.NodeService.Upgrade:input_type -> chalkos.node.v1.UpgradeRequest
-	64, // 62: chalkos.node.v1.NodeService.DrainNode:input_type -> chalkos.node.v1.DrainNodeRequest
-	66, // 63: chalkos.node.v1.NodeService.UncordonNode:input_type -> chalkos.node.v1.UncordonNodeRequest
-	68, // 64: chalkos.node.v1.NodeService.RevokeNode:input_type -> chalkos.node.v1.RevokeNodeRequest
-	70, // 65: chalkos.node.v1.NodeService.UnrevokeNode:input_type -> chalkos.node.v1.UnrevokeNodeRequest
-	5,  // 66: chalkos.node.v1.NodeService.Info:output_type -> chalkos.node.v1.InfoResponse
-	7,  // 67: chalkos.node.v1.NodeService.Disks:output_type -> chalkos.node.v1.DisksResponse
-	11, // 68: chalkos.node.v1.NodeService.Contract:output_type -> chalkos.node.v1.ContractResponse
-	22, // 69: chalkos.node.v1.NodeService.Install:output_type -> chalkos.node.v1.InstallResponse
-	26, // 70: chalkos.node.v1.NodeService.ApplyConfig:output_type -> chalkos.node.v1.ApplyConfigResponse
-	25, // 71: chalkos.node.v1.NodeService.GetConfig:output_type -> chalkos.node.v1.GetConfigResponse
-	29, // 72: chalkos.node.v1.NodeService.ResetVolume:output_type -> chalkos.node.v1.ResetVolumeResponse
-	31, // 73: chalkos.node.v1.NodeService.Status:output_type -> chalkos.node.v1.StatusResponse
-	43, // 74: chalkos.node.v1.NodeService.Logs:output_type -> chalkos.node.v1.LogsResponse
-	45, // 75: chalkos.node.v1.NodeService.Reboot:output_type -> chalkos.node.v1.RebootResponse
-	47, // 76: chalkos.node.v1.NodeService.Bootstrap:output_type -> chalkos.node.v1.BootstrapResponse
-	51, // 77: chalkos.node.v1.NodeService.EtcdMembers:output_type -> chalkos.node.v1.EtcdMembersResponse
-	53, // 78: chalkos.node.v1.NodeService.EtcdRemoveMember:output_type -> chalkos.node.v1.EtcdRemoveMemberResponse
-	55, // 79: chalkos.node.v1.NodeService.EtcdLeave:output_type -> chalkos.node.v1.EtcdLeaveResponse
-	57, // 80: chalkos.node.v1.NodeService.RenewNodeCertificate:output_type -> chalkos.node.v1.RenewNodeCertificateResponse
-	59, // 81: chalkos.node.v1.NodeService.RotationStep:output_type -> chalkos.node.v1.RotationStepResponse
-	63, // 82: chalkos.node.v1.NodeService.Upgrade:output_type -> chalkos.node.v1.UpgradeResponse
-	65, // 83: chalkos.node.v1.NodeService.DrainNode:output_type -> chalkos.node.v1.DrainNodeResponse
-	67, // 84: chalkos.node.v1.NodeService.UncordonNode:output_type -> chalkos.node.v1.UncordonNodeResponse
-	69, // 85: chalkos.node.v1.NodeService.RevokeNode:output_type -> chalkos.node.v1.RevokeNodeResponse
-	71, // 86: chalkos.node.v1.NodeService.UnrevokeNode:output_type -> chalkos.node.v1.UnrevokeNodeResponse
-	66, // [66:87] is the sub-list for method output_type
-	45, // [45:66] is the sub-list for method input_type
-	45, // [45:45] is the sub-list for extension type_name
-	45, // [45:45] is the sub-list for extension extendee
-	0,  // [0:45] is the sub-list for field type_name
+	83, // 43: chalkos.node.v1.RevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
+	83, // 44: chalkos.node.v1.UnrevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
+	74, // 45: chalkos.node.v1.DiagnosticsResponse.diagnostics:type_name -> chalkos.node.v1.Diagnostic
+	75, // 46: chalkos.node.v1.Diagnostic.parameters:type_name -> chalkos.node.v1.DiagnosticParameter
+	82, // 47: chalkos.node.v1.RunDiagnosticRequest.arguments:type_name -> chalkos.node.v1.RunDiagnosticRequest.ArgumentsEntry
+	78, // 48: chalkos.node.v1.RunDiagnosticResponse.exit:type_name -> chalkos.node.v1.DiagnosticExit
+	4,  // 49: chalkos.node.v1.NodeService.Info:input_type -> chalkos.node.v1.InfoRequest
+	6,  // 50: chalkos.node.v1.NodeService.Disks:input_type -> chalkos.node.v1.DisksRequest
+	10, // 51: chalkos.node.v1.NodeService.Contract:input_type -> chalkos.node.v1.ContractRequest
+	12, // 52: chalkos.node.v1.NodeService.Install:input_type -> chalkos.node.v1.InstallRequest
+	23, // 53: chalkos.node.v1.NodeService.ApplyConfig:input_type -> chalkos.node.v1.ApplyConfigRequest
+	24, // 54: chalkos.node.v1.NodeService.GetConfig:input_type -> chalkos.node.v1.GetConfigRequest
+	28, // 55: chalkos.node.v1.NodeService.ResetVolume:input_type -> chalkos.node.v1.ResetVolumeRequest
+	30, // 56: chalkos.node.v1.NodeService.Status:input_type -> chalkos.node.v1.StatusRequest
+	42, // 57: chalkos.node.v1.NodeService.Logs:input_type -> chalkos.node.v1.LogsRequest
+	44, // 58: chalkos.node.v1.NodeService.Reboot:input_type -> chalkos.node.v1.RebootRequest
+	46, // 59: chalkos.node.v1.NodeService.Bootstrap:input_type -> chalkos.node.v1.BootstrapRequest
+	50, // 60: chalkos.node.v1.NodeService.EtcdMembers:input_type -> chalkos.node.v1.EtcdMembersRequest
+	52, // 61: chalkos.node.v1.NodeService.EtcdRemoveMember:input_type -> chalkos.node.v1.EtcdRemoveMemberRequest
+	54, // 62: chalkos.node.v1.NodeService.EtcdLeave:input_type -> chalkos.node.v1.EtcdLeaveRequest
+	56, // 63: chalkos.node.v1.NodeService.RenewNodeCertificate:input_type -> chalkos.node.v1.RenewNodeCertificateRequest
+	58, // 64: chalkos.node.v1.NodeService.RotationStep:input_type -> chalkos.node.v1.RotationStepRequest
+	61, // 65: chalkos.node.v1.NodeService.Upgrade:input_type -> chalkos.node.v1.UpgradeRequest
+	64, // 66: chalkos.node.v1.NodeService.DrainNode:input_type -> chalkos.node.v1.DrainNodeRequest
+	66, // 67: chalkos.node.v1.NodeService.UncordonNode:input_type -> chalkos.node.v1.UncordonNodeRequest
+	68, // 68: chalkos.node.v1.NodeService.RevokeNode:input_type -> chalkos.node.v1.RevokeNodeRequest
+	70, // 69: chalkos.node.v1.NodeService.UnrevokeNode:input_type -> chalkos.node.v1.UnrevokeNodeRequest
+	72, // 70: chalkos.node.v1.NodeService.Diagnostics:input_type -> chalkos.node.v1.DiagnosticsRequest
+	76, // 71: chalkos.node.v1.NodeService.RunDiagnostic:input_type -> chalkos.node.v1.RunDiagnosticRequest
+	5,  // 72: chalkos.node.v1.NodeService.Info:output_type -> chalkos.node.v1.InfoResponse
+	7,  // 73: chalkos.node.v1.NodeService.Disks:output_type -> chalkos.node.v1.DisksResponse
+	11, // 74: chalkos.node.v1.NodeService.Contract:output_type -> chalkos.node.v1.ContractResponse
+	22, // 75: chalkos.node.v1.NodeService.Install:output_type -> chalkos.node.v1.InstallResponse
+	26, // 76: chalkos.node.v1.NodeService.ApplyConfig:output_type -> chalkos.node.v1.ApplyConfigResponse
+	25, // 77: chalkos.node.v1.NodeService.GetConfig:output_type -> chalkos.node.v1.GetConfigResponse
+	29, // 78: chalkos.node.v1.NodeService.ResetVolume:output_type -> chalkos.node.v1.ResetVolumeResponse
+	31, // 79: chalkos.node.v1.NodeService.Status:output_type -> chalkos.node.v1.StatusResponse
+	43, // 80: chalkos.node.v1.NodeService.Logs:output_type -> chalkos.node.v1.LogsResponse
+	45, // 81: chalkos.node.v1.NodeService.Reboot:output_type -> chalkos.node.v1.RebootResponse
+	47, // 82: chalkos.node.v1.NodeService.Bootstrap:output_type -> chalkos.node.v1.BootstrapResponse
+	51, // 83: chalkos.node.v1.NodeService.EtcdMembers:output_type -> chalkos.node.v1.EtcdMembersResponse
+	53, // 84: chalkos.node.v1.NodeService.EtcdRemoveMember:output_type -> chalkos.node.v1.EtcdRemoveMemberResponse
+	55, // 85: chalkos.node.v1.NodeService.EtcdLeave:output_type -> chalkos.node.v1.EtcdLeaveResponse
+	57, // 86: chalkos.node.v1.NodeService.RenewNodeCertificate:output_type -> chalkos.node.v1.RenewNodeCertificateResponse
+	59, // 87: chalkos.node.v1.NodeService.RotationStep:output_type -> chalkos.node.v1.RotationStepResponse
+	63, // 88: chalkos.node.v1.NodeService.Upgrade:output_type -> chalkos.node.v1.UpgradeResponse
+	65, // 89: chalkos.node.v1.NodeService.DrainNode:output_type -> chalkos.node.v1.DrainNodeResponse
+	67, // 90: chalkos.node.v1.NodeService.UncordonNode:output_type -> chalkos.node.v1.UncordonNodeResponse
+	69, // 91: chalkos.node.v1.NodeService.RevokeNode:output_type -> chalkos.node.v1.RevokeNodeResponse
+	71, // 92: chalkos.node.v1.NodeService.UnrevokeNode:output_type -> chalkos.node.v1.UnrevokeNodeResponse
+	73, // 93: chalkos.node.v1.NodeService.Diagnostics:output_type -> chalkos.node.v1.DiagnosticsResponse
+	77, // 94: chalkos.node.v1.NodeService.RunDiagnostic:output_type -> chalkos.node.v1.RunDiagnosticResponse
+	72, // [72:95] is the sub-list for method output_type
+	49, // [49:72] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_chalkos_node_v1_node_proto_init() }
@@ -5472,13 +6027,19 @@ func file_chalkos_node_v1_node_proto_init() {
 		(*UpgradeRequest_Header)(nil),
 		(*UpgradeRequest_Chunk)(nil),
 	}
+	file_chalkos_node_v1_node_proto_msgTypes[71].OneofWrappers = []any{}
+	file_chalkos_node_v1_node_proto_msgTypes[73].OneofWrappers = []any{
+		(*RunDiagnosticResponse_Stdout)(nil),
+		(*RunDiagnosticResponse_Stderr)(nil),
+		(*RunDiagnosticResponse_Exit)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chalkos_node_v1_node_proto_rawDesc), len(file_chalkos_node_v1_node_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   71,
+			NumMessages:   79,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

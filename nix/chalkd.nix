@@ -12,6 +12,7 @@ callPackage ./go-module.nix { } {
     ../pkg/clustersecrets
     ../pkg/command
     ../pkg/config
+    ../pkg/diagnostics
     ../pkg/effects
     ../pkg/esp
     ../pkg/facts

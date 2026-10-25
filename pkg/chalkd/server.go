@@ -20,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
+	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
@@ -47,6 +48,9 @@ const (
 	// maxLogStreams limits concurrent Logs calls, each of which holds a journalctl process
 	// until the client goes away.
 	maxLogStreams = 8
+	// maxDiagnosticRuns limits concurrent RunDiagnostic calls, each of which holds a transient
+	// unit until its command ends.
+	maxDiagnosticRuns = 4
 )
 
 // Paths are the files chalkd reads and writes; tests point them at temporary directories.
@@ -70,6 +74,8 @@ type Paths struct {
 	FailedBoot string
 	// Facts is where the image declares the facts its rules read.
 	Facts string
+	// Diagnostics is where the image declares its diagnostics.
+	Diagnostics string
 	// EffectsBaseline, below /run, is what the effects of a delivery that failed part way
 	// compare with until a delivery is applied whole: the config, the facts and the outputs as they
 	// were before the first delivery that failed.
@@ -91,6 +97,7 @@ func DefaultPaths() Paths {
 		Cmdline:         "/proc/cmdline",
 		FailedBoot:      "/var/lib/chalkd/failed-boot",
 		Facts:           facts.DefaultPath,
+		Diagnostics:     diagnostics.DefaultPath,
 		EffectsBaseline: "/run/chalkd/effects-baseline.json",
 	}
 }
@@ -131,6 +138,9 @@ type Server struct {
 	RebootNode func()
 	// Facts runs the commands of facts; nil runs them with systemd-run. Tests replace it.
 	Facts facts.Runner
+	// Diagnose runs the diagnostics' commands; nil runs them as transient systemd units. Tests
+	// replace it.
+	Diagnose diagnostics.Runner
 	// Layers are the layers the image carries, as its markers name them.
 	Layers layers.Set
 	// Kubernetes is the node's Kubernetes side; nil in maintenance mode and on an image without
@@ -158,6 +168,8 @@ type Server struct {
 	upgrading sync.Mutex
 	// logStreams counts the Logs calls running.
 	logStreams atomic.Int32
+	// diagnosticRuns counts the RunDiagnostic calls running.
+	diagnosticRuns atomic.Int32
 }
 
 // permission is where an RPC may be called and the least role it needs.
@@ -199,6 +211,10 @@ var permissions = map[string]permission{
 	nodev1connect.NodeServiceUncordonNodeProcedure:         {normalOnly, pki.RoleOperator, layers.Kubernetes},
 	nodev1connect.NodeServiceRevokeNodeProcedure:           {normalOnly, pki.RoleAdmin, layers.Kubernetes},
 	nodev1connect.NodeServiceUnrevokeNodeProcedure:         {normalOnly, pki.RoleAdmin, layers.Kubernetes},
+	nodev1connect.NodeServiceDiagnosticsProcedure:          {anyMode, pki.RoleReader, layers.Base},
+	// RunDiagnostic also needs the diagnostic's own role, which it checks itself, as the table
+	// cannot see the request.
+	nodev1connect.NodeServiceRunDiagnosticProcedure: {anyMode, pki.RoleReader, layers.Base},
 	// Upgrade needs the admin role when its header carries config or a fallback secret, as
 	// ApplyConfig does; Upgrade checks that itself, as the table cannot see the header.
 	nodev1connect.NodeServiceUpgradeProcedure: {normalOnly, pki.RoleOperator, layers.Base},

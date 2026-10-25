@@ -615,6 +615,63 @@ The response of UnrevokeNode.
 | `revoked_at` | google.protobuf.Timestamp | When the node was revoked; unset when the time it is listed with cannot be read, which counts every CA as made before the revocation. |
 | `stale_cas` | list of string | The CAs issued before the revocation, by the names chalkctl rotate takes: os-ca, kubernetes-ca. The old node's certificates work again until they expire or these CAs are rotated. Empty when both were rotated after the revocation. |
 
+### Diagnostics { #method-diagnostics }
+
+Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
+ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
+
+Request: DiagnosticsRequest. Response: DiagnosticsResponse.
+
+#### DiagnosticsRequest { #message-diagnosticsrequest }
+
+The request of Diagnostics.
+
+No fields.
+
+#### DiagnosticsResponse { #message-diagnosticsresponse }
+
+The response of Diagnostics.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `diagnostics` | list of Diagnostic | The image's diagnostics, in name order. |
+
+Field types: [Diagnostic](#message-diagnostic).
+
+### RunDiagnostic { #method-rundiagnostic }
+
+RunDiagnostic runs one of the image's diagnostics with the arguments given and streams what
+its command prints on standard output and standard error, then how it ended. It is refused
+with PERMISSION_DENIED unless the caller also has the diagnostic's own role, and with
+INVALID_ARGUMENT unless each argument is of its parameter's type and every parameter without
+a default or optional is given. chalkd runs the command as a transient systemd unit under a
+user of its own, on a read-only file system, with no capabilities but those the diagnostic
+names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
+a time. Available in maintenance and normal mode to readers.
+
+Request: RunDiagnosticRequest. Response: a stream of RunDiagnosticResponse.
+
+#### RunDiagnosticRequest { #message-rundiagnosticrequest }
+
+The request of RunDiagnostic.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | string | Name of the diagnostic, as Diagnostics lists it. |
+| `arguments` | map of string | The value of each parameter given, by parameter name. |
+
+#### RunDiagnosticResponse { #message-rundiagnosticresponse }
+
+A message of the RunDiagnostic stream: output as the command prints it, then how it ended.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `stdout` | bytes, oneof output | Bytes the command printed on standard output. |
+| `stderr` | bytes, oneof output | Bytes the command printed on standard error. |
+| `exit` | DiagnosticExit, oneof output | How the command ended; the stream's last message. |
+
+Field types: [DiagnosticExit](#message-diagnosticexit).
+
 ## Messages { #messages }
 
 These messages are held by fields of other messages.
@@ -657,6 +714,45 @@ A certificate the node holds or issues with.
 | `problem` | string | Why a renewal fails, such as "renewal failing: &lt;reason>; expires &lt;date>", or a warning, such as "less than a third of its lifetime remains" or "node CA expires &lt;date>; run chalkctl node-ca rotate"; empty when there is nothing to do. A command it advises names the node, or says &lt;node> when the node cannot tell its name. |
 | `fingerprint` | string | The SHA-256 fingerprint of the certificate, in lower-case hex. |
 | `issuer` | string | The SHA-256 fingerprint of the certificate that issued it, in lower-case hex; empty when the node does not hold that one. |
+
+### Diagnostic { #message-diagnostic }
+
+A diagnostic the image declares.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | string | Name RunDiagnostic takes, such as "route-get". |
+| `description` | string | One sentence on what the diagnostic shows. |
+| `parameters` | list of DiagnosticParameter | Its parameters: those a call must give, then the others, each in the order its command names them. |
+| `role` | string | Least role that runs it: reader, operator or admin. |
+| `timeout` | string | How long it may run before systemd stops it, such as "10s". |
+
+Field types: [DiagnosticParameter](#message-diagnosticparameter).
+
+### DiagnosticExit { #message-diagnosticexit }
+
+How a diagnostic's command ended.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `code` | int32 | Its exit status, while stopped is empty. |
+| `stopped` | string | Why the command ended without exiting by itself, else empty: "timeout" once it ran longer than the diagnostic's timeout, "output-limit" once it printed more than 1 MiB, of which the stream holds the first 1 MiB, or systemd's result of its unit, such as "signal". |
+
+### DiagnosticParameter { #message-diagnosticparameter }
+
+A parameter of a diagnostic.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | string | Name the arguments of RunDiagnostic give it by. |
+| `type` | string | What its value is: address, prefix, hostname, interface, int, enum or pattern. |
+| `description` | string | One sentence on the value. |
+| `optional` | bool | Whether a call may leave it out. |
+| `default_value` | string | The value it takes when a call leaves it out; empty when leaving it out drops the arguments of the command that name it. |
+| `min` | int64 or unset | Least value of an int parameter, when it has one. |
+| `max` | int64 or unset | Greatest value of an int parameter, when it has one. |
+| `values` | list of string | The values of an enum parameter. |
+| `regex` | string | The RE2 regular expression a pattern parameter's value matches whole. |
 
 ### Disk { #message-disk }
 

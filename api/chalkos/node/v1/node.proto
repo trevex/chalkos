@@ -127,6 +127,18 @@ service NodeService {
   // bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
   // Kubernetes layer.
   rpc UnrevokeNode(UnrevokeNodeRequest) returns (UnrevokeNodeResponse);
+  // Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
+  // ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
+  rpc Diagnostics(DiagnosticsRequest) returns (DiagnosticsResponse);
+  // RunDiagnostic runs one of the image's diagnostics with the arguments given and streams what
+  // its command prints on standard output and standard error, then how it ended. It is refused
+  // with PERMISSION_DENIED unless the caller also has the diagnostic's own role, and with
+  // INVALID_ARGUMENT unless each argument is of its parameter's type and every parameter without
+  // a default or optional is given. chalkd runs the command as a transient systemd unit under a
+  // user of its own, on a read-only file system, with no capabilities but those the diagnostic
+  // names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
+  // a time. Available in maintenance and normal mode to readers.
+  rpc RunDiagnostic(RunDiagnosticRequest) returns (stream RunDiagnosticResponse);
 }
 
 // The mode chalkd serves the node in.
@@ -997,4 +1009,81 @@ message UnrevokeNodeResponse {
   // The old node's certificates work again until they expire or these CAs are rotated. Empty when
   // both were rotated after the revocation.
   repeated string stale_cas = 2;
+}
+
+// The request of Diagnostics.
+message DiagnosticsRequest {}
+
+// The response of Diagnostics.
+message DiagnosticsResponse {
+  // The image's diagnostics, in name order.
+  repeated Diagnostic diagnostics = 1;
+}
+
+// A diagnostic the image declares.
+message Diagnostic {
+  // Name RunDiagnostic takes, such as "route-get".
+  string name = 1;
+  // One sentence on what the diagnostic shows.
+  string description = 2;
+  // Its parameters: those a call must give, then the others, each in the order its command names
+  // them.
+  repeated DiagnosticParameter parameters = 3;
+  // Least role that runs it: reader, operator or admin.
+  string role = 4;
+  // How long it may run before systemd stops it, such as "10s".
+  string timeout = 5;
+}
+
+// A parameter of a diagnostic.
+message DiagnosticParameter {
+  // Name the arguments of RunDiagnostic give it by.
+  string name = 1;
+  // What its value is: address, prefix, hostname, interface, int, enum or pattern.
+  string type = 2;
+  // One sentence on the value.
+  string description = 3;
+  // Whether a call may leave it out.
+  bool optional = 4;
+  // The value it takes when a call leaves it out; empty when leaving it out drops the arguments
+  // of the command that name it.
+  string default_value = 5;
+  // Least value of an int parameter, when it has one.
+  optional int64 min = 6;
+  // Greatest value of an int parameter, when it has one.
+  optional int64 max = 7;
+  // The values of an enum parameter.
+  repeated string values = 8;
+  // The RE2 regular expression a pattern parameter's value matches whole.
+  string regex = 9;
+}
+
+// The request of RunDiagnostic.
+message RunDiagnosticRequest {
+  // Name of the diagnostic, as Diagnostics lists it.
+  string name = 1;
+  // The value of each parameter given, by parameter name.
+  map<string, string> arguments = 2;
+}
+
+// A message of the RunDiagnostic stream: output as the command prints it, then how it ended.
+message RunDiagnosticResponse {
+  oneof output {
+    // Bytes the command printed on standard output.
+    bytes stdout = 1;
+    // Bytes the command printed on standard error.
+    bytes stderr = 2;
+    // How the command ended; the stream's last message.
+    DiagnosticExit exit = 3;
+  }
+}
+
+// How a diagnostic's command ended.
+message DiagnosticExit {
+  // Its exit status, while stopped is empty.
+  int32 code = 1;
+  // Why the command ended without exiting by itself, else empty: "timeout" once it ran longer
+  // than the diagnostic's timeout, "output-limit" once it printed more than 1 MiB, of which the
+  // stream holds the first 1 MiB, or systemd's result of its unit, such as "signal".
+  string stopped = 2;
 }
