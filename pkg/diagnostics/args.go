@@ -105,7 +105,9 @@ func (p Parameter) typed(s string) (string, error) {
 				return "", fmt.Errorf("%q is no DNS name", s)
 			}
 		}
-		return s, nil
+		// Fully qualified, so no search list applies, and a program that tells a name from a
+		// record type or class by its dot, as drill does, reads a single label as a name.
+		return name + ".", nil
 	case TypeInterface:
 		if !interfaceName.MatchString(s) {
 			return "", fmt.Errorf("%q is no interface name", s)

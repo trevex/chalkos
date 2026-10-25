@@ -49,7 +49,7 @@ func TestArgv(t *testing.T) {
 		"a default":       {ping, map[string]string{"address": "192.0.2.1"}, []string{"/nix/store/x-iputils/bin/ping", "-n", "-c", "4", "192.0.2.1"}},
 		"canonical forms": {ping, map[string]string{"address": "2001:DB8:0::1", "count": "007"}, []string{"/nix/store/x-iputils/bin/ping", "-n", "-c", "7", "2001:db8::1"}},
 		"a zone":          {ping, map[string]string{"address": "fe80::1%eth0"}, []string{"/nix/store/x-iputils/bin/ping", "-n", "-c", "4", "fe80::1%eth0"}},
-		"left out":        {dig, map[string]string{"name": "example.org"}, []string{"/nix/store/x-dig/bin/dig", "example.org"}},
+		"left out":        {dig, map[string]string{"name": "example.org"}, []string{"/nix/store/x-dig/bin/dig", "example.org."}},
 		"in an argument":  {dig, map[string]string{"name": "example.org.", "type": "AAAA", "server": "192.0.2.53"}, []string{"/nix/store/x-dig/bin/dig", "example.org.", "AAAA", "@192.0.2.53"}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -105,7 +105,8 @@ func TestValues(t *testing.T) {
 		{Parameter{Type: TypeInterface}, "eth0.100", "eth0.100", ""},
 		{Parameter{Type: TypeInterface}, "-eth0", "", `"-eth0" is no interface name`},
 		{Parameter{Type: TypeInterface}, "abcdefghijklmnop", "", `"abcdefghijklmnop" is no interface name`},
-		{Parameter{Type: TypeHostname}, "_sip._tcp.example.org", "_sip._tcp.example.org", ""},
+		{Parameter{Type: TypeHostname}, "_sip._tcp.example.org", "_sip._tcp.example.org.", ""},
+		{Parameter{Type: TypeHostname}, "mx", "mx.", ""},
 		{Parameter{Type: TypeInt, Max: bound(5)}, "6", "", "6 is not at most 5"},
 		{Parameter{Type: TypePattern, Regex: "^[a-z]+$"}, "main", "main", ""},
 		{Parameter{Type: TypePattern, Regex: "^a|b$"}, "ab", "", `"ab" does not match ^a|b$`},

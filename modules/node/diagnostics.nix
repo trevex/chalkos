@@ -43,9 +43,11 @@ let
         description = ''
           What the value is. chalkd refuses a value of another type, and passes the command its
           canonical form: `address` is an IPv4 or IPv6 address, with a zone for a link-local one;
-          `prefix` an address with a prefix length; `hostname` a DNS name; `interface` a network
-          interface's name; `int` a decimal integer from `min` to `max`; `enum` one of `values`;
-          `pattern` a string that `regex` matches whole.
+          `prefix` an address with a prefix length; `hostname` a DNS name, which the command gets
+          fully qualified, with a trailing dot; `interface` a network interface's name; `int` a
+          decimal integer from `min` to `max`; `enum` one of `values`; `pattern` a string that
+          `regex` matches whole. chalkd refuses any value that starts with `-` or holds a control
+          character.
         '';
       };
       description = mkOption {
