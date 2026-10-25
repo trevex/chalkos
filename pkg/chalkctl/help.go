@@ -85,10 +85,10 @@ client file or the secrets file.`
 const nodeRoutesExample = `  # Every route of r1's main table and BGP's paths.
   chalkctl node routes r1
 
-  # The default route, in the kernel and in BGP.
+  # Every IPv6 route, in the kernel and in BGP.
   chalkctl node routes r1 ::/0
 
-  # The routes zebra installed from BGP in every table.
+  # The routes zebra installed from BGP in every table, and BGP's paths.
   chalkctl node routes r1 --protocol bgp --table all`
 
 const nodeDiagExample = `  # List w1's diagnostics.
