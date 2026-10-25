@@ -129,6 +129,22 @@ let
           }
         ];
       }
+    else if n == types.peerAS.name then
+      {
+        anyOf = [
+          {
+            enum = [
+              "external"
+              "internal"
+            ];
+          }
+          {
+            type = "integer";
+            minimum = 1;
+            maximum = 4294967295;
+          }
+        ];
+      }
     else if n == "str" then
       { type = "string"; }
     else if n == "nonEmptyStr" then

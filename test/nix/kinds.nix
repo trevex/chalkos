@@ -278,6 +278,23 @@ lib.runTests {
       }
     ];
   };
+  # A BGP neighbour's AS, as BGPPeer takes it: external, internal or a 32-bit AS number.
+  testPeerAS = {
+    expr = propOf kindTypes.peerAS;
+    expected.anyOf = [
+      {
+        enum = [
+          "external"
+          "internal"
+        ];
+      }
+      {
+        type = "integer";
+        minimum = 1;
+        maximum = 4294967295;
+      }
+    ];
+  };
   testPositive = {
     expr = propOf types.ints.positive;
     expected = {

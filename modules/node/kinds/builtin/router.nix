@@ -15,19 +15,16 @@ let
   inherit (lib) mkOption types;
   inherit (import ./lib.nix) builtin groups apiVersions;
   inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) documentName portRange;
+  inherit (import ./router-types.nix { inherit lib; })
+    interface
+    interfaceText
+    prefix
+    address
+    family
+    ;
   cel = import ../../../../lib/cel.nix { inherit lib; };
 
-  # An interface's name, or a glob of names: a prefix and `*`, the one wildcard nftables matches.
-  interface = types.strMatching "[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*]";
-  interfaceText = "by name or glob, a glob being a prefix followed by `*`";
-  # An address range, which the rules read with cidr(), and an address, which they read with ip().
-  prefix = types.strMatching "[0-9A-Fa-f:.]+/[0-9]{1,3}";
-  address = types.strMatching "[0-9A-Fa-f:.]+";
   zoneName = types.strMatching documentName;
-  family = types.enum [
-    "ipv4"
-    "ipv6"
-  ];
   verdict = types.enum [
     "accept"
     "drop"

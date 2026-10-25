@@ -39,6 +39,17 @@
       description = "port or range of ports";
     };
 
+  # A BGP neighbour's AS: external or internal, as the session finds it, or an AS number.
+  peerAS =
+    lib.types.either (lib.types.enum [
+      "external"
+      "internal"
+    ]) (lib.types.ints.between 1 4294967295)
+    // {
+      name = "chalkosPeerAS";
+      description = "external, internal or an AS number";
+    };
+
   # A document's metadata.name, as chalkcfg reads it.
   documentName = "[a-z0-9]([-a-z0-9.]*[a-z0-9])?";
 }
