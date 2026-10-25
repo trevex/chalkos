@@ -415,6 +415,11 @@ in
           echo "error: the router's check accepted a ruleset the kernel refuses" >&2
           exit 1
         fi
+        if ! grep -q 'Error: Interface does not exist' err; then
+          echo "error: the router's check refused the ruleset for another reason:" >&2
+          cat err >&2
+          exit 1
+        fi
         touch $out
       '';
 
