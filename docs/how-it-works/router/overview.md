@@ -100,7 +100,8 @@ Once the config is stored, chalkd reloads `chalkos-firewall.service` and then re
 `systemd-sysctl.service`, so forwarding never changes before the policies of the same delivery.
 The reload loads the ruleset in one nftables transaction. The transaction replaces the table
 `inet chalkos` and leaves every other table alone. A ruleset that nft refuses at that point
-leaves the loaded one in place and fails the delivery.
+leaves the loaded one in place and fails the delivery. chalkd still restarts
+`systemd-sysctl.service`, so the delivery's kernel settings apply with the old table.
 
 ## The management guard keeps the node API reachable
 
@@ -114,7 +115,7 @@ that a running `Network` matches. A delivery that removes the last `Network` of 
 the config is refused: Router "router" spec.management.interfaces: the config leaves the management interfaces lan0 without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery
 ```
 
-The rule reads the `Name=` of each `[Match]` section and splits it into names at spaces. It
+The rule reads the `Name=` of each `[Match]` section and splits it into names at spaces and tabs. It
 compares names and globs, a prefix followed by `*`, by their prefixes:
 
 - A name matches the same name, and a glob matches the names and globs its prefix starts.

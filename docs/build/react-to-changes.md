@@ -79,7 +79,7 @@ evaluation fails. `start` changes what `restart` does:
 
 | Option | Action |
 | --- | --- |
-| `reload` | Reloads the units with `systemctl reload`, by their full names. |
+| `reload` | Reloads the units with `systemctl reload`, by their full names. A unit that failed it restarts instead, since systemd reloads no failed unit. |
 | `restart` | Restarts the units, by their full names. A unit that does not run stays stopped. |
 | `start` | With `restart`, starts the units that do not run too. |
 | `run` | Runs one command after the reloads and before the restarts. |
