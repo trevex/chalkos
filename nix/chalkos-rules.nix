@@ -8,6 +8,7 @@ callPackage ./go-module.nix { } {
     ../pkg/atomicfile
     ../pkg/command
     ../pkg/config
+    ../pkg/diagnostics
     ../pkg/effects
     ../pkg/facts
     ../pkg/identity

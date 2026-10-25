@@ -1,8 +1,8 @@
 // Command chalkos-rules checks an image when it is built: every change rule its schemas declare
 // and every rule of its effects compiles, within the cost limit, and reads only facts the image
 // declares, each a file or a program of the image's store; every effect acts on units the image
-// defines, outputs it declares and kinds its schemas declare; and every output renders its
-// examples and passes its check.
+// defines, outputs it declares and kinds its schemas declare; every output renders its examples
+// and passes its check; and every diagnostic is one chalkd can run.
 package main
 
 import (
@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/command"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/withheld"
+	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/jsonfile"
@@ -30,12 +31,13 @@ import (
 const usage = `usage: chalkos-rules check IMAGE
 
 Checks the files of the directory IMAGE, as an image's build lays them out: schemas/, the
-directory of its schemas; facts.json, effects.json and outputs.json, the image's own;
-examples.json, the examples directory of each output by name; and units/, its systemd units.
-Every rule of the schemas and of the effects compiles and reads only facts facts.json declares,
-every unit an effect restarts or reloads is one of units/, every effect's outputs and kinds name
-an output or a kind that exists, every output reads kinds the schemas declare, and each output
-renders each of its examples and passes its check.`
+directory of its schemas; facts.json, effects.json, outputs.json and diagnostics.json, the
+image's own; examples.json, the examples directory of each output by name; and units/, its
+systemd units. Every rule of the schemas and of the effects compiles and reads only facts
+facts.json declares, every unit an effect restarts or reloads is one of units/, every effect's
+outputs and kinds name an output or a kind that exists, every output reads kinds the schemas
+declare, each output renders each of its examples and passes its check, and every diagnostic is
+one chalkd can run.`
 
 func main() {
 	if len(os.Args) != 3 || os.Args[1] != "check" {
@@ -63,6 +65,9 @@ func check(image string, out io.Writer) error {
 	}
 	outs, err := outputs.Read(filepath.Join(image, "outputs.json"), outputs.DefaultRoot)
 	if err != nil {
+		return err
+	}
+	if _, err := diagnostics.Read(filepath.Join(image, "diagnostics.json")); err != nil {
 		return err
 	}
 	examples := map[string]string{}

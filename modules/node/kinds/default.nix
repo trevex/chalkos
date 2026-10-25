@@ -4,7 +4,7 @@
 # - Each kind has a get function that builds chalkcfg commands.
 # - The schemas include networkd's kinds (networkd.nix).
 # The image builds only when chalkos-rules accepts the rules of its kinds, facts (facts.nix),
-# outputs and effects.
+# outputs, effects and diagnostics.
 {
   chalkosPackages,
   config,
@@ -64,11 +64,13 @@ let
     "effects.json" = config.system.build.chalkosEffects;
     "outputs.json" = config.system.build.chalkosOutputs;
     "examples.json" = config.system.build.chalkosOutputExamples;
+    "diagnostics.json" = config.system.build.chalkosDiagnostics;
     units = config.environment.etc."systemd/system".source;
   };
   # The image builds only when every rule of its schemas and of its effects compiles, within the
   # cost limit, and reads facts the image declares, its effects act on units and outputs it
-  # defines, and each output renders its examples and passes its check.
+  # defines, each output renders its examples and passes its check, and chalkd can run each of
+  # its diagnostics.
   rulesCheck = pkgs.runCommand "chalkos-rules-check" { nativeBuildInputs = [ chalkos-rules ]; } ''
     chalkos-rules check ${rulesImage}
     touch $out

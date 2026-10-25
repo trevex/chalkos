@@ -257,8 +257,8 @@ in
   # act on units it defines. The test image's Greeting and the homelab example's Rack, Hardware and
   # Peer bring extension kinds with their own rules, facts, effects and outputs; a rule that does
   # not compile, one that reads a fact no module declares, an effect's rule that does not compile,
-  # an effect on a unit the image lacks and an output whose check refuses an example fail the check
-  # of their image. The homelab's Hardware output renders hardware-examples/server.yaml, and its
+  # an effect on a unit the image lacks, a diagnostic whose regex does not compile and an output
+  # whose check refuses an example fail the check of their image. The homelab's Hardware output renders hardware-examples/server.yaml, and its
   # bird-conf output renders bgp-examples/two-peers.yaml, which bird -p parses.
   rules =
     let
@@ -325,6 +325,29 @@ in
           }
         )
       ];
+      # A diagnostic whose pattern Go's regexp does not compile, which no evaluation catches.
+      brokenDiagnostic = build [
+        (
+          { pkgs, ... }:
+          {
+            chalkos.diagnostics.broken = {
+              description = "A diagnostic whose pattern does not compile.";
+              command = [
+                "${pkgs.iproute2}/bin/ip"
+                "route"
+                "show"
+                "table"
+                "{table}"
+              ];
+              parameters.table = {
+                type = "pattern";
+                regex = "^[a-z$";
+                description = "A table.";
+              };
+            };
+          }
+        )
+      ];
     in
     pkgs.runCommand "chalkos-rules"
       {
@@ -356,6 +379,7 @@ in
         refused ${brokenEffect.chalkosRulesImage} 'effect bird: rule "config ==": ERROR: <input>:1:10: Syntax error'
         refused ${undefinedUnit.chalkosRulesImage} 'effect bird: the image defines no unit bird.service'
         refused ${refusedExample.chalkosRulesImage} 'output demo: example second.yaml: its check refused the rendered files (exit 1)'
+        refused ${brokenDiagnostic.chalkosRulesImage} 'diagnostic broken: parameter table: its regex: error parsing regexp: missing closing ]'
         # The check of chrony's output passes the servers its template renders, and refuses a
         # line chronyd does not parse or a sourcedir file does not take.
         check=$(jq -r .chrony.check ${testing.nixos.test-metal.config.system.build.chalkosOutputs})

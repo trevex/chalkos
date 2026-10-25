@@ -87,6 +87,18 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+// A diagnostic chalkd would refuse fails the check, as it would fail chalkd's reading of it.
+func TestCheckRefusesADiagnostic(t *testing.T) {
+	f := files(greeting(fieldRule, kindRule), lock, effect(`false`, `false`))
+	f["diagnostics.json"] = `{"route": {"description": "A route.", "role": "reader", "timeout": "10s",
+	  "command": ["/nix/store/x-iproute2/bin/ip", "route", "show", "table", "{table}"],
+	  "parameters": {"table": {"type": "pattern", "description": "A table.", "regex": "^[a-z$"}}}}`
+	err := check(image(t, f), &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "diagnostic route: parameter table: its regex: error parsing regexp") {
+		t.Errorf("err = %v, want one naming the diagnostic's regex", err)
+	}
+}
+
 // storeShell is the shell of the image's store that runs the test's scripts, as the renderer of
 // an image runs from its store.
 func storeShell(t *testing.T) string {
