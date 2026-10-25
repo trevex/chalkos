@@ -115,6 +115,20 @@ let
         ];
         "x-chalkos-kubernetes-object" = true;
       }
+    else if n == types.portRange.name then
+      {
+        anyOf = [
+          {
+            type = "integer";
+            minimum = 0;
+            maximum = 65535;
+          }
+          {
+            type = "string";
+            pattern = "^(?:[0-9]{1,5}-[0-9]{1,5})$";
+          }
+        ];
+      }
     else if n == "str" then
       { type = "string"; }
     else if n == "nonEmptyStr" then

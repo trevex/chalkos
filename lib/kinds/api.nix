@@ -9,6 +9,7 @@ rec {
     storage = "storage.chalkos.dev";
     time = "time.chalkos.dev";
     kubernetes = "kubernetes.chalkos.dev";
+    router = "router.chalkos.dev";
     networkd = "networkd.chalkos.dev";
   };
   apiVersions = builtins.mapAttrs (_: group: "${group}/${version}") groups;

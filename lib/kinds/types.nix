@@ -29,6 +29,12 @@
     description = "Kubernetes object";
   };
 
+  # A port, or a range of ports written "<first>-<last>", which the router kinds take.
+  portRange = lib.types.either lib.types.port (lib.types.strMatching "[0-9]{1,5}-[0-9]{1,5}") // {
+    name = "chalkosPortRange";
+    description = "port or range of ports";
+  };
+
   # A document's metadata.name, as chalkcfg reads it.
   documentName = "[a-z0-9]([-a-z0-9.]*[a-z0-9])?";
 }

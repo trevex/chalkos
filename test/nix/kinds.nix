@@ -247,6 +247,21 @@ lib.runTests {
       maximum = 65535;
     };
   };
+  # A port or a range of ports, as the router kinds take them: a number, or "<first>-<last>".
+  testPortRange = {
+    expr = propOf kindTypes.portRange;
+    expected.anyOf = [
+      {
+        type = "integer";
+        minimum = 0;
+        maximum = 65535;
+      }
+      {
+        type = "string";
+        pattern = "^(?:[0-9]{1,5}-[0-9]{1,5})$";
+      }
+    ];
+  };
   testPositive = {
     expr = propOf types.ints.positive;
     expected = {
