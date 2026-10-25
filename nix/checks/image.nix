@@ -258,8 +258,9 @@ in
   # Peer bring extension kinds with their own rules, facts, effects and outputs; a rule that does
   # not compile, one that reads a fact no module declares, an effect's rule that does not compile,
   # an effect on a unit the image lacks, a diagnostic whose regex does not compile and an output
-  # whose check refuses an example fail the check of their image. The homelab's Hardware output renders hardware-examples/server.yaml, and its
-  # bird-conf output renders bgp-examples/two-peers.yaml, which bird -p parses.
+  # whose check refuses an example fail the check of their image. The homelab's Hardware output
+  # renders hardware-examples/server.yaml, and its bird-conf output renders
+  # bgp-examples/two-peers.yaml, which bird -p parses.
   rules =
     let
       build =
