@@ -498,8 +498,8 @@ A node's config holds at most one. It has 17 [change rules](builtins.md#rules-re
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.allow` | list of string | required | Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone. A family's whole range, `0.0.0.0/0` or `::/0`, answers whoever reaches the addresses of `listen`: an open resolver, if one of them faces the internet. |
-| `spec.dns64` | object or null | `null` | DNS64: AAAA records the resolver synthesizes for IPv4-only names, and its answer for `ipv4only.arpa`; null synthesizes none. |
-| `spec.dns64.prefix` | string | `"64:ff9b::/96"` | NAT64 prefix the resolver synthesizes AAAA records in, from the A records of names that have no AAAA record. |
+| `spec.dns64` | object or null | `null` | DNS64: AAAA records the resolver synthesises for IPv4-only names, and its answer for `ipv4only.arpa`; null synthesises none. |
+| `spec.dns64.prefix` | string | `"64:ff9b::/96"` | NAT64 prefix the resolver synthesises AAAA records in, from the A records of names that have no AAAA record. |
 | `spec.dnssec` | boolean | `true` | Whether the resolver validates DNSSEC with the root's trust anchor of the image. The forwarders then pass DNSSEC records on. |
 | `spec.forwarders` | list of string | `[]` | Resolvers the router sends its queries to; empty resolves names itself, from the root servers. |
 | `spec.listen` | list of string | required | Addresses of the router on which the resolver answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`. |

@@ -311,7 +311,7 @@ in
                 options.prefix = mkOption {
                   type = prefix;
                   default = "64:ff9b::/96";
-                  description = "NAT64 prefix the resolver synthesizes AAAA records in, from the A records of names that have no AAAA record.";
+                  description = "NAT64 prefix the resolver synthesises AAAA records in, from the A records of names that have no AAAA record.";
                 };
               }
             );
@@ -319,7 +319,7 @@ in
             example = {
               prefix = "64:ff9b::/96";
             };
-            description = "DNS64: AAAA records the resolver synthesizes for IPv4-only names, and its answer for `ipv4only.arpa`; null synthesizes none.";
+            description = "DNS64: AAAA records the resolver synthesises for IPv4-only names, and its answer for `ipv4only.arpa`; null synthesises none.";
             rules = [
               (
                 let
