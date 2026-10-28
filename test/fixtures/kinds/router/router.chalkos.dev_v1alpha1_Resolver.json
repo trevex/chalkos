@@ -26,7 +26,7 @@
       "additionalProperties": false,
       "properties": {
         "allow": {
-          "description": "Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone.",
+          "description": "Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone. A family's whole range, `0.0.0.0/0` or `::/0`, answers whoever reaches the addresses of `listen`: an open resolver, if one of them faces the internet.",
           "examples": [
             [
               "2001:db8::/32"
@@ -266,8 +266,20 @@
             },
             {
               "description": "A record appears once, as Unbound keeps one of its copies.",
-              "messageExpression": "cel.bind(e, self.map(z, z.records).flatten(), cel.bind(r, e.filter(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == \"AAAA\" ? ip(x.value) == ip(y.value) : x.value == y.value))) > 1)[0], \"the record \" + r.name + \" \" + r.type + \" \" + (r.type == \"AAAA\" ? string(ip(r.value)) : r.value) + \" appears more than once; Unbound keeps one\"))",
+              "messageExpression": "cel.bind(e, self.map(z, z.records).flatten(), size(e) > 50 ? \"a record appears more than once in the local zones, with one name, type and value; Unbound keeps one\" : cel.bind(r, e.filter(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == \"AAAA\" ? ip(x.value) == ip(y.value) : x.value == y.value))) > 1)[0], \"the record \" + r.name + \" \" + r.type + \" \" + (r.type == \"AAAA\" ? string(ip(r.value)) : r.value) + \" appears more than once; Unbound keeps one\"))",
               "rule": "cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == \"AAAA\" ? ip(x.value) == ip(y.value) : x.value == y.value))) == 1))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A redirect zone's records are of the zone's name, which Unbound answers for every name below it.",
+              "messageExpression": "cel.bind(z, self.filter(z, z.type == \"redirect\" && !z.records.all(r, r.name == z.name))[0], \"the redirect zone \" + z.name + \" holds a record of \" + z.records.filter(r, r.name != z.name)[0].name + \"; a redirect zone's records are of its own name, which Unbound answers for every name below it\")",
+              "rule": "self.all(z, z.type != \"redirect\" || z.records.all(r, r.name == z.name))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A CNAME record's name holds no other record.",
+              "messageExpression": "cel.bind(e, self.map(z, z.records).flatten(), e.filter(x, x.type == \"CNAME\" && size(e.filter(y, y.name == x.name)) > 1)[0].name + \" holds a CNAME record and another record; a CNAME's name holds it alone\")",
+              "rule": "cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, x.type != \"CNAME\" || size(e.filter(y, y.name == x.name)) == 1))",
               "takes": "refuse"
             }
           ]
@@ -293,6 +305,12 @@
     "kind": "Resolver",
     "multiple": false,
     "rules": [
+      {
+        "description": "A Resolver listens on an address of a family its clients' ranges are of.",
+        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, ![\"ipv4\", \"ipv6\"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, \"Resolver \" + n).join(\", \") + \" listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common\"",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, [\"ipv4\", \"ipv6\"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))",
+        "takes": "refuse"
+      },
       {
         "description": "With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64.",
         "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, s.dns64 != null && s.localZones.exists(z, (z.name == \"ipv4only.arpa\" || z.name.endsWith(\".ipv4only.arpa\") || \"ipv4only.arpa\".endsWith(\".\" + z.name))))).map(n, \"Resolver \" + n).join(\", \") + \" has a local zone over ipv4only.arpa, which Unbound would answer before DNS64; drop the zone or DNS64\"",

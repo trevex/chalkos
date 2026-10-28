@@ -158,6 +158,20 @@ func TestNAT64Rules(t *testing.T) {
 		{"the most TXT records", replace(resolver(many(maxRecords, "TXT"))), nil},
 		{"too many records", replace(resolver(many(maxRecords+1, "AAAA"))),
 			[]string{`Resolver "resolver" spec.localZones: the local zones hold 151 records, more than the 150 whose duplicates chalkd can check`}},
+		{"the most records alike", replace(resolver(strings.Repeat(record("TXT", strings.Repeat("x", 254))+", ", maxRecords-1) + record("TXT", strings.Repeat("x", 254)))),
+			[]string{`Resolver "resolver" spec.localZones: a record appears more than once in the local zones, with one name, type and value; Unbound keeps one`}},
+		{"a redirect zone's record below it", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "type": "redirect", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1"}]}]}`)),
+			[]string{`Resolver "resolver" spec.localZones: the redirect zone lan.example.org holds a record of a.lan.example.org; a redirect zone's records are of its own name, which Unbound answers for every name below it`}},
+		{"a redirect zone of its own name", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "type": "redirect", "records": [{"name": "lan.example.org", "type": "A", "value": "192.0.2.1"}]}]}`)), nil},
+		{"a CNAME beside another record", replace(resolver(record("CNAME", "r1.lan.example.org") + ", " + record("TXT", "x"))),
+			[]string{`Resolver "resolver" spec.localZones: a.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone`}},
+		{"two CNAMEs of one name", replace(resolver(record("CNAME", "r1.lan.example.org") + ", " + record("CNAME", "r2.lan.example.org"))),
+			[]string{`Resolver "resolver" spec.localZones: a.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone`}},
+		{"a CNAME in two zones", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "example.org", "type": "transparent", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1"}]},
+			{"name": "lan.example.org", "records": [{"name": "a.lan.example.org", "type": "CNAME", "value": "r1.lan.example.org"}]}]}`)),
+			[]string{`Resolver "resolver" spec.localZones: a.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone`}},
+		{"listen and allow of other families", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["192.0.2.0/24"]}`)),
+			[]string{"Resolver resolver listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
@@ -168,6 +182,17 @@ func TestNAT64Rules(t *testing.T) {
 				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
 			}
 		})
+	}
+}
+
+// An A or AAAA record whose value is no address stops the rules with ip()'s error, which names the
+// field, in place of a failure of their own.
+func TestRecordOfNoAddress(t *testing.T) {
+	set, doc := routerRules(t)
+	r := doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "records": [{"name": "a.lan.example.org", "type": "A", "value": "foo"}]}]}`)
+	_, err := set.Evaluate(Input{Documents: []config.Document{r}, Node: "r1"})
+	if want := `Resolver "resolver" spec.localZones: a rule cannot be evaluated: ip: the argument is not an address`; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, want %q", err, want)
 	}
 }
 

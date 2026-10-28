@@ -493,11 +493,11 @@ The router's DNS resolver, Unbound: the addresses it answers on, whom it answers
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config holds at most one. It has 14 [change rules](builtins.md#rules-resolver).
+A node's config holds at most one. It has 17 [change rules](builtins.md#rules-resolver).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.allow` | list of string | required | Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone. |
+| `spec.allow` | list of string | required | Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone. A family's whole range, `0.0.0.0/0` or `::/0`, answers whoever reaches the addresses of `listen`: an open resolver, if one of them faces the internet. |
 | `spec.dns64` | object or null | `null` | DNS64: AAAA records the resolver synthesizes for IPv4-only names, and its answer for `ipv4only.arpa`; null synthesizes none. |
 | `spec.dns64.prefix` | string | `"64:ff9b::/96"` | NAT64 prefix the resolver synthesizes AAAA records in, from the A records of names that have no AAAA record. |
 | `spec.dnssec` | boolean | `true` | Whether the resolver validates DNSSEC with the root's trust anchor of the image. The forwarders then pass DNSSEC records on. |

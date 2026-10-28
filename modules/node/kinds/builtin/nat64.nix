@@ -78,6 +78,7 @@ let
     x: y:
     ''${x}.name == ${y}.name && ${x}.type == ${y}.type && (${x}.type == "AAAA" ? ip(${x}.value) == ip(${y}.value) : ${x}.value == ${y}.value)'';
   maxRecords = 150;
+  fewOfMessage = 50;
   # Whether a local zone named z holds ipv4only.arpa or a name below it, which DNS64 answers.
   overIPv4Only =
     z:
@@ -248,6 +249,11 @@ in
         description = "The router's DNS resolver, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.";
         rules = [
           {
+            description = "A Resolver listens on an address of a family its clients' ranges are of.";
+            rule = ''documents.all(n, cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))'';
+            messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, !["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, "Resolver " + n).join(", ") + " listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"'';
+          }
+          {
             description = "With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64.";
             rule = "documents.all(n, cel.bind(s, documents[n].spec, s.dns64 == null || !s.localZones.exists(z, ${overIPv4Only "z.name"})))";
             messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, s.dns64 != null && s.localZones.exists(z, ${overIPv4Only "z.name"}))).map(n, "Resolver " + n).join(", ") + " has a local zone over ipv4only.arpa, which Unbound would answer before DNS64; drop the zone or DNS64"'';
@@ -270,7 +276,7 @@ in
           allow = lib.chalkos.mkOption {
             type = types.nonEmptyListOf prefix;
             example = [ "2001:db8::/32" ];
-            description = "Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone.";
+            description = "Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone. A family's whole range, `0.0.0.0/0` or `::/0`, answers whoever reaches the addresses of `listen`: an open resolver, if one of them faces the internet.";
             rules = [
               {
                 description = "The resolver's clients are address ranges.";
@@ -356,7 +362,19 @@ in
               {
                 description = "A record appears once, as Unbound keeps one of its copies.";
                 rule = "cel.bind(e, ${records}, size(e) > ${toString maxRecords} || e.all(x, size(e.filter(y, ${sameRecord "x" "y"})) == 1))";
-                messageExpression = ''cel.bind(e, ${records}, cel.bind(r, e.filter(x, size(e.filter(y, ${sameRecord "x" "y"})) > 1)[0], "the record " + r.name + " " + r.type + " " + (r.type == "AAAA" ? string(ip(r.value)) : r.value) + " appears more than once; Unbound keeps one"))'';
+                # Naming the record compares every pair; past fewOfMessage records the message
+                # says what is wrong alone.
+                messageExpression = ''cel.bind(e, ${records}, size(e) > ${toString fewOfMessage} ? "a record appears more than once in the local zones, with one name, type and value; Unbound keeps one" : cel.bind(r, e.filter(x, size(e.filter(y, ${sameRecord "x" "y"})) > 1)[0], "the record " + r.name + " " + r.type + " " + (r.type == "AAAA" ? string(ip(r.value)) : r.value) + " appears more than once; Unbound keeps one"))'';
+              }
+              {
+                description = "A redirect zone's records are of the zone's name, which Unbound answers for every name below it.";
+                rule = ''self.all(z, z.type != "redirect" || z.records.all(r, r.name == z.name))'';
+                messageExpression = ''cel.bind(z, self.filter(z, z.type == "redirect" && !z.records.all(r, r.name == z.name))[0], "the redirect zone " + z.name + " holds a record of " + z.records.filter(r, r.name != z.name)[0].name + "; a redirect zone's records are of its own name, which Unbound answers for every name below it")'';
+              }
+              {
+                description = "A CNAME record's name holds no other record.";
+                rule = ''cel.bind(e, ${records}, size(e) > ${toString maxRecords} || e.all(x, x.type != "CNAME" || size(e.filter(y, y.name == x.name)) == 1))'';
+                messageExpression = ''cel.bind(e, ${records}, e.filter(x, x.type == "CNAME" && size(e.filter(y, y.name == x.name)) > 1)[0].name + " holds a CNAME record and another record; a CNAME's name holds it alone")'';
               }
             ];
           };

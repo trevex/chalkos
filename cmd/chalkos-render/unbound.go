@@ -107,8 +107,7 @@ func unboundConfig(r resolverSpec, trustAnchor, zoneFile string) (string, error)
 			fmt.Fprintf(&b, "  domain-insecure: %q\n", ipv4OnlyZone)
 		}
 	}
-	// The records rendered so far, as "<name>. <type> <data>"; Unbound keeps one of two alike.
-	records := map[string]bool{}
+	records := renderedRecords{keys: map[string]bool{}, types: map[string]string{}}
 	for i, z := range r.LocalZones {
 		lines, err := localZoneLines(z, records)
 		if err != nil {
@@ -181,6 +180,11 @@ func resolverAddresses(r resolverSpec) ([]netip.Addr, []netip.Prefix, error) {
 		}
 		allow = append(allow, p)
 	}
+	if !slices.ContainsFunc(listen, func(a netip.Addr) bool {
+		return slices.ContainsFunc(allow, func(p netip.Prefix) bool { return p.Addr().Is4() == a.Is4() })
+	}) {
+		return nil, nil, fmt.Errorf("it listens on no address of a family its clients' ranges are of, so it would answer no one")
+	}
 	return listen, allow, nil
 }
 
@@ -194,10 +198,18 @@ func unicastAddress(a string) (netip.Addr, error) {
 	return addr, nil
 }
 
+// renderedRecords are the records of the local zones rendered so far: each as "<name>. <type>
+// <data>", of which Unbound keeps one of two alike, and the type of each name's first record.
+type renderedRecords struct {
+	keys  map[string]bool
+	types map[string]string
+}
+
 // localZoneLines are Unbound's local-zone line of z and a local-data line per record. A record
 // renders between single quotes, so a TXT record's text stands between double quotes. It refuses
-// a record that seen holds, as "<name>. <type> <data>", and adds its records to seen.
-func localZoneLines(z localZone, seen map[string]bool) ([]string, error) {
+// a record that seen holds, a CNAME record of a name that holds another record, and a record below
+// a redirect zone's own name, and adds its records to seen.
+func localZoneLines(z localZone, seen renderedRecords) ([]string, error) {
 	if !dnsName.MatchString(z.Name) || len(z.Name) > 253 {
 		return nil, fmt.Errorf("%q is no DNS name in lower case without the root's dot", z.Name)
 	}
@@ -210,6 +222,9 @@ func localZoneLines(z localZone, seen map[string]bool) ([]string, error) {
 		if !dnsName.MatchString(r.Name) || len(r.Name) > 253 || (r.Name != z.Name && !strings.HasSuffix(r.Name, "."+z.Name)) {
 			return nil, fmt.Errorf("%s: %q is no name of the zone", at, r.Name)
 		}
+		if z.Type == "redirect" && r.Name != z.Name {
+			return nil, fmt.Errorf("%s: %s is no name of the redirect zone's own, which Unbound answers for every name below it", at, r.Name)
+		}
 		if r.TTL > 2147483647 {
 			return nil, fmt.Errorf("%s: ttl %d is past 2147483647", at, r.TTL)
 		}
@@ -218,10 +233,14 @@ func localZoneLines(z localZone, seen map[string]bool) ([]string, error) {
 			return nil, fmt.Errorf("%s: %w", at, err)
 		}
 		key := fmt.Sprintf("%s. %s %s", r.Name, r.Type, value)
-		if seen[key] {
+		if seen.keys[key] {
 			return nil, fmt.Errorf("%s: %s appears twice", at, key)
 		}
-		seen[key] = true
+		seen.keys[key] = true
+		if t, ok := seen.types[r.Name]; ok && (t == "CNAME" || r.Type == "CNAME") {
+			return nil, fmt.Errorf("%s: %s holds a CNAME record and another record; a CNAME's name holds it alone", at, r.Name)
+		}
+		seen.types[r.Name] = r.Type
 		lines = append(lines, fmt.Sprintf("local-data: '%s. %d IN %s %s'", r.Name, r.TTL, r.Type, value))
 	}
 	return lines, nil

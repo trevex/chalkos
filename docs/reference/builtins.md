@@ -738,133 +738,166 @@ cel.bind(d, self.filter(e, !self.exists_one(x, cidr(x.prefix) == cidr(e.prefix) 
 
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
-| 1 | — | With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64. | `refuse` | after the table | after the table |
-| 2 | `spec.allow` | The resolver's clients are address ranges. | `refuse` | `self.all(p, cidr(p).prefix() >= 0)` | a client is no address range |
-| 3 | `spec.allow` | Each range appears once. | `refuse` | `self.all(a, size(self.filter(b, cidr(b) == cidr(a))) == 1)` | after the table |
-| 4 | `spec.dns64` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
-| 5 | `spec.forwarders` | The resolver forwards to unicast addresses. | `refuse` | after the table | after the table |
-| 6 | `spec.forwarders` | Each forwarder appears once. | `refuse` | `self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)` | after the table |
-| 7 | `spec.listen` | The resolver listens on unicast addresses. | `refuse` | after the table | after the table |
-| 8 | `spec.listen` | Each address appears once. | `refuse` | `self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)` | after the table |
-| 9 | `spec.localZones` | A local zone appears once. | `refuse` | `self.all(z, size(self.filter(y, y.name == z.name)) == 1)` | after the table |
-| 10 | `spec.localZones` | A local zone's records are of the zone's name or names below it. | `refuse` | `self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))` | after the table |
-| 11 | `spec.localZones` | The names of local zones and their records hold 253 characters at most. | `refuse` | `self.all(z, size(z.name) <= 253) && self.map(z, z.records).flatten().all(r, size(r.name) <= 253)` | after the table |
-| 12 | `spec.localZones` | An A or AAAA record holds an address of its family. | `refuse` | after the table | after the table |
-| 13 | `spec.localZones` | The local zones hold 150 records at most, which the rules can compare in pairs. | `refuse` | `size(self.map(z, z.records).flatten()) <= 150` | after the table |
-| 14 | `spec.localZones` | A record appears once, as Unbound keeps one of its copies. | `refuse` | after the table | after the table |
+| 1 | — | A Resolver listens on an address of a family its clients' ranges are of. | `refuse` | after the table | after the table |
+| 2 | — | With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64. | `refuse` | after the table | after the table |
+| 3 | `spec.allow` | The resolver's clients are address ranges. | `refuse` | `self.all(p, cidr(p).prefix() >= 0)` | a client is no address range |
+| 4 | `spec.allow` | Each range appears once. | `refuse` | `self.all(a, size(self.filter(b, cidr(b) == cidr(a))) == 1)` | after the table |
+| 5 | `spec.dns64` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
+| 6 | `spec.forwarders` | The resolver forwards to unicast addresses. | `refuse` | after the table | after the table |
+| 7 | `spec.forwarders` | Each forwarder appears once. | `refuse` | `self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)` | after the table |
+| 8 | `spec.listen` | The resolver listens on unicast addresses. | `refuse` | after the table | after the table |
+| 9 | `spec.listen` | Each address appears once. | `refuse` | `self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)` | after the table |
+| 10 | `spec.localZones` | A local zone appears once. | `refuse` | `self.all(z, size(self.filter(y, y.name == z.name)) == 1)` | after the table |
+| 11 | `spec.localZones` | A local zone's records are of the zone's name or names below it. | `refuse` | `self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))` | after the table |
+| 12 | `spec.localZones` | The names of local zones and their records hold 253 characters at most. | `refuse` | `self.all(z, size(z.name) <= 253) && self.map(z, z.records).flatten().all(r, size(r.name) <= 253)` | after the table |
+| 13 | `spec.localZones` | An A or AAAA record holds an address of its family. | `refuse` | after the table | after the table |
+| 14 | `spec.localZones` | The local zones hold 150 records at most, which the rules can compare in pairs. | `refuse` | `size(self.map(z, z.records).flatten()) <= 150` | after the table |
+| 15 | `spec.localZones` | A record appears once, as Unbound keeps one of its copies. | `refuse` | after the table | after the table |
+| 16 | `spec.localZones` | A redirect zone's records are of the zone's name, which Unbound answers for every name below it. | `refuse` | `self.all(z, z.type != "redirect" || z.records.all(r, r.name == z.name))` | after the table |
+| 17 | `spec.localZones` | A CNAME record's name holds no other record. | `refuse` | after the table | after the table |
 
 Expression of rule 1:
 
 ```text
-documents.all(n, cel.bind(s, documents[n].spec, s.dns64 == null || !s.localZones.exists(z, (z.name == "ipv4only.arpa" || z.name.endsWith(".ipv4only.arpa") || "ipv4only.arpa".endsWith("." + z.name)))))
+documents.all(n, cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))
 ```
 
 Message of rule 1:
 
 ```text
+documents.filter(n, cel.bind(s, documents[n].spec, !["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, "Resolver " + n).join(", ") + " listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"
+```
+
+Expression of rule 2:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, s.dns64 == null || !s.localZones.exists(z, (z.name == "ipv4only.arpa" || z.name.endsWith(".ipv4only.arpa") || "ipv4only.arpa".endsWith("." + z.name)))))
+```
+
+Message of rule 2:
+
+```text
 documents.filter(n, cel.bind(s, documents[n].spec, s.dns64 != null && s.localZones.exists(z, (z.name == "ipv4only.arpa" || z.name.endsWith(".ipv4only.arpa") || "ipv4only.arpa".endsWith("." + z.name))))).map(n, "Resolver " + n).join(", ") + " has a local zone over ipv4only.arpa, which Unbound would answer before DNS64; drop the zone or DNS64"
-```
-
-Message of rule 3:
-
-```text
-"the range " + self.filter(a, size(self.filter(b, cidr(b) == cidr(a))) > 1)[0] + " appears more than once"
-```
-
-Expression of rule 4:
-
-```text
-self == null || (cidr(self.prefix).ip(0).family() == "ipv6" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self.prefix).ip(0)) && cel.bind(x, cidr(self.prefix).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) && cel.bind(a, string(cidr(self.prefix).ip(0)), cidr(a + "/72").ip(0) == cidr(a + "/64").ip(0)))
 ```
 
 Message of rule 4:
 
 ```text
-!(cidr(self.prefix).ip(0).family() == "ipv6" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self.prefix).ip(0))) ? "the prefix " + self.prefix + " is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96" : !cel.bind(x, cidr(self.prefix).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) ? "the prefix " + self.prefix + " holds link-local, multicast or unspecified addresses" : "the prefix " + self.prefix + " sets bits 64 to 71, which RFC 6052 keeps zero"
+"the range " + self.filter(a, size(self.filter(b, cidr(b) == cidr(a))) > 1)[0] + " appears more than once"
 ```
 
 Expression of rule 5:
 
 ```text
-self.all(a, cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))
+self == null || (cidr(self.prefix).ip(0).family() == "ipv6" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self.prefix).ip(0)) && cel.bind(x, cidr(self.prefix).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) && cel.bind(a, string(cidr(self.prefix).ip(0)), cidr(a + "/72").ip(0) == cidr(a + "/64").ip(0)))
 ```
 
 Message of rule 5:
 
 ```text
-"the forwarder " + self.filter(a, !cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))[0] + " is no unicast address"
+!(cidr(self.prefix).ip(0).family() == "ipv6" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self.prefix).ip(0))) ? "the prefix " + self.prefix + " is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96" : !cel.bind(x, cidr(self.prefix).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) ? "the prefix " + self.prefix + " holds link-local, multicast or unspecified addresses" : "the prefix " + self.prefix + " sets bits 64 to 71, which RFC 6052 keeps zero"
 ```
 
-Message of rule 6:
-
-```text
-"the forwarder " + self.filter(a, size(self.filter(b, ip(b) == ip(a))) > 1)[0] + " appears more than once"
-```
-
-Expression of rule 7:
+Expression of rule 6:
 
 ```text
 self.all(a, cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))
 ```
 
+Message of rule 6:
+
+```text
+"the forwarder " + self.filter(a, !cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))[0] + " is no unicast address"
+```
+
 Message of rule 7:
 
 ```text
-"the address " + self.filter(a, !cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))[0] + " is no unicast address the resolver can listen on"
+"the forwarder " + self.filter(a, size(self.filter(b, ip(b) == ip(a))) > 1)[0] + " appears more than once"
+```
+
+Expression of rule 8:
+
+```text
+self.all(a, cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))
 ```
 
 Message of rule 8:
 
 ```text
-"the address " + self.filter(a, size(self.filter(b, ip(b) == ip(a))) > 1)[0] + " appears more than once"
+"the address " + self.filter(a, !cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))[0] + " is no unicast address the resolver can listen on"
 ```
 
 Message of rule 9:
 
 ```text
-"the local zone " + self.filter(z, size(self.filter(y, y.name == z.name)) > 1)[0].name + " appears more than once"
+"the address " + self.filter(a, size(self.filter(b, ip(b) == ip(a))) > 1)[0] + " appears more than once"
 ```
 
 Message of rule 10:
 
 ```text
-cel.bind(z, self.filter(z, !z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))[0], "the local zone " + z.name + " holds a record of " + z.records.filter(r, !(r.name == z.name || r.name.endsWith("." + z.name)))[0].name + ", which is outside it")
+"the local zone " + self.filter(z, size(self.filter(y, y.name == z.name)) > 1)[0].name + " appears more than once"
 ```
 
 Message of rule 11:
 
 ```text
-"the name " + (self.map(z, z.name) + self.map(z, z.records).flatten().map(r, r.name)).filter(n, size(n) > 253)[0] + " holds more than 253 characters"
-```
-
-Expression of rule 12:
-
-```text
-self.map(z, z.records).flatten().all(r, (r.type == "A" ? ip(r.value).family() == "ipv4" : r.type != "AAAA" || cel.bind(x, ip(r.value), x.family() == "ipv6" && !cidr("::ffff:0:0/96").contains(x)) && !r.value.contains("%")))
+cel.bind(z, self.filter(z, !z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))[0], "the local zone " + z.name + " holds a record of " + z.records.filter(r, !(r.name == z.name || r.name.endsWith("." + z.name)))[0].name + ", which is outside it")
 ```
 
 Message of rule 12:
 
 ```text
-cel.bind(r, self.map(z, z.records).flatten().filter(r, !(r.type == "A" ? ip(r.value).family() == "ipv4" : r.type != "AAAA" || cel.bind(x, ip(r.value), x.family() == "ipv6" && !cidr("::ffff:0:0/96").contains(x)) && !r.value.contains("%")))[0], "the " + r.type + " record of " + r.name + " holds " + r.value + ", which is no " + (r.type == "A" ? "IPv4" : "IPv6") + " address")
+"the name " + (self.map(z, z.name) + self.map(z, z.records).flatten().map(r, r.name)).filter(n, size(n) > 253)[0] + " holds more than 253 characters"
+```
+
+Expression of rule 13:
+
+```text
+self.map(z, z.records).flatten().all(r, (r.type == "A" ? ip(r.value).family() == "ipv4" : r.type != "AAAA" || cel.bind(x, ip(r.value), x.family() == "ipv6" && !cidr("::ffff:0:0/96").contains(x)) && !r.value.contains("%")))
 ```
 
 Message of rule 13:
 
 ```text
-"the local zones hold " + string(size(self.map(z, z.records).flatten())) + " records, more than the 150 whose duplicates chalkd can check"
-```
-
-Expression of rule 14:
-
-```text
-cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == "AAAA" ? ip(x.value) == ip(y.value) : x.value == y.value))) == 1))
+cel.bind(r, self.map(z, z.records).flatten().filter(r, !(r.type == "A" ? ip(r.value).family() == "ipv4" : r.type != "AAAA" || cel.bind(x, ip(r.value), x.family() == "ipv6" && !cidr("::ffff:0:0/96").contains(x)) && !r.value.contains("%")))[0], "the " + r.type + " record of " + r.name + " holds " + r.value + ", which is no " + (r.type == "A" ? "IPv4" : "IPv6") + " address")
 ```
 
 Message of rule 14:
 
 ```text
-cel.bind(e, self.map(z, z.records).flatten(), cel.bind(r, e.filter(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == "AAAA" ? ip(x.value) == ip(y.value) : x.value == y.value))) > 1)[0], "the record " + r.name + " " + r.type + " " + (r.type == "AAAA" ? string(ip(r.value)) : r.value) + " appears more than once; Unbound keeps one"))
+"the local zones hold " + string(size(self.map(z, z.records).flatten())) + " records, more than the 150 whose duplicates chalkd can check"
+```
+
+Expression of rule 15:
+
+```text
+cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == "AAAA" ? ip(x.value) == ip(y.value) : x.value == y.value))) == 1))
+```
+
+Message of rule 15:
+
+```text
+cel.bind(e, self.map(z, z.records).flatten(), size(e) > 50 ? "a record appears more than once in the local zones, with one name, type and value; Unbound keeps one" : cel.bind(r, e.filter(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == "AAAA" ? ip(x.value) == ip(y.value) : x.value == y.value))) > 1)[0], "the record " + r.name + " " + r.type + " " + (r.type == "AAAA" ? string(ip(r.value)) : r.value) + " appears more than once; Unbound keeps one"))
+```
+
+Message of rule 16:
+
+```text
+cel.bind(z, self.filter(z, z.type == "redirect" && !z.records.all(r, r.name == z.name))[0], "the redirect zone " + z.name + " holds a record of " + z.records.filter(r, r.name != z.name)[0].name + "; a redirect zone's records are of its own name, which Unbound answers for every name below it")
+```
+
+Expression of rule 17:
+
+```text
+cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, x.type != "CNAME" || size(e.filter(y, y.name == x.name)) == 1))
+```
+
+Message of rule 17:
+
+```text
+cel.bind(e, self.map(z, z.records).flatten(), e.filter(x, x.type == "CNAME" && size(e.filter(y, y.name == x.name)) > 1)[0].name + " holds a CNAME record and another record; a CNAME's name holds it alone")
 ```
 
 #### Router { #rules-router }
