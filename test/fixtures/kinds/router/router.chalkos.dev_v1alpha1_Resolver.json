@@ -80,9 +80,9 @@
           ],
           "x-chalkos-rules": [
             {
-              "description": "A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero, as RFC 6052 gives them.",
-              "messageExpression": "(cidr(self.prefix).ip(0).family() == \"ipv6\" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self.prefix).ip(0))) ? \"the prefix \" + self.prefix + \" sets bits 64 to 71, which RFC 6052 keeps zero\" : \"the prefix \" + self.prefix + \" is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96\"",
-              "rule": "self == null || (cidr(self.prefix).ip(0).family() == \"ipv6\" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self.prefix).ip(0)) && cel.bind(a, string(cidr(self.prefix).ip(0)), cidr(a + \"/72\").ip(0) == cidr(a + \"/64\").ip(0)))",
+              "description": "A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them.",
+              "messageExpression": "!(cidr(self.prefix).ip(0).family() == \"ipv6\" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self.prefix).ip(0))) ? \"the prefix \" + self.prefix + \" is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96\" : !cel.bind(x, cidr(self.prefix).ip(0), x != ip(\"::\") && !cidr(\"fe80::/10\").contains(x) && !cidr(\"ff00::/8\").contains(x)) ? \"the prefix \" + self.prefix + \" holds link-local, multicast or unspecified addresses\" : \"the prefix \" + self.prefix + \" sets bits 64 to 71, which RFC 6052 keeps zero\"",
+              "rule": "self == null || (cidr(self.prefix).ip(0).family() == \"ipv6\" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self.prefix).ip(0)) && cel.bind(x, cidr(self.prefix).ip(0), x != ip(\"::\") && !cidr(\"fe80::/10\").contains(x) && !cidr(\"ff00::/8\").contains(x)) && cel.bind(a, string(cidr(self.prefix).ip(0)), cidr(a + \"/72\").ip(0) == cidr(a + \"/64\").ip(0)))",
               "takes": "refuse"
             }
           ]
@@ -108,8 +108,8 @@
           "x-chalkos-rules": [
             {
               "description": "The resolver forwards to unicast addresses.",
-              "messageExpression": "\"the forwarder \" + self.filter(a, !cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))[0] + \" is no unicast address\"",
-              "rule": "self.all(a, cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))",
+              "messageExpression": "\"the forwarder \" + self.filter(a, !cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"169.254.0.0/16\").contains(x) && !cidr(\"fe80::/10\").contains(x) && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))[0] + \" is no unicast address\"",
+              "rule": "self.all(a, cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"169.254.0.0/16\").contains(x) && !cidr(\"fe80::/10\").contains(x) && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))",
               "takes": "refuse"
             },
             {
@@ -136,8 +136,8 @@
           "x-chalkos-rules": [
             {
               "description": "The resolver listens on unicast addresses.",
-              "messageExpression": "\"the address \" + self.filter(a, !cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))[0] + \" is no unicast address the resolver can listen on\"",
-              "rule": "self.all(a, cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))",
+              "messageExpression": "\"the address \" + self.filter(a, !cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"169.254.0.0/16\").contains(x) && !cidr(\"fe80::/10\").contains(x) && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))[0] + \" is no unicast address the resolver can listen on\"",
+              "rule": "self.all(a, cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"169.254.0.0/16\").contains(x) && !cidr(\"fe80::/10\").contains(x) && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))",
               "takes": "refuse"
             },
             {
@@ -150,7 +150,7 @@
         },
         "localZones": {
           "default": [],
-          "description": "Zones the resolver answers from its own records.",
+          "description": "Zones the resolver answers from its own records, 150 records in all at most. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers.",
           "items": {
             "additionalProperties": false,
             "properties": {
@@ -259,9 +259,15 @@
               "takes": "refuse"
             },
             {
+              "description": "The local zones hold 150 records at most, which the rules can compare in pairs.",
+              "messageExpression": "\"the local zones hold \" + string(size(self.map(z, z.records).flatten())) + \" records, more than the 150 whose duplicates chalkd can check\"",
+              "rule": "size(self.map(z, z.records).flatten()) <= 150",
+              "takes": "refuse"
+            },
+            {
               "description": "A record appears once, as Unbound keeps one of its copies.",
-              "messageExpression": "cel.bind(e, self.map(z, z.records).flatten(), cel.bind(r, e.filter(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == \"AAAA\" ? ip(x.value) == ip(y.value) : x.value == y.value))) > 1)[0], \"the record \" + r.name + \" \" + r.type + \" \" + r.value + \" appears more than once; Unbound keeps one\"))",
-              "rule": "cel.bind(e, self.map(z, z.records).flatten(), e.all(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == \"AAAA\" ? ip(x.value) == ip(y.value) : x.value == y.value))) == 1))",
+              "messageExpression": "cel.bind(e, self.map(z, z.records).flatten(), cel.bind(r, e.filter(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == \"AAAA\" ? ip(x.value) == ip(y.value) : x.value == y.value))) > 1)[0], \"the record \" + r.name + \" \" + r.type + \" \" + (r.type == \"AAAA\" ? string(ip(r.value)) : r.value) + \" appears more than once; Unbound keeps one\"))",
+              "rule": "cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == \"AAAA\" ? ip(x.value) == ip(y.value) : x.value == y.value))) == 1))",
               "takes": "refuse"
             }
           ]
@@ -286,6 +292,14 @@
     "group": "router.chalkos.dev",
     "kind": "Resolver",
     "multiple": false,
+    "rules": [
+      {
+        "description": "With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64.",
+        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, s.dns64 != null && s.localZones.exists(z, (z.name == \"ipv4only.arpa\" || z.name.endsWith(\".ipv4only.arpa\") || \"ipv4only.arpa\".endsWith(\".\" + z.name))))).map(n, \"Resolver \" + n).join(\", \") + \" has a local zone over ipv4only.arpa, which Unbound would answer before DNS64; drop the zone or DNS64\"",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, s.dns64 == null || !s.localZones.exists(z, (z.name == \"ipv4only.arpa\" || z.name.endsWith(\".ipv4only.arpa\") || \"ipv4only.arpa\".endsWith(\".\" + z.name)))))",
+        "takes": "refuse"
+      }
+    ],
     "version": "v1alpha1"
   }
 }

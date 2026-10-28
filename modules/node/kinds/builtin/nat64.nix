@@ -18,24 +18,25 @@ let
   inherit (import ./router-types.nix { inherit lib; }) prefix address;
 
   # The rule that the field p holds a NAT64 prefix, as RFC 6052 gives them and Jool and Unbound
-  # take them: an IPv6 range of one of its lengths, no IPv4-mapped one, whose bits 64 to 71 are
-  # zero. Those bits are zero when masking the first address to 72 bits gives what masking it to
-  # 64 bits gives.
+  # take them: an IPv6 range of one of its lengths, no IPv4-mapped one, of no link-local,
+  # multicast or unspecified addresses, whose bits 64 to 71 are zero. Those bits are zero when
+  # masking the first address to 72 bits gives what masking it to 64 bits gives.
   nat64Prefix =
     p:
     let
       range = ''cidr(${p}).ip(0).family() == "ipv6" && cidr(${p}).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(${p}).ip(0))'';
+      routable = ''cel.bind(x, cidr(${p}).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x))'';
     in
     {
-      description = "A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero, as RFC 6052 gives them.";
-      rule = ''${range} && cel.bind(a, string(cidr(${p}).ip(0)), cidr(a + "/72").ip(0) == cidr(a + "/64").ip(0))'';
-      messageExpression = ''(${range}) ? "the prefix " + ${p} + " sets bits 64 to 71, which RFC 6052 keeps zero" : "the prefix " + ${p} + " is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96"'';
+      description = "A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them.";
+      rule = ''${range} && ${routable} && cel.bind(a, string(cidr(${p}).ip(0)), cidr(a + "/72").ip(0) == cidr(a + "/64").ip(0))'';
+      messageExpression = ''!(${range}) ? "the prefix " + ${p} + " is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96" : !${routable} ? "the prefix " + ${p} + " holds link-local, multicast or unspecified addresses" : "the prefix " + ${p} + " sets bits 64 to 71, which RFC 6052 keeps zero"'';
     };
-  # Whether the address a is one a service listens on or sends to: no unspecified, loopback,
-  # multicast or IPv4-mapped address.
+  # Whether the address a is one a service listens on or sends to: no unspecified, link-local,
+  # loopback, multicast or IPv4-mapped address.
   unicast =
     a:
-    ''cel.bind(x, ip(${a}), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x))'';
+    ''cel.bind(x, ip(${a}), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x))'';
   # The rule that the addresses, or with cidr the ranges, of the field self appear once each, in
   # whatever spelling; what names one in the message.
   once = parse: what: {
@@ -70,10 +71,17 @@ let
   recordAddress =
     r:
     ''(${r}.type == "A" ? ip(${r}.value).family() == "ipv4" : ${r}.type != "AAAA" || cel.bind(x, ip(${r}.value), x.family() == "ipv6" && !cidr("::ffff:0:0/96").contains(x)) && !${r}.value.contains("%"))'';
-  # Whether the records x and y are one, an AAAA record's address in whatever spelling.
+  # Whether the records x and y are one, an AAAA record's address in whatever spelling. The rule
+  # that compares the records in pairs stays within chalkd's runtime cost limit for maxRecords
+  # records, which a rule of its own keeps to.
   sameRecord =
     x: y:
     ''${x}.name == ${y}.name && ${x}.type == ${y}.type && (${x}.type == "AAAA" ? ip(${x}.value) == ip(${y}.value) : ${x}.value == ${y}.value)'';
+  maxRecords = 150;
+  # Whether a local zone named z holds ipv4only.arpa or a name below it, which DNS64 answers.
+  overIPv4Only =
+    z:
+    ''(${z} == "ipv4only.arpa" || ${z}.endsWith(".ipv4only.arpa") || "ipv4only.arpa".endsWith("." + ${z}))'';
 
   poolEntry = types.submodule {
     options = {
@@ -183,6 +191,11 @@ in
             messageExpression = ''documents.filter(n, documents.exists(m, n != m && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, "NAT64 " + n).join(", ") + " translate addresses of one prefix; give each NAT64 a prefix of its own"'';
           }
           {
+            description = "One NAT64 at most has an empty pool4, which takes the router's own addresses.";
+            rule = "size(documents.filter(n, size(documents[n].spec.pool4) == 0)) <= 1";
+            messageExpression = ''documents.filter(n, size(documents[n].spec.pool4) == 0).map(n, "NAT64 " + n).join(", ") + " take the router's own addresses, with an empty pool4, and would share them; give all but one a pool4"'';
+          }
+          {
             description = "No two NAT64s share an address of their pools.";
             rule = "cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.all(x, e.all(y, x[0] == y[0] || !(cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))))";
             messageExpression = ''cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.filter(x, e.exists(y, x[0] != y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))).map(x, "NAT64 " + x[0] + " " + x[1]).join(", ") + " share addresses; give each NAT64 a pool of its own")'';
@@ -199,7 +212,7 @@ in
             type = types.listOf poolEntry;
             default = [ ];
             example = [ { prefix = "192.0.2.10/32"; } ];
-            description = "IPv4 addresses, with their ports, that the translated connections leave from: addresses of the router, or addresses routed to it. Empty takes the router's own addresses with the ports 61001 to 65535, as Jool does. nftables's NAT does not apply to the translated connections.";
+            description = "IPv4 addresses, with their ports, that the translated connections leave from: addresses of the router, or addresses routed to it. Empty takes the router's own addresses with the ports 61001 to 65535, as Jool does; one NAT64 at most has an empty pool4. nftables's NAT does not apply to the translated connections.";
             rules = [
               {
                 description = "A pool's entries are IPv4 ranges of 65536 addresses at most.";
@@ -214,7 +227,7 @@ in
               {
                 description = "A pool entry's ports lie from 1 to 65535 and leave out the kernel's ephemeral ports, 32768 to 60999.";
                 rule = "self.all(a, cel.bind(lo, ${firstPort "a"}, cel.bind(hi, ${lastPort "a"}, lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))";
-                messageExpression = ''"the ports " + string(self.filter(a, !cel.bind(lo, ${firstPort "a"}, cel.bind(hi, ${lastPort "a"}, lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))[0].ports) + " of a pool entry are no range from 1 to 65535 outside the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; take 1-32767 or 61000-65535 at most"'';
+                messageExpression = ''"a pool entry takes the ports " + string(self.filter(a, !cel.bind(lo, ${firstPort "a"}, cel.bind(hi, ${lastPort "a"}, lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))[0].ports) + ", which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999"'';
               }
               {
                 description = "A pool entry names each protocol once.";
@@ -233,6 +246,13 @@ in
 
       Resolver = builtin groups.router // {
         description = "The router's DNS resolver, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.";
+        rules = [
+          {
+            description = "With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64.";
+            rule = "documents.all(n, cel.bind(s, documents[n].spec, s.dns64 == null || !s.localZones.exists(z, ${overIPv4Only "z.name"})))";
+            messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, s.dns64 != null && s.localZones.exists(z, ${overIPv4Only "z.name"}))).map(n, "Resolver " + n).join(", ") + " has a local zone over ipv4only.arpa, which Unbound would answer before DNS64; drop the zone or DNS64"'';
+          }
+        ];
         spec = {
           listen = lib.chalkos.mkOption {
             type = types.nonEmptyListOf address;
@@ -306,7 +326,7 @@ in
           localZones = lib.chalkos.mkOption {
             type = types.listOf localZone;
             default = [ ];
-            description = "Zones the resolver answers from its own records.";
+            description = "Zones the resolver answers from its own records, ${toString maxRecords} records in all at most. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers.";
             rules = [
               {
                 description = "A local zone appears once.";
@@ -329,9 +349,14 @@ in
                 messageExpression = ''cel.bind(r, ${records}.filter(r, !${recordAddress "r"})[0], "the " + r.type + " record of " + r.name + " holds " + r.value + ", which is no " + (r.type == "A" ? "IPv4" : "IPv6") + " address")'';
               }
               {
+                description = "The local zones hold ${toString maxRecords} records at most, which the rules can compare in pairs.";
+                rule = "size(${records}) <= ${toString maxRecords}";
+                messageExpression = ''"the local zones hold " + string(size(${records})) + " records, more than the ${toString maxRecords} whose duplicates chalkd can check"'';
+              }
+              {
                 description = "A record appears once, as Unbound keeps one of its copies.";
-                rule = "cel.bind(e, ${records}, e.all(x, size(e.filter(y, ${sameRecord "x" "y"})) == 1))";
-                messageExpression = ''cel.bind(e, ${records}, cel.bind(r, e.filter(x, size(e.filter(y, ${sameRecord "x" "y"})) > 1)[0], "the record " + r.name + " " + r.type + " " + r.value + " appears more than once; Unbound keeps one"))'';
+                rule = "cel.bind(e, ${records}, size(e) > ${toString maxRecords} || e.all(x, size(e.filter(y, ${sameRecord "x" "y"})) == 1))";
+                messageExpression = ''cel.bind(e, ${records}, cel.bind(r, e.filter(x, size(e.filter(y, ${sameRecord "x" "y"})) > 1)[0], "the record " + r.name + " " + r.type + " " + (r.type == "AAAA" ? string(ip(r.value)) : r.value) + " appears more than once; Unbound keeps one"))'';
               }
             ];
           };

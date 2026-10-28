@@ -27,7 +27,7 @@
       "properties": {
         "pool4": {
           "default": [],
-          "description": "IPv4 addresses, with their ports, that the translated connections leave from: addresses of the router, or addresses routed to it. Empty takes the router's own addresses with the ports 61001 to 65535, as Jool does. nftables's NAT does not apply to the translated connections.",
+          "description": "IPv4 addresses, with their ports, that the translated connections leave from: addresses of the router, or addresses routed to it. Empty takes the router's own addresses with the ports 61001 to 65535, as Jool does; one NAT64 at most has an empty pool4. nftables's NAT does not apply to the translated connections.",
           "examples": [
             [
               {
@@ -100,7 +100,7 @@
             },
             {
               "description": "A pool entry's ports lie from 1 to 65535 and leave out the kernel's ephemeral ports, 32768 to 60999.",
-              "messageExpression": "\"the ports \" + string(self.filter(a, !cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))[0].ports) + \" of a pool entry are no range from 1 to 65535 outside the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; take 1-32767 or 61000-65535 at most\"",
+              "messageExpression": "\"a pool entry takes the ports \" + string(self.filter(a, !cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))[0].ports) + \", which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999\"",
               "rule": "self.all(a, cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))",
               "takes": "refuse"
             },
@@ -125,9 +125,9 @@
           "type": "string",
           "x-chalkos-rules": [
             {
-              "description": "A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero, as RFC 6052 gives them.",
-              "messageExpression": "(cidr(self).ip(0).family() == \"ipv6\" && cidr(self).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self).ip(0))) ? \"the prefix \" + self + \" sets bits 64 to 71, which RFC 6052 keeps zero\" : \"the prefix \" + self + \" is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96\"",
-              "rule": "cidr(self).ip(0).family() == \"ipv6\" && cidr(self).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self).ip(0)) && cel.bind(a, string(cidr(self).ip(0)), cidr(a + \"/72\").ip(0) == cidr(a + \"/64\").ip(0))",
+              "description": "A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them.",
+              "messageExpression": "!(cidr(self).ip(0).family() == \"ipv6\" && cidr(self).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self).ip(0))) ? \"the prefix \" + self + \" is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96\" : !cel.bind(x, cidr(self).ip(0), x != ip(\"::\") && !cidr(\"fe80::/10\").contains(x) && !cidr(\"ff00::/8\").contains(x)) ? \"the prefix \" + self + \" holds link-local, multicast or unspecified addresses\" : \"the prefix \" + self + \" sets bits 64 to 71, which RFC 6052 keeps zero\"",
+              "rule": "cidr(self).ip(0).family() == \"ipv6\" && cidr(self).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self).ip(0)) && cel.bind(x, cidr(self).ip(0), x != ip(\"::\") && !cidr(\"fe80::/10\").contains(x) && !cidr(\"ff00::/8\").contains(x)) && cel.bind(a, string(cidr(self).ip(0)), cidr(a + \"/72\").ip(0) == cidr(a + \"/64\").ip(0))",
               "takes": "refuse"
             }
           ]
@@ -159,6 +159,12 @@
         "description": "No two NAT64s translate addresses of one prefix.",
         "messageExpression": "documents.filter(n, documents.exists(m, n != m && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, \"NAT64 \" + n).join(\", \") + \" translate addresses of one prefix; give each NAT64 a prefix of its own\"",
         "rule": "documents.all(n, documents.all(m, n == m || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))",
+        "takes": "refuse"
+      },
+      {
+        "description": "One NAT64 at most has an empty pool4, which takes the router's own addresses.",
+        "messageExpression": "documents.filter(n, size(documents[n].spec.pool4) == 0).map(n, \"NAT64 \" + n).join(\", \") + \" take the router's own addresses, with an empty pool4, and would share them; give all but one a pool4\"",
+        "rule": "size(documents.filter(n, size(documents[n].spec.pool4) == 0)) <= 1",
         "takes": "refuse"
       },
       {

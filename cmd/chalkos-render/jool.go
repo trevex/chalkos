@@ -82,6 +82,8 @@ func joolInstances(docs []named[nat64Spec]) ([]joolInstance, error) {
 	var out []joolInstance
 	// The prefixes and pools of the documents before the one at hand.
 	var prefixes, pools []named[netip.Prefix]
+	// The document before the one at hand whose empty pool takes the router's own addresses.
+	ownAddresses := ""
 	for _, n := range docs {
 		what := "NAT64 " + n.Name
 		if len(n.Name) > joolNameMax {
@@ -95,6 +97,12 @@ func joolInstances(docs []named[nat64Spec]) ([]joolInstance, error) {
 			if o.Spec.Overlaps(p) {
 				return nil, fmt.Errorf("%s and NAT64 %s both translate addresses of %s", what, o.Name, p)
 			}
+		}
+		if len(n.Spec.Pool4) == 0 {
+			if ownAddresses != "" {
+				return nil, fmt.Errorf("%s and NAT64 %s both take the router's own addresses, with an empty pool4", what, ownAddresses)
+			}
+			ownAddresses = n.Name
 		}
 		inst := joolInstance{Instance: n.Name, Framework: "netfilter", Global: joolGlobal{Pool6: p.String()}, Pool4: []joolPool4{}}
 		var ranges []poolRange

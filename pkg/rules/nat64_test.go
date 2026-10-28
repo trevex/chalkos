@@ -10,13 +10,18 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
+// maxRecords are the records of a Resolver's local zones whose duplicates the rules check within
+// chalkd's runtime cost limit.
+const maxRecords = 150
+
 // The NAT64 and Resolver rules accept a fabric edge's documents and refuse a name Jool does not
-// take, prefixes no NAT64 or DNS64 takes, two NAT64s of one prefix or of one pool's addresses, a
-// pool entry of IPv6, of too many addresses, of addresses no connection leaves from or of the
-// kernel's ephemeral ports, a protocol named twice, two entries of one protocol's addresses and
-// ports, addresses no resolver listens on or forwards to, an address, range or forwarder twice,
-// local zones twice or with records outside them, A and AAAA records of other data, a record
-// twice and names past 253 characters.
+// take, prefixes no NAT64 or DNS64 takes, two NAT64s of one prefix, of one pool's addresses or of
+// the router's own addresses, a pool entry of IPv6, of too many addresses, of addresses no
+// connection leaves from or of the kernel's ephemeral ports, a protocol named twice, two entries of
+// one protocol's addresses and ports, addresses no resolver listens on or forwards to, an address,
+// range or forwarder twice, local zones twice, with records outside them or over ipv4only.arpa
+// with DNS64, A and AAAA records of other data, a record twice, more records than the rules can
+// compare and names past 253 characters.
 func TestNAT64Rules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -41,6 +46,19 @@ func TestNAT64Rules(t *testing.T) {
 		return []string{`Resolver "resolver" spec.localZones: the ` + typ + ` record of a.lan.example.org holds ` + value + `, which is no ` + is}
 	}
 	long := strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("a", 46) + ".lan.example.org"
+	// many are n records of one name, AAAA records or TXT records of 254 characters, which the
+	// rule that compares records in pairs compares at the highest cost.
+	many := func(n int, typ string) string {
+		var records []string
+		for i := range n {
+			value := "2001:db8::" + strconv.FormatInt(int64(i), 16)
+			if typ == "TXT" {
+				value = strings.Repeat("x", 250) + strconv.Itoa(1000+i)
+			}
+			records = append(records, `{"name": "h.lan.example.org", "type": "`+typ+`", "value": "`+value+`"}`)
+		}
+		return strings.Join(records, ", ")
+	}
 	replace := func(with ...config.Document) []config.Document {
 		out := slices.Clone(edge)
 		for _, w := range with {
@@ -76,11 +94,11 @@ func TestNAT64Rules(t *testing.T) {
 		{"a pool of a /15", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "198.18.0.0/15"}]}`)),
 			[]string{`NAT64 "lab" spec.pool4: the pool entry 198.18.0.0/15 is no IPv4 range of 16 bits or more`}},
 		{"the kernel's ephemeral ports", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": "1-65535"}]}`)),
-			[]string{`NAT64 "lab" spec.pool4: the ports 1-65535 of a pool entry are no range from 1 to 65535 outside the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; take 1-32767 or 61000-65535 at most`}},
+			[]string{`NAT64 "lab" spec.pool4: a pool entry takes the ports 1-65535, which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999`}},
 		{"one ephemeral port", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": 40000}]}`)),
-			[]string{`NAT64 "lab" spec.pool4: the ports 40000 of a pool entry are no range from 1 to 65535 outside the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; take 1-32767 or 61000-65535 at most`}},
+			[]string{`NAT64 "lab" spec.pool4: a pool entry takes the ports 40000, which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999`}},
 		{"an inverted range", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": "65000-61001"}]}`)),
-			[]string{`NAT64 "lab" spec.pool4: the ports 65000-61001 of a pool entry are no range from 1 to 65535 outside the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; take 1-32767 or 61000-65535 at most`}},
+			[]string{`NAT64 "lab" spec.pool4: a pool entry takes the ports 65000-61001, which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999`}},
 		{"a protocol twice", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "protocols": ["tcp", "tcp"]}]}`)),
 			[]string{`NAT64 "lab" spec.pool4: a pool entry names a protocol twice`}},
 		{"a resolver on the unspecified address", replace(doc("Resolver", "resolver", `{"listen": ["::"], "allow": ["2001:db8::/32"]}`)),
@@ -121,6 +139,25 @@ func TestNAT64Rules(t *testing.T) {
 			[]string{`Resolver "resolver" spec.localZones: the record a.lan.example.org AAAA 2001:db8::1 appears more than once; Unbound keeps one`}},
 		{"a name of 254 characters", replace(resolver(`{"name": "` + long + `", "type": "A", "value": "192.0.2.1"}`)),
 			[]string{`Resolver "resolver" spec.localZones: the name ` + long + ` holds more than 253 characters`}},
+		{"two NAT64s of the router's own addresses", replace(doc("NAT64", "edge", `{}`), doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96"}`)),
+			[]string{"NAT64 edge, NAT64 lab take the router's own addresses, with an empty pool4, and would share them; give all but one a pool4"}},
+		{"a link-local prefix", replace(doc("NAT64", "lab", `{"prefix": "fe80::/64"}`)),
+			[]string{`NAT64 "lab" spec.prefix: the prefix fe80::/64 holds link-local, multicast or unspecified addresses`}},
+		{"a multicast prefix", replace(doc("NAT64", "lab", `{"prefix": "ff0e::/96"}`)),
+			[]string{`NAT64 "lab" spec.prefix: the prefix ff0e::/96 holds link-local, multicast or unspecified addresses`}},
+		{"the unspecified prefix", replace(doc("NAT64", "lab", `{"prefix": "::/96"}`)),
+			[]string{`NAT64 "lab" spec.prefix: the prefix ::/96 holds link-local, multicast or unspecified addresses`}},
+		{"a resolver on a link-local address", replace(doc("Resolver", "resolver", `{"listen": ["fe80::1"], "allow": ["2001:db8::/32"]}`)),
+			[]string{`Resolver "resolver" spec.listen: the address fe80::1 is no unicast address the resolver can listen on`}},
+		{"a link-local forwarder", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": ["169.254.0.53"]}`)),
+			[]string{`Resolver "resolver" spec.forwarders: the forwarder 169.254.0.53 is no unicast address`}},
+		{"ipv4only.arpa as a local zone", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "dns64": {}, "localZones": [{"name": "arpa"}]}`)),
+			[]string{"Resolver resolver has a local zone over ipv4only.arpa, which Unbound would answer before DNS64; drop the zone or DNS64"}},
+		{"ipv4only.arpa without DNS64", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "ipv4only.arpa"}]}`)), nil},
+		{"the most AAAA records", replace(resolver(many(maxRecords, "AAAA"))), nil},
+		{"the most TXT records", replace(resolver(many(maxRecords, "TXT"))), nil},
+		{"too many records", replace(resolver(many(maxRecords+1, "AAAA"))),
+			[]string{`Resolver "resolver" spec.localZones: the local zones hold 151 records, more than the 150 whose duplicates chalkd can check`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})

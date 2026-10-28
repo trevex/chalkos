@@ -434,11 +434,11 @@ A stateful NAT64 of the router, an instance of Jool: it translates IPv6 connecti
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 9 [change rules](builtins.md#rules-nat64).
+A node's config may hold several, each with a name of its own. It has 10 [change rules](builtins.md#rules-nat64).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.pool4` | list of object | `[]` | IPv4 addresses, with their ports, that the translated connections leave from: addresses of the router, or addresses routed to it. Empty takes the router's own addresses with the ports 61001 to 65535, as Jool does. nftables's NAT does not apply to the translated connections. |
+| `spec.pool4` | list of object | `[]` | IPv4 addresses, with their ports, that the translated connections leave from: addresses of the router, or addresses routed to it. Empty takes the router's own addresses with the ports 61001 to 65535, as Jool does; one NAT64 at most has an empty pool4. nftables's NAT does not apply to the translated connections. |
 | `spec.pool4[].ports` | integer from 1 to 65535 or string | `"61001-65535"` | Ports, or ICMP identifiers, of the addresses the translated connections take: a port or a range `<first>-<last>` that leaves out the kernel's ephemeral ports, 32768 to 60999, which the router's own connections take. |
 | `spec.pool4[].prefix` | string | required | IPv4 addresses the translated connections leave from, a range of 65536 addresses at most. |
 | `spec.pool4[].protocols` | list of one of `tcp`, `udp`, `icmp` | `["tcp","udp","icmp"]` | Protocols whose connections take the addresses and ports. |
@@ -493,7 +493,7 @@ The router's DNS resolver, Unbound: the addresses it answers on, whom it answers
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config holds at most one. It has 12 [change rules](builtins.md#rules-resolver).
+A node's config holds at most one. It has 14 [change rules](builtins.md#rules-resolver).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -503,7 +503,7 @@ A node's config holds at most one. It has 12 [change rules](builtins.md#rules-re
 | `spec.dnssec` | boolean | `true` | Whether the resolver validates DNSSEC with the root's trust anchor of the image. The forwarders then pass DNSSEC records on. |
 | `spec.forwarders` | list of string | `[]` | Resolvers the router sends its queries to; empty resolves names itself, from the root servers. |
 | `spec.listen` | list of string | required | Addresses of the router on which the resolver answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`. |
-| `spec.localZones` | list of object | `[]` | Zones the resolver answers from its own records. |
+| `spec.localZones` | list of object | `[]` | Zones the resolver answers from its own records, 150 records in all at most. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers. |
 | `spec.localZones[].name` | string | required | Name of the zone, in lower case and without the root's dot. |
 | `spec.localZones[].records` | list of object | `[]` | Records the router answers for names of the zone. |
 | `spec.localZones[].records[].name` | string | required | Name of the record: the zone's name or a name below it. |
