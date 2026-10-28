@@ -118,8 +118,8 @@ A rule translates IPv4 unless its `family` is `ipv6`. `snat` translates the sour
 `to.address` instead of the interface's address. The router forwards what a `dnat` rule translated
 without a policy of its own.
 
-NAT rules do not translate the connections of a NAT64, which leave from the addresses of its own
-pool. [Translate to IPv4 and resolve names](nat64-and-dns.md) sets one up.
+Masquerade and `snat` rules do not translate the connections of a NAT64, which leave from the
+addresses of its own pool. [Translate to IPv4 and resolve names](nat64-and-dns.md) sets one up.
 
 ## Deliver and check the firewall
 

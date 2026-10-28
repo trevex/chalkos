@@ -123,8 +123,10 @@ chain srcnat {
 A `dnat` rule opens its own forwarding: the forward chain accepts the connections it translated,
 whatever the policies say.
 
-NAT rules never see the connections a NAT64 translates, nor do the input and forward chains:
-Jool takes their packets at the prerouting hook and sends the translated ones itself.
+Source NAT rules never see a packet a NAT64 translated, nor do the input and forward chains: Jool
+takes the packets at the prerouting hook and sends the translated ones itself. A `dnat` rule runs
+before Jool, so one that matches an address and ports of a NAT64's pool takes the replies of its
+connections first.
 [NAT64 and DNS64 on a router](nat64-and-dns.md#translated-connections-bypass-the-firewalls-nat)
 describes them.
 
@@ -159,6 +161,8 @@ unit, which loads the new one.
   a TCP connection whose start took another router.
 - The router's own outgoing traffic is accepted. A policy cannot come from `local`.
 - The policies do not filter the connections a NAT64 translates.
+- A `dnat` rule that matches an address and ports of a NAT64's pool takes the replies of its
+  connections before Jool does.
 
 ## Related pages
 

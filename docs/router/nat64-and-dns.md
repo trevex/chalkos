@@ -23,7 +23,7 @@ examples configure the fabric edge `r1` of [Route with BGP](bgp.md):
   it.
 
 A NAT64's connections leave from IPv4 addresses that the router holds on its uplink, or that the
-uplink routes to it. The firewall's NAT never sees a translated connection, so a masquerade
+uplink routes to it. The firewall's source NAT never sees a translated packet, so a masquerade
 `NATRule` does not translate it, and a private address behind one does not work.
 
 ## Add a NAT64
@@ -79,9 +79,10 @@ renames it, replaces the translator, and the connections it carried end.
 
 ## Announce the prefix
 
-The router installs an unreachable route to each NAT64's prefix, which lets BGP announce it. Add
-the prefix to the networks of the `BGP` document, so that the clients' routers send its traffic to
-this router:
+The router installs an unreachable route to each NAT64's prefix, which lets BGP announce it. The
+prefix belongs in the networks of the `BGP` document, so that the clients' routers send its
+traffic to this router. `r1`'s `BGP` of [Route with BGP](bgp.md) lists it already, with the
+routing policy `nat64`, which tags its announcement with a community:
 
 ```yaml
 apiVersion: router.chalkos.dev/v1alpha1
@@ -90,9 +91,10 @@ metadata: {name: bgp}
 spec:
   asn: 64512
   routerID: 192.0.2.1
+  multipath: {ebgp: 64, asPathRelax: true}
   networks:
     - {prefix: "2001:db8:ffff::1/128"}
-    - {prefix: "64:ff9b::/96"}
+    - {prefix: "64:ff9b::/96", policy: nat64}
     - {prefix: 192.0.2.0/24}
 ```
 
@@ -223,11 +225,14 @@ nat64:
 resolver: running
 ```
 
-Each NAT64 has a line. `SESSIONS` counts the connections it translates, over all protocols.
-`BINDINGS` counts the IPv4 addresses and ports that those connections hold. The `POOL` columns
-count the addresses and ports of each protocol's pool: 4 addresses of 4535 ports each here. A
-protocol that the pool leaves out shows `-`. So does every protocol of an empty pool, which takes
-the router's own addresses.
+Each NAT64 whose instance runs has a line. `SESSIONS` counts the connections it translates, over
+all protocols. `BINDINGS` counts the IPv4 addresses and ports that those connections hold. The
+`POOL` columns count the addresses and ports of each protocol's pool: 4 addresses of 4535 ports
+each here. A protocol that the pool leaves out shows `-`. So does every protocol of an empty pool,
+which takes the router's own addresses.
+
+A NAT64 whose instance did not load has no line. After a boot the status then lists
+`failed unit chalkos-nat64.service`, and a delivery fails with the unit's error.
 
 `nat64: unknown:` gives jool's error when chalkd could not read the NAT64s' state.
 `resolver: not running:` gives unbound-control's error. A router without `NAT64` documents prints

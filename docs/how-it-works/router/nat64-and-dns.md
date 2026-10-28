@@ -86,10 +86,13 @@ the routes of protocol 64 alone, as it leaves FRR's.
 ## Translated connections bypass the firewall's NAT
 
 Jool sends a translated packet itself, past the hooks where conntrack tracks connections, so
-nftables's NAT never sees it. A `NATRule` that masquerades the uplink does not translate it, and
-an address of `pool4` must be the router's own or routed to it. The firewall's policies do not
-filter the translated connections either. The prerouting chain's reverse-path filter runs before
-Jool, and Jool takes the packets before the input and forward chains.
+nftables's source NAT never sees a translated packet. A `NATRule` that masquerades the uplink
+does not translate it, and an address of `pool4` must be the router's own or routed to it. The
+destination NAT chain runs at the prerouting hook before Jool, so a `dnat` rule that matches an
+address and ports of a pool takes the replies of translated connections before Jool does. The
+firewall's policies do not filter the translated connections either. The prerouting chain's
+reverse-path filter runs before Jool, and Jool takes the packets before the input and forward
+chains.
 
 ## The output unbound renders Unbound's whole config
 
@@ -134,7 +137,7 @@ remote-control:
 - Unbound does not answer `ipv4only.arpa` by itself. The auth zone, from a file of the image,
   holds RFC 8880's `192.0.0.170` and `192.0.0.171`. The iterator reads them in place of asking
   another server, and the DNS64 module synthesises the AAAA records from them. The zone is
-  unsigned, so validation skips it.
+  unsigned, and `domain-insecure` has the validator skip it.
 - A local zone becomes a `local-zone` line and a `local-data` line per record. Unbound answers
   them before DNS64, which synthesises nothing from them.
 - Forwarders become a `forward-zone` of the root.
@@ -209,6 +212,8 @@ needs an operator, as the sessions show who connects where.
   packets that arrive, not those the router sends.
 - The firewall's policies do not limit who uses a NAT64. Routing to the prefix and the
   reverse-path filter do.
+- A `dnat` rule that matches an address and ports of a pool takes the replies of translated
+  connections before Jool does.
 - DNS64 synthesises no AAAA record from a local zone's records.
 - A pool's ports stay out of the kernel's ephemeral range, 32768 to 60999, also for addresses the
   router does not hold.
