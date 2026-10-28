@@ -1,0 +1,32 @@
+# unbound.conf
+# Unbound's config, rendered by chalkos-render unbound from the node's Resolver.
+# unbound-control reload_keep_cache applies it.
+server:
+  username: ""
+  chroot: ""
+  pidfile: ""
+  directory: "/"
+  do-daemonize: no
+  use-syslog: no
+  ip-freebind: yes
+  port: 53
+  interface: 192.0.2.1
+  interface: 2001:db8:1::1
+  access-control: 192.0.2.0/24 allow
+  access-control: 2001:db8:1::/64 allow
+  module-config: "validator iterator"
+  trust-anchor-file: "/etc/unbound/root.key"
+  local-zone: "lan.example.org." static
+  local-data: 'router.lan.example.org. 3600 IN A 192.0.2.1'
+  local-data: 'router.lan.example.org. 3600 IN AAAA 2001:db8:1::1'
+  local-data: 'lan.example.org. 3600 IN MX 10 mail.lan.example.org.'
+  local-data: '_imaps._tcp.lan.example.org. 3600 IN SRV 0 1 993 mail.lan.example.org.'
+  local-data: 'lan.example.org. 300 IN TXT "v=spf1 -all"'
+  local-zone: "ads.example.net." always_nxdomain
+forward-zone:
+  name: "."
+  forward-addr: 2001:db8:2::53
+  forward-addr: 198.51.100.53
+remote-control:
+  control-enable: yes
+  control-interface: /run/unbound/unbound.ctl

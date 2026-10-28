@@ -1,8 +1,9 @@
 // Command chalkos-render is the renderer of the outputs the helpers of lib.chalkos.render build,
-// and of the built-in outputs networkd, router-sysctl, router-nftables and frr. chalkd runs it in
-// the sandbox of an output: it reads the output's input as JSON on standard input, {"node":
-// {"name": …}, "documents": {"<Kind>": [<document>, …]}}, and writes files into $OUT, the only
-// path it may write. A router image's build runs it once more for the image's fallback ruleset.
+// and of the built-in outputs networkd, router-sysctl, router-nftables, frr, jool and unbound.
+// chalkd runs it in the sandbox of an output: it reads the output's input as JSON on standard
+// input, {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}, and writes files into
+// $OUT, the only path it may write. A router image's build runs it once more for the image's
+// fallback ruleset.
 package main
 
 import (
@@ -27,6 +28,8 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render router-nftables PORT
        chalkos-render router-nftables-fallback PORT
        chalkos-render frr
+       chalkos-render jool
+       chalkos-render unbound TRUST-ANCHOR ZONE-FILE
 
 template executes the Go text/template TEMPLATE on the input and writes the result to $OUT/FILE;
 the template has the functions join, quote, json and default. documents writes each document of
@@ -36,7 +39,10 @@ kinds' schemas in the directory SCHEMAS. router-sysctl writes the kernel setting
 document as $OUT/90-chalkos-router.conf. router-nftables writes the firewall of the documents of
 the router kinds as the nftables table inet chalkos in $OUT/ruleset.nft, which accepts chalkd's TCP
 port PORT; router-nftables-fallback writes the table of a node without a rendered ruleset, which
-forwards nothing. frr writes FRR's config of the BGP documents as $OUT/frr.conf.`
+forwards nothing. frr writes FRR's config of the BGP documents as $OUT/frr.conf. jool writes Jool's
+config of each NAT64 document as $OUT/<name>.json. unbound writes Unbound's config of the Resolver
+document as $OUT/unbound.conf, with the root's trust anchor in the file TRUST-ANCHOR and the zone
+ipv4only.arpa in the file ZONE-FILE.`
 
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Getenv("OUT")); err != nil {
@@ -77,6 +83,10 @@ func run(args []string, stdin io.Reader, out string) error {
 		return renderRouterNftables(args[1], true, in, out)
 	case args[0] == "frr" && len(args) == 1:
 		return renderFRR(in, out)
+	case args[0] == "jool" && len(args) == 1:
+		return renderJool(in, out)
+	case args[0] == "unbound" && len(args) == 3:
+		return renderUnbound(args[1], args[2], in, out)
 	}
 	return errUsage
 }

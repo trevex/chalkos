@@ -207,6 +207,39 @@ type routingPolicySpec struct {
 	Default string `json:"default"`
 }
 
+type nat64Spec struct {
+	Prefix string      `json:"prefix"`
+	Pool4  []poolEntry `json:"pool4"`
+}
+
+type poolEntry struct {
+	Prefix    string    `json:"prefix"`
+	Ports     portRange `json:"ports"`
+	Protocols []string  `json:"protocols"`
+}
+
+type resolverSpec struct {
+	Listen     []string `json:"listen"`
+	Allow      []string `json:"allow"`
+	Forwarders []string `json:"forwarders"`
+	DNSSEC     bool     `json:"dnssec"`
+	DNS64      *struct {
+		Prefix string `json:"prefix"`
+	} `json:"dns64"`
+	LocalZones []localZone `json:"localZones"`
+}
+
+type localZone struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Records []struct {
+		Name  string `json:"name"`
+		Type  string `json:"type"`
+		Value string `json:"value"`
+		TTL   uint32 `json:"ttl"`
+	} `json:"records"`
+}
+
 // named is the spec of a document, with the document's name.
 type named[T any] struct {
 	Name string
@@ -226,6 +259,8 @@ type routerDocuments struct {
 	// Communities are the CommunityList documents and RoutingPolicies the RoutingPolicy ones.
 	Communities     []named[communityListSpec]
 	RoutingPolicies []named[routingPolicySpec]
+	NAT64           []named[nat64Spec]
+	Resolvers       []named[resolverSpec]
 	// Links are the interface names the Network documents' [Match] sections name, sorted.
 	Links []string
 }
@@ -264,6 +299,12 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 		return d, err
 	}
 	if d.RoutingPolicies, err = decodeKind[routingPolicySpec](byKind, "RoutingPolicy"); err != nil {
+		return d, err
+	}
+	if d.NAT64, err = decodeKind[nat64Spec](byKind, "NAT64"); err != nil {
+		return d, err
+	}
+	if d.Resolvers, err = decodeKind[resolverSpec](byKind, "Resolver"); err != nil {
 		return d, err
 	}
 	d.Links = networkLinks(byKind)

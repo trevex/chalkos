@@ -1,7 +1,9 @@
 # A fabric edge: the node API from the WAN, SSH from an office's set, forwarding from the fabric
 # to the WAN, masquerade out of the WAN and a web server behind a destination NAT. It peers
 # unnumbered with the fabric's leaves on eth1 and eth2, with BFD and a password, sends them a
-# default route, and takes IPv4 routes from a transit peer on the WAN.
+# default route, and takes IPv4 routes from a transit peer on the WAN. Its NAT64 translates the
+# well-known prefix, which it announces, from addresses of the 192.0.2.0/24 it announces too, and
+# its resolver answers the fabric with DNS64.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Router
 metadata: {name: router}
@@ -178,3 +180,17 @@ kind: Secret
 metadata: {name: bgp}
 spec:
   data: {fabric: example-password}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NAT64
+metadata: {name: edge}
+spec:
+  pool4: [{prefix: 192.0.2.8/30}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Resolver
+metadata: {name: resolver}
+spec:
+  listen: ["2001:db8:ffff::1"]
+  allow: ["2001:db8::/32"]
+  dns64: {prefix: "64:ff9b::/96"}

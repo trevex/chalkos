@@ -1,0 +1,27 @@
+# unbound.conf
+# Unbound's config, rendered by chalkos-render unbound from the node's Resolver.
+# unbound-control reload_keep_cache applies it.
+server:
+  username: ""
+  chroot: ""
+  pidfile: ""
+  directory: "/"
+  do-daemonize: no
+  use-syslog: no
+  ip-freebind: yes
+  port: 53
+  interface: 2001:db8:ffff::1
+  access-control: 2001:db8::/32 allow
+  module-config: "dns64 validator iterator"
+  trust-anchor-file: "/etc/unbound/root.key"
+  dns64-prefix: 64:ff9b::/96
+  domain-insecure: "ipv4only.arpa."
+auth-zone:
+  name: "ipv4only.arpa."
+  zonefile: "/etc/unbound/ipv4only.arpa.zone"
+  for-downstream: no
+  for-upstream: yes
+  fallback-enabled: no
+remote-control:
+  control-enable: yes
+  control-interface: /run/unbound/unbound.ctl

@@ -1,6 +1,7 @@
 # A LAN router: the LAN reaches the WAN, masqueraded in IPv4, the WAN reaches a server on the LAN
 # through a destination NAT, and the router itself answers the node API on the LAN alone and
-# port 8080 to a trusted WAN host. The namespace check router-firewall probes this ruleset.
+# port 8080 to a trusted WAN host. The namespace check router-firewall probes this ruleset. Its
+# resolver answers the LAN, forwards to resolvers on the WAN and answers lan.example.org itself.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Router
 metadata: {name: router}
@@ -59,3 +60,20 @@ spec:
   in: {zone: wan}
   match: {protocol: tcp, destinationPorts: [8081]}
   to: {address: 192.0.2.2, port: 80}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Resolver
+metadata: {name: resolver}
+spec:
+  listen: [192.0.2.1, "2001:db8:1::1"]
+  allow: [192.0.2.0/24, "2001:db8:1::/64"]
+  forwarders: ["2001:db8:2::53", 198.51.100.53]
+  localZones:
+    - name: lan.example.org
+      records:
+        - {name: router.lan.example.org, type: A, value: 192.0.2.1}
+        - {name: router.lan.example.org, type: AAAA, value: "2001:db8:1::1"}
+        - {name: lan.example.org, type: MX, value: 10 mail.lan.example.org}
+        - {name: _imaps._tcp.lan.example.org, type: SRV, value: 0 1 993 mail.lan.example.org}
+        - {name: lan.example.org, type: TXT, value: v=spf1 -all, ttl: 300}
+    - {name: ads.example.net, type: always_nxdomain}

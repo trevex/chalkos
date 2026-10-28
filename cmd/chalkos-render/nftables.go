@@ -31,6 +31,11 @@ func renderRouterNftables(port string, closed bool, in map[string]any, out strin
 	if fw.openings, err = bgpOpenings(d.Peers); err != nil {
 		return err
 	}
+	dns, err := resolverOpenings(d.Resolvers)
+	if err != nil {
+		return err
+	}
+	fw.openings = append(fw.openings, dns...)
 	text, err := fw.ruleset()
 	if err != nil {
 		return err
@@ -39,14 +44,15 @@ func renderRouterNftables(port string, closed bool, in map[string]any, out strin
 }
 
 // An opening is a port of one of the router's services, which the input chain accepts after the
-// protected rules: from the interfaces and source ranges the service's documents scope it to,
-// empty for any, with a comment that names the document.
+// protected rules: from the interfaces and source ranges, and to the destination addresses, the
+// service's documents scope it to, empty for any, with a comment that names the document.
 type opening struct {
-	comment    string
-	protocol   string
-	ports      []portRange
-	interfaces []string
-	sources    []string
+	comment      string
+	protocol     string
+	ports        []portRange
+	interfaces   []string
+	sources      []string
+	destinations []string
 }
 
 // bgpOpenings are the ports of each BGPPeer, on its interfaces or from its address alone: BGP's
@@ -89,6 +95,32 @@ func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 				bfd.ports = append(bfd.ports, "4784")
 			}
 			out = append(out, bfd)
+		}
+	}
+	return out, nil
+}
+
+// resolverOpenings are DNS's UDP and TCP port 53 of the Resolver, from its clients' ranges to the
+// addresses it listens on.
+func resolverOpenings(resolvers []named[resolverSpec]) ([]opening, error) {
+	var out []opening
+	for _, r := range resolvers {
+		what := "Resolver " + r.Name
+		listen, allow, err := resolverAddresses(r.Spec)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", what, err)
+		}
+		o := opening{comment: what, ports: []portRange{"53"}}
+		for _, a := range listen {
+			o.destinations = append(o.destinations, netip.PrefixFrom(a, a.BitLen()).String())
+		}
+		for _, p := range allow {
+			o.sources = append(o.sources, p.String())
+		}
+		for _, proto := range []string{"udp", "tcp"} {
+			x := o
+			x.protocol = proto
+			out = append(out, x)
 		}
 	}
 	return out, nil
@@ -620,7 +652,8 @@ func interfaceSet(names []string) string {
 	return "{ " + strings.Join(quoted, ", ") + " }"
 }
 
-// lines renders the opening: a line per family of its sources, or one without sources.
+// lines renders the opening: a line per family of its sources and destinations, or one without
+// either. A family that one of them names and the other lacks has no line.
 func (o opening) lines() ([]string, error) {
 	match, err := protocolMatch(o.protocol, nil, o.ports, nil)
 	if err != nil {
@@ -631,23 +664,37 @@ func (o opening) lines() ([]string, error) {
 		head = "iifname " + interfaceSet(o.interfaces) + " "
 	}
 	tail := fmt.Sprintf("%s accept comment %q", match, o.comment)
-	if len(o.sources) == 0 {
+	if len(o.sources) == 0 && len(o.destinations) == 0 {
 		return []string{head + tail}, nil
 	}
 	var lines []string
 	for _, fam := range []string{"ipv4", "ipv6"} {
-		var mine []string
-		for _, a := range o.sources {
-			p, err := netip.ParsePrefix(a)
-			if err != nil {
-				return nil, fmt.Errorf("%q is no address range", a)
+		var parts []string
+		for _, side := range []struct {
+			dir    string
+			ranges []string
+		}{{"saddr", o.sources}, {"daddr", o.destinations}} {
+			if len(side.ranges) == 0 {
+				continue
 			}
-			if p.Addr().Is4() == (fam == "ipv4") {
-				mine = append(mine, p.Masked().String())
+			var mine []string
+			for _, a := range side.ranges {
+				p, err := netip.ParsePrefix(a)
+				if err != nil {
+					return nil, fmt.Errorf("%q is no address range", a)
+				}
+				if p.Addr().Is4() == (fam == "ipv4") {
+					mine = append(mine, p.Masked().String())
+				}
 			}
+			if len(mine) == 0 {
+				parts = nil
+				break
+			}
+			parts = append(parts, fmt.Sprintf("%s %s { %s }", familyWords[fam], side.dir, strings.Join(mine, ", ")))
 		}
-		if len(mine) > 0 {
-			lines = append(lines, fmt.Sprintf("%s%s saddr { %s } %s", head, familyWords[fam], strings.Join(mine, ", "), tail))
+		if len(parts) > 0 {
+			lines = append(lines, head+strings.Join(parts, " ")+" "+tail)
 		}
 	}
 	return lines, nil
