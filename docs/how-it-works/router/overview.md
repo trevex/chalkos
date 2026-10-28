@@ -1,6 +1,6 @@
 ---
 title: "How a router works"
-description: "What the router layer adds to a node: the router kinds, forwarding set by a Router document, the firewall, BGP, the boot order and the management guard"
+description: "What the router layer adds to a node: the router kinds, forwarding set by a Router document, the firewall, BGP, NAT64, the resolver, the boot order and the management guard"
 ---
 
 # How a router works
@@ -19,16 +19,19 @@ parts:
 
 | Part | What it is |
 | --- | --- |
-| Kinds | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGP`, `BGPPeer`, `PrefixList`, `CommunityList` and `RoutingPolicy`, which only router images accept. |
-| Outputs | `router-sysctl`, the kernel settings of the `Router` document; `router-nftables`, the firewall of the firewall kinds and the ports of the `BGPPeer` documents; and `frr`, FRR's config of the BGP kinds. |
-| Effects | `router-sysctl` restarts `systemd-sysctl.service`, `router-nftables` reloads `chalkos-firewall.service`, and `frr` reloads `frr.service`. |
+| Kinds | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `NAT64` and `Resolver`, which only router images accept. |
+| Outputs | `router-sysctl`, the kernel settings of the `Router` document; `router-nftables`, the firewall of the firewall kinds and the ports of the `BGPPeer` and `Resolver` documents; `frr`, FRR's config of the BGP kinds; `jool`, an instance of Jool per `NAT64`; and `unbound`, Unbound's config of the `Resolver`. |
+| Effects | `router-sysctl` restarts `systemd-sysctl.service`, `router-nftables` reloads `chalkos-firewall.service`, `frr` reloads `frr.service`, `jool` reloads `chalkos-nat64.service` and `unbound` reloads `unbound.service`. `unbound-start` restarts `unbound.service` when a `Resolver` is added or removed. |
 | Firewall | The nftables table `inet chalkos` in place of NixOS's firewall. |
 | FRR | zebra, bgpd, bfdd and staticd, and vtysh, which chalkd asks for the router's BGP sessions and paths. |
-| Diagnostics | `traceroute`, the routers on the path to an address, and `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers`, FRR's views of BGP and BFD. |
+| Jool | The kernel module of the NAT64 instances, and `jool`, with which `chalkos-nat64.service` loads them and chalkd reads their sessions and pools. |
+| Unbound | The resolver, and `unbound-control`, which reloads it and tells chalkd whether it runs. |
+| Diagnostics | `traceroute`, the routers on the path to an address; `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers`, FRR's views of BGP and BFD; and `nat64-sessions`, a NAT64 instance's sessions. |
 
-[The router's firewall](firewall.md) describes the table, and [BGP on a router](bgp.md) FRR's
-config. [Built-ins](../../reference/builtins.md#outputs-router-images) lists the outputs,
-effects, rules and diagnostics.
+[The router's firewall](firewall.md) describes the table, [BGP on a router](bgp.md) FRR's config,
+and [NAT64 and DNS64 on a router](nat64-and-dns.md) Jool's instances and Unbound's config.
+[Built-ins](../../reference/builtins.md#outputs-router-images) lists the outputs, effects, rules
+and diagnostics.
 
 ## The Router document sets the kernel's forwarding
 
@@ -83,6 +86,9 @@ flowchart LR
     pre --> networkd["networkd configures the interfaces"]
     config --> frr["frr.service fills in the passwords and starts FRR"]
     firewall --> frr
+    firewall --> nat64["chalkos-nat64 loads the NAT64 instances and their routes"]
+    nat64 --> frr
+    nat64 --> unbound["unbound.service starts the resolver"]
 ```
 
 `chalkos-firewall.service` loads the rendered ruleset. When the node has none, it loads a fallback
@@ -106,7 +112,11 @@ The reload loads the ruleset in one nftables transaction. The transaction replac
 leaves the loaded one in place and fails the delivery. chalkd still restarts
 `systemd-sysctl.service`, so the delivery's kernel settings apply with the old table.
 A delivery that changes FRR's config reloads `frr.service` in the same call as the firewall, and
-after it. [BGP on a router](bgp.md#a-delivery-reloads-frr) describes that reload.
+after it. [BGP on a router](bgp.md#a-delivery-reloads-frr) describes that reload. The same call
+reloads `chalkos-nat64.service` after the firewall and before FRR, so a NAT64 prefix's route exists
+before FRR announces it, and `unbound.service` after `chalkos-nat64.service`.
+[NAT64 and DNS64 on a router](nat64-and-dns.md#a-delivery-reloads-unbound-and-keeps-its-cache)
+describes both.
 
 ## The management guard keeps the node API reachable
 
@@ -146,6 +156,7 @@ so `chalkctl apply-config` and the node run it, and `chalkctl validate` does not
 
 - [The router's firewall](firewall.md): the table, its chains and what each default does.
 - [BGP on a router](bgp.md): FRR's config, the passwords and the state chalkd reads.
+- [NAT64 and DNS64 on a router](nat64-and-dns.md): Jool's instances and Unbound's config.
 - [Run a router](../../router/index.md): set up a router and its firewall.
 - [Config kinds](../../reference/kinds.md#router-chalkos-dev) for every field of the router kinds.
 - [Ports and firewall](../../reference/ports-and-firewall.md#router-images).

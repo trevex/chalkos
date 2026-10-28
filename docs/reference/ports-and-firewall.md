@@ -136,6 +136,7 @@ no other table of chalkos filters the router's traffic.
 | 179 | TCP | BGP, FRR's bgpd | the interfaces of each `BGPPeer` of `interface` or `interfaces`, and from the address of each of `address` |
 | 3784, 3785 | UDP | BFD, FRR's bfdd: single-hop control and echo | as port 179, for each `BGPPeer` with `bfd` |
 | 4784 | UDP | BFD, FRR's bfdd: multi-hop control | from the address of each `BGPPeer` of `address` with `bfd` |
+| 53 | UDP and TCP | DNS, Unbound | from the ranges of the `Resolver`'s `allow` to the addresses of its `listen` |
 
 The table also accepts the loopback interface, established and related connections, ICMP and
 ICMPv6 errors and echo requests, ICMPv6 neighbour discovery, router solicitations and

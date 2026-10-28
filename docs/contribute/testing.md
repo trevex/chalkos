@@ -119,7 +119,7 @@ the nodes with the real chalkctl. Each check runs one test or a group of them:
 | `e2e-upgrade` | Under Secure Boot, an upgrade that the node pulls through a mirror endpoint, a registry the test serves, with the endpoint's credentials, that boots from slot B and is found healthy, then one streamed from a directory that never becomes healthy and falls back. | 1 |
 | `e2e-kubernetes` | A dual-stack cluster of a control plane and a worker through chalklab: networking, DNS, a private image pulled through a mirror with the node's credentials, renewals and rotations, a reboot. | 2 |
 | `e2e-kubernetes-ha` | Three control planes of an IPv6-only cluster behind a VIP: joins, failover, reinstalls and a rolling upgrade. | 3 |
-| `e2e-router` | Two routers through chalklab, peering unnumbered over BGP with BFD and a password: the session in their status, a default route learned, a diagnostic, a delivery FRR reloads without ending the session, and the Kubernetes API unimplemented. | 2 |
+| `e2e-router` | Two routers through chalklab, peering unnumbered over BGP with BFD and a password: the session in their status, a default route and the NAT64 prefix learned, a diagnostic, a delivery FRR reloads without ending the session, the Kubernetes API unimplemented, DNS64's answer for `ipv4only.arpa`, and a connection through NAT64 and QEMU's user-mode network to a listener of the test, with its session in the status and in `nat64-sessions`. | 2 |
 
 A VM gets 2 CPUs and 2 GiB of memory unless its test asks for less, on a 16 GiB sparse disk.
 The Kubernetes test gives its control plane 2048 MiB and its worker 1024 MiB; the HA test gives
@@ -164,6 +164,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |
 | The router's kinds, outputs or firewall | `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit` |
 | The router's BGP: its kinds, `frr` output, FRR's unit, `pkg/router` | `rules`, `frr-credentials`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
+| The router's NAT64 and resolver: their kinds, the `jool` and `unbound` outputs, their units, `pkg/router` | `rules`, `eval`, `eval-kinds`, `go-unit`, `image-size`, `e2e-router` |
 | `templates/lab` | `template-lab` |
 | `.github/workflows` | `workflows` |
 

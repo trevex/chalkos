@@ -198,4 +198,13 @@ networks and filter what passes.
 
     [:octicons-arrow-right-24: Read](router/bgp.md)
 
+-   :material-swap-horizontal: __NAT64 and DNS64 on a router__
+
+    ---
+
+    Jool's instances of the NAT64 documents, the prefix's route, Unbound's rendered config with
+    DNS64, the reloads and the state chalkd reads.
+
+    [:octicons-arrow-right-24: Read](router/nat64-and-dns.md)
+
 </div>

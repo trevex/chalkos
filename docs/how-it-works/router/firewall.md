@@ -33,11 +33,14 @@ It holds these rules, in order:
 | --- | --- |
 | Protected | The loopback interface; established and related connections, after conntrack's invalid packets are dropped; ICMPv6 errors, echo requests, neighbour discovery, router solicitations and advertisements and multicast listener discovery; ICMP errors and echo requests; DHCPv6 replies from the server port to the client port of a link-local address. |
 | chalkd | TCP port 50000 on the interfaces of `Router.spec.management.interfaces`, or on every interface while it is null. |
-| Services | The ports of the router's own services, from the interfaces and sources their documents name: BGP's TCP port 179 of each `BGPPeer` and, for each with `bfd`, BFD's UDP ports 3784 and 3785, from its interfaces or its address, and 4784 from its address. |
+| Services | The ports of the router's own services, from the interfaces and sources their documents name: BGP's TCP port 179 of each `BGPPeer` and, for each with `bfd`, BFD's UDP ports 3784 and 3785, from its interfaces or its address, and 4784 from its address; DNS's UDP and TCP port 53 from the `Resolver`'s `allow` to its `listen`. |
 | Policies to `local` | A jump to the chain of each `FirewallPolicy` whose `to` is `local`, for the interfaces of its `from` zone. |
 
 [BGP on a router](bgp.md#the-firewall-accepts-each-peers-ports) shows the rules of the `BGPPeer`
-documents. A policy to `local` may accept more. It cannot drop what the earlier rules accepted.
+documents, and
+[NAT64 and DNS64 on a router](nat64-and-dns.md#the-firewall-accepts-dns-from-the-resolvers-clients)
+those of the `Resolver`. A policy to `local` may accept more. It cannot drop what the earlier rules
+accepted.
 The input chain of a LAN router whose node API answers on `lan0` reads:
 
 ```text
@@ -120,6 +123,11 @@ chain srcnat {
 A `dnat` rule opens its own forwarding: the forward chain accepts the connections it translated,
 whatever the policies say.
 
+NAT rules never see the connections a NAT64 translates, nor do the input and forward chains:
+Jool takes their packets at the prerouting hook and sends the translated ones itself.
+[NAT64 and DNS64 on a router](nat64-and-dns.md#translated-connections-bypass-the-firewalls-nat)
+describes them.
+
 ## The reverse-path filter
 
 `Router.spec.rpFilter` adds a chain on the prerouting hook. It drops a packet whose source the
@@ -150,6 +158,7 @@ unit, which loads the new one.
 - With policies between zones, conntrack drops the packets it marks invalid, such as the middle of
   a TCP connection whose start took another router.
 - The router's own outgoing traffic is accepted. A policy cannot come from `local`.
+- The policies do not filter the connections a NAT64 translates.
 
 ## Related pages
 
