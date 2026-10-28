@@ -2455,7 +2455,7 @@ type RouterStatus struct {
 	// Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is
 	// then empty.
 	BgpError string `protobuf:"bytes,2,opt,name=bgp_error,json=bgpError,proto3" json:"bgp_error,omitempty"`
-	// The router's NAT64 instances, one per NAT64 document, by name.
+	// The router's NAT64 instances, one per Jool instance, which a NAT64 document names, by name.
 	Nat64 []*NAT64Status `protobuf:"bytes,3,rep,name=nat64,proto3" json:"nat64,omitempty"`
 	// Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then
 	// empty.
@@ -2536,8 +2536,13 @@ type NAT64Status struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of the NAT64 document, which names its instance.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// The instance's translations of TCP, UDP and ICMP, in this order.
-	Protocols     []*NAT64ProtocolStatus `protobuf:"bytes,2,rep,name=protocols,proto3" json:"protocols,omitempty"`
+	// Connections the instance translates, of all protocols.
+	Sessions uint64 `protobuf:"varint,2,opt,name=sessions,proto3" json:"sessions,omitempty"`
+	// IPv4 addresses and ports of the pool that translated connections hold, of all protocols: one
+	// per IPv6 address and port, or ICMP identifier, that the instance translates.
+	Bindings uint64 `protobuf:"varint,3,opt,name=bindings,proto3" json:"bindings,omitempty"`
+	// The instance's pool for TCP, UDP and ICMP, in this order.
+	Pools         []*NAT64PoolStatus `protobuf:"bytes,4,rep,name=pools,proto3" json:"pools,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2579,44 +2584,53 @@ func (x *NAT64Status) GetName() string {
 	return ""
 }
 
-func (x *NAT64Status) GetProtocols() []*NAT64ProtocolStatus {
+func (x *NAT64Status) GetSessions() uint64 {
 	if x != nil {
-		return x.Protocols
+		return x.Sessions
+	}
+	return 0
+}
+
+func (x *NAT64Status) GetBindings() uint64 {
+	if x != nil {
+		return x.Bindings
+	}
+	return 0
+}
+
+func (x *NAT64Status) GetPools() []*NAT64PoolStatus {
+	if x != nil {
+		return x.Pools
 	}
 	return nil
 }
 
-// A NAT64 instance's translations of one protocol.
-type NAT64ProtocolStatus struct {
+// A NAT64 instance's pool of one protocol.
+type NAT64PoolStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The protocol: tcp, udp or icmp.
 	Protocol string `protobuf:"bytes,1,opt,name=protocol,proto3" json:"protocol,omitempty"`
-	// Connections the instance translates.
-	Sessions uint64 `protobuf:"varint,2,opt,name=sessions,proto3" json:"sessions,omitempty"`
-	// IPv4 addresses and ports of the pool that translated connections hold: one per IPv6 address
-	// and port, or ICMP identifier, that the instance translates.
-	Bindings uint64 `protobuf:"varint,3,opt,name=bindings,proto3" json:"bindings,omitempty"`
 	// IPv4 addresses and ports, or ICMP identifiers, the pool holds for the protocol; 0 when it
 	// holds none. An instance whose pool is empty takes the router's own addresses.
-	PoolSize      uint64 `protobuf:"varint,4,opt,name=pool_size,json=poolSize,proto3" json:"pool_size,omitempty"`
+	Size          uint64 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *NAT64ProtocolStatus) Reset() {
-	*x = NAT64ProtocolStatus{}
+func (x *NAT64PoolStatus) Reset() {
+	*x = NAT64PoolStatus{}
 	mi := &file_chalkos_node_v1_node_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *NAT64ProtocolStatus) String() string {
+func (x *NAT64PoolStatus) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*NAT64ProtocolStatus) ProtoMessage() {}
+func (*NAT64PoolStatus) ProtoMessage() {}
 
-func (x *NAT64ProtocolStatus) ProtoReflect() protoreflect.Message {
+func (x *NAT64PoolStatus) ProtoReflect() protoreflect.Message {
 	mi := &file_chalkos_node_v1_node_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2628,35 +2642,21 @@ func (x *NAT64ProtocolStatus) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use NAT64ProtocolStatus.ProtoReflect.Descriptor instead.
-func (*NAT64ProtocolStatus) Descriptor() ([]byte, []int) {
+// Deprecated: Use NAT64PoolStatus.ProtoReflect.Descriptor instead.
+func (*NAT64PoolStatus) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{30}
 }
 
-func (x *NAT64ProtocolStatus) GetProtocol() string {
+func (x *NAT64PoolStatus) GetProtocol() string {
 	if x != nil {
 		return x.Protocol
 	}
 	return ""
 }
 
-func (x *NAT64ProtocolStatus) GetSessions() uint64 {
+func (x *NAT64PoolStatus) GetSize() uint64 {
 	if x != nil {
-		return x.Sessions
-	}
-	return 0
-}
-
-func (x *NAT64ProtocolStatus) GetBindings() uint64 {
-	if x != nil {
-		return x.Bindings
-	}
-	return 0
-}
-
-func (x *NAT64ProtocolStatus) GetPoolSize() uint64 {
-	if x != nil {
-		return x.PoolSize
+		return x.Size
 	}
 	return 0
 }
@@ -6343,15 +6343,15 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x05nat64\x18\x03 \x03(\v2\x1c.chalkos.node.v1.NAT64StatusR\x05nat64\x12\x1f\n" +
 	"\vnat64_error\x18\x04 \x01(\tR\n" +
 	"nat64Error\x12;\n" +
-	"\bresolver\x18\x05 \x01(\v2\x1f.chalkos.node.v1.ResolverStatusR\bresolver\"e\n" +
+	"\bresolver\x18\x05 \x01(\v2\x1f.chalkos.node.v1.ResolverStatusR\bresolver\"\x91\x01\n" +
 	"\vNAT64Status\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12B\n" +
-	"\tprotocols\x18\x02 \x03(\v2$.chalkos.node.v1.NAT64ProtocolStatusR\tprotocols\"\x86\x01\n" +
-	"\x13NAT64ProtocolStatus\x12\x1a\n" +
-	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x1a\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bsessions\x18\x02 \x01(\x04R\bsessions\x12\x1a\n" +
-	"\bbindings\x18\x03 \x01(\x04R\bbindings\x12\x1b\n" +
-	"\tpool_size\x18\x04 \x01(\x04R\bpoolSize\"@\n" +
+	"\bbindings\x18\x03 \x01(\x04R\bbindings\x126\n" +
+	"\x05pools\x18\x04 \x03(\v2 .chalkos.node.v1.NAT64PoolStatusR\x05pools\"A\n" +
+	"\x0fNAT64PoolStatus\x12\x1a\n" +
+	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x04R\x04size\"@\n" +
 	"\x0eResolverStatus\x12\x18\n" +
 	"\arunning\x18\x01 \x01(\bR\arunning\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\"\xe0\x01\n" +
@@ -6687,7 +6687,7 @@ var file_chalkos_node_v1_node_proto_goTypes = []any{
 	(*StatusResponse)(nil),               // 31: chalkos.node.v1.StatusResponse
 	(*RouterStatus)(nil),                 // 32: chalkos.node.v1.RouterStatus
 	(*NAT64Status)(nil),                  // 33: chalkos.node.v1.NAT64Status
-	(*NAT64ProtocolStatus)(nil),          // 34: chalkos.node.v1.NAT64ProtocolStatus
+	(*NAT64PoolStatus)(nil),              // 34: chalkos.node.v1.NAT64PoolStatus
 	(*ResolverStatus)(nil),               // 35: chalkos.node.v1.ResolverStatus
 	(*BGPPeerStatus)(nil),                // 36: chalkos.node.v1.BGPPeerStatus
 	(*OutputStatus)(nil),                 // 37: chalkos.node.v1.OutputStatus
@@ -6781,7 +6781,7 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	36, // 29: chalkos.node.v1.RouterStatus.peers:type_name -> chalkos.node.v1.BGPPeerStatus
 	33, // 30: chalkos.node.v1.RouterStatus.nat64:type_name -> chalkos.node.v1.NAT64Status
 	35, // 31: chalkos.node.v1.RouterStatus.resolver:type_name -> chalkos.node.v1.ResolverStatus
-	34, // 32: chalkos.node.v1.NAT64Status.protocols:type_name -> chalkos.node.v1.NAT64ProtocolStatus
+	34, // 32: chalkos.node.v1.NAT64Status.pools:type_name -> chalkos.node.v1.NAT64PoolStatus
 	39, // 33: chalkos.node.v1.BootStatus.running:type_name -> chalkos.node.v1.BootImage
 	39, // 34: chalkos.node.v1.BootStatus.staged:type_name -> chalkos.node.v1.BootImage
 	39, // 35: chalkos.node.v1.BootStatus.failed:type_name -> chalkos.node.v1.BootImage

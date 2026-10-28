@@ -20,9 +20,9 @@ import (
 // routerNode serves n1 as a router whose FRR answers with the recordings of package router's
 // tests, and whose kernel holds the default route and an edge's address that BGP installed over
 // two links, to the recordings' next hops, and a blackhole. rules answer further commands, such as
-// jool's and unbound-control's, before the recordings; resolver tells whether the node has
-// Unbound's config.
-func routerNode(t *testing.T, ta *testApp, resolver bool, rules ...tooltest.Rule) string {
+// jool's and unbound-control's, before the recordings; documents tells whether the node has a
+// NAT64 document edge and a Resolver, whose rendered files chalkd looks for.
+func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rule) string {
 	t.Helper()
 	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
@@ -39,13 +39,15 @@ func routerNode(t *testing.T, ta *testApp, resolver bool, rules ...tooltest.Rule
 		tooltest.Rule{Prefix: "vtysh -c show bgp ipv4 unicast detail json", Out: frr("ipv4-detail.json")},
 		tooltest.Rule{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: frr("ipv6-detail.json")},
 	)}
-	conf := filepath.Join(t.TempDir(), "unbound.conf")
-	if resolver {
-		if err := os.WriteFile(conf, []byte("server:\n"), 0o644); err != nil {
-			t.Fatal(err)
+	conf, nat64 := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir()
+	if documents {
+		for _, file := range []string{conf, filepath.Join(nat64, "edge.json")} {
+			if err := os.WriteFile(file, []byte("\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
-	s.Router = &chalkd.Router{Run: r, ResolverConfig: conf, KernelRoutes: func() ([]*nodev1.KernelRoute, error) {
+	s.Router = &chalkd.Router{Run: r, ResolverConfig: conf, NAT64Dir: nat64, KernelRoutes: func() ([]*nodev1.KernelRoute, error) {
 		hops := func() []*nodev1.NextHop {
 			return []*nodev1.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
@@ -112,15 +114,14 @@ func TestNodeRoutesWithoutTheLayer(t *testing.T) {
 	}
 }
 
-// status prints a router's NAT64 instances, a line per protocol with its sessions, bindings and
-// pool size, and whether its resolver runs.
+// status prints a router's NAT64 instances, a line each with its sessions, bindings and the size of
+// each protocol's pool, and whether its resolver runs.
 func TestStatusRouterNAT64AndResolver(t *testing.T) {
 	ta := newTestApp(t)
 	pool := "0,TCP,192.0.2.8,61001,65535,1059,0\n"
 	addr := routerNode(t, ta, true,
 		tooltest.Rule{Prefix: "jool instance display", Out: "8fb43ac0,edge,netfilter\n"},
-		tooltest.Rule{Prefix: "jool -i edge session display --csv --no-headers --tcp", Out: "TCP,2001:db8:ffff::2,33830,64:ff9b::c633:6402,18080,192.0.2.8,62105,198.51.100.2,18080,0:03:59.041,V6_INIT\n"},
-		tooltest.Rule{Prefix: "jool -i edge bib display --csv --no-headers --tcp", Out: "TCP,2001:db8:ffff::2,33830,192.0.2.8,62105,0\n"},
+		tooltest.Rule{Prefix: "jool -i edge stats display --csv --no-headers --all", Out: "JSTAT_RECEIVED6,152\nJSTAT_BIB_ENTRIES,2\nJSTAT_SESSIONS,3\n"},
 		tooltest.Rule{Prefix: "jool -i edge pool4 display --csv --no-headers --tcp", Out: pool},
 		tooltest.Rule{Prefix: "jool -i edge pool4 display --csv --no-headers --udp", Out: pool},
 	)
@@ -128,10 +129,8 @@ func TestStatusRouterNAT64AndResolver(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "nat64:\n" +
-		"  INSTANCE  PROTOCOL  SESSIONS  BINDINGS  POOL\n" +
-		"  edge      tcp       1         1         4535\n" +
-		"  edge      udp       0         0         4535\n" +
-		"  edge      icmp      0         0         -\n" +
+		"  INSTANCE  SESSIONS  BINDINGS  POOL TCP  POOL UDP  POOL ICMP\n" +
+		"  edge      3         2         4535      4535      -\n" +
 		"resolver: running\n" +
 		"certificates:\n"
 	if got := ta.stdout.String(); !strings.Contains(got, want) {

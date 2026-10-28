@@ -997,16 +997,14 @@ The state of the node's Kubernetes.
 
 Field types: [KubernetesPhase](#enum-kubernetesphase), [RevokedNode](#message-revokednode).
 
-### NAT64ProtocolStatus { #message-nat64protocolstatus }
+### NAT64PoolStatus { #message-nat64poolstatus }
 
-A NAT64 instance's translations of one protocol.
+A NAT64 instance's pool of one protocol.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `protocol` | string | The protocol: tcp, udp or icmp. |
-| `sessions` | uint64 | Connections the instance translates. |
-| `bindings` | uint64 | IPv4 addresses and ports of the pool that translated connections hold: one per IPv6 address and port, or ICMP identifier, that the instance translates. |
-| `pool_size` | uint64 | IPv4 addresses and ports, or ICMP identifiers, the pool holds for the protocol; 0 when it holds none. An instance whose pool is empty takes the router's own addresses. |
+| `size` | uint64 | IPv4 addresses and ports, or ICMP identifiers, the pool holds for the protocol; 0 when it holds none. An instance whose pool is empty takes the router's own addresses. |
 
 ### NAT64Status { #message-nat64status }
 
@@ -1015,9 +1013,11 @@ One NAT64 instance of a router, as Jool reports it.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `name` | string | Name of the NAT64 document, which names its instance. |
-| `protocols` | list of NAT64ProtocolStatus | The instance's translations of TCP, UDP and ICMP, in this order. |
+| `sessions` | uint64 | Connections the instance translates, of all protocols. |
+| `bindings` | uint64 | IPv4 addresses and ports of the pool that translated connections hold, of all protocols: one per IPv6 address and port, or ICMP identifier, that the instance translates. |
+| `pools` | list of NAT64PoolStatus | The instance's pool for TCP, UDP and ICMP, in this order. |
 
-Field types: [NAT64ProtocolStatus](#message-nat64protocolstatus).
+Field types: [NAT64PoolStatus](#message-nat64poolstatus).
 
 ### NextHop { #message-nexthop }
 
@@ -1096,7 +1096,7 @@ The state of a router's routing daemons, its NAT64 instances and its resolver.
 | ----- | ---- | ----------- |
 | `peers` | list of BGPPeerStatus | The router's BGP sessions, by BGPPeer document and then by interface or address. |
 | `bgp_error` | string | Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is then empty. |
-| `nat64` | list of NAT64Status | The router's NAT64 instances, one per NAT64 document, by name. |
+| `nat64` | list of NAT64Status | The router's NAT64 instances, one per Jool instance, which a NAT64 document names, by name. |
 | `nat64_error` | string | Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then empty. |
 | `resolver` | ResolverStatus | The router's resolver; unset on a router without a Resolver document. |
 

@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/router"
 	"github.com/trevex/chalkos/pkg/tool"
 )
@@ -26,6 +30,9 @@ type Router struct {
 	// ResolverConfig is Unbound's config, which exists on a node with a Resolver document;
 	// empty is /etc/unbound/unbound.conf. Tests replace it.
 	ResolverConfig string
+	// NAT64Dir is the output jool's directory, with a file <name>.json per NAT64 document; empty
+	// is /run/chalkos/outputs/jool. Tests replace it.
+	NAT64Dir string
 }
 
 // askTimeout bounds the questions chalkd asks one router daemon, so Status answers while one
@@ -86,9 +93,13 @@ func (r *Router) status(ctx context.Context) *nodev1.RouterStatus {
 	return st
 }
 
-// nat64 is the state of Jool's instances: of each protocol, the sessions, the pool's addresses
-// and ports they hold, and the pool's size.
+// nat64 is the state of the Jool instances of the node's NAT64 documents, all asked within one
+// timeout; an instance removed meanwhile is left out.
 func (r *Router) nat64(ctx context.Context) ([]*nodev1.NAT64Status, error) {
+	rendered, err := r.renderedNAT64()
+	if err != nil || len(rendered) == 0 {
+		return nil, err
+	}
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	out, err := r.ask(ctx, budget, "jool", router.JoolInstancesArgs...)
@@ -101,31 +112,75 @@ func (r *Router) nat64(ctx context.Context) ([]*nodev1.NAT64Status, error) {
 	}
 	var instances []*nodev1.NAT64Status
 	for _, name := range names {
-		n := &nodev1.NAT64Status{Name: name}
-		for _, protocol := range router.NAT64Protocols {
-			p := &nodev1.NAT64ProtocolStatus{Protocol: protocol}
-			for _, t := range []struct {
-				table string
-				read  func([]byte) (uint64, error)
-				into  *uint64
-			}{
-				{"session", router.CountJoolRows, &p.Sessions},
-				{"bib", router.CountJoolRows, &p.Bindings},
-				{"pool4", router.ParseJoolPool4, &p.PoolSize},
-			} {
-				out, err := r.ask(ctx, budget, "jool", router.JoolTableArgs(name, t.table, protocol)...)
-				if err != nil {
-					return nil, err
-				}
-				if *t.into, err = t.read(out); err != nil {
-					return nil, fmt.Errorf("instance %s: %w", name, err)
-				}
-			}
-			n.Protocols = append(n.Protocols, p)
+		// Jool lists the instances of every network namespace; the node's are those of its NAT64
+		// documents.
+		if !slices.Contains(rendered, name) {
+			continue
+		}
+		n, err := r.nat64Instance(ctx, budget, name)
+		if errors.Is(err, errInstanceGone) {
+			continue
+		}
+		if err != nil {
+			return nil, err
 		}
 		instances = append(instances, n)
 	}
 	return instances, nil
+}
+
+// errInstanceGone is a Jool instance removed while chalkd asks about it.
+var errInstanceGone = errors.New("the instance is gone")
+
+// nat64Instance is the state of one of Jool's instances: its counters of sessions and bindings
+// and the size of each protocol's pool.
+func (r *Router) nat64Instance(ctx, budget context.Context, name string) (*nodev1.NAT64Status, error) {
+	jool := func(args []string) ([]byte, error) {
+		out, err := r.ask(ctx, budget, "jool", args...)
+		if te := (*tool.Error)(nil); errors.As(err, &te) && strings.Contains(te.Stderr, router.JoolMissingInstance) {
+			return nil, errInstanceGone
+		}
+		return out, err
+	}
+	out, err := jool(router.JoolStatsArgs(name))
+	if err != nil {
+		return nil, err
+	}
+	n := &nodev1.NAT64Status{Name: name}
+	if n.Sessions, n.Bindings, err = router.ParseJoolStats(out); err != nil {
+		return nil, fmt.Errorf("instance %s: %w", name, err)
+	}
+	for _, protocol := range router.NAT64Protocols {
+		out, err := jool(router.JoolPool4Args(name, protocol))
+		if err != nil {
+			return nil, err
+		}
+		p := &nodev1.NAT64PoolStatus{Protocol: protocol}
+		if p.Size, err = router.ParseJoolPool4(out); err != nil {
+			return nil, fmt.Errorf("instance %s: %w", name, err)
+		}
+		n.Pools = append(n.Pools, p)
+	}
+	return n, nil
+}
+
+// renderedNAT64 are the names of the node's NAT64 documents, whose instances the output jool
+// renders as <name>.json.
+func (r *Router) renderedNAT64() ([]string, error) {
+	entries, err := os.ReadDir(cmp.Or(r.NAT64Dir, filepath.Join(outputs.DefaultRoot, "jool")))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if name, ok := strings.CutSuffix(e.Name(), ".json"); ok && e.Type().IsRegular() {
+			names = append(names, name)
+		}
+	}
+	return names, nil
 }
 
 // resolver is the state of Unbound on a node whose Resolver document rendered its config, and nil

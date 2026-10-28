@@ -19,14 +19,19 @@ var joolName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`)
 // JoolInstancesArgs are jool's arguments that list its instances.
 var JoolInstancesArgs = []string{"instance", "display", "--csv", "--no-headers"}
 
-// JoolTableArgs are jool's arguments that list one protocol's entries of an instance's table:
-// session, bib or pool4. Addresses print as numbers, as Jool would ask DNS for names otherwise.
-func JoolTableArgs(instance, table, protocol string) []string {
-	args := []string{"-i", instance, table, "display", "--csv", "--no-headers", "--" + protocol}
-	if table != "pool4" {
-		args = append(args, "--numeric")
-	}
-	return args
+// JoolMissingInstance is what jool says, after the kernel module's error, of an instance that does
+// not exist in its network namespace, such as one removed while chalkd asks about it.
+const JoolMissingInstance = "This namespace lacks an instance named"
+
+// JoolStatsArgs are jool's arguments that list all of an instance's statistics, also those that
+// are zero.
+func JoolStatsArgs(instance string) []string {
+	return []string{"-i", instance, "stats", "display", "--csv", "--no-headers", "--all"}
+}
+
+// JoolPool4Args are jool's arguments that list an instance's pool of one protocol.
+func JoolPool4Args(instance, protocol string) []string {
+	return []string{"-i", instance, "pool4", "display", "--csv", "--no-headers", "--" + protocol}
 }
 
 // joolRows are the records of jool's CSV, whose lines may differ in their number of fields.
@@ -41,8 +46,9 @@ func joolRows(data []byte) ([][]string, error) {
 }
 
 // ParseJoolInstances reads the names of jool instance display --csv --no-headers, a line of
-// namespace, name and framework per instance, sorted. A name chalkos would not give an instance is
-// an error, since the names reach jool's command line.
+// namespace, name and framework per instance, sorted. Jool lists the instances of every network
+// namespace; a name chalkos would not give an instance is left out, since the names reach jool's
+// command line.
 func ParseJoolInstances(data []byte) ([]string, error) {
 	rows, err := joolRows(data)
 	if err != nil {
@@ -53,28 +59,42 @@ func ParseJoolInstances(data []byte) ([]string, error) {
 		if len(row) != 3 {
 			return nil, fmt.Errorf("jool lists an instance as %q, not namespace, name and framework", row)
 		}
-		if !joolName.MatchString(row[1]) {
-			return nil, fmt.Errorf("jool lists an instance named %q, which no NAT64 document names", row[1])
+		if joolName.MatchString(row[1]) {
+			names = append(names, row[1])
 		}
-		names = append(names, row[1])
 	}
 	slices.Sort(names)
 	return slices.Compact(names), nil
 }
 
-// CountJoolRows counts the entries of a session or BIB table jool displays with --csv
-// --no-headers, each a line that starts with its protocol and holds at least BIB's six fields.
-func CountJoolRows(data []byte) (uint64, error) {
+// ParseJoolStats reads an instance's counters of session and BIB entries from jool stats display
+// --csv --no-headers --all, a line of name and value per statistic, and an explanation with
+// --explain.
+func ParseJoolStats(data []byte) (sessions, bindings uint64, err error) {
 	rows, err := joolRows(data)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
+	stats := map[string]uint64{}
 	for _, row := range rows {
-		if len(row) < 6 || !slices.Contains([]string{"TCP", "UDP", "ICMP"}, row[0]) {
-			return 0, fmt.Errorf("jool lists %q, which is no entry of TCP, UDP or ICMP", row)
+		if len(row) < 2 || len(row) > 3 {
+			return 0, 0, fmt.Errorf("jool lists %q, not a statistic and its value", row)
+		}
+		if row[0] != "JSTAT_SESSIONS" && row[0] != "JSTAT_BIB_ENTRIES" {
+			continue
+		}
+		v, err := strconv.ParseUint(row[1], 10, 64)
+		if err != nil {
+			return 0, 0, fmt.Errorf("jool lists %s of %q", row[0], row[1])
+		}
+		stats[row[0]] = v
+	}
+	for _, name := range []string{"JSTAT_SESSIONS", "JSTAT_BIB_ENTRIES"} {
+		if _, ok := stats[name]; !ok {
+			return 0, 0, fmt.Errorf("jool's statistics lack %s", name)
 		}
 	}
-	return uint64(len(rows)), nil
+	return stats["JSTAT_SESSIONS"], stats["JSTAT_BIB_ENTRIES"], nil
 }
 
 // ParseJoolPool4 reads the size of a pool from jool pool4 display --csv --no-headers: the ports of

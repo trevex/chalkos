@@ -559,7 +559,7 @@ message RouterStatus {
   // Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is
   // then empty.
   string bgp_error = 2;
-  // The router's NAT64 instances, one per NAT64 document, by name.
+  // The router's NAT64 instances, one per Jool instance, which a NAT64 document names, by name.
   repeated NAT64Status nat64 = 3;
   // Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then
   // empty.
@@ -572,22 +572,22 @@ message RouterStatus {
 message NAT64Status {
   // Name of the NAT64 document, which names its instance.
   string name = 1;
-  // The instance's translations of TCP, UDP and ICMP, in this order.
-  repeated NAT64ProtocolStatus protocols = 2;
+  // Connections the instance translates, of all protocols.
+  uint64 sessions = 2;
+  // IPv4 addresses and ports of the pool that translated connections hold, of all protocols: one
+  // per IPv6 address and port, or ICMP identifier, that the instance translates.
+  uint64 bindings = 3;
+  // The instance's pool for TCP, UDP and ICMP, in this order.
+  repeated NAT64PoolStatus pools = 4;
 }
 
-// A NAT64 instance's translations of one protocol.
-message NAT64ProtocolStatus {
+// A NAT64 instance's pool of one protocol.
+message NAT64PoolStatus {
   // The protocol: tcp, udp or icmp.
   string protocol = 1;
-  // Connections the instance translates.
-  uint64 sessions = 2;
-  // IPv4 addresses and ports of the pool that translated connections hold: one per IPv6 address
-  // and port, or ICMP identifier, that the instance translates.
-  uint64 bindings = 3;
   // IPv4 addresses and ports, or ICMP identifiers, the pool holds for the protocol; 0 when it
   // holds none. An instance whose pool is empty takes the router's own addresses.
-  uint64 pool_size = 4;
+  uint64 size = 2;
 }
 
 // The state of a router's resolver.

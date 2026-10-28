@@ -27,7 +27,7 @@ func routerServer(t *testing.T, kernel ...*nodev1.KernelRoute) (*Server, *toolte
 	t.Helper()
 	s, r := installedServer(t, section("", ""), false)
 	s.Layers = layers.Of(layers.Router)
-	s.Router = &Router{Run: r, KernelRoutes: func() ([]*nodev1.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf")}
+	s.Router = &Router{Run: r, KernelRoutes: func() ([]*nodev1.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()}
 	return s, r
 }
 
@@ -53,6 +53,10 @@ func TestRouterStatus(t *testing.T) {
 	}
 	if !r.Quiet["vtysh -c show bgp neighbors json"] {
 		t.Error("vtysh's standard error reaches the console")
+	}
+	// Without NAT64 documents, Jool is not asked.
+	if st.Nat64Error != "" || slices.ContainsFunc(r.Calls, func(c string) bool { return strings.HasPrefix(c, "jool") }) {
+		t.Errorf("a router without NAT64 asked jool: %q, %v", st.Nat64Error, r.Calls)
 	}
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c show bgp neighbors json", Err: &tool.Error{Command: "vtysh", Code: 1, Stderr: "Exiting: failed to connect to any daemons.\n"}})
 	st = status(t, s).Router
@@ -137,8 +141,10 @@ func TestRouterStatusWhileDaemonsHang(t *testing.T) {
 	s.Router.Run = hangingRunner{r}
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
 	askTimeout = 200 * time.Millisecond
-	if err := os.WriteFile(s.Router.ResolverConfig, []byte("server:\n"), 0o644); err != nil {
-		t.Fatal(err)
+	for _, file := range []string{s.Router.ResolverConfig, filepath.Join(s.Router.NAT64Dir, "edge.json")} {
+		if err := os.WriteFile(file, []byte("\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	start := time.Now()
 	st := status(t, s).Router
@@ -156,7 +162,8 @@ func TestRouterStatusWhileDaemonsHang(t *testing.T) {
 	}
 }
 
-// slowJool is a jool that lists one instance at once and takes a while for each of its tables.
+// slowJool is a jool that lists one instance and its statistics at once and takes a while for each
+// of its pools.
 type slowJool struct {
 	tool.Runner
 	delay time.Duration
@@ -166,6 +173,9 @@ func (j slowJool) Run(ctx context.Context, name string, args ...string) ([]byte,
 	if name == "jool" && args[0] == "instance" {
 		return []byte("8fb43ac0,edge,netfilter\n"), nil
 	}
+	if name == "jool" && slices.Contains(args, "stats") {
+		return []byte("JSTAT_BIB_ENTRIES,0\nJSTAT_SESSIONS,0\n"), nil
+	}
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -174,11 +184,14 @@ func (j slowJool) Run(ctx context.Context, name string, args ...string) ([]byte,
 	}
 }
 
-// jool's questions share one timeout: tables that each answer in time but together take longer
+// jool's questions share one timeout: pools that each answer in time but together take longer
 // leave the NAT64 part unknown.
 func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
 	s, r := routerServer(t)
-	s.Router.Run = slowJool{r, 30 * time.Millisecond}
+	s.Router.Run = slowJool{r, 40 * time.Millisecond}
+	if err := os.WriteFile(filepath.Join(s.Router.NAT64Dir, "edge.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
 	askTimeout = 100 * time.Millisecond
 	start := time.Now()
@@ -213,31 +226,41 @@ func TestVtyshCallerDeadline(t *testing.T) {
 	}
 }
 
-// A router's status holds each of Jool's instances, recorded from Jool 4.1.15, with each
-// protocol's sessions, bindings and pool size, asked without jool's standard error reaching the
-// console; when jool fails, the NAT64 part says why and the rest of the status stands.
+// A router's status holds each Jool instance that a NAT64 document of the node names, with its
+// sessions, bindings and each protocol's pool size, recorded from Jool 4.1.15, asked without jool's
+// standard error reaching the console; an instance of another namespace or one removed meanwhile
+// is left out, and when jool fails, the NAT64 part says why and the rest of the status stands.
 func TestRouterNAT64Status(t *testing.T) {
 	s, r := routerServer(t)
+	for _, name := range []string{"edge", "gone"} {
+		if err := os.WriteFile(filepath.Join(s.Router.NAT64Dir, name+".json"), []byte("{}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	r.Rules = append(r.Rules,
-		tooltest.Rule{Prefix: "jool instance display --csv --no-headers", Out: "8fb43ac0,edge,netfilter\n", Times: 1},
-		tooltest.Rule{Prefix: "jool -i edge session display --csv --no-headers --tcp", Out: routerRecording(t, "jool-sessions-tcp.csv")},
-		tooltest.Rule{Prefix: "jool -i edge session display --csv --no-headers --icmp", Out: routerRecording(t, "jool-sessions-icmp.csv")},
-		tooltest.Rule{Prefix: "jool -i edge bib display --csv --no-headers --tcp", Out: "TCP,2001:db8:ffff::2,33830,192.0.2.8,62105,0\n"},
+		tooltest.Rule{Prefix: "jool instance display --csv --no-headers", Out: "8fb43ac0,edge,netfilter\n8fb43ac0,gone,netfilter\n51c2d0e7,other,netfilter\n51c2d0e7,Other Box,netfilter\n", Times: 1},
+		tooltest.Rule{Prefix: "jool -i edge stats display --csv --no-headers --all", Out: routerRecording(t, "jool-stats.csv")},
 		tooltest.Rule{Prefix: "jool -i edge pool4 display --csv --no-headers --tcp", Out: routerRecording(t, "jool-pool4-tcp.csv")},
+		tooltest.Rule{Prefix: "jool -i gone ", Err: &tool.Error{Command: "jool", Code: 1, Stderr: "Error: The kernel module returned error 3: This namespace lacks an instance named 'gone'.\n"}},
 	)
 	st := status(t, s).Router
-	if st == nil || st.Nat64Error != "" || len(st.Nat64) != 1 || st.Nat64[0].Name != "edge" {
+	if st == nil || st.Nat64Error != "" || len(st.Nat64) != 1 || st.Nat64[0].Name != "edge" || st.Nat64[0].Sessions != 3 || st.Nat64[0].Bindings != 2 {
 		t.Fatalf("router status = %v", st)
 	}
 	var got []string
-	for _, p := range st.Nat64[0].Protocols {
-		got = append(got, fmt.Sprintf("%s %d %d %d", p.Protocol, p.Sessions, p.Bindings, p.PoolSize))
+	for _, p := range st.Nat64[0].Pools {
+		got = append(got, fmt.Sprintf("%s %d", p.Protocol, p.Size))
 	}
-	if want := []string{"tcp 2 1 41837", "udp 0 0 0", "icmp 1 0 0"}; !slices.Equal(got, want) {
-		t.Errorf("protocols = %v, want %v", got, want)
+	if want := []string{"tcp 41837", "udp 0", "icmp 0"}; !slices.Equal(got, want) {
+		t.Errorf("pools = %v, want %v", got, want)
 	}
 	if !r.Quiet["jool instance display --csv --no-headers"] {
 		t.Error("jool's standard error reaches the console")
+	}
+	for _, call := range r.Calls {
+		if strings.HasPrefix(call, "jool -i other") || strings.Contains(call, "Other Box") {
+			t.Errorf("chalkd asked about an instance no NAT64 document of the node names: %s", call)
+		}
 	}
 	r.Rules = append([]tooltest.Rule{{Prefix: "jool instance display", Err: &tool.Error{Command: "jool", Code: 1, Stderr: "Error: Jool's kernel module is not loaded.\n"}}}, r.Rules...)
 	st = status(t, s).Router

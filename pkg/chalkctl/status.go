@@ -146,15 +146,15 @@ func (a *app) routerStatus(r *nodev1.RouterStatus) error {
 	case len(r.Nat64) > 0:
 		fmt.Fprintln(a.stdout, "nat64:")
 		w := a.table()
-		fmt.Fprintln(w, "  INSTANCE\tPROTOCOL\tSESSIONS\tBINDINGS\tPOOL")
+		fmt.Fprintln(w, "  INSTANCE\tSESSIONS\tBINDINGS\tPOOL TCP\tPOOL UDP\tPOOL ICMP")
 		for _, n := range r.Nat64 {
-			for _, p := range n.Protocols {
-				pool := strconv.FormatUint(p.PoolSize, 10)
-				if p.PoolSize == 0 {
-					pool = "-"
+			pools := map[string]string{}
+			for _, p := range n.Pools {
+				if p.Size > 0 {
+					pools[p.Protocol] = strconv.FormatUint(p.Size, 10)
 				}
-				fmt.Fprintf(w, "  %s\t%s\t%d\t%d\t%s\n", n.Name, p.Protocol, p.Sessions, p.Bindings, pool)
 			}
+			fmt.Fprintf(w, "  %s\t%d\t%d\t%s\t%s\t%s\n", n.Name, n.Sessions, n.Bindings, cmp.Or(pools["tcp"], "-"), cmp.Or(pools["udp"], "-"), cmp.Or(pools["icmp"], "-"))
 		}
 		if err := w.Flush(); err != nil {
 			return err
