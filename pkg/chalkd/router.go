@@ -1,9 +1,12 @@
 package chalkd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"time"
 
 	"connectrpc.com/connect"
@@ -13,51 +16,116 @@ import (
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
-// Router is the node's router side: the state of its FRR and the kernel's routes.
+// Router is the node's router side: the state of its FRR, Jool and Unbound and the kernel's routes.
 type Router struct {
-	// Run runs vtysh, which FRR answers on its sockets in /run/frr.
+	// Run runs vtysh, which FRR answers on its sockets in /run/frr, jool and unbound-control.
 	Run tool.Runner
 	// KernelRoutes lists the kernel's routes; nil reads them through netlink. Tests replace it.
 	KernelRoutes func() ([]*nodev1.KernelRoute, error)
+	// ResolverConfig is Unbound's config, which exists on a node with a Resolver document;
+	// empty is /etc/unbound/unbound.conf. Tests replace it.
+	ResolverConfig string
 }
 
-// vtyshTimeout bounds each question chalkd asks FRR, so Status answers while FRR hangs. Tests
-// shorten it.
-var vtyshTimeout = 5 * time.Second
+// askTimeout bounds each question chalkd asks a router daemon, so Status answers while one hangs.
+// Tests shorten it.
+var askTimeout = 5 * time.Second
 
-// vtysh runs one of the fixed show commands of package router, whose standard error, while FRR is
-// down, goes into the error alone rather than into chalkd's log as well.
-func (r *Router) vtysh(ctx context.Context, command string) ([]byte, error) {
-	runCtx, cancel := context.WithTimeout(ctx, vtyshTimeout)
+// ask runs one of the router's fixed questions to its daemons, whose standard error, while the
+// daemon is down, goes into the error alone rather than into chalkd's log as well.
+func (r *Router) ask(ctx context.Context, program string, args ...string) ([]byte, error) {
+	runCtx, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	run := r.Run.Run
 	if quiet, ok := r.Run.(tool.QuietRunner); ok {
 		run = quiet.RunQuiet
 	}
-	out, err := run(runCtx, "vtysh", "-c", command)
+	out, err := run(runCtx, program, args...)
 	if err != nil {
-		// The caller's own end is not vtysh's timeout.
+		// The caller's own end is not the daemon's timeout.
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("vtysh did not answer within %v", vtyshTimeout)
+			return nil, fmt.Errorf("%s did not answer within %v", program, askTimeout)
 		}
 	}
 	return out, err
 }
 
-// status is the router's part of the node's status: its BGP sessions, or why FRR did not say.
+// vtysh runs one of the fixed show commands of package router.
+func (r *Router) vtysh(ctx context.Context, command string) ([]byte, error) {
+	return r.ask(ctx, "vtysh", "-c", command)
+}
+
+// status is the router's part of the node's status: its BGP sessions, its NAT64 instances and its
+// resolver, or why a daemon did not say.
 func (r *Router) status(ctx context.Context) *nodev1.RouterStatus {
+	st := &nodev1.RouterStatus{}
 	out, err := r.vtysh(ctx, router.NeighborsCommand)
-	if err != nil {
-		return &nodev1.RouterStatus{BgpError: err.Error()}
+	if err == nil {
+		st.Peers, err = router.ParsePeers(out)
 	}
-	peers, err := router.ParsePeers(out)
 	if err != nil {
-		return &nodev1.RouterStatus{BgpError: err.Error()}
+		st.Peers, st.BgpError = nil, err.Error()
 	}
-	return &nodev1.RouterStatus{Peers: peers}
+	if st.Nat64, err = r.nat64(ctx); err != nil {
+		st.Nat64, st.Nat64Error = nil, err.Error()
+	}
+	st.Resolver = r.resolver(ctx)
+	return st
+}
+
+// nat64 is the state of Jool's instances: of each protocol, the sessions, the pool's addresses
+// and ports they hold, and the pool's size.
+func (r *Router) nat64(ctx context.Context) ([]*nodev1.NAT64Status, error) {
+	out, err := r.ask(ctx, "jool", router.JoolInstancesArgs...)
+	if err != nil {
+		return nil, err
+	}
+	names, err := router.ParseJoolInstances(out)
+	if err != nil {
+		return nil, err
+	}
+	var instances []*nodev1.NAT64Status
+	for _, name := range names {
+		n := &nodev1.NAT64Status{Name: name}
+		for _, protocol := range router.NAT64Protocols {
+			p := &nodev1.NAT64ProtocolStatus{Protocol: protocol}
+			for _, t := range []struct {
+				table string
+				read  func([]byte) (uint64, error)
+				into  *uint64
+			}{
+				{"session", router.CountJoolRows, &p.Sessions},
+				{"bib", router.CountJoolRows, &p.Bindings},
+				{"pool4", router.ParseJoolPool4, &p.PoolSize},
+			} {
+				out, err := r.ask(ctx, "jool", router.JoolTableArgs(name, t.table, protocol)...)
+				if err != nil {
+					return nil, err
+				}
+				if *t.into, err = t.read(out); err != nil {
+					return nil, fmt.Errorf("instance %s: %w", name, err)
+				}
+			}
+			n.Protocols = append(n.Protocols, p)
+		}
+		instances = append(instances, n)
+	}
+	return instances, nil
+}
+
+// resolver is the state of Unbound on a node whose Resolver document rendered its config, and nil
+// on another.
+func (r *Router) resolver(ctx context.Context) *nodev1.ResolverStatus {
+	if _, err := os.Stat(cmp.Or(r.ResolverConfig, "/etc/unbound/unbound.conf")); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if _, err := r.ask(ctx, "unbound-control", "status"); err != nil {
+		return &nodev1.ResolverStatus{Error: err.Error()}
+	}
+	return &nodev1.ResolverStatus{Running: true}
 }
 
 func (s *Server) Routes(ctx context.Context, req *connect.Request[nodev1.RoutesRequest]) (*connect.Response[nodev1.RoutesResponse], error) {
