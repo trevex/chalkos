@@ -1,6 +1,6 @@
 # The router layer, on images whose nodes route between networks: its marker, forwarding, the
-# router kinds' outputs and effects, the firewall that takes the place of NixOS's, BGP with FRR
-# and the router's diagnostics.
+# router kinds' outputs and effects, the firewall that takes the place of NixOS's, BGP with FRR,
+# NAT64 with Jool, the resolver with Unbound and the router's diagnostics.
 { config, lib, ... }:
 {
   imports = [
@@ -8,6 +8,8 @@
     ./sysctl.nix
     ./diagnostics.nix
     ./bgp.nix
+    ./nat64.nix
+    ./resolver.nix
   ];
 
   options.chalkos.router.enable = lib.mkOption {

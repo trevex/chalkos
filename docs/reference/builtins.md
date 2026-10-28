@@ -974,8 +974,10 @@ The outputs router images add.
 | Output | Inputs | Directory | Renderer | Check |
 | --- | --- | --- | --- | --- |
 | `frr`{ #output-frr } | `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `Network` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
-| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGPPeer` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
+| `jool`{ #output-jool } | `NAT64` | `/run/chalkos/outputs/jool` | Command `chalkos-render jool` | yes |
+| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGPPeer`, `Resolver` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
 | `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |
+| `unbound`{ #output-unbound } | `Resolver` | `/run/chalkos/outputs/unbound` | Command `chalkos-render unbound root.key ipv4only.arpa.zone` | yes |
 
 ## Effects { #effects }
 
@@ -1049,8 +1051,17 @@ The effects router images add.
 | Effect | Fires when | Does |
 | --- | --- | --- |
 | `frr`{ #effect-frr } | The output `frr` changed. | Reloads `frr.service`. |
+| `jool`{ #effect-jool } | The output `jool` changed. | Reloads `chalkos-nat64.service`. |
 | `router-nftables`{ #effect-router-nftables } | The output `router-nftables` changed. | Reloads `chalkos-firewall.service`. |
 | `router-sysctl`{ #effect-router-sysctl } | The output `router-sysctl` changed. | Restarts `systemd-sysctl.service`. |
+| `unbound`{ #effect-unbound } | The output `unbound` changed. | Reloads `unbound.service`. |
+| `unbound-start`{ #effect-unbound-start } | The `when` after the table holds, which reads the documents of `Resolver`. | Restarts `unbound.service`, and starts them when they are stopped. |
+
+`when` of `unbound-start`:
+
+```text
+size((("router.chalkos.dev/v1alpha1" in config && "Resolver" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Resolver : {})) != size((("router.chalkos.dev/v1alpha1" in oldConfig && "Resolver" in oldConfig["router.chalkos.dev/v1alpha1"]) ? oldConfig["router.chalkos.dev/v1alpha1"].Resolver : {}))
+```
 
 ## Diagnostics { #diagnostics }
 
@@ -1104,7 +1115,16 @@ The diagnostics router images add.
 | `bgp-neighbor`{ #diagnostic-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp neighbors {peer}`. | `peer`, pattern `^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$` | reader | — |
 | `bgp-route`{ #diagnostic-bgp-route } | BGP's paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best. Runs `vtysh -c show bgp {family} unicast {prefix}`. | `prefix`, prefix; `family`, enum of `ipv4` or `ipv6`, default `ipv6` | reader | — |
 | `bgp-summary`{ #diagnostic-bgp-summary } | FRR's BGP sessions of each address family, as show bgp summary prints them. Runs `vtysh -c show bgp summary`. | — | reader | — |
+| `nat64-sessions`{ #diagnostic-nat64-sessions } | A NAT64 instance's sessions, as jool session display prints them: each translated TCP, UDP and ICMP connection's IPv6 and IPv4 addresses and ports, and when it expires. Runs `bash -c <script> nat64-sessions {instance}`, with the script after the table. | `instance`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$` | operator | `CAP_NET_ADMIN` |
 | `traceroute`{ #diagnostic-traceroute } | The routers on the path to an address, as traceroute -n prints them: one probe a hop, 30 hops at most. Runs `traceroute -n -m 30 -q 1 -w 2 {address}`. | `address`, address | operator | — |
+
+Script of `nat64-sessions`:
+
+```text
+for protocol in --tcp --udp --icmp; do
+  jool -i "$1" session display --numeric "$protocol" || exit
+done
+```
 
 Sources: the schemas, `facts.json`, `outputs.json`, `effects.json` and `diagnostics.json` that
 an image holds in `/etc/chalkos`, of an image of the default variant, of one with

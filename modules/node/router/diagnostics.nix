@@ -1,6 +1,7 @@
-# The diagnostics router images add to every image's: the routers on the path to an address, and
-# FRR's BGP sessions, neighbours and paths and its BFD peers, which vtysh asks FRR for as a member
-# of frrvty, the group of FRR's sockets.
+# The diagnostics router images add to every image's: the routers on the path to an address, FRR's
+# BGP sessions, neighbours and paths and its BFD peers, which vtysh asks FRR for as a member of
+# frrvty, the group of FRR's sockets, and a NAT64 instance's sessions, which Jool shows to
+# CAP_NET_ADMIN alone.
 {
   config,
   lib,
@@ -80,6 +81,29 @@ in
             description = "Address family of the prefix.";
           };
         };
+    chalkos.diagnostics.nat64-sessions = {
+      description = "A NAT64 instance's sessions, as jool session display prints them: each translated TCP, UDP and ICMP connection's IPv6 and IPv4 addresses and ports, and when it expires.";
+      command = [
+        "${pkgs.bash}/bin/bash"
+        "-c"
+        ''
+          for protocol in --tcp --udp --icmp; do
+            ${pkgs.jool-cli}/bin/jool -i "$1" session display --numeric "$protocol" || exit
+          done
+        ''
+        "nat64-sessions"
+        "{instance}"
+      ];
+      parameters.instance = {
+        type = "pattern";
+        regex = "^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$";
+        description = "Name of the NAT64 document, which names its instance.";
+      };
+      # The sessions show who connects where.
+      role = "operator";
+      timeout = "30s";
+      capabilities = [ "CAP_NET_ADMIN" ];
+    };
     chalkos.diagnostics.bfd-peers =
       vtysh "FRR's BFD sessions and their state, as show bfd peers prints them." "show bfd peers"
         { };

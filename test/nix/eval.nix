@@ -409,6 +409,114 @@ lib.runTests {
       node = false;
     };
   };
+  # Router images carry Jool's module, loaded at boot, and run chalkos-nat64, which the output jool
+  # renders NAT64 instances for and whose reload the effect asks for, after the firewall and before
+  # FRR, with CAP_NET_ADMIN alone. They run Unbound of the config the output unbound renders, once
+  # one is rendered, after chalkos-nat64, with CAP_NET_BIND_SERVICE alone and its control socket's
+  # directory closed to other users; a changed resolver reloads it with its cache, and one added or
+  # removed starts or stops it. The firewall opens the resolver's port, chalkd asks jool and
+  # unbound-control for their state, the image adds the diagnostic nat64-sessions, and the node's
+  # own names resolve as before. Other images run neither.
+  testRouterNAT64AndResolver = {
+    expr =
+      let
+        edge = layered.edge-metal.config;
+        nat64 = edge.systemd.services.chalkos-nat64;
+        unbound = edge.systemd.services.unbound;
+      in
+      {
+        module = map lib.getName edge.boot.extraModulePackages;
+        loaded = lib.elem "jool" edge.boot.kernelModules;
+        inputs = {
+          jool = edge.chalkos.outputs.jool.inputs;
+          unbound = edge.chalkos.outputs.unbound.inputs;
+        };
+        firewallReads = lib.elem "Resolver" edge.chalkos.outputs.router-nftables.inputs;
+        checks = {
+          jool = lib.hasInfix "/bin/jool file check" edge.chalkos.outputs.jool.check;
+          unbound = lib.hasInfix "/bin/unbound-checkconf" edge.chalkos.outputs.unbound.check;
+        };
+        effects = {
+          jool = edge.chalkos.effects.jool.reload;
+          unbound = edge.chalkos.effects.unbound.reload;
+          start = {
+            inherit (edge.chalkos.effects.unbound-start) restart start;
+          };
+        };
+        nat64After = lib.subtractLists nat64.after [
+          "chalkos-config.service"
+          "chalkos-firewall.service"
+        ];
+        nat64Before = nat64.before;
+        nat64Capabilities = nat64.serviceConfig.CapabilityBoundingSet;
+        nat64Reloads = nat64.serviceConfig.ExecReload == nat64.serviceConfig.ExecStart;
+        nat64Stops = lib.hasSuffix " stop" nat64.serviceConfig.ExecStop;
+        unboundAfter = lib.elem "chalkos-nat64.service" unbound.after;
+        unboundCapabilities = {
+          inherit (unbound.serviceConfig) AmbientCapabilities CapabilityBoundingSet RuntimeDirectoryMode;
+        };
+        unboundCondition = unbound.unitConfig.ConditionPathExists;
+        unboundConfig = edge.environment.etc."unbound/unbound.conf".source;
+        unboundReload = lib.hasSuffix "/bin/unbound-control reload_keep_cache" unbound.serviceConfig.ExecReload;
+        localQueries = edge.services.unbound.resolveLocalQueries;
+        chalkd = lib.subtractLists (map lib.getName edge.systemd.services.chalkd.path) [
+          "jool-cli"
+          "unbound"
+        ];
+        diagnostic = {
+          inherit (edge.chalkos.diagnostics.nat64-sessions) role capabilities;
+        };
+        plain = {
+          unbound = layered.plain-metal.config.services.unbound.enable;
+          jool = layered.plain-metal.config.chalkos.outputs ? jool;
+        };
+      };
+    expected = {
+      module = [ "jool" ];
+      loaded = true;
+      inputs = {
+        jool = [ "NAT64" ];
+        unbound = [ "Resolver" ];
+      };
+      firewallReads = true;
+      checks = {
+        jool = true;
+        unbound = true;
+      };
+      effects = {
+        jool = [ "chalkos-nat64.service" ];
+        unbound = [ "unbound.service" ];
+        start = {
+          restart = [ "unbound.service" ];
+          start = true;
+        };
+      };
+      nat64After = [ ];
+      nat64Before = [ "frr.service" ];
+      nat64Capabilities = [ "CAP_NET_ADMIN" ];
+      nat64Reloads = true;
+      nat64Stops = true;
+      unboundAfter = true;
+      unboundCapabilities = {
+        AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
+        CapabilityBoundingSet = [ "CAP_NET_BIND_SERVICE" ];
+        RuntimeDirectoryMode = "0750";
+      };
+      unboundCondition = "/run/chalkos/outputs/unbound/unbound.conf";
+      unboundConfig = "/run/chalkos/outputs/unbound/unbound.conf";
+      unboundReload = true;
+      localQueries = false;
+      chalkd = [ ];
+      diagnostic = {
+        role = "operator";
+        capabilities = [ "CAP_NET_ADMIN" ];
+      };
+      plain = {
+        unbound = false;
+        jool = false;
+      };
+    };
+  };
   # Forwarding belongs to the base: both layers turn it on, an image of the base alone forwards
   # only when its modules ask for it.
   testForwarding = {

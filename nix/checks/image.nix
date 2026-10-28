@@ -261,8 +261,9 @@ in
   # whose check refuses an example fail the check of their image. The homelab's Hardware output
   # renders hardware-examples/server.yaml, and its bird-conf output renders
   # bgp-examples/two-peers.yaml, which bird -p parses. A router image checks its rules, renders its
-  # router examples and holds the modules of its firewall, its firewall check refuses what the
-  # kernel would, and its FRR check what vtysh would.
+  # router examples and holds the modules of its firewall and Jool, its firewall check refuses what
+  # the kernel would, its FRR check what vtysh would, its Jool check what jool would and its
+  # Unbound check what unbound-checkconf would.
   rules =
     let
       build =
@@ -274,8 +275,8 @@ in
         ../../examples/homelab/extensions/bgp.nix
       ];
       router = checkLib.router.config.system.build;
-      # The router image loads nf_conntrack and the modules of its firewall, which its module tree
-      # must hold.
+      # The router image loads nf_conntrack, the modules of its firewall and Jool, which its module
+      # tree must hold with what they depend on.
       routerModules = lib.findFirst (
         d: d.name == "kernel-modules-check"
       ) (throw "the router image runs no kernel-modules-check") checkLib.router.config.system.checks;
@@ -433,6 +434,41 @@ in
         fi
         if ! grep -q 'Unknown command.*neighbor peer-fabric bfd sometimes' err; then
           echo "error: the router's FRR check refused the config for another reason:" >&2
+          cat err >&2
+          exit 1
+        fi
+        # The check of Jool's instances passes the edge example's and refuses a port past 65535,
+        # with jool alone. The goldens start with a line that names the file.
+        check=$(jq -r .jool.check ${router.chalkosOutputs})
+        mkdir jool
+        sed 1d ${../../cmd/chalkos-render/testdata/router/edge.jool} >jool/edge.json
+        OUT=$PWD/jool $check </dev/null
+        sed -i 's/"61001-65535"/"61001-70000"/' jool/edge.json
+        if OUT=$PWD/jool $check </dev/null >err 2>&1; then
+          echo "error: the router's Jool check accepted a port past 65535" >&2
+          exit 1
+        fi
+        if ! grep -q "'70000' is out of bounds" err; then
+          echo "error: the router's Jool check refused the instance for another reason:" >&2
+          cat err >&2
+          exit 1
+        fi
+        # The check of Unbound's config passes the LAN example's, with the trust anchor and zone
+        # the image renders it with in place of the golden's, and refuses a record Unbound does not
+        # take.
+        check=$(jq -r .unbound.check ${router.chalkosOutputs})
+        read -r _ _ anchor zone < <(jq -r .unbound.render ${router.chalkosOutputs})
+        mkdir unbound
+        sed -e 1d -e "s|/etc/unbound/root.key|$anchor|" -e "s|/etc/unbound/ipv4only.arpa.zone|$zone|" \
+          ${../../cmd/chalkos-render/testdata/router/lan.unbound} >unbound/unbound.conf
+        OUT=$PWD/unbound $check </dev/null
+        sed -i 's/IN A 192.0.2.1/IN A 192.0.2.300/' unbound/unbound.conf
+        if OUT=$PWD/unbound $check </dev/null >err 2>&1; then
+          echo "error: the router's Unbound check accepted a record Unbound refuses" >&2
+          exit 1
+        fi
+        if ! grep -q 'Bad local-data RR' err; then
+          echo "error: the router's Unbound check refused the config for another reason:" >&2
           cat err >&2
           exit 1
         fi
