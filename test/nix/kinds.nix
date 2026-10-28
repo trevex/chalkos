@@ -89,8 +89,10 @@ let
     "CommunityList"
     "FirewallPolicy"
     "FirewallZone"
+    "NAT64"
     "NATRule"
     "PrefixList"
+    "Resolver"
     "Router"
     "RoutingPolicy"
   ];

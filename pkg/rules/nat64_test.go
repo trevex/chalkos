@@ -1,0 +1,174 @@
+package rules
+
+import (
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/schema"
+)
+
+// The NAT64 and Resolver rules accept a fabric edge's documents and refuse a name Jool does not
+// take, prefixes no NAT64 or DNS64 takes, two NAT64s of one prefix or of one pool's addresses, a
+// pool entry of IPv6, of too many addresses, of addresses no connection leaves from or of the
+// kernel's ephemeral ports, a protocol named twice, two entries of one protocol's addresses and
+// ports, addresses no resolver listens on or forwards to, an address, range or forwarder twice,
+// local zones twice or with records outside them, A and AAAA records of other data, a record
+// twice and names past 253 characters.
+func TestNAT64Rules(t *testing.T) {
+	set, doc := routerRules(t)
+	edge := []config.Document{
+		doc("NAT64", "edge", `{"pool4": [{"prefix": "192.0.2.8/30"}, {"prefix": "198.51.100.1/32", "ports": "1-32767", "protocols": ["tcp"]}]}`),
+		doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": 61001}, {"prefix": "203.0.113.0/30", "ports": "61002-65535"}]}`),
+		doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1", "192.0.2.1"], "allow": ["2001:db8::/32"], "forwarders": ["2001:db8::53"],
+			"dns64": {}, "localZones": [{"name": "lan.example.org", "records": [{"name": "r1.lan.example.org", "type": "AAAA", "value": "2001:db8::1"},
+			{"name": "r1.lan.example.org", "type": "A", "value": "192.0.2.1"}, {"name": "lan.example.org", "type": "MX", "value": "10 r1.lan.example.org"},
+			{"name": "_imaps._tcp.lan.example.org", "type": "SRV", "value": "0 1 993 r1.lan.example.org"}, {"name": "www.lan.example.org", "type": "CNAME", "value": "r1.lan.example.org"},
+			{"name": "lan.example.org", "type": "TXT", "value": "v=spf1 -all"}]}, {"name": "2.0.192.in-addr.arpa", "records": [{"name": "1.2.0.192.in-addr.arpa", "type": "PTR", "value": "r1.lan.example.org"}]}]}`),
+	}
+	// resolver is the resolver of the fabric edge with the local zone lan.example.org of the
+	// records given, in JSON.
+	resolver := func(records string) config.Document {
+		return doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "records": [`+records+`]}]}`)
+	}
+	// record is a record of a.lan.example.org of the type and value given.
+	record := func(typ, value string) string {
+		return `{"name": "a.lan.example.org", "type": "` + typ + `", "value": ` + strconv.Quote(value) + `}`
+	}
+	recordMessage := func(typ, value, is string) []string {
+		return []string{`Resolver "resolver" spec.localZones: the ` + typ + ` record of a.lan.example.org holds ` + value + `, which is no ` + is}
+	}
+	long := strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("a", 46) + ".lan.example.org"
+	replace := func(with ...config.Document) []config.Document {
+		out := slices.Clone(edge)
+		for _, w := range with {
+			i := slices.IndexFunc(out, func(d config.Document) bool { return d.Kind == w.Kind && d.Name == w.Name })
+			if i < 0 {
+				out = append(out, w)
+			} else {
+				out[i] = w
+			}
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name string
+		docs []config.Document
+		want []string
+	}{
+		{"a fabric edge", edge, nil},
+		{"a name of 16 characters", replace(doc("NAT64", "abcdefghijklmnop", `{"prefix": "2001:db8:65::/96"}`)),
+			[]string{"NAT64 abcdefghijklmnop has a name of more than 15 characters, which Jool does not take as an instance's name; give it a shorter one"}},
+		{"a prefix of 95 bits", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/95"}`)),
+			[]string{`NAT64 "lab" spec.prefix: the prefix 2001:db8:64::/95 is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96`}},
+		{"an IPv4 prefix", replace(doc("NAT64", "lab", `{"prefix": "192.0.2.0/24"}`)),
+			[]string{`NAT64 "lab" spec.prefix: the prefix 192.0.2.0/24 is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96`}},
+		{"two NAT64s of one prefix", replace(doc("NAT64", "lab", `{"prefix": "64:ff9b::/96"}`)),
+			[]string{"NAT64 edge, NAT64 lab translate addresses of one prefix; give each NAT64 a prefix of its own"}},
+		{"a prefix within another's", replace(doc("NAT64", "lab", `{"prefix": "64:ff9b::/64"}`)),
+			[]string{"NAT64 edge, NAT64 lab translate addresses of one prefix; give each NAT64 a prefix of its own"}},
+		{"two NAT64s of one pool's addresses", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "192.0.2.9/32", "ports": "1-32767"}]}`)),
+			[]string{"NAT64 edge 192.0.2.8/30, NAT64 lab 192.0.2.9/32 share addresses; give each NAT64 a pool of its own"}},
+		{"an IPv6 pool", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "2001:db8::/64"}]}`)),
+			[]string{`NAT64 "lab" spec.pool4: the pool entry 2001:db8::/64 is no IPv4 range of 16 bits or more`}},
+		{"a pool of a /15", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "198.18.0.0/15"}]}`)),
+			[]string{`NAT64 "lab" spec.pool4: the pool entry 198.18.0.0/15 is no IPv4 range of 16 bits or more`}},
+		{"the kernel's ephemeral ports", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": "1-65535"}]}`)),
+			[]string{`NAT64 "lab" spec.pool4: the ports 1-65535 of a pool entry are no range from 1 to 65535 outside the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; take 1-32767 or 61000-65535 at most`}},
+		{"one ephemeral port", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": 40000}]}`)),
+			[]string{`NAT64 "lab" spec.pool4: the ports 40000 of a pool entry are no range from 1 to 65535 outside the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; take 1-32767 or 61000-65535 at most`}},
+		{"an inverted range", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": "65000-61001"}]}`)),
+			[]string{`NAT64 "lab" spec.pool4: the ports 65000-61001 of a pool entry are no range from 1 to 65535 outside the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; take 1-32767 or 61000-65535 at most`}},
+		{"a protocol twice", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "protocols": ["tcp", "tcp"]}]}`)),
+			[]string{`NAT64 "lab" spec.pool4: a pool entry names a protocol twice`}},
+		{"a resolver on the unspecified address", replace(doc("Resolver", "resolver", `{"listen": ["::"], "allow": ["2001:db8::/32"]}`)),
+			[]string{`Resolver "resolver" spec.listen: the address :: is no unicast address the resolver can listen on`}},
+		{"a forwarder on loopback", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": ["127.0.0.53"]}`)),
+			[]string{`Resolver "resolver" spec.forwarders: the forwarder 127.0.0.53 is no unicast address`}},
+		{"a resolver on an IPv4-mapped address", replace(doc("Resolver", "resolver", `{"listen": ["::ffff:192.0.2.1"], "allow": ["2001:db8::/32"]}`)),
+			[]string{`Resolver "resolver" spec.listen: the address ::ffff:192.0.2.1 is no unicast address the resolver can listen on`}},
+		{"a DNS64 prefix of 95 bits", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "dns64": {"prefix": "64:ff9b::/95"}}`)),
+			[]string{`Resolver "resolver" spec.dns64: the prefix 64:ff9b::/95 is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96`}},
+		{"a zone twice", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org"}, {"name": "lan.example.org", "type": "refuse"}]}`)),
+			[]string{`Resolver "resolver" spec.localZones: the local zone lan.example.org appears more than once`}},
+		{"a record outside its zone", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "records": [{"name": "xlan.example.org", "type": "A", "value": "192.0.2.1"}]}]}`)),
+			[]string{`Resolver "resolver" spec.localZones: the local zone lan.example.org holds a record of xlan.example.org, which is outside it`}},
+		{"a prefix that sets bits 64 to 71", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64:0:100::/96"}`)),
+			[]string{`NAT64 "lab" spec.prefix: the prefix 2001:db8:64:0:100::/96 sets bits 64 to 71, which RFC 6052 keeps zero`}},
+		{"an IPv4-mapped prefix", replace(doc("NAT64", "lab", `{"prefix": "::ffff:0:0/96"}`)),
+			[]string{`NAT64 "lab" spec.prefix: the prefix ::ffff:0:0/96 is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96`}},
+		{"a DNS64 prefix that sets bits 64 to 71", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "dns64": {"prefix": "64:ff9b::ff00:0:0:0/96"}}`)),
+			[]string{`Resolver "resolver" spec.dns64: the prefix 64:ff9b::ff00:0:0:0/96 sets bits 64 to 71, which RFC 6052 keeps zero`}},
+		{"a pool of loopback addresses", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "127.0.0.1/32"}]}`)),
+			[]string{`NAT64 "lab" spec.pool4: the pool entry 127.0.0.1/32 holds addresses no connection leaves from: the unspecified address, loopback, multicast or broadcast`}},
+		{"a pool of the broadcast address", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "255.255.0.0/16"}]}`)),
+			[]string{`NAT64 "lab" spec.pool4: the pool entry 255.255.0.0/16 holds addresses no connection leaves from: the unspecified address, loopback, multicast or broadcast`}},
+		{"two entries of one protocol's addresses and ports", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.0/30", "ports": "61001-62000", "protocols": ["tcp"]}, {"prefix": "203.0.113.1/32", "ports": 61500, "protocols": ["udp", "tcp"]}]}`)),
+			[]string{`NAT64 "lab" spec.pool4: the pool entry 203.0.113.0/30 shares tcp addresses and ports with another; give each entry of a protocol addresses or ports of its own`}},
+		{"an address twice", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1", "2001:DB8:ffff::1"], "allow": ["2001:db8::/32"]}`)),
+			[]string{`Resolver "resolver" spec.listen: the address 2001:db8:ffff::1 appears more than once`}},
+		{"a client range twice", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32", "2001:db8:0::/32"]}`)),
+			[]string{`Resolver "resolver" spec.allow: the range 2001:db8::/32 appears more than once`}},
+		{"a forwarder twice", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": ["192.0.2.53", "192.0.2.53"]}`)),
+			[]string{`Resolver "resolver" spec.forwarders: the forwarder 192.0.2.53 appears more than once`}},
+		{"an A record of IPv6", replace(resolver(record("A", "2001:db8::1"))), recordMessage("A", "2001:db8::1", "IPv4 address")},
+		{"an AAAA record of IPv4", replace(resolver(record("AAAA", "192.0.2.1"))), recordMessage("AAAA", "192.0.2.1", "IPv6 address")},
+		{"an IPv4-mapped AAAA record", replace(resolver(record("AAAA", "::ffff:192.0.2.1"))), recordMessage("AAAA", "::ffff:192.0.2.1", "IPv6 address")},
+		{"an AAAA record of a zone", replace(resolver(record("AAAA", "fe80::1%eth0"))), recordMessage("AAAA", "fe80::1%eth0", "IPv6 address")},
+		{"a record twice", replace(resolver(record("AAAA", "2001:db8::1") + ", " + record("AAAA", "2001:DB8::1"))),
+			[]string{`Resolver "resolver" spec.localZones: the record a.lan.example.org AAAA 2001:db8::1 appears more than once; Unbound keeps one`}},
+		{"a name of 254 characters", replace(resolver(`{"name": "` + long + `", "type": "A", "value": "192.0.2.1"}`)),
+			[]string{`Resolver "resolver" spec.localZones: the name ` + long + ` holds more than 253 characters`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := messages(failures); !slices.Equal(got, tc.want) {
+				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
+			}
+		})
+	}
+}
+
+// The schemas fill in a NAT64's well-known prefix and a pool entry's ports and protocols, and take
+// local zones' names in lower case without the root's dot and record data without quotes,
+// backslashes or line breaks.
+func TestNAT64Schemas(t *testing.T) {
+	s, err := schema.LoadSchemas("../../test/fixtures/kinds/router")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filled, err := s.Default(builtinDoc(t, config.RouterAPI, "NAT64", "edge", `{"pool4": [{"prefix": "192.0.2.10/32"}]}`).Object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := filled["spec"].(map[string]any)
+	entry := spec["pool4"].([]any)[0].(map[string]any)
+	if spec["prefix"] != "64:ff9b::/96" || entry["ports"] != "61001-65535" || len(entry["protocols"].([]any)) != 3 {
+		t.Errorf("defaults: %v", spec)
+	}
+	for _, tc := range []struct {
+		spec string
+		ok   bool
+	}{
+		{`{"listen": ["2001:db8::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "_tcp.lan.example.org"}]}`, true},
+		{`{"listen": ["2001:db8::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "Lan.example.org"}]}`, false},
+		{`{"listen": ["2001:db8::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org."}]}`, false},
+		{`{"listen": ["2001:db8::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "records": [{"name": "a.lan.example.org", "type": "TXT", "value": "two\nlines"}]}]}`, false},
+		{`{"listen": ["2001:db8::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "records": [{"name": "a.lan.example.org", "type": "TXT", "value": "[a]^b~ c@d"}]}]}`, true},
+		{`{"listen": ["2001:db8::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "records": [{"name": "a.lan.example.org", "type": "TXT", "value": "say \"hi\""}]}]}`, false},
+		{`{"listen": ["2001:db8::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "records": [{"name": "a.lan.example.org", "type": "TXT", "value": "it's"}]}]}`, false},
+		{`{"listen": ["2001:db8::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "records": [{"name": "a.lan.example.org", "type": "TXT", "value": "a\\b"}]}]}`, false},
+		{`{"listen": [], "allow": ["2001:db8::/32"]}`, false},
+		{`{"listen": ["2001:db8::1"], "allow": []}`, false},
+	} {
+		d := builtinDoc(t, config.RouterAPI, "Resolver", "resolver", tc.spec)
+		if err := s.Validate(d.Object); (err == nil) != tc.ok {
+			t.Errorf("Resolver %s: err = %v, want accepted %v", tc.spec, err, tc.ok)
+		}
+	}
+}

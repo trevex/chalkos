@@ -428,6 +428,22 @@ A node's config may hold several, each with a name of its own. It has 2 [change 
 | --- | --- | --- | --- |
 | `spec.interfaces` | list of string | required | Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. |
 
+### NAT64 { #nat64 }
+
+A stateful NAT64 of the router, an instance of Jool: it translates IPv6 connections to addresses of its prefix into IPv4 connections to the address each embeds, from the addresses of its pool.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 9 [change rules](builtins.md#rules-nat64).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.pool4` | list of object | `[]` | IPv4 addresses, with their ports, that the translated connections leave from: addresses of the router, or addresses routed to it. Empty takes the router's own addresses with the ports 61001 to 65535, as Jool does. nftables's NAT does not apply to the translated connections. |
+| `spec.pool4[].ports` | integer from 1 to 65535 or string | `"61001-65535"` | Ports, or ICMP identifiers, of the addresses the translated connections take: a port or a range `<first>-<last>` that leaves out the kernel's ephemeral ports, 32768 to 60999, which the router's own connections take. |
+| `spec.pool4[].prefix` | string | required | IPv4 addresses the translated connections leave from, a range of 65536 addresses at most. |
+| `spec.pool4[].protocols` | list of one of `tcp`, `udp`, `icmp` | `["tcp","udp","icmp"]` | Protocols whose connections take the addresses and ports. |
+| `spec.prefix` | string | `"64:ff9b::/96"` | IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router installs an unreachable route to it, which BGP announces when `BGP.spec.networks` names the prefix. |
+
 ### NATRule { #natrule }
 
 An address translation of the router, which applies whether or not any FirewallPolicy exists: masquerade or source NAT of connections that leave, destination NAT of connections that arrive.
@@ -470,6 +486,31 @@ A node's config may hold several, each with a name of its own. It has 2 [change 
 | `spec.entries[].le` | integer from 0 to 128 or null | `null` | Longest prefix length of a route within `prefix` that the entry matches; null matches `prefix` alone, unless `ge` is given. |
 | `spec.entries[].prefix` | string | required | Address range the entry matches. |
 | `spec.family` | one of `ipv4`, `ipv6` | required | Address family of the list. |
+
+### Resolver { #resolver }
+
+The router's DNS resolver, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config holds at most one. It has 12 [change rules](builtins.md#rules-resolver).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.allow` | list of string | required | Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone. |
+| `spec.dns64` | object or null | `null` | DNS64: AAAA records the resolver synthesizes for IPv4-only names, and its answer for `ipv4only.arpa`; null synthesizes none. |
+| `spec.dns64.prefix` | string | `"64:ff9b::/96"` | NAT64 prefix the resolver synthesizes AAAA records in, from the A records of names that have no AAAA record. |
+| `spec.dnssec` | boolean | `true` | Whether the resolver validates DNSSEC with the root's trust anchor of the image. The forwarders then pass DNSSEC records on. |
+| `spec.forwarders` | list of string | `[]` | Resolvers the router sends its queries to; empty resolves names itself, from the root servers. |
+| `spec.listen` | list of string | required | Addresses of the router on which the resolver answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`. |
+| `spec.localZones` | list of object | `[]` | Zones the resolver answers from its own records. |
+| `spec.localZones[].name` | string | required | Name of the zone, in lower case and without the root's dot. |
+| `spec.localZones[].records` | list of object | `[]` | Records the router answers for names of the zone. |
+| `spec.localZones[].records[].name` | string | required | Name of the record: the zone's name or a name below it. |
+| `spec.localZones[].records[].ttl` | integer from 0 to 2147483647 | `3600` | Seconds a resolver may keep the record. |
+| `spec.localZones[].records[].type` | one of `A`, `AAAA`, `CNAME`, `PTR`, `MX`, `SRV`, `TXT` | required | Type of the record. |
+| `spec.localZones[].records[].value` | string | required | Data of the record, of up to 255 printable ASCII characters other than quotes and backslashes: an address for `A` and `AAAA`, a name for `CNAME` and `PTR`, `<preference> <name>` for `MX`, `<priority> <weight> <port> <name>` for `SRV`, and text for `TXT`. |
+| `spec.localZones[].type` | one of `static`, `transparent`, `typetransparent`, `redirect`, `refuse`, `deny`, `always_nxdomain` | `"static"` | How Unbound answers names of the zone, as its `local-zone` types say: `static` answers from the records alone, `transparent` resolves the names the records lack, `typetransparent` also the types they lack, `redirect` answers every name below the zone with the zone's own records, `refuse` and `deny` refuse or drop the queries the records do not answer, and `always_nxdomain` answers that no name exists. |
 
 ### Router { #router }
 

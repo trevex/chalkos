@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A stateful NAT64 of the router, an instance of Jool: it translates IPv6 connections to addresses of its prefix into IPv4 connections to the address each embeds, from the addresses of its pool.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "NAT64"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "pool4": {
+          "default": [],
+          "description": "IPv4 addresses, with their ports, that the translated connections leave from: addresses of the router, or addresses routed to it. Empty takes the router's own addresses with the ports 61001 to 65535, as Jool does. nftables's NAT does not apply to the translated connections.",
+          "examples": [
+            [
+              {
+                "prefix": "192.0.2.10/32"
+              }
+            ]
+          ],
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "ports": {
+                "anyOf": [
+                  {
+                    "maximum": 65535,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  {
+                    "pattern": "^(?:[1-9][0-9]{0,4}-[1-9][0-9]{0,4})$",
+                    "type": "string"
+                  }
+                ],
+                "default": "61001-65535",
+                "description": "Ports, or ICMP identifiers, of the addresses the translated connections take: a port or a range `<first>-<last>` that leaves out the kernel's ephemeral ports, 32768 to 60999, which the router's own connections take."
+              },
+              "prefix": {
+                "description": "IPv4 addresses the translated connections leave from, a range of 65536 addresses at most.",
+                "examples": [
+                  "192.0.2.10/32"
+                ],
+                "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+                "type": "string"
+              },
+              "protocols": {
+                "default": [
+                  "tcp",
+                  "udp",
+                  "icmp"
+                ],
+                "description": "Protocols whose connections take the addresses and ports.",
+                "items": {
+                  "enum": [
+                    "tcp",
+                    "udp",
+                    "icmp"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prefix"
+            ],
+            "type": "object"
+          },
+          "type": "array",
+          "x-chalkos-rules": [
+            {
+              "description": "A pool's entries are IPv4 ranges of 65536 addresses at most.",
+              "messageExpression": "\"the pool entry \" + self.filter(a, !(cidr(a.prefix).ip(0).family() == \"ipv4\" && cidr(a.prefix).prefix() >= 16))[0].prefix + \" is no IPv4 range of 16 bits or more\"",
+              "rule": "self.all(a, cidr(a.prefix).ip(0).family() == \"ipv4\" && cidr(a.prefix).prefix() >= 16)",
+              "takes": "refuse"
+            },
+            {
+              "description": "A pool's entries hold no unspecified, loopback, multicast or broadcast address.",
+              "messageExpression": "\"the pool entry \" + self.filter(a, !cel.bind(c, cidr(a.prefix), c.ip(0).family() != \"ipv4\" || c.ip(0) != ip(\"0.0.0.0\") && !cidr(\"127.0.0.0/8\").contains(c.ip(0)) && !cidr(\"224.0.0.0/4\").contains(c.ip(0)) && !c.contains(ip(\"255.255.255.255\"))))[0].prefix + \" holds addresses no connection leaves from: the unspecified address, loopback, multicast or broadcast\"",
+              "rule": "self.all(a, cel.bind(c, cidr(a.prefix), c.ip(0).family() != \"ipv4\" || c.ip(0) != ip(\"0.0.0.0\") && !cidr(\"127.0.0.0/8\").contains(c.ip(0)) && !cidr(\"224.0.0.0/4\").contains(c.ip(0)) && !c.contains(ip(\"255.255.255.255\"))))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A pool entry's ports lie from 1 to 65535 and leave out the kernel's ephemeral ports, 32768 to 60999.",
+              "messageExpression": "\"the ports \" + string(self.filter(a, !cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))[0].ports) + \" of a pool entry are no range from 1 to 65535 outside the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; take 1-32767 or 61000-65535 at most\"",
+              "rule": "self.all(a, cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A pool entry names each protocol once.",
+              "message": "a pool entry names a protocol twice",
+              "rule": "self.all(a, [\"tcp\", \"udp\", \"icmp\"].all(p, size(a.protocols.filter(q, q == p)) <= 1))",
+              "takes": "refuse"
+            },
+            {
+              "description": "No two entries of a pool share a protocol, addresses and ports.",
+              "messageExpression": "cel.bind(e, self.map(a, [\"tcp\", \"udp\", \"icmp\"].filter(p, p in a.protocols).map(p, [p, a.prefix, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1]))])).flatten(), cel.bind(x, e.filter(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) > 1)[0], \"the pool entry \" + x[1] + \" shares \" + x[0] + \" addresses and ports with another; give each entry of a protocol addresses or ports of its own\"))",
+              "rule": "cel.bind(e, self.map(a, [\"tcp\", \"udp\", \"icmp\"].filter(p, p in a.protocols).map(p, [p, a.prefix, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1]))])).flatten(), e.all(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) <= 1))",
+              "takes": "refuse"
+            }
+          ]
+        },
+        "prefix": {
+          "default": "64:ff9b::/96",
+          "description": "IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router installs an unreachable route to it, which BGP announces when `BGP.spec.networks` names the prefix.",
+          "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+          "type": "string",
+          "x-chalkos-rules": [
+            {
+              "description": "A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero, as RFC 6052 gives them.",
+              "messageExpression": "(cidr(self).ip(0).family() == \"ipv6\" && cidr(self).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self).ip(0))) ? \"the prefix \" + self + \" sets bits 64 to 71, which RFC 6052 keeps zero\" : \"the prefix \" + self + \" is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96\"",
+              "rule": "cidr(self).ip(0).family() == \"ipv6\" && cidr(self).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self).ip(0)) && cel.bind(a, string(cidr(self).ip(0)), cidr(a + \"/72\").ip(0) == cidr(a + \"/64\").ip(0))",
+              "takes": "refuse"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "NAT64",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "NAT64",
+    "multiple": true,
+    "rules": [
+      {
+        "description": "A NAT64's name has 15 characters at most, as Jool's instance names do.",
+        "messageExpression": "documents.filter(n, size(n) > 15).map(n, \"NAT64 \" + n).join(\", \") + \" has a name of more than 15 characters, which Jool does not take as an instance's name; give it a shorter one\"",
+        "rule": "documents.all(n, size(n) <= 15)",
+        "takes": "refuse"
+      },
+      {
+        "description": "No two NAT64s translate addresses of one prefix.",
+        "messageExpression": "documents.filter(n, documents.exists(m, n != m && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, \"NAT64 \" + n).join(\", \") + \" translate addresses of one prefix; give each NAT64 a prefix of its own\"",
+        "rule": "documents.all(n, documents.all(m, n == m || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))",
+        "takes": "refuse"
+      },
+      {
+        "description": "No two NAT64s share an address of their pools.",
+        "messageExpression": "cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.filter(x, e.exists(y, x[0] != y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))).map(x, \"NAT64 \" + x[0] + \" \" + x[1]).join(\", \") + \" share addresses; give each NAT64 a pool of its own\")",
+        "rule": "cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.all(x, e.all(y, x[0] == y[0] || !(cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))))",
+        "takes": "refuse"
+      }
+    ],
+    "version": "v1alpha1"
+  }
+}

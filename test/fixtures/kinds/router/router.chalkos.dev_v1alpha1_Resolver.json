@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The router's DNS resolver, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Resolver"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "description": "Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone.",
+          "examples": [
+            [
+              "2001:db8::/32"
+            ]
+          ],
+          "items": {
+            "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "x-chalkos-rules": [
+            {
+              "description": "The resolver's clients are address ranges.",
+              "message": "a client is no address range",
+              "rule": "self.all(p, cidr(p).prefix() >= 0)",
+              "takes": "refuse"
+            },
+            {
+              "description": "Each range appears once.",
+              "messageExpression": "\"the range \" + self.filter(a, size(self.filter(b, cidr(b) == cidr(a))) > 1)[0] + \" appears more than once\"",
+              "rule": "self.all(a, size(self.filter(b, cidr(b) == cidr(a))) == 1)",
+              "takes": "refuse"
+            }
+          ]
+        },
+        "dns64": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "prefix": {
+                  "default": "64:ff9b::/96",
+                  "description": "NAT64 prefix the resolver synthesizes AAAA records in, from the A records of names that have no AAAA record.",
+                  "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "DNS64: AAAA records the resolver synthesizes for IPv4-only names, and its answer for `ipv4only.arpa`; null synthesizes none.",
+          "examples": [
+            {
+              "prefix": "64:ff9b::/96"
+            }
+          ],
+          "x-chalkos-rules": [
+            {
+              "description": "A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero, as RFC 6052 gives them.",
+              "messageExpression": "(cidr(self.prefix).ip(0).family() == \"ipv6\" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self.prefix).ip(0))) ? \"the prefix \" + self.prefix + \" sets bits 64 to 71, which RFC 6052 keeps zero\" : \"the prefix \" + self.prefix + \" is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96\"",
+              "rule": "self == null || (cidr(self.prefix).ip(0).family() == \"ipv6\" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr(\"::ffff:0:0/96\").contains(cidr(self.prefix).ip(0)) && cel.bind(a, string(cidr(self.prefix).ip(0)), cidr(a + \"/72\").ip(0) == cidr(a + \"/64\").ip(0)))",
+              "takes": "refuse"
+            }
+          ]
+        },
+        "dnssec": {
+          "default": true,
+          "description": "Whether the resolver validates DNSSEC with the root's trust anchor of the image. The forwarders then pass DNSSEC records on.",
+          "type": "boolean"
+        },
+        "forwarders": {
+          "default": [],
+          "description": "Resolvers the router sends its queries to; empty resolves names itself, from the root servers.",
+          "examples": [
+            [
+              "2001:db8::53"
+            ]
+          ],
+          "items": {
+            "pattern": "^(?:[0-9A-Fa-f:.]+)$",
+            "type": "string"
+          },
+          "type": "array",
+          "x-chalkos-rules": [
+            {
+              "description": "The resolver forwards to unicast addresses.",
+              "messageExpression": "\"the forwarder \" + self.filter(a, !cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))[0] + \" is no unicast address\"",
+              "rule": "self.all(a, cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))",
+              "takes": "refuse"
+            },
+            {
+              "description": "Each forwarder appears once.",
+              "messageExpression": "\"the forwarder \" + self.filter(a, size(self.filter(b, ip(b) == ip(a))) > 1)[0] + \" appears more than once\"",
+              "rule": "self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)",
+              "takes": "refuse"
+            }
+          ]
+        },
+        "listen": {
+          "description": "Addresses of the router on which the resolver answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`.",
+          "examples": [
+            [
+              "2001:db8:ffff::1"
+            ]
+          ],
+          "items": {
+            "pattern": "^(?:[0-9A-Fa-f:.]+)$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "x-chalkos-rules": [
+            {
+              "description": "The resolver listens on unicast addresses.",
+              "messageExpression": "\"the address \" + self.filter(a, !cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))[0] + \" is no unicast address the resolver can listen on\"",
+              "rule": "self.all(a, cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))",
+              "takes": "refuse"
+            },
+            {
+              "description": "Each address appears once.",
+              "messageExpression": "\"the address \" + self.filter(a, size(self.filter(b, ip(b) == ip(a))) > 1)[0] + \" appears more than once\"",
+              "rule": "self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)",
+              "takes": "refuse"
+            }
+          ]
+        },
+        "localZones": {
+          "default": [],
+          "description": "Zones the resolver answers from its own records.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "Name of the zone, in lower case and without the root's dot.",
+                "examples": [
+                  "lan.example.org"
+                ],
+                "pattern": "^(?:([a-z0-9_]([-a-z0-9_]{0,61}[a-z0-9])?[.])*[a-z0-9_]([-a-z0-9_]{0,61}[a-z0-9])?)$",
+                "type": "string"
+              },
+              "records": {
+                "default": [],
+                "description": "Records the router answers for names of the zone.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "description": "Name of the record: the zone's name or a name below it.",
+                      "examples": [
+                        "r1.lan.example.org"
+                      ],
+                      "pattern": "^(?:([a-z0-9_]([-a-z0-9_]{0,61}[a-z0-9])?[.])*[a-z0-9_]([-a-z0-9_]{0,61}[a-z0-9])?)$",
+                      "type": "string"
+                    },
+                    "ttl": {
+                      "default": 3600,
+                      "description": "Seconds a resolver may keep the record.",
+                      "maximum": 2147483647,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": {
+                      "description": "Type of the record.",
+                      "enum": [
+                        "A",
+                        "AAAA",
+                        "CNAME",
+                        "PTR",
+                        "MX",
+                        "SRV",
+                        "TXT"
+                      ]
+                    },
+                    "value": {
+                      "description": "Data of the record, of up to 255 printable ASCII characters other than quotes and backslashes: an address for `A` and `AAAA`, a name for `CNAME` and `PTR`, `<preference> <name>` for `MX`, `<priority> <weight> <port> <name>` for `SRV`, and text for `TXT`.",
+                      "examples": [
+                        "2001:db8:1::1"
+                      ],
+                      "pattern": "^(?:(]|[ !#-&(-[^-~]){1,255})$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "type": {
+                "default": "static",
+                "description": "How Unbound answers names of the zone, as its `local-zone` types say: `static` answers from the records alone, `transparent` resolves the names the records lack, `typetransparent` also the types they lack, `redirect` answers every name below the zone with the zone's own records, `refuse` and `deny` refuse or drop the queries the records do not answer, and `always_nxdomain` answers that no name exists.",
+                "enum": [
+                  "static",
+                  "transparent",
+                  "typetransparent",
+                  "redirect",
+                  "refuse",
+                  "deny",
+                  "always_nxdomain"
+                ]
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "type": "array",
+          "x-chalkos-rules": [
+            {
+              "description": "A local zone appears once.",
+              "messageExpression": "\"the local zone \" + self.filter(z, size(self.filter(y, y.name == z.name)) > 1)[0].name + \" appears more than once\"",
+              "rule": "self.all(z, size(self.filter(y, y.name == z.name)) == 1)",
+              "takes": "refuse"
+            },
+            {
+              "description": "A local zone's records are of the zone's name or names below it.",
+              "messageExpression": "cel.bind(z, self.filter(z, !z.records.all(r, r.name == z.name || r.name.endsWith(\".\" + z.name)))[0], \"the local zone \" + z.name + \" holds a record of \" + z.records.filter(r, !(r.name == z.name || r.name.endsWith(\".\" + z.name)))[0].name + \", which is outside it\")",
+              "rule": "self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith(\".\" + z.name)))",
+              "takes": "refuse"
+            },
+            {
+              "description": "The names of local zones and their records hold 253 characters at most.",
+              "messageExpression": "\"the name \" + (self.map(z, z.name) + self.map(z, z.records).flatten().map(r, r.name)).filter(n, size(n) > 253)[0] + \" holds more than 253 characters\"",
+              "rule": "self.all(z, size(z.name) <= 253) && self.map(z, z.records).flatten().all(r, size(r.name) <= 253)",
+              "takes": "refuse"
+            },
+            {
+              "description": "An A or AAAA record holds an address of its family.",
+              "messageExpression": "cel.bind(r, self.map(z, z.records).flatten().filter(r, !(r.type == \"A\" ? ip(r.value).family() == \"ipv4\" : r.type != \"AAAA\" || cel.bind(x, ip(r.value), x.family() == \"ipv6\" && !cidr(\"::ffff:0:0/96\").contains(x)) && !r.value.contains(\"%\")))[0], \"the \" + r.type + \" record of \" + r.name + \" holds \" + r.value + \", which is no \" + (r.type == \"A\" ? \"IPv4\" : \"IPv6\") + \" address\")",
+              "rule": "self.map(z, z.records).flatten().all(r, (r.type == \"A\" ? ip(r.value).family() == \"ipv4\" : r.type != \"AAAA\" || cel.bind(x, ip(r.value), x.family() == \"ipv6\" && !cidr(\"::ffff:0:0/96\").contains(x)) && !r.value.contains(\"%\")))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A record appears once, as Unbound keeps one of its copies.",
+              "messageExpression": "cel.bind(e, self.map(z, z.records).flatten(), cel.bind(r, e.filter(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == \"AAAA\" ? ip(x.value) == ip(y.value) : x.value == y.value))) > 1)[0], \"the record \" + r.name + \" \" + r.type + \" \" + r.value + \" appears more than once; Unbound keeps one\"))",
+              "rule": "cel.bind(e, self.map(z, z.records).flatten(), e.all(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == \"AAAA\" ? ip(x.value) == ip(y.value) : x.value == y.value))) == 1))",
+              "takes": "refuse"
+            }
+          ]
+        }
+      },
+      "required": [
+        "allow",
+        "listen"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Resolver",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "Resolver",
+    "multiple": false,
+    "version": "v1alpha1"
+  }
+}
