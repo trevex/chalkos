@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -27,26 +28,25 @@ type Router struct {
 	ResolverConfig string
 }
 
-// askTimeout bounds each question chalkd asks a router daemon, so Status answers while one hangs.
-// Tests shorten it.
+// askTimeout bounds the questions chalkd asks one router daemon, so Status answers while one
+// hangs. Tests shorten it.
 var askTimeout = 5 * time.Second
 
 // ask runs one of the router's fixed questions to its daemons, whose standard error, while the
-// daemon is down, goes into the error alone rather than into chalkd's log as well.
-func (r *Router) ask(ctx context.Context, program string, args ...string) ([]byte, error) {
-	runCtx, cancel := context.WithTimeout(ctx, askTimeout)
-	defer cancel()
+// daemon is down, goes into the error alone rather than into chalkd's log as well. budget is ctx
+// bounded by askTimeout, which the questions to one daemon share.
+func (r *Router) ask(ctx, budget context.Context, program string, args ...string) ([]byte, error) {
 	run := r.Run.Run
 	if quiet, ok := r.Run.(tool.QuietRunner); ok {
 		run = quiet.RunQuiet
 	}
-	out, err := run(runCtx, program, args...)
+	out, err := run(budget, program, args...)
 	if err != nil {
 		// The caller's own end is not the daemon's timeout.
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		if errors.Is(budget.Err(), context.DeadlineExceeded) {
 			return nil, fmt.Errorf("%s did not answer within %v", program, askTimeout)
 		}
 	}
@@ -55,31 +55,43 @@ func (r *Router) ask(ctx context.Context, program string, args ...string) ([]byt
 
 // vtysh runs one of the fixed show commands of package router.
 func (r *Router) vtysh(ctx context.Context, command string) ([]byte, error) {
-	return r.ask(ctx, "vtysh", "-c", command)
+	budget, cancel := context.WithTimeout(ctx, askTimeout)
+	defer cancel()
+	return r.ask(ctx, budget, "vtysh", "-c", command)
 }
 
 // status is the router's part of the node's status: its BGP sessions, its NAT64 instances and its
-// resolver, or why a daemon did not say.
+// resolver, or why a daemon did not say. The daemons are asked side by side, so daemons that hang
+// cost one timeout altogether.
 func (r *Router) status(ctx context.Context) *nodev1.RouterStatus {
 	st := &nodev1.RouterStatus{}
-	out, err := r.vtysh(ctx, router.NeighborsCommand)
-	if err == nil {
-		st.Peers, err = router.ParsePeers(out)
-	}
-	if err != nil {
-		st.Peers, st.BgpError = nil, err.Error()
-	}
-	if st.Nat64, err = r.nat64(ctx); err != nil {
-		st.Nat64, st.Nat64Error = nil, err.Error()
-	}
-	st.Resolver = r.resolver(ctx)
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		out, err := r.vtysh(ctx, router.NeighborsCommand)
+		if err == nil {
+			st.Peers, err = router.ParsePeers(out)
+		}
+		if err != nil {
+			st.Peers, st.BgpError = nil, err.Error()
+		}
+	})
+	wg.Go(func() {
+		var err error
+		if st.Nat64, err = r.nat64(ctx); err != nil {
+			st.Nat64, st.Nat64Error = nil, err.Error()
+		}
+	})
+	wg.Go(func() { st.Resolver = r.resolver(ctx) })
+	wg.Wait()
 	return st
 }
 
 // nat64 is the state of Jool's instances: of each protocol, the sessions, the pool's addresses
 // and ports they hold, and the pool's size.
 func (r *Router) nat64(ctx context.Context) ([]*nodev1.NAT64Status, error) {
-	out, err := r.ask(ctx, "jool", router.JoolInstancesArgs...)
+	budget, cancel := context.WithTimeout(ctx, askTimeout)
+	defer cancel()
+	out, err := r.ask(ctx, budget, "jool", router.JoolInstancesArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +113,7 @@ func (r *Router) nat64(ctx context.Context) ([]*nodev1.NAT64Status, error) {
 				{"bib", router.CountJoolRows, &p.Bindings},
 				{"pool4", router.ParseJoolPool4, &p.PoolSize},
 			} {
-				out, err := r.ask(ctx, "jool", router.JoolTableArgs(name, t.table, protocol)...)
+				out, err := r.ask(ctx, budget, "jool", router.JoolTableArgs(name, t.table, protocol)...)
 				if err != nil {
 					return nil, err
 				}
@@ -122,7 +134,9 @@ func (r *Router) resolver(ctx context.Context) *nodev1.ResolverStatus {
 	if _, err := os.Stat(cmp.Or(r.ResolverConfig, "/etc/unbound/unbound.conf")); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	if _, err := r.ask(ctx, "unbound-control", "status"); err != nil {
+	budget, cancel := context.WithTimeout(ctx, askTimeout)
+	defer cancel()
+	if _, err := r.ask(ctx, budget, "unbound-control", "status"); err != nil {
 		return &nodev1.ResolverStatus{Error: err.Error()}
 	}
 	return &nodev1.ResolverStatus{Running: true}

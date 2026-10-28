@@ -130,24 +130,64 @@ func (hangingRunner) Run(ctx context.Context, name string, args ...string) ([]by
 	return nil, ctx.Err()
 }
 
-// Daemons that hang cost Status no more than a timeout each, and the router's part says which.
+// Daemons that hang cost Status one timeout altogether, as chalkd asks them side by side, and the
+// router's part says which hang.
 func TestRouterStatusWhileDaemonsHang(t *testing.T) {
 	s, r := routerServer(t)
 	s.Router.Run = hangingRunner{r}
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
-	askTimeout = 10 * time.Millisecond
+	askTimeout = 200 * time.Millisecond
 	if err := os.WriteFile(s.Router.ResolverConfig, []byte("server:\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	start := time.Now()
 	st := status(t, s).Router
-	if st == nil || len(st.Peers) != 0 || !strings.Contains(st.BgpError, "vtysh did not answer within 10ms") {
+	if took := time.Since(start); took >= 2*askTimeout {
+		t.Errorf("Status took %v while the daemons hang, not about %v", took, askTimeout)
+	}
+	if st == nil || len(st.Peers) != 0 || !strings.Contains(st.BgpError, "vtysh did not answer within 200ms") {
 		t.Fatalf("router status while FRR hangs = %v", st)
 	}
-	if len(st.Nat64) != 0 || !strings.Contains(st.Nat64Error, "jool did not answer within 10ms") {
+	if len(st.Nat64) != 0 || !strings.Contains(st.Nat64Error, "jool did not answer within 200ms") {
 		t.Errorf("router status while Jool hangs = %v", st)
 	}
-	if st.Resolver == nil || st.Resolver.Running || !strings.Contains(st.Resolver.Error, "unbound-control did not answer within 10ms") {
+	if st.Resolver == nil || st.Resolver.Running || !strings.Contains(st.Resolver.Error, "unbound-control did not answer within 200ms") {
 		t.Errorf("router status while Unbound hangs = %v", st)
+	}
+}
+
+// slowJool is a jool that lists one instance at once and takes a while for each of its tables.
+type slowJool struct {
+	tool.Runner
+	delay time.Duration
+}
+
+func (j slowJool) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if name == "jool" && args[0] == "instance" {
+		return []byte("8fb43ac0,edge,netfilter\n"), nil
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(j.delay):
+		return nil, nil
+	}
+}
+
+// jool's questions share one timeout: tables that each answer in time but together take longer
+// leave the NAT64 part unknown.
+func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
+	s, r := routerServer(t)
+	s.Router.Run = slowJool{r, 30 * time.Millisecond}
+	defer func(d time.Duration) { askTimeout = d }(askTimeout)
+	askTimeout = 100 * time.Millisecond
+	start := time.Now()
+	st := status(t, s).Router
+	if took := time.Since(start); took >= 2*askTimeout {
+		t.Errorf("Status took %v while Jool is slow, not about %v", took, askTimeout)
+	}
+	if st == nil || len(st.Nat64) != 0 || !strings.Contains(st.Nat64Error, "jool did not answer within 100ms") {
+		t.Errorf("router status while Jool is slow = %v", st)
 	}
 }
 
