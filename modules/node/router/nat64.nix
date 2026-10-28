@@ -57,13 +57,15 @@ let
         jool file handle "$file" || failed+=("apply instance $name")
         ip -6 route replace unreachable "$prefix" proto "$proto" || failed+=("route $prefix")
       done
-      instances=$(jool instance display --csv --no-headers)
+      # jool lists the instances of every network namespace, and global display finds those of the
+      # unit's own alone, so the instances of other namespaces stay.
+      instances=$(jool instance display --csv --no-headers) || failed+=("list instances")
       while IFS=, read -r _ name _; do
-        if [[ -n $name && ! -v want[$name] ]]; then
+        if [[ -n $name && -z ''${want[$name]+x} ]] && jool -i "$name" global display >/dev/null 2>&1; then
           jool -i "$name" instance remove || failed+=("remove instance $name")
         fi
       done <<<"$instances"
-      routes=$(ip -6 -j route show proto "$proto" | jq -r '.[].dst')
+      routes=$(ip -6 -j route show proto "$proto" | jq -r '.[].dst') || failed+=("list routes")
       while read -r prefix; do
         keep=false
         for p in "''${want[@]}"; do
