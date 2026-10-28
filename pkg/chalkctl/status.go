@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -133,8 +134,44 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	return nil
 }
 
-// routerStatus prints a router's BGP sessions, or why their state is unknown.
+// routerStatus prints a router's BGP sessions, its NAT64 instances and its resolver, or why their
+// state is unknown. A router without NAT64 instances or a resolver prints no line of them.
 func (a *app) routerStatus(r *nodev1.RouterStatus) error {
+	if err := a.bgpStatus(r); err != nil {
+		return err
+	}
+	switch {
+	case r.Nat64Error != "":
+		fmt.Fprintf(a.stdout, "nat64: unknown: %s\n", r.Nat64Error)
+	case len(r.Nat64) > 0:
+		fmt.Fprintln(a.stdout, "nat64:")
+		w := a.table()
+		fmt.Fprintln(w, "  INSTANCE\tPROTOCOL\tSESSIONS\tBINDINGS\tPOOL")
+		for _, n := range r.Nat64 {
+			for _, p := range n.Protocols {
+				pool := strconv.FormatUint(p.PoolSize, 10)
+				if p.PoolSize == 0 {
+					pool = "-"
+				}
+				fmt.Fprintf(w, "  %s\t%s\t%d\t%d\t%s\n", n.Name, p.Protocol, p.Sessions, p.Bindings, pool)
+			}
+		}
+		if err := w.Flush(); err != nil {
+			return err
+		}
+	}
+	switch {
+	case r.Resolver == nil:
+	case r.Resolver.Running:
+		fmt.Fprintln(a.stdout, "resolver: running")
+	default:
+		fmt.Fprintf(a.stdout, "resolver: not running: %s\n", r.Resolver.Error)
+	}
+	return nil
+}
+
+// bgpStatus prints a router's BGP sessions, or why their state is unknown.
+func (a *app) bgpStatus(r *nodev1.RouterStatus) error {
 	switch {
 	case r.BgpError != "":
 		fmt.Fprintf(a.stdout, "bgp: unknown: %s\n", r.BgpError)
