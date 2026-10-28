@@ -552,13 +552,50 @@ message StatusResponse {
   RouterStatus router = 13;
 }
 
-// The state of a router's routing daemons.
+// The state of a router's routing daemons, its NAT64 instances and its resolver.
 message RouterStatus {
   // The router's BGP sessions, by BGPPeer document and then by interface or address.
   repeated BGPPeerStatus peers = 1;
   // Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is
   // then empty.
   string bgp_error = 2;
+  // The router's NAT64 instances, one per NAT64 document, by name.
+  repeated NAT64Status nat64 = 3;
+  // Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then
+  // empty.
+  string nat64_error = 4;
+  // The router's resolver; unset on a router without a Resolver document.
+  ResolverStatus resolver = 5;
+}
+
+// One NAT64 instance of a router, as Jool reports it.
+message NAT64Status {
+  // Name of the NAT64 document, which names its instance.
+  string name = 1;
+  // The instance's translations of TCP, UDP and ICMP, in this order.
+  repeated NAT64ProtocolStatus protocols = 2;
+}
+
+// A NAT64 instance's translations of one protocol.
+message NAT64ProtocolStatus {
+  // The protocol: tcp, udp or icmp.
+  string protocol = 1;
+  // Connections the instance translates.
+  uint64 sessions = 2;
+  // IPv4 addresses and ports of the pool that translated connections hold: one per IPv6 address
+  // and port, or ICMP identifier, that the instance translates.
+  uint64 bindings = 3;
+  // IPv4 addresses and ports, or ICMP identifiers, the pool holds for the protocol; 0 when it
+  // holds none. An instance whose pool is empty takes the router's own addresses.
+  uint64 pool_size = 4;
+}
+
+// The state of a router's resolver.
+message ResolverStatus {
+  // Whether Unbound answers on its control socket.
+  bool running = 1;
+  // Why Unbound did not answer, such as unbound-control's error; empty while it runs.
+  string error = 2;
 }
 
 // One BGP session of a router: a BGPPeer's address, or one of its interfaces.

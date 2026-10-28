@@ -997,6 +997,28 @@ The state of the node's Kubernetes.
 
 Field types: [KubernetesPhase](#enum-kubernetesphase), [RevokedNode](#message-revokednode).
 
+### NAT64ProtocolStatus { #message-nat64protocolstatus }
+
+A NAT64 instance's translations of one protocol.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `protocol` | string | The protocol: tcp, udp or icmp. |
+| `sessions` | uint64 | Connections the instance translates. |
+| `bindings` | uint64 | IPv4 addresses and ports of the pool that translated connections hold: one per IPv6 address and port, or ICMP identifier, that the instance translates. |
+| `pool_size` | uint64 | IPv4 addresses and ports, or ICMP identifiers, the pool holds for the protocol; 0 when it holds none. An instance whose pool is empty takes the router's own addresses. |
+
+### NAT64Status { #message-nat64status }
+
+One NAT64 instance of a router, as Jool reports it.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | string | Name of the NAT64 document, which names its instance. |
+| `protocols` | list of NAT64ProtocolStatus | The instance's translations of TCP, UDP and ICMP, in this order. |
+
+Field types: [NAT64ProtocolStatus](#message-nat64protocolstatus).
+
 ### NextHop { #message-nexthop }
 
 A next hop of a kernel route.
@@ -1048,6 +1070,15 @@ A chalkos image in an OCI registry.
 | ----- | ---- | ----------- |
 | `reference` | string | The image's repository and manifest digest, repository@sha256:…, as chalkctl resolved the inventory's reference. The node pulls that manifest and refuses it unless its config is the image the header describes and its store, hash-tree, UKI and, for an install, boot-loader layers have the header's sizes and SHA-256 sums. An upgrade pulls through the Mirror and authenticates with the Registry documents of the config the request delivers, or without one of the running config; an install through those of the config the request delivers. It tries each endpoint of the Mirror of the reference's host, then the host, each with the Registry of its own host, and pulls anonymously from a host without one. |
 
+### ResolverStatus { #message-resolverstatus }
+
+The state of a router's resolver.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `running` | bool | Whether Unbound answers on its control socket. |
+| `error` | string | Why Unbound did not answer, such as unbound-control's error; empty while it runs. |
+
 ### RevokedNode { #message-revokednode }
 
 A node revoked in the cluster.
@@ -1059,14 +1090,17 @@ A node revoked in the cluster.
 
 ### RouterStatus { #message-routerstatus }
 
-The state of a router's routing daemons.
+The state of a router's routing daemons, its NAT64 instances and its resolver.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `peers` | list of BGPPeerStatus | The router's BGP sessions, by BGPPeer document and then by interface or address. |
 | `bgp_error` | string | Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is then empty. |
+| `nat64` | list of NAT64Status | The router's NAT64 instances, one per NAT64 document, by name. |
+| `nat64_error` | string | Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then empty. |
+| `resolver` | ResolverStatus | The router's resolver; unset on a router without a Resolver document. |
 
-Field types: [BGPPeerStatus](#message-bgppeerstatus).
+Field types: [BGPPeerStatus](#message-bgppeerstatus), [NAT64Status](#message-nat64status), [ResolverStatus](#message-resolverstatus).
 
 ### StorageChange { #message-storagechange }
 
