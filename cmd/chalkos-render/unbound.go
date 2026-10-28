@@ -79,6 +79,9 @@ func unboundConfig(r resolverSpec, trustAnchor, zoneFile string) (string, error)
 	for _, a := range listen {
 		fmt.Fprintf(&b, "  interface: %s\n", a)
 	}
+	// Unbound refuses clients outside allow by default; the config says so itself. Of two lines of
+	// one range the later decides, so an allow of a whole family opens it.
+	b.WriteString("  access-control: 0.0.0.0/0 refuse\n  access-control: ::/0 refuse\n")
 	for _, p := range allow {
 		fmt.Fprintf(&b, "  access-control: %s allow\n", p)
 	}

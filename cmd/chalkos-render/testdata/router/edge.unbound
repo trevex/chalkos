@@ -11,6 +11,8 @@ server:
   ip-freebind: yes
   port: 53
   interface: 2001:db8:ffff::1
+  access-control: 0.0.0.0/0 refuse
+  access-control: ::/0 refuse
   access-control: 2001:db8::/32 allow
   module-config: "dns64 validator iterator"
   trust-anchor-file: "/etc/unbound/root.key"

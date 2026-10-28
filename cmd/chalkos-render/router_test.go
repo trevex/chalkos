@@ -271,6 +271,27 @@ func TestResolverOpenings(t *testing.T) {
 	}
 }
 
+// Unbound refuses every client but those of allow, whose lines follow the refusals: of two lines of
+// one range the later decides, so an allow of a whole family opens it.
+func TestUnboundAccessControl(t *testing.T) {
+	for allow, want := range map[string]string{
+		`["2001:db8::/32"]`: "  access-control: 0.0.0.0/0 refuse\n  access-control: ::/0 refuse\n  access-control: 2001:db8::/32 allow\n",
+		`["::/0"]`:          "  access-control: 0.0.0.0/0 refuse\n  access-control: ::/0 refuse\n  access-control: ::/0 allow\n",
+	} {
+		var r resolverSpec
+		if err := json.Unmarshal([]byte(`{"listen": ["2001:db8:ffff::1"], "allow": `+allow+`}`), &r); err != nil {
+			t.Fatal(err)
+		}
+		text, err := unboundConfig(r, testTrustAnchor, testZoneFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(text, "  interface: 2001:db8:ffff::1\n"+want+"  module-config:") {
+			t.Errorf("allow %s renders\n%s\nwant\n%s", allow, text, want)
+		}
+	}
+}
+
 // A record's data renders as Unbound reads it: an address in its usual form, a name with the
 // root's dot, and text between double quotes, in which a hash or semicolon starts no comment.
 func TestRecordValues(t *testing.T) {
