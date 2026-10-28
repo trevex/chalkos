@@ -1,8 +1,8 @@
-# r1's BGP once it announces the address of edge0.
+# r1's BGP once it announces the address of edge0 too.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: BGP
 metadata: {name: bgp}
 spec:
   asn: 64512
   routerID: 192.0.2.1
-  networks: [{prefix: "2001:db8:ffff::1/128"}]
+  networks: [{prefix: "64:ff9b::/96"}, {prefix: "2001:db8:ffff::1/128"}]

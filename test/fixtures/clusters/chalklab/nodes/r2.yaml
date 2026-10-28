@@ -1,10 +1,26 @@
-# The inner router: IPv6-only on the switch, it learns its default route from r1.
+# The inner router: IPv6-only on the switch, it learns its default route and the NAT64 prefix
+# from r1 and announces the address of its edge0, which its connections through r1's NAT64 and
+# its queries to r1's resolver come from.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-edge0}
+spec:
+  netDev: {kind: dummy, name: edge0}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-edge0}
+spec:
+  match: {name: edge0}
+  network: {address: ["2001:db8:ffff::2/128"]}
+---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: BGP
 metadata: {name: bgp}
 spec:
   asn: 64513
   routerID: 192.0.2.2
+  networks: [{prefix: "2001:db8:ffff::2/128"}]
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: BGPPeer

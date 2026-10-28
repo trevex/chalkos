@@ -1,6 +1,8 @@
 # The edge: it peers unnumbered with the routers on its fabric links and sends them a default
 # route, whatever its own table holds. edge0 holds the address it announces once
-# nodes/r1-announce.yaml gives its BGP the network.
+# nodes/r1-announce.yaml gives its BGP the network. Its NAT64 translates the well-known prefix from
+# the address QEMU's DHCP server gives enp0s2, and its resolver answers r2 with DNS64 on the
+# address of edge0.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: NetDev
 metadata: {name: 20-edge0}
@@ -25,3 +27,17 @@ spec:
   password: {secretRef: {name: bgp, key: fabric}}
   families:
     ipv6: {defaultOriginate: true}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NAT64
+metadata: {name: edge}
+spec:
+  pool4: [{prefix: 10.0.2.15/32}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Resolver
+metadata: {name: resolver}
+spec:
+  listen: ["2001:db8:ffff::1"]
+  allow: ["2001:db8:ffff::/48"]
+  dns64: {prefix: "64:ff9b::/96"}

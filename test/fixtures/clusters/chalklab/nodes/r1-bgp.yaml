@@ -1,6 +1,8 @@
+# r1's BGP, which announces the prefix of its NAT64.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: BGP
 metadata: {name: bgp}
 spec:
   asn: 64512
   routerID: 192.0.2.1
+  networks: [{prefix: "64:ff9b::/96"}]
