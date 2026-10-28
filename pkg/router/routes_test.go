@@ -64,3 +64,20 @@ func TestFilterRefusals(t *testing.T) {
 		}
 	}
 }
+
+// The routes of the router's NAT64 prefixes carry the protocol nat64, number 64.
+func TestFilterNAT64(t *testing.T) {
+	kernel := []*nodev1.KernelRoute{
+		{Destination: "64:ff9b::/96", Type: "unreachable", Protocol: protocolName(64), Table: 254},
+		{Destination: "::/0", Protocol: "bgp", Table: 254},
+	}
+	for _, protocol := range []string{"nat64", "64"} {
+		f, err := NewFilter("", protocol, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := f.Kernel(kernel); len(got) != 1 || got[0].Destination != "64:ff9b::/96" || f.WantsBGP() {
+			t.Errorf("%s: kernel %v, BGP %v", protocol, got, f.WantsBGP())
+		}
+	}
+}
