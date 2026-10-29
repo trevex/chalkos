@@ -180,29 +180,40 @@ func WriteKeepingPrevious(dir string, s Stored) error {
 	if err != nil {
 		return err
 	}
+	kept, err := os.Readlink(prev)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	if version == s.Version {
-		kept, err := os.Readlink(prev)
-		if errors.Is(err, fs.ErrNotExist) {
+		if kept == "" {
 			return replace(dir, fill(s))
-		}
-		if err != nil {
-			return err
 		}
 		return replace(dir, fill(s), filepath.Join(filepath.Dir(dir), kept))
 	}
 	// The previous link moves once the new set is filled and on disk, so a set that cannot be
 	// written keeps the previous config. A power cut between that rename and the slot link's
 	// leaves both links naming the held set, which callers take for no previous config.
-	fillKeeping := func(tmp string) error {
-		if err := fill(s)(tmp); err != nil {
-			return err
-		}
-		if err := syncTree(tmp); err != nil {
-			return err
-		}
+	moved := false
+	err = replaceAfter(dir, fill(s), func() error {
+		moved = true
 		return relink(prev, held)
+	}, filepath.Join(filepath.Dir(dir), held))
+	if err == nil || !moved {
+		return err
 	}
-	return replace(dir, fillKeeping, filepath.Join(filepath.Dir(dir), held))
+	// While the slot's link still names the held set, the previous link goes back to the set it
+	// named, which is still there: only a replace that got through removes it.
+	if now, rerr := os.Readlink(dir); rerr != nil || now != held {
+		return err
+	}
+	restore := func() error { return removeLink(prev) }
+	if kept != "" {
+		restore = func() error { return relink(prev, kept) }
+	}
+	if rerr := restore(); rerr != nil {
+		return errors.Join(err, fmt.Errorf("keep the previous config: %w", rerr))
+	}
+	return err
 }
 
 // fill fills a new slot's directory with s.
@@ -331,6 +342,12 @@ func Version(dir string) (string, error) {
 // system is mounted, as the installer mounts a target's STATE elsewhere than /state. The
 // directories keep names are left too, as a slot's previous config.
 func replace(dir string, fill func(tmp string) error, keep ...string) error {
+	return replaceAfter(dir, fill, nil, keep...)
+}
+
+// replaceAfter replaces dir as replace does and calls filled, unless nil, once the new set is on
+// disk and before dir's link moves; when filled fails, dir stays as it was.
+func replaceAfter(dir string, fill func(tmp string) error, filled func() error, keep ...string) error {
 	parent, base := filepath.Dir(dir), filepath.Base(dir)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
@@ -345,6 +362,12 @@ func replace(dir string, fill func(tmp string) error, keep ...string) error {
 	if err := fillDir(tmp, fill); err != nil {
 		os.RemoveAll(tmp)
 		return err
+	}
+	if filled != nil {
+		if err := filled(); err != nil {
+			os.RemoveAll(tmp)
+			return err
+		}
 	}
 	link := filepath.Join(parent, "."+base+".link")
 	if err := os.Remove(link); err != nil && !errors.Is(err, fs.ErrNotExist) {

@@ -435,3 +435,27 @@ func TestWriteKeepingPreviousThatFails(t *testing.T) {
 		t.Errorf("the directories next to the slot are %v, want the current one and the previous one", l)
 	}
 }
+
+// TestWriteKeepingPreviousThatFailsLate keeps the previous config when the slot's link cannot
+// move after the previous link did: the previous link goes back to the set it named.
+func TestWriteKeepingPreviousThatFailsLate(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "config")
+	for _, v := range []string{"v1", "v2"} {
+		if err := WriteKeepingPrevious(dir, stored(t, v)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A directory where replace puts the slot's new link cannot be removed.
+	blocked := filepath.Join(filepath.Dir(dir), ".config.link")
+	if err := os.MkdirAll(filepath.Join(blocked, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteKeepingPrevious(dir, stored(t, "v3")); err == nil {
+		t.Fatal("wrote the set with its link blocked")
+	}
+	current, _ := Version(dir)
+	previous, _ := Version(Previous(dir))
+	if current != "v2" || previous != "v1" {
+		t.Errorf("after a failed write the slot holds %q and its previous config %q, want v2 and v1", current, previous)
+	}
+}
