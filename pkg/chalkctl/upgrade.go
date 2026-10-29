@@ -487,7 +487,7 @@ func (r *upgradeRun) run(ctx context.Context) error {
 	names := strings.Join(slices.Sorted(maps.Keys(images)), ", ")
 	switch {
 	case r.rollback && r.noReboot:
-		r.say("staged %s on %s; it boots with their next reboot", bootImageName(r.rollbackTo), layer.Count(len(r.nodes), "node"))
+		r.say("staged %s on %s; it boots with their next reboot, and an upgrade to the image they run leaves it staged", bootImageName(r.rollbackTo), layer.Count(len(r.nodes), "node"))
 	case r.rollback:
 		r.say("rolled back %s to %s", layer.Count(len(r.nodes), "node"), bootImageName(r.rollbackTo))
 	case r.noReboot:

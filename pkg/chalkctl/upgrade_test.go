@@ -1965,3 +1965,37 @@ func TestUpgradeRollbackRefuses(t *testing.T) {
 		}
 	}
 }
+
+// TestUpgradeRollbackWithoutAReboot stages the previous image without draining or rebooting the
+// node and says that it boots with the next reboot; run again without --no-reboot, it finds the
+// image staged and reboots the node into it.
+func TestUpgradeRollbackWithoutAReboot(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	l.ta.stdout.Reset()
+	if err := l.run("upgrade", "--rollback", "--nodes", "w1", "--no-reboot"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got, want := l.takeEvents(), []string{"w1 rollback"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+	if line := "staged 010101010101 on 1 node; it boots with their next reboot"; !strings.Contains(l.ta.stdout.String(), line) {
+		t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
+	}
+	l.ta.stdout.Reset()
+	if err := l.run("upgrade", "--rollback", "--nodes", "w1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got, want := l.takeEvents(), []string{"w1 drain", "w1 reboot", "w1 uncordon"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+	if line := "w1: 010101010101 is installed already"; !strings.Contains(l.ta.stdout.String(), line) {
+		t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
+	}
+	if v := l.images()["w1"]; v != "0.1.0" {
+		t.Errorf("w1 runs %s, want 0.1.0", v)
+	}
+}
