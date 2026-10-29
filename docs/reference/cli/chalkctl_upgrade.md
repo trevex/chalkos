@@ -1,6 +1,6 @@
 ---
 title: "chalkctl upgrade"
-description: "Install new images on the cluster's nodes, one control plane at a time"
+description: "Install new images on the cluster's nodes, or boot their previous ones again"
 ---
 
 # chalkctl upgrade
@@ -9,13 +9,13 @@ description: "Install new images on the cluster's nodes, one control plane at a 
 chalkctl upgrade [flags]
 ```
 
-Installs a new image on each node: control planes one at a time, each only while etcd keeps its
-quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
-Without --image, each node, or each node --nodes names, gets the image the inventory names for it;
-with --image, the nodes that run the image's variant get it, or those --nodes names. A node gets
-the image in its inactive slot, is cordoned and drained, reboots into the image, and is uncordoned
-once its boot was found healthy and it is Ready. A node that falls back to the image before stops
-the run.
+Installs a new image on each node: first the nodes that act for the others, such as Kubernetes
+control planes, one at a time, then the other nodes in batches of --max-unavailable. Without
+--image, each node, or each node --nodes names, gets the image the inventory names for it; with
+--image, the nodes that run the image's variant get it, or those --nodes names. A node gets the
+image in its inactive slot and reboots into it. Its layers hold it before and release it once its
+boot was found healthy: Kubernetes keeps etcd's quorum, drains the node and uncordons it once it is
+Ready. A node that falls back to the image before stops the run.
 
 Each node gets its config with the image, checked against it before any node is drained, and
 chalkctl prints a line of what it changes; --diff prints the whole diff and changes nothing.
@@ -41,7 +41,7 @@ operator client file or the secrets file.
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--image`{ #flag-image } | string | the directory of each node's image in the inventory | Image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory. |
 | `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
-| `--max-unavailable`{ #flag-max-unavailable } | integer | `1` | How many workers and nodes without Kubernetes upgrade at once. |
+| `--max-unavailable`{ #flag-max-unavailable } | integer | `1` | How many nodes upgrade at once after the nodes that act for the others, such as Kubernetes control planes, which upgrade one at a time. |
 | `--no-reboot`{ #flag-no-reboot } | boolean | `false` | Install the images on the nodes without draining or rebooting them; they boot with their next reboot. |
 | `--nodes`{ #flag-nodes } | string | every node of the cluster, or with --image every node that runs the image's variant | Comma-separated nodes to upgrade. |
 | `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |

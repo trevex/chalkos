@@ -280,13 +280,13 @@ const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept 
   # Rotate the node CA. It runs in one go: every node gets a certificate of the new one.
   chalkctl rotate node-ca --secrets secrets.age`
 
-const upgradeLong = `Installs a new image on each node: control planes one at a time, each only while etcd keeps its
-quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
-Without --image, each node, or each node --nodes names, gets the image the inventory names for it;
-with --image, the nodes that run the image's variant get it, or those --nodes names. A node gets
-the image in its inactive slot, is cordoned and drained, reboots into the image, and is uncordoned
-once its boot was found healthy and it is Ready. A node that falls back to the image before stops
-the run.
+const upgradeLong = `Installs a new image on each node: first the nodes that act for the others, such as Kubernetes
+control planes, one at a time, then the other nodes in batches of --max-unavailable. Without
+--image, each node, or each node --nodes names, gets the image the inventory names for it; with
+--image, the nodes that run the image's variant get it, or those --nodes names. A node gets the
+image in its inactive slot and reboots into it. Its layers hold it before and release it once its
+boot was found healthy: Kubernetes keeps etcd's quorum, drains the node and uncordons it once it is
+Ready. A node that falls back to the image before stops the run.
 
 Each node gets its config with the image, checked against it before any node is drained, and
 chalkctl prints a line of what it changes; --diff prints the whole diff and changes nothing.

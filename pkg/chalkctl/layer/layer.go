@@ -101,6 +101,14 @@ type Upgrade interface {
 	After(ctx context.Context, u Upgrading, name string, role UpgradeRole) error
 }
 
+// UpgradeFlags is a plugin that adds flags to chalkctl upgrade, which its Upgrade hooks read.
+// chalkctl asks every compiled plugin.
+type UpgradeFlags interface {
+	// UpgradeFlags registers the layer's flags of chalkctl upgrade on fs and returns where their
+	// values go, which Upgrading.Flags gives the layer's hooks during a run.
+	UpgradeFlags(fs *pflag.FlagSet) any
+}
+
 // Coordinators is a plugin whose layer has nodes that act for the others, such as the nodes that
 // drain the others. chalkctl asks every compiled plugin; upgrade and rotate take those nodes
 // first.
@@ -131,10 +139,9 @@ type Upgrading interface {
 	// moving on past those whose error next accepts. It fails with ErrNoCoordinator while there
 	// is none.
 	ViaCoordinators(prefer string, next func(error) bool, fn func(conn *client.Conn) error) error
-	// AllowDowntime is --allow-downtime.
-	AllowDowntime() bool
-	// DeleteEmptyDir is --delete-emptydir-data.
-	DeleteEmptyDir() bool
+	// Flags is what the layer's UpgradeFlags returned for the run's command, by the layer's name;
+	// nil for a layer without flags.
+	Flags(layer string) any
 	// DrainTimeout is how long a node's drain may take.
 	DrainTimeout() time.Duration
 	// QuorumWait is how long the run waits for a cluster to keep its quorum while a node reboots.

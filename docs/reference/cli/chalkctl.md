@@ -47,5 +47,5 @@ chalkctl kubeconfig --secrets secrets.age
 - [chalkctl rotate](chalkctl_rotate.md): Rotate os-ca, node-ca, kubernetes-ca, service-account-key or encryption-key
 - [chalkctl status](chalkctl_status.md): Show an installed node's status
 - [chalkctl storage](chalkctl_storage.md): Manage a node's volumes
-- [chalkctl upgrade](chalkctl_upgrade.md): Install new images on the cluster's nodes, one control plane at a time
+- [chalkctl upgrade](chalkctl_upgrade.md): Install new images on the cluster's nodes, or boot their previous ones again
 - [chalkctl validate](chalkctl_validate.md): Check nodes' config against the schemas of their images

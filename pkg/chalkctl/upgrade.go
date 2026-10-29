@@ -46,11 +46,13 @@ type upgradeRun struct {
 
 // upgradeOptions are how a run upgrades, as its flags give it.
 type upgradeOptions struct {
-	allowDowntime, noReboot bool
+	noReboot bool
 	// retryFailed installs the image again on nodes that fell back from it; each node is upgraded
 	// once per run, so a second fall back stops the run.
-	retryFailed, deleteEmptyDir bool
-	maxUnavailable              int
+	retryFailed    bool
+	maxUnavailable int
+	// layerFlags are the values of the layers' flags, by layer, as their UpgradeFlags returned them.
+	layerFlags map[string]any
 	// passwordFile holds the password of nodes whose fallback is a password, which the config's new
 	// encrypted volumes are enrolled with.
 	passwordFile                            string
@@ -58,16 +60,16 @@ type upgradeOptions struct {
 }
 
 type upgradeFlags struct {
-	cluster                              clusterFlags
-	secrets                              secretFlags
-	config, image, nodes                 string
-	passwordFile                         string
-	addresses                            addressList
-	maxUnavailable                       positiveInt
-	allowDowntime, noReboot, retryFailed bool
-	diff                                 bool
-	deleteEmptyDir                       bool
-	timeout                              time.Duration
+	cluster               clusterFlags
+	secrets               secretFlags
+	config, image, nodes  string
+	passwordFile          string
+	addresses             addressList
+	maxUnavailable        positiveInt
+	noReboot, retryFailed bool
+	diff                  bool
+	layers                map[string]any
+	timeout               time.Duration
 }
 
 // positiveInt is the value of an integer flag that is at least 1.
@@ -89,10 +91,10 @@ func (n *positiveInt) String() string { return strconv.Itoa(int(*n)) }
 func (n *positiveInt) Type() string   { return "int" }
 
 func (a *app) upgradeCommand() *cobra.Command {
-	f := upgradeFlags{addresses: addressList{}, maxUnavailable: 1}
+	f := upgradeFlags{addresses: addressList{}, maxUnavailable: 1, layers: map[string]any{}}
 	cmd := a.command(&cobra.Command{
 		Use:     "upgrade",
-		Short:   "Install new images on the cluster's nodes, one control plane at a time",
+		Short:   "Install new images on the cluster's nodes, or boot their previous ones again",
 		Long:    upgradeLong,
 		Example: upgradeExample,
 		Args:    cli.NoArgs,
@@ -104,11 +106,14 @@ func (a *app) upgradeCommand() *cobra.Command {
 	registerAddresses(fs, f.addresses)
 	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
 	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)")
-	fs.Var(&f.maxUnavailable, "max-unavailable", "how many workers and nodes without Kubernetes upgrade at once")
-	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots")
+	fs.Var(&f.maxUnavailable, "max-unavailable", "how many nodes upgrade at once after the nodes that act for the others, such as Kubernetes control planes, which upgrade one at a time")
+	for _, p := range plugins {
+		if u, ok := p.(layer.UpgradeFlags); ok {
+			f.layers[p.Name()] = u.UpgradeFlags(fs)
+		}
+	}
 	fs.BoolVar(&f.noReboot, "no-reboot", false, "install the images on the nodes without draining or rebooting them; they boot with their next reboot")
 	fs.BoolVar(&f.retryFailed, "retry-failed", false, "install an image again, once, on nodes that fell back from it")
-	fs.BoolVar(&f.deleteEmptyDir, "delete-emptydir-data", false, "evict pods with emptyDir volumes too, deleting their data")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
 	registerPasswordFile(fs, &f.passwordFile)
 	fs.BoolVar(&f.diff, "diff", false, "print what each node's config changes against the config of the image it runs, document by document and field by field, and change nothing; needs the admin role")
@@ -124,7 +129,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	if err != nil {
 		return err
 	}
-	// The nodes refuse an upgrade below the operator role, but only once a worker is drained.
+	// The nodes refuse an upgrade below the operator role, but only once a node is drained.
 	if role := creds.role(); !role.Allows(pki.RoleOperator) {
 		return fmt.Errorf("upgrade needs the %s role; the %s role may not upgrade nodes", pki.RoleOperator, roleLabel(role))
 	}
@@ -172,8 +177,8 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 // node waited for.
 func (f upgradeFlags) options(poll time.Duration) upgradeOptions {
 	return upgradeOptions{
-		allowDowntime: f.allowDowntime, noReboot: f.noReboot, maxUnavailable: int(f.maxUnavailable),
-		retryFailed: f.retryFailed, deleteEmptyDir: f.deleteEmptyDir, passwordFile: f.passwordFile,
+		noReboot: f.noReboot, maxUnavailable: int(f.maxUnavailable), retryFailed: f.retryFailed,
+		layerFlags: f.layers, passwordFile: f.passwordFile,
 		timeout: f.timeout, drainTimeout: f.timeout, poll: poll, quorumWait: min(f.timeout, time.Minute),
 	}
 }
@@ -705,8 +710,7 @@ func (r *upgradeRun) hooks(ctx context.Context, n *upgradeNode, hook func(layer.
 var _ layer.Upgrading = (*upgradeRun)(nil)
 
 func (r *upgradeRun) Say(format string, args ...any) { r.say(format, args...) }
-func (r *upgradeRun) AllowDowntime() bool            { return r.allowDowntime }
-func (r *upgradeRun) DeleteEmptyDir() bool           { return r.deleteEmptyDir }
+func (r *upgradeRun) Flags(layer string) any         { return r.layerFlags[layer] }
 func (r *upgradeRun) DrainTimeout() time.Duration    { return r.drainTimeout }
 func (r *upgradeRun) QuorumWait() time.Duration      { return r.quorumWait }
 func (r *upgradeRun) Poll() time.Duration            { return r.poll }
