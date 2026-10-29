@@ -67,7 +67,7 @@ func TestRollback(t *testing.T) {
 		recorded++
 		return nil
 	}
-	res, err := l.node.Rollback(ctx, a.root, record)
+	res, err := l.node.Rollback(ctx, a.root, nil, record)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,10 +75,11 @@ func TestRollback(t *testing.T) {
 		t.Errorf("result %+v, writes %v; want a's UKI as generation 3 and nothing written", res, l.writes)
 	}
 	l.boots(a, 3)
-	if again, err := l.node.Rollback(ctx, a.root, record); err != nil || !again.AlreadyStaged || again.Entry != "chalkos_3+3.efi" {
+	// The record names the rollback, so asking again finds its counted entry staged.
+	if again, err := l.node.Rollback(ctx, a.root, a.root, record); err != nil || !again.AlreadyStaged || again.Entry != "chalkos_3+3.efi" {
 		t.Errorf("a second request = %+v, %v; want it staged already", again, err)
 	}
-	if same, err := l.node.Rollback(ctx, b.root, record); err != nil || !same.AlreadyInstalled {
+	if same, err := l.node.Rollback(ctx, b.root, nil, record); err != nil || !same.AlreadyInstalled {
 		t.Errorf("a rollback to the running image = %+v, %v", same, err)
 	}
 	// The rollback and the request that found its image staged are recorded; one to the running
@@ -95,7 +96,7 @@ func TestRollback(t *testing.T) {
 	if e, name := l.boot(); name != "b" || e.File != "chalkos_2.efi" {
 		t.Errorf("after the tries the disk boots %s from %s, want b", name, e.File)
 	}
-	if _, err := l.node.Rollback(ctx, a.root, nil); err == nil || !strings.Contains(err.Error(), "keeps no image it ran before") {
+	if _, err := l.node.Rollback(ctx, a.root, nil, nil); err == nil || !strings.Contains(err.Error(), "keeps no image it ran before") {
 		t.Errorf("after the fallback: %v", err)
 	}
 }
@@ -116,10 +117,10 @@ func TestRollbackStopped(t *testing.T) {
 		changes = append(changes, what)
 		return stop
 	}
-	if _, err := l.node.Rollback(context.Background(), a.root, func() error { return stop }); !errors.Is(err, stop) || len(changes) != 0 {
+	if _, err := l.node.Rollback(context.Background(), a.root, nil, func() error { return stop }); !errors.Is(err, stop) || len(changes) != 0 {
 		t.Fatalf("rollback = %v with changes %q, want it stopped by the record before any change", err, changes)
 	}
-	if _, err := l.node.Rollback(context.Background(), a.root, nil); !errors.Is(err, stop) {
+	if _, err := l.node.Rollback(context.Background(), a.root, nil, nil); !errors.Is(err, stop) {
 		t.Fatalf("rollback = %v, want it stopped", err)
 	}
 	if len(changes) != 1 || changes[0] != "name the UKI chalkos_3+3.efi" {
@@ -129,7 +130,7 @@ func TestRollbackStopped(t *testing.T) {
 		t.Errorf("the disk boots %s from %s, want b", name, e.File)
 	}
 	l.node.Change = nil
-	if res, err := l.node.Rollback(context.Background(), a.root, nil); err != nil || res.Entry != "chalkos_3+3.efi" {
+	if res, err := l.node.Rollback(context.Background(), a.root, nil, nil); err != nil || res.Entry != "chalkos_3+3.efi" {
 		t.Fatalf("rollback again = %+v, %v", res, err)
 	}
 	l.boots(a, 3)
@@ -145,12 +146,12 @@ func TestRollbackTwice(t *testing.T) {
 	}
 	l.bless(l.attempt())
 	l.runFrom(b, "chalkos_2.efi", 4, 5)
-	if _, err := l.node.Rollback(context.Background(), a.root, nil); err != nil {
+	if _, err := l.node.Rollback(context.Background(), a.root, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	l.bless(l.attempt())
 	l.runFrom(a, "chalkos_3.efi", 2, 3)
-	res, err := l.node.Rollback(context.Background(), b.root, nil)
+	res, err := l.node.Rollback(context.Background(), b.root, nil, nil)
 	if err != nil || res.Entry != "chalkos_4+2.efi" {
 		t.Fatalf("second rollback = %+v, %v", res, err)
 	}
@@ -158,8 +159,9 @@ func TestRollbackTwice(t *testing.T) {
 }
 
 // TestRollbackRefuses refuses a node without an image it ran before, another root hash than that
-// image's, a staged upgrade, which replaced it, a UKI its check refuses and an inactive slot that
-// no longer holds the store; the disk keeps booting the running image.
+// image's, a staged upgrade, which replaced it, also when asked for its own image, a UKI its
+// check refuses and an inactive slot that no longer holds the store; the disk keeps booting the
+// running image.
 func TestRollbackRefuses(t *testing.T) {
 	a, b, c := newImage(t, "a", 3), newImage(t, "b", 2), newImage(t, "c", 1)
 	ctx := context.Background()
@@ -169,29 +171,35 @@ func TestRollbackRefuses(t *testing.T) {
 		t.Error("recorded a refused rollback")
 		return nil
 	}
-	if _, err := l.node.Rollback(ctx, b.root, record); err == nil || !strings.Contains(err.Error(), "keeps no image it ran before") {
+	if _, err := l.node.Rollback(ctx, b.root, nil, record); err == nil || !strings.Contains(err.Error(), "keeps no image it ran before") {
 		t.Errorf("without one: %v", err)
 	}
 	if _, err := l.install(b); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := l.node.Rollback(ctx, c.root, record); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_2+2.efi") {
+	if _, err := l.node.Rollback(ctx, c.root, nil, record); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_2+2.efi") {
 		t.Errorf("a staged upgrade: %v", err)
+	}
+	// The upgrade's own image, staged with tries, is no rollback's unless the record names it.
+	for _, last := range [][]byte{nil, c.root} {
+		if _, err := l.node.Rollback(ctx, b.root, last, record); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_2+2.efi; its upgrade replaced") {
+			t.Errorf("the staged upgrade's image, last %x: %v", last, err)
+		}
 	}
 	l.bless(l.attempt())
 	l.runFrom(b, "chalkos_2.efi", 4, 5)
-	if _, err := l.node.Rollback(ctx, c.root, record); err == nil || !strings.Contains(err.Error(), "the image the node ran before is") {
+	if _, err := l.node.Rollback(ctx, c.root, nil, record); err == nil || !strings.Contains(err.Error(), "the image the node ran before is") {
 		t.Errorf("another root hash: %v", err)
 	}
 	// The UKI is checked again, as an upgrade checks a new one.
 	platform := l.node.OSRelease["CHALKOS_PLATFORM"]
 	l.node.OSRelease["CHALKOS_PLATFORM"] = "elsewhere"
-	if _, err := l.node.Rollback(ctx, a.root, record); err == nil || !strings.Contains(err.Error(), "the UKI's platform is") {
+	if _, err := l.node.Rollback(ctx, a.root, nil, record); err == nil || !strings.Contains(err.Error(), "the UKI's platform is") {
 		t.Errorf("a UKI of another platform: %v", err)
 	}
 	l.node.OSRelease["CHALKOS_PLATFORM"] = platform
 	l.setUUID(2, "11111111-2222-3333-4444-555555555555")
-	if _, err := l.node.Rollback(ctx, a.root, record); err == nil || !strings.Contains(err.Error(), "the inactive slot no longer holds the store") {
+	if _, err := l.node.Rollback(ctx, a.root, nil, record); err == nil || !strings.Contains(err.Error(), "the inactive slot no longer holds the store") {
 		t.Errorf("a changed slot: %v", err)
 	}
 	if e, name := l.boot(); name != "b" || e.File != "chalkos_2.efi" {
@@ -213,7 +221,7 @@ func TestRollbackBeforeTheBootIsHealthy(t *testing.T) {
 	l.runFrom(b, e.File, 4, 5)
 	ctx := context.Background()
 
-	res, err := l.node.Rollback(ctx, a.root, nil)
+	res, err := l.node.Rollback(ctx, a.root, nil, nil)
 	if err != nil || res.Entry != "chalkos_3.efi" || res.AlreadyStaged {
 		t.Fatalf("rollback = %+v, %v; want a's UKI as generation 3 without tries", res, err)
 	}
@@ -229,10 +237,10 @@ func TestRollbackBeforeTheBootIsHealthy(t *testing.T) {
 	if e, name := l.boot(); name != "a" || e.File != "chalkos_3.efi" || e.TriesLeft != -1 {
 		t.Errorf("the disk boots %s from %s (%d tries left), want a from chalkos_3.efi uncounted", name, e.File, e.TriesLeft)
 	}
-	if again, err := l.node.Rollback(ctx, a.root, nil); err != nil || !again.AlreadyStaged || again.Entry != "chalkos_3.efi" {
+	if again, err := l.node.Rollback(ctx, a.root, nil, nil); err != nil || !again.AlreadyStaged || again.Entry != "chalkos_3.efi" {
 		t.Errorf("a second request = %+v, %v; want it staged already", again, err)
 	}
-	if _, err := l.node.Rollback(ctx, newImage(t, "c", 1).root, nil); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_3.efi") {
+	if _, err := l.node.Rollback(ctx, newImage(t, "c", 1).root, nil, nil); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_3.efi") {
 		t.Errorf("a rollback to another image: %v", err)
 	}
 	// An upgrade to the image finds it staged, the node's known-good image, which boots with the
@@ -252,7 +260,7 @@ func TestRollbackBeforeTheBootIsHealthy(t *testing.T) {
 		t.Fatalf("booted %s", e.File)
 	}
 	l.runFrom(a, "chalkos_3.efi", 2, 3)
-	res, err = l.node.Rollback(ctx, b.root, nil)
+	res, err = l.node.Rollback(ctx, b.root, nil, nil)
 	if err != nil || res.Entry != "chalkos_4+2.efi" {
 		t.Fatalf("rollback to b = %+v, %v; want it counted", res, err)
 	}

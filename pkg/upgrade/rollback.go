@@ -48,14 +48,17 @@ func Previous(entries []esp.Entry, imageID string, booted esp.Entry, running []b
 //
 // The rename is the only change, so until it the running image boots next; a rollback stopped
 // before it changed nothing, and one asked for again after it finds the image staged. The caller
-// keeps Install from running meanwhile, as Install retires the slot. record, when set, is called
-// once every check passed, just before the rename, and when the image boots next already; its
-// error stops the rollback, so a refused one leaves what record writes as it was.
+// keeps Install from running meanwhile, as Install retires the slot. last is the root hash of the
+// image the caller's record names as the last rollback's, nil without one. record, when set, is
+// called once every check passed, just before the rename, and when the image boots next already;
+// its error stops the rollback, so a refused one leaves what record writes as it was.
 //   - A node that runs the image answers AlreadyInstalled, and one that boots it next already
-//     AlreadyStaged, so a rollback asked for twice happens once.
+//     AlreadyStaged, so a rollback asked for twice happens once. A staged entry is the rollback's
+//     when its name carries no tries, as a rollback from a boot not found healthy stages it, or
+//     when last names its image; one with tries is otherwise an upgrade's.
 //   - Another image staged to boot next replaced the image before, as an upgrade's retirement
-//     removed its UKI; Rollback refuses.
-func (n *Node) Rollback(ctx context.Context, rootHash []byte, record func() error) (Result, error) {
+//     removed its UKI; Rollback refuses, also when the upgrade staged the image asked for.
+func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func() error) (Result, error) {
 	if record == nil {
 		record = func() error { return nil }
 	}
@@ -80,7 +83,7 @@ func (n *Node) Rollback(ctx context.Context, rootHash []byte, record func() erro
 	}
 	if staged, ok := esp.StagedEntry(all, imageID, booted); ok {
 		switch {
-		case bytes.Equal(staged.RootHash, rootHash):
+		case bytes.Equal(staged.RootHash, rootHash) && (staged.TriesLeft < 0 || bytes.Equal(last, rootHash)):
 			if err := record(); err != nil {
 				return Result{}, err
 			}

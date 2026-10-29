@@ -183,7 +183,7 @@ func (s *Server) reactivate(ctx context.Context, rootHash []byte, record func() 
 	if err != nil {
 		return upgrade.Result{}, err
 	}
-	return n.Rollback(ctx, rootHash, record)
+	return n.Rollback(ctx, rootHash, s.rolledBackTo(), record)
 }
 
 // keepsSlot reports whether STATE keeps a config slot of the image whose store has the root hash,
