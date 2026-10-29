@@ -140,6 +140,7 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o chalkd.KubernetesOptions) (
 	o.ClusterFile = o.Paths.Cluster
 	s.Kubernetes = chalkd.NewKubernetes(o)
 	withPlugins(t, s, layers.Of(layers.Kubernetes), nil)
+	writeEffects(t, s)
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
 	// The loader has the Kubernetes layer write the cluster file.

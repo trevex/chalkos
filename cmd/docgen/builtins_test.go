@@ -95,8 +95,8 @@ func TestWriteBuiltins(t *testing.T) {
 		"| Effect | Fires when | Does |\n| --- | --- | --- |\n" +
 			"| `chrony`{ #effect-chrony } | The output `chrony` changed. | Runs `chalkos-chrony-reload-sources`. |\n" +
 			"| `networkd`{ #effect-networkd } | The output `networkd` changed. | Reloads `systemd-networkd.service`. |\n",
-		"| `chalkd-cluster`{ #effect-chalkd-cluster } | `facts.cluster != oldFacts.cluster` holds. | Restarts chalkd's Kubernetes loops. |\n" +
-			"| `chalkd-share`{ #effect-chalkd-share } | `facts.share != oldFacts.share` holds. | Reloads chalkd's control-plane loop. |\n" +
+		"| `chalkd-cluster`{ #effect-chalkd-cluster } | `facts.cluster != oldFacts.cluster` holds. | Runs chalkd's action `kubernetes:restart`. |\n" +
+			"| `chalkd-share`{ #effect-chalkd-share } | `facts.share != oldFacts.share` holds. | Runs chalkd's action `kubernetes:reload`. |\n" +
 			"| `kubernetes`{ #effect-kubernetes } | The documents of `Host`, or a value of a Secret they reference, changed, or the `when` after the table holds, which reads the documents of `Node` and the facts `cluster` and `share`. | Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |\n",
 		"\n`when` of `kubernetes`:\n\n```text\ncel.bind(d, config[\"kubernetes.chalkos.dev/v1alpha1\"].Node, d)",
 		// A diagnostic's command shows without store paths, and a script of several lines follows

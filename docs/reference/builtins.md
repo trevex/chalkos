@@ -973,7 +973,7 @@ The facts images with Kubernetes add.
 
 | Fact | Reads | Read by |
 | --- | --- | --- |
-| `cluster`{ #fact-cluster } | File `/run/chalkos/kubernetes/cluster.json`. | The effects `chalkd-cluster` and `kubernetes`. |
+| `cluster`{ #fact-cluster } | File `/run/chalkos/kubernetes/cluster.json`. | The effects `chalkd-cluster`, `chalkd-share` and `kubernetes`. |
 | `share`{ #fact-share } | The key `kind` of the file `/state/kubernetes/share.json`, and the SHA-256 of each other key. | The rules of `Cluster` and `Node`, and the effects `chalkd-share` and `kubernetes`. |
 
 ### Router images { #facts-router-images }
@@ -1040,8 +1040,8 @@ The effects images with Kubernetes add.
 
 | Effect | Fires when | Does |
 | --- | --- | --- |
-| `chalkd-cluster`{ #effect-chalkd-cluster } | The `when` after the table holds, which reads the documents of `Cluster` and `Flannel` and the fact `cluster`. | Restarts chalkd's Kubernetes loops. |
-| `chalkd-share`{ #effect-chalkd-share } | The `when` after the table holds, which reads the documents of `Addon` and `Node` and the fact `share`. | Reloads chalkd's control-plane loop. |
+| `chalkd-cluster`{ #effect-chalkd-cluster } | The `when` after the table holds, which reads the documents of `Cluster` and `Flannel` and the fact `cluster`. | Runs chalkd's action `kubernetes:restart`. |
+| `chalkd-share`{ #effect-chalkd-share } | The `when` after the table holds, which reads the documents of `Addon`, `Cluster`, `Flannel` and `Node` and the facts `cluster` and `share`. | Runs chalkd's action `kubernetes:reload`. |
 | `controlplane-ports`{ #effect-controlplane-ports } | The `when` after the table holds, which reads the documents of `Node`. | Restarts `chalkos-controlplane.service`. |
 | `kubernetes`{ #effect-kubernetes } | The `when` after the table holds, which reads the documents of `Cluster`, `Flannel`, `Host`, `Network` and `Node` and the facts `cluster` and `share`. | Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |
 | `registry-credentials`{ #effect-registry-credentials } | The documents of `Registry`, or a value of a Secret they reference, changed. | Restarts `chalkos-registry-credentials.service` and `kubelet.service`. |
@@ -1056,7 +1056,7 @@ facts.cluster != oldFacts.cluster || cel.bind(d, (("kubernetes.chalkos.dev/v1alp
 `when` of `chalkd-share`:
 
 ```text
-cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : was.filter(k, k != "nodeCA").map(k, k + "=" + was[k]) != gets.filter(k, k != "nodeCA").map(k, k + "=" + gets[k]))) || (cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Node" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Node : {}), d.exists(n, d[n].spec.type == "controlplane")) && cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Addon" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten() != cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in oldConfig && "Addon" in oldConfig["kubernetes.chalkos.dev/v1alpha1"]) ? oldConfig["kubernetes.chalkos.dev/v1alpha1"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten())
+(cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : was.filter(k, k != "nodeCA").map(k, k + "=" + was[k]) != gets.filter(k, k != "nodeCA").map(k, k + "=" + gets[k]))) || (cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Node" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Node : {}), d.exists(n, d[n].spec.type == "controlplane")) && cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Addon" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten() != cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in oldConfig && "Addon" in oldConfig["kubernetes.chalkos.dev/v1alpha1"]) ? oldConfig["kubernetes.chalkos.dev/v1alpha1"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten())) && !(facts.cluster != oldFacts.cluster || cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Cluster" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Cluster : {}), d.map(n, d[n].spec)) != cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in oldConfig && "Cluster" in oldConfig["kubernetes.chalkos.dev/v1alpha1"]) ? oldConfig["kubernetes.chalkos.dev/v1alpha1"].Cluster : {}), d.map(n, d[n].spec)) || cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Flannel" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Flannel : {}), d.map(n, d[n].spec)) != cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in oldConfig && "Flannel" in oldConfig["kubernetes.chalkos.dev/v1alpha1"]) ? oldConfig["kubernetes.chalkos.dev/v1alpha1"].Flannel : {}), d.map(n, d[n].spec)))
 ```
 
 `when` of `controlplane-ports`:

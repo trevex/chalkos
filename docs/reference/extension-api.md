@@ -131,14 +131,17 @@ Type: map of submodule · Default: `{ }` · Declared in: [modules/node/runtime/e
 What a delivery does to the node's services, by a name of the effect's own. Once a
 delivery is applied, chalkd takes every effect one of whose `outputs` changed, the
 documents of one of whose `kinds` did, or whose `when` holds: it reloads the units
-of their `reload`, runs their `run`, restarts the units of their `restart`, and acts on
-its own loops as their `chalkd` says. An effect exists only when it is declared.
+of their `reload`, runs their `run`, restarts the units of their `restart`, and runs the
+layer actions their `chalkd` names. An effect exists only when it is declared.
 
 The options within each, by their path below `chalkos.effects`:
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `<name>.chalkd`{ #chalkoseffectschalkd } | one of `restart`, `reload` or null | `null` | What the effect does to chalkd's control-plane loops, which run inside chalkd and have no unit of their own: `reload` starts the control plane's loop again, which reads the share and applies the control plane's objects, and `restart` every Kubernetes loop, which read the cluster when they start. |
+| `<name>.chalkd`{ #chalkoseffectschalkd } | string matching `[a-z][a-z0-9-]*:[a-z][a-z0-9-]*` or null | `null` | An action of a layer on what only the running chalkd holds, as `<layer>:<action>`, such as `kubernetes:restart`, which starts chalkd's Kubernetes loops again, or `kubernetes:reload`, which starts the control plane's loop again. chalkd runs the actions of the due effects once each, after the restarts. The layer must be one of the image's. Example: `"kubernetes:reload"` |
+| `<name>.hint`{ #chalkoseffectshint } | submodule or null | `null` | Why the effect's units may fail to restart, for the delivery's error: when a unit of `restart` fails, chalkd fails the delivery as a failed precondition that names `text` and the content of `file`, rather than systemctl's error alone. |
+| `<name>.hint.file`{ #chalkoseffectshintfile } | path or null | `null` | A file whose text follows `text`; the hint is shown only while the file holds text. |
+| `<name>.hint.text`{ #chalkoseffectshinttext } | non-empty string | required | What the delivery's error says after the units' failure. |
 | `<name>.kinds`{ #chalkoseffectskinds } | list of string | `[ ]` | Config kinds, by name as for a grant. The effect fires when the documents of one of them changed: one was added, removed or changed, or a value of a Secret one of them references changed. A service that reads its kinds' documents when it starts needs no output in between. Example: `[ "Peer" ]` |
 | `<name>.outputs`{ #chalkoseffectsoutputs } | list of string | `[ ]` | Names of outputs of `chalkos.outputs`. The effect fires when one of them changed: when the hash of its files differs from the one before the delivery, or the values of the Secrets its input documents reference do, so a rotated password fires the effect even though the rendered files stay the same. Example: `[ "bird-conf" ]` |
 | `<name>.reload`{ #chalkoseffectsreload } | list of string | `[ ]` | Units the effect reloads with `systemctl reload`, before chalkd restarts any. chalkd reloads only a unit that is active, and not one it restarts. A unit that failed it restarts with `reset-failed` and `restart`, as a failed unit of `restart`, since systemd reloads no failed unit. Example: `[ "systemd-networkd.service" ]` |

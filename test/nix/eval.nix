@@ -867,6 +867,7 @@ lib.runTests {
               start = false;
               when = "";
               chalkd = "";
+              hint = null;
             }
             && lib.any (p: lib.getName p == "chalkos-chrony-reload-sources") c.systemd.services.chalkd.path;
           # The TimeSync's servers are an output, which a template renders, chronyd checks, and

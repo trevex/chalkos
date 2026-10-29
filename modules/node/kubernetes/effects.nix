@@ -1,10 +1,12 @@
 # What a change of the node's config restarts or reloads on an image that runs Kubernetes: the
 # registry units, the control plane's ports, the preparation and the kubelet, and chalkd's
-# Kubernetes loops.
+# Kubernetes loops, through the Kubernetes layer's actions.
 { config, lib, ... }:
 let
   cel = import ../../../lib/cel.nix { inherit lib; };
   inherit (import ../../../lib/kinds/api.nix) apiVersions;
+  # Where chalkd writes the node's Kubernetes files, as default.nix names it.
+  run = "/run/chalkos/kubernetes";
   # The Address= values of each Network's [Network] sections, as written and in the order of the
   # networks' names, which the identity takes the node's static addresses from. They are compared
   # with their prefix lengths: taking those off loops over the addresses of each section of each
@@ -82,17 +84,25 @@ in
           "kubelet.service"
         ];
         start = true;
+        # A unit that fails to restart says why the preparation failed, which tells more than
+        # systemctl's error.
+        hint = {
+          text = "the node runs no kubelet: preparation failed";
+          file = "${run}/prepare.error";
+        };
       };
       # chalkd's Kubernetes loops, which chalkd starts again itself: every loop reads the
       # cluster when it starts, and the control plane's loop reads the share and applies the
       # control plane's objects.
       chalkd-cluster = {
         when = clusterChanged;
-        chalkd = "restart";
+        chalkd = "kubernetes:restart";
       };
+      # A restart for a new cluster starts the control plane's loop again too, so a reload is due
+      # only without one.
       chalkd-share = {
-        when = "${shareChanged} || ${addonsApplied}";
-        chalkd = "reload";
+        when = "(${shareChanged} || ${addonsApplied}) && !(${clusterChanged})";
+        chalkd = "kubernetes:reload";
       };
     };
   };

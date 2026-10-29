@@ -1,5 +1,5 @@
 # Effects: what a delivery does to the node's services once it is applied. An effect restarts or
-# reloads units, runs a command or acts on chalkd's own loops when one of its outputs changed,
+# reloads units, runs a command or a layer's action in chalkd when one of its outputs changed,
 # the documents of one of its kinds did, or its CEL rule holds.
 {
   config,
@@ -13,6 +13,12 @@ let
     inherit (config.chalkos) kinds;
   };
   outputs = config.chalkos.outputs;
+  layerNames = lib.attrNames config.chalkos.layers;
+  image =
+    if config.chalkos.variant.name == null then
+      "the image"
+    else
+      "the variant ${config.chalkos.variant.name}";
 
   # Returns kinds, or throws, prefixed with `where`, if kinds names a kind the image does not
   # declare, Secret or Addon. A Secret's values count for the kinds whose secretRef fields name
@@ -92,18 +98,38 @@ let
         description = "Start the units of `restart` that do not run, with `systemctl restart` instead of `try-restart`, as for a unit whose condition only the delivery meets.";
       };
       chalkd = lib.mkOption {
+        type = lib.types.nullOr (lib.types.strMatching "[a-z][a-z0-9-]*:[a-z][a-z0-9-]*");
+        default = null;
+        example = "kubernetes:reload";
+        description = ''
+          An action of a layer on what only the running chalkd holds, as `<layer>:<action>`,
+          such as `kubernetes:restart`, which starts chalkd's Kubernetes loops again, or
+          `kubernetes:reload`, which starts the control plane's loop again. chalkd runs the
+          actions of the due effects once each, after the restarts. The layer must be one of
+          the image's.
+        '';
+      };
+      hint = lib.mkOption {
         type = lib.types.nullOr (
-          lib.types.enum [
-            "restart"
-            "reload"
-          ]
+          lib.types.submodule {
+            options = {
+              text = lib.mkOption {
+                type = lib.types.nonEmptyStr;
+                description = "What the delivery's error says after the units' failure.";
+              };
+              file = lib.mkOption {
+                type = lib.types.nullOr lib.types.path;
+                default = null;
+                description = "A file whose text follows `text`; the hint is shown only while the file holds text.";
+              };
+            };
+          }
         );
         default = null;
         description = ''
-          What the effect does to chalkd's control-plane loops, which run inside chalkd and have
-          no unit of their own: `reload` starts the control plane's loop again, which reads the
-          share and applies the control plane's objects, and `restart` every Kubernetes loop,
-          which read the cluster when they start.
+          Why the effect's units may fail to restart, for the delivery's error: when a unit of
+          `restart` fails, chalkd fails the delivery as a failed precondition that names `text`
+          and the content of `file`, rather than systemctl's error alone.
         '';
       };
     };
@@ -115,10 +141,40 @@ let
     let
       where = "chalkos.effects.${name}";
       unknown = lib.filter (o: !(outputs ? ${o})) e.outputs;
+      # The layer an effect's chalkd action names, or a run of chalkd <layer> <command> does.
+      chalkdLayer = if e.chalkd == null then null else lib.head (lib.splitString ":" e.chalkd);
+      # Split on whitespace as chalkd splits it, with strings.Fields.
+      runWords =
+        if e.run == null then
+          [ ]
+        else
+          lib.filter (w: lib.isString w && w != "") (builtins.split "[[:space:]]+" e.run);
+      runLayer =
+        if
+          lib.length runWords >= 2
+          && baseNameOf (lib.head runWords) == "chalkd"
+          # chalkd's common subcommands, which name no layer; they must match those of cmd/chalkd.
+          && !(lib.elem (lib.elemAt runWords 1) [
+            "serve"
+            "load-config"
+            "health"
+          ])
+        then
+          lib.elemAt runWords 1
+        else
+          null;
+      missing = lib.filter (l: l != null && !(lib.elem l layerNames)) [
+        chalkdLayer
+        runLayer
+      ];
     in
     if unknown != [ ] then
       throw "${where}.outputs: the image has no output ${lib.head unknown}; its outputs are ${
         if outputs == { } then "none" else lib.concatStringsSep ", " (lib.attrNames outputs)
+      }"
+    else if missing != [ ] then
+      throw "${where}: it names the ${lib.head missing} layer, which ${image} does not carry; its layers are ${
+        if layerNames == [ ] then "none" else lib.concatStringsSep ", " layerNames
       }"
     else if e.outputs == [ ] && e.kinds == [ ] && e.when == null then
       throw "${where}: it has none of outputs, kinds and when, so nothing triggers it"
@@ -136,6 +192,14 @@ let
         when = if e.when == null then "" else e.when;
         run = if e.run == null then "" else e.run;
         chalkd = if e.chalkd == null then "" else e.chalkd;
+        hint =
+          if e.hint == null then
+            null
+          else
+            {
+              inherit (e.hint) text;
+              file = if e.hint.file == null then "" else toString e.hint.file;
+            };
       };
   effectsJSON = builtins.toJSON (lib.mapAttrs effectJSON config.chalkos.effects);
 in
@@ -147,8 +211,8 @@ in
       What a delivery does to the node's services, by a name of the effect's own. Once a
       delivery is applied, chalkd takes every effect one of whose `outputs` changed, the
       documents of one of whose `kinds` did, or whose `when` holds: it reloads the units
-      of their `reload`, runs their `run`, restarts the units of their `restart`, and acts on
-      its own loops as their `chalkd` says. An effect exists only when it is declared.
+      of their `reload`, runs their `run`, restarts the units of their `restart`, and runs the
+      layer actions their `chalkd` names. An effect exists only when it is declared.
     '';
   };
 

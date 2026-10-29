@@ -21,6 +21,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -257,13 +258,7 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 		RebootNode: func() {},
 	}
 	s.Loader.RunDir = filepath.Join(root, "run")
-	// The effects of the default image, which the node carries out.
 	s.Loader.Effects = filepath.Join(root, "effects.json")
-	effects, err := os.ReadFile("../../test/fixtures/kinds/effects.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, s.Loader.Effects, string(effects))
 	s.Loader.SetHostname = func(string) error { return nil }
 	// The node runs the image of the root hash abab…, whose slot holds the identity alone.
 	s.Loader.Slots = filepath.Join(root, "state", "config")
@@ -281,7 +276,34 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	writeFile(t, s.Paths.Facts, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"}}`)
 	writeFile(t, s.Paths.MountInfo, "41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
 	withPlugins(t, s, layers.Of(), nil)
+	writeEffects(t, s)
 	return s, r
+}
+
+// writeEffects declares the effects of the default image, which the node carries out, without
+// those that run an action of a layer s's image does not carry, as an image without the layer
+// has none.
+func writeEffects(t *testing.T, s *chalkd.Server) {
+	t.Helper()
+	raw, err := os.ReadFile("../../test/fixtures/kinds/effects.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var defs map[string]effects.Definition
+	if err := json.Unmarshal(raw, &defs); err != nil {
+		t.Fatal(err)
+	}
+	for name, d := range defs {
+		// An action its layer lacks stays, so the delivery refuses it.
+		if l, _, _ := strings.Cut(d.Chalkd, ":"); d.Chalkd != "" && !s.Plugins.Layers().Has(l) {
+			delete(defs, name)
+		}
+	}
+	data, err := json.Marshal(defs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, s.Loader.Effects, string(data))
 }
 
 // withPlugins compiles the Kubernetes and router layers into s, with s's Kubernetes side and the

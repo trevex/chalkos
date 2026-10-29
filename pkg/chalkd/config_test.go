@@ -19,7 +19,6 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
-	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -506,13 +505,16 @@ func TestApplyConfigReloadsTimeServers(t *testing.T) {
 	}
 }
 
-// TestApplyConfigActsOnItselfInProcess: chalkd takes the effects on its own loops itself, and
-// neither asks systemd nor names itself as restarted.
+// TestApplyConfigActsOnItselfInProcess: chalkd runs the layer actions of the due effects itself,
+// each once and in the order of their names, and neither asks systemd nor names itself as
+// restarted.
 func TestApplyConfigActsOnItselfInProcess(t *testing.T) {
 	s, r := configServer(t)
-	write(t, s.Loader.Effects, `{"cluster": {"when": "true", "chalkd": "restart"}, "share": {"when": "true", "chalkd": "reload"}}`)
-	var acted effects.ChalkdAction
-	s.actedOnSelf = func(a effects.ChalkdAction) { acted = a }
+	addKubernetes(t, s, k8s.KindWorker, true)
+	write(t, s.Loader.Effects, `{"cluster": {"when": "true", "chalkd": "kubernetes:restart"}, "share": {"when": "true", "chalkd": "kubernetes:reload"},
+	  "again": {"when": "true", "chalkd": "kubernetes:reload"}}`)
+	var acted []string
+	s.actedOnSelf = func(names []string) { acted = append(acted, names...) }
 	resp, err := sendConfig(s, baseConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -520,8 +522,26 @@ func TestApplyConfigActsOnItselfInProcess(t *testing.T) {
 	if len(r.Calls) != 0 || len(resp.RestartedUnits) != 0 {
 		t.Errorf("ran %v, restarted %v", r.Calls, resp.RestartedUnits)
 	}
-	if acted != effects.ChalkdRestart {
-		t.Errorf("acted on itself %v, want a restart, which a reload is part of", acted)
+	if want := []string{"kubernetes:reload", "kubernetes:restart"}; !slices.Equal(acted, want) {
+		t.Errorf("acted on itself %v, want %v", acted, want)
+	}
+}
+
+// TestApplyConfigRefusesAnUnknownAction: an effect that names an action no layer of the image has
+// is the image's failure, which refuses the delivery before it changes anything.
+func TestApplyConfigRefusesAnUnknownAction(t *testing.T) {
+	s, r := configServer(t)
+	writeEffects(t, s, `{"routes": {"when": "true", "chalkd": "router:reload"}}`)
+	renamed := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	_, err := sendConfig(s, renamed)
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "effect routes: no layer of this image has the action router:reload") {
+		t.Fatalf("err = %v, want the unknown action", err)
+	}
+	if v, err := slot.Version(slotOf(t, s)); err != nil || v != hashOf(t, baseConfig) {
+		t.Errorf("stored version = %q, %v; want the config from before", v, err)
+	}
+	if len(r.Calls) != 0 {
+		t.Errorf("a refused delivery ran %v", r.Calls)
 	}
 }
 

@@ -64,3 +64,15 @@ func (p *kubernetesLayer) Status(ctx context.Context, _ *connect.Request[kuberne
 	}
 	return connect.NewResponse(st), nil
 }
+
+var _ layer.Actions = (*kubernetesLayer)(nil)
+
+// Actions start chalkd's Kubernetes loops again: restart every loop, which reads the cluster when
+// it starts; reload the control plane's loop, which reads the share and applies the control
+// plane's objects.
+func (p *kubernetesLayer) Actions() map[string]func(context.Context) error {
+	return map[string]func(context.Context) error{
+		"restart": func(context.Context) error { p.k.Restart(); return nil },
+		"reload":  func(context.Context) error { p.k.Reload(); return nil },
+	}
+}

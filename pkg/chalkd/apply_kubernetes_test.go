@@ -58,15 +58,30 @@ func withClusterSpec(spec string) string {
 		`spec: {endpoint: "https://192.168.100.11:6443", `+strings.TrimPrefix(spec, "{"), 1)
 }
 
-// loops records what deliveries ask of chalkd's own loops.
+// loops records the layer actions deliveries run.
 func loops(s *Server) *[]string {
 	var acted []string
-	s.actedOnSelf = func(a effects.ChalkdAction) {
-		if a != "" {
-			acted = append(acted, string(a))
+	s.actedOnSelf = func(names []string) { acted = append(acted, names...) }
+	return &acted
+}
+
+// Every layer action of the default image's effects is one the Kubernetes layer has, which the
+// tests that filter the effects by their layers rely on.
+func TestFixtureEffectsActionsResolve(t *testing.T) {
+	defs, err := effects.Read("../../test/fixtures/kinds/effects.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := newTestServer(t, normal, vda)
+	withPlugins(t, s, layers.Of(layers.Kubernetes), nil)
+	for name, d := range defs {
+		if d.Chalkd == "" {
+			continue
+		}
+		if _, err := s.Plugins.Action(d.Chalkd); err != nil {
+			t.Errorf("effect %s: %v", name, err)
 		}
 	}
-	return &acted
 }
 
 func TestApplyConfigDeliversShare(t *testing.T) {
@@ -549,7 +564,7 @@ func TestApplyConfigRetriesAShareWhoseSlotFailed(t *testing.T) {
 	if recorded := readFile(t, filepath.Join(s.Paths.StateDir, "kubernetes", "share.json")); !strings.Contains(recorded, "BEGIN CERTIFICATE") {
 		t.Fatalf("share.json = %s, want the delivered share recorded", recorded)
 	}
-	if slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") || !slices.Equal(*acted, []string{"reload"}) {
+	if slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") || !slices.Equal(*acted, []string{"kubernetes:reload"}) {
 		t.Errorf("ran %v, acted on the loops %v; want the loops reloaded alone", r.Calls, *acted)
 	}
 	if err := os.Chmod(slots, 0o755); err != nil {
@@ -560,7 +575,7 @@ func TestApplyConfigRetriesAShareWhoseSlotFailed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes.service", "kubelet.service"}) || !slices.Equal(*acted, []string{"reload"}) {
+	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes.service", "kubelet.service"}) || !slices.Equal(*acted, []string{"kubernetes:reload"}) {
 		t.Errorf("the retry restarted %v, acted on the loops %v", resp.RestartedUnits, *acted)
 	}
 }
@@ -620,7 +635,7 @@ func TestApplyConfigActsOnTheLoopsWhenTheGrantedConfigFails(t *testing.T) {
 	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "write the config for the granted units") {
 		t.Fatalf("err = %v, want the granted units' config to fail", err)
 	}
-	if !slices.Equal(*acted, []string{"restart"}) {
+	if !slices.Equal(*acted, []string{"kubernetes:restart"}) {
 		t.Errorf("acted on the loops %v, want them restarted for the new cluster", *acted)
 	}
 	if err := os.Remove(credentials); err != nil {
@@ -630,7 +645,7 @@ func TestApplyConfigActsOnTheLoopsWhenTheGrantedConfigFails(t *testing.T) {
 	if _, err := sendConfig(s, next); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(*acted, []string{"restart"}) {
+	if !slices.Equal(*acted, []string{"kubernetes:restart"}) {
 		t.Errorf("the retry acted on the loops %v", *acted)
 	}
 }
@@ -669,7 +684,7 @@ func TestApplyConfigActsOnTheLoopsWhenTheNodeCertificateFails(t *testing.T) {
 	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); c.Domain != "lab.local" {
 		t.Fatalf("domain = %q, want the cluster file written", c.Domain)
 	}
-	if !slices.Equal(*acted, []string{"restart"}) {
+	if !slices.Equal(*acted, []string{"kubernetes:restart"}) {
 		t.Errorf("acted on the loops %v, want them restarted for the new cluster", *acted)
 	}
 	if err := os.Chmod(dir, 0o755); err != nil {
@@ -680,7 +695,7 @@ func TestApplyConfigActsOnTheLoopsWhenTheNodeCertificateFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes.service", "kubelet.service"}) || !slices.Equal(*acted, []string{"restart"}) {
+	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes.service", "kubelet.service"}) || !slices.Equal(*acted, []string{"kubernetes:restart"}) {
 		t.Errorf("the retry restarted %v, acted on the loops %v", resp.RestartedUnits, *acted)
 	}
 }

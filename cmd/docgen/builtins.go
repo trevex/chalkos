@@ -651,11 +651,8 @@ func writeEffects(b *strings.Builder, anchor, intro string, names []string, defs
 			}
 			does = append(does, sentence(s))
 		}
-		switch e.Chalkd {
-		case effects.ChalkdRestart:
-			does = append(does, "Restarts chalkd's Kubernetes loops.")
-		case effects.ChalkdReload:
-			does = append(does, "Reloads chalkd's control-plane loop.")
+		if e.Chalkd != "" {
+			does = append(does, "Runs chalkd's action "+code(e.Chalkd)+".")
 		}
 		fmt.Fprintf(b, "| `%s`{ #effect-%s } | %s | %s |\n",
 			name, name, tableCell(sentence(strings.Join(fires, ", or "))), tableCell(strings.Join(does, " ")))

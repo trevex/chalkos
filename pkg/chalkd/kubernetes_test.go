@@ -36,6 +36,7 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/effects"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
@@ -93,6 +94,8 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 		},
 	})
 	withPlugins(t, s, layers.Of(layers.Kubernetes), nil)
+	addLayerEffects(t, s)
+	prepareErrorHint(t, s)
 	s.Loader.Layers = []nodeconfig.Layer{kubernetesOf(s)}
 	// The loops a test started would run on against its removed files, and load the tests after
 	// it, until the test binary ends.
@@ -891,4 +894,25 @@ func TestApplyOnceLeavesTheRevokedNodesToTheApprover(t *testing.T) {
 	if n, err := k.applyOnce(context.Background(), c, cfg); err != nil || n != 0 {
 		t.Errorf("applyOnce = %d, %v", n, err)
 	}
+}
+
+// prepareErrorHint points the hint of the default image's kubernetes effect at the preparation's
+// error file of s's Kubernetes side, as the image points it at the node's.
+func prepareErrorHint(t *testing.T, s *Server) {
+	t.Helper()
+	var declared map[string]effects.Definition
+	if err := json.Unmarshal([]byte(readFile(t, s.Loader.Effects)), &declared); err != nil {
+		t.Fatal(err)
+	}
+	e, ok := declared["kubernetes"]
+	if !ok || e.Hint == nil {
+		t.Fatal("the default image's kubernetes effect has no hint")
+	}
+	e.Hint.File = s.Kubernetes.Paths.PrepareError()
+	declared["kubernetes"] = e
+	data, err := json.Marshal(declared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, s.Loader.Effects, string(data))
 }

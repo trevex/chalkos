@@ -23,7 +23,6 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/diagnostics"
-	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/layers"
@@ -157,8 +156,8 @@ type Server struct {
 
 	// clock is the time client certificates are verified at; nil is the system clock.
 	clock func() time.Time
-	// actedOnSelf, when set, is told what each delivery asked of chalkd's own loops; tests set it.
-	actedOnSelf func(effects.ChalkdAction)
+	// actedOnSelf, when set, is told the layer actions each delivery runs; tests set it.
+	actedOnSelf func([]string)
 
 	// mu serialises calls that change the node.
 	mu        sync.Mutex

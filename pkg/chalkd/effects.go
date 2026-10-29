@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 
@@ -57,6 +58,14 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 	defs, err := effects.Read(s.Loader.Effects)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
+	}
+	// An action no active plugin has would fail only once the delivery changed the node.
+	for _, effect := range slices.Sorted(maps.Keys(defs)) {
+		if a := defs[effect].Chalkd; a != "" {
+			if _, err := s.Plugins.Action(a); err != nil {
+				return nil, failed(connect.CodeInternal, "%s: effect %s: %v", s.Loader.Effects, effect, err)
+			}
+		}
 	}
 	// A delivery without config checks no document against schemas, so schemas is nil; the kinds'
 	// hashes, here and in due, need the running image's own then, the way its outputs already load
@@ -194,7 +203,7 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 	}
 	if stored || e.oldHashed {
 		if err := s.Loader.LoadConfig(); err != nil {
-			// What chalkd's loops read, the slot, the cluster file and the share, is in place.
+			// What the layer actions read, the slot and the layers' files, is in place.
 			a := actionsOf(e.defs, due)
 			s.actOnSelf(a.chalkd)
 			return nil, nil, failed(connect.CodeInternal, "write the config for the granted units: %v%s", err, a.byHand())
@@ -222,9 +231,9 @@ func (s *Server) refused(e *pendingEffects) {
 	}
 }
 
-// failedPartWay acts on the effects on chalkd's own loops for a delivery that failed once it
-// changed the node and before its slot was written: the files its loops read besides the slot,
-// the cluster file and the share, may be written by then, and the rules compare them as they are.
+// failedPartWay runs the layer actions of the effects for a delivery that failed once it changed
+// the node and before its slot was written: the files they read besides the slot, the layers'
+// files, may be written by then, and the rules compare them as they are.
 // The baseline stays, so a retry takes every effect of the delivery.
 func (s *Server) failedPartWay(ctx context.Context, e *pendingEffects, secret string) {
 	due, _, err := s.due(ctx, e, nil, secret)
@@ -240,16 +249,25 @@ func (s *Server) failedPartWay(ctx context.Context, e *pendingEffects, secret st
 //   - reload and restart: the units to reload and to restart, each sorted;
 //   - start: the units of restart to start too;
 //   - run: the commands to run, in the order of their effects' names;
-//   - chalkd: what chalkd does to its own loops, a restart taking precedence over a reload.
+//   - chalkd: the layer actions to run, sorted;
+//   - hints: the hint of each unit in the restart of any effect of the image, due or not.
 type actions struct {
 	reload, restart []string
 	start           map[string]bool
 	run             []string
-	chalkd          effects.ChalkdAction
+	chalkd          []string
+	hints           map[string]effects.Hint
 }
 
 func actionsOf(defs map[string]effects.Definition, due []string) actions {
-	a := actions{start: map[string]bool{}}
+	a := actions{start: map[string]bool{}, hints: map[string]effects.Hint{}}
+	for _, name := range slices.Sorted(maps.Keys(defs)) {
+		if d := defs[name]; d.Hint != nil {
+			for _, unit := range d.Restart {
+				a.hints[unit] = *d.Hint
+			}
+		}
+	}
 	for _, name := range due {
 		d := defs[name]
 		a.reload = append(a.reload, d.Reload...)
@@ -260,21 +278,19 @@ func actionsOf(defs map[string]effects.Definition, due []string) actions {
 		if d.Run != "" && !slices.Contains(a.run, d.Run) {
 			a.run = append(a.run, d.Run)
 		}
-		switch {
-		case d.Chalkd == effects.ChalkdRestart:
-			a.chalkd = d.Chalkd
-		case d.Chalkd == effects.ChalkdReload && a.chalkd == "":
-			a.chalkd = d.Chalkd
+		if d.Chalkd != "" {
+			a.chalkd = append(a.chalkd, d.Chalkd)
 		}
 	}
 	slices.Sort(a.reload)
 	slices.Sort(a.restart)
-	a.reload, a.restart = slices.Compact(a.reload), slices.Compact(a.restart)
+	slices.Sort(a.chalkd)
+	a.reload, a.restart, a.chalkd = slices.Compact(a.reload), slices.Compact(a.restart), slices.Compact(a.chalkd)
 	return a
 }
 
 // applyEffects reloads the units of a.reload that run, runs a.run, then restarts the units of
-// a.restart, and returns the restarted units. chalkd acts on its own loops last. A unit it
+// a.restart, and returns the restarted units. chalkd runs the layer actions last. A unit it
 // restarts is not reloaded, because the restart reads all a reload would. A unit of a.reload that
 // failed is restarted as a failed unit of a.restart is: systemctl reloads no failed unit, and its
 // start, such as a firewall's that loads the new ruleset, is what the new config needs.
@@ -287,8 +303,8 @@ func actionsOf(defs map[string]effects.Definition, due []string) actions {
 //     kind at boot. The new config may be what it lacked, and try-restart leaves a failed unit
 //     alone.
 func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) {
-	// Once the units it restarts read the new config, and whether or not they could: the
-	// cluster and the share the loops read are in place.
+	// Once the units it restarts read the new config, and whether or not they could: the files
+	// the layer actions read are in place.
 	defer s.actOnSelf(a.chalkd)
 	states := map[string]string{}
 	for _, unit := range append(slices.Clone(a.reload), a.restart...) {
@@ -370,11 +386,13 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 	if len(errs) > 0 {
 		slices.Sort(byHand.restart)
 		hand := byHand.byHand()
-		// The Kubernetes units start only once their preparation succeeds, whose reason tells
-		// more than systemctl's error; another unit's failure has its own.
-		if slices.ContainsFunc(byHand.restart, isKubernetesUnit) && s.Kubernetes != nil {
-			if prep, err := readPreparation(s.Kubernetes.Paths); err == nil && prep.failure != "" {
-				return nil, failed(connect.CodeFailedPrecondition, "%v; the node runs no kubelet: %s%s", errors.Join(errs...), prep.problem(), hand)
+		// A unit whose effect says why it may fail to start, which tells more than systemctl's
+		// error, says so.
+		for _, unit := range byHand.restart {
+			if h, ok := a.hints[unit]; ok {
+				if why := hintText(h); why != "" {
+					return nil, failed(connect.CodeFailedPrecondition, "%v; %s%s", errors.Join(errs...), why, hand)
+				}
 			}
 		}
 		return nil, failed(connect.CodeInternal, "%v%s", errors.Join(errs...), hand)
@@ -383,26 +401,33 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 	return restarted, nil
 }
 
-// isKubernetesUnit tells whether unit is one of the units the node's Kubernetes preparation
-// starts: the preparation itself, and the kubelet that waits for it.
-func isKubernetesUnit(unit string) bool {
-	return unit == "chalkos-kubernetes.service" || unit == "kubelet.service"
+// hintText is a hint's text, followed by its file's while the file holds text; "" when its file
+// holds none.
+func hintText(h effects.Hint) string {
+	if h.File == "" {
+		return h.Text
+	}
+	data, err := os.ReadFile(h.File)
+	if why := strings.TrimSpace(string(data)); err == nil && why != "" {
+		return h.Text + ": " + why
+	}
+	return ""
 }
 
-// actOnSelf reloads or restarts chalkd's Kubernetes loops, on a node with Kubernetes; a restart
-// starts the control plane's loop again too.
-func (s *Server) actOnSelf(a effects.ChalkdAction) {
+// actOnSelf runs the layer actions the delivery's effects name, on what only the running chalkd
+// holds.
+func (s *Server) actOnSelf(names []string) {
 	if s.actedOnSelf != nil {
-		s.actedOnSelf(a)
+		s.actedOnSelf(names)
 	}
-	if s.Kubernetes == nil {
-		return
-	}
-	switch a {
-	case effects.ChalkdRestart:
-		s.Kubernetes.Restart()
-	case effects.ChalkdReload:
-		s.Kubernetes.Reload()
+	for _, name := range names {
+		run, err := s.Plugins.Action(name)
+		if err == nil {
+			err = run(context.Background())
+		}
+		if err != nil {
+			log.Printf("%s: %v", name, err)
+		}
 	}
 }
 

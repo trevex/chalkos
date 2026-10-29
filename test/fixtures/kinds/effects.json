@@ -1,6 +1,7 @@
 {
   "chalkd-cluster": {
-    "chalkd": "restart",
+    "chalkd": "kubernetes:restart",
+    "hint": null,
     "kinds": [],
     "outputs": [],
     "reload": [],
@@ -10,17 +11,19 @@
     "when": "facts.cluster != oldFacts.cluster || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Cluster\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Cluster\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Flannel\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Flannel\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec))"
   },
   "chalkd-share": {
-    "chalkd": "reload",
+    "chalkd": "kubernetes:reload",
+    "hint": null,
     "kinds": [],
     "outputs": [],
     "reload": [],
     "restart": [],
     "run": "",
     "start": false,
-    "when": "cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : was.filter(k, k != \"nodeCA\").map(k, k + \"=\" + was[k]) != gets.filter(k, k != \"nodeCA\").map(k, k + \"=\" + gets[k]))) || (cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Node\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Node : {}), d.exists(n, d[n].spec.type == \"controlplane\")) && cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Addon\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten() != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Addon\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten())"
+    "when": "(cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : was.filter(k, k != \"nodeCA\").map(k, k + \"=\" + was[k]) != gets.filter(k, k != \"nodeCA\").map(k, k + \"=\" + gets[k]))) || (cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Node\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Node : {}), d.exists(n, d[n].spec.type == \"controlplane\")) && cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Addon\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten() != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Addon\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten())) && !(facts.cluster != oldFacts.cluster || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Cluster\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Cluster\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Flannel\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Flannel\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec)))"
   },
   "chrony": {
     "chalkd": "",
+    "hint": null,
     "kinds": [],
     "outputs": [
       "chrony"
@@ -33,6 +36,7 @@
   },
   "chrony-dhcp": {
     "chalkd": "",
+    "hint": null,
     "kinds": [],
     "outputs": [],
     "reload": [],
@@ -45,6 +49,7 @@
   },
   "controlplane-ports": {
     "chalkd": "",
+    "hint": null,
     "kinds": [],
     "outputs": [],
     "reload": [],
@@ -57,6 +62,10 @@
   },
   "kubernetes": {
     "chalkd": "",
+    "hint": {
+      "file": "/run/chalkos/kubernetes/prepare.error",
+      "text": "the node runs no kubelet: preparation failed"
+    },
     "kinds": [],
     "outputs": [],
     "reload": [],
@@ -70,6 +79,7 @@
   },
   "networkd": {
     "chalkd": "",
+    "hint": null,
     "kinds": [],
     "outputs": [
       "networkd"
@@ -84,6 +94,7 @@
   },
   "registry-credentials": {
     "chalkd": "",
+    "hint": null,
     "kinds": [
       "Registry"
     ],
@@ -99,6 +110,7 @@
   },
   "registry-mirrors": {
     "chalkd": "",
+    "hint": null,
     "kinds": [],
     "outputs": [],
     "reload": [],

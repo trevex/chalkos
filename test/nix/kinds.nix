@@ -839,7 +839,7 @@ lib.runTests {
           restart = [ "bird.service" ];
           start = true;
           run = "birdc configure";
-          chalkd = "reload";
+          chalkd = "kubernetes:reload";
         };
       })).bird;
     expected = {
@@ -850,7 +850,8 @@ lib.runTests {
       reload = [ ];
       run = "birdc configure";
       start = true;
-      chalkd = "reload";
+      chalkd = "kubernetes:reload";
+      hint = null;
     };
   };
   # An output reaches chalkd with its check as a script of the store.
@@ -1042,6 +1043,53 @@ lib.runTests {
     );
     expected = true;
   };
+  # An effect's chalkd action or run names a layer of the image; another layer fails.
+  testEffectOfAnotherLayerFails = {
+    expr =
+      map
+        (
+          e:
+          fails (
+            effectsOf (withBird {
+              chalkos.effects.bird = {
+                when = "true";
+              }
+              // e;
+            })
+          )
+        )
+        [
+          { chalkd = "router:reload"; }
+          { run = "/nix/store/x-chalkd/bin/chalkd router x"; }
+          { chalkd = "kubernetes:restart"; }
+          { run = "/nix/store/x-chalkd/bin/chalkd load-config"; }
+          { run = "/nix/store/x-chalkd/bin/chalkd \tload-config"; }
+        ];
+    expected = [
+      true
+      true
+      false
+      false
+      false
+    ];
+  };
+  testEffectHintReachesChalkd = {
+    expr =
+      (effectsOf (withBird {
+        chalkos.effects.bird = {
+          when = "true";
+          restart = [ "bird.service" ];
+          hint = {
+            text = "bird needs its peers";
+            file = "/run/bird/why";
+          };
+        };
+      })).bird.hint;
+    expected = {
+      text = "bird needs its peers";
+      file = "/run/bird/why";
+    };
+  };
   testOutputOfUnknownKindFails = {
     expr = fails (
       outputsOf (withBird {
@@ -1164,6 +1212,7 @@ lib.runTests {
         start = false;
         when = "";
         chalkd = "";
+        hint = null;
       };
     };
   };

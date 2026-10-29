@@ -37,6 +37,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer/layertest"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/layers"
@@ -170,25 +171,71 @@ func withPlugins(t *testing.T, s *Server, l layers.Set, r *Router) {
 }
 
 // writeEffects declares the effects of the default image, which the tests carry out, and those
-// of extra, a JSON object of effects by name, at the test server's path.
+// of extra, a JSON object of effects by name, at the test server's path. An effect of the default
+// image that runs an action of a layer s's image does not carry is left out, as an image without
+// the layer has none; addLayerEffects adds it once s has the layer.
 func writeEffects(t *testing.T, s *Server, extra string) {
 	t.Helper()
-	writeMerged(t, s.Loader.Effects, "../../test/fixtures/kinds/effects.json", extra)
+	writeMerged(t, s.Loader.Effects, "../../test/fixtures/kinds/effects.json", extra, func(raw json.RawMessage) bool {
+		return ofActiveLayer(t, s, raw)
+	})
+}
+
+// addLayerEffects adds the default image's effects that run an action of a layer s's image
+// carries, which writeEffects left out before s had the layer, to the effects s declares.
+func addLayerEffects(t *testing.T, s *Server) {
+	t.Helper()
+	var fixture, declared map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(readFile(t, "../../test/fixtures/kinds/effects.json")), &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(readFile(t, s.Loader.Effects)), &declared); err != nil {
+		t.Fatal(err)
+	}
+	for name, raw := range fixture {
+		if _, ok := declared[name]; !ok && ofActiveLayer(t, s, raw) {
+			declared[name] = raw
+		}
+	}
+	data, err := json.Marshal(declared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, s.Loader.Effects, string(data))
+}
+
+// ofActiveLayer tells whether the effect raw runs no layer action or one of a layer s's image
+// carries. An action that layer lacks stays, so the delivery refuses it.
+func ofActiveLayer(t *testing.T, s *Server, raw json.RawMessage) bool {
+	t.Helper()
+	var e effects.Definition
+	if err := json.Unmarshal(raw, &e); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chalkd == "" {
+		return true
+	}
+	name, _, _ := strings.Cut(e.Chalkd, ":")
+	return s.Plugins.Layers().Has(name)
 }
 
 // writeServices grants the kinds the default image's units read, and those of extra, a JSON object
 // of grants by unit, at the test server's path.
 func writeServices(t *testing.T, s *Server, extra string) {
 	t.Helper()
-	writeMerged(t, s.Loader.Services, "../../test/fixtures/kinds/services.json", extra)
+	writeMerged(t, s.Loader.Services, "../../test/fixtures/kinds/services.json", extra, nil)
 }
 
-// writeMerged writes the JSON object of the fixture with the keys of extra added to path.
-func writeMerged(t *testing.T, path, fixture, extra string) {
+// writeMerged writes the JSON object of the fixture with the keys of extra added to path; with
+// keep, only the fixture's values keep holds for.
+func writeMerged(t *testing.T, path, fixture, extra string, keep func(json.RawMessage) bool) {
 	t.Helper()
 	var base, more map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(readFile(t, fixture)), &base); err != nil {
 		t.Fatal(err)
+	}
+	if keep != nil {
+		maps.DeleteFunc(base, func(_ string, v json.RawMessage) bool { return !keep(v) })
 	}
 	if err := json.Unmarshal([]byte(extra), &more); err != nil {
 		t.Fatal(err)
