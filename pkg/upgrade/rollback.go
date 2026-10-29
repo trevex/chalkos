@@ -133,6 +133,16 @@ func (n *Node) Rollback(ctx context.Context, rootHash []byte) (Result, error) {
 	return Result{Entry: name}, nil
 }
 
+// Staged is the image's entry that boots next instead of the booted one: the uncounted entry a
+// rollback leaves while the running image's boot was not found healthy, or the counted entry
+// esp.StagedEntry finds, which an upgrade or another rollback leaves. false without one.
+func Staged(entries []esp.Entry, imageID string, booted esp.Entry) (esp.Entry, bool) {
+	if e, ok := rolledBack(entries, imageID, booted); ok {
+		return e, true
+	}
+	return esp.StagedEntry(entries, imageID, booted)
+}
+
 // rolledBack is the entry a rollback while the running image's boot was not found healthy left:
 // the image's highest generation, above the booted entry's, without tries. esp.StagedEntry finds
 // the counted entries an upgrade or a rollback leaves otherwise.

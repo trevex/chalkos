@@ -65,6 +65,9 @@ const (
 	// NodeServiceRollbackConfigProcedure is the fully-qualified name of the NodeService's
 	// RollbackConfig RPC.
 	NodeServiceRollbackConfigProcedure = "/chalkos.node.v1.NodeService/RollbackConfig"
+	// NodeServiceRollbackImageProcedure is the fully-qualified name of the NodeService's RollbackImage
+	// RPC.
+	NodeServiceRollbackImageProcedure = "/chalkos.node.v1.NodeService/RollbackImage"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -141,6 +144,16 @@ type NodeServiceClient interface {
 	// layers' payloads stay as they are. An upgrade's image starts without a previous config.
 	// Available in normal mode to admins.
 	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
+	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
+	// store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
+	// keeps, until the next upgrade writes the slot. The node writes no store: it checks the image's
+	// UKI as an upgrade checks a new one and renames it to the next generation with the tries it
+	// asks for, so boot counting falls back to the running image should its boots fail. While the
+	// running image's boot has not been found healthy, the name carries no tries instead: the image
+	// stays the node's known-good entry. The image boots with the config it last ran. The node
+	// reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
+	// previous image, as while an upgrade's image is staged. Available in normal mode to operators.
+	RollbackImage(context.Context, *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -238,6 +251,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("RollbackConfig")),
 			connect.WithClientOptions(opts...),
 		),
+		rollbackImage: connect.NewClient[v1.RollbackImageRequest, v1.RollbackImageResponse](
+			httpClient,
+			baseURL+NodeServiceRollbackImageProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("RollbackImage")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -257,6 +276,7 @@ type nodeServiceClient struct {
 	diagnostics    *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
 	runDiagnostic  *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
 	rollbackConfig *connect.Client[v1.RollbackConfigRequest, v1.RollbackConfigResponse]
+	rollbackImage  *connect.Client[v1.RollbackImageRequest, v1.RollbackImageResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -327,6 +347,11 @@ func (c *nodeServiceClient) RunDiagnostic(ctx context.Context, req *connect.Requ
 // RollbackConfig calls chalkos.node.v1.NodeService.RollbackConfig.
 func (c *nodeServiceClient) RollbackConfig(ctx context.Context, req *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error) {
 	return c.rollbackConfig.CallUnary(ctx, req)
+}
+
+// RollbackImage calls chalkos.node.v1.NodeService.RollbackImage.
+func (c *nodeServiceClient) RollbackImage(ctx context.Context, req *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error) {
+	return c.rollbackImage.CallUnary(ctx, req)
 }
 
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
@@ -403,6 +428,16 @@ type NodeServiceHandler interface {
 	// layers' payloads stay as they are. An upgrade's image starts without a previous config.
 	// Available in normal mode to admins.
 	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
+	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
+	// store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
+	// keeps, until the next upgrade writes the slot. The node writes no store: it checks the image's
+	// UKI as an upgrade checks a new one and renames it to the next generation with the tries it
+	// asks for, so boot counting falls back to the running image should its boots fail. While the
+	// running image's boot has not been found healthy, the name carries no tries instead: the image
+	// stays the node's known-good entry. The image boots with the config it last ran. The node
+	// reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
+	// previous image, as while an upgrade's image is staged. Available in normal mode to operators.
+	RollbackImage(context.Context, *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -496,6 +531,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("RollbackConfig")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceRollbackImageHandler := connect.NewUnaryHandler(
+		NodeServiceRollbackImageProcedure,
+		svc.RollbackImage,
+		connect.WithSchema(nodeServiceMethods.ByName("RollbackImage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -526,6 +567,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceRunDiagnosticHandler.ServeHTTP(w, r)
 		case NodeServiceRollbackConfigProcedure:
 			nodeServiceRollbackConfigHandler.ServeHTTP(w, r)
+		case NodeServiceRollbackImageProcedure:
+			nodeServiceRollbackImageHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -589,4 +632,8 @@ func (UnimplementedNodeServiceHandler) RunDiagnostic(context.Context, *connect.R
 
 func (UnimplementedNodeServiceHandler) RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RollbackConfig is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) RollbackImage(context.Context, *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RollbackImage is not implemented"))
 }

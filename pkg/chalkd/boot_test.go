@@ -13,6 +13,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -98,6 +99,84 @@ func TestStatusWithoutTheRecordOfImages(t *testing.T) {
 				Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0x33}, 32), Generation: 3}}
 			if !proto.Equal(resp.Msg.Boot, want) {
 				t.Errorf("boot = %v, want %v", resp.Msg.Boot, want)
+			}
+		})
+	}
+}
+
+// TestStatusReportsThePreviousImage names the image a rollback boots: the entry below the booted
+// one, not bad, while STATE keeps its config slot, without which it would boot without config,
+// and while no other image boots next.
+func TestStatusReportsThePreviousImage(t *testing.T) {
+	previous := bytes.Repeat([]byte{0x31}, 32)
+	for _, tc := range []struct {
+		name  string
+		files []string
+		slot  bool
+		want  *nodev1.BootImage
+	}{
+		{"kept", []string{"chalkos_1.efi", "chalkos_2.efi"}, true, &nodev1.BootImage{RootHash: previous, Generation: 1}},
+		{"before the boot is found healthy", []string{"chalkos_1.efi", "chalkos_2+2-1.efi"}, true, &nodev1.BootImage{RootHash: previous, Generation: 1}},
+		{"without its config slot", []string{"chalkos_1.efi", "chalkos_2.efi"}, false, nil},
+		{"bad", []string{"chalkos_1+0-3.efi", "chalkos_2.efi"}, true, nil},
+		{"another image staged", []string{"chalkos_1.efi", "chalkos_2.efi", "chalkos_3+3.efi"}, true, nil},
+		{"none", []string{"chalkos_2.efi"}, true, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := installedServer(t, section("", ""), false)
+			writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", tc.files...)
+			if tc.slot {
+				if err := slot.Write(slot.Dir(s.Loader.Slots, previous), slot.Stored{Version: "v1", Identity: []byte("{}")}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !proto.Equal(resp.Msg.Boot.Previous, tc.want) {
+				t.Errorf("previous = %v, want %v", resp.Msg.Boot.Previous, tc.want)
+			}
+		})
+	}
+}
+
+// TestStatusReportsTheRollback names the image the last rollback rolled back to while the node
+// runs or stages it, counted or, as a rollback before the boot was found healthy leaves it, not,
+// and not once an upgrade replaced it.
+func TestStatusReportsTheRollback(t *testing.T) {
+	record := func(s *Server, h []byte) {
+		write(t, filepath.Join(s.Paths.StateDir, "chalkd", "rollback"), hex.EncodeToString(h)+"\n")
+	}
+	staged := bytes.Repeat([]byte{0x33}, 32)
+	for _, tc := range []struct {
+		name   string
+		files  []string
+		record []byte
+		want   *nodev1.BootImage
+	}{
+		{"runs it", []string{"chalkos_1.efi", "chalkos_2.efi"}, bytes.Repeat([]byte{0x32}, 32), &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0x32}, 32), Generation: 2}},
+		{"stages it", []string{"chalkos_2.efi", "chalkos_3+3.efi"}, staged, &nodev1.BootImage{RootHash: staged, Generation: 3}},
+		{"stages it uncounted", []string{"chalkos_2+2-1.efi", "chalkos_3.efi"}, staged, &nodev1.BootImage{RootHash: staged, Generation: 3}},
+		{"another image", []string{"chalkos_1.efi", "chalkos_2.efi"}, bytes.Repeat([]byte{0x31}, 32), nil},
+		{"none", []string{"chalkos_1.efi", "chalkos_2.efi"}, nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := installedServer(t, section("", ""), false)
+			writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", tc.files...)
+			if tc.record != nil {
+				record(s, tc.record)
+			}
+			resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !proto.Equal(resp.Msg.Boot.Rollback, tc.want) {
+				t.Errorf("rollback = %v, want %v", resp.Msg.Boot.Rollback, tc.want)
+			}
+			// The image the node stages is named as staged too.
+			if tc.want != nil && !bytes.Equal(tc.want.RootHash, resp.Msg.Boot.Running.RootHash) && !proto.Equal(resp.Msg.Boot.Staged, tc.want) {
+				t.Errorf("staged = %v, want %v", resp.Msg.Boot.Staged, tc.want)
 			}
 		})
 	}

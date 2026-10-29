@@ -22,8 +22,8 @@ import (
 )
 
 // stagedImage is the root hash of the image staged to boot next instead of the running one, as an
-// upgrade without a reboot leaves it; nil without one. A node whose config slots are the running
-// image's alone has none, whatever the ESP holds: no upgrade wrote config for another.
+// upgrade or a rollback without a reboot leaves it; nil without one. A node whose config slots are
+// the running image's alone has none, whatever the ESP holds: no upgrade wrote config for another.
 func (s *Server) stagedImage() ([]byte, error) {
 	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
@@ -44,7 +44,7 @@ func (s *Server) stagedImage() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	e, ok := esp.StagedEntry(entries, readOSRelease(s.Paths.OSRelease)["IMAGE_ID"], booted)
+	e, ok := upgrade.Staged(entries, readOSRelease(s.Paths.OSRelease)["IMAGE_ID"], booted)
 	if !ok {
 		return nil, nil
 	}

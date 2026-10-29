@@ -434,6 +434,40 @@ ApplyConfigResponse says it.
 
 Field types: [StorageChange](#message-storagechange).
 
+### RollbackImage { #method-rollbackimage }
+
+RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
+store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
+keeps, until the next upgrade writes the slot. The node writes no store: it checks the image's
+UKI as an upgrade checks a new one and renames it to the next generation with the tries it
+asks for, so boot counting falls back to the running image should its boots fail. While the
+running image's boot has not been found healthy, the name carries no tries instead: the image
+stays the node's known-good entry. The image boots with the config it last ran. The node
+reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
+previous image, as while an upgrade's image is staged. Available in normal mode to operators.
+
+Request: RollbackImageRequest. Response: RollbackImageResponse.
+
+#### RollbackImageRequest { #message-rollbackimagerequest }
+
+The request of RollbackImage.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `root_hash` | bytes | The verity root hash of the previous image's store, as BootStatus.previous gives it. The node refuses another, and answers already_installed while it runs the image and already_staged while the image boots next, so a request sent twice rolls back once. Required. |
+| `reboot` | bool | Whether the node reboots into the image once it boots next. |
+
+#### RollbackImageResponse { #message-rollbackimageresponse }
+
+The response of RollbackImage.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `already_installed` | bool | Whether the node runs the image already, so nothing changed. |
+| `entry` | string | The file name of the UKI that boots the image next, with its tries while it has them. |
+| `rebooting` | bool | Whether the node reboots into the image. |
+| `already_staged` | bool | Whether the image boots next already, from entry, as a rollback without a reboot left it. |
+
 ## Messages { #messages }
 
 These messages are held by fields of other messages.
@@ -458,10 +492,12 @@ The images on the node's ESP and how the running one booted.
 | `running` | BootImage | The image the node runs. |
 | `entry` | string | File name of the UKI the node booted, in the ESP's /EFI/Linux, with its tries counter while it has one. |
 | `blessed` | bool | Whether the boot was found healthy and marked good, or not counted by the boot loader at all; false while the boot loader counts the boot's tries. |
-| `staged` | BootImage | The image an upgrade installed to boot next; unset without one. |
+| `staged` | BootImage | The image an upgrade installed or a rollback made to boot next; unset without one. |
 | `failed` | BootImage | The image whose boots used up their tries without being found healthy, from which the node fell back; unset without one. The failed UKI stays until the next upgrade. |
 | `journal` | list of string | The last lines chalkd and the health check logged during the failed image's last boot, as the check recorded them on VAR; empty without that record. |
 | `error` | string | Why the boot could not be read; empty when it was. The running image's root hash is set when the kernel command line could be read. |
+| `previous` | BootImage | The image RollbackImage boots: the one an upgrade replaced, whose UKI is on the ESP and whose config slot STATE keeps; unset without one, as after an install, while another image is staged, or after a fallback. |
+| `rollback` | BootImage | The image the last RollbackImage rolled back to, while the node runs it or boots it next; unset otherwise, and once an upgrade replaced it. A client that rolls back several nodes to one image knows by it which of them a rollback got there already. |
 
 Field types: [BootImage](#message-bootimage).
 

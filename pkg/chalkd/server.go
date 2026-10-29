@@ -132,6 +132,9 @@ type Server struct {
 	// ReadImage reads the store of an image in the inactive slot, as apply-config --staged checks
 	// config against it; nil mounts it from the boot disk. Tests replace it.
 	ReadImage func(ctx context.Context, rootHash []byte, read func(st imageStore, system string) error) error
+	// ReactivateImage makes the image the inactive slot holds, by its root hash, boot next again,
+	// as a rollback does; nil re-activates it on the boot disk. Tests replace it.
+	ReactivateImage func(ctx context.Context, rootHash []byte) (upgrade.Result, error)
 	// Journal streams the journal of the boot, or of one unit.
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.
@@ -188,7 +191,8 @@ var permissions = map[string]layer.Permission{
 	nodev1connect.NodeServiceRunDiagnosticProcedure: {Modes: layer.AnyMode, Role: pki.RoleReader},
 	// Upgrade needs the admin role when its header carries config or a fallback secret, as
 	// ApplyConfig does; Upgrade checks that itself, as the table cannot see the header.
-	nodev1connect.NodeServiceUpgradeProcedure: {Modes: layer.NormalOnly, Role: pki.RoleOperator},
+	nodev1connect.NodeServiceUpgradeProcedure:       {Modes: layer.NormalOnly, Role: pki.RoleOperator},
+	nodev1connect.NodeServiceRollbackImageProcedure: {Modes: layer.NormalOnly, Role: pki.RoleOperator},
 }
 
 // gate is where a procedure may be called: its permission and its layer, layers.Base for the

@@ -1,17 +1,24 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 // sendRollback calls RollbackConfig for the version.
@@ -133,4 +140,85 @@ func TestRollbackConfigAfterAnInterruptedWrite(t *testing.T) {
 	if len(r.Calls) != 0 {
 		t.Errorf("the refusal ran %v", r.Calls)
 	}
+}
+
+// TestRollbackImage re-activates the previous image, whose config slot STATE keeps, records it as
+// the image the last rollback rolled back to, and reboots when asked into an image the node does
+// not run; an image without a config slot is refused before anything changes, as it would boot
+// without config.
+func TestRollbackImage(t *testing.T) {
+	c := newCreds(t)
+	previous := bytes.Repeat([]byte{0x31}, 32)
+	for _, tc := range []struct {
+		name       string
+		reboot     bool
+		result     upgrade.Result
+		err        error
+		wantReboot bool
+		wantCode   connect.Code
+	}{
+		{"staged", false, upgrade.Result{Entry: "chalkos_3+3.efi"}, nil, false, 0},
+		{"staged and rebooting", true, upgrade.Result{Entry: "chalkos_3+3.efi"}, nil, true, 0},
+		{"already installed", true, upgrade.Result{AlreadyInstalled: true}, nil, false, 0},
+		{"already staged and rebooting", true, upgrade.Result{AlreadyStaged: true, Entry: "chalkos_3+3.efi"}, nil, true, 0},
+		{"refused", true, upgrade.Result{}, errors.New("the node keeps no image it ran before to roll back to"), false, connect.CodeFailedPrecondition},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := newTestServer(t, normal, vda)
+			if err := slot.Write(slot.Dir(s.Loader.Slots, previous), slot.Stored{Version: "v1", Identity: []byte("{}")}); err != nil {
+				t.Fatal(err)
+			}
+			rebooted := make(chan struct{})
+			s.RebootNode = func() { close(rebooted) }
+			s.ReactivateImage = func(_ context.Context, rootHash []byte) (upgrade.Result, error) {
+				if !bytes.Equal(rootHash, previous) {
+					t.Errorf("re-activates %x", rootHash)
+				}
+				return tc.result, tc.err
+			}
+			conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
+			resp, err := conn.RollbackImage(context.Background(), connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: previous, Reboot: tc.reboot}))
+			switch {
+			case tc.wantCode != 0:
+				if connect.CodeOf(err) != tc.wantCode || !strings.Contains(err.Error(), "roll back: the node keeps no image it ran before") {
+					t.Fatalf("rollback = %v, want code %v", err, tc.wantCode)
+				}
+			case err != nil:
+				t.Fatal(err)
+			case resp.Msg.Entry != tc.result.Entry || resp.Msg.AlreadyInstalled != tc.result.AlreadyInstalled || resp.Msg.AlreadyStaged != tc.result.AlreadyStaged || resp.Msg.Rebooting != tc.wantReboot:
+				t.Errorf("response %+v", resp.Msg)
+			}
+			if tc.err == nil {
+				data, err := os.ReadFile(filepath.Join(s.Paths.StateDir, "chalkd", "rollback"))
+				if err != nil || string(data) != hex.EncodeToString(previous)+"\n" {
+					t.Errorf("the record of the last rollback = %q, %v", data, err)
+				}
+			}
+			select {
+			case <-rebooted:
+				if !tc.wantReboot {
+					t.Error("the node rebooted")
+				}
+			case <-time.After(3 * time.Second):
+				if tc.wantReboot {
+					t.Error("the node did not reboot")
+				}
+			}
+		})
+	}
+	t.Run("without a config slot", func(t *testing.T) {
+		s, _ := newTestServer(t, normal, vda)
+		s.ReactivateImage = func(context.Context, []byte) (upgrade.Result, error) {
+			t.Error("re-activated an image without a config slot")
+			return upgrade.Result{}, nil
+		}
+		conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
+		_, err := conn.RollbackImage(context.Background(), connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: previous}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "STATE holds no config for the image") {
+			t.Errorf("rollback = %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(s.Paths.StateDir, "chalkd", "rollback")); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("the record of the last rollback: %v", err)
+		}
+	})
 }

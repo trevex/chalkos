@@ -1,13 +1,23 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
+	"errors"
+	"io/fs"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/uki"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 // RollbackConfig delivers the running image's previous config again, as rollbackConfig does. Like
@@ -74,4 +84,108 @@ func (s *Server) rollbackConfig(ctx context.Context, version string) (*nodev1.Ap
 		return nil, err
 	}
 	return resp.Msg, nil
+}
+
+// RollbackImage makes the previous image boot next again, through the upgrade path without
+// writing its store, and reboots into it when asked to. It runs under the lock an upgrade holds,
+// so neither writes the ESP while the other does. An image whose config slot STATE no longer
+// keeps is refused first: it would boot without config, fail its health check and fall back.
+func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.RollbackImageRequest]) (*connect.Response[nodev1.RollbackImageResponse], error) {
+	m := req.Msg
+	if len(m.RootHash) == 0 {
+		return nil, failed(connect.CodeInvalidArgument, "the request names no image to roll back to")
+	}
+	if !s.upgrading.TryLock() {
+		return nil, failed(connect.CodeAborted, "an upgrade or a config delivery is running")
+	}
+	defer s.upgrading.Unlock()
+	running, err := uki.RunningHash(s.Paths.Cmdline)
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
+	}
+	if !bytes.Equal(running, m.RootHash) {
+		s.mu.Lock()
+		kept := s.keepsSlot(m.RootHash)
+		s.mu.Unlock()
+		if !kept {
+			return nil, failed(connect.CodeFailedPrecondition, "STATE holds no config for the image %x, so it would boot without config", m.RootHash)
+		}
+		// The record comes first: Status reports it only while the node runs or stages the image,
+		// so a rollback that fails leaves it unreported.
+		if err := atomicfile.WriteFile(filepath.Join(s.Paths.StateDir, rollbackRecord), []byte(hex.EncodeToString(m.RootHash)+"\n"), 0o644); err != nil {
+			return nil, failed(connect.CodeInternal, "record the rollback: %v", err)
+		}
+	}
+	res, err := s.reactivate(ctx, m.RootHash)
+	if err != nil {
+		log.Printf("rollback to %x failed: %v", m.RootHash, err)
+		return nil, failed(connect.CodeFailedPrecondition, "roll back: %v", err)
+	}
+	resp := &nodev1.RollbackImageResponse{AlreadyInstalled: res.AlreadyInstalled, AlreadyStaged: res.AlreadyStaged, Entry: res.Entry}
+	switch {
+	case res.AlreadyInstalled:
+		log.Printf("%x runs already", m.RootHash)
+		return connect.NewResponse(resp), nil
+	case res.AlreadyStaged:
+		log.Printf("%x boots next already, as %s", m.RootHash, res.Entry)
+	default:
+		log.Printf("rolling back to %x, which boots next as %s", m.RootHash, res.Entry)
+	}
+	if m.Reboot {
+		log.Printf("rebooting into %x", m.RootHash)
+		resp.Rebooting = true
+		s.rebootSoon()
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// rollbackRecord is where STATE keeps the root hash of the image the last RollbackImage rolled back
+// to, below its mount point.
+const rollbackRecord = "chalkd/rollback"
+
+// rolledBackTo is the root hash the rollback record names; nil without a record, or with one that
+// cannot be read, which is logged: the record is reported, never relied on by the node.
+func (s *Server) rolledBackTo() []byte {
+	data, err := os.ReadFile(filepath.Join(s.Paths.StateDir, rollbackRecord))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	var h []byte
+	if err == nil {
+		h, err = hex.DecodeString(strings.TrimSpace(string(data)))
+	}
+	if err != nil {
+		log.Printf("read the record of the last rollback: %v", err)
+		return nil
+	}
+	return h
+}
+
+// forgetRollback removes the rollback record once an upgrade installed an image.
+func (s *Server) forgetRollback() {
+	if err := os.Remove(filepath.Join(s.Paths.StateDir, rollbackRecord)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		log.Printf("remove the record of the last rollback: %v", err)
+	}
+}
+
+// reactivate makes the image the inactive slot holds, by its root hash, boot next again.
+func (s *Server) reactivate(ctx context.Context, rootHash []byte) (upgrade.Result, error) {
+	if s.ReactivateImage != nil {
+		return s.ReactivateImage(ctx, rootHash)
+	}
+	n, err := s.upgradeNode()
+	if err != nil {
+		return upgrade.Result{}, err
+	}
+	return n.Rollback(ctx, rootHash)
+}
+
+// keepsSlot reports whether STATE keeps a config slot of the image whose store has the root hash,
+// which the image boots with.
+func (s *Server) keepsSlot(rootHash []byte) bool {
+	_, err := os.Lstat(slot.Dir(s.Loader.Slots, rootHash))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		log.Printf("look for the config slot of %x: %v", rootHash, err)
+	}
+	return err == nil
 }

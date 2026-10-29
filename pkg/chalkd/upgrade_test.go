@@ -56,6 +56,8 @@ func TestUpgrade(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := newTestServer(t, normal, vda)
+			record := filepath.Join(s.Paths.StateDir, "chalkd", "rollback")
+			write(t, record, strings.Repeat("31", 32)+"\n")
 			rebooted := make(chan struct{})
 			s.RebootNode = func() { close(rebooted) }
 			var got []byte
@@ -105,6 +107,10 @@ func TestUpgrade(t *testing.T) {
 			}
 			if !bytes.Equal(got, image) {
 				t.Errorf("the installation received %d bytes, want %d", len(got), len(image))
+			}
+			// An upgrade that installed or staged an image replaces the rollback's record.
+			if _, err := os.Stat(record); errors.Is(err, fs.ErrNotExist) != (tc.err == nil && !tc.result.AlreadyInstalled) {
+				t.Errorf("the record of the last rollback: %v", err)
 			}
 			select {
 			case <-rebooted:

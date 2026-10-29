@@ -118,6 +118,9 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		log.Printf("%x runs already", img.GetRootHash())
 		return connect.NewResponse(resp), nil
 	}
+	// The upgrade replaced how the node got to the image it stages; one to the image it runs
+	// already leaves the record of a rollback to that image.
+	s.forgetRollback()
 	if res.AlreadyStaged {
 		log.Printf("%x boots next already, as %s; its config is replaced", img.GetRootHash(), res.Entry)
 	}

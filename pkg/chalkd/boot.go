@@ -16,9 +16,11 @@ import (
 
 // bootStatus reads the boot from the ESP: the entry the node booted and whether it was blessed,
 // and the other UKI of its image an upgrade installed, staged to boot next or failed. A UKI whose
-// tries are used up while the node runs another image is an image it fell back from. Each image
-// is named by its root hash and generation, with the provenance the record of installed images
-// gives it.
+// tries are used up while the node runs another image is an image it fell back from. It also
+// names the image a rollback boots, the one an upgrade replaced, while STATE keeps its config
+// slot, and the image the last rollback rolled back to, while the node runs or stages it. Each
+// image is named by its root hash and generation, with the provenance the record of installed
+// images gives it.
 func (s *Server) bootStatus() *nodev1.BootStatus {
 	st := &nodev1.BootStatus{}
 	running, err := uki.RunningHash(s.Paths.Cmdline)
@@ -51,9 +53,25 @@ func (s *Server) bootStatus() *nodev1.BootStatus {
 			st.Staged = bootImage(images, e.RootHash, e.Generation)
 		}
 	}
+	// A rollback while the running image's boot was not found healthy leaves its entry uncounted.
+	if e, ok := upgrade.Staged(entries, booted.ImageID, booted); ok && st.Staged == nil {
+		st.Staged = bootImage(images, e.RootHash, e.Generation)
+	}
 	if failed.File != "" {
 		st.Failed = bootImage(images, failed.RootHash, failed.Generation)
 		st.Journal = s.failedBoot(failed)
+	}
+	// While another image boots next, a rollback is refused.
+	if prev, ok := upgrade.Previous(entries, booted.ImageID, booted, running); ok && st.Staged == nil && s.keepsSlot(prev.RootHash) {
+		st.Previous = bootImage(images, prev.RootHash, prev.Generation)
+	}
+	if to := s.rolledBackTo(); to != nil {
+		switch {
+		case bytes.Equal(to, running):
+			st.Rollback = bootImage(images, to, st.Running.Generation)
+		case st.Staged != nil && bytes.Equal(to, st.Staged.RootHash):
+			st.Rollback = bootImage(images, to, st.Staged.Generation)
+		}
 	}
 	return st
 }
