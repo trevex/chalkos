@@ -1224,7 +1224,7 @@ lib.runTests {
       {
         none = services (image false);
         worker = services (image true);
-        prepare = lib.hasInfix "/bin/chalkd prepare-kubernetes" (image true)
+        prepare = lib.hasInfix "/bin/chalkd kubernetes prepare" (image true)
         .systemd.services.chalkos-kubernetes.serviceConfig.ExecStart;
       };
     expected = {
@@ -1559,7 +1559,7 @@ lib.runTests {
       expr = {
         grant = services.chalkos-registry-credentials.kinds;
         credentials = unit.serviceConfig.LoadCredential;
-        command = lib.hasSuffix "/bin/chalkd registry-credentials" unit.serviceConfig.ExecStart;
+        command = lib.hasSuffix "/bin/chalkd kubernetes registry-credentials" unit.serviceConfig.ExecStart;
         beforeKubelet =
           lib.elem "kubelet.service" unit.before
           && lib.elem "chalkos-registry-credentials.service" kubelet.wants
@@ -1615,10 +1615,11 @@ lib.runTests {
               let
                 pre = prepare.serviceConfig.ExecStartPre or [ ];
               in
-              builtins.length pre == 1 && lib.hasSuffix "/bin/chalkd vxlan-rule" (builtins.elemAt pre 0);
+              builtins.length pre == 1
+              && lib.hasSuffix "/bin/chalkd kubernetes vxlan-rule" (builtins.elemAt pre 0);
             # The preparation fills the table as its last step, and nothing fills it after a failure.
             prepareFills =
-              lib.hasSuffix "/bin/chalkd prepare-kubernetes --vxlan-rule" prepare.serviceConfig.ExecStart
+              lib.hasSuffix "/bin/chalkd kubernetes prepare --vxlan-rule" prepare.serviceConfig.ExecStart
               && !(prepare.serviceConfig ? ExecStartPost);
             afterFirewall = lib.elem "nftables.service" prepare.after;
           };

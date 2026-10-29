@@ -41,10 +41,10 @@ in
       path = [ pkgs.nftables ];
       serviceConfig = {
         # No VXLAN is accepted while the addresses are picked, nor when none are found.
-        ExecStartPre = [ "${chalkd} vxlan-rule" ];
+        ExecStartPre = [ "${chalkd} kubernetes vxlan-rule" ];
         # The preparation fills the table last, so the node is marked prepared only with the rules
         # in place, and a failure to fill it is the preparation's.
-        ExecStart = "${chalkd} prepare-kubernetes --vxlan-rule";
+        ExecStart = "${chalkd} kubernetes prepare --vxlan-rule";
       };
     };
 

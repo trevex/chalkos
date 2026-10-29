@@ -12,9 +12,11 @@ import (
 	"time"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 func writeFile(t *testing.T, path, content string) {
@@ -236,65 +238,14 @@ func TestHealthArgs(t *testing.T) {
 	}
 }
 
-// TestContainerdHosts prints each registry's hosts.toml from the node's documents, in order of
-// the directories, each after the line naming it.
-func TestContainerdHosts(t *testing.T) {
-	dir := t.TempDir()
-	docs, err := config.Parse(strings.NewReader(`apiVersion: oci.chalkos.dev/v1alpha1
-kind: Registry
-metadata: {name: lan}
-spec: {host: "10.0.0.5:5000", insecure: true}
----
-apiVersion: oci.chalkos.dev/v1alpha1
-kind: Mirror
-metadata: {name: hub}
-spec: {registry: docker.io, endpoints: ["http://10.0.0.5:5000"]}
-`))
+// testRegistry is the registry of the compiled layers, bound to a server that serves nothing.
+func testRegistry(t *testing.T) *layer.Registry {
+	t.Helper()
+	reg, err := layer.NewRegistry(layers.Set{}, plugins(&chalkd.Server{Run: tool.ExecRunner{}}, nil, nil)...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := slot.WriteRuntime(dir, docs, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if err := containerdHosts(&out, dir); err != nil {
-		t.Fatal(err)
-	}
-	want := "=== 10.0.0.5:5000\nserver = \"http://10.0.0.5:5000\"\n=== docker.io\nserver = \"https://registry-1.docker.io\"\n\n[host.\"http://10.0.0.5:5000\"]\n  capabilities = [\"pull\", \"resolve\"]\n"
-	if out.String() != want {
-		t.Errorf("containerd-hosts printed %q, want %q", out.String(), want)
-	}
-}
-
-// TestRegistryCredentials writes the kubelet's credential provider files from the node's Registry
-// documents, with the password from the unit's credentials, and no password into the files
-// the kubelet's config and flags are.
-func TestRegistryCredentials(t *testing.T) {
-	runDir, creds, out := t.TempDir(), t.TempDir(), filepath.Join(t.TempDir(), "credential-provider")
-	docs, err := config.Parse(strings.NewReader(`apiVersion: oci.chalkos.dev/v1alpha1
-kind: Registry
-metadata: {name: hub}
-spec: {host: docker.io, username: hub-bot, password: {secretRef: {name: hub, key: token}}}
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := slot.WriteRuntime(runDir, docs, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(creds, "secret_hub.token"), "hub-s3cret")
-	if err := registryCredentials(runDir, creds, out); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(filepath.Join(out, "credentials.json"))
-	if want := `{"docker.io":{"username":"hub-bot","password":"hub-s3cret"}}`; err != nil || string(data) != want {
-		t.Errorf("credentials.json = %s, %v; want %s", data, err, want)
-	}
-	for _, f := range []string{"config.json", "flags"} {
-		if data, err := os.ReadFile(filepath.Join(out, f)); err != nil || strings.Contains(string(data), "hub-s3cret") {
-			t.Errorf("%s = %s, %v", f, data, err)
-		}
-	}
+	return reg
 }
 
 // TestCommandsRefuseArguments refuses, before running anything, the arguments a command does not
@@ -308,20 +259,33 @@ func TestCommandsRefuseArguments(t *testing.T) {
 		{"load-config", []string{"x"}},
 		{"health", []string{"--wait", "0"}},
 		{"health", []string{"now"}},
-		{"prepare-kubernetes", []string{"--vxlan"}},
-		{"prepare-kubernetes", []string{"--vxlan-rule", "x"}},
-		{"vxlan-rule", []string{"a", "b"}},
-		{"containerd-hosts", []string{"x"}},
-		{"registry-credentials", []string{"x"}},
-		{"credential-provider", []string{"x"}},
 	} {
-		if _, ok := errors.AsType[usageError](commands[tc.command](tc.args)); !ok {
+		if _, ok := errors.AsType[layer.UsageError](commands[tc.command](tc.args)); !ok {
 			t.Errorf("%s %q ran", tc.command, tc.args)
 		}
 	}
-	for line := range strings.Lines(usage) {
-		if name, _, _ := strings.Cut(strings.TrimSpace(line), " "); strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "   ") && commands[name] == nil {
-			t.Errorf("the usage names %s, which is no command", name)
+	reg := testRegistry(t)
+	for line := range strings.Lines(usage(reg)) {
+		if !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "   ") {
+			continue
+		}
+		if _, run, _ := lookup(reg, strings.Fields(line)); run == nil {
+			t.Errorf("the usage names %q, which is no command", strings.TrimSpace(line))
+		}
+	}
+}
+
+// TestLookupFindsLayerCommands finds a layer's command after the layer's name, and neither the
+// command alone nor under another layer.
+func TestLookupFindsLayerCommands(t *testing.T) {
+	reg := testRegistry(t)
+	name, run, args := lookup(reg, []string{"kubernetes", "prepare", "--vxlan-rule"})
+	if run == nil || name != "kubernetes prepare" || !slices.Equal(args, []string{"--vxlan-rule"}) {
+		t.Errorf("lookup = %q, %v, %q; want kubernetes prepare with --vxlan-rule", name, run != nil, args)
+	}
+	for _, args := range [][]string{{"prepare-kubernetes"}, {"router", "prepare"}, {"kubernetes"}} {
+		if _, run, _ := lookup(reg, args); run != nil {
+			t.Errorf("lookup(%q) found a command", args)
 		}
 	}
 }

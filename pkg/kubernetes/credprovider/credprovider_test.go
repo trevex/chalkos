@@ -35,7 +35,7 @@ func TestWrite(t *testing.T) {
 	want := map[string]any{
 		"apiVersion": "kubelet.config.k8s.io/v1", "kind": "CredentialProviderConfig",
 		"providers": []any{map[string]any{
-			"name": "chalkd", "args": []any{"credential-provider"}, "apiVersion": "credentialprovider.kubelet.k8s.io/v1",
+			"name": "chalkd", "args": []any{"kubernetes", "credential-provider"}, "apiVersion": "credentialprovider.kubelet.k8s.io/v1",
 			"defaultCacheDuration": "5m", "matchImages": []any{"[fd00::1]:5000", "docker.io", "quay.io"},
 		}},
 	}

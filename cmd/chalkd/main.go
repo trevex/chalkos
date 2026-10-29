@@ -30,13 +30,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
-	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/install"
-	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/kubernetes/credprovider"
-	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
-	"github.com/trevex/chalkos/pkg/kubernetes/vxlan"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -44,7 +38,8 @@ import (
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
-const usage = `usage: chalkd <command>
+// commonUsage is the usage of chalkd's own commands, which each layer's follow.
+const commonUsage = `usage: chalkd <command>
 
 commands:
   serve                            serve the node API
@@ -54,52 +49,35 @@ commands:
                                    it is, and reboot after an unhealthy boot of an image the
                                    boot loader counts; failed units ignored do not count
   health --stopped                 after a wait ended before it decided, as it would have:
-                                   record the boot and reboot when that leads on
-  prepare-kubernetes [--vxlan-rule]
-                                   pick the node's addresses and write its Kubernetes
-                                   certificates and configuration; with --vxlan-rule, then fill
-                                   the firewall's VXLAN table from them
-  vxlan-rule [FILE]                fill the firewall's VXLAN table from FILE, as the preparation
-                                   writes it, or empty it without FILE
-  containerd-hosts                 print containerd's hosts.toml of each registry the node's
-                                   Mirror and Registry documents name, each after a line
-                                   "=== <directory>"
-  registry-credentials             write the kubelet's credential provider config and the node's
-                                   registry credentials from its Registry documents
-  credential-provider              answer the kubelet's request for an image's credentials`
+                                   record the boot and reboot when that leads on`
 
-// commands are chalkd's commands by name. Each takes the arguments after its name and fails with
-// a usageError when it does not take them.
+// commands are chalkd's own commands by name. Each takes the arguments after its name and fails
+// with a layer.UsageError when it does not take them. modules/node/runtime/effects.nix lists their
+// names, which an effect's run of chalkd may use without naming a layer.
 var commands = map[string]func(args []string) error{
-	"serve":              noArgs(serve),
-	"load-config":        noArgs(loadConfig),
-	"health":             health,
-	"prepare-kubernetes": prepareKubernetes,
-	"vxlan-rule":         vxlanRule,
-	"containerd-hosts":   noArgs(func() error { return containerdHosts(os.Stdout, "/run/chalkos") }),
-	"registry-credentials": noArgs(func() error {
-		return registryCredentials("/run/chalkos", os.Getenv("CREDENTIALS_DIRECTORY"), k8s.CredentialProviderDir)
-	}),
-	"credential-provider": noArgs(func() error {
-		return credprovider.Provide(k8s.CredentialProviderDir, os.Stdin, os.Stdout)
-	}),
+	"serve":       layer.NoArgs(serve),
+	"load-config": layer.NoArgs(loadConfig),
+	"health":      health,
 }
 
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("chalkd: ")
-	var run func([]string) error
-	if len(os.Args) >= 2 {
-		run = commands[os.Args[1]]
+	// Subcommands need no server: the plugins are bound to one that serves nothing.
+	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
+	reg, err := layer.NewRegistry(layers.Set{}, plugins(node, nil, nil)...)
+	if err != nil {
+		log.Fatal(err)
 	}
+	name, run, args := lookup(reg, os.Args[1:])
 	if run == nil {
-		fmt.Fprintln(os.Stderr, usage)
+		fmt.Fprintln(os.Stderr, usage(reg))
 		os.Exit(2)
 	}
-	err := run(os.Args[2:])
-	if _, ok := errors.AsType[usageError](err); ok {
-		fmt.Fprintf(os.Stderr, "chalkd %s: %v\n", os.Args[1], err)
-		fmt.Fprintln(os.Stderr, usage)
+	err = run(args)
+	if _, ok := errors.AsType[layer.UsageError](err); ok {
+		fmt.Fprintf(os.Stderr, "chalkd %s: %v\n", name, err)
+		fmt.Fprintln(os.Stderr, usage(reg))
 		os.Exit(2)
 	}
 	if err != nil {
@@ -108,42 +86,49 @@ func main() {
 	}
 }
 
-// usageError is what a command fails with when it does not take its arguments.
-type usageError struct{ error }
-
-// noArgs is a command that takes no arguments.
-func noArgs(run func() error) func([]string) error {
-	return func(args []string) error {
-		if len(args) > 0 {
-			return usageError{fmt.Errorf("takes no argument %q", args[0])}
+// lookup finds the command args name: one of chalkd's, or a layer's as <layer> <command>, which
+// any compiled layer serves, as the units of the layer's own module run it. It returns the
+// command's name, its function and its arguments; a nil function for no command.
+func lookup(reg *layer.Registry, args []string) (string, func([]string) error, []string) {
+	if len(args) == 0 {
+		return "", nil, nil
+	}
+	if run := commands[args[0]]; run != nil {
+		return args[0], run, args[1:]
+	}
+	if len(args) >= 2 {
+		if cmd, ok := reg.Command(args[0], args[1]); ok {
+			return args[0] + " " + args[1], cmd.Run, args[2:]
 		}
-		return run()
 	}
+	return "", nil, nil
 }
 
-// prepareKubernetes prepares the node for Kubernetes, and with --vxlan-rule then fills the
-// firewall's VXLAN table.
-func prepareKubernetes(args []string) error {
-	var firewall knode.Firewall
-	switch {
-	case len(args) == 1 && args[0] == "--vxlan-rule":
-		firewall = knode.VXLANRule(vxlan.Default())
-	case len(args) > 0:
-		return usageError{fmt.Errorf("takes --vxlan-rule alone, not %q", args)}
+// usage is chalkd's usage: its own commands, then each layer's.
+func usage(reg *layer.Registry) string {
+	var b strings.Builder
+	b.WriteString(commonUsage)
+	for _, p := range reg.Compiled() {
+		c, ok := p.(layer.Commands)
+		if !ok {
+			continue
+		}
+		cmds := c.Commands()
+		for _, name := range slices.Sorted(maps.Keys(cmds)) {
+			cmd := cmds[name]
+			line := strings.TrimSpace(p.Name() + " " + name + " " + cmd.Args)
+			help := strings.Split(cmd.Help, "\n")
+			if len(line) < 33 {
+				fmt.Fprintf(&b, "\n  %-32s %s", line, help[0])
+			} else {
+				fmt.Fprintf(&b, "\n  %s\n  %-32s %s", line, "", help[0])
+			}
+			for _, more := range help[1:] {
+				fmt.Fprintf(&b, "\n  %-32s %s", "", more)
+			}
+		}
 	}
-	return knode.Prepare(knode.DefaultPaths(), time.Now(), knode.WaitForAddresses, firewall)
-}
-
-// vxlanRule fills the firewall's VXLAN table from the file given, or empties it without one.
-func vxlanRule(args []string) error {
-	if len(args) > 1 {
-		return usageError{fmt.Errorf("takes one file, not %q", args)}
-	}
-	var file string
-	if len(args) == 1 {
-		file = args[0]
-	}
-	return vxlan.Default().Apply(file)
+	return b.String()
 }
 
 // healthArgs are what chalkd health takes: how long to wait for the boot to become healthy, or
@@ -188,7 +173,7 @@ func parseHealthArgs(args []string) (healthArgs, error) {
 func loadConfig() error {
 	// Only the layers' config is asked for, so the server they are bound to serves nothing.
 	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
-	reg, err := registry(node, chalkd.NewKubernetes(chalkd.KubernetesOptions{}), &chalkd.Router{Run: node.Run})
+	reg, err := registry(node, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -203,11 +188,11 @@ func loadConfig() error {
 func health(args []string) error {
 	a, err := parseHealthArgs(args)
 	if err != nil {
-		return usageError{err}
+		return layer.UsageError{Err: err}
 	}
 	// Only the layers' hooks are asked, so the server they are bound to serves nothing.
 	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
-	reg, err := registry(node, chalkd.NewKubernetes(chalkd.KubernetesOptions{}), &chalkd.Router{Run: node.Run})
+	reg, err := registry(node, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -225,27 +210,6 @@ func health(args []string) error {
 		return fmt.Errorf("not healthy: %w", err)
 	}
 	log.Print("healthy")
-	return nil
-}
-
-// containerdHosts prints containerd's hosts.toml of each registry the node's Mirror and Registry
-// documents below runDir name, by its directory below containerd's config_path, each after a line
-// "=== <directory>", for chalkos-registry-mirrors to write.
-func containerdHosts(w io.Writer, runDir string) error {
-	docs, err := slot.ReadRuntime(runDir)
-	if err != nil {
-		return err
-	}
-	r, err := config.RegistriesOf(docs, nil)
-	if err != nil {
-		return err
-	}
-	files := r.HostsTOML()
-	for _, dir := range slices.Sorted(maps.Keys(files)) {
-		if _, err := fmt.Fprintf(w, "=== %s\n%s", dir, files[dir]); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -500,24 +464,4 @@ func addresses() string {
 		return "none yet"
 	}
 	return strings.Join(ips, " ")
-}
-
-// registryCredentials writes the kubelet's credential provider files into dir from the node's
-// Registry documents below runDir, with the passwords among the unit's credentials, which systemd
-// loads into the directory credentials: the unit is granted the Registry kind. The provider is
-// this chalkd.
-func registryCredentials(runDir, credentials, dir string) error {
-	docs, err := slot.ReadRuntime(runDir)
-	if err != nil {
-		return err
-	}
-	r, err := config.RegistriesOf(docs, slot.CredentialSecrets(credentials))
-	if err != nil {
-		return err
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	return credprovider.Write(dir, filepath.Dir(exe), r.Logins)
 }

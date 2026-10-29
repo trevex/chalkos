@@ -1064,6 +1064,9 @@ lib.runTests {
           { chalkd = "kubernetes:restart"; }
           { run = "/nix/store/x-chalkd/bin/chalkd load-config"; }
           { run = "/nix/store/x-chalkd/bin/chalkd \tload-config"; }
+          { run = "/nix/store/x-chalkd/bin/chalkd kubernetes vxlan-rule"; }
+          # A layer's command without the layer's name names no layer of the image.
+          { run = "/nix/store/x-chalkd/bin/chalkd vxlan-rule"; }
         ];
     expected = [
       true
@@ -1071,6 +1074,8 @@ lib.runTests {
       false
       false
       false
+      false
+      true
     ];
   };
   testEffectHintReachesChalkd = {

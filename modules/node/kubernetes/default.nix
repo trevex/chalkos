@@ -130,7 +130,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = lib.mkDefault "${lib.getExe chalkd} prepare-kubernetes";
+        ExecStart = lib.mkDefault "${lib.getExe chalkd} kubernetes prepare";
       };
     };
 

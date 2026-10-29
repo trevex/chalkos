@@ -6,10 +6,10 @@ let
   inherit (checkLib) worker firewall unitCheck;
 in
 {
-  # The worker's VXLAN rule, chalkd vxlan-rule as its preparation unit runs it, with its firewall,
-  # in a network namespace: a peer sends UDP to port 8472 over a veth pair, and the node receives
-  # what the firewall accepts. The rule reads the cluster's ranges from the cluster file the test
-  # writes. chalkd's unit tests cover what the rule makes of the files.
+  # The worker's VXLAN rule, chalkd kubernetes vxlan-rule as its preparation unit runs it, with its
+  # firewall, in a network namespace: a peer sends UDP to port 8472 over a veth pair, and the node
+  # receives what the firewall accepts. The rule reads the cluster's ranges from the cluster file
+  # the test writes. chalkd's unit tests cover what the rule makes of the files.
   vxlan-rule =
     let
       rule = builtins.head worker.config.systemd.services.chalkos-kubernetes.serviceConfig.ExecStartPre;

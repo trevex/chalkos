@@ -12,7 +12,7 @@ let
   # chalkd renders each registry's hosts.toml from the Mirror and Registry documents, so
   # containerd also reaches a registry over plain HTTP when its Registry allows it.
   registryMirrors = pkgs.callPackage ../../../nix/registry-mirrors.nix {
-    mirrorsCommand = "${lib.getExe chalkd} containerd-hosts";
+    mirrorsCommand = "${lib.getExe chalkd} kubernetes containerd-hosts";
   };
 in
 {
@@ -45,7 +45,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = "${lib.getExe chalkd} registry-credentials";
+        ExecStart = "${lib.getExe chalkd} kubernetes registry-credentials";
       };
     };
   };
