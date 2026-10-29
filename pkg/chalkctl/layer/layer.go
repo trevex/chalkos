@@ -206,7 +206,9 @@ type Host interface {
 	Secrets(ctx context.Context, f SecretsFlags) (clustersecrets.Secrets, error)
 }
 
-// ClusterFlags are a command's flags that name the cluster, as Host registered them.
+// ClusterFlags are a command's flags that name the cluster, as Host registered them. A plugin
+// holds them as a handle it passes back to Host, which reads them; the methods give the values of
+// single flags, and tell the kinds of handle apart.
 type ClusterFlags interface {
 	// Inventory is --inventory.
 	Inventory() string
@@ -220,7 +222,7 @@ type NodeFlags interface {
 }
 
 // SecretsFlags are a command's flags that read the cluster and its secrets file, as Host
-// registered them.
+// registered them. Unlike NodeFlags, they always name a secrets file, which Host.Secrets reads.
 type SecretsFlags interface {
 	ClusterFlags
 	// SecretsFile is --secrets.
