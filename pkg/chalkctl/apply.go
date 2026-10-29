@@ -8,15 +8,24 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
 type applyConfigFlags struct {
-	node                                 nodeFlags
-	passwordFile                         string
-	kubernetesShare, staged, diff, force bool
+	node         nodeFlags
+	passwordFile string
+	staged, diff bool
+	layers       []layerFlags
+}
+
+// layerFlags are a layer's apply-config flags with the layer that registered them.
+type layerFlags struct {
+	d layer.Delivery
+	f layer.ApplyFlags
 }
 
 func (a *app) applyConfigCommand() *cobra.Command {
@@ -31,27 +40,29 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	fs := cmd.Flags()
 	f.node.register(fs)
 	registerPasswordFile(fs, &f.passwordFile)
-	fs.BoolVar(&f.kubernetesShare, "kubernetes-share", false, "also deliver a new Kubernetes share, such as a new kubelet certificate for a worker")
-	fs.BoolVar(&f.force, "force", false, "with --kubernetes-share, deliver the share without asking the control planes whether the node is revoked")
+	for _, d := range compiled[layer.Delivery]() {
+		f.layers = append(f.layers, layerFlags{d, d.ApplyFlags(fs)})
+	}
 	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the node's image in the inventory")
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing")
 	return cmd
 }
 
 func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
-	if f.staged && f.kubernetesShare {
-		return cli.Usagef("--staged delivers config alone; deliver the Kubernetes share to the running image")
-	}
-	if f.force && !f.kubernetesShare {
-		return cli.Usagef("--force goes with --kubernetes-share")
+	for _, l := range f.layers {
+		if err := l.f.Check(f.staged); err != nil {
+			return err
+		}
 	}
 	t, err := a.target(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
-	if f.kubernetesShare && !f.diff && !f.force {
-		if err := notRevoked(ctx, t, "apply-config delivers it a Kubernetes share"); err != nil {
-			return err
+	for _, l := range f.layers {
+		if l.f.Requested() && l.f.Admitted() && !f.diff {
+			if err := l.d.Admit(ctx, pluginTarget{t}, l.f.Does()); err != nil {
+				return err
+			}
 		}
 	}
 	conn, err := dialInstalled(t)
@@ -110,18 +121,19 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if err != nil {
 		return err
 	}
-	var share []byte
-	if f.kubernetesShare {
-		if share, err = kubernetesShare(t, time.Now()); err != nil {
+	var payloads []*anypb.Any
+	for _, l := range f.layers {
+		if !l.f.Requested() {
+			continue
+		}
+		p, err := l.d.Payloads(pluginTarget{t}, time.Now())
+		if err != nil {
 			return err
 		}
-		if share == nil {
-			return fmt.Errorf("%s is no Kubernetes node: its Node names no type", t.name)
+		if len(p) == 0 {
+			return l.f.None(t.name)
 		}
-	}
-	payloads, err := sharePayloads(share)
-	if err != nil {
-		return err
+		payloads = append(payloads, p...)
 	}
 	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, Layers: payloads, Staged: f.staged}))
 	if err != nil {

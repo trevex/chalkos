@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -45,6 +46,34 @@ type ImageFacts interface {
 	// Target sets on t what the facts give config's translation; claimed is false for facts of
 	// another layer.
 	Target(facts *anypb.Any, t *config.Target) (claimed bool, err error)
+}
+
+// Delivery is a plugin whose layer takes payloads that chalkctl issues a node from the secrets
+// file, and which admits a node to them.
+type Delivery interface {
+	// Payloads are the layer's payloads for t, issued from its secrets at now; none for a node
+	// the layer gives nothing.
+	Payloads(t Target, now time.Time) ([]*anypb.Any, error)
+	// ApplyFlags registers apply-config's flags that ask for the layer's payloads.
+	ApplyFlags(fs *pflag.FlagSet) ApplyFlags
+	// Admit refuses to deliver t what the secrets file issues it, which does says.
+	Admit(ctx context.Context, t Target, does string) error
+	// AdmitInstall refuses to install t.
+	AdmitInstall(ctx context.Context, t Target) error
+}
+
+// ApplyFlags are apply-config's flags of a layer, as Delivery registered them.
+type ApplyFlags interface {
+	// Check refuses flags that do not go together; staged is --staged.
+	Check(staged bool) error
+	// Requested reports whether the flags ask for the layer's payloads.
+	Requested() bool
+	// Admitted reports whether the node is to be admitted before it gets them.
+	Admitted() bool
+	// Does says what apply-config does to the node with them, for Admit.
+	Does() string
+	// None is the error of a node the layer gives no payloads.
+	None(name string) error
 }
 
 // Host is what chalkctl gives its plugins' commands.
@@ -120,6 +149,12 @@ type Target interface {
 	// Call runs fn on a connection to the installed node; fn's error carries the node's name in
 	// place of <node>.
 	Call(fn func(conn *client.Conn) error) error
+	// Secrets are those of the secrets file chalkctl reaches the node with; empty with a client
+	// file.
+	Secrets() clustersecrets.Secrets
+	// Nodes reaches the cluster's nodes at the inventory's addresses with the target's
+	// credentials.
+	Nodes() Nodes
 }
 
 // Nodes reaches the nodes of a cluster with one set of credentials.

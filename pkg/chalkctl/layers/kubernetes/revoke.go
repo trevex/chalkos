@@ -98,7 +98,7 @@ func controlPlanesRead(h layer.Host, ctx context.Context, f viaFlags, name strin
 	if err != nil {
 		return err
 	}
-	return everyControlPlaneReads(ctx, controlPlanes, name, nodeStatusOf(nodes))
+	return everyControlPlaneReads(ctx, controlPlanes, name, NodeStatusOf(nodes))
 }
 
 // everyControlPlaneReads refuses to revoke the node while a control plane may renew its node
@@ -118,7 +118,7 @@ func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name st
 			continue
 		}
 		switch {
-		case !EverBootstrapped(k) || k.Phase == kubernetesv1.Phase_PHASE_LEFT:
+		case !everBootstrapped(k) || k.Phase == kubernetesv1.Phase_PHASE_LEFT:
 		case k.RevokedNodesError != "":
 			why = append(why, fmt.Sprintf("%s: cannot read the revoked nodes: %s", cp, k.RevokedNodesError))
 		case !k.RevokedNodesRead:
@@ -228,14 +228,4 @@ func unrevokedLine(name string, at time.Time, stale []string) string {
 		"the old %s's kubelet does not register its Node again by itself: reboot it with chalkctl reboot %s, or restart its kubelet; "+
 		"a node installed afresh as %s registers as usual",
 		name, when, strings.Join(stale, " and "), verb, name, name, name)
-}
-
-// EverBootstrapped reports whether a control plane of the Kubernetes status was bootstrapped,
-// whether or not it serves now.
-func EverBootstrapped(k *kubernetesv1.StatusResponse) bool {
-	switch k.GetPhase() {
-	case kubernetesv1.Phase_PHASE_BOOTSTRAPPED, kubernetesv1.Phase_PHASE_ETCD_DATA_MISSING, kubernetesv1.Phase_PHASE_LEFT:
-		return true
-	}
-	return false
 }

@@ -271,7 +271,7 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 		return nil
 	}
 	nodes := r.allNodes()
-	list, err := revokedNodesOf(ctx, r.nodesOf(kubernetes.KindControlPlane), r.kubernetesStatus)
+	list, err := kuberneteslayer.RevokedNodesOf(ctx, r.nodesOf(kubernetes.KindControlPlane), r.kubernetesStatus)
 	if err != nil {
 		return fmt.Errorf("%w; rotate runs only once one does, so it never hands a certificate to a revoked node, or with --ignore-revoked", err)
 	}
@@ -332,17 +332,13 @@ func (r *rotation) deliver(ctx context.Context, name string, req *nodev1.ApplyCo
 	})
 }
 
-// deliverShare sends a node whose image has Kubernetes its share as the secrets file has it now.
-func (r *rotation) deliverShare(ctx context.Context, name string) error {
+// deliverPayloads sends a node the payloads its layers issue it as the secrets file has them now.
+func (r *rotation) deliverPayloads(ctx context.Context, name string) error {
 	t, err := r.target(name)
 	if err != nil {
 		return err
 	}
-	share, err := kubernetesShare(t, r.a.now())
-	if err != nil {
-		return err
-	}
-	payloads, err := sharePayloads(share)
+	payloads, err := payloadsOf(t, r.a.now())
 	if err != nil {
 		return err
 	}
@@ -364,7 +360,7 @@ func (r *rotation) kubernetesStatus(ctx context.Context, name string) (*kubernet
 	if err != nil {
 		return nil, err
 	}
-	return nodes.kubernetesStatus(ctx, name)
+	return kuberneteslayer.NodeStatusOf(pluginNodes{nodes})(ctx, name)
 }
 
 // waitFor checks until check passes, up to the rotation's timeout.
@@ -427,7 +423,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 			return err
 		}
 		return r.eachNode(r.nodesOf(kubernetes.KindControlPlane), func(name string) error {
-			if err := r.deliverShare(ctx, name); err != nil {
+			if err := r.deliverPayloads(ctx, name); err != nil {
 				return err
 			}
 			if err := r.waitStatus(ctx, name, "to hold the new node CA", func(st *nodev1.StatusResponse) error {

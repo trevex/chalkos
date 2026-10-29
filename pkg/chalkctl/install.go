@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -81,8 +82,10 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		return fmt.Errorf("%s at %s is installed already", t.name, t.addr)
 	}
 	if !f.force {
-		if err := installNotRevoked(ctx, t); err != nil {
-			return err
+		for _, d := range compiled[layer.Delivery]() {
+			if err := d.AdmitInstall(ctx, pluginTarget{t}); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -140,11 +143,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	if header.FallbackSecret, err = a.fallbackSecret(ctx, t, fallback, f.passwordFile); err != nil {
 		return err
 	}
-	share, err := kubernetesShare(t, time.Now())
-	if err != nil {
-		return err
-	}
-	if header.Layers, err = sharePayloads(share); err != nil {
+	if header.Layers, err = payloadsOf(t, time.Now()); err != nil {
 		return err
 	}
 	if img == nil {

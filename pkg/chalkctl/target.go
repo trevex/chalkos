@@ -12,9 +12,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/pflag"
 
-	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	kuberneteslayer "github.com/trevex/chalkos/pkg/chalkctl/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 )
@@ -297,27 +295,6 @@ func nodeStatus(ctx context.Context, t *target) (*nodev1.StatusResponse, error) 
 		if err == nil {
 			st = resp.Msg
 		}
-		return err
-	})
-	return st, err
-}
-
-// kubernetesStatus reads the state of an installed node's Kubernetes.
-func (s nodeSet) kubernetesStatus(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
-	t, err := s.target(name)
-	if err != nil {
-		return nil, err
-	}
-	return nodeKubernetesStatus(ctx, t)
-}
-
-// nodeKubernetesStatus reads the state of an installed node's Kubernetes; an error that is
-// kuberneteslayer.ErrNoKubernetes when its Info names no Kubernetes layer.
-func nodeKubernetesStatus(ctx context.Context, t *target) (*kubernetesv1.StatusResponse, error) {
-	var st *kubernetesv1.StatusResponse
-	err := callNode(t, func(conn *client.Conn) error {
-		var err error
-		st, err = kuberneteslayer.NodeStatus(ctx, conn)
 		return err
 	})
 	return st, err

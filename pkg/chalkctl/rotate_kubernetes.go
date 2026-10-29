@@ -158,7 +158,7 @@ func (r *rotation) controlPlanesInTurn(ctx context.Context, kind clustersecrets.
 		if err := r.waitQuorum(ctx, name); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
-		if err := r.deliverShare(ctx, name); err != nil {
+		if err := r.deliverPayloads(ctx, name); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
 		if err := r.waitStatus(ctx, name, "to run on its new files", func(st *nodev1.StatusResponse) error {
@@ -236,7 +236,7 @@ func (r *rotation) workersTrust(ctx context.Context, workers []string) error {
 		return err
 	}
 	return r.eachNode(workers, func(name string) error {
-		if err := r.deliverShare(ctx, name); err != nil {
+		if err := r.deliverPayloads(ctx, name); err != nil {
 			return err
 		}
 		if err := r.waitStatus(ctx, name, "to trust the Kubernetes CAs", func(st *nodev1.StatusResponse) error { return applied(st, want) }); err != nil {
@@ -259,7 +259,7 @@ func (r *rotation) refreshKubernetesCA(ctx context.Context, workers []string) er
 		if st, err := r.status(ctx, name); err == nil && layer.IssuedBy(st, client.NameKubeletClient, ca) == nil {
 			return nil
 		}
-		if err := r.deliverShare(ctx, name); err != nil {
+		if err := r.deliverPayloads(ctx, name); err != nil {
 			return err
 		}
 		return r.waitStatus(ctx, name, "to use a kubelet client certificate of the new CA", func(st *nodev1.StatusResponse) error {

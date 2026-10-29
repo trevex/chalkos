@@ -11,11 +11,11 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/kubernetes"
-	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -48,8 +48,10 @@ func (a *app) nodeRenew(ctx context.Context, f nodeRenewFlags, pos []string) err
 		return err
 	}
 	if !f.force {
-		if err := notRevoked(ctx, t, "node renew issues it a node certificate"); err != nil {
-			return err
+		for _, d := range compiled[layer.Delivery]() {
+			if err := d.Admit(ctx, pluginTarget{t}, "node renew issues it a node certificate"); err != nil {
+				return err
+			}
 		}
 	}
 	names, err := t.cluster.certNames(t.name)
@@ -144,10 +146,6 @@ func (a *app) nodeCARotate(ctx context.Context, f nodeCARotateFlags) error {
 	}
 	fmt.Fprintf(a.stdout, "%s holds a new node CA, which expires %s; %s\n", file.out, nodeCA.NotAfter.UTC().Format(time.RFC3339), file.written())
 
-	share, err := kpki.ControlPlaneShare(&secrets.Kubernetes, secrets.NodeCA).Encode()
-	if err != nil {
-		return err
-	}
 	creds, err := secretCredentials(secrets)
 	if err != nil {
 		return err
@@ -156,7 +154,7 @@ func (a *app) nodeCARotate(ctx context.Context, f nodeCARotateFlags) error {
 	nodes := nodeSet{cluster: c, creds: creds, addresses: map[string]string{controlPlanes[0]: f.node.address}}
 	var failed []string
 	for _, name := range controlPlanes {
-		err := a.deliverNodeCA(ctx, nodes, name, share)
+		err := a.deliverNodeCA(ctx, nodes, name)
 		if err != nil {
 			failed = append(failed, fmt.Sprintf("%s: %v", name, err))
 			continue
@@ -169,13 +167,18 @@ func (a *app) nodeCARotate(ctx context.Context, f nodeCARotateFlags) error {
 	return nil
 }
 
-// deliverNodeCA delivers the control-plane share with the new node CA to a node, and nothing else.
-func (a *app) deliverNodeCA(ctx context.Context, nodes nodeSet, name string, share []byte) error {
-	return nodes.call(name, func(conn *client.Conn) error {
-		payloads, err := sharePayloads(share)
-		if err != nil {
-			return err
-		}
+// deliverNodeCA delivers a node the payloads its layers issue it with the new node CA, and
+// nothing else.
+func (a *app) deliverNodeCA(ctx context.Context, nodes nodeSet, name string) error {
+	t, err := nodes.target(name)
+	if err != nil {
+		return err
+	}
+	payloads, err := payloadsOf(t, time.Now())
+	if err != nil {
+		return err
+	}
+	return callNode(t, func(conn *client.Conn) error {
 		resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: payloads}))
 		if err != nil {
 			return err

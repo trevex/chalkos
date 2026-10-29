@@ -148,6 +148,11 @@ func (t pluginTarget) Name() string                                { return t.t.
 func (t pluginTarget) Cluster() layer.Cluster                      { return pluginCluster{t.t.cluster} }
 func (t pluginTarget) Dial() (*client.Conn, error)                 { return dialInstalled(t.t) }
 func (t pluginTarget) Call(fn func(conn *client.Conn) error) error { return callNode(t.t, fn) }
+func (t pluginTarget) Secrets() clustersecrets.Secrets             { return t.t.secrets }
+
+func (t pluginTarget) Nodes() layer.Nodes {
+	return pluginNodes{nodeSet{cluster: t.t.cluster, creds: t.t.creds}}
+}
 
 // pluginNodes is a nodeSet as a plugin sees it.
 type pluginNodes struct{ s nodeSet }
