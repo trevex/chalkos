@@ -1111,3 +1111,23 @@ func TestRotationOrdersAllNodes(t *testing.T) {
 		t.Errorf("allNodes = %v, want %v", got, want)
 	}
 }
+
+// TestRotationKeepsTheVersionBeforeIt leaves the secrets file's previous version at the one the
+// rotation started from, whatever the phases wrote, and names it at the finish.
+func TestRotationKeepsTheVersionBeforeIt(t *testing.T) {
+	l := newRotationLab(t)
+	path := filepath.Join(l.ta.dir, "secrets.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.rotate("node-ca"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if prev, _ := os.ReadFile(path + ".prev"); !bytes.Equal(prev, before) {
+		t.Error("secrets.json.prev is not the file from before the rotation")
+	}
+	if want := "the version from before the rotation is " + path + ".prev"; !strings.Contains(l.ta.stdout.String(), want) {
+		t.Errorf("output lacks %q:\n%s", want, l.ta.stdout)
+	}
+}

@@ -159,11 +159,11 @@ func TestRotateNodeCAOnAControlPlane(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"rotate", "node-ca"}, "n1="+addr)); err != nil {
 		t.Fatal(err)
 	}
-	// Each phase writes the file, so .prev is the version before the last phase's.
+	// The phases write the file, and .prev stays the version from before the rotation.
 	if prev, err := os.ReadFile(out + ".prev"); err != nil {
 		t.Error(err)
-	} else if s, err := clustersecrets.Read(prev, nil); err != nil || s.Rotation == nil || s.Rotation.Kind != clustersecrets.RotateNodeCA {
-		t.Errorf("secrets.json.prev is not the secrets file during the rotation: %v", err)
+	} else if s, err := clustersecrets.Read(prev, nil); err != nil || s.Rotation != nil || s.NodeCA != ta.secrets.NodeCA {
+		t.Errorf("secrets.json.prev is not the secrets file from before the rotation: %v", err)
 	}
 	data, err := os.ReadFile(out)
 	if err != nil {

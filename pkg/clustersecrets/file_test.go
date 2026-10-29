@@ -163,3 +163,22 @@ func TestOpenLocks(t *testing.T) {
 	}
 	g.Close()
 }
+
+// Overwrite replaces the file as Replace does, but leaves its previous version as it is.
+func TestOverwriteKeepsAnOlderPreviousVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secrets.json")
+	for _, data := range []string{"one", "two"} {
+		if err := Replace(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Overwrite(path, []byte("three"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "three" {
+		t.Errorf("file = %q", got)
+	}
+	if prev, _ := os.ReadFile(PreviousOf(path)); string(prev) != "one" {
+		t.Errorf("previous version = %q, want one", prev)
+	}
+}

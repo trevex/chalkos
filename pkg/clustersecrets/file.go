@@ -80,7 +80,13 @@ func lockFile(path string) (*os.File, error) {
 // Replace replaces the file with data as the package function Replace does. It refuses with
 // ErrChanged a file that changed since it was read or last replaced: the lock keeps other
 // commands out, but not an editor or a checkout, whose change would be lost.
-func (f *File) Replace(data []byte) error {
+func (f *File) Replace(data []byte) error { return f.replace(data, Replace) }
+
+// Overwrite replaces the file as Replace does, but leaves its previous version as it is, as the
+// package function Overwrite does.
+func (f *File) Overwrite(data []byte) error { return f.replace(data, Overwrite) }
+
+func (f *File) replace(data []byte, write func(string, []byte, fs.FileMode) error) error {
 	current, err := os.ReadFile(f.path)
 	if err != nil {
 		return fmt.Errorf("read the secrets file again before replacing it: %w", err)
@@ -88,7 +94,7 @@ func (f *File) Replace(data []byte) error {
 	if sha256.Sum256(current) != f.sum {
 		return ErrChanged
 	}
-	err = Replace(f.path, data, 0o600)
+	err = write(f.path, data, 0o600)
 	var unsynced *UnsyncedError
 	if err == nil || errors.As(err, &unsynced) {
 		f.sum = sha256.Sum256(data)
@@ -117,6 +123,17 @@ func Create(path string, data []byte, perm fs.FileMode) error {
 //
 // A directory that cannot be synced after the rename is an *UnsyncedError.
 func Replace(path string, data []byte, perm fs.FileMode) error {
+	return replaceFile(path, data, perm, true)
+}
+
+// Overwrite replaces path with data as Replace does, but leaves PreviousOf(path) as it is, so it
+// keeps a version older than the one path held.
+func Overwrite(path string, data []byte, perm fs.FileMode) error {
+	return replaceFile(path, data, perm, false)
+}
+
+// replaceFile is Replace, keeping what path held as PreviousOf(path) only when previous is set.
+func replaceFile(path string, data []byte, perm fs.FileMode, previous bool) error {
 	switch real, err := filepath.EvalSymlinks(path); {
 	case err == nil:
 		path = real
@@ -140,7 +157,7 @@ func Replace(path string, data []byte, perm fs.FileMode) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	defer os.Remove(tmp)
-	if exists {
+	if exists && previous {
 		if err := keepPrevious(path, perm); err != nil {
 			return fmt.Errorf("keep the previous version of %s: %w", path, err)
 		}

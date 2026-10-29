@@ -421,8 +421,9 @@ func (c *changeFlags) register(fs *pflag.FlagSet) {
 }
 
 // secretsFile is a secrets file a command changes, with where and how the changes are written:
-// back to the file in place, keeping its previous version as <file>.prev, or to new files; in the
-// format the file had, an encrypted file to the recipients it records.
+// back to the file in place, keeping its previous version as <file>.prev, the one from before a
+// rotation while one runs, or to new files; in the format the file had, an encrypted file to the
+// recipients it records.
 type secretsFile struct {
 	secrets clustersecrets.Secrets
 	// path is the file the secrets were read from, out the one they are written to.
@@ -436,6 +437,9 @@ type secretsFile struct {
 	outNew, publicNew bool
 	// file holds the secrets file's lock until Close; nil for standard input.
 	file *clustersecrets.File
+	// duringRotation is set once a write replaced a file that recorded a rotation, which left the
+	// file's previous version the one from before the rotation.
+	duringRotation bool
 }
 
 // Close releases the secrets file's lock.
@@ -583,6 +587,9 @@ func (f *secretsFile) written() string {
 	var what []string
 	if f.inPlace() {
 		what = append(what, "the previous version is "+clustersecrets.PreviousOf(f.path))
+		if f.duringRotation {
+			what[len(what)-1] = "the version from before the rotation is " + clustersecrets.PreviousOf(f.path)
+		}
 	} else {
 		what = append(what, "replace the secrets file with it")
 	}
@@ -633,17 +640,27 @@ func (a *app) writeSecretsFile(f *secretsFile, secrets clustersecrets.Secrets) e
 	if err != nil {
 		return err
 	}
-	if f.inPlace() {
+	// While the file records a rotation, its previous version stays the one from before the
+	// rotation: each phase writes the file, and the version to go back to is the one the rotation
+	// started from.
+	rotating := f.secrets.Rotation != nil
+	switch {
+	case f.inPlace() && rotating:
+		err = f.file.Overwrite(data)
+	case f.inPlace():
 		err = f.file.Replace(data)
-		if errors.Is(err, clustersecrets.ErrChanged) {
-			return fmt.Errorf("%s changed since chalkctl read it and was left as it is; look at what changed it, then run the command again", f.path)
-		}
-	} else {
+	case rotating && !f.outNew:
+		err = clustersecrets.Overwrite(f.out, data, 0o600)
+	default:
 		err = a.writeOrReplace(f.out, data, 0o600, &f.outNew)
+	}
+	if errors.Is(err, clustersecrets.ErrChanged) {
+		return fmt.Errorf("%s changed since chalkctl read it and was left as it is; look at what changed it, then run the command again", f.path)
 	}
 	if err := a.warnUnsynced(err); err != nil {
 		return err
 	}
+	f.duringRotation = rotating
 	if f.format != clustersecrets.FormatJSON {
 		a.sayRecipients(f.out, f.recipients)
 	}
