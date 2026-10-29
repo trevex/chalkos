@@ -1082,6 +1082,39 @@ func TestRollbackConfigRemovesAnUnreadableTrial(t *testing.T) {
 	}
 }
 
+// TestRollbackConfigKeepsAnUnreadableTrialItCannotRollBack keeps a trial record that cannot be
+// read when the rollback is refused: the record goes only once the config is rolled back.
+func TestRollbackConfigKeepsAnUnreadableTrialItCannotRollBack(t *testing.T) {
+	s, _ := configServer(t)
+	recordTrial(t, s, nextConfig)
+	write(t, filepath.Join(s.Paths.StateDir, trialFile), "{")
+	if _, err := sendRollback(s, "v9"); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("a rollback to a config the node does not keep: %v, want it refused", err)
+	}
+	if got := readFile(t, filepath.Join(s.Paths.StateDir, trialFile)); got != "{" {
+		t.Errorf("the record is %q, want it kept", got)
+	}
+}
+
+// TestRollbackConfigFinishesAnUnreadableTrial delivers the config the slot runs again when it is
+// the version asked for, as after a rollback at the deadline that wrote the slot and failed after,
+// and removes the record that cannot be read.
+func TestRollbackConfigFinishesAnUnreadableTrial(t *testing.T) {
+	s, _ := configServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(s.Paths.StateDir, trialFile), "{")
+	if _, err := sendRollback(s, rec.Previous); err != nil {
+		t.Fatal(err)
+	}
+	if exists(filepath.Join(s.Paths.StateDir, trialFile)) {
+		t.Error("the record stays")
+	}
+	checkRolledBack(t, s, rec)
+}
+
 // TestRestoreTrialAtBootFailing keeps the record of a trial whose slot cannot be restored, with
 // its deadline moved to the boot's time, so chalkd rolls the trial back as it starts.
 func TestRestoreTrialAtBootFailing(t *testing.T) {

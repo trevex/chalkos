@@ -419,8 +419,11 @@ During a trial it takes only the version from before the trial, ConfigTrial.prev
 rolls the config on trial back at once and ends the trial. Once a rollback at the trial's
 deadline wrote that config and failed after, the node runs it already: RollbackConfig then
 delivers it again, which finishes the rollback, and ends the trial. A trial record the node
-cannot read goes, and the rollback goes ahead as without a trial. Available in normal mode to
-admins.
+cannot read names no version: RollbackConfig rolls back to the version asked for, or delivers
+it again when the node runs it already, and removes the record once that went through. Status
+reports no trial then, so once a rollback at the deadline wrote the config from before the
+trial, previous_config_version is the config on trial, and config_version is the version that
+finishes the rollback. Available in normal mode to admins.
 
 Request: RollbackConfigRequest. Response: RollbackConfigResponse.
 

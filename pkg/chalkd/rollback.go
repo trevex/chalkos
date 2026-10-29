@@ -27,8 +27,9 @@ import (
 // trial: a trial's slot keeps the config from before it as its previous one. A slot that runs that
 // config already, as a rollback at the deadline that failed after it wrote the slot leaves it,
 // keeps the config on trial as its previous one instead, so the rollback delivers the config the
-// slot runs again, which finishes the rollback. A trial record that cannot be read goes, and the
-// rollback goes ahead as without a trial.
+// slot runs again, which finishes the rollback. A trial record that cannot be read names no
+// version, so the rollback goes to the version asked for, or delivers it again when the slot runs
+// it already, and the record goes once that went through.
 func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1.RollbackConfigRequest]) (*connect.Response[nodev1.RollbackConfigResponse], error) {
 	version := req.Msg.Version
 	if version == "" {
@@ -43,12 +44,15 @@ func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
 		// A record that cannot be read refuses every other change, and a rollback is where every
-		// trial may end, so it goes, and the rollback goes ahead as without a trial.
-		log.Printf("read the record of the config's trial: %v; removing it for the rollback", err)
-		if err := s.endTrial(); err != nil {
-			return nil, failed(connect.CodeInternal, "remove the record of the config's trial, which cannot be read: %v", err)
+		// trial may end, so it goes once the config is rolled back. A slot that runs the version
+		// asked for already, as a rollback at the deadline that failed after it wrote the slot
+		// leaves it, has it delivered again, which finishes that rollback.
+		log.Printf("read the record of the config's trial: %v; removing it once the config is rolled back", err)
+		resp, err := s.rollbackOrRedeliver(ctx, version)
+		if err != nil {
+			return nil, err
 		}
-		open = false
+		return s.endTrialRolledBack(resp, "every change is refused until a rollback removes it"), nil
 	}
 	if !open {
 		resp, _, err := s.rollbackConfig(ctx, version)
@@ -70,16 +74,35 @@ func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1
 	if err != nil {
 		return nil, err
 	}
-	// A rollback on request during a trial ends it: the node runs the config from before it again.
-	// A record that cannot be removed stays until the next change or the deadline finds the trial
-	// ended.
+	return s.endTrialRolledBack(resp, "Status shows the trial until the next delivery, upgrade or image rollback, the trial's deadline or chalkd's next start removes the record"), nil
+}
+
+// rollbackOrRedeliver rolls the config back to version, or delivers it again when the running
+// image's slot runs it already. The caller holds s.mu and s.upgrading.
+func (s *Server) rollbackOrRedeliver(ctx context.Context, version string) (*nodev1.ApplyConfigResponse, error) {
+	dir, err := s.Loader.Slot()
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
+	}
+	if running, err := slot.Version(dir); err == nil && running == version {
+		log.Printf("the node runs config %s already; delivering it again", version)
+		return s.redeliver(ctx)
+	}
+	resp, _, err := s.rollbackConfig(ctx, version)
+	return resp, err
+}
+
+// endTrialRolledBack ends the trial once a rollback on request, which resp describes, went
+// through: the node runs the config from before it again. A record that cannot be removed stays,
+// and the warning says so and, after, what follows from that. The caller holds s.mu.
+func (s *Server) endTrialRolledBack(resp *nodev1.ApplyConfigResponse, after string) *connect.Response[nodev1.RollbackConfigResponse] {
 	if err := s.endTrial(); err != nil {
 		log.Printf("end the trial: %v", err)
-		resp.Warnings = append(resp.Warnings, fmt.Sprintf("the config was rolled back, but the record of its trial could not be removed for good: %v; Status shows the trial until the next delivery, upgrade or image rollback, the trial's deadline or chalkd's next start removes the record", err))
+		resp.Warnings = append(resp.Warnings, fmt.Sprintf("the config was rolled back, but the record of its trial could not be removed for good: %v; %s", err, after))
 	} else {
 		log.Print("the trial ended with the rollback")
 	}
-	return rollbackResponse(resp), nil
+	return rollbackResponse(resp)
 }
 
 // rollbackResponse is RollbackConfig's response to a rollback that resp describes.
