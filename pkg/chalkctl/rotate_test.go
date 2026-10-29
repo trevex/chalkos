@@ -1095,3 +1095,19 @@ func TestRotateHelpNamesEveryKind(t *testing.T) {
 		t.Errorf("Short = %q, want %q", cmd.Short, want)
 	}
 }
+
+// A rotation takes the coordinators first, then every other node in name order: a node without
+// Kubernetes comes between the workers by its name, not after them.
+func TestRotationOrdersAllNodes(t *testing.T) {
+	path := writeNodes(t, t.TempDir(), []testNode{
+		{"w1", kubernetes.KindWorker, "w"}, {"a0", "", "plain"}, {"cp1", kubernetes.KindControlPlane, "cp"},
+	}, nil)
+	c, err := loadInventory(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &rotation{cluster: c, revoked: map[string]bool{}}
+	if got, want := r.allNodes(), []string{"cp1", "a0", "w1"}; !slices.Equal(got, want) {
+		t.Errorf("allNodes = %v, want %v", got, want)
+	}
+}

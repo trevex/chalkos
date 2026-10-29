@@ -137,7 +137,7 @@ func TestRenewalWithoutRenewOnlyLogs(t *testing.T) {
 	due := false
 	expires := start.Add(48 * time.Hour)
 	r := New("node certificate", func(time.Time) (bool, time.Time, error) { return due, expires, nil }, nil)
-	_, advance := runRenewal(t, r, start)
+	clock, advance := runRenewal(t, r, start)
 	if wait := advance(start); wait < 54*time.Minute || logged.Len() != 0 {
 		t.Fatalf("before it is due: next check after %v, logged %q", wait, logged.String())
 	}
@@ -147,7 +147,12 @@ func TestRenewalWithoutRenewOnlyLogs(t *testing.T) {
 			t.Errorf("once due, the next check comes after %v, want about an hour", wait)
 		}
 	}
-	if n := strings.Count(logged.String(), "nothing on this node renews it"); n != 1 {
+	r.Force()
+	if wait := clock.Next(t); wait < 54*time.Minute {
+		t.Errorf("once forced, the next check comes after %v, want about an hour", wait)
+	}
+	logs := func() int { return strings.Count(logged.String(), "nothing on this node renews it") }
+	if n := logs(); n != 1 {
 		t.Errorf("logged %d times that nothing renews it, want once: %q", n, logged.String())
 	}
 	if !strings.Contains(logged.String(), expires.UTC().Format(time.RFC3339)) {
@@ -155,5 +160,15 @@ func TestRenewalWithoutRenewOnlyLogs(t *testing.T) {
 	}
 	if r.Problem() != "" {
 		t.Errorf("problem = %q, want none", r.Problem())
+	}
+
+	// Once a check finds it no longer due, as after chalkctl node renew, the next time it falls
+	// due is logged again.
+	due = false
+	advance(start.Add(5 * time.Hour))
+	due = true
+	advance(start.Add(6 * time.Hour))
+	if n := logs(); n != 2 {
+		t.Errorf("logged %d times that nothing renews it, want twice: %q", n, logged.String())
 	}
 }

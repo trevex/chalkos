@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -12,6 +13,7 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -625,8 +627,12 @@ func signRequest(nodeCA pki.CertKey, names pki.NodeNames, request []byte, now ti
 	return pki.SignNode(nodeCA, names, csr.PublicKey.(*ecdsa.PublicKey), now)
 }
 
-// A node renewal without an issuer issues nothing, also when forced, and keeps the certificate.
+// A node renewal without an issuer issues nothing, also when forced, and keeps the certificate;
+// once due it logs that once instead.
 func TestNodeRenewalWithoutAnIssuer(t *testing.T) {
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	c := newCreds(t)
 	cert := loadedCertificate(t, c, c.node)
 	leaf := cert.Current().Leaf
@@ -643,5 +649,9 @@ func TestNodeRenewalWithoutAnIssuer(t *testing.T) {
 	clock.Next(t)
 	if cert.Current().Leaf != leaf || r.Problem() != "" {
 		t.Errorf("certificate replaced %v, problem %q", cert.Current().Leaf != leaf, r.Problem())
+	}
+	want := "node certificate is due for renewal and expires " + leaf.NotAfter.UTC().Format(time.RFC3339) + "; nothing on this node renews it"
+	if n := strings.Count(logged.String(), want); n != 1 || strings.Contains(logged.String(), "renewed") {
+		t.Errorf("logged %q, want %q once", logged.String(), want)
 	}
 }
