@@ -78,6 +78,15 @@ service NodeService {
   // names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
   // a time. Available in maintenance and normal mode to readers.
   rpc RunDiagnostic(RunDiagnosticRequest) returns (stream RunDiagnosticResponse);
+  // RollbackConfig delivers the running image's previous config again: the config the image ran
+  // before the delivery that replaced it, which the node keeps until the next delivery replaces
+  // it in turn. It goes through ApplyConfig's checks and steps: the image's change rules compared
+  // with the config the node runs and the machine, storage changes, outputs and effects, so a
+  // refusal names the rule. The config it replaces becomes the previous one, so a second rollback
+  // undoes the first. Only the config documents return: the OS CAs, the node certificate and the
+  // layers' payloads stay as they are. An upgrade's image starts without a previous config.
+  // Available in normal mode to admins.
+  rpc RollbackConfig(RollbackConfigRequest) returns (RollbackConfigResponse);
 }
 
 // The mode chalkd serves the node in.
@@ -453,6 +462,26 @@ message ResetVolumeRequest {
 
 // The response of ResetVolume, once the volume is created again.
 message ResetVolumeResponse {}
+
+// The request of RollbackConfig.
+message RollbackConfigRequest {
+  // The version of the previous config to deliver again, as
+  // StatusResponse.previous_config_version gives it. The node refuses another with
+  // FAILED_PRECONDITION, so a request sent twice rolls back once. Required.
+  string version = 1;
+}
+
+// The response of RollbackConfig: what delivering the previous config changed, as
+// ApplyConfigResponse says it.
+message RollbackConfigResponse {
+  // Storage changes that were applied.
+  repeated StorageChange changes = 1;
+  // Units the delivery restarted, as the image's effects say.
+  repeated string restarted_units = 2;
+  // Why the rule of an effect could not be evaluated, without the values it read; the delivery
+  // took the effect all the same.
+  repeated string warnings = 3;
+}
 
 // The request of Status.
 message StatusRequest {}

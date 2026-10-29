@@ -62,6 +62,9 @@ const (
 	// NodeServiceRunDiagnosticProcedure is the fully-qualified name of the NodeService's RunDiagnostic
 	// RPC.
 	NodeServiceRunDiagnosticProcedure = "/chalkos.node.v1.NodeService/RunDiagnostic"
+	// NodeServiceRollbackConfigProcedure is the fully-qualified name of the NodeService's
+	// RollbackConfig RPC.
+	NodeServiceRollbackConfigProcedure = "/chalkos.node.v1.NodeService/RollbackConfig"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -129,6 +132,15 @@ type NodeServiceClient interface {
 	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
 	// a time. Available in maintenance and normal mode to readers.
 	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest]) (*connect.ServerStreamForClient[v1.RunDiagnosticResponse], error)
+	// RollbackConfig delivers the running image's previous config again: the config the image ran
+	// before the delivery that replaced it, which the node keeps until the next delivery replaces
+	// it in turn. It goes through ApplyConfig's checks and steps: the image's change rules compared
+	// with the config the node runs and the machine, storage changes, outputs and effects, so a
+	// refusal names the rule. The config it replaces becomes the previous one, so a second rollback
+	// undoes the first. Only the config documents return: the OS CAs, the node certificate and the
+	// layers' payloads stay as they are. An upgrade's image starts without a previous config.
+	// Available in normal mode to admins.
+	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -220,24 +232,31 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("RunDiagnostic")),
 			connect.WithClientOptions(opts...),
 		),
+		rollbackConfig: connect.NewClient[v1.RollbackConfigRequest, v1.RollbackConfigResponse](
+			httpClient,
+			baseURL+NodeServiceRollbackConfigProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("RollbackConfig")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // nodeServiceClient implements NodeServiceClient.
 type nodeServiceClient struct {
-	info          *connect.Client[v1.InfoRequest, v1.InfoResponse]
-	disks         *connect.Client[v1.DisksRequest, v1.DisksResponse]
-	contract      *connect.Client[v1.ContractRequest, v1.ContractResponse]
-	install       *connect.Client[v1.InstallRequest, v1.InstallResponse]
-	applyConfig   *connect.Client[v1.ApplyConfigRequest, v1.ApplyConfigResponse]
-	getConfig     *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
-	resetVolume   *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
-	status        *connect.Client[v1.StatusRequest, v1.StatusResponse]
-	logs          *connect.Client[v1.LogsRequest, v1.LogsResponse]
-	reboot        *connect.Client[v1.RebootRequest, v1.RebootResponse]
-	upgrade       *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
-	diagnostics   *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
-	runDiagnostic *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
+	info           *connect.Client[v1.InfoRequest, v1.InfoResponse]
+	disks          *connect.Client[v1.DisksRequest, v1.DisksResponse]
+	contract       *connect.Client[v1.ContractRequest, v1.ContractResponse]
+	install        *connect.Client[v1.InstallRequest, v1.InstallResponse]
+	applyConfig    *connect.Client[v1.ApplyConfigRequest, v1.ApplyConfigResponse]
+	getConfig      *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
+	resetVolume    *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
+	status         *connect.Client[v1.StatusRequest, v1.StatusResponse]
+	logs           *connect.Client[v1.LogsRequest, v1.LogsResponse]
+	reboot         *connect.Client[v1.RebootRequest, v1.RebootResponse]
+	upgrade        *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
+	diagnostics    *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
+	runDiagnostic  *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
+	rollbackConfig *connect.Client[v1.RollbackConfigRequest, v1.RollbackConfigResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -305,6 +324,11 @@ func (c *nodeServiceClient) RunDiagnostic(ctx context.Context, req *connect.Requ
 	return c.runDiagnostic.CallServerStream(ctx, req)
 }
 
+// RollbackConfig calls chalkos.node.v1.NodeService.RollbackConfig.
+func (c *nodeServiceClient) RollbackConfig(ctx context.Context, req *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error) {
+	return c.rollbackConfig.CallUnary(ctx, req)
+}
+
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in maintenance and normal mode to readers.
@@ -370,6 +394,15 @@ type NodeServiceHandler interface {
 	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
 	// a time. Available in maintenance and normal mode to readers.
 	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest], *connect.ServerStream[v1.RunDiagnosticResponse]) error
+	// RollbackConfig delivers the running image's previous config again: the config the image ran
+	// before the delivery that replaced it, which the node keeps until the next delivery replaces
+	// it in turn. It goes through ApplyConfig's checks and steps: the image's change rules compared
+	// with the config the node runs and the machine, storage changes, outputs and effects, so a
+	// refusal names the rule. The config it replaces becomes the previous one, so a second rollback
+	// undoes the first. Only the config documents return: the OS CAs, the node certificate and the
+	// layers' payloads stay as they are. An upgrade's image starts without a previous config.
+	// Available in normal mode to admins.
+	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -457,6 +490,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("RunDiagnostic")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceRollbackConfigHandler := connect.NewUnaryHandler(
+		NodeServiceRollbackConfigProcedure,
+		svc.RollbackConfig,
+		connect.WithSchema(nodeServiceMethods.ByName("RollbackConfig")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -485,6 +524,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceDiagnosticsHandler.ServeHTTP(w, r)
 		case NodeServiceRunDiagnosticProcedure:
 			nodeServiceRunDiagnosticHandler.ServeHTTP(w, r)
+		case NodeServiceRollbackConfigProcedure:
+			nodeServiceRollbackConfigHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -544,4 +585,8 @@ func (UnimplementedNodeServiceHandler) Diagnostics(context.Context, *connect.Req
 
 func (UnimplementedNodeServiceHandler) RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest], *connect.ServerStream[v1.RunDiagnosticResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RunDiagnostic is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RollbackConfig is not implemented"))
 }

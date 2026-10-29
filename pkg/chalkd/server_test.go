@@ -508,6 +508,8 @@ func call(c *client.Conn, procedure string) connect.Code {
 		_, err = c.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{}))
 	case "ApplyConfig":
 		_, err = c.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{}))
+	case "RollbackConfig":
+		_, err = c.RollbackConfig(ctx, connect.NewRequest(&nodev1.RollbackConfigRequest{}))
 	case "ResetVolume":
 		_, err = c.ResetVolume(ctx, connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "data"}))
 	case "Contract":
@@ -590,20 +592,20 @@ func TestAuthorisation(t *testing.T) {
 	}{
 		{"normal", normal, true, map[pki.Role]map[string]connect.Code{
 			// The test image has no layers, whose RPCs are unimplemented for every role.
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "RollbackConfig": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
 				"EtcdMembers": connect.CodeUnimplemented, "EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented,
 				"RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented,
 				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented,
 				"KubernetesStatus": connect.CodeUnimplemented, "RouterStatus": connect.CodeUnimplemented, "Routes": connect.CodeUnimplemented},
 			// A request without a header is refused after authorisation, an upgrade with config for
 			// the role.
-			pki.RoleOperator: {"Reboot": 0, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Bootstrap": connect.CodeUnimplemented,
+			pki.RoleOperator: {"Reboot": 0, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "RollbackConfig": connect.CodePermissionDenied, "Bootstrap": connect.CodeUnimplemented,
 				"EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented, "RotationStep": connect.CodeUnimplemented,
 				"Upgrade": connect.CodeInvalidArgument, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented, "UncordonNode": connect.CodeUnimplemented,
 				"GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented},
 			// An empty request and a reset without config are refused after authorisation; refusing
 			// them means the call got through.
-			pki.RoleAdmin: {"ApplyConfig": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeUnimplemented,
+			pki.RoleAdmin: {"ApplyConfig": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "RollbackConfig": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeUnimplemented,
 				"EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented, "RenewNodeCertificate": connect.CodeUnimplemented,
 				"RotationStep": connect.CodeUnimplemented, "GetConfig": 0, "UpgradeWithConfig": connect.CodeInvalidArgument, "RevokeNode": connect.CodeUnimplemented,
 				"UnrevokeNode": connect.CodeUnimplemented},
@@ -617,7 +619,7 @@ func TestAuthorisation(t *testing.T) {
 		{"maintenance with OS CA", maintenance, true, map[pki.Role]map[string]connect.Code{
 			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeUnimplemented},
 			// A header without a target is refused after authorisation.
-			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyConfig": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeUnimplemented, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeUnimplemented,
+			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyConfig": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "RollbackConfig": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeUnimplemented, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeUnimplemented,
 				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodeFailedPrecondition, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented},
 			unknownOrganization: {"Info": connect.CodePermissionDenied, "Install": connect.CodePermissionDenied},
 		}},

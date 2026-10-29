@@ -37,6 +37,11 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 	if resp.PreviousConfigVersion, err = slot.Version(slot.Previous(dir)); err != nil {
 		return nil, failed(connect.CodeInternal, "read the previous config's version: %v", err)
 	}
+	// A write interrupted between the previous link and the slot's leaves both naming one set,
+	// which is no config to roll back to.
+	if resp.PreviousConfigVersion == resp.ConfigVersion {
+		resp.PreviousConfigVersion = ""
+	}
 
 	var status storage.Status
 	if raw, err := os.ReadFile(s.Paths.StorageStatus); err == nil {

@@ -400,6 +400,40 @@ A message of the RunDiagnostic stream: output as the command prints it, then how
 
 Field types: [DiagnosticExit](#message-diagnosticexit).
 
+### RollbackConfig { #method-rollbackconfig }
+
+RollbackConfig delivers the running image's previous config again: the config the image ran
+before the delivery that replaced it, which the node keeps until the next delivery replaces
+it in turn. It goes through ApplyConfig's checks and steps: the image's change rules compared
+with the config the node runs and the machine, storage changes, outputs and effects, so a
+refusal names the rule. The config it replaces becomes the previous one, so a second rollback
+undoes the first. Only the config documents return: the OS CAs, the node certificate and the
+layers' payloads stay as they are. An upgrade's image starts without a previous config.
+Available in normal mode to admins.
+
+Request: RollbackConfigRequest. Response: RollbackConfigResponse.
+
+#### RollbackConfigRequest { #message-rollbackconfigrequest }
+
+The request of RollbackConfig.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `version` | string | The version of the previous config to deliver again, as StatusResponse.previous_config_version gives it. The node refuses another with FAILED_PRECONDITION, so a request sent twice rolls back once. Required. |
+
+#### RollbackConfigResponse { #message-rollbackconfigresponse }
+
+The response of RollbackConfig: what delivering the previous config changed, as
+ApplyConfigResponse says it.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `changes` | list of StorageChange | Storage changes that were applied. |
+| `restarted_units` | list of string | Units the delivery restarted, as the image's effects say. |
+| `warnings` | list of string | Why the rule of an effect could not be evaluated, without the values it read; the delivery took the effect all the same. |
+
+Field types: [StorageChange](#message-storagechange).
+
 ## Messages { #messages }
 
 These messages are held by fields of other messages.

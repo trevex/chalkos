@@ -171,17 +171,18 @@ type Server struct {
 // permissions are the modes and least role of each procedure of the node API. The authorizer
 // refuses a procedure without an entry.
 var permissions = map[string]layer.Permission{
-	nodev1connect.NodeServiceInfoProcedure:        {Modes: layer.AnyMode, Role: pki.RoleReader},
-	nodev1connect.NodeServiceDisksProcedure:       {Modes: layer.AnyMode, Role: pki.RoleReader},
-	nodev1connect.NodeServiceContractProcedure:    {Modes: layer.AnyMode, Role: pki.RoleReader},
-	nodev1connect.NodeServiceInstallProcedure:     {Modes: layer.MaintenanceOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceApplyConfigProcedure: {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceGetConfigProcedure:   {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceResetVolumeProcedure: {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceStatusProcedure:      {Modes: layer.NormalOnly, Role: pki.RoleReader},
-	nodev1connect.NodeServiceLogsProcedure:        {Modes: layer.AnyMode, Role: pki.RoleReader},
-	nodev1connect.NodeServiceRebootProcedure:      {Modes: layer.AnyMode, Role: pki.RoleOperator},
-	nodev1connect.NodeServiceDiagnosticsProcedure: {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceInfoProcedure:           {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceDisksProcedure:          {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceContractProcedure:       {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceInstallProcedure:        {Modes: layer.MaintenanceOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceApplyConfigProcedure:    {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceGetConfigProcedure:      {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceResetVolumeProcedure:    {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceRollbackConfigProcedure: {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceStatusProcedure:         {Modes: layer.NormalOnly, Role: pki.RoleReader},
+	nodev1connect.NodeServiceLogsProcedure:           {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceRebootProcedure:         {Modes: layer.AnyMode, Role: pki.RoleOperator},
+	nodev1connect.NodeServiceDiagnosticsProcedure:    {Modes: layer.AnyMode, Role: pki.RoleReader},
 	// RunDiagnostic also needs the diagnostic's own role, which it checks itself, as the table
 	// cannot see the request.
 	nodev1connect.NodeServiceRunDiagnosticProcedure: {Modes: layer.AnyMode, Role: pki.RoleReader},
