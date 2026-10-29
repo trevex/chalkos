@@ -71,6 +71,10 @@ func trusted(t *testing.T, s Secrets, kind RotationKind) []string {
 // the old one, and nothing else in the file changes.
 func TestRotationPhases(t *testing.T) {
 	for _, kind := range RotationKinds {
+		// Nodes trust the node CA through the OS CA alone: TestNodeCARotation runs its phases.
+		if kind == RotateNodeCA {
+			continue
+		}
 		t.Run(string(kind), func(t *testing.T) {
 			s := generate(t)
 			before := trusted(t, s, kind)
@@ -164,6 +168,51 @@ func TestRotationPhases(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestNodeCARotation runs the node CA's phases: the new node CA waits in the rotation until the
+// switch makes it the one that issues, nothing is accepted besides, and nothing else changes.
+func TestNodeCARotation(t *testing.T) {
+	s := generate(t)
+	before := s
+	if err := s.BeginRotation(RotateNodeCA, now); err != nil {
+		t.Fatal(err)
+	}
+	s = roundTrip(t, s)
+	n := s.Rotation.New
+	if n == nil || n.NodeCA == nil || n.OSCA != nil || s.NodeCA != before.NodeCA || len(s.Accepted.OSCA) != 0 {
+		t.Fatalf("after the start: new %v, node CA changed %v", n, s.NodeCA != before.NodeCA)
+	}
+	if err := pki.ValidateNodeCA(*n.NodeCA, s.OSCA.Certificate); err != nil {
+		t.Errorf("the new node CA: %v", err)
+	}
+	next := *n.NodeCA
+	if err := s.SwitchRotation(); err == nil {
+		t.Fatal("switched before every node applied the accept phase")
+	}
+	if err := s.RecordApplied(now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SwitchRotation(); err != nil {
+		t.Fatal(err)
+	}
+	s = roundTrip(t, s)
+	if s.NodeCA != next || s.Rotation.New != nil {
+		t.Fatalf("after the switch: node CA is the new one %v, new values %v", s.NodeCA == next, s.Rotation.New)
+	}
+	for _, step := range []func() error{
+		func() error { return s.RecordApplied(now) }, s.RefreshRotation,
+		func() error { return s.RecordApplied(now) }, s.FinishRotation,
+		func() error { return s.RecordApplied(now) }, s.EndRotation,
+	} {
+		if err := step(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s = roundTrip(t, s)
+	if s.Rotation != nil || s.OSCA != before.OSCA || s.Kubernetes.CA != before.Kubernetes.CA || s.NodeCA != next {
+		t.Errorf("after the rotation: %v", s.Rotation)
 	}
 }
 
@@ -348,6 +397,15 @@ func TestValidateRefusesInconsistentRotations(t *testing.T) {
 			s.Kubernetes.Accepted.CA, s.Kubernetes.Accepted.FrontProxyCA, s.Kubernetes.Accepted.EtcdCA = []string{k.CA.Certificate}, []string{k.FrontProxyCA.Certificate}, []string{k.EtcdCA.Certificate}
 			s.Rotation = &Rotation{Kind: RotateKubernetesCA, Phase: PhaseAccept, New: &NewValues{CA: &k.CA, FrontProxyCA: &k.FrontProxyCA, EtcdCA: &k.EtcdCA, OSCA: &other.OSCA}}
 		},
+		"a node CA's rotation without the new node CA": func(s *Secrets) {
+			s.Rotation = &Rotation{Kind: RotateNodeCA, Phase: PhaseAccept, New: &NewValues{}}
+		},
+		"a node CA's rotation with a new OS CA": func(s *Secrets) {
+			s.Rotation = &Rotation{Kind: RotateNodeCA, Phase: PhaseAccept, New: &NewValues{OSCA: &other.OSCA, NodeCA: &other.NodeCA}}
+		},
+		"a node CA's rotation with a node CA of another OS CA": func(s *Secrets) {
+			s.Rotation = &Rotation{Kind: RotateNodeCA, Phase: PhaseAccept, New: &NewValues{NodeCA: &other.NodeCA}}
+		},
 		"two accepted OS CAs": func(s *Secrets) {
 			s.Accepted.OSCA = []string{other.OSCA.Certificate, generate(t).OSCA.Certificate}
 			s.Rotation = &Rotation{Kind: RotateOSCA, Phase: PhaseRefresh, Switched: now}
@@ -395,7 +453,7 @@ func TestValidateRefusesInconsistentRotations(t *testing.T) {
 // TestRotationRedacted checks that nothing a rotation adds to the secrets file appears when they
 // are printed.
 func TestRotationRedacted(t *testing.T) {
-	for _, kind := range []RotationKind{RotateServiceAccountKey, RotateEncryptionKey, RotateOSCA} {
+	for _, kind := range []RotationKind{RotateServiceAccountKey, RotateEncryptionKey, RotateOSCA, RotateNodeCA} {
 		s := generate(t)
 		if err := s.BeginRotation(kind, now); err != nil {
 			t.Fatal(err)
@@ -404,7 +462,10 @@ func TestRotationRedacted(t *testing.T) {
 		if n := s.Rotation.New; n != nil {
 			secrets = append(secrets, n.ServiceAccountKey)
 			if n.OSCA != nil {
-				secrets = append(secrets, n.OSCA.Key, n.NodeCA.Key)
+				secrets = append(secrets, n.OSCA.Key)
+			}
+			if n.NodeCA != nil {
+				secrets = append(secrets, n.NodeCA.Key)
 			}
 		}
 		for _, key := range s.Kubernetes.Accepted.EncryptionKeys {

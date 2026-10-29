@@ -23,28 +23,22 @@ type RotationKind string
 // What chalkctl rotate rotates.
 const (
 	RotateOSCA              RotationKind = "os-ca"
+	RotateNodeCA            RotationKind = "node-ca"
 	RotateKubernetesCA      RotationKind = "kubernetes-ca"
 	RotateServiceAccountKey RotationKind = "service-account-key"
 	RotateEncryptionKey     RotationKind = "encryption-key"
 )
 
-// RotationKinds lists what can be rotated, in the order chalkctl names them.
-var RotationKinds = []RotationKind{RotateOSCA, RotateKubernetesCA, RotateServiceAccountKey, RotateEncryptionKey}
-
-// RotationKindList names every kind as chalkctl rotate takes it, separated by commas.
-func RotationKindList() string {
-	names := make([]string, len(RotationKinds))
-	for i, k := range RotationKinds {
-		names[i] = string(k)
-	}
-	return strings.Join(names, ", ")
-}
+// RotationKinds lists what a secrets file may record a rotation of.
+var RotationKinds = []RotationKind{RotateOSCA, RotateNodeCA, RotateKubernetesCA, RotateServiceAccountKey, RotateEncryptionKey}
 
 // Name names what a kind of rotation rotates in prose.
 func (k RotationKind) Name() string {
 	switch k {
 	case RotateOSCA:
 		return "OS CA"
+	case RotateNodeCA:
+		return "node CA"
 	case RotateKubernetesCA:
 		return "Kubernetes CAs"
 	case RotateServiceAccountKey:
@@ -161,10 +155,12 @@ func (n NewValues) String() string { return "clustersecrets.NewValues{redacted}"
 // GoString redacts like String.
 func (n NewValues) GoString() string { return n.String() }
 
-// onlyOf reports whether the new values hold nothing but values of kind.
+// onlyOf reports whether the new values hold nothing but values of kind. The OS CA's hold its
+// new node CA too; a new node CA without an OS CA is the node CA's.
 func (n NewValues) onlyOf(kind RotationKind) bool {
 	of := map[RotationKind]bool{
-		RotateOSCA:              n.OSCA != nil || n.NodeCA != nil,
+		RotateOSCA:              n.OSCA != nil,
+		RotateNodeCA:            n.NodeCA != nil && n.OSCA == nil,
 		RotateKubernetesCA:      n.CA != nil || n.FrontProxyCA != nil || n.EtcdCA != nil,
 		RotateServiceAccountKey: n.ServiceAccountKey != "",
 	}
@@ -403,6 +399,13 @@ func (s Secrets) validateRotation() error {
 			return fmt.Errorf("rotation.new.nodeCA: %w", err)
 		}
 		return requireAccepted("rotation.new.osCA", n.OSCA.Certificate, s.Accepted.OSCA)
+	case RotateNodeCA:
+		if n.NodeCA == nil {
+			return errors.New("rotation: the new node CA is missing")
+		}
+		if err := pki.ValidateNodeCA(*n.NodeCA, s.OSCA.Certificate); err != nil {
+			return fmt.Errorf("rotation.new.nodeCA: %w", err)
+		}
 	case RotateKubernetesCA:
 		for _, ca := range []struct {
 			name     string
@@ -507,6 +510,12 @@ func (s *Secrets) BeginRotation(kind RotationKind, now time.Time) error {
 		}
 		n.OSCA, n.NodeCA = &root, &nodeCA
 		s.Accepted.OSCA = append(s.Accepted.OSCA, root.Certificate)
+	case RotateNodeCA:
+		nodeCA, err := pki.NewNodeCA(s.OSCA, now)
+		if err != nil {
+			return err
+		}
+		n.NodeCA = &nodeCA
 	case RotateKubernetesCA:
 		for _, ca := range []struct {
 			name     string
@@ -547,7 +556,7 @@ func (s *Secrets) BeginRotation(kind RotationKind, now time.Time) error {
 		k.Accepted.EncryptionKeys = append(k.Accepted.EncryptionKeys, EncryptionKey{Name: name, Key: key})
 		n = nil
 	default:
-		return fmt.Errorf("unknown rotation %q; rotate one of %s", kind, RotationKindList())
+		return fmt.Errorf("unknown rotation %q", kind)
 	}
 	s.Rotation = &Rotation{Kind: kind, Phase: PhaseAccept, New: n}
 	return s.Validate()
@@ -614,6 +623,8 @@ func (s *Secrets) SwitchRotation() error {
 	case RotateOSCA:
 		s.Accepted.OSCA = []string{s.OSCA.Certificate}
 		s.OSCA, s.NodeCA = *r.New.OSCA, *r.New.NodeCA
+	case RotateNodeCA:
+		s.NodeCA = *r.New.NodeCA
 	case RotateKubernetesCA:
 		k.Accepted.CA, k.Accepted.FrontProxyCA, k.Accepted.EtcdCA = []string{k.CA.Certificate}, []string{k.FrontProxyCA.Certificate}, []string{k.EtcdCA.Certificate}
 		k.CA, k.FrontProxyCA, k.EtcdCA = *r.New.CA, *r.New.FrontProxyCA, *r.New.EtcdCA

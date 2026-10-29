@@ -21,8 +21,8 @@ import (
 // Version is the only version of the secrets file this package reads and writes.
 const Version = 3
 
-// Secrets is the cluster's secrets file. chalkctl gen secrets writes it; chalkctl node-ca rotate
-// and chalkctl rotate change it.
+// Secrets is the cluster's secrets file. chalkctl gen secrets writes it; chalkctl rotate changes
+// it.
 type Secrets struct {
 	Version int `json:"version"`
 	// OSCA is the root every node and client of chalkd trusts. It issues client certificates and
