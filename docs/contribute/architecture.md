@@ -190,7 +190,8 @@ which chalkd finds by type assertion, add what else the layer does:
 | --- | --- |
 | `Health` | Its check of a new boot's health. |
 | `Certificates` | Its certificates and trusted CAs in Status. |
-| `Delivery` | The payloads it takes with a delivery, its part of the identity, and what it writes from the config. |
+| `Delivery` | The payloads it takes with a delivery and its part of the identity. |
+| `nodeconfig.Layer` | What it writes from the running slot's documents, at boot and after each delivery. |
 | `Issuer` | The issuing of node certificates on renewal; an image has one issuer at most. |
 | `ImageFacts` | The facts of its images that config is translated with. |
 | `Commands` | Subcommands, run as `chalkd <layer> <command>`. |

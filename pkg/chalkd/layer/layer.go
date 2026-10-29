@@ -4,6 +4,10 @@
 // plugin's API and starts only the active plugins, those whose layers the image carries. It asks
 // the active plugins for most hooks, and every compiled plugin for a command and for the hooks
 // that concern an image other than the running one; each hook says which plugins chalkd asks.
+//
+// One hook is declared where it is called: a plugin whose layer writes what it derives from the
+// running slot's documents implements nodeconfig.Layer, which the config loader asks of the
+// active plugins at boot and after each delivery.
 package layer
 
 import (
@@ -95,8 +99,8 @@ type Certificates interface {
 	Certificates(ctx context.Context, now time.Time) ([]*nodev1.CertificateStatus, []*nodev1.TrustStatus)
 }
 
-// Delivery is a plugin whose layer takes payloads with config deliveries, checks the identity's
-// part of its own and writes what the config gives it.
+// Delivery is a plugin whose layer takes payloads with config deliveries and checks the
+// identity's part of its own. What a layer writes from the config is the hook nodeconfig.Layer.
 type Delivery interface {
 	// Accepts reports whether the payload is one of the layer's. chalkd asks the plugins it has
 	// Plan.
@@ -109,10 +113,6 @@ type Delivery interface {
 	// asks the active plugins, and the installer, whose image carries no layer, every compiled
 	// plugin.
 	Plan(ctx context.Context, d Planned) (Commit, error)
-	// WriteConfig writes what the layer derives from the running slot's documents, nil for a
-	// slot without documents, as the config loader does at boot and after each delivery. chalkd
-	// asks the active plugins.
-	WriteConfig(docs config.Documents) error
 }
 
 // Issuer is a plugin whose layer issues the node's own certificate when it renews. An image has

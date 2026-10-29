@@ -10,8 +10,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
-
-	"github.com/trevex/chalkos/pkg/config"
 )
 
 // stringPayloads is a Delivery that takes string payloads and records the delivery it planned.
@@ -30,8 +28,6 @@ func (d *stringPayloads) Plan(_ context.Context, p Planned) (Commit, error) {
 	d.planned = &p
 	return Commit{}, nil
 }
-
-func (d *stringPayloads) WriteConfig(config.Documents) error { return nil }
 
 func payload(t *testing.T, m proto.Message) *anypb.Any {
 	t.Helper()
