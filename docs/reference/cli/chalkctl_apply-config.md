@@ -33,7 +33,7 @@ file.
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
 | `--diff`{ #flag-diff } | boolean | `false` | Print what the config changes in the node's config, document by document and field by field, and change nothing. |
-| `--force`{ #flag-force } | boolean | `false` | With --kubernetes-share, deliver the share without asking the control planes whether the node is revoked. |
+| `--force`{ #flag-force } | boolean | `false` | With --kubernetes-share, deliver without asking whether the node is revoked. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--kubernetes-share`{ #flag-kubernetes-share } | boolean | `false` | Also deliver a new Kubernetes share, such as a new kubelet certificate for a worker. |

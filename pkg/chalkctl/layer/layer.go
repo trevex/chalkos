@@ -60,7 +60,8 @@ type Delivery interface {
 	// Payloads are the layer's payloads for t, issued from its secrets at now; none for a node
 	// the layer gives nothing.
 	Payloads(t Target, now time.Time) ([]*anypb.Any, error)
-	// ApplyFlags registers apply-config's flags that ask for the layer's payloads.
+	// ApplyFlags registers apply-config's flags that ask for the layer's payloads; chalkctl
+	// registers --force, which delivers them without Admit.
 	ApplyFlags(fs *pflag.FlagSet) ApplyFlags
 	// Admit refuses to deliver t what the secrets file issues it, which does says.
 	Admit(ctx context.Context, t Target, does string) error
@@ -72,10 +73,10 @@ type Delivery interface {
 type ApplyFlags interface {
 	// Check refuses flags that do not go together; staged is --staged.
 	Check(staged bool) error
+	// Flag is the flag that asks for the layer's payloads, such as --kubernetes-share.
+	Flag() string
 	// Requested reports whether the flags ask for the layer's payloads.
 	Requested() bool
-	// Admitted reports whether the node is to be admitted before it gets them.
-	Admitted() bool
 	// Does says what apply-config does to the node with them, for Admit.
 	Does() string
 	// None is the error of a node the layer gives no payloads.

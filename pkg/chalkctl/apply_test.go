@@ -228,3 +228,21 @@ func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
 		t.Errorf("config version on the node = %q, %v; want none", v, err)
 	}
 }
+
+// apply-config registers --force once, for every layer's payload flags, and names them in its
+// help and its refusal.
+func TestApplyConfigForceIsChalkctls(t *testing.T) {
+	ta := newTestApp(t)
+	cmd, _, err := newCommand(ta.app).Find([]string{"apply-config"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := cmd.Flags().Lookup("force")
+	if f == nil || f.Usage != "with --kubernetes-share, deliver without asking whether the node is revoked" {
+		t.Fatalf("--force: %v", f)
+	}
+	err = ta.run(context.Background(), []string{"apply-config", "n1", "--force", "--inventory", ta.inventory})
+	if err == nil || !strings.Contains(err.Error(), "--force goes with --kubernetes-share") {
+		t.Errorf("err = %v", err)
+	}
+}

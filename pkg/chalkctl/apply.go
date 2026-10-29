@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -19,7 +21,10 @@ type applyConfigFlags struct {
 	node         nodeFlags
 	passwordFile string
 	staged, diff bool
+	force        bool
 	layers       []layerFlags
+	// payloadFlags names the layers' flags that ask for payloads, which --force goes with.
+	payloadFlags string
 }
 
 // layerFlags are a layer's apply-config flags with the layer that registered them.
@@ -40,8 +45,15 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	fs := cmd.Flags()
 	f.node.register(fs)
 	registerPasswordFile(fs, &f.passwordFile)
+	var payloadFlags []string
 	for _, d := range compiled[layer.Delivery]() {
-		f.layers = append(f.layers, layerFlags{d, d.ApplyFlags(fs)})
+		lf := d.ApplyFlags(fs)
+		f.layers = append(f.layers, layerFlags{d, lf})
+		payloadFlags = append(payloadFlags, lf.Flag())
+	}
+	if len(payloadFlags) > 0 {
+		f.payloadFlags = strings.Join(payloadFlags, " or ")
+		fs.BoolVar(&f.force, "force", false, "with "+f.payloadFlags+", deliver without asking whether the node is revoked")
 	}
 	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the node's image in the inventory")
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing")
@@ -54,12 +66,16 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 			return err
 		}
 	}
+	requested := slices.ContainsFunc(f.layers, func(l layerFlags) bool { return l.f.Requested() })
+	if f.force && !requested {
+		return cli.Usagef("--force goes with %s", f.payloadFlags)
+	}
 	t, err := a.target(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
 	for _, l := range f.layers {
-		if l.f.Requested() && l.f.Admitted() && !f.diff {
+		if l.f.Requested() && !f.force && !f.diff {
 			if err := l.d.Admit(ctx, pluginTarget{t}, l.f.Does()); err != nil {
 				return err
 			}

@@ -35,29 +35,25 @@ func (p *Plugin) Payloads(t layer.Target, now time.Time) ([]*anypb.Any, error) {
 	return []*anypb.Any{payload}, nil
 }
 
-// applyFlags are --kubernetes-share and its --force.
-type applyFlags struct{ share, force bool }
+// applyFlags are --kubernetes-share.
+type applyFlags struct{ share bool }
 
-// ApplyFlags registers --kubernetes-share and --force.
+// ApplyFlags registers --kubernetes-share.
 func (p *Plugin) ApplyFlags(fs *pflag.FlagSet) layer.ApplyFlags {
 	f := &applyFlags{}
 	fs.BoolVar(&f.share, "kubernetes-share", false, "also deliver a new Kubernetes share, such as a new kubelet certificate for a worker")
-	fs.BoolVar(&f.force, "force", false, "with --kubernetes-share, deliver the share without asking the control planes whether the node is revoked")
 	return f
 }
 
 func (f *applyFlags) Check(staged bool) error {
-	switch {
-	case staged && f.share:
+	if staged && f.share {
 		return cli.Usagef("--staged delivers config alone; deliver the Kubernetes share to the running image")
-	case f.force && !f.share:
-		return cli.Usagef("--force goes with --kubernetes-share")
 	}
 	return nil
 }
 
+func (f *applyFlags) Flag() string    { return "--kubernetes-share" }
 func (f *applyFlags) Requested() bool { return f.share }
-func (f *applyFlags) Admitted() bool  { return !f.force }
 func (f *applyFlags) Does() string    { return "apply-config delivers it a Kubernetes share" }
 
 func (f *applyFlags) None(name string) error {

@@ -90,10 +90,10 @@ start, so chalkctl trusts the node's old key: someone holding a leaked, expired 
 and sitting in its network path could receive the new certificate in its place. That is inherent
 to recovering a node; renewing node certificates before they expire avoids it.
 
-A node revoked with chalkctl node revoke is refused, as is any node while no control plane says
-which nodes are revoked: the control planes are asked first. A control plane whose own
-certificate expired cannot answer; --force renews without asking. The command needs the secrets
-file.`
+A node revoked with chalkctl node revoke is refused, as is any node while a layer cannot say
+which nodes are revoked: in a Kubernetes cluster the control planes are asked first, and one
+whose own certificate expired cannot answer. --force renews without asking. The command needs
+the secrets file.`
 
 const nodeRenewExample = `  chalkctl node renew w1`
 
