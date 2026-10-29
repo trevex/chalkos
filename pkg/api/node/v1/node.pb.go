@@ -2540,7 +2540,11 @@ type StatusResponse struct {
 	// or an upgrade.
 	PreviousConfigVersion string `protobuf:"bytes,12,opt,name=previous_config_version,json=previousConfigVersion,proto3" json:"previous_config_version,omitempty"`
 	// The config on trial, while one is; unset otherwise.
-	Trial         *ConfigTrial `protobuf:"bytes,13,opt,name=trial,proto3" json:"trial,omitempty"`
+	Trial *ConfigTrial `protobuf:"bytes,13,opt,name=trial,proto3" json:"trial,omitempty"`
+	// Why the record of a config's trial cannot be read, while it cannot; trial is unset then. The
+	// node refuses every other change until RollbackConfig rolls the config back, which removes the
+	// record. Empty otherwise.
+	TrialError    string `protobuf:"bytes,14,opt,name=trial_error,json=trialError,proto3" json:"trial_error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2664,6 +2668,13 @@ func (x *StatusResponse) GetTrial() *ConfigTrial {
 		return x.Trial
 	}
 	return nil
+}
+
+func (x *StatusResponse) GetTrialError() string {
+	if x != nil {
+		return x.TrialError
+	}
+	return ""
 }
 
 // A config on trial, which the node rolls back by itself at the deadline unless ConfirmConfig
@@ -4506,7 +4517,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x14ConfirmConfigRequest\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\"\x17\n" +
 	"\x15ConfirmConfigResponse\"\x0f\n" +
-	"\rStatusRequest\"\x99\x05\n" +
+	"\rStatusRequest\"\xba\x05\n" +
 	"\x0eStatusResponse\x121\n" +
 	"\x05disks\x18\x01 \x03(\v2\x1b.chalkos.node.v1.DiskStatusR\x05disks\x127\n" +
 	"\avolumes\x18\x02 \x03(\v2\x1d.chalkos.node.v1.VolumeStatusR\avolumes\x12!\n" +
@@ -4521,7 +4532,9 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	" \x01(\tR\x13stagedConfigVersion\x127\n" +
 	"\aoutputs\x18\v \x03(\v2\x1d.chalkos.node.v1.OutputStatusR\aoutputs\x126\n" +
 	"\x17previous_config_version\x18\f \x01(\tR\x15previousConfigVersion\x122\n" +
-	"\x05trial\x18\r \x01(\v2\x1c.chalkos.node.v1.ConfigTrialR\x05trial\"\xee\x01\n" +
+	"\x05trial\x18\r \x01(\v2\x1c.chalkos.node.v1.ConfigTrialR\x05trial\x12\x1f\n" +
+	"\vtrial_error\x18\x0e \x01(\tR\n" +
+	"trialError\"\xee\x01\n" +
 	"\vConfigTrial\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12)\n" +
 	"\x10previous_version\x18\x02 \x01(\tR\x0fpreviousVersion\x126\n" +

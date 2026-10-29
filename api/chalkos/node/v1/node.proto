@@ -600,6 +600,10 @@ message StatusResponse {
   string previous_config_version = 12;
   // The config on trial, while one is; unset otherwise.
   ConfigTrial trial = 13;
+  // Why the record of a config's trial cannot be read, while it cannot; trial is unset then. The
+  // node refuses every other change until RollbackConfig rolls the config back, which removes the
+  // record. Empty otherwise.
+  string trial_error = 14;
 }
 
 // A config on trial, which the node rolls back by itself at the deadline unless ConfirmConfig

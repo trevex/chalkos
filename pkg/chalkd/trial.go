@@ -54,7 +54,7 @@ func readTrial(stateDir string) (r trialRecord, open bool, err error) {
 		return trialRecord{}, false, err
 	}
 	if err := json.Unmarshal(data, &r); err != nil {
-		return trialRecord{}, false, fmt.Errorf("the trial record cannot be read: %w", err)
+		return trialRecord{}, false, fmt.Errorf("parse the trial record: %w", err)
 	}
 	if h, err := hex.DecodeString(r.Slot); err != nil || len(h) == 0 || r.Version == "" || r.Previous == "" {
 		return trialRecord{}, false, errors.New("the trial record names no slot and versions")
@@ -212,24 +212,24 @@ func (s *Server) endTrial() error {
 	return nil
 }
 
-// trialStatus is the config on trial as Status reports it; nil without one. A record that cannot
-// be read is logged and left out.
-func (s *Server) trialStatus() *nodev1.ConfigTrial {
+// trialStatus is the config on trial as Status reports it, nil without one, and why its record
+// cannot be read, which is logged and leaves the trial out.
+func (s *Server) trialStatus() (*nodev1.ConfigTrial, string) {
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
 		log.Printf("read the record of the config's trial: %v", err)
-		return nil
+		return nil, err.Error()
 	}
 	if !open {
-		return nil
+		return nil, ""
 	}
-	return &nodev1.ConfigTrial{Version: r.Version, PreviousVersion: r.Previous, Deadline: timestamppb.New(r.Deadline), Error: r.Error, IgnoreUnits: r.IgnoreUnits, RollbackChanged: r.Changed}
+	return &nodev1.ConfigTrial{Version: r.Version, PreviousVersion: r.Previous, Deadline: timestamppb.New(r.Deadline), Error: r.Error, IgnoreUnits: r.IgnoreUnits, RollbackChanged: r.Changed}, ""
 }
 
 // unreadableTrial refuses a request for err, which kept the trial's record from being read. The
 // record stays until RollbackConfig removes it: every trial may end in a rollback.
 func (s *Server) unreadableTrial(err error) error {
-	return failed(connect.CodeInternal, "read the record of the config's trial: %v; roll the config back with chalkctl apply-config --rollback %s, which removes the record", err, s.nodeName())
+	return failed(connect.CodeInternal, "read the record of the config's trial: %v; other changes are refused until chalkctl apply-config --rollback %s restores the previous config, which removes the record", err, s.nodeName())
 }
 
 // refuseOnTrialLocking is refuseOnTrial under s.mu, for an upgrade and an image rollback, which

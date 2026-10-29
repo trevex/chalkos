@@ -344,18 +344,25 @@ func TestConfirmConfigAfterTheDeadline(t *testing.T) {
 }
 
 // TestConfirmConfigCorruptRecord fails a confirmation on a trial record that cannot be read, and
-// Status leaves the trial out.
+// Status leaves the trial out and says why.
 func TestConfirmConfigCorruptRecord(t *testing.T) {
 	s, _ := configServer(t)
 	r := recordTrial(t, s, nextConfig)
 	if err := os.WriteFile(filepath.Join(s.Paths.StateDir, trialFile), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := sendConfirm(s, r.Version); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the record of the config's trial") {
+	err := sendConfirm(s, r.Version)
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the record of the config's trial: ") ||
+		!strings.Contains(err.Error(), "; other changes are refused until chalkctl apply-config --rollback ") ||
+		!strings.Contains(err.Error(), " restores the previous config, which removes the record") {
 		t.Errorf("a corrupt record: %v", err)
 	}
-	if tr := statusOf(t, s).Trial; tr != nil {
-		t.Errorf("status trial = %+v, want none", tr)
+	st := statusOf(t, s)
+	if st.Trial != nil {
+		t.Errorf("status trial = %+v, want none", st.Trial)
+	}
+	if !strings.Contains(st.TrialError, "unexpected end of JSON input") {
+		t.Errorf("status trial error = %q, want why the record cannot be read", st.TrialError)
 	}
 }
 
@@ -1056,7 +1063,7 @@ func TestRestoreTrialAtBoot(t *testing.T) {
 	}
 	check("a lost trial")
 	write(t, filepath.Join(s.Paths.StateDir, trialFile), "{")
-	if err := RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots); err == nil || !strings.Contains(err.Error(), "cannot be read") {
+	if err := RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots); err == nil || !strings.Contains(err.Error(), "parse the trial record: ") {
 		t.Errorf("a record that cannot be read: %v", err)
 	}
 	if got := readFile(t, filepath.Join(s.Paths.StateDir, trialFile)); got != "{" {
@@ -1106,8 +1113,8 @@ func TestRollbackConfigRemovesAnUnreadableTrial(t *testing.T) {
 	s, _ := configServer(t)
 	rec := recordTrial(t, s, nextConfig)
 	write(t, filepath.Join(s.Paths.StateDir, trialFile), "{")
-	want := "read the record of the config's trial: the trial record cannot be read"
-	hint := "roll the config back with chalkctl apply-config --rollback n1, which removes the record"
+	want := "read the record of the config's trial: parse the trial record: "
+	hint := "; other changes are refused until chalkctl apply-config --rollback n1 restores the previous config, which removes the record"
 	if _, err := sendConfig(s, baseConfig); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), hint) {
 		t.Errorf("a delivery: %v, want %q and %q", err, want, hint)
 	}

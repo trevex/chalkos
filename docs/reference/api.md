@@ -265,6 +265,7 @@ The response of Status: the state of an installed node.
 | `outputs` | list of OutputStatus | The image's outputs, by name. |
 | `previous_config_version` | string | The version of the running image's previous config, which RollbackConfig delivers again, as config_version gives the running one's; empty while the node keeps none, as after an install or an upgrade. |
 | `trial` | ConfigTrial | The config on trial, while one is; unset otherwise. |
+| `trial_error` | string | Why the record of a config's trial cannot be read, while it cannot; trial is unset then. The node refuses every other change until RollbackConfig rolls the config back, which removes the record. Empty otherwise. |
 
 Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [ConfigTrial](#message-configtrial).
 
