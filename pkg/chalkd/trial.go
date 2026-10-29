@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -51,7 +52,16 @@ func readTrial(stateDir string) (r trialRecord, open bool, err error) {
 	if h, err := hex.DecodeString(r.Slot); err != nil || len(h) == 0 || r.Version == "" || r.Previous == "" {
 		return trialRecord{}, false, errors.New("the trial record names no slot and versions")
 	}
+	if r.Deadline.IsZero() {
+		return trialRecord{}, false, errors.New("the trial record names no deadline")
+	}
 	return r, true, nil
+}
+
+// sameTrial reports whether r and o record the same trial, with the same deadline and ignored
+// units. The error is left out: a failed rollback's retry rewrites it.
+func (r trialRecord) sameTrial(o trialRecord) bool {
+	return r.Slot == o.Slot && r.Version == o.Version && r.Previous == o.Previous && r.Deadline.Equal(o.Deadline) && slices.Equal(r.IgnoreUnits, o.IgnoreUnits)
 }
 
 // writeTrial writes the trial record below stateDir and syncs it, so it survives a crash once
@@ -112,17 +122,20 @@ func (r trialRecord) state(slots string) (string, trialState, error) {
 // ConfirmConfig ends the trial of a config once the node is healthy, and the node keeps the config.
 // The health check leaves out the units the trial's record names besides the image's. It runs
 // before s.mu is taken: the layers' checks take their time and must not hold back a delivery or
-// the deadline. The record is read for its units without the lock, and read again under it, so a
-// trial that the deadline ended meanwhile is found ended.
+// the deadline. The record is read without the lock first, and a request that cannot confirm it,
+// for another version or without a trial, skips the check. Under the lock the record is read
+// again, and a record that changed meanwhile is refused with UNAVAILABLE, so the client asks again
+// and the check covers the trial it confirms. A trial past its deadline is confirmed only while
+// its rollback failed and is retried.
 func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.ConfirmConfigRequest]) (*connect.Response[nodev1.ConfirmConfigResponse], error) {
 	version := req.Msg.Version
 	if version == "" {
 		return nil, failed(connect.CodeInvalidArgument, "the request names no config version to confirm")
 	}
-	if s.Healthy != nil {
-		// A record that cannot be read here is reported under the lock.
-		pending, _, _ := readTrial(s.Paths.StateDir)
-		if err := s.Healthy(ctx, pending.IgnoreUnits); err != nil {
+	// A record that cannot be read here is reported under the lock.
+	checked, open, err := readTrial(s.Paths.StateDir)
+	if err == nil && open && checked.Version == version && s.Healthy != nil {
+		if err := s.Healthy(ctx, checked.IgnoreUnits); err != nil {
 			return nil, failed(connect.CodeUnavailable, "the node is not healthy: %v", err)
 		}
 	}
@@ -149,6 +162,17 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 	}
 	if r.Version != version {
 		return nil, failed(connect.CodeFailedPrecondition, "the trial is of config %s, not %s", r.Version, version)
+	}
+	if !r.sameTrial(checked) {
+		return nil, failed(connect.CodeUnavailable, "the trial changed while the node's health was checked")
+	}
+	if !time.Now().Before(r.Deadline) && r.Error == "" {
+		return nil, failed(connect.CodeFailedPrecondition, "the trial of config %s ended at its deadline, %s", r.Version, r.Deadline.UTC().Format(time.RFC3339))
+	}
+	if _, st, err := r.state(s.Loader.Slots); err != nil {
+		return nil, failed(connect.CodeInternal, "read the trial's config slot: %v", err)
+	} else if st != trialApplied {
+		return nil, failed(connect.CodeFailedPrecondition, "the node does not run config %s on trial with config %s as its previous config", r.Version, r.Previous)
 	}
 	if err := s.endTrial(); err != nil {
 		return nil, failed(connect.CodeInternal, "end the trial: %v", err)

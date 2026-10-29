@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -119,20 +120,45 @@ func TestConfirmConfig(t *testing.T) {
 
 // TestTrialState classifies a trial by its slot: applied while the slot runs the version on trial
 // and keeps the one before; ended while it runs the one before, also after an interrupted write
-// left both links on it; lost otherwise.
+// left both links on it; lost otherwise, as while it runs the version on trial but keeps another
+// previous config.
 func TestTrialState(t *testing.T) {
 	s, _ := configServer(t)
 	r := recordTrial(t, s, nextConfig)
+	dir := slotOf(t, s)
 	check := func(want trialState) {
 		t.Helper()
 		if _, got, err := r.state(s.Loader.Slots); err != nil || got != want {
 			t.Errorf("state = %v, %v; want %v", got, err, want)
 		}
 	}
+	readlink := func(link string) string {
+		t.Helper()
+		target, err := os.Readlink(link)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return target
+	}
+	relink := func(link, target string) {
+		t.Helper()
+		if err := os.Remove(link); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	next, base := readlink(dir), readlink(slot.Previous(dir))
 	check(trialApplied)
-	if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
+	relink(slot.Previous(dir), next)
+	check(trialLost)
+	relink(slot.Previous(dir), base)
+	if err := slot.RestorePrevious(dir); err != nil {
 		t.Fatal(err)
 	}
+	check(trialEnded)
+	relink(slot.Previous(dir), base)
 	check(trialEnded)
 	r.Version, r.Previous = "v8", "v9"
 	check(trialLost)
@@ -200,5 +226,116 @@ func TestRollbackConfigEndsATrial(t *testing.T) {
 	}
 	if _, err := sendConfig(s, nextConfig); err != nil {
 		t.Errorf("a delivery after the trial ended: %v", err)
+	}
+}
+
+// TestConfirmConfigChecksTheTrialFirst refuses another version, and a node without a trial, before
+// the health check: an unhealthy node answers FAILED_PRECONDITION, not UNAVAILABLE.
+func TestConfirmConfigChecksTheTrialFirst(t *testing.T) {
+	s, _ := configServer(t)
+	r := recordTrial(t, s, nextConfig)
+	checked := false
+	s.Healthy = func(context.Context, []string) error {
+		checked = true
+		return errors.New("units failed: demo.service")
+	}
+	if err := sendConfirm(s, r.Previous); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the trial is of config "+r.Version+", not "+r.Previous) {
+		t.Errorf("another version: %v", err)
+	}
+	if err := removeTrial(s.Paths.StateDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendConfirm(s, r.Previous); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no trial is open, and the node runs config "+r.Version+", not "+r.Previous) {
+		t.Errorf("no trial: %v", err)
+	}
+	if checked {
+		t.Error("the node's health was checked for a confirmation that cannot succeed")
+	}
+}
+
+// TestConfirmConfigTrialChanged refuses to confirm a trial whose record changed while the node's
+// health was checked, so the client asks again.
+func TestConfirmConfigTrialChanged(t *testing.T) {
+	s, _ := configServer(t)
+	r := recordTrial(t, s, nextConfig)
+	later := r
+	later.Deadline = r.Deadline.Add(time.Hour)
+	s.Healthy = func(context.Context, []string) error {
+		return writeTrial(s.Paths.StateDir, later)
+	}
+	if err := sendConfirm(s, r.Version); connect.CodeOf(err) != connect.CodeUnavailable || !strings.Contains(err.Error(), "the trial changed while the node's health was checked") {
+		t.Errorf("a changed trial: %v", err)
+	}
+	if got, open, err := readTrial(s.Paths.StateDir); err != nil || !open || !got.Deadline.Equal(later.Deadline) {
+		t.Errorf("the record is %+v, open %v, %v; want the changed trial open", got, open, err)
+	}
+}
+
+// TestConfirmConfigNotApplied refuses a trial whose slot no longer runs the config on trial.
+func TestConfirmConfigNotApplied(t *testing.T) {
+	s, _ := configServer(t)
+	r := recordTrial(t, s, nextConfig)
+	if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendConfirm(s, r.Version); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node does not run config "+r.Version+" on trial") {
+		t.Errorf("a trial rolled back: %v", err)
+	}
+	if !trialOpenOn(t, s) {
+		t.Error("the refusal ended the trial")
+	}
+}
+
+// TestConfirmConfigAfterTheDeadline refuses a trial past its deadline, unless the rollback at the
+// deadline failed: then the confirmation ends the trial and its retries.
+func TestConfirmConfigAfterTheDeadline(t *testing.T) {
+	s, _ := configServer(t)
+	r := recordTrial(t, s, nextConfig)
+	r.Deadline = time.Now().Add(-time.Minute).Truncate(time.Second).UTC()
+	if err := writeTrial(s.Paths.StateDir, r); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendConfirm(s, r.Version); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the trial of config "+r.Version+" ended at its deadline, "+r.Deadline.Format(time.RFC3339)) {
+		t.Errorf("past the deadline: %v", err)
+	}
+	if !trialOpenOn(t, s) {
+		t.Fatal("the refusal ended the trial")
+	}
+	r.Error = "an output failed"
+	if err := writeTrial(s.Paths.StateDir, r); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendConfirm(s, r.Version); err != nil {
+		t.Fatalf("past the deadline with a failed rollback: %v", err)
+	}
+	if trialOpenOn(t, s) {
+		t.Error("the confirmed trial is still open")
+	}
+}
+
+// TestConfirmConfigCorruptRecord fails a confirmation on a trial record that cannot be read, and
+// Status leaves the trial out.
+func TestConfirmConfigCorruptRecord(t *testing.T) {
+	s, _ := configServer(t)
+	r := recordTrial(t, s, nextConfig)
+	if err := os.WriteFile(filepath.Join(s.Paths.StateDir, trialFile), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendConfirm(s, r.Version); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the record of the config's trial") {
+		t.Errorf("a corrupt record: %v", err)
+	}
+	if tr := statusOf(t, s).Trial; tr != nil {
+		t.Errorf("status trial = %+v, want none", tr)
+	}
+}
+
+// TestReadTrialRefusesNoDeadline refuses a record without a deadline.
+func TestReadTrialRefusesNoDeadline(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeTrial(dir, trialRecord{Slot: "ab", Version: "v2", Previous: "v1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readTrial(dir); err == nil || !strings.Contains(err.Error(), "names no deadline") {
+		t.Errorf("readTrial = %v, want the missing deadline", err)
 	}
 }
