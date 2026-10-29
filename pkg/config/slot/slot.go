@@ -87,8 +87,8 @@ func slotHash(name string) ([]byte, bool) {
 
 // Retire removes every slot below root but those of the root hashes kept: its link first, so a
 // reader finds the slot whole or not at all, then the directory the link named, the slot's
-// previous config and those that interrupted writes of it left. A directory where a slot's link would be is refused, as
-// replace refuses it.
+// previous config and those that interrupted writes of it left. A directory where a slot's link
+// would be is refused, as replace refuses it.
 func Retire(root string, keep [][]byte) error {
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -156,7 +156,7 @@ func Write(dir string, s Stored) error {
 // its previous config, which Previous names, one level deep: the previous config before it goes.
 // A slot that holds s's version already keeps its previous config as it is, so a delivery sent
 // twice does not lose it; a slot that holds no set is written as Write writes it. The previous
-// link is renamed and synced after the new set is filled and before the slot's link, and a
+// link is renamed and synced after the new set is on disk and before the slot's link, and a
 // directory goes only once no link names it, so a power cut leaves the slot whole and its
 // previous config either the set before or the set the slot still holds.
 func WriteKeepingPrevious(dir string, s Stored) error {
@@ -190,10 +190,14 @@ func WriteKeepingPrevious(dir string, s Stored) error {
 		}
 		return replace(dir, fill(s), filepath.Join(filepath.Dir(dir), kept))
 	}
-	// The previous link moves once the new set is filled, so a write that fails keeps the
-	// previous config.
+	// The previous link moves once the new set is filled and on disk, so a set that cannot be
+	// written keeps the previous config. A power cut between that rename and the slot link's
+	// leaves both links naming the held set, which callers take for no previous config.
 	fillKeeping := func(tmp string) error {
 		if err := fill(s)(tmp); err != nil {
+			return err
+		}
+		if err := syncTree(tmp); err != nil {
 			return err
 		}
 		return relink(prev, held)
@@ -408,7 +412,12 @@ func fillDir(tmp string, fill func(string) error) error {
 	if err := fill(tmp); err != nil {
 		return err
 	}
-	return filepath.WalkDir(tmp, func(path string, e fs.DirEntry, err error) error {
+	return syncTree(tmp)
+}
+
+// syncTree syncs every directory below root, root included.
+func syncTree(root string) error {
+	return filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
 		if err != nil || !e.IsDir() {
 			return err
 		}
