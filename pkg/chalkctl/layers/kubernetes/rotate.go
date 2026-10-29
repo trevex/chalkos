@@ -22,14 +22,34 @@ import (
 // every projected token they hold: they renew at 80 % of its nominal hour.
 const tokenRefresh = time.Hour
 
-// Rotates reports whether kind is the Kubernetes CAs', the service-account key's or the
-// encryption key's rotation.
-func (p *Plugin) Rotates(kind clustersecrets.RotationKind) bool {
-	switch kind {
-	case clustersecrets.RotateKubernetesCA, clustersecrets.RotateServiceAccountKey, clustersecrets.RotateEncryptionKey:
-		return true
+// Kinds are the rotations of the Kubernetes CAs, the service-account key and the encryption key.
+func (p *Plugin) Kinds() []clustersecrets.RotationKind {
+	return []clustersecrets.RotationKind{clustersecrets.RotateKubernetesCA, clustersecrets.RotateServiceAccountKey, clustersecrets.RotateEncryptionKey}
+}
+
+// CheckStart refuses a rotation without a control-plane node, through which every step of the
+// Kubernetes rotations runs.
+func (p *Plugin) CheckStart(ctx context.Context, r layer.Rotating, kind clustersecrets.RotationKind) error {
+	if len(rotatingNodesOf(r, k8s.KindControlPlane)) == 0 {
+		return fmt.Errorf("the cluster has no control-plane node, through which the rotation of the %s runs", kind.Name())
 	}
-	return false
+	return nil
+}
+
+// PausesAfter stops every rotation after its refresh, and the Kubernetes CAs' after their accept
+// phase too, so kubeconfigs and workloads trust the new CAs before they issue the servers'
+// certificates.
+func (p *Plugin) PausesAfter(kind clustersecrets.RotationKind, phase clustersecrets.Phase) bool {
+	return phase == clustersecrets.PhaseRefresh || phase == clustersecrets.PhaseAccept && kind == clustersecrets.RotateKubernetesCA
+}
+
+// Finished advises issuing kubeconfigs again after the Kubernetes CAs' rotation: what a kubeconfig
+// trusts is in its file, which the finish cannot reach.
+func (p *Plugin) Finished(kind clustersecrets.RotationKind) (string, string) {
+	if kind == clustersecrets.RotateKubernetesCA {
+		return "every node trusts the new value alone", "Kubeconfigs issued during the rotation still trust the old Kubernetes CA besides the new one when they verify the API server, so whoever holds the old CA's key could pose as the API server to them; issue them again with chalkctl kubeconfig."
+	}
+	return "every node trusts the new value alone", ""
 }
 
 // RevokedNodes are the nodes the first control plane that answers with them lists as revoked, as

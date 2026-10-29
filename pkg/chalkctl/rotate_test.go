@@ -387,13 +387,18 @@ func (l *rotationLab) takeEvents() []string {
 
 func newRotationLab(t *testing.T) *rotationLab {
 	t.Helper()
-	ta := newTestApp(t)
-	ta.pollInterval = 5 * time.Millisecond
 	// Two control planes, a worker and a node without Kubernetes.
-	nodes := []testNode{
+	return newRotationLabOf(t, []testNode{
 		{"cp1", kubernetes.KindControlPlane, "cp"}, {"cp2", kubernetes.KindControlPlane, "cp"},
 		{"w1", kubernetes.KindWorker, "w"}, {"n1", "", "plain"},
-	}
+	})
+}
+
+// newRotationLabOf builds a lab of the nodes.
+func newRotationLabOf(t *testing.T, nodes []testNode) *rotationLab {
+	t.Helper()
+	ta := newTestApp(t)
+	ta.pollInterval = 5 * time.Millisecond
 	ta.inventory = writeNodes(t, ta.dir, nodes, nil)
 	l := &rotationLab{t: t, ta: ta, nodes: map[string]*fakeNode{}, addrs: map[string]string{}, encrypted: map[string]uint64{clustersecrets.DefaultEncryptionKeyName: 3}}
 	for _, node := range nodes {
@@ -701,7 +706,7 @@ func TestRotateTimeoutNamesTheNode(t *testing.T) {
 // and checks that the phase stays unapplied and that --resume completes the rotation once the
 // node answers again.
 func TestRotateResumesEveryPhase(t *testing.T) {
-	for _, kind := range clustersecrets.RotationKinds {
+	for _, kind := range rotationKinds() {
 		for _, phase := range []clustersecrets.Phase{clustersecrets.PhaseAccept, clustersecrets.PhaseSwitch, clustersecrets.PhaseRefresh, clustersecrets.PhaseFinish} {
 			t.Run(string(kind)+"/"+string(phase), func(t *testing.T) {
 				l := newRotationLab(t)
@@ -1001,5 +1006,30 @@ func TestRotateRefusesAKindNoLayerRotates(t *testing.T) {
 	err := ta.run(context.Background(), []string{"rotate", "kubernetes-ca"})
 	if err == nil || !strings.Contains(err.Error(), "no layer of chalkctl rotates") {
 		t.Fatalf("err = %v, want the kind refused", err)
+	}
+}
+
+// TestRotateRefusesKubernetesWithoutAControlPlane checks that a Kubernetes kind on a cluster
+// without a control-plane node is refused before the secrets file records it.
+func TestRotateRefusesKubernetesWithoutAControlPlane(t *testing.T) {
+	l := newRotationLabOf(t, []testNode{{"r1", "", "plain"}, {"r2", "", "plain"}})
+	err := l.rotate("kubernetes-ca")
+	if err == nil || !strings.Contains(err.Error(), "no control-plane node") {
+		t.Fatalf("err = %v, want the rotation refused", err)
+	}
+	if l.phase() != "" {
+		t.Errorf("the secrets file records %q", l.phase())
+	}
+}
+
+// TestRotateHelpNamesEveryKind checks that the help lists the kinds chalkctl runs.
+func TestRotateHelpNamesEveryKind(t *testing.T) {
+	ta := newTestApp(t)
+	cmd, _, err := newCommand(ta.app).Find([]string{"rotate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "Rotate os-ca, kubernetes-ca, service-account-key or encryption-key"; cmd.Short != want {
+		t.Errorf("Short = %q, want %q", cmd.Short, want)
 	}
 }

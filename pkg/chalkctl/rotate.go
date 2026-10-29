@@ -2,10 +2,10 @@ package chalkctl
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -16,7 +16,6 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
-	"github.com/trevex/chalkos/pkg/pki"
 )
 
 type rotateFlags struct {
@@ -33,7 +32,7 @@ func (a *app) rotateCommand() *cobra.Command {
 	f := rotateFlags{addresses: addressList{}}
 	cmd := a.command(&cobra.Command{
 		Use:     "rotate <kind>",
-		Short:   "Rotate os-ca, kubernetes-ca, service-account-key or encryption-key",
+		Short:   "Rotate " + kindList(rotationKinds(), " or "),
 		Long:    rotateLong,
 		Example: rotateExample,
 		Args:    cli.ExactArgs(1),
@@ -45,8 +44,8 @@ func (a *app) rotateCommand() *cobra.Command {
 	registerAddresses(fs, f.addresses)
 	fs.BoolVar(&f.resume, "resume", false, "continue the rotation the secrets file records")
 	fs.BoolVar(&f.finish, "finish", false, "remove the old value from every node and the secrets file")
-	fs.BoolVar(&f.force, "force", false, "with --finish, finish the service-account key's rotation within the hour after its switch")
-	fs.BoolVar(&f.ignoreRevoked, "ignore-revoked", false, "rotate every node of the inventory, revoked ones included, without reading the revoked nodes, as while no control plane can say which are")
+	fs.BoolVar(&f.force, "force", false, "with --finish, finish although the kind asks to wait, as the service-account key does within the hour after its switch")
+	fs.BoolVar(&f.ignoreRevoked, "ignore-revoked", false, "rotate every node of the inventory, revoked ones included, without reading the revoked nodes, as while no layer can say which are")
 	fs.DurationVar(&f.timeout, "timeout", 10*time.Minute, "how long to wait for each node to apply a phase")
 	return cmd
 }
@@ -61,9 +60,9 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	}
 	kind := clustersecrets.RotationKind(pos[0])
 	if !slices.Contains(clustersecrets.RotationKinds, kind) {
-		return cli.Usagef("unknown kind %q; rotate one of %s", kind, clustersecrets.RotationKindList())
+		return cli.Usagef("unknown kind %q; rotate one of %s", kind, kindList(rotationKinds(), ", "))
 	}
-	if kind != clustersecrets.RotateOSCA && rotator(kind) == nil {
+	if rotatorOf(nil, kind) == nil {
 		return cli.Usagef("no layer of chalkctl rotates the %s", kind.Name())
 	}
 	c, err := loadCluster(ctx, cf)
@@ -140,6 +139,9 @@ func (r *rotation) save(change func(s *clustersecrets.Secrets) error) error {
 }
 
 func (r *rotation) start(ctx context.Context, kind clustersecrets.RotationKind) error {
+	if err := r.rotator(kind).CheckStart(ctx, r, kind); err != nil {
+		return err
+	}
 	if err := r.save(func(s *clustersecrets.Secrets) error { return s.BeginRotation(kind, r.a.now()) }); err != nil {
 		return err
 	}
@@ -186,10 +188,7 @@ func (r *rotation) finish(ctx context.Context, kind clustersecrets.RotationKind,
 
 // finishGuard refuses to remove an old value something still needs.
 func (r *rotation) finishGuard(ctx context.Context, kind clustersecrets.RotationKind, force bool) error {
-	if kind == clustersecrets.RotateOSCA {
-		return nil
-	}
-	return rotator(kind).FinishGuard(ctx, r, kind, force)
+	return r.rotator(kind).FinishGuard(ctx, r, kind, force)
 }
 
 // run applies the phase the secrets file records and the ones after it, up to the kind's pause
@@ -215,7 +214,7 @@ func (r *rotation) run(ctx context.Context) error {
 				return err
 			}
 			r.say("%s: every node applied the %s phase", rot.Kind, rot.Phase)
-			if pausesAfter(rot.Kind, rot.Phase) {
+			if r.rotator(rot.Kind).PausesAfter(rot.Kind, rot.Phase) {
 				return r.paused(ctx, rot)
 			}
 		}
@@ -226,18 +225,22 @@ func (r *rotation) run(ctx context.Context) error {
 		case clustersecrets.PhaseSwitch:
 			err = r.save(func(s *clustersecrets.Secrets) error { return s.RefreshRotation() })
 		case clustersecrets.PhaseRefresh:
-			return r.paused(ctx, rot)
+			if r.rotator(rot.Kind).PausesAfter(rot.Kind, rot.Phase) {
+				return r.paused(ctx, rot)
+			}
+			// A kind that does not pause after its refresh finishes at once.
+			if err := r.finishGuard(ctx, rot.Kind, false); err != nil {
+				return err
+			}
+			err = r.save(func(s *clustersecrets.Secrets) error { return s.FinishRotation() })
 		case clustersecrets.PhaseFinish:
 			if err := r.save(func(s *clustersecrets.Secrets) error { return s.EndRotation() }); err != nil {
 				return err
 			}
-			r.say("the rotation of the %s is finished: every node trusts the new value alone; %s", rot.Kind.Name(), r.file.written())
-			// What a client trusts is in its file, which the finish cannot reach.
-			switch rot.Kind {
-			case clustersecrets.RotateOSCA:
-				r.say("Client files issued during the rotation still trust the old OS CA besides the new one when they verify the nodes, so whoever holds the old OS CA's key could pose as a node to them; issue them again with chalkctl config new.")
-			case clustersecrets.RotateKubernetesCA:
-				r.say("Kubeconfigs issued during the rotation still trust the old Kubernetes CA besides the new one when they verify the API server, so whoever holds the old CA's key could pose as the API server to them; issue them again with chalkctl kubeconfig.")
+			state, advice := r.rotator(rot.Kind).Finished(rot.Kind)
+			r.say("the rotation of the %s is finished: %s; %s", rot.Kind.Name(), state, r.file.written())
+			if advice != "" {
+				r.say("%s", advice)
 			}
 			return nil
 		}
@@ -249,21 +252,56 @@ func (r *rotation) run(ctx context.Context) error {
 
 // apply delivers a phase to the nodes and waits until each confirms it.
 func (r *rotation) apply(ctx context.Context, kind clustersecrets.RotationKind, phase clustersecrets.Phase) error {
-	if kind == clustersecrets.RotateOSCA {
-		return r.applyOSCA(ctx, phase)
-	}
-	return rotator(kind).ApplyRotation(ctx, r, kind, phase)
+	return r.rotator(kind).ApplyRotation(ctx, r, kind, phase)
 }
 
-// rotator is the plugin that runs the rotation of kind; nil for the OS CA's, which the driver
-// runs.
-func rotator(kind clustersecrets.RotationKind) layer.Rotation {
-	for _, p := range compiled[layer.Rotation]() {
-		if p.Rotates(kind) {
+// paused says what the operator does before the rotation continues.
+func (r *rotation) paused(ctx context.Context, rot clustersecrets.Rotation) error {
+	return r.rotator(rot.Kind).Paused(ctx, r, rot)
+}
+
+// rotators are what runs each kind of rotation: chalkctl's own for what every node takes part in,
+// then every compiled plugin's.
+func rotators(r *rotation) []layer.Rotation {
+	return append([]layer.Rotation{caRotation{r}}, compiled[layer.Rotation]()...)
+}
+
+// rotatorOf is what runs the rotation of kind; nil when nothing does.
+func rotatorOf(r *rotation, kind clustersecrets.RotationKind) layer.Rotation {
+	for _, p := range rotators(r) {
+		if slices.Contains(p.Kinds(), kind) {
 			return p
 		}
 	}
 	return nil
+}
+
+// rotator is what runs the rotation of kind. rotate refused a kind without one, and running a
+// recorded kind other than the one named.
+func (r *rotation) rotator(kind clustersecrets.RotationKind) layer.Rotation {
+	return rotatorOf(r, kind)
+}
+
+// rotationKinds are the kinds chalkctl rotate runs, in the order it names them.
+func rotationKinds() []clustersecrets.RotationKind {
+	var kinds []clustersecrets.RotationKind
+	for _, p := range rotators(nil) {
+		kinds = append(kinds, p.Kinds()...)
+	}
+	return kinds
+}
+
+// kindList names kinds as chalkctl rotate takes them, separated by commas and the last by last,
+// such as " or ".
+func kindList(kinds []clustersecrets.RotationKind, last string) string {
+	names := make([]string, len(kinds))
+	for i, k := range kinds {
+		names[i] = string(k)
+	}
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + last + names[len(names)-1]
 }
 
 // skipRevoked reads the revoked nodes from every layer that lists them and leaves those of the
@@ -276,7 +314,7 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 	}
 	nodes := r.allNodes()
 	list := map[string]string{}
-	for _, p := range compiled[layer.Rotation]() {
+	for _, p := range compiled[layer.RotationNodes]() {
 		revoked, err := p.RevokedNodes(ctx, r)
 		if err != nil {
 			return fmt.Errorf("%w; rotate runs only once one does, so it never hands a certificate to a revoked node, or with --ignore-revoked", err)
@@ -408,109 +446,6 @@ func (r *rotation) Nodes() (layer.Nodes, error) {
 		return nil, err
 	}
 	return pluginNodes{nodes}, nil
-}
-
-// applyOSCA runs a phase of the OS CA's rotation: nodes trust both OS CAs, control planes renew
-// node certificates with the new node CA, every node gets a certificate of it, and finally nodes
-// trust the new OS CA alone.
-func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) error {
-	s := r.file.secrets
-	switch phase {
-	case clustersecrets.PhaseAccept, clustersecrets.PhaseFinish:
-		bundle := s.OSCABundle()
-		want, err := pki.Fingerprints(bundle)
-		if err != nil {
-			return err
-		}
-		return layer.EachNode(r.allNodes(), func(name string) error {
-			if err := r.deliver(ctx, name, &nodev1.ApplyConfigRequest{Trust: []byte(bundle)}); err != nil {
-				return err
-			}
-			if err := layer.WaitStatus(ctx, r, name, "to trust the OS CAs", func(st *nodev1.StatusResponse) error {
-				return layer.Trusts(st, client.NameOSCA, want, "")
-			}); err != nil {
-				return err
-			}
-			r.say("  %s trusts the %s of the secrets file", name, layer.Count(len(want), "OS CA"))
-			return nil
-		})
-	case clustersecrets.PhaseSwitch:
-		nodeCA, err := layer.FingerprintOf(s.NodeCA.Certificate)
-		if err != nil {
-			return err
-		}
-		holders, err := nodeCAHolders(r.cluster)
-		if err != nil {
-			return err
-		}
-		holders = slices.DeleteFunc(holders, func(name string) bool { return r.revoked[name] })
-		return layer.EachNode(holders, func(name string) error {
-			if err := r.deliverPayloads(ctx, name); err != nil {
-				return err
-			}
-			if err := layer.WaitStatus(ctx, r, name, "to hold the new node CA", func(st *nodev1.StatusResponse) error {
-				if c := layer.CertificateOf(st, client.NameNodeCA); c == nil || c.Fingerprint != nodeCA {
-					return errors.New("holds another node CA")
-				}
-				return nil
-			}); err != nil {
-				return err
-			}
-			r.say("  %s renews node certificates with the new node CA", name)
-			return nil
-		})
-	case clustersecrets.PhaseRefresh:
-		nodeCA, err := layer.FingerprintOf(s.NodeCA.Certificate)
-		if err != nil {
-			return err
-		}
-		return layer.EachNode(r.allNodes(), func(name string) error {
-			// A node renewed since, or in an earlier run, keeps its certificate.
-			if st, err := r.status(ctx, name); err == nil && layer.IssuedBy(st, client.NameNode, nodeCA) == nil {
-				r.say("  %s serves a certificate of the new node CA already", name)
-				return nil
-			}
-			names, err := r.cluster.certNames(name)
-			if err != nil {
-				return err
-			}
-			cert, err := pki.IssueNode(s.NodeCA, names, r.a.now())
-			if err != nil {
-				return err
-			}
-			if err := r.deliver(ctx, name, &nodev1.ApplyConfigRequest{NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key)}); err != nil {
-				return err
-			}
-			if err := layer.WaitStatus(ctx, r, name, "to serve a certificate of the new node CA", func(st *nodev1.StatusResponse) error {
-				return layer.IssuedBy(st, client.NameNode, nodeCA)
-			}); err != nil {
-				return err
-			}
-			r.say("  %s serves a certificate of the new node CA", name)
-			return nil
-		})
-	}
-	return nil
-}
-
-// pausesAfter reports whether the rotation stops after the phase for the operator, besides after
-// the refresh: the OS CA and the Kubernetes CAs after their accept phase, so client files,
-// kubeconfigs and workloads trust the new CA before it issues the servers' certificates.
-func pausesAfter(kind clustersecrets.RotationKind, phase clustersecrets.Phase) bool {
-	return phase == clustersecrets.PhaseAccept && (kind == clustersecrets.RotateOSCA || kind == clustersecrets.RotateKubernetesCA)
-}
-
-// paused says what the operator does before the rotation continues.
-func (r *rotation) paused(ctx context.Context, rot clustersecrets.Rotation) error {
-	switch {
-	case rot.Kind != clustersecrets.RotateOSCA:
-		return rotator(rot.Kind).Paused(ctx, r, rot)
-	case rot.Phase == clustersecrets.PhaseAccept:
-		r.say("Every node trusts the old and the new OS CA. Issue new client files now with chalkctl config new: they carry both OS CAs and work throughout the rotation and after it. Client files from before the rotation stop verifying the nodes from the switch on and are refused at the finish. Then continue with chalkctl rotate %s --resume, which makes the new OS CA issue.", rot.Kind)
-	default:
-		r.say("Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl config new. Build images and installer media again from %s; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate %s --finish.", r.publicFile(), rot.Kind)
-	}
-	return nil
 }
 
 // publicFile names the public half of the secrets file.

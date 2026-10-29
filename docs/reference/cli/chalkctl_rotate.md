@@ -20,10 +20,10 @@ as &lt;file>.prev, unless --out names a new file. An encrypted file is encrypted
 recipients it records, which --recipient replaces. One rotation runs at a time, and one chalkctl
 command at a time changes the secrets file, holding &lt;file>.lock.
 
-Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while no control plane
-says which nodes are revoked, unless none was bootstrapped yet. --ignore-revoked rotates without
-the list, and every node of the inventory takes part, so remove revoked nodes from the inventory
-first. The command needs the secrets file.
+Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while a layer cannot
+say which nodes are revoked, as while no Kubernetes control plane answers, unless none was
+bootstrapped yet. --ignore-revoked rotates without the lists, and every node of the inventory
+takes part, so remove revoked nodes from the inventory first. The command needs the secrets file.
 
 ## Flags
 
@@ -31,9 +31,9 @@ first. The command needs the secrets file.
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | map of string | each node's address in the inventory | Address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated. |
 | `--finish`{ #flag-finish } | boolean | `false` | Remove the old value from every node and the secrets file. |
-| `--force`{ #flag-force } | boolean | `false` | With --finish, finish the service-account key's rotation within the hour after its switch. |
+| `--force`{ #flag-force } | boolean | `false` | With --finish, finish although the kind asks to wait, as the service-account key does within the hour after its switch. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
-| `--ignore-revoked`{ #flag-ignore-revoked } | boolean | `false` | Rotate every node of the inventory, revoked ones included, without reading the revoked nodes, as while no control plane can say which are. |
+| `--ignore-revoked`{ #flag-ignore-revoked } | boolean | `false` | Rotate every node of the inventory, revoked ones included, without reading the revoked nodes, as while no layer can say which are. |
 | `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--out`{ #flag-out } | string | — | New file to write the changed secrets file to, instead of updating the secrets file in place. |
 | `--public-out`{ #flag-public-out } | string | — | New file to write the public half to, instead of updating secrets.pub.json beside the secrets file in place. |

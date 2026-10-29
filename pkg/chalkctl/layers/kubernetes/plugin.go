@@ -17,14 +17,15 @@ import (
 type Plugin struct{}
 
 var (
-	_ layer.Plugin       = (*Plugin)(nil)
-	_ layer.Commands     = (*Plugin)(nil)
-	_ layer.Status       = (*Plugin)(nil)
-	_ layer.ImageFacts   = (*Plugin)(nil)
-	_ layer.Delivery     = (*Plugin)(nil)
-	_ layer.Upgrade      = (*Plugin)(nil)
-	_ layer.Coordinators = (*Plugin)(nil)
-	_ layer.Rotation     = (*Plugin)(nil)
+	_ layer.Plugin        = (*Plugin)(nil)
+	_ layer.Commands      = (*Plugin)(nil)
+	_ layer.Status        = (*Plugin)(nil)
+	_ layer.ImageFacts    = (*Plugin)(nil)
+	_ layer.Delivery      = (*Plugin)(nil)
+	_ layer.Upgrade       = (*Plugin)(nil)
+	_ layer.Coordinators  = (*Plugin)(nil)
+	_ layer.Rotation      = (*Plugin)(nil)
+	_ layer.RotationNodes = (*Plugin)(nil)
 )
 
 // New returns chalkctl's Kubernetes layer.

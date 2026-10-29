@@ -270,10 +270,10 @@ as <file>.prev, unless --out names a new file. An encrypted file is encrypted ag
 recipients it records, which --recipient replaces. One rotation runs at a time, and one chalkctl
 command at a time changes the secrets file, holding <file>.lock.
 
-Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while no control plane
-says which nodes are revoked, unless none was bootstrapped yet. --ignore-revoked rotates without
-the list, and every node of the inventory takes part, so remove revoked nodes from the inventory
-first. The command needs the secrets file.`
+Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while a layer cannot
+say which nodes are revoked, as while no Kubernetes control plane answers, unless none was
+bootstrapped yet. --ignore-revoked rotates without the lists, and every node of the inventory
+takes part, so remove revoked nodes from the inventory first. The command needs the secrets file.`
 
 const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept phase, so kubeconfigs and workloads can
   # trust the new CA before it issues certificates. It pauses again after the refresh.

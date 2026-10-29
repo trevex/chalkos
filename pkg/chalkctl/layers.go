@@ -53,7 +53,7 @@ func payloadsOf(t *target, now time.Time) ([]*anypb.Any, error) {
 // layers' order and each once.
 func nodeCAHolders(c *cluster) ([]string, error) {
 	var names []string
-	for _, p := range compiled[layer.Rotation]() {
+	for _, p := range compiled[layer.RotationNodes]() {
 		holders, err := p.NodeCAHolders(pluginCluster{c})
 		if err != nil {
 			return nil, err

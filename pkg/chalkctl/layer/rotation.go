@@ -12,18 +12,33 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 )
 
-// Rotation is a plugin whose layer runs rotations of chalkctl rotate, and which names the nodes
-// every rotation leaves out or delivers the node CA to. chalkctl asks every compiled plugin.
+// Rotation runs kinds of rotation of chalkctl rotate. chalkctl runs the rotations of the CAs
+// every node takes part in itself, and asks every compiled plugin for its kinds.
 type Rotation interface {
-	// Rotates reports whether the layer runs the rotation of kind.
-	Rotates(kind clustersecrets.RotationKind) bool
+	// Kinds are the rotations it runs, in the order chalkctl names them.
+	Kinds() []clustersecrets.RotationKind
+	// CheckStart refuses to start a rotation of kind, as on a cluster without the nodes it runs
+	// through. It runs before the secrets file records the rotation.
+	CheckStart(ctx context.Context, r Rotating, kind clustersecrets.RotationKind) error
 	// ApplyRotation delivers a phase of the rotation of kind to the nodes and waits until each
 	// confirms it.
 	ApplyRotation(ctx context.Context, r Rotating, kind clustersecrets.RotationKind, phase clustersecrets.Phase) error
-	// FinishGuard refuses to remove an old value of kind something still needs; force is --force.
-	FinishGuard(ctx context.Context, r Rotating, kind clustersecrets.RotationKind, force bool) error
+	// PausesAfter reports whether the rotation of kind stops for the operator once every node
+	// applied the phase. A kind that does not pause after the refresh finishes without --finish.
+	PausesAfter(kind clustersecrets.RotationKind, phase clustersecrets.Phase) bool
 	// Paused says what the operator does before the rotation continues.
 	Paused(ctx context.Context, r Rotating, rot clustersecrets.Rotation) error
+	// FinishGuard refuses to remove an old value of kind something still needs; force is --force.
+	FinishGuard(ctx context.Context, r Rotating, kind clustersecrets.RotationKind, force bool) error
+	// Finished says what the end of the rotation of kind leaves: the state of the nodes, which
+	// follows "the rotation of the <kind> is finished: ", and advice for what the finish cannot
+	// reach, such as clients' files to issue again; advice is "" without any.
+	Finished(kind clustersecrets.RotationKind) (state, advice string)
+}
+
+// RotationNodes is a plugin whose layer names the nodes every rotation leaves out and those it
+// delivers the node CA to. chalkctl asks every compiled plugin.
+type RotationNodes interface {
 	// RevokedNodes are the nodes the layer lists as revoked, each with when it was, as
 	// "since <time>". A rotation hands them nothing.
 	RevokedNodes(ctx context.Context, r Rotating) (map[string]string, error)
