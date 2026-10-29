@@ -148,8 +148,11 @@ type NodeServiceClient interface {
 	// refusal names the rule. The config it replaces becomes the previous one, so a second rollback
 	// undoes the first. Only the config documents return: the OS CAs, the node certificate and the
 	// layers' payloads stay as they are. An upgrade's image starts without a previous config.
-	// During a trial it rolls the config on trial back at once and ends the trial. Available in
-	// normal mode to admins.
+	// During a trial it takes only the version from before the trial, ConfigTrial.previous_version,
+	// rolls the config on trial back at once and ends the trial. Once a rollback at the trial's
+	// deadline wrote that config and failed after, the node runs it already: RollbackConfig then
+	// delivers it again, which finishes the rollback, and ends the trial. Available in normal mode to
+	// admins.
 	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
 	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
 	// store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
@@ -171,9 +174,10 @@ type NodeServiceClient interface {
 	// FAILED_PRECONDITION too when the node no longer runs the version on trial, and after the
 	// deadline, unless the rollback at the deadline failed: while ConfigTrial.error is set, a
 	// confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
-	// changed the node, it answers FAILED_PRECONDITION all the same: RollbackConfig finishes the
-	// rollback. It answers INTERNAL when the node cannot read the trial's record. Available in normal
-	// mode to admins.
+	// changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
+	// the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
+	// answers INTERNAL when the node cannot read the trial's record. Available in normal mode to
+	// admins.
 	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
 }
 
@@ -462,8 +466,11 @@ type NodeServiceHandler interface {
 	// refusal names the rule. The config it replaces becomes the previous one, so a second rollback
 	// undoes the first. Only the config documents return: the OS CAs, the node certificate and the
 	// layers' payloads stay as they are. An upgrade's image starts without a previous config.
-	// During a trial it rolls the config on trial back at once and ends the trial. Available in
-	// normal mode to admins.
+	// During a trial it takes only the version from before the trial, ConfigTrial.previous_version,
+	// rolls the config on trial back at once and ends the trial. Once a rollback at the trial's
+	// deadline wrote that config and failed after, the node runs it already: RollbackConfig then
+	// delivers it again, which finishes the rollback, and ends the trial. Available in normal mode to
+	// admins.
 	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
 	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
 	// store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
@@ -485,9 +492,10 @@ type NodeServiceHandler interface {
 	// FAILED_PRECONDITION too when the node no longer runs the version on trial, and after the
 	// deadline, unless the rollback at the deadline failed: while ConfigTrial.error is set, a
 	// confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
-	// changed the node, it answers FAILED_PRECONDITION all the same: RollbackConfig finishes the
-	// rollback. It answers INTERNAL when the node cannot read the trial's record. Available in normal
-	// mode to admins.
+	// changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
+	// the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
+	// answers INTERNAL when the node cannot read the trial's record. Available in normal mode to
+	// admins.
 	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
 }
 

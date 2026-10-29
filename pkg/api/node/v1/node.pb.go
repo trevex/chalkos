@@ -2146,8 +2146,9 @@ func (*ResetVolumeResponse) Descriptor() ([]byte, []int) {
 type RollbackConfigRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The version of the previous config to deliver again, as
-	// StatusResponse.previous_config_version gives it. The node refuses another with
-	// FAILED_PRECONDITION, so a request sent twice rolls back once. Required.
+	// StatusResponse.previous_config_version gives it, or during a trial its
+	// ConfigTrial.previous_version. The node refuses another with FAILED_PRECONDITION, so a request
+	// sent twice rolls back once. Required.
 	Version       string `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2677,14 +2678,17 @@ type ConfigTrial struct {
 	Deadline *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=deadline,proto3" json:"deadline,omitempty"`
 	// Why the rollback at the deadline failed, which the node tries again each minute; empty before
 	// the deadline and while none failed. While it is set, ConfirmConfig still confirms the config
-	// and stops the retries, unless the rollback failed after it changed the node: then
-	// ConfirmConfig refuses, and RollbackConfig finishes the rollback.
+	// and stops the retries, unless rollback_changed is set.
 	Error string `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
 	// The units the trial's health check leaves out besides those the image ignores, as
 	// ApplyConfigRequest.ignore_units named them.
-	IgnoreUnits   []string `protobuf:"bytes,5,rep,name=ignore_units,json=ignoreUnits,proto3" json:"ignore_units,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	IgnoreUnits []string `protobuf:"bytes,5,rep,name=ignore_units,json=ignoreUnits,proto3" json:"ignore_units,omitempty"`
+	// Whether a rollback at the deadline failed after it changed the node, as when it wrote the
+	// config and a restart failed after. ConfirmConfig refuses then; the node keeps trying to finish
+	// the rollback each minute, and RollbackConfig to previous_version finishes it at once.
+	RollbackChanged bool `protobuf:"varint,6,opt,name=rollback_changed,json=rollbackChanged,proto3" json:"rollback_changed,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ConfigTrial) Reset() {
@@ -2750,6 +2754,13 @@ func (x *ConfigTrial) GetIgnoreUnits() []string {
 		return x.IgnoreUnits
 	}
 	return nil
+}
+
+func (x *ConfigTrial) GetRollbackChanged() bool {
+	if x != nil {
+		return x.RollbackChanged
+	}
+	return false
 }
 
 // The state of one output of the running image.
@@ -4506,13 +4517,14 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	" \x01(\tR\x13stagedConfigVersion\x127\n" +
 	"\aoutputs\x18\v \x03(\v2\x1d.chalkos.node.v1.OutputStatusR\aoutputs\x126\n" +
 	"\x17previous_config_version\x18\f \x01(\tR\x15previousConfigVersion\x122\n" +
-	"\x05trial\x18\r \x01(\v2\x1c.chalkos.node.v1.ConfigTrialR\x05trial\"\xc3\x01\n" +
+	"\x05trial\x18\r \x01(\v2\x1c.chalkos.node.v1.ConfigTrialR\x05trial\"\xee\x01\n" +
 	"\vConfigTrial\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12)\n" +
 	"\x10previous_version\x18\x02 \x01(\tR\x0fpreviousVersion\x126\n" +
 	"\bdeadline\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\bdeadline\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\x12!\n" +
-	"\fignore_units\x18\x05 \x03(\tR\vignoreUnits\"L\n" +
+	"\fignore_units\x18\x05 \x03(\tR\vignoreUnits\x12)\n" +
+	"\x10rollback_changed\x18\x06 \x01(\bR\x0frollbackChanged\"L\n" +
 	"\fOutputStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\tR\x04hash\x12\x14\n" +

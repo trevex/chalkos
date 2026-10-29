@@ -89,8 +89,11 @@ service NodeService {
   // refusal names the rule. The config it replaces becomes the previous one, so a second rollback
   // undoes the first. Only the config documents return: the OS CAs, the node certificate and the
   // layers' payloads stay as they are. An upgrade's image starts without a previous config.
-  // During a trial it rolls the config on trial back at once and ends the trial. Available in
-  // normal mode to admins.
+  // During a trial it takes only the version from before the trial, ConfigTrial.previous_version,
+  // rolls the config on trial back at once and ends the trial. Once a rollback at the trial's
+  // deadline wrote that config and failed after, the node runs it already: RollbackConfig then
+  // delivers it again, which finishes the rollback, and ends the trial. Available in normal mode to
+  // admins.
   rpc RollbackConfig(RollbackConfigRequest) returns (RollbackConfigResponse);
   // RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
   // store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
@@ -112,9 +115,10 @@ service NodeService {
   // FAILED_PRECONDITION too when the node no longer runs the version on trial, and after the
   // deadline, unless the rollback at the deadline failed: while ConfigTrial.error is set, a
   // confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
-  // changed the node, it answers FAILED_PRECONDITION all the same: RollbackConfig finishes the
-  // rollback. It answers INTERNAL when the node cannot read the trial's record. Available in normal
-  // mode to admins.
+  // changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
+  // the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
+  // answers INTERNAL when the node cannot read the trial's record. Available in normal mode to
+  // admins.
   rpc ConfirmConfig(ConfirmConfigRequest) returns (ConfirmConfigResponse);
 }
 
@@ -507,8 +511,9 @@ message ResetVolumeResponse {}
 // The request of RollbackConfig.
 message RollbackConfigRequest {
   // The version of the previous config to deliver again, as
-  // StatusResponse.previous_config_version gives it. The node refuses another with
-  // FAILED_PRECONDITION, so a request sent twice rolls back once. Required.
+  // StatusResponse.previous_config_version gives it, or during a trial its
+  // ConfigTrial.previous_version. The node refuses another with FAILED_PRECONDITION, so a request
+  // sent twice rolls back once. Required.
   string version = 1;
 }
 
@@ -604,12 +609,15 @@ message ConfigTrial {
   google.protobuf.Timestamp deadline = 3;
   // Why the rollback at the deadline failed, which the node tries again each minute; empty before
   // the deadline and while none failed. While it is set, ConfirmConfig still confirms the config
-  // and stops the retries, unless the rollback failed after it changed the node: then
-  // ConfirmConfig refuses, and RollbackConfig finishes the rollback.
+  // and stops the retries, unless rollback_changed is set.
   string error = 4;
   // The units the trial's health check leaves out besides those the image ignores, as
   // ApplyConfigRequest.ignore_units named them.
   repeated string ignore_units = 5;
+  // Whether a rollback at the deadline failed after it changed the node, as when it wrote the
+  // config and a restart failed after. ConfirmConfig refuses then; the node keeps trying to finish
+  // the rollback each minute, and RollbackConfig to previous_version finishes it at once.
+  bool rollback_changed = 6;
 }
 
 // The state of one output of the running image.

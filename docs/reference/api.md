@@ -415,8 +415,11 @@ with the config the node runs and the machine, storage changes, outputs and effe
 refusal names the rule. The config it replaces becomes the previous one, so a second rollback
 undoes the first. Only the config documents return: the OS CAs, the node certificate and the
 layers' payloads stay as they are. An upgrade's image starts without a previous config.
-During a trial it rolls the config on trial back at once and ends the trial. Available in
-normal mode to admins.
+During a trial it takes only the version from before the trial, ConfigTrial.previous_version,
+rolls the config on trial back at once and ends the trial. Once a rollback at the trial's
+deadline wrote that config and failed after, the node runs it already: RollbackConfig then
+delivers it again, which finishes the rollback, and ends the trial. Available in normal mode to
+admins.
 
 Request: RollbackConfigRequest. Response: RollbackConfigResponse.
 
@@ -426,7 +429,7 @@ The request of RollbackConfig.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `version` | string | The version of the previous config to deliver again, as StatusResponse.previous_config_version gives it. The node refuses another with FAILED_PRECONDITION, so a request sent twice rolls back once. Required. |
+| `version` | string | The version of the previous config to deliver again, as StatusResponse.previous_config_version gives it, or during a trial its ConfigTrial.previous_version. The node refuses another with FAILED_PRECONDITION, so a request sent twice rolls back once. Required. |
 
 #### RollbackConfigResponse { #message-rollbackconfigresponse }
 
@@ -487,9 +490,10 @@ is open, unless the node runs that version, so a request sent twice confirms onc
 FAILED_PRECONDITION too when the node no longer runs the version on trial, and after the
 deadline, unless the rollback at the deadline failed: while ConfigTrial.error is set, a
 confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
-changed the node, it answers FAILED_PRECONDITION all the same: RollbackConfig finishes the
-rollback. It answers INTERNAL when the node cannot read the trial's record. Available in normal
-mode to admins.
+changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
+the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
+answers INTERNAL when the node cannot read the trial's record. Available in normal mode to
+admins.
 
 Request: ConfirmConfigRequest. Response: ConfirmConfigResponse.
 
@@ -562,8 +566,9 @@ confirms it first.
 | `version` | string | The version of the config on trial, as StatusResponse.config_version gives it. |
 | `previous_version` | string | The version of the config the node ran before, which the rollback delivers again. |
 | `deadline` | google.protobuf.Timestamp | When the node rolls the config back, unless it is confirmed first. |
-| `error` | string | Why the rollback at the deadline failed, which the node tries again each minute; empty before the deadline and while none failed. While it is set, ConfirmConfig still confirms the config and stops the retries, unless the rollback failed after it changed the node: then ConfirmConfig refuses, and RollbackConfig finishes the rollback. |
+| `error` | string | Why the rollback at the deadline failed, which the node tries again each minute; empty before the deadline and while none failed. While it is set, ConfirmConfig still confirms the config and stops the retries, unless rollback_changed is set. |
 | `ignore_units` | list of string | The units the trial's health check leaves out besides those the image ignores, as ApplyConfigRequest.ignore_units named them. |
+| `rollback_changed` | bool | Whether a rollback at the deadline failed after it changed the node, as when it wrote the config and a restart failed after. ConfirmConfig refuses then; the node keeps trying to finish the rollback each minute, and RollbackConfig to previous_version finishes it at once. |
 
 ### Diagnostic { #message-diagnostic }
 
