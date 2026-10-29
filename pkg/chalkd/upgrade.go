@@ -16,10 +16,10 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/esp"
-	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storeslot"
@@ -129,11 +129,8 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	return connect.NewResponse(resp), nil
 }
 
-// Where an image holds the schemas of its kinds and its Kubernetes facts, below its system.
-const (
-	imageSchemas = "/etc/chalkos/schemas"
-	imageFacts   = "/etc/chalkos/kubernetes/image.json"
-)
+// imageSchemas is where an image holds the schemas of its kinds, below its system.
+const imageSchemas = "/etc/chalkos/schemas"
 
 // imageStore is the store of an image an upgrade wrote, read as upgrade.Store reads it: by the
 // image's own paths.
@@ -143,9 +140,9 @@ type imageStore interface {
 }
 
 // imageContract reads what an image translates config with from its store: its schemas and
-// image.json, whose content the image's root hash covers. system is the image's NixOS system in
-// st, and platform is the image's.
-func imageContract(st imageStore, system, platform string) (*schema.Schemas, config.Target, error) {
+// its layers' facts, whose content the image's root hash covers. system is the image's NixOS
+// system in st, and platform is the image's.
+func (s *Server) imageContract(st imageStore, system, platform string) (*schema.Schemas, config.Target, error) {
 	entries, err := st.ReadDir(system + imageSchemas)
 	if err != nil {
 		return nil, config.Target{}, fmt.Errorf("the image's schemas: %w", err)
@@ -163,20 +160,17 @@ func imageContract(st imageStore, system, platform string) (*schema.Schemas, con
 	if err != nil {
 		return nil, config.Target{}, fmt.Errorf("the image's schemas: %w", err)
 	}
-	facts, err := st.ReadFile(system + imageFacts)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, config.Target{}, fmt.Errorf("the image's Kubernetes facts: %w", err)
+	facts, err := imageFacts(layer.Compiled[layer.ImageFacts](s.Plugins), func(h layer.ImageFacts) (*anypb.Any, error) {
+		return h.SystemFacts(func(path string) ([]byte, error) { return st.ReadFile(system + path) })
+	})
+	if err != nil {
+		return nil, config.Target{}, err
 	}
-	var payloads []*anypb.Any
-	if len(facts) > 0 {
-		p, err := k8s.FactsPayload(facts)
-		if err != nil {
-			return nil, config.Target{}, fmt.Errorf("the image's Kubernetes facts: %w", err)
-		}
-		payloads = append(payloads, p)
+	t := config.Target{Platform: platform}
+	if err := s.target(facts, &t); err != nil {
+		return nil, config.Target{}, err
 	}
-	t, err := imageTarget(platform, payloads)
-	return schemas, t, err
+	return schemas, t, nil
 }
 
 // stageConfig writes the config slot of the image an upgrade installs, whose store is st with the
@@ -233,7 +227,7 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 	if err != nil {
 		return err
 	}
-	schemas, t, err := imageContract(st, system, platform)
+	schemas, t, err := s.imageContract(st, system, platform)
 	if err != nil {
 		return failed(connect.CodeInvalidArgument, "%v", err)
 	}

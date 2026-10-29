@@ -18,6 +18,8 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
+var _ layer.Certificates = (*kubernetesLayer)(nil)
+
 // Certificates are the Kubernetes side's certificates and trust: the CAs of its share, the
 // control plane's and the kubelet's certificates, and the CAs and keys its components run with.
 func (p *kubernetesLayer) Certificates(_ context.Context, now time.Time) ([]*nodev1.CertificateStatus, []*nodev1.TrustStatus) {

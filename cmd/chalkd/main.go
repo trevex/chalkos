@@ -417,9 +417,11 @@ func serve() error {
 	}
 	if srv.Plugins.Layers().Has(layers.Kubernetes) && creds.mode == nodev1.Mode_MODE_NORMAL {
 		srv.Kubernetes = k
-		// The cluster's control planes renew node certificates; a node without Kubernetes knows
-		// none and is renewed with chalkctl node renew.
-		srv.Renewal = chalkd.NewNodeRenewal(creds.node, srv.IssueNodeCertificate)
+	}
+	// The issuer of the image's layer renews the node certificate; a node without one is renewed
+	// with chalkctl node renew.
+	if is := srv.Plugins.Issuer(); is != nil && creds.mode == nodev1.Mode_MODE_NORMAL {
+		srv.Renewal = chalkd.NewNodeRenewal(creds.node, is.IssueNodeCertificate)
 		go srv.Renewal.Run(ctx)
 	}
 	go announceAddresses(srv.CurrentFingerprint)

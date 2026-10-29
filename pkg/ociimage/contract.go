@@ -54,6 +54,15 @@ func ReadContractDir(dir string) (Contract, error) {
 	return c, nil
 }
 
+// ReadFile reads a file of the contract by its name in the image's directory: image.json alone,
+// which is fs.ErrNotExist for an image without one.
+func (c Contract) ReadFile(name string) ([]byte, error) {
+	if name == "image.json" && len(c.ImageJSON) > 0 {
+		return c.ImageJSON, nil
+	}
+	return nil, fs.ErrNotExist
+}
+
 // readFiles reads the files of dir whose names match pattern, by name.
 func readFiles(dir, pattern string) (map[string][]byte, error) {
 	paths, err := filepath.Glob(filepath.Join(dir, pattern))

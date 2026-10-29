@@ -9,11 +9,14 @@ import (
 	"os"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
+
+var _ layer.Health = (*kubernetesLayer)(nil)
 
 // Health checks the node's part in its cluster once it holds a share: a worker's kubelet is
 // healthy and its Node registered; a bootstrapped control plane's etcd member answers, its API

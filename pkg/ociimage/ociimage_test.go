@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -256,6 +257,21 @@ func TestContractTar(t *testing.T) {
 	}
 	if got, err := ociimage.ParseContract(bytes.NewReader(data)); err != nil || !reflect.DeepEqual(got, c) {
 		t.Errorf("ParseContract = %+v, %v", got, err)
+	}
+}
+
+// TestContractReadFile reads image.json by its name, and nothing for an image without one or
+// for another name.
+func TestContractReadFile(t *testing.T) {
+	c := ociimage.Contract{Metadata: []byte("{}"), ImageJSON: []byte(`{"version": "1.37.1"}`)}
+	if data, err := c.ReadFile("image.json"); err != nil || string(data) != `{"version": "1.37.1"}` {
+		t.Errorf("image.json = %q, %v", data, err)
+	}
+	if _, err := c.ReadFile("metadata.json"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("metadata.json: %v, want fs.ErrNotExist", err)
+	}
+	if _, err := (ociimage.Contract{}).ReadFile("image.json"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("image.json of an image without one: %v, want fs.ErrNotExist", err)
 	}
 }
 

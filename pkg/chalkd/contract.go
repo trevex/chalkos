@@ -9,7 +9,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 )
 
 // Contract returns what the running image was built for, its layers, its schemas as files and its
@@ -41,10 +41,8 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 		}
 		resp.Schemas[e.Name()] = data
 	}
-	if facts, err := k8s.FactsPayloadOf(s.Loader.KubernetesImage); err != nil {
+	if resp.LayerFacts, err = imageFacts(layer.Active[layer.ImageFacts](s.Plugins), layer.ImageFacts.RunningFacts); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
-	} else if facts != nil {
-		resp.LayerFacts = append(resp.LayerFacts, facts)
 	}
 	return connect.NewResponse(resp), nil
 }

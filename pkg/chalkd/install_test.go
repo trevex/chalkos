@@ -25,8 +25,11 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -297,10 +300,29 @@ func TestInstallFailureCanBeRepeated(t *testing.T) {
 const testImage = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",
   "kubeControllerManager": "c", "kubeScheduler": "s", "kubeProxy": "p", "coredns": "d", "flannel": ""}}`
 
-// kubernetesImage gives s's running image Kubernetes: its image.json.
+// kubernetesImage gives s's running image Kubernetes: its image.json, which the Kubernetes
+// layer reads. A node without a Kubernetes side, as in maintenance mode, gets the layer with one
+// of its own, whose files are in a directory of the test.
 func kubernetesImage(t *testing.T, s *Server) {
 	t.Helper()
 	write(t, s.Loader.KubernetesImage, testImage)
+	if s.Kubernetes != nil {
+		s.Kubernetes.imageFile = s.Loader.KubernetesImage
+		return
+	}
+	root := t.TempDir()
+	k := NewKubernetes(KubernetesOptions{
+		Paths: knode.Paths{
+			State: filepath.Join(root, "state"), Cluster: filepath.Join(root, "cluster.json"), NodeFile: filepath.Join(root, "node.json"),
+			Run: filepath.Join(root, "run"), PKI: filepath.Join(root, "pki"), KubeletPKI: filepath.Join(root, "kubelet"), EtcdData: filepath.Join(root, "etcd"),
+		},
+		ImageFile: s.Loader.KubernetesImage,
+	})
+	reg, err := layer.NewRegistry(layers.Of(layers.Kubernetes), NewKubernetesLayer(s, k), NewRouterLayer(&Router{Run: s.Run}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Plugins = reg
 }
 
 // workerConfig is baseConfig for a Kubernetes worker with a fixed address.

@@ -42,7 +42,7 @@ func (s *Server) certificates(now time.Time) []*nodev1.CertificateStatus {
 		case s.Renewal != nil && s.Renewal.Problem() != "":
 			problem = s.Renewal.Problem()
 		case problem != "" && s.Renewal == nil:
-			// Only nodes with Kubernetes reach a control plane to renew it.
+			// Only a node whose image has an issuer renews it itself.
 			problem += "; renew it with chalkctl node renew " + s.nodeName()
 		}
 		var issuer *x509.Certificate

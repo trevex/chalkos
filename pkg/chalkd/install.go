@@ -9,12 +9,13 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
-	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -175,13 +176,12 @@ func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[n
 		return nil, nil, failed(connect.CodeFailedPrecondition, "install: %v", err)
 	}
 	contract := &nodev1.ImageContract{Schemas: c.Schemas, SystemDefinitions: make(map[string]string, len(c.Definitions))}
-	if len(c.ImageJSON) > 0 {
-		facts, err := k8s.FactsPayload(c.ImageJSON)
-		if err != nil {
-			pull.Close()
-			return nil, nil, failed(connect.CodeInternal, "install: %v", err)
-		}
-		contract.LayerFacts = append(contract.LayerFacts, facts)
+	// The pulled image is not the one that runs, so every compiled plugin reads its facts.
+	if contract.LayerFacts, err = imageFacts(layer.Compiled[layer.ImageFacts](s.Plugins), func(h layer.ImageFacts) (*anypb.Any, error) {
+		return h.ContractFacts(c.ReadFile)
+	}); err != nil {
+		pull.Close()
+		return nil, nil, failed(connect.CodeInternal, "install: %v", err)
 	}
 	for name, data := range c.Definitions {
 		contract.SystemDefinitions[name] = string(data)

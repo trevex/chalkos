@@ -25,7 +25,7 @@ func TestContract(t *testing.T) {
 	if m := resp.Msg; m.Variant != "worker" || m.Platform != "metal" {
 		t.Errorf("contract of the image of %q and %q, want the os-release's worker and metal", m.Variant, m.Platform)
 	}
-	write(t, s.Loader.KubernetesImage, testImage)
+	kubernetesImage(t, s)
 	if resp, err = s.Contract(context.Background(), connect.NewRequest(&nodev1.ContractRequest{})); err != nil || len(resp.Msg.LayerFacts) != 1 {
 		t.Fatalf("layer facts = %v, %v; want the image.json", resp.Msg.GetLayerFacts(), err)
 	}

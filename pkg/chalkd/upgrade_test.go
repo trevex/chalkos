@@ -223,7 +223,7 @@ func imageWith(t *testing.T, files map[string][]byte, facts string) dirStore {
 		write(t, filepath.Join(root, "nix/store/x", imageSchemas, name), string(data))
 	}
 	if facts != "" {
-		write(t, filepath.Join(root, "nix/store/x", imageFacts), facts)
+		write(t, filepath.Join(root, "nix/store/x", k8s.ImageFile), facts)
 	}
 	return dirStore(root)
 }

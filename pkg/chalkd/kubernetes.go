@@ -36,6 +36,8 @@ type Kubernetes struct {
 	revokedNodesHook func(context.Context) (revoked.List, error)
 	// kubelet is the kubelet's health endpoint.
 	kubelet string
+	// imageFile is the running image's image.json.
+	imageFile string
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -174,6 +176,8 @@ type KubernetesOptions struct {
 	RevokedNodes func(context.Context) (revoked.List, error)
 	// Kubelet is the kubelet's health endpoint; empty means http://127.0.0.1:10248/healthz.
 	Kubelet string
+	// ImageFile is the running image's image.json; empty is k8s.ImageFile. Tests replace it.
+	ImageFile string
 }
 
 // LeavesProblem says why renewing the control plane's certificates failed last; "" while it
@@ -190,12 +194,15 @@ func (k *Kubernetes) LeavesProblem() string {
 
 // NewKubernetes returns the Kubernetes side of a node.
 func NewKubernetes(o KubernetesOptions) *Kubernetes {
-	k := &Kubernetes{Paths: o.Paths, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd, revokedNodesHook: o.RevokedNodes, kubelet: o.Kubelet}
+	k := &Kubernetes{Paths: o.Paths, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd, revokedNodesHook: o.RevokedNodes, kubelet: o.Kubelet, imageFile: o.ImageFile}
 	if k.Paths == (knode.Paths{}) {
 		k.Paths = knode.DefaultPaths()
 	}
 	if k.kubelet == "" {
 		k.kubelet = "http://127.0.0.1:10248/healthz"
+	}
+	if k.imageFile == "" {
+		k.imageFile = k8s.ImageFile
 	}
 	h := &k.hooks
 	if h.Slot == nil {

@@ -29,6 +29,10 @@ func TestInfoAndContractNameTheLayers(t *testing.T) {
 	} {
 		s, _ := newTestServer(t, normal, vda)
 		withPlugins(t, s, c.layers, nil)
+		if c.layers.Has(layers.Kubernetes) {
+			// The Kubernetes layer reads its image.json.
+			kubernetesImage(t, s)
+		}
 		info, err := s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
 		if err != nil {
 			t.Fatal(err)

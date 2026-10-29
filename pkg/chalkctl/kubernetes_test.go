@@ -112,11 +112,11 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o chalkd.KubernetesOptions) (
 		// The control plane runs with the certificates the node holds.
 		o.Hooks.CheckControlPlane = func(context.Context, k8s.Cluster, kpki.Share) error { return nil }
 	}
+	o.ImageFile = imageJSON(t, s)
 	s.Kubernetes = chalkd.NewKubernetes(o)
 	withPlugins(t, s, layers.Of(layers.Kubernetes), nil)
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
-	kubernetesImage(t, s)
 	// The cluster file chalkd writes from the node's config.
 	s.Loader.ClusterFile = s.Kubernetes.Paths.Cluster
 	writeFile(t, s.Kubernetes.Paths.Cluster, clusterFile("worker"))

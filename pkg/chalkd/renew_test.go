@@ -242,7 +242,7 @@ func TestIssueNodeCertificateOfRevokedControlPlane(t *testing.T) {
 	s.Certificate = loadedCertificate(t, c, issued)
 	var loadErr error
 	s.Kubernetes.revokedNodesHook = func(context.Context) (revoked.List, error) { return revoked.List{"n1": time.Now()}, loadErr }
-	r := NewNodeRenewal(s.Certificate, s.IssueNodeCertificate)
+	r := NewNodeRenewal(s.Certificate, kubernetesOf(s).IssueNodeCertificate)
 	before := s.Certificate.Fingerprint()
 	if err := r.Renew(context.Background(), time.Now()); connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "node n1 is revoked") {
 		t.Errorf("renewing n1: %v, want a refusal", err)
@@ -407,7 +407,7 @@ func TestIssueNodeCertificateLocallyOnControlPlanes(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Certificate = loadedCertificate(t, c, issued)
-	r := NewNodeRenewal(s.Certificate, s.IssueNodeCertificate)
+	r := NewNodeRenewal(s.Certificate, kubernetesOf(s).IssueNodeCertificate)
 	before := s.Certificate.Fingerprint()
 	if err := r.Renew(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)

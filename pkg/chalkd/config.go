@@ -3,9 +3,7 @@ package chalkd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"strings"
 
@@ -13,9 +11,9 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
-	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -64,14 +62,15 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 	}
 	release := readOSRelease(s.Paths.OSRelease)
 	t := config.Target{Platform: release["CHALKOS_PLATFORM"]}
-	// The facts the node builds its cluster from at boot, so the config is checked against
-	// exactly those; an image without them runs no Kubernetes.
-	img, err := k8s.ReadImage(s.Loader.KubernetesImage)
-	switch {
-	case err == nil:
-		t.Image = &img
-	case !errors.Is(err, fs.ErrNotExist):
-		return config.Target{}, nil, failed(connect.CodeInternal, "the image's Kubernetes facts: %v", err)
+	// The facts the image's layers build their config from at boot, so the config is checked
+	// against exactly those; an image whose layers have none carries none. They are the image's
+	// own, so a fault in them is not the client's.
+	facts, err := imageFacts(layer.Active[layer.ImageFacts](s.Plugins), layer.ImageFacts.RunningFacts)
+	if err != nil {
+		return config.Target{}, nil, failed(connect.CodeInternal, "the image's layer facts: %v", err)
+	}
+	if err := s.target(facts, &t); err != nil {
+		return config.Target{}, nil, failed(connect.CodeInternal, "the image's layer facts: %v", plain(err))
 	}
 	return t, schemas, nil
 }
@@ -96,7 +95,7 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, con
 	)
 	switch {
 	case s.Installer:
-		t, schemas, err = headerTarget(h, contract)
+		t, schemas, err = s.headerTarget(h, contract)
 	case contract != nil:
 		err = failed(connect.CodeInvalidArgument, "an install in place checks the config against the running image; the header must carry no schemas or image.json")
 	default:
@@ -159,7 +158,7 @@ func headerName(h *nodev1.InstallHeader) (string, error) {
 
 // headerTarget is the image an install from the installer writes, as its header and contract
 // describe it, and the contract's schemas.
-func headerTarget(h *nodev1.InstallHeader, contract *nodev1.ImageContract) (config.Target, *schema.Schemas, error) {
+func (s *Server) headerTarget(h *nodev1.InstallHeader, contract *nodev1.ImageContract) (config.Target, *schema.Schemas, error) {
 	if h.Image == nil {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the installer needs the node's image to write to the target disk")
 	}
@@ -170,27 +169,47 @@ func headerTarget(h *nodev1.InstallHeader, contract *nodev1.ImageContract) (conf
 	if err != nil {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's schemas: %v", err)
 	}
-	t, err := imageTarget(h.Image.GetPlatform(), contract.GetLayerFacts())
-	return t, schemas, err
+	t := config.Target{Platform: h.Image.GetPlatform()}
+	if err := s.target(contract.GetLayerFacts(), &t); err != nil {
+		return config.Target{}, nil, err
+	}
+	return t, schemas, nil
 }
 
-// imageTarget is the image of the platform an install or upgrade writes, as config for it is
-// translated, with its layers' facts, none for an image whose layers have none.
-func imageTarget(platform string, facts []*anypb.Any) (config.Target, error) {
-	t := config.Target{Platform: platform}
+// target sets on t what the facts give config's translation, through the plugin each is of;
+// facts no compiled plugin claims are refused.
+func (s *Server) target(facts []*anypb.Any, t *config.Target) error {
 	for _, f := range facts {
-		img, ok, err := k8s.ImageOfPayload(f)
-		if !ok {
-			return config.Target{}, failed(connect.CodeInvalidArgument, "the image's contract carries facts of type %s, which this chalkd does not know", f.GetTypeUrl())
+		claimed := false
+		for _, h := range layer.Compiled[layer.ImageFacts](s.Plugins) {
+			ok, err := h.Target(f, t)
+			if err != nil {
+				return err
+			}
+			if claimed = ok; ok {
+				break
+			}
 		}
-		if err != nil {
-			return config.Target{}, failed(connect.CodeInvalidArgument, "the image's image.json: %v", err)
-		}
-		if t.Image == nil {
-			t.Image = &img
+		if !claimed {
+			return failed(connect.CodeInvalidArgument, "the image's contract carries facts of type %s, which this chalkd does not know", f.GetTypeUrl())
 		}
 	}
-	return t, nil
+	return nil
+}
+
+// imageFacts collects the facts each plugin reads, nil ones left out.
+func imageFacts(hooks []layer.ImageFacts, read func(layer.ImageFacts) (*anypb.Any, error)) ([]*anypb.Any, error) {
+	var list []*anypb.Any
+	for _, h := range hooks {
+		f, err := read(h)
+		if err != nil {
+			return nil, err
+		}
+		if f != nil {
+			list = append(list, f)
+		}
+	}
+	return list, nil
 }
 
 // runningSlot is the running image's config slot on STATE and what it holds; found is false while

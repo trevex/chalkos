@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -223,6 +224,8 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	s := maintenanceNode()
 	s.Installer = true
+	// The installer's image carries no layer; its compiled plugins read the sent image's facts.
+	withPlugins(t, s, layers.Of(), nil)
 	// The installer's own image has no schemas: the config checks against those sent alone.
 	s.Loader.Schemas = filepath.Join(t.TempDir(), "none")
 	var got install.PartsRequest
