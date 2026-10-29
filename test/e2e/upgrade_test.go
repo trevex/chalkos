@@ -16,16 +16,18 @@ import (
 )
 
 // TestUpgrade installs the signed test image under Secure Boot, which boots its UKI as
-// chalkos_1.efi, upgrades it to the upgrade image, which boots from slot B as chalkos_2.efi with
-// STATE and VAR unlocked by the TPM and is found healthy, and then to the unhealthy image,
-// installed as chalkos_3, which never becomes healthy: after its one try the node falls back to
-// chalkos_2.efi and says so. Each image is named by its root hash. The node pulls the upgrade image
-// through a Mirror of a registry host it cannot reach, whose endpoint is a registry on the host
-// that asks for the credentials of the endpoint's own Registry; the upgrade delivers the Mirror and
-// the Registry. The upgrade to the unhealthy image still streams it from its directory. The upgrade
-// carries config only the upgrade image accepts, a Farewell, and the upgrade to the unhealthy image
-// the test image's config again: the fallback boots the upgrade image with its own config, Farewell
-// included.
+// chalkos_1.efi, and upgrades it to the upgrade image, which boots from slot B as chalkos_2.efi
+// with STATE and VAR unlocked by the TPM and is found healthy. chalkctl upgrade --rollback then
+// boots the test image again from slot A as chalkos_3, with the config it ran; run again, it
+// changes nothing; and an upgrade from the inventory boots the upgrade image again as chalkos_4,
+// reusing its store in slot B. Last comes the unhealthy image, installed as chalkos_5, which never
+// becomes healthy: after its one try the node falls back to chalkos_4.efi and says so. Each image
+// is named by its root hash. The node pulls the upgrade image through a Mirror of a registry host
+// it cannot reach, whose endpoint is a registry on the host that asks for the credentials of the
+// endpoint's own Registry; the upgrade delivers the Mirror and the Registry. The upgrade to the
+// unhealthy image still streams it from its directory. The upgrade carries config only the upgrade
+// image accepts, a Farewell, and the upgrade to the unhealthy image the test image's config again:
+// the fallback boots the upgrade image with its own config, Farewell included.
 func TestUpgrade(t *testing.T) {
 	requireEnv(t, append(secureBootEnv, append(chalkdEnv, "CHALKLAB_UPGRADE_IMAGE_DIR", "CHALKLAB_UNHEALTHY_IMAGE_DIR")...)...)
 	base, nextHash, badHash := rootHash(t, "CHALKLAB_IMAGE_DIR"), rootHash(t, "CHALKLAB_UPGRADE_IMAGE_DIR"), rootHash(t, "CHALKLAB_UNHEALTHY_IMAGE_DIR")
@@ -87,23 +89,49 @@ func TestUpgrade(t *testing.T) {
 		t.Errorf("status after the upgrade: %v", err)
 	}
 
+	// The test image is still in slot A with its UKI and config: a rollback boots it again as
+	// generation 3, counted, since the upgrade image's boot was found healthy. Run again, the
+	// rollback finds the node on the test image and changes nothing. An upgrade from the inventory
+	// undoes it: the node finds the upgrade image's store in slot B and boots it as generation 4.
+	rolled := time.Now()
+	rollback := []string{"upgrade", "--rollback", "--nodes", "chalklab", "--address", "chalklab=" + n.addr, "--timeout", "10m"}
+	out, err = chalkctl(t, nil, "base", rollback...)
+	if err != nil || !strings.Contains(out, "chalklab: rolling back to "+base[:12]) || !strings.Contains(out, "chalklab: "+base[:12]+" boots next as chalkos_3+3.efi\n") ||
+		!strings.Contains(out, "rolled back 1 node to "+base[:12]) {
+		t.Fatalf("rollback to %s: %v", base[:12], err)
+	}
+	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + base[:16], "store_partition": "3", "state_boots": "4", "var_boots": "3"})
+	if out, err := chalkctl(t, n, "base", "status", "chalklab"); err != nil || !strings.Contains(out, "image "+base[:12]+", booted from chalkos_3.efi\n") || !strings.Contains(out, "previous image "+nextHash[:12]) {
+		t.Errorf("status after the rollback to %s: %v", base[:12], err)
+	}
+	out, err = chalkctl(t, nil, "base", rollback...)
+	if err != nil || strings.Contains(out, "rolling back to") || !strings.Contains(out, "chalklab: runs "+base[:12]+", found healthy") {
+		t.Fatalf("a second rollback: %v", err)
+	}
+	out, err = chalkctl(t, nil, "", "upgrade", "--inventory", pullInventory, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
+	if err != nil || !strings.Contains(out, "chalklab: installed "+nextHash[:12]+", which boots next as chalkos_4+3.efi") {
+		t.Fatalf("upgrade back to %s: %v", nextHash[:12], err)
+	}
+	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + nextHash[:16], "store_partition": "5", "state_boots": "5", "var_boots": "4"})
+	t.Logf("rolled back and upgraded again in %v", time.Since(rolled).Round(time.Second))
+
 	failed := time.Now()
 	out, err = chalkctl(t, nil, "base", "upgrade", "--image", badImage, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
 	if err == nil || !strings.Contains(out, `chalklab: config 0 added, 4 removed (Secret "registry", Farewell "bye", Mirror "e2e", Registry "e2e"), 0 changed`+"\n") ||
-		!strings.Contains(out, "chalklab: installed "+badHash[:12]+", which boots next as chalkos_3+1.efi") ||
+		!strings.Contains(out, "chalklab: installed "+badHash[:12]+", which boots next as chalkos_5+1.efi") ||
 		!strings.Contains(out, "chalklab: upgrade to "+badHash[:12]+" failed: rolled back to "+nextHash[:12]) || !strings.Contains(out, "units failed: chalktest-broken.service") {
 		t.Fatalf("upgrade to %s: %v", badHash[:12], err)
 	}
 	t.Logf("fell back from %s in %v", badHash[:12], time.Since(failed).Round(time.Second))
 	// One boot of the unhealthy image from slot A, then the upgrade image again.
-	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + badHash[:16], "store_partition": "3", "state_boots": "4"})
-	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + nextHash[:16], "store_partition": "5", "state_boots": "5", "var_boots": "4"})
+	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + badHash[:16], "store_partition": "3", "state_boots": "6"})
+	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + nextHash[:16], "store_partition": "5", "state_boots": "7", "var_boots": "6"})
 	// The upgrade image runs the config the upgrade gave it, not the one sent with the unhealthy
 	// image.
 	out, err = chalkctl(t, n, "", "status", "chalklab", "--inventory", pullInventory)
-	if err != nil || !strings.Contains(out, "image "+nextHash[:12]+", booted from chalkos_2.efi\n") || !strings.Contains(out, "upgrade to "+badHash[:12]+" failed: rolled back to "+nextHash[:12]) ||
+	if err != nil || !strings.Contains(out, "image "+nextHash[:12]+", booted from chalkos_4.efi\n") || !strings.Contains(out, "upgrade to "+badHash[:12]+" failed: rolled back to "+nextHash[:12]) ||
 		!strings.Contains(out, "units failed: chalktest-broken.service") || !inventoryConfig.MatchString(out) {
-		t.Errorf("status after the rollback: %v", err)
+		t.Errorf("status after the fallback: %v", err)
 	}
 	t.Logf("the test took %v", time.Since(start).Round(time.Second))
 }
