@@ -209,13 +209,15 @@ live in `pkg/chalkd/layers/kubernetes` and `pkg/chalkd/layers/router`.
 `pkg/chalkctl/layer` declares chalkctl's side in the same way: a `Plugin` with hooks for commands,
 a node's status section, image facts, the payloads of a delivery and their admission, the
 coordinators that upgrade and rotate take first, an upgrade's checks and the rotation kinds a layer
-runs. A plugin also names the nodes every rotation leaves out and those that hold the node CA.
-chalkctl runs the rotations of the OS CA and the node CA itself, in `pkg/chalkctl/rotate_ca.go`,
-since every node takes part in them, and asks the plugins for their kinds. For what the inventory
-and the secrets file drive, such as commands, payloads and rotations, it asks every compiled
-plugin. For what it reads from a node's layer services, such as the node's status section and its
-part in an upgrade, it asks only the plugins of the layers the node's Info names. A plugin reaches the cluster and its
-nodes through the `Host` chalkctl gives it. `pkg/chalkctl/layers.go` lists the plugins, which live in
+runs. `UpgradeFlags` adds a layer's flags to `chalkctl upgrade`, such as the Kubernetes plugin's
+`--allow-downtime`, and the layer's upgrade hooks read them back. A plugin also names the nodes
+every rotation leaves out and those that hold the node CA. chalkctl runs the rotations of the OS
+CA and the node CA itself, in `pkg/chalkctl/rotate_ca.go`, since every node takes part in them,
+and asks the plugins for their kinds. For what the inventory and the secrets file drive, such as
+commands, payloads and rotations, it asks every compiled plugin. For what it reads from a node's
+layer services, such as the node's status section and its part in an upgrade, it asks only the
+plugins of the layers the node's Info names. A plugin reaches the cluster and its nodes through
+the `Host` chalkctl gives it. `pkg/chalkctl/layers.go` lists the plugins, which live in
 `pkg/chalkctl/layers/kubernetes` and `pkg/chalkctl/layers/router`.
 
 ## chalkd runs with a narrow sandbox

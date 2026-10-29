@@ -53,6 +53,8 @@ KubernetesService on images with the `kubernetes` layer, and RouterService on im
 | NodeService | Logs | reader | maintenance and normal mode |
 | NodeService | Reboot | operator | maintenance and normal mode |
 | NodeService | ResetVolume | admin | normal mode |
+| NodeService | RollbackConfig | admin | normal mode |
+| NodeService | RollbackImage | operator | normal mode |
 | NodeService | RunDiagnostic | reader, and the diagnostic's own role | maintenance and normal mode |
 | NodeService | Status | reader | normal mode |
 | NodeService | Upgrade | operator; admin when the request carries config or a fallback secret | normal mode |

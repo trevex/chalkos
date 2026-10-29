@@ -16,8 +16,10 @@
 *[node certificate]: The certificate chalkd serves and authenticates with.
 *[Config document]: One object of a node's config, written in YAML like a Kubernetes object.
 *[Image directory]: The build output of an image: the raw disk image with its metadata and config schemas.
+*[Previous config]: The config the running image ran before the last delivery, which the node keeps beside the image's config slot, one level deep.
 *[config document]: One object of a node's config, written in YAML like a Kubernetes object.
 *[image directory]: The build output of an image: the raw disk image with its metadata and config schemas.
+*[previous config]: The config the running image ran before the last delivery, which the node keeps beside the image's config slot, one level deep.
 *[Control planes]: A node that runs etcd and the Kubernetes API server, controller-manager and scheduler.
 *[control planes]: A node that runs etcd and the Kubernetes API server, controller-manager and scheduler.
 *[Boot counting]: systemd-boot's count of the tries a newly installed image has left.

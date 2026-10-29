@@ -293,14 +293,90 @@ its current image. The next run writes the slot in full.
 
 ## Go back to the previous image
 
-Going back is an upgrade to the previous image. chalkctl and chalkd do not know older from newer
-and do not warn. The node installs the previous image as the next generation, with its tries, like
-any upgrade.
+After an upgrade, a node's inactive slot still holds the image it ran before, with that image's
+boot entry and config, until the next upgrade writes over the slot. `chalkctl status` names it:
 
-Use the image the node ran before, built from the same commit and `flake.lock`. It has the same root
-hash, so the node finds the store in its inactive slot and needs no new copy. Keep the previous
-image directory until the new image has proven itself. Whether the older image can read what the
-newer one wrote is for you to check, such as etcd's data after a Kubernetes upgrade.
+```text
+previous image <old> (upgrade --rollback boots it)
+```
+
+`chalkctl upgrade --rollback` boots that image again in place of installing one:
+
+```console
+$ chalkctl upgrade --rollback --allow-downtime
+rolling back 2 nodes to <old>: cp1, w1
+cp1: rolling back to <old>
+cp1: <old> boots next as chalkos_3+3.efi
+cp1: cordoned, evicted <n> pods, kept <n>
+cp1: rebooting into <old>
+cp1: runs <old>, found healthy
+cp1: uncordoned
+w1: cordoned, evicted <n> pods, kept <n>
+w1: rolling back to <old>
+w1: <old> boots next as chalkos_3+3.efi
+w1: rebooting into <old>
+w1: runs <old>, found healthy
+w1: uncordoned
+rolled back 2 nodes to <old>
+```
+
+The node writes no image. It checks that the inactive slot still holds the store and checks the
+image's UKI as an upgrade does, Secure Boot included. Then it renames the UKI to the next
+generation, here `chalkos_3+3.efi`. chalkctl runs it as it runs an upgrade, in the same order and
+batches, holding, draining and waiting for each node as an upgrade does, and it takes `--nodes`,
+`--no-reboot`, `--max-unavailable` and `--timeout`. The image boots with the config it last ran, so
+the rollback delivers no config and an operator client file suffices. `--image`, `--diff` and
+`--retry-failed` do not combine with `--rollback`.
+
+Boot counting protects the rollback's boot when the node runs an image whose boot was found
+healthy. A boot of the image before that fails its tries falls back to the image the node ran, and
+the run stops with `w1: rollback to <old> failed: it fell back to <new>`. A node whose running image
+was not found healthy yet, as when that image is the one to leave, gets the image before without
+boot counting. That image was found healthy before, so it is the node's known-good image again,
+and the node never falls back from it. chalkctl says so on the `boots next` line, releases the node
+once its layers report it ready, and ends the node's steps with
+`w1: runs <old> (its boots are not counted)`. Until the running boot is found healthy, the node
+keeps the config that image last ran: `apply-config --staged` and an upgrade to that image with
+other config are refused.
+
+### One image for the whole run
+
+chalkctl takes the run's target from the status of the nodes it rolls back, every node of the
+cluster or those `--nodes` names. Each node names the image a rollback got it to already, or else
+its previous image, and all of them must name the same one. A node that runs that image already is
+left alone. Run again after a run that stopped, the command continues with the same image instead
+of booting the rolled-back nodes forward. Run again after a run that finished, it changes nothing,
+so a second rollback does not undo the first.
+
+The run refuses before it changes any node when the nodes name different images:
+
+```text
+the nodes roll back to different images: cp1 to <a>; w1 to <b>; roll them back separately with --nodes
+```
+
+This happens on a cluster whose control planes and workers run different images, and on nodes that
+did not go through the same upgrades, such as a node installed after the others' last upgrade and
+upgraded once since. Its previous image is the one it was installed with. Roll each group back with
+its own `--nodes`. A node that keeps no previous image and does not run the target is refused with
+the reason, such as a node installed with the image the others run now and never upgraded:
+`w2 does not run <old>, which the other nodes roll back to, and keeps no previous image: ...; leave
+it out with --nodes`.
+
+### What keeps a node from rolling back
+
+A node keeps no previous image after an install, and after an upgrade or rollback it fell back
+from. An image staged with `upgrade --no-reboot` has written over the inactive slot, so the
+rollback is refused while it is staged; `chalkctl reboot` boots it. A rollback staged with
+`--no-reboot` boots at the next reboot, and an upgrade to the image the node runs leaves it staged.
+
+`chalkctl upgrade` to the inventory's image undoes a rollback once the nodes run the image before.
+The newer image is still in the inactive slot, so the node reuses it without a new copy.
+
+Once an upgrade has written over the slot, the way back is an upgrade to the older image directory.
+chalkctl and chalkd do not know older from newer and do not warn. Use the image built from the same
+commit and `flake.lock`, and keep its directory until the new image has proven itself. Whether the
+older image can read what the newer one wrote is for you to check in either case, such as etcd's
+data after a Kubernetes upgrade.
 
 ## If something goes wrong
 
@@ -314,6 +390,9 @@ newer one wrote is for you to check, such as etcd's data after a Kubernetes upgr
   inventory, or reinstall the node.
 - `upgrade needs the operator role; the reader role may not upgrade nodes`: the client file has the
   reader role. Use an operator or admin client file.
+- `no node keeps a previous image to roll back to: ...`: `--rollback` found no node with an image
+  to boot again. [What keeps a node from rolling back](#what-keeps-a-node-from-rolling-back) lists
+  the reasons.
 
 ## What next
 

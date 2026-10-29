@@ -97,6 +97,21 @@ Find the cause in the journal lines, fix it in a new build and upgrade again, as
 [A node that fails its health check rolls back](upgrade.md#a-node-that-fails-its-health-check-rolls-back)
 describes.
 
+## A change misbehaves after the node was found healthy
+
+A boot that was found healthy is kept, so a problem that shows only later needs a rollback on
+request. Each one undoes one kind of change:
+
+- A config delivery that broke a service: `chalkctl apply-config w1 --secrets secrets.age
+  --rollback` delivers the config the image ran before.
+  [Roll back a config change](change-config.md#roll-back-a-config-change) describes it.
+- An image that misbehaves after its boot was found healthy: `chalkctl upgrade --rollback --nodes
+  w1` boots the image the node ran before, which its inactive slot still holds.
+  [Go back to the previous image](upgrade.md#go-back-to-the-previous-image) describes it.
+
+The node's OS CAs, node certificate, storage and layer payloads stay as they are with either
+rollback.
+
 ## The node certificate expired
 
 chalkctl refuses the node's certificate as expired, so every command against the node fails. The

@@ -168,8 +168,14 @@ Kubernetes no node holds it. The refresh issues every node a certificate of it f
 file. Control planes come first, then the other nodes by name. Node certificates of the old node CA
 stay valid until they expire, because they chain to the same OS CA.
 
-chalkctl writes the secrets file once per phase, so after a rotation `<file>.prev` holds the
-version the last phase wrote.
+chalkctl writes the secrets file once per phase. A write that replaces a file recording a rotation
+leaves `<file>.prev` as it is, so from the rotation's start until the next change after its finish
+`<file>.prev` holds the version from before the rotation.
+
+The OS CAs and the node certificate are STATE's, outside any config slot and any image, so neither
+a config rollback nor an image rollback restores them. A node rolled back after an OS CA rotation's
+finish still trusts the new OS CA alone. A rollback after a node CA rotation takes no extra step,
+because the node keeps its certificate and both node CAs chain to the OS CA every node trusts.
 
 ## A rotation leaves client files behind
 

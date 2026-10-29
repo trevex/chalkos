@@ -338,11 +338,18 @@ At every boot, `chalkos-config.service` loads the slot of the image the kernel c
 
 - An install writes the slot of the image it installs.
 - An upgrade writes the slot of the new image. The image before keeps its own, so a
-  [fallback](boot-and-rollback.md) boots it with the config it ran.
+  [fallback](boot-and-rollback.md) or `upgrade --rollback` boots it with the config it ran.
 - `apply-config` writes the slot of the running image, and `apply-config --staged` the slot of the
   image an upgrade with `--no-reboot` staged to boot next. Nothing restarts for the staged slot.
-- An upgrade removes the slot of every image no UKI on the ESP boots any more, so a node holds at
-  most two slots, one for each of its images.
+- `apply-config` keeps the config it replaces as the slot's previous config,
+  `/state/config/.<root-hash>.previous`, one level deep. `apply-config --rollback` delivers that
+  config again through the same checks, storage changes and effects as any delivery, and the config
+  it replaces becomes the previous one. Status reports the previous config's version for the running
+  image alone.
+- An install, an upgrade and `apply-config --staged` write a slot without a previous config. An
+  upgraded node therefore has no previous config until its first delivery.
+- An upgrade removes the slot of every image no UKI on the ESP boots any more, together with its
+  previous config, so a node holds at most two slots, one for each of its images.
 
 An image whose slot is missing boots without config: `chalkos-config` fails, the health check
 fails with it, and a counted boot falls back. `chalkctl apply-config` on the running image warns

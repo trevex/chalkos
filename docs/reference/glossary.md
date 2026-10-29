@@ -27,8 +27,8 @@ them. See [Security model](../how-it-works/node/security.md).
 ## Blessed boot { #blessed-boot }
 
 A boot that the [health check](#health-check) found healthy. After it,
-`systemd-bless-boot` removes the boot counter from the [UKI](#uki)'s file name. A blessed image
-is never rolled back. See [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md).
+`systemd-bless-boot` removes the boot counter from the [UKI](#uki)'s file name. Nothing rolls a
+blessed image back on its own. See [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md).
 
 ## Boot counting { #boot-counting }
 
@@ -464,6 +464,14 @@ its own. Every [variant](#variant) gets one [image](#image) per platform, so onl
 images carry its drivers and agents. A node refuses an image of another platform than the one it
 runs. See [Variants and platforms](../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine).
 
+## Previous config { #previous-config }
+
+The config the running [image](#image) ran before the last delivery, which the node keeps beside
+the image's [config slot](#config-slot), one level deep.
+[`chalkctl apply-config --rollback`](cli/chalkctl_apply-config.md) delivers it again, and the
+config it replaces becomes the previous one. An install or an upgrade writes a slot without one.
+See [Config and the inventory](../how-it-works/node/config.md#a-node-keeps-one-config-slot-per-image).
+
 ## Provenance { #provenance }
 
 The git revision and tag an image was built from. `chalkos.lib.mkImages` takes them as `revision`
@@ -500,7 +508,10 @@ until they expire. [`chalkctl node unrevoke`](cli/chalkctl_node_unrevoke.md) let
 
 The return to the previous image after a new one used up its boot tries without a
 [blessed boot](#blessed-boot). chalkd reports it in status
-with the failed boot's last log lines, and `chalkctl upgrade` stops. See
+with the failed boot's last log lines, and `chalkctl upgrade` stops. Two more rollbacks run on
+request: [`chalkctl upgrade --rollback`](cli/chalkctl_upgrade.md) boots the image the inactive
+[slot](#slot) still holds, and [`chalkctl apply-config --rollback`](cli/chalkctl_apply-config.md)
+delivers the [previous config](#previous-config) again. See
 [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md).
 
 ## Root hash { #root-hash }

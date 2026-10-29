@@ -258,6 +258,36 @@ a failure that lay outside the image. Each node is upgraded once per run, so a s
 stops the run again. Usually the fix is a new build, which has a new root hash and is installed
 like any other image.
 
+## A rollback boots the image before again
+
+After an upgrade, the inactive slot holds the image the node ran before, and its UKI and config
+slot stay too. An upgrade removes an image's UKIs before it writes over that image's slot, so a
+UKI on the ESP of an image the node does not run means the slot still holds its store.
+`chalkctl upgrade --rollback` uses that to boot the image again without sending it.
+
+chalkd's RollbackImage refuses an image whose config slot STATE no longer keeps, since the image
+would boot without config. It checks that the inactive slot still holds the store and checks the
+UKI as an upgrade checks a new one, Secure Boot included, because db and dbx may have changed since
+the UKI was installed. Then it renames the UKI to the next generation. Nothing is written to the
+slot. While the running image's boot was found healthy the new name carries the UKI's tries, so
+the boot is counted and falls back to the running image. Before that it carries none, as
+[Boot, health and rollback](boot-and-rollback.md#a-blessed-image-is-rolled-back-only-on-request)
+explains. A staged upgrade has written over the inactive slot, so a rollback is refused while one
+is staged.
+
+The run around it is an upgrade's: the same order, batches, layer hooks, reboot and wait for a
+healthy boot. chalkctl picks one target image for the run at plan time, from the selected nodes'
+status. chalkd records on STATE the image the last rollback went to, `/state/chalkd/rollback`,
+and status reports that record while the node runs or stages the image. A node's vote is that
+record, else its previous image. Nodes that already run the target are skipped, so a run started
+again continues instead of booting the rolled-back nodes forward, and a second rollback after a
+finished one changes nothing. Nodes whose votes differ are refused before anything changes.
+
+An upgrade removes the record. `chalkctl upgrade` to the inventory's image therefore undoes a
+rollback once the node runs the image before: the newer image is still in the inactive slot and
+is reused without being written again. An upgrade to the image the node runs leaves a staged
+rollback staged.
+
 ## A downgrade is an upgrade to another root hash
 
 chalkd has no notion of older or newer. A downgrade is an upgrade to another root hash, installed

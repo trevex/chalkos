@@ -134,7 +134,8 @@ Two other ways to keep the file suit other setups:
 Committing `secrets.age` puts it under the same history and review as the rest of the cluster.
 Every clone then carries it, so its protection rests on the recipients' keys alone.
 `chalkctl rotate` later rewrites the file in place and leaves `secrets.age.prev` and, while it
-runs, `secrets.age.lock` beside it. Keep both out of git.
+runs, `secrets.age.lock` beside it. Keep both out of git. `secrets.age.prev` holds the version
+from before the last change, or after a rotation the version from before the rotation.
 
 !!! danger "A lost secrets file cannot be generated again"
 
@@ -289,8 +290,9 @@ Back up these files to a place apart from the workstation:
 - The repository: the inventory, the config files, `secrets.pub.json` and `flake.lock`, which pins
   the chalkos revision every image is built from.
 - The image directory of the image the nodes ran before an upgrade, until the new image has
-  proven itself. [Go back to the previous image](upgrade.md#go-back-to-the-previous-image) uses
-  it.
+  proven itself. `chalkctl upgrade --rollback` boots that image from the nodes' inactive slots
+  until the next upgrade writes over them; after that, an upgrade to the kept directory is the way
+  back, as [Go back to the previous image](upgrade.md#go-back-to-the-previous-image) describes.
 - The password of each node whose encryption fallback is a password. Nothing else holds it.
 
 On the shipped variant, the cluster's state lives in etcd on the control planes. chalkos has no

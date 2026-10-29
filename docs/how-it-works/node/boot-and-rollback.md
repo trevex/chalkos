@@ -152,7 +152,7 @@ start do not count, nor do the units listed in
 [`chalkos.upgrade.healthIgnoreUnits`](../../reference/image-options.md#chalkosupgradehealthignoreunits).
 
 When the check passes, the unit succeeds, `boot-complete.target` is reached and
-`systemd-bless-boot` blesses the entry. A blessed image is never rolled back.
+`systemd-bless-boot` blesses the entry. Nothing rolls a blessed image back on its own.
 
 !!! note "On the shipped variant, a cluster node is healthy when its Kubernetes parts are"
 
@@ -223,11 +223,23 @@ After the last try, systemd-boot skips the used-up entry and boots the previous 
 and UKI the upgrade never touched. Its entry carries no counter, so its boot is not counted, and
 no health check runs.
 
-### A blessed image is never rolled back
+### A blessed image is rolled back only on request
 
 A blessed image that fails at a later boot stays. The health check does not run on its boots, so
-nothing rolls back, and status lists the failed units. The check also judges only what it checks:
-a new image whose workloads fail while the parts the check covers are healthy is blessed.
+nothing rolls back on its own, and status lists the failed units. The check also judges only what
+it checks: a new image whose workloads fail while the parts the check covers are healthy is
+blessed.
+
+`chalkctl upgrade --rollback` boots the image before again on request, while the inactive slot
+still holds it, as [Upgrades](upgrades.md#a-rollback-boots-the-image-before-again) describes.
+Whether its boot is counted depends on the boot the node runs:
+
+- After a boot that was found healthy, the image before boots counted, with the tries its UKI asks
+  for. When its boots fail, systemd-boot falls back to the image the node ran.
+- After a boot that was not found healthy yet, the image before boots uncounted. Its boot was found
+  healthy before, and it boots with the config it last ran, so it is the node's known-good image
+  again and the node does not fall back from it. Until the running boot is found healthy, chalkd
+  keeps that image's config as it last ran and refuses other config for it.
 
 [Recover a node](../../operate/recover-node.md) and
 [Troubleshooting](../../operate/troubleshooting.md) cover the fixes.
@@ -242,10 +254,16 @@ VAR is removed once a counted boot is found healthy.
 explains each image line. `chalkctl upgrade` stops at a node that rolled back, as
 [Upgrades](upgrades.md#a-rolled-back-node-stops-the-run) describes.
 
+Status also names the previous image, the one `chalkctl upgrade --rollback` boots. It is the
+newest entry below the booted one that is not used up and boots another store, while STATE keeps
+its config slot and no image is staged to boot next. chalkd records on STATE the image the last
+rollback went to, and status reports that record while the node runs the image or boots it next.
+
 ## Limits
 
 - Rollback protects the first boots of a new image only. Once blessed, an image stays, even if it
-  fails later.
+  fails later, until `chalkctl upgrade --rollback` boots the image before, which works only while
+  the inactive slot still holds it.
 - The health check does not cover workloads. A regression that only workloads notice is blessed.
 - A hang before the health check, such as a console prompt, needs a reset from outside. The node
   cannot reboot itself from there.

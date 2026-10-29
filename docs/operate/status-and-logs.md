@@ -77,6 +77,11 @@ parentheses say otherwise when they differ:
 `staged config <version> (...)`, the config that image boots with. Its parentheses name
 `chalkctl apply-config --staged w1` when it differs.
 
+`previous config <version> (apply-config --rollback restores it)` names the config the running
+image ran before the last delivery.
+[Roll back a config change](change-config.md#roll-back-a-config-change) delivers it again. The line
+is missing until a delivery replaced the config the image was installed or upgraded with.
+
 ## The platform and image lines name what the node booted
 
 `platform metal (the inventory's)` names the platform the node's image was built for. A node
@@ -84,9 +89,15 @@ whose image in the inventory is built for another platform shows
 `platform kvm, but ...; changing a node's platform is a reinstall`.
 
 The image line names the image the node booted and its boot entry. A boot that the health check
-still checks ends in `, not found healthy yet`. More lines follow after an upgrade:
+still checks ends in `, not found healthy yet`. More lines follow after an upgrade or a rollback:
 
 - `upgrade to <image> installed; it boots next`: an upgrade with `--no-reboot` staged the image.
+- `rollback to <image> staged; it boots next`: `chalkctl upgrade --rollback --no-reboot` staged
+  the image the node ran before.
+- `previous image <image> (upgrade --rollback boots it)`: the inactive slot still holds the image
+  the node ran before, which
+  [Go back to the previous image](upgrade.md#go-back-to-the-previous-image) boots again. The line
+  is missing after an install, after a fallback and while another image is staged.
 - `upgrade to <image> failed: rolled back to <image>`: the new image was not found healthy, and
   the node booted its previous one. The last 30 lines that chalkd and the health check logged in
   the failed boot follow, indented.

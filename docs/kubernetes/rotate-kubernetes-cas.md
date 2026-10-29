@@ -125,7 +125,7 @@ kubernetes-ca: the finish phase
   cp3 runs on its new files
   w1 trusts the Kubernetes CAs
 kubernetes-ca: every node applied the finish phase
-the rotation of the Kubernetes CAs is finished: every node trusts the new value alone; the previous version is secrets.age.prev; secrets.pub.json holds the new public half
+the rotation of the Kubernetes CAs is finished: every node trusts the new value alone; the version from before the rotation is secrets.age.prev; secrets.pub.json holds the new public half
 Kubeconfigs issued during the rotation still trust the old Kubernetes CA besides the new one when they verify the API server, so whoever holds the old CA's key could pose as the API server to them; issue them again with chalkctl kubeconfig.
 ```
 

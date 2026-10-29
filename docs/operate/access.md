@@ -108,7 +108,7 @@ node-ca: the accept phase
 ...
   w1 serves a certificate of the new node CA
 ...
-the rotation of the node CA is finished: every node serves a certificate of the new node CA, and certificates of the old one stay valid until they expire, since both chain to the same OS CA; the previous version is secrets.age.prev; secrets.pub.json holds the new public half
+the rotation of the node CA is finished: every node serves a certificate of the new node CA, and certificates of the old one stay valid until they expire, since both chain to the same OS CA; the version from before the rotation is secrets.age.prev; secrets.pub.json holds the new public half
 ```
 
 The rotation runs in one go, without pausing. It reaches the control planes first, then the other
@@ -122,9 +122,13 @@ then prints
 `no node renews node certificates itself; chalkctl node renew issues them from the new node CA`,
 and every node still gets a certificate of the new node CA.
 
-chalkctl writes the secrets file once per phase. After the rotation, `secrets.age.prev` holds the
-version the last phase wrote, and the version from before the rotation is gone. To keep it, back
-up the secrets file before you rotate.
+chalkctl writes the secrets file once per phase. `secrets.age.prev` stays at the version from before
+the rotation while the phases run and after the finish, until the next command that changes the
+file.
+
+A config or image rollback after a node CA rotation takes no extra step. Node certificates belong
+to the node and stay through either rollback, and every node trusts the OS CA that both node CAs
+chain to.
 
 ## Choose what to rotate
 
@@ -200,8 +204,9 @@ The diagram shows the phases in order and the three points, drawn round, where y
 `chalkctl rotate os-ca --resume` continues after the first pause, and
 `chalkctl rotate os-ca --finish` runs the finish after the second.
 
-The secrets file records the rotation's phase. chalkctl rewrites it in place after every step, keeps
-the previous version as `secrets.age.prev`, and rewrites `secrets.pub.json` beside it. An encrypted
+The secrets file records the rotation's phase. chalkctl rewrites it in place after every step and
+rewrites `secrets.pub.json` beside it. `secrets.age.prev` keeps the version from before the
+rotation until the next change after it. An encrypted
 file is encrypted again to the recipients it records, unless `--recipient` replaces them. `--out`
 and `--public-out` write new files instead and leave the old ones as they are. Then continue the
 rotation with `--secrets` naming the new file, because only that file knows the phase. One rotation
@@ -261,6 +266,11 @@ chalkctl rotate os-ca --finish --secrets secrets.age
 The finish ends with
 `the rotation of the OS CA is finished: every node trusts the new value alone`, followed by where
 the files went and the reminder to issue the client files again.
+
+A config or image rollback restores no trust: the OS CAs are the node's own, kept apart from its
+config and its image. A node rolled back after the finish still trusts the new OS CA alone, so it
+takes the client files and the secrets file from after the rotation, and refuses a client file
+issued before it.
 
 ## Check that it worked
 

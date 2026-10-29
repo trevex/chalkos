@@ -187,6 +187,53 @@ config ec7ca85e562721ea1f8d0368d415bb80dc62819ba0c80857c9c444e4450aba09 (the inv
 A node whose files changed since the last delivery shows
 `not the inventory's; chalkctl apply-config w1 delivers it` in the parentheses.
 
+## Roll back a config change
+
+A node keeps the config its running image ran before the last delivery, its previous config.
+`--rollback` delivers that config again in place of the inventory's. Preview it with `--diff`
+first, which prints what the rollback changes and changes nothing:
+
+```console
+$ chalkctl apply-config w1 --secrets secrets.age --rollback --diff
+w1: config 0 added, 1 removed (TimeSync "default"), 0 changed
+- TimeSync "default" (in the running config, not in the previous one)
+```
+
+Then run it without `--diff`:
+
+```console
+$ chalkctl apply-config w1 --secrets secrets.age --rollback
+w1: config 0 added, 1 removed (TimeSync "default"), 0 changed
+restarted <unit>
+w1 runs config <previous-version> again; config ec7ca85e562721ea1f8d0368d415bb80dc62819ba0c80857c9c444e4450aba09 is its previous one now
+```
+
+The node keeps the previous config itself, so the command needs no inventory. Without one, give
+the node's address with `--address`. The command needs the secrets file, as any delivery does.
+
+The previous config goes through the same checks, storage changes and restarts as any delivery.
+The image's rules may refuse it. A rollback of a delivery that added a volume, for example, removes
+the volume, which takes a reinstall, so the node refuses it with the storage rule's message:
+`Volume scratch: the config removes it; only a reinstall of w1 removes a volume`.
+
+The node keeps one previous config per image. The config a rollback replaces becomes the previous
+one, so a second `--rollback` undoes the first. An install or an upgrade writes a config without a
+previous one, so an upgraded node has none until its first delivery.
+
+A rollback restores the config documents and nothing else. The OS CAs, the node certificate and
+the payloads of the node's layers, such as a Kubernetes share, stay as they are. `--rollback`
+refuses `--staged`, `--force` and the layers' payload flags such as `--kubernetes-share`.
+
+`chalkctl status` names the config a rollback restores, below the `config` line:
+
+```text
+previous config <previous-version> (apply-config --rollback restores it)
+```
+
+A node without a previous config refuses the rollback with
+`w1 keeps no previous config of the image it runs; it keeps one once apply-config replaced the
+config the image was installed or upgraded with`.
+
 ## If something goes wrong
 
 - `pass the secrets file with --secrets FILE, or --secrets - to read it from standard input`: the
