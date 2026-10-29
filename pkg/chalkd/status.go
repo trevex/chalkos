@@ -18,6 +18,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -78,8 +79,14 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 	if resp.Outputs, err = s.outputStatus(); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	resp.Certificates = s.certificates(time.Now())
+	now := time.Now()
+	resp.Certificates = s.certificates(now)
 	resp.Trust = s.trust()
+	for _, h := range layer.Active[layer.Certificates](s.Plugins) {
+		certs, trust := h.Certificates(ctx, now)
+		resp.Certificates = append(resp.Certificates, certs...)
+		resp.Trust = append(resp.Trust, trust...)
+	}
 	resp.Time = s.timeStatus(ctx)
 	resp.Boot = s.bootStatus()
 	if resp.StagedConfigVersion, err = s.stagedVersion(resp.Boot); err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
@@ -272,5 +274,41 @@ func TestParseTrackingReadsTheLeapStatusField(t *testing.T) {
 	}
 	if st.Synchronised {
 		t.Errorf("synchronised with leap status %q", "Not synchronised")
+	}
+}
+
+// certificatesLayer is a layer that reports a certificate and a CA of its own.
+type certificatesLayer struct{}
+
+func (certificatesLayer) Name() string { return "example" }
+func (certificatesLayer) Handler(...connect.HandlerOption) (string, http.Handler) {
+	return "/example/", http.NotFoundHandler()
+}
+func (certificatesLayer) Permissions() map[string]layer.Permission { return nil }
+func (certificatesLayer) Start(context.Context) error              { return nil }
+func (certificatesLayer) Certificates(context.Context, time.Time) ([]*nodev1.CertificateStatus, []*nodev1.TrustStatus) {
+	return []*nodev1.CertificateStatus{{Name: "example"}}, []*nodev1.TrustStatus{{Name: "example CA"}}
+}
+
+// Status reports the node's own certificates and the OS CAs first, and the active layers' after
+// them.
+func TestStatusAppendsTheLayersCertificates(t *testing.T) {
+	s, _ := installedServer(t, section("", ""), false)
+	withNodeCertificate(t, s)
+	reg, err := layer.NewRegistry(layers.Of("example"), certificatesLayer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Plugins = reg
+	st := status(t, s)
+	if got := certificateNames(st.Certificates); strings.Join(got, ",") != "node,OS CA,example" {
+		t.Errorf("certificates %v, want node, OS CA, example", got)
+	}
+	var trust []string
+	for _, tr := range st.Trust {
+		trust = append(trust, tr.Name)
+	}
+	if strings.Join(trust, ",") != "OS CA,example CA" {
+		t.Errorf("trust %v, want OS CA, example CA", trust)
 	}
 }

@@ -20,6 +20,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -99,6 +100,39 @@ func TestHealthWithoutKubernetes(t *testing.T) {
 	}
 }
 
+// healthHook is a layer's health check with a fixed verdict.
+type healthHook struct {
+	checked bool
+	err     error
+}
+
+func (h healthHook) Health(context.Context) (bool, error) { return h.checked, h.err }
+
+// The first layer that checked decides; while none did, the common checks decide.
+func TestHealthAsksTheLayers(t *testing.T) {
+	addr, cert := chalkdServing(t)
+	notApplied := tooltest.Rule{Prefix: "systemctl is-active --quiet chalkos-config.service", Err: errors.New("inactive")}
+	for _, tc := range []struct {
+		name   string
+		layers []layer.Health
+		want   string
+		// common is whether the common checks run.
+		common bool
+	}{
+		{"the second decides", []layer.Health{healthHook{}, healthHook{true, errors.New("the service is not ready")}, healthHook{true, nil}}, "the service is not ready", false},
+		{"none decides", []layer.Health{healthHook{}, healthHook{}}, "the config was not applied", true},
+		{"a layer is healthy", []layer.Health{healthHook{true, nil}}, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &tooltest.Runner{Rules: []tooltest.Rule{notApplied}}
+			checkHealth(t, &Health{Run: r, Layers: tc.layers, Chalkd: addr, NodeCertificate: cert}, tc.want)
+			if common := len(r.Calls) > 0; common != tc.common {
+				t.Errorf("common checks ran: %v, want %v (%q)", common, tc.common, r.Calls)
+			}
+		})
+	}
+}
+
 func checkHealth(t *testing.T, h *Health, want string) {
 	t.Helper()
 	err := h.Check(context.Background())
@@ -129,14 +163,16 @@ func TestHealthOfAWorker(t *testing.T) {
 			s, r := kubernetesServer(t, k8s.KindWorker, tc.share)
 			s.Kubernetes.hooks.Node = func(context.Context) (*corev1.Node, error) { return readyNode(), tc.node }
 			healthy := tc.kubelet
-			h := &Health{Run: r, Kubernetes: s.Kubernetes, Chalkd: addr, NodeCertificate: cert, Kubelet: kubelet(t, &healthy)}
+			s.Kubernetes.kubelet = kubelet(t, &healthy)
+			h := &Health{Run: r, Layers: []layer.Health{kubernetesOf(s)}, Chalkd: addr, NodeCertificate: cert}
 			checkHealth(t, h, tc.want)
 		})
 	}
 	s, r := kubernetesServer(t, k8s.KindWorker, true)
 	withoutAddress(t, s, "no ipv4 node address matches validSubnets 10.0.0.0/8")
 	healthy := true
-	checkHealth(t, &Health{Run: r, Kubernetes: s.Kubernetes, Chalkd: addr, NodeCertificate: cert, Kubelet: kubelet(t, &healthy)}, "preparation failed: no ipv4 node address")
+	s.Kubernetes.kubelet = kubelet(t, &healthy)
+	checkHealth(t, &Health{Run: r, Layers: []layer.Health{kubernetesOf(s)}, Chalkd: addr, NodeCertificate: cert}, "preparation failed: no ipv4 node address")
 }
 
 func TestHealthOfAControlPlane(t *testing.T) {
@@ -145,7 +181,8 @@ func TestHealthOfAControlPlane(t *testing.T) {
 	k := s.Kubernetes
 	ready, healthy := true, true
 	k.hooks.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return ready }
-	h := &Health{Run: &tooltest.Runner{}, Kubernetes: k, Chalkd: addr, NodeCertificate: cert, Kubelet: kubelet(t, &healthy)}
+	k.kubelet = kubelet(t, &healthy)
+	h := &Health{Run: &tooltest.Runner{}, Layers: []layer.Health{kubernetesOf(s)}, Chalkd: addr, NodeCertificate: cert}
 	checkHealth(t, h, "")
 	ready = false
 	checkHealth(t, h, "the API server is not ready")
@@ -161,7 +198,8 @@ func TestHealthOfAControlPlane(t *testing.T) {
 	if bootstrapped, _ := knode.Bootstrapped(s2.Kubernetes.Paths); bootstrapped {
 		t.Fatal("bootstrapped")
 	}
-	checkHealth(t, &Health{Run: r, Kubernetes: s2.Kubernetes, Chalkd: addr, NodeCertificate: cert, Kubelet: "http://127.0.0.1:1/healthz"}, "")
+	s2.Kubernetes.kubelet = "http://127.0.0.1:1/healthz"
+	checkHealth(t, &Health{Run: r, Layers: []layer.Health{kubernetesOf(s2)}, Chalkd: addr, NodeCertificate: cert}, "")
 }
 
 // espWith is a health check of a node whose ESP holds the UKIs; see writeESP.

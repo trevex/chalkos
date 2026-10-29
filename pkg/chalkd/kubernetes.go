@@ -34,6 +34,8 @@ type Kubernetes struct {
 	// revokedNodesHook returns the revoked nodes in place of the node's own API server, as
 	// KubernetesOptions.RevokedNodes sets it.
 	revokedNodesHook func(context.Context) (revoked.List, error)
+	// kubelet is the kubelet's health endpoint.
+	kubelet string
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -170,6 +172,8 @@ type KubernetesOptions struct {
 	// RevokedNodes returns the nodes revoked in the cluster, whose node certificates a control
 	// plane does not renew; nil reads them through the node's own API server. Tests replace it.
 	RevokedNodes func(context.Context) (revoked.List, error)
+	// Kubelet is the kubelet's health endpoint; empty means http://127.0.0.1:10248/healthz.
+	Kubelet string
 }
 
 // LeavesProblem says why renewing the control plane's certificates failed last; "" while it
@@ -186,9 +190,12 @@ func (k *Kubernetes) LeavesProblem() string {
 
 // NewKubernetes returns the Kubernetes side of a node.
 func NewKubernetes(o KubernetesOptions) *Kubernetes {
-	k := &Kubernetes{Paths: o.Paths, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd, revokedNodesHook: o.RevokedNodes}
+	k := &Kubernetes{Paths: o.Paths, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd, revokedNodesHook: o.RevokedNodes, kubelet: o.Kubelet}
 	if k.Paths == (knode.Paths{}) {
 		k.Paths = knode.DefaultPaths()
+	}
+	if k.kubelet == "" {
+		k.kubelet = "http://127.0.0.1:10248/healthz"
 	}
 	h := &k.hooks
 	if h.Slot == nil {

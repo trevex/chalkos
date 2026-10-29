@@ -29,6 +29,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/install"
@@ -190,15 +191,13 @@ func health(args []string) error {
 	if err != nil {
 		return usageError{err}
 	}
-	l, err := layers.Read(layers.Dir)
+	// Only the layers' hooks are asked, so the server they are bound to serves nothing.
+	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
+	reg, err := registry(node, chalkd.NewKubernetes(chalkd.KubernetesOptions{}), &chalkd.Router{Run: node.Run})
 	if err != nil {
 		return err
 	}
-	var k *chalkd.Kubernetes
-	if l.Has(layers.Kubernetes) {
-		k = chalkd.NewKubernetes(chalkd.KubernetesOptions{})
-	}
-	h := chalkd.DefaultHealth(k)
+	h := chalkd.DefaultHealth(layer.Active[layer.Health](reg))
 	h.IgnoreUnits = a.ignore
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
