@@ -76,6 +76,52 @@ type ApplyFlags interface {
 	None(name string) error
 }
 
+// Upgrade is a plugin whose layer takes part in chalkctl upgrade.
+type Upgrade interface {
+	// UpgradeRole reads the node's part in the layer's cluster from its service on conn.
+	UpgradeRole(ctx context.Context, conn *client.Conn) (UpgradeRole, error)
+	// ListedCoordinator reports whether the inventory lists the node as one that acts for the
+	// others.
+	ListedCoordinator(c Cluster, name string) (bool, error)
+	// BeforeInstall runs before a node that reboots is sent its image.
+	BeforeInstall(ctx context.Context, u Upgrading, name string, role UpgradeRole) error
+	// BeforeReboot runs once the node has its image, before it reboots.
+	BeforeReboot(ctx context.Context, u Upgrading, name string, role UpgradeRole) error
+	// Ready checks, from the layer's service on conn, that the node serves its cluster again.
+	Ready(ctx context.Context, conn *client.Conn, role UpgradeRole) error
+	// After releases the node once it runs its image, found healthy.
+	After(ctx context.Context, u Upgrading, name string, role UpgradeRole) error
+}
+
+// UpgradeRole is a node's part in a layer's cluster, as an upgrade treats it.
+type UpgradeRole struct {
+	// Coordinator is set for a node that acts for the others; coordinators upgrade one at a time,
+	// before the others.
+	Coordinator bool
+	// Member is set for a node that serves the cluster, which an upgrade releases only once it
+	// does again, and which stays held after it fell back.
+	Member bool
+}
+
+// Upgrading is a run of chalkctl upgrade, as a plugin's hooks use it.
+type Upgrading interface {
+	// Say prints a line of the run's progress.
+	Say(format string, args ...any)
+	// ViaCoordinators calls fn on a coordinator: prefer first when it is one, then the others,
+	// moving on past those whose error next accepts.
+	ViaCoordinators(prefer string, next func(error) bool, fn func(conn *client.Conn) error) error
+	// AllowDowntime is --allow-downtime.
+	AllowDowntime() bool
+	// DeleteEmptyDir is --delete-emptydir-data.
+	DeleteEmptyDir() bool
+	// DrainTimeout is how long a node's drain may take.
+	DrainTimeout() time.Duration
+	// QuorumWait is how long the run waits for a cluster to keep its quorum while a node reboots.
+	QuorumWait() time.Duration
+	// Poll is the time between two looks at what the run waits for.
+	Poll() time.Duration
+}
+
 // Host is what chalkctl gives its plugins' commands.
 type Host interface {
 	// Stdout is the standard output of the command that runs.

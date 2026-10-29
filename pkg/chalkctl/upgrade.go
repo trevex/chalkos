@@ -17,14 +17,10 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
-	kuberneteslayer "github.com/trevex/chalkos/pkg/chalkctl/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
-	"github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -384,11 +380,11 @@ func (r *upgradeRun) call(name string, fn func(conn *client.Conn) error) error {
 	})
 }
 
-// probe reads what a node runs and its status.
-func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoResponse, *nodev1.StatusResponse, *kubernetesv1.StatusResponse, error) {
+// probe reads what a node runs, its status and its roles in the clusters of its layers.
+func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoResponse, *nodev1.StatusResponse, upgradeRoles, error) {
 	var info *nodev1.InfoResponse
 	var st *nodev1.StatusResponse
-	var k *kubernetesv1.StatusResponse
+	var roles upgradeRoles
 	err := r.call(name, func(conn *client.Conn) error {
 		i, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
 		if err != nil {
@@ -398,18 +394,30 @@ func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoRespon
 		if err != nil {
 			return err
 		}
-		if slices.Contains(i.Msg.Layers, layers.Kubernetes) {
-			if k, err = kuberneteslayer.Status(ctx, conn); err != nil {
+		for _, u := range pluginsOf[layer.Upgrade](i.Msg.Layers) {
+			role, err := u.UpgradeRole(ctx, conn)
+			if err != nil {
 				return err
 			}
+			roles = append(roles, upgradeRole{u, role})
 		}
 		info, st = i.Msg, s.Msg
 		return nil
 	})
-	return info, st, k, err
+	return info, st, roles, err
 }
 
-// run upgrades the control planes one at a time, then the other nodes in batches.
+// ready checks, on conn, that the node serves the cluster of each of its layers again.
+func (n *upgradeNode) ready(ctx context.Context, conn *client.Conn) error {
+	for _, r := range n.roles {
+		if err := r.u.Ready(ctx, conn, r.role); err != nil {
+			return fmt.Errorf("%s: %w", n.name, err)
+		}
+	}
+	return nil
+}
+
+// run upgrades the coordinators one at a time, then the other nodes in batches.
 func (r *upgradeRun) run(ctx context.Context) error {
 	controlPlanes, others := r.split()
 	images := map[string]bool{}
@@ -447,9 +455,10 @@ func (r *upgradeRun) run(ctx context.Context) error {
 }
 
 // node upgrades one node, continuing where an earlier run stopped: a node that runs the image
-// and was found healthy is uncordoned once its Node is Ready, one that booted it is waited for,
-// and the image installed already is not sent again. An image is its store's root hash: a node
-// runs, stages or fell back from the image when it names that root hash.
+// and was found healthy is released once it serves its clusters again, one that booted it is
+// waited for, and the image installed already is not sent again. Its layers' hooks hold it before
+// it reboots and release it after. An image is its store's root hash: a node runs, stages or fell
+// back from the image when it names that root hash.
 func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	image, target := n.image.name(), n.image.header.RootHash
 	_, st, _, err := r.probe(ctx, n.name)
@@ -469,21 +478,16 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 			r.say("%s: runs %s", n.name, image)
 			return nil
 		}
-		// An earlier run may have stopped while the node was not Ready; it is released only once
-		// it is.
+		// An earlier run may have stopped while the node did not serve its clusters; it is released
+		// only once it does.
 	case runs:
 		r.say("%s: booted %s; waiting for it to be found healthy", n.name, image)
 	default:
 		if failed {
 			r.say("%s: fell back from %s before; trying it again", n.name, image)
 		}
-		if n.kind == kubernetes.KindControlPlane && !r.noReboot {
-			if err := r.quorum(ctx, n.name); err != nil {
-				return err
-			}
-		}
-		if n.kind == kubernetes.KindWorker && !r.noReboot {
-			if err := r.drain(ctx, n); err != nil {
+		if !r.noReboot {
+			if err := r.hooks(ctx, n, layer.Upgrade.BeforeInstall); err != nil {
 				return err
 			}
 		}
@@ -497,10 +501,8 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		if r.noReboot {
 			return nil
 		}
-		if n.kind == kubernetes.KindControlPlane {
-			if err := r.drain(ctx, n); err != nil {
-				return err
-			}
+		if err := r.hooks(ctx, n, layer.Upgrade.BeforeReboot); err != nil {
+			return err
 		}
 		if err := r.call(n.name, func(conn *client.Conn) error {
 			_, err := conn.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{}))
@@ -513,7 +515,7 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	if err := r.waitHealthy(ctx, n); err != nil {
 		return err
 	}
-	return r.uncordon(ctx, n)
+	return r.hooks(ctx, n, layer.Upgrade.After)
 }
 
 // stagedAlready reports whether the node has the image staged with the config the run gives it,
@@ -624,13 +626,25 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	return nil
 }
 
-// waitHealthy waits until the node runs the image, its boot was found healthy, and a node in
-// the cluster is Ready, or until it fell back.
+// waitHealthy waits until the node runs the image, its boot was found healthy, and it serves the
+// clusters of its layers again, or until it fell back.
 func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 	image, target := n.image.name(), n.image.header.RootHash
 	var fellBack error
 	err := layer.WaitFor(ctx, "", r.timeout, r.poll, func() error {
-		_, st, k, err := r.probe(ctx, n.name)
+		var st *nodev1.StatusResponse
+		var notReady error
+		err := r.call(n.name, func(conn *client.Conn) error {
+			s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			if err != nil {
+				return err
+			}
+			st = s.Msg
+			if boot := st.GetBoot(); bytes.Equal(boot.GetRunning().GetRootHash(), target) && boot.GetBlessed() {
+				notReady = n.ready(ctx, conn)
+			}
+			return nil
+		})
 		switch {
 		case err != nil:
 			return err
@@ -641,10 +655,8 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 			return fmt.Errorf("it runs %s", bootImageName(st.GetBoot().GetRunning()))
 		case !st.GetBoot().GetBlessed():
 			return errors.New("its boot was not found healthy yet")
-		case n.inCluster && k.GetNodeReady() != "True":
-			return fmt.Errorf("its Node is not Ready: %s", k.GetNodeReady())
 		}
-		return nil
+		return notReady
 	})
 	switch {
 	case fellBack != nil:
@@ -657,14 +669,46 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 }
 
 // rolledBack is the error of a node that fell back from the image, with what its boots logged. A
-// node of the cluster stays cordoned, for an operator to look at.
+// node that serves a cluster stays held there, for an operator to look at.
 func (r *upgradeRun) rolledBack(n *upgradeNode, boot *nodev1.BootStatus) error {
 	msg := fmt.Sprintf("%s: upgrade to %s failed: rolled back to %s", n.name, bootImageName(boot.Failed), bootImageName(boot.Running))
-	if n.inCluster && !r.noReboot {
+	if n.roles.member() && !r.noReboot {
 		msg += "; it stays cordoned"
 	}
 	if len(boot.Journal) > 0 {
 		msg += "; its boots logged:\n  " + strings.Join(boot.Journal, "\n  ")
 	}
 	return errors.New(msg)
+}
+
+// hooks runs a hook of each of the node's layers, in their order.
+func (r *upgradeRun) hooks(ctx context.Context, n *upgradeNode, hook func(layer.Upgrade, context.Context, layer.Upgrading, string, layer.UpgradeRole) error) error {
+	for _, role := range n.roles {
+		if err := hook(role.u, ctx, r, n.name, role.role); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var _ layer.Upgrading = (*upgradeRun)(nil)
+
+func (r *upgradeRun) Say(format string, args ...any) { r.say(format, args...) }
+func (r *upgradeRun) AllowDowntime() bool            { return r.allowDowntime }
+func (r *upgradeRun) DeleteEmptyDir() bool           { return r.deleteEmptyDir }
+func (r *upgradeRun) DrainTimeout() time.Duration    { return r.drainTimeout }
+func (r *upgradeRun) QuorumWait() time.Duration      { return r.quorumWait }
+func (r *upgradeRun) Poll() time.Duration            { return r.poll }
+
+// ViaCoordinators calls fn on a coordinator: the node itself first when it is one, then the
+// others, moving on past those whose error next accepts.
+func (r *upgradeRun) ViaCoordinators(prefer string, next func(error) bool, fn func(conn *client.Conn) error) error {
+	names := slices.Clone(r.controlPlanes)
+	if i := slices.Index(names, prefer); i > 0 {
+		names = append([]string{prefer}, slices.Delete(names, i, i+1)...)
+	}
+	if len(names) == 0 {
+		return errors.New("the cluster has no control-plane node to ask; pass --inventory")
+	}
+	return r.reach.viaControlPlanes(names, next, fn)
 }

@@ -8,21 +8,39 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 )
 
-// upgradeNode is a node to upgrade, by its part in Kubernetes: its kind, and whether it is part
-// of a cluster, so its Node exists; the image it gets; and the config it gets for the image, the
-// inventory's, checked against the image; nil on a partial cluster, where the node carries its own
-// over.
+// upgradeNode is a node to upgrade, by its roles in the clusters of its layers; the image it gets;
+// and the config it gets for the image, the inventory's, checked against the image; nil on a
+// partial cluster, where the node carries its own over.
 type upgradeNode struct {
-	name, kind string
-	inCluster  bool
-	image      *diskImage
-	delivery   *delivery
+	name     string
+	roles    upgradeRoles
+	image    *diskImage
+	delivery *delivery
 	// secret is the fallback secret the delivery's new encrypted volumes are enrolled with, asked
 	// for before any node is drained; empty when it adds none.
 	secret string
+}
+
+// upgradeRole is a node's role in the cluster of one of its layers, with the layer's hooks.
+type upgradeRole struct {
+	u    layer.Upgrade
+	role layer.UpgradeRole
+}
+
+// upgradeRoles are a node's roles in the clusters of its layers.
+type upgradeRoles []upgradeRole
+
+// coordinator reports whether the node acts for the others in one of its layers.
+func (rs upgradeRoles) coordinator() bool {
+	return slices.ContainsFunc(rs, func(r upgradeRole) bool { return r.role.Coordinator })
+}
+
+// member reports whether the node serves the cluster of one of its layers.
+func (rs upgradeRoles) member() bool {
+	return slices.ContainsFunc(rs, func(r upgradeRole) bool { return r.role.Member })
 }
 
 // upgradeGroup is the nodes that get one image: the image given, or the one an image directory of
@@ -41,7 +59,7 @@ type upgradePlan struct {
 	// nodes are the nodes to upgrade, and groups the same nodes by the image they get.
 	nodes  map[string]*upgradeNode
 	groups []*upgradeGroup
-	// controlPlanes are the cluster's control-plane nodes, which drain and uncordon nodes.
+	// controlPlanes are the cluster's coordinators, which the layers drain and release nodes through.
 	controlPlanes []string
 }
 
@@ -111,7 +129,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		if err := c.node(name); err != nil {
 			return err
 		}
-		info, _, k, err := r.probe(ctx, name)
+		info, _, roles, err := r.probe(ctx, name)
 		if err != nil {
 			return err
 		}
@@ -122,11 +140,8 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 				return err
 			}
 		}
-		n := &upgradeNode{name: name}
-		if k != nil {
-			n.kind, n.inCluster = k.Kind, inCluster(k)
-		}
-		probedCPs[name] = n.kind == kubernetes.KindControlPlane
+		n := &upgradeNode{name: name, roles: roles}
+		probedCPs[name] = roles.coordinator()
 		if img != nil && len(named) == 0 && info.Variant != img.Info.Variant() {
 			continue
 		}
@@ -162,35 +177,49 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	for _, key := range slices.Sorted(maps.Keys(groups)) {
 		r.groups = append(r.groups, groups[key])
 	}
-	// The control planes drain the nodes and keep etcd's quorum, so every node's type is read,
-	// also of nodes the run leaves alone. Loading the inventory read every node's files already,
-	// so a node whose files are broken stops every command, and this adds only a node whose
-	// files hold the same document twice. Without an inventory, the nodes --address names that
-	// the run leaves alone are asked.
+	// The coordinators drain the nodes and keep their cluster's quorum, so every node's role is
+	// read, also of nodes the run leaves alone. Loading the inventory read every node's files
+	// already, so a node whose files are broken stops every command, and this adds only a node
+	// whose files hold the same document twice. Without an inventory, the nodes --address names
+	// that the run leaves alone are asked.
 	for _, name := range r.nodeNames() {
 		if _, probed := probedCPs[name]; c.partial() && !probed {
-			_, _, k, err := r.probe(ctx, name)
+			_, _, roles, err := r.probe(ctx, name)
 			if err != nil {
 				return err
 			}
-			probedCPs[name] = k.GetKind() == kubernetes.KindControlPlane
+			probedCPs[name] = roles.coordinator()
 		}
-		kind, err := c.kind(name)
+		listed, err := r.listedCoordinator(name)
 		if err != nil {
 			return err
 		}
-		if probedCPs[name] || kind == kubernetes.KindControlPlane {
+		if probedCPs[name] || listed {
 			r.controlPlanes = append(r.controlPlanes, name)
 		}
 	}
 	if len(r.controlPlanes) == 0 && !r.noReboot {
 		for _, n := range r.nodes {
-			if n.inCluster {
+			if n.roles.member() {
 				return fmt.Errorf("%s is drained through a control plane, but the cluster has none to ask; pass --inventory, or give a control plane's address with --address", n.name)
 			}
 		}
 	}
 	return nil
+}
+
+// listedCoordinator reports whether the inventory makes the node a coordinator of one of the
+// layers chalkctl knows.
+func (r *upgradeRun) listedCoordinator(name string) (bool, error) {
+	listed := false
+	for _, u := range compiled[layer.Upgrade]() {
+		ok, err := u.ListedCoordinator(pluginCluster{r.cluster}, name)
+		if err != nil {
+			return false, err
+		}
+		listed = listed || ok
+	}
+	return listed, nil
 }
 
 // nodeNames are the cluster's nodes: the inventory's, or without one those --address names.
@@ -225,10 +254,10 @@ func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error)
 	return &upgradeGroup{key: nc.ImageDir, dir: nc.ImageDir, variant: md.Variant, platform: md.Platform}, nil
 }
 
-// split sorts the nodes to upgrade into the control planes and the others, each by name.
+// split sorts the nodes to upgrade into the coordinators and the others, each by name.
 func (r *upgradeRun) split() (controlPlanes, others []string) {
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
-		if r.nodes[name].kind == kubernetes.KindControlPlane {
+		if r.nodes[name].roles.coordinator() {
 			controlPlanes = append(controlPlanes, name)
 		} else {
 			others = append(others, name)
