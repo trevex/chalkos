@@ -141,6 +141,8 @@ func (c pluginCluster) Partial() bool                     { return c.c.partial()
 func (c pluginCluster) RequireNodes(command string) error { return c.c.requireNodes(command) }
 func (c pluginCluster) NodeNames() []string               { return c.c.nodeNames() }
 
+// Documents returns the documents the cluster holds for the node, not a copy: plugins only read
+// them.
 func (c pluginCluster) Documents(name string) ([]config.Document, error) {
 	if c.c.partial() {
 		return nil, nil
