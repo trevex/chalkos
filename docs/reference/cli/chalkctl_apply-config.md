@@ -37,15 +37,19 @@ confirms the config within it, the node rolls the config back by itself through 
 reachable, once the node is healthy as an upgrade's boot must be: chalkd serves, no unit of the
 boot failed, and the image's layers find their services healthy. The check leaves out the units the
 image ignores and those --ignore-unit names, one unit per flag. chalkctl warns of units that failed
-before the trial, which keep the check from passing unless they recover. A trial delivers config
-alone and is refused for a config that changes the node's storage. While it is open, the node
-refuses other deliveries, upgrades and image rollbacks; --rollback rolls the config back at once
-and ends the trial, and a reboot boots the config from before it. --no-confirm leaves the trial
-open, and --confirm confirms it later; it needs no inventory. A delivery on trial that fails after
-it changed the config leaves the trial open, and chalkctl does not confirm it. When the rollback at
-the deadline fails, the node tries it again each minute and --confirm still keeps the config,
-unless the failed rollback changed the node; --rollback then finishes it. After a trial's rollback,
-the config on trial is the node's previous config, which --rollback delivers again without a trial.
+before the trial, which keep the check from passing unless they recover. When the config is not
+confirmed, or the answer to its delivery is lost, as when the config cuts chalkctl off, chalkctl
+waits up to two minutes after the deadline for the node's rollback, reports it and exits non-zero.
+Interrupting chalkctl leaves the trial open. A trial delivers config alone and is refused for a
+config that changes the node's storage. While it is open, the node refuses other deliveries,
+upgrades and image rollbacks; --rollback rolls the config back at once and ends the trial, and a
+reboot boots the config from before it. --no-confirm leaves the trial open, and --confirm confirms
+it later, trying until the trial's deadline while the node is unhealthy; --confirm needs no
+inventory. A delivery on trial that fails after it changed the config leaves the trial open, and
+chalkctl does not confirm it. When an attempt to roll the config back fails, the node tries again
+each minute and --confirm still keeps the config, unless the failed attempt changed the node;
+--rollback then finishes the rollback. After a trial's rollback, the config on trial is the node's
+previous config, which --rollback delivers again without a trial.
 
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
@@ -69,7 +73,7 @@ file.
 | `--rollback`{ #flag-rollback } | boolean | `false` | Deliver the node's previous config again, the one its image ran before the last delivery, instead of the inventory's. |
 | `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
 | `--staged`{ #flag-staged } | boolean | `false` | Deliver the config for the image staged to boot next instead, checked against the node's image in the inventory. |
-| `--try`{ #flag-try } | duration | `0s` | Apply the config on trial: the node rolls it back by itself unless chalkctl confirms it within the duration, from 10s to 24h, over a new connection once the node is healthy. |
+| `--try`{ #flag-try } | duration | `0s` | Apply the config on trial for the duration, from 10s to 24h: the node rolls it back by itself unless chalkctl confirms it over a new connection once the node is healthy. |
 
 ## Examples
 
