@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/addons"
@@ -23,8 +24,8 @@ import (
 )
 
 // controlPlaneRenewal renews the control plane's certificates.
-func (k *Kubernetes) controlPlaneRenewal() *Renewal {
-	return newRenewal("Kubernetes control-plane certificates", func(now time.Time) (bool, time.Time, error) {
+func (k *Kubernetes) controlPlaneRenewal() *renewal.Renewal {
+	return renewal.New("Kubernetes control-plane certificates", func(now time.Time) (bool, time.Time, error) {
 		// Until the preparation wrote the certificates, as right after boot, there are none to
 		// renew; those it writes are new.
 		if prepared, err := knode.Prepared(k.Paths); err != nil || !prepared {

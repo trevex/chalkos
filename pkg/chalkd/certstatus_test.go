@@ -3,6 +3,7 @@ package chalkd
 import (
 	"context"
 	"crypto/x509"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,10 +53,18 @@ func TestStatusCertificatesOfAControlPlane(t *testing.T) {
 	}
 
 	// A failing renewal shows with the certificate it renews.
-	s.Renewal = NewNodeRenewal(s.Certificate, nil)
-	s.Renewal.setProblem("renewal failing: connection refused; expires 2027-10-08T12:00:00Z")
-	if got := status(t, s).Certificates[0]; got.Problem != "renewal failing: connection refused; expires 2027-10-08T12:00:00Z" {
-		t.Errorf("node certificate problem %q", got.Problem)
+	s.Renewal = NewNodeRenewal(s.Certificate, func(context.Context, []byte) (string, error) {
+		return "", errors.New("connection refused")
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.Renewal.Run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+	s.Renewal.Force()
+	eventually(t, "the renewal to fail", func() bool { return s.Renewal.Problem() != "" })
+	wantProblem := "renewal failing: connection refused; expires " + s.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339)
+	if got := status(t, s).Certificates[0]; got.Problem != wantProblem {
+		t.Errorf("node certificate problem %q, want %q", got.Problem, wantProblem)
 	}
 }
 

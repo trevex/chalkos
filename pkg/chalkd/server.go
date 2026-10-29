@@ -20,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
+	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
@@ -150,7 +151,7 @@ type Server struct {
 	// router layer. Routes relies on it being set otherwise.
 	Router *Router
 	// Renewal renews the node certificate; nil on a node that renews none.
-	Renewal *Renewal
+	Renewal *renewal.Renewal
 	// RenewOnApplyConfig renews the node certificate and the control plane's certificates after
 	// each ApplyConfig that delivers config, due or not. Only test images set it, to renew within
 	// a test's time.

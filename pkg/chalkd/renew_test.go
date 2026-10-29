@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/renewal/renewaltest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -288,40 +289,12 @@ func TestWorkerRenewsThroughControlPlane(t *testing.T) {
 	}
 }
 
-// fakeClock hands the waits a Renewal asks for to the test, which ends each one.
-type fakeClock struct {
-	now   time.Time
-	waits chan time.Duration
-	fire  chan time.Time
-}
-
-func newFakeClock(now time.Time) *fakeClock {
-	return &fakeClock{now: now, waits: make(chan time.Duration), fire: make(chan time.Time)}
-}
-
-func (f *fakeClock) After(d time.Duration) <-chan time.Time {
-	f.waits <- d
-	return f.fire
-}
-
-// next returns the wait the renewal asked for, ends it at now and lets the renewal go on.
-func (f *fakeClock) next(t *testing.T) time.Duration {
-	t.Helper()
-	select {
-	case d := <-f.waits:
-		return d
-	case <-time.After(time.Minute):
-		t.Fatal("the renewal asked for no wait")
-		return 0
-	}
-}
-
 func TestRenewalThresholdsAndBackoff(t *testing.T) {
 	c := newCreds(t)
 	start := time.Now()
 	cert := loadedCertificate(t, c, c.node)
 	leaf := cert.Current().Leaf
-	clock := newFakeClock(start)
+	clock := renewaltest.NewClock(start)
 	failing := true
 	issued := 0
 	r := NewNodeRenewal(cert, func(_ context.Context, request []byte) (string, error) {
@@ -329,31 +302,20 @@ func TestRenewalThresholdsAndBackoff(t *testing.T) {
 		if failing {
 			return "", errors.New("connection refused")
 		}
-		return signRequest(c.nodeCA, pki.NamesOf(leaf), request, clock.now)
+		return signRequest(c.nodeCA, pki.NamesOf(leaf), request, clock.Now())
 	})
-	r.Now = func() time.Time { return clock.now }
+	r.Now = clock.Now
 	r.After = clock.After
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { r.Run(ctx); close(done) }()
 	t.Cleanup(func() {
 		cancel()
-		for {
-			select {
-			case <-done:
-				return
-			case <-clock.waits:
-			case clock.fire <- clock.now:
-			}
-		}
+		clock.Drain(done)
 	})
-	advance := func(now time.Time) time.Duration {
-		clock.now = now
-		clock.fire <- now
-		return clock.next(t)
-	}
+	advance := func(now time.Time) time.Duration { return clock.Advance(t, now) }
 
-	if first := clock.next(t); first >= time.Hour/10 {
+	if first := clock.Next(t); first >= time.Hour/10 {
 		t.Errorf("the first check comes after %v, want soon after the start", first)
 	}
 	// Before two thirds of the lifetime nothing is renewed, and the next check is about an hour on.
@@ -528,19 +490,19 @@ func TestRenewalAttemptsEndAtTheirDeadline(t *testing.T) {
 		return RenewThrough(ctx, w1, addr, request)
 	})
 	r.Timeout = time.Second
-	clock := newFakeClock(time.Now())
-	r.Now = func() time.Time { return clock.now }
+	clock := renewaltest.NewClock(time.Now())
+	r.Now = clock.Now
 	r.After = clock.After
 
 	before := runtime.NumGoroutine()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { r.Run(ctx); close(done) }()
-	clock.next(t)
+	clock.Next(t)
 	r.Force()
 	start := time.Now()
 	select {
-	case <-clock.waits:
+	case <-clock.Waits():
 	case <-time.After(10 * time.Second):
 		t.Fatalf("an attempt with a silent peer still runs after %v", time.Since(start))
 	}
@@ -586,111 +548,6 @@ func TestRenewOnApplyConfigRenewsTheControlPlane(t *testing.T) {
 	})
 }
 
-// runRenewal runs r on a fake clock until the test ends and returns the clock and a function
-// that ends the current wait at the time given and returns the next wait.
-func runRenewal(t *testing.T, r *Renewal, start time.Time) (*fakeClock, func(time.Time) time.Duration) {
-	t.Helper()
-	clock := newFakeClock(start)
-	r.Now = func() time.Time { return clock.now }
-	r.After = clock.After
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { r.Run(ctx); close(done) }()
-	t.Cleanup(func() {
-		cancel()
-		for {
-			select {
-			case <-done:
-				return
-			case <-clock.waits:
-			case clock.fire <- clock.now:
-			}
-		}
-	})
-	clock.next(t)
-	return clock, func(now time.Time) time.Duration {
-		clock.now = now
-		clock.fire <- now
-		return clock.next(t)
-	}
-}
-
-// A check that fails, as before the preparation wrote the control plane's certificates at boot,
-// renews nothing: the next check decides again whether anything is due.
-func TestRenewalChecksAgainAfterAFailedCheck(t *testing.T) {
-	start := time.Now()
-	checks, renewals := 0, 0
-	r := newRenewal("test", func(time.Time) (bool, time.Time, error) {
-		checks++
-		if checks == 1 {
-			return false, time.Time{}, errors.New("no certificates yet")
-		}
-		return false, start.Add(48 * time.Hour), nil
-	}, func(context.Context, time.Time) error {
-		renewals++
-		return nil
-	})
-	_, advance := runRenewal(t, r, start)
-	if wait := advance(start); wait > 2*time.Minute {
-		t.Errorf("after a failed check the next one comes after %v", wait)
-	}
-	if !strings.HasPrefix(r.Problem(), "renewal failing: no certificates yet") {
-		t.Errorf("problem after a failed check = %q", r.Problem())
-	}
-	if wait := advance(start.Add(time.Minute)); wait < 54*time.Minute {
-		t.Errorf("with nothing due the next check comes after %v", wait)
-	}
-	if renewals != 0 {
-		t.Errorf("renewed %d times though nothing was due", renewals)
-	}
-	if r.Problem() != "" {
-		t.Errorf("problem once nothing is due = %q", r.Problem())
-	}
-}
-
-// A renewal that failed is tried again only while it is still due: something else, such as a
-// preparation or a delivered certificate, may have renewed in between.
-func TestRenewalAfterAFailureRenewsOnlyWhileDue(t *testing.T) {
-	start := time.Now()
-	due, renewals := true, 0
-	r := newRenewal("test", func(time.Time) (bool, time.Time, error) {
-		if due {
-			return true, start.Add(time.Hour), nil
-		}
-		return false, start.Add(48 * time.Hour), nil
-	}, func(context.Context, time.Time) error {
-		renewals++
-		return errors.New("busy")
-	})
-	_, advance := runRenewal(t, r, start)
-	advance(start)
-	if renewals != 1 || r.Problem() == "" {
-		t.Fatalf("renewals %d, problem %q", renewals, r.Problem())
-	}
-	due = false
-	advance(start.Add(time.Minute))
-	if renewals != 1 {
-		t.Errorf("renewed again though nothing was due any more")
-	}
-	if r.Problem() != "" {
-		t.Errorf("problem once nothing is due = %q", r.Problem())
-	}
-}
-
-// A renewal started again keeps no problem from an earlier run once a check finds nothing due.
-func TestRenewalClearsAnEarlierProblem(t *testing.T) {
-	start := time.Now()
-	r := newRenewal("test", func(time.Time) (bool, time.Time, error) {
-		return false, start.Add(48 * time.Hour), nil
-	}, func(context.Context, time.Time) error { return nil })
-	r.setProblem("renewal failing: connection refused; expires 2027-10-08T12:00:00Z")
-	_, advance := runRenewal(t, r, start)
-	advance(start)
-	if r.Problem() != "" {
-		t.Errorf("problem once nothing is due = %q", r.Problem())
-	}
-}
-
 // After a reboot chalkd's loops start before the preparation wrote the control plane's
 // certificates: the renewal waits for them and issues none of its own.
 func TestControlPlaneRenewalWaitsForThePreparation(t *testing.T) {
@@ -710,7 +567,10 @@ func TestControlPlaneRenewalWaitsForThePreparation(t *testing.T) {
 	}
 	s.Kubernetes.leaves = r
 	start := time.Now()
-	_, advance := runRenewal(t, r, start)
+	clock := renewaltest.NewClock(start)
+	r.Now = clock.Now
+	r.After = clock.After
+	advance := renewaltest.Run(t, r.Run, clock)
 	now := start
 	for range 3 {
 		now = now.Add(advance(now))
@@ -747,34 +607,6 @@ func TestControlPlaneRenewalWaitsForThePreparation(t *testing.T) {
 	}
 	if r.Problem() != "" {
 		t.Errorf("problem after the preparation = %q", r.Problem())
-	}
-}
-
-// A forced renewal that failed is tried again until it succeeds, whether due or not.
-func TestForcedRenewalIsTriedAgain(t *testing.T) {
-	start := time.Now()
-	failing, renewals := true, 0
-	r := newRenewal("test", func(time.Time) (bool, time.Time, error) {
-		return false, start.Add(48 * time.Hour), nil
-	}, func(context.Context, time.Time) error {
-		renewals++
-		if failing {
-			return errors.New("busy")
-		}
-		return nil
-	})
-	clock, advance := runRenewal(t, r, start)
-	r.Force()
-	if wait := clock.next(t); wait > 2*time.Minute || renewals != 1 {
-		t.Fatalf("after a failed forced renewal: %d renewals, next attempt after %v", renewals, wait)
-	}
-	failing = false
-	if wait := advance(start.Add(time.Minute)); wait < 54*time.Minute || renewals != 2 {
-		t.Errorf("after a forced renewal: %d renewals, next check after %v", renewals, wait)
-	}
-	advance(start.Add(time.Hour))
-	if renewals != 2 || r.Problem() != "" {
-		t.Errorf("after the forced renewal succeeded: %d renewals, problem %q", renewals, r.Problem())
 	}
 }
 

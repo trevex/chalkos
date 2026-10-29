@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -67,7 +68,7 @@ type Kubernetes struct {
 	done  chan struct{}
 	count int
 	// leaves renews the control plane's certificates while the control plane's loop runs.
-	leaves *Renewal
+	leaves *renewal.Renewal
 
 	// apiMu guards api, chalkd's client for the API server; see ownAPIClient.
 	apiMu sync.Mutex
@@ -327,7 +328,7 @@ func (k *Kubernetes) startLocked() chan struct{} {
 		k.leaves = k.controlPlaneRenewal()
 	}
 	k.leavesDone = make(chan struct{})
-	go func(leaves *Renewal, done chan struct{}) {
+	go func(leaves *renewal.Renewal, done chan struct{}) {
 		leaves.Run(ctx)
 		close(done)
 	}(k.leaves, k.leavesDone)

@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
@@ -746,7 +747,7 @@ func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	k := s.Kubernetes
 	entered, release := make(chan struct{}), make(chan struct{})
-	k.leaves = newRenewal("test", func(time.Time) (bool, time.Time, error) {
+	k.leaves = renewal.New("test", func(time.Time) (bool, time.Time, error) {
 		return true, time.Time{}, nil
 	}, func(context.Context, time.Time) error {
 		close(entered)
