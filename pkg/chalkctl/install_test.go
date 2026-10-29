@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,8 +17,10 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -238,7 +241,16 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", imageDir}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if got.Config.Version == "" || got.Kubernetes == nil || got.Kubernetes.NodeName != "n1" {
-		t.Errorf("install request config = %+v, kubernetes = %+v; want both translated for the image sent", got.Config, got.Kubernetes)
+	var id identity.Identity
+	if err := json.Unmarshal(got.Config.Identity, &id); err != nil {
+		t.Fatal(err)
+	}
+	if got.Config.Version == "" || id.Kubernetes == nil || id.Kubernetes.NodeName != "n1" {
+		t.Errorf("install request config = %+v, kubernetes = %+v; want both translated for the image sent", got.Config, id.Kubernetes)
+	}
+	// The installer's compiled Kubernetes layer writes the share for the node.
+	share, err := kpki.ParseShare(shareOf(t, got.Request))
+	if err != nil || share.Node() != "n1" {
+		t.Errorf("the share the install writes: %v, for %q", err, share.Node())
 	}
 }

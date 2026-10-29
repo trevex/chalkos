@@ -2,6 +2,7 @@ package nodeconfig
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
-	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -220,109 +220,41 @@ func TestApplyWritesNoKeyCredentials(t *testing.T) {
 	}
 }
 
-// kubernetesConfig is a worker's set with its Kubernetes and Node documents as chalkd stores them,
-// schema defaults filled in.
-const kubernetesConfig = `
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: default}
-spec:
-  endpoint: "https://10.0.0.10:6443"
-  domain: cluster.local
-  allowSchedulingOnControlPlanes: false
-  ipFamilies: [ipv4]
-  podCIDRs: {ipv4: 10.244.0.0/16, ipv6: "fd00:10:244::/56"}
-  serviceCIDRs: {ipv4: 10.96.0.0/12, ipv6: "fd00:10:96::/112"}
-  dnsIPs: {ipv4: null, ipv6: null}
-  nodeCIDRMaskSizes: {ipv4: 24, ipv6: 64}
-  nodeIP: {validSubnets: [], timeout: 300}
-  vip: {addresses: [], mode: l2}
-  extraArgs: {etcd: {}, kube-apiserver: {}, kube-controller-manager: {}, kube-scheduler: {}}
----
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: default}
-spec:
-  type: worker
-  labels: {}
-  taints: []
-  kubeletExtraArgs: {}
-  nodeIP: {addresses: null, validSubnets: null}
-  vip: {interface: null}
-`
+// recordingLayer records the documents the loader has it write from, and fails with err.
+type recordingLayer struct {
+	calls int
+	docs  config.Documents
+	err   error
+}
 
-const kubernetesImage = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",
-  "kubeControllerManager": "c", "kubeScheduler": "s", "kubeProxy": "p", "coredns": "d", "flannel": ""}}`
+func (r *recordingLayer) WriteConfig(docs config.Documents) error {
+	r.calls++
+	r.docs = docs
+	return r.err
+}
 
-// kubernetesLoader is a loader on an image with Kubernetes whose STATE holds the documents.
-func kubernetesLoader(t *testing.T, documents string) Loader {
-	t.Helper()
+// The image's layers write from the slot's documents, none for a slot without them, and their
+// error fails the load.
+func TestLoadHasTheLayersWriteTheirConfig(t *testing.T) {
 	l, _ := newTestLoader(t)
 	copySchemas(t, l.Schemas)
-	root := filepath.Dir(filepath.Dir(l.Services))
-	l.KubernetesImage = filepath.Join(root, "etc", "kubernetes", "image.json")
-	l.ClusterFile = filepath.Join(root, "run", "chalkos", "kubernetes", "cluster.json")
-	write(t, l.KubernetesImage, kubernetesImage)
-	writeSlot(t, l, running, nodeIdentity, documents)
-	return l
-}
-
-func TestLoadWritesTheCluster(t *testing.T) {
-	l := kubernetesLoader(t, kubernetesConfig)
+	writeSlot(t, l, running, nodeIdentity, loaderConfig)
+	r := &recordingLayer{}
+	l.Layers = []Layer{r}
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
 	}
-	c, err := kubernetes.ReadCluster(l.ClusterFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Kind != kubernetes.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.DNSIPs.IPv4.String() != "10.96.0.10" || c.Images.KubeProxy != "p" {
-		t.Errorf("cluster = %+v", c)
-	}
-	// Another cluster replaces it.
-	c.Domain = "lab.local"
-	if err := l.WriteCluster(&c); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := kubernetes.ReadCluster(l.ClusterFile); err != nil || got.Domain != "lab.local" {
-		t.Errorf("new domain: %+v, %v", got, err)
-	}
-}
-
-// A set without a Cluster document leaves no cluster file, and says why.
-func TestLoadWithoutClusterDocument(t *testing.T) {
-	l := kubernetesLoader(t, "apiVersion: kubernetes.chalkos.dev"+strings.SplitN(kubernetesConfig, "---\napiVersion: kubernetes.chalkos.dev", 2)[1])
-	write(t, l.ClusterFile, "{}")
-	if err := l.Load(); err == nil || !strings.Contains(err.Error(), "no Cluster") {
-		t.Fatalf("err = %v", err)
-	}
-	if _, err := os.Stat(l.ClusterFile); !os.IsNotExist(err) {
-		t.Errorf("kept the cluster file: %v", err)
-	}
-}
-
-// A slot without documents, an identity alone, has no cluster file; an image without Kubernetes
-// neither.
-func TestLoadWithoutSetOrKubernetesRemovesTheCluster(t *testing.T) {
-	l := kubernetesLoader(t, "")
-	write(t, l.ClusterFile, "{}")
-	if err := l.Load(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(l.ClusterFile); !os.IsNotExist(err) {
-		t.Errorf("without a set: kept the cluster file: %v", err)
+	if r.calls != 1 || len(r.docs) == 0 {
+		t.Errorf("the layer wrote %d times from %d documents, want once from the slot's", r.calls, len(r.docs))
 	}
 
-	l = kubernetesLoader(t, kubernetesConfig)
-	if err := os.Remove(l.KubernetesImage); err != nil {
-		t.Fatal(err)
+	writeSlot(t, l, running, nodeIdentity, "")
+	r.err = errors.New("no cluster")
+	if err := l.LoadConfig(); err == nil || !strings.Contains(err.Error(), "no cluster") {
+		t.Errorf("err = %v, want the layer's", err)
 	}
-	write(t, l.ClusterFile, "{}")
-	if err := l.Load(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(l.ClusterFile); !os.IsNotExist(err) {
-		t.Errorf("without Kubernetes: kept the cluster file: %v", err)
+	if r.calls != 2 || r.docs != nil {
+		t.Errorf("without documents the layer wrote %d times from %v, want twice, the second from none", r.calls, r.docs)
 	}
 }
 

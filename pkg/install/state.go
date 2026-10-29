@@ -14,7 +14,6 @@ import (
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config/slot"
-	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -179,18 +178,6 @@ func isMounted(mountInfo, path string) (bool, error) {
 	return false, nil
 }
 
-// WriteShare records the node's Kubernetes share on STATE, in a directory only root can enter.
-func WriteShare(stateDir string, share []byte) error {
-	dir := filepath.Join(stateDir, "kubernetes")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
-		return err
-	}
-	return atomicfile.WriteFile(filepath.Join(dir, "share.json"), share, 0o600)
-}
-
 // openState makes the disk's STATE match the encryption policy, opens it and mounts it at
 // StateDir. It returns STATE's device.
 func (i *Installer) openState(ctx context.Context, disk storage.BlockDisk, defs map[string]string, policy string) (string, error) {
@@ -221,7 +208,7 @@ func (i *Installer) openState(ctx context.Context, disk storage.BlockDisk, defs 
 
 // writeIdentity writes what makes the machine this node to STATE: the node certificate and the
 // OS CAs chalkd serves with, the provenance record, the config slot of the image whose store has
-// the root hash, with the identity, and the Kubernetes share.
+// the root hash, with the identity, and the layers' payloads.
 func (i *Installer) writeIdentity(req Request, rootHash []byte) error {
 	if err := i.change("write the identity"); err != nil {
 		return err
@@ -261,18 +248,8 @@ func (i *Installer) writeIdentity(req Request, rootHash []byte) error {
 	if err := slot.Write(slot.Dir(filepath.Join(i.StateDir, "config"), rootHash), req.Config); err != nil {
 		return fmt.Errorf("store the config: %w", err)
 	}
-	if len(req.KubernetesShare) > 0 {
-		// validate already parsed and checked the share; encode it again so STATE holds the
-		// canonical form, never whatever bytes the request happened to carry.
-		share, err := kpki.ParseShare(req.KubernetesShare)
-		if err != nil {
-			return err
-		}
-		canonical, err := share.Encode()
-		if err != nil {
-			return err
-		}
-		if err := WriteShare(i.StateDir, canonical); err != nil {
+	for _, write := range req.Layers {
+		if err := write(i.StateDir); err != nil {
 			return err
 		}
 	}

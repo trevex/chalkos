@@ -25,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/install"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/layers"
+	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -363,13 +364,12 @@ func (ta *testApp) withSecrets(args []string) []string {
 	return append(slices.Clone(args), "--secrets", path)
 }
 
-// imageJSON writes the image.json of a running image with Kubernetes for the node s and returns
-// its path.
-func imageJSON(t *testing.T, s *chalkd.Server) string {
+// imageJSON writes the image.json of a running image with Kubernetes and returns its path.
+func imageJSON(t *testing.T) string {
 	t.Helper()
-	s.Loader.KubernetesImage = filepath.Join(t.TempDir(), "image.json")
-	writeFile(t, s.Loader.KubernetesImage, testImageJSON)
-	return s.Loader.KubernetesImage
+	file := filepath.Join(t.TempDir(), "image.json")
+	writeFile(t, file, testImageJSON)
+	return file
 }
 
 // kubernetesImage gives the node s, which has no Kubernetes side, as in maintenance mode, a running
@@ -377,18 +377,20 @@ func imageJSON(t *testing.T, s *chalkd.Server) string {
 // it, whose files are in a directory of the test.
 func kubernetesImage(t *testing.T, s *chalkd.Server) {
 	t.Helper()
-	file := imageJSON(t, s)
+	file := imageJSON(t)
 	root := t.TempDir()
 	k := chalkd.NewKubernetes(chalkd.KubernetesOptions{
 		Paths: knode.Paths{
 			State: filepath.Join(root, "state"), Cluster: filepath.Join(root, "cluster.json"), NodeFile: filepath.Join(root, "node.json"),
 			Run: filepath.Join(root, "run"), PKI: filepath.Join(root, "pki"), KubeletPKI: filepath.Join(root, "kubelet"), EtcdData: filepath.Join(root, "etcd"),
 		},
-		ImageFile: file,
+		ImageFile:   file,
+		ClusterFile: filepath.Join(root, "cluster.json"),
 	})
 	reg, err := layer.NewRegistry(layers.Of(layers.Kubernetes), chalkd.NewKubernetesLayer(s, k), chalkd.NewRouterLayer(&chalkd.Router{Run: s.Run}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.Plugins = reg
+	s.Loader.Layers = layer.Active[nodeconfig.Layer](reg)
 }

@@ -83,19 +83,28 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	if err := json.Unmarshal(stored.Identity, &id); err != nil {
 		return nil, failed(connect.CodeInternal, "parse the identity: %v", err)
 	}
-	share, err := sharePayload(h.Layers)
-	if err != nil {
-		return nil, err
-	}
 	req := install.Request{
 		Config:          stored,
 		Section:         id.Storage,
-		Kubernetes:      id.Kubernetes,
 		NodeCertificate: h.NodeCertificate,
 		NodeKey:         h.NodeKey,
 		CA:              h.CaCertificate,
 		FallbackSecret:  h.FallbackSecret,
-		KubernetesShare: share,
+	}
+	// The request's payloads go to the layers that take them.
+	deliveries := layer.Active[layer.Delivery](s.Plugins)
+	if s.Installer {
+		// The installer carries no layer; the image it installs does.
+		deliveries = layer.Compiled[layer.Delivery](s.Plugins)
+	}
+	commits, err := layer.Plan(ctx, deliveries, h.Layers, layer.Planned{Identity: stored.Identity, OSCA: string(h.CaCertificate), Install: true})
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range commits {
+		if c.Payloads != nil {
+			req.Layers = append(req.Layers, c.Payloads)
+		}
 	}
 	switch target := h.Target.(type) {
 	case *nodev1.InstallHeader_InPlace:

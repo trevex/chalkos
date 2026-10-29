@@ -38,6 +38,8 @@ type Kubernetes struct {
 	kubelet string
 	// imageFile is the running image's image.json.
 	imageFile string
+	// clusterFile receives the cluster the config gives on the image, which Paths.Cluster reads.
+	clusterFile string
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -178,6 +180,9 @@ type KubernetesOptions struct {
 	Kubelet string
 	// ImageFile is the running image's image.json; empty is k8s.ImageFile. Tests replace it.
 	ImageFile string
+	// ClusterFile is where the cluster the config gives is written; empty is k8s.ClusterFile.
+	// Tests replace it.
+	ClusterFile string
 }
 
 // LeavesProblem says why renewing the control plane's certificates failed last; "" while it
@@ -194,7 +199,7 @@ func (k *Kubernetes) LeavesProblem() string {
 
 // NewKubernetes returns the Kubernetes side of a node.
 func NewKubernetes(o KubernetesOptions) *Kubernetes {
-	k := &Kubernetes{Paths: o.Paths, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd, revokedNodesHook: o.RevokedNodes, kubelet: o.Kubelet, imageFile: o.ImageFile}
+	k := &Kubernetes{Paths: o.Paths, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd, revokedNodesHook: o.RevokedNodes, kubelet: o.Kubelet, imageFile: o.ImageFile, clusterFile: o.ClusterFile}
 	if k.Paths == (knode.Paths{}) {
 		k.Paths = knode.DefaultPaths()
 	}
@@ -203,6 +208,9 @@ func NewKubernetes(o KubernetesOptions) *Kubernetes {
 	}
 	if k.imageFile == "" {
 		k.imageFile = k8s.ImageFile
+	}
+	if k.clusterFile == "" {
+		k.clusterFile = k8s.ClusterFile
 	}
 	h := &k.hooks
 	if h.Slot == nil {

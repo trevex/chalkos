@@ -3,17 +3,16 @@
 //   - writes the identity the config translates to as /run/chalkos/node.json, which the node's
 //     Kubernetes side reads, and sets the hostname;
 //   - writes the config's documents for the units granted config kinds;
-//   - writes the Kubernetes cluster the config describes, for chalkd;
+//   - has the image's layers write what they derive from the documents, such as the Kubernetes
+//     cluster file;
 //   - at boot, renders the image's outputs, such as networkd's units and chrony's time servers.
 package nodeconfig
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -22,16 +21,22 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/effects"
-	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
+// Layer writes what an image layer derives from the running slot's documents, such as the
+// Kubernetes cluster file chalkd's Kubernetes side reads.
+type Layer interface {
+	// WriteConfig writes it from docs; nil for a slot without documents.
+	WriteConfig(docs config.Documents) error
+}
+
 // Loader applies config slots. It holds where it reads the slots and the image's contracts, and
-// where it writes the identity, documents, credentials, cluster and outputs. Tests point the paths
-// at temporary directories.
+// where it writes the identity, documents, credentials and outputs. Tests point the paths at
+// temporary directories.
 type Loader struct {
 	// Slots is the directory of the node's config slots on STATE, one per image, and Cmdline the
 	// running kernel's command line, whose usrhash= names the running image and so its slot.
@@ -42,13 +47,11 @@ type Loader struct {
 	// what its deliveries do to them.
 	Services, Effects string
 	// Schemas are the image's schemas, which tell the secretRef fields of its documents.
-	Schemas string
-	// KubernetesImage is the image's Kubernetes facts, absent on an image without Kubernetes;
-	// ClusterFile receives the cluster the config gives on it, which chalkd's Kubernetes side
-	// reads.
-	KubernetesImage string
-	ClusterFile     string
-	SetHostname     func(string) error
+	Schemas     string
+	SetHostname func(string) error
+	// Layers are the image's layers, each of which writes what it derives from the documents
+	// after them.
+	Layers []Layer
 	// Outputs is the image's outputs, which Render renders below its root. NodeCertificate is the
 	// node certificate on STATE, whose subject is the node's name, which renderers read.
 	Outputs         string
@@ -65,8 +68,6 @@ func Default() Loader {
 		Slots:           "/state/config",
 		Cmdline:         "/proc/cmdline",
 		Schemas:         "/etc/chalkos/schemas",
-		KubernetesImage: kubernetes.ImageFile,
-		ClusterFile:     kubernetes.ClusterFile,
 		SetHostname:     func(name string) error { return syscall.Sethostname([]byte(name)) },
 		Outputs:         outputs.DefaultPath,
 		Render:          outputs.Default(),
@@ -135,8 +136,8 @@ func (l Loader) readSlot() (slot.Stored, error) {
 
 // LoadConfig writes the running image's slot for the units that read it: its documents, Secrets
 // excepted, below RunDir/config, and for each granted unit the values the secretRefs of its kinds
-// name below RunDir/credentials/<unit>. On an image with Kubernetes it then writes the cluster the
-// documents give.
+// name below RunDir/credentials/<unit>. The image's layers then write what they derive from the
+// documents.
 func (l Loader) LoadConfig() error {
 	stored, err := l.readSlot()
 	if err != nil {
@@ -148,7 +149,7 @@ func (l Loader) LoadConfig() error {
 // writeConfig writes a slot's documents as LoadConfig does. It does not check them against the
 // image's schemas again: the slot is the image's own, written only once they passed. A slot without
 // documents, an identity alone, gets empty directories, so its units load their credentials all
-// the same, and no cluster.
+// the same.
 func (l Loader) writeConfig(stored slot.Stored) error {
 	services, err := effects.ReadServices(l.Services)
 	if err != nil {
@@ -171,64 +172,15 @@ func (l Loader) writeConfig(stored slot.Stored) error {
 	if err := slot.WriteRuntime(l.RunDir, stored.Documents, schemas, kinds); err != nil {
 		return err
 	}
-	var c *kubernetes.Cluster
+	var docs config.Documents
 	if found {
-		if c, err = l.Cluster(stored.Documents); err != nil {
-			// No Kubernetes side runs on settings the config does not give.
-			if rerr := l.WriteCluster(nil); rerr != nil {
-				return errors.Join(err, rerr)
-			}
-			return fmt.Errorf("the node runs no Kubernetes: its stored config gives no Kubernetes cluster for this image: %w; deliver config that does with chalkctl apply-config", err)
-		}
+		docs = stored.Documents
 	}
-	return l.WriteCluster(c)
-}
-
-// Cluster returns the Kubernetes cluster docs give on this image, from the image's facts and the
-// documents' settings; nil on an image without Kubernetes.
-func (l Loader) Cluster(docs config.Documents) (*kubernetes.Cluster, error) {
-	if l.KubernetesImage == "" {
-		return nil, nil
+	var errs []error
+	for _, layer := range l.Layers {
+		errs = append(errs, layer.WriteConfig(docs))
 	}
-	img, err := kubernetes.ReadImage(l.KubernetesImage)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	c, err := docs.Cluster(img)
-	if err != nil {
-		return nil, err
-	}
-	return &c, nil
-}
-
-// WriteCluster writes c as the node's cluster file, or removes the file for nil. A file that
-// holds c already is left as it is.
-func (l Loader) WriteCluster(c *kubernetes.Cluster) error {
-	if l.ClusterFile == "" {
-		return nil
-	}
-	if c == nil {
-		if err := os.Remove(l.ClusterFile); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-		return nil
-	}
-	old, err := os.ReadFile(l.ClusterFile)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	if bytes.Equal(old, data) {
-		return nil
-	}
-	return atomicfile.WriteFile(l.ClusterFile, data, 0o644)
+	return errors.Join(errs...)
 }
 
 // Apply writes what the identity determines and sets the hostname.

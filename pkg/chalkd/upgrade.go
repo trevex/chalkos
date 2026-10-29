@@ -235,7 +235,7 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 	if err != nil {
 		return failed(connect.CodeInvalidArgument, "the config does not suit the image: %v", err)
 	}
-	d, err := parseIdentity(string(next.Identity))
+	d, err := s.parseIdentity(string(next.Identity))
 	if err != nil {
 		return err
 	}

@@ -367,7 +367,7 @@ func TestApplyConfigOnAKubernetesImage(t *testing.T) {
 func TestApplyConfigRefusesMalformedImageFacts(t *testing.T) {
 	s, r := configServer(t)
 	kubernetesImage(t, s)
-	write(t, s.Loader.KubernetesImage, `{"version": "1.37.1"`)
+	write(t, kubernetesOf(s).k.imageFile, `{"version": "1.37.1"`)
 	_, err := sendConfig(s, workerConfig)
 	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the image's layer facts") {
 		t.Fatalf("err = %v, want a failure naming the image's layer facts", err)

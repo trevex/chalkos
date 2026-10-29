@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
@@ -343,8 +345,12 @@ func TestInstallPullsTheImage(t *testing.T) {
 	if !reflect.DeepEqual(got.SystemDefinitions, map[string]string{"50-state.conf": "[Partition]\nLabel=state\n"}) {
 		t.Errorf("definitions = %v", got.SystemDefinitions)
 	}
-	if k := got.Kubernetes; k == nil || k.NodeName != "n1" {
-		t.Errorf("Kubernetes identity = %+v, want one translated with the contract's image.json", got.Kubernetes)
+	var id identity.Identity
+	if err := json.Unmarshal(got.Config.Identity, &id); err != nil {
+		t.Fatal(err)
+	}
+	if k := id.Kubernetes; k == nil || k.NodeName != "n1" {
+		t.Errorf("Kubernetes identity = %+v, want one translated with the contract's image.json", id.Kubernetes)
 	}
 }
 

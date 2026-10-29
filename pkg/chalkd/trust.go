@@ -3,13 +3,11 @@ package chalkd
 import (
 	"context"
 	"crypto/x509"
-	"errors"
 	"time"
 
 	"connectrpc.com/connect"
 
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
-	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -29,26 +27,6 @@ func (s *Server) trustFor(ctx context.Context, delivered []byte) (string, error)
 		return "", failed(connect.CodeInvalidArgument, "%v", err)
 	}
 	return pki.Bundle(string(delivered)), nil
-}
-
-// checkKeptNodeCA refuses OS CAs that the node CA a control plane holds does not chain to.
-func (s *Server) checkKeptNodeCA(osCA string) error {
-	if s.Kubernetes == nil {
-		return nil
-	}
-	share, err := knode.ReadShare(s.Kubernetes.Paths)
-	if errors.Is(err, knode.ErrNoShare) {
-		return nil
-	}
-	if err != nil {
-		return failed(connect.CodeInternal, "%v", err)
-	}
-	if share.NodeCA != nil {
-		if err := pki.ValidateNodeCA(*share.NodeCA, osCA); err != nil {
-			return failed(connect.CodeInvalidArgument, "the OS CAs do not verify the node's node CA, which it renews node certificates with: %v", err)
-		}
-	}
-	return nil
 }
 
 // peerOf returns the verified client certificate of the call, if there is one.

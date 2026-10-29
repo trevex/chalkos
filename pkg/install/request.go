@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/config/slot"
-	"github.com/trevex/chalkos/pkg/identity"
-	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -18,17 +16,15 @@ import (
 type Request struct {
 	// Section is the identity's storage section.
 	Section storage.Section
-	// Kubernetes is the identity's Kubernetes section; nil on a node whose image has no Kubernetes.
-	Kubernetes *identity.Kubernetes
 	// NodeCertificate, the node certificate followed by the node CA's, and NodeKey are what chalkd
 	// serves once the node is installed; CA holds the OS CAs, which issue the client certificates
 	// it accepts and the node CA. All are PEM.
 	NodeCertificate, NodeKey, CA []byte
 	// FallbackSecret is enrolled as the second keyslot of every encrypted volume.
 	FallbackSecret string
-	// KubernetesShare is the node's share of the Kubernetes secrets (JSON); empty on a node whose
-	// image has no Kubernetes.
-	KubernetesShare []byte
+	// Layers write the payloads of the image's layers, such as the Kubernetes share, to the STATE
+	// mounted at stateDir, once the identity is written; chalkd checked them before the install.
+	Layers []func(stateDir string) error
 	// Config is the node's config as the config slot of the image installed keeps it, with the
 	// identity it translates to as delivered (JSON), which the slot keeps as it is.
 	Config slot.Stored
@@ -62,26 +58,6 @@ func (r Request) validate() error {
 	// reached once installed. The node's clock may not be set yet, so dates are not checked.
 	if _, err := r.nodeFile(); err != nil {
 		return err
-	}
-	if len(r.KubernetesShare) > 0 {
-		share, err := kpki.ParseShare(r.KubernetesShare)
-		if err != nil {
-			return err
-		}
-		var nodeName string
-		if r.Kubernetes != nil {
-			nodeName = r.Kubernetes.NodeName
-		}
-		// A worker share names the node its kubelet certificate is for; a node must never run a
-		// kubelet certificate issued for another node.
-		if err := share.ValidateFor(nodeName); err != nil {
-			return err
-		}
-		if share.NodeCA != nil {
-			if err := pki.ValidateNodeCA(*share.NodeCA, string(r.CA)); err != nil {
-				return fmt.Errorf("the share's node CA: %w", err)
-			}
-		}
 	}
 	return nil
 }

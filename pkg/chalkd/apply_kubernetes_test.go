@@ -24,6 +24,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
@@ -44,7 +45,7 @@ func clusterServer(t *testing.T, kind string) (*Server, *tooltest.Runner) {
 	t.Helper()
 	s, r := configServer(t)
 	addKubernetes(t, s, kind, true)
-	s.Loader.ClusterFile = s.Kubernetes.Paths.Cluster
+	s.Kubernetes.clusterFile = s.Kubernetes.Paths.Cluster
 	writeFacts(t, s)
 	kubernetesImage(t, s)
 	return s, r
@@ -343,6 +344,21 @@ func TestApplyConfigRefusesInvalidAddressSettings(t *testing.T) {
 	}
 }
 
+// An identity's Kubernetes part is checked on an image without the Kubernetes layer too, as the
+// config slots of other images, which an upgrade writes, may hold one.
+func TestApplyConfigRefusesInvalidAddressSettingsWithoutTheLayer(t *testing.T) {
+	s, r := installedServer(t, section("", ""), false)
+	if s.Plugins.Layers().Has(layers.Kubernetes) {
+		t.Fatal("the server's image has the Kubernetes layer")
+	}
+	identity := strings.Replace(kubernetesIdentity("n1"), `"nodeIPs": ["192.168.100.11"]`, `"nodeIPs": ["192.168.100"]`, 1)
+	if _, err := apply(s, identity, ""); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "nodeIPs") {
+		t.Errorf("err = %v, want the node IPs refused", err)
+	}
+	if len(r.Calls) != 0 {
+		t.Errorf("a refused identity ran %v", r.Calls)
+	}
+}
 func TestApplyConfigRecordsNodeCAWithoutRestarts(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindControlPlane, true)
 	p := s.Kubernetes.Paths
@@ -803,7 +819,7 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, r := configServer(t)
 			addKubernetes(t, s, k8s.KindWorker, tc.share)
-			s.Loader.ClusterFile = s.Kubernetes.Paths.Cluster
+			s.Kubernetes.clusterFile = s.Kubernetes.Paths.Cluster
 			kubernetesImage(t, s)
 			if tc.stored {
 				if _, err := sendConfig(s, workerConfig); err != nil {
@@ -863,7 +879,7 @@ func TestApplyConfigRefusesChangedRegistrationFields(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, r := configServer(t)
 			addKubernetes(t, s, k8s.KindWorker, tc.share)
-			s.Loader.ClusterFile = s.Kubernetes.Paths.Cluster
+			s.Kubernetes.clusterFile = s.Kubernetes.Paths.Cluster
 			writeFacts(t, s)
 			kubernetesImage(t, s)
 			if tc.before != "" {

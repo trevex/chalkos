@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,12 +20,14 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/layers"
+	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -48,13 +52,33 @@ func installShare(t *testing.T, ta *testApp) (install.Request, error) {
 	return got, err
 }
 
+// shareOf is the share an install request has its layers write to STATE; nil when they write
+// none.
+func shareOf(t *testing.T, req install.Request) []byte {
+	t.Helper()
+	state := t.TempDir()
+	for _, write := range req.Layers {
+		if err := write(state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(state, "kubernetes", "share.json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 func TestInstallSendsShareOfTheNodeKind(t *testing.T) {
 	ta := newTestApp(t)
 	got, err := installShare(t, ta)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.KubernetesShare != nil {
+	if shareOf(t, got) != nil {
 		t.Error("a node whose image has no Kubernetes got a share")
 	}
 
@@ -62,7 +86,7 @@ func TestInstallSendsShareOfTheNodeKind(t *testing.T) {
 	if got, err = installShare(t, ta); err != nil {
 		t.Fatal(err)
 	}
-	share, err := kpki.ParseShare(got.KubernetesShare)
+	share, err := kpki.ParseShare(shareOf(t, got))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +98,7 @@ func TestInstallSendsShareOfTheNodeKind(t *testing.T) {
 	if got, err = installShare(t, ta); err != nil {
 		t.Fatal(err)
 	}
-	if share, err = kpki.ParseShare(got.KubernetesShare); err != nil || share.Kind != "controlplane" || share.CA != ta.secrets.Kubernetes.CA {
+	if share, err = kpki.ParseShare(shareOf(t, got)); err != nil || share.Kind != "controlplane" || share.CA != ta.secrets.Kubernetes.CA {
 		t.Errorf("control-plane share: %v", err)
 	}
 }
@@ -112,18 +136,20 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o chalkd.KubernetesOptions) (
 		// The control plane runs with the certificates the node holds.
 		o.Hooks.CheckControlPlane = func(context.Context, k8s.Cluster, kpki.Share) error { return nil }
 	}
-	o.ImageFile = imageJSON(t, s)
+	o.ImageFile = imageJSON(t)
+	o.ClusterFile = o.Paths.Cluster
 	s.Kubernetes = chalkd.NewKubernetes(o)
 	withPlugins(t, s, layers.Of(layers.Kubernetes), nil)
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
+	// The loader has the Kubernetes layer write the cluster file.
+	s.Loader.Layers = layer.Active[nodeconfig.Layer](s.Plugins)
 	// The cluster file chalkd writes from the node's config.
-	s.Loader.ClusterFile = s.Kubernetes.Paths.Cluster
 	writeFile(t, s.Kubernetes.Paths.Cluster, clusterFile("worker"))
 	// The facts the kubelet's restart rules read, as the image declares them.
 	writeFile(t, s.Paths.Facts, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"},
 	  "share": {"file": "`+s.Kubernetes.Paths.Share()+`", "fields": ["kind"], "hashOthers": true},
-	  "cluster": {"file": "`+s.Loader.ClusterFile+`"}}`)
+	  "cluster": {"file": "`+s.Kubernetes.Paths.Cluster+`"}}`)
 	return s, r
 }
 

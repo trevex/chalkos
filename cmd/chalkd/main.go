@@ -72,7 +72,7 @@ commands:
 // a usageError when it does not take them.
 var commands = map[string]func(args []string) error{
 	"serve":              noArgs(serve),
-	"load-config":        noArgs(func() error { return nodeconfig.Default().Load() }),
+	"load-config":        noArgs(loadConfig),
 	"health":             health,
 	"prepare-kubernetes": prepareKubernetes,
 	"vxlan-rule":         vxlanRule,
@@ -181,6 +181,20 @@ func parseHealthArgs(args []string) (healthArgs, error) {
 		return healthArgs{}, errors.New("--stopped and --wait exclude each other")
 	}
 	return a, nil
+}
+
+// loadConfig applies the config recorded on STATE, with the image's layers writing what they
+// derive from it.
+func loadConfig() error {
+	// Only the layers' config is asked for, so the server they are bound to serves nothing.
+	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
+	reg, err := registry(node, chalkd.NewKubernetes(chalkd.KubernetesOptions{}), &chalkd.Router{Run: node.Run})
+	if err != nil {
+		return err
+	}
+	loader := nodeconfig.Default()
+	loader.Layers = layer.Active[nodeconfig.Layer](reg)
+	return loader.Load()
 }
 
 // health checks this boot once, or with --wait until it is healthy or the seconds passed. With
@@ -388,6 +402,7 @@ func serve() error {
 	if srv.Plugins, err = registry(srv, k, router); err != nil {
 		return err
 	}
+	srv.Loader.Layers = layer.Active[nodeconfig.Layer](srv.Plugins)
 
 	switch {
 	case creds.mode == nodev1.Mode_MODE_NORMAL:

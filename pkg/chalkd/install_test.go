@@ -28,8 +28,10 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/layers"
+	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -59,7 +61,6 @@ func header(t *testing.T, target any) *nodev1.InstallHeader {
 		NodeKey:         []byte("key"),
 		CaCertificate:   []byte("ca"),
 		FallbackSecret:  "recovery",
-		Layers:          shareLayers(t, []byte("share")),
 	}
 	switch t := target.(type) {
 	case *nodev1.InstallHeader_InPlace:
@@ -103,7 +104,7 @@ func TestInstallInPlace(t *testing.T) {
 	if err := sendInstall(t, s, header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if got.Config.Version != hashOf(t, installConfig) || !bytes.Equal(gotHash, bytes.Repeat([]byte{0xab}, 32)) || string(got.NodeKey) != "key" || string(got.CA) != "ca" || got.FallbackSecret != "recovery" || string(got.KubernetesShare) != "share" ||
+	if got.Config.Version != hashOf(t, installConfig) || !bytes.Equal(gotHash, bytes.Repeat([]byte{0xab}, 32)) || string(got.NodeKey) != "key" || string(got.CA) != "ca" || got.FallbackSecret != "recovery" || len(got.Layers) != 0 ||
 		got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
 		t.Errorf("install request = %+v", got)
 	}
@@ -305,9 +306,8 @@ const testImage = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", 
 // of its own, whose files are in a directory of the test.
 func kubernetesImage(t *testing.T, s *Server) {
 	t.Helper()
-	write(t, s.Loader.KubernetesImage, testImage)
 	if s.Kubernetes != nil {
-		s.Kubernetes.imageFile = s.Loader.KubernetesImage
+		write(t, s.Kubernetes.imageFile, testImage)
 		return
 	}
 	root := t.TempDir()
@@ -316,13 +316,16 @@ func kubernetesImage(t *testing.T, s *Server) {
 			State: filepath.Join(root, "state"), Cluster: filepath.Join(root, "cluster.json"), NodeFile: filepath.Join(root, "node.json"),
 			Run: filepath.Join(root, "run"), PKI: filepath.Join(root, "pki"), KubeletPKI: filepath.Join(root, "kubelet"), EtcdData: filepath.Join(root, "etcd"),
 		},
-		ImageFile: s.Loader.KubernetesImage,
+		ImageFile:   filepath.Join(root, "image.json"),
+		ClusterFile: filepath.Join(root, "cluster.json"),
 	})
+	write(t, k.imageFile, testImage)
 	reg, err := layer.NewRegistry(layers.Of(layers.Kubernetes), NewKubernetesLayer(s, k), NewRouterLayer(&Router{Run: s.Run}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.Plugins = reg
+	s.Loader.Layers = []nodeconfig.Layer{kubernetesOf(s)}
 }
 
 // workerConfig is baseConfig for a Kubernetes worker with a fixed address.
@@ -388,6 +391,9 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 	h.Config = workerConfig
 	contractOf(h).Schemas = fixtureSchemas(t)
 	contractOf(h).LayerFacts = factsLayers(t, testImage)
+	// The installer carries no layer: the compiled Kubernetes layer takes the share.
+	share := testShare(t, k8s.KindWorker)
+	h.Layers = shareLayers(t, share)
 	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64"}
 
 	if err := sendInstall(t, s, h, nil); err != nil {
@@ -397,11 +403,21 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 	if err := json.Unmarshal(got.Config.Identity, &id); err != nil || id.Platform != "metal" {
 		t.Errorf("identity = %s, %v", got.Config.Identity, err)
 	}
-	if k := got.Kubernetes; k == nil || k.NodeName != "n1" || !slices.Equal(k.NodeIPs, []string{"192.168.100.21"}) {
-		t.Errorf("Kubernetes identity = %+v", got.Kubernetes)
+	if k := id.Kubernetes; k == nil || k.NodeName != "n1" || !slices.Equal(k.NodeIPs, []string{"192.168.100.21"}) {
+		t.Errorf("Kubernetes identity = %+v", id.Kubernetes)
 	}
 	if got.Config.Version != hashOf(t, workerConfig) {
 		t.Errorf("config = %+v", got.Config)
+	}
+	if len(got.Layers) != 1 {
+		t.Fatalf("the install request writes %d layer payloads, want the share", len(got.Layers))
+	}
+	state := t.TempDir()
+	if err := got.Layers[0](state); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(state, "kubernetes", "share.json")); got != string(share) {
+		t.Errorf("share.json = %s, want the share sent", got)
 	}
 }
 

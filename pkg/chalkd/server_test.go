@@ -129,7 +129,6 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 			Slots:           filepath.Join(root, "state", "config"),
 			Cmdline:         filepath.Join(root, "cmdline"),
 			Schemas:         filepath.Join(root, "schemas"),
-			KubernetesImage: filepath.Join(root, "etc", "chalkos", "kubernetes", "image.json"),
 			SetHostname:     func(string) error { return nil },
 		},
 		InPlace:   func(context.Context, install.Request, []byte) error { return errors.New("no install expected") },
@@ -214,7 +213,7 @@ func (f storageFacts) Run(ctx context.Context, argv []string, stdin []byte, _ in
 }
 
 // writeFacts declares the facts of the built-in kinds' rules and effects as an image does, at
-// the test server's paths; the cluster file only once the server writes one.
+// the test server's paths; the cluster file only where the server writes the one it reads.
 func writeFacts(t *testing.T, s *Server) {
 	t.Helper()
 	defined := map[string]facts.Definition{
@@ -223,8 +222,8 @@ func writeFacts(t *testing.T, s *Server) {
 		"disks":    {Command: "chalkos-storage facts disks"},
 		"fallback": {Command: "chalkos-storage facts fallback", Inputs: []string{facts.FallbackSecret}},
 	}
-	if s.Loader.ClusterFile != "" {
-		defined["cluster"] = facts.Definition{File: s.Loader.ClusterFile}
+	if k := s.Kubernetes; k != nil && k.clusterFile == k.Paths.Cluster {
+		defined["cluster"] = facts.Definition{File: k.clusterFile}
 	}
 	defs, err := json.Marshal(defined)
 	if err != nil {

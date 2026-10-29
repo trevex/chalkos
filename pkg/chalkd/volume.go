@@ -135,7 +135,7 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 // they must then accept whole. They check the disk the volume lives on and the fallback secret it
 // is enrolled with too.
 func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.Stored, schemas *schema.Schemas, fallback string) error {
-	d, err := parseIdentity(string(next.Identity))
+	d, err := s.parseIdentity(string(next.Identity))
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (s *Server) elsewhere(err error, section storage.Section, writing []byte) e
 	if rerr != nil || !found {
 		return err
 	}
-	ran, rerr := parseIdentity(string(running.Identity))
+	ran, rerr := s.parseIdentity(string(running.Identity))
 	if rerr != nil {
 		return err
 	}
@@ -252,7 +252,7 @@ func (s *Server) slotsNaming(name string, writing []byte) []string {
 		if err != nil || !found {
 			continue
 		}
-		if d, err := parseIdentity(string(held.Identity)); err == nil && hasVolume(d.section, name) {
+		if d, err := s.parseIdentity(string(held.Identity)); err == nil && hasVolume(d.section, name) {
 			others = append(others, fmt.Sprintf("%x", h[:6]))
 		}
 	}

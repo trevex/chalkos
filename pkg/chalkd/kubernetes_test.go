@@ -43,6 +43,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/layers"
+	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
@@ -71,6 +72,10 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 			KubeletPKI: filepath.Join(root, "var", "lib", "kubelet", "pki"),
 			EtcdData:   filepath.Join(root, "var", "lib", "etcd"),
 		},
+		// The image.json is the test's to write; the cluster file the server writes is not the one
+		// its Kubernetes side reads unless the test says so.
+		ImageFile:   filepath.Join(root, "etc", "image.json"),
+		ClusterFile: filepath.Join(root, "run", "chalkos", "cluster.json"),
 		Hooks: KubernetesHooks{
 			Slot:         s.Loader.Slot,
 			Objects:      func(k8s.Cluster) ([]map[string]any, error) { return nil, errors.New("no objects in this test") },
@@ -88,6 +93,7 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 		},
 	})
 	withPlugins(t, s, layers.Of(layers.Kubernetes), nil)
+	s.Loader.Layers = []nodeconfig.Layer{kubernetesOf(s)}
 	// The loops a test started would run on against its removed files, and load the tests after
 	// it, until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)

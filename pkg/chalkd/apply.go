@@ -7,16 +7,13 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/facts"
-	"github.com/trevex/chalkos/pkg/install"
-	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/outputs"
-	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -88,10 +85,8 @@ type delivery struct {
 	identity delivered
 	// osCA is the OS CAs the node trusts once the delivery is applied.
 	osCA string
-	// cluster is the cluster the config gives; nil with keep or on an image without Kubernetes.
-	cluster *k8s.Cluster
-	// share is the delivered share in its canonical encoding; nil when none was delivered.
-	share []byte
+	// commits are what the image's layers change, as they planned the delivery.
+	commits []layer.Commit
 	// machine is what the config adds to the machine's storage; empty with keep.
 	machine machineChange
 	fx      *pendingEffects
@@ -128,7 +123,7 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	} else {
 		d.dir, d.stored = dir, r.next
 	}
-	if d.identity, err = parseIdentity(data); err != nil {
+	if d.identity, err = s.parseIdentity(data); err != nil {
 		return nil, err
 	}
 	// The rules, the effects and the renderers see the node by the name its node certificate gives.
@@ -136,14 +131,20 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	if err != nil {
 		return nil, err
 	}
+	// The layers check their payloads and what the config gives them before the rules.
+	var docs config.Documents
+	if !d.keep {
+		docs = r.next.Documents
+	}
+	if d.commits, err = layer.Plan(ctx, layer.Active[layer.Delivery](s.Plugins), m.Layers, layer.Planned{
+		Identity: d.identity.data, Documents: docs, OSCA: d.osCA, Trust: len(m.Trust) > 0,
+		ForceRenewals: s.RenewOnApplyConfig,
+	}); err != nil {
+		return nil, err
+	}
 	// The delivery's facts, loaded once for the running slot's check and the staged slot's.
 	var loaded *facts.Loader
 	if !d.keep {
-		if s.Kubernetes != nil {
-			if d.cluster, err = s.Loader.Cluster(r.next.Documents); err != nil {
-				return nil, failed(connect.CodeInvalidArgument, "the config: %v", err)
-			}
-		}
 		// The image's rules compare the config with the running slot's and the storage STATE
 		// records, and read the node's facts. A missing or mistyped fallback secret is refused
 		// before the node trusts the delivered OS CAs.
@@ -157,13 +158,6 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 		if err := s.checkRules(set, name, r.next.Documents, prev.Documents, loaded); err != nil {
 			return nil, s.elsewhere(err, d.identity.section, nil)
 		}
-	}
-	share, err := sharePayload(m.Layers)
-	if err != nil {
-		return nil, err
-	}
-	if d.share, err = s.kubernetesShare(d.identity, share, d.osCA, d.cluster); err != nil {
-		return nil, err
 	}
 	if err := s.checkNodeCertificate(m.NodeCertificate, m.NodeKey); err != nil {
 		return nil, err
@@ -200,9 +194,10 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 }
 
 // commit applies a planned delivery. The changes come in this order:
-//  1. the OS CAs, the last check first: a control plane's node CA must chain to them;
-//  2. the machine's storage, the identity and the cluster file;
-//  3. the node certificate and the share;
+//  1. the OS CAs, which the layers checked against what they keep, such as a control plane's
+//     node CA;
+//  2. the machine's storage, the identity and what the layers derive from the config;
+//  3. the node certificate and the layers' payloads;
 //  4. the running slot, last;
 //  5. the effects.
 //
@@ -214,13 +209,6 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	s, m := d.s, d.msg
 	if len(m.Trust) > 0 {
-		if d.share == nil {
-			// A control plane keeps renewing node certificates with the node CA it holds.
-			if err := s.checkKeptNodeCA(d.osCA); err != nil {
-				s.refused(d.fx)
-				return nil, err
-			}
-		}
 		if err := s.Certificate.ReplaceTrust(d.osCA, peerOf(ctx)...); err != nil {
 			if isRefusedTrust(err) {
 				s.refused(d.fx)
@@ -238,10 +226,13 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 		if err := s.Loader.Apply(d.identity.data); err != nil {
 			return nil, failed(connect.CodeInternal, "apply the identity: %v", err)
 		}
-		if d.cluster != nil {
-			if err := s.Loader.WriteCluster(d.cluster); err != nil {
+		for _, c := range d.commits {
+			if c.Config == nil {
+				continue
+			}
+			if err := c.Config(); err != nil {
 				s.failedPartWay(ctx, d.fx, m.FallbackSecret)
-				return nil, failed(connect.CodeInternal, "write the Kubernetes cluster: %v", err)
+				return nil, failed(connect.CodeInternal, "%v", err)
 			}
 		}
 	}
@@ -252,10 +243,13 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 		}
 		log.Printf("serving a delivered node certificate; it expires %s", s.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339))
 	}
-	if d.share != nil {
-		if err := install.WriteShare(s.Paths.StateDir, d.share); err != nil {
+	for _, c := range d.commits {
+		if c.Payloads == nil {
+			continue
+		}
+		if err := c.Payloads(s.Paths.StateDir); err != nil {
 			s.failedPartWay(ctx, d.fx, m.FallbackSecret)
-			return nil, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
+			return nil, failed(connect.CodeInternal, "%v", err)
 		}
 	}
 	// The documents and the identity are written in one rename.
@@ -270,100 +264,21 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 	if err != nil {
 		return nil, err
 	}
-	// A delivery without config, as a rotation's, renews nothing: forced renewals would restart the
-	// control plane's pods on top of the restarts the rotation waits for. Renewals come after the
-	// loops started again, which would end a renewal under way.
-	if s.RenewOnApplyConfig && !d.keep {
-		s.forceRenewals()
+	// A delivery without config, as a rotation's, renews nothing: forced renewals would restart
+	// services on top of the restarts the rotation waits for. Renewals come after the loops started
+	// again, which would end a renewal under way. The layers plan their own renewals alike.
+	if s.RenewOnApplyConfig && !d.keep && s.Renewal != nil {
+		log.Print("renewing the node certificate, as this test image does after each config")
+		s.Renewal.Force()
+	}
+	for _, c := range d.commits {
+		if c.Applied != nil {
+			c.Applied()
+		}
 	}
 	resp := &nodev1.ApplyConfigResponse{RestartedUnits: restarted, Warnings: warnings}
 	for _, c := range d.machine.changes {
 		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
 	}
 	return connect.NewResponse(resp), nil
-}
-
-// forceRenewals renews the node certificate and, on a control plane whose loop runs, its
-// certificates at once.
-func (s *Server) forceRenewals() {
-	if s.Renewal != nil {
-		log.Print("renewing the node certificate, as this test image does after each config")
-		s.Renewal.Force()
-	}
-	if s.Kubernetes != nil {
-		s.Kubernetes.mu.Lock()
-		leaves := s.Kubernetes.leaves
-		s.Kubernetes.mu.Unlock()
-		if leaves != nil {
-			log.Print("renewing the control plane's certificates, as this test image does after each config")
-			leaves.Force()
-		}
-	}
-}
-
-// sharePayload returns the share among the request's layer payloads; nil without one. A payload
-// of another type is refused, and so is a second share.
-func sharePayload(payloads []*anypb.Any) ([]byte, error) {
-	var share []byte
-	for _, p := range payloads {
-		if !kpki.IsPayload(p) {
-			return nil, failed(connect.CodeInvalidArgument, "the request carries a payload of type %s, which no layer of this image takes", p.GetTypeUrl())
-		}
-		if share != nil {
-			return nil, failed(connect.CodeInvalidArgument, "the request carries two shares; deliver one")
-		}
-		data, err := kpki.SharePayload(p)
-		if err != nil {
-			return nil, failed(connect.CodeInvalidArgument, "%v", err)
-		}
-		share = data
-	}
-	return share, nil
-}
-
-// kubernetesShare validates a delivered share for the node the identity names, a node CA in it
-// against the OS CAs osCA, and returns it as STATE keeps it, in its canonical encoding; nil when
-// none was delivered. cluster is the one the config of the same request gives, nil without
-// config, when the node's cluster file is read instead.
-func (s *Server) kubernetesShare(d delivered, data []byte, osCA string, cluster *k8s.Cluster) ([]byte, error) {
-	if len(data) == 0 {
-		return nil, nil
-	}
-	if s.Kubernetes == nil {
-		return nil, failed(connect.CodeInvalidArgument, "the node's image has no Kubernetes, so it takes no Kubernetes share")
-	}
-	share, err := kpki.ParseShare(data)
-	if err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "%v", err)
-	}
-	if cluster == nil {
-		c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
-		if err != nil {
-			return nil, failed(connect.CodeInvalidArgument, "the node has no Kubernetes cluster: %v", err)
-		}
-		cluster = &c
-	}
-	c := cluster
-	if share.Kind != c.Kind {
-		return nil, failed(connect.CodeInvalidArgument, "the share is for a %s node, but the node's Node document gives it the type %s", share.Kind, c.Kind)
-	}
-	var nodeName string
-	if d.kubernetes != nil {
-		nodeName = d.kubernetes.NodeName
-	}
-	// A node must never run its kubelet with a certificate issued for another node.
-	if err := share.ValidateFor(nodeName); err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "%v", err)
-	}
-	// Certificates of another node CA would never verify against the node's OS CA.
-	if share.NodeCA != nil {
-		if err := pki.ValidateNodeCA(*share.NodeCA, osCA); err != nil {
-			return nil, failed(connect.CodeInvalidArgument, "the share's node CA: %v", err)
-		}
-	}
-	canonical, err := share.Encode()
-	if err != nil {
-		return nil, failed(connect.CodeInternal, "encode the Kubernetes share: %v", err)
-	}
-	return canonical, nil
 }
