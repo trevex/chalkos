@@ -26,7 +26,7 @@ type Router struct {
 	// Run runs vtysh, which FRR answers on its sockets in /run/frr, jool and unbound-control.
 	Run tool.Runner
 	// KernelRoutes lists the kernel's routes; nil reads them through netlink. Tests replace it.
-	KernelRoutes func() ([]*nodev1.KernelRoute, error)
+	KernelRoutes func() ([]*router.KernelRoute, error)
 	// ResolverConfig is Unbound's config, which exists on a node with a Resolver document;
 	// empty is /etc/unbound/unbound.conf. Tests replace it.
 	ResolverConfig string
@@ -75,11 +75,16 @@ func (r *Router) status(ctx context.Context) *nodev1.RouterStatus {
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		out, err := r.vtysh(ctx, router.NeighborsCommand)
+		var peers []*router.Peer
 		if err == nil {
-			st.Peers, err = router.ParsePeers(out)
+			peers, err = router.ParsePeers(out)
 		}
 		if err != nil {
-			st.Peers, st.BgpError = nil, err.Error()
+			st.BgpError = err.Error()
+			return
+		}
+		for _, p := range peers {
+			st.Peers = append(st.Peers, peerStatus(p))
 		}
 	})
 	wg.Go(func() {
@@ -212,11 +217,14 @@ func (s *Server) Routes(ctx context.Context, req *connect.Request[nodev1.RoutesR
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	resp := &nodev1.RoutesResponse{Kernel: f.Kernel(kernel)}
+	resp := &nodev1.RoutesResponse{}
+	for _, r := range f.Kernel(kernel) {
+		resp.Kernel = append(resp.Kernel, kernelRoute(r))
+	}
 	if f.WantsBGP() {
 		for _, family := range []string{"ipv4", "ipv6"} {
 			out, err := s.Router.vtysh(ctx, fmt.Sprintf(router.RoutesCommand, family))
-			var routes []*nodev1.BGPRoute
+			var routes []*router.BGPRoute
 			if err == nil {
 				routes, err = router.ParseRoutes(out)
 			}
@@ -224,8 +232,31 @@ func (s *Server) Routes(ctx context.Context, req *connect.Request[nodev1.RoutesR
 				resp.Bgp, resp.BgpError = nil, err.Error()
 				break
 			}
-			resp.Bgp = append(resp.Bgp, f.BGP(routes)...)
+			for _, r := range f.BGP(routes) {
+				resp.Bgp = append(resp.Bgp, bgpRoute(r))
+			}
 		}
 	}
 	return connect.NewResponse(resp), nil
+}
+
+// peerStatus is a BGP session as the router's status reports it.
+func peerStatus(p *router.Peer) *nodev1.BGPPeerStatus {
+	return &nodev1.BGPPeerStatus{Name: p.Name, Neighbor: p.Neighbor, State: p.State, UptimeSeconds: p.UptimeSeconds,
+		PrefixesReceived: p.PrefixesReceived, PrefixesSent: p.PrefixesSent, Bfd: p.BFD}
+}
+
+// kernelRoute is a kernel route as Routes answers it.
+func kernelRoute(r *router.KernelRoute) *nodev1.KernelRoute {
+	k := &nodev1.KernelRoute{Destination: r.Destination, Type: r.Type, Protocol: r.Protocol, Table: r.Table, Metric: r.Metric}
+	for _, h := range r.NextHops {
+		k.NextHops = append(k.NextHops, &nodev1.NextHop{Gateway: h.Gateway, Interface: h.Interface, Weight: h.Weight})
+	}
+	return k
+}
+
+// bgpRoute is a BGP path as Routes answers it.
+func bgpRoute(r *router.BGPRoute) *nodev1.BGPRoute {
+	return &nodev1.BGPRoute{Prefix: r.Prefix, AsPath: r.ASPath, NextHops: r.NextHops, Peer: r.Peer, LocalPref: r.LocalPref,
+		Med: r.MED, Communities: r.Communities, Best: r.Best}
 }

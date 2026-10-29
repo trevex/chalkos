@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 )
 
 func readTestdata(t *testing.T, name string) []byte {
@@ -29,7 +27,7 @@ func TestParsePeers(t *testing.T) {
 	}
 	var got []string
 	for _, p := range peers {
-		got = append(got, fmt.Sprintf("%s %s %s up=%d rcvd=%d sent=%d bfd=%q", p.Name, p.Neighbor, p.State, p.UptimeSeconds, p.PrefixesReceived, p.PrefixesSent, p.Bfd))
+		got = append(got, fmt.Sprintf("%s %s %s up=%d rcvd=%d sent=%d bfd=%q", p.Name, p.Neighbor, p.State, p.UptimeSeconds, p.PrefixesReceived, p.PrefixesSent, p.BFD))
 	}
 	want := []string{
 		`fabric eth1 Established up=3723 rcvd=1 sent=2 bfd="up"`,
@@ -66,14 +64,14 @@ func TestParsePeersWithout(t *testing.T) {
 // local preference and communities, a network the router originates, and no path that lost.
 // The IPv4 paths carry an IPv6 next hop (RFC 8950) and an address peer's AS path and MED.
 func TestParseBGPRoutes(t *testing.T) {
-	describe := func(rs []*nodev1.BGPRoute) string {
+	describe := func(rs []*BGPRoute) string {
 		var lines []string
 		for _, r := range rs {
 			pref := "-"
 			if r.LocalPref != nil {
 				pref = fmt.Sprint(*r.LocalPref)
 			}
-			lines = append(lines, fmt.Sprintf("%s best=%v path=%q peer=%q via=%v pref=%s med=%d comm=%v", r.Prefix, r.Best, r.AsPath, r.Peer, r.NextHops, pref, r.Med, r.Communities))
+			lines = append(lines, fmt.Sprintf("%s best=%v path=%q peer=%q via=%v pref=%s med=%d comm=%v", r.Prefix, r.Best, r.ASPath, r.Peer, r.NextHops, pref, r.MED, r.Communities))
 		}
 		return strings.Join(lines, "\n")
 	}

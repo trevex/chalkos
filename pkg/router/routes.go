@@ -7,8 +7,6 @@ import (
 	"net/netip"
 	"slices"
 	"strconv"
-
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 )
 
 // Tables are the routing tables the kernel names, by name.
@@ -97,8 +95,8 @@ func (f Filter) within(d string) bool {
 }
 
 // Kernel keeps the kernel routes the filter keeps.
-func (f Filter) Kernel(routes []*nodev1.KernelRoute) []*nodev1.KernelRoute {
-	var kept []*nodev1.KernelRoute
+func (f Filter) Kernel(routes []*KernelRoute) []*KernelRoute {
+	var kept []*KernelRoute
 	for _, r := range routes {
 		if (f.allTables || r.Table == f.table) && (f.protocol == "" || r.Protocol == f.protocol) && f.within(r.Destination) {
 			kept = append(kept, r)
@@ -113,8 +111,8 @@ func (f Filter) WantsBGP() bool {
 }
 
 // BGP keeps the BGP paths within the filter's prefix.
-func (f Filter) BGP(routes []*nodev1.BGPRoute) []*nodev1.BGPRoute {
-	var kept []*nodev1.BGPRoute
+func (f Filter) BGP(routes []*BGPRoute) []*BGPRoute {
+	var kept []*BGPRoute
 	for _, r := range routes {
 		if f.within(r.Prefix) {
 			kept = append(kept, r)
@@ -124,8 +122,8 @@ func (f Filter) BGP(routes []*nodev1.BGPRoute) []*nodev1.BGPRoute {
 }
 
 // sortKernel orders kernel routes by table, family, destination and metric.
-func sortKernel(routes []*nodev1.KernelRoute) {
-	slices.SortStableFunc(routes, func(a, b *nodev1.KernelRoute) int {
+func sortKernel(routes []*KernelRoute) {
+	slices.SortStableFunc(routes, func(a, b *KernelRoute) int {
 		if c := cmp.Compare(a.Table, b.Table); c != 0 {
 			return c
 		}

@@ -3,21 +3,19 @@ package router
 import (
 	"strings"
 	"testing"
-
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 )
 
 // A filter keeps the routes within its prefix, of its protocol and of its table, main unless
 // given; BGP's paths go with the protocol bgp or none.
 func TestFilter(t *testing.T) {
-	kernel := []*nodev1.KernelRoute{
+	kernel := []*KernelRoute{
 		{Destination: "::/0", Protocol: "bgp", Table: 254},
 		{Destination: "2001:db8:1::/64", Protocol: "kernel", Table: 254},
 		{Destination: "2001:db8:1::1/128", Protocol: "kernel", Table: 255},
 		{Destination: "192.0.2.0/24", Protocol: "static", Table: 254},
 		{Destination: "198.51.100.0/24", Protocol: "bgp", Table: 100},
 	}
-	bgp := []*nodev1.BGPRoute{{Prefix: "::/0"}, {Prefix: "2001:db8:1::/48"}, {Prefix: "192.0.2.0/24"}}
+	bgp := []*BGPRoute{{Prefix: "::/0"}, {Prefix: "2001:db8:1::/48"}, {Prefix: "192.0.2.0/24"}}
 	for _, c := range []struct {
 		prefix, protocol, table string
 		kernel, bgp             []string
@@ -67,7 +65,7 @@ func TestFilterRefusals(t *testing.T) {
 
 // The routes of the router's NAT64 prefixes carry the protocol nat64, number 64.
 func TestFilterNAT64(t *testing.T) {
-	kernel := []*nodev1.KernelRoute{
+	kernel := []*KernelRoute{
 		{Destination: "64:ff9b::/96", Type: "unreachable", Protocol: protocolName(64), Table: 254},
 		{Destination: "::/0", Protocol: "bgp", Table: 254},
 	}

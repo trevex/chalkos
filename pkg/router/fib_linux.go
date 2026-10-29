@@ -7,8 +7,6 @@ import (
 	"net"
 	"net/netip"
 	"syscall"
-
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 )
 
 // The route attributes the kernel's routes carry besides those of package syscall.
@@ -26,7 +24,7 @@ const (
 // their tables, families and destinations. zebra installs routes with nexthop objects; their next
 // hops are those the kernel adds to the dump while net.ipv4.nexthop_compat_mode is 1, its
 // default, as RTA_NH_ID is not resolved here.
-func KernelRoutes() ([]*nodev1.KernelRoute, error) {
+func KernelRoutes() ([]*KernelRoute, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, fmt.Errorf("list the node's interfaces: %w", err)
@@ -52,8 +50,8 @@ func KernelRoutes() ([]*nodev1.KernelRoute, error) {
 }
 
 // parseRoutes reads RTM_NEWROUTE messages of IPv4 and IPv6, naming interfaces by index.
-func parseRoutes(msgs []syscall.NetlinkMessage, names map[uint32]string) ([]*nodev1.KernelRoute, error) {
-	var routes []*nodev1.KernelRoute
+func parseRoutes(msgs []syscall.NetlinkMessage, names map[uint32]string) ([]*KernelRoute, error) {
+	var routes []*KernelRoute
 	for _, m := range msgs {
 		if m.Header.Type == syscall.NLMSG_DONE {
 			break
@@ -76,12 +74,12 @@ func parseRoutes(msgs []syscall.NetlinkMessage, names map[uint32]string) ([]*nod
 		default:
 			continue
 		}
-		r := &nodev1.KernelRoute{Table: uint32(m.Data[4]), Protocol: protocolName(m.Data[5]), Type: typeName(m.Data[7])}
+		r := &KernelRoute{Table: uint32(m.Data[4]), Protocol: protocolName(m.Data[5]), Type: typeName(m.Data[7])}
 		attrs, err := syscall.ParseNetlinkRouteAttr(&m)
 		if err != nil {
 			return nil, fmt.Errorf("list the node's routes: %w", err)
 		}
-		var hop nodev1.NextHop
+		var hop NextHop
 		for _, a := range attrs {
 			switch a.Attr.Type {
 			case syscall.RTA_DST:
@@ -144,14 +142,14 @@ func via(b []byte) string {
 // nextHops reads RTA_MULTIPATH: struct rtnexthop, a length of 16 bits, flags, hops, the
 // interface's index of 32 bits, then attributes, each padded to 4 bytes. hops is the weight less
 // one.
-func nextHops(b []byte, names map[uint32]string) ([]*nodev1.NextHop, error) {
-	var hops []*nodev1.NextHop
+func nextHops(b []byte, names map[uint32]string) ([]*NextHop, error) {
+	var hops []*NextHop
 	for len(b) >= 8 {
 		n := int(binary.NativeEndian.Uint16(b[0:2]))
 		if n < 8 || n > len(b) {
 			return nil, errors.New("list the node's routes: a malformed next hop")
 		}
-		h := &nodev1.NextHop{Weight: uint32(b[3]) + 1, Interface: names[binary.NativeEndian.Uint32(b[4:8])]}
+		h := &NextHop{Weight: uint32(b[3]) + 1, Interface: names[binary.NativeEndian.Uint32(b[4:8])]}
 		for a := b[8:n]; len(a) >= syscall.SizeofRtAttr; {
 			l := int(binary.NativeEndian.Uint16(a[0:2]))
 			if l < syscall.SizeofRtAttr || l > len(a) {

@@ -8,8 +8,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 )
 
 type rtattr struct {
@@ -67,7 +65,7 @@ func routeMessage(family, bits, table, protocol, typ uint8, as ...rtattr) syscal
 	}
 }
 
-func describeKernel(rs []*nodev1.KernelRoute) []string {
+func describeKernel(rs []*KernelRoute) []string {
 	var out []string
 	for _, r := range rs {
 		var hops []string
@@ -119,7 +117,7 @@ func TestKernelRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.ContainsFunc(routes, func(r *nodev1.KernelRoute) bool {
+	if !slices.ContainsFunc(routes, func(r *KernelRoute) bool {
 		return r.Destination == "127.0.0.1/32" && r.Type == "local" && r.Table == 255
 	}) {
 		t.Errorf("no local route of 127.0.0.1 in %v", describeKernel(routes))

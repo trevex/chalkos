@@ -11,8 +11,6 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
-
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 )
 
 // PeerGroupPrefix starts the name of the peer group frr.conf gives each BGPPeer document.
@@ -42,7 +40,7 @@ type neighbor struct {
 // ParsePeers reads the sessions of show bgp neighbors json, keyed by interface or address, into
 // the peers of a router's status, by BGPPeer document and then by neighbour. A session of no
 // BGPPeer's peer group is left out; FRR prints {} without a BGP instance.
-func ParsePeers(data []byte) ([]*nodev1.BGPPeerStatus, error) {
+func ParsePeers(data []byte) ([]*Peer, error) {
 	if err := answered(data); err != nil {
 		return nil, err
 	}
@@ -50,13 +48,13 @@ func ParsePeers(data []byte) ([]*nodev1.BGPPeerStatus, error) {
 	if err := json.Unmarshal(data, &neighbors); err != nil {
 		return nil, fmt.Errorf("read FRR's BGP neighbours: %w", err)
 	}
-	var peers []*nodev1.BGPPeerStatus
+	var peers []*Peer
 	for key, n := range neighbors {
 		name, ok := strings.CutPrefix(n.PeerGroup, PeerGroupPrefix)
 		if !ok {
 			continue
 		}
-		p := &nodev1.BGPPeerStatus{Name: name, Neighbor: key, State: n.State}
+		p := &Peer{Name: name, Neighbor: key, State: n.State}
 		if n.State == "Established" {
 			p.UptimeSeconds = n.UpMsec / 1000
 		}
@@ -65,11 +63,11 @@ func ParsePeers(data []byte) ([]*nodev1.BGPPeerStatus, error) {
 			p.PrefixesSent += af.Sent
 		}
 		if n.BFD != nil {
-			p.Bfd = bfdState(n.BFD.Status)
+			p.BFD = bfdState(n.BFD.Status)
 		}
 		peers = append(peers, p)
 	}
-	slices.SortFunc(peers, func(a, b *nodev1.BGPPeerStatus) int {
+	slices.SortFunc(peers, func(a, b *Peer) int {
 		return strings.Compare(a.Name+"\x00"+a.Neighbor, b.Name+"\x00"+b.Neighbor)
 	})
 	return peers, nil
@@ -126,7 +124,7 @@ type path struct {
 // ParseRoutes reads the paths of show bgp <family> unicast detail json into the routes BGP
 // selected: the best path of each prefix and the equal paths installed beside it, by prefix.
 // FRR prints a warning and no routes without a BGP instance.
-func ParseRoutes(data []byte) ([]*nodev1.BGPRoute, error) {
+func ParseRoutes(data []byte) ([]*BGPRoute, error) {
 	if err := answered(data); err != nil {
 		return nil, err
 	}
@@ -136,16 +134,16 @@ func ParseRoutes(data []byte) ([]*nodev1.BGPRoute, error) {
 	if err := json.Unmarshal(data, &table); err != nil {
 		return nil, fmt.Errorf("read FRR's BGP paths: %w", err)
 	}
-	var routes []*nodev1.BGPRoute
+	var routes []*BGPRoute
 	for prefix, paths := range table.Routes {
 		for _, p := range paths {
 			best := p.Best != nil && p.Best.Overall
 			if !p.Valid || !best && !p.Multipath {
 				continue
 			}
-			r := &nodev1.BGPRoute{Prefix: prefix, Med: p.Metric, LocalPref: p.LocalPref, Best: best}
+			r := &BGPRoute{Prefix: prefix, MED: p.Metric, LocalPref: p.LocalPref, Best: best}
 			if !p.Local {
-				r.AsPath = p.ASPath.String
+				r.ASPath = p.ASPath.String
 				r.Peer = cmp.Or(p.Peer.Interface, p.Peer.PeerID)
 			}
 			for _, h := range p.NextHops {
@@ -162,7 +160,7 @@ func ParseRoutes(data []byte) ([]*nodev1.BGPRoute, error) {
 			routes = append(routes, r)
 		}
 	}
-	slices.SortStableFunc(routes, func(a, b *nodev1.BGPRoute) int {
+	slices.SortStableFunc(routes, func(a, b *BGPRoute) int {
 		if c := comparePrefixes(a.Prefix, b.Prefix); c != 0 {
 			return c
 		}

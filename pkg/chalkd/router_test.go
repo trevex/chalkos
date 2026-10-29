@@ -23,11 +23,11 @@ import (
 
 // routerServer is an installed router whose FRR answers vtysh as the runner's rules say, and whose
 // kernel holds the routes given.
-func routerServer(t *testing.T, kernel ...*nodev1.KernelRoute) (*Server, *tooltest.Runner) {
+func routerServer(t *testing.T, kernel ...*router.KernelRoute) (*Server, *tooltest.Runner) {
 	t.Helper()
 	s, r := installedServer(t, section("", ""), false)
 	s.Layers = layers.Of(layers.Router)
-	s.Router = &Router{Run: r, KernelRoutes: func() ([]*nodev1.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()}
+	s.Router = &Router{Run: r, KernelRoutes: func() ([]*router.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()}
 	return s, r
 }
 
@@ -75,9 +75,9 @@ func TestRouterStatus(t *testing.T) {
 // from the kernel's.
 func TestRoutes(t *testing.T) {
 	s, r := routerServer(t,
-		&nodev1.KernelRoute{Destination: "::/0", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20},
-		&nodev1.KernelRoute{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254},
-		&nodev1.KernelRoute{Destination: "192.0.2.1/32", Type: "unicast", Protocol: "bgp", Table: 254},
+		&router.KernelRoute{Destination: "::/0", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20},
+		&router.KernelRoute{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254},
+		&router.KernelRoute{Destination: "192.0.2.1/32", Type: "unicast", Protocol: "bgp", Table: 254},
 	)
 	r.Rules = append(r.Rules,
 		tooltest.Rule{Prefix: "vtysh -c show bgp ipv4 unicast detail json", Out: routerRecording(t, "ipv4-detail.json"), Times: 2},

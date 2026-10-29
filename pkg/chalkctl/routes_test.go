@@ -10,9 +10,9 @@ import (
 
 	"connectrpc.com/connect"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/layers"
+	"github.com/trevex/chalkos/pkg/router"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
@@ -47,12 +47,12 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 			}
 		}
 	}
-	s.Router = &chalkd.Router{Run: r, ResolverConfig: conf, NAT64Dir: nat64, KernelRoutes: func() ([]*nodev1.KernelRoute, error) {
-		hops := func() []*nodev1.NextHop {
-			return []*nodev1.NextHop{
+	s.Router = &chalkd.Router{Run: r, ResolverConfig: conf, NAT64Dir: nat64, KernelRoutes: func() ([]*router.KernelRoute, error) {
+		hops := func() []*router.NextHop {
+			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
 		}
-		return []*nodev1.KernelRoute{
+		return []*router.KernelRoute{
 			{Destination: "::/0", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20, NextHops: hops()},
 			{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254, Metric: 1024},
 			{Destination: "2001:db8:ffff::1/128", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20, NextHops: hops()},
