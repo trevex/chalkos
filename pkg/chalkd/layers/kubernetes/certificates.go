@@ -137,7 +137,7 @@ func (k *side) certificates(now time.Time) []*nodev1.CertificateStatus {
 		warning time.Duration
 		hint    string
 	}{
-		{client.NameNodeCA, share.NodeCA, nodeCAWarning, "; run chalkctl node-ca rotate"},
+		{client.NameNodeCA, share.NodeCA, nodeCAWarning, "; run chalkctl rotate node-ca"},
 		{client.NameKubernetesCA, &share.CA, layer.CAWarning, ""},
 		{client.NameFrontProxyCA, share.FrontProxyCA, layer.CAWarning, ""},
 		{client.NameEtcdCA, share.EtcdCA, layer.CAWarning, ""},

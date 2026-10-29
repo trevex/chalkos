@@ -514,7 +514,6 @@ func TestPartialClusterRefusals(t *testing.T) {
 		want string
 	}{
 		{[]string{"rotate", "os-ca"}, "rotate needs an inventory"},
-		{[]string{"node-ca", "rotate"}, "node-ca rotate needs an inventory"},
 		{[]string{"recovery-key", "n1"}, "recovery-key needs an inventory"},
 		{[]string{"kubeconfig"}, "kubeconfig needs an inventory"},
 		{[]string{"etcd", "members"}, "--via"},

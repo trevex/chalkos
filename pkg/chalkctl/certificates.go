@@ -2,9 +2,7 @@ package chalkctl
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -12,8 +10,6 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
-	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -80,109 +76,4 @@ func (a *app) nodeRenew(ctx context.Context, f nodeRenewFlags, pos []string) err
 	}
 	fmt.Fprintf(a.stdout, "%s serves a new node certificate; it expires %s\n", t.name, leaf.NotAfter.UTC().Format(time.RFC3339))
 	return nil
-}
-
-type nodeCARotateFlags struct {
-	node   nodeFlags
-	change changeFlags
-}
-
-// nodeCARotateCommand issues a new node CA from the OS CA, writes the secrets file with it and delivers
-// it to every control-plane node. Node certificates of the old node CA stay valid until they
-// expire: they chain to the same OS CA.
-func (a *app) nodeCARotateCommand() *cobra.Command {
-	var f nodeCARotateFlags
-	cmd := a.command(&cobra.Command{
-		Use:     "rotate",
-		Short:   "Issue a new node CA and deliver it to the control planes",
-		Long:    nodeCARotateLong,
-		Example: nodeCARotateExample,
-		Args:    cli.NoArgs,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeCARotate(ctx, f) })
-	f.node.register(cmd.Flags())
-	f.change.register(cmd.Flags())
-	return cmd
-}
-
-func (a *app) nodeCARotate(ctx context.Context, f nodeCARotateFlags) error {
-	c, err := loadCluster(ctx, f.node.cluster)
-	if err != nil {
-		return err
-	}
-	if err := c.requireNodes("node-ca rotate"); err != nil {
-		return err
-	}
-	controlPlanes, err := nodeCAHolders(c)
-	if err != nil {
-		return err
-	}
-	// A node CA no control plane holds renews nothing.
-	if len(controlPlanes) == 0 {
-		return errors.New("node-ca rotate: the cluster has no control-plane node to renew node certificates with the new node CA")
-	}
-	if f.node.address != "" && len(controlPlanes) != 1 {
-		return errors.New("node-ca rotate: --address names one node's chalkd, but the cluster has several control-plane nodes")
-	}
-	file, err := a.openSecrets(ctx, f.node.secrets, f.change)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	secrets := file.secrets
-	// A rotation delivers its own shares, one control plane at a time.
-	if r := secrets.Rotation; r != nil {
-		return fmt.Errorf("node-ca rotate: %v", &clustersecrets.ErrRotationRuns{Kind: r.Kind, Phase: r.Phase})
-	}
-	if secrets.NodeCA, err = pki.NewNodeCA(secrets.OSCA, time.Now()); err != nil {
-		return err
-	}
-	if err := a.writeSecretsFile(file, secrets); err != nil {
-		return err
-	}
-	nodeCA, err := pki.ParseCertificate([]byte(secrets.NodeCA.Certificate))
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(a.stdout, "%s holds a new node CA, which expires %s; %s\n", file.out, nodeCA.NotAfter.UTC().Format(time.RFC3339), file.written())
-
-	creds, err := secretCredentials(secrets)
-	if err != nil {
-		return err
-	}
-	// --address is refused above unless the cluster has this one control plane.
-	nodes := nodeSet{cluster: c, creds: creds, addresses: map[string]string{controlPlanes[0]: f.node.address}}
-	var failed []string
-	for _, name := range controlPlanes {
-		err := a.deliverNodeCA(ctx, nodes, name)
-		if err != nil {
-			failed = append(failed, fmt.Sprintf("%s: %v", name, err))
-			continue
-		}
-		fmt.Fprintf(a.stdout, "%s renews node certificates with the new node CA\n", name)
-	}
-	if len(failed) > 0 {
-		return fmt.Errorf("the new node CA did not reach every control-plane node; deliver it with chalkctl apply-config <node> --kubernetes-share --secrets %s: %s", file.out, strings.Join(failed, "; "))
-	}
-	return nil
-}
-
-// deliverNodeCA delivers a node the payloads its layers issue it with the new node CA, and
-// nothing else.
-func (a *app) deliverNodeCA(ctx context.Context, nodes nodeSet, name string) error {
-	t, err := nodes.target(name)
-	if err != nil {
-		return err
-	}
-	payloads, err := payloadsOf(t, time.Now())
-	if err != nil {
-		return err
-	}
-	return callNode(t, func(conn *client.Conn) error {
-		resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: payloads}))
-		if err != nil {
-			return err
-		}
-		a.warnDelivery(name, resp.Msg)
-		return nil
-	})
 }

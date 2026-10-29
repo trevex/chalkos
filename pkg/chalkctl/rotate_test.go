@@ -708,6 +708,10 @@ func TestRotateTimeoutNamesTheNode(t *testing.T) {
 func TestRotateResumesEveryPhase(t *testing.T) {
 	for _, kind := range rotationKinds() {
 		for _, phase := range []clustersecrets.Phase{clustersecrets.PhaseAccept, clustersecrets.PhaseSwitch, clustersecrets.PhaseRefresh, clustersecrets.PhaseFinish} {
+			// The node CA's accept and finish reach no node, so no node can stop them.
+			if kind == clustersecrets.RotateNodeCA && (phase == clustersecrets.PhaseAccept || phase == clustersecrets.PhaseFinish) {
+				continue
+			}
 			t.Run(string(kind)+"/"+string(phase), func(t *testing.T) {
 				l := newRotationLab(t)
 				failing := []string{"cp2"}
@@ -771,7 +775,7 @@ func TestRotateResumesEveryPhase(t *testing.T) {
 }
 
 // TestSecretsLockedWhileChanged checks that while a rotation changes the secrets file, another
-// rotation and node-ca rotate are refused at once, and that the lock is released at the end.
+// rotation is refused at once, and that the lock is released at the end.
 func TestSecretsLockedWhileChanged(t *testing.T) {
 	l := newRotationLab(t)
 	path := filepath.Join(l.ta.dir, "secrets.json")
@@ -784,7 +788,7 @@ func TestSecretsLockedWhileChanged(t *testing.T) {
 		second := *l.ta.app
 		second.stdout, second.stderr = &bytes.Buffer{}, &bytes.Buffer{}
 		base := []string{"--inventory", l.ta.inventory, "--secrets", path}
-		for _, args := range [][]string{{"rotate", "kubernetes-ca", "--resume"}, {"rotate", "os-ca", "--finish"}, {"node-ca", "rotate"}} {
+		for _, args := range [][]string{{"rotate", "kubernetes-ca", "--resume"}, {"rotate", "os-ca", "--finish"}, {"rotate", "node-ca"}} {
 			refused = append(refused, second.run(context.Background(), append(args, base...)))
 		}
 	}
@@ -1022,6 +1026,64 @@ func TestRotateRefusesKubernetesWithoutAControlPlane(t *testing.T) {
 	}
 }
 
+// TestRotateNodeCA runs the node CA's rotation in one go: the control planes hold the new node
+// CA, every node serves a certificate of it, nobody's trust changes, and the secrets file records
+// no rotation afterwards.
+func TestRotateNodeCA(t *testing.T) {
+	l := newRotationLab(t)
+	before := l.secrets()
+	if err := l.rotate("node-ca"); err != nil {
+		t.Fatal(err)
+	}
+	if l.phase() != "" {
+		t.Fatalf("the secrets file records %q, want the rotation ended", l.phase())
+	}
+	s := l.secrets()
+	if s.NodeCA == before.NodeCA || s.OSCA != before.OSCA {
+		t.Fatalf("node CA changed %v, OS CA kept %v", s.NodeCA != before.NodeCA, s.OSCA == before.OSCA)
+	}
+	nodeCA := fingerprint(t, s.NodeCA.Certificate)
+	osCA, _ := pki.Fingerprints(s.OSCABundle())
+	for name, n := range l.nodes {
+		if chain := n.cert.Current().TLS.Certificate; fingerprintDER(chain[1]) != nodeCA {
+			t.Errorf("%s does not serve a certificate of the new node CA", name)
+		}
+		if fps, _ := pki.Fingerprints(n.cert.OSCA()); !slices.Equal(fps, osCA) {
+			t.Errorf("%s trusts %d OS CAs, want the one", name, len(fps))
+		}
+		if n.kind == kubernetes.KindControlPlane && *n.share.NodeCA != s.NodeCA {
+			t.Errorf("%s does not hold the new node CA", name)
+		}
+	}
+	out := l.ta.stdout.String()
+	for _, want := range []string{"nothing to deliver", "cp1 renews node certificates with the new node CA", "n1 serves a certificate of the new node CA", "the rotation of the node CA is finished", "stay valid until they expire"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "--finish") {
+		t.Errorf("the rotation paused:\n%s", out)
+	}
+}
+
+// TestRotateNodeCAWithoutHolders rotates the node CA of a cluster no node of which holds it, as
+// a router fleet: every node gets a certificate of the new node CA.
+func TestRotateNodeCAWithoutHolders(t *testing.T) {
+	l := newRotationLabOf(t, []testNode{{"r1", "", "plain"}, {"r2", "", "plain"}})
+	if err := l.rotate("node-ca"); err != nil {
+		t.Fatal(err)
+	}
+	nodeCA := fingerprint(t, l.secrets().NodeCA.Certificate)
+	for name, n := range l.nodes {
+		if chain := n.cert.Current().TLS.Certificate; fingerprintDER(chain[1]) != nodeCA {
+			t.Errorf("%s does not serve a certificate of the new node CA", name)
+		}
+	}
+	if !strings.Contains(l.ta.stdout.String(), "no node renews node certificates itself") {
+		t.Errorf("output:\n%s", l.ta.stdout)
+	}
+}
+
 // TestRotateHelpNamesEveryKind checks that the help lists the kinds chalkctl runs.
 func TestRotateHelpNamesEveryKind(t *testing.T) {
 	ta := newTestApp(t)
@@ -1029,7 +1091,7 @@ func TestRotateHelpNamesEveryKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "Rotate os-ca, kubernetes-ca, service-account-key or encryption-key"; cmd.Short != want {
+	if want := "Rotate os-ca, node-ca, kubernetes-ca, service-account-key or encryption-key"; cmd.Short != want {
 		t.Errorf("Short = %q, want %q", cmd.Short, want)
 	}
 }

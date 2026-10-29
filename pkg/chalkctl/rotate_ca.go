@@ -19,21 +19,25 @@ type caRotation struct{ r *rotation }
 var _ layer.Rotation = caRotation{}
 
 func (caRotation) Kinds() []clustersecrets.RotationKind {
-	return []clustersecrets.RotationKind{clustersecrets.RotateOSCA}
+	return []clustersecrets.RotationKind{clustersecrets.RotateOSCA, clustersecrets.RotateNodeCA}
 }
 
 func (caRotation) CheckStart(context.Context, layer.Rotating, clustersecrets.RotationKind) error {
 	return nil
 }
 
-func (c caRotation) ApplyRotation(ctx context.Context, _ layer.Rotating, _ clustersecrets.RotationKind, phase clustersecrets.Phase) error {
+func (c caRotation) ApplyRotation(ctx context.Context, _ layer.Rotating, kind clustersecrets.RotationKind, phase clustersecrets.Phase) error {
+	if kind == clustersecrets.RotateNodeCA {
+		return c.r.applyNodeCA(ctx, phase)
+	}
 	return c.r.applyOSCA(ctx, phase)
 }
 
 // PausesAfter stops the OS CA's rotation after its accept phase, so client files trust the new
-// OS CA before it issues the nodes' certificates, and after its refresh.
-func (caRotation) PausesAfter(_ clustersecrets.RotationKind, phase clustersecrets.Phase) bool {
-	return phase == clustersecrets.PhaseAccept || phase == clustersecrets.PhaseRefresh
+// OS CA before it issues the nodes' certificates, and after its refresh. The node CA's runs in one
+// go: nodes trust it through the OS CA, which stays.
+func (caRotation) PausesAfter(kind clustersecrets.RotationKind, phase clustersecrets.Phase) bool {
+	return kind == clustersecrets.RotateOSCA && (phase == clustersecrets.PhaseAccept || phase == clustersecrets.PhaseRefresh)
 }
 
 func (c caRotation) Paused(_ context.Context, _ layer.Rotating, rot clustersecrets.Rotation) error {
@@ -50,9 +54,27 @@ func (caRotation) FinishGuard(context.Context, layer.Rotating, clustersecrets.Ro
 	return nil
 }
 
-// Finished: what a client trusts is in its file, which the finish cannot reach.
-func (caRotation) Finished(clustersecrets.RotationKind) (string, string) {
+// Finished: what a client trusts is in its file, which the finish of the OS CA's rotation cannot
+// reach.
+func (caRotation) Finished(kind clustersecrets.RotationKind) (string, string) {
+	if kind == clustersecrets.RotateNodeCA {
+		return "every node serves a certificate of the new node CA, and certificates of the old one stay valid until they expire, since both chain to the same OS CA", ""
+	}
 	return "every node trusts the new value alone", "Client files issued during the rotation still trust the old OS CA besides the new one when they verify the nodes, so whoever holds the old OS CA's key could pose as a node to them; issue them again with chalkctl config new."
+}
+
+// applyNodeCA runs a phase of the node CA's rotation. Nodes trust the new node CA through the OS
+// CA that issued it, so its accept and finish change no node; the switch delivers it to the nodes
+// that hold the node CA, and the refresh gives every node a certificate of it.
+func (r *rotation) applyNodeCA(ctx context.Context, phase clustersecrets.Phase) error {
+	switch phase {
+	case clustersecrets.PhaseSwitch:
+		return r.switchNodeCA(ctx)
+	case clustersecrets.PhaseRefresh:
+		return r.refreshNodeCertificates(ctx)
+	}
+	r.say("  every node trusts the OS CA the new node CA chains to; nothing to deliver")
+	return nil
 }
 
 // applyOSCA runs a phase of the OS CA's rotation: nodes trust both OS CAs, the nodes that hold
@@ -98,6 +120,10 @@ func (r *rotation) switchNodeCA(ctx context.Context) error {
 		return err
 	}
 	holders = slices.DeleteFunc(holders, func(name string) bool { return r.revoked[name] })
+	if len(holders) == 0 {
+		r.say("  no node renews node certificates itself; chalkctl node renew issues them from the new node CA")
+		return nil
+	}
 	return layer.EachNode(holders, func(name string) error {
 		if err := r.deliverPayloads(ctx, name); err != nil {
 			return err

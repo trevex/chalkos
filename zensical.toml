@@ -132,10 +132,6 @@ nav = [
           { "routes" = "reference/cli/chalkctl_node_routes.md" },
           { "unrevoke" = "reference/cli/chalkctl_node_unrevoke.md" },
         ] },
-        { "node-ca" = [
-          { "Overview" = "reference/cli/chalkctl_node-ca.md" },
-          { "rotate" = "reference/cli/chalkctl_node-ca_rotate.md" },
-        ] },
         { "reboot" = "reference/cli/chalkctl_reboot.md" },
         { "recovery-key" = "reference/cli/chalkctl_recovery-key.md" },
         { "rotate" = "reference/cli/chalkctl_rotate.md" },

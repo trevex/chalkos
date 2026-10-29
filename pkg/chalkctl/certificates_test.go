@@ -125,8 +125,10 @@ func TestNodeRenewVerifiesTheNode(t *testing.T) {
 	}
 }
 
-func TestNodeCARotate(t *testing.T) {
-	ta := newTestApp(t)
+// controlPlaneNode starts n1 as a Kubernetes control plane that holds a share of the secrets
+// file, with the node CA.
+func controlPlaneNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner, string) {
+	t.Helper()
 	withKind(t, ta, kubernetes.KindControlPlane)
 	s, r := kubernetesNode(t, ta)
 	p := kubernetesPaths(s)
@@ -139,22 +141,29 @@ func TestNodeCARotate(t *testing.T) {
 	}
 	writeFile(t, p.Share(), string(share))
 	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", chalkd.CAFile), ta.secrets.OSCA.Certificate)
-	addr := ta.startNode(t, s)
+	return s, r, ta.startNode(t, s)
+}
+
+// TestRotateNodeCAOnAControlPlane rotates the node CA of a cluster of one control plane, a chalkd
+// with the Kubernetes layer: its share holds the new node CA, it serves a certificate of it, and
+// nothing restarts.
+func TestRotateNodeCAOnAControlPlane(t *testing.T) {
+	ta := newTestApp(t)
+	s, r, addr := controlPlaneNode(t, ta)
+	p := kubernetesPaths(s)
 
 	// The secrets file is updated in place, its previous version kept beside it, and
 	// secrets.pub.json written beside it.
 	out := filepath.Join(ta.dir, "secrets.json")
 	pub := filepath.Join(ta.dir, "secrets.pub.json")
-	before, err := os.ReadFile(out)
-	if err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"rotate", "node-ca"}, "n1="+addr)); err != nil {
 		t.Fatal(err)
 	}
-	args := ta.args([]string{"node-ca", "rotate"}, addr)
-	if err := ta.run(context.Background(), args); err != nil {
-		t.Fatal(err)
-	}
-	if prev, err := os.ReadFile(out + ".prev"); err != nil || string(prev) != string(before) {
-		t.Errorf("secrets.json.prev is not the previous secrets file: %v", err)
+	// Each phase writes the file, so .prev is the version before the last phase's.
+	if prev, err := os.ReadFile(out + ".prev"); err != nil {
+		t.Error(err)
+	} else if s, err := clustersecrets.Read(prev, nil); err != nil || s.Rotation == nil || s.Rotation.Kind != clustersecrets.RotateNodeCA {
+		t.Errorf("secrets.json.prev is not the secrets file during the rotation: %v", err)
 	}
 	data, err := os.ReadFile(out)
 	if err != nil {
@@ -164,8 +173,8 @@ func TestNodeCARotate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rotated.NodeCA == ta.secrets.NodeCA {
-		t.Error("the node CA is the old one")
+	if rotated.NodeCA == ta.secrets.NodeCA || rotated.Rotation != nil {
+		t.Errorf("the node CA is the old one %v, the rotation still recorded %v", rotated.NodeCA == ta.secrets.NodeCA, rotated.Rotation)
 	}
 	if rotated.OSCA != ta.secrets.OSCA || string(rotated.RecoverySecret) != string(ta.secrets.RecoverySecret) || rotated.Kubernetes.CA != ta.secrets.Kubernetes.CA {
 		t.Error("the rotation changed more than the node CA")
@@ -182,37 +191,18 @@ func TestNodeCARotate(t *testing.T) {
 	if got, err := kpki.ParseShare(onNode); err != nil || got.NodeCA == nil || *got.NodeCA != rotated.NodeCA {
 		t.Errorf("the node's share does not hold the new node CA: %v", err)
 	}
-	if !strings.Contains(ta.stdout.String(), "n1 renews node certificates with the new node CA") {
-		t.Errorf("stdout = %q", ta.stdout)
+	if issuer := pki.Fingerprint(s.Certificate.Current().TLS.Certificate[1]); issuer != fingerprint(t, rotated.NodeCA.Certificate) {
+		t.Error("n1 does not serve a certificate of the new node CA")
+	}
+	for _, want := range []string{"n1 renews node certificates with the new node CA", "n1 serves a certificate of the new node CA"} {
+		if !strings.Contains(ta.stdout.String(), want) {
+			t.Errorf("stdout lacks %q:\n%s", want, ta.stdout)
+		}
 	}
 	for _, c := range r.calls {
 		if strings.HasPrefix(c, "systemctl restart") {
 			t.Errorf("a new node CA restarted %s", c)
 		}
-	}
-
-	// --out and --public-out write new files and leave the secrets file alone.
-	newOut, newPub := filepath.Join(ta.dir, "secrets.next.json"), filepath.Join(ta.dir, "secrets.next.pub.json")
-	outArgs := ta.args([]string{"node-ca", "rotate", "--out", newOut, "--public-out", newPub}, addr)
-	if err := ta.run(context.Background(), outArgs); err != nil {
-		t.Fatal(err)
-	}
-	if after, _ := os.ReadFile(out); string(after) != string(data) {
-		t.Error("--out changed the secrets file")
-	}
-	next, err := os.ReadFile(newOut)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s, err := clustersecrets.Read(next, nil); err != nil || s.NodeCA == rotated.NodeCA {
-		t.Errorf("--out did not get another node CA: %v", err)
-	}
-	if _, err := os.Stat(newPub); err != nil {
-		t.Error(err)
-	}
-	// They are new files: an existing one is never overwritten.
-	if err := ta.run(context.Background(), outArgs); err == nil || !strings.Contains(err.Error(), "exists") {
-		t.Errorf("err = %v, want a refusal to overwrite", err)
 	}
 }
 
@@ -269,39 +259,15 @@ func TestCertificateLine(t *testing.T) {
 }
 
 // Without --public-out the public file goes stale, which the message says.
-func TestNodeCARotateNamesThePublicFile(t *testing.T) {
+func TestRotateNodeCANamesThePublicFile(t *testing.T) {
 	ta := newTestApp(t)
-	withKind(t, ta, kubernetes.KindControlPlane)
-	s, _ := kubernetesNode(t, ta)
-	p := kubernetesPaths(s)
-	writeFile(t, p.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443",
-	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
-	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local"}`)
-	share, err := kpki.ControlPlaneShare(&ta.secrets.Kubernetes, ta.secrets.NodeCA).Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, p.Share(), string(share))
-	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", chalkd.CAFile), ta.secrets.OSCA.Certificate)
-	addr := ta.startNode(t, s)
+	_, _, addr := controlPlaneNode(t, ta)
 	out := filepath.Join(ta.dir, "secrets.rotated.json")
-	if err := ta.run(context.Background(), ta.args([]string{"node-ca", "rotate", "--out", out}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"rotate", "node-ca", "--out", out}, "n1="+addr)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(ta.stdout.String(), "secrets.pub.json still holds the previous public half") {
 		t.Errorf("stdout = %q, want secrets.pub.json named", ta.stdout)
-	}
-}
-
-func TestNodeCARotateNeedsAControlPlane(t *testing.T) {
-	ta := newTestApp(t)
-	out := filepath.Join(ta.dir, "secrets.rotated.json")
-	err := ta.run(context.Background(), []string{"node-ca", "rotate", "--out", out, "--inventory", ta.inventory})
-	if err == nil || !strings.Contains(err.Error(), "control-plane") {
-		t.Errorf("err = %v, want a refusal naming the missing control-plane node", err)
-	}
-	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
-		t.Errorf("wrote %s for a cluster no node CA reaches: %v", out, statErr)
 	}
 }
 

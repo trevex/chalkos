@@ -154,10 +154,10 @@ changes the secrets file, holding `<file>.lock`. The file is updated in place an
 version kept as `<file>.prev`, unless `--out` names a new file. An encrypted file is encrypted
 again to the recipients recorded inside it.
 
-[`chalkctl node-ca rotate`](../../reference/cli/chalkctl_node-ca_rotate.md) replaces the node CA
-alone, without phases. It issues a new node CA from the OS CA and delivers it to every control
-plane. Node certificates of the old node CA stay valid until they expire, because they chain to
-the same OS CA, and are renewed from the new one as they fall due.
+[`chalkctl rotate node-ca`](../../reference/cli/chalkctl_rotate.md) replaces the node CA alone, in
+one go without pausing. It issues a new node CA from the OS CA, delivers it to the nodes that hold
+the node CA, and gives every node a certificate of it. Node certificates of the old node CA stay
+valid until they expire, because they chain to the same OS CA.
 
 ## A rotation leaves client files behind
 
@@ -208,6 +208,5 @@ an `os-ca` rotation retires the certificates of the old node CA.
   lifetime and the status notes.
 - [Manage access and certificates](../../operate/access.md) and
   [Recover a node](../../operate/recover-node.md).
-- [`chalkctl rotate`](../../reference/cli/chalkctl_rotate.md),
-  [`chalkctl node-ca rotate`](../../reference/cli/chalkctl_node-ca_rotate.md) and
+- [`chalkctl rotate`](../../reference/cli/chalkctl_rotate.md) and
   [`chalkctl node renew`](../../reference/cli/chalkctl_node_renew.md).

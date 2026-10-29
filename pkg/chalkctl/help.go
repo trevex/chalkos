@@ -97,22 +97,6 @@ file.`
 
 const nodeRenewExample = `  chalkctl node renew w1`
 
-const nodeCALong = `Manages the node CA, which issues the certificates nodes serve. Its command needs the secrets
-file.`
-
-const nodeCAExample = `  chalkctl node-ca rotate`
-
-const nodeCARotateLong = `Issues a new node CA from the OS CA, writes it to the secrets file and delivers it to every
-control plane; the control planes issue node certificates from it from then on. Node certificates
-of the old node CA stay valid until they expire, because they chain to the same OS CA. The
-secrets file is updated in place, keeping its previous version as <file>.prev, unless --out names
-a new file. The command needs the secrets file.`
-
-const nodeCARotateExample = `  chalkctl node-ca rotate
-
-  # Write the changed secrets to a new file and keep the old one.
-  chalkctl node-ca rotate --secrets secrets.age --out secrets.new.age --public-out secrets.pub.new.json`
-
 const configLong = `Manages client files, which let a person operate the cluster without the secrets file. Writing
 a client file needs the secrets file.`
 
@@ -279,7 +263,10 @@ const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept 
   # trust the new CA before it issues certificates. It pauses again after the refresh.
   chalkctl rotate kubernetes-ca --secrets secrets.age
   chalkctl rotate kubernetes-ca --secrets secrets.age --resume
-  chalkctl rotate kubernetes-ca --secrets secrets.age --finish`
+  chalkctl rotate kubernetes-ca --secrets secrets.age --finish
+
+  # Rotate the node CA. It runs in one go: every node gets a certificate of the new one.
+  chalkctl rotate node-ca --secrets secrets.age`
 
 const upgradeLong = `Installs a new image on each node: control planes one at a time, each only while etcd keeps its
 quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.

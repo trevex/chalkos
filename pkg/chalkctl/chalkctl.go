@@ -59,14 +59,12 @@ func newCommand(a *app) *cobra.Command {
 	gen.AddCommand(a.genSecretsCommand())
 	node := cli.Group(&cobra.Command{Use: "node", Short: "Manage a node's access and show its diagnostics and routes", Long: nodeLong, Example: nodeExample})
 	node.AddCommand(a.nodeRenewCommand(), a.nodeDiagCommand())
-	nodeCA := cli.Group(&cobra.Command{Use: "node-ca", Short: "Manage the node CA", Long: nodeCALong, Example: nodeCAExample})
-	nodeCA.AddCommand(a.nodeCARotateCommand())
 	config := cli.Group(&cobra.Command{Use: "config", Short: "Manage client files", Long: configLong, Example: configExample})
 	config.AddCommand(a.configNewCommand())
 	storage := cli.Group(&cobra.Command{Use: "storage", Short: "Manage a node's volumes", Long: storageLong, Example: storageExample})
 	storage.AddCommand(a.resetVolumeCommand())
 	root.AddCommand(
-		gen, node, nodeCA, config, storage,
+		gen, node, config, storage,
 		a.recoveryKeyCommand(),
 		a.installCommand(),
 		a.disksCommand(),

@@ -1,6 +1,6 @@
 ---
 title: "chalkctl rotate"
-description: "Rotate os-ca, kubernetes-ca, service-account-key or encryption-key"
+description: "Rotate os-ca, node-ca, kubernetes-ca, service-account-key or encryption-key"
 ---
 
 # chalkctl rotate
@@ -50,6 +50,9 @@ takes part, so remove revoked nodes from the inventory first. The command needs 
 chalkctl rotate kubernetes-ca --secrets secrets.age
 chalkctl rotate kubernetes-ca --secrets secrets.age --resume
 chalkctl rotate kubernetes-ca --secrets secrets.age --finish
+
+# Rotate the node CA. It runs in one go: every node gets a certificate of the new one.
+chalkctl rotate node-ca --secrets secrets.age
 ```
 
 ## See also

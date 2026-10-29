@@ -42,10 +42,9 @@ chalkctl kubeconfig --secrets secrets.age
 - [chalkctl kubeconfig](chalkctl_kubeconfig.md): Write an admin kubeconfig
 - [chalkctl logs](chalkctl_logs.md): Show a node's journal
 - [chalkctl node](chalkctl_node.md): Manage a node's access and show its diagnostics and routes
-- [chalkctl node-ca](chalkctl_node-ca.md): Manage the node CA
 - [chalkctl reboot](chalkctl_reboot.md): Reboot a node
 - [chalkctl recovery-key](chalkctl_recovery-key.md): Print a node's recovery key
-- [chalkctl rotate](chalkctl_rotate.md): Rotate os-ca, kubernetes-ca, service-account-key or encryption-key
+- [chalkctl rotate](chalkctl_rotate.md): Rotate os-ca, node-ca, kubernetes-ca, service-account-key or encryption-key
 - [chalkctl status](chalkctl_status.md): Show an installed node's status
 - [chalkctl storage](chalkctl_storage.md): Manage a node's volumes
 - [chalkctl upgrade](chalkctl_upgrade.md): Install new images on the cluster's nodes, one control plane at a time

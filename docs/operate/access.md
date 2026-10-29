@@ -92,24 +92,28 @@ in the node's network path could receive the new certificate. Renewing before ex
 
 The node CA issues every node certificate, and on the shipped variant the control planes hold it to
 renew them. It is valid for five years. No node certificate outlives it, so control planes warn
-once less than 18 months remain, with `node CA expires <date>; run chalkctl node-ca rotate`.
+once less than 18 months remain, with `node CA expires <date>; run chalkctl rotate node-ca`.
 
-`chalkctl node-ca rotate` issues a new node CA from the OS CA and delivers it to every control
-plane:
+`chalkctl rotate node-ca` issues a new node CA from the OS CA, delivers it to the nodes that hold
+the node CA, and gives every node a certificate of it:
 
 ```console
-$ chalkctl node-ca rotate --secrets secrets.age
-secrets.age holds a new node CA, which expires <date>; the previous version is secrets.age.prev; secrets.pub.json holds the new public half
-cp1 renews node certificates with the new node CA
+$ chalkctl rotate node-ca --secrets secrets.age
+secrets.age records the rotation of the node CA; the previous version is secrets.age.prev; secrets.pub.json holds the new public half
+node-ca: the accept phase
+  every node trusts the OS CA the new node CA chains to; nothing to deliver
+...
+  cp1 renews node certificates with the new node CA
+...
+  w1 serves a certificate of the new node CA
+...
+the rotation of the node CA is finished: every node serves a certificate of the new node CA, and certificates of the old one stay valid until they expire, since both chain to the same OS CA; the previous version is secrets.age.prev; secrets.pub.json holds the new public half
 ```
 
-`<date>` is five years from the rotation. The rotation runs in one step. Certificates of the old node
-CA stay valid until they expire, because both node CAs chain to the same OS CA. Nodes pick up
-certificates of the new one at their next renewal. The rotation therefore cuts off no node, not
-even a removed one: chalkd trusts every node CA the OS CA signed. A control plane that could not
-be reached fails the command, and the error names the command that delivers the new node CA later:
-`the new node CA did not reach every control-plane node; deliver it with
-chalkctl apply-config <node> --kubernetes-share --secrets secrets.age: ...`.
+The rotation runs in one go, without pausing. Certificates of the old node CA stay valid until they
+expire, because both node CAs chain to the same OS CA. The rotation therefore cuts off no node, not
+even a removed one: chalkd trusts every node CA the OS CA signed. A node that could not be reached
+stops the rotation, and `chalkctl rotate node-ca --resume` continues it.
 
 ## Choose what to rotate
 
