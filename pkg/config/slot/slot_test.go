@@ -506,11 +506,19 @@ func TestRestorePrevious(t *testing.T) {
 		t.Errorf("with both links on one set: %v", err)
 	}
 	// A previous link whose set is gone is refused before the slot's link moves to it.
-	if err := relink(Previous(dir), "gone"); err != nil {
+	if err := relink(Previous(dir), "missing"); err != nil {
 		t.Fatal(err)
 	}
-	if err := RestorePrevious(dir); !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), dir+"'s previous config gone is gone") {
+	if err := RestorePrevious(dir); !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), dir+"'s previous config missing is gone") {
 		t.Errorf("with a dangling previous link: %v", err)
+	}
+	// One whose set cannot be read for another reason says so.
+	loop := filepath.Base(Previous(dir))
+	if err := relink(Previous(dir), loop); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestorePrevious(dir); err == nil || !strings.Contains(err.Error(), dir+"'s previous config "+loop+" cannot be read: ") {
+		t.Errorf("with a previous link to itself: %v", err)
 	}
 	if now, err := os.Readlink(dir); err != nil || now != held {
 		t.Errorf("after a refused restore the slot links to %q, %v; want %q", now, err, held)

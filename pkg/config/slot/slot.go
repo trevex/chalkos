@@ -242,8 +242,12 @@ func RestorePrevious(dir string) error {
 		return err
 	}
 	// A previous link whose set is gone would leave the slot's link dangling.
-	if _, err := os.Stat(prev); err != nil {
+	_, err = os.Stat(prev)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
 		return fmt.Errorf("%s's previous config %s is gone: %w", dir, kept, err)
+	case err != nil:
+		return fmt.Errorf("%s's previous config %s cannot be read: %w", dir, kept, err)
 	}
 	if err := relinkVia(dir, filepath.Join(filepath.Dir(dir), "."+filepath.Base(dir)+".link"), kept); err != nil {
 		return err
