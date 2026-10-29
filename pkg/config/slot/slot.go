@@ -43,6 +43,16 @@ const (
 	documentsDir = "documents"
 )
 
+// previousSuffix ends the name of the link beside a slot that names the slot's previous config.
+const previousSuffix = ".previous"
+
+// Previous is the link beside the slot dir that names the slot's previous config, such as
+// /state/config/.<root hash>.previous: the set WriteKeepingPrevious replaced last. Read and
+// Version read it as they read a slot; it does not exist while the slot keeps no previous config.
+func Previous(dir string) string {
+	return filepath.Join(filepath.Dir(dir), "."+filepath.Base(dir)+previousSuffix)
+}
+
 // Dir is the slot of the image whose store has the root hash, below root, such as
 // /state/config.
 func Dir(root string, rootHash []byte) string {
@@ -76,8 +86,8 @@ func slotHash(name string) ([]byte, bool) {
 }
 
 // Retire removes every slot below root but those of the root hashes kept: its link first, so a
-// reader finds the slot whole or not at all, then the directory the link named and those that
-// interrupted writes of it left. A directory where a slot's link would be is refused, as
+// reader finds the slot whole or not at all, then the directory the link named, the slot's
+// previous config and those that interrupted writes of it left. A directory where a slot's link would be is refused, as
 // replace refuses it.
 func Retire(root string, keep [][]byte) error {
 	entries, err := os.ReadDir(root)
@@ -89,10 +99,10 @@ func Retire(root string, keep [][]byte) error {
 	}
 	names := map[string]bool{}
 	for _, e := range entries {
-		// A slot's link is named by its hash; its directories and the link a replace makes start
-		// with a dot, the hash, and "-" or ".link".
+		// A slot's link is named by its hash; its directories, the links a replace makes and its
+		// previous config's link start with a dot, the hash, and "-", ".link" or ".previous".
 		name, _, _ := strings.Cut(strings.TrimPrefix(e.Name(), "."), "-")
-		name = strings.TrimSuffix(name, ".link")
+		name = strings.TrimSuffix(strings.TrimSuffix(name, ".link"), previousSuffix)
 		if _, ok := slotHash(name); ok {
 			names[name] = true
 		}
@@ -111,7 +121,15 @@ func Retire(root string, keep [][]byte) error {
 		if err := os.Remove(filepath.Join(root, "."+name+".link")); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
-		if err := removeStale(dir, ""); err != nil {
+		if err := removeLink(Previous(dir)); err != nil {
+			return err
+		}
+		// The links go to disk before the directories they named, so a power cut never leaves a
+		// link to a removed directory.
+		if err := atomicfile.SyncDir(root); err != nil {
+			return err
+		}
+		if err := removeStale(dir); err != nil {
 			return err
 		}
 	}
@@ -122,9 +140,70 @@ func Retire(root string, keep [][]byte) error {
 // delivered go below delivered/, those with defaults below documents/, each to
 // <group>/<Kind>/<name>.json and Secrets to secrets/<name>.json, readable by root alone; the
 // identity goes to identity.json, readable by root alone, and the version to version. See
-// replace for how a power cut leaves either slot whole.
+// replace for how a power cut leaves either slot whole. A slot Write writes keeps no previous
+// config: one WriteKeepingPrevious kept goes, its link before its directory.
 func Write(dir string, s Stored) error {
-	return replace(dir, func(tmp string) error {
+	if err := checkLink(dir); err != nil {
+		return err
+	}
+	if err := removeLink(Previous(dir)); err != nil {
+		return err
+	}
+	return replace(dir, fill(s))
+}
+
+// WriteKeepingPrevious writes s to the slot dir as Write does and keeps the set the slot held as
+// its previous config, which Previous names, one level deep: the previous config before it goes.
+// A slot that holds s's version already keeps its previous config as it is, so a delivery sent
+// twice does not lose it; a slot that holds no set is written as Write writes it. The previous
+// link is renamed and synced after the new set is filled and before the slot's link, and a
+// directory goes only once no link names it, so a power cut leaves the slot whole and its
+// previous config either the set before or the set the slot still holds.
+func WriteKeepingPrevious(dir string, s Stored) error {
+	prev := Previous(dir)
+	if err := checkLink(dir); err != nil {
+		return err
+	}
+	if err := checkLink(prev); err != nil {
+		return err
+	}
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		return Write(dir, s)
+	} else if err != nil {
+		return err
+	}
+	held, err := os.Readlink(dir)
+	if err != nil {
+		return err
+	}
+	version, err := Version(dir)
+	if err != nil {
+		return err
+	}
+	if version == s.Version {
+		kept, err := os.Readlink(prev)
+		if errors.Is(err, fs.ErrNotExist) {
+			return replace(dir, fill(s))
+		}
+		if err != nil {
+			return err
+		}
+		return replace(dir, fill(s), filepath.Join(filepath.Dir(dir), kept))
+	}
+	// The previous link moves once the new set is filled, so a write that fails keeps the
+	// previous config.
+	fillKeeping := func(tmp string) error {
+		if err := fill(s)(tmp); err != nil {
+			return err
+		}
+		return relink(prev, held)
+	}
+	return replace(dir, fillKeeping, filepath.Join(filepath.Dir(dir), held))
+}
+
+// fill fills a new slot's directory with s.
+func fill(s Stored) func(tmp string) error {
+	return func(tmp string) error {
 		for _, tree := range []struct {
 			dir  string
 			docs []config.Document
@@ -141,7 +220,37 @@ func Write(dir string, s Stored) error {
 			return err
 		}
 		return atomicfile.Replace(filepath.Join(tmp, versionFile), []byte(s.Version+"\n"), 0o644)
-	})
+	}
+}
+
+// relink makes link a relative symbolic link to target, a name in link's directory, in one rename,
+// and syncs the directory.
+func relink(link, target string) error {
+	tmp := link + ".link"
+	if err := os.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.Symlink(target, tmp); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, link); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return atomicfile.SyncDir(filepath.Dir(link))
+}
+
+// removeLink removes the link and the link an interrupted relink of it left, after checkLink.
+func removeLink(link string) error {
+	if err := checkLink(link); err != nil {
+		return err
+	}
+	for _, p := range []string{link, link + ".link"} {
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 // Read returns the slot dir, its documents ordered by apiVersion, kind and name; found is false
@@ -215,8 +324,9 @@ func Version(dir string) (string, error) {
 // the directory dir named before and any an interrupted replace left. Renaming a link over
 // another is atomic where renaming a directory over a non-empty one is impossible, so a reader
 // or a power cut finds either set whole. The link is relative, so it resolves wherever the file
-// system is mounted, as the installer mounts a target's STATE elsewhere than /state.
-func replace(dir string, fill func(tmp string) error) error {
+// system is mounted, as the installer mounts a target's STATE elsewhere than /state. The
+// directories keep names are left too, as a slot's previous config.
+func replace(dir string, fill func(tmp string) error, keep ...string) error {
 	parent, base := filepath.Dir(dir), filepath.Base(dir)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
@@ -249,18 +359,18 @@ func replace(dir string, fill func(tmp string) error) error {
 	if err := atomicfile.SyncDir(parent); err != nil {
 		return err
 	}
-	return removeStale(dir, tmp)
+	return removeStale(dir, append(keep, tmp)...)
 }
 
 // removeStale removes the directories next to dir that earlier or interrupted writes left, all
-// but keep.
-func removeStale(dir, keep string) error {
+// but those keep names.
+func removeStale(dir string, keep ...string) error {
 	stale, err := filepath.Glob(filepath.Join(filepath.Dir(dir), "."+filepath.Base(dir)+"-*"))
 	if err != nil {
 		return err
 	}
 	for _, p := range stale {
-		if p != keep {
+		if !slices.Contains(keep, p) {
 			if err := os.RemoveAll(p); err != nil {
 				return err
 			}

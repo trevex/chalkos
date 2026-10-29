@@ -303,3 +303,135 @@ func TestReadRuntime(t *testing.T) {
 		t.Errorf("ReadRuntime = %v, %v; want the Registry alone", got, err)
 	}
 }
+
+// TestWriteKeepingPrevious keeps the config a write replaces as the slot's previous one, one level
+// deep: the slot's directory before goes once a third write replaces the second. A write of the
+// version the slot holds keeps the previous config as it is, and Write drops it.
+func TestWriteKeepingPrevious(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "config")
+	if err := WriteKeepingPrevious(dir, stored(t, "v1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := Read(Previous(dir)); err != nil || found {
+		t.Fatalf("a first write keeps a previous config: found %v, %v", found, err)
+	}
+	if v, err := Version(Previous(dir)); err != nil || v != "" {
+		t.Errorf("previous version without one = %q, %v", v, err)
+	}
+	for i, next := range []string{"v2", "v3"} {
+		if err := WriteKeepingPrevious(dir, stored(t, next)); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"v1", "v2"}[i]
+		if got, found, err := Read(Previous(dir)); err != nil || !found || got.Version != want || len(got.Delivered) != 3 {
+			t.Errorf("after %s the previous config is %+v, found %v, %v; want %s whole", next, got, found, err, want)
+		}
+		if l := leftovers(t, dir); len(l) != 2 {
+			t.Errorf("after %s the directories next to the slot are %v, want the current one and the previous one", next, l)
+		}
+	}
+	if target, err := os.Readlink(Previous(dir)); err != nil || filepath.IsAbs(target) {
+		t.Errorf("previous link = %q, %v; want a relative link", target, err)
+	}
+	// The same version again: the previous config stays v2.
+	if err := WriteKeepingPrevious(dir, stored(t, "v3")); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := Version(Previous(dir)); v != "v2" {
+		t.Errorf("after the same version again the previous config is %q, want v2", v)
+	}
+	if err := Write(dir, stored(t, "v4")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(Previous(dir)); !os.IsNotExist(err) {
+		t.Errorf("Write kept the previous config: %v", err)
+	}
+	if l := leftovers(t, dir); len(l) != 1 {
+		t.Errorf("after Write the directories next to the slot are %v, want the current one alone", l)
+	}
+}
+
+// TestWriteKeepingPreviousRefusesADirectory leaves a directory where the previous config's link
+// would be alone and says so.
+func TestWriteKeepingPreviousRefusesADirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "config")
+	if err := os.Mkdir(Previous(dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteKeepingPrevious(dir, stored(t, "v1")); err == nil || !strings.Contains(err.Error(), "is a directory, not a config link") {
+		t.Errorf("write: %v", err)
+	}
+}
+
+// TestRetireRemovesThePreviousConfig removes a retired slot's previous config and keeps a kept
+// slot's.
+func TestRetireRemovesThePreviousConfig(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "config")
+	a, b := bytes.Repeat([]byte{0xaa}, 32), bytes.Repeat([]byte{0xbb}, 32)
+	for _, h := range [][]byte{a, b} {
+		for _, v := range []string{"v1", "v2"} {
+			if err := WriteKeepingPrevious(Dir(root, h), stored(t, v)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := Retire(root, [][]byte{a}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(Previous(Dir(root, b))); !os.IsNotExist(err) {
+		t.Errorf("the retired slot's previous config stayed: %v", err)
+	}
+	if l := leftovers(t, Dir(root, b)); len(l) != 0 {
+		t.Errorf("the retired slot left %v", l)
+	}
+	if v, err := Version(Previous(Dir(root, a))); err != nil || v != "v1" {
+		t.Errorf("the kept slot's previous config = %q, %v; want v1", v, err)
+	}
+}
+
+// TestWriteKeepingPreviousWithoutASlot drops a previous config that outlived its slot, as an
+// interrupted Retire may leave it, so a fresh slot never names another image's set.
+func TestWriteKeepingPreviousWithoutASlot(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "config")
+	if err := WriteKeepingPrevious(dir, stored(t, "v1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteKeepingPrevious(dir, stored(t, "v2")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteKeepingPrevious(dir, stored(t, "v3")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(Previous(dir)); !os.IsNotExist(err) {
+		t.Errorf("the previous config of the slot before stayed: %v", err)
+	}
+	if l := leftovers(t, dir); len(l) != 1 {
+		t.Errorf("the directories next to the slot are %v, want the current one alone", l)
+	}
+}
+
+// TestWriteKeepingPreviousThatFails keeps the slot and its previous config as they were when the
+// new set cannot be written.
+func TestWriteKeepingPreviousThatFails(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "config")
+	for _, v := range []string{"v1", "v2"} {
+		if err := WriteKeepingPrevious(dir, stored(t, v)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d := config.FromObject(map[string]any{"apiVersion": "demo.example.org/v1alpha1", "kind": "Demo", "metadata": map[string]any{"name": "../escape"}})
+	if err := WriteKeepingPrevious(dir, Stored{Documents: []config.Document{d}, Version: "v3"}); err == nil {
+		t.Fatal("wrote a refused set")
+	}
+	current, _ := Version(dir)
+	previous, _ := Version(Previous(dir))
+	if current != "v2" || previous != "v1" {
+		t.Errorf("after a failed write the slot holds %q and its previous config %q, want v2 and v1", current, previous)
+	}
+	if l := leftovers(t, dir); len(l) != 2 {
+		t.Errorf("the directories next to the slot are %v, want the current one and the previous one", l)
+	}
+}
