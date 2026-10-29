@@ -67,12 +67,20 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
 	}
 	header := imageHeader(img)
-	// The node's known-good image, staged by a rollback, keeps the config it last ran.
-	s.mu.Lock()
-	knownGood, err := s.keepsKnownGood(img.GetRootHash(), h.GetConfig())
-	s.mu.Unlock()
-	if err != nil {
-		return nil, err
+	// The node's known-good image, staged by a rollback, keeps the config it last ran. Only config
+	// is refused for it, so an upgrade without config reads the ESP for it once Install found the
+	// image staged.
+	knownGood := func() (bool, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.keepsKnownGood(img.GetRootHash(), h.GetConfig())
+	}
+	var keepsConfig bool
+	if h.GetConfig() != "" {
+		var err error
+		if keepsConfig, err = knownGood(); err != nil {
+			return nil, err
+		}
 	}
 	parts := chunks(stream)
 	if src := h.GetSource(); src != nil {
@@ -125,8 +133,13 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		log.Printf("%x runs already", img.GetRootHash())
 		return connect.NewResponse(resp), nil
 	}
+	if res.AlreadyStaged && h.GetConfig() == "" {
+		if keepsConfig, err = knownGood(); err != nil {
+			return nil, err
+		}
+	}
 	switch {
-	case res.AlreadyStaged && knownGood:
+	case res.AlreadyStaged && keepsConfig:
 		// Nothing changed, so the record of the rollback that staged the image stays.
 		log.Printf("%x boots next already, as %s, with the config it last ran", img.GetRootHash(), res.Entry)
 	case res.AlreadyStaged:
