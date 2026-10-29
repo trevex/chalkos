@@ -19,7 +19,7 @@ type Renewal struct {
 	// Due reports whether the renewal is due at now and when what it renews expires; there being
 	// nothing to renew yet is no error.
 	Due func(now time.Time) (due bool, expires time.Time, err error)
-	// Renew renews.
+	// Renew renews; nil for what something else renews, which Run then only logs once it is due.
 	Renew func(ctx context.Context, now time.Time) error
 	// Now and After are the clock; tests replace them.
 	Now   func() time.Time
@@ -77,6 +77,8 @@ func (r *Renewal) Run(ctx context.Context) {
 	// that found the renewal due: one that failed may have been made unnecessary since, by a
 	// preparation or a delivered certificate, and renewing again would restart what runs on it.
 	forced := false
+	// logged is set once a renewal without Renew logged that it is due.
+	logged := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -88,7 +90,18 @@ func (r *Renewal) Run(ctx context.Context) {
 		now := r.Now()
 		due, expires, err := r.Due(now)
 		if err == nil && !forced && !due {
-			retry = 0
+			retry, logged = 0, false
+			r.setProblem("")
+			wait = r.Check - r.Check/10 + jitter(r.Check/5)
+			continue
+		}
+		if err == nil && r.Renew == nil {
+			// Nothing here renews: the renewal says once that it is due, and Status says what to do.
+			if due && !logged {
+				log.Printf("%s is due for renewal and expires %s; nothing on this node renews it", r.What, expires.UTC().Format(time.RFC3339))
+			}
+			logged = due
+			retry, forced = 0, false
 			r.setProblem("")
 			wait = r.Check - r.Check/10 + jitter(r.Check/5)
 			continue

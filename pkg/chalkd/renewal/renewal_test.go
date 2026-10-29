@@ -1,8 +1,11 @@
 package renewal
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -121,5 +124,36 @@ func TestForcedRenewalIsTriedAgain(t *testing.T) {
 	advance(start.Add(time.Hour))
 	if renewals != 2 || r.Problem() != "" {
 		t.Errorf("after the forced renewal succeeded: %d renewals, problem %q", renewals, r.Problem())
+	}
+}
+
+// A renewal without Renew renews nothing: once due it logs that once, checks again about hourly
+// and reports no problem, also when forced.
+func TestRenewalWithoutRenewOnlyLogs(t *testing.T) {
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	start := time.Now()
+	due := false
+	expires := start.Add(48 * time.Hour)
+	r := New("node certificate", func(time.Time) (bool, time.Time, error) { return due, expires, nil }, nil)
+	_, advance := runRenewal(t, r, start)
+	if wait := advance(start); wait < 54*time.Minute || logged.Len() != 0 {
+		t.Fatalf("before it is due: next check after %v, logged %q", wait, logged.String())
+	}
+	due = true
+	for i := range 3 {
+		if wait := advance(start.Add(time.Duration(i+1) * time.Hour)); wait < 54*time.Minute {
+			t.Errorf("once due, the next check comes after %v, want about an hour", wait)
+		}
+	}
+	if n := strings.Count(logged.String(), "nothing on this node renews it"); n != 1 {
+		t.Errorf("logged %d times that nothing renews it, want once: %q", n, logged.String())
+	}
+	if !strings.Contains(logged.String(), expires.UTC().Format(time.RFC3339)) {
+		t.Errorf("the log does not name the expiry: %q", logged.String())
+	}
+	if r.Problem() != "" {
+		t.Errorf("problem = %q, want none", r.Problem())
 	}
 }
