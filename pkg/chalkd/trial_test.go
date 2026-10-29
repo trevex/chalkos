@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // nextConfig is baseConfig with another name in the Demo, which restarts demo.service.
@@ -134,4 +136,69 @@ func TestTrialState(t *testing.T) {
 	check(trialEnded)
 	r.Version, r.Previous = "v8", "v9"
 	check(trialLost)
+}
+
+// TestChangesWaitForATrial refuses every delivery, an upgrade and an image rollback while a config
+// is on trial, names how to end it, and changes nothing.
+func TestChangesWaitForATrial(t *testing.T) {
+	s, r := configServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	c := newCreds(t)
+	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
+	r.Calls = nil
+	ctx := context.Background()
+	apply := func(m *nodev1.ApplyConfigRequest) func() error {
+		return func() error {
+			_, err := s.ApplyConfig(ctx, connect.NewRequest(m))
+			return err
+		}
+	}
+	for _, tc := range []struct {
+		name, what string
+		call       func() error
+	}{
+		{"config", "another delivery", apply(&nodev1.ApplyConfigRequest{Config: baseConfig})},
+		{"staged config", "another delivery", apply(&nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true})},
+		{"OS CAs", "another delivery", apply(&nodev1.ApplyConfigRequest{Trust: []byte("x")})},
+		{"image rollback", "an image rollback", func() error {
+			_, err := s.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: bytes.Repeat([]byte{1}, 32)}))
+			return err
+		}},
+		{"upgrade", "an upgrade", func() error {
+			stream := conn.Upgrade(ctx)
+			stream.Send(&nodev1.UpgradeRequest{})
+			_, err := stream.CloseAndReceive()
+			return err
+		}},
+	} {
+		want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl apply-config --confirm n1, or roll it back with chalkctl apply-config --rollback n1, before " + tc.what
+		if err := tc.call(); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want %q", tc.name, err, want)
+		}
+	}
+	if len(r.Calls) != 0 {
+		t.Errorf("the refusals ran %v", r.Calls)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != rec.Version {
+		t.Errorf("the node runs %s, want the config on trial", v)
+	}
+}
+
+// TestRollbackConfigEndsATrial rolls the config on trial back on request and ends the trial, so
+// the node takes deliveries again.
+func TestRollbackConfigEndsATrial(t *testing.T) {
+	s, _ := configServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	if _, err := sendRollback(s, rec.Previous); err != nil {
+		t.Fatal(err)
+	}
+	if trialOpenOn(t, s) {
+		t.Error("the trial is open after the rollback")
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != rec.Previous {
+		t.Errorf("the node runs %s, want %s", v, rec.Previous)
+	}
+	if _, err := sendConfig(s, nextConfig); err != nil {
+		t.Errorf("a delivery after the trial ended: %v", err)
+	}
 }

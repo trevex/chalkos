@@ -179,3 +179,20 @@ func (s *Server) trialStatus() *nodev1.ConfigTrial {
 	}
 	return &nodev1.ConfigTrial{Version: r.Version, PreviousVersion: r.Previous, Deadline: timestamppb.New(r.Deadline), Error: r.Error, IgnoreUnits: r.IgnoreUnits}
 }
+
+// refuseOnTrial refuses what would change the node while a config is on trial, so the trial's
+// rollback restores what the node ran before it. what names the change. A delivery holds s.mu; an
+// upgrade and an image rollback hold s.upgrading, which a trial's delivery holds while it writes
+// the record, so neither sees a trial start under it.
+func (s *Server) refuseOnTrial(what string) error {
+	r, open, err := readTrial(s.Paths.StateDir)
+	if err != nil {
+		return failed(connect.CodeInternal, "read the record of the config's trial: %v", err)
+	}
+	if !open {
+		return nil
+	}
+	name := s.nodeName()
+	return failed(connect.CodeFailedPrecondition, "config %s is on trial until %s: confirm it with chalkctl apply-config --confirm %s, or roll it back with chalkctl apply-config --rollback %s, before %s",
+		r.Version, r.Deadline.UTC().Format(time.RFC3339), name, name, what)
+}

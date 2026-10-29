@@ -30,6 +30,10 @@ type applyRequest struct {
 func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// A config on trial is confirmed or rolled back before the node takes another delivery.
+	if err := s.refuseOnTrial("another delivery"); err != nil {
+		return nil, err
+	}
 	// An upgrade writes its image's slot, checked against the machine, before the image is
 	// staged, so a machine change in between would escape checkStaged. TryLock never waits: the
 	// upgrade holds upgrading while it takes s.mu.
