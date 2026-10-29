@@ -3,6 +3,8 @@ package slot
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -503,8 +505,18 @@ func TestRestorePrevious(t *testing.T) {
 	if err := RestorePrevious(dir); err == nil || !strings.Contains(err.Error(), "keeps no previous config") {
 		t.Errorf("with both links on one set: %v", err)
 	}
+	// A previous link whose set is gone is refused before the slot's link moves to it.
+	if err := relink(Previous(dir), "gone"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestorePrevious(dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("with a dangling previous link: %v", err)
+	}
+	if now, err := os.Readlink(dir); err != nil || now != held {
+		t.Errorf("after a refused restore the slot links to %q, %v; want %q", now, err, held)
+	}
 	// A slot that does not exist has nothing to restore.
-	if err := RestorePrevious(filepath.Join(filepath.Dir(dir), "none")); err == nil {
-		t.Error("a slot that does not exist was restored")
+	if err := RestorePrevious(filepath.Join(filepath.Dir(dir), "none")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a slot that does not exist: %v", err)
 	}
 }
