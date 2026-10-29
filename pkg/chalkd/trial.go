@@ -244,9 +244,10 @@ func (s *Server) refuseOnTrialLocking(what string) error {
 // record a crash or a failed removal kept, leaves it, is finished first, and the change goes
 // ahead. That needs s.upgrading: holdsUpgrading tells that the caller holds it, and otherwise it
 // is tried, and the change is refused with ABORTED while the upgrade, the image rollback or the
-// rollback at a trial's deadline that holds it runs. The caller holds s.mu, which a trial's
-// delivery holds while it writes the record; an upgrade and an image rollback call it through
-// refuseOnTrialLocking.
+// rollback at a trial's deadline that holds it runs. A trial whose slot runs neither config loses
+// its record, as at its deadline, and the change goes ahead. The caller holds s.mu, which a
+// trial's delivery holds while it writes the record; an upgrade and an image rollback call it
+// through refuseOnTrialLocking.
 func (s *Server) refuseOnTrial(what string, holdsUpgrading bool) error {
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
@@ -265,6 +266,12 @@ func (s *Server) refuseOnTrial(what string, holdsUpgrading bool) error {
 			defer s.upgrading.Unlock()
 		}
 		return s.finishTrial(r)
+	} else if st == trialLost {
+		log.Printf("the trial of config %s ended: its slot runs neither it nor config %s", r.Version, r.Previous)
+		if err := s.endTrial(); err != nil {
+			return failed(connect.CodeInternal, "remove the record of the lost trial of config %s: %v", r.Version, err)
+		}
+		return nil
 	}
 	name := s.nodeName()
 	return failed(connect.CodeFailedPrecondition, "config %s is on trial until %s: confirm it with chalkctl apply-config --confirm %s, or roll it back with chalkctl apply-config --rollback %s, before %s",
@@ -357,7 +364,7 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 // stands: while its slot runs the config on trial, it arms the deadline; while the slot runs the
 // config from before it, as a delivery that failed before it wrote the slot or a crash leaves it,
 // it finishes the trial and returns finishTrial's error. A trial whose slot runs neither loses its
-// record. A slot that cannot be read leaves the decision to the deadline, as the trial applied.
+// record; one that cannot be removed has the deadline try again. A slot that cannot be read leaves the decision to the deadline, as the trial applied.
 // The caller holds s.mu and s.upgrading.
 func (s *Server) settleTrial(r trialRecord) (trialState, error) {
 	_, st, err := r.state(s.Loader.Slots)
@@ -373,7 +380,9 @@ func (s *Server) settleTrial(r trialRecord) (trialState, error) {
 	default:
 		log.Printf("the trial of config %s ended: its slot runs neither it nor config %s", r.Version, r.Previous)
 		if err := s.endTrial(); err != nil {
-			log.Printf("remove the record of the config's trial: %v", err)
+			// The deadline finds the trial lost again and removes the record then.
+			log.Printf("remove the record of the config's trial: %v; trying again in %v", err, s.retryTrial())
+			s.armTrial(r, s.retryTrial())
 		}
 	}
 	return st, nil

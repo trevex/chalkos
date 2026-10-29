@@ -493,6 +493,58 @@ func TestChangesPassAnEndedTrial(t *testing.T) {
 	}
 }
 
+// lostTrial records a trial whose slot runs neither its config nor the one from before it.
+func lostTrial(t *testing.T, s *Server) trialRecord {
+	t.Helper()
+	rec := recordTrial(t, s, nextConfig)
+	rec.Version, rec.Previous = "v8", "v9"
+	if err := writeTrial(s.Paths.StateDir, rec); err != nil {
+		t.Fatal(err)
+	}
+	return rec
+}
+
+// TestChangesDropALostTrial lets a change pass a trial whose slot runs neither its config nor the
+// one from before it, and removes its record, as its deadline would.
+func TestChangesDropALostTrial(t *testing.T) {
+	s, _ := configServer(t)
+	lostTrial(t, s)
+	if _, err := sendConfig(s, nextConfig); err != nil {
+		t.Errorf("a delivery past a lost trial: %v", err)
+	}
+	if trialOpenOn(t, s) {
+		t.Error("the lost trial's record stays")
+	}
+}
+
+// TestLostTrialKeepsARecordItCannotRemove refuses a change with INTERNAL when the record of a lost
+// trial cannot be removed, and settling the trial arms the deadline to try again.
+func TestLostTrialKeepsARecordItCannotRemove(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
+	s := trialServer(t)
+	s.trialRetry = time.Hour
+	rec := lostTrial(t, s)
+	dir := filepath.Dir(filepath.Join(s.Paths.StateDir, trialFile))
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	if _, err := sendConfig(s, nextConfig); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "remove the record of the lost trial of config v8") {
+		t.Errorf("err = %v, want the record that stays", err)
+	}
+	s.upgrading.Lock()
+	s.mu.Lock()
+	_, _ = s.settleTrial(rec)
+	armed := s.trialTimer != nil
+	s.mu.Unlock()
+	s.upgrading.Unlock()
+	if !trialOpenOn(t, s) || !armed {
+		t.Errorf("the record stays %v and the deadline is armed %v, want both", trialOpenOn(t, s), armed)
+	}
+}
+
 // TestChangesStopAtAnEndedTrialTheyCannotRemove refuses a change with INTERNAL when the record of
 // a trial that ended cannot be removed, and keeps the record.
 func TestChangesStopAtAnEndedTrialTheyCannotRemove(t *testing.T) {
