@@ -12,6 +12,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/config"
 )
 
 // host is chalkctl's environment as its layer plugins use it.
@@ -135,11 +136,21 @@ func (c pluginCluster) InventoryName() string {
 	return c.c.inv.Name
 }
 
-func (c pluginCluster) Endpoint() string                            { return c.c.endpoint }
-func (c pluginCluster) Partial() bool                               { return c.c.partial() }
-func (c pluginCluster) RequireNodes(command string) error           { return c.c.requireNodes(command) }
-func (c pluginCluster) Kind(name string) (string, error)            { return c.c.kind(name) }
-func (c pluginCluster) NodesOf(kind, skip string) ([]string, error) { return c.c.nodesOf(kind, skip) }
+func (c pluginCluster) Endpoint() string                  { return c.c.endpoint }
+func (c pluginCluster) Partial() bool                     { return c.c.partial() }
+func (c pluginCluster) RequireNodes(command string) error { return c.c.requireNodes(command) }
+func (c pluginCluster) NodeNames() []string               { return c.c.nodeNames() }
+
+func (c pluginCluster) Documents(name string) ([]config.Document, error) {
+	if c.c.partial() {
+		return nil, nil
+	}
+	nc, err := c.c.config(name)
+	if err != nil {
+		return nil, err
+	}
+	return nc.Documents, nil
+}
 
 // pluginTarget is a target as a plugin sees it.
 type pluginTarget struct{ t *target }

@@ -241,10 +241,11 @@ type Cluster interface {
 	Partial() bool
 	// RequireNodes refuses a partial cluster for the command, which needs the nodes' config.
 	RequireNodes(command string) error
-	// Kind is the type the node's Node document names; "" without one and on a partial cluster.
-	Kind(name string) (string, error)
-	// NodesOf lists the nodes of a Node type but skip, in name order; "" lists those without one.
-	NodesOf(kind, skip string) ([]string, error)
+	// NodeNames are the inventory's nodes in name order; none on a partial cluster.
+	NodeNames() []string
+	// Documents are the node's config documents as the inventory gives them; none on a partial
+	// cluster.
+	Documents(name string) ([]config.Document, error)
 }
 
 // Target is a node of the cluster with the credentials chalkctl reaches it with.

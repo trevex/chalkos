@@ -111,6 +111,27 @@ func TestNode(t *testing.T) {
 	}
 }
 
+// TestNodeType reads the type of the Kubernetes Node document among a node's documents.
+func TestNodeType(t *testing.T) {
+	host := config.Document{APIVersion: config.CoreAPI, Kind: "Host", Object: map[string]any{"spec": map[string]any{"hostname": "n1.lab"}}}
+	node := func(kind string) config.Document {
+		return config.Document{APIVersion: config.KubernetesAPI, Kind: "Node", Name: "default", Object: map[string]any{"spec": map[string]any{"type": kind}}}
+	}
+	for name, tc := range map[string]struct {
+		docs []config.Document
+		want string
+	}{
+		"a control plane": {[]config.Document{host, node("controlplane")}, "controlplane"},
+		"a worker":        {[]config.Document{node("worker"), host}, "worker"},
+		"a Host alone":    {[]config.Document{host}, ""},
+		"no documents":    {nil, ""},
+	} {
+		if got := NodeType(tc.docs); got != tc.want {
+			t.Errorf("%s: NodeType = %q, want %q", name, got, tc.want)
+		}
+	}
+}
+
 // TestNodeWithoutAKubernetesNode takes a node whose files hold no Kubernetes Node, as a node of an
 // image without Kubernetes has, without a type and without the Addon, and a Node of any name.
 func TestNodeWithoutAKubernetesNode(t *testing.T) {

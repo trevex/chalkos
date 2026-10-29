@@ -50,7 +50,7 @@ func (p *Plugin) RevokedNodes(ctx context.Context, r layer.Rotating) (map[string
 
 // NodeCAHolders are the control planes.
 func (p *Plugin) NodeCAHolders(c layer.Cluster) ([]string, error) {
-	return c.NodesOf(k8s.KindControlPlane, "")
+	return nodesOf(c, k8s.KindControlPlane, "")
 }
 
 // kubernetesStatus reads the state of a node's Kubernetes, as nodeStatus does.

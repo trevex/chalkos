@@ -15,7 +15,7 @@ import (
 // Payloads are the node's share, issued from the secrets for its Node type; none for a node
 // without one.
 func (p *Plugin) Payloads(t layer.Target, now time.Time) ([]*anypb.Any, error) {
-	kind, err := t.Cluster().Kind(t.Name())
+	kind, err := kindOf(t.Cluster(), t.Name())
 	if err != nil || kind == "" {
 		return nil, err
 	}

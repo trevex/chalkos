@@ -72,11 +72,8 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 		return nil, err
 	}
 	c := &NodeConfig{Name: name, ImageName: imageName, ImageDir: source.Directory, ImageOCI: source.OCI, inv: inv}
+	c.Type = NodeType(docs)
 	for _, d := range docs {
-		if d.APIVersion == config.KubernetesAPI && d.Kind == "Node" {
-			node, _ := d.Object["spec"].(map[string]any)
-			c.Type, _ = node["type"].(string)
-		}
 		if d.APIVersion == config.CoreAPI && d.Kind == "Host" {
 			host, _ := d.Object["spec"].(map[string]any)
 			c.Hostname, _ = host["hostname"].(string)
@@ -89,6 +86,19 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 		c.Documents = append(c.Documents, d)
 	}
 	return c, nil
+}
+
+// NodeType is the spec.type of the Kubernetes Node document among docs: controlplane or worker;
+// empty without one.
+func NodeType(docs []config.Document) string {
+	kind := ""
+	for _, d := range docs {
+		if d.APIVersion == config.KubernetesAPI && d.Kind == "Node" {
+			node, _ := d.Object["spec"].(map[string]any)
+			kind, _ = node["type"].(string)
+		}
+	}
+	return kind
 }
 
 // StaticAddresses are the node's static addresses, as its Network documents give them.

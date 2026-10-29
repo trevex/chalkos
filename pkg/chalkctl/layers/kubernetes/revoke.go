@@ -90,7 +90,7 @@ func controlPlanesRead(h layer.Host, ctx context.Context, f viaFlags, name strin
 	}
 	controlPlanes := []string{f.via}
 	if !c.Partial() {
-		if controlPlanes, err = c.NodesOf(k8s.KindControlPlane, name); err != nil {
+		if controlPlanes, err = nodesOf(c, k8s.KindControlPlane, name); err != nil {
 			return err
 		}
 	}
@@ -159,7 +159,7 @@ func keepsRevokedNodes(h layer.Host, ctx context.Context, f viaFlags) error {
 	if err != nil || c.Partial() {
 		return err
 	}
-	switch names, err := c.NodesOf(k8s.KindControlPlane, ""); {
+	switch names, err := nodesOf(c, k8s.KindControlPlane, ""); {
 	case err != nil:
 		return err
 	case len(names) == 0:

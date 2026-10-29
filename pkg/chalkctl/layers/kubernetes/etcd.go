@@ -33,7 +33,7 @@ func throughControlPlane(h layer.Host, ctx context.Context, f viaFlags, skip str
 	if c.Partial() {
 		return errors.New("an inventory names the control planes; name one with --via, or pass --inventory")
 	}
-	names, err := c.NodesOf(k8s.KindControlPlane, skip)
+	names, err := nodesOf(c, k8s.KindControlPlane, skip)
 	if err != nil {
 		return err
 	}

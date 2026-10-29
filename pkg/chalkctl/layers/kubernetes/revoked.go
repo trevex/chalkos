@@ -68,7 +68,7 @@ func (n notInstalledYet) Unwrap() error { return n.error }
 // that does not answer as an installed node counts as not installed yet, so the cluster's first
 // nodes install while the others wait in maintenance mode or are off.
 func (p *Plugin) AdmitInstall(ctx context.Context, t layer.Target) error {
-	controlPlanes, err := t.Cluster().NodesOf(k8s.KindControlPlane, t.Name())
+	controlPlanes, err := nodesOf(t.Cluster(), k8s.KindControlPlane, t.Name())
 	if err != nil {
 		return err
 	}
@@ -93,7 +93,7 @@ func (p *Plugin) AdmitInstall(ctx context.Context, t layer.Target) error {
 // Admit refuses to deliver the target what the secrets file issues it, which does says, while
 // a control plane lists it as revoked or while no control plane says which nodes are.
 func (p *Plugin) Admit(ctx context.Context, t layer.Target, does string) error {
-	controlPlanes, err := t.Cluster().NodesOf(k8s.KindControlPlane, "")
+	controlPlanes, err := nodesOf(t.Cluster(), k8s.KindControlPlane, "")
 	if err != nil {
 		return err
 	}

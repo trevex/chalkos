@@ -40,7 +40,7 @@ func bootstrap(h layer.Host, ctx context.Context, f bootstrapFlags, pos []string
 	}
 	// Without an inventory the node itself refuses when it is a worker.
 	if !t.Cluster().Partial() {
-		kind, err := t.Cluster().Kind(t.Name())
+		kind, err := kindOf(t.Cluster(), t.Name())
 		if err != nil {
 			return err
 		}

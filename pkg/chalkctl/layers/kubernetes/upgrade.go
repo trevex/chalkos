@@ -26,7 +26,7 @@ func (p *Plugin) UpgradeRole(ctx context.Context, conn *client.Conn) (layer.Upgr
 
 // ListedCoordinator reports whether the inventory lists the node as a control plane.
 func (p *Plugin) ListedCoordinator(c layer.Cluster, name string) (bool, error) {
-	kind, err := c.Kind(name)
+	kind, err := kindOf(c, name)
 	return kind == k8s.KindControlPlane, err
 }
 
