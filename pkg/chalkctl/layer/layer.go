@@ -8,6 +8,7 @@ package layer
 
 import (
 	"context"
+	"errors"
 	"io"
 	"text/tabwriter"
 	"time"
@@ -82,15 +83,14 @@ type ApplyFlags interface {
 	None(name string) error
 }
 
-// Upgrade is a plugin whose layer takes part in chalkctl upgrade. chalkctl asks every compiled
-// plugin for ListedCoordinator, and for the other hooks of a node the plugins of the layers its
-// Info names.
+// Upgrade is a plugin whose layer takes part in chalkctl upgrade. chalkctl asks, for a node, the
+// plugins of the layers its Info names.
 type Upgrade interface {
 	// UpgradeRole reads the node's part in the layer's cluster from its service on conn.
 	UpgradeRole(ctx context.Context, conn *client.Conn) (UpgradeRole, error)
-	// ListedCoordinator reports whether the inventory lists the node as one that acts for the
-	// others.
-	ListedCoordinator(c Cluster, name string) (bool, error)
+	// NoCoordinator is the error of a run that must reach the layer's coordinators for the node,
+	// a member, while the cluster has none to ask.
+	NoCoordinator(name string) error
 	// BeforeInstall runs before a node that reboots is sent its image.
 	BeforeInstall(ctx context.Context, u Upgrading, name string, role UpgradeRole) error
 	// BeforeReboot runs once the node has its image, before it reboots.
@@ -100,6 +100,18 @@ type Upgrade interface {
 	// After releases the node once it runs its image, found healthy.
 	After(ctx context.Context, u Upgrading, name string, role UpgradeRole) error
 }
+
+// Coordinators is a plugin whose layer has nodes that act for the others, such as the nodes that
+// drain the others. chalkctl asks every compiled plugin; upgrade and rotate take those nodes
+// first.
+type Coordinators interface {
+	// ListedCoordinator reports whether the inventory lists the node as one that acts for the
+	// others.
+	ListedCoordinator(c Cluster, name string) (bool, error)
+}
+
+// ErrNoCoordinator is ViaCoordinators' error while the cluster has no coordinator to ask.
+var ErrNoCoordinator = errors.New("the cluster has no coordinator to ask; pass --inventory")
 
 // UpgradeRole is a node's part in a layer's cluster, as an upgrade treats it.
 type UpgradeRole struct {
@@ -116,7 +128,8 @@ type Upgrading interface {
 	// Say prints a line of the run's progress.
 	Say(format string, args ...any)
 	// ViaCoordinators calls fn on a coordinator: prefer first when it is one, then the others,
-	// moving on past those whose error next accepts.
+	// moving on past those whose error next accepts. It fails with ErrNoCoordinator while there
+	// is none.
 	ViaCoordinators(prefer string, next func(error) bool, fn func(conn *client.Conn) error) error
 	// AllowDowntime is --allow-downtime.
 	AllowDowntime() bool

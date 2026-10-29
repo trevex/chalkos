@@ -59,8 +59,9 @@ type upgradePlan struct {
 	// nodes are the nodes to upgrade, and groups the same nodes by the image they get.
 	nodes  map[string]*upgradeNode
 	groups []*upgradeGroup
-	// controlPlanes are the cluster's coordinators, which the layers drain and release nodes through.
-	controlPlanes []string
+	// coordinators are the cluster's nodes that act for the others, which the layers drain and
+	// release nodes through.
+	coordinators []string
 }
 
 // plan finds the nodes to upgrade and opens the image of each group from its directory, which
@@ -123,8 +124,8 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		skipped = append(skipped, fmt.Sprintf("%s (%s)", name, platform))
 		return nil
 	}
-	// The control planes a partial cluster has are known by asking them.
-	probedCPs := map[string]bool{}
+	// The coordinators a partial cluster has are known by asking them.
+	probed := map[string]bool{}
 	for _, name := range candidates {
 		if err := c.node(name); err != nil {
 			return err
@@ -141,7 +142,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			}
 		}
 		n := &upgradeNode{name: name, roles: roles}
-		probedCPs[name] = roles.coordinator()
+		probed[name] = roles.coordinator()
 		if img != nil && len(named) == 0 && info.Variant != img.Info.Variant() {
 			continue
 		}
@@ -183,43 +184,29 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	// whose files hold the same document twice. Without an inventory, the nodes --address names
 	// that the run leaves alone are asked.
 	for _, name := range r.nodeNames() {
-		if _, probed := probedCPs[name]; c.partial() && !probed {
+		if _, ok := probed[name]; c.partial() && !ok {
 			_, _, roles, err := r.probe(ctx, name)
 			if err != nil {
 				return err
 			}
-			probedCPs[name] = roles.coordinator()
+			probed[name] = roles.coordinator()
 		}
-		listed, err := r.listedCoordinator(name)
+		listed, err := listedCoordinator(r.cluster, name)
 		if err != nil {
 			return err
 		}
-		if probedCPs[name] || listed {
-			r.controlPlanes = append(r.controlPlanes, name)
+		if probed[name] || listed {
+			r.coordinators = append(r.coordinators, name)
 		}
 	}
-	if len(r.controlPlanes) == 0 && !r.noReboot {
-		for _, n := range r.nodes {
-			if n.roles.member() {
-				return fmt.Errorf("%s is drained through a control plane, but the cluster has none to ask; pass --inventory, or give a control plane's address with --address", n.name)
+	if len(r.coordinators) == 0 && !r.noReboot {
+		for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
+			if err := r.nodes[name].noCoordinator(name); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
-}
-
-// listedCoordinator reports whether the inventory makes the node a coordinator of one of the
-// layers chalkctl knows.
-func (r *upgradeRun) listedCoordinator(name string) (bool, error) {
-	listed := false
-	for _, u := range compiled[layer.Upgrade]() {
-		ok, err := u.ListedCoordinator(pluginCluster{r.cluster}, name)
-		if err != nil {
-			return false, err
-		}
-		listed = listed || ok
-	}
-	return listed, nil
 }
 
 // nodeNames are the cluster's nodes: the inventory's, or without one those --address names.
@@ -255,19 +242,19 @@ func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error)
 }
 
 // split sorts the nodes to upgrade into the coordinators and the others, each by name.
-func (r *upgradeRun) split() (controlPlanes, others []string) {
+func (r *upgradeRun) split() (coordinators, others []string) {
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
 		if r.nodes[name].roles.coordinator() {
-			controlPlanes = append(controlPlanes, name)
+			coordinators = append(coordinators, name)
 		} else {
 			others = append(others, name)
 		}
 	}
-	return controlPlanes, others
+	return coordinators, others
 }
 
 // order is the order run upgrades the nodes in.
 func (r *upgradeRun) order() []string {
-	controlPlanes, others := r.split()
-	return append(controlPlanes, others...)
+	coordinators, others := r.split()
+	return append(coordinators, others...)
 }

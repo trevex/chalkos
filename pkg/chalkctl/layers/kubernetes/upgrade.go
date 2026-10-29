@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -28,6 +29,21 @@ func (p *Plugin) UpgradeRole(ctx context.Context, conn *client.Conn) (layer.Upgr
 func (p *Plugin) ListedCoordinator(c layer.Cluster, name string) (bool, error) {
 	kind, err := kindOf(c, name)
 	return kind == k8s.KindControlPlane, err
+}
+
+// NoCoordinator says that the node is drained through a control plane, which the cluster lacks.
+func (p *Plugin) NoCoordinator(name string) error {
+	return fmt.Errorf("%s is drained through a control plane, but the cluster has none to ask; pass --inventory, or give a control plane's address with --address", name)
+}
+
+// viaControlPlanes calls fn on a control plane as u.ViaCoordinators does, and names the control
+// planes when the cluster has none.
+func viaControlPlanes(u layer.Upgrading, prefer string, next func(error) bool, fn func(conn *client.Conn) error) error {
+	err := u.ViaCoordinators(prefer, next, fn)
+	if errors.Is(err, layer.ErrNoCoordinator) {
+		return errors.New("the cluster has no control-plane node to ask; pass --inventory")
+	}
+	return err
 }
 
 // BeforeInstall waits for etcd to keep its quorum while a control plane reboots, and drains a
@@ -86,7 +102,7 @@ func quorum(ctx context.Context, u layer.Upgrading, name string) error {
 // With 4 voters a reboot needs 3 healthy others, a removal 2.
 func quorumOnce(ctx context.Context, u layer.Upgrading, name string) error {
 	var members []*kubernetesv1.EtcdMember
-	err := u.ViaCoordinators(name, tryNextControlPlane, func(conn *client.Conn) error {
+	err := viaControlPlanes(u, name, tryNextControlPlane, func(conn *client.Conn) error {
 		resp, err := Client(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
 		if err == nil {
 			members = resp.Msg.Members
@@ -133,7 +149,7 @@ func drainElsewhere(err error) bool {
 // drain cordons a node of the cluster and evicts its pods.
 func drain(ctx context.Context, u layer.Upgrading, name string) error {
 	var resp *kubernetesv1.DrainNodeResponse
-	err := u.ViaCoordinators(name, drainElsewhere, func(conn *client.Conn) error {
+	err := viaControlPlanes(u, name, drainElsewhere, func(conn *client.Conn) error {
 		res, err := Client(conn).DrainNode(ctx, connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: name, TimeoutSeconds: uint32(u.DrainTimeout() / time.Second), DeleteEmptydirData: u.DeleteEmptyDir()}))
 		if err == nil {
 			resp = res.Msg
@@ -157,7 +173,7 @@ func drain(ctx context.Context, u layer.Upgrading, name string) error {
 // uncordon makes a node of the cluster schedulable again, when the upgrade cordoned it.
 func uncordon(ctx context.Context, u layer.Upgrading, name string) error {
 	var uncordoned bool
-	err := u.ViaCoordinators(name, tryNextControlPlane, func(conn *client.Conn) error {
+	err := viaControlPlanes(u, name, tryNextControlPlane, func(conn *client.Conn) error {
 		resp, err := Client(conn).UncordonNode(ctx, connect.NewRequest(&kubernetesv1.UncordonNodeRequest{Node: name}))
 		if err == nil {
 			uncordoned = resp.Msg.Uncordoned

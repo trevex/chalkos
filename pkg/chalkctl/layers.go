@@ -66,3 +66,17 @@ func nodeCAHolders(c *cluster) ([]string, error) {
 	}
 	return names, nil
 }
+
+// listedCoordinator reports whether the inventory makes the node a coordinator of one of the
+// layers chalkctl knows.
+func listedCoordinator(c *cluster, name string) (bool, error) {
+	listed := false
+	for _, co := range compiled[layer.Coordinators]() {
+		ok, err := co.ListedCoordinator(pluginCluster{c}, name)
+		if err != nil {
+			return false, err
+		}
+		listed = listed || ok
+	}
+	return listed, nil
+}

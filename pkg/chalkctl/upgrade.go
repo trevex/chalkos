@@ -417,15 +417,26 @@ func (n *upgradeNode) ready(ctx context.Context, conn *client.Conn) error {
 	return nil
 }
 
+// noCoordinator is the error of the first of the node's layers that needs a coordinator for it,
+// a member; nil when none does.
+func (n *upgradeNode) noCoordinator(name string) error {
+	for _, r := range n.roles {
+		if r.role.Member {
+			return r.u.NoCoordinator(name)
+		}
+	}
+	return nil
+}
+
 // run upgrades the coordinators one at a time, then the other nodes in batches.
 func (r *upgradeRun) run(ctx context.Context) error {
-	controlPlanes, others := r.split()
+	coordinators, others := r.split()
 	images := map[string]bool{}
 	for _, g := range r.groups {
 		r.say("upgrading %s on %s to %s: %s", g.variant, g.platform, g.image.name(), strings.Join(g.nodes, ", "))
 		images[g.image.name()] = true
 	}
-	for _, name := range controlPlanes {
+	for _, name := range coordinators {
 		if err := r.node(ctx, r.nodes[name]); err != nil {
 			return err
 		}
@@ -703,12 +714,12 @@ func (r *upgradeRun) Poll() time.Duration            { return r.poll }
 // ViaCoordinators calls fn on a coordinator: the node itself first when it is one, then the
 // others, moving on past those whose error next accepts.
 func (r *upgradeRun) ViaCoordinators(prefer string, next func(error) bool, fn func(conn *client.Conn) error) error {
-	names := slices.Clone(r.controlPlanes)
+	names := slices.Clone(r.coordinators)
 	if i := slices.Index(names, prefer); i > 0 {
 		names = append([]string{prefer}, slices.Delete(names, i, i+1)...)
 	}
 	if len(names) == 0 {
-		return errors.New("the cluster has no control-plane node to ask; pass --inventory")
+		return layer.ErrNoCoordinator
 	}
 	return r.reach.viaFirst(names, next, fn)
 }
