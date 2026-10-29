@@ -13,7 +13,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
+	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/router"
@@ -26,9 +27,35 @@ import (
 func routerServer(t *testing.T, kernel ...*router.KernelRoute) (*Server, *tooltest.Runner) {
 	t.Helper()
 	s, r := installedServer(t, section("", ""), false)
-	s.Layers = layers.Of(layers.Router)
-	s.Router = &Router{Run: r, KernelRoutes: func() ([]*router.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()}
+	withPlugins(t, s, layers.Of(layers.Router), &Router{Run: r, KernelRoutes: func() ([]*router.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()})
 	return s, r
+}
+
+// routerLayerOf is the router layer of s.
+func routerLayerOf(s *Server) *routerLayer {
+	for _, p := range s.Plugins.Compiled() {
+		if r, ok := p.(*routerLayer); ok {
+			return r
+		}
+	}
+	return nil
+}
+
+// routerOf is the router side of s, which its router layer serves.
+func routerOf(s *Server) *Router { return routerLayerOf(s).r }
+
+// routerStatus is the state of s's router as its layer serves it; nil on an image without the
+// router layer.
+func routerStatus(t *testing.T, s *Server) *routerv1.StatusResponse {
+	t.Helper()
+	if !s.Plugins.Layers().Has(layers.Router) {
+		return nil
+	}
+	resp, err := routerLayerOf(s).Status(context.Background(), connect.NewRequest(&routerv1.StatusRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.Msg
 }
 
 // routerRecording is a recording of FRR's JSON or jool's CSV from package router's tests.
@@ -47,7 +74,7 @@ func routerRecording(t *testing.T, name string) string {
 func TestRouterStatus(t *testing.T) {
 	s, r := routerServer(t)
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c show bgp neighbors json", Out: routerRecording(t, "neighbors.json"), Times: 1})
-	st := status(t, s).Router
+	st := routerStatus(t, s)
 	if st == nil || st.BgpError != "" || len(st.Peers) != 3 || st.Peers[0].Name != "fabric" || st.Peers[0].State != "Established" {
 		t.Fatalf("router status = %v", st)
 	}
@@ -59,13 +86,13 @@ func TestRouterStatus(t *testing.T) {
 		t.Errorf("a router without NAT64 asked jool: %q, %v", st.Nat64Error, r.Calls)
 	}
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c show bgp neighbors json", Err: &tool.Error{Command: "vtysh", Code: 1, Stderr: "Exiting: failed to connect to any daemons.\n"}})
-	st = status(t, s).Router
+	st = routerStatus(t, s)
 	if st == nil || len(st.Peers) != 0 || !strings.Contains(st.BgpError, "failed to connect to any daemons") {
 		t.Errorf("router status while FRR is down = %v", st)
 	}
 	// A node without the router layer reports no router.
 	plain, _ := installedServer(t, section("", ""), false)
-	if st := status(t, plain).Router; st != nil {
+	if st := routerStatus(t, plain); st != nil {
 		t.Errorf("router status of a node without the layer = %v", st)
 	}
 }
@@ -85,8 +112,8 @@ func TestRoutes(t *testing.T) {
 	)
 	c := newCreds(t)
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleReader])
-	routes := func(prefix, protocol, table string) (*nodev1.RoutesResponse, error) {
-		resp, err := conn.Routes(context.Background(), connect.NewRequest(&nodev1.RoutesRequest{Prefix: prefix, Protocol: protocol, Table: table}))
+	routes := func(prefix, protocol, table string) (*routerv1.RoutesResponse, error) {
+		resp, err := routerv1connect.NewRouterServiceClient(conn.HTTPClient(), conn.BaseURL()).Routes(context.Background(), connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Protocol: protocol, Table: table}))
 		if err != nil {
 			return nil, err
 		}
@@ -138,16 +165,16 @@ func (hangingRunner) Run(ctx context.Context, name string, args ...string) ([]by
 // router's part says which hang.
 func TestRouterStatusWhileDaemonsHang(t *testing.T) {
 	s, r := routerServer(t)
-	s.Router.Run = hangingRunner{r}
+	routerOf(s).Run = hangingRunner{r}
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
 	askTimeout = 200 * time.Millisecond
-	for _, file := range []string{s.Router.ResolverConfig, filepath.Join(s.Router.NAT64Dir, "edge.json")} {
+	for _, file := range []string{routerOf(s).ResolverConfig, filepath.Join(routerOf(s).NAT64Dir, "edge.json")} {
 		if err := os.WriteFile(file, []byte("\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	start := time.Now()
-	st := status(t, s).Router
+	st := routerStatus(t, s)
 	if took := time.Since(start); took >= 2*askTimeout {
 		t.Errorf("Status took %v while the daemons hang, not about %v", took, askTimeout)
 	}
@@ -188,14 +215,14 @@ func (j slowJool) Run(ctx context.Context, name string, args ...string) ([]byte,
 // leave the NAT64 part unknown.
 func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
 	s, r := routerServer(t)
-	s.Router.Run = slowJool{r, 40 * time.Millisecond}
-	if err := os.WriteFile(filepath.Join(s.Router.NAT64Dir, "edge.json"), []byte("{}\n"), 0o644); err != nil {
+	routerOf(s).Run = slowJool{r, 40 * time.Millisecond}
+	if err := os.WriteFile(filepath.Join(routerOf(s).NAT64Dir, "edge.json"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
 	askTimeout = 100 * time.Millisecond
 	start := time.Now()
-	st := status(t, s).Router
+	st := routerStatus(t, s)
 	if took := time.Since(start); took >= 2*askTimeout {
 		t.Errorf("Status took %v while Jool is slow, not about %v", took, askTimeout)
 	}
@@ -207,10 +234,10 @@ func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
 // A request that ends before vtysh answers is no timeout of vtysh's.
 func TestVtyshCancelled(t *testing.T) {
 	s, r := routerServer(t)
-	s.Router.Run = hangingRunner{r}
+	routerOf(s).Run = hangingRunner{r}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := s.Router.vtysh(ctx, router.NeighborsCommand); err == nil || strings.Contains(err.Error(), "did not answer") {
+	if _, err := routerOf(s).vtysh(ctx, router.NeighborsCommand); err == nil || strings.Contains(err.Error(), "did not answer") {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -218,10 +245,10 @@ func TestVtyshCancelled(t *testing.T) {
 // A caller's deadline shorter than vtysh's timeout is the caller's, not vtysh's.
 func TestVtyshCallerDeadline(t *testing.T) {
 	s, r := routerServer(t)
-	s.Router.Run = hangingRunner{r}
+	routerOf(s).Run = hangingRunner{r}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	if _, err := s.Router.vtysh(ctx, router.NeighborsCommand); !errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "did not answer") {
+	if _, err := routerOf(s).vtysh(ctx, router.NeighborsCommand); !errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "did not answer") {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -233,7 +260,7 @@ func TestVtyshCallerDeadline(t *testing.T) {
 func TestRouterNAT64Status(t *testing.T) {
 	s, r := routerServer(t)
 	for _, name := range []string{"edge", "gone"} {
-		if err := os.WriteFile(filepath.Join(s.Router.NAT64Dir, name+".json"), []byte("{}\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(routerOf(s).NAT64Dir, name+".json"), []byte("{}\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -243,7 +270,7 @@ func TestRouterNAT64Status(t *testing.T) {
 		tooltest.Rule{Prefix: "jool -i edge pool4 display --csv --no-headers --tcp", Out: routerRecording(t, "jool-pool4-tcp.csv")},
 		tooltest.Rule{Prefix: "jool -i gone ", Err: &tool.Error{Command: "jool", Code: 1, Stderr: "Error: The kernel module returned error 3: This namespace lacks an instance named 'gone'.\n"}},
 	)
-	st := status(t, s).Router
+	st := routerStatus(t, s)
 	if st == nil || st.Nat64Error != "" || len(st.Nat64) != 1 || st.Nat64[0].Name != "edge" || st.Nat64[0].Sessions != 3 || st.Nat64[0].Bindings != 2 {
 		t.Fatalf("router status = %v", st)
 	}
@@ -263,7 +290,7 @@ func TestRouterNAT64Status(t *testing.T) {
 		}
 	}
 	r.Rules = append([]tooltest.Rule{{Prefix: "jool instance display", Err: &tool.Error{Command: "jool", Code: 1, Stderr: "Error: Jool's kernel module is not loaded.\n"}}}, r.Rules...)
-	st = status(t, s).Router
+	st = routerStatus(t, s)
 	if st == nil || len(st.Nat64) != 0 || !strings.Contains(st.Nat64Error, "Jool's kernel module is not loaded") {
 		t.Errorf("router status while Jool is down = %v", st)
 	}
@@ -273,17 +300,17 @@ func TestRouterNAT64Status(t *testing.T) {
 // whether it runs.
 func TestRouterResolverStatus(t *testing.T) {
 	s, r := routerServer(t)
-	if st := status(t, s).Router; st == nil || st.Resolver != nil {
+	if st := routerStatus(t, s); st == nil || st.Resolver != nil {
 		t.Fatalf("router status without a resolver = %v", st)
 	}
-	if err := os.WriteFile(s.Router.ResolverConfig, []byte("server:\n"), 0o644); err != nil {
+	if err := os.WriteFile(routerOf(s).ResolverConfig, []byte("server:\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if st := status(t, s).Router; st.GetResolver() == nil || !st.Resolver.Running || st.Resolver.Error != "" {
+	if st := routerStatus(t, s); st.GetResolver() == nil || !st.Resolver.Running || st.Resolver.Error != "" {
 		t.Errorf("router status of a running resolver = %v", st)
 	}
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "unbound-control status", Err: &tool.Error{Command: "unbound-control", Code: 1, Stderr: "error: connect: No such file or directory for /run/unbound/unbound.ctl\n"}})
-	if st := status(t, s).Router; st.GetResolver() == nil || st.Resolver.Running || !strings.Contains(st.Resolver.Error, "No such file or directory") {
+	if st := routerStatus(t, s); st.GetResolver() == nil || st.Resolver.Running || !strings.Contains(st.Resolver.Error, "No such file or directory") {
 		t.Errorf("router status of a stopped resolver = %v", st)
 	}
 }

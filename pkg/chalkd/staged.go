@@ -71,7 +71,7 @@ func (s *Server) readImage(ctx context.Context, rootHash []byte, read func(st im
 // accept it makes with the request's fallback secret. Nothing the running image runs changes.
 // The caller holds s.mu.
 func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
-	if m.Config == "" || len(m.KubernetesShare) > 0 || len(m.NodeCertificate) > 0 || len(m.NodeKey) > 0 || len(m.Trust) > 0 {
+	if m.Config == "" || len(m.Layers) > 0 || len(m.NodeCertificate) > 0 || len(m.NodeKey) > 0 || len(m.Trust) > 0 {
 		return nil, failed(connect.CodeInvalidArgument, "a request for the staged image delivers config alone, with the fallback secret: the share, the certificates and the OS CAs are the node's")
 	}
 	docs, err := config.Parse(strings.NewReader(m.Config))

@@ -272,7 +272,7 @@ func TestStatusReportsTheControlPlanesState(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Kubernetes.hooks.CheckControlPlane = func(context.Context, k8s.Cluster, kpki.Share) error { return nil }
-	if got := status(t, s).Kubernetes.ControlPlane; got != "current" {
+	if got := kubernetesStatus(t, s).ControlPlane; got != "current" {
 		t.Errorf("control plane %q", got)
 	}
 }

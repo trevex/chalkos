@@ -18,7 +18,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -90,16 +90,16 @@ func (l *revokeLab) list(t *testing.T) revoked.List {
 	return list
 }
 
-func (l *revokeLab) revoke(name string) (*nodev1.RevokeNodeResponse, error) {
-	resp, err := l.s.RevokeNode(context.Background(), connect.NewRequest(&nodev1.RevokeNodeRequest{Node: name}))
+func (l *revokeLab) revoke(name string) (*kubernetesv1.RevokeNodeResponse, error) {
+	resp, err := kubernetesOf(l.s).RevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: name}))
 	if err != nil {
 		return nil, err
 	}
 	return resp.Msg, nil
 }
 
-func (l *revokeLab) unrevoke(name string, force bool) (*nodev1.UnrevokeNodeResponse, error) {
-	resp, err := l.s.UnrevokeNode(context.Background(), connect.NewRequest(&nodev1.UnrevokeNodeRequest{Node: name, Force: force}))
+func (l *revokeLab) unrevoke(name string, force bool) (*kubernetesv1.UnrevokeNodeResponse, error) {
+	resp, err := kubernetesOf(l.s).UnrevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.UnrevokeNodeRequest{Node: name, Force: force}))
 	if err != nil {
 		return nil, err
 	}
@@ -152,11 +152,11 @@ func TestRevokeNodeOnControlPlanesOnly(t *testing.T) {
 		"a worker":                  {worker, "ask a control-plane node"},
 		"an unbootstrapped control": {unbootstrapped, "not an etcd member"},
 	} {
-		_, err := tc.s.RevokeNode(context.Background(), connect.NewRequest(&nodev1.RevokeNodeRequest{Node: "w1"}))
+		_, err := kubernetesOf(tc.s).RevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: "w1"}))
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("revoke on %s: %v, want a refusal naming %q", name, err, tc.want)
 		}
-		_, err = tc.s.UnrevokeNode(context.Background(), connect.NewRequest(&nodev1.UnrevokeNodeRequest{Node: "w1"}))
+		_, err = kubernetesOf(tc.s).UnrevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.UnrevokeNodeRequest{Node: "w1"}))
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("unrevoke on %s: %v, want FailedPrecondition", name, err)
 		}

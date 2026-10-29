@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
@@ -75,7 +76,7 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 	if err := json.Indent(&delivered, share, "", "  "); err != nil {
 		t.Fatal(err)
 	}
-	resp, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{KubernetesShare: delivered.Bytes()})
+	resp, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, delivered.Bytes())})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestApplyConfigRefusesShare(t *testing.T) {
 		"no node name":               {worker, identityWith(section("", "")), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
 		"a node CA of another OS CA": {controlPlane, kubernetesIdentity("n1"), foreignNodeCA, connect.CodeInvalidArgument},
 	} {
-		_, err := deliver(context.Background(), tc.s, tc.identity, &nodev1.ApplyConfigRequest{KubernetesShare: tc.share})
+		_, err := deliver(context.Background(), tc.s, tc.identity, &nodev1.ApplyConfigRequest{Layers: shareLayers(t, tc.share)})
 		if connect.CodeOf(err) != tc.code {
 			t.Errorf("%s: %v, want %v", name, err, tc.code)
 		}
@@ -144,7 +145,7 @@ func TestApplyConfigRefusesShareOfAnotherKind(t *testing.T) {
 	for image, share := range map[string]string{k8s.KindWorker: k8s.KindControlPlane, k8s.KindControlPlane: k8s.KindWorker} {
 		s, r := kubernetesServer(t, image, false)
 		before, _ := readIdentity(s)
-		_, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{KubernetesShare: testShare(t, share)})
+		_, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, testShare(t, share))})
 		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), share) {
 			t.Errorf("%s share on a %s image: %v", share, image, err)
 		}
@@ -263,7 +264,7 @@ func TestApplyConfigRestartsControlPlaneLoopWithNewShare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{KubernetesShare: replaced}); err != nil {
+	if _, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, replaced)}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -356,7 +357,7 @@ func TestApplyConfigRecordsNodeCAWithoutRestarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: data})); err != nil {
+	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, data)})); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := knode.ReadShare(p); err != nil || *got.NodeCA != nodeCA {
@@ -368,7 +369,7 @@ func TestApplyConfigRecordsNodeCAWithoutRestarts(t *testing.T) {
 
 	// Any other change prepares the node's files again.
 	other := testShare(t, k8s.KindControlPlane)
-	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: other})); err != nil {
+	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, other)})); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
@@ -386,7 +387,7 @@ func TestApplyConfigTheSameShareAgainDoesNothing(t *testing.T) {
 	share := []byte(readFile(t, filepath.Join(s.Paths.StateDir, "kubernetes", "share.json")))
 	acted := loops(s)
 	r.Calls = nil
-	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
+	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, share)}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +426,7 @@ func TestApplyConfigNodeCAWithConfig(t *testing.T) {
 		{"a Demo", strings.NewReplacer("nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21], validSubnets: [192.168.100.0/24]}}", "name: first", "name: second").Replace(controlPlane), []string{"demo.service"}},
 	} {
 		r.Calls, *acted = nil, nil
-		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: step.config, KubernetesShare: withNodeCA()}))
+		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: step.config, Layers: shareLayers(t, withNodeCA())}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -514,7 +515,7 @@ func TestApplyConfigRetriesAShareWhoseSlotFailed(t *testing.T) {
 	acted := loops(s)
 	share := testShare(t, k8s.KindWorker)
 	send := func() (*nodev1.ApplyConfigResponse, error) {
-		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: workerConfig, KubernetesShare: share}))
+		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: workerConfig, Layers: shareLayers(t, share)}))
 		if err != nil {
 			return nil, err
 		}
@@ -558,7 +559,7 @@ func TestApplyConfigRetriesAShareWhoseRestartFailed(t *testing.T) {
 	}
 	share := testShare(t, k8s.KindWorker)
 	send := func() (*nodev1.ApplyConfigResponse, error) {
-		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
+		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, share)}))
 		if err != nil {
 			return nil, err
 		}
@@ -688,7 +689,7 @@ func TestApplyConfigWritesTheGrantedConfigForAShareAfterAFailure(t *testing.T) {
 	}
 	share := testShare(t, k8s.KindWorker)
 	send := func() (*nodev1.ApplyConfigResponse, error) {
-		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
+		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, share)}))
 		if err != nil {
 			return nil, err
 		}
@@ -810,7 +811,7 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 				}
 			}
 			r.Calls = nil
-			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: controlPlane, KubernetesShare: tc.delivered}))
+			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: controlPlane, Layers: shareLayers(t, tc.delivered)}))
 			if tc.want == "" {
 				if err != nil {
 					t.Fatal(err)
@@ -1049,5 +1050,50 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 	}
 	if len(resp.RestartedUnits) != 0 || slices.ContainsFunc(r.Calls, func(c string) bool { return strings.Contains(c, "restart") }) {
 		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.Calls)
+	}
+}
+
+// shareLayers are the layer payloads that deliver a share; none for no share.
+func shareLayers(t *testing.T, share []byte) []*anypb.Any {
+	t.Helper()
+	if len(share) == 0 {
+		return nil
+	}
+	p, err := kpki.Payload(share)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []*anypb.Any{p}
+}
+
+// factsLayers are the layer facts of an image.json.
+func factsLayers(t *testing.T, imageJSON string) []*anypb.Any {
+	t.Helper()
+	p, err := k8s.FactsPayload([]byte(imageJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []*anypb.Any{p}
+}
+
+// A delivery is refused with a payload no layer takes and with two shares.
+func TestApplyConfigRefusesPayloads(t *testing.T) {
+	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
+	other, err := anypb.New(&nodev1.InfoRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	share := testShare(t, k8s.KindWorker)
+	for name, tc := range map[string]struct {
+		layers []*anypb.Any
+		want   string
+	}{
+		"another type": {[]*anypb.Any{other}, "which no layer of this image takes"},
+		"two shares":   {append(shareLayers(t, share), shareLayers(t, share)...), "two shares"},
+	} {
+		_, err := deliver(context.Background(), worker, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{Layers: tc.layers})
+		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v, want %q", name, err, tc.want)
+		}
 	}
 }

@@ -23,14 +23,14 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
-func rotationStep(ctx context.Context, s *Server, step nodev1.RotationStep) (*nodev1.RotationStepResponse, error) {
-	resp, err := s.RotationStep(ctx, connect.NewRequest(&nodev1.RotationStepRequest{Step: step}))
+func rotationStep(ctx context.Context, s *Server, step kubernetesv1.RotationStep) (*kubernetesv1.RotationStepResponse, error) {
+	resp, err := kubernetesOf(s).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: step}))
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func withAPI(s *Server, objects ...runtimeObject) *fake.Clientset {
 	return client
 }
 
-func counts(encrypted []*nodev1.EncryptedObjects) map[string]uint64 {
+func counts(encrypted []*kubernetesv1.EncryptedObjects) map[string]uint64 {
 	m := map[string]uint64{}
 	for _, e := range encrypted {
 		m[e.Resource+"/"+e.Key] = e.Objects
@@ -73,7 +73,7 @@ func TestCountEncrypted(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	resp, err := rotationStep(ctx, s, nodev1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED)
+	resp, err := rotationStep(ctx, s, kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestRewriteEncrypted(t *testing.T) {
 		objects = append(objects, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: fmt.Sprintf("s%d", i)}, Data: map[string][]byte{"k": []byte("v")}})
 	}
 	client := withAPI(s, objects...)
-	resp, err := rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
+	resp, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestListTokenSecrets(t *testing.T) {
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "a", Name: "legacy"}, Type: corev1.SecretTypeServiceAccountToken},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "a", Name: "opaque"}, Type: corev1.SecretTypeOpaque},
 	)
-	resp, err := rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS)
+	resp, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestRestartAddons(t *testing.T) {
 	// kube-flannel's kube-root-ca.crt holds another CA: nothing restarts.
 	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer cancel()
-	if _, err := rotationStep(short, s, nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS); err == nil || !strings.Contains(err.Error(), "kube-root-ca.crt of kube-flannel") {
+	if _, err := rotationStep(short, s, kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS); err == nil || !strings.Contains(err.Error(), "kube-root-ca.crt of kube-flannel") {
 		t.Fatalf("err = %v, want a wait for kube-flannel's kube-root-ca.crt", err)
 	}
 	if d, _ := client.AppsV1().Deployments("kube-system").Get(ctx, "coredns", metav1.GetOptions{}); d.Spec.Template.Annotations[RestartedAnnotation] != "" {
@@ -190,7 +190,7 @@ func TestRestartAddons(t *testing.T) {
 		ds.Status.UpdatedNumberScheduled = 2
 		client.AppsV1().DaemonSets("kube-flannel").UpdateStatus(ctx, ds, metav1.UpdateOptions{})
 	}()
-	resp, err := rotationStep(ctx, s, nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS)
+	resp, err := rotationStep(ctx, s, kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestRenewKubeletServing(t *testing.T) {
 	if err := os.Symlink("kubelet-server-2026-10-08.pem", p.KubeletServing()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING); err != nil {
+	if _, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING); err != nil {
 		t.Fatal(err)
 	}
 	if left, _ := filepath.Glob(filepath.Join(p.KubeletPKI, "kubelet-server-*")); len(left) != 0 {
@@ -241,7 +241,7 @@ func TestRenewKubeletServing(t *testing.T) {
 		t.Errorf("calls %v, want the kubelet restarted", r.Calls)
 	}
 	// A worker runs none of the control plane's steps.
-	if _, err := rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("a worker counted encrypted objects: %v", err)
 	}
 }
@@ -270,7 +270,7 @@ func TestRewriteEncryptedRetriesAndSkips(t *testing.T) {
 		}
 		return false, nil, nil
 	})
-	resp, err := rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
+	resp, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestRewriteEncryptedPages(t *testing.T) {
 		}
 		return true, list, nil
 	})
-	resp, err := rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
+	resp, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,14 +350,14 @@ func TestRewriteEncryptedErrorsHoldNoData(t *testing.T) {
 	fail := apierrors.NewGenericServerResponse(500, "update", corev1.Resource("secrets"), "s0", "data.k: hunter2", 0, true)
 	fail.ErrStatus.Reason = ""
 	client.PrependReactor("update", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) { return true, nil, fail })
-	_, err := rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
+	_, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
 	if err == nil || !strings.Contains(err.Error(), "ns/s0") || !strings.Contains(err.Error(), "500") || strings.Contains(err.Error(), "hunter2") {
 		t.Errorf("err = %v, want one naming ns/s0 and the HTTP status alone", err)
 	}
 	client.PrependReactor("update", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("connection reset by peer")
 	})
-	_, err = rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
+	_, err = rotationStep(context.Background(), s, kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
 	if err == nil || !strings.Contains(err.Error(), "connection reset by peer") {
 		t.Errorf("err = %v, want one saying why", err)
 	}
@@ -372,7 +372,7 @@ func TestUnknownRotationStepMintsNothing(t *testing.T) {
 		minted = true
 		return fake.NewClientset(), nil
 	}
-	if _, err := rotationStep(context.Background(), s, nodev1.RotationStep(99)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if _, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep(99)); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("err = %v, want invalid_argument", err)
 	}
 	if minted {
@@ -415,7 +415,7 @@ func TestRestartAddonsDoesNotWaitForWhatNeverRollsOut(t *testing.T) {
 	)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	resp, err := rotationStep(ctx, s, nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS)
+	resp, err := rotationStep(ctx, s, kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS)
 	if err != nil {
 		t.Fatalf("the step waited for workloads that never roll out on a restart: %v", err)
 	}

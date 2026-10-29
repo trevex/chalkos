@@ -10,7 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
@@ -121,7 +121,7 @@ func TestEtcdLeaveForce(t *testing.T) {
 // stops at any other answer.
 func TestTryNextControlPlane(t *testing.T) {
 	notMember := connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is not an etcd member; ask another control-plane node"))
-	detail, err := connect.NewErrorDetail(&nodev1.NotEtcdMember{})
+	detail, err := connect.NewErrorDetail(&kubernetesv1.NotEtcdMember{})
 	if err != nil {
 		t.Fatal(err)
 	}

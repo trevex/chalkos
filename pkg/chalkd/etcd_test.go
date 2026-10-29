@@ -15,7 +15,7 @@ import (
 	"connectrpc.com/connect"
 	clientv3 "go.etcd.io/etcd/client/v3"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
@@ -89,9 +89,9 @@ func memberServer(t *testing.T, others ...string) (*Server, *clientv3.Client, ma
 	return s, cli, members
 }
 
-func etcdMembers(t *testing.T, s *Server) []*nodev1.EtcdMember {
+func etcdMembers(t *testing.T, s *Server) []*kubernetesv1.EtcdMember {
 	t.Helper()
-	resp, err := s.EtcdMembers(context.Background(), connect.NewRequest(&nodev1.EtcdMembersRequest{}))
+	resp, err := kubernetesOf(s).EtcdMembers(context.Background(), connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,12 +99,12 @@ func etcdMembers(t *testing.T, s *Server) []*nodev1.EtcdMember {
 }
 
 func removeMember(s *Server, member string, force bool) error {
-	_, err := s.EtcdRemoveMember(context.Background(), connect.NewRequest(&nodev1.EtcdRemoveMemberRequest{Member: member, Force: force}))
+	_, err := kubernetesOf(s).EtcdRemoveMember(context.Background(), connect.NewRequest(&kubernetesv1.EtcdRemoveMemberRequest{Member: member, Force: force}))
 	return err
 }
 
 func leave(s *Server, force bool) error {
-	_, err := s.EtcdLeave(context.Background(), connect.NewRequest(&nodev1.EtcdLeaveRequest{Force: force}))
+	_, err := kubernetesOf(s).EtcdLeave(context.Background(), connect.NewRequest(&kubernetesv1.EtcdLeaveRequest{Force: force}))
 	return err
 }
 
@@ -413,7 +413,7 @@ func TestEtcdNeedsMember(t *testing.T) {
 	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
 	waiting, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	for name, s := range map[string]*Server{"worker": worker, "not bootstrapped": waiting} {
-		_, err := s.EtcdMembers(context.Background(), connect.NewRequest(&nodev1.EtcdMembersRequest{}))
+		_, err := kubernetesOf(s).EtcdMembers(context.Background(), connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("members on %s: %v", name, err)
 		}
@@ -432,7 +432,7 @@ func TestNotEtcdMemberDetail(t *testing.T) {
 		s    *Server
 		want bool
 	}{"worker": {worker, false}, "not bootstrapped": {waiting, true}} {
-		_, err := tc.s.EtcdMembers(context.Background(), connect.NewRequest(&nodev1.EtcdMembersRequest{}))
+		_, err := kubernetesOf(tc.s).EtcdMembers(context.Background(), connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
 		ce := new(connect.Error)
 		if !errors.As(err, &ce) {
 			t.Fatalf("%s: %v", name, err)
@@ -440,7 +440,7 @@ func TestNotEtcdMemberDetail(t *testing.T) {
 		got := false
 		for _, d := range ce.Details() {
 			if v, err := d.Value(); err == nil {
-				_, got = v.(*nodev1.NotEtcdMember)
+				_, got = v.(*kubernetesv1.NotEtcdMember)
 			}
 		}
 		if got != tc.want {

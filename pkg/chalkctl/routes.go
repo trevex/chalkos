@@ -9,9 +9,16 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
+	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 )
+
+// routerClient is the client of the node's router layer over conn.
+func routerClient(conn *client.Conn) routerv1connect.RouterServiceClient {
+	return routerv1connect.NewRouterServiceClient(conn.HTTPClient(), conn.BaseURL())
+}
 
 type routesFlags struct {
 	node            nodeFlags
@@ -34,7 +41,7 @@ func (a *app) nodeRoutesCommand() *cobra.Command {
 }
 
 func (a *app) nodeRoutes(ctx context.Context, f routesFlags, pos []string) error {
-	req := &nodev1.RoutesRequest{Protocol: f.protocol, Table: f.table}
+	req := &routerv1.RoutesRequest{Protocol: f.protocol, Table: f.table}
 	if len(pos) > 1 {
 		req.Prefix = pos[1]
 	}
@@ -47,7 +54,7 @@ func (a *app) nodeRoutes(ctx context.Context, f routesFlags, pos []string) error
 		return err
 	}
 	defer conn.Close()
-	resp, err := conn.Routes(ctx, connect.NewRequest(req))
+	resp, err := routerClient(conn).Routes(ctx, connect.NewRequest(req))
 	if err != nil {
 		return err
 	}
@@ -89,7 +96,7 @@ func (a *app) nodeRoutes(ctx context.Context, f routesFlags, pos []string) error
 
 // nextHop is a kernel route's next hop as routes prints it: the gateway on the interface, with
 // its weight among several.
-func nextHop(h *nodev1.NextHop) string {
+func nextHop(h *routerv1.NextHop) string {
 	s := h.Interface
 	if h.Gateway != "" {
 		s = h.Gateway + " on " + h.Interface

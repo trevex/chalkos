@@ -21,21 +21,25 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
+	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
+	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/chalkd/layer/layertest"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -148,7 +152,22 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 	writeFacts(t, s)
 	writeServices(t, s, "{}")
 	writeEffects(t, s, "{}")
+	withPlugins(t, s, layers.Of(), nil)
 	return s, r
+}
+
+// withPlugins compiles the Kubernetes and router layers into s, with s's Kubernetes side and the
+// router side r, or one that runs s's programs when r is nil, on an image of the layers l.
+func withPlugins(t *testing.T, s *Server, l layers.Set, r *Router) {
+	t.Helper()
+	if r == nil {
+		r = &Router{Run: s.Run}
+	}
+	reg, err := layer.NewRegistry(l, NewKubernetesLayer(s, s.Kubernetes), NewRouterLayer(r))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Plugins = reg
 }
 
 // writeEffects declares the effects of the default image, which the tests carry out, and those
@@ -330,21 +349,21 @@ var deniedEverything = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Disks": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied,
 	"Logs": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied,
 	"ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeUnimplemented,
-	"RenewNodeCertificate": connect.CodePermissionDenied, "RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied,
+	"RenewNodeCertificate": connect.CodeUnimplemented, "RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied,
 	"DrainNode": connect.CodeUnimplemented, "UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied,
 	"RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented, "Diagnostics": connect.CodePermissionDenied,
-	"RunDiagnostic": connect.CodePermissionDenied,
+	"RunDiagnostic": connect.CodePermissionDenied, "KubernetesStatus": connect.CodeUnimplemented, "RouterStatus": connect.CodeUnimplemented,
 }
 
-// nodeRole is what a node gets in normal mode: RenewNodeCertificate alone, which a node without
-// Kubernetes refuses after authorisation, and the unimplemented RPCs of the Kubernetes layer.
+// nodeRole is what a node gets in normal mode on an image without layers: nothing of the node
+// API, and the unimplemented RPCs of the layers, RenewNodeCertificate among them.
 var nodeRole = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied,
-	"ApplyConfig": connect.CodePermissionDenied, "EtcdMembers": connect.CodeUnimplemented, "RenewNodeCertificate": connect.CodeFailedPrecondition,
+	"ApplyConfig": connect.CodePermissionDenied, "EtcdMembers": connect.CodeUnimplemented, "RenewNodeCertificate": connect.CodeUnimplemented,
 	"RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented,
 	"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented,
 	"UnrevokeNode": connect.CodeUnimplemented, "Diagnostics": connect.CodePermissionDenied,
-	"RunDiagnostic": connect.CodePermissionDenied,
+	"RunDiagnostic": connect.CodePermissionDenied, "KubernetesStatus": connect.CodeUnimplemented, "RouterStatus": connect.CodeUnimplemented,
 }
 
 // clientWithOrganization issues a client certificate with the Organization given, bypassing the
@@ -420,6 +439,8 @@ func dial(t *testing.T, addr string, cert *tls.Certificate) *client.Conn {
 // call runs one RPC and returns its error code; 0 when it succeeded.
 func call(c *client.Conn, procedure string) connect.Code {
 	ctx := context.Background()
+	k := kubernetesv1connect.NewKubernetesServiceClient(c.HTTPClient(), c.BaseURL())
+	rt := routerv1connect.NewRouterServiceClient(c.HTTPClient(), c.BaseURL())
 	var err error
 	switch procedure {
 	case "Info":
@@ -437,17 +458,17 @@ func call(c *client.Conn, procedure string) connect.Code {
 	case "Disks":
 		_, err = c.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))
 	case "Bootstrap":
-		_, err = c.Bootstrap(ctx, connect.NewRequest(&nodev1.BootstrapRequest{}))
+		_, err = k.Bootstrap(ctx, connect.NewRequest(&kubernetesv1.BootstrapRequest{}))
 	case "EtcdMembers":
-		_, err = c.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
+		_, err = k.EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
 	case "EtcdRemoveMember":
-		_, err = c.EtcdRemoveMember(ctx, connect.NewRequest(&nodev1.EtcdRemoveMemberRequest{Member: "cp2"}))
+		_, err = k.EtcdRemoveMember(ctx, connect.NewRequest(&kubernetesv1.EtcdRemoveMemberRequest{Member: "cp2"}))
 	case "EtcdLeave":
-		_, err = c.EtcdLeave(ctx, connect.NewRequest(&nodev1.EtcdLeaveRequest{}))
+		_, err = k.EtcdLeave(ctx, connect.NewRequest(&kubernetesv1.EtcdLeaveRequest{}))
 	case "RenewNodeCertificate":
-		_, err = c.RenewNodeCertificate(ctx, connect.NewRequest(&nodev1.RenewNodeCertificateRequest{}))
+		_, err = k.RenewNodeCertificate(ctx, connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{}))
 	case "RotationStep":
-		_, err = c.RotationStep(ctx, connect.NewRequest(&nodev1.RotationStepRequest{Step: nodev1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED}))
+		_, err = k.RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED}))
 	case "Logs":
 		var s *connect.ServerStreamForClient[nodev1.LogsResponse]
 		if s, err = c.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{})); err == nil {
@@ -460,13 +481,13 @@ func call(c *client.Conn, procedure string) connect.Code {
 		stream.Send(&nodev1.InstallRequest{})
 		_, err = stream.CloseAndReceive()
 	case "DrainNode":
-		_, err = c.DrainNode(ctx, connect.NewRequest(&nodev1.DrainNodeRequest{Node: "w1"}))
+		_, err = k.DrainNode(ctx, connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: "w1"}))
 	case "UncordonNode":
-		_, err = c.UncordonNode(ctx, connect.NewRequest(&nodev1.UncordonNodeRequest{Node: "w1"}))
+		_, err = k.UncordonNode(ctx, connect.NewRequest(&kubernetesv1.UncordonNodeRequest{Node: "w1"}))
 	case "RevokeNode":
-		_, err = c.RevokeNode(ctx, connect.NewRequest(&nodev1.RevokeNodeRequest{Node: "w1"}))
+		_, err = k.RevokeNode(ctx, connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: "w1"}))
 	case "UnrevokeNode":
-		_, err = c.UnrevokeNode(ctx, connect.NewRequest(&nodev1.UnrevokeNodeRequest{Node: "w1"}))
+		_, err = k.UnrevokeNode(ctx, connect.NewRequest(&kubernetesv1.UnrevokeNodeRequest{Node: "w1"}))
 	case "Diagnostics":
 		_, err = c.Diagnostics(ctx, connect.NewRequest(&nodev1.DiagnosticsRequest{}))
 	case "RunDiagnostic":
@@ -478,7 +499,11 @@ func call(c *client.Conn, procedure string) connect.Code {
 			err = s.Err()
 		}
 	case "Routes":
-		_, err = c.Routes(ctx, connect.NewRequest(&nodev1.RoutesRequest{}))
+		_, err = rt.Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{}))
+	case "KubernetesStatus":
+		_, err = k.Status(ctx, connect.NewRequest(&kubernetesv1.StatusRequest{}))
+	case "RouterStatus":
+		_, err = rt.Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
 	case "GetConfig":
 		_, err = c.GetConfig(ctx, connect.NewRequest(&nodev1.GetConfigRequest{}))
 	case "UpgradeWithConfig":
@@ -507,11 +532,12 @@ func TestAuthorisation(t *testing.T) {
 		codes map[pki.Role]map[string]connect.Code
 	}{
 		{"normal", normal, true, map[pki.Role]map[string]connect.Code{
-			// The test image has no Kubernetes layer, whose RPCs are unimplemented for every role.
+			// The test image has no layers, whose RPCs are unimplemented for every role.
 			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
 				"EtcdMembers": connect.CodeUnimplemented, "EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented,
 				"RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented,
-				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented},
+				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented,
+				"KubernetesStatus": connect.CodeUnimplemented, "RouterStatus": connect.CodeUnimplemented, "Routes": connect.CodeUnimplemented},
 			// A request without a header is refused after authorisation, an upgrade with config for
 			// the role.
 			pki.RoleOperator: {"Reboot": 0, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Bootstrap": connect.CodeUnimplemented,
@@ -521,7 +547,7 @@ func TestAuthorisation(t *testing.T) {
 			// An empty request and a reset without config are refused after authorisation; refusing
 			// them means the call got through.
 			pki.RoleAdmin: {"ApplyConfig": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeUnimplemented,
-				"EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented, "RenewNodeCertificate": connect.CodePermissionDenied,
+				"EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented, "RenewNodeCertificate": connect.CodeUnimplemented,
 				"RotationStep": connect.CodeUnimplemented, "GetConfig": 0, "UpgradeWithConfig": connect.CodeInvalidArgument, "RevokeNode": connect.CodeUnimplemented,
 				"UnrevokeNode": connect.CodeUnimplemented},
 			// A certificate of the OS CA without a role's Organization grants nothing.
@@ -724,58 +750,25 @@ func TestRebootAfterResponse(t *testing.T) {
 	}
 }
 
-// A procedure without an entry is refused, so a new one must be given its modes and role.
-func TestEveryProcedureHasPermissions(t *testing.T) {
-	methods := nodev1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods()
-	if methods.Len() == 0 {
-		t.Fatal("the service has no methods")
-	}
-	for i := 0; i < methods.Len(); i++ {
-		procedure := "/" + nodev1connect.NodeServiceName + "/" + string(methods.Get(i).Name())
-		if _, ok := permissions[procedure]; !ok {
-			t.Errorf("%s has no entry in permissions", procedure)
-		}
-	}
-	if len(permissions) != methods.Len() {
-		t.Errorf("permissions has %d entries for %d procedures", len(permissions), methods.Len())
-	}
+// A procedure without an entry is refused, so a new one must be given its modes and role; each
+// RPC's comment in node.proto, which the API reference shows, names them.
+func TestNodeAPIPermissions(t *testing.T) {
+	service := nodev1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService")
+	layertest.CheckPermissions(t, service, permissions)
+	layertest.CheckComments(t, filepath.Join("..", "..", "api", "chalkos", "node", "v1", "node.proto"), service, permissions, "")
 }
 
-// TestRPCCommentsNamePermissions holds each RPC's comment in node.proto, which the API reference
-// shows, to the modes, role and layer the permissions table gives the RPC.
-func TestRPCCommentsNamePermissions(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "api", "chalkos", "node", "v1", "node.proto"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	available := regexp.MustCompile(`Available in (maintenance and normal|maintenance|normal) mode to (readers|operators|admins|nodes)(?:, on images with the (\w+) layer)?\.`)
-	rpc := regexp.MustCompile(`^rpc (\w+)\(`)
-	modes := map[string][]nodev1.Mode{"maintenance and normal": layer.AnyMode, "maintenance": layer.MaintenanceOnly, "normal": layer.NormalOnly}
-	roles := map[string]pki.Role{"readers": pki.RoleReader, "operators": pki.RoleOperator, "admins": pki.RoleAdmin, "nodes": pki.RoleNode}
-	var comment []string
-	rpcs := 0
-	for line := range strings.Lines(string(data)) {
-		line = strings.TrimSpace(line)
-		if text, ok := strings.CutPrefix(line, "//"); ok {
-			comment = append(comment, strings.TrimSpace(text))
-			continue
-		}
-		if m := rpc.FindStringSubmatch(line); m != nil {
-			rpcs++
-			procedure := "/" + nodev1connect.NodeServiceName + "/" + m[1]
-			a := available.FindStringSubmatch(strings.Join(comment, " "))
-			p := permissions[procedure]
-			if a == nil {
-				t.Errorf("the comment of %s names no modes and role", m[1])
-			} else if !slices.Equal(modes[a[1]], p.modes) || roles[a[2]] != p.role || strings.ToLower(a[3]) != p.layer {
-				t.Errorf("the comment of %s says %q, the permissions are %v to %s of the layer %q", m[1], a[0], p.modes, p.role, p.layer)
-			}
-		}
-		comment = nil
-	}
-	if rpcs != len(permissions) {
-		t.Errorf("node.proto declares %d RPCs, permissions has %d entries", rpcs, len(permissions))
-	}
+// TestLayerAPIPermissions holds the Kubernetes and router layers' APIs to their plugins'
+// permissions as TestNodeAPIPermissions holds the node API.
+func TestLayerAPIPermissions(t *testing.T) {
+	k := NewKubernetesLayer(nil, nil)
+	service := kubernetesv1.File_chalkos_kubernetes_v1_kubernetes_proto.Services().ByName("KubernetesService")
+	layertest.CheckPermissions(t, service, k.Permissions())
+	layertest.CheckComments(t, filepath.Join("..", "..", "api", "chalkos", "kubernetes", "v1", "kubernetes.proto"), service, k.Permissions(), layers.Kubernetes)
+	r := NewRouterLayer(nil)
+	service = routerv1.File_chalkos_router_v1_router_proto.Services().ByName("RouterService")
+	layertest.CheckPermissions(t, service, r.Permissions())
+	layertest.CheckComments(t, filepath.Join("..", "..", "api", "chalkos", "router", "v1", "router.proto"), service, r.Permissions(), layers.Router)
 }
 
 func TestRequestSizeLimit(t *testing.T) {

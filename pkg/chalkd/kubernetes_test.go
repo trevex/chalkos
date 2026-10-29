@@ -28,8 +28,11 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
@@ -58,7 +61,6 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *tooltest
 func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 	t.Helper()
 	root := t.TempDir()
-	s.Layers = layers.Of(layers.Kubernetes)
 	s.Kubernetes = NewKubernetes(KubernetesOptions{
 		Paths: knode.Paths{
 			State:      filepath.Join(s.Paths.StateDir, "kubernetes"),
@@ -85,6 +87,7 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 			APIClient: func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return fake.NewClientset(), nil },
 		},
 	})
+	withPlugins(t, s, layers.Of(layers.Kubernetes), nil)
 	// The loops a test started would run on against its removed files, and load the tests after
 	// it, until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
@@ -100,6 +103,35 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// kubernetesOf is the Kubernetes layer of s, whose handlers serve its Kubernetes side.
+func kubernetesOf(s *Server) *kubernetesLayer {
+	for _, p := range s.Plugins.Compiled() {
+		if k, ok := p.(*kubernetesLayer); ok {
+			return k
+		}
+	}
+	return nil
+}
+
+// kubernetesClient is the client of the Kubernetes layer over c.
+func kubernetesClient(c *client.Conn) kubernetesv1connect.KubernetesServiceClient {
+	return kubernetesv1connect.NewKubernetesServiceClient(c.HTTPClient(), c.BaseURL())
+}
+
+// kubernetesStatus is the state of s's Kubernetes as its layer serves it; nil on an image without
+// the Kubernetes layer.
+func kubernetesStatus(t *testing.T, s *Server) *kubernetesv1.StatusResponse {
+	t.Helper()
+	if !s.Plugins.Layers().Has(layers.Kubernetes) {
+		return nil
+	}
+	resp, err := kubernetesOf(s).Status(context.Background(), connect.NewRequest(&kubernetesv1.StatusRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.Msg
 }
 
 // readyNode is a Ready Node with the pod ranges.
@@ -183,8 +215,8 @@ func testShareFor(t *testing.T, kind, nodeName string) []byte {
 	return data
 }
 
-func bootstrap(s *Server, ctx context.Context) (*nodev1.BootstrapResponse, error) {
-	resp, err := s.Bootstrap(ctx, connect.NewRequest(&nodev1.BootstrapRequest{}))
+func bootstrap(s *Server, ctx context.Context) (*kubernetesv1.BootstrapResponse, error) {
+	resp, err := kubernetesOf(s).Bootstrap(ctx, connect.NewRequest(&kubernetesv1.BootstrapRequest{}))
 	if err != nil {
 		return nil, err
 	}
@@ -351,28 +383,27 @@ func TestStatusKubernetes(t *testing.T) {
 	plain, _ := installedServer(t, section("", ""), false)
 	for name, tc := range map[string]struct {
 		s    *Server
-		want *nodev1.KubernetesStatus
+		want *kubernetesv1.StatusResponse
 	}{
-		"waiting":               {waiting, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_WAITING, Kind: "controlplane", State: "waiting for bootstrap or for the cluster at https://192.168.100.11:6443"}},
-		"bootstrapped":          {bootstrapped, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
-		"no share":              {noShare, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "worker", State: "no share"}},
-		"no address":            {noAddress, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "worker", State: "preparation failed: no node address matches the default filter (the node has no addresses)"}},
-		"share of another kind": {otherKind, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "worker", State: "preparation failed: the node's share is for a controlplane node, but its config gives it the type worker"}},
-		"firewall":              {noFirewall, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "worker", State: "preparation failed: accept VXLAN to the node's address: exit status 1"}},
-		"preparing":             {preparing, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "controlplane", State: "preparing"}},
-		"writing":               {writing, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING, Kind: "worker", State: "preparing"}},
-		"worker":                {worker, &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED, Kind: "worker", State: "joined", NodeReady: "unknown: connection refused"}},
-		"dual-stack worker":     {dualStack("10.244.1.0/24", "fd00:10:244:1::/64"), &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED, Kind: "worker", State: "joined", NodeReady: "True"}},
-		"no pod range yet":      {dualStack(), &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED, Kind: "worker", State: "joined", NodeReady: "True"}},
-		"no ipv6 pod range": {dualStack("10.244.1.0/24"), &nodev1.KubernetesStatus{Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED, Kind: "worker", NodeReady: "True",
+		"waiting":               {waiting, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_WAITING, Kind: "controlplane", State: "waiting for bootstrap or for the cluster at https://192.168.100.11:6443"}},
+		"bootstrapped":          {bootstrapped, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
+		"no share":              {noShare, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_PREPARING, Kind: "worker", State: "no share"}},
+		"no address":            {noAddress, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_PREPARING, Kind: "worker", State: "preparation failed: no node address matches the default filter (the node has no addresses)"}},
+		"share of another kind": {otherKind, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_PREPARING, Kind: "worker", State: "preparation failed: the node's share is for a controlplane node, but its config gives it the type worker"}},
+		"firewall":              {noFirewall, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_PREPARING, Kind: "worker", State: "preparation failed: accept VXLAN to the node's address: exit status 1"}},
+		"preparing":             {preparing, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_PREPARING, Kind: "controlplane", State: "preparing"}},
+		"writing":               {writing, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_PREPARING, Kind: "worker", State: "preparing"}},
+		"worker":                {worker, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_JOINED, Kind: "worker", State: "joined", NodeReady: "unknown: connection refused"}},
+		"dual-stack worker":     {dualStack("10.244.1.0/24", "fd00:10:244:1::/64"), &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_JOINED, Kind: "worker", State: "joined", NodeReady: "True"}},
+		"no pod range yet":      {dualStack(), &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_JOINED, Kind: "worker", State: "joined", NodeReady: "True"}},
+		"no ipv6 pod range": {dualStack("10.244.1.0/24"), &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_JOINED, Kind: "worker", NodeReady: "True",
 			State: "joined: the Node has no ipv6 pod range; the control plane allocates ranges of the families the cluster was created with"}},
 		"no Kubernetes": {plain, nil},
 	} {
-		resp, err := tc.s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
-		if err != nil {
+		if _, err := tc.s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{})); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		got := resp.Msg.Kubernetes
+		got := kubernetesStatus(t, tc.s)
 		if (got == nil) != (tc.want == nil) || got != nil && (got.Kind != tc.want.Kind || got.State != tc.want.State || got.Phase != tc.want.Phase || got.NodeReady != tc.want.NodeReady) {
 			t.Errorf("%s: kubernetes status %v, want %v", name, got, tc.want)
 		}
@@ -428,11 +459,7 @@ func TestStatusEtcdDataMissing(t *testing.T) {
 	p := s.Kubernetes.Paths
 	write(t, p.Bootstrapped(), "")
 	write(t, p.EtcdInitialised(), "")
-	resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := resp.Msg.Kubernetes.State; got != "etcd data missing: restore etcd or reinstall the node" {
+	if got := kubernetesStatus(t, s).State; got != "etcd data missing: restore etcd or reinstall the node" {
 		t.Errorf("state %q", got)
 	}
 }

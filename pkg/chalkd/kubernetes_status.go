@@ -18,7 +18,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -56,12 +56,12 @@ func (p preparation) problem() string {
 }
 
 // status describes the node's Kubernetes state.
-func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, error) {
+func (k *Kubernetes) status(ctx context.Context) (*kubernetesv1.StatusResponse, error) {
 	c, err := k8s.ReadCluster(k.Paths.Cluster)
 	if err != nil {
 		return nil, err
 	}
-	st := &nodev1.KubernetesStatus{Kind: c.Kind, Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING}
+	st := &kubernetesv1.StatusResponse{Kind: c.Kind, Phase: kubernetesv1.Phase_PHASE_PREPARING}
 	if _, err := os.Stat(k.Paths.Share()); errors.Is(err, os.ErrNotExist) {
 		st.State = "no share"
 		return st, nil
@@ -78,15 +78,15 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 	}
 	switch {
 	case c.Kind == k8s.KindWorker:
-		st.State, st.Phase = "joined", nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED
+		st.State, st.Phase = "joined", kubernetesv1.Phase_PHASE_JOINED
 	case m == knode.MembershipLeft:
-		st.State, st.Phase = "left etcd; reinstall the node to join the cluster again", nodev1.KubernetesPhase_KUBERNETES_PHASE_LEFT
+		st.State, st.Phase = "left etcd; reinstall the node to join the cluster again", kubernetesv1.Phase_PHASE_LEFT
 		return st, nil
 	case m == knode.MembershipBootstrapped && leftovers.EtcdDataMissing:
-		st.State, st.Phase = "etcd data missing: restore etcd or reinstall the node", nodev1.KubernetesPhase_KUBERNETES_PHASE_ETCD_DATA_MISSING
+		st.State, st.Phase = "etcd data missing: restore etcd or reinstall the node", kubernetesv1.Phase_PHASE_ETCD_DATA_MISSING
 		return st, nil
 	case m == knode.MembershipBootstrapped:
-		st.State, st.Phase = "bootstrapped", nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED
+		st.State, st.Phase = "bootstrapped", kubernetesv1.Phase_PHASE_BOOTSTRAPPED
 		k.mu.Lock()
 		for _, problem := range []string{k.pinProblem, k.split} {
 			if problem != "" {
@@ -108,9 +108,9 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 		}
 	default:
 		st.State = k.joinStatus(c, m == knode.MembershipJoining)
-		st.Phase = nodev1.KubernetesPhase_KUBERNETES_PHASE_WAITING
+		st.Phase = kubernetesv1.Phase_PHASE_WAITING
 		if m == knode.MembershipJoining {
-			st.Phase = nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINING
+			st.Phase = kubernetesv1.Phase_PHASE_JOINING
 		}
 		return st, nil
 	}

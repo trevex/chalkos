@@ -26,7 +26,6 @@ import (
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
-	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -143,23 +142,18 @@ type Server struct {
 	// Diagnose runs the diagnostics' commands; nil runs them as transient systemd units. Tests
 	// replace it.
 	Diagnose diagnostics.Runner
-	// Layers are the layers the image carries, as its markers name them.
-	Layers layers.Set
-	// Kubernetes is the node's Kubernetes side; nil in maintenance mode and on an image without
-	// the Kubernetes layer. The handlers of that layer's methods rely on it being set otherwise.
+	// Plugins are the layers compiled into chalkd and those of them the image carries; nil
+	// serves the node API alone, as on an image of the base alone.
+	Plugins *layer.Registry
+	// Kubernetes is the node's Kubernetes side, which the Kubernetes layer serves; nil in
+	// maintenance mode and on an image without the Kubernetes layer.
 	Kubernetes *Kubernetes
-	// Router is the node's router side; nil in maintenance mode and on an image without the
-	// router layer. Routes relies on it being set otherwise.
-	Router *Router
 	// Renewal renews the node certificate; nil on a node that renews none.
 	Renewal *renewal.Renewal
 	// RenewOnApplyConfig renews the node certificate and the control plane's certificates after
 	// each ApplyConfig that delivers config, due or not. Only test images set it, to renew within
 	// a test's time.
 	RenewOnApplyConfig bool
-	// RevokedNodes returns the nodes revoked in the cluster, whose node certificates a control
-	// plane does not renew; nil reads them through the node's own API server. Tests replace it.
-	RevokedNodes func(context.Context) (revoked.List, error)
 
 	// clock is the time client certificates are verified at; nil is the system clock.
 	clock func() time.Time
@@ -177,46 +171,49 @@ type Server struct {
 	diagnosticRuns atomic.Int32
 }
 
-// permission is where an RPC may be called and the least role it needs.
-type permission struct {
-	modes []nodev1.Mode
-	role  pki.Role
-	// layer is the image layer the RPC belongs to; layers.Base for those of every image.
+// permissions are the modes and least role of each procedure of the node API. The authorizer
+// refuses a procedure without an entry.
+var permissions = map[string]layer.Permission{
+	nodev1connect.NodeServiceInfoProcedure:        {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceDisksProcedure:       {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceContractProcedure:    {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceInstallProcedure:     {Modes: layer.MaintenanceOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceApplyConfigProcedure: {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceGetConfigProcedure:   {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceResetVolumeProcedure: {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceStatusProcedure:      {Modes: layer.NormalOnly, Role: pki.RoleReader},
+	nodev1connect.NodeServiceLogsProcedure:        {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceRebootProcedure:      {Modes: layer.AnyMode, Role: pki.RoleOperator},
+	nodev1connect.NodeServiceDiagnosticsProcedure: {Modes: layer.AnyMode, Role: pki.RoleReader},
+	// RunDiagnostic also needs the diagnostic's own role, which it checks itself, as the table
+	// cannot see the request.
+	nodev1connect.NodeServiceRunDiagnosticProcedure: {Modes: layer.AnyMode, Role: pki.RoleReader},
+	// Upgrade needs the admin role when its header carries config or a fallback secret, as
+	// ApplyConfig does; Upgrade checks that itself, as the table cannot see the header.
+	nodev1connect.NodeServiceUpgradeProcedure: {Modes: layer.NormalOnly, Role: pki.RoleOperator},
+}
+
+// gate is where a procedure may be called: its permission and its layer, layers.Base for the
+// node API.
+type gate struct {
+	layer.Permission
 	layer string
 }
 
-// permissions are the modes, least role and layer of each RPC. The authorizer refuses an RPC
-// without an entry, and one of a layer the image lacks as unimplemented, so the handlers of a
-// layer's RPCs run only on images with it.
-var permissions = map[string]permission{
-	nodev1connect.NodeServiceInfoProcedure:                 {layer.AnyMode, pki.RoleReader, layers.Base},
-	nodev1connect.NodeServiceDisksProcedure:                {layer.AnyMode, pki.RoleReader, layers.Base},
-	nodev1connect.NodeServiceContractProcedure:             {layer.AnyMode, pki.RoleReader, layers.Base},
-	nodev1connect.NodeServiceInstallProcedure:              {layer.MaintenanceOnly, pki.RoleAdmin, layers.Base},
-	nodev1connect.NodeServiceApplyConfigProcedure:          {layer.NormalOnly, pki.RoleAdmin, layers.Base},
-	nodev1connect.NodeServiceGetConfigProcedure:            {layer.NormalOnly, pki.RoleAdmin, layers.Base},
-	nodev1connect.NodeServiceResetVolumeProcedure:          {layer.NormalOnly, pki.RoleAdmin, layers.Base},
-	nodev1connect.NodeServiceStatusProcedure:               {layer.NormalOnly, pki.RoleReader, layers.Base},
-	nodev1connect.NodeServiceLogsProcedure:                 {layer.AnyMode, pki.RoleReader, layers.Base},
-	nodev1connect.NodeServiceRebootProcedure:               {layer.AnyMode, pki.RoleOperator, layers.Base},
-	nodev1connect.NodeServiceBootstrapProcedure:            {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceEtcdMembersProcedure:          {layer.NormalOnly, pki.RoleReader, layers.Kubernetes},
-	nodev1connect.NodeServiceEtcdRemoveMemberProcedure:     {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceEtcdLeaveProcedure:            {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceRenewNodeCertificateProcedure: {layer.NormalOnly, pki.RoleNode, layers.Base},
-	nodev1connect.NodeServiceRotationStepProcedure:         {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceDrainNodeProcedure:            {layer.NormalOnly, pki.RoleOperator, layers.Kubernetes},
-	nodev1connect.NodeServiceUncordonNodeProcedure:         {layer.NormalOnly, pki.RoleOperator, layers.Kubernetes},
-	nodev1connect.NodeServiceRevokeNodeProcedure:           {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceUnrevokeNodeProcedure:         {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceDiagnosticsProcedure:          {layer.AnyMode, pki.RoleReader, layers.Base},
-	// RunDiagnostic also needs the diagnostic's own role, which it checks itself, as the table
-	// cannot see the request.
-	nodev1connect.NodeServiceRunDiagnosticProcedure: {layer.AnyMode, pki.RoleReader, layers.Base},
-	// Upgrade needs the admin role when its header carries config or a fallback secret, as
-	// ApplyConfig does; Upgrade checks that itself, as the table cannot see the header.
-	nodev1connect.NodeServiceUpgradeProcedure: {layer.NormalOnly, pki.RoleOperator, layers.Base},
-	nodev1connect.NodeServiceRoutesProcedure:  {layer.NormalOnly, pki.RoleReader, layers.Router},
+// gates are the permissions of the node API and of every compiled plugin's API. The authorizer
+// refuses a procedure of a layer the image lacks as unimplemented, so the handlers of a layer's
+// procedures run only on images with it.
+func (s *Server) gates() map[string]gate {
+	g := map[string]gate{}
+	for procedure, p := range permissions {
+		g[procedure] = gate{p, layers.Base}
+	}
+	for _, plugin := range s.Plugins.Compiled() {
+		for procedure, p := range plugin.Permissions() {
+			g[procedure] = gate{p, plugin.Name()}
+		}
+	}
+	return g
 }
 
 type roleKey struct{}
@@ -224,18 +221,24 @@ type roleKey struct{}
 // unverifiedKey holds why a client certificate no longer verifies.
 type unverifiedKey struct{}
 
-// Handler serves the API. Roles come from the client certificate's chains, verified for every
-// request against the OS CAs the node trusts then: see pki.ClientRole. The chains TLS verified
-// when the connection was made would keep a client of a root the node stopped trusting, or one
-// whose certificate expired, authorised for as long as it keeps the connection open.
+// Handler serves the node API and every compiled plugin's API. Roles come from the client
+// certificate's chains, verified for every request against the OS CAs the node trusts then: see
+// pki.ClientRole. The chains TLS verified when the connection was made would keep a client of a
+// root the node stopped trusting, or one whose certificate expired, authorised for as long as it
+// keeps the connection open.
 func (s *Server) Handler() http.Handler {
-	_, h := nodev1connect.NewNodeServiceHandler(s,
-		connect.WithInterceptors(authorizer{s}),
+	opts := []connect.HandlerOption{
+		connect.WithInterceptors(authorizer{s: s, gates: s.gates()}),
 		connect.WithReadMaxBytes(maxMessageBytes),
 		// An oversized compressed request would otherwise be decompressed in full before being
 		// discarded; refusing compression up front keeps that cost off chalkd.
 		connect.WithCompression("gzip", nil, nil),
-	)
+	}
+	mux := http.NewServeMux()
+	mux.Handle(nodev1connect.NewNodeServiceHandler(s, opts...))
+	for _, p := range s.Plugins.Compiled() {
+		mux.Handle(p.Handler(opts...))
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var role pki.Role
 		ctx := r.Context()
@@ -254,7 +257,7 @@ func (s *Server) Handler() http.Handler {
 		case s.AnyClient:
 			role = pki.RoleAdmin
 		}
-		h.ServeHTTP(w, r.WithContext(context.WithValue(ctx, roleKey{}, role)))
+		mux.ServeHTTP(w, r.WithContext(context.WithValue(ctx, roleKey{}, role)))
 	})
 }
 
@@ -289,17 +292,20 @@ func (s *Server) verifyClient(presented []*x509.Certificate) ([][]*x509.Certific
 
 // authorizer refuses calls of a layer the image lacks, in the wrong mode or with too little a
 // role, in that order.
-type authorizer struct{ s *Server }
+type authorizer struct {
+	s     *Server
+	gates map[string]gate
+}
 
 func (a authorizer) check(ctx context.Context, procedure string) error {
-	r, ok := permissions[procedure]
+	r, ok := a.gates[procedure]
 	if !ok {
 		return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("%s is not served", procedure))
 	}
-	if !a.s.Layers.Has(r.layer) {
+	if !a.s.Plugins.Layers().Has(r.layer) {
 		return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("the %s layer is not in this image", r.layer))
 	}
-	if !slices.Contains(r.modes, a.s.Mode) {
+	if !slices.Contains(r.Modes, a.s.Mode) {
 		if a.s.Mode == maintenance {
 			return connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is in maintenance mode; install it first"))
 		}
@@ -309,8 +315,8 @@ func (a authorizer) check(ctx context.Context, procedure string) error {
 		return connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("the client certificate does not verify against the OS CAs the node trusts: %w", err))
 	}
 	role, _ := ctx.Value(roleKey{}).(pki.Role)
-	if !role.Allows(r.role) {
-		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("%s needs the %s role", procedure, r.role))
+	if !role.Allows(r.Role) {
+		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("%s needs the %s role", procedure, r.Role))
 	}
 	return nil
 }

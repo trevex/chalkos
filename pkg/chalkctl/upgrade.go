@@ -17,10 +17,12 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -381,9 +383,10 @@ func (r *upgradeRun) call(name string, fn func(conn *client.Conn) error) error {
 }
 
 // probe reads what a node runs and its status.
-func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoResponse, *nodev1.StatusResponse, error) {
+func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoResponse, *nodev1.StatusResponse, *kubernetesv1.StatusResponse, error) {
 	var info *nodev1.InfoResponse
 	var st *nodev1.StatusResponse
+	var k *kubernetesv1.StatusResponse
 	err := r.call(name, func(conn *client.Conn) error {
 		i, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
 		if err != nil {
@@ -393,10 +396,15 @@ func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoRespon
 		if err != nil {
 			return err
 		}
+		if slices.Contains(i.Msg.Layers, layers.Kubernetes) {
+			if k, err = kubernetesStatus(ctx, conn); err != nil {
+				return err
+			}
+		}
 		info, st = i.Msg, s.Msg
 		return nil
 	})
-	return info, st, err
+	return info, st, k, err
 }
 
 // run upgrades the control planes one at a time, then the other nodes in batches.
@@ -442,7 +450,7 @@ func (r *upgradeRun) run(ctx context.Context) error {
 // runs, stages or fell back from the image when it names that root hash.
 func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	image, target := n.image.name(), n.image.header.RootHash
-	_, st, err := r.probe(ctx, n.name)
+	_, st, _, err := r.probe(ctx, n.name)
 	if err != nil {
 		return err
 	}
@@ -620,7 +628,7 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 	image, target := n.image.name(), n.image.header.RootHash
 	var fellBack error
 	err := waitFor(ctx, "", r.timeout, r.poll, func() error {
-		_, st, err := r.probe(ctx, n.name)
+		_, st, k, err := r.probe(ctx, n.name)
 		switch {
 		case err != nil:
 			return err
@@ -631,8 +639,8 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 			return fmt.Errorf("it runs %s", bootImageName(st.GetBoot().GetRunning()))
 		case !st.GetBoot().GetBlessed():
 			return errors.New("its boot was not found healthy yet")
-		case n.inCluster && st.GetKubernetes().GetNodeReady() != "True":
-			return fmt.Errorf("its Node is not Ready: %s", st.GetKubernetes().GetNodeReady())
+		case n.inCluster && k.GetNodeReady() != "True":
+			return fmt.Errorf("its Node is not Ready: %s", k.GetNodeReady())
 		}
 		return nil
 	})

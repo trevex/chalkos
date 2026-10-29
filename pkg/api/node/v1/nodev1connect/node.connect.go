@@ -55,40 +55,13 @@ const (
 	NodeServiceLogsProcedure = "/chalkos.node.v1.NodeService/Logs"
 	// NodeServiceRebootProcedure is the fully-qualified name of the NodeService's Reboot RPC.
 	NodeServiceRebootProcedure = "/chalkos.node.v1.NodeService/Reboot"
-	// NodeServiceBootstrapProcedure is the fully-qualified name of the NodeService's Bootstrap RPC.
-	NodeServiceBootstrapProcedure = "/chalkos.node.v1.NodeService/Bootstrap"
-	// NodeServiceEtcdMembersProcedure is the fully-qualified name of the NodeService's EtcdMembers RPC.
-	NodeServiceEtcdMembersProcedure = "/chalkos.node.v1.NodeService/EtcdMembers"
-	// NodeServiceEtcdRemoveMemberProcedure is the fully-qualified name of the NodeService's
-	// EtcdRemoveMember RPC.
-	NodeServiceEtcdRemoveMemberProcedure = "/chalkos.node.v1.NodeService/EtcdRemoveMember"
-	// NodeServiceEtcdLeaveProcedure is the fully-qualified name of the NodeService's EtcdLeave RPC.
-	NodeServiceEtcdLeaveProcedure = "/chalkos.node.v1.NodeService/EtcdLeave"
-	// NodeServiceRenewNodeCertificateProcedure is the fully-qualified name of the NodeService's
-	// RenewNodeCertificate RPC.
-	NodeServiceRenewNodeCertificateProcedure = "/chalkos.node.v1.NodeService/RenewNodeCertificate"
-	// NodeServiceRotationStepProcedure is the fully-qualified name of the NodeService's RotationStep
-	// RPC.
-	NodeServiceRotationStepProcedure = "/chalkos.node.v1.NodeService/RotationStep"
 	// NodeServiceUpgradeProcedure is the fully-qualified name of the NodeService's Upgrade RPC.
 	NodeServiceUpgradeProcedure = "/chalkos.node.v1.NodeService/Upgrade"
-	// NodeServiceDrainNodeProcedure is the fully-qualified name of the NodeService's DrainNode RPC.
-	NodeServiceDrainNodeProcedure = "/chalkos.node.v1.NodeService/DrainNode"
-	// NodeServiceUncordonNodeProcedure is the fully-qualified name of the NodeService's UncordonNode
-	// RPC.
-	NodeServiceUncordonNodeProcedure = "/chalkos.node.v1.NodeService/UncordonNode"
-	// NodeServiceRevokeNodeProcedure is the fully-qualified name of the NodeService's RevokeNode RPC.
-	NodeServiceRevokeNodeProcedure = "/chalkos.node.v1.NodeService/RevokeNode"
-	// NodeServiceUnrevokeNodeProcedure is the fully-qualified name of the NodeService's UnrevokeNode
-	// RPC.
-	NodeServiceUnrevokeNodeProcedure = "/chalkos.node.v1.NodeService/UnrevokeNode"
 	// NodeServiceDiagnosticsProcedure is the fully-qualified name of the NodeService's Diagnostics RPC.
 	NodeServiceDiagnosticsProcedure = "/chalkos.node.v1.NodeService/Diagnostics"
 	// NodeServiceRunDiagnosticProcedure is the fully-qualified name of the NodeService's RunDiagnostic
 	// RPC.
 	NodeServiceRunDiagnosticProcedure = "/chalkos.node.v1.NodeService/RunDiagnostic"
-	// NodeServiceRoutesProcedure is the fully-qualified name of the NodeService's Routes RPC.
-	NodeServiceRoutesProcedure = "/chalkos.node.v1.NodeService/Routes"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -99,10 +72,10 @@ type NodeServiceClient interface {
 	// readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
 	// Contract returns the config contract of the image the node runs: the variant and platform it
-	// was built for, its layers, the schemas of the config kinds it accepts and its image.json, which
-	// chalkctl checks config against before it delivers it. The installer refuses it: config is for
-	// the image it installs, whose contract comes with that image. Available in maintenance and
-	// normal mode to readers.
+	// was built for, its layers, the schemas of the config kinds it accepts and its layers' facts,
+	// such as the Kubernetes image.json, which chalkctl checks config against before it delivers
+	// it. The installer refuses it: config is for the image it installs, whose contract comes with
+	// that image. Available in maintenance and normal mode to readers.
 	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
@@ -110,9 +83,9 @@ type NodeServiceClient interface {
 	// registry, which the installer pulls. An install the installer did not finish continues when
 	// run again, from either. Available in maintenance mode to admins.
 	Install(context.Context) *connect.ClientStreamForClient[v1.InstallRequest, v1.InstallResponse]
-	// ApplyConfig replaces the config of an installed node, or delivers it a Kubernetes share, a
-	// node certificate or OS CAs. Destructive storage changes are refused; additive ones are
-	// applied live. Available in normal mode to admins.
+	// ApplyConfig replaces the config of an installed node, or delivers it payloads of its layers,
+	// such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
+	// refused; additive ones are applied live. Available in normal mode to admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
 	// GetConfig returns the config a slot keeps, the running image's or the staged image's, as it
 	// was delivered, with secret values replaced by their hashes. Available in normal mode to
@@ -123,7 +96,8 @@ type NodeServiceClient interface {
 	// disk. Available in normal mode to admins.
 	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
 	// Status reports the state of an installed node: its config versions, storage, failed units,
-	// certificates, trust, clock, boot, outputs and Kubernetes. Available in normal mode to readers.
+	// certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
+	// Available in normal mode to readers.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
 	// and normal mode to readers.
@@ -131,34 +105,6 @@ type NodeServiceClient interface {
 	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
 	// to operators.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
-	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
-	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
-	// is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
-	// normal mode to admins, on images with the Kubernetes layer.
-	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
-	// EtcdMembers lists etcd's members as the node's own member sees them, with their health. It
-	// answers on control-plane nodes that are etcd members. Available in normal mode to readers, on
-	// images with the Kubernetes layer.
-	EtcdMembers(context.Context, *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error)
-	// EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
-	// have fewer healthy members than their quorum, unless forced, and for the node's own member,
-	// which EtcdLeave removes. Available in normal mode to admins, on images with the Kubernetes
-	// layer.
-	EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error)
-	// EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
-	// still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
-	// unpins its addresses. The node joins the cluster again only once it is reinstalled. A
-	// bootstrapped node whose own member does not answer leaves only when forced. Available in
-	// normal mode to admins, on images with the Kubernetes layer.
-	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
-	// RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
-	// the names of the node certificate it authenticated with. It answers on control-plane nodes
-	// and refuses a revoked node. Available in normal mode to nodes.
-	RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error)
-	// RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
-	// out; chalkctl rotate calls it. Available in normal mode to admins, on images with the
-	// Kubernetes layer.
-	RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error)
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 	// The first message carries the header; the store, its hash tree and the UKI follow as chunks,
@@ -171,40 +117,6 @@ type NodeServiceClient interface {
 	// an operator can run any image as root, with STATE and VAR unsealed, as their keys are sealed
 	// to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
 	Upgrade(context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse]
-	// DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
-	// eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
-	// and pods without a controller stay; they run again on the node once it is back. Pods with
-	// emptyDir volumes are evicted only when the request accepts losing that data. Pods that
-	// terminate already, as those an earlier drain evicted, are not evicted again, but the call
-	// returns only once they and the pods it evicted have stopped. A node that was cordoned already
-	// stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. It
-	// answers on bootstrapped control-plane nodes. Available in normal mode to operators, on images
-	// with the Kubernetes layer. An eviction refused for good, or one a PodDisruptionBudget holds
-	// back until the timeout, fails the call with FAILED_PRECONDITION; pods that did not stop in
-	// time, or whose evictions the API server kept failing, with DEADLINE_EXCEEDED.
-	DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error)
-	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
-	// a node cordoned otherwise as it is. It answers on bootstrapped control-plane nodes. Available
-	// in normal mode to operators, on images with the Kubernetes layer.
-	UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error)
-	// RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
-	// kube-system/chalkos-revoked-nodes, applies the API server's admission policy
-	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
-	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
-	// time of its first revocation. A call that fails after listing the node says so; calling again
-	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-	// map of revoked nodes would grow too long for the API server to compile with it. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
-	// Kubernetes layer.
-	RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error)
-	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
-	// it, so a node of that name may join again. The old node's certificates work again too, unless
-	// the CAs they chain to were rotated after the revocation: the call is refused with
-	// FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
-	// that fails after removing the node says so; calling again applies the policy. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
-	// Kubernetes layer.
-	UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error)
 	// Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
 	// ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
 	Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error)
@@ -217,10 +129,6 @@ type NodeServiceClient interface {
 	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
 	// a time. Available in maintenance and normal mode to readers.
 	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest]) (*connect.ServerStreamForClient[v1.RunDiagnosticResponse], error)
-	// Routes lists the routes in the node's kernel, of the main table unless another is asked for,
-	// and the paths its BGP instance selected, each within an address range when one is given.
-	// Available in normal mode to readers, on images with the router layer.
-	Routes(context.Context, *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -294,70 +202,10 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("Reboot")),
 			connect.WithClientOptions(opts...),
 		),
-		bootstrap: connect.NewClient[v1.BootstrapRequest, v1.BootstrapResponse](
-			httpClient,
-			baseURL+NodeServiceBootstrapProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Bootstrap")),
-			connect.WithClientOptions(opts...),
-		),
-		etcdMembers: connect.NewClient[v1.EtcdMembersRequest, v1.EtcdMembersResponse](
-			httpClient,
-			baseURL+NodeServiceEtcdMembersProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("EtcdMembers")),
-			connect.WithClientOptions(opts...),
-		),
-		etcdRemoveMember: connect.NewClient[v1.EtcdRemoveMemberRequest, v1.EtcdRemoveMemberResponse](
-			httpClient,
-			baseURL+NodeServiceEtcdRemoveMemberProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("EtcdRemoveMember")),
-			connect.WithClientOptions(opts...),
-		),
-		etcdLeave: connect.NewClient[v1.EtcdLeaveRequest, v1.EtcdLeaveResponse](
-			httpClient,
-			baseURL+NodeServiceEtcdLeaveProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("EtcdLeave")),
-			connect.WithClientOptions(opts...),
-		),
-		renewNodeCertificate: connect.NewClient[v1.RenewNodeCertificateRequest, v1.RenewNodeCertificateResponse](
-			httpClient,
-			baseURL+NodeServiceRenewNodeCertificateProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("RenewNodeCertificate")),
-			connect.WithClientOptions(opts...),
-		),
-		rotationStep: connect.NewClient[v1.RotationStepRequest, v1.RotationStepResponse](
-			httpClient,
-			baseURL+NodeServiceRotationStepProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("RotationStep")),
-			connect.WithClientOptions(opts...),
-		),
 		upgrade: connect.NewClient[v1.UpgradeRequest, v1.UpgradeResponse](
 			httpClient,
 			baseURL+NodeServiceUpgradeProcedure,
 			connect.WithSchema(nodeServiceMethods.ByName("Upgrade")),
-			connect.WithClientOptions(opts...),
-		),
-		drainNode: connect.NewClient[v1.DrainNodeRequest, v1.DrainNodeResponse](
-			httpClient,
-			baseURL+NodeServiceDrainNodeProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("DrainNode")),
-			connect.WithClientOptions(opts...),
-		),
-		uncordonNode: connect.NewClient[v1.UncordonNodeRequest, v1.UncordonNodeResponse](
-			httpClient,
-			baseURL+NodeServiceUncordonNodeProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("UncordonNode")),
-			connect.WithClientOptions(opts...),
-		),
-		revokeNode: connect.NewClient[v1.RevokeNodeRequest, v1.RevokeNodeResponse](
-			httpClient,
-			baseURL+NodeServiceRevokeNodeProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("RevokeNode")),
-			connect.WithClientOptions(opts...),
-		),
-		unrevokeNode: connect.NewClient[v1.UnrevokeNodeRequest, v1.UnrevokeNodeResponse](
-			httpClient,
-			baseURL+NodeServiceUnrevokeNodeProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("UnrevokeNode")),
 			connect.WithClientOptions(opts...),
 		),
 		diagnostics: connect.NewClient[v1.DiagnosticsRequest, v1.DiagnosticsResponse](
@@ -372,41 +220,24 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("RunDiagnostic")),
 			connect.WithClientOptions(opts...),
 		),
-		routes: connect.NewClient[v1.RoutesRequest, v1.RoutesResponse](
-			httpClient,
-			baseURL+NodeServiceRoutesProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Routes")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
 // nodeServiceClient implements NodeServiceClient.
 type nodeServiceClient struct {
-	info                 *connect.Client[v1.InfoRequest, v1.InfoResponse]
-	disks                *connect.Client[v1.DisksRequest, v1.DisksResponse]
-	contract             *connect.Client[v1.ContractRequest, v1.ContractResponse]
-	install              *connect.Client[v1.InstallRequest, v1.InstallResponse]
-	applyConfig          *connect.Client[v1.ApplyConfigRequest, v1.ApplyConfigResponse]
-	getConfig            *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
-	resetVolume          *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
-	status               *connect.Client[v1.StatusRequest, v1.StatusResponse]
-	logs                 *connect.Client[v1.LogsRequest, v1.LogsResponse]
-	reboot               *connect.Client[v1.RebootRequest, v1.RebootResponse]
-	bootstrap            *connect.Client[v1.BootstrapRequest, v1.BootstrapResponse]
-	etcdMembers          *connect.Client[v1.EtcdMembersRequest, v1.EtcdMembersResponse]
-	etcdRemoveMember     *connect.Client[v1.EtcdRemoveMemberRequest, v1.EtcdRemoveMemberResponse]
-	etcdLeave            *connect.Client[v1.EtcdLeaveRequest, v1.EtcdLeaveResponse]
-	renewNodeCertificate *connect.Client[v1.RenewNodeCertificateRequest, v1.RenewNodeCertificateResponse]
-	rotationStep         *connect.Client[v1.RotationStepRequest, v1.RotationStepResponse]
-	upgrade              *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
-	drainNode            *connect.Client[v1.DrainNodeRequest, v1.DrainNodeResponse]
-	uncordonNode         *connect.Client[v1.UncordonNodeRequest, v1.UncordonNodeResponse]
-	revokeNode           *connect.Client[v1.RevokeNodeRequest, v1.RevokeNodeResponse]
-	unrevokeNode         *connect.Client[v1.UnrevokeNodeRequest, v1.UnrevokeNodeResponse]
-	diagnostics          *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
-	runDiagnostic        *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
-	routes               *connect.Client[v1.RoutesRequest, v1.RoutesResponse]
+	info          *connect.Client[v1.InfoRequest, v1.InfoResponse]
+	disks         *connect.Client[v1.DisksRequest, v1.DisksResponse]
+	contract      *connect.Client[v1.ContractRequest, v1.ContractResponse]
+	install       *connect.Client[v1.InstallRequest, v1.InstallResponse]
+	applyConfig   *connect.Client[v1.ApplyConfigRequest, v1.ApplyConfigResponse]
+	getConfig     *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
+	resetVolume   *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
+	status        *connect.Client[v1.StatusRequest, v1.StatusResponse]
+	logs          *connect.Client[v1.LogsRequest, v1.LogsResponse]
+	reboot        *connect.Client[v1.RebootRequest, v1.RebootResponse]
+	upgrade       *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
+	diagnostics   *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
+	runDiagnostic *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -459,59 +290,9 @@ func (c *nodeServiceClient) Reboot(ctx context.Context, req *connect.Request[v1.
 	return c.reboot.CallUnary(ctx, req)
 }
 
-// Bootstrap calls chalkos.node.v1.NodeService.Bootstrap.
-func (c *nodeServiceClient) Bootstrap(ctx context.Context, req *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error) {
-	return c.bootstrap.CallUnary(ctx, req)
-}
-
-// EtcdMembers calls chalkos.node.v1.NodeService.EtcdMembers.
-func (c *nodeServiceClient) EtcdMembers(ctx context.Context, req *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error) {
-	return c.etcdMembers.CallUnary(ctx, req)
-}
-
-// EtcdRemoveMember calls chalkos.node.v1.NodeService.EtcdRemoveMember.
-func (c *nodeServiceClient) EtcdRemoveMember(ctx context.Context, req *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error) {
-	return c.etcdRemoveMember.CallUnary(ctx, req)
-}
-
-// EtcdLeave calls chalkos.node.v1.NodeService.EtcdLeave.
-func (c *nodeServiceClient) EtcdLeave(ctx context.Context, req *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error) {
-	return c.etcdLeave.CallUnary(ctx, req)
-}
-
-// RenewNodeCertificate calls chalkos.node.v1.NodeService.RenewNodeCertificate.
-func (c *nodeServiceClient) RenewNodeCertificate(ctx context.Context, req *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error) {
-	return c.renewNodeCertificate.CallUnary(ctx, req)
-}
-
-// RotationStep calls chalkos.node.v1.NodeService.RotationStep.
-func (c *nodeServiceClient) RotationStep(ctx context.Context, req *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error) {
-	return c.rotationStep.CallUnary(ctx, req)
-}
-
 // Upgrade calls chalkos.node.v1.NodeService.Upgrade.
 func (c *nodeServiceClient) Upgrade(ctx context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse] {
 	return c.upgrade.CallClientStream(ctx)
-}
-
-// DrainNode calls chalkos.node.v1.NodeService.DrainNode.
-func (c *nodeServiceClient) DrainNode(ctx context.Context, req *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error) {
-	return c.drainNode.CallUnary(ctx, req)
-}
-
-// UncordonNode calls chalkos.node.v1.NodeService.UncordonNode.
-func (c *nodeServiceClient) UncordonNode(ctx context.Context, req *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error) {
-	return c.uncordonNode.CallUnary(ctx, req)
-}
-
-// RevokeNode calls chalkos.node.v1.NodeService.RevokeNode.
-func (c *nodeServiceClient) RevokeNode(ctx context.Context, req *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error) {
-	return c.revokeNode.CallUnary(ctx, req)
-}
-
-// UnrevokeNode calls chalkos.node.v1.NodeService.UnrevokeNode.
-func (c *nodeServiceClient) UnrevokeNode(ctx context.Context, req *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error) {
-	return c.unrevokeNode.CallUnary(ctx, req)
 }
 
 // Diagnostics calls chalkos.node.v1.NodeService.Diagnostics.
@@ -524,11 +305,6 @@ func (c *nodeServiceClient) RunDiagnostic(ctx context.Context, req *connect.Requ
 	return c.runDiagnostic.CallServerStream(ctx, req)
 }
 
-// Routes calls chalkos.node.v1.NodeService.Routes.
-func (c *nodeServiceClient) Routes(ctx context.Context, req *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error) {
-	return c.routes.CallUnary(ctx, req)
-}
-
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in maintenance and normal mode to readers.
@@ -537,10 +313,10 @@ type NodeServiceHandler interface {
 	// readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
 	// Contract returns the config contract of the image the node runs: the variant and platform it
-	// was built for, its layers, the schemas of the config kinds it accepts and its image.json, which
-	// chalkctl checks config against before it delivers it. The installer refuses it: config is for
-	// the image it installs, whose contract comes with that image. Available in maintenance and
-	// normal mode to readers.
+	// was built for, its layers, the schemas of the config kinds it accepts and its layers' facts,
+	// such as the Kubernetes image.json, which chalkctl checks config against before it delivers
+	// it. The installer refuses it: config is for the image it installs, whose contract comes with
+	// that image. Available in maintenance and normal mode to readers.
 	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
@@ -548,9 +324,9 @@ type NodeServiceHandler interface {
 	// registry, which the installer pulls. An install the installer did not finish continues when
 	// run again, from either. Available in maintenance mode to admins.
 	Install(context.Context, *connect.ClientStream[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
-	// ApplyConfig replaces the config of an installed node, or delivers it a Kubernetes share, a
-	// node certificate or OS CAs. Destructive storage changes are refused; additive ones are
-	// applied live. Available in normal mode to admins.
+	// ApplyConfig replaces the config of an installed node, or delivers it payloads of its layers,
+	// such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
+	// refused; additive ones are applied live. Available in normal mode to admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
 	// GetConfig returns the config a slot keeps, the running image's or the staged image's, as it
 	// was delivered, with secret values replaced by their hashes. Available in normal mode to
@@ -561,7 +337,8 @@ type NodeServiceHandler interface {
 	// disk. Available in normal mode to admins.
 	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
 	// Status reports the state of an installed node: its config versions, storage, failed units,
-	// certificates, trust, clock, boot, outputs and Kubernetes. Available in normal mode to readers.
+	// certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
+	// Available in normal mode to readers.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
 	// and normal mode to readers.
@@ -569,34 +346,6 @@ type NodeServiceHandler interface {
 	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
 	// to operators.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
-	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
-	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
-	// is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
-	// normal mode to admins, on images with the Kubernetes layer.
-	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
-	// EtcdMembers lists etcd's members as the node's own member sees them, with their health. It
-	// answers on control-plane nodes that are etcd members. Available in normal mode to readers, on
-	// images with the Kubernetes layer.
-	EtcdMembers(context.Context, *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error)
-	// EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
-	// have fewer healthy members than their quorum, unless forced, and for the node's own member,
-	// which EtcdLeave removes. Available in normal mode to admins, on images with the Kubernetes
-	// layer.
-	EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error)
-	// EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
-	// still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
-	// unpins its addresses. The node joins the cluster again only once it is reinstalled. A
-	// bootstrapped node whose own member does not answer leaves only when forced. Available in
-	// normal mode to admins, on images with the Kubernetes layer.
-	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
-	// RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
-	// the names of the node certificate it authenticated with. It answers on control-plane nodes
-	// and refuses a revoked node. Available in normal mode to nodes.
-	RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error)
-	// RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
-	// out; chalkctl rotate calls it. Available in normal mode to admins, on images with the
-	// Kubernetes layer.
-	RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error)
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 	// The first message carries the header; the store, its hash tree and the UKI follow as chunks,
@@ -609,40 +358,6 @@ type NodeServiceHandler interface {
 	// an operator can run any image as root, with STATE and VAR unsealed, as their keys are sealed
 	// to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
 	Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error)
-	// DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
-	// eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
-	// and pods without a controller stay; they run again on the node once it is back. Pods with
-	// emptyDir volumes are evicted only when the request accepts losing that data. Pods that
-	// terminate already, as those an earlier drain evicted, are not evicted again, but the call
-	// returns only once they and the pods it evicted have stopped. A node that was cordoned already
-	// stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. It
-	// answers on bootstrapped control-plane nodes. Available in normal mode to operators, on images
-	// with the Kubernetes layer. An eviction refused for good, or one a PodDisruptionBudget holds
-	// back until the timeout, fails the call with FAILED_PRECONDITION; pods that did not stop in
-	// time, or whose evictions the API server kept failing, with DEADLINE_EXCEEDED.
-	DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error)
-	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
-	// a node cordoned otherwise as it is. It answers on bootstrapped control-plane nodes. Available
-	// in normal mode to operators, on images with the Kubernetes layer.
-	UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error)
-	// RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
-	// kube-system/chalkos-revoked-nodes, applies the API server's admission policy
-	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
-	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
-	// time of its first revocation. A call that fails after listing the node says so; calling again
-	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-	// map of revoked nodes would grow too long for the API server to compile with it. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
-	// Kubernetes layer.
-	RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error)
-	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
-	// it, so a node of that name may join again. The old node's certificates work again too, unless
-	// the CAs they chain to were rotated after the revocation: the call is refused with
-	// FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
-	// that fails after removing the node says so; calling again applies the policy. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
-	// Kubernetes layer.
-	UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error)
 	// Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
 	// ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
 	Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error)
@@ -655,10 +370,6 @@ type NodeServiceHandler interface {
 	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
 	// a time. Available in maintenance and normal mode to readers.
 	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest], *connect.ServerStream[v1.RunDiagnosticResponse]) error
-	// Routes lists the routes in the node's kernel, of the main table unless another is asked for,
-	// and the paths its BGP instance selected, each within an address range when one is given.
-	// Available in normal mode to readers, on images with the router layer.
-	Routes(context.Context, *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -728,70 +439,10 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("Reboot")),
 		connect.WithHandlerOptions(opts...),
 	)
-	nodeServiceBootstrapHandler := connect.NewUnaryHandler(
-		NodeServiceBootstrapProcedure,
-		svc.Bootstrap,
-		connect.WithSchema(nodeServiceMethods.ByName("Bootstrap")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceEtcdMembersHandler := connect.NewUnaryHandler(
-		NodeServiceEtcdMembersProcedure,
-		svc.EtcdMembers,
-		connect.WithSchema(nodeServiceMethods.ByName("EtcdMembers")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceEtcdRemoveMemberHandler := connect.NewUnaryHandler(
-		NodeServiceEtcdRemoveMemberProcedure,
-		svc.EtcdRemoveMember,
-		connect.WithSchema(nodeServiceMethods.ByName("EtcdRemoveMember")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceEtcdLeaveHandler := connect.NewUnaryHandler(
-		NodeServiceEtcdLeaveProcedure,
-		svc.EtcdLeave,
-		connect.WithSchema(nodeServiceMethods.ByName("EtcdLeave")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceRenewNodeCertificateHandler := connect.NewUnaryHandler(
-		NodeServiceRenewNodeCertificateProcedure,
-		svc.RenewNodeCertificate,
-		connect.WithSchema(nodeServiceMethods.ByName("RenewNodeCertificate")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceRotationStepHandler := connect.NewUnaryHandler(
-		NodeServiceRotationStepProcedure,
-		svc.RotationStep,
-		connect.WithSchema(nodeServiceMethods.ByName("RotationStep")),
-		connect.WithHandlerOptions(opts...),
-	)
 	nodeServiceUpgradeHandler := connect.NewClientStreamHandler(
 		NodeServiceUpgradeProcedure,
 		svc.Upgrade,
 		connect.WithSchema(nodeServiceMethods.ByName("Upgrade")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceDrainNodeHandler := connect.NewUnaryHandler(
-		NodeServiceDrainNodeProcedure,
-		svc.DrainNode,
-		connect.WithSchema(nodeServiceMethods.ByName("DrainNode")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceUncordonNodeHandler := connect.NewUnaryHandler(
-		NodeServiceUncordonNodeProcedure,
-		svc.UncordonNode,
-		connect.WithSchema(nodeServiceMethods.ByName("UncordonNode")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceRevokeNodeHandler := connect.NewUnaryHandler(
-		NodeServiceRevokeNodeProcedure,
-		svc.RevokeNode,
-		connect.WithSchema(nodeServiceMethods.ByName("RevokeNode")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceUnrevokeNodeHandler := connect.NewUnaryHandler(
-		NodeServiceUnrevokeNodeProcedure,
-		svc.UnrevokeNode,
-		connect.WithSchema(nodeServiceMethods.ByName("UnrevokeNode")),
 		connect.WithHandlerOptions(opts...),
 	)
 	nodeServiceDiagnosticsHandler := connect.NewUnaryHandler(
@@ -804,12 +455,6 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		NodeServiceRunDiagnosticProcedure,
 		svc.RunDiagnostic,
 		connect.WithSchema(nodeServiceMethods.ByName("RunDiagnostic")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceRoutesHandler := connect.NewUnaryHandler(
-		NodeServiceRoutesProcedure,
-		svc.Routes,
-		connect.WithSchema(nodeServiceMethods.ByName("Routes")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -834,34 +479,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceLogsHandler.ServeHTTP(w, r)
 		case NodeServiceRebootProcedure:
 			nodeServiceRebootHandler.ServeHTTP(w, r)
-		case NodeServiceBootstrapProcedure:
-			nodeServiceBootstrapHandler.ServeHTTP(w, r)
-		case NodeServiceEtcdMembersProcedure:
-			nodeServiceEtcdMembersHandler.ServeHTTP(w, r)
-		case NodeServiceEtcdRemoveMemberProcedure:
-			nodeServiceEtcdRemoveMemberHandler.ServeHTTP(w, r)
-		case NodeServiceEtcdLeaveProcedure:
-			nodeServiceEtcdLeaveHandler.ServeHTTP(w, r)
-		case NodeServiceRenewNodeCertificateProcedure:
-			nodeServiceRenewNodeCertificateHandler.ServeHTTP(w, r)
-		case NodeServiceRotationStepProcedure:
-			nodeServiceRotationStepHandler.ServeHTTP(w, r)
 		case NodeServiceUpgradeProcedure:
 			nodeServiceUpgradeHandler.ServeHTTP(w, r)
-		case NodeServiceDrainNodeProcedure:
-			nodeServiceDrainNodeHandler.ServeHTTP(w, r)
-		case NodeServiceUncordonNodeProcedure:
-			nodeServiceUncordonNodeHandler.ServeHTTP(w, r)
-		case NodeServiceRevokeNodeProcedure:
-			nodeServiceRevokeNodeHandler.ServeHTTP(w, r)
-		case NodeServiceUnrevokeNodeProcedure:
-			nodeServiceUnrevokeNodeHandler.ServeHTTP(w, r)
 		case NodeServiceDiagnosticsProcedure:
 			nodeServiceDiagnosticsHandler.ServeHTTP(w, r)
 		case NodeServiceRunDiagnosticProcedure:
 			nodeServiceRunDiagnosticHandler.ServeHTTP(w, r)
-		case NodeServiceRoutesProcedure:
-			nodeServiceRoutesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -911,48 +534,8 @@ func (UnimplementedNodeServiceHandler) Reboot(context.Context, *connect.Request[
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Reboot is not implemented"))
 }
 
-func (UnimplementedNodeServiceHandler) Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Bootstrap is not implemented"))
-}
-
-func (UnimplementedNodeServiceHandler) EtcdMembers(context.Context, *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.EtcdMembers is not implemented"))
-}
-
-func (UnimplementedNodeServiceHandler) EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.EtcdRemoveMember is not implemented"))
-}
-
-func (UnimplementedNodeServiceHandler) EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.EtcdLeave is not implemented"))
-}
-
-func (UnimplementedNodeServiceHandler) RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RenewNodeCertificate is not implemented"))
-}
-
-func (UnimplementedNodeServiceHandler) RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RotationStep is not implemented"))
-}
-
 func (UnimplementedNodeServiceHandler) Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Upgrade is not implemented"))
-}
-
-func (UnimplementedNodeServiceHandler) DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.DrainNode is not implemented"))
-}
-
-func (UnimplementedNodeServiceHandler) UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.UncordonNode is not implemented"))
-}
-
-func (UnimplementedNodeServiceHandler) RevokeNode(context.Context, *connect.Request[v1.RevokeNodeRequest]) (*connect.Response[v1.RevokeNodeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RevokeNode is not implemented"))
-}
-
-func (UnimplementedNodeServiceHandler) UnrevokeNode(context.Context, *connect.Request[v1.UnrevokeNodeRequest]) (*connect.Response[v1.UnrevokeNodeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.UnrevokeNode is not implemented"))
 }
 
 func (UnimplementedNodeServiceHandler) Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error) {
@@ -961,8 +544,4 @@ func (UnimplementedNodeServiceHandler) Diagnostics(context.Context, *connect.Req
 
 func (UnimplementedNodeServiceHandler) RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest], *connect.ServerStream[v1.RunDiagnosticResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RunDiagnostic is not implemented"))
-}
-
-func (UnimplementedNodeServiceHandler) Routes(context.Context, *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Routes is not implemented"))
 }

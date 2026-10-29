@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 	"github.com/trevex/chalkos/pkg/kubernetes/vip"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 )
@@ -30,6 +31,9 @@ type Kubernetes struct {
 	// etcdURL is where chalkd reaches the node's own etcd member; empty means the cluster's
 	// LocalEtcd.
 	etcdURL string
+	// revokedNodesHook returns the revoked nodes in place of the node's own API server, as
+	// KubernetesOptions.RevokedNodes sets it.
+	revokedNodesHook func(context.Context) (revoked.List, error)
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -163,6 +167,9 @@ type KubernetesOptions struct {
 	// LocalEtcd is where chalkd reaches the node's own etcd member; empty means the cluster's
 	// LocalEtcd.
 	LocalEtcd string
+	// RevokedNodes returns the nodes revoked in the cluster, whose node certificates a control
+	// plane does not renew; nil reads them through the node's own API server. Tests replace it.
+	RevokedNodes func(context.Context) (revoked.List, error)
 }
 
 // LeavesProblem says why renewing the control plane's certificates failed last; "" while it
@@ -179,7 +186,7 @@ func (k *Kubernetes) LeavesProblem() string {
 
 // NewKubernetes returns the Kubernetes side of a node.
 func NewKubernetes(o KubernetesOptions) *Kubernetes {
-	k := &Kubernetes{Paths: o.Paths, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd}
+	k := &Kubernetes{Paths: o.Paths, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd, revokedNodesHook: o.RevokedNodes}
 	if k.Paths == (knode.Paths{}) {
 		k.Paths = knode.DefaultPaths()
 	}

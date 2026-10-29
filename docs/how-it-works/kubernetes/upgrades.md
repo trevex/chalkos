@@ -109,7 +109,7 @@ control plane always needs the flag.
 ## A control plane's chalkd drains each node
 
 Drains run on a control plane's chalkd, through the
-[DrainNode](../../reference/api.md#method-drainnode) method, because an operator's client file
+[DrainNode](../../reference/api.md#kubernetes-method-drainnode) method, because an operator's client file
 carries no Kubernetes credentials. chalkd cordons the node, marks it with the annotation
 `chalkos.dev/upgrade-cordon` and evicts its pods through the eviction API, so PodDisruptionBudgets
 hold. It keeps DaemonSet pods, mirror pods, finished pods and pods without a controller, which

@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/types/known/anypb"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 )
 
@@ -39,6 +42,18 @@ func greetings(t *testing.T, text string) []config.Document {
 
 func greeting(message string) string {
 	return "apiVersion: greeting.example.org/v1alpha1\nkind: Greeting\nmetadata: {name: hello}\nspec: {message: " + message + "}\n"
+}
+
+// A contract whose facts no layer chalkctl knows claims is refused.
+func TestNewContractRefusesUnknownFacts(t *testing.T) {
+	other, err := anypb.New(&nodev1.InfoRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = newContract(map[string][]byte{"greeting.example.org_v1alpha1_Greeting.json": []byte(greetingSchema)}, []*anypb.Any{other})
+	if err == nil || !strings.Contains(err.Error(), "carries facts of type type.googleapis.com/chalkos.node.v1.InfoRequest, which this chalkctl does not know") {
+		t.Errorf("newContract = %v, want a refusal", err)
+	}
 }
 
 // chalkctl checks the image's rules that read no facts: without the node's config the kind's,

@@ -5,6 +5,7 @@ callPackage ./go-module.nix { } {
   pname = "chalkos-rules";
   paths = [
     ../cmd/chalkos-rules
+    ../pkg/api/kubernetes
     ../pkg/atomicfile
     ../pkg/command
     ../pkg/config

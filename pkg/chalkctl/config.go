@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
@@ -21,32 +22,50 @@ import (
 )
 
 // contract is what an image accepts as config: the platform it was built for, the schemas of its
-// kinds and its image.json, as files to send a node, and loaded.
+// kinds and its layers' facts, as files and payloads to send a node, and loaded.
 type contract struct {
 	platform string
 	files    map[string][]byte
-	// kubernetesImage is the image's image.json as the image holds it; empty on an image without
-	// Kubernetes.
-	kubernetesImage []byte
-	schemas         *schema.Schemas
+	// facts are the image's layers' facts as the image holds them; none on an image whose layers
+	// have none.
+	facts   []*anypb.Any
+	schemas *schema.Schemas
 	// image is the image's Kubernetes facts; nil on an image without Kubernetes.
 	image *k8s.Image
 }
 
-func newContract(files map[string][]byte, imageJSON []byte) (contract, error) {
+func newContract(files map[string][]byte, facts []*anypb.Any) (contract, error) {
 	s, err := schema.LoadFiles(files)
 	if err != nil {
 		return contract{}, err
 	}
-	c := contract{files: files, kubernetesImage: imageJSON, schemas: s}
-	if len(imageJSON) > 0 {
-		img, err := k8s.ParseImage(imageJSON)
+	c := contract{files: files, facts: facts, schemas: s}
+	for _, f := range facts {
+		img, ok, err := k8s.ImageOfPayload(f)
+		if !ok {
+			return contract{}, fmt.Errorf("the image's contract carries facts of type %s, which this chalkctl does not know", f.GetTypeUrl())
+		}
 		if err != nil {
 			return contract{}, fmt.Errorf("image.json: %w", err)
 		}
-		c.image = &img
+		if c.image == nil {
+			c.image = &img
+		}
 	}
 	return c, nil
+}
+
+// imageFacts are the layer facts of an image.json as an image holds it; none for an image
+// without one.
+func imageFacts(imageJSON []byte) ([]*anypb.Any, error) {
+	if len(imageJSON) == 0 {
+		return nil, nil
+	}
+	p, err := k8s.FactsPayload(imageJSON)
+	if err != nil {
+		return nil, err
+	}
+	return []*anypb.Any{p}, nil
 }
 
 // imageContract reads the contract of an image directory: its schemas/ and image.json.
@@ -78,7 +97,11 @@ func imageContract(dir string) (contract, error) {
 	case err != nil:
 		return contract{}, err
 	}
-	c, err := newContract(files, imageJSON)
+	facts, err := imageFacts(imageJSON)
+	if err != nil {
+		return contract{}, err
+	}
+	c, err := newContract(files, facts)
 	if err != nil {
 		return contract{}, fmt.Errorf("%s: %w", dir, err)
 	}
@@ -91,7 +114,7 @@ func nodeContract(ctx context.Context, conn *client.Conn, name string) (contract
 	if err != nil {
 		return contract{}, fmt.Errorf("ask %s for the schemas of its image: %w", name, err)
 	}
-	c, err := newContract(resp.Msg.Schemas, resp.Msg.KubernetesImage)
+	c, err := newContract(resp.Msg.Schemas, resp.Msg.LayerFacts)
 	if err != nil {
 		return contract{}, fmt.Errorf("the schemas of the image %s runs: %w", name, err)
 	}
@@ -211,7 +234,11 @@ func inventoryContract(nc *inventory.NodeConfig) (contract, error) {
 	if err != nil {
 		return contract{}, err
 	}
-	c, err := newContract(a.Contract.Schemas, a.Contract.ImageJSON)
+	facts, err := imageFacts(a.Contract.ImageJSON)
+	if err != nil {
+		return contract{}, err
+	}
+	c, err := newContract(a.Contract.Schemas, facts)
 	if err != nil {
 		return contract{}, fmt.Errorf("%s: %w", a.Reference, err)
 	}

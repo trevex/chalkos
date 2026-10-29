@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
@@ -131,7 +132,7 @@ func (r *rotation) applyKubernetes(ctx context.Context, kind clustersecrets.Rota
 // its manifests define.
 func (r *rotation) restartAddons(ctx context.Context) error {
 	return r.throughControlPlane(ctx, func(ctx context.Context, conn *client.Conn) error {
-		resp, err := conn.RotationStep(ctx, connect.NewRequest(&nodev1.RotationStepRequest{Step: nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS}))
+		resp, err := kubernetesClient(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS}))
 		if err == nil {
 			r.say("  restarted %s", strings.Join(resp.Msg.Restarted, ", "))
 			if len(resp.Msg.NotWaited) > 0 {
@@ -162,7 +163,11 @@ func (r *rotation) controlPlanesInTurn(ctx context.Context, kind clustersecrets.
 			if err := applied(st, want); err != nil {
 				return err
 			}
-			if k := st.Kubernetes; k.GetPhase() == nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED && !k.ControlPlaneCurrent {
+			k, err := r.kubernetesStatus(ctx, name)
+			if err != nil {
+				return err
+			}
+			if k.GetPhase() == kubernetesv1.Phase_PHASE_BOOTSTRAPPED && !k.ControlPlaneCurrent {
 				return fmt.Errorf("control plane: %s", k.ControlPlane)
 			}
 			return nil
@@ -185,10 +190,10 @@ func (r *rotation) waitQuorum(ctx context.Context, name string) error {
 	window := min(10*r.poll, r.timeout)
 	var silent time.Time
 	return r.waitFor(ctx, "etcd's members to be healthy", func() error {
-		var members []*nodev1.EtcdMember
+		var members []*kubernetesv1.EtcdMember
 		var answer error
 		err := r.call(name, func(conn *client.Conn) error {
-			resp, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
+			resp, err := kubernetesClient(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
 			if err == nil {
 				members = resp.Msg.Members
 			}
@@ -269,7 +274,7 @@ func (r *rotation) refreshKubernetesCA(ctx context.Context, workers []string) er
 		if err := r.call(name, func(conn *client.Conn) error {
 			ctx, cancel := context.WithTimeout(ctx, r.timeout)
 			defer cancel()
-			_, err := conn.RotationStep(ctx, connect.NewRequest(&nodev1.RotationStepRequest{Step: nodev1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING}))
+			_, err := kubernetesClient(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING}))
 			return err
 		}); err != nil {
 			return err
@@ -292,7 +297,7 @@ func (r *rotation) rewriteEncrypted(ctx context.Context) error {
 		return errors.New("the secrets file accepts no single old encryption key")
 	}
 	deadline := time.Now().Add(r.timeout)
-	counts, err := r.encryptedCounts(ctx, nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
+	counts, err := r.encryptedCounts(ctx, kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
 	// A cluster with many Secrets takes longer to rewrite than the default allows. Whatever
 	// stopped once the time was up, the node's error or the call's own, the time is the cause.
 	if err != nil && (connect.CodeOf(err) == connect.CodeDeadlineExceeded || !time.Now().Before(deadline)) {
@@ -322,7 +327,7 @@ func (r *rotation) finishGuardKubernetes(ctx context.Context, kind clustersecret
 		if len(old) != 1 {
 			return errors.New("the secrets file accepts no single old encryption key")
 		}
-		counts, err := r.encryptedCounts(ctx, nodev1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED)
+		counts, err := r.encryptedCounts(ctx, kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED)
 		if err != nil {
 			return err
 		}
@@ -348,7 +353,7 @@ func (r *rotation) pausedKubernetes(ctx context.Context, rot clustersecrets.Rota
 		r.say("The API server signs tokens with the new service-account key, and chalkos's addons and the workloads of the Addon documents, StatefulSets included, restarted with new tokens. Kubelets renew the tokens of other pods within the hour after every control plane applied the switch; finish from %s with chalkctl rotate %s --finish.", at.Local().Format(time.RFC3339), kind)
 		var secrets []string
 		err := r.throughControlPlane(ctx, func(ctx context.Context, conn *client.Conn) error {
-			resp, err := conn.RotationStep(ctx, connect.NewRequest(&nodev1.RotationStepRequest{Step: nodev1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS}))
+			resp, err := kubernetesClient(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS}))
 			if err == nil {
 				secrets = resp.Msg.TokenSecrets
 			}
@@ -380,10 +385,10 @@ func (r *rotation) throughControlPlane(ctx context.Context, fn func(ctx context.
 
 // encryptedCounts runs a rotation step that counts the objects etcd holds and returns them by key
 // name, "" for those stored unencrypted.
-func (r *rotation) encryptedCounts(ctx context.Context, step nodev1.RotationStep) (map[string]uint64, error) {
+func (r *rotation) encryptedCounts(ctx context.Context, step kubernetesv1.RotationStep) (map[string]uint64, error) {
 	counts := map[string]uint64{}
 	err := r.throughControlPlane(ctx, func(ctx context.Context, conn *client.Conn) error {
-		resp, err := conn.RotationStep(ctx, connect.NewRequest(&nodev1.RotationStepRequest{Step: step}))
+		resp, err := kubernetesClient(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: step}))
 		if err != nil {
 			return err
 		}

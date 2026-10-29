@@ -21,6 +21,8 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd"
@@ -221,22 +223,35 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 		st.Boot.Failed = &nodev1.BootImage{RootHash: n.failedRoot, Generation: n.generation + 1}
 	}
 	st.ConfigVersion = versionOf(n.config)
+	if n.failed != "" {
+		st.Boot.Journal = []string{"chalkd: not healthy yet: units failed: broken.service"}
+	}
+	return connect.NewResponse(st), nil
+}
+
+// upgradeKubernetes is an upgradeFake's Kubernetes layer.
+type upgradeKubernetes struct {
+	*upgradeFake
+	kubernetesv1connect.UnimplementedKubernetesServiceHandler
+}
+
+func (n upgradeKubernetes) Status(context.Context, *connect.Request[kubernetesv1.StatusRequest]) (*connect.Response[kubernetesv1.StatusResponse], error) {
+	if err := n.down(); err != nil {
+		return nil, err
+	}
 	n.lab.mu.Lock()
 	ready := "True"
 	if n.lab.notReady[n.name] {
 		ready = "False"
 	}
 	n.lab.mu.Unlock()
-	if n.failed != "" {
-		st.Boot.Journal = []string{"chalkd: not healthy yet: units failed: broken.service"}
-	}
 	switch n.kind {
 	case kubernetes.KindControlPlane:
-		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, NodeReady: ready}
+		return connect.NewResponse(&kubernetesv1.StatusResponse{Kind: n.kind, State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: ready}), nil
 	case kubernetes.KindWorker:
-		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED, NodeReady: ready}
+		return connect.NewResponse(&kubernetesv1.StatusResponse{Kind: n.kind, State: "joined", Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: ready}), nil
 	}
-	return connect.NewResponse(st), nil
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("the kubernetes layer is not in this image"))
 }
 
 func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
@@ -327,7 +342,7 @@ func (n *upgradeFake) Reboot(context.Context, *connect.Request[nodev1.RebootRequ
 	return connect.NewResponse(&nodev1.RebootResponse{}), nil
 }
 
-func (n *upgradeFake) EtcdMembers(context.Context, *connect.Request[nodev1.EtcdMembersRequest]) (*connect.Response[nodev1.EtcdMembersResponse], error) {
+func (n upgradeKubernetes) EtcdMembers(context.Context, *connect.Request[kubernetesv1.EtcdMembersRequest]) (*connect.Response[kubernetesv1.EtcdMembersResponse], error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
@@ -335,12 +350,12 @@ func (n *upgradeFake) EtcdMembers(context.Context, *connect.Request[nodev1.EtcdM
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is a worker; ask a control-plane node"))
 	}
 	n.lab.record("%s members", n.name)
-	resp := &nodev1.EtcdMembersResponse{}
+	resp := &kubernetesv1.EtcdMembersResponse{}
 	n.lab.mu.Lock()
 	defer n.lab.mu.Unlock()
 	for name, node := range n.lab.nodes {
 		if node.kind == kubernetes.KindControlPlane {
-			m := &nodev1.EtcdMember{Name: name}
+			m := &kubernetesv1.EtcdMember{Name: name}
 			if slices.Contains(n.lab.unhealthyMembers, name) {
 				m.Unhealthy = "no answer"
 			}
@@ -350,7 +365,7 @@ func (n *upgradeFake) EtcdMembers(context.Context, *connect.Request[nodev1.EtcdM
 	return connect.NewResponse(resp), nil
 }
 
-func (n *upgradeFake) DrainNode(_ context.Context, req *connect.Request[nodev1.DrainNodeRequest]) (*connect.Response[nodev1.DrainNodeResponse], error) {
+func (n upgradeKubernetes) DrainNode(_ context.Context, req *connect.Request[kubernetesv1.DrainNodeRequest]) (*connect.Response[kubernetesv1.DrainNodeResponse], error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
@@ -368,21 +383,21 @@ func (n *upgradeFake) DrainNode(_ context.Context, req *connect.Request[nodev1.D
 	if !cordoned {
 		n.lab.cordoned[req.Msg.Node], marked = true, true
 	}
-	return connect.NewResponse(&nodev1.DrainNodeResponse{Marked: marked, Evicted: []string{"default/web"}, Unmanaged: []string{"default/bare"}}), nil
+	return connect.NewResponse(&kubernetesv1.DrainNodeResponse{Marked: marked, Evicted: []string{"default/web"}, Unmanaged: []string{"default/bare"}}), nil
 }
 
-func (n *upgradeFake) UncordonNode(_ context.Context, req *connect.Request[nodev1.UncordonNodeRequest]) (*connect.Response[nodev1.UncordonNodeResponse], error) {
+func (n upgradeKubernetes) UncordonNode(_ context.Context, req *connect.Request[kubernetesv1.UncordonNodeRequest]) (*connect.Response[kubernetesv1.UncordonNodeResponse], error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
 	n.lab.mu.Lock()
 	defer n.lab.mu.Unlock()
 	if !n.lab.cordoned[req.Msg.Node] {
-		return connect.NewResponse(&nodev1.UncordonNodeResponse{}), nil
+		return connect.NewResponse(&kubernetesv1.UncordonNodeResponse{}), nil
 	}
 	delete(n.lab.cordoned, req.Msg.Node)
 	n.lab.events = append(n.lab.events, req.Msg.Node+" uncordon")
-	return connect.NewResponse(&nodev1.UncordonNodeResponse{Uncordoned: true}), nil
+	return connect.NewResponse(&kubernetesv1.UncordonNodeResponse{Uncordoned: true}), nil
 }
 
 // fakeRoleKey holds the role a fake node's client certificate grants.
@@ -445,8 +460,10 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpVarian
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, h := nodev1connect.NewNodeServiceHandler(n)
-		l.addrs[name] = serveTLS(t, withRoles(h), chalkd.TLSConfig(nc.GetCertificate, nc.ClientCAs))
+		mux := http.NewServeMux()
+		mux.Handle(nodev1connect.NewNodeServiceHandler(n))
+		mux.Handle(kubernetesv1connect.NewKubernetesServiceHandler(upgradeKubernetes{upgradeFake: n}))
+		l.addrs[name] = serveTLS(t, withRoles(mux), chalkd.TLSConfig(nc.GetCertificate, nc.ClientCAs))
 		l.nodes[name] = n
 	}
 	l.useInventory(t, nil)
@@ -1250,32 +1267,6 @@ func TestUpgradeDrainsOnlyNodesWithTheKubernetesLayer(t *testing.T) {
 	}
 }
 
-// TestUpgradeNodesWhoseChalkdReportsNoLayers upgrades nodes whose chalkd predates layers by what
-// their status says of Kubernetes: the control planes one at a time with a check of etcd's quorum,
-// and the workers drained.
-func TestUpgradeNodesWhoseChalkdReportsNoLayers(t *testing.T) {
-	l := newUpgradeLab(t, 3)
-	for _, n := range l.nodes {
-		n.layers = nil
-	}
-	if err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0"), "--max-unavailable", "3"); err != nil {
-		t.Fatalf("%v\n%s", err, l.ta.stdout)
-	}
-	var want []string
-	for _, cp := range []string{"cp1", "cp2", "cp3"} {
-		want = append(want, cp+" members", cp+" upgrade", cp+" drain", cp+" reboot", cp+" uncordon")
-	}
-	if got := l.takeEvents(); !slices.Equal(got, want) {
-		t.Errorf("events:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
-	}
-	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1"); err != nil {
-		t.Fatalf("%v\n%s", err, l.ta.stdout)
-	}
-	if events := l.takeEvents(); !slices.Contains(events, "w1 drain") || !slices.Contains(events, "w1 uncordon") {
-		t.Errorf("w1 was not drained: %q", events)
-	}
-}
-
 // TestUpgradeAsksOnlyControlPlanesWithTheKubernetesLayer upgrades a worker of a partial cluster
 // through the control plane --address names, which the run leaves alone, only when that node's
 // image has the Kubernetes layer.
@@ -1582,7 +1573,11 @@ func (n *upgradeFake) Contract(context.Context, *connect.Request[nodev1.Contract
 		}
 	}
 	if n.variant == "cp" || n.variant == "w" || n.variant == "k8s" {
-		resp.KubernetesImage = []byte(testImageJSON)
+		facts, err := kubernetes.FactsPayload([]byte(testImageJSON))
+		if err != nil {
+			return nil, err
+		}
+		resp.LayerFacts = append(resp.LayerFacts, facts)
 	}
 	return connect.NewResponse(resp), nil
 }

@@ -26,7 +26,6 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 	t.Helper()
 	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
-	s.Layers = layers.Of(layers.Router)
 	frr := func(name string) string {
 		data, err := os.ReadFile("../router/testdata/" + name)
 		if err != nil {
@@ -47,7 +46,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 			}
 		}
 	}
-	s.Router = &chalkd.Router{Run: r, ResolverConfig: conf, NAT64Dir: nat64, KernelRoutes: func() ([]*router.KernelRoute, error) {
+	withPlugins(t, s, layers.Of(layers.Router), &chalkd.Router{Run: r, ResolverConfig: conf, NAT64Dir: nat64, KernelRoutes: func() ([]*router.KernelRoute, error) {
 		hops := func() []*router.NextHop {
 			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
@@ -57,7 +56,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 			{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254, Metric: 1024},
 			{Destination: "2001:db8:ffff::1/128", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20, NextHops: hops()},
 		}, nil
-	}}
+	}})
 	return ta.startNode(t, s)
 }
 

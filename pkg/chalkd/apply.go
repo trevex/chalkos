@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config/slot"
@@ -103,8 +104,8 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	m := r.msg
 	// Without config the node keeps its own, which the share is checked against.
 	d := &delivery{s: s, msg: m, keep: r.identity == ""}
-	if d.keep && len(m.KubernetesShare) == 0 && len(m.NodeCertificate) == 0 && len(m.Trust) == 0 {
-		return nil, failed(connect.CodeInvalidArgument, "the request delivers no config, share, node certificate or OS CAs")
+	if d.keep && len(m.Layers) == 0 && len(m.NodeCertificate) == 0 && len(m.Trust) == 0 {
+		return nil, failed(connect.CodeInvalidArgument, "the request delivers no config, layer payload, node certificate or OS CAs")
 	}
 	// A node certificate is checked against the OS CAs the node trusts when it arrives.
 	if len(m.Trust) > 0 && len(m.NodeCertificate) > 0 {
@@ -157,7 +158,11 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 			return nil, s.elsewhere(err, d.identity.section, nil)
 		}
 	}
-	if d.share, err = s.kubernetesShare(d.identity, m.KubernetesShare, d.osCA, d.cluster); err != nil {
+	share, err := sharePayload(m.Layers)
+	if err != nil {
+		return nil, err
+	}
+	if d.share, err = s.kubernetesShare(d.identity, share, d.osCA, d.cluster); err != nil {
 		return nil, err
 	}
 	if err := s.checkNodeCertificate(m.NodeCertificate, m.NodeKey); err != nil {
@@ -294,6 +299,26 @@ func (s *Server) forceRenewals() {
 			leaves.Force()
 		}
 	}
+}
+
+// sharePayload returns the share among the request's layer payloads; nil without one. A payload
+// of another type is refused, and so is a second share.
+func sharePayload(payloads []*anypb.Any) ([]byte, error) {
+	var share []byte
+	for _, p := range payloads {
+		if !kpki.IsPayload(p) {
+			return nil, failed(connect.CodeInvalidArgument, "the request carries a payload of type %s, which no layer of this image takes", p.GetTypeUrl())
+		}
+		if share != nil {
+			return nil, failed(connect.CodeInvalidArgument, "the request carries two shares; deliver one")
+		}
+		data, err := kpki.SharePayload(p)
+		if err != nil {
+			return nil, failed(connect.CodeInvalidArgument, "%v", err)
+		}
+		share = data
+	}
+	return share, nil
 }
 
 // kubernetesShare validates a delivered share for the node the identity names, a node CA in it

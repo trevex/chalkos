@@ -9,6 +9,10 @@ This page is for authors of clients of the node API, the API chalkd serves on ev
 readers want [chalkctl](cli/chalkctl.md), its client, instead. chalkd serves the API on TCP port
 50000 over TLS, as a Connect service that also answers gRPC and gRPC-Web.
 
+Beside NodeService, which every image serves, chalkd serves the API of each layer the image
+carries: KubernetesService on images with the Kubernetes layer, RouterService on images with the
+router layer. On an image without the layer their methods fail with UNIMPLEMENTED.
+
 Each method names the modes it is available in and the least role it needs, which
 [Roles and credentials](access.md) explains, followed by its request and response messages. The
 messages that fields of other messages hold are under [Messages](#messages), and the enumerations
@@ -23,9 +27,8 @@ The definition is `api/chalkos/node/v1/node.proto`, package `chalkos.node.v1`.
 NodeService is the API chalkd serves on each node. Each method's comment names the modes it is
 available in, maintenance mode, normal mode or both, and the least role a client certificate
 needs to call it: reader, operator or admin, where each role may call what the roles before it
-may. Only nodes call RenewNodeCertificate, with the node role. A method of a layer, such as the
-Kubernetes layer, says so; on an image without that layer it fails with UNIMPLEMENTED, before
-the mode and the role are checked.
+may. The API of each layer the image carries, such as chalkos.kubernetes.v1.KubernetesService,
+is served beside it.
 
 ### Info { #method-info }
 
@@ -88,10 +91,10 @@ Field types: [Disk](#message-disk).
 ### Contract { #method-contract }
 
 Contract returns the config contract of the image the node runs: the variant and platform it
-was built for, its layers, the schemas of the config kinds it accepts and its image.json, which
-chalkctl checks config against before it delivers it. The installer refuses it: config is for
-the image it installs, whose contract comes with that image. Available in maintenance and
-normal mode to readers.
+was built for, its layers, the schemas of the config kinds it accepts and its layers' facts,
+such as the Kubernetes image.json, which chalkctl checks config against before it delivers
+it. The installer refuses it: config is for the image it installs, whose contract comes with
+that image. Available in maintenance and normal mode to readers.
 
 Request: ContractRequest. Response: ContractResponse.
 
@@ -110,7 +113,7 @@ The response of Contract: the config contract of the image the node runs.
 | `schemas` | map of bytes | The image's schemas by file name, as /etc/chalkos/schemas holds them. |
 | `variant` | string | The variant the image was built as, as its os-release names it. |
 | `platform` | string | The platform the image was built for, as its os-release names it. |
-| `kubernetes_image` | bytes | The image's image.json: the Kubernetes release, the images of its components and the pod network it ships. Empty on an image without Kubernetes. |
+| `layer_facts` | list of google.protobuf.Any | The facts of the image's layers, such as chalkos.kubernetes.v1.ImageFacts, which config is translated with; empty for an image whose layers have none. |
 | `layers` | list of string | The layers the image carries beside the base every image has, such as "kubernetes", in name order. |
 
 ### Install { #method-install }
@@ -142,25 +145,25 @@ No fields.
 
 ### ApplyConfig { #method-applyconfig }
 
-ApplyConfig replaces the config of an installed node, or delivers it a Kubernetes share, a
-node certificate or OS CAs. Destructive storage changes are refused; additive ones are
-applied live. Available in normal mode to admins.
+ApplyConfig replaces the config of an installed node, or delivers it payloads of its layers,
+such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
+refused; additive ones are applied live. Available in normal mode to admins.
 
 Request: ApplyConfigRequest. Response: ApplyConfigResponse.
 
 #### ApplyConfigRequest { #message-applyconfigrequest }
 
-The request of ApplyConfig: a config, or a share, a node certificate or OS CAs to deliver.
+The request of ApplyConfig: a config, or layer payloads, a node certificate or OS CAs to deliver.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `fallback_secret` | string | Recovery key or password enrolled on the encrypted volumes the config adds; required when it adds one and the node's fallback is not none. |
-| `kubernetes_share` | bytes | A new Kubernetes share (JSON) replacing the node's, as InstallHeader carries it; empty keeps the node's share. |
 | `node_certificate` | bytes | A new node certificate for the node, followed by the certificate of the node CA that issued it (PEM), which chalkd serves from then on; empty keeps the node's. |
 | `node_key` | bytes | PEM key of node_certificate; empty keeps the node's. |
 | `trust` | bytes | The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them; empty keeps the node's. They must verify the node's certificate, the caller's and a control plane's node CA. Not together with a node certificate. |
-| `config` | string | The node's config, as InstallHeader.config holds it, checked against the running image's schemas. It replaces the node's config as a whole. Empty keeps the node's config and storage, for a request that delivers only a share, a node certificate or OS CAs. |
+| `config` | string | The node's config, as InstallHeader.config holds it, checked against the running image's schemas. It replaces the node's config as a whole. Empty keeps the node's config and storage, for a request that delivers only layer payloads, a node certificate or OS CAs. |
 | `staged` | bool | Whether the config is for the image staged to boot next: chalkd checks it against that image and keeps it in that image's config slot, changing nothing the running image runs but the machine's storage. The config meets that image's change rules, compared with the running slot's config and the machine as for the running image, and the storage changes they accept are made at once, with fallback_secret. It takes the config and the fallback secret alone, and an image staged. |
+| `layers` | list of google.protobuf.Any | Payloads of the image's layers, such as a new chalkos.kubernetes.v1.Share replacing the node's, each kept by the layer whose type it is; the node refuses a payload no layer of its image takes. Empty keeps the layers' payloads. |
 
 #### ApplyConfigResponse { #message-applyconfigresponse }
 
@@ -226,7 +229,8 @@ No fields.
 ### Status { #method-status }
 
 Status reports the state of an installed node: its config versions, storage, failed units,
-certificates, trust, clock, boot, outputs and Kubernetes. Available in normal mode to readers.
+certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
+Available in normal mode to readers.
 
 Request: StatusRequest. Response: StatusResponse.
 
@@ -245,7 +249,6 @@ The response of Status: the state of an installed node.
 | `disks` | list of DiskStatus | The disks of the node's storage, by name, as the boot's storage setup left them. |
 | `volumes` | list of VolumeStatus | The volumes of the node's storage, by name. |
 | `failed_units` | list of string | Names of the systemd units that failed. |
-| `kubernetes` | KubernetesStatus | State of the node's Kubernetes; absent on a node whose image has no Kubernetes. |
 | `certificates` | list of CertificateStatus | Every certificate the node holds or issues, with its expiry and what needs doing about it. |
 | `time` | TimeStatus | How the node keeps its clock. |
 | `trust` | list of TrustStatus | What the node trusts and issues with, by fingerprint. |
@@ -254,9 +257,8 @@ The response of Status: the state of an installed node.
 | `config_version` | string | SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by its own SHA-256. Empty on a node that runs no config. |
 | `staged_config_version` | string | The version of the config kept for the image staged to boot next, as config_version gives the running one's; empty without a staged image or config for it. |
 | `outputs` | list of OutputStatus | The image's outputs, by name. |
-| `router` | RouterStatus | State of the node's routing daemons; absent in maintenance mode and on a node whose image has no router layer. |
 
-Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [KubernetesStatus](#message-kubernetesstatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [RouterStatus](#message-routerstatus).
+Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus).
 
 ### Logs { #method-logs }
 
@@ -301,161 +303,6 @@ The response of Reboot, which the node sends before it reboots.
 
 No fields.
 
-### Bootstrap { #method-bootstrap }
-
-Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
-chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
-is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
-normal mode to admins, on images with the Kubernetes layer.
-
-Request: BootstrapRequest. Response: BootstrapResponse.
-
-#### BootstrapRequest { #message-bootstraprequest }
-
-The request of Bootstrap.
-
-No fields.
-
-#### BootstrapResponse { #message-bootstrapresponse }
-
-The response of Bootstrap, once the add-ons are applied.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `applied` | uint32 | Objects applied: chalkos's add-ons and those of the node's Addon documents. |
-
-### EtcdMembers { #method-etcdmembers }
-
-EtcdMembers lists etcd's members as the node's own member sees them, with their health. It
-answers on control-plane nodes that are etcd members. Available in normal mode to readers, on
-images with the Kubernetes layer.
-
-Request: EtcdMembersRequest. Response: EtcdMembersResponse.
-
-#### EtcdMembersRequest { #message-etcdmembersrequest }
-
-The request of EtcdMembers.
-
-No fields.
-
-#### EtcdMembersResponse { #message-etcdmembersresponse }
-
-The response of EtcdMembers.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `members` | list of EtcdMember | etcd's members, as etcd lists them. |
-
-Field types: [EtcdMember](#message-etcdmember).
-
-### EtcdRemoveMember { #method-etcdremovemember }
-
-EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
-have fewer healthy members than their quorum, unless forced, and for the node's own member,
-which EtcdLeave removes. Available in normal mode to admins, on images with the Kubernetes
-layer.
-
-Request: EtcdRemoveMemberRequest. Response: EtcdRemoveMemberResponse.
-
-#### EtcdRemoveMemberRequest { #message-etcdremovememberrequest }
-
-The request of EtcdRemoveMember.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `member` | string | The member's name or its ID in hex. |
-| `force` | bool | Whether the member is removed even when the voters left would have no healthy quorum. |
-
-#### EtcdRemoveMemberResponse { #message-etcdremovememberresponse }
-
-The response of EtcdRemoveMember.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `removed` | EtcdMember | The member that was removed, without its health. |
-
-Field types: [EtcdMember](#message-etcdmember).
-
-### EtcdLeave { #method-etcdleave }
-
-EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
-still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
-unpins its addresses. The node joins the cluster again only once it is reinstalled. A
-bootstrapped node whose own member does not answer leaves only when forced. Available in
-normal mode to admins, on images with the Kubernetes layer.
-
-Request: EtcdLeaveRequest. Response: EtcdLeaveResponse.
-
-#### EtcdLeaveRequest { #message-etcdleaverequest }
-
-The request of EtcdLeave.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `force` | bool | Whether the node leaves through the other members also when its own etcd member does not answer, as on a node that lost its pinned address. |
-
-#### EtcdLeaveResponse { #message-etcdleaveresponse }
-
-The response of EtcdLeave, once the node is out of etcd.
-
-No fields.
-
-### RenewNodeCertificate { #method-renewnodecertificate }
-
-RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
-the names of the node certificate it authenticated with. It answers on control-plane nodes
-and refuses a revoked node. Available in normal mode to nodes.
-
-Request: RenewNodeCertificateRequest. Response: RenewNodeCertificateResponse.
-
-#### RenewNodeCertificateRequest { #message-renewnodecertificaterequest }
-
-The request of RenewNodeCertificate.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `certificate_request` | bytes | PKCS #10 certificate request (DER) signed with the node's new key, which never leaves the node. Only its key is used; the names come from the caller's certificate. |
-
-#### RenewNodeCertificateResponse { #message-renewnodecertificateresponse }
-
-The response of RenewNodeCertificate.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `certificate_chain` | bytes | The new node certificate followed by the certificate of the node CA that issued it (PEM). |
-
-### RotationStep { #method-rotationstep }
-
-RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
-out; chalkctl rotate calls it. Available in normal mode to admins, on images with the
-Kubernetes layer.
-
-Request: RotationStepRequest. Response: RotationStepResponse.
-
-#### RotationStepRequest { #message-rotationsteprequest }
-
-The request of RotationStep.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `step` | RotationStep | The step to run. |
-
-Field types: [RotationStep](#enum-rotationstep).
-
-#### RotationStepResponse { #message-rotationstepresponse }
-
-The response of RotationStep; each step sets the fields it reports.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `restarted` | list of string | The workloads restarted, as namespace/kind/name. |
-| `token_secrets` | list of string | The Secrets of type kubernetes.io/service-account-token, as namespace/name. |
-| `rewritten` | uint64 | How many objects were updated. |
-| `encrypted` | list of EncryptedObjects | The objects etcd holds by resource and key. |
-| `not_waited` | list of string | The workloads restarted but not waited for, as namespace/kind/name: their rollout does not complete by itself (an OnDelete update strategy, a StatefulSet's partition, a paused Deployment). |
-
-Field types: [EncryptedObjects](#message-encryptedobjects).
-
 ### Upgrade { #method-upgrade }
 
 Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
@@ -493,128 +340,6 @@ The response of Upgrade.
 | `entry` | string | The file name of the UKI that boots the image next, with its tries. |
 | `rebooting` | bool | Whether the node reboots into the image. |
 | `already_staged` | bool | Whether the image boots next already, from entry, as an earlier upgrade without a reboot left it; the image was not written again, and the config the upgrade carries, or the running image's, replaced the config kept for it. |
-
-### DrainNode { #method-drainnode }
-
-DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
-eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
-and pods without a controller stay; they run again on the node once it is back. Pods with
-emptyDir volumes are evicted only when the request accepts losing that data. Pods that
-terminate already, as those an earlier drain evicted, are not evicted again, but the call
-returns only once they and the pods it evicted have stopped. A node that was cordoned already
-stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. It
-answers on bootstrapped control-plane nodes. Available in normal mode to operators, on images
-with the Kubernetes layer. An eviction refused for good, or one a PodDisruptionBudget holds
-back until the timeout, fails the call with FAILED_PRECONDITION; pods that did not stop in
-time, or whose evictions the API server kept failing, with DEADLINE_EXCEEDED.
-
-Request: DrainNodeRequest. Response: DrainNodeResponse.
-
-#### DrainNodeRequest { #message-drainnoderequest }
-
-The request of DrainNode.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `node` | string | The node's name in Kubernetes. |
-| `timeout_seconds` | uint32 | How long to wait for the pods to be evicted and gone, in seconds; zero waits five minutes. |
-| `delete_emptydir_data` | bool | Whether pods with emptyDir volumes are evicted too, which loses their data. |
-
-#### DrainNodeResponse { #message-drainnoderesponse }
-
-The response of DrainNode: the pods evicted and the pods that stay.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `marked` | bool | Whether the node is marked as cordoned for an upgrade, by this call or an earlier one. |
-| `evicted` | list of string | The pods evicted, as namespace/name. |
-| `kept` | list of string | The DaemonSet, static and finished pods, which stay on the node, as namespace/name. |
-| `unmanaged` | list of string | The pods without a controller, which stay and which nothing starts again elsewhere, as namespace/name. The node lifecycle controller deletes them for good when the node stays down longer than their tolerations allow. |
-
-### UncordonNode { #method-uncordonnode }
-
-UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
-a node cordoned otherwise as it is. It answers on bootstrapped control-plane nodes. Available
-in normal mode to operators, on images with the Kubernetes layer.
-
-Request: UncordonNodeRequest. Response: UncordonNodeResponse.
-
-#### UncordonNodeRequest { #message-uncordonnoderequest }
-
-The request of UncordonNode.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `node` | string | The node's name in Kubernetes. |
-
-#### UncordonNodeResponse { #message-uncordonnoderesponse }
-
-The response of UncordonNode.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `uncordoned` | bool | Whether the node was cordoned for an upgrade and is schedulable again. |
-
-### RevokeNode { #method-revokenode }
-
-RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
-kube-system/chalkos-revoked-nodes, applies the API server's admission policy
-chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
-Control planes then refuse to renew its node certificate. A node revoked already keeps the
-time of its first revocation. A call that fails after listing the node says so; calling again
-finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-map of revoked nodes would grow too long for the API server to compile with it. It answers on
-bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
-Kubernetes layer.
-
-Request: RevokeNodeRequest. Response: RevokeNodeResponse.
-
-#### RevokeNodeRequest { #message-revokenoderequest }
-
-The request of RevokeNode.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `node` | string | The node's name in Kubernetes, which its node certificate carries too. |
-
-#### RevokeNodeResponse { #message-revokenoderesponse }
-
-The response of RevokeNode.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `revoked_at` | google.protobuf.Timestamp | When the node was revoked: now, or at an earlier revocation. |
-| `node_deleted` | bool | Whether the call deleted the node's Node object; false when the cluster had none. |
-
-### UnrevokeNode { #method-unrevokenode }
-
-UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
-it, so a node of that name may join again. The old node's certificates work again too, unless
-the CAs they chain to were rotated after the revocation: the call is refused with
-FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
-that fails after removing the node says so; calling again applies the policy. It answers on
-bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
-Kubernetes layer.
-
-Request: UnrevokeNodeRequest. Response: UnrevokeNodeResponse.
-
-#### UnrevokeNodeRequest { #message-unrevokenoderequest }
-
-The request of UnrevokeNode.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `node` | string | The node's name in Kubernetes. |
-| `force` | bool | Whether the node is unrevoked although the CAs its old certificates chain to predate the revocation. |
-
-#### UnrevokeNodeResponse { #message-unrevokenoderesponse }
-
-The response of UnrevokeNode.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `revoked_at` | google.protobuf.Timestamp | When the node was revoked; unset when the time it is listed with cannot be read, which counts every CA as made before the revocation. |
-| `stale_cas` | list of string | The CAs issued before the revocation, by the names chalkctl rotate takes: os-ca, kubernetes-ca. The old node's certificates work again until they expire or these CAs are rotated. Empty when both were rotated after the revocation. |
 
 ### Diagnostics { #method-diagnostics }
 
@@ -673,68 +398,9 @@ A message of the RunDiagnostic stream: output as the command prints it, then how
 
 Field types: [DiagnosticExit](#message-diagnosticexit).
 
-### Routes { #method-routes }
-
-Routes lists the routes in the node's kernel, of the main table unless another is asked for,
-and the paths its BGP instance selected, each within an address range when one is given.
-Available in normal mode to readers, on images with the router layer.
-
-Request: RoutesRequest. Response: RoutesResponse.
-
-#### RoutesRequest { #message-routesrequest }
-
-The request of Routes.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `prefix` | string | An address range, such as 2001:db8::/32: only the routes to it and to ranges within it. Empty for every route. |
-| `protocol` | string | Only the kernel's routes of this protocol: kernel, boot, static, ra, dhcp, bgp or another the kernel names, or its number. BGP's paths are listed for bgp and for an empty protocol alone. |
-| `table` | string | The kernel's routing table: main, local, default, all, or a table's number. Empty for main. |
-
-#### RoutesResponse { #message-routesresponse }
-
-The response of Routes.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `kernel` | list of KernelRoute | The kernel's routes, in the order of their tables, families and destinations. |
-| `bgp` | list of BGPRoute | The paths BGP selected and installs, in the order of their families and prefixes. |
-| `bgp_error` | string | Why BGP's paths could not be read, such as vtysh's error; empty when they were. |
-
-Field types: [KernelRoute](#message-kernelroute), [BGPRoute](#message-bgproute).
-
 ## Messages { #messages }
 
 These messages are held by fields of other messages.
-
-### BGPPeerStatus { #message-bgppeerstatus }
-
-One BGP session of a router: a BGPPeer's address, or one of its interfaces.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `name` | string | Name of the BGPPeer document. |
-| `neighbor` | string | The interface the session runs on, for a peer of interface or interfaces, or the neighbour's address. |
-| `state` | string | The session's BGP state: Idle, Connect, Active, OpenSent, OpenConfirm or Established. |
-| `uptime_seconds` | uint64 | How long the session has been established, in seconds; 0 while it is not. |
-| `prefixes_received` | uint32 | Routes the router accepted from the neighbour, of every family. |
-| `prefixes_sent` | uint32 | Routes the router sends the neighbour, of every family. |
-| `bfd` | string | The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd. |
-
-### BGPRoute { #message-bgproute }
-
-A path of BGP's for a prefix, which its best path selection took.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `prefix` | string | The prefix, such as ::/0. |
-| `as_path` | string | The ASes of the path, separated by spaces; empty for a route the router originates. |
-| `next_hops` | list of string | The next hop addresses FRR resolved for the path. |
-| `peer` | string | The neighbour the path came from: its interface, for a session of an interface, or its address; empty for a route the router originates. |
-| `local_pref` | uint32 or unset | The path's local preference, when it carries one. |
-| `med` | uint32 | The path's multi-exit discriminator. |
-| `communities` | list of string | The path's standard and large communities. |
-| `best` | bool | Whether it is the best path; otherwise one of the equal paths BGP installs beside it. |
 
 ### BootImage { #message-bootimage }
 
@@ -856,28 +522,6 @@ A disk of the node's storage, as the boot's storage setup left it.
 | `device` | string | Device node the disk was found at, such as /dev/nvme0n1; empty when it was not found. |
 | `error` | string | Why the disk's volumes could not be created or opened at boot; empty when they were. |
 
-### EncryptedObjects { #message-encryptedobjects }
-
-How many objects of one resource etcd holds under one key.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `resource` | string | The resource, such as secrets. |
-| `key` | string | The name of the key the objects are encrypted with; empty for objects stored unencrypted. |
-| `objects` | uint64 | Number of objects. |
-
-### EtcdMember { #message-etcdmember }
-
-A member of etcd.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `id` | uint64 | The member's ID. |
-| `name` | string | The node's name; empty while a member that was added has not started. |
-| `peer_urls` | list of string | URLs the other members reach the member at. |
-| `learner` | bool | Whether the member is a learner: a member without a vote, as a joining control-plane node is until it catches up. |
-| `unhealthy` | string | Why the member did not answer; empty when it is healthy. |
-
 ### ImageChunk { #message-imagechunk }
 
 A piece of an image's parts, which follow the header back to back in the header's order.
@@ -894,7 +538,7 @@ The contract of the image an installer writes, as its image directory holds it.
 | ----- | ---- | ----------- |
 | `system_definitions` | map of string | The image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with. Each image chooses its partition sizes, so the installer's own may not fit. |
 | `schemas` | map of bytes | The image's schemas by file name, as its image directory's schemas/ holds them; the config is checked against them. |
-| `kubernetes_image` | bytes | The image's image.json; empty for an image without Kubernetes. |
+| `layer_facts` | list of google.protobuf.Any | The facts of the image's layers, such as chalkos.kubernetes.v1.ImageFacts; empty for an image whose layers have none. |
 
 ### ImageHeader { #message-imageheader }
 
@@ -956,87 +600,12 @@ What an install delivers: the node's credentials and config, the target and the 
 | `disk` | DiskReference, oneof target | Target disk, which the installer lays out and writes the streamed image to. |
 | `image` | ImageHeader | The image the installer writes to the target disk; it must name the boot loader. Installer only. |
 | `wipe_disk` | bool | Whether the installer may replace what the target disk holds, including an installed node. |
-| `kubernetes_share` | bytes | The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA certificate and a kubelet client certificate for a worker. Empty for an image without Kubernetes. |
 | `config` | string | The node's config: YAML documents separated by ---. chalkd checks them as a set against the schemas of the image it installs, fills in their defaults, keeps them on STATE and translates them into what the node applies at boot. Required. |
 | `contract` | ImageContract, oneof origin | The contract of an image whose parts follow the header as chunks. Installer only: in place, chalkd checks the config against the running image. |
 | `source` | ImageSource, oneof origin | An image in a registry, which the installer pulls. Its contract layer holds the image's contract, and the request carries nothing after the header. Installer only. |
+| `layers` | list of google.protobuf.Any | Payloads of the installed image's layers, such as chalkos.kubernetes.v1.Share, which the node keeps on STATE. The node refuses a payload no layer takes. |
 
 Field types: [InPlace](#message-inplace), [DiskReference](#message-diskreference), [ImageHeader](#message-imageheader), [ImageContract](#message-imagecontract), [ImageSource](#message-imagesource).
-
-### KernelRoute { #message-kernelroute }
-
-A route in the kernel's routing tables.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `destination` | string | Destination address range, such as ::/0. |
-| `type` | string | The route's type: unicast, local, broadcast, anycast, multicast, blackhole, unreachable, prohibit or throw, or its number. |
-| `protocol` | string | What installed it: kernel, boot, static, ra, dhcp, bgp and others the kernel names, or its number. |
-| `table` | uint32 | The routing table, by number: 254 is main, 255 local and 253 default. |
-| `metric` | uint32 | The route's metric. |
-| `next_hops` | list of NextHop | Where the route leads; several for a route over equal-cost paths. |
-
-Field types: [NextHop](#message-nexthop).
-
-### KubernetesStatus { #message-kubernetesstatus }
-
-The state of the node's Kubernetes.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `kind` | string | The node's part in the cluster: controlplane or worker. |
-| `state` | string | What the node waits for or is: "no share", "preparing" while its Kubernetes files are prepared, or why their preparation failed, such as "preparation failed: no ipv4 node address matches validSubnets 10.0.0.0/8 (the node has ...)"; then on a control-plane node "waiting for bootstrap or for the cluster at &lt;endpoint>", what joining that cluster does or waits for, such as "joining the cluster at &lt;endpoint>: etcd member &lt;id> catches up" or a stale member and how to remove it, "bootstrapped" or "etcd data missing: restore etcd or reinstall the node"; "joined" on a worker, followed by ": the Node has no &lt;family> pod range; ..." when the control plane allocated it no pod range of one of the worker's families. |
-| `phase` | KubernetesPhase | Where the node stands, as state describes it in words. Clients decide on the phase; state is for people to read. |
-| `node_ready` | string | The status of the Node's Ready condition (True, False or Unknown), or why it could not be read. |
-| `vip` | string | On a bootstrapped control-plane node of a cluster with VIPs: "holder" while the node holds them, "standby" otherwise. Empty on other nodes. |
-| `control_plane` | string | On a bootstrapped control-plane node: "current" once its API server and etcd serve the certificates the node holds now and the API server answers ready, otherwise what is not so, such as "the API server serves certificates the node replaced". Empty on other nodes. |
-| `control_plane_current` | bool | Whether control_plane is "current": the node's API server and etcd serve the certificates the node holds now and the API server answers ready. False on other nodes. |
-| `revoked_nodes` | list of RevokedNode | On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty when none is revoked, and when the list was not reported; revoked_nodes_read tells the two apart. |
-| `revoked_nodes_error` | string | On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when they were. |
-| `revoked_nodes_read` | bool | Whether the node read the revoked nodes, so that an empty revoked_nodes means none is revoked. False on other nodes, when revoked_nodes_error is set, and from a chalkd that predates node revocation. |
-
-Field types: [KubernetesPhase](#enum-kubernetesphase), [RevokedNode](#message-revokednode).
-
-### NAT64PoolStatus { #message-nat64poolstatus }
-
-A NAT64 instance's pool of one protocol.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `protocol` | string | The protocol: tcp, udp or icmp. |
-| `size` | uint64 | IPv4 addresses and ports, or ICMP identifiers, the pool holds for the protocol; 0 when it holds none. An instance whose pool is empty takes the router's own addresses. |
-
-### NAT64Status { #message-nat64status }
-
-One NAT64 instance of a router, as Jool reports it.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `name` | string | Name of the NAT64 document, which names its instance. |
-| `sessions` | uint64 | Connections the instance translates, of all protocols. |
-| `bindings` | uint64 | IPv4 addresses and ports of the pool that translated connections hold, of all protocols: one per IPv6 address and port, or ICMP identifier, that the instance translates. |
-| `pools` | list of NAT64PoolStatus | The instance's pool for TCP, UDP and ICMP, in this order. |
-
-Field types: [NAT64PoolStatus](#message-nat64poolstatus).
-
-### NextHop { #message-nexthop }
-
-A next hop of a kernel route.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `gateway` | string | The gateway's address, which may be of the other family; empty for a route on the link alone. |
-| `interface` | string | The interface the route leaves through. |
-| `weight` | uint32 | The next hop's weight among several, from 1; 0 for a route of one next hop. |
-
-### NotEtcdMember { #message-notetcdmember }
-
-The error detail of a request that needs an etcd member, from a control-plane node that is
-none, as before it joined the cluster or after it left etcd. The request fails with FAILED_PRECONDITION, and another
-control-plane node may answer it. EtcdMembers, EtcdRemoveMember, RotationStep, DrainNode,
-UncordonNode, RevokeNode and UnrevokeNode give it.
-
-No fields.
 
 ### OutputStatus { #message-outputstatus }
 
@@ -1069,38 +638,6 @@ A chalkos image in an OCI registry.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `reference` | string | The image's repository and manifest digest, repository@sha256:…, as chalkctl resolved the inventory's reference. The node pulls that manifest and refuses it unless its config is the image the header describes and its store, hash-tree, UKI and, for an install, boot-loader layers have the header's sizes and SHA-256 sums. An upgrade pulls through the Mirror and authenticates with the Registry documents of the config the request delivers, or without one of the running config; an install through those of the config the request delivers. It tries each endpoint of the Mirror of the reference's host, then the host, each with the Registry of its own host, and pulls anonymously from a host without one. |
-
-### ResolverStatus { #message-resolverstatus }
-
-The state of a router's resolver.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `running` | bool | Whether Unbound answers on its control socket. |
-| `error` | string | Why Unbound did not answer, such as unbound-control's error; empty while it runs. |
-
-### RevokedNode { #message-revokednode }
-
-A node revoked in the cluster.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `name` | string | The node's name in Kubernetes. |
-| `revoked_at` | google.protobuf.Timestamp | When the node was revoked; unset when the time it is listed with cannot be read. |
-
-### RouterStatus { #message-routerstatus }
-
-The state of a router's routing daemons, its NAT64 instances and its resolver.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `peers` | list of BGPPeerStatus | The router's BGP sessions, by BGPPeer document and then by interface or address. |
-| `bgp_error` | string | Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is then empty. |
-| `nat64` | list of NAT64Status | The router's NAT64 instances, one per Jool instance, which a NAT64 document names, by name. |
-| `nat64_error` | string | Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then empty. |
-| `resolver` | ResolverStatus | The router's resolver; unset on a router without a Resolver document. |
-
-Field types: [BGPPeerStatus](#message-bgppeerstatus), [NAT64Status](#message-nat64status), [ResolverStatus](#message-resolverstatus).
 
 ### StorageChange { #message-storagechange }
 
@@ -1160,22 +697,6 @@ A volume of the node's storage.
 
 ## Enums { #enums }
 
-### KubernetesPhase { #enum-kubernetesphase }
-
-Where a node stands in its Kubernetes cluster. On a control-plane node it follows the node's
-etcd membership.
-
-| Name | Number | Description |
-| ---- | ------ | ----------- |
-| `KUBERNETES_PHASE_UNSPECIFIED` | 0 | No phase; chalkd never reports it. |
-| `KUBERNETES_PHASE_PREPARING` | 1 | The node has no share yet, or its Kubernetes files are being prepared, or their preparation failed. |
-| `KUBERNETES_PHASE_WAITING` | 2 | A control-plane node that is no etcd member and has not started joining. It waits for a bootstrap or for the cluster, or tries to reach the cluster to join it. |
-| `KUBERNETES_PHASE_JOINING` | 3 | A control-plane node that started joining the cluster and has not finished. It may be an etcd member already. |
-| `KUBERNETES_PHASE_BOOTSTRAPPED` | 4 | A control-plane node that is an etcd member: it initialised etcd or finished joining. |
-| `KUBERNETES_PHASE_ETCD_DATA_MISSING` | 5 | A bootstrapped control-plane node whose etcd data is missing, as after VAR was reset. Its control plane does not start until etcd is restored or the node is reinstalled. |
-| `KUBERNETES_PHASE_LEFT` | 6 | A control-plane node that left etcd. It joins the cluster again only once reinstalled. |
-| `KUBERNETES_PHASE_JOINED` | 7 | A worker node whose Kubernetes files are prepared: its kubelet joins the cluster. |
-
 ### Mode { #enum-mode }
 
 The mode chalkd serves the node in.
@@ -1185,19 +706,6 @@ The mode chalkd serves the node in.
 | `MODE_UNSPECIFIED` | 0 | No mode; chalkd never reports it. |
 | `MODE_MAINTENANCE` | 1 | The node is not installed: chalkd serves a self-signed certificate. |
 | `MODE_NORMAL` | 2 | The node is installed: chalkd serves its node certificate and requires client certificates. |
-
-### RotationStep { #enum-rotationstep }
-
-A step of a CA or key rotation that RotationStep runs.
-
-| Name | Number | Description |
-| ---- | ------ | ----------- |
-| `ROTATION_STEP_UNSPECIFIED` | 0 | No step; chalkd refuses it. |
-| `ROTATION_STEP_RESTART_ADDONS` | 1 | On a bootstrapped control-plane node: restart the Deployments, DaemonSets and StatefulSets of chalkos's add-ons and of the node's Addon documents, once the kube-root-ca.crt ConfigMaps of their namespaces hold every Kubernetes CA the node trusts, and wait until they rolled out. |
-| `ROTATION_STEP_LIST_TOKEN_SECRETS` | 2 | On a bootstrapped control-plane node: list the Secrets of type kubernetes.io/service-account-token, whose tokens nothing signs again. |
-| `ROTATION_STEP_REWRITE_ENCRYPTED` | 3 | On a bootstrapped control-plane node: update every object of the resources the API server encrypts without changing it, so the API server encrypts it with its first key, then count the objects etcd holds under each key. |
-| `ROTATION_STEP_COUNT_ENCRYPTED` | 4 | On a bootstrapped control-plane node: count the objects etcd holds under each key. |
-| `ROTATION_STEP_RENEW_KUBELET_SERVING` | 5 | On a node with Kubernetes: remove the kubelet's serving certificate and restart the kubelet, which requests a new one. |
 
 ### SecureBoot { #enum-secureboot }
 
@@ -1210,5 +718,574 @@ The state of Secure Boot, as the firmware's EFI variables SecureBoot and SetupMo
 | `SECURE_BOOT_ENABLED` | 2 | Secure Boot is on: the firmware starts only binaries that db allows. |
 | `SECURE_BOOT_SETUP_MODE` | 3 | The firmware accepts new Secure Boot keys without authentication. |
 
-Sources: `api/chalkos/node/v1/node.proto`, rendered by protoc-gen-doc with `api/markdown.tmpl`.
-The modes and roles the methods name are those of the permissions in `pkg/chalkd/server.go`.
+The definition is `api/chalkos/kubernetes/v1/kubernetes.proto`, package `chalkos.kubernetes.v1`.
+
+## KubernetesService { #kubernetesservice }
+
+KubernetesService is the API of the node's Kubernetes side. Each method's comment names the
+modes it is available in and the least role a client certificate needs, as on NodeService.
+Only nodes call RenewNodeCertificate, with the node role. On an image without the Kubernetes
+layer every method fails with UNIMPLEMENTED, before the mode and the role are checked.
+
+### Status { #kubernetes-method-status }
+
+Status reports the state of the node's Kubernetes: its part in the cluster, its preparation,
+its etcd membership, its Node, VIPs, control plane and the revoked nodes. Available in normal
+mode to readers, on images with the Kubernetes layer.
+
+Request: StatusRequest. Response: StatusResponse.
+
+#### StatusRequest { #kubernetes-message-statusrequest }
+
+The request of Status.
+
+No fields.
+
+#### StatusResponse { #kubernetes-message-statusresponse }
+
+The response of Status: the state of the node's Kubernetes.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `kind` | string | The node's part in the cluster: controlplane or worker. |
+| `state` | string | What the node waits for or is: "no share", "preparing" while its Kubernetes files are prepared, or why their preparation failed, such as "preparation failed: no ipv4 node address matches validSubnets 10.0.0.0/8 (the node has ...)"; then on a control-plane node "waiting for bootstrap or for the cluster at &lt;endpoint>", what joining that cluster does or waits for, such as "joining the cluster at &lt;endpoint>: etcd member &lt;id> catches up" or a stale member and how to remove it, "bootstrapped" or "etcd data missing: restore etcd or reinstall the node"; "joined" on a worker, followed by ": the Node has no &lt;family> pod range; ..." when the control plane allocated it no pod range of one of the worker's families. |
+| `phase` | Phase | Where the node stands, as state describes it in words. Clients decide on the phase; state is for people to read. |
+| `node_ready` | string | The status of the Node's Ready condition (True, False or Unknown), or why it could not be read. |
+| `vip` | string | On a bootstrapped control-plane node of a cluster with VIPs: "holder" while the node holds them, "standby" otherwise. Empty on other nodes. |
+| `control_plane` | string | On a bootstrapped control-plane node: "current" once its API server and etcd serve the certificates the node holds now and the API server answers ready, otherwise what is not so, such as "the API server serves certificates the node replaced". Empty on other nodes. |
+| `control_plane_current` | bool | Whether control_plane is "current": the node's API server and etcd serve the certificates the node holds now and the API server answers ready. False on other nodes. |
+| `revoked_nodes` | list of RevokedNode | On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty when none is revoked, and when the list was not reported; revoked_nodes_read tells the two apart. |
+| `revoked_nodes_error` | string | On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when they were. |
+| `revoked_nodes_read` | bool | Whether the node read the revoked nodes, so that an empty revoked_nodes means none is revoked. False on other nodes and when revoked_nodes_error is set. |
+
+Field types: [Phase](#kubernetes-enum-phase), [RevokedNode](#kubernetes-message-revokednode).
+
+### Bootstrap { #kubernetes-method-bootstrap }
+
+Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
+chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
+is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
+normal mode to admins, on images with the Kubernetes layer.
+
+Request: BootstrapRequest. Response: BootstrapResponse.
+
+#### BootstrapRequest { #kubernetes-message-bootstraprequest }
+
+The request of Bootstrap.
+
+No fields.
+
+#### BootstrapResponse { #kubernetes-message-bootstrapresponse }
+
+The response of Bootstrap, once the add-ons are applied.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `applied` | uint32 | Objects applied: chalkos's add-ons and those of the node's Addon documents. |
+
+### EtcdMembers { #kubernetes-method-etcdmembers }
+
+EtcdMembers lists etcd's members as the node's own member sees them, with their health. It
+answers on control-plane nodes that are etcd members. Available in normal mode to readers, on
+images with the Kubernetes layer.
+
+Request: EtcdMembersRequest. Response: EtcdMembersResponse.
+
+#### EtcdMembersRequest { #kubernetes-message-etcdmembersrequest }
+
+The request of EtcdMembers.
+
+No fields.
+
+#### EtcdMembersResponse { #kubernetes-message-etcdmembersresponse }
+
+The response of EtcdMembers.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `members` | list of EtcdMember | etcd's members, as etcd lists them. |
+
+Field types: [EtcdMember](#kubernetes-message-etcdmember).
+
+### EtcdRemoveMember { #kubernetes-method-etcdremovemember }
+
+EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
+have fewer healthy members than their quorum, unless forced, and for the node's own member,
+which EtcdLeave removes. Available in normal mode to admins, on images with the Kubernetes
+layer.
+
+Request: EtcdRemoveMemberRequest. Response: EtcdRemoveMemberResponse.
+
+#### EtcdRemoveMemberRequest { #kubernetes-message-etcdremovememberrequest }
+
+The request of EtcdRemoveMember.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `member` | string | The member's name or its ID in hex. |
+| `force` | bool | Whether the member is removed even when the voters left would have no healthy quorum. |
+
+#### EtcdRemoveMemberResponse { #kubernetes-message-etcdremovememberresponse }
+
+The response of EtcdRemoveMember.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `removed` | EtcdMember | The member that was removed, without its health. |
+
+Field types: [EtcdMember](#kubernetes-message-etcdmember).
+
+### EtcdLeave { #kubernetes-method-etcdleave }
+
+EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
+still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
+unpins its addresses. The node joins the cluster again only once it is reinstalled. A
+bootstrapped node whose own member does not answer leaves only when forced. Available in
+normal mode to admins, on images with the Kubernetes layer.
+
+Request: EtcdLeaveRequest. Response: EtcdLeaveResponse.
+
+#### EtcdLeaveRequest { #kubernetes-message-etcdleaverequest }
+
+The request of EtcdLeave.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `force` | bool | Whether the node leaves through the other members also when its own etcd member does not answer, as on a node that lost its pinned address. |
+
+#### EtcdLeaveResponse { #kubernetes-message-etcdleaveresponse }
+
+The response of EtcdLeave, once the node is out of etcd.
+
+No fields.
+
+### RenewNodeCertificate { #kubernetes-method-renewnodecertificate }
+
+RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
+the names of the node certificate it authenticated with. It answers on control-plane nodes
+and refuses a revoked node. Available in normal mode to nodes, on images with the Kubernetes
+layer.
+
+Request: RenewNodeCertificateRequest. Response: RenewNodeCertificateResponse.
+
+#### RenewNodeCertificateRequest { #kubernetes-message-renewnodecertificaterequest }
+
+The request of RenewNodeCertificate.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `certificate_request` | bytes | PKCS #10 certificate request (DER) signed with the node's new key, which never leaves the node. Only its key is used; the names come from the caller's certificate. |
+
+#### RenewNodeCertificateResponse { #kubernetes-message-renewnodecertificateresponse }
+
+The response of RenewNodeCertificate.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `certificate_chain` | bytes | The new node certificate followed by the certificate of the node CA that issued it (PEM). |
+
+### RotationStep { #kubernetes-method-rotationstep }
+
+RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
+out; chalkctl rotate calls it. Available in normal mode to admins, on images with the
+Kubernetes layer.
+
+Request: RotationStepRequest. Response: RotationStepResponse.
+
+#### RotationStepRequest { #kubernetes-message-rotationsteprequest }
+
+The request of RotationStep.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `step` | RotationStep | The step to run. |
+
+Field types: [RotationStep](#kubernetes-enum-rotationstep).
+
+#### RotationStepResponse { #kubernetes-message-rotationstepresponse }
+
+The response of RotationStep; each step sets the fields it reports.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `restarted` | list of string | The workloads restarted, as namespace/kind/name. |
+| `token_secrets` | list of string | The Secrets of type kubernetes.io/service-account-token, as namespace/name. |
+| `rewritten` | uint64 | How many objects were updated. |
+| `encrypted` | list of EncryptedObjects | The objects etcd holds by resource and key. |
+| `not_waited` | list of string | The workloads restarted but not waited for, as namespace/kind/name: their rollout does not complete by itself (an OnDelete update strategy, a StatefulSet's partition, a paused Deployment). |
+
+Field types: [EncryptedObjects](#kubernetes-message-encryptedobjects).
+
+### DrainNode { #kubernetes-method-drainnode }
+
+DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
+eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
+and pods without a controller stay; they run again on the node once it is back. Pods with
+emptyDir volumes are evicted only when the request accepts losing that data. Pods that
+terminate already, as those an earlier drain evicted, are not evicted again, but the call
+returns only once they and the pods it evicted have stopped. A node that was cordoned already
+stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. It
+answers on bootstrapped control-plane nodes. Available in normal mode to operators, on images
+with the Kubernetes layer. An eviction refused for good, or one a PodDisruptionBudget holds
+back until the timeout, fails the call with FAILED_PRECONDITION; pods that did not stop in
+time, or whose evictions the API server kept failing, with DEADLINE_EXCEEDED.
+
+Request: DrainNodeRequest. Response: DrainNodeResponse.
+
+#### DrainNodeRequest { #kubernetes-message-drainnoderequest }
+
+The request of DrainNode.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `node` | string | The node's name in Kubernetes. |
+| `timeout_seconds` | uint32 | How long to wait for the pods to be evicted and gone, in seconds; zero waits five minutes. |
+| `delete_emptydir_data` | bool | Whether pods with emptyDir volumes are evicted too, which loses their data. |
+
+#### DrainNodeResponse { #kubernetes-message-drainnoderesponse }
+
+The response of DrainNode: the pods evicted and the pods that stay.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `marked` | bool | Whether the node is marked as cordoned for an upgrade, by this call or an earlier one. |
+| `evicted` | list of string | The pods evicted, as namespace/name. |
+| `kept` | list of string | The DaemonSet, static and finished pods, which stay on the node, as namespace/name. |
+| `unmanaged` | list of string | The pods without a controller, which stay and which nothing starts again elsewhere, as namespace/name. The node lifecycle controller deletes them for good when the node stays down longer than their tolerations allow. |
+
+### UncordonNode { #kubernetes-method-uncordonnode }
+
+UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
+a node cordoned otherwise as it is. It answers on bootstrapped control-plane nodes. Available
+in normal mode to operators, on images with the Kubernetes layer.
+
+Request: UncordonNodeRequest. Response: UncordonNodeResponse.
+
+#### UncordonNodeRequest { #kubernetes-message-uncordonnoderequest }
+
+The request of UncordonNode.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `node` | string | The node's name in Kubernetes. |
+
+#### UncordonNodeResponse { #kubernetes-message-uncordonnoderesponse }
+
+The response of UncordonNode.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `uncordoned` | bool | Whether the node was cordoned for an upgrade and is schedulable again. |
+
+### RevokeNode { #kubernetes-method-revokenode }
+
+RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
+kube-system/chalkos-revoked-nodes, applies the API server's admission policy
+chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
+Control planes then refuse to renew its node certificate. A node revoked already keeps the
+time of its first revocation. A call that fails after listing the node says so; calling again
+finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
+map of revoked nodes would grow too long for the API server to compile with it. It answers on
+bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+Kubernetes layer.
+
+Request: RevokeNodeRequest. Response: RevokeNodeResponse.
+
+#### RevokeNodeRequest { #kubernetes-message-revokenoderequest }
+
+The request of RevokeNode.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `node` | string | The node's name in Kubernetes, which its node certificate carries too. |
+
+#### RevokeNodeResponse { #kubernetes-message-revokenoderesponse }
+
+The response of RevokeNode.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `revoked_at` | google.protobuf.Timestamp | When the node was revoked: now, or at an earlier revocation. |
+| `node_deleted` | bool | Whether the call deleted the node's Node object; false when the cluster had none. |
+
+### UnrevokeNode { #kubernetes-method-unrevokenode }
+
+UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
+it, so a node of that name may join again. The old node's certificates work again too, unless
+the CAs they chain to were rotated after the revocation: the call is refused with
+FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
+that fails after removing the node says so; calling again applies the policy. It answers on
+bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+Kubernetes layer.
+
+Request: UnrevokeNodeRequest. Response: UnrevokeNodeResponse.
+
+#### UnrevokeNodeRequest { #kubernetes-message-unrevokenoderequest }
+
+The request of UnrevokeNode.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `node` | string | The node's name in Kubernetes. |
+| `force` | bool | Whether the node is unrevoked although the CAs its old certificates chain to predate the revocation. |
+
+#### UnrevokeNodeResponse { #kubernetes-message-unrevokenoderesponse }
+
+The response of UnrevokeNode.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `revoked_at` | google.protobuf.Timestamp | When the node was revoked; unset when the time it is listed with cannot be read, which counts every CA as made before the revocation. |
+| `stale_cas` | list of string | The CAs issued before the revocation, by the names chalkctl rotate takes: os-ca, kubernetes-ca. The old node's certificates work again until they expire or these CAs are rotated. Empty when both were rotated after the revocation. |
+
+## Messages of chalkos.kubernetes.v1 { #kubernetes-messages }
+
+These messages are held by fields of other messages.
+
+### EncryptedObjects { #kubernetes-message-encryptedobjects }
+
+How many objects of one resource etcd holds under one key.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `resource` | string | The resource, such as secrets. |
+| `key` | string | The name of the key the objects are encrypted with; empty for objects stored unencrypted. |
+| `objects` | uint64 | Number of objects. |
+
+### EtcdMember { #kubernetes-message-etcdmember }
+
+A member of etcd.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `id` | uint64 | The member's ID. |
+| `name` | string | The node's name; empty while a member that was added has not started. |
+| `peer_urls` | list of string | URLs the other members reach the member at. |
+| `learner` | bool | Whether the member is a learner: a member without a vote, as a joining control-plane node is until it catches up. |
+| `unhealthy` | string | Why the member did not answer; empty when it is healthy. |
+
+### ImageFacts { #kubernetes-message-imagefacts }
+
+The Kubernetes facts of an image, as its contract carries them in its layer facts.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `image_json` | bytes | The image's image.json: the Kubernetes release, the images of its components and the pod network it ships. |
+
+### NotEtcdMember { #kubernetes-message-notetcdmember }
+
+The error detail of a request that needs an etcd member, from a control-plane node that is
+none, as before it joined the cluster or after it left etcd. The request fails with FAILED_PRECONDITION, and another
+control-plane node may answer it. EtcdMembers, EtcdRemoveMember, RotationStep, DrainNode,
+UncordonNode, RevokeNode and UnrevokeNode give it.
+
+No fields.
+
+### RevokedNode { #kubernetes-message-revokednode }
+
+A node revoked in the cluster.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | string | The node's name in Kubernetes. |
+| `revoked_at` | google.protobuf.Timestamp | When the node was revoked; unset when the time it is listed with cannot be read. |
+
+### Share { #kubernetes-message-share }
+
+A node's Kubernetes share, as ApplyConfig and Install deliver it in their layers.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `share` | bytes | The share (JSON): the CAs and keys for a control-plane node, the CA certificate and a kubelet client certificate for a worker. |
+
+## Enums of chalkos.kubernetes.v1 { #kubernetes-enums }
+
+### Phase { #kubernetes-enum-phase }
+
+Where a node stands in its Kubernetes cluster. On a control-plane node it follows the node's
+etcd membership.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| `PHASE_UNSPECIFIED` | 0 | No phase; chalkd never reports it. |
+| `PHASE_PREPARING` | 1 | The node has no share yet, or its Kubernetes files are being prepared, or their preparation failed. |
+| `PHASE_WAITING` | 2 | A control-plane node that is no etcd member and has not started joining. It waits for a bootstrap or for the cluster, or tries to reach the cluster to join it. |
+| `PHASE_JOINING` | 3 | A control-plane node that started joining the cluster and has not finished. It may be an etcd member already. |
+| `PHASE_BOOTSTRAPPED` | 4 | A control-plane node that is an etcd member: it initialised etcd or finished joining. |
+| `PHASE_ETCD_DATA_MISSING` | 5 | A bootstrapped control-plane node whose etcd data is missing, as after VAR was reset. Its control plane does not start until etcd is restored or the node is reinstalled. |
+| `PHASE_LEFT` | 6 | A control-plane node that left etcd. It joins the cluster again only once reinstalled. |
+| `PHASE_JOINED` | 7 | A worker node whose Kubernetes files are prepared: its kubelet joins the cluster. |
+
+### RotationStep { #kubernetes-enum-rotationstep }
+
+A step of a CA or key rotation that RotationStep runs.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| `ROTATION_STEP_UNSPECIFIED` | 0 | No step; chalkd refuses it. |
+| `ROTATION_STEP_RESTART_ADDONS` | 1 | On a bootstrapped control-plane node: restart the Deployments, DaemonSets and StatefulSets of chalkos's add-ons and of the node's Addon documents, once the kube-root-ca.crt ConfigMaps of their namespaces hold every Kubernetes CA the node trusts, and wait until they rolled out. |
+| `ROTATION_STEP_LIST_TOKEN_SECRETS` | 2 | On a bootstrapped control-plane node: list the Secrets of type kubernetes.io/service-account-token, whose tokens nothing signs again. |
+| `ROTATION_STEP_REWRITE_ENCRYPTED` | 3 | On a bootstrapped control-plane node: update every object of the resources the API server encrypts without changing it, so the API server encrypts it with its first key, then count the objects etcd holds under each key. |
+| `ROTATION_STEP_COUNT_ENCRYPTED` | 4 | On a bootstrapped control-plane node: count the objects etcd holds under each key. |
+| `ROTATION_STEP_RENEW_KUBELET_SERVING` | 5 | On a node with Kubernetes: remove the kubelet's serving certificate and restart the kubelet, which requests a new one. |
+
+The definition is `api/chalkos/router/v1/router.proto`, package `chalkos.router.v1`.
+
+## RouterService { #routerservice }
+
+RouterService is the API of the node's router side. Each method's comment names the modes it is
+available in and the least role a client certificate needs, as on NodeService. On an image
+without the router layer every method fails with UNIMPLEMENTED, before the mode and the role are
+checked.
+
+### Status { #router-method-status }
+
+Status reports the state of the router's routing daemons, its NAT64 instances and its
+resolver. Available in normal mode to readers, on images with the router layer.
+
+Request: StatusRequest. Response: StatusResponse.
+
+#### StatusRequest { #router-message-statusrequest }
+
+The request of Status.
+
+No fields.
+
+#### StatusResponse { #router-message-statusresponse }
+
+The response of Status: the state of a router's routing daemons, its NAT64 instances and its
+resolver.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `peers` | list of BGPPeerStatus | The router's BGP sessions, by BGPPeer document and then by interface or address. |
+| `bgp_error` | string | Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is then empty. |
+| `nat64` | list of NAT64Status | The router's NAT64 instances, one per Jool instance, which a NAT64 document names, by name. |
+| `nat64_error` | string | Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then empty. |
+| `resolver` | ResolverStatus | The router's resolver; unset on a router without a Resolver document. |
+
+Field types: [BGPPeerStatus](#router-message-bgppeerstatus), [NAT64Status](#router-message-nat64status), [ResolverStatus](#router-message-resolverstatus).
+
+### Routes { #router-method-routes }
+
+Routes lists the routes in the node's kernel, of the main table unless another is asked for,
+and the paths its BGP instance selected, each within an address range when one is given.
+Available in normal mode to readers, on images with the router layer.
+
+Request: RoutesRequest. Response: RoutesResponse.
+
+#### RoutesRequest { #router-message-routesrequest }
+
+The request of Routes.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `prefix` | string | An address range, such as 2001:db8::/32: only the routes to it and to ranges within it. Empty for every route. |
+| `protocol` | string | Only the kernel's routes of this protocol: kernel, boot, static, ra, dhcp, bgp or another the kernel names, or its number. BGP's paths are listed for bgp and for an empty protocol alone. |
+| `table` | string | The kernel's routing table: main, local, default, all, or a table's number. Empty for main. |
+
+#### RoutesResponse { #router-message-routesresponse }
+
+The response of Routes.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `kernel` | list of KernelRoute | The kernel's routes, in the order of their tables, families and destinations. |
+| `bgp` | list of BGPRoute | The paths BGP selected and installs, in the order of their families and prefixes. |
+| `bgp_error` | string | Why BGP's paths could not be read, such as vtysh's error; empty when they were. |
+
+Field types: [KernelRoute](#router-message-kernelroute), [BGPRoute](#router-message-bgproute).
+
+## Messages of chalkos.router.v1 { #router-messages }
+
+These messages are held by fields of other messages.
+
+### BGPPeerStatus { #router-message-bgppeerstatus }
+
+One BGP session of a router: a BGPPeer's address, or one of its interfaces.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | string | Name of the BGPPeer document. |
+| `neighbor` | string | The interface the session runs on, for a peer of interface or interfaces, or the neighbour's address. |
+| `state` | string | The session's BGP state: Idle, Connect, Active, OpenSent, OpenConfirm or Established. |
+| `uptime_seconds` | uint64 | How long the session has been established, in seconds; 0 while it is not. |
+| `prefixes_received` | uint32 | Routes the router accepted from the neighbour, of every family. |
+| `prefixes_sent` | uint32 | Routes the router sends the neighbour, of every family. |
+| `bfd` | string | The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd. |
+
+### BGPRoute { #router-message-bgproute }
+
+A path of BGP's for a prefix, which its best path selection took.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `prefix` | string | The prefix, such as ::/0. |
+| `as_path` | string | The ASes of the path, separated by spaces; empty for a route the router originates. |
+| `next_hops` | list of string | The next hop addresses FRR resolved for the path. |
+| `peer` | string | The neighbour the path came from: its interface, for a session of an interface, or its address; empty for a route the router originates. |
+| `local_pref` | uint32 or unset | The path's local preference, when it carries one. |
+| `med` | uint32 | The path's multi-exit discriminator. |
+| `communities` | list of string | The path's standard and large communities. |
+| `best` | bool | Whether it is the best path; otherwise one of the equal paths BGP installs beside it. |
+
+### KernelRoute { #router-message-kernelroute }
+
+A route in the kernel's routing tables.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `destination` | string | Destination address range, such as ::/0. |
+| `type` | string | The route's type: unicast, local, broadcast, anycast, multicast, blackhole, unreachable, prohibit or throw, or its number. |
+| `protocol` | string | What installed it: kernel, boot, static, ra, dhcp, bgp and others the kernel names, or its number. |
+| `table` | uint32 | The routing table, by number: 254 is main, 255 local and 253 default. |
+| `metric` | uint32 | The route's metric. |
+| `next_hops` | list of NextHop | Where the route leads; several for a route over equal-cost paths. |
+
+Field types: [NextHop](#router-message-nexthop).
+
+### NAT64PoolStatus { #router-message-nat64poolstatus }
+
+A NAT64 instance's pool of one protocol.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `protocol` | string | The protocol: tcp, udp or icmp. |
+| `size` | uint64 | IPv4 addresses and ports, or ICMP identifiers, the pool holds for the protocol; 0 when it holds none. An instance whose pool is empty takes the router's own addresses. |
+
+### NAT64Status { #router-message-nat64status }
+
+One NAT64 instance of a router, as Jool reports it.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | string | Name of the NAT64 document, which names its instance. |
+| `sessions` | uint64 | Connections the instance translates, of all protocols. |
+| `bindings` | uint64 | IPv4 addresses and ports of the pool that translated connections hold, of all protocols: one per IPv6 address and port, or ICMP identifier, that the instance translates. |
+| `pools` | list of NAT64PoolStatus | The instance's pool for TCP, UDP and ICMP, in this order. |
+
+Field types: [NAT64PoolStatus](#router-message-nat64poolstatus).
+
+### NextHop { #router-message-nexthop }
+
+A next hop of a kernel route.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `gateway` | string | The gateway's address, which may be of the other family; empty for a route on the link alone. |
+| `interface` | string | The interface the route leaves through. |
+| `weight` | uint32 | The next hop's weight among several, from 1; 0 for a route of one next hop. |
+
+### ResolverStatus { #router-message-resolverstatus }
+
+The state of a router's resolver.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `running` | bool | Whether Unbound answers on its control socket. |
+| `error` | string | Why Unbound did not answer, such as unbound-control's error; empty while it runs. |
+
+Sources: `api/chalkos/node/v1/node.proto`, `api/chalkos/kubernetes/v1/kubernetes.proto` and
+`api/chalkos/router/v1/router.proto`, rendered by protoc-gen-doc with `api/markdown.tmpl`. The
+modes and roles the methods name are those of the permissions in `pkg/chalkd/server.go` and in
+each layer's plugin.

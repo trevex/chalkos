@@ -18,7 +18,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/internal/cli"
@@ -160,10 +160,10 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 }
 
 func TestRevokedLines(t *testing.T) {
-	if got := revokedLines(&nodev1.KubernetesStatus{Kind: "worker"}); got != nil {
+	if got := revokedLines(&kubernetesv1.StatusResponse{Kind: "worker"}); got != nil {
 		t.Errorf("a worker's lines = %q", got)
 	}
-	got := revokedLines(&nodev1.KubernetesStatus{RevokedNodesError: "read the revoked nodes: connection refused"})
+	got := revokedLines(&kubernetesv1.StatusResponse{RevokedNodesError: "read the revoked nodes: connection refused"})
 	if want := []string{"revoked nodes unknown: read the revoked nodes: connection refused"}; !slices.Equal(got, want) {
 		t.Errorf("lines = %q, want %q", got, want)
 	}
@@ -244,7 +244,7 @@ func TestNodeRevokeRefusesAControlPlane(t *testing.T) {
 }
 
 func TestEtcdMemberRefusal(t *testing.T) {
-	members := []*nodev1.EtcdMember{{Name: "cp1"}, {Name: "cp2", Learner: true}, {}}
+	members := []*kubernetesv1.EtcdMember{{Name: "cp1"}, {Name: "cp2", Learner: true}, {}}
 	for name, want := range map[string]bool{"cp1": true, "cp2": true, "w1": false, "": false} {
 		err := etcdMemberRefusal(name, members)
 		if (err != nil) != want {
@@ -301,17 +301,21 @@ func TestNodeRevokeRefusesUnlessEveryControlPlaneReads(t *testing.T) {
 }
 
 func TestEveryControlPlaneReadsRevoked(t *testing.T) {
-	statuses := map[string]*nodev1.StatusResponse{
-		"read":     {Kubernetes: &nodev1.KubernetesStatus{State: "bootstrapped", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, RevokedNodesRead: true}},
-		"old":      {Kubernetes: &nodev1.KubernetesStatus{State: "bootstrapped", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED}},
-		"unread":   {Kubernetes: &nodev1.KubernetesStatus{State: "etcd data missing: restore etcd", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_ETCD_DATA_MISSING, RevokedNodesError: "read the revoked nodes: connection refused"}},
-		"waiting":  {Kubernetes: &nodev1.KubernetesStatus{State: "waiting for bootstrap", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_WAITING}},
-		"left":     {Kubernetes: &nodev1.KubernetesStatus{State: "left etcd: reinstall the node", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_LEFT}},
-		"no share": {Kubernetes: &nodev1.KubernetesStatus{State: "no share", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING}},
+	statuses := map[string]*kubernetesv1.StatusResponse{
+		"read":     {State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, RevokedNodesRead: true},
+		"old":      {State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED},
+		"unread":   {State: "etcd data missing: restore etcd", Phase: kubernetesv1.Phase_PHASE_ETCD_DATA_MISSING, RevokedNodesError: "read the revoked nodes: connection refused"},
+		"waiting":  {State: "waiting for bootstrap", Phase: kubernetesv1.Phase_PHASE_WAITING},
+		"left":     {State: "left etcd: reinstall the node", Phase: kubernetesv1.Phase_PHASE_LEFT},
+		"no share": {State: "no share", Phase: kubernetesv1.Phase_PHASE_PREPARING},
 	}
-	status := func(_ context.Context, name string) (*nodev1.StatusResponse, error) {
+	status := func(_ context.Context, name string) (*kubernetesv1.StatusResponse, error) {
 		if st, ok := statuses[name]; ok {
 			return st, nil
+		}
+		if name == "router" {
+			// As callNode returns it, with the node's name.
+			return nil, nodeError(errNoKubernetes, name)
 		}
 		return nil, errors.New("connection refused")
 	}
@@ -319,7 +323,7 @@ func TestEveryControlPlaneReadsRevoked(t *testing.T) {
 		controlPlanes []string
 		want          []string
 	}{
-		{[]string{"read", "waiting", "left", "no share"}, nil},
+		{[]string{"read", "waiting", "left", "no share", "router"}, nil},
 		{[]string{"read", "old"}, []string{"old: its chalkd predates node revocation and renews w1's node certificate until it is upgraded"}},
 		{[]string{"unread", "down"}, []string{"unread: cannot read the revoked nodes: read the revoked nodes: connection refused", "down: connection refused"}},
 	} {
@@ -370,7 +374,7 @@ func (l *rotationLab) install(args ...string) error {
 // counts as one not installed yet, as while a cluster's nodes are installed one by one.
 func TestInstallRefusesRevokedNames(t *testing.T) {
 	l := installLab(t)
-	l.revoked = []*nodev1.RevokedNode{{Name: "n1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}}
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "n1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}}
 	err := l.install()
 	if err == nil || !strings.Contains(err.Error(), "n1 is revoked since 2026-10-23T12:00:00Z") || !strings.Contains(err.Error(), "chalkctl node unrevoke n1") || !strings.Contains(err.Error(), "--force") {
 		t.Errorf("installing a revoked name: %v", err)
@@ -396,5 +400,31 @@ func TestInstallRefusesRevokedNames(t *testing.T) {
 	l.states = map[string]string{"cp2": "waiting for bootstrap"}
 	if err := l.install(); err != nil {
 		t.Errorf("installing before any control plane was bootstrapped: %v", err)
+	}
+}
+
+// revokedNodesOf counts a control plane whose image has no Kubernetes layer among those not
+// bootstrapped: alone it leaves the list empty, beside one that gives the list it is passed over.
+func TestRevokedNodesOfWithoutTheKubernetesLayer(t *testing.T) {
+	read := &kubernetesv1.StatusResponse{State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, RevokedNodesRead: true,
+		RevokedNodes: []*kubernetesv1.RevokedNode{{Name: "w1"}}}
+	status := func(_ context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+		switch name {
+		case "read":
+			return read, nil
+		case "down":
+			return nil, errors.New("connection refused")
+		}
+		return nil, nodeError(errNoKubernetes, name)
+	}
+	if list, err := revokedNodesOf(context.Background(), []string{"router"}, status); err != nil || len(list) != 0 {
+		t.Errorf("without the layer: %v, %v; want no revoked node", list, err)
+	}
+	if list, err := revokedNodesOf(context.Background(), []string{"router", "read"}, status); err != nil || list["w1"] == nil {
+		t.Errorf("beside a control plane that reads them: %v, %v; want w1", list, err)
+	}
+	_, err := revokedNodesOf(context.Background(), []string{"router", "down"}, status)
+	if err == nil || !strings.Contains(err.Error(), "router: is not bootstrapped: no Kubernetes") || !strings.Contains(err.Error(), "down: connection refused") {
+		t.Errorf("beside one that is down: %v, want a refusal naming both", err)
 	}
 }

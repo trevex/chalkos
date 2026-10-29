@@ -2,8 +2,6 @@ package chalkd
 
 import (
 	"context"
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,10 +9,11 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
 
-// Contract returns what the running image was built for, its layers, and its schemas and
-// image.json as files, so a client checks config against exactly what chalkd translates it for.
+// Contract returns what the running image was built for, its layers, its schemas as files and its
+// layers' facts, so a client checks config against exactly what chalkd translates it for.
 func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractRequest]) (*connect.Response[nodev1.ContractResponse], error) {
 	// The installer runs an image of its own: config is for the image it installs, which comes
 	// with its contract.
@@ -30,7 +29,7 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 		Schemas:  map[string][]byte{},
 		Variant:  release["CHALKOS_VARIANT"],
 		Platform: release["CHALKOS_PLATFORM"],
-		Layers:   s.Layers.Names(),
+		Layers:   s.Plugins.Layers().Names(),
 	}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
@@ -42,12 +41,10 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 		}
 		resp.Schemas[e.Name()] = data
 	}
-	data, err := os.ReadFile(s.Loader.KubernetesImage)
-	switch {
-	case err == nil:
-		resp.KubernetesImage = data
-	case !errors.Is(err, fs.ErrNotExist):
+	if facts, err := k8s.FactsPayloadOf(s.Loader.KubernetesImage); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
+	} else if facts != nil {
+		resp.LayerFacts = append(resp.LayerFacts, facts)
 	}
 	return connect.NewResponse(resp), nil
 }

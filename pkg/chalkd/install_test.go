@@ -56,7 +56,7 @@ func header(t *testing.T, target any) *nodev1.InstallHeader {
 		NodeKey:         []byte("key"),
 		CaCertificate:   []byte("ca"),
 		FallbackSecret:  "recovery",
-		KubernetesShare: []byte("share"),
+		Layers:          shareLayers(t, []byte("share")),
 	}
 	switch t := target.(type) {
 	case *nodev1.InstallHeader_InPlace:
@@ -365,7 +365,7 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Config = workerConfig
 	contractOf(h).Schemas = fixtureSchemas(t)
-	contractOf(h).KubernetesImage = []byte(testImage)
+	contractOf(h).LayerFacts = factsLayers(t, testImage)
 	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64"}
 
 	if err := sendInstall(t, s, h, nil); err != nil {
@@ -409,11 +409,11 @@ func TestInstallRefusesConfig(t *testing.T) {
 		"without config": {false, func(h *nodev1.InstallHeader) { h.Config = "" }, "the header delivers no config"},
 		"from the installer with an invalid image.json": {true, func(h *nodev1.InstallHeader) {
 			fromInstaller(h)
-			contractOf(h).KubernetesImage = []byte(`{"version": "1.37.1"`)
+			contractOf(h).LayerFacts = factsLayers(t, `{"version": "1.37.1"`)
 		}, "image.json"},
 		"from the installer with a schema outside schemas/": {true, func(h *nodev1.InstallHeader) {
 			fromInstaller(h)
-			contractOf(h).KubernetesImage = []byte(testImage)
+			contractOf(h).LayerFacts = factsLayers(t, testImage)
 			contractOf(h).Schemas = map[string][]byte{"../x.json": []byte("{}")}
 		}, `"../x.json" is not the name of a schema file`},
 	} {

@@ -9,7 +9,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -66,7 +66,7 @@ func notEtcdMember(err error) bool {
 	}
 	for _, d := range ce.Details() {
 		if v, err := d.Value(); err == nil {
-			if _, ok := v.(*nodev1.NotEtcdMember); ok {
+			if _, ok := v.(*kubernetesv1.NotEtcdMember); ok {
 				return true
 			}
 		}
@@ -106,9 +106,9 @@ func (a *app) etcdMembersCommand() *cobra.Command {
 }
 
 func (a *app) etcdMembers(ctx context.Context, f viaFlags) error {
-	var members []*nodev1.EtcdMember
+	var members []*kubernetesv1.EtcdMember
 	err := a.throughControlPlane(ctx, f, "", func(conn *client.Conn) error {
-		resp, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
+		resp, err := kubernetesClient(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
 		if err == nil {
 			members = resp.Msg.Members
 		}
@@ -152,9 +152,9 @@ func (a *app) etcdRemoveMemberCommand() *cobra.Command {
 }
 
 func (a *app) etcdRemoveMember(ctx context.Context, f viaFlags, pos []string) error {
-	var removed *nodev1.EtcdMember
+	var removed *kubernetesv1.EtcdMember
 	err := a.throughControlPlane(ctx, f, pos[0], func(conn *client.Conn) error {
-		resp, err := conn.EtcdRemoveMember(ctx, connect.NewRequest(&nodev1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force}))
+		resp, err := kubernetesClient(conn).EtcdRemoveMember(ctx, connect.NewRequest(&kubernetesv1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force}))
 		if err == nil {
 			removed = resp.Msg.Removed
 		}
@@ -187,7 +187,7 @@ func (a *app) etcdLeave(ctx context.Context, f viaFlags, pos []string) error {
 		return err
 	}
 	if err := callNode(t, func(conn *client.Conn) error {
-		_, err := conn.EtcdLeave(ctx, connect.NewRequest(&nodev1.EtcdLeaveRequest{Force: f.force}))
+		_, err := kubernetesClient(conn).EtcdLeave(ctx, connect.NewRequest(&kubernetesv1.EtcdLeaveRequest{Force: f.force}))
 		return err
 	}); err != nil {
 		return fmt.Errorf("%s: %w", t.name, err)

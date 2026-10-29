@@ -77,7 +77,7 @@ lives one hour and exists only in memory.
 
 chalkd checks its node certificate about hourly and renews it once two thirds of its lifetime have
 passed. It creates a new key and asks a control plane for a certificate through
-[RenewNodeCertificate](../../reference/api.md#method-renewnodecertificate), on port 50000 of the
+[RenewNodeCertificate](../../reference/api.md#kubernetes-method-renewnodecertificate), on port 50000 of the
 cluster endpoint's host. It authenticates with its current certificate, and the control plane
 signs exactly the names of that certificate, whatever the request asks for. A control plane signs
 its own with the node CA it holds. A failed attempt keeps the current certificate and is retried

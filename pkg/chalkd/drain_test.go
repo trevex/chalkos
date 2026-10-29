@@ -20,7 +20,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
@@ -89,8 +89,8 @@ func newDrainLab(t *testing.T, refusals int, nodes ...*corev1.Node) *drainLab {
 	return l
 }
 
-func (l *drainLab) drain(timeout uint32) (*nodev1.DrainNodeResponse, error) {
-	resp, err := l.s.DrainNode(context.Background(), connect.NewRequest(&nodev1.DrainNodeRequest{Node: "w1", TimeoutSeconds: timeout}))
+func (l *drainLab) drain(timeout uint32) (*kubernetesv1.DrainNodeResponse, error) {
+	resp, err := kubernetesOf(l.s).DrainNode(context.Background(), connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: "w1", TimeoutSeconds: timeout}))
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (l *drainLab) drain(timeout uint32) (*nodev1.DrainNodeResponse, error) {
 }
 
 func (l *drainLab) uncordon() bool {
-	resp, err := l.s.UncordonNode(context.Background(), connect.NewRequest(&nodev1.UncordonNodeRequest{Node: "w1"}))
+	resp, err := kubernetesOf(l.s).UncordonNode(context.Background(), connect.NewRequest(&kubernetesv1.UncordonNodeRequest{Node: "w1"}))
 	if err != nil {
 		panic(err)
 	}
@@ -205,7 +205,7 @@ func TestDrainRefusals(t *testing.T) {
 		t.Errorf("draining an unknown node: %v", err)
 	}
 	s, _ := kubernetesServer(t, k8s.KindWorker, true)
-	if _, err := s.DrainNode(context.Background(), connect.NewRequest(&nodev1.DrainNodeRequest{Node: "w1"})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := kubernetesOf(s).DrainNode(context.Background(), connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: "w1"})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("draining through a worker: %v", err)
 	}
 }
@@ -330,7 +330,7 @@ func TestDrainEmptyDir(t *testing.T) {
 	if len(l.evicted) != 0 || !l.node(t).Spec.Unschedulable {
 		t.Errorf("evicted %v, cordoned %v", l.evicted, l.node(t).Spec.Unschedulable)
 	}
-	resp, err := l.s.DrainNode(context.Background(), connect.NewRequest(&nodev1.DrainNodeRequest{Node: "w1", DeleteEmptydirData: true}))
+	resp, err := kubernetesOf(l.s).DrainNode(context.Background(), connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: "w1", DeleteEmptydirData: true}))
 	if err != nil || !slices.Contains(resp.Msg.Evicted, "default/cache") {
 		t.Errorf("drain deleting emptyDir data = %v, %v", resp, err)
 	}

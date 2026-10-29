@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -56,6 +58,9 @@ type Conn struct {
 	netDial func(ctx context.Context, network, addr string) (net.Conn, error)
 	// source says where the address came from.
 	source string
+	// http and baseURL reach the node's services.
+	http    *http.Client
+	baseURL string
 }
 
 // errClosed is what calls after Close fail with.
@@ -160,9 +165,16 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 	if o.Untrusted != nil {
 		rt = &untrusted{RoundTripper: transport, conn: c, endpoint: endpoint, tls: cfg, replace: o.Untrusted}
 	}
-	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(&http.Client{Transport: rt}, "https://"+endpoint)
+	c.http = &http.Client{Transport: rt}
+	c.baseURL = "https://" + endpoint
+	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(c.http, c.baseURL)
 	return c, nil
 }
+
+// HTTPClient and BaseURL reach the node's other services, such as a layer's, over the
+// connections and checks of this client: connect's New…Client takes them.
+func (c *Conn) HTTPClient() connect.HTTPClient { return c.http }
+func (c *Conn) BaseURL() string                { return c.baseURL }
 
 // verifyConnection records the fingerprint of the node's certificate and checks the certificate
 // with v.

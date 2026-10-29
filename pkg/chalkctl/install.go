@@ -118,7 +118,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 				return err
 			}
 			header.Origin = &nodev1.InstallHeader_Contract{Contract: &nodev1.ImageContract{
-				SystemDefinitions: definitions, Schemas: c.files, KubernetesImage: c.kubernetesImage,
+				SystemDefinitions: definitions, Schemas: c.files, LayerFacts: c.facts,
 			}}
 		}
 	}
@@ -140,7 +140,11 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	if header.FallbackSecret, err = a.fallbackSecret(ctx, t, fallback, f.passwordFile); err != nil {
 		return err
 	}
-	if header.KubernetesShare, err = kubernetesShare(t, time.Now()); err != nil {
+	share, err := kubernetesShare(t, time.Now())
+	if err != nil {
+		return err
+	}
+	if header.Layers, err = sharePayloads(share); err != nil {
 		return err
 	}
 	if img == nil {

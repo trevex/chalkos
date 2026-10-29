@@ -15,7 +15,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/client"
@@ -24,17 +25,17 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-func (s *Server) RenewNodeCertificate(ctx context.Context, req *connect.Request[nodev1.RenewNodeCertificateRequest]) (*connect.Response[nodev1.RenewNodeCertificateResponse], error) {
+func (p *kubernetesLayer) RenewNodeCertificate(ctx context.Context, req *connect.Request[kubernetesv1.RenewNodeCertificateRequest]) (*connect.Response[kubernetesv1.RenewNodeCertificateResponse], error) {
 	peer := layer.Peer(ctx)
 	if peer == nil {
 		return nil, failed(connect.CodeUnauthenticated, "renewing a node certificate needs the node's current one")
 	}
-	nodeCA, err := s.nodeCA()
+	nodeCA, err := p.k.nodeCA()
 	if err != nil {
 		return nil, err
 	}
 	names := pki.NamesOf(peer)
-	if err := s.notRevoked(ctx, names.CommonName); err != nil {
+	if err := p.k.notRevoked(ctx, names.CommonName); err != nil {
 		return nil, err
 	}
 	chain, err := signRequest(nodeCA, names, req.Msg.CertificateRequest, time.Now())
@@ -42,16 +43,16 @@ func (s *Server) RenewNodeCertificate(ctx context.Context, req *connect.Request[
 		return nil, err
 	}
 	log.Printf("issued node %s a new node certificate", peer.Subject.CommonName)
-	return connect.NewResponse(&nodev1.RenewNodeCertificateResponse{CertificateChain: []byte(chain)}), nil
+	return connect.NewResponse(&kubernetesv1.RenewNodeCertificateResponse{CertificateChain: []byte(chain)}), nil
 }
 
 // nodeCA returns the node CA of a control-plane node's share; only control planes hold it.
-func (s *Server) nodeCA() (pki.CertKey, error) {
+func (k *Kubernetes) nodeCA() (pki.CertKey, error) {
 	notControlPlane := failed(connect.CodeFailedPrecondition, "the node is not a control plane; control-plane nodes renew node certificates")
-	if s.Kubernetes == nil {
+	if k == nil {
 		return pki.CertKey{}, notControlPlane
 	}
-	c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
+	c, err := k8s.ReadCluster(k.Paths.Cluster)
 	if err != nil {
 		return pki.CertKey{}, failed(connect.CodeInternal, "%v", err)
 	}
@@ -60,12 +61,12 @@ func (s *Server) nodeCA() (pki.CertKey, error) {
 	}
 	// A node that left etcd is no control plane of the cluster any more, though its share still
 	// holds the node CA until it is reinstalled.
-	if m, _, err := knode.ReadMembership(s.Kubernetes.Paths); err != nil {
+	if m, _, err := knode.ReadMembership(k.Paths); err != nil {
 		return pki.CertKey{}, failed(connect.CodeInternal, "%v", err)
 	} else if m == knode.MembershipLeft {
 		return pki.CertKey{}, failed(connect.CodeFailedPrecondition, "the node left etcd and signs no node certificates; reinstall it to join the cluster again")
 	}
-	share, err := knode.ReadShare(s.Kubernetes.Paths)
+	share, err := knode.ReadShare(k.Paths)
 	if err != nil {
 		return pki.CertKey{}, failed(connect.CodeFailedPrecondition, "%v", err)
 	}
@@ -104,14 +105,14 @@ func (s *Server) IssueNodeCertificate(ctx context.Context, request []byte) (stri
 		return "", err
 	}
 	if c.Kind == k8s.KindControlPlane {
-		nodeCA, err := s.nodeCA()
+		nodeCA, err := s.Kubernetes.nodeCA()
 		if err != nil {
 			return "", err
 		}
 		// A control plane removed from etcd without leaving it still holds the node CA; once it
 		// is revoked, it renews its own certificate no more than another node's.
 		names := pki.NamesOf(s.Certificate.Current().Leaf)
-		if err := s.notRevoked(ctx, names.CommonName); err != nil {
+		if err := s.Kubernetes.notRevoked(ctx, names.CommonName); err != nil {
 			return "", err
 		}
 		return signRequest(nodeCA, names, request, time.Now())
@@ -134,7 +135,8 @@ func RenewThrough(ctx context.Context, cert *NodeCertificate, addr string, reque
 	}
 	// Renewals are hours apart: nothing is kept open in between.
 	defer conn.Close()
-	resp, err := conn.RenewNodeCertificate(ctx, connect.NewRequest(&nodev1.RenewNodeCertificateRequest{CertificateRequest: request}))
+	k := kubernetesv1connect.NewKubernetesServiceClient(conn.HTTPClient(), conn.BaseURL())
+	resp, err := k.RenewNodeCertificate(ctx, connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request}))
 	if err != nil {
 		return "", fmt.Errorf("the control plane at %s: %w", addr, err)
 	}

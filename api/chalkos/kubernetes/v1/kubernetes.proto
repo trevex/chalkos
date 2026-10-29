@@ -1,0 +1,374 @@
+syntax = "proto3";
+
+// The API of chalkd's Kubernetes layer, which chalkd serves beside the node API on images with
+// the Kubernetes layer, on the same port and with the same certificates and roles.
+package chalkos.kubernetes.v1;
+
+option go_package = "github.com/trevex/chalkos/pkg/api/kubernetes/v1;kubernetesv1";
+
+import "google/protobuf/timestamp.proto";
+
+// KubernetesService is the API of the node's Kubernetes side. Each method's comment names the
+// modes it is available in and the least role a client certificate needs, as on NodeService.
+// Only nodes call RenewNodeCertificate, with the node role. On an image without the Kubernetes
+// layer every method fails with UNIMPLEMENTED, before the mode and the role are checked.
+service KubernetesService {
+  // Status reports the state of the node's Kubernetes: its part in the cluster, its preparation,
+  // its etcd membership, its Node, VIPs, control plane and the revoked nodes. Available in normal
+  // mode to readers, on images with the Kubernetes layer.
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
+  // chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
+  // is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
+  // normal mode to admins, on images with the Kubernetes layer.
+  rpc Bootstrap(BootstrapRequest) returns (BootstrapResponse);
+  // EtcdMembers lists etcd's members as the node's own member sees them, with their health. It
+  // answers on control-plane nodes that are etcd members. Available in normal mode to readers, on
+  // images with the Kubernetes layer.
+  rpc EtcdMembers(EtcdMembersRequest) returns (EtcdMembersResponse);
+  // EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
+  // have fewer healthy members than their quorum, unless forced, and for the node's own member,
+  // which EtcdLeave removes. Available in normal mode to admins, on images with the Kubernetes
+  // layer.
+  rpc EtcdRemoveMember(EtcdRemoveMemberRequest) returns (EtcdRemoveMemberResponse);
+  // EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
+  // still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
+  // unpins its addresses. The node joins the cluster again only once it is reinstalled. A
+  // bootstrapped node whose own member does not answer leaves only when forced. Available in
+  // normal mode to admins, on images with the Kubernetes layer.
+  rpc EtcdLeave(EtcdLeaveRequest) returns (EtcdLeaveResponse);
+  // RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
+  // the names of the node certificate it authenticated with. It answers on control-plane nodes
+  // and refuses a revoked node. Available in normal mode to nodes, on images with the Kubernetes
+  // layer.
+  rpc RenewNodeCertificate(RenewNodeCertificateRequest) returns (RenewNodeCertificateResponse);
+  // RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
+  // out; chalkctl rotate calls it. Available in normal mode to admins, on images with the
+  // Kubernetes layer.
+  rpc RotationStep(RotationStepRequest) returns (RotationStepResponse);
+  // DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
+  // eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
+  // and pods without a controller stay; they run again on the node once it is back. Pods with
+  // emptyDir volumes are evicted only when the request accepts losing that data. Pods that
+  // terminate already, as those an earlier drain evicted, are not evicted again, but the call
+  // returns only once they and the pods it evicted have stopped. A node that was cordoned already
+  // stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. It
+  // answers on bootstrapped control-plane nodes. Available in normal mode to operators, on images
+  // with the Kubernetes layer. An eviction refused for good, or one a PodDisruptionBudget holds
+  // back until the timeout, fails the call with FAILED_PRECONDITION; pods that did not stop in
+  // time, or whose evictions the API server kept failing, with DEADLINE_EXCEEDED.
+  rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse);
+  // UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
+  // a node cordoned otherwise as it is. It answers on bootstrapped control-plane nodes. Available
+  // in normal mode to operators, on images with the Kubernetes layer.
+  rpc UncordonNode(UncordonNodeRequest) returns (UncordonNodeResponse);
+  // RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigMap
+  // kube-system/chalkos-revoked-nodes, applies the API server's admission policy
+  // chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
+  // Control planes then refuse to renew its node certificate. A node revoked already keeps the
+  // time of its first revocation. A call that fails after listing the node says so; calling again
+  // finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
+  // map of revoked nodes would grow too long for the API server to compile with it. It answers on
+  // bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+  // Kubernetes layer.
+  rpc RevokeNode(RevokeNodeRequest) returns (RevokeNodeResponse);
+  // UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
+  // it, so a node of that name may join again. The old node's certificates work again too, unless
+  // the CAs they chain to were rotated after the revocation: the call is refused with
+  // FAILED_PRECONDITION while the OS CA or the Kubernetes CA predates it, unless forced. A call
+  // that fails after removing the node says so; calling again applies the policy. It answers on
+  // bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+  // Kubernetes layer.
+  rpc UnrevokeNode(UnrevokeNodeRequest) returns (UnrevokeNodeResponse);
+}
+
+// The request of Status.
+message StatusRequest {}
+
+// The response of Status: the state of the node's Kubernetes.
+message StatusResponse {
+  // The node's part in the cluster: controlplane or worker.
+  string kind = 1;
+  // What the node waits for or is: "no share", "preparing" while its Kubernetes files are
+  // prepared, or why their preparation failed, such as "preparation failed: no ipv4 node address
+  // matches validSubnets 10.0.0.0/8 (the node has ...)"; then on a control-plane node "waiting
+  // for bootstrap or for the cluster at <endpoint>", what joining that cluster does or waits for,
+  // such as "joining the cluster at <endpoint>: etcd member <id> catches up" or a stale member
+  // and how to remove it, "bootstrapped" or "etcd data missing: restore etcd or reinstall the
+  // node"; "joined" on a worker, followed by ": the Node has no <family> pod range; ..." when the
+  // control plane allocated it no pod range of one of the worker's families.
+  string state = 2;
+  // Where the node stands, as state describes it in words. Clients decide on the phase; state is
+  // for people to read.
+  Phase phase = 3;
+  // The status of the Node's Ready condition (True, False or Unknown), or why it could not be
+  // read.
+  string node_ready = 4;
+  // On a bootstrapped control-plane node of a cluster with VIPs: "holder" while the node holds
+  // them, "standby" otherwise. Empty on other nodes.
+  string vip = 5;
+  // On a bootstrapped control-plane node: "current" once its API server and etcd serve the
+  // certificates the node holds now and the API server answers ready, otherwise what is not so,
+  // such as "the API server serves certificates the node replaced". Empty on other nodes.
+  string control_plane = 6;
+  // Whether control_plane is "current": the node's API server and etcd serve the certificates
+  // the node holds now and the API server answers ready. False on other nodes.
+  bool control_plane_current = 7;
+  // On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the
+  // ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty when none is revoked, and when
+  // the list was not reported; revoked_nodes_read tells the two apart.
+  repeated RevokedNode revoked_nodes = 8;
+  // On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when
+  // they were.
+  string revoked_nodes_error = 9;
+  // Whether the node read the revoked nodes, so that an empty revoked_nodes means none is
+  // revoked. False on other nodes and when revoked_nodes_error is set.
+  bool revoked_nodes_read = 10;
+}
+
+// Where a node stands in its Kubernetes cluster. On a control-plane node it follows the node's
+// etcd membership.
+enum Phase {
+  // No phase; chalkd never reports it.
+  PHASE_UNSPECIFIED = 0;
+  // The node has no share yet, or its Kubernetes files are being prepared, or their preparation
+  // failed.
+  PHASE_PREPARING = 1;
+  // A control-plane node that is no etcd member and has not started joining. It waits for a
+  // bootstrap or for the cluster, or tries to reach the cluster to join it.
+  PHASE_WAITING = 2;
+  // A control-plane node that started joining the cluster and has not finished. It may be an
+  // etcd member already.
+  PHASE_JOINING = 3;
+  // A control-plane node that is an etcd member: it initialised etcd or finished joining.
+  PHASE_BOOTSTRAPPED = 4;
+  // A bootstrapped control-plane node whose etcd data is missing, as after VAR was reset. Its
+  // control plane does not start until etcd is restored or the node is reinstalled.
+  PHASE_ETCD_DATA_MISSING = 5;
+  // A control-plane node that left etcd. It joins the cluster again only once reinstalled.
+  PHASE_LEFT = 6;
+  // A worker node whose Kubernetes files are prepared: its kubelet joins the cluster.
+  PHASE_JOINED = 7;
+}
+
+// A node revoked in the cluster.
+message RevokedNode {
+  // The node's name in Kubernetes.
+  string name = 1;
+  // When the node was revoked; unset when the time it is listed with cannot be read.
+  google.protobuf.Timestamp revoked_at = 2;
+}
+
+// The request of Bootstrap.
+message BootstrapRequest {}
+
+// The response of Bootstrap, once the add-ons are applied.
+message BootstrapResponse {
+  // Objects applied: chalkos's add-ons and those of the node's Addon documents.
+  uint32 applied = 1;
+}
+
+// The error detail of a request that needs an etcd member, from a control-plane node that is
+// none, as before it joined the cluster or after it left etcd. The request fails with FAILED_PRECONDITION, and another
+// control-plane node may answer it. EtcdMembers, EtcdRemoveMember, RotationStep, DrainNode,
+// UncordonNode, RevokeNode and UnrevokeNode give it.
+message NotEtcdMember {}
+
+// A member of etcd.
+message EtcdMember {
+  // The member's ID.
+  uint64 id = 1;
+  // The node's name; empty while a member that was added has not started.
+  string name = 2;
+  // URLs the other members reach the member at.
+  repeated string peer_urls = 3;
+  // Whether the member is a learner: a member without a vote, as a joining control-plane node
+  // is until it catches up.
+  bool learner = 4;
+  // Why the member did not answer; empty when it is healthy.
+  string unhealthy = 5;
+}
+
+// The request of EtcdMembers.
+message EtcdMembersRequest {}
+
+// The response of EtcdMembers.
+message EtcdMembersResponse {
+  // etcd's members, as etcd lists them.
+  repeated EtcdMember members = 1;
+}
+
+// The request of EtcdRemoveMember.
+message EtcdRemoveMemberRequest {
+  // The member's name or its ID in hex.
+  string member = 1;
+  // Whether the member is removed even when the voters left would have no healthy quorum.
+  bool force = 2;
+}
+
+// The response of EtcdRemoveMember.
+message EtcdRemoveMemberResponse {
+  // The member that was removed, without its health.
+  EtcdMember removed = 1;
+}
+
+// The request of EtcdLeave.
+message EtcdLeaveRequest {
+  // Whether the node leaves through the other members also when its own etcd member does not
+  // answer, as on a node that lost its pinned address.
+  bool force = 1;
+}
+
+// The response of EtcdLeave, once the node is out of etcd.
+message EtcdLeaveResponse {}
+
+// The request of RenewNodeCertificate.
+message RenewNodeCertificateRequest {
+  // PKCS #10 certificate request (DER) signed with the node's new key, which never leaves the
+  // node. Only its key is used; the names come from the caller's certificate.
+  bytes certificate_request = 1;
+}
+
+// The response of RenewNodeCertificate.
+message RenewNodeCertificateResponse {
+  // The new node certificate followed by the certificate of the node CA that issued it (PEM).
+  bytes certificate_chain = 1;
+}
+
+// A step of a CA or key rotation that RotationStep runs.
+enum RotationStep {
+  // No step; chalkd refuses it.
+  ROTATION_STEP_UNSPECIFIED = 0;
+  // On a bootstrapped control-plane node: restart the Deployments, DaemonSets and StatefulSets of
+  // chalkos's add-ons and of the node's Addon documents, once the kube-root-ca.crt ConfigMaps of
+  // their namespaces hold every Kubernetes CA the node trusts, and wait until they rolled out.
+  ROTATION_STEP_RESTART_ADDONS = 1;
+  // On a bootstrapped control-plane node: list the Secrets of type
+  // kubernetes.io/service-account-token, whose tokens nothing signs again.
+  ROTATION_STEP_LIST_TOKEN_SECRETS = 2;
+  // On a bootstrapped control-plane node: update every object of the resources the API server
+  // encrypts without changing it, so the API server encrypts it with its first key, then count
+  // the objects etcd holds under each key.
+  ROTATION_STEP_REWRITE_ENCRYPTED = 3;
+  // On a bootstrapped control-plane node: count the objects etcd holds under each key.
+  ROTATION_STEP_COUNT_ENCRYPTED = 4;
+  // On a node with Kubernetes: remove the kubelet's serving certificate and restart the kubelet,
+  // which requests a new one.
+  ROTATION_STEP_RENEW_KUBELET_SERVING = 5;
+}
+
+// The request of RotationStep.
+message RotationStepRequest {
+  // The step to run.
+  RotationStep step = 1;
+}
+
+// The response of RotationStep; each step sets the fields it reports.
+message RotationStepResponse {
+  // The workloads restarted, as namespace/kind/name.
+  repeated string restarted = 1;
+  // The Secrets of type kubernetes.io/service-account-token, as namespace/name.
+  repeated string token_secrets = 2;
+  // How many objects were updated.
+  uint64 rewritten = 3;
+  // The objects etcd holds by resource and key.
+  repeated EncryptedObjects encrypted = 4;
+  // The workloads restarted but not waited for, as namespace/kind/name: their rollout does not
+  // complete by itself (an OnDelete update strategy, a StatefulSet's partition, a paused
+  // Deployment).
+  repeated string not_waited = 5;
+}
+
+// How many objects of one resource etcd holds under one key.
+message EncryptedObjects {
+  // The resource, such as secrets.
+  string resource = 1;
+  // The name of the key the objects are encrypted with; empty for objects stored unencrypted.
+  string key = 2;
+  // Number of objects.
+  uint64 objects = 3;
+}
+
+// The request of DrainNode.
+message DrainNodeRequest {
+  // The node's name in Kubernetes.
+  string node = 1;
+  // How long to wait for the pods to be evicted and gone, in seconds; zero waits five minutes.
+  uint32 timeout_seconds = 2;
+  // Whether pods with emptyDir volumes are evicted too, which loses their data.
+  bool delete_emptydir_data = 3;
+}
+
+// The response of DrainNode: the pods evicted and the pods that stay.
+message DrainNodeResponse {
+  // Whether the node is marked as cordoned for an upgrade, by this call or an earlier one.
+  bool marked = 1;
+  // The pods evicted, as namespace/name.
+  repeated string evicted = 2;
+  // The DaemonSet, static and finished pods, which stay on the node, as namespace/name.
+  repeated string kept = 3;
+  // The pods without a controller, which stay and which nothing starts again elsewhere, as
+  // namespace/name. The node lifecycle controller deletes them for good when the node stays down
+  // longer than their tolerations allow.
+  repeated string unmanaged = 4;
+}
+
+// The request of UncordonNode.
+message UncordonNodeRequest {
+  // The node's name in Kubernetes.
+  string node = 1;
+}
+
+// The response of UncordonNode.
+message UncordonNodeResponse {
+  // Whether the node was cordoned for an upgrade and is schedulable again.
+  bool uncordoned = 1;
+}
+
+// The request of RevokeNode.
+message RevokeNodeRequest {
+  // The node's name in Kubernetes, which its node certificate carries too.
+  string node = 1;
+}
+
+// The response of RevokeNode.
+message RevokeNodeResponse {
+  // When the node was revoked: now, or at an earlier revocation.
+  google.protobuf.Timestamp revoked_at = 1;
+  // Whether the call deleted the node's Node object; false when the cluster had none.
+  bool node_deleted = 2;
+}
+
+// The request of UnrevokeNode.
+message UnrevokeNodeRequest {
+  // The node's name in Kubernetes.
+  string node = 1;
+  // Whether the node is unrevoked although the CAs its old certificates chain to predate the
+  // revocation.
+  bool force = 2;
+}
+
+// The response of UnrevokeNode.
+message UnrevokeNodeResponse {
+  // When the node was revoked; unset when the time it is listed with cannot be read, which counts
+  // every CA as made before the revocation.
+  google.protobuf.Timestamp revoked_at = 1;
+  // The CAs issued before the revocation, by the names chalkctl rotate takes: os-ca, kubernetes-ca.
+  // The old node's certificates work again until they expire or these CAs are rotated. Empty when
+  // both were rotated after the revocation.
+  repeated string stale_cas = 2;
+}
+
+// A node's Kubernetes share, as ApplyConfig and Install deliver it in their layers.
+message Share {
+  // The share (JSON): the CAs and keys for a control-plane node, the CA certificate and a kubelet
+  // client certificate for a worker.
+  bytes share = 1;
+}
+
+// The Kubernetes facts of an image, as its contract carries them in its layer facts.
+message ImageFacts {
+  // The image's image.json: the Kubernetes release, the images of its components and the pod
+  // network it ships.
+  bytes image_json = 1;
+}

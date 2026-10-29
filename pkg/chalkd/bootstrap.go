@@ -7,13 +7,13 @@ import (
 
 	"connectrpc.com/connect"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 )
 
-func (s *Server) Bootstrap(ctx context.Context, _ *connect.Request[nodev1.BootstrapRequest]) (*connect.Response[nodev1.BootstrapResponse], error) {
-	k := s.Kubernetes
+func (p *kubernetesLayer) Bootstrap(ctx context.Context, _ *connect.Request[kubernetesv1.BootstrapRequest]) (*connect.Response[kubernetesv1.BootstrapResponse], error) {
+	k := p.k
 	c, err := k8s.ReadCluster(k.Paths.Cluster)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
@@ -21,9 +21,9 @@ func (s *Server) Bootstrap(ctx context.Context, _ *connect.Request[nodev1.Bootst
 	if c.Kind != k8s.KindControlPlane {
 		return nil, failed(connect.CodeFailedPrecondition, "the node is a worker; bootstrap a control-plane node")
 	}
-	s.mu.Lock()
-	done, err := s.bootstrap(ctx, k, c)
-	s.mu.Unlock()
+	p.node.Changes().Lock()
+	done, err := p.bootstrap(ctx, c)
+	p.node.Changes().Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -35,12 +35,13 @@ func (s *Server) Bootstrap(ctx context.Context, _ *connect.Request[nodev1.Bootst
 	k.mu.Lock()
 	n := k.count
 	k.mu.Unlock()
-	return connect.NewResponse(&nodev1.BootstrapResponse{Applied: uint32(n)}), nil
+	return connect.NewResponse(&kubernetesv1.BootstrapResponse{Applied: uint32(n)}), nil
 }
 
 // bootstrap commits the node to initialising etcd: the marker comes first, so a failure after
 // it is retried by the next boot and never initialises a second cluster.
-func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (chan struct{}, error) {
+func (p *kubernetesLayer) bootstrap(ctx context.Context, c k8s.Cluster) (chan struct{}, error) {
+	k := p.k
 	m, leftovers, err := knode.ReadMembership(k.Paths)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
@@ -65,7 +66,7 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 	case prep.failure != "":
 		return nil, failed(connect.CodeFailedPrecondition, "%s", prep.problem())
 	case !prep.done:
-		return nil, failed(connect.CodeFailedPrecondition, "%v; see chalkctl logs %s --unit chalkos-kubernetes", knode.ErrNotPrepared, s.nodeName())
+		return nil, failed(connect.CodeFailedPrecondition, "%v; see chalkctl logs %s --unit chalkos-kubernetes", knode.ErrNotPrepared, p.node.NodeName())
 	}
 	ips, err := knode.ReadNodeIPs(k.Paths)
 	if err != nil {

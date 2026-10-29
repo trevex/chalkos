@@ -108,7 +108,7 @@ func TestApplyConfigStagedRefuses(t *testing.T) {
 		"an unknown kind":       {withoutDemo, &nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true}, false, connect.CodeInvalidArgument, `does not accept kind "Demo"`},
 		"a VAR of another size": {fixtureSchemas(t), &nodev1.ApplyConfigRequest{Config: strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), Staged: true}, false, connect.CodeFailedPrecondition, "only a reinstall of"},
 		"no config":             {fixtureSchemas(t), &nodev1.ApplyConfigRequest{Staged: true}, false, connect.CodeInvalidArgument, "delivers config alone"},
-		"a share":               {fixtureSchemas(t), &nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, KubernetesShare: []byte("{}")}, false, connect.CodeInvalidArgument, "delivers config alone"},
+		"a share":               {fixtureSchemas(t), &nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, Layers: shareLayers(t, []byte("{}"))}, false, connect.CodeInvalidArgument, "delivers config alone"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, r := stagedServer(t, tc.schemas)

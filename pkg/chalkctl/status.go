@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -13,8 +14,11 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/layers"
 )
 
 func (a *app) statusCommand() *cobra.Command {
@@ -90,7 +94,15 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 			return err
 		}
 	}
-	if k := s.Kubernetes; k != nil {
+	info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+	if err != nil {
+		return err
+	}
+	if slices.Contains(info.Msg.Layers, layers.Kubernetes) {
+		k, err := kubernetesStatus(ctx, conn)
+		if err != nil {
+			return err
+		}
 		fmt.Fprintln(a.stdout, kubernetesLine(k))
 		w := a.table()
 		for _, line := range revokedLines(k) {
@@ -100,8 +112,12 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 			return err
 		}
 	}
-	if r := s.Router; r != nil {
-		if err := a.routerStatus(r); err != nil {
+	if slices.Contains(info.Msg.Layers, layers.Router) {
+		resp, err := routerClient(conn).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
+		if err != nil {
+			return err
+		}
+		if err := a.routerStatus(resp.Msg); err != nil {
 			return err
 		}
 	}
@@ -136,7 +152,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 
 // routerStatus prints a router's BGP sessions, its NAT64 instances and its resolver, or why their
 // state is unknown. A router without NAT64 instances or a resolver prints no line of them.
-func (a *app) routerStatus(r *nodev1.RouterStatus) error {
+func (a *app) routerStatus(r *routerv1.StatusResponse) error {
 	if err := a.bgpStatus(r); err != nil {
 		return err
 	}
@@ -171,7 +187,7 @@ func (a *app) routerStatus(r *nodev1.RouterStatus) error {
 }
 
 // bgpStatus prints a router's BGP sessions, or why their state is unknown.
-func (a *app) bgpStatus(r *nodev1.RouterStatus) error {
+func (a *app) bgpStatus(r *routerv1.StatusResponse) error {
 	switch {
 	case r.BgpError != "":
 		fmt.Fprintf(a.stdout, "bgp: unknown: %s\n", r.BgpError)
@@ -258,7 +274,7 @@ func timeLine(t *nodev1.TimeStatus) string {
 }
 
 // kubernetesLine is the status line of the node's Kubernetes side.
-func kubernetesLine(k *nodev1.KubernetesStatus) string {
+func kubernetesLine(k *kubernetesv1.StatusResponse) string {
 	line := fmt.Sprintf("kubernetes %s: %s", k.Kind, k.State)
 	if k.NodeReady != "" {
 		line += ", node ready: " + k.NodeReady

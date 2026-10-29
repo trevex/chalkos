@@ -12,12 +12,14 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/esp"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storeslot"
@@ -165,7 +167,15 @@ func imageContract(st imageStore, system, platform string) (*schema.Schemas, con
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, config.Target{}, fmt.Errorf("the image's Kubernetes facts: %w", err)
 	}
-	t, err := imageTarget(platform, facts)
+	var payloads []*anypb.Any
+	if len(facts) > 0 {
+		p, err := k8s.FactsPayload(facts)
+		if err != nil {
+			return nil, config.Target{}, fmt.Errorf("the image's Kubernetes facts: %w", err)
+		}
+		payloads = append(payloads, p)
+	}
+	t, err := imageTarget(platform, payloads)
 	return schemas, t, err
 }
 

@@ -18,6 +18,8 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd"
@@ -25,6 +27,7 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -76,12 +79,16 @@ func (n *fakeNode) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.
 		if err := n.cert.Replace(string(m.NodeCertificate), string(m.NodeKey), time.Now()); err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, err)
 		}
-	case len(m.KubernetesShare) > 0:
+	case len(m.Layers) > 0:
 		n.lab.record(n.name + " share")
 		if n.lab.onShare != nil {
 			n.lab.onShare(n.name)
 		}
-		share, err := kpki.ParseShare(m.KubernetesShare)
+		data, err := kpki.SharePayload(m.Layers[0])
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		share, err := kpki.ParseShare(data)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, err)
 		}
@@ -98,10 +105,29 @@ func (n *fakeNode) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.
 	return connect.NewResponse(&nodev1.ApplyConfigResponse{}), nil
 }
 
+// Info names the Kubernetes layer on a node of a kind.
+func (n *fakeNode) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest]) (*connect.Response[nodev1.InfoResponse], error) {
+	if err := n.refuse(); err != nil {
+		return nil, err
+	}
+	resp := &nodev1.InfoResponse{Mode: nodev1.Mode_MODE_NORMAL}
+	if n.kind != "" {
+		resp.Layers = []string{layers.Kubernetes}
+	}
+	return connect.NewResponse(resp), nil
+}
+
 func (n *fakeNode) Status(ctx context.Context, _ *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
 	if err := n.refuse(); err != nil {
 		return nil, err
 	}
+	st, _ := n.status()
+	return connect.NewResponse(st), nil
+}
+
+// status is the node's status and its Kubernetes status, nil without a share.
+func (n *fakeNode) status() (*nodev1.StatusResponse, *kubernetesv1.StatusResponse) {
+	var k *kubernetesv1.StatusResponse
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	t := n.lab.t
@@ -145,31 +171,49 @@ func (n *fakeNode) Status(ctx context.Context, _ *connect.Request[nodev1.StatusR
 			if n.lab.held("stale", n.name) {
 				state = "stale"
 			}
-			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, ControlPlane: state, ControlPlaneCurrent: state == "current"}
+			k = &kubernetesv1.StatusResponse{Kind: n.kind, State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, ControlPlane: state, ControlPlaneCurrent: state == "current"}
 			n.lab.mu.Lock()
 			if s, ok := n.lab.states[n.name]; ok {
-				phase := nodev1.KubernetesPhase_KUBERNETES_PHASE_WAITING
+				phase := kubernetesv1.Phase_PHASE_WAITING
 				if s == "no share" {
-					phase = nodev1.KubernetesPhase_KUBERNETES_PHASE_PREPARING
+					phase = kubernetesv1.Phase_PHASE_PREPARING
 				}
-				st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: s, Phase: phase}
+				k = &kubernetesv1.StatusResponse{Kind: n.kind, State: s, Phase: phase}
 			} else {
-				k := st.Kubernetes
 				k.RevokedNodes, k.RevokedNodesError = n.lab.revoked, n.lab.revokedErr[n.name]
 				k.RevokedNodesRead = k.RevokedNodesError == "" && !n.lab.unreported[n.name]
 			}
 			n.lab.mu.Unlock()
 		} else {
-			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined", Phase: nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED}
+			k = &kubernetesv1.StatusResponse{Kind: n.kind, State: "joined", Phase: kubernetesv1.Phase_PHASE_JOINED}
 		}
 		st.Certificates = append(st.Certificates,
 			&nodev1.CertificateStatus{Name: "kubelet client", Issuer: n.kubeletClient},
 			&nodev1.CertificateStatus{Name: "kubelet serving", Issuer: n.kubeletServing})
 	}
-	return connect.NewResponse(st), nil
+	return st, k
 }
 
-func (n *fakeNode) EtcdMembers(ctx context.Context, _ *connect.Request[nodev1.EtcdMembersRequest]) (*connect.Response[nodev1.EtcdMembersResponse], error) {
+// fakeKubernetes is a fakeNode's Kubernetes layer.
+type fakeKubernetes struct {
+	*fakeNode
+	kubernetesv1connect.UnimplementedKubernetesServiceHandler
+}
+
+func (n fakeKubernetes) Status(ctx context.Context, _ *connect.Request[kubernetesv1.StatusRequest]) (*connect.Response[kubernetesv1.StatusResponse], error) {
+	if err := n.refuse(); err != nil {
+		return nil, err
+	}
+	if n.kind == "" {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("the kubernetes layer is not in this image"))
+	}
+	if _, k := n.status(); k != nil {
+		return connect.NewResponse(k), nil
+	}
+	return connect.NewResponse(&kubernetesv1.StatusResponse{Kind: n.kind, State: "no share", Phase: kubernetesv1.Phase_PHASE_PREPARING}), nil
+}
+
+func (n fakeKubernetes) EtcdMembers(ctx context.Context, _ *connect.Request[kubernetesv1.EtcdMembersRequest]) (*connect.Response[kubernetesv1.EtcdMembersResponse], error) {
 	if err := n.refuse(); err != nil {
 		return nil, err
 	}
@@ -177,41 +221,41 @@ func (n *fakeNode) EtcdMembers(ctx context.Context, _ *connect.Request[nodev1.Et
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is a worker; ask a control-plane node"))
 	}
 	n.lab.record(n.name + " quorum")
-	members := []*nodev1.EtcdMember{{Name: "cp1"}, {Name: "cp2"}}
+	members := []*kubernetesv1.EtcdMember{{Name: "cp1"}, {Name: "cp2"}}
 	switch {
 	case n.lab.held("learner", ""):
 		members[1].Learner = true
 	case n.lab.held("unhealthy", ""):
 		members[1].Unhealthy = "no answer"
 	}
-	return connect.NewResponse(&nodev1.EtcdMembersResponse{Members: members}), nil
+	return connect.NewResponse(&kubernetesv1.EtcdMembersResponse{Members: members}), nil
 }
 
-func (n *fakeNode) RotationStep(ctx context.Context, req *connect.Request[nodev1.RotationStepRequest]) (*connect.Response[nodev1.RotationStepResponse], error) {
+func (n fakeKubernetes) RotationStep(ctx context.Context, req *connect.Request[kubernetesv1.RotationStepRequest]) (*connect.Response[kubernetesv1.RotationStepResponse], error) {
 	if err := n.refuse(); err != nil {
 		return nil, err
 	}
 	n.lab.mu.Lock()
 	slow := n.lab.slowRewrite
 	n.lab.mu.Unlock()
-	if slow && req.Msg.Step == nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED {
+	if slow && req.Msg.Step == kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.lab.record(fmt.Sprintf("%s %s", n.name, strings.TrimPrefix(req.Msg.Step.String(), "ROTATION_STEP_")))
-	resp := &nodev1.RotationStepResponse{}
+	resp := &kubernetesv1.RotationStepResponse{}
 	l := n.lab
 	switch req.Msg.Step {
-	case nodev1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING:
+	case kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING:
 		n.kubeletServing = fingerprint(l.t, n.share.CA.Certificate)
-	case nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS:
+	case kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS:
 		resp.Restarted = []string{"kube-system/Deployment/coredns", "apps/DaemonSet/on-delete"}
 		resp.NotWaited = []string{"apps/DaemonSet/on-delete"}
-	case nodev1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS:
+	case kubernetesv1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS:
 		resp.TokenSecrets = []string{"default/legacy"}
-	case nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED:
+	case kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED:
 		l.mu.Lock()
 		for key, count := range l.encrypted {
 			delete(l.encrypted, key)
@@ -220,10 +264,10 @@ func (n *fakeNode) RotationStep(ctx context.Context, req *connect.Request[nodev1
 		}
 		l.mu.Unlock()
 		fallthrough
-	case nodev1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED:
+	case kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED:
 		l.mu.Lock()
 		for key, count := range l.encrypted {
-			resp.Encrypted = append(resp.Encrypted, &nodev1.EncryptedObjects{Resource: "secrets", Key: key, Objects: count})
+			resp.Encrypted = append(resp.Encrypted, &kubernetesv1.EncryptedObjects{Resource: "secrets", Key: key, Objects: count})
 		}
 		l.mu.Unlock()
 	}
@@ -280,7 +324,7 @@ type rotationLab struct {
 	slowRewrite bool
 	// revoked are the nodes the control planes list as revoked; revokedErr says, by control plane,
 	// why one could not read them.
-	revoked    []*nodev1.RevokedNode
+	revoked    []*kubernetesv1.RevokedNode
 	revokedErr map[string]string
 	// unreported makes control planes report no revoked nodes, as a chalkd from before
 	// revocation; states makes them report a Kubernetes state other than bootstrapped.
@@ -373,8 +417,10 @@ func newRotationLab(t *testing.T) *rotationLab {
 			n.kubeletClient = fingerprint(t, ta.secrets.Kubernetes.CA.Certificate)
 			n.kubeletServing = n.kubeletClient
 		}
-		_, h := nodev1connect.NewNodeServiceHandler(n)
-		l.addrs[name] = serveTLS(t, http.Handler(h), chalkd.TLSConfig(n.cert.GetCertificate, n.cert.ClientCAs))
+		mux := http.NewServeMux()
+		mux.Handle(nodev1connect.NewNodeServiceHandler(n))
+		mux.Handle(kubernetesv1connect.NewKubernetesServiceHandler(fakeKubernetes{fakeNode: n}))
+		l.addrs[name] = serveTLS(t, mux, chalkd.TLSConfig(n.cert.GetCertificate, n.cert.ClientCAs))
 		l.nodes[name] = n
 	}
 	return l
@@ -789,7 +835,7 @@ func TestSecretsChangedMeanwhileNotOverwritten(t *testing.T) {
 // revoked out of every phase, and names them.
 func TestRotateSkipsRevokedNodes(t *testing.T) {
 	l := newRotationLab(t)
-	l.revoked = []*nodev1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}, {Name: "gone"}}
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}, {Name: "gone"}}
 	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused"}
 	if err := l.rotate("os-ca"); err != nil {
 		t.Fatal(err)
@@ -893,7 +939,7 @@ func TestRotateReadsRevokedNodesBeforeEachPhase(t *testing.T) {
 	l.onShare = func(string) {
 		l.mu.Lock()
 		defer l.mu.Unlock()
-		l.revoked = []*nodev1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}}
+		l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}}
 	}
 	l.takeEvents()
 	if err := l.rotate("os-ca", "--resume"); err != nil {
@@ -916,7 +962,7 @@ func TestRotateReadsRevokedNodesBeforeEachPhase(t *testing.T) {
 // control plane can say which are, and warns that revoked nodes in the inventory take part.
 func TestRotateIgnoreRevoked(t *testing.T) {
 	l := newRotationLab(t)
-	l.revoked = []*nodev1.RevokedNode{{Name: "w1"}}
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1"}}
 	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused"}
 	l.unreported = map[string]bool{"cp2": true}
 	if err := l.rotate("os-ca", "--ignore-revoked"); err != nil {

@@ -119,7 +119,11 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 			return fmt.Errorf("%s is no Kubernetes node: its Node names no type", t.name)
 		}
 	}
-	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, KubernetesShare: share, Staged: f.staged}))
+	payloads, err := sharePayloads(share)
+	if err != nil {
+		return err
+	}
+	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, Layers: payloads, Staged: f.staged}))
 	if err != nil {
 		return nodeError(err, t.name)
 	}

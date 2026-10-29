@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -81,6 +82,10 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	if err := json.Unmarshal(stored.Identity, &id); err != nil {
 		return nil, failed(connect.CodeInternal, "parse the identity: %v", err)
 	}
+	share, err := sharePayload(h.Layers)
+	if err != nil {
+		return nil, err
+	}
 	req := install.Request{
 		Config:          stored,
 		Section:         id.Storage,
@@ -89,7 +94,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		NodeKey:         h.NodeKey,
 		CA:              h.CaCertificate,
 		FallbackSecret:  h.FallbackSecret,
-		KubernetesShare: h.KubernetesShare,
+		KubernetesShare: share,
 	}
 	switch target := h.Target.(type) {
 	case *nodev1.InstallHeader_InPlace:
@@ -169,7 +174,15 @@ func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[n
 		pull.Close()
 		return nil, nil, failed(connect.CodeFailedPrecondition, "install: %v", err)
 	}
-	contract := &nodev1.ImageContract{Schemas: c.Schemas, KubernetesImage: c.ImageJSON, SystemDefinitions: make(map[string]string, len(c.Definitions))}
+	contract := &nodev1.ImageContract{Schemas: c.Schemas, SystemDefinitions: make(map[string]string, len(c.Definitions))}
+	if len(c.ImageJSON) > 0 {
+		facts, err := k8s.FactsPayload(c.ImageJSON)
+		if err != nil {
+			pull.Close()
+			return nil, nil, failed(connect.CodeInternal, "install: %v", err)
+		}
+		contract.LayerFacts = append(contract.LayerFacts, facts)
+	}
 	for name, data := range c.Definitions {
 		contract.SystemDefinitions[name] = string(data)
 	}

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
@@ -169,20 +170,25 @@ func headerTarget(h *nodev1.InstallHeader, contract *nodev1.ImageContract) (conf
 	if err != nil {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's schemas: %v", err)
 	}
-	t, err := imageTarget(h.Image.GetPlatform(), contract.GetKubernetesImage())
+	t, err := imageTarget(h.Image.GetPlatform(), contract.GetLayerFacts())
 	return t, schemas, err
 }
 
 // imageTarget is the image of the platform an install or upgrade writes, as config for it is
-// translated, with its image.json, empty for an image without Kubernetes.
-func imageTarget(platform string, kubernetesImage []byte) (config.Target, error) {
+// translated, with its layers' facts, none for an image whose layers have none.
+func imageTarget(platform string, facts []*anypb.Any) (config.Target, error) {
 	t := config.Target{Platform: platform}
-	if len(kubernetesImage) > 0 {
-		facts, err := k8s.ParseImage(kubernetesImage)
+	for _, f := range facts {
+		img, ok, err := k8s.ImageOfPayload(f)
+		if !ok {
+			return config.Target{}, failed(connect.CodeInvalidArgument, "the image's contract carries facts of type %s, which this chalkd does not know", f.GetTypeUrl())
+		}
 		if err != nil {
 			return config.Target{}, failed(connect.CodeInvalidArgument, "the image's image.json: %v", err)
 		}
-		t.Image = &facts
+		if t.Image == nil {
+			t.Image = &img
+		}
 	}
 	return t, nil
 }

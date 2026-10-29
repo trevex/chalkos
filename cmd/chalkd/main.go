@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -359,13 +360,8 @@ func serve() error {
 	if err != nil {
 		return err
 	}
-	l, err := layers.Read(layers.Dir)
-	if err != nil {
-		return err
-	}
 	srv := &chalkd.Server{
 		Mode:        creds.mode,
-		Layers:      l,
 		Installer:   os.Getenv("CHALKD_INSTALLER") == "1",
 		AnyClient:   creds.clientCAs == nil,
 		ClientCAs:   creds.clientCAs,
@@ -386,6 +382,13 @@ func serve() error {
 	}
 
 	srv.RenewOnApplyConfig = renewOnApplyConfig(os.Getenv)
+	// Images with Kubernetes carry its facts; the cluster comes from the node's config. Router
+	// images read FRR's state with vtysh and the kernel's routes through netlink.
+	k := chalkd.NewKubernetes(chalkd.KubernetesOptions{})
+	router := &chalkd.Router{Run: srv.Run}
+	if srv.Plugins, err = registry(srv, k, router); err != nil {
+		return err
+	}
 
 	switch {
 	case creds.mode == nodev1.Mode_MODE_NORMAL:
@@ -397,21 +400,28 @@ func serve() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
-	// Images with Kubernetes carry its facts; the cluster comes from the node's config.
-	if l.Has(layers.Kubernetes) && creds.mode == nodev1.Mode_MODE_NORMAL {
-		srv.Kubernetes = chalkd.NewKubernetes(chalkd.KubernetesOptions{})
-		srv.Kubernetes.Start()
-		// On every way out the node releases the VIPs, which must not stay on a node whose chalkd
-		// no longer holds their lease, and closes its etcd clients.
-		defer srv.Kubernetes.Stop()
+	// The active layers' loops run until chalkd stops. On every way out, a signal or a server that
+	// failed, ctx ends and chalkd waits for them, so the node releases the VIPs first.
+	var loops sync.WaitGroup
+	defer func() {
+		stop()
+		loops.Wait()
+	}()
+	if creds.mode == nodev1.Mode_MODE_NORMAL {
+		for _, p := range srv.Plugins.Active() {
+			loops.Go(func() {
+				if err := p.Start(ctx); err != nil {
+					log.Printf("%s: %v", p.Name(), err)
+				}
+			})
+		}
+	}
+	if srv.Plugins.Layers().Has(layers.Kubernetes) && creds.mode == nodev1.Mode_MODE_NORMAL {
+		srv.Kubernetes = k
 		// The cluster's control planes renew node certificates; a node without Kubernetes knows
 		// none and is renewed with chalkctl node renew.
 		srv.Renewal = chalkd.NewNodeRenewal(creds.node, srv.IssueNodeCertificate)
 		go srv.Renewal.Run(ctx)
-	}
-	// Router images read FRR's state with vtysh and the kernel's routes through netlink.
-	if l.Has(layers.Router) && creds.mode == nodev1.Mode_MODE_NORMAL {
-		srv.Router = &chalkd.Router{Run: srv.Run}
 	}
 	go announceAddresses(srv.CurrentFingerprint)
 

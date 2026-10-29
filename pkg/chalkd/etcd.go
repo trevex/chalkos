@@ -13,7 +13,7 @@ import (
 	"connectrpc.com/connect"
 	clientv3 "go.etcd.io/etcd/client/v3"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -66,7 +66,7 @@ func (k *Kubernetes) etcdMember() (controlPlaneNode, error) {
 // clients, such as chalkctl, to ask the next control-plane node.
 func errNotEtcdMember() error {
 	err := connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is not an etcd member; ask another control-plane node"))
-	if detail, derr := connect.NewErrorDetail(&nodev1.NotEtcdMember{}); derr == nil {
+	if detail, derr := connect.NewErrorDetail(&kubernetesv1.NotEtcdMember{}); derr == nil {
 		err.AddDetail(detail)
 	}
 	return err
@@ -95,16 +95,16 @@ func (k *Kubernetes) dialEtcd(c k8s.Cluster, share kpki.Share, endpoints ...stri
 	return etcd.Dial(endpoints, tlsConfig)
 }
 
-func memberMessage(m etcd.Member, unhealthy error) *nodev1.EtcdMember {
-	msg := &nodev1.EtcdMember{Id: m.ID, Name: m.Name, PeerUrls: m.PeerURLs, Learner: m.Learner}
+func memberMessage(m etcd.Member, unhealthy error) *kubernetesv1.EtcdMember {
+	msg := &kubernetesv1.EtcdMember{Id: m.ID, Name: m.Name, PeerUrls: m.PeerURLs, Learner: m.Learner}
 	if unhealthy != nil {
 		msg.Unhealthy = unhealthy.Error()
 	}
 	return msg
 }
 
-func (s *Server) EtcdMembers(ctx context.Context, _ *connect.Request[nodev1.EtcdMembersRequest]) (*connect.Response[nodev1.EtcdMembersResponse], error) {
-	k := s.Kubernetes
+func (p *kubernetesLayer) EtcdMembers(ctx context.Context, _ *connect.Request[kubernetesv1.EtcdMembersRequest]) (*connect.Response[kubernetesv1.EtcdMembersResponse], error) {
+	k := p.k
 	cp, err := k.etcdMember()
 	if err != nil {
 		return nil, err
@@ -121,17 +121,17 @@ func (s *Server) EtcdMembers(ctx context.Context, _ *connect.Request[nodev1.Etcd
 		return nil, failed(connect.CodeUnavailable, "%v", err)
 	}
 	unhealthy := etcd.Health(ctx, cli, members)
-	resp := &nodev1.EtcdMembersResponse{}
+	resp := &kubernetesv1.EtcdMembersResponse{}
 	for _, m := range members {
 		resp.Members = append(resp.Members, memberMessage(m, unhealthy[m.ID]))
 	}
 	return connect.NewResponse(resp), nil
 }
 
-func (s *Server) EtcdRemoveMember(ctx context.Context, req *connect.Request[nodev1.EtcdRemoveMemberRequest]) (*connect.Response[nodev1.EtcdRemoveMemberResponse], error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	k := s.Kubernetes
+func (p *kubernetesLayer) EtcdRemoveMember(ctx context.Context, req *connect.Request[kubernetesv1.EtcdRemoveMemberRequest]) (*connect.Response[kubernetesv1.EtcdRemoveMemberResponse], error) {
+	p.node.Changes().Lock()
+	defer p.node.Changes().Unlock()
+	k := p.k
 	cp, err := k.etcdMember()
 	if err != nil {
 		return nil, err
@@ -167,7 +167,7 @@ func (s *Server) EtcdRemoveMember(ctx context.Context, req *connect.Request[node
 		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 	}
 	log.Printf("kubernetes: removed the etcd member %s", m)
-	return connect.NewResponse(&nodev1.EtcdRemoveMemberResponse{Removed: memberMessage(m, nil)}), nil
+	return connect.NewResponse(&kubernetesv1.EtcdRemoveMemberResponse{Removed: memberMessage(m, nil)}), nil
 }
 
 // ownMember finds the node's member among the members with etcd.Self, at the peer URL of the
@@ -201,17 +201,17 @@ func (k *Kubernetes) leaveEndpoints(ctx context.Context, c k8s.Cluster, share kp
 	return append(endpoints, others...)
 }
 
-func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.EtcdLeaveRequest]) (*connect.Response[nodev1.EtcdLeaveResponse], error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	k := s.Kubernetes
+func (p *kubernetesLayer) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv1.EtcdLeaveRequest]) (*connect.Response[kubernetesv1.EtcdLeaveResponse], error) {
+	p.node.Changes().Lock()
+	defer p.node.Changes().Unlock()
+	k := p.k
 	cp, err := k.controlPlane()
 	if err != nil {
 		return nil, err
 	}
 	c, name, share := cp.cluster, cp.name, cp.share
-	p := k.Paths
-	m, leftovers, err := knode.ReadMembership(p)
+	paths := k.Paths
+	m, leftovers, err := knode.ReadMembership(paths)
 	switch {
 	case err != nil:
 		return nil, failed(connect.CodeInternal, "%v", err)
@@ -312,29 +312,29 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 
 	// A renewal of the control plane's certificates renders the static pods while it holds this
 	// lock: it ends first, and none renders them once the node is marked as left.
-	unlock, err := knode.LockPKI(ctx, p)
+	unlock, err := knode.LockPKI(ctx, paths)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd, but stopping its control plane failed: %v", err)
 	}
 	defer unlock()
 	// The marker comes first: from here on the node is no member, whatever it still holds.
-	if err := knode.MarkLeft(p, time.Now()); err != nil {
+	if err := knode.MarkLeft(paths, time.Now()); err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd, but recording it failed: %v", err)
 	}
-	if err := knode.RemoveStaticPods(p); err != nil {
+	if err := knode.RemoveStaticPods(paths); err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd, but stopping its control plane failed: %v", err)
 	}
 	if err := k.hooks.EtcdStopped(ctx, c); err != nil {
-		return nil, failed(connect.CodeInternal, "the node left etcd, but its etcd did not stop: %v; its data stays in %s until chalkctl etcd leave runs again", err, p.EtcdData)
+		return nil, failed(connect.CodeInternal, "the node left etcd, but its etcd did not stop: %v; its data stays in %s until chalkctl etcd leave runs again", err, paths.EtcdData)
 	}
-	if err := knode.RemoveEtcdData(p); err != nil {
+	if err := knode.RemoveEtcdData(paths); err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd, but deleting its etcd data failed: %v", err)
 	}
-	if err := knode.ClearMembership(p); err != nil {
+	if err := knode.ClearMembership(paths); err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd: %v", err)
 	}
 	log.Print("kubernetes: the node left etcd; reinstall it to join the cluster again")
-	return connect.NewResponse(&nodev1.EtcdLeaveResponse{}), nil
+	return connect.NewResponse(&kubernetesv1.EtcdLeaveResponse{}), nil
 }
 
 // etcdStopped waits until the node's etcd no longer listens, as the kubelet stops it once its

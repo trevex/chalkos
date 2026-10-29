@@ -10,7 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -45,11 +45,11 @@ func (a *app) nodeRevoke(ctx context.Context, f viaFlags, pos []string) error {
 			return err
 		}
 	}
-	var resp *nodev1.RevokeNodeResponse
+	var resp *kubernetesv1.RevokeNodeResponse
 	// A control plane is not asked to revoke itself.
 	err := a.throughControlPlane(ctx, f, name, func(conn *client.Conn) error {
 		if !f.force {
-			m, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
+			m, err := kubernetesClient(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
 			if err != nil {
 				return err
 			}
@@ -57,7 +57,7 @@ func (a *app) nodeRevoke(ctx context.Context, f viaFlags, pos []string) error {
 				return err
 			}
 		}
-		r, err := conn.RevokeNode(ctx, connect.NewRequest(&nodev1.RevokeNodeRequest{Node: name}))
+		r, err := kubernetesClient(conn).RevokeNode(ctx, connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: name}))
 		if err == nil {
 			resp = r.Msg
 		}
@@ -97,7 +97,7 @@ func (a *app) controlPlanesRead(ctx context.Context, f viaFlags, name string) er
 	if err != nil {
 		return err
 	}
-	return everyControlPlaneReads(ctx, controlPlanes, name, f.nodes(c, creds).status)
+	return everyControlPlaneReads(ctx, controlPlanes, name, f.nodes(c, creds).kubernetesStatus)
 }
 
 // everyControlPlaneReads refuses to revoke the node while a control plane may renew its node
@@ -105,16 +105,19 @@ func (a *app) controlPlanesRead(ctx context.Context, f viaFlags, name string) er
 // nodes, or does not say it read them, as a chalkd from before node revocation, which renews
 // node certificates without asking. A control plane that is not bootstrapped, or that left etcd,
 // renews none.
-func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name string, status func(ctx context.Context, name string) (*nodev1.StatusResponse, error)) error {
+func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name string, status func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error)) error {
 	var why []string
 	for _, cp := range controlPlanes {
-		st, err := status(ctx, cp)
+		k, err := status(ctx, cp)
+		if errors.Is(err, errNoKubernetes) {
+			continue
+		}
 		if err != nil {
 			why = append(why, fmt.Sprintf("%s: %v", cp, err))
 			continue
 		}
-		switch k := st.Kubernetes; {
-		case !everBootstrapped(k) || k.Phase == nodev1.KubernetesPhase_KUBERNETES_PHASE_LEFT:
+		switch {
+		case !everBootstrapped(k) || k.Phase == kubernetesv1.Phase_PHASE_LEFT:
 		case k.RevokedNodesError != "":
 			why = append(why, fmt.Sprintf("%s: cannot read the revoked nodes: %s", cp, k.RevokedNodesError))
 		case !k.RevokedNodesRead:
@@ -129,7 +132,7 @@ func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name st
 }
 
 // etcdMemberRefusal refuses to revoke a node that is still an etcd member, a control plane.
-func etcdMemberRefusal(name string, members []*nodev1.EtcdMember) error {
+func etcdMemberRefusal(name string, members []*kubernetesv1.EtcdMember) error {
 	for _, m := range members {
 		if name != "" && m.Name == name {
 			return fmt.Errorf("%s is still an etcd member; %s", name, controlPlaneRevocation(name))
@@ -185,9 +188,9 @@ func (a *app) nodeUnrevoke(ctx context.Context, f viaFlags, pos []string) error 
 	if err := a.keepsRevokedNodes(ctx, f); err != nil {
 		return err
 	}
-	var resp *nodev1.UnrevokeNodeResponse
+	var resp *kubernetesv1.UnrevokeNodeResponse
 	err := a.throughControlPlane(ctx, f, "", func(conn *client.Conn) error {
-		r, err := conn.UnrevokeNode(ctx, connect.NewRequest(&nodev1.UnrevokeNodeRequest{Node: pos[0], Force: f.force}))
+		r, err := kubernetesClient(conn).UnrevokeNode(ctx, connect.NewRequest(&kubernetesv1.UnrevokeNodeRequest{Node: pos[0], Force: f.force}))
 		if err == nil {
 			resp = r.Msg
 		}
@@ -228,7 +231,7 @@ func unrevokedLine(name string, at time.Time, stale []string) string {
 
 // revokedLines are the status lines of the nodes a control plane lists as revoked, or of why
 // it could not read them.
-func revokedLines(k *nodev1.KubernetesStatus) []string {
+func revokedLines(k *kubernetesv1.StatusResponse) []string {
 	if k.RevokedNodesError != "" {
 		return []string{"revoked nodes unknown: " + k.RevokedNodesError}
 	}
@@ -243,7 +246,7 @@ func revokedLines(k *nodev1.KubernetesStatus) []string {
 }
 
 // revokedSince says when a node was revoked.
-func revokedSince(n *nodev1.RevokedNode) string {
+func revokedSince(n *kubernetesv1.RevokedNode) string {
 	if n.RevokedAt == nil {
 		return "at an unknown time"
 	}
@@ -256,30 +259,30 @@ func revokedSince(n *nodev1.RevokedNode) string {
 // Otherwise the list is unknown while no control plane gives it: one does not when it does not
 // answer, cannot read the list, or does not say it read it, as a chalkd from before revocation.
 // The error then names why each did not.
-func revokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx context.Context, name string) (*nodev1.StatusResponse, error)) (map[string]*nodev1.RevokedNode, error) {
+func revokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error)) (map[string]*kubernetesv1.RevokedNode, error) {
 	var why []string
 	bootstrapped := false
 	for _, name := range controlPlanes {
-		st, err := status(ctx, name)
+		k, err := status(ctx, name)
+		if errors.Is(err, errNoKubernetes) {
+			why = append(why, fmt.Sprintf("%s: is not bootstrapped: no Kubernetes", name))
+			continue
+		}
 		if err != nil {
 			bootstrapped = bootstrapped || !errors.As(err, new(notInstalledYet))
 			why = append(why, fmt.Sprintf("%s: %v", name, err))
 			continue
 		}
-		switch k := st.Kubernetes; {
+		switch {
 		case !everBootstrapped(k):
-			state := "no Kubernetes"
-			if k != nil {
-				state = k.State
-			}
-			why = append(why, fmt.Sprintf("%s: is not bootstrapped: %s", name, state))
+			why = append(why, fmt.Sprintf("%s: is not bootstrapped: %s", name, k.State))
 			continue
 		case k.RevokedNodesError != "":
 			why = append(why, fmt.Sprintf("%s: %s", name, k.RevokedNodesError))
 		case !k.RevokedNodesRead:
 			why = append(why, name+": reports no revoked nodes; its chalkd predates node revocation")
 		default:
-			list := map[string]*nodev1.RevokedNode{}
+			list := map[string]*kubernetesv1.RevokedNode{}
 			for _, n := range k.RevokedNodes {
 				list[n.Name] = n
 			}
@@ -288,7 +291,7 @@ func revokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx
 		bootstrapped = true
 	}
 	if !bootstrapped {
-		return map[string]*nodev1.RevokedNode{}, nil
+		return map[string]*kubernetesv1.RevokedNode{}, nil
 	}
 	return nil, fmt.Errorf("no control-plane node said which nodes are revoked (%s)", strings.Join(why, "; "))
 }
@@ -309,8 +312,8 @@ func installNotRevoked(ctx context.Context, t *target) error {
 		return err
 	}
 	nodes := nodeSet{cluster: t.cluster, creds: t.creds}
-	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
-		st, err := nodes.status(ctx, name)
+	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+		st, err := nodes.kubernetesStatus(ctx, name)
 		switch connect.CodeOf(err) {
 		case connect.CodeUnavailable, connect.CodeDeadlineExceeded:
 			return nil, notInstalledYet{err}
@@ -328,9 +331,9 @@ func installNotRevoked(ctx context.Context, t *target) error {
 
 // everBootstrapped reports whether a control plane of the Kubernetes status was bootstrapped,
 // whether or not it serves now.
-func everBootstrapped(k *nodev1.KubernetesStatus) bool {
+func everBootstrapped(k *kubernetesv1.StatusResponse) bool {
 	switch k.GetPhase() {
-	case nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, nodev1.KubernetesPhase_KUBERNETES_PHASE_ETCD_DATA_MISSING, nodev1.KubernetesPhase_KUBERNETES_PHASE_LEFT:
+	case kubernetesv1.Phase_PHASE_BOOTSTRAPPED, kubernetesv1.Phase_PHASE_ETCD_DATA_MISSING, kubernetesv1.Phase_PHASE_LEFT:
 		return true
 	}
 	return false
@@ -344,12 +347,12 @@ func notRevoked(ctx context.Context, t *target, does string) error {
 		return err
 	}
 	nodes := nodeSet{cluster: t.cluster, creds: t.creds}
-	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
+	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
 		// The target is reached where the command reaches it, the others where the inventory says.
 		if name == t.name {
-			return nodeStatus(ctx, t)
+			return nodeKubernetesStatus(ctx, t)
 		}
-		return nodes.status(ctx, name)
+		return nodes.kubernetesStatus(ctx, name)
 	})
 	if err != nil {
 		return fmt.Errorf("%w; %s only once one does, or with --force", err, does)

@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
@@ -111,8 +112,8 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o chalkd.KubernetesOptions) (
 		// The control plane runs with the certificates the node holds.
 		o.Hooks.CheckControlPlane = func(context.Context, k8s.Cluster, kpki.Share) error { return nil }
 	}
-	s.Layers = layers.Of(layers.Kubernetes)
 	s.Kubernetes = chalkd.NewKubernetes(o)
+	withPlugins(t, s, layers.Of(layers.Kubernetes), nil)
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
 	kubernetesImage(t, s)
@@ -307,7 +308,7 @@ func TestStatusShowsKubernetes(t *testing.T) {
 }
 
 func TestKubernetesLine(t *testing.T) {
-	for want, k := range map[string]*nodev1.KubernetesStatus{
+	for want, k := range map[string]*kubernetesv1.StatusResponse{
 		"kubernetes worker: joined, node ready: True":                                    {Kind: "worker", State: "joined", NodeReady: "True"},
 		"kubernetes controlplane: bootstrapped, node ready: True, vip holder":            {Kind: "controlplane", State: "bootstrapped", NodeReady: "True", Vip: "holder"},
 		"kubernetes controlplane: preparing":                                             {Kind: "controlplane", State: "preparing"},

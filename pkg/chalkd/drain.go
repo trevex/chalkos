@@ -19,7 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 )
 
 // UpgradeCordon marks a Node an upgrade cordoned, so the upgrade makes schedulable again only the
@@ -29,8 +29,8 @@ const UpgradeCordon = "chalkos.dev/upgrade-cordon"
 // defaultDrainTimeout is how long a drain waits for pods by default.
 const defaultDrainTimeout = 5 * time.Minute
 
-func (s *Server) DrainNode(ctx context.Context, req *connect.Request[nodev1.DrainNodeRequest]) (*connect.Response[nodev1.DrainNodeResponse], error) {
-	cs, _, err := s.Kubernetes.apiClient(s.Kubernetes.etcdMember)
+func (p *kubernetesLayer) DrainNode(ctx context.Context, req *connect.Request[kubernetesv1.DrainNodeRequest]) (*connect.Response[kubernetesv1.DrainNodeResponse], error) {
+	cs, _, err := p.k.apiClient(p.k.etcdMember)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func (s *Server) DrainNode(ctx context.Context, req *connect.Request[nodev1.Drai
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	d, err := s.Kubernetes.evictPods(ctx, cs, name, req.Msg.DeleteEmptydirData)
+	d, err := p.k.evictPods(ctx, cs, name, req.Msg.DeleteEmptydirData)
 	if err != nil {
 		var de *drainError
 		if errors.As(err, &de) {
@@ -53,11 +53,11 @@ func (s *Server) DrainNode(ctx context.Context, req *connect.Request[nodev1.Drai
 		}
 		return nil, failed(connect.CodeUnavailable, "drain %s: %v; it stays cordoned", name, err)
 	}
-	return connect.NewResponse(&nodev1.DrainNodeResponse{Marked: marked, Evicted: d.evicted, Kept: d.kept, Unmanaged: d.unmanaged}), nil
+	return connect.NewResponse(&kubernetesv1.DrainNodeResponse{Marked: marked, Evicted: d.evicted, Kept: d.kept, Unmanaged: d.unmanaged}), nil
 }
 
-func (s *Server) UncordonNode(ctx context.Context, req *connect.Request[nodev1.UncordonNodeRequest]) (*connect.Response[nodev1.UncordonNodeResponse], error) {
-	cs, _, err := s.Kubernetes.apiClient(s.Kubernetes.etcdMember)
+func (p *kubernetesLayer) UncordonNode(ctx context.Context, req *connect.Request[kubernetesv1.UncordonNodeRequest]) (*connect.Response[kubernetesv1.UncordonNodeResponse], error) {
+	cs, _, err := p.k.apiClient(p.k.etcdMember)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func (s *Server) UncordonNode(ctx context.Context, req *connect.Request[nodev1.U
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&nodev1.UncordonNodeResponse{Uncordoned: uncordoned}), nil
+	return connect.NewResponse(&kubernetesv1.UncordonNodeResponse{Uncordoned: uncordoned}), nil
 }
 
 // setCordon cordons a node and marks it, unless it was cordoned unmarked, or uncordons a node

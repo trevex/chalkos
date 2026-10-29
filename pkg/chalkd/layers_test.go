@@ -8,7 +8,11 @@ import (
 
 	"connectrpc.com/connect"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
+	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -24,7 +28,7 @@ func TestInfoAndContractNameTheLayers(t *testing.T) {
 		{layers.Of(layers.Kubernetes), []string{"kubernetes"}},
 	} {
 		s, _ := newTestServer(t, normal, vda)
-		s.Layers = c.layers
+		withPlugins(t, s, c.layers, nil)
 		info, err := s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
 		if err != nil {
 			t.Fatal(err)
@@ -40,7 +44,7 @@ func TestInfoAndContractNameTheLayers(t *testing.T) {
 }
 
 // kubernetesRPCs are the RPCs of the Kubernetes layer.
-var kubernetesRPCs = []string{"Bootstrap", "EtcdMembers", "EtcdRemoveMember", "EtcdLeave", "RotationStep", "DrainNode", "UncordonNode", "RevokeNode", "UnrevokeNode"}
+var kubernetesRPCs = []string{"KubernetesStatus", "Bootstrap", "EtcdMembers", "EtcdRemoveMember", "EtcdLeave", "RotationStep", "DrainNode", "UncordonNode", "RevokeNode", "UnrevokeNode"}
 
 // An RPC of a layer the image lacks is unimplemented in either mode, before the mode and the role
 // are checked; on an image with the layer, the mode and the role decide as before.
@@ -54,11 +58,16 @@ func TestLayerGate(t *testing.T) {
 				t.Errorf("%s in %v without the Kubernetes layer: code %v, want unimplemented", rpc, mode, got)
 			}
 		}
-		_, err := conn.Bootstrap(context.Background(), connect.NewRequest(&nodev1.BootstrapRequest{}))
+		if got := call(conn, "RouterStatus"); got != connect.CodeUnimplemented {
+			t.Errorf("router status in %v without the router layer: code %v, want unimplemented", mode, got)
+		}
+		k := kubernetesv1connect.NewKubernetesServiceClient(conn.HTTPClient(), conn.BaseURL())
+		_, err := k.Bootstrap(context.Background(), connect.NewRequest(&kubernetesv1.BootstrapRequest{}))
 		if want := "the kubernetes layer is not in this image"; err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("bootstrap in %v: %v, want %q", mode, err, want)
 		}
-		_, err = conn.Routes(context.Background(), connect.NewRequest(&nodev1.RoutesRequest{}))
+		r := routerv1connect.NewRouterServiceClient(conn.HTTPClient(), conn.BaseURL())
+		_, err = r.Routes(context.Background(), connect.NewRequest(&routerv1.RoutesRequest{}))
 		if want := "the router layer is not in this image"; connect.CodeOf(err) != connect.CodeUnimplemented || !strings.Contains(err.Error(), want) {
 			t.Errorf("routes in %v without the router layer: %v, want %q", mode, err, want)
 		}

@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -26,12 +26,12 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-func (s *Server) RevokeNode(ctx context.Context, req *connect.Request[nodev1.RevokeNodeRequest]) (*connect.Response[nodev1.RevokeNodeResponse], error) {
+func (p *kubernetesLayer) RevokeNode(ctx context.Context, req *connect.Request[kubernetesv1.RevokeNodeRequest]) (*connect.Response[kubernetesv1.RevokeNodeResponse], error) {
 	name := req.Msg.Node
 	if err := checkNodeName(name); err != nil {
 		return nil, err
 	}
-	cs, _, err := s.Kubernetes.revokedClient()
+	cs, _, err := p.k.revokedClient()
 	if err != nil {
 		return nil, err
 	}
@@ -53,15 +53,15 @@ func (s *Server) RevokeNode(ctx context.Context, req *connect.Request[nodev1.Rev
 		return nil, failed(connect.CodeUnavailable, "%s is revoked, but deleting its Node failed: %v; revoking it again deletes it", name, err)
 	}
 	log.Printf("kubernetes: revoked node %s", name)
-	return connect.NewResponse(&nodev1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), NodeDeleted: deleted}), nil
+	return connect.NewResponse(&kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), NodeDeleted: deleted}), nil
 }
 
-func (s *Server) UnrevokeNode(ctx context.Context, req *connect.Request[nodev1.UnrevokeNodeRequest]) (*connect.Response[nodev1.UnrevokeNodeResponse], error) {
+func (p *kubernetesLayer) UnrevokeNode(ctx context.Context, req *connect.Request[kubernetesv1.UnrevokeNodeRequest]) (*connect.Response[kubernetesv1.UnrevokeNodeResponse], error) {
 	name := req.Msg.Node
 	if err := checkNodeName(name); err != nil {
 		return nil, err
 	}
-	cs, share, err := s.Kubernetes.revokedClient()
+	cs, share, err := p.k.revokedClient()
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (s *Server) UnrevokeNode(ctx context.Context, req *connect.Request[nodev1.U
 	var stale []string
 	at, listed, err := revoked.Unrevoke(ctx, cs, name, func(at time.Time) error {
 		var err error
-		if stale, err = s.staleCAs(share, at); err != nil {
+		if stale, err = p.staleCAs(share, at); err != nil {
 			return failed(connect.CodeInternal, "%v", err)
 		}
 		if len(stale) > 0 && !req.Msg.Force {
@@ -99,7 +99,7 @@ func (s *Server) UnrevokeNode(ctx context.Context, req *connect.Request[nodev1.U
 	} else {
 		log.Printf("kubernetes: unrevoked node %s", name)
 	}
-	resp := &nodev1.UnrevokeNodeResponse{StaleCas: stale}
+	resp := &kubernetesv1.UnrevokeNodeResponse{StaleCas: stale}
 	if !at.IsZero() {
 		resp.RevokedAt = timestamppb.New(at)
 	}
@@ -137,8 +137,8 @@ func checkNodeName(name string) error {
 
 // notRevoked refuses to renew the node certificate of a revoked node. Without the revoked nodes,
 // the node may be among them: nothing is renewed until they can be read.
-func (s *Server) notRevoked(ctx context.Context, name string) error {
-	list, err := s.revokedNodes(ctx)
+func (k *Kubernetes) notRevoked(ctx context.Context, name string) error {
+	list, err := k.revokedNodes(ctx)
 	if connectErr := (*connect.Error)(nil); errors.As(err, &connectErr) {
 		return connectErr
 	}
@@ -163,16 +163,17 @@ func (k *Kubernetes) revokedClient() (kubernetes.Interface, kpki.Share, error) {
 	return cs, cp.share, err
 }
 
-// revokedNodes returns the cluster's revoked nodes, as RevokedNodes does when set.
-func (s *Server) revokedNodes(ctx context.Context) (revoked.List, error) {
-	if s.RevokedNodes != nil {
-		return s.RevokedNodes(ctx)
+// revokedNodes returns the cluster's revoked nodes, as KubernetesOptions.RevokedNodes does when
+// set.
+func (k *Kubernetes) revokedNodes(ctx context.Context) (revoked.List, error) {
+	if k.revokedNodesHook != nil {
+		return k.revokedNodesHook(ctx)
 	}
-	return s.Kubernetes.revokedNodes(ctx)
+	return k.loadRevoked(ctx)
 }
 
-// revokedNodes reads the revoked nodes through the control plane's own API server.
-func (k *Kubernetes) revokedNodes(ctx context.Context) (revoked.List, error) {
+// loadRevoked reads the revoked nodes through the control plane's own API server.
+func (k *Kubernetes) loadRevoked(ctx context.Context) (revoked.List, error) {
 	cs, _, err := k.apiClient(k.controlPlane)
 	if err != nil {
 		return nil, err
@@ -182,15 +183,15 @@ func (k *Kubernetes) revokedNodes(ctx context.Context) (revoked.List, error) {
 
 // revokedStatus lists the revoked nodes in a bootstrapped control plane's status, or why they
 // could not be read.
-func (k *Kubernetes) revokedStatus(ctx context.Context, st *nodev1.KubernetesStatus) {
-	list, err := k.revokedNodes(ctx)
+func (k *Kubernetes) revokedStatus(ctx context.Context, st *kubernetesv1.StatusResponse) {
+	list, err := k.loadRevoked(ctx)
 	if err != nil {
 		st.RevokedNodesError = err.Error()
 		return
 	}
 	st.RevokedNodesRead = true
 	for _, name := range slices.Sorted(maps.Keys(list)) {
-		n := &nodev1.RevokedNode{Name: name}
+		n := &kubernetesv1.RevokedNode{Name: name}
 		if at := list[name]; !at.IsZero() {
 			n.RevokedAt = timestamppb.New(at)
 		}
@@ -202,11 +203,12 @@ func (k *Kubernetes) revokedStatus(ctx context.Context, st *nodev1.KubernetesSta
 // certificates may chain to. chalkd verifies a node against the OS CAs alone, so a node CA any
 // of them signed, rotated or not, still vouches for it; the kubelet's certificates chain to the
 // Kubernetes CAs.
-func (s *Server) staleCAs(share kpki.Share, at time.Time) ([]string, error) {
-	if s.Certificate == nil {
+func (p *kubernetesLayer) staleCAs(share kpki.Share, at time.Time) ([]string, error) {
+	cert := p.node.NodeCertificate()
+	if cert == nil {
 		return nil, errors.New("the node trusts no OS CA")
 	}
-	osCAs, err := pki.ParseBundle(s.Certificate.OSCA())
+	osCAs, err := pki.ParseBundle(cert.OSCA())
 	if err != nil {
 		return nil, fmt.Errorf("the OS CA: %w", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
@@ -268,7 +269,7 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 		return nil
 	}
 	nodes := r.allNodes()
-	list, err := revokedNodesOf(ctx, r.nodesOf(kubernetes.KindControlPlane), r.status)
+	list, err := revokedNodesOf(ctx, r.nodesOf(kubernetes.KindControlPlane), r.kubernetesStatus)
 	if err != nil {
 		return fmt.Errorf("%w; rotate runs only once one does, so it never hands a certificate to a revoked node, or with --ignore-revoked", err)
 	}
@@ -339,7 +340,11 @@ func (r *rotation) deliverShare(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	return r.deliver(ctx, name, &nodev1.ApplyConfigRequest{KubernetesShare: share})
+	payloads, err := sharePayloads(share)
+	if err != nil {
+		return err
+	}
+	return r.deliver(ctx, name, &nodev1.ApplyConfigRequest{Layers: payloads})
 }
 
 // status reads a node's status.
@@ -349,6 +354,15 @@ func (r *rotation) status(ctx context.Context, name string) (*nodev1.StatusRespo
 		return nil, err
 	}
 	return nodes.status(ctx, name)
+}
+
+// kubernetesStatus reads the state of a node's Kubernetes.
+func (r *rotation) kubernetesStatus(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+	nodes, err := r.nodes()
+	if err != nil {
+		return nil, err
+	}
+	return nodes.kubernetesStatus(ctx, name)
 }
 
 // waitFor checks until check passes, up to the rotation's timeout.

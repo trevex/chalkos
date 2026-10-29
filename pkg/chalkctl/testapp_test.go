@@ -18,10 +18,12 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -276,7 +278,22 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	s.Paths.EffectsBaseline = filepath.Join(root, "run", "effects-baseline.json")
 	writeFile(t, s.Paths.Facts, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"}}`)
 	writeFile(t, s.Paths.MountInfo, "41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
+	withPlugins(t, s, layers.Of(), nil)
 	return s, r
+}
+
+// withPlugins compiles the Kubernetes and router layers into s, with s's Kubernetes side and the
+// router side r, or one that runs s's programs when r is nil, on an image of the layers l.
+func withPlugins(t *testing.T, s *chalkd.Server, l layers.Set, r *chalkd.Router) {
+	t.Helper()
+	if r == nil {
+		r = &chalkd.Router{Run: s.Run}
+	}
+	reg, err := layer.NewRegistry(l, chalkd.NewKubernetesLayer(s, s.Kubernetes), chalkd.NewRouterLayer(r))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Plugins = reg
 }
 
 // slotOf is the running image's config slot of a node installedNode made.

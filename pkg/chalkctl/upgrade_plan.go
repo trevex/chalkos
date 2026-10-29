@@ -111,7 +111,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		if err := c.node(name); err != nil {
 			return err
 		}
-		info, st, err := r.probe(ctx, name)
+		info, _, k, err := r.probe(ctx, name)
 		if err != nil {
 			return err
 		}
@@ -123,7 +123,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			}
 		}
 		n := &upgradeNode{name: name}
-		if k := st.Kubernetes; k != nil && hasKubernetes(info, st) {
+		if k != nil {
 			n.kind, n.inCluster = k.Kind, inCluster(k)
 		}
 		probedCPs[name] = n.kind == kubernetes.KindControlPlane
@@ -169,11 +169,11 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	// the run leaves alone are asked.
 	for _, name := range r.nodeNames() {
 		if _, probed := probedCPs[name]; c.partial() && !probed {
-			info, st, err := r.probe(ctx, name)
+			_, _, k, err := r.probe(ctx, name)
 			if err != nil {
 				return err
 			}
-			probedCPs[name] = hasKubernetes(info, st) && st.Kubernetes.GetKind() == kubernetes.KindControlPlane
+			probedCPs[name] = k.GetKind() == kubernetes.KindControlPlane
 		}
 		kind, err := c.kind(name)
 		if err != nil {

@@ -11,13 +11,30 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/types/known/anypb"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
+
+// kubernetesClient is the client of the node's Kubernetes layer over conn.
+func kubernetesClient(conn *client.Conn) kubernetesv1connect.KubernetesServiceClient {
+	return kubernetesv1connect.NewKubernetesServiceClient(conn.HTTPClient(), conn.BaseURL())
+}
+
+// kubernetesStatus reads the state of the node's Kubernetes over conn.
+func kubernetesStatus(ctx context.Context, conn *client.Conn) (*kubernetesv1.StatusResponse, error) {
+	resp, err := kubernetesClient(conn).Status(ctx, connect.NewRequest(&kubernetesv1.StatusRequest{}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
 
 // kubernetesShare issues the share of a node with Kubernetes; nil for one without.
 func kubernetesShare(t *target, now time.Time) ([]byte, error) {
@@ -30,6 +47,19 @@ func kubernetesShare(t *target, now time.Time) ([]byte, error) {
 		return nil, err
 	}
 	return share.Encode()
+}
+
+// sharePayloads are the layer payloads that deliver a share; none for no share, as a node without
+// Kubernetes gets.
+func sharePayloads(share []byte) ([]*anypb.Any, error) {
+	if share == nil {
+		return nil, nil
+	}
+	p, err := kpki.Payload(share)
+	if err != nil {
+		return nil, err
+	}
+	return []*anypb.Any{p}, nil
 }
 
 type bootstrapFlags struct {
@@ -74,7 +104,7 @@ func (a *app) bootstrap(ctx context.Context, f bootstrapFlags, pos []string) err
 	ctx, cancel := context.WithTimeout(ctx, f.timeout)
 	defer cancel()
 	fmt.Fprintf(a.stdout, "bootstrapping %s; the control plane pulls its images and starts\n", t.name)
-	resp, err := conn.Bootstrap(ctx, connect.NewRequest(&nodev1.BootstrapRequest{}))
+	resp, err := kubernetesClient(conn).Bootstrap(ctx, connect.NewRequest(&kubernetesv1.BootstrapRequest{}))
 	if err != nil {
 		return fmt.Errorf("bootstrap %s: %w", t.name, err)
 	}

@@ -12,9 +12,11 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/pflag"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/layers"
 )
 
 // nodeFlags holds what commands addressing one node share.
@@ -295,6 +297,36 @@ func nodeStatus(ctx context.Context, t *target) (*nodev1.StatusResponse, error) 
 		if err == nil {
 			st = resp.Msg
 		}
+		return err
+	})
+	return st, err
+}
+
+// kubernetesStatus reads the state of an installed node's Kubernetes.
+func (s nodeSet) kubernetesStatus(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+	t, err := s.target(name)
+	if err != nil {
+		return nil, err
+	}
+	return nodeKubernetesStatus(ctx, t)
+}
+
+// errNoKubernetes is the error of a node whose image does not carry the Kubernetes layer.
+var errNoKubernetes = errors.New("the node's image has no Kubernetes layer")
+
+// nodeKubernetesStatus reads the state of an installed node's Kubernetes; errNoKubernetes when its
+// Info names no Kubernetes layer.
+func nodeKubernetesStatus(ctx context.Context, t *target) (*kubernetesv1.StatusResponse, error) {
+	var st *kubernetesv1.StatusResponse
+	err := callNode(t, func(conn *client.Conn) error {
+		info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(info.Msg.Layers, layers.Kubernetes) {
+			return errNoKubernetes
+		}
+		st, err = kubernetesStatus(ctx, conn)
 		return err
 	})
 	return st, err

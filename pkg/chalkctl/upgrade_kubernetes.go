@@ -10,9 +10,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/layers"
 )
 
 // quorum checks that etcd keeps its quorum while the control plane reboots: its other voters
@@ -27,9 +26,9 @@ func (r *upgradeRun) quorum(ctx context.Context, name string) error {
 // the rebooting one included; etcd.CheckQuorum counts a removal's quorum over the voters left.
 // With 4 voters a reboot needs 3 healthy others, a removal 2.
 func (r *upgradeRun) quorumOnce(ctx context.Context, name string) error {
-	var members []*nodev1.EtcdMember
+	var members []*kubernetesv1.EtcdMember
 	err := r.viaControlPlanes(name, tryNextControlPlane, func(conn *client.Conn) error {
-		resp, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
+		resp, err := kubernetesClient(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
 		if err == nil {
 			members = resp.Msg.Members
 		}
@@ -90,9 +89,9 @@ func (r *upgradeRun) drain(ctx context.Context, n *upgradeNode) error {
 	if !n.inCluster {
 		return nil
 	}
-	var resp *nodev1.DrainNodeResponse
+	var resp *kubernetesv1.DrainNodeResponse
 	err := r.viaControlPlanes(n.name, drainElsewhere, func(conn *client.Conn) error {
-		res, err := conn.DrainNode(ctx, connect.NewRequest(&nodev1.DrainNodeRequest{Node: n.name, TimeoutSeconds: uint32(r.drainTimeout / time.Second), DeleteEmptydirData: r.deleteEmptyDir}))
+		res, err := kubernetesClient(conn).DrainNode(ctx, connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: n.name, TimeoutSeconds: uint32(r.drainTimeout / time.Second), DeleteEmptydirData: r.deleteEmptyDir}))
 		if err == nil {
 			resp = res.Msg
 		}
@@ -119,7 +118,7 @@ func (r *upgradeRun) uncordon(ctx context.Context, n *upgradeNode) error {
 	}
 	var uncordoned bool
 	err := r.viaControlPlanes(n.name, tryNextControlPlane, func(conn *client.Conn) error {
-		resp, err := conn.UncordonNode(ctx, connect.NewRequest(&nodev1.UncordonNodeRequest{Node: n.name}))
+		resp, err := kubernetesClient(conn).UncordonNode(ctx, connect.NewRequest(&kubernetesv1.UncordonNodeRequest{Node: n.name}))
 		if err == nil {
 			uncordoned = resp.Msg.Uncordoned
 		}
@@ -135,19 +134,10 @@ func (r *upgradeRun) uncordon(ctx context.Context, n *upgradeNode) error {
 }
 
 // inCluster reports whether a node is part of a cluster, so its Node exists.
-func inCluster(k *nodev1.KubernetesStatus) bool {
+func inCluster(k *kubernetesv1.StatusResponse) bool {
 	switch k.GetPhase() {
-	case nodev1.KubernetesPhase_KUBERNETES_PHASE_BOOTSTRAPPED, nodev1.KubernetesPhase_KUBERNETES_PHASE_JOINED:
+	case kubernetesv1.Phase_PHASE_BOOTSTRAPPED, kubernetesv1.Phase_PHASE_JOINED:
 		return true
 	}
 	return false
-}
-
-// hasKubernetes reports whether a node runs Kubernetes: its image has the Kubernetes layer, or
-// its chalkd predates layers, reports none, and its status carries Kubernetes.
-func hasKubernetes(info *nodev1.InfoResponse, st *nodev1.StatusResponse) bool {
-	if l := info.GetLayers(); len(l) > 0 {
-		return slices.Contains(l, layers.Kubernetes)
-	}
-	return st.GetKubernetes() != nil
 }

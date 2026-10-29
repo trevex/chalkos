@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,8 +16,12 @@ import (
 
 	"connectrpc.com/connect"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
+	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/outputs"
+	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/router"
 	"github.com/trevex/chalkos/pkg/tool"
 )
@@ -33,6 +38,32 @@ type Router struct {
 	// NAT64Dir is the output jool's directory, with a file <name>.json per NAT64 document; empty
 	// is /run/chalkos/outputs/jool. Tests replace it.
 	NAT64Dir string
+}
+
+// routerLayer is chalkd's router layer: it serves RouterService for the node's router side.
+type routerLayer struct{ r *Router }
+
+// NewRouterLayer is the router layer of the node, with its router side.
+func NewRouterLayer(r *Router) layer.Plugin { return &routerLayer{r: r} }
+
+func (p *routerLayer) Name() string { return layers.Router }
+
+func (p *routerLayer) Handler(opts ...connect.HandlerOption) (string, http.Handler) {
+	return routerv1connect.NewRouterServiceHandler(p, opts...)
+}
+
+func (p *routerLayer) Permissions() map[string]layer.Permission {
+	return map[string]layer.Permission{
+		routerv1connect.RouterServiceStatusProcedure: {Modes: layer.NormalOnly, Role: pki.RoleReader},
+		routerv1connect.RouterServiceRoutesProcedure: {Modes: layer.NormalOnly, Role: pki.RoleReader},
+	}
+}
+
+// Start runs nothing: the router's state is read when it is asked for.
+func (p *routerLayer) Start(context.Context) error { return nil }
+
+func (p *routerLayer) Status(ctx context.Context, _ *connect.Request[routerv1.StatusRequest]) (*connect.Response[routerv1.StatusResponse], error) {
+	return connect.NewResponse(p.r.status(ctx)), nil
 }
 
 // askTimeout bounds the questions chalkd asks one router daemon, so Status answers while one
@@ -67,11 +98,11 @@ func (r *Router) vtysh(ctx context.Context, command string) ([]byte, error) {
 	return r.ask(ctx, budget, "vtysh", "-c", command)
 }
 
-// status is the router's part of the node's status: its BGP sessions, its NAT64 instances and its
-// resolver, or why a daemon did not say. The daemons are asked side by side, so daemons that hang
-// cost one timeout altogether.
-func (r *Router) status(ctx context.Context) *nodev1.RouterStatus {
-	st := &nodev1.RouterStatus{}
+// status is the state of the router: its BGP sessions, its NAT64 instances and its resolver, or
+// why a daemon did not say. The daemons are asked side by side, so daemons that hang cost one
+// timeout altogether.
+func (r *Router) status(ctx context.Context) *routerv1.StatusResponse {
+	st := &routerv1.StatusResponse{}
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		out, err := r.vtysh(ctx, router.NeighborsCommand)
@@ -100,7 +131,7 @@ func (r *Router) status(ctx context.Context) *nodev1.RouterStatus {
 
 // nat64 is the state of the Jool instances of the node's NAT64 documents, all asked within one
 // timeout; an instance removed meanwhile is left out.
-func (r *Router) nat64(ctx context.Context) ([]*nodev1.NAT64Status, error) {
+func (r *Router) nat64(ctx context.Context) ([]*routerv1.NAT64Status, error) {
 	rendered, err := r.renderedNAT64()
 	if err != nil || len(rendered) == 0 {
 		return nil, err
@@ -115,7 +146,7 @@ func (r *Router) nat64(ctx context.Context) ([]*nodev1.NAT64Status, error) {
 	if err != nil {
 		return nil, err
 	}
-	var instances []*nodev1.NAT64Status
+	var instances []*routerv1.NAT64Status
 	for _, name := range names {
 		// Jool lists the instances of every network namespace; the node's are those of its NAT64
 		// documents.
@@ -139,7 +170,7 @@ var errInstanceGone = errors.New("the instance is gone")
 
 // nat64Instance is the state of one of Jool's instances: its counters of sessions and bindings
 // and the size of each protocol's pool.
-func (r *Router) nat64Instance(ctx, budget context.Context, name string) (*nodev1.NAT64Status, error) {
+func (r *Router) nat64Instance(ctx, budget context.Context, name string) (*routerv1.NAT64Status, error) {
 	jool := func(args []string) ([]byte, error) {
 		out, err := r.ask(ctx, budget, "jool", args...)
 		if te := (*tool.Error)(nil); errors.As(err, &te) && strings.Contains(te.Stderr, router.JoolMissingInstance) {
@@ -151,7 +182,7 @@ func (r *Router) nat64Instance(ctx, budget context.Context, name string) (*nodev
 	if err != nil {
 		return nil, err
 	}
-	n := &nodev1.NAT64Status{Name: name}
+	n := &routerv1.NAT64Status{Name: name}
 	if n.Sessions, n.Bindings, err = router.ParseJoolStats(out); err != nil {
 		return nil, fmt.Errorf("instance %s: %w", name, err)
 	}
@@ -160,7 +191,7 @@ func (r *Router) nat64Instance(ctx, budget context.Context, name string) (*nodev
 		if err != nil {
 			return nil, err
 		}
-		p := &nodev1.NAT64PoolStatus{Protocol: protocol}
+		p := &routerv1.NAT64PoolStatus{Protocol: protocol}
 		if p.Size, err = router.ParseJoolPool4(out); err != nil {
 			return nil, fmt.Errorf("instance %s: %w", name, err)
 		}
@@ -190,26 +221,26 @@ func (r *Router) renderedNAT64() ([]string, error) {
 
 // resolver is the state of Unbound on a node whose Resolver document rendered its config, and nil
 // on another.
-func (r *Router) resolver(ctx context.Context) *nodev1.ResolverStatus {
+func (r *Router) resolver(ctx context.Context) *routerv1.ResolverStatus {
 	if _, err := os.Stat(cmp.Or(r.ResolverConfig, "/etc/unbound/unbound.conf")); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	if _, err := r.ask(ctx, budget, "unbound-control", "status"); err != nil {
-		return &nodev1.ResolverStatus{Error: err.Error()}
+		return &routerv1.ResolverStatus{Error: err.Error()}
 	}
-	return &nodev1.ResolverStatus{Running: true}
+	return &routerv1.ResolverStatus{Running: true}
 }
 
-func (s *Server) Routes(ctx context.Context, req *connect.Request[nodev1.RoutesRequest]) (*connect.Response[nodev1.RoutesResponse], error) {
+func (p *routerLayer) Routes(ctx context.Context, req *connect.Request[routerv1.RoutesRequest]) (*connect.Response[routerv1.RoutesResponse], error) {
 	// The request's strings reach no command: the filter parses them, and vtysh is asked for
 	// whole families alone.
 	f, err := router.NewFilter(req.Msg.Prefix, req.Msg.Protocol, req.Msg.Table)
 	if err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "%v", err)
 	}
-	list := s.Router.KernelRoutes
+	list := p.r.KernelRoutes
 	if list == nil {
 		list = router.KernelRoutes
 	}
@@ -217,13 +248,13 @@ func (s *Server) Routes(ctx context.Context, req *connect.Request[nodev1.RoutesR
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	resp := &nodev1.RoutesResponse{}
+	resp := &routerv1.RoutesResponse{}
 	for _, r := range f.Kernel(kernel) {
 		resp.Kernel = append(resp.Kernel, kernelRoute(r))
 	}
 	if f.WantsBGP() {
 		for _, family := range []string{"ipv4", "ipv6"} {
-			out, err := s.Router.vtysh(ctx, fmt.Sprintf(router.RoutesCommand, family))
+			out, err := p.r.vtysh(ctx, fmt.Sprintf(router.RoutesCommand, family))
 			var routes []*router.BGPRoute
 			if err == nil {
 				routes, err = router.ParseRoutes(out)
@@ -241,22 +272,22 @@ func (s *Server) Routes(ctx context.Context, req *connect.Request[nodev1.RoutesR
 }
 
 // peerStatus is a BGP session as the router's status reports it.
-func peerStatus(p *router.Peer) *nodev1.BGPPeerStatus {
-	return &nodev1.BGPPeerStatus{Name: p.Name, Neighbor: p.Neighbor, State: p.State, UptimeSeconds: p.UptimeSeconds,
+func peerStatus(p *router.Peer) *routerv1.BGPPeerStatus {
+	return &routerv1.BGPPeerStatus{Name: p.Name, Neighbor: p.Neighbor, State: p.State, UptimeSeconds: p.UptimeSeconds,
 		PrefixesReceived: p.PrefixesReceived, PrefixesSent: p.PrefixesSent, Bfd: p.BFD}
 }
 
 // kernelRoute is a kernel route as Routes answers it.
-func kernelRoute(r *router.KernelRoute) *nodev1.KernelRoute {
-	k := &nodev1.KernelRoute{Destination: r.Destination, Type: r.Type, Protocol: r.Protocol, Table: r.Table, Metric: r.Metric}
+func kernelRoute(r *router.KernelRoute) *routerv1.KernelRoute {
+	k := &routerv1.KernelRoute{Destination: r.Destination, Type: r.Type, Protocol: r.Protocol, Table: r.Table, Metric: r.Metric}
 	for _, h := range r.NextHops {
-		k.NextHops = append(k.NextHops, &nodev1.NextHop{Gateway: h.Gateway, Interface: h.Interface, Weight: h.Weight})
+		k.NextHops = append(k.NextHops, &routerv1.NextHop{Gateway: h.Gateway, Interface: h.Interface, Weight: h.Weight})
 	}
 	return k
 }
 
 // bgpRoute is a BGP path as Routes answers it.
-func bgpRoute(r *router.BGPRoute) *nodev1.BGPRoute {
-	return &nodev1.BGPRoute{Prefix: r.Prefix, AsPath: r.ASPath, NextHops: r.NextHops, Peer: r.Peer, LocalPref: r.LocalPref,
+func bgpRoute(r *router.BGPRoute) *routerv1.BGPRoute {
+	return &routerv1.BGPRoute{Prefix: r.Prefix, AsPath: r.ASPath, NextHops: r.NextHops, Peer: r.Peer, LocalPref: r.LocalPref,
 		Med: r.MED, Communities: r.Communities, Best: r.Best}
 }

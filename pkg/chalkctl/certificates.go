@@ -172,7 +172,11 @@ func (a *app) nodeCARotate(ctx context.Context, f nodeCARotateFlags) error {
 // deliverNodeCA delivers the control-plane share with the new node CA to a node, and nothing else.
 func (a *app) deliverNodeCA(ctx context.Context, nodes nodeSet, name string, share []byte) error {
 	return nodes.call(name, func(conn *client.Conn) error {
-		resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
+		payloads, err := sharePayloads(share)
+		if err != nil {
+			return err
+		}
+		resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: payloads}))
 		if err != nil {
 			return err
 		}

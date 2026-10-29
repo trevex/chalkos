@@ -21,7 +21,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -32,25 +32,25 @@ import (
 // rotation sets, as kubectl rollout restart sets its own.
 const RestartedAnnotation = "chalkos.dev/restarted-at"
 
-func (s *Server) RotationStep(ctx context.Context, req *connect.Request[nodev1.RotationStepRequest]) (*connect.Response[nodev1.RotationStepResponse], error) {
-	k := s.Kubernetes
+func (p *kubernetesLayer) RotationStep(ctx context.Context, req *connect.Request[kubernetesv1.RotationStepRequest]) (*connect.Response[kubernetesv1.RotationStepResponse], error) {
+	k := p.k
 	// An unknown step is refused before it gets a credential for the API server.
-	var step func(context.Context, *nodev1.RotationStepResponse) error
+	var step func(context.Context, *kubernetesv1.RotationStepResponse) error
 	switch req.Msg.Step {
-	case nodev1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING:
-		step = s.renewKubeletServing
-	case nodev1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED:
+	case kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING:
+		step = p.renewKubeletServing
+	case kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED:
 		step = k.countEncryptedStep
-	case nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS:
+	case kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS:
 		step = k.restartAddonsStep
-	case nodev1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS:
+	case kubernetesv1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS:
 		step = k.tokenSecretsStep
-	case nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED:
+	case kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED:
 		step = k.rewriteEncryptedStep
 	default:
 		return nil, failed(connect.CodeInvalidArgument, "unknown rotation step %v", req.Msg.Step)
 	}
-	resp := &nodev1.RotationStepResponse{}
+	resp := &kubernetesv1.RotationStepResponse{}
 	if err := step(ctx, resp); err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func stepFailed(err error) error {
 }
 
 // countEncryptedStep counts the encrypted objects the node's etcd member holds by key.
-func (k *Kubernetes) countEncryptedStep(ctx context.Context, resp *nodev1.RotationStepResponse) error {
+func (k *Kubernetes) countEncryptedStep(ctx context.Context, resp *kubernetesv1.RotationStepResponse) error {
 	cp, err := k.etcdMember()
 	if err != nil {
 		return err
@@ -77,7 +77,7 @@ func (k *Kubernetes) countEncryptedStep(ctx context.Context, resp *nodev1.Rotati
 }
 
 // restartAddonsStep restarts the workloads of the cluster's manifests; see restartAddons.
-func (k *Kubernetes) restartAddonsStep(ctx context.Context, resp *nodev1.RotationStepResponse) error {
+func (k *Kubernetes) restartAddonsStep(ctx context.Context, resp *kubernetesv1.RotationStepResponse) error {
 	client, cp, err := k.apiClient(k.etcdMember)
 	if err != nil {
 		return err
@@ -87,7 +87,7 @@ func (k *Kubernetes) restartAddonsStep(ctx context.Context, resp *nodev1.Rotatio
 }
 
 // tokenSecretsStep lists the cluster's service account token Secrets.
-func (k *Kubernetes) tokenSecretsStep(ctx context.Context, resp *nodev1.RotationStepResponse) error {
+func (k *Kubernetes) tokenSecretsStep(ctx context.Context, resp *kubernetesv1.RotationStepResponse) error {
 	client, _, err := k.apiClient(k.etcdMember)
 	if err != nil {
 		return err
@@ -97,7 +97,7 @@ func (k *Kubernetes) tokenSecretsStep(ctx context.Context, resp *nodev1.Rotation
 }
 
 // rewriteEncryptedStep rewrites the encrypted objects, then counts them by key.
-func (k *Kubernetes) rewriteEncryptedStep(ctx context.Context, resp *nodev1.RotationStepResponse) error {
+func (k *Kubernetes) rewriteEncryptedStep(ctx context.Context, resp *kubernetesv1.RotationStepResponse) error {
 	client, cp, err := k.apiClient(k.etcdMember)
 	if err != nil {
 		return err
@@ -385,20 +385,20 @@ func whyNot(err error) string {
 // countEncrypted counts the objects of the encrypted resources the node's etcd member holds,
 // by the name of the key each is encrypted with, which the API server writes before the
 // ciphertext: k8s:enc:<provider>:v1:<name>:.
-func (k *Kubernetes) countEncrypted(ctx context.Context, c k8s.Cluster, share kpki.Share) ([]*nodev1.EncryptedObjects, error) {
+func (k *Kubernetes) countEncrypted(ctx context.Context, c k8s.Cluster, share kpki.Share) ([]*kubernetesv1.EncryptedObjects, error) {
 	cli, err := k.dialEtcd(c, share)
 	if err != nil {
 		return nil, err
 	}
 	defer cli.Close()
-	var counts []*nodev1.EncryptedObjects
+	var counts []*kubernetesv1.EncryptedObjects
 	for _, resource := range kpki.EncryptedResources {
 		byKey, err := etcd.CountByKey(ctx, cli, "/registry/"+resource+"/")
 		if err != nil {
 			return nil, err
 		}
 		for _, key := range slices.Sorted(maps.Keys(byKey)) {
-			counts = append(counts, &nodev1.EncryptedObjects{Resource: resource, Key: key, Objects: byKey[key]})
+			counts = append(counts, &kubernetesv1.EncryptedObjects{Resource: resource, Key: key, Objects: byKey[key]})
 		}
 	}
 	return counts, nil
@@ -406,10 +406,10 @@ func (k *Kubernetes) countEncrypted(ctx context.Context, c k8s.Cluster, share kp
 
 // renewKubeletServing removes the kubelet's serving certificates and restarts the kubelet, which
 // requests a new one from the control plane, issued by the CA that issues now.
-func (s *Server) renewKubeletServing(ctx context.Context, _ *nodev1.RotationStepResponse) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	k := s.Kubernetes
+func (p *kubernetesLayer) renewKubeletServing(ctx context.Context, _ *kubernetesv1.RotationStepResponse) error {
+	p.node.Changes().Lock()
+	defer p.node.Changes().Unlock()
+	k := p.k
 	files, err := filepath.Glob(filepath.Join(k.Paths.KubeletPKI, "kubelet-server-*.pem"))
 	if err != nil {
 		return failed(connect.CodeInternal, "%v", err)
@@ -419,7 +419,7 @@ func (s *Server) renewKubeletServing(ctx context.Context, _ *nodev1.RotationStep
 			return failed(connect.CodeInternal, "%v", err)
 		}
 	}
-	if _, err := s.Run.Run(ctx, "systemctl", "restart", "kubelet.service"); err != nil {
+	if _, err := p.node.Runner().Run(ctx, "systemctl", "restart", "kubelet.service"); err != nil {
 		return failed(connect.CodeInternal, "restart the kubelet: %v", err)
 	}
 	log.Print("rotation: the kubelet requests a new serving certificate")

@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"regexp"
@@ -15,7 +14,11 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
+	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/router"
@@ -65,18 +68,20 @@ func TestRouterLab(t *testing.T) {
 		readers[name] = dialNode(t, nodes[name], name, reader)
 		t.Cleanup(func() { readers[name].Close() })
 	}
+	// routerOf is the client of the router layer of c.
+	routerOf := func(c *client.Conn) routerv1connect.RouterServiceClient {
+		return routerv1connect.NewRouterServiceClient(c.HTTPClient(), c.BaseURL())
+	}
 	// session is the router's session of the BGPPeer on enp0s3, as its status reports it.
-	session := func(name, peer string) (*nodev1.BGPPeerStatus, error) {
+	session := func(name, peer string) (*routerv1.BGPPeerStatus, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		resp, err := conns[name].Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		resp, err := routerOf(conns[name]).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
 		if err != nil {
 			return nil, err
 		}
-		r := resp.Msg.Router
+		r := resp.Msg
 		switch {
-		case r == nil:
-			return nil, errors.New("the status has no router part")
 		case r.BgpError != "":
 			return nil, fmt.Errorf("its BGP state is unknown: %s", r.BgpError)
 		}
@@ -103,16 +108,16 @@ func TestRouterLab(t *testing.T) {
 	learnedFrom := func(name, prefix, as string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		resp, err := conns[name].Routes(ctx, connect.NewRequest(&nodev1.RoutesRequest{Prefix: prefix, Protocol: "bgp"}))
+		resp, err := routerOf(conns[name]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Protocol: "bgp"}))
 		if err != nil {
 			return err
 		}
-		kernel := slices.ContainsFunc(resp.Msg.Kernel, func(k *nodev1.KernelRoute) bool {
-			return k.Destination == prefix && slices.ContainsFunc(k.NextHops, func(h *nodev1.NextHop) bool {
+		kernel := slices.ContainsFunc(resp.Msg.Kernel, func(k *routerv1.KernelRoute) bool {
+			return k.Destination == prefix && slices.ContainsFunc(k.NextHops, func(h *routerv1.NextHop) bool {
 				return h.Interface == "enp0s3" && strings.HasPrefix(h.Gateway, "fe80:")
 			})
 		})
-		bgp := slices.ContainsFunc(resp.Msg.Bgp, func(b *nodev1.BGPRoute) bool {
+		bgp := slices.ContainsFunc(resp.Msg.Bgp, func(b *routerv1.BGPRoute) bool {
 			return b.Prefix == prefix && b.Best && b.AsPath == as && b.Peer == "enp0s3"
 		})
 		if !kernel || !bgp {
@@ -156,19 +161,28 @@ func TestRouterLab(t *testing.T) {
 				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
 			}
 			// A reader sees the sessions, and the password nowhere.
-			resp, err := readers[name].Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			resp, err := routerOf(readers[name]).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
+			if err != nil {
+				t.Errorf("router status of %s for a reader: %v", name, err)
+				continue
+			}
+			if len(resp.Msg.GetPeers()) == 0 {
+				t.Errorf("router status of %s for a reader shows no BGP session: %v", name, resp.Msg)
+			}
+			if b, err := protojson.Marshal(resp.Msg); err != nil || strings.Contains(string(b), bgpPassword) {
+				t.Errorf("router status of %s for a reader holds the BGP password: %v\n%s", name, err, b)
+			}
+			node, err := readers[name].Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 			if err != nil {
 				t.Errorf("status of %s for a reader: %v", name, err)
 				continue
 			}
-			if len(resp.Msg.GetRouter().GetPeers()) == 0 {
-				t.Errorf("status of %s for a reader shows no BGP session: %v", name, resp.Msg.Router)
-			}
-			if b, err := protojson.Marshal(resp.Msg); err != nil || strings.Contains(string(b), bgpPassword) {
+			if b, err := protojson.Marshal(node.Msg); err != nil || strings.Contains(string(b), bgpPassword) {
 				t.Errorf("status of %s for a reader holds the BGP password: %v\n%s", name, err, b)
 			}
 		}
-		if _, err := conns["r1"].Bootstrap(ctx, connect.NewRequest(&nodev1.BootstrapRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
+		k := kubernetesv1connect.NewKubernetesServiceClient(conns["r1"].HTTPClient(), conns["r1"].BaseURL())
+		if _, err := k.Bootstrap(ctx, connect.NewRequest(&kubernetesv1.BootstrapRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
 			t.Errorf("Bootstrap on r1: %v, want unimplemented", err)
 		}
 	}) {
@@ -239,14 +253,14 @@ func TestRouterLab(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		for role, c := range map[string]*client.Conn{"an admin": conns["r1"], "a reader": readers["r1"]} {
-			resp, err := c.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			resp, err := routerOf(c).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
 			if err != nil {
-				t.Errorf("status of r1 for %s: %v", role, err)
+				t.Errorf("router status of r1 for %s: %v", role, err)
 				continue
 			}
-			r := resp.Msg.GetRouter()
-			edge := slices.ContainsFunc(r.GetNat64(), func(n *nodev1.NAT64Status) bool {
-				return n.Name == "edge" && n.Sessions > 0 && n.Bindings > 0 && slices.EqualFunc(n.Pools, router.NAT64Protocols, func(p *nodev1.NAT64PoolStatus, protocol string) bool {
+			r := resp.Msg
+			edge := slices.ContainsFunc(r.GetNat64(), func(n *routerv1.NAT64Status) bool {
+				return n.Name == "edge" && n.Sessions > 0 && n.Bindings > 0 && slices.EqualFunc(n.Pools, router.NAT64Protocols, func(p *routerv1.NAT64PoolStatus, protocol string) bool {
 					return p.Protocol == protocol && p.Size == 4535
 				})
 			})
