@@ -300,11 +300,11 @@ func nodeStatus(ctx context.Context, t *target) (*nodev1.StatusResponse, error) 
 	return st, err
 }
 
-// viaControlPlanes calls fn on the first of the control planes named that answers: it moves on
-// past those whose error next accepts. The error names the control plane that gave it.
-func (s nodeSet) viaControlPlanes(names []string, next func(error) bool, fn func(conn *client.Conn) error) error {
+// viaFirst calls fn on the first of the nodes named that answers: it moves on past those whose
+// error next accepts. The error names the node that gave it.
+func (s nodeSet) viaFirst(names []string, next func(error) bool, fn func(conn *client.Conn) error) error {
 	if len(names) == 0 {
-		return errors.New("the cluster has no control-plane node to ask")
+		return errors.New("no node to ask")
 	}
 	var last error
 	for _, name := range names {
@@ -317,5 +317,5 @@ func (s nodeSet) viaControlPlanes(names []string, next func(error) bool, fn func
 			return last
 		}
 	}
-	return fmt.Errorf("no control-plane node answered: %w", last)
+	return fmt.Errorf("none of %s answered: %w", strings.Join(names, ", "), last)
 }

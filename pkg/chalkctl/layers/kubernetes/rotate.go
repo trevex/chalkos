@@ -423,7 +423,11 @@ func rotationThroughControlPlane(ctx context.Context, r layer.Rotating, fn func(
 	if err != nil {
 		return err
 	}
-	return nodes.ViaControlPlanes(r.NodesOf(k8s.KindControlPlane), tryNextControlPlane, func(conn *client.Conn) error { return fn(ctx, conn) })
+	names := r.NodesOf(k8s.KindControlPlane)
+	if len(names) == 0 {
+		return errors.New("the cluster has no control-plane node to ask")
+	}
+	return nodes.ViaFirst(names, tryNextControlPlane, func(conn *client.Conn) error { return fn(ctx, conn) })
 }
 
 // encryptedCounts runs a rotation step that counts the objects etcd holds and returns them by key

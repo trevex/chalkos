@@ -710,5 +710,5 @@ func (r *upgradeRun) ViaCoordinators(prefer string, next func(error) bool, fn fu
 	if len(names) == 0 {
 		return errors.New("the cluster has no control-plane node to ask; pass --inventory")
 	}
-	return r.reach.viaControlPlanes(names, next, fn)
+	return r.reach.viaFirst(names, next, fn)
 }

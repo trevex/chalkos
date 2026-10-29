@@ -270,7 +270,7 @@ type Nodes interface {
 	// Call runs fn on a connection to the installed node; fn's error carries the node's name in
 	// place of <node>.
 	Call(name string, fn func(conn *client.Conn) error) error
-	// ViaControlPlanes calls fn on the first of names that answers, moving on past those whose
-	// error next accepts; the error names the node that gave it.
-	ViaControlPlanes(names []string, next func(error) bool, fn func(conn *client.Conn) error) error
+	// ViaFirst calls fn on the first of names that answers, moving on past those whose error next
+	// accepts; the error names the node that gave it.
+	ViaFirst(names []string, next func(error) bool, fn func(conn *client.Conn) error) error
 }

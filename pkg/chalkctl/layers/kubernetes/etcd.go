@@ -24,7 +24,7 @@ func throughControlPlane(h layer.Host, ctx context.Context, f viaFlags, skip str
 		return err
 	}
 	if f.via != "" {
-		return nodes.ViaControlPlanes([]string{f.via}, func(error) bool { return false }, call)
+		return nodes.ViaFirst([]string{f.via}, func(error) bool { return false }, call)
 	}
 	if f.node.Address() != "" {
 		return errors.New("--address reaches one node; name it with --via")
@@ -40,7 +40,7 @@ func throughControlPlane(h layer.Host, ctx context.Context, f viaFlags, skip str
 	if len(names) == 0 {
 		return errors.New("the cluster has no other control-plane node to ask")
 	}
-	return nodes.ViaControlPlanes(names, tryNextControlPlane, call)
+	return nodes.ViaFirst(names, tryNextControlPlane, call)
 }
 
 // tryNextControlPlane reports whether another control plane may answer where one failed with

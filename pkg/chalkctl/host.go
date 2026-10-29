@@ -163,6 +163,6 @@ func (n pluginNodes) Call(name string, fn func(conn *client.Conn) error) error {
 	return n.s.call(name, fn)
 }
 
-func (n pluginNodes) ViaControlPlanes(names []string, next func(error) bool, fn func(conn *client.Conn) error) error {
-	return n.s.viaControlPlanes(names, next, fn)
+func (n pluginNodes) ViaFirst(names []string, next func(error) bool, fn func(conn *client.Conn) error) error {
+	return n.s.viaFirst(names, next, fn)
 }
