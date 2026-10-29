@@ -48,6 +48,9 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	state := t.cluster.configState(t.name, s.ConfigVersion, false)
 	// A node installed before config documents runs an identity alone.
 	fmt.Fprintf(a.stdout, "config %s (%s)\n", cmp.Or(s.ConfigVersion, "none"), state)
+	if s.PreviousConfigVersion != "" {
+		fmt.Fprintf(a.stdout, "previous config %s (apply-config --rollback restores it)\n", s.PreviousConfigVersion)
+	}
 	if s.Boot.GetStaged() != nil {
 		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", cmp.Or(s.StagedConfigVersion, "none"), t.cluster.configState(t.name, s.StagedConfigVersion, true))
 	}
@@ -129,7 +132,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 }
 
 // bootLines are the status lines of the node's boot: the image it runs, an upgrade it boots next,
-// and one it fell back from, with the lines that image logged last.
+// the image a rollback boots, and one it fell back from, with the lines that image logged last.
 func bootLines(b *nodev1.BootStatus) []string {
 	if b == nil {
 		return nil
@@ -145,6 +148,9 @@ func bootLines(b *nodev1.BootStatus) []string {
 	lines := []string{line}
 	if b.Staged != nil {
 		lines = append(lines, fmt.Sprintf("upgrade to %s installed; it boots next", bootImageName(b.Staged)))
+	}
+	if b.Previous != nil {
+		lines = append(lines, fmt.Sprintf("previous image %s (upgrade --rollback boots it)", bootImageName(b.Previous)))
 	}
 	if b.Failed != nil {
 		lines = append(lines, fmt.Sprintf("upgrade to %s failed: rolled back to %s", bootImageName(b.Failed), running))

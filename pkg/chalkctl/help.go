@@ -197,6 +197,15 @@ boot next, as an upgrade with --no-reboot leaves it, and nothing restarts. Witho
 chalkctl warns of a staged image, whose config stays as it is. A config for the running image that
 adds storage the staged image's config lacks is refused: deliver the config with --staged first.
 
+--rollback delivers the node's previous config again instead of the inventory's: the config the
+running image ran before the last delivery, which the node keeps. It goes through the same checks,
+storage changes and restarts as any delivery, so the image's rules may refuse it, as when the
+config it replaces added a volume. The config it replaces becomes the previous one, so a second
+--rollback undoes the first. It restores the config documents alone: the OS CAs, the node
+certificate and layer payloads such as a Kubernetes share stay as they are. An upgrade's image
+starts without a previous config. With --diff it prints what the rollback changes. It needs no
+inventory.
+
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
 says which nodes are revoked; --force delivers it without asking. The command needs the secrets
@@ -212,17 +221,20 @@ const applyConfigExample = `  # Apply w1's changed network and labels.
   chalkctl apply-config w1 --secrets secrets.age --diff
 
   # Deliver w1's config for the image an upgrade with --no-reboot staged.
-  chalkctl apply-config w1 --secrets secrets.age --staged`
+  chalkctl apply-config w1 --secrets secrets.age --staged
+
+  # Undo w1's last config delivery.
+  chalkctl apply-config w1 --secrets secrets.age --rollback`
 
 const statusLong = `Shows an installed node's status: the config it runs and whether it is the one the inventory
 gives; its platform; the image it booted, by its store's root hash and the tag and revision it
 was built from as far as the node knows them, the boot entry and whether that boot was found
 healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled back,
-with the journal of the boot that failed; whether its store is the image the inventory names for
-it; its volumes and their state; Kubernetes, with the nodes revoked in the cluster on a control
-plane; a router's BGP sessions; the certificates it serves and when they expire; the CAs it
-trusts; its clock; and the units that failed. The command needs a reader client file or the
-secrets file.`
+with the journal of the boot that failed; the previous config and image a rollback restores;
+whether its store is the image the inventory names for it; its volumes and their state;
+Kubernetes, with the nodes revoked in the cluster on a control plane; a router's BGP sessions;
+the certificates it serves and when they expire; the CAs it trusts; its clock; and the units that
+failed. The command needs a reader client file or the secrets file.`
 
 const statusExample = `  chalkctl status cp1
 

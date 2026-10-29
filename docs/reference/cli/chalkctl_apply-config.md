@@ -22,6 +22,15 @@ boot next, as an upgrade with --no-reboot leaves it, and nothing restarts. Witho
 chalkctl warns of a staged image, whose config stays as it is. A config for the running image that
 adds storage the staged image's config lacks is refused: deliver the config with --staged first.
 
+--rollback delivers the node's previous config again instead of the inventory's: the config the
+running image ran before the last delivery, which the node keeps. It goes through the same checks,
+storage changes and restarts as any delivery, so the image's rules may refuse it, as when the
+config it replaces added a volume. The config it replaces becomes the previous one, so a second
+--rollback undoes the first. It restores the config documents alone: the OS CAs, the node
+certificate and layer payloads such as a Kubernetes share stay as they are. An upgrade's image
+starts without a previous config. With --diff it prints what the rollback changes. It needs no
+inventory.
+
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
 says which nodes are revoked; --force delivers it without asking. The command needs the secrets
@@ -38,6 +47,7 @@ file.
 | `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--kubernetes-share`{ #flag-kubernetes-share } | boolean | `false` | Also deliver a new Kubernetes share, such as a new kubelet certificate for a worker. |
 | `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |
+| `--rollback`{ #flag-rollback } | boolean | `false` | Deliver the node's previous config again, the one its image ran before the last delivery, instead of the inventory's. |
 | `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
 | `--staged`{ #flag-staged } | boolean | `false` | Deliver the config for the image staged to boot next instead, checked against the node's image in the inventory. |
 
@@ -55,6 +65,9 @@ chalkctl apply-config w1 --secrets secrets.age --diff
 
 # Deliver w1's config for the image an upgrade with --no-reboot staged.
 chalkctl apply-config w1 --secrets secrets.age --staged
+
+# Undo w1's last config delivery.
+chalkctl apply-config w1 --secrets secrets.age --rollback
 ```
 
 ## See also

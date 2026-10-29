@@ -21,6 +21,7 @@ type applyConfigFlags struct {
 	node         nodeFlags
 	passwordFile string
 	staged, diff bool
+	rollback     bool
 	force        bool
 	layers       []layerFlags
 	// payloadFlags names the layers' flags that ask for payloads, which --force goes with.
@@ -57,10 +58,14 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	}
 	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the node's image in the inventory")
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing")
+	fs.BoolVar(&f.rollback, "rollback", false, "deliver the node's previous config again, the one its image ran before the last delivery, instead of the inventory's")
 	return cmd
 }
 
 func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
+	if f.rollback {
+		return a.rollbackConfig(ctx, f, pos[0])
+	}
 	for _, l := range f.layers {
 		if err := l.f.Check(f.staged); err != nil {
 			return err
@@ -167,6 +172,64 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		return nil
 	}
 	fmt.Fprintf(a.stdout, "%s runs config %s\n", t.name, d.Version)
+	return nil
+}
+
+// rollbackConfig delivers the node's previous config again, as the node keeps it, and prints what
+// it changes in the node's config; with --diff it prints the whole diff and changes nothing.
+func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name string) error {
+	switch {
+	case f.staged:
+		return cli.Usagef("--rollback restores the running image's previous config; --staged goes without it")
+	case f.force || slices.ContainsFunc(f.layers, func(l layerFlags) bool { return l.f.Requested() }):
+		return cli.Usagef("--rollback restores config alone; deliver %s without it", f.payloadFlags)
+	}
+	// The node keeps the config it rolls back to, so no inventory needs to give it.
+	n := f.node
+	n.needs = ""
+	t, err := a.target(ctx, n, name)
+	if err != nil {
+		return err
+	}
+	conn, err := dialInstalled(t)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	if err != nil {
+		return nodeError(err, t.name)
+	}
+	version := st.Msg.PreviousConfigVersion
+	if version == "" {
+		return fmt.Errorf("%s keeps no previous config of the image it runs; it keeps one once apply-config replaced the config the image was installed or upgraded with", t.name)
+	}
+	running, err := slotConfig(ctx, conn, false)
+	if err != nil {
+		return fmt.Errorf("%s: %w", t.name, err)
+	}
+	previous, err := previousConfig(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("%s: %w", t.name, err)
+	}
+	changes := diffConfig(running, previous)
+	fmt.Fprintf(a.stdout, "%s: %s\n", t.name, changes.summary())
+	if f.diff {
+		changes.write(a.stdout)
+		return nil
+	}
+	resp, err := conn.RollbackConfig(ctx, connect.NewRequest(&nodev1.RollbackConfigRequest{Version: version}))
+	if err != nil {
+		return nodeError(err, t.name)
+	}
+	for _, c := range resp.Msg.Changes {
+		fmt.Fprintf(a.stdout, "volume %s: %s\n", c.Volume, c.Reason)
+	}
+	for _, u := range resp.Msg.RestartedUnits {
+		fmt.Fprintf(a.stdout, "restarted %s\n", u)
+	}
+	a.warnDelivery(t.name, &nodev1.ApplyConfigResponse{Warnings: resp.Msg.Warnings})
+	fmt.Fprintf(a.stdout, "%s runs config %s again; config %s is its previous one now\n", t.name, version, st.Msg.ConfigVersion)
 	return nil
 }
 

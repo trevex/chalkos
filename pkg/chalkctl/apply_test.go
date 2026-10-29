@@ -246,3 +246,54 @@ func TestApplyConfigForceIsChalkctls(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// apply-config --rollback delivers the node's previous config again and prints what it changes;
+// status names the previous config; a second rollback undoes the first, and --diff changes
+// nothing.
+func TestApplyConfigRollback(t *testing.T) {
+	ta := newTestApp(t)
+	s, _ := installedNode(t, ta, []byte(`{}`))
+	addr := ta.startNode(t, s)
+	run := func(args ...string) error {
+		ta.stdout.Reset()
+		return ta.run(context.Background(), ta.args(args, addr))
+	}
+	if err := run("apply-config", "n1", "--rollback"); err == nil || !strings.Contains(err.Error(), "n1 keeps no previous config of the image it runs") {
+		t.Errorf("without a previous config: %v", err)
+	}
+	if err := run("apply-config", "n1"); err != nil {
+		t.Fatal(err)
+	}
+	first := ta.configVersion(t)
+	ta.writeNode(t, n1SystemDisk, n1Network, "apiVersion: time.chalkos.dev/v1alpha1\nkind: TimeSync\nmetadata: {name: default}\nspec: {servers: [{host: ntp.lan}]}\n")
+	if err := run("apply-config", "n1"); err != nil {
+		t.Fatal(err)
+	}
+	second := ta.configVersion(t)
+	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "previous config "+first+" (apply-config --rollback restores it)") {
+		t.Errorf("status = %v:\n%s", err, ta.stdout)
+	}
+	if err := run("apply-config", "n1", "--rollback", "--diff"); err != nil || !strings.Contains(ta.stdout.String(), "n1: config 0 added, 1 removed (TimeSync \"default\"), 0 changed") {
+		t.Errorf("--diff = %v:\n%s", err, ta.stdout)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != second {
+		t.Errorf("--diff changed the node's config to %s", v)
+	}
+	if err := run("apply-config", "n1", "--rollback"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "n1 runs config " + first + " again; config " + second + " is its previous one now"; !strings.Contains(ta.stdout.String(), want) {
+		t.Errorf("stdout lacks %q:\n%s", want, ta.stdout)
+	}
+	if err := run("apply-config", "n1", "--rollback"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != second {
+		t.Errorf("after a second rollback the node runs %s, want %s", v, second)
+	}
+	for _, args := range [][]string{{"--staged"}, {"--kubernetes-share"}, {"--force"}} {
+		if err := run(append([]string{"apply-config", "n1", "--rollback"}, args...)...); err == nil || !strings.Contains(err.Error(), "--rollback") {
+			t.Errorf("--rollback %s = %v, want a usage error", args[0], err)
+		}
+	}
+}

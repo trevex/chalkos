@@ -217,7 +217,18 @@ func (c configDiff) write(w io.Writer) {
 // slotConfig asks a node for the documents of a slot, the running image's or with staged the
 // staged image's; none when the node holds none for the image.
 func slotConfig(ctx context.Context, conn *client.Conn, staged bool) ([]config.Document, error) {
-	resp, err := conn.GetConfig(ctx, connect.NewRequest(&nodev1.GetConfigRequest{Staged: staged}))
+	return getConfig(ctx, conn, &nodev1.GetConfigRequest{Staged: staged})
+}
+
+// previousConfig asks a node for the documents of the running image's previous config; none when
+// the node keeps none.
+func previousConfig(ctx context.Context, conn *client.Conn) ([]config.Document, error) {
+	return getConfig(ctx, conn, &nodev1.GetConfigRequest{Previous: true})
+}
+
+// getConfig asks a node for the documents the request names; none when the node holds none.
+func getConfig(ctx context.Context, conn *client.Conn, req *nodev1.GetConfigRequest) ([]config.Document, error) {
+	resp, err := conn.GetConfig(ctx, connect.NewRequest(req))
 	if connect.CodeOf(err) == connect.CodeNotFound {
 		return nil, nil
 	}
