@@ -122,9 +122,9 @@ then prints
 `no node renews node certificates itself; chalkctl node renew issues them from the new node CA`,
 and every node still gets a certificate of the new node CA.
 
-chalkctl writes the secrets file once per phase. `secrets.age.prev` stays at the version from before
-the rotation while the phases run and after the finish, until the next command that changes the
-file.
+chalkctl writes the secrets file once per phase. `secrets.age.prev` keeps the version from before
+the rotation while the phases run and after the finish, until the first command that changes the
+file after the rotation finished.
 
 A config or image rollback after a node CA rotation takes no extra step. Node certificates belong
 to the node and stay through either rollback, and every node trusts the OS CA that both node CAs
