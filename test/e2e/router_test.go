@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -54,9 +55,13 @@ const bgpPassword = "lab-s3cret"
 //   - node-ca: chalkctl rotate node-ca over the lab's inventory, on a copy of the secrets file,
 //     gives r1 and r2 certificates of the new node CA, which a new connection verifies, and
 //     their status reports the node certificate without a problem.
+//   - rollback: apply-config --rollback, without an inventory, brings r1 back to the config it
+//     ran before the reload, so r2 loses the route to r1's edge0, and a second rollback brings
+//     the route back; frr.conf stays root's with mode 0600.
 //
-// Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, and a few seconds
-// for the node CA, about 5 minutes with the copies of the images. chalklab destroy removes the lab when the test ends.
+// Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
+// the node CA and about 10 s for the rollbacks, about 5 minutes with the copies of the images.
+// chalklab destroy removes the lab when the test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -284,7 +289,7 @@ func TestRouterLab(t *testing.T) {
 		return
 	}
 
-	t.Run("node-ca", func(t *testing.T) {
+	if !t.Run("node-ca", func(t *testing.T) {
 		// The rotation writes the secrets file, so it runs on a copy; the OS CA stays, so the
 		// test's client certificates keep working.
 		t.Setenv("CHALKLAB_SECRETS", copySecrets(t, t.TempDir()))
@@ -336,5 +341,46 @@ func TestRouterLab(t *testing.T) {
 				}
 			}
 		}
+	}) {
+		return
+	}
+
+	t.Run("rollback", func(t *testing.T) {
+		status := func() *nodev1.StatusResponse {
+			t.Helper()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			st, err := conns["r1"].Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return st.Msg
+		}
+		before := status()
+		announced, previous := before.ConfigVersion, before.PreviousConfigVersion
+		if previous == "" || previous == announced {
+			t.Fatalf("r1 runs config %s and keeps %q as its previous one, want the config from before the reload", announced, previous)
+		}
+		// The node keeps the config it rolls back to, so no inventory gives it.
+		out, err := chalkctl(t, nodes["r1"], "", "apply-config", "--rollback", "r1")
+		if err != nil || !strings.Contains(out, "r1 runs config "+previous+" again; config "+announced+" is its previous one now") {
+			t.Fatalf("apply-config --rollback: %v", err)
+		}
+		waitFor(t, 2*time.Minute, "r2 to lose r1's edge0", func() error {
+			if learned("2001:db8:ffff::1/128") == nil {
+				return errors.New("r2 still routes it through r1")
+			}
+			return nil
+		})
+		if after := status(); after.ConfigVersion != previous || after.PreviousConfigVersion != announced {
+			t.Errorf("after the rollback r1 runs %s and keeps %s, want %s and %s", after.ConfigVersion, after.PreviousConfigVersion, previous, announced)
+		}
+		// A second rollback undoes the first.
+		out, err = chalkctl(t, nodes["r1"], "", "apply-config", "--rollback", "r1")
+		if err != nil || !strings.Contains(out, "r1 runs config "+announced+" again; config "+previous+" is its previous one now") {
+			t.Fatalf("a second apply-config --rollback: %v", err)
+		}
+		waitFor(t, 2*time.Minute, "r2's route to r1's edge0", func() error { return learned("2001:db8:ffff::1/128") })
+		rootsConfig(t)
 	})
 }
