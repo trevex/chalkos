@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
@@ -309,7 +310,7 @@ func pulledInstall(t *testing.T, host, docs string) *nodev1.InstallHeader {
 	root := strings.Repeat("ab", 32)
 	md := `{"schemaVersion": 0, "id": "chalkos", "variant": "worker", "platform": "metal", "rootHash": "` + root + `", "kinds": []}`
 	img := ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: root, Architecture: "x86-64", Platform: "metal"},
-		ociimage.Contract{Metadata: []byte(md), Schemas: fixtureSchemas(t), Definitions: map[string][]byte{"50-state.conf": []byte("[Partition]\nLabel=state\n")}, ImageJSON: []byte(testImage)})
+		ociimage.Contract{Metadata: []byte(md), Schemas: fixtureSchemas(t), Definitions: map[string][]byte{"50-state.conf": []byte("[Partition]\nLabel=state\n")}, ImageJSON: []byte(kubernetestest.Image)})
 	ref := ocitest.Push(t, img, host+"/lab/worker-metal:v1")
 	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Config = workerConfig + "---\n" + docs

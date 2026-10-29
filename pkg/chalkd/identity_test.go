@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -870,7 +871,7 @@ func TestFallbackCheckDevice(t *testing.T) {
 // returns that node CA.
 func withNodeCertificate(t *testing.T, s *Server) pki.CertKey {
 	t.Helper()
-	nodeCA := testNodeCA(t)
+	nodeCA := kubernetestest.NodeCA(t)
 	cert, err := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now().Add(-time.Minute))
 	if err != nil {
 		t.Fatal(err)

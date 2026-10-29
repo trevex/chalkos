@@ -228,7 +228,7 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	s := maintenanceNode()
 	s.Installer = true
 	// The installer's image carries no layer; its compiled plugins read the sent image's facts.
-	withPlugins(t, s, layers.Of(), nil)
+	withPlugins(t, s, layers.Of())
 	// The installer's own image has no schemas: the config checks against those sent alone.
 	s.Loader.Schemas = filepath.Join(t.TempDir(), "none")
 	var got install.PartsRequest

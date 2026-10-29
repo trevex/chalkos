@@ -28,7 +28,7 @@ func TestInfoAndContractNameTheLayers(t *testing.T) {
 		{layers.Of(layers.Kubernetes), []string{"kubernetes"}},
 	} {
 		s, _ := newTestServer(t, normal, vda)
-		withPlugins(t, s, c.layers, nil)
+		withPlugins(t, s, c.layers)
 		if c.layers.Has(layers.Kubernetes) {
 			// The Kubernetes layer reads its image.json.
 			kubernetesImage(t, s)

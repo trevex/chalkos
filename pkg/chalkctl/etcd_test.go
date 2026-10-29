@@ -12,6 +12,7 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -20,13 +21,13 @@ import (
 
 // etcdNode is n1 as a bootstrapped control-plane node whose etcd member runs. adjust, when not
 // nil, changes the node's Kubernetes side, whose LocalEtcd is the member's.
-func etcdNode(t *testing.T, ta *testApp, adjust func(*chalkd.KubernetesOptions)) *chalkd.Server {
+func etcdNode(t *testing.T, ta *testApp, adjust func(*kubernetesplugin.Options)) *chalkd.Server {
 	t.Helper()
 	withKind(t, ta, k8s.KindControlPlane)
 	share := kpki.ControlPlaneShare(&ta.secrets.Kubernetes, ta.secrets.NodeCA)
-	o := chalkd.KubernetesOptions{
+	o := kubernetesplugin.Options{
 		LocalEtcd: etcdtest.StartNew(t, *share.EtcdCA, "n1").ClientURL,
-		Hooks: chalkd.KubernetesHooks{
+		Hooks: kubernetesplugin.Hooks{
 			// No API server lists the other members.
 			EtcdEndpoints: func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 				return nil, errors.New("connection refused")
@@ -37,17 +38,17 @@ func etcdNode(t *testing.T, ta *testApp, adjust func(*chalkd.KubernetesOptions))
 		adjust(&o)
 	}
 	s, _ := kubernetesNodeWith(t, ta, o)
-	k := s.Kubernetes
+	p := kubernetesPaths(s)
 	data, err := share.Encode()
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, k.Paths.Share(), string(data))
-	writeFile(t, k.Paths.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443",
+	writeFile(t, p.Share(), string(data))
+	writeFile(t, p.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443",
 	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
 	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local"}`)
-	writeFile(t, k.Paths.NodeFile, `{"kubernetes": {"nodeName": "n1"}}`)
-	writeFile(t, k.Paths.Bootstrapped(), "")
+	writeFile(t, p.NodeFile, `{"kubernetes": {"nodeName": "n1"}}`)
+	writeFile(t, p.Bootstrapped(), "")
 	return s
 }
 
@@ -87,7 +88,7 @@ func TestEtcdLeaveRefusesLastVoter(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "etcd's last voter") {
 		t.Errorf("err = %v, want a refusal for the last voter", err)
 	}
-	if bootstrapped, _ := knode.Bootstrapped(s.Kubernetes.Paths); !bootstrapped {
+	if bootstrapped, _ := knode.Bootstrapped(kubernetesPaths(s)); !bootstrapped {
 		t.Error("a refused leave changed the node")
 	}
 }
@@ -96,7 +97,7 @@ func TestEtcdLeaveRefusesLastVoter(t *testing.T) {
 // answer, with it the node goes on to the quorum guard.
 func TestEtcdLeaveForce(t *testing.T) {
 	ta := newTestApp(t)
-	s := etcdNode(t, ta, func(o *chalkd.KubernetesOptions) {
+	s := etcdNode(t, ta, func(o *kubernetesplugin.Options) {
 		local := o.LocalEtcd
 		o.LocalEtcd = etcdtest.Silent(t)
 		// Each leave waits the timeout out for the silent member, while the other one must answer

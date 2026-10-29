@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -289,7 +290,7 @@ func TestStageConfigRefuses(t *testing.T) {
 	}{
 		"an unknown kind":           {withoutDemo, "", "", `does not accept kind "Demo"`},
 		"an unknown delivered kind": {withoutDemo, "", baseConfig, `does not accept kind "Demo"`},
-		"Kubernetes without a Node": {fixtureSchemas(t), testImage, "", "no Node: the config of a node whose image runs Kubernetes holds one Node document"},
+		"Kubernetes without a Node": {fixtureSchemas(t), kubernetestest.Image, "", "no Node: the config of a node whose image runs Kubernetes holds one Node document"},
 		"a broken image.json":       {fixtureSchemas(t), `{"version": ""}`, "", "image.json"},
 		"no schemas":                {nil, "", "", "the image's schemas"},
 		"a VAR of another size":     {fixtureSchemas(t), "", strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), "VAR: size 1G instead of filling its disk; only a reinstall of n1 carries it out"},
@@ -429,11 +430,11 @@ func TestStageConfigKeepsTheFixedFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
-	err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), testImage), "/nix/store/x", "metal", newImage, next, "")
+	err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), kubernetestest.Image), "/nix/store/x", "metal", newImage, next, "")
 	if err == nil || !strings.Contains(err.Error(), `changes the node's type from "worker" to "controlplane"`) {
 		t.Errorf("err = %v", err)
 	}
-	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), testImage), "/nix/store/x", "metal", newImage, workerConfig, ""); err != nil {
+	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), kubernetestest.Image), "/nix/store/x", "metal", newImage, workerConfig, ""); err != nil {
 		t.Errorf("the same config: %v", err)
 	}
 }

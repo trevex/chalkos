@@ -144,14 +144,11 @@ type Server struct {
 	// Plugins are the layers compiled into chalkd and those of them the image carries; nil
 	// serves the node API alone, as on an image of the base alone.
 	Plugins *layer.Registry
-	// Kubernetes is the node's Kubernetes side, which the Kubernetes layer serves; nil in
-	// maintenance mode and on an image without the Kubernetes layer.
-	Kubernetes *Kubernetes
 	// Renewal renews the node certificate; nil on a node that renews none.
 	Renewal *renewal.Renewal
-	// RenewOnApplyConfig renews the node certificate and the control plane's certificates after
-	// each ApplyConfig that delivers config, due or not. Only test images set it, to renew within
-	// a test's time.
+	// RenewOnApplyConfig renews the node certificate and the layers' certificates after each
+	// ApplyConfig that delivers config, due or not. Only test images set it, to renew within a
+	// test's time.
 	RenewOnApplyConfig bool
 
 	// clock is the time client certificates are verified at; nil is the system clock.

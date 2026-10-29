@@ -129,7 +129,7 @@ func TestNodeCARotate(t *testing.T) {
 	ta := newTestApp(t)
 	withKind(t, ta, kubernetes.KindControlPlane)
 	s, r := kubernetesNode(t, ta)
-	p := s.Kubernetes.Paths
+	p := kubernetesPaths(s)
 	writeFile(t, p.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443",
 	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
 	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local"}`)
@@ -273,7 +273,7 @@ func TestNodeCARotateNamesThePublicFile(t *testing.T) {
 	ta := newTestApp(t)
 	withKind(t, ta, kubernetes.KindControlPlane)
 	s, _ := kubernetesNode(t, ta)
-	p := s.Kubernetes.Paths
+	p := kubernetesPaths(s)
 	writeFile(t, p.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443",
 	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
 	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local"}`)

@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,9 @@ import (
 	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layer/layertest"
+	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
+	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/effects"
@@ -149,21 +153,27 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
 	writeSchemas(t, s.Loader.Schemas)
 	s.Facts = storageFacts{s}
-	writeFacts(t, s)
+	writeFacts(t, s, "")
 	writeServices(t, s, "{}")
 	writeEffects(t, s, "{}")
-	withPlugins(t, s, layers.Of(), nil)
+	withPlugins(t, s, layers.Of())
 	return s, r
 }
 
-// withPlugins compiles the Kubernetes and router layers into s, with s's Kubernetes side and the
-// router side r, or one that runs s's programs when r is nil, on an image of the layers l.
-func withPlugins(t *testing.T, s *Server, l layers.Set, r *Router) {
+// withPlugins compiles the Kubernetes and router layers into s, on an image of the layers l: the
+// plugins given, and for a layer none of them is, one built with chalkd's own options.
+func withPlugins(t *testing.T, s *Server, l layers.Set, plugins ...layer.Plugin) {
 	t.Helper()
-	if r == nil {
-		r = &Router{Run: s.Run}
+	given := func(name string) bool {
+		return slices.ContainsFunc(plugins, func(p layer.Plugin) bool { return p.Name() == name })
 	}
-	reg, err := layer.NewRegistry(l, NewKubernetesLayer(s, s.Kubernetes), NewRouterLayer(r))
+	if !given(layers.Kubernetes) {
+		plugins = append(plugins, kubernetesplugin.New(s, kubernetesplugin.Options{}))
+	}
+	if !given(layers.Router) {
+		plugins = append(plugins, routerplugin.New(s, routerplugin.Options{}))
+	}
+	reg, err := layer.NewRegistry(l, plugins...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,8 +270,9 @@ func (f storageFacts) Run(ctx context.Context, argv []string, stdin []byte, _ in
 }
 
 // writeFacts declares the facts of the built-in kinds' rules and effects as an image does, at
-// the test server's paths; the cluster file only where the server writes the one it reads.
-func writeFacts(t *testing.T, s *Server) {
+// the test server's paths; the cluster file, when given, is the one the server writes and its
+// Kubernetes layer reads.
+func writeFacts(t *testing.T, s *Server, cluster string) {
 	t.Helper()
 	defined := map[string]facts.Definition{
 		"share":    {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json"), Fields: []string{"kind"}, HashOthers: true},
@@ -269,8 +280,8 @@ func writeFacts(t *testing.T, s *Server) {
 		"disks":    {Command: "chalkos-storage facts disks"},
 		"fallback": {Command: "chalkos-storage facts fallback", Inputs: []string{facts.FallbackSecret}},
 	}
-	if k := s.Kubernetes; k != nil && k.clusterFile == k.Paths.Cluster {
-		defined["cluster"] = facts.Definition{File: k.clusterFile}
+	if cluster != "" {
+		defined["cluster"] = facts.Definition{File: cluster}
 	}
 	defs, err := json.Marshal(defined)
 	if err != nil {
@@ -804,19 +815,6 @@ func TestNodeAPIPermissions(t *testing.T) {
 	layertest.CheckComments(t, filepath.Join("..", "..", "api", "chalkos", "node", "v1", "node.proto"), service, permissions, "")
 }
 
-// TestLayerAPIPermissions holds the Kubernetes and router layers' APIs to their plugins'
-// permissions as TestNodeAPIPermissions holds the node API.
-func TestLayerAPIPermissions(t *testing.T) {
-	k := NewKubernetesLayer(nil, nil)
-	service := kubernetesv1.File_chalkos_kubernetes_v1_kubernetes_proto.Services().ByName("KubernetesService")
-	layertest.CheckPermissions(t, service, k.Permissions())
-	layertest.CheckComments(t, filepath.Join("..", "..", "api", "chalkos", "kubernetes", "v1", "kubernetes.proto"), service, k.Permissions(), layers.Kubernetes)
-	r := NewRouterLayer(nil)
-	service = routerv1.File_chalkos_router_v1_router_proto.Services().ByName("RouterService")
-	layertest.CheckPermissions(t, service, r.Permissions())
-	layertest.CheckComments(t, filepath.Join("..", "..", "api", "chalkos", "router", "v1", "router.proto"), service, r.Permissions(), layers.Router)
-}
-
 func TestRequestSizeLimit(t *testing.T) {
 	c := newCreds(t)
 	s, r := installedServer(t, section("", ""), false)
@@ -978,3 +976,24 @@ func TestCount(t *testing.T) {
 		}
 	}
 }
+
+// eventually waits until check holds.
+func eventually(t *testing.T, what string, check func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Minute)
+	for !check() {
+		if time.Now().After(deadline) {
+			t.Fatalf("waiting for %s", what)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// testOSCA is the OS CA of every test server's STATE, which the node CAs of the Kubernetes
+// fixtures chain to.
+var testOSCA = kubernetestest.OSCA

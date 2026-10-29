@@ -18,56 +18,19 @@ import (
 	"time"
 	"unicode/utf16"
 
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
-	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
-	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
-// chalkdServing stands for chalkd: a TLS server that completes handshakes with the node's
-// certificate, whose file it returns with its address.
-func chalkdServing(t *testing.T) (addr, cert string) {
-	t.Helper()
-	self, err := pki.SelfSigned("n1", time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	cert = filepath.Join(t.TempDir(), "node.pem")
-	write(t, cert, self.Certificate+self.Key)
-	pair, err := tls.X509KeyPair([]byte(self.Certificate), []byte(self.Key))
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewUnstartedServer(http.NotFoundHandler())
-	srv.TLS = &tls.Config{Certificates: []tls.Certificate{pair}}
-	srv.StartTLS()
-	t.Cleanup(srv.Close)
-	return srv.Listener.Addr().String(), cert
-}
-
-// kubelet stands for the kubelet's health endpoint, healthy or not.
-func kubelet(t *testing.T, healthy *bool) string {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if !*healthy {
-			http.Error(w, "not healthy", http.StatusInternalServerError)
-		}
-	}))
-	t.Cleanup(srv.Close)
-	return srv.URL + "/healthz"
-}
-
 // bootUnits is what systemctl lists of the units multi-user.target and sysinit.target pull in.
 const bootUnits = "multi-user.target\n  chalkd.service\n  broken.service\n  timers.target\n  cleanup.timer\nsysinit.target\n  systemd-journald.service\n"
 
 func TestHealthWithoutKubernetes(t *testing.T) {
-	addr, cert := chalkdServing(t)
-	other, _ := chalkdServing(t)
+	addr, cert := kubernetestest.ChalkdServing(t)
+	other, _ := kubernetestest.ChalkdServing(t)
 	units := tooltest.Rule{Prefix: "systemctl list-dependencies --all --plain --no-legend --no-pager multi-user.target sysinit.target", Out: bootUnits}
 	failed := func(names ...string) tooltest.Rule {
 		var out string
@@ -110,7 +73,7 @@ func (h healthHook) Health(context.Context) (bool, error) { return h.checked, h.
 
 // The first layer that checked decides; while none did, the common checks decide.
 func TestHealthAsksTheLayers(t *testing.T) {
-	addr, cert := chalkdServing(t)
+	addr, cert := kubernetestest.ChalkdServing(t)
 	notApplied := tooltest.Rule{Prefix: "systemctl is-active --quiet chalkos-config.service", Err: errors.New("inactive")}
 	for _, tc := range []struct {
 		name   string
@@ -142,64 +105,6 @@ func checkHealth(t *testing.T, h *Health, want string) {
 	case want != "" && (err == nil || !strings.Contains(err.Error(), want)):
 		t.Errorf("health = %v, want %q", err, want)
 	}
-}
-
-func TestHealthOfAWorker(t *testing.T) {
-	addr, cert := chalkdServing(t)
-	for _, tc := range []struct {
-		name    string
-		share   bool
-		kubelet bool
-		node    error
-		want    string
-	}{
-		{"healthy", true, true, nil, ""},
-		{"kubelet not healthy", true, false, nil, "the kubelet is not healthy"},
-		{"Node not registered", true, true, errors.New("nodes \"n1\" not found"), "the Node is not registered"},
-		// A worker not given a share yet belongs to no cluster.
-		{"no share", false, false, errors.New("no kubeconfig"), ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			s, r := kubernetesServer(t, k8s.KindWorker, tc.share)
-			s.Kubernetes.hooks.Node = func(context.Context) (*corev1.Node, error) { return readyNode(), tc.node }
-			healthy := tc.kubelet
-			s.Kubernetes.kubelet = kubelet(t, &healthy)
-			h := &Health{Run: r, Layers: []layer.Health{kubernetesOf(s)}, Chalkd: addr, NodeCertificate: cert}
-			checkHealth(t, h, tc.want)
-		})
-	}
-	s, r := kubernetesServer(t, k8s.KindWorker, true)
-	withoutAddress(t, s, "no ipv4 node address matches validSubnets 10.0.0.0/8")
-	healthy := true
-	s.Kubernetes.kubelet = kubelet(t, &healthy)
-	checkHealth(t, &Health{Run: r, Layers: []layer.Health{kubernetesOf(s)}, Chalkd: addr, NodeCertificate: cert}, "preparation failed: no ipv4 node address")
-}
-
-func TestHealthOfAControlPlane(t *testing.T) {
-	addr, cert := chalkdServing(t)
-	s, _, members := memberServer(t)
-	k := s.Kubernetes
-	ready, healthy := true, true
-	k.hooks.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return ready }
-	k.kubelet = kubelet(t, &healthy)
-	h := &Health{Run: &tooltest.Runner{}, Layers: []layer.Health{kubernetesOf(s)}, Chalkd: addr, NodeCertificate: cert}
-	checkHealth(t, h, "")
-	ready = false
-	checkHealth(t, h, "the API server is not ready")
-	ready, healthy = true, false
-	checkHealth(t, h, "the kubelet is not healthy")
-	healthy = true
-	k.timing.EtcdTimeout = 2 * time.Second
-	members["n1"].Stop()
-	checkHealth(t, h, "the etcd member is not healthy")
-
-	// A control plane waiting for its bootstrap is healthy once its identity was applied.
-	s2, r := kubernetesServer(t, k8s.KindControlPlane, true)
-	if bootstrapped, _ := knode.Bootstrapped(s2.Kubernetes.Paths); bootstrapped {
-		t.Fatal("bootstrapped")
-	}
-	s2.Kubernetes.kubelet = "http://127.0.0.1:1/healthz"
-	checkHealth(t, &Health{Run: r, Layers: []layer.Health{kubernetesOf(s2)}, Chalkd: addr, NodeCertificate: cert}, "")
 }
 
 // espWith is a health check of a node whose ESP holds the UKIs; see writeESP.
@@ -241,7 +146,7 @@ var failedHeader = "usrhash=" + strings.Repeat("32", 32) + " generation=2"
 // TestHealthWaitReboots waits for a boot that never becomes healthy, records its journal on VAR,
 // and reboots only while the boot loader counts it and has somewhere to go.
 func TestHealthWaitReboots(t *testing.T) {
-	_, cert := chalkdServing(t)
+	_, cert := kubernetestest.ChalkdServing(t)
 	for _, tc := range []struct {
 		name   string
 		h      *Health
@@ -274,7 +179,7 @@ func TestHealthWaitReboots(t *testing.T) {
 // TestHealthWaitHealthy finds a boot healthy without rebooting, and forgets the record of a
 // failed boot once a boot the loader counts was found healthy: that image boots for good now.
 func TestHealthWaitHealthy(t *testing.T) {
-	addr, cert := chalkdServing(t)
+	addr, cert := kubernetestest.ChalkdServing(t)
 	for _, tc := range []struct {
 		name   string
 		h      *Health
@@ -317,7 +222,7 @@ func TestHealthWaitEndsAtTheDeadline(t *testing.T) {
 	}()
 	h := espWith(t, "chalkos_2.efi", "chalkos_1.efi", "chalkos_2+2-1.efi")
 	r := &tooltest.Runner{Rules: []tooltest.Rule{journalRule}}
-	_, cert := chalkdServing(t)
+	_, cert := kubernetestest.ChalkdServing(t)
 	h.Run, h.Chalkd, h.NodeCertificate = r, ln.Addr().String(), cert
 	done := make(chan error, 1)
 	start := time.Now()

@@ -13,12 +13,8 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// How long before they expire CAs are reported: a year, and for the node CA 18 months, as node
-// certificates never outlive it and it needs replacing well before.
-const (
-	CAWarning     = 365 * 24 * time.Hour
-	NodeCAWarning = 548 * 24 * time.Hour
-)
+// CAWarning is how long before they expire CAs are reported: a year.
+const CAWarning = 365 * 24 * time.Hour
 
 // CertificateStatus describes a certificate with its fingerprint and, when known, its issuer's.
 func CertificateStatus(name string, cert, issuer *x509.Certificate, problem string) *nodev1.CertificateStatus {

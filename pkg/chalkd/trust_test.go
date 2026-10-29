@@ -20,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -65,7 +66,7 @@ func TestApplyConfigReplacesTheOSCAs(t *testing.T) {
 	nextClient, nextAdmin := adminOf(t, next)
 	both := pki.Bundle(osCA.Certificate, next.Certificate)
 	leaf, _ := pki.IssueLeaf(next, pki.Leaf{CommonName: "leaf", Client: true}, time.Now())
-	renewed, _ := pki.IssueNode(testNodeCA(t), pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
+	renewed, _ := pki.IssueNode(kubernetestest.NodeCA(t), pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
 
 	addr := serveTLS(t, s.Handler(), TLSConfig(s.Certificate.GetCertificate, s.Certificate.ClientCAs))
 	roots, _ := pki.BundlePool(both)
@@ -90,7 +91,7 @@ func TestApplyConfigReplacesTheOSCAs(t *testing.T) {
 		"OS CAs without the caller's":                                         {nextAdmin, &nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)}},
 		"a key":                                                               {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both + next.Key)}},
 		"a leaf":                                                              {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both + leaf.Certificate)}},
-		"a node CA as a root":                                                 {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both + testNodeCA(t).Certificate)}},
+		"a node CA as a root":                                                 {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both + kubernetestest.NodeCA(t).Certificate)}},
 		"OS CAs with a node certificate":                                      {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both), NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(renewed.Key)}},
 	} {
 		_, err := s.ApplyConfig(asCaller(tc.caller), connect.NewRequest(tc.req))
@@ -160,7 +161,7 @@ func TestTrustKeepsTheControlPlanesNodeCA(t *testing.T) {
 	nextNodeCA, _ := pki.NewNodeCA(next, time.Now())
 	k, _ := clustersecrets.NewKubernetesSecrets(time.Now())
 	share, _ := kpki.ControlPlaneShare(k, nextNodeCA).Encode()
-	write(t, s.Kubernetes.Paths.Share(), string(share))
+	write(t, kubernetesPaths(s).Share(), string(share))
 	_, admin := adminOf(t, osCA)
 	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)})); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "node CA") {
 		t.Errorf("OS CAs without the node CA's: %v, want a refusal naming the node CA", err)
@@ -181,7 +182,7 @@ func TestRefusedTrustLeavesTheBaseline(t *testing.T) {
 	nextNodeCA, _ := pki.NewNodeCA(next, time.Now())
 	k, _ := clustersecrets.NewKubernetesSecrets(time.Now())
 	share, _ := kpki.ControlPlaneShare(k, nextNodeCA).Encode()
-	write(t, s.Kubernetes.Paths.Share(), string(share))
+	write(t, kubernetesPaths(s).Share(), string(share))
 	_, admin := adminOf(t, osCA)
 	refuse := func() {
 		t.Helper()
@@ -222,14 +223,14 @@ func TestStatusReportsKubernetesTrust(t *testing.T) {
 	if err := secrets.BeginRotation(clustersecrets.RotateEncryptionKey, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	secrets.NodeCA = testNodeCA(t)
+	secrets.NodeCA = kubernetestest.NodeCA(t)
 	share, err := kpki.ShareFor(&secrets, k8s.KindControlPlane, "n1", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	data, _ := share.Encode()
-	write(t, s.Kubernetes.Paths.Share(), string(data))
-	if err := knode.Prepare(s.Kubernetes.Paths, time.Now(), nodeIP("192.168.100.11"), nil); err != nil {
+	write(t, kubernetesPaths(s).Share(), string(data))
+	if err := knode.Prepare(kubernetesPaths(s), time.Now(), kubernetestest.NodeIP("192.168.100.11"), nil); err != nil {
 		t.Fatal(err)
 	}
 	trust := trustOf(t, s)
@@ -257,42 +258,10 @@ func TestStatusReportsKubernetesTrust(t *testing.T) {
 	}
 
 	w, _ := kubernetesServer(t, k8s.KindWorker, true)
-	workerShare, _ := knode.ReadShare(w.Kubernetes.Paths)
+	workerShare, _ := knode.ReadShare(kubernetesPaths(w))
 	want, _ := pki.Fingerprints(workerShare.CABundle())
 	if tr := trustOf(t, w)["Kubernetes CA"]; tr == nil || !slices.Equal(tr.Fingerprints, want) || tr.Issuing != "" {
 		t.Errorf("worker: Kubernetes CA %v, want %v and nothing issuing", tr, want)
-	}
-}
-
-// TestStatusReportsTheControlPlanesState checks that a bootstrapped control plane says whether
-// it runs on its current certificates.
-func TestStatusReportsTheControlPlanesState(t *testing.T) {
-	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	if err := knode.MarkBootstrapped(s.Kubernetes.Paths, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	s.Kubernetes.hooks.CheckControlPlane = func(context.Context, k8s.Cluster, kpki.Share) error { return nil }
-	if got := kubernetesStatus(t, s).ControlPlane; got != "current" {
-		t.Errorf("control plane %q", got)
-	}
-}
-
-func TestServesFile(t *testing.T) {
-	served, _ := pki.SelfSigned("served", time.Now())
-	other, _ := pki.SelfSigned("other", time.Now())
-	pair, _ := tls.X509KeyPair([]byte(served.Certificate), []byte(served.Key))
-	addr := serveTLS(t, http.NotFoundHandler(), TLSConfig(StaticCertificate(&pair), nil))
-	dir := t.TempDir()
-	write(t, filepath.Join(dir, "served.crt"), served.Certificate)
-	write(t, filepath.Join(dir, "other.crt"), other.Certificate)
-	if err := servesFile(context.Background(), addr, filepath.Join(dir, "served.crt")); err != nil {
-		t.Error(err)
-	}
-	if err := servesFile(context.Background(), addr, filepath.Join(dir, "other.crt")); err == nil || !strings.Contains(err.Error(), "replaced") {
-		t.Errorf("another certificate: %v", err)
-	}
-	if err := servesFile(context.Background(), "127.0.0.1:1", filepath.Join(dir, "served.crt")); err == nil || !strings.Contains(err.Error(), "does not answer") {
-		t.Errorf("nothing listening: %v", err)
 	}
 }
 

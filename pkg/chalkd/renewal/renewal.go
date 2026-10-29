@@ -1,5 +1,5 @@
 // Package renewal renews a certificate, or a set of them, once it is due, as chalkd renews the
-// node certificate and a control plane's certificates.
+// node certificate and a layer its own.
 package renewal
 
 import (
@@ -108,7 +108,7 @@ func (r *Renewal) Run(ctx context.Context) {
 				problem += "; expires " + expires.UTC().Format(time.RFC3339)
 			}
 			r.setProblem(problem)
-			// Jitter keeps the nodes that lost their control plane together from all asking again
+			// Jitter keeps the nodes that lost their issuer together from all asking again
 			// at once.
 			wait = retry - retry/10 + jitter(retry/5)
 			log.Printf("%s: %s; trying again in %v", r.What, problem, wait.Round(time.Second))

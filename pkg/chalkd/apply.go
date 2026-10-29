@@ -97,7 +97,7 @@ type delivery struct {
 // refused request changes nothing. The caller discards the staged outputs of the delivery.
 func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, error) {
 	m := r.msg
-	// Without config the node keeps its own, which the share is checked against.
+	// Without config the node keeps its own, which the layers' payloads are checked against.
 	d := &delivery{s: s, msg: m, keep: r.identity == ""}
 	if d.keep && len(m.Layers) == 0 && len(m.NodeCertificate) == 0 && len(m.Trust) == 0 {
 		return nil, failed(connect.CodeInvalidArgument, "the request delivers no config, layer payload, node certificate or OS CAs")
@@ -194,8 +194,7 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 }
 
 // commit applies a planned delivery. The changes come in this order:
-//  1. the OS CAs, which the layers checked against what they keep, such as a control plane's
-//     node CA;
+//  1. the OS CAs, which the layers checked against what they keep;
 //  2. the machine's storage, the identity and what the layers derive from the config;
 //  3. the node certificate and the layers' payloads;
 //  4. the running slot, last;

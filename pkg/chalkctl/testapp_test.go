@@ -19,6 +19,8 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
+	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/effects"
@@ -275,7 +277,7 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	s.Paths.EffectsBaseline = filepath.Join(root, "run", "effects-baseline.json")
 	writeFile(t, s.Paths.Facts, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"}}`)
 	writeFile(t, s.Paths.MountInfo, "41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
-	withPlugins(t, s, layers.Of(), nil)
+	withPlugins(t, s, layers.Of())
 	writeEffects(t, s)
 	return s, r
 }
@@ -306,18 +308,34 @@ func writeEffects(t *testing.T, s *chalkd.Server) {
 	writeFile(t, s.Loader.Effects, string(data))
 }
 
-// withPlugins compiles the Kubernetes and router layers into s, with s's Kubernetes side and the
-// router side r, or one that runs s's programs when r is nil, on an image of the layers l.
-func withPlugins(t *testing.T, s *chalkd.Server, l layers.Set, r *chalkd.Router) {
+// withPlugins compiles the Kubernetes and router layers into s, on an image of the layers l: the
+// plugins given, and for a layer none of them is, one built with chalkd's own options.
+func withPlugins(t *testing.T, s *chalkd.Server, l layers.Set, plugins ...layer.Plugin) {
 	t.Helper()
-	if r == nil {
-		r = &chalkd.Router{Run: s.Run}
+	given := func(name string) bool {
+		return slices.ContainsFunc(plugins, func(p layer.Plugin) bool { return p.Name() == name })
 	}
-	reg, err := layer.NewRegistry(l, chalkd.NewKubernetesLayer(s, s.Kubernetes), chalkd.NewRouterLayer(r))
+	if !given(layers.Kubernetes) {
+		plugins = append(plugins, kubernetesplugin.New(s, kubernetesplugin.Options{}))
+	}
+	if !given(layers.Router) {
+		plugins = append(plugins, routerplugin.New(s, routerplugin.Options{}))
+	}
+	reg, err := layer.NewRegistry(l, plugins...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.Plugins = reg
+}
+
+// kubernetesPaths are the files the Kubernetes layer of s reads and writes.
+func kubernetesPaths(s *chalkd.Server) knode.Paths {
+	for _, p := range s.Plugins.Compiled() {
+		if k, ok := p.(*kubernetesplugin.Plugin); ok {
+			return k.Paths()
+		}
+	}
+	return knode.Paths{}
 }
 
 // slotOf is the running image's config slot of a node installedNode made.
@@ -394,14 +412,14 @@ func imageJSON(t *testing.T) string {
 	return file
 }
 
-// kubernetesImage gives the node s, which has no Kubernetes side, as in maintenance mode, a running
-// image with Kubernetes: its image.json and the Kubernetes layer with a side of its own that reads
-// it, whose files are in a directory of the test.
+// kubernetesImage gives the node s, whose image has no Kubernetes layer, as in maintenance mode, a
+// running image with Kubernetes: its image.json and the Kubernetes layer that reads it, whose files
+// are in a directory of the test.
 func kubernetesImage(t *testing.T, s *chalkd.Server) {
 	t.Helper()
 	file := imageJSON(t)
 	root := t.TempDir()
-	k := chalkd.NewKubernetes(chalkd.KubernetesOptions{
+	k := kubernetesplugin.New(s, kubernetesplugin.Options{
 		Paths: knode.Paths{
 			State: filepath.Join(root, "state"), Cluster: filepath.Join(root, "cluster.json"), NodeFile: filepath.Join(root, "node.json"),
 			Run: filepath.Join(root, "run"), PKI: filepath.Join(root, "pki"), KubeletPKI: filepath.Join(root, "kubelet"), EtcdData: filepath.Join(root, "etcd"),
@@ -409,10 +427,6 @@ func kubernetesImage(t *testing.T, s *chalkd.Server) {
 		ImageFile:   file,
 		ClusterFile: filepath.Join(root, "cluster.json"),
 	})
-	reg, err := layer.NewRegistry(layers.Of(layers.Kubernetes), chalkd.NewKubernetesLayer(s, k), chalkd.NewRouterLayer(&chalkd.Router{Run: s.Run}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.Plugins = reg
-	s.Loader.Layers = layer.Active[nodeconfig.Layer](reg)
+	withPlugins(t, s, layers.Of(layers.Kubernetes), k)
+	s.Loader.Layers = layer.Active[nodeconfig.Layer](s.Plugins)
 }

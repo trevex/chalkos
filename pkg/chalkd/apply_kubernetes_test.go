@@ -19,9 +19,13 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/effects"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/addons"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/layers"
@@ -41,12 +45,11 @@ func hostConfig(name, hostname string) string {
 
 // clusterServer is a configured node of the kind with a share whose loader writes the cluster
 // from the image facts and the delivered config into its Kubernetes side's cluster file.
-func clusterServer(t *testing.T, kind string) (*Server, *tooltest.Runner) {
+func clusterServer(t *testing.T, kind string, adjust ...func(*kubernetesplugin.Options)) (*Server, *tooltest.Runner) {
 	t.Helper()
 	s, r := configServer(t)
-	addKubernetes(t, s, kind, true)
-	s.Kubernetes.clusterFile = s.Kubernetes.Paths.Cluster
-	writeFacts(t, s)
+	addKubernetes(t, s, kind, true, append([]func(*kubernetesplugin.Options){readsWrittenCluster}, adjust...)...)
+	writeFacts(t, s, kubernetesPaths(s).Cluster)
 	kubernetesImage(t, s)
 	return s, r
 }
@@ -73,7 +76,7 @@ func TestFixtureEffectsActionsResolve(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _ := newTestServer(t, normal, vda)
-	withPlugins(t, s, layers.Of(layers.Kubernetes), nil)
+	withPlugins(t, s, layers.Of(layers.Kubernetes))
 	for name, d := range defs {
 		if d.Chalkd == "" {
 			continue
@@ -86,7 +89,7 @@ func TestFixtureEffectsActionsResolve(t *testing.T) {
 
 func TestApplyConfigDeliversShare(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindWorker, false)
-	share := testShare(t, k8s.KindWorker)
+	share := kubernetestest.Share(t, k8s.KindWorker, "n1")
 	// STATE keeps the share as Encode writes it, not as it was delivered.
 	var delivered bytes.Buffer
 	if err := json.Indent(&delivered, share, "", "  "); err != nil {
@@ -96,7 +99,7 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := s.Kubernetes.Paths.Share()
+	path := kubernetesPaths(s).Share()
 	got, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(got, share) {
 		t.Fatalf("the recorded share is not the canonical encoding: %v", err)
@@ -138,10 +141,10 @@ func TestApplyConfigRefusesShare(t *testing.T) {
 		share    []byte
 		code     connect.Code
 	}{
-		"no Kubernetes":              {plain, kubernetesIdentity("n1"), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
+		"no Kubernetes":              {plain, kubernetesIdentity("n1"), kubernetestest.Share(t, k8s.KindWorker, "n1"), connect.CodeInvalidArgument},
 		"broken share":               {worker, kubernetesIdentity("n1"), []byte(`{"kind": "worker"}`), connect.CodeInvalidArgument},
-		"another node's share":       {worker, kubernetesIdentity("n1"), testShareFor(t, k8s.KindWorker, "n2"), connect.CodeInvalidArgument},
-		"no node name":               {worker, identityWith(section("", "")), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
+		"another node's share":       {worker, kubernetesIdentity("n1"), kubernetestest.Share(t, k8s.KindWorker, "n2"), connect.CodeInvalidArgument},
+		"no node name":               {worker, identityWith(section("", "")), kubernetestest.Share(t, k8s.KindWorker, "n1"), connect.CodeInvalidArgument},
 		"a node CA of another OS CA": {controlPlane, kubernetesIdentity("n1"), foreignNodeCA, connect.CodeInvalidArgument},
 	} {
 		_, err := deliver(context.Background(), tc.s, tc.identity, &nodev1.ApplyConfigRequest{Layers: shareLayers(t, tc.share)})
@@ -152,7 +155,7 @@ func TestApplyConfigRefusesShare(t *testing.T) {
 	if len(r.Calls) != 0 {
 		t.Errorf("a refused share ran %v", r.Calls)
 	}
-	if _, err := os.Stat(worker.Kubernetes.Paths.Share()); err == nil {
+	if _, err := os.Stat(kubernetesPaths(worker).Share()); err == nil {
 		t.Error("a refused share was recorded")
 	}
 }
@@ -161,14 +164,14 @@ func TestApplyConfigRefusesShareOfAnotherKind(t *testing.T) {
 	for image, share := range map[string]string{k8s.KindWorker: k8s.KindControlPlane, k8s.KindControlPlane: k8s.KindWorker} {
 		s, r := kubernetesServer(t, image, false)
 		before, _ := readIdentity(s)
-		_, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, testShare(t, share))})
+		_, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, kubernetestest.Share(t, share, "n1"))})
 		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), share) {
 			t.Errorf("%s share on a %s image: %v", share, image, err)
 		}
 		if len(r.Calls) != 0 {
 			t.Errorf("%s share on a %s image ran %v", share, image, r.Calls)
 		}
-		if _, err := os.Stat(s.Kubernetes.Paths.Share()); err == nil {
+		if _, err := os.Stat(kubernetesPaths(s).Share()); err == nil {
 			t.Errorf("%s share on a %s image was recorded", share, image)
 		}
 		if after, _ := readIdentity(s); !bytes.Equal(after, before) {
@@ -260,22 +263,22 @@ func TestApplyConfigRestartsKubernetesOnHostChange(t *testing.T) {
 // A share delivered to a running control plane reaches its loop at once, which starts again
 // with it.
 func TestApplyConfigRestartsControlPlaneLoopWithNewShare(t *testing.T) {
-	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	k := s.Kubernetes
-	// Only a reload restarts the loop this quickly.
-	k.timing.RestartBackoff = time.Hour
 	shares := make(chan kpki.Share, 4)
-	k.hooks.ControlPlane = func(ctx context.Context, share kpki.Share, applied func(int)) error {
-		shares <- share
-		applied(19)
-		<-ctx.Done()
-		return ctx.Err()
-	}
-	if _, err := bootstrap(s, context.Background()); err != nil {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true, func(o *kubernetesplugin.Options) {
+		// Only a reload restarts the loop this quickly.
+		o.Timing.RestartBackoff = time.Hour
+		o.Hooks.ControlPlane = func(ctx context.Context, share kpki.Share, applied func(int)) error {
+			shares <- share
+			applied(19)
+			<-ctx.Done()
+			return ctx.Err()
+		}
+	})
+	if _, err := kubernetestest.Bootstrap(context.Background(), kubernetesOf(s)); err != nil {
 		t.Fatal(err)
 	}
 	<-shares
-	replaced := testShare(t, k8s.KindControlPlane)
+	replaced := kubernetestest.Share(t, k8s.KindControlPlane, "n1")
 	want, err := kpki.ParseShare(replaced)
 	if err != nil {
 		t.Fatal(err)
@@ -298,7 +301,7 @@ func TestApplyConfigReportsMissingAddress(t *testing.T) {
 	s, r := clusterServer(t, k8s.KindWorker)
 	const reason = "no node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)"
 	r.Rules = append([]tooltest.Rule{{Prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", Err: errors.New("exit status 1")}}, r.Rules...)
-	withoutAddress(t, s, reason)
+	kubernetestest.WithoutAddress(t, kubernetesPaths(s), reason)
 	_, err := sendConfig(s, workerConfig)
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node runs no kubelet: preparation failed: "+reason) {
 		t.Errorf("err = %v, want the missing address", err)
@@ -310,7 +313,7 @@ func TestApplyConfigReportsMissingAddress(t *testing.T) {
 func TestApplyConfigReportsFailedRestart(t *testing.T) {
 	s, r := clusterServer(t, k8s.KindWorker)
 	r.Rules = append([]tooltest.Rule{{Prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", Err: errors.New("exit status 1")}}, r.Rules...)
-	withoutFirewall(t, s)
+	kubernetestest.WithoutFirewall(t, kubernetesPaths(s))
 	_, err := sendConfig(s, workerConfig)
 	want := "restart chalkos-kubernetes.service kubelet.service: exit status 1; the node runs no kubelet: preparation failed: accept VXLAN to the node's address: exit status 1; the delivery is applied, so restart chalkos-kubernetes.service kubelet.service by hand"
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
@@ -334,7 +337,7 @@ func TestApplyConfigReportsThePreparationForKubernetesUnitsAlone(t *testing.T) {
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
-	withoutFirewall(t, s)
+	kubernetestest.WithoutFirewall(t, kubernetesPaths(s))
 	r.Rules = append([]tooltest.Rule{{Prefix: "systemctl try-restart demo.service", Err: errors.New("exit status 1")}}, r.Rules...)
 	_, err := sendConfig(s, strings.Replace(workerConfig, "name: first", "name: second", 1))
 	want := "try-restart demo.service: exit status 1; the delivery is applied, so restart demo.service by hand"
@@ -376,12 +379,12 @@ func TestApplyConfigRefusesInvalidAddressSettingsWithoutTheLayer(t *testing.T) {
 }
 func TestApplyConfigRecordsNodeCAWithoutRestarts(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindControlPlane, true)
-	p := s.Kubernetes.Paths
+	p := kubernetesPaths(s)
 	current, err := knode.ReadShare(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodeCA := testNodeCA(t)
+	nodeCA := kubernetestest.NodeCA(t)
 	next := current
 	next.NodeCA = &nodeCA
 	data, err := next.Encode()
@@ -399,7 +402,7 @@ func TestApplyConfigRecordsNodeCAWithoutRestarts(t *testing.T) {
 	}
 
 	// Any other change prepares the node's files again.
-	other := testShare(t, k8s.KindControlPlane)
+	other := kubernetestest.Share(t, k8s.KindControlPlane, "n1")
 	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, other)})); err != nil {
 		t.Fatal(err)
 	}
@@ -436,11 +439,11 @@ func TestApplyConfigNodeCAWithConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	withNodeCA := func() []byte {
-		current, err := knode.ReadShare(s.Kubernetes.Paths)
+		current, err := knode.ReadShare(kubernetesPaths(s))
 		if err != nil {
 			t.Fatal(err)
 		}
-		nodeCA := testNodeCA(t)
+		nodeCA := kubernetestest.NodeCA(t)
 		current.NodeCA = &nodeCA
 		data, err := current.Encode()
 		if err != nil {
@@ -472,7 +475,7 @@ func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
-	c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
+	c, err := k8s.ReadCluster(kubernetesPaths(s).Cluster)
 	if err != nil || c.Domain != "cluster.local" || c.Images.KubeProxy != "p" {
 		t.Fatalf("cluster = %+v, %v", c, err)
 	}
@@ -491,7 +494,7 @@ func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
 	if resp, err = sendConfig(s, withClusterSpec("{domain: lab.local}")); err != nil {
 		t.Fatal(err)
 	}
-	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); c.Domain != "lab.local" {
+	if c, _ := k8s.ReadCluster(kubernetesPaths(s).Cluster); c.Domain != "lab.local" {
 		t.Errorf("domain = %q", c.Domain)
 	}
 	if !slices.Contains(resp.RestartedUnits, "kubelet.service") || !slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
@@ -513,7 +516,7 @@ func TestApplyConfigNamesAFailedClusterRestart(t *testing.T) {
 	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "restart chalkos-kubernetes.service kubelet.service by hand once that is fixed, or deliver it again") {
 		t.Fatalf("err = %v, want the units named", err)
 	}
-	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); c.Domain != "lab.local" {
+	if c, _ := k8s.ReadCluster(kubernetesPaths(s).Cluster); c.Domain != "lab.local" {
 		t.Fatalf("domain = %q, want the cluster file written", c.Domain)
 	}
 	r.Rules, r.Calls = nil, nil
@@ -544,7 +547,7 @@ func TestApplyConfigRetriesAShareWhoseSlotFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	acted := loops(s)
-	share := testShare(t, k8s.KindWorker)
+	share := kubernetestest.Share(t, k8s.KindWorker, "n1")
 	send := func() (*nodev1.ApplyConfigResponse, error) {
 		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: workerConfig, Layers: shareLayers(t, share)}))
 		if err != nil {
@@ -588,7 +591,7 @@ func TestApplyConfigRetriesAShareWhoseRestartFailed(t *testing.T) {
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
-	share := testShare(t, k8s.KindWorker)
+	share := kubernetestest.Share(t, k8s.KindWorker, "n1")
 	send := func() (*nodev1.ApplyConfigResponse, error) {
 		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, share)}))
 		if err != nil {
@@ -681,7 +684,7 @@ func TestApplyConfigActsOnTheLoopsWhenTheNodeCertificateFails(t *testing.T) {
 	if _, err := send(); err == nil || !strings.Contains(err.Error(), "record the node certificate") {
 		t.Fatalf("err = %v, want the node certificate's failure", err)
 	}
-	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); c.Domain != "lab.local" {
+	if c, _ := k8s.ReadCluster(kubernetesPaths(s).Cluster); c.Domain != "lab.local" {
 		t.Fatalf("domain = %q, want the cluster file written", c.Domain)
 	}
 	if !slices.Equal(*acted, []string{"kubernetes:restart"}) {
@@ -718,7 +721,7 @@ func TestApplyConfigWritesTheGrantedConfigForAShareAfterAFailure(t *testing.T) {
 	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "write the config for the granted units") {
 		t.Fatalf("err = %v, want the granted units' config to fail", err)
 	}
-	share := testShare(t, k8s.KindWorker)
+	share := kubernetestest.Share(t, k8s.KindWorker, "n1")
 	send := func() (*nodev1.ApplyConfigResponse, error) {
 		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, share)}))
 		if err != nil {
@@ -769,7 +772,7 @@ func TestApplyConfigRestartsForAClusterFileThatDiffers(t *testing.T) {
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(s.Kubernetes.Paths.Cluster); err != nil {
+	if err := os.Remove(kubernetesPaths(s).Cluster); err != nil {
 		t.Fatal(err)
 	}
 	r.Calls = nil
@@ -795,7 +798,7 @@ func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
 			if _, err := sendConfig(s, workerConfig); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Remove(s.Kubernetes.Paths.Cluster); err != nil {
+			if err := os.Remove(kubernetesPaths(s).Cluster); err != nil {
 				t.Fatal(err)
 			}
 			r.Calls = nil
@@ -806,7 +809,7 @@ func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
 			if len(r.Calls) != 0 {
 				t.Errorf("ran %v", r.Calls)
 			}
-			if exists(s.Kubernetes.Paths.Cluster) {
+			if exists(kubernetesPaths(s).Cluster) {
 				t.Error("wrote the refused cluster")
 			}
 		})
@@ -827,14 +830,13 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 	}{
 		"a stored cluster":                 {true, true, nil, refused},
 		"no stored cluster":                {true, false, nil, refused},
-		"a share of the new type with it":  {true, true, testShare(t, k8s.KindControlPlane), refused},
+		"a share of the new type with it":  {true, true, kubernetestest.Share(t, k8s.KindControlPlane, "n1"), refused},
 		"no share":                         {false, true, nil, ""},
 		"the first config without a share": {false, false, nil, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, r := configServer(t)
-			addKubernetes(t, s, k8s.KindWorker, tc.share)
-			s.Kubernetes.clusterFile = s.Kubernetes.Paths.Cluster
+			addKubernetes(t, s, k8s.KindWorker, tc.share, readsWrittenCluster)
 			kubernetesImage(t, s)
 			if tc.stored {
 				if _, err := sendConfig(s, workerConfig); err != nil {
@@ -847,7 +849,7 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); err != nil || c.Kind != k8s.KindControlPlane {
+				if c, err := k8s.ReadCluster(kubernetesPaths(s).Cluster); err != nil || c.Kind != k8s.KindControlPlane {
 					t.Errorf("cluster = %+v, %v", c, err)
 				}
 				return
@@ -858,7 +860,7 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 			if len(r.Calls) != 0 {
 				t.Errorf("ran %v", r.Calls)
 			}
-			if c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); err != nil || c.Kind != k8s.KindWorker {
+			if c, err := k8s.ReadCluster(kubernetesPaths(s).Cluster); err != nil || c.Kind != k8s.KindWorker {
 				t.Errorf("cluster = %+v, %v; want the worker's kept", c, err)
 			}
 		})
@@ -893,9 +895,8 @@ func TestApplyConfigRefusesChangedRegistrationFields(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, r := configServer(t)
-			addKubernetes(t, s, k8s.KindWorker, tc.share)
-			s.Kubernetes.clusterFile = s.Kubernetes.Paths.Cluster
-			writeFacts(t, s)
+			addKubernetes(t, s, k8s.KindWorker, tc.share, readsWrittenCluster)
+			writeFacts(t, s, kubernetesPaths(s).Cluster)
 			kubernetesImage(t, s)
 			if tc.before != "" {
 				if _, err := sendConfig(s, tc.before); err != nil {
@@ -927,17 +928,6 @@ func TestApplyConfigRefusesChangedRegistrationFields(t *testing.T) {
 
 // A changed cluster starts a control plane's loop again once the one before ended.
 func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
-	s, _ := clusterServer(t, k8s.KindControlPlane)
-	k := s.Kubernetes
-	p := k.Paths
-	ips, err := knode.ReadNodeIPs(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := knode.WritePin(p, ips); err != nil {
-		t.Fatal(err)
-	}
-	write(t, p.Bootstrapped(), "")
 	var mu sync.Mutex
 	var events []string
 	record := func(e string) {
@@ -950,16 +940,27 @@ func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
 		defer mu.Unlock()
 		return slices.Clone(events)
 	}
-	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, applied func(int)) error {
-		record("start")
-		applied(1)
-		<-ctx.Done()
-		// A loop that takes a while to end must have ended before the next starts.
-		time.Sleep(50 * time.Millisecond)
-		record("end")
-		return ctx.Err()
+	s, _ := clusterServer(t, k8s.KindControlPlane, func(o *kubernetesplugin.Options) {
+		o.Hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, applied func(int)) error {
+			record("start")
+			applied(1)
+			<-ctx.Done()
+			// A loop that takes a while to end must have ended before the next starts.
+			time.Sleep(50 * time.Millisecond)
+			record("end")
+			return ctx.Err()
+		}
+	})
+	p := kubernetesPaths(s)
+	ips, err := knode.ReadNodeIPs(p)
+	if err != nil {
+		t.Fatal(err)
 	}
-	k.Start()
+	if err := knode.WritePin(p, ips); err != nil {
+		t.Fatal(err)
+	}
+	write(t, p.Bootstrapped(), "")
+	startKubernetes(t, s)
 	eventually(t, "the first loop", func() bool { return len(seen()) == 1 })
 
 	config := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
@@ -1003,9 +1004,40 @@ func TestApplyConfigComparesRangesCanonically(t *testing.T) {
 // A control plane applies the objects of changed Addon documents at once, without restarting
 // a unit, from the config stored by then.
 func TestApplyConfigAppliesChangedAddons(t *testing.T) {
-	s, r := clusterServer(t, k8s.KindControlPlane)
-	k := s.Kubernetes
-	p := k.Paths
+	applied := make(chan string, 10)
+	var s *Server
+	s, r := clusterServer(t, k8s.KindControlPlane, func(o *kubernetesplugin.Options) {
+		// The loop reports the last object it would apply: chalkos's add-ons, then the objects of
+		// the Addon documents stored by then.
+		o.Hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+			c, err := k8s.ReadCluster(kubernetesPaths(s).Cluster)
+			if err != nil {
+				return err
+			}
+			objects, err := addons.Render(c)
+			if err != nil {
+				return err
+			}
+			dir, err := s.Loader.Slot()
+			if err != nil {
+				return err
+			}
+			stored, _, err := slot.Read(dir)
+			if err != nil {
+				return err
+			}
+			extra, err := stored.Documents.AddonObjects()
+			if err != nil {
+				return err
+			}
+			objects = append(objects, extra...)
+			last, _ := objects[len(objects)-1]["metadata"].(map[string]any)
+			applied <- fmt.Sprint(last["name"])
+			<-ctx.Done()
+			return ctx.Err()
+		}
+	})
+	p := kubernetesPaths(s)
 	ips, err := knode.ReadNodeIPs(p)
 	if err != nil {
 		t.Fatal(err)
@@ -1014,23 +1046,6 @@ func TestApplyConfigAppliesChangedAddons(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, p.Bootstrapped(), "")
-	k.hooks.Slot = s.Loader.Slot
-	k.hooks.Objects = k.objects
-	applied := make(chan string, 10)
-	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
-		c, err := k8s.ReadCluster(p.Cluster)
-		if err != nil {
-			return err
-		}
-		objects, err := k.hooks.Objects(c)
-		if err != nil {
-			return err
-		}
-		last, _ := objects[len(objects)-1]["metadata"].(map[string]any)
-		applied <- fmt.Sprint(last["name"])
-		<-ctx.Done()
-		return ctx.Err()
-	}
 	config := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
 	if _, err := sendConfig(s, config); err != nil {
 		t.Fatal(err)
@@ -1114,7 +1129,7 @@ func TestApplyConfigRefusesPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	share := testShare(t, k8s.KindWorker)
+	share := kubernetestest.Share(t, k8s.KindWorker, "n1")
 	for name, tc := range map[string]struct {
 		layers []*anypb.Any
 		want   string

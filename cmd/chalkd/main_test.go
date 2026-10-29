@@ -241,7 +241,7 @@ func TestHealthArgs(t *testing.T) {
 // testRegistry is the registry of the compiled layers, bound to a server that serves nothing.
 func testRegistry(t *testing.T) *layer.Registry {
 	t.Helper()
-	reg, err := layer.NewRegistry(layers.Set{}, plugins(&chalkd.Server{Run: tool.ExecRunner{}}, nil, nil)...)
+	reg, err := layer.NewRegistry(layers.Set{}, plugins(&chalkd.Server{Run: tool.ExecRunner{}})...)
 	if err != nil {
 		t.Fatal(err)
 	}

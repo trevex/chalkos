@@ -1287,5 +1287,5 @@ The state of a router's resolver.
 
 Sources: `api/chalkos/node/v1/node.proto`, `api/chalkos/kubernetes/v1/kubernetes.proto` and
 `api/chalkos/router/v1/router.proto`, rendered by protoc-gen-doc with `api/markdown.tmpl`. The
-modes and roles the methods name are those of the permissions in `pkg/chalkd/server.go` and in
-each layer's plugin.
+modes and roles the methods name are those of the permissions in `pkg/chalkd/server.go` and of
+each layer's plugin in `pkg/chalkd/layers`.

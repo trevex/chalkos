@@ -11,6 +11,7 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 )
 
 func TestContract(t *testing.T) {
@@ -30,7 +31,7 @@ func TestContract(t *testing.T) {
 		t.Fatalf("layer facts = %v, %v; want the image.json", resp.Msg.GetLayerFacts(), err)
 	}
 	var facts kubernetesv1.ImageFacts
-	if err := resp.Msg.LayerFacts[0].UnmarshalTo(&facts); err != nil || string(facts.ImageJson) != testImage {
+	if err := resp.Msg.LayerFacts[0].UnmarshalTo(&facts); err != nil || string(facts.ImageJson) != kubernetestest.Image {
 		t.Errorf("image.json = %q, %v", facts.ImageJson, err)
 	}
 	s.Loader.Schemas = filepath.Join(t.TempDir(), "missing")

@@ -25,7 +25,8 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -45,7 +46,7 @@ var installConfig = strings.Replace(baseConfig, "spec: {disk: {path: /dev/vda}}"
 // CA's, as chalkctl issues it into an install header.
 func nodeChain(t *testing.T, name string) []byte {
 	t.Helper()
-	nodeCA := testNodeCA(t)
+	nodeCA := kubernetestest.NodeCA(t)
 	cert, err := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +162,7 @@ func TestInstallTakesTheNodesNameFromTheHeadersCertificate(t *testing.T) {
 // by the node CA's, which pki.IssueNode does not issue.
 func unnamedChain(t *testing.T) []byte {
 	t.Helper()
-	nodeCA := testNodeCA(t)
+	nodeCA := kubernetestest.NodeCA(t)
 	caCert, caKey, err := nodeCA.Parse()
 	if err != nil {
 		t.Fatal(err)
@@ -297,35 +298,19 @@ func TestInstallFailureCanBeRepeated(t *testing.T) {
 	}
 }
 
-// testImage is the image.json of a Kubernetes image without flannel.
-const testImage = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",
-  "kubeControllerManager": "c", "kubeScheduler": "s", "kubeProxy": "p", "coredns": "d", "flannel": ""}}`
-
 // kubernetesImage gives s's running image Kubernetes: its image.json, which the Kubernetes
-// layer reads. A node without a Kubernetes side, as in maintenance mode, gets the layer with one
-// of its own, whose files are in a directory of the test.
+// layer reads. A node whose layer has chalkd's own paths, as one without the layer has, gets the
+// layer with files in a directory of the test.
 func kubernetesImage(t *testing.T, s *Server) {
 	t.Helper()
-	if s.Kubernetes != nil {
-		write(t, s.Kubernetes.imageFile, testImage)
-		return
+	if kubernetesPaths(s) == knode.DefaultPaths() {
+		root := t.TempDir()
+		paths := kubernetestest.Paths(root, root)
+		k := kubernetesplugin.New(s, kubernetesplugin.Options{Paths: paths, ImageFile: kubernetestest.ImageFile(paths), ClusterFile: paths.Cluster})
+		withPlugins(t, s, layers.Of(layers.Kubernetes), k)
+		s.Loader.Layers = []nodeconfig.Layer{k}
 	}
-	root := t.TempDir()
-	k := NewKubernetes(KubernetesOptions{
-		Paths: knode.Paths{
-			State: filepath.Join(root, "state"), Cluster: filepath.Join(root, "cluster.json"), NodeFile: filepath.Join(root, "node.json"),
-			Run: filepath.Join(root, "run"), PKI: filepath.Join(root, "pki"), KubeletPKI: filepath.Join(root, "kubelet"), EtcdData: filepath.Join(root, "etcd"),
-		},
-		ImageFile:   filepath.Join(root, "image.json"),
-		ClusterFile: filepath.Join(root, "cluster.json"),
-	})
-	write(t, k.imageFile, testImage)
-	reg, err := layer.NewRegistry(layers.Of(layers.Kubernetes), NewKubernetesLayer(s, k), NewRouterLayer(&Router{Run: s.Run}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.Plugins = reg
-	s.Loader.Layers = []nodeconfig.Layer{kubernetesOf(s)}
+	write(t, imageFileOf(s), kubernetestest.Image)
 }
 
 // workerConfig is baseConfig for a Kubernetes worker with a fixed address.
@@ -390,9 +375,9 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Config = workerConfig
 	contractOf(h).Schemas = fixtureSchemas(t)
-	contractOf(h).LayerFacts = factsLayers(t, testImage)
+	contractOf(h).LayerFacts = factsLayers(t, kubernetestest.Image)
 	// The installer carries no layer: the compiled Kubernetes layer takes the share.
-	share := testShare(t, k8s.KindWorker)
+	share := kubernetestest.Share(t, k8s.KindWorker, "n1")
 	h.Layers = shareLayers(t, share)
 	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64"}
 
@@ -451,7 +436,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 		}, "image.json"},
 		"from the installer with a schema outside schemas/": {true, func(h *nodev1.InstallHeader) {
 			fromInstaller(h)
-			contractOf(h).LayerFacts = factsLayers(t, testImage)
+			contractOf(h).LayerFacts = factsLayers(t, kubernetestest.Image)
 			contractOf(h).Schemas = map[string][]byte{"../x.json": []byte("{}")}
 		}, `"../x.json" is not the name of a schema file`},
 	} {

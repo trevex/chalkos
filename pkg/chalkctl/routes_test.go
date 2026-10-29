@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/trevex/chalkos/pkg/chalkd"
+	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/router"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -46,7 +47,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 			}
 		}
 	}
-	withPlugins(t, s, layers.Of(layers.Router), &chalkd.Router{Run: r, ResolverConfig: conf, NAT64Dir: nat64, KernelRoutes: func() ([]*router.KernelRoute, error) {
+	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{ResolverConfig: conf, NAT64Dir: nat64, KernelRoutes: func() ([]*router.KernelRoute, error) {
 		hops := func() []*router.NextHop {
 			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
@@ -56,7 +57,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 			{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254, Metric: 1024},
 			{Destination: "2001:db8:ffff::1/128", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20, NextHops: hops()},
 		}, nil
-	}})
+	}}))
 	return ta.startNode(t, s)
 }
 
@@ -154,3 +155,11 @@ func TestStatusRouterNAT64AndResolverDown(t *testing.T) {
 		}
 	}
 }
+
+// runsWith is the node of s, whose programs r runs.
+type runsWith struct {
+	*chalkd.Server
+	r tool.Runner
+}
+
+func (n runsWith) Runner() tool.Runner { return n.r }

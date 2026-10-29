@@ -2,7 +2,6 @@ package chalkd
 
 import (
 	"context"
-	"crypto/x509"
 	"errors"
 	"net/http"
 	"os"
@@ -90,8 +89,8 @@ func TestStatusCertificatesOfAWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := share.Encode()
-	write(t, s.Kubernetes.Paths.Share(), string(data))
-	if err := os.Remove(s.Kubernetes.Paths.KubeletClient()); err != nil {
+	write(t, kubernetesPaths(s).Share(), string(data))
+	if err := os.Remove(kubernetesPaths(s).KubeletClient()); err != nil {
 		t.Fatal(err)
 	}
 	var kubelet *nodev1.CertificateStatus
@@ -122,29 +121,6 @@ func TestStatusNamesTheNodeToRenew(t *testing.T) {
 	want := "less than a third of its lifetime remains; renew it with chalkctl node renew n1"
 	if got := s.certificates(time.Now().Add(pki.LeafValidity * 3 / 4))[0]; got.Name != "node" || got.Problem != want {
 		t.Errorf("%s: problem %q, want %q", got.Name, got.Problem, want)
-	}
-}
-
-func TestCertificateProblems(t *testing.T) {
-	now := time.Now()
-	cert := func(from, until time.Duration) *x509.Certificate {
-		return &x509.Certificate{NotBefore: now.Add(from), NotAfter: now.Add(until)}
-	}
-	for _, tc := range []struct {
-		name string
-		got  string
-		want string
-	}{
-		{"leaf early", layer.LeafProblem(cert(-time.Hour, 300*24*time.Hour), now), ""},
-		{"leaf in its last third", layer.LeafProblem(cert(-250*24*time.Hour, 100*24*time.Hour), now), "less than a third of its lifetime remains"},
-		{"leaf expired", layer.LeafProblem(cert(-400*24*time.Hour, -time.Hour), now), "expired"},
-		{"CA with years left", layer.CAProblem(cert(0, 2*layer.CAWarning), now, layer.CAWarning), ""},
-		{"CA within its warning", layer.CAProblem(cert(0, layer.CAWarning-time.Hour), now, layer.CAWarning), "expires " + now.Add(layer.CAWarning-time.Hour).UTC().Format(time.DateOnly)},
-		{"node CA within 18 months", layer.CAProblem(cert(0, 500*24*time.Hour), now, layer.NodeCAWarning), "expires " + now.Add(500*24*time.Hour).UTC().Format(time.DateOnly)},
-	} {
-		if tc.got != tc.want {
-			t.Errorf("%s: %q, want %q", tc.name, tc.got, tc.want)
-		}
 	}
 }
 
@@ -208,7 +184,7 @@ func TestStatusKubeletCertificatesWarnLate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		write(t, s.Kubernetes.Paths.KubeletClient(), ck.Certificate+ck.Key)
+		write(t, kubernetesPaths(s).KubeletClient(), ck.Certificate+ck.Key)
 		if got := kubeletStatus(t, s).Problem; (got != "") != tc.warn {
 			t.Errorf("issued %v ago: problem %q, want a warning %v", -tc.issued, got, tc.warn)
 		}
@@ -240,7 +216,7 @@ func TestStatusNamesTheOSCA(t *testing.T) {
 // A share chalkd cannot read leaves the Kubernetes certificates unknown, which status says.
 func TestStatusReportsAnUnreadableShare(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	write(t, s.Kubernetes.Paths.Share(), "not a share")
+	write(t, kubernetesPaths(s).Share(), "not a share")
 	var found bool
 	for _, c := range status(t, s).Certificates {
 		if strings.Contains(c.Problem, "share") {

@@ -27,6 +27,8 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal/renewaltest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -37,10 +39,13 @@ import (
 )
 
 // controlPlaneOf is a control-plane node whose share holds the node CA of c, in a cluster that
-// revoked no node.
-func controlPlaneOf(t *testing.T, c creds) *Server {
+// revoked no node unless adjust says otherwise.
+func controlPlaneOf(t *testing.T, c creds, adjust ...func(*kubernetesplugin.Options)) *Server {
 	t.Helper()
-	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	noneRevoked := func(o *kubernetesplugin.Options) {
+		o.RevokedNodes = func(context.Context) (revoked.List, error) { return revoked.List{}, nil }
+	}
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true, append([]func(*kubernetesplugin.Options){noneRevoked}, adjust...)...)
 	k, err := clustersecrets.NewKubernetesSecrets(time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -49,8 +54,7 @@ func controlPlaneOf(t *testing.T, c creds) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, s.Kubernetes.Paths.Share(), string(data))
-	s.Kubernetes.revokedNodesHook = func(context.Context) (revoked.List, error) { return revoked.List{}, nil }
+	write(t, kubernetesPaths(s).Share(), string(data))
 	return s
 }
 
@@ -177,12 +181,13 @@ func renewAs(t *testing.T, c creds, addr, name string) error {
 // every certificate while the revoked nodes cannot be read.
 func TestRenewNodeCertificateOfRevokedNode(t *testing.T) {
 	c := newCreds(t)
-	s := controlPlaneOf(t, c)
 	revokedAt := time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC)
 	var loadErr error
-	s.Kubernetes.revokedNodesHook = func(context.Context) (revoked.List, error) {
-		return revoked.List{"w1": revokedAt, "w3": {}}, loadErr
-	}
+	s := controlPlaneOf(t, c, func(o *kubernetesplugin.Options) {
+		o.RevokedNodes = func(context.Context) (revoked.List, error) {
+			return revoked.List{"w1": revokedAt, "w3": {}}, loadErr
+		}
+	})
 	addr := serve(t, s, c, c.pool)
 	for name, want := range map[string]string{
 		"w1": "node w1 is revoked since 2026-10-23T08:00:00Z; chalkctl node unrevoke w1 lets it renew again",
@@ -205,11 +210,12 @@ func TestRenewNodeCertificateOfRevokedNode(t *testing.T) {
 // own API server, where RevokeNode lists them.
 func TestRenewNodeCertificateReadsRevokedNodes(t *testing.T) {
 	c := newCreds(t)
-	s := controlPlaneOf(t, c)
-	s.Kubernetes.revokedNodesHook = nil
-	write(t, s.Kubernetes.Paths.Bootstrapped(), "")
 	cs := fake.NewClientset()
-	s.Kubernetes.hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return cs, nil }
+	s := controlPlaneOf(t, c, func(o *kubernetesplugin.Options) {
+		o.RevokedNodes = nil
+		o.Hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return cs, nil }
+	})
+	write(t, kubernetesPaths(s).Bootstrapped(), "")
 	if _, err := kubernetesOf(s).RevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: "w1"})); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +227,7 @@ func TestRenewNodeCertificateReadsRevokedNodes(t *testing.T) {
 		t.Errorf("renewing w2: %v", err)
 	}
 	// Without its node file, the node cannot reach its API server; the refusal keeps its own code.
-	if err := os.Remove(s.Kubernetes.Paths.NodeFile); err != nil {
+	if err := os.Remove(kubernetesPaths(s).NodeFile); err != nil {
 		t.Fatal(err)
 	}
 	err := renewAs(t, c, addr, "w2")
@@ -234,14 +240,15 @@ func TestRenewNodeCertificateReadsRevokedNodes(t *testing.T) {
 // it is revoked, as one removed from etcd without leaving it would be.
 func TestIssueNodeCertificateOfRevokedControlPlane(t *testing.T) {
 	c := newCreds(t)
-	s := controlPlaneOf(t, c)
+	var loadErr error
+	s := controlPlaneOf(t, c, func(o *kubernetesplugin.Options) {
+		o.RevokedNodes = func(context.Context) (revoked.List, error) { return revoked.List{"n1": time.Now()}, loadErr }
+	})
 	issued, err := pki.IssueNode(c.nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now().Add(-30*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.Certificate = loadedCertificate(t, c, issued)
-	var loadErr error
-	s.Kubernetes.revokedNodesHook = func(context.Context) (revoked.List, error) { return revoked.List{"n1": time.Now()}, loadErr }
 	r := NewNodeRenewal(s.Certificate, kubernetesOf(s).IssueNodeCertificate)
 	before := s.Certificate.Fingerprint()
 	if err := r.Renew(context.Background(), time.Now()); connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "node n1 is revoked") {
@@ -279,7 +286,7 @@ func TestWorkerRenewsThroughControlPlane(t *testing.T) {
 	w1 := loadedCertificate(t, c, issued)
 	before := w1.Fingerprint()
 	r := NewNodeRenewal(w1, func(ctx context.Context, request []byte) (string, error) {
-		return RenewThrough(ctx, w1, addr, request)
+		return kubernetesplugin.RenewThrough(ctx, w1, addr, request)
 	})
 	if err := r.Renew(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
@@ -292,7 +299,7 @@ func TestWorkerRenewsThroughControlPlane(t *testing.T) {
 	maintenanceNode, _ := newTestServer(t, maintenance, vda)
 	maintenanceAddr := serve(t, maintenanceNode, c, nil)
 	request, _ := certificateRequest(t, "w1")
-	if _, err := RenewThrough(context.Background(), w1, maintenanceAddr, request); err == nil {
+	if _, err := kubernetesplugin.RenewThrough(context.Background(), w1, maintenanceAddr, request); err == nil {
 		t.Error("asked a peer without a node certificate")
 	}
 }
@@ -495,7 +502,7 @@ func TestRenewalAttemptsEndAtTheirDeadline(t *testing.T) {
 	}
 	w1 := loadedCertificate(t, c, issued)
 	r := NewNodeRenewal(w1, func(ctx context.Context, request []byte) (string, error) {
-		return RenewThrough(ctx, w1, addr, request)
+		return kubernetesplugin.RenewThrough(ctx, w1, addr, request)
 	})
 	r.Timeout = time.Second
 	clock := renewaltest.NewClock(time.Now())
@@ -537,11 +544,11 @@ func TestRenewalAttemptsEndAtTheirDeadline(t *testing.T) {
 // certificates after ApplyConfig too.
 func TestRenewOnApplyConfigRenewsTheControlPlane(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	if _, err := bootstrap(s, context.Background()); err != nil {
+	if _, err := kubernetestest.Bootstrap(context.Background(), kubernetesOf(s)); err != nil {
 		t.Fatal(err)
 	}
 	s.RenewOnApplyConfig = true
-	apiServer := filepath.Join(s.Kubernetes.Paths.PKI, kpki.FileAPIServer)
+	apiServer := filepath.Join(kubernetesPaths(s).PKI, kpki.FileAPIServer)
 	before, err := os.ReadFile(apiServer)
 	if err != nil {
 		t.Fatal(err)
@@ -554,68 +561,6 @@ func TestRenewOnApplyConfigRenewsTheControlPlane(t *testing.T) {
 		after, _ := os.ReadFile(apiServer)
 		return len(after) > 0 && string(after) != string(before)
 	})
-}
-
-// After a reboot chalkd's loops start before the preparation wrote the control plane's
-// certificates: the renewal waits for them and issues none of its own.
-func TestControlPlaneRenewalWaitsForThePreparation(t *testing.T) {
-	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	withNodeCertificate(t, s)
-	p := s.Kubernetes.Paths
-	// RUN is empty after a reboot.
-	if err := os.RemoveAll(p.Run); err != nil {
-		t.Fatal(err)
-	}
-	r := s.Kubernetes.controlPlaneRenewal()
-	renew := r.Renew
-	renewals := 0
-	r.Renew = func(ctx context.Context, now time.Time) error {
-		renewals++
-		return renew(ctx, now)
-	}
-	s.Kubernetes.leaves = r
-	start := time.Now()
-	clock := renewaltest.NewClock(start)
-	r.Now = clock.Now
-	r.After = clock.After
-	advance := renewaltest.Run(t, r.Run, clock)
-	now := start
-	for range 3 {
-		now = now.Add(advance(now))
-		if r.Problem() != "" {
-			t.Errorf("problem before the preparation = %q", r.Problem())
-		}
-		for _, c := range status(t, s).Certificates {
-			if strings.Contains(c.Problem, "renewal failing") {
-				t.Errorf("status %s: %s", c.Name, c.Problem)
-			}
-		}
-	}
-	if exists(p.PKI) {
-		t.Error("the renewal wrote the control plane's certificates before the preparation")
-	}
-	// The certificates the preparation writes are new: none are renewed, so no static pod
-	// starts again.
-	if err := knode.Prepare(p, now, nodeIP("192.168.100.11"), nil); err != nil {
-		t.Fatal(err)
-	}
-	apiServer := filepath.Join(p.PKI, kpki.FileAPIServer)
-	prepared, err := os.ReadFile(apiServer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range 2 {
-		now = now.Add(advance(now))
-	}
-	if renewals != 0 {
-		t.Errorf("renewed %d times after the preparation", renewals)
-	}
-	if after, _ := os.ReadFile(apiServer); string(after) != string(prepared) {
-		t.Error("the certificates the preparation wrote were issued again")
-	}
-	if r.Problem() != "" {
-		t.Errorf("problem after the preparation = %q", r.Problem())
-	}
 }
 
 // A certificate delivered while a renewal runs, as by chalkctl node renew, stays: the renewal
@@ -659,7 +604,7 @@ func TestRenewalKeepsACertificateDeliveredMeanwhile(t *testing.T) {
 func TestRenewNodeCertificateRefusedOnceLeft(t *testing.T) {
 	c := newCreds(t)
 	s := controlPlaneOf(t, c)
-	if err := knode.MarkLeft(s.Kubernetes.Paths, time.Now()); err != nil {
+	if err := knode.MarkLeft(kubernetesPaths(s), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	addr := serve(t, s, c, c.pool)
@@ -668,4 +613,14 @@ func TestRenewNodeCertificateRefusedOnceLeft(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
 		t.Errorf("%v, want a refusal naming that the node left etcd", err)
 	}
+}
+
+// signRequest issues a node certificate of nodeCA for the key of a PKCS #10 request, for the
+// names given, as a control plane does.
+func signRequest(nodeCA pki.CertKey, names pki.NodeNames, request []byte, now time.Time) (string, error) {
+	csr, err := x509.ParseCertificateRequest(request)
+	if err != nil {
+		return "", err
+	}
+	return pki.SignNode(nodeCA, names, csr.PublicKey.(*ecdsa.PublicKey), now)
 }

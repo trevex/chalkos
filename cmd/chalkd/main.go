@@ -65,7 +65,7 @@ func main() {
 	log.SetPrefix("chalkd: ")
 	// Subcommands need no server: the plugins are bound to one that serves nothing.
 	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
-	reg, err := layer.NewRegistry(layers.Set{}, plugins(node, nil, nil)...)
+	reg, err := layer.NewRegistry(layers.Set{}, plugins(node)...)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func parseHealthArgs(args []string) (healthArgs, error) {
 func loadConfig() error {
 	// Only the layers' config is asked for, so the server they are bound to serves nothing.
 	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
-	reg, err := registry(node, nil, nil)
+	reg, err := registry(node)
 	if err != nil {
 		return err
 	}
@@ -192,7 +192,7 @@ func health(args []string) error {
 	}
 	// Only the layers' hooks are asked, so the server they are bound to serves nothing.
 	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
-	reg, err := registry(node, nil, nil)
+	reg, err := registry(node)
 	if err != nil {
 		return err
 	}
@@ -359,11 +359,7 @@ func serve() error {
 	}
 
 	srv.RenewOnApplyConfig = renewOnApplyConfig(os.Getenv)
-	// Images with Kubernetes carry its facts; the cluster comes from the node's config. Router
-	// images read FRR's state with vtysh and the kernel's routes through netlink.
-	k := chalkd.NewKubernetes(chalkd.KubernetesOptions{})
-	router := &chalkd.Router{Run: srv.Run}
-	if srv.Plugins, err = registry(srv, k, router); err != nil {
+	if srv.Plugins, err = registry(srv); err != nil {
 		return err
 	}
 	srv.Loader.Layers = layer.Active[nodeconfig.Layer](srv.Plugins)
@@ -393,9 +389,6 @@ func serve() error {
 				}
 			})
 		}
-	}
-	if srv.Plugins.Layers().Has(layers.Kubernetes) && creds.mode == nodev1.Mode_MODE_NORMAL {
-		srv.Kubernetes = k
 	}
 	// The issuer of the image's layer renews the node certificate; a node without one is renewed
 	// with chalkctl node renew.

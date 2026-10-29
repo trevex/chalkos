@@ -21,6 +21,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -107,12 +108,12 @@ func TestInstallSendsShareOfTheNodeKind(t *testing.T) {
 // ready.
 func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 	t.Helper()
-	return kubernetesNodeWith(t, ta, chalkd.KubernetesOptions{})
+	return kubernetesNodeWith(t, ta, kubernetesplugin.Options{})
 }
 
 // kubernetesNodeWith is kubernetesNode with the Kubernetes side o sets up. The paths and the
 // hooks o leaves nil are kubernetesNode's.
-func kubernetesNodeWith(t *testing.T, ta *testApp, o chalkd.KubernetesOptions) (*chalkd.Server, *fakeRunner) {
+func kubernetesNodeWith(t *testing.T, ta *testApp, o kubernetesplugin.Options) (*chalkd.Server, *fakeRunner) {
 	t.Helper()
 	current, _ := json.Marshal(ta.identity(t))
 	s, r := installedNode(t, ta, current)
@@ -138,19 +139,19 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o chalkd.KubernetesOptions) (
 	}
 	o.ImageFile = imageJSON(t)
 	o.ClusterFile = o.Paths.Cluster
-	s.Kubernetes = chalkd.NewKubernetes(o)
-	withPlugins(t, s, layers.Of(layers.Kubernetes), nil)
+	k := kubernetesplugin.New(s, o)
+	withPlugins(t, s, layers.Of(layers.Kubernetes), k)
 	writeEffects(t, s)
 	// The loops a test started would run on against its removed files until the test binary ends.
-	t.Cleanup(s.Kubernetes.Stop)
+	t.Cleanup(k.Stop)
 	// The loader has the Kubernetes layer write the cluster file.
 	s.Loader.Layers = layer.Active[nodeconfig.Layer](s.Plugins)
 	// The cluster file chalkd writes from the node's config.
-	writeFile(t, s.Kubernetes.Paths.Cluster, clusterFile("worker"))
+	writeFile(t, kubernetesPaths(s).Cluster, clusterFile("worker"))
 	// The facts the kubelet's restart rules read, as the image declares them.
 	writeFile(t, s.Paths.Facts, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"},
-	  "share": {"file": "`+s.Kubernetes.Paths.Share()+`", "fields": ["kind"], "hashOthers": true},
-	  "cluster": {"file": "`+s.Kubernetes.Paths.Cluster+`"}}`)
+	  "share": {"file": "`+kubernetesPaths(s).Share()+`", "fields": ["kind"], "hashOthers": true},
+	  "cluster": {"file": "`+kubernetesPaths(s).Cluster+`"}}`)
 	return s, r
 }
 
@@ -163,7 +164,7 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1", "--kubernetes-share"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(s.Kubernetes.Paths.Share())
+	data, err := os.ReadFile(kubernetesPaths(s).Share())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,8 +325,8 @@ func TestStatusShowsKubernetes(t *testing.T) {
 	}
 	ta.stdout.Reset()
 	// The address the node's preparation picks once it has a share, and its marker.
-	writeFile(t, s.Kubernetes.Paths.NodeIP(), "10.0.0.11\n")
-	writeFile(t, s.Kubernetes.Paths.Prepared(), "")
+	writeFile(t, kubernetesPaths(s).NodeIP(), "10.0.0.11\n")
+	writeFile(t, kubernetesPaths(s).Prepared(), "")
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
