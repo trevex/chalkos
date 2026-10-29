@@ -22,6 +22,7 @@ import (
 	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
@@ -276,7 +277,7 @@ func (n fakeKubernetes) RotationStep(ctx context.Context, req *connect.Request[k
 
 func fingerprint(t *testing.T, certificate string) string {
 	t.Helper()
-	fp, err := fingerprintOf(certificate)
+	fp, err := layer.FingerprintOf(certificate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +504,7 @@ func TestRotateOSCA(t *testing.T) {
 	both, _ := pki.Fingerprints(s.OSCABundle())
 	nodeCA := fingerprint(t, s.NodeCA.Certificate)
 	for name, n := range l.nodes {
-		if fps, _ := pki.Fingerprints(n.cert.OSCA()); !sameFingerprints(fps, both) || len(fps) != 2 {
+		if fps, _ := pki.Fingerprints(n.cert.OSCA()); !slices.Equal(slices.Sorted(slices.Values(fps)), slices.Sorted(slices.Values(both))) || len(fps) != 2 {
 			t.Errorf("%s trusts %d OS CAs, want both", name, len(fps))
 		}
 		if chain := n.cert.Current().TLS.Certificate; fingerprintDER(chain[1]) != nodeCA {

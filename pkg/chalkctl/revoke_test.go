@@ -19,6 +19,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	kuberneteslayer "github.com/trevex/chalkos/pkg/chalkctl/layers/kubernetes"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/internal/cli"
@@ -106,7 +107,8 @@ func TestNodeUnrevoke(t *testing.T) {
 	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w2", "--via", "n1", "--force"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	want := "unrevoked node w2; its certificates from before " + future.Format(time.RFC3339) + " work again until they expire: the os-ca and kubernetes-ca were not rotated since\n" + reregister("w2") + "\n"
+	want := "unrevoked node w2; its certificates from before " + future.Format(time.RFC3339) + " work again until they expire: the os-ca and kubernetes-ca were not rotated since\nthe old w2's kubelet does not register its Node again by itself: reboot it with chalkctl reboot w2, " +
+		"or restart its kubelet; a node installed afresh as w2 registers as usual\n"
 	if got := ta.stdout.String(); got != want {
 		t.Errorf("forced: stdout = %q, want %q", got, want)
 	}
@@ -117,23 +119,6 @@ func TestNodeUnrevoke(t *testing.T) {
 	err = ta.run(ctx, ta.args([]string{"node", "unrevoke", "w1", "--via", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "node w1 is not revoked") {
 		t.Errorf("unrevoking w1 again: %v", err)
-	}
-}
-
-func TestUnrevokedLine(t *testing.T) {
-	at := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
-	for _, tc := range []struct {
-		at    time.Time
-		stale []string
-		want  string
-	}{
-		{at, nil, "unrevoked node w1; the certificates it held before 2026-10-23T12:00:00Z are no longer trusted"},
-		{at, []string{"os-ca"}, "unrevoked node w1; its certificates from before 2026-10-23T12:00:00Z work again until they expire: the os-ca was not rotated since\n" + reregister("w1")},
-		{time.Time{}, []string{"os-ca", "kubernetes-ca"}, "unrevoked node w1; its certificates from before its revocation, at an unknown time, work again until they expire: the os-ca and kubernetes-ca were not rotated since\n" + reregister("w1")},
-	} {
-		if got := unrevokedLine("w1", tc.at, tc.stale); got != tc.want {
-			t.Errorf("unrevokedLine(%v, %v) = %q, want %q", tc.at, tc.stale, got, tc.want)
-		}
 	}
 }
 
@@ -243,19 +228,6 @@ func TestNodeRevokeRefusesAControlPlane(t *testing.T) {
 	}
 }
 
-func TestEtcdMemberRefusal(t *testing.T) {
-	members := []*kubernetesv1.EtcdMember{{Name: "cp1"}, {Name: "cp2", Learner: true}, {}}
-	for name, want := range map[string]bool{"cp1": true, "cp2": true, "w1": false, "": false} {
-		err := etcdMemberRefusal(name, members)
-		if (err != nil) != want {
-			t.Errorf("%q: %v, want refused %v", name, err, want)
-		}
-		if err != nil && (!strings.Contains(err.Error(), "chalkctl etcd remove-member "+name) || !strings.Contains(err.Error(), "chalkctl rotate os-ca")) {
-			t.Errorf("%q: %v, want the remedy named", name, err)
-		}
-	}
-}
-
 // A cluster without control planes keeps no revoked nodes.
 func TestNodeRevokeWithoutControlPlanes(t *testing.T) {
 	ta := newTestApp(t)
@@ -265,12 +237,6 @@ func TestNodeRevokeWithoutControlPlanes(t *testing.T) {
 			t.Errorf("node %s: %v", cmd, err)
 		}
 	}
-}
-
-// reregister is the line that tells how the old node registers its Node again.
-func reregister(name string) string {
-	return "the old " + name + "'s kubelet does not register its Node again by itself: reboot it with chalkctl reboot " + name +
-		", or restart its kubelet; a node installed afresh as " + name + " registers as usual"
 }
 
 // node revoke refuses while a control plane may renew the node's certificate unaware of the
@@ -297,52 +263,6 @@ func TestNodeRevokeRefusesUnlessEveryControlPlaneReads(t *testing.T) {
 	}
 	if list, _ := revoked.Load(ctx, cs); len(list) != 1 {
 		t.Errorf("revoked nodes %v, want w1", list)
-	}
-}
-
-func TestEveryControlPlaneReadsRevoked(t *testing.T) {
-	statuses := map[string]*kubernetesv1.StatusResponse{
-		"read":     {State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, RevokedNodesRead: true},
-		"old":      {State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED},
-		"unread":   {State: "etcd data missing: restore etcd", Phase: kubernetesv1.Phase_PHASE_ETCD_DATA_MISSING, RevokedNodesError: "read the revoked nodes: connection refused"},
-		"waiting":  {State: "waiting for bootstrap", Phase: kubernetesv1.Phase_PHASE_WAITING},
-		"left":     {State: "left etcd: reinstall the node", Phase: kubernetesv1.Phase_PHASE_LEFT},
-		"no share": {State: "no share", Phase: kubernetesv1.Phase_PHASE_PREPARING},
-	}
-	status := func(_ context.Context, name string) (*kubernetesv1.StatusResponse, error) {
-		if st, ok := statuses[name]; ok {
-			return st, nil
-		}
-		if name == "router" {
-			// As callNode returns it, with the node's name.
-			return nil, nodeError(errNoKubernetes, name)
-		}
-		return nil, errors.New("connection refused")
-	}
-	for _, tc := range []struct {
-		controlPlanes []string
-		want          []string
-	}{
-		{[]string{"read", "waiting", "left", "no share", "router"}, nil},
-		{[]string{"read", "old"}, []string{"old: its chalkd predates node revocation and renews w1's node certificate until it is upgraded"}},
-		{[]string{"unread", "down"}, []string{"unread: cannot read the revoked nodes: read the revoked nodes: connection refused", "down: connection refused"}},
-	} {
-		err := everyControlPlaneReads(context.Background(), tc.controlPlanes, "w1", status)
-		if tc.want == nil {
-			if err != nil {
-				t.Errorf("%v: %v", tc.controlPlanes, err)
-			}
-			continue
-		}
-		if err == nil || !strings.Contains(err.Error(), "pass --force to revoke w1 anyway") {
-			t.Errorf("%v: %v, want a refusal", tc.controlPlanes, err)
-			continue
-		}
-		for _, w := range tc.want {
-			if !strings.Contains(err.Error(), w) {
-				t.Errorf("%v: %v, want %q", tc.controlPlanes, err, w)
-			}
-		}
 	}
 }
 
@@ -415,7 +335,7 @@ func TestRevokedNodesOfWithoutTheKubernetesLayer(t *testing.T) {
 		case "down":
 			return nil, errors.New("connection refused")
 		}
-		return nil, nodeError(errNoKubernetes, name)
+		return nil, nodeError(kuberneteslayer.ErrNoKubernetes, name)
 	}
 	if list, err := revokedNodesOf(context.Background(), []string{"router"}, status); err != nil || len(list) != 0 {
 		t.Errorf("without the layer: %v, %v; want no revoked node", list, err)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -75,7 +76,7 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 		}
 	}
 	if len(failed) > 0 {
-		return errors.New("the config of " + count(len(failed), "node") + " is invalid:\n" + strings.Join(failed, "\n"))
+		return errors.New("the config of " + layer.Count(len(failed), "node") + " is invalid:\n" + strings.Join(failed, "\n"))
 	}
 	return nil
 }

@@ -19,6 +19,8 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	kuberneteslayer "github.com/trevex/chalkos/pkg/chalkctl/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -397,7 +399,7 @@ func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoRespon
 			return err
 		}
 		if slices.Contains(i.Msg.Layers, layers.Kubernetes) {
-			if k, err = kubernetesStatus(ctx, conn); err != nil {
+			if k, err = kuberneteslayer.Status(ctx, conn); err != nil {
 				return err
 			}
 		}
@@ -437,9 +439,9 @@ func (r *upgradeRun) run(ctx context.Context) error {
 	}
 	names := strings.Join(slices.Sorted(maps.Keys(images)), ", ")
 	if r.noReboot {
-		r.say("installed %s on %s; it boots with their next reboot", names, count(len(r.nodes), "node"))
+		r.say("installed %s on %s; it boots with their next reboot", names, layer.Count(len(r.nodes), "node"))
 	} else {
-		r.say("upgraded %s to %s", count(len(r.nodes), "node"), names)
+		r.say("upgraded %s to %s", layer.Count(len(r.nodes), "node"), names)
 	}
 	return nil
 }
@@ -627,14 +629,14 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 	image, target := n.image.name(), n.image.header.RootHash
 	var fellBack error
-	err := waitFor(ctx, "", r.timeout, r.poll, func() error {
+	err := layer.WaitFor(ctx, "", r.timeout, r.poll, func() error {
 		_, st, k, err := r.probe(ctx, n.name)
 		switch {
 		case err != nil:
 			return err
 		case bytes.Equal(st.GetBoot().GetFailed().GetRootHash(), target):
 			fellBack = r.rolledBack(n, st.GetBoot())
-			return permanent{fellBack}
+			return layer.Permanent{Err: fellBack}
 		case !bytes.Equal(st.GetBoot().GetRunning().GetRootHash(), target):
 			return fmt.Errorf("it runs %s", bootImageName(st.GetBoot().GetRunning()))
 		case !st.GetBoot().GetBlessed():

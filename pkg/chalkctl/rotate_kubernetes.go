@@ -11,6 +11,8 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	kuberneteslayer "github.com/trevex/chalkos/pkg/chalkctl/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -50,7 +52,7 @@ func expectations(s clustersecrets.Secrets, kind clustersecrets.RotationKind, no
 			}
 			e := expectation{name: ca.name, values: values}
 			if controlPlane {
-				if e.issuing, err = fingerprintOf(ca.issuing); err != nil {
+				if e.issuing, err = layer.FingerprintOf(ca.issuing); err != nil {
 					return nil, err
 				}
 			}
@@ -85,7 +87,7 @@ func expectations(s clustersecrets.Secrets, kind clustersecrets.RotationKind, no
 // applied checks a node's status against the expectations.
 func applied(st *nodev1.StatusResponse, want []expectation) error {
 	for _, e := range want {
-		if err := trusts(st, e.name, e.values, e.issuing); err != nil {
+		if err := layer.Trusts(st, e.name, e.values, e.issuing); err != nil {
 			return err
 		}
 	}
@@ -132,7 +134,7 @@ func (r *rotation) applyKubernetes(ctx context.Context, kind clustersecrets.Rota
 // its manifests define.
 func (r *rotation) restartAddons(ctx context.Context) error {
 	return r.throughControlPlane(ctx, func(ctx context.Context, conn *client.Conn) error {
-		resp, err := kubernetesClient(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS}))
+		resp, err := kuberneteslayer.Client(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS}))
 		if err == nil {
 			r.say("  restarted %s", strings.Join(resp.Msg.Restarted, ", "))
 			if len(resp.Msg.NotWaited) > 0 {
@@ -193,7 +195,7 @@ func (r *rotation) waitQuorum(ctx context.Context, name string) error {
 		var members []*kubernetesv1.EtcdMember
 		var answer error
 		err := r.call(name, func(conn *client.Conn) error {
-			resp, err := kubernetesClient(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
+			resp, err := kuberneteslayer.Client(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
 			if err == nil {
 				members = resp.Msg.Members
 			}
@@ -201,13 +203,13 @@ func (r *rotation) waitQuorum(ctx context.Context, name string) error {
 			return err
 		})
 		switch {
-		case connect.IsWireError(answer) && notEtcdMember(answer):
+		case connect.IsWireError(answer) && kuberneteslayer.NotEtcdMember(answer):
 			return nil
 		case err != nil && (answer == nil || !connect.IsWireError(answer)):
 			if silent.IsZero() {
 				silent = time.Now()
 			} else if time.Since(silent) >= window {
-				return permanent{fmt.Errorf("%s does not answer: %w", name, err)}
+				return layer.Permanent{Err: fmt.Errorf("%s does not answer: %w", name, err)}
 			}
 			return err
 		case err != nil:
@@ -249,38 +251,38 @@ func (r *rotation) workersTrust(ctx context.Context, workers []string) error {
 // planes issued themselves at the switch, and has every kubelet request a serving certificate,
 // which the controller-manager signs with the new CA now that every control plane switched.
 func (r *rotation) refreshKubernetesCA(ctx context.Context, workers []string) error {
-	ca, err := fingerprintOf(r.file.secrets.Kubernetes.CA.Certificate)
+	ca, err := layer.FingerprintOf(r.file.secrets.Kubernetes.CA.Certificate)
 	if err != nil {
 		return err
 	}
 	if err := r.eachNode(workers, func(name string) error {
-		if st, err := r.status(ctx, name); err == nil && issuedBy(st, client.NameKubeletClient, ca) == nil {
+		if st, err := r.status(ctx, name); err == nil && layer.IssuedBy(st, client.NameKubeletClient, ca) == nil {
 			return nil
 		}
 		if err := r.deliverShare(ctx, name); err != nil {
 			return err
 		}
 		return r.waitStatus(ctx, name, "to use a kubelet client certificate of the new CA", func(st *nodev1.StatusResponse) error {
-			return issuedBy(st, client.NameKubeletClient, ca)
+			return layer.IssuedBy(st, client.NameKubeletClient, ca)
 		})
 	}); err != nil {
 		return err
 	}
 	return r.eachNode(append(r.nodesOf(kubernetes.KindControlPlane), workers...), func(name string) error {
-		if st, err := r.status(ctx, name); err == nil && issuedBy(st, client.NameKubeletServing, ca) == nil {
+		if st, err := r.status(ctx, name); err == nil && layer.IssuedBy(st, client.NameKubeletServing, ca) == nil {
 			r.say("  %s's kubelet serves a certificate of the new CA already", name)
 			return nil
 		}
 		if err := r.call(name, func(conn *client.Conn) error {
 			ctx, cancel := context.WithTimeout(ctx, r.timeout)
 			defer cancel()
-			_, err := kubernetesClient(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING}))
+			_, err := kuberneteslayer.Client(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING}))
 			return err
 		}); err != nil {
 			return err
 		}
 		if err := r.waitStatus(ctx, name, "for a kubelet serving certificate of the new CA", func(st *nodev1.StatusResponse) error {
-			return issuedBy(st, client.NameKubeletServing, ca)
+			return layer.IssuedBy(st, client.NameKubeletServing, ca)
 		}); err != nil {
 			return err
 		}
@@ -307,7 +309,7 @@ func (r *rotation) rewriteEncrypted(ctx context.Context) error {
 		return err
 	}
 	if n := counts[old[0].Name]; n > 0 {
-		return fmt.Errorf("etcd still holds %s under the old key %s", count(n, "object"), old[0].Name)
+		return fmt.Errorf("etcd still holds %s under the old key %s", layer.Count(n, "object"), old[0].Name)
 	}
 	return nil
 }
@@ -332,7 +334,7 @@ func (r *rotation) finishGuardKubernetes(ctx context.Context, kind clustersecret
 			return err
 		}
 		if n := counts[old[0].Name]; n > 0 {
-			return fmt.Errorf("etcd holds %s encrypted with the old key %s, which removing it would lose; rewrite them with chalkctl rotate encryption-key --resume", count(n, "object"), old[0].Name)
+			return fmt.Errorf("etcd holds %s encrypted with the old key %s, which removing it would lose; rewrite them with chalkctl rotate encryption-key --resume", layer.Count(n, "object"), old[0].Name)
 		}
 	}
 	return nil
@@ -353,7 +355,7 @@ func (r *rotation) pausedKubernetes(ctx context.Context, rot clustersecrets.Rota
 		r.say("The API server signs tokens with the new service-account key, and chalkos's addons and the workloads of the Addon documents, StatefulSets included, restarted with new tokens. Kubelets renew the tokens of other pods within the hour after every control plane applied the switch; finish from %s with chalkctl rotate %s --finish.", at.Local().Format(time.RFC3339), kind)
 		var secrets []string
 		err := r.throughControlPlane(ctx, func(ctx context.Context, conn *client.Conn) error {
-			resp, err := kubernetesClient(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS}))
+			resp, err := kuberneteslayer.Client(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS}))
 			if err == nil {
 				secrets = resp.Msg.TokenSecrets
 			}
@@ -380,7 +382,7 @@ func (r *rotation) throughControlPlane(ctx context.Context, fn func(ctx context.
 	if err != nil {
 		return err
 	}
-	return nodes.viaControlPlanes(r.nodesOf(kubernetes.KindControlPlane), tryNextControlPlane, func(conn *client.Conn) error { return fn(ctx, conn) })
+	return nodes.viaControlPlanes(r.nodesOf(kubernetes.KindControlPlane), kuberneteslayer.TryNextControlPlane, func(conn *client.Conn) error { return fn(ctx, conn) })
 }
 
 // encryptedCounts runs a rotation step that counts the objects etcd holds and returns them by key
@@ -388,12 +390,12 @@ func (r *rotation) throughControlPlane(ctx context.Context, fn func(ctx context.
 func (r *rotation) encryptedCounts(ctx context.Context, step kubernetesv1.RotationStep) (map[string]uint64, error) {
 	counts := map[string]uint64{}
 	err := r.throughControlPlane(ctx, func(ctx context.Context, conn *client.Conn) error {
-		resp, err := kubernetesClient(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: step}))
+		resp, err := kuberneteslayer.Client(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: step}))
 		if err != nil {
 			return err
 		}
 		if resp.Msg.Rewritten > 0 {
-			r.say("  rewrote %s unchanged", count(resp.Msg.Rewritten, "encrypted object"))
+			r.say("  rewrote %s unchanged", layer.Count(resp.Msg.Rewritten, "encrypted object"))
 		}
 		for _, e := range resp.Msg.Encrypted {
 			counts[e.Key] += e.Objects

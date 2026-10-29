@@ -17,6 +17,8 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
+	kuberneteslayer "github.com/trevex/chalkos/pkg/chalkctl/layers/kubernetes"
+	routerlayer "github.com/trevex/chalkos/pkg/chalkctl/layers/router"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/layers"
 )
@@ -99,7 +101,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 		return err
 	}
 	if slices.Contains(info.Msg.Layers, layers.Kubernetes) {
-		k, err := kubernetesStatus(ctx, conn)
+		k, err := kuberneteslayer.Status(ctx, conn)
 		if err != nil {
 			return err
 		}
@@ -113,7 +115,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 		}
 	}
 	if slices.Contains(info.Msg.Layers, layers.Router) {
-		resp, err := routerClient(conn).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
+		resp, err := routerlayer.Client(conn).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
 		if err != nil {
 			return err
 		}

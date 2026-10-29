@@ -14,6 +14,7 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
@@ -367,7 +368,7 @@ func (r *rotation) kubernetesStatus(ctx context.Context, name string) (*kubernet
 
 // waitFor checks until check passes, up to the rotation's timeout.
 func (r *rotation) waitFor(ctx context.Context, what string, check func() error) error {
-	return waitFor(ctx, what, r.timeout, r.poll, check)
+	return layer.WaitFor(ctx, what, r.timeout, r.poll, check)
 }
 
 // waitStatus waits until a node's status passes check.
@@ -395,63 +396,6 @@ func (r *rotation) eachNode(names []string, fn func(name string) error) error {
 	return nil
 }
 
-// trusts checks that a node's status reports the entry of name with exactly the fingerprints
-// want and, when issuing is given, that value as the one that issues.
-func trusts(st *nodev1.StatusResponse, name string, want []string, issuing string) error {
-	for _, t := range st.Trust {
-		if t.Name != name {
-			continue
-		}
-		if !sameFingerprints(t.Fingerprints, want) {
-			return fmt.Errorf("trusts %d %s values, not the %d of the secrets file", len(t.Fingerprints), name, len(want))
-		}
-		if issuing != "" && t.Issuing != issuing {
-			return fmt.Errorf("issues with another %s than the secrets file's", name)
-		}
-		return nil
-	}
-	return fmt.Errorf("reports no %s", name)
-}
-
-func sameFingerprints(a, b []string) bool {
-	a, b = slices.Clone(a), slices.Clone(b)
-	slices.Sort(a)
-	slices.Sort(b)
-	return slices.Equal(a, b)
-}
-
-// certificate returns the status of the node's certificate of the name.
-func certificate(st *nodev1.StatusResponse, name string) *nodev1.CertificateStatus {
-	for _, c := range st.Certificates {
-		if c.Name == name {
-			return c
-		}
-	}
-	return nil
-}
-
-// issuedBy checks that the node's certificate of the name was issued by the CA of the
-// fingerprint.
-func issuedBy(st *nodev1.StatusResponse, name, issuer string) error {
-	c := certificate(st, name)
-	switch {
-	case c == nil:
-		return fmt.Errorf("reports no %s certificate", name)
-	case c.Issuer != issuer:
-		return fmt.Errorf("its %s certificate is not issued by the CA that issues now", name)
-	}
-	return nil
-}
-
-// fingerprintOf is the fingerprint of a PEM certificate.
-func fingerprintOf(certificate string) (string, error) {
-	cert, err := pki.ParseCertificate([]byte(certificate))
-	if err != nil {
-		return "", err
-	}
-	return pki.Fingerprint(cert.Raw), nil
-}
-
 // applyOSCA runs a phase of the OS CA's rotation: nodes trust both OS CAs, control planes renew
 // node certificates with the new node CA, every node gets a certificate of it, and finally nodes
 // trust the new OS CA alone.
@@ -469,15 +413,15 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 				return err
 			}
 			if err := r.waitStatus(ctx, name, "to trust the OS CAs", func(st *nodev1.StatusResponse) error {
-				return trusts(st, client.NameOSCA, want, "")
+				return layer.Trusts(st, client.NameOSCA, want, "")
 			}); err != nil {
 				return err
 			}
-			r.say("  %s trusts the %s of the secrets file", name, count(len(want), "OS CA"))
+			r.say("  %s trusts the %s of the secrets file", name, layer.Count(len(want), "OS CA"))
 			return nil
 		})
 	case clustersecrets.PhaseSwitch:
-		nodeCA, err := fingerprintOf(s.NodeCA.Certificate)
+		nodeCA, err := layer.FingerprintOf(s.NodeCA.Certificate)
 		if err != nil {
 			return err
 		}
@@ -486,7 +430,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 				return err
 			}
 			if err := r.waitStatus(ctx, name, "to hold the new node CA", func(st *nodev1.StatusResponse) error {
-				if c := certificate(st, client.NameNodeCA); c == nil || c.Fingerprint != nodeCA {
+				if c := layer.CertificateOf(st, client.NameNodeCA); c == nil || c.Fingerprint != nodeCA {
 					return errors.New("holds another node CA")
 				}
 				return nil
@@ -497,13 +441,13 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 			return nil
 		})
 	case clustersecrets.PhaseRefresh:
-		nodeCA, err := fingerprintOf(s.NodeCA.Certificate)
+		nodeCA, err := layer.FingerprintOf(s.NodeCA.Certificate)
 		if err != nil {
 			return err
 		}
 		return r.eachNode(r.allNodes(), func(name string) error {
 			// A node renewed since, or in an earlier run, keeps its certificate.
-			if st, err := r.status(ctx, name); err == nil && issuedBy(st, client.NameNode, nodeCA) == nil {
+			if st, err := r.status(ctx, name); err == nil && layer.IssuedBy(st, client.NameNode, nodeCA) == nil {
 				r.say("  %s serves a certificate of the new node CA already", name)
 				return nil
 			}
@@ -519,7 +463,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 				return err
 			}
 			if err := r.waitStatus(ctx, name, "to serve a certificate of the new node CA", func(st *nodev1.StatusResponse) error {
-				return issuedBy(st, client.NameNode, nodeCA)
+				return layer.IssuedBy(st, client.NameNode, nodeCA)
 			}); err != nil {
 				return err
 			}

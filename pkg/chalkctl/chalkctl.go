@@ -4,8 +4,6 @@ package chalkctl
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"os"
 	"text/tabwriter"
@@ -13,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
@@ -59,17 +58,15 @@ func newCommand(a *app) *cobra.Command {
 	gen := cli.Group(&cobra.Command{Use: "gen", Short: "Generate files of a cluster", Long: genLong, Example: genExample})
 	gen.AddCommand(a.genSecretsCommand())
 	node := cli.Group(&cobra.Command{Use: "node", Short: "Manage a node's access and show its diagnostics and routes", Long: nodeLong, Example: nodeExample})
-	node.AddCommand(a.nodeRenewCommand(), a.nodeRevokeCommand(), a.nodeUnrevokeCommand(), a.nodeDiagCommand(), a.nodeRoutesCommand())
+	node.AddCommand(a.nodeRenewCommand(), a.nodeDiagCommand())
 	nodeCA := cli.Group(&cobra.Command{Use: "node-ca", Short: "Manage the node CA", Long: nodeCALong, Example: nodeCAExample})
 	nodeCA.AddCommand(a.nodeCARotateCommand())
 	config := cli.Group(&cobra.Command{Use: "config", Short: "Manage client files", Long: configLong, Example: configExample})
 	config.AddCommand(a.configNewCommand())
 	storage := cli.Group(&cobra.Command{Use: "storage", Short: "Manage a node's volumes", Long: storageLong, Example: storageExample})
 	storage.AddCommand(a.resetVolumeCommand())
-	etcd := cli.Group(&cobra.Command{Use: "etcd", Short: "Manage the cluster's etcd members", Long: etcdLong, Example: etcdExample})
-	etcd.AddCommand(a.etcdMembersCommand(), a.etcdRemoveMemberCommand(), a.etcdLeaveCommand())
 	root.AddCommand(
-		gen, node, nodeCA, config, storage, etcd,
+		gen, node, nodeCA, config, storage,
 		a.recoveryKeyCommand(),
 		a.installCommand(),
 		a.disksCommand(),
@@ -78,11 +75,15 @@ func newCommand(a *app) *cobra.Command {
 		a.logsCommand(),
 		a.rebootCommand(),
 		a.rotateCommand(),
-		a.bootstrapCommand(),
-		a.kubeconfigCommand(),
 		a.upgradeCommand(),
 		a.validateCommand(),
 	)
+	groups := map[string]*cobra.Command{"": root, "node": node}
+	for _, c := range compiled[layer.Commands]() {
+		for group, cmds := range c.Commands(host{a}) {
+			groups[group].AddCommand(cmds...)
+		}
+	}
 	return root
 }
 
@@ -101,14 +102,6 @@ func Execute(ctx context.Context, root *cobra.Command) int {
 	return cli.Execute(ctx, root, cli.Options{Interruptible: true})
 }
 
-// count is n and the noun, in the plural unless n is one.
-func count[N ~int | ~uint32 | ~uint64](n N, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
-}
-
 // poll is the time between two looks at the nodes' status.
 func (a *app) poll() time.Duration {
 	if a.pollInterval > 0 {
@@ -124,40 +117,6 @@ func (a *app) now() time.Time {
 	}
 	return time.Now()
 }
-
-// waitFor runs check every interval until it passes, up to timeout. A check that fails with a
-// permanent error ends the wait at once with the error it wraps. Once the time is up, the error
-// is the last check's; once ctx ended, it is the context's cause. A what other than "" names what
-// was waited for in either: "waiting for <what>: ...".
-func waitFor(ctx context.Context, what string, timeout, interval time.Duration, check func() error) error {
-	deadline := time.Now().Add(timeout)
-	for {
-		err := check()
-		var p permanent
-		switch {
-		case err == nil:
-			return nil
-		case errors.As(err, &p):
-			return p.error
-		case time.Now().Before(deadline):
-			select {
-			case <-ctx.Done():
-				err = context.Cause(ctx)
-			case <-time.After(interval):
-				continue
-			}
-		}
-		if what == "" {
-			return err
-		}
-		return fmt.Errorf("waiting for %s: %w", what, err)
-	}
-}
-
-// permanent is a check's error that waiting does not change.
-type permanent struct{ error }
-
-func (p permanent) Unwrap() error { return p.error }
 
 // table writes aligned columns, separated by tabs, to standard output once flushed.
 func (a *app) table() *tabwriter.Writer {
