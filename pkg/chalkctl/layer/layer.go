@@ -1,6 +1,9 @@
 // Package layer is what chalkctl's layers plug in with. A layer is a Plugin compiled into
 // chalkctl: it adds to chalkctl through the optional interfaces below, which chalkctl finds by
 // type assertion, and reaches the cluster and its nodes through the Host chalkctl gives it.
+// chalkctl asks every compiled plugin for the hooks the inventory and the secrets file drive, and
+// only the plugins of the layers a node's Info names for what it reads from that node's layer
+// services; each hook says which plugins chalkctl asks.
 package layer
 
 import (
@@ -25,21 +28,23 @@ type Plugin interface {
 	Name() string
 }
 
-// Commands is a plugin that adds commands.
+// Commands is a plugin that adds commands. chalkctl adds those of every compiled plugin.
 type Commands interface {
 	// Commands are the layer's commands by the group they join: "" for chalkctl itself, or a
 	// group's name, such as "node".
 	Commands(h Host) map[string][]*cobra.Command
 }
 
-// Status is a plugin that adds its section to a node's status.
+// Status is a plugin that adds its section to a node's status. chalkctl asks the plugins of the
+// layers the node's Info names.
 type Status interface {
 	// PrintStatus prints the layer's section of the status of the node conn reaches, whose image
 	// carries the layer.
 	PrintStatus(ctx context.Context, h Host, conn *client.Conn) error
 }
 
-// ImageFacts is a plugin whose layer's images carry facts config is translated with.
+// ImageFacts is a plugin whose layer's images carry facts config is translated with. chalkctl
+// asks every compiled plugin.
 type ImageFacts interface {
 	// ContractFacts reads the facts of an image's contract: read takes a file name within the
 	// image's directory, as its contract layer holds it. They are nil for an image without them.
@@ -50,7 +55,7 @@ type ImageFacts interface {
 }
 
 // Delivery is a plugin whose layer takes payloads that chalkctl issues a node from the secrets
-// file, and which admits a node to them.
+// file, and which admits a node to them. chalkctl asks every compiled plugin.
 type Delivery interface {
 	// Payloads are the layer's payloads for t, issued from its secrets at now; none for a node
 	// the layer gives nothing.
@@ -77,7 +82,9 @@ type ApplyFlags interface {
 	None(name string) error
 }
 
-// Upgrade is a plugin whose layer takes part in chalkctl upgrade.
+// Upgrade is a plugin whose layer takes part in chalkctl upgrade. chalkctl asks every compiled
+// plugin for ListedCoordinator, and for the other hooks of a node the plugins of the layers its
+// Info names.
 type Upgrade interface {
 	// UpgradeRole reads the node's part in the layer's cluster from its service on conn.
 	UpgradeRole(ctx context.Context, conn *client.Conn) (UpgradeRole, error)
@@ -124,7 +131,7 @@ type Upgrading interface {
 }
 
 // Rotation is a plugin whose layer runs rotations of chalkctl rotate, and which names the nodes
-// every rotation leaves out or delivers the node CA to.
+// every rotation leaves out or delivers the node CA to. chalkctl asks every compiled plugin.
 type Rotation interface {
 	// Rotates reports whether the layer runs the rotation of kind.
 	Rotates(kind clustersecrets.RotationKind) bool

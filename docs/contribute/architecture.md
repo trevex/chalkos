@@ -198,15 +198,20 @@ which chalkd finds by type assertion, add what else the layer does:
 
 `cmd/chalkd/plugins.go` lists the compiled plugins, and `layer.Registry` sorts them into the
 compiled and the active ones. chalkd mounts the API of every compiled plugin, so the authoriser
-can answer for a missing layer, but starts and asks for hooks only the active ones, whose layers
-the image carries. For another image's data, such as the facts of the image an upgrade or an
-install writes, it asks the compiled plugins. The plugins live in `pkg/chalkd/layers/kubernetes`
-and `pkg/chalkd/layers/router`.
+can answer for a missing layer, and runs the commands of every compiled plugin. It starts only
+the active plugins, whose layers the image carries, and asks them for most hooks. For what may
+belong to another image, it asks every compiled plugin: the facts of the image an upgrade or an
+install writes, the identity an upgrade's slot keeps, and the payloads the installer takes. The
+comment of each hook in `pkg/chalkd/layer/layer.go` names the plugins chalkd asks. The plugins
+live in `pkg/chalkd/layers/kubernetes` and `pkg/chalkd/layers/router`.
 
 `pkg/chalkctl/layer` declares chalkctl's side in the same way: a `Plugin` with hooks for commands,
 a node's status section, image facts, the payloads of a delivery and their admission, an
-upgrade's checks and a rotation's steps. A plugin reaches the cluster and its nodes through the
-`Host` chalkctl gives it. `pkg/chalkctl/layers.go` lists the plugins, which live in
+upgrade's checks and a rotation's steps. chalkctl asks every compiled plugin for what the
+inventory and the secrets file drive, such as commands, payloads and rotations. For what it reads
+from a node's layer services, such as the node's status section and its part in an upgrade, it
+asks only the plugins of the layers the node's Info names. A plugin reaches the cluster and its
+nodes through the `Host` chalkctl gives it. `pkg/chalkctl/layers.go` lists the plugins, which live in
 `pkg/chalkctl/layers/kubernetes` and `pkg/chalkctl/layers/router`.
 
 ## chalkd runs with a narrow sandbox
