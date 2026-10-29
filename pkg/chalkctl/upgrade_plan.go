@@ -323,7 +323,7 @@ func noPrevious(b *nodev1.BootStatus) string {
 	if b.GetStaged() != nil {
 		return "its inactive slot holds " + bootImageName(b.GetStaged()) + ", staged to boot next; chalkctl reboot boots it"
 	}
-	return "its inactive slot holds no image it booted before, as after an install or an upgrade it fell back from"
+	return "its inactive slot holds no image it booted before, as after an install, or an upgrade or rollback it fell back from"
 }
 
 // nodeNames are the cluster's nodes: the inventory's, or without one those --address names.
