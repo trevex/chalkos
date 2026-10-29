@@ -20,6 +20,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -538,6 +539,9 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		// A staged image is sent again only for its config: the node finds the image staged and
 		// replaces the config it keeps for it.
 		if r.stagedAlready(n, st) {
+			// A rollback stages its image without tries while the boot the node runs was not
+			// found healthy.
+			n.uncounted = n.rollbackTo != nil && !boot.GetBlessed()
 			r.say("%s: %s is installed already", n.name, image)
 		} else if err := r.install(ctx, n); err != nil {
 			return err
@@ -689,24 +693,24 @@ func (r *upgradeRun) reactivate(ctx context.Context, n *upgradeNode) error {
 	}); err != nil {
 		return err
 	}
+	n.uncounted = !resp.AlreadyInstalled && !esp.Counted(resp.Entry)
 	switch {
 	case resp.AlreadyInstalled:
 		r.say("%s: runs %s already", n.name, image)
+	case resp.AlreadyStaged && n.uncounted:
+		r.say("%s: %s is staged already, as %s, %s", n.name, image, resp.Entry, uncountedRollback)
 	case resp.AlreadyStaged:
 		r.say("%s: %s is staged already, as %s", n.name, image, resp.Entry)
-	case counted(resp.Entry):
-		r.say("%s: %s boots next as %s", n.name, image, resp.Entry)
+	case n.uncounted:
+		r.say("%s: %s boots next as %s, %s", n.name, image, resp.Entry, uncountedRollback)
 	default:
-		r.say("%s: %s boots next as %s, without boot counting: the boot the node runs was not found healthy, so the image before, found healthy once, is its known-good image again and is not fallen back from", n.name, image, resp.Entry)
+		r.say("%s: %s boots next as %s", n.name, image, resp.Entry)
 	}
 	return nil
 }
 
-// counted reports whether systemd-boot counts the boots of the entry, whose name then gives its
-// tries, as in chalkos_3+3.efi.
-func counted(entry string) bool {
-	return strings.Contains(strings.TrimSuffix(entry, ".efi"), "+")
-}
+// uncountedRollback says why a rollback's entry carries no tries.
+const uncountedRollback = "without boot counting: the boot the node runs was not found healthy, so the image before, found healthy once, is its known-good image again and is not fallen back from"
 
 // waitHealthy waits until the node runs the image, its boot was found healthy, and it serves the
 // clusters of its layers again, or until it fell back.
@@ -745,6 +749,11 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 		return fellBack
 	case err != nil:
 		return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, image, err)
+	}
+	if n.uncounted {
+		// The entry is blessed from the start, so no boot of it was found healthy.
+		r.say("%s: runs %s (its boots are not counted)", n.name, image)
+		return nil
 	}
 	r.say("%s: runs %s, found healthy", n.name, image)
 	return nil

@@ -1912,7 +1912,7 @@ func TestUpgradeRollbackContinues(t *testing.T) {
 
 // TestUpgradeRollbackSkipsNodesOnTheTarget rolls back every node of the cluster when only one was
 // upgraded: the others run the image it rolls back to, and are left alone. The node stages the
-// image without boot counting, which the run says.
+// image without boot counting, which the run says, also once the node runs it.
 func TestUpgradeRollbackSkipsNodesOnTheTarget(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1"); err != nil {
@@ -1927,8 +1927,13 @@ func TestUpgradeRollbackSkipsNodesOnTheTarget(t *testing.T) {
 	if got, want := l.takeEvents(), []string{"w1 drain", "w1 rollback", "w1 reboot", "w1 uncordon"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
-	if line := "w1: 010101010101 boots next as chalkos_3.efi, without boot counting"; !strings.Contains(l.ta.stdout.String(), line) {
-		t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
+	for _, line := range []string{"w1: 010101010101 boots next as chalkos_3.efi, without boot counting", "w1: runs 010101010101 (its boots are not counted)"} {
+		if !strings.Contains(l.ta.stdout.String(), line) {
+			t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
+		}
+	}
+	if line := "w1: runs 010101010101, found healthy"; strings.Contains(l.ta.stdout.String(), line) {
+		t.Errorf("output says %q of a boot that is not counted:\n%s", line, l.ta.stdout)
 	}
 }
 

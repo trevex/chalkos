@@ -132,6 +132,13 @@ func CountedEntryName(imageID string, generation uint64, tries int) string {
 	return fmt.Sprintf("%s_%d+%d.efi", imageID, generation, tries)
 }
 
+// Counted reports whether systemd-boot counts the boots of the entry the UKI's file name gives:
+// whether the name carries a tries counter, as in chalkos_3+3.efi.
+func Counted(file string) bool {
+	_, left, _ := parseEntryName(file)
+	return left >= 0
+}
+
 // parseEntryName splits a UKI's file name into the entry's ID and its tries counter as
 // systemd-boot does. The counter follows the last "+" and precedes the suffix. A malformed
 // counter, or one whose counts exceed an int32, counts as none, because systemd-boot rejects it.

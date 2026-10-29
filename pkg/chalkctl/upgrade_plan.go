@@ -28,6 +28,9 @@ type upgradeNode struct {
 	// rollbackTo is the image a rollback run boots on every node, as planRollback chose it; nil
 	// for an upgrade.
 	rollbackTo *nodev1.BootImage
+	// uncounted is set once a rollback staged its image on the node without tries, so systemd-boot
+	// does not count its boots and none is found healthy.
+	uncounted bool
 }
 
 // target is the image the node gets: the image to install, or the one a rollback boots; by its

@@ -144,6 +144,9 @@ func TestTriesCounter(t *testing.T) {
 		if id != tc.id || left != tc.left || done != tc.done {
 			t.Errorf("%s: %s, %d, %d; want %s, %d, %d", tc.file, id, left, done, tc.id, tc.left, tc.done)
 		}
+		if Counted(tc.file) != (tc.left >= 0) {
+			t.Errorf("%s: counted %v", tc.file, Counted(tc.file))
+		}
 	}
 }
 
