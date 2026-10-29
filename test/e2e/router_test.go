@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/router"
 )
@@ -49,9 +51,12 @@ const bgpPassword = "lab-s3cret"
 //     r1's NAT64 and QEMU's user-mode network to a listener of the test on the host. r1's status,
 //     for an admin and for a reader, shows the connection's session and binding and its resolver
 //     running, the nat64-sessions diagnostic shows the session, and no unit of r1 failed.
+//   - node-ca: chalkctl rotate node-ca over the lab's inventory, on a copy of the secrets file,
+//     gives r1 and r2 certificates of the new node CA, which a new connection verifies, and
+//     their status reports the node certificate without a problem.
 //
-// Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, about 5 minutes
-// with the copies of the images. chalklab destroy removes the lab when the test ends.
+// Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, and a few seconds
+// for the node CA, about 5 minutes with the copies of the images. chalklab destroy removes the lab when the test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -213,7 +218,7 @@ func TestRouterLab(t *testing.T) {
 		return
 	}
 
-	t.Run("nat64", func(t *testing.T) {
+	if !t.Run("nat64", func(t *testing.T) {
 		// r1 answers r2's edge0, the source of r2's connections and queries, through BGP.
 		waitFor(t, 2*time.Minute, "r1's route to r2's edge0", func() error { return learnedFrom("r1", "2001:db8:ffff::2/128", "64513") })
 		out, err := chalkctl(t, nodes["r2"], "base", "node", "diag", "r2", "dns-query", "name=ipv4only.arpa", "type=AAAA", "server=2001:db8:ffff::1")
@@ -274,6 +279,62 @@ func TestRouterLab(t *testing.T) {
 		}
 		if out, err := chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "nat64-sessions", "instance=edge"); err != nil || !strings.Contains(out, "10.0.2.2#"+port) {
 			t.Errorf("nat64-sessions of r1 lists no session to the host's listener: %v\n%s", err, out)
+		}
+	}) {
+		return
+	}
+
+	t.Run("node-ca", func(t *testing.T) {
+		// The rotation writes the secrets file, so it runs on a copy; the OS CA stays, so the
+		// test's client certificates keep working.
+		t.Setenv("CHALKLAB_SECRETS", copySecrets(t, t.TempDir()))
+		before, err := readSecrets()
+		if err != nil {
+			t.Fatal(err)
+		}
+		state, err := lab.StateDir(routerLabName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := chalkctl(t, nil, "", "rotate", "node-ca", "--inventory", filepath.Join(state, "chalkos.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"r1 serves a certificate of the new node CA", "r2 serves a certificate of the new node CA", "the rotation of the node CA is finished"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("chalkctl rotate node-ca does not say %q", want)
+			}
+		}
+		after, err := readSecrets()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.NodeCA.Certificate == before.NodeCA.Certificate || after.Rotation != nil {
+			t.Fatalf("the secrets file: node CA changed %v, rotation %v", after.NodeCA.Certificate != before.NodeCA.Certificate, after.Rotation)
+		}
+		ca, err := pki.ParseCertificate([]byte(after.NodeCA.Certificate))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		for _, name := range []string{"r1", "r2"} {
+			// A new connection verifies the chain through the new node CA.
+			c := dialNode(t, nodes[name], name, reader)
+			defer c.Close()
+			st, err := c.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			if err != nil {
+				t.Errorf("status of %s: %v", name, err)
+				continue
+			}
+			if !slices.ContainsFunc(st.Msg.Certificates, func(c *nodev1.CertificateStatus) bool { return c.Name == client.NameNode }) {
+				t.Errorf("status of %s lists no node certificate", name)
+			}
+			for _, cert := range st.Msg.Certificates {
+				if cert.Name == client.NameNode && (cert.Issuer != pki.Fingerprint(ca.Raw) || cert.Problem != "") {
+					t.Errorf("%s serves a node certificate of issuer %s with problem %q, want the new node CA's and none", name, cert.Issuer, cert.Problem)
+				}
+			}
 		}
 	})
 }
