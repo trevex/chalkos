@@ -248,8 +248,8 @@ func TestApplyConfigForceIsChalkctls(t *testing.T) {
 }
 
 // apply-config --rollback delivers the node's previous config again and prints what it changes;
-// status names the previous config; a second rollback undoes the first, and --diff changes
-// nothing.
+// status names the previous config; a second rollback undoes the first, --diff changes nothing,
+// and the secrets file and the node's address do without an inventory.
 func TestApplyConfigRollback(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
@@ -293,6 +293,15 @@ func TestApplyConfigRollback(t *testing.T) {
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != second {
 		t.Errorf("after a second rollback the node runs %s, want %s", v, second)
+	}
+	// The node keeps the config it rolls back to, so the secrets file and the address do without an
+	// inventory.
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), []string{"apply-config", "n1", "--rollback", "--address", addr}); err != nil {
+		t.Fatalf("without an inventory: %v", err)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != first {
+		t.Errorf("after a rollback without an inventory the node runs %s, want %s", v, first)
 	}
 	for _, args := range [][]string{{"--staged"}, {"--kubernetes-share"}, {"--force"}} {
 		if err := run(append([]string{"apply-config", "n1", "--rollback"}, args...)...); err == nil || !strings.Contains(err.Error(), "--rollback") {
