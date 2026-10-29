@@ -23,7 +23,9 @@
 // same image ID and an empty IMAGE_VERSION: the image installed last boots next, an older one's
 // too, and the boot falls back to the entry before once its tries are used up.
 //
-// The running slot and its UKI are never written.
+// The running slot and its UKI are never written. A rollback, Node.Rollback, makes the image before
+// an upgrade boot next again while the inactive slot still holds it: it renames that image's UKI
+// to the next generation, as step 4 names a new one.
 //
 // The installer shares the checks of an image's UKI and boot loader, CheckUKI and CheckSecureBoot,
 // and writes slot A of the disk it installs a node onto with the same slot writer,
@@ -174,8 +176,8 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		if retired(e, h.ImageID, booted, running) || !ofImage(e, h.ImageID) && e.ID != booted.ID {
 			continue
 		}
-		if esp.EntryGeneration(e.ID, h.ImageID) == 0 {
-			return Result{}, fmt.Errorf("%s on the ESP is not named %s_<generation>.efi with a generation from 1 on and no leading zeros, so the next generation might not boot before it; reinstall the node, or rename the entry", e.File, h.ImageID)
+		if err := misnamed(e, h.ImageID); err != nil {
+			return Result{}, err
 		}
 	}
 	// The UKI is renamed last, to the image's next generation, above the generation any name on the
@@ -269,6 +271,15 @@ func ofImage(e esp.Entry, imageID string) bool {
 // booted nor boots the running store.
 func retired(e esp.Entry, imageID string, booted esp.Entry, running []byte) bool {
 	return ofImage(e, imageID) && e.ID != booted.ID && !bytes.Equal(e.RootHash, running)
+}
+
+// misnamed is the error of an entry an upgrade or a rollback leaves on the ESP whose name chalkd
+// would not give it: the next generation might not boot before it.
+func misnamed(e esp.Entry, imageID string) error {
+	if esp.EntryGeneration(e.ID, imageID) != 0 {
+		return nil
+	}
+	return fmt.Errorf("%s on the ESP is not named %s_<generation>.efi with a generation from 1 on and no leading zeros, so the next generation might not boot before it; reinstall the node, or rename the entry", e.File, imageID)
 }
 
 // recheck checks the image a staged entry boots, as an upgrade checks one it writes. When the
