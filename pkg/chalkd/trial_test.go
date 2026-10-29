@@ -548,7 +548,9 @@ func TestConfirmConfigDuringARollbackAttempt(t *testing.T) {
 	}
 }
 
-// waitForLock waits until a goroutine whose stack names fn blocks on a mutex.
+// waitForLock waits until a goroutine whose stack names fn blocks on a mutex. It reads the Go
+// runtime's goroutine dump, where a goroutine that waits for a sync.Mutex shows
+// sync.runtime_SemacquireMutex; a runtime that names the wait otherwise makes it time out.
 func waitForLock(t *testing.T, fn string) {
 	t.Helper()
 	buf := make([]byte, 1<<20)
@@ -586,6 +588,14 @@ func TestConfirmConfigTrialRecordedMeanwhile(t *testing.T) {
 	if !trialOpenOn(t, s) {
 		t.Error("the refusal ended the trial")
 	}
+}
+
+// expire runs the deadline of the trial r as the timer armed last would.
+func expire(s *Server, r trialRecord) {
+	s.mu.Lock()
+	armed := s.trialArmed
+	s.mu.Unlock()
+	s.expireTrial(r.Version, r.Deadline, armed)
 }
 
 func sendTrial(s *Server, text string, d time.Duration) (*nodev1.ApplyConfigResponse, error) {
@@ -697,9 +707,10 @@ func TestTrialRefusals(t *testing.T) {
 	}
 }
 
-// TestTrialExpiryAfterTheTrialEnded leaves a node alone that runs the config from before the
-// trial already: after a rollback on request whose record a crash kept, and after an interrupted
-// write left both links on that config. It only removes the record. A record of a later trial is
+// TestTrialExpiryAfterTheTrialEnded finishes the trial of a node that runs the config from before
+// it already: after a rollback on request whose record a crash kept, and after an interrupted
+// write left both links on that config. Delivering that config again restarts nothing, and the
+// record goes. A record of a later trial is
 // not this deadline's and stays, whether of another version or of the same one with another
 // deadline.
 func TestTrialExpiryAfterTheTrialEnded(t *testing.T) {
@@ -716,7 +727,7 @@ func TestTrialExpiryAfterTheTrialEnded(t *testing.T) {
 			t.Fatal(err)
 		}
 		r.Calls = nil
-		s.expireTrial(rec.Version, rec.Deadline)
+		expire(s, rec)
 		if trialOpenOn(t, s) {
 			t.Errorf("%s: the record stays", name)
 		}
@@ -744,7 +755,7 @@ func TestTrialExpiryAfterTheTrialEnded(t *testing.T) {
 	if err := writeTrial(s.Paths.StateDir, later); err != nil {
 		t.Fatal(err)
 	}
-	s.expireTrial(rec.Version, rec.Deadline)
+	expire(s, rec)
 	if !trialOpenOn(t, s) {
 		t.Error("an earlier deadline ended a later trial")
 	}
@@ -756,7 +767,9 @@ func TestTrialExpiryAfterTheTrialEnded(t *testing.T) {
 func TestTrialExpiryOfAnEarlierTrial(t *testing.T) {
 	s := trialServer(t)
 	rec := recordTrial(t, s, nextConfig)
-	s.expireTrial(rec.Version, rec.Deadline.Add(-time.Hour))
+	early := rec
+	early.Deadline = rec.Deadline.Add(-time.Hour)
+	expire(s, early)
 	if !trialOpenOn(t, s) {
 		t.Error("an earlier deadline ended the trial")
 	}
@@ -782,8 +795,8 @@ func TestTrialExpiryRetries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.expireTrial(first.Version, first.Deadline)
-	s.expireTrial(first.Version, first.Deadline)
+	expire(s, first)
+	expire(s, first)
 	rec, open, err := readTrial(s.Paths.StateDir)
 	if err != nil || !open || rec.Error == "" || rec.Attempts != 2 || rec.Changed {
 		t.Fatalf("after two failed rollbacks the record is %+v, open %v, %v; want it open with the failure and two attempts", rec, open, err)
@@ -795,7 +808,7 @@ func TestTrialExpiryRetries(t *testing.T) {
 		t.Errorf("the node runs %s after the failed rollback", v)
 	}
 	writeOutputs(t, s, outputsWith(`cat > "$OUT/demo.json"`))
-	s.expireTrial(rec.Version, rec.Deadline)
+	expire(s, rec)
 	if trialOpenOn(t, s) {
 		t.Error("the trial is open after the rollback went through")
 	}
@@ -825,7 +838,7 @@ func TestTrialExpiryFailingPartWay(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(slots, 0o755) })
-	s.expireTrial(first.Version, first.Deadline)
+	expire(s, first)
 	rec, open, err := readTrial(s.Paths.StateDir)
 	if err != nil || !open || !strings.Contains(rec.Error, "store the config") || rec.Attempts != 1 || !rec.Changed {
 		t.Fatalf("after a rollback that failed part way the record is %+v, open %v, %v; want it open and changed", rec, open, err)
@@ -845,7 +858,9 @@ func TestTrialExpiryFailingPartWay(t *testing.T) {
 }
 
 // TestResumeTrial arms a recorded trial as chalkd starts: one past its deadline rolls back at
-// once; a record a crash left before the slot was written goes, as does one that cannot be read.
+// once; a record a crash left before the slot was written goes once the running config is
+// delivered again. A record that cannot be read stays, and every change is refused until a boot
+// removes it.
 func TestResumeTrial(t *testing.T) {
 	s := trialServer(t)
 	rec := recordTrial(t, s, nextConfig)
@@ -872,8 +887,11 @@ func TestResumeTrial(t *testing.T) {
 	}
 	write(t, filepath.Join(s.Paths.StateDir, trialFile), "{")
 	s.ResumeTrial()
-	if _, err := os.Stat(filepath.Join(s.Paths.StateDir, trialFile)); !os.IsNotExist(err) {
-		t.Errorf("a record that cannot be read stays: %v", err)
+	if got := readFile(t, filepath.Join(s.Paths.StateDir, trialFile)); got != "{" {
+		t.Errorf("a record that cannot be read is %q, want it kept", got)
+	}
+	if _, err := sendConfig(s, nextConfig); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the record of the config's trial") {
+		t.Errorf("a delivery past a record that cannot be read: %v", err)
 	}
 }
 
@@ -894,7 +912,7 @@ func TestTrialExpiryKeepsARecordItCannotRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
-	s.expireTrial(rec.Version, rec.Deadline)
+	expire(s, rec)
 	s.mu.Lock()
 	armed := s.trialTimer != nil
 	s.mu.Unlock()
@@ -974,5 +992,226 @@ func TestRestoreTrialAtBootFailing(t *testing.T) {
 	}
 	if r, open, err := readTrial(s.Paths.StateDir); err != nil || !open || !r.sameTrial(rec) {
 		t.Errorf("the record is %+v, %v, %v, want it kept", r, open, err)
+	}
+}
+
+// failRestartOnce has the next restart of demo.service fail.
+func failRestartOnce(s *Server) *tooltest.Runner {
+	r := s.Run.(*tooltest.Runner)
+	r.Rules = append([]tooltest.Rule{{Prefix: "systemctl try-restart demo.service", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
+	return r
+}
+
+// openTrialOf sends next on trial for an hour, with retries an hour apart, and returns its record.
+func openTrialOf(t *testing.T, s *Server, next string) trialRecord {
+	t.Helper()
+	s.trialRetry = time.Hour
+	if _, err := sendTrial(s, next, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	r, open, err := readTrial(s.Paths.StateDir)
+	if err != nil || !open {
+		t.Fatalf("no trial recorded: %v", err)
+	}
+	return r
+}
+
+// checkRolledBack checks that the slot runs the config from before the trial r and keeps the
+// one on trial as its previous config.
+func checkRolledBack(t *testing.T, s *Server, r trialRecord) {
+	t.Helper()
+	running, _ := slot.Version(slotOf(t, s))
+	previous, _ := slot.Version(slot.Previous(slotOf(t, s)))
+	if running != r.Previous || previous != r.Version {
+		t.Errorf("the slot runs %s and keeps %s, want %s and %s", running, previous, r.Previous, r.Version)
+	}
+}
+
+// TestTrialExpiryFinishesAFailedRestart keeps the trial open when its rollback at the deadline
+// wrote the slot and a restart failed after it: the slot runs the config from before the trial,
+// but demo.service still runs the one on trial. Status says the rollback changed the node, a
+// confirmation is refused, and the next attempt delivers the running config again, restarts
+// demo.service and only then ends the trial.
+func TestTrialExpiryFinishesAFailedRestart(t *testing.T) {
+	s := trialServer(t)
+	first := openTrialOf(t, s, nextConfig)
+	r := failRestartOnce(s)
+	expire(s, first)
+	rec, open, err := readTrial(s.Paths.StateDir)
+	if err != nil || !open || !strings.Contains(rec.Error, "try-restart demo.service") || rec.Attempts != 1 || !rec.Changed {
+		t.Fatalf("after a restart that failed the record is %+v, open %v, %v; want it open and changed", rec, open, err)
+	}
+	checkRolledBack(t, s, rec)
+	if tr := statusOf(t, s).Trial; tr == nil || !tr.RollbackChanged || tr.Error != rec.Error {
+		t.Errorf("status trial = %+v, want the failure that changed the node", tr)
+	}
+	err = sendConfirm(s, rec.Version)
+	for _, want := range []string{"chalkd tries again each minute", "chalkctl apply-config --rollback n1 finishes it now"} {
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+			t.Errorf("a confirmation: %v, want %q", err, want)
+		}
+	}
+	r.ResetCalls()
+	expire(s, rec)
+	if trialOpenOn(t, s) {
+		t.Error("the trial is open after the retry went through")
+	}
+	if !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Errorf("the retry ran %v, want demo.service restarted", r.Calls)
+	}
+	checkRolledBack(t, s, rec)
+}
+
+// TestRollbackConfigFinishesATrialsRollback finishes a rollback at the deadline that failed after
+// it wrote the slot: a rollback on request to the config from before the trial, which the slot
+// runs already, delivers it again, restarts demo.service and ends the trial.
+func TestRollbackConfigFinishesATrialsRollback(t *testing.T) {
+	s := trialServer(t)
+	first := openTrialOf(t, s, nextConfig)
+	r := failRestartOnce(s)
+	expire(s, first)
+	if !trialOpenOn(t, s) {
+		t.Fatal("the trial ended with a restart that failed")
+	}
+	r.ResetCalls()
+	if _, err := sendRollback(s, first.Previous); err != nil {
+		t.Fatal(err)
+	}
+	if trialOpenOn(t, s) {
+		t.Error("the trial is open after the rollback on request")
+	}
+	if !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Errorf("the rollback ran %v, want demo.service restarted", r.Calls)
+	}
+	checkRolledBack(t, s, first)
+}
+
+// TestRollbackConfigDuringATrialTakesItsPrevious refuses a rollback during a trial to any config
+// but the one from before it: once a rollback at the deadline wrote the slot, its previous config
+// is the one on trial, which would apply it for good.
+func TestRollbackConfigDuringATrialTakesItsPrevious(t *testing.T) {
+	s, r := configServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
+		t.Fatal(err)
+	}
+	r.ResetCalls()
+	want := "config " + rec.Version + " is on trial, so a rollback delivers config " + rec.Previous + " from before it, not " + rec.Version
+	if _, err := sendRollback(s, rec.Version); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+	if !trialOpenOn(t, s) {
+		t.Error("the refusal ended the trial")
+	}
+	checkRolledBack(t, s, rec)
+	if len(r.Calls) != 0 {
+		t.Errorf("the refusal ran %v", r.Calls)
+	}
+}
+
+// TestTrialFailingBeforeItsSlotIsFinished delivers the running config again at once when a trial's
+// delivery fails before it writes the slot, so nothing of the config on trial stays applied, and
+// no trial is open.
+func TestTrialFailingBeforeItsSlotIsFinished(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
+	s := trialServer(t)
+	slots := filepath.Dir(slotOf(t, s))
+	// The directory of slots takes no new slot directory.
+	if err := os.Chmod(slots, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(slots, 0o755) })
+	base := hashOf(t, baseConfig)
+	_, err := sendTrial(s, nextConfig, time.Hour)
+	if err == nil || !strings.Contains(err.Error(), "store the config") || !strings.Contains(err.Error(), "config "+base+" is delivered again, and no trial is open") {
+		t.Errorf("err = %v, want the slot's failure and the running config delivered again", err)
+	}
+	if trialOpenOn(t, s) {
+		t.Error("the trial is open")
+	}
+	if exists(s.Paths.EffectsBaseline) {
+		t.Error("the effects' baseline stays, so the delivery was not applied whole")
+	}
+	s.mu.Lock()
+	armed := s.trialTimer != nil
+	s.mu.Unlock()
+	if armed {
+		t.Error("a deadline is armed")
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != base {
+		t.Errorf("the node runs %s, want %s", v, base)
+	}
+}
+
+// TestTrialExpiryStaleDeadline leaves the trial and its deadline alone when a deadline fires that
+// was armed before the one armed last: it neither rolls the trial back nor replaces that deadline.
+func TestTrialExpiryStaleDeadline(t *testing.T) {
+	s := trialServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	s.mu.Lock()
+	s.armTrial(rec, time.Hour)
+	stale := s.trialArmed
+	s.armTrial(rec, time.Hour)
+	timer := s.trialTimer
+	s.mu.Unlock()
+	s.expireTrial(rec.Version, rec.Deadline, stale)
+	if !trialOpenOn(t, s) {
+		t.Error("a stale deadline ended the trial")
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != rec.Version {
+		t.Errorf("the node runs %s, want the config on trial", v)
+	}
+	s.mu.Lock()
+	kept := s.trialTimer == timer
+	s.mu.Unlock()
+	if !kept {
+		t.Error("a stale deadline replaced the one armed after it")
+	}
+}
+
+// TestTrialExpiryTimesOut counts a rollback at the deadline that outlasts its time as a failed
+// attempt, and tries it again.
+func TestTrialExpiryTimesOut(t *testing.T) {
+	s := trialServer(t)
+	s.trialTimeout = 200 * time.Millisecond
+	first := openTrialOf(t, s, nextConfig)
+	writeOutputs(t, s, map[string]outputs.Definition{
+		"demo": demoOutput(t, s, `exec sleep 10`, ""), "networkd": networkdOutput(t, s), "chrony": chronyOutput(t, s),
+	})
+	expire(s, first)
+	rec, open, err := readTrial(s.Paths.StateDir)
+	if err != nil || !open || !strings.Contains(rec.Error, "its renderer did not finish") || rec.Attempts != 1 || rec.Changed {
+		t.Fatalf("after a rollback that timed out the record is %+v, open %v, %v; want it open with one attempt", rec, open, err)
+	}
+	s.mu.Lock()
+	armed := s.trialTimer != nil
+	s.mu.Unlock()
+	if !armed {
+		t.Error("the retry is not armed")
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != rec.Version {
+		t.Errorf("the node runs %s, want the config on trial", v)
+	}
+}
+
+// TestChangesWaitForAnEndedTrialsRollback refuses with ABORTED a delivery that finds a trial whose
+// slot runs the config from before it while an upgrade, an image rollback or the rollback at the
+// deadline runs: that rollback is finished before the record goes, and the lock it needs is held.
+func TestChangesWaitForAnEndedTrialsRollback(t *testing.T) {
+	s, _ := configServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
+		t.Fatal(err)
+	}
+	s.upgrading.Lock()
+	_, err := sendConfig(s, nextConfig)
+	s.upgrading.Unlock()
+	if connect.CodeOf(err) != connect.CodeAborted || !strings.Contains(err.Error(), "the trial of config "+rec.Version+" ended; chalkd finishes its rollback") {
+		t.Errorf("err = %v, want the rollback to finish first", err)
+	}
+	if !trialOpenOn(t, s) {
+		t.Error("the record is gone")
 	}
 }

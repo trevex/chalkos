@@ -174,9 +174,15 @@ type Server struct {
 	// trialTimer rolls the config on trial back at its deadline; nil without a trial. s.mu guards
 	// it.
 	trialTimer *time.Timer
+	// trialArmed counts the deadlines armed, so a deadline that fires knows whether it is the one
+	// armed last. s.mu guards it.
+	trialArmed uint64
 	// trialRetry is the time before a rollback at a trial's deadline that failed is tried again;
 	// zero is a minute. Tests set it.
 	trialRetry time.Duration
+	// trialTimeout is the time a rollback at a trial's deadline may take; zero is
+	// trialRollbackTimeout. Tests set it.
+	trialTimeout time.Duration
 	// logStreams counts the Logs calls running.
 	logStreams atomic.Int32
 	// diagnosticRuns counts the RunDiagnostic calls running.

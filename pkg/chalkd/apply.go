@@ -33,7 +33,7 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// A config on trial is confirmed or rolled back before the node takes another delivery.
-	if err := s.refuseOnTrial("another delivery"); err != nil {
+	if err := s.refuseOnTrial("another delivery", false); err != nil {
 		return nil, err
 	}
 	try, err := trialOf(req.Msg)
@@ -103,6 +103,9 @@ type delivery struct {
 	osCA string
 	// commits are what the image's layers change, as they planned the delivery.
 	commits []layer.Commit
+	// held is set for a delivery of the config the slot runs already, which writes the slot no
+	// more: it applies the config and takes the effects, as the end of a trial's rollback does.
+	held bool
 	// machine is what the config adds to the machine's storage; empty with keep.
 	machine machineChange
 	fx      *pendingEffects
@@ -274,7 +277,7 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 		}
 	}
 	// The documents and the identity are written in one rename.
-	if !d.keep {
+	if !d.keep && !d.held {
 		d.stored.Identity = d.identity.data
 		if err := slot.WriteKeepingPrevious(d.dir, d.stored); err != nil {
 			s.failedPartWay(ctx, d.fx, m.FallbackSecret)

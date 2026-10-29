@@ -43,7 +43,7 @@ import (
 // of the config's Registry of its host, and checked against the header as a streamed one.
 func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
 	if !s.upgrading.TryLock() {
-		return nil, failed(connect.CodeAborted, "an upgrade or a config delivery is running")
+		return nil, failed(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
 	}
 	defer s.upgrading.Unlock()
 	if err := s.refuseOnTrialLocking("an upgrade"); err != nil {

@@ -30,7 +30,7 @@ const trialFile = "chalkd/trial"
 // previous config and a rollback delivers again; the deadline; and the units the trial's health
 // check leaves out besides the image's. Error is why the last rollback at the deadline failed,
 // Attempts counts the rollbacks at the deadline that failed, and Changed is set once one failed
-// after it changed the node, which a rollback on request then finishes.
+// after it changed the node, which the deadline's retries or a rollback on request then finish.
 type trialRecord struct {
 	Slot        string    `json:"slot"`
 	Version     string    `json:"version"`
@@ -179,7 +179,7 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 		return nil, failed(connect.CodeFailedPrecondition, "the trial of config %s ended at its deadline, %s", r.Version, r.Deadline.UTC().Format(time.RFC3339))
 	}
 	if r.Changed {
-		return nil, failed(connect.CodeFailedPrecondition, "the rollback of config %s at its trial's deadline failed after it changed the node: %s; finish it with chalkctl apply-config --rollback %s", r.Version, r.Error, s.nodeName())
+		return nil, failed(connect.CodeFailedPrecondition, "the rollback of config %s at its trial's deadline failed after it changed the node: %s; chalkd tries again each minute, or chalkctl apply-config --rollback %s finishes it now", r.Version, r.Error, s.nodeName())
 	}
 	_, st, err := r.state(s.Loader.Slots)
 	if err != nil {
@@ -205,6 +205,8 @@ func (s *Server) endTrial() error {
 		s.trialTimer.Stop()
 		s.trialTimer = nil
 	}
+	// A deadline that fired already and waits for the locks finds it was stopped.
+	s.trialArmed++
 	return nil
 }
 
@@ -219,7 +221,7 @@ func (s *Server) trialStatus() *nodev1.ConfigTrial {
 	if !open {
 		return nil
 	}
-	return &nodev1.ConfigTrial{Version: r.Version, PreviousVersion: r.Previous, Deadline: timestamppb.New(r.Deadline), Error: r.Error, IgnoreUnits: r.IgnoreUnits}
+	return &nodev1.ConfigTrial{Version: r.Version, PreviousVersion: r.Previous, Deadline: timestamppb.New(r.Deadline), Error: r.Error, IgnoreUnits: r.IgnoreUnits, RollbackChanged: r.Changed}
 }
 
 // refuseOnTrialLocking is refuseOnTrial under s.mu, for an upgrade and an image rollback, which
@@ -227,16 +229,19 @@ func (s *Server) trialStatus() *nodev1.ConfigTrial {
 func (s *Server) refuseOnTrialLocking(what string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.refuseOnTrial(what)
+	return s.refuseOnTrial(what, true)
 }
 
 // refuseOnTrial refuses what would change the node while a config is on trial, so the trial's
-// rollback restores what the node ran before it. what names the change. A record whose slot runs
-// the config from before the trial already, as a rollback whose record a crash or a failed removal
-// kept leaves it, is removed, and the change goes ahead. The caller holds s.mu, which a trial's
+// rollback restores what the node ran before it. what names the change. A trial whose slot runs
+// the config from before it already, as a rollback that failed after it wrote the slot, or whose
+// record a crash or a failed removal kept, leaves it, is finished first, and the change goes
+// ahead. That needs s.upgrading: holdsUpgrading tells that the caller holds it, and otherwise it
+// is tried, and the change is refused with ABORTED while the upgrade, the image rollback or the
+// rollback at a trial's deadline that holds it runs. The caller holds s.mu, which a trial's
 // delivery holds while it writes the record; an upgrade and an image rollback call it through
 // refuseOnTrialLocking.
-func (s *Server) refuseOnTrial(what string) error {
+func (s *Server) refuseOnTrial(what string, holdsUpgrading bool) error {
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
 		return failed(connect.CodeInternal, "read the record of the config's trial: %v", err)
@@ -247,11 +252,13 @@ func (s *Server) refuseOnTrial(what string) error {
 	if _, st, err := r.state(s.Loader.Slots); err != nil {
 		log.Printf("read the trial's config slot: %v", err)
 	} else if st == trialEnded {
-		if err := s.endTrial(); err != nil {
-			return failed(connect.CodeInternal, "remove the record of the ended trial of config %s: %v", r.Version, err)
+		if !holdsUpgrading {
+			if !s.upgrading.TryLock() {
+				return failed(connect.CodeAborted, "the trial of config %s ended; chalkd finishes its rollback once the upgrade, the image rollback or the rollback at a trial's deadline that runs ended, so try again then", r.Version)
+			}
+			defer s.upgrading.Unlock()
 		}
-		log.Printf("the trial of config %s ended: the node runs config %s already", r.Version, r.Previous)
-		return nil
+		return s.finishTrial(r)
 	}
 	name := s.nodeName()
 	return failed(connect.CodeFailedPrecondition, "config %s is on trial until %s: confirm it with chalkctl apply-config --confirm %s, or roll it back with chalkctl apply-config --rollback %s, before %s",
@@ -309,8 +316,9 @@ func checkTrial(found bool, running, next string, m machineChange) error {
 
 // applyTrial delivers config on trial. The record goes to STATE, synced, before the delivery
 // changes anything, so neither a crash nor a boot finds the config on trial without it; once the
-// delivery ended, settleTrial arms the deadline or, when the slot does not run the config, drops
-// the record. The caller holds s.mu and s.upgrading.
+// delivery ended, settleTrial arms the deadline or, when the slot does not run the config, ends
+// the trial. A delivery that failed says which: the config stays on trial until its deadline, or
+// the config from before it is delivered again. The caller holds s.mu and s.upgrading.
 func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	d, err := s.planDelivery(ctx, r)
 	if err != nil {
@@ -323,40 +331,108 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 		return nil, failed(connect.CodeInternal, "record the trial: %v", err)
 	}
 	resp, err := d.commit(ctx)
-	s.settleTrial(rec)
-	if err != nil {
-		return nil, err
+	st, ferr := s.settleTrial(rec)
+	if err == nil {
+		log.Printf("config %s is on trial until %s; it rolls back to config %s unless confirmed", rec.Version, rec.Deadline.UTC().Format(time.RFC3339), rec.Previous)
+		return resp, nil
 	}
-	log.Printf("config %s is on trial until %s; it rolls back to config %s unless confirmed", rec.Version, rec.Deadline.UTC().Format(time.RFC3339), rec.Previous)
-	return resp, nil
+	switch {
+	case st == trialApplied:
+		return nil, failed(connect.CodeOf(err), "%v; config %s stays on trial until %s", plain(err), rec.Version, rec.Deadline.UTC().Format(time.RFC3339))
+	case st == trialEnded && ferr != nil:
+		return nil, failed(connect.CodeOf(err), "%v; %v", plain(err), plain(ferr))
+	case st == trialEnded:
+		return nil, failed(connect.CodeOf(err), "%v; config %s is delivered again, and no trial is open", plain(err), rec.Previous)
+	}
+	return nil, err
 }
 
-// settleTrial arms the deadline of the trial while its slot runs the config on trial, and removes
-// the record otherwise: of a delivery that failed before it wrote the slot, or of a trial that
-// ended before chalkd started. A slot that cannot be read leaves the decision to the deadline. The
-// caller holds s.mu.
-func (s *Server) settleTrial(r trialRecord) {
+// settleTrial settles the trial r once its delivery ended or chalkd started, and returns where it
+// stands: while its slot runs the config on trial, it arms the deadline; while the slot runs the
+// config from before it, as a delivery that failed before it wrote the slot or a crash leaves it,
+// it finishes the trial and returns finishTrial's error. A trial whose slot runs neither loses its
+// record. A slot that cannot be read leaves the decision to the deadline, as the trial applied.
+// The caller holds s.mu and s.upgrading.
+func (s *Server) settleTrial(r trialRecord) (trialState, error) {
 	_, st, err := r.state(s.Loader.Slots)
 	switch {
 	case err != nil:
 		log.Printf("read the config of the trial's slot: %v; its deadline decides", err)
 		s.armTrial(r, time.Until(r.Deadline))
+		return trialApplied, nil
 	case st == trialApplied:
 		s.armTrial(r, time.Until(r.Deadline))
+	case st == trialEnded:
+		return st, s.finishTrial(r)
 	default:
+		log.Printf("the trial of config %s ended: its slot runs neither it nor config %s", r.Version, r.Previous)
 		if err := s.endTrial(); err != nil {
 			log.Printf("remove the record of the config's trial: %v", err)
 		}
 	}
+	return st, nil
+}
+
+// trialRollbackTimeout is the longest a rollback at a trial's deadline, or the delivery that
+// finishes a trial's rollback, may take; one that takes longer failed, and is tried again.
+const trialRollbackTimeout = 5 * time.Minute
+
+// rollbackContext is the context of a rollback at a trial's deadline or the delivery that
+// finishes one: they outlive every request, so it is a context of their own, with their timeout.
+func (s *Server) rollbackContext() (context.Context, context.CancelFunc) {
+	d := s.trialTimeout
+	if d <= 0 {
+		d = trialRollbackTimeout
+	}
+	return context.WithTimeout(context.Background(), d)
+}
+
+// finishTrial ends a trial whose slot runs the config from before it again. It delivers that
+// config again first: the effects compare with the baseline a delivery that failed part way left,
+// the rollback's or the trial's own, so they take what it left undone, such as a restart or an
+// output's swap. Only then does the record go. A delivery that fails keeps the trial open, as
+// keepTrial does, and the deadline tries again; so does a record that cannot be removed. The
+// caller holds s.mu and s.upgrading.
+func (s *Server) finishTrial(r trialRecord) error {
+	log.Printf("the node runs config %s from before the trial of config %s; delivering it again to finish the rollback", r.Previous, r.Version)
+	ctx, cancel := s.rollbackContext()
+	defer cancel()
+	if _, err := s.redeliver(ctx); err != nil {
+		s.keepTrial(r, err, true)
+		return failed(connect.CodeOf(err), "the trial of config %s ended, but delivering config %s again to finish its rollback failed: %v; chalkd tries again each minute", r.Version, r.Previous, plain(err))
+	}
+	if err := s.endTrial(); err != nil {
+		log.Printf("remove the record of the ended trial of config %s: %v; trying again in %v", r.Version, err, s.retryTrial())
+		s.armTrial(r, s.retryTrial())
+		return failed(connect.CodeInternal, "remove the record of the ended trial of config %s: %v", r.Version, err)
+	}
+	log.Printf("the trial of config %s ended: the node runs config %s", r.Version, r.Previous)
+	return nil
+}
+
+// keepTrial keeps the trial r open after err failed its rollback at the deadline, or the delivery
+// that finishes it: the record takes the failure, counts the attempt and whether it changed the
+// node, and the deadline is armed again for the retry. The caller holds s.mu.
+func (s *Server) keepTrial(r trialRecord, err error, changed bool) {
+	log.Printf("the rollback of config %s failed: %v; trying again in %v", r.Version, err, s.retryTrial())
+	r.Error, r.Attempts, r.Changed = plain(err).Error(), r.Attempts+1, r.Changed || changed
+	if werr := writeTrial(s.Paths.StateDir, r); werr != nil {
+		log.Printf("record the failed rollback: %v", werr)
+	}
+	s.armTrial(r, s.retryTrial())
 }
 
 // armTrial has the trial expire after the time given, at once when it is not positive; the
-// caller holds s.mu.
+// caller holds s.mu. The record's deadline is wall-clock time, which outlives chalkd, while the
+// timer counts on the monotonic clock from now: a step of the system's clock after the deadline
+// was armed moves the timer no more, and chalkd's next start arms it from the recorded deadline.
 func (s *Server) armTrial(r trialRecord, after time.Duration) {
 	if s.trialTimer != nil {
 		s.trialTimer.Stop()
 	}
-	s.trialTimer = time.AfterFunc(after, func() { s.expireTrial(r.Version, r.Deadline) })
+	s.trialArmed++
+	armed := s.trialArmed
+	s.trialTimer = time.AfterFunc(after, func() { s.expireTrial(r.Version, r.Deadline, armed) })
 }
 
 // retryTrial is the time before a rollback at a trial's deadline that failed is tried again.
@@ -368,23 +444,27 @@ func (s *Server) retryTrial() time.Duration {
 }
 
 // expireTrial rolls back the config on trial whose version and deadline are given, once the
-// deadline passed unconfirmed, through rollbackConfig, the pipeline of RollbackConfig. It takes
-// s.upgrading before s.mu, as Upgrade and RollbackImage do. ApplyConfig and RollbackConfig hold
-// s.mu and only try s.upgrading, so nothing waits for the lock the other holds. The trial is
-// re-read under the locks:
+// deadline passed unconfirmed, through rollbackConfig, the pipeline of RollbackConfig. armed is
+// the count of armed deadlines when its own was armed: a deadline armed after it, or stopped,
+// leaves it nothing to do, as its timer may have fired while it was replaced. It takes s.upgrading
+// before s.mu, as Upgrade and RollbackImage do. ApplyConfig and RollbackConfig hold s.mu and only
+// try s.upgrading, so nothing waits for the lock the other holds. The trial is re-read under the
+// locks:
 //   - a trial confirmed or rolled back meanwhile, or a later trial, even of the same version, is
 //     left alone;
-//   - a node that runs the config from before the trial already, as after a rollback on request
-//     whose record a crash kept, only loses the record, and so does a slot that runs neither;
+//   - a node that runs the config from before the trial already, as after a rollback that failed
+//     after it wrote the slot, or a rollback on request whose record a crash kept, finishes the
+//     trial; a slot that runs neither only loses the record;
 //   - a rollback that fails keeps the trial open, its failure and whether it changed the node in
-//     the record, and is tried again.
-//
-// The rollback outlives every request, so it runs with a context of its own.
-func (s *Server) expireTrial(version string, deadline time.Time) {
+//     the record, and is tried again; so does one that outlasts trialRollbackTimeout.
+func (s *Server) expireTrial(version string, deadline time.Time, armed uint64) {
 	s.upgrading.Lock()
 	defer s.upgrading.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if armed != s.trialArmed {
+		return
+	}
 	r, open, err := readTrial(s.Paths.StateDir)
 	switch {
 	case err != nil:
@@ -395,25 +475,24 @@ func (s *Server) expireTrial(version string, deadline time.Time) {
 		return
 	}
 	_, st, err := r.state(s.Loader.Slots)
-	changed := false
-	if err == nil && st == trialApplied {
-		log.Printf("config %s was not confirmed by its trial's deadline; rolling back to config %s", r.Version, r.Previous)
-		_, changed, err = s.rollbackConfig(context.Background(), r.Previous)
-	}
-	if err != nil {
-		log.Printf("the rollback of config %s at its trial's deadline failed: %v; trying again in %v", r.Version, err, s.retryTrial())
-		r.Error, r.Attempts, r.Changed = plain(err).Error(), r.Attempts+1, r.Changed || changed
-		if werr := writeTrial(s.Paths.StateDir, r); werr != nil {
-			log.Printf("record the failed rollback: %v", werr)
-		}
-		s.armTrial(r, s.retryTrial())
+	switch {
+	case err != nil:
+		s.keepTrial(r, fmt.Errorf("read the config of the trial's slot: %w", err), false)
 		return
-	}
-	switch st {
-	case trialEnded:
-		log.Printf("the trial of config %s ended: the node runs config %s already", r.Version, r.Previous)
-	case trialLost:
+	case st == trialEnded:
+		s.finishTrial(r)
+		return
+	case st == trialLost:
 		log.Printf("the trial of config %s ended: its slot runs neither it nor config %s", r.Version, r.Previous)
+	default:
+		log.Printf("config %s was not confirmed by its trial's deadline; rolling back to config %s", r.Version, r.Previous)
+		ctx, cancel := s.rollbackContext()
+		_, changed, err := s.rollbackConfig(ctx, r.Previous)
+		cancel()
+		if err != nil {
+			s.keepTrial(r, err, changed)
+			return
+		}
 	}
 	// The deadline that fired is armed no longer, so a record that stays is tried again.
 	if err := s.endTrial(); err != nil {
@@ -422,19 +501,19 @@ func (s *Server) expireTrial(version string, deadline time.Time) {
 	}
 }
 
-// ResumeTrial arms the deadline of a trial recorded before chalkd started: one past its deadline
-// rolls back at once. A record of a trial whose slot does not run its config, as a crash before
-// the slot was written leaves it, goes, as does a record that cannot be read: no trial is open
-// then. chalkd calls it in normal mode before it serves.
+// ResumeTrial settles a trial recorded before chalkd started, as settleTrial does: one past its
+// deadline rolls back at once, and one whose slot runs the config from before it, as a crash
+// before the slot was written leaves it, is finished. A record that cannot be read stays, so
+// every change is refused until a boot or RollbackConfig removes it. chalkd calls it in normal
+// mode before it serves.
 func (s *Server) ResumeTrial() {
+	s.upgrading.Lock()
+	defer s.upgrading.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
-		log.Printf("read the record of the config's trial: %v; removing it, so no trial is open", err)
-		if err := s.endTrial(); err != nil {
-			log.Printf("remove the record of the config's trial: %v", err)
-		}
+		log.Printf("read the record of the config's trial: %v; keeping it, so the node takes no change until a boot removes it", err)
 		return
 	}
 	if open {
