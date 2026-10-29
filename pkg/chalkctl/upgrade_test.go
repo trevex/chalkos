@@ -20,6 +20,7 @@ import (
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
@@ -136,6 +137,8 @@ type upgradeFake struct {
 	// rolledBackTo is the root hash of the image the last rollback rolled back to, as chalkd records
 	// it; an upgrade that stages an image removes it.
 	rolledBackTo []byte
+	// trial is the config on trial the node's status shows; nil without one.
+	trial *nodev1.ConfigTrial
 }
 
 // upgradeLab is a cluster of fake nodes.
@@ -242,6 +245,7 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 		st.Boot.Failed = &nodev1.BootImage{RootHash: n.failedRoot, Generation: n.generation + 1}
 	}
 	st.ConfigVersion = versionOf(n.config)
+	st.Trial = n.trial
 	if n.failed != "" {
 		st.Boot.Journal = []string{"chalkd: not healthy yet: units failed: broken.service"}
 	}
@@ -2080,5 +2084,22 @@ func TestUpgradeRollbackOfAControlPlane(t *testing.T) {
 	}
 	if v := l.images()["cp1"]; v != "0.1.0" {
 		t.Errorf("cp1 runs %s, want 0.1.0", v)
+	}
+}
+
+// TestUpgradeRefusesANodeOnTrial stops before anything changes when a selected node runs a config
+// on trial, for an upgrade and a rollback alike.
+func TestUpgradeRefusesANodeOnTrial(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	l.nodes["w2"].trial = &nodev1.ConfigTrial{Version: "v2", PreviousVersion: "v1", Deadline: timestamppb.New(time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC))}
+	want := "w2 runs config v2 on trial until 2026-10-29T12:00:00Z; confirm it with chalkctl apply-config --confirm w2, or roll it back with chalkctl apply-config --rollback w2, first"
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0")); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("upgrade = %v, want %q", err, want)
+	}
+	if err := l.run("upgrade", "--rollback", "--nodes", "w2"); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("upgrade --rollback = %v, want %q", err, want)
+	}
+	if got := l.takeEvents(); len(got) != 0 {
+		t.Errorf("the refused runs asked %q", got)
 	}
 }

@@ -150,7 +150,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		if err := c.node(name); err != nil {
 			return err
 		}
-		info, _, roles, err := r.probe(ctx, name)
+		info, st, roles, err := r.probe(ctx, name)
 		if err != nil {
 			return err
 		}
@@ -180,6 +180,10 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			groups[g.key] = g
 		}
 		g = groups[g.key]
+		// The node refuses an upgrade while a config is on trial.
+		if err := trialOpen(name, st); err != nil {
+			return err
+		}
 		r.nodes[name] = n
 		if info.Variant != "" && info.Variant != g.variant {
 			r.say("%s runs the variant %s; it gets the image of %s", name, info.Variant, g.variant)
@@ -265,6 +269,9 @@ func (r *upgradeRun) planRollback(ctx context.Context, named []string) error {
 		b := st.GetBoot()
 		if b.GetError() != "" {
 			return fmt.Errorf("%s: its boot is unknown: %s", name, b.GetError())
+		}
+		if err := trialOpen(name, st); err != nil {
+			return err
 		}
 		probed[name], boots[name] = roles.coordinator(), b
 		r.nodes[name] = &upgradeNode{name: name, roles: roles}
