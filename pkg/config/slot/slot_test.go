@@ -509,7 +509,7 @@ func TestRestorePrevious(t *testing.T) {
 	if err := relink(Previous(dir), "gone"); err != nil {
 		t.Fatal(err)
 	}
-	if err := RestorePrevious(dir); !errors.Is(err, fs.ErrNotExist) {
+	if err := RestorePrevious(dir); !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), dir+"'s previous config gone is gone") {
 		t.Errorf("with a dangling previous link: %v", err)
 	}
 	if now, err := os.Readlink(dir); err != nil || now != held {
