@@ -1135,6 +1135,20 @@ func TestUpgradeChecksTheConfigBeforeDraining(t *testing.T) {
 	}
 }
 
+// TestUpgradeOfAChalkdWithoutTheLayersAPI says to upgrade a chalkd whose Info names the
+// Kubernetes layer but which serves no API of it, before the node is sent anything.
+func TestUpgradeOfAChalkdWithoutTheLayersAPI(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	l.nodes["n1"].layers = []string{layers.Kubernetes}
+	err := l.upgrade(testUpgradeImage(t, "plain", "0.2.0"), "--nodes", "n1")
+	if want := "n1: the node's chalkd serves no API of the kubernetes layer; upgrade chalkd first"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("upgrade = %v, want %q", err, want)
+	}
+	if events := l.takeEvents(); len(events) != 0 {
+		t.Errorf("the nodes were asked %q", events)
+	}
+}
+
 // TestUpgradeChecksEveryNodesConfigFirst: when the config of a later node does not suit the
 // image, no node is drained or sent it, not even those before it.
 func TestUpgradeChecksEveryNodesConfigFirst(t *testing.T) {

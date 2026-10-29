@@ -42,7 +42,8 @@ func nodeStatus(ctx context.Context, conn *client.Conn) (*kubernetesv1.StatusRes
 	if !slices.Contains(info.Msg.Layers, layers.Kubernetes) {
 		return nil, errNoKubernetes
 	}
-	return Status(ctx, conn)
+	st, err := Status(ctx, conn)
+	return st, layer.ServiceError(err, layers.Kubernetes)
 }
 
 // nodeStatusOf reads the state of an installed node's Kubernetes through nodes, as nodeStatus does.

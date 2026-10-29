@@ -14,7 +14,7 @@ import (
 func (p *Plugin) PrintStatus(ctx context.Context, h layer.Host, conn *client.Conn) error {
 	k, err := Status(ctx, conn)
 	if err != nil {
-		return err
+		return layer.ServiceError(err, p.Name())
 	}
 	fmt.Fprintln(h.Stdout(), kubernetesLine(k))
 	w := h.Table()

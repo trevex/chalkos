@@ -19,7 +19,7 @@ import (
 func (p *Plugin) UpgradeRole(ctx context.Context, conn *client.Conn) (layer.UpgradeRole, error) {
 	k, err := Status(ctx, conn)
 	if err != nil {
-		return layer.UpgradeRole{}, err
+		return layer.UpgradeRole{}, layer.ServiceError(err, p.Name())
 	}
 	return layer.UpgradeRole{Coordinator: k.Kind == k8s.KindControlPlane, Member: inCluster(k)}, nil
 }
