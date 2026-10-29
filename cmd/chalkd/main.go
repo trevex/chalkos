@@ -390,10 +390,14 @@ func serve() error {
 			})
 		}
 	}
-	// The issuer of the image's layer renews the node certificate; a node without one is renewed
-	// with chalkctl node renew.
-	if is := srv.Plugins.Issuer(); is != nil && creds.mode == nodev1.Mode_MODE_NORMAL {
-		srv.Renewal = chalkd.NewNodeRenewal(creds.node, is.IssueNodeCertificate)
+	// The issuer of the image's layer renews the node certificate. Without one, the renewal only
+	// logs once it is due, and Status names chalkctl node renew.
+	if creds.mode == nodev1.Mode_MODE_NORMAL {
+		var issue func(context.Context, []byte) (string, error)
+		if is := srv.Plugins.Issuer(); is != nil {
+			issue = is.IssueNodeCertificate
+		}
+		srv.Renewal = chalkd.NewNodeRenewal(creds.node, issue)
 		go srv.Renewal.Run(ctx)
 	}
 	go announceAddresses(srv.CurrentFingerprint)

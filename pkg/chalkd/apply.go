@@ -266,7 +266,7 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 	// A delivery without config, as a rotation's, renews nothing: forced renewals would restart
 	// services on top of the restarts the rotation waits for. Renewals come after the loops started
 	// again, which would end a renewal under way. The layers plan their own renewals alike.
-	if s.RenewOnApplyConfig && !d.keep && s.Renewal != nil {
+	if s.RenewOnApplyConfig && !d.keep && s.Renewal != nil && s.Renewal.Renew != nil {
 		log.Print("renewing the node certificate, as this test image does after each config")
 		s.Renewal.Force()
 	}

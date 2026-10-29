@@ -41,9 +41,9 @@ func (s *Server) certificates(now time.Time) []*nodev1.CertificateStatus {
 		switch {
 		case s.Renewal != nil && s.Renewal.Problem() != "":
 			problem = s.Renewal.Problem()
-		case problem != "" && s.Renewal == nil:
+		case problem != "" && (s.Renewal == nil || s.Renewal.Renew == nil):
 			// Only a node whose image has an issuer renews it itself.
-			problem += "; renew it with chalkctl node renew " + s.nodeName()
+			problem = cannotRenew(leaf, now, s.nodeName())
 		}
 		var issuer *x509.Certificate
 		if chain := s.Certificate.Current().TLS.Certificate; len(chain) > 1 {

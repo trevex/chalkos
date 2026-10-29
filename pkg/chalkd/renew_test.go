@@ -624,3 +624,24 @@ func signRequest(nodeCA pki.CertKey, names pki.NodeNames, request []byte, now ti
 	}
 	return pki.SignNode(nodeCA, names, csr.PublicKey.(*ecdsa.PublicKey), now)
 }
+
+// A node renewal without an issuer issues nothing, also when forced, and keeps the certificate.
+func TestNodeRenewalWithoutAnIssuer(t *testing.T) {
+	c := newCreds(t)
+	cert := loadedCertificate(t, c, c.node)
+	leaf := cert.Current().Leaf
+	r := NewNodeRenewal(cert, nil)
+	if r.Renew != nil {
+		t.Fatal("a renewal without an issuer renews")
+	}
+	clock := renewaltest.NewClock(time.Now())
+	r.Now, r.After = clock.Now, clock.After
+	advance := renewaltest.Run(t, r.Run, clock)
+	advance(pki.RenewAt(leaf).Add(time.Minute))
+	// A forced renewal runs at once and asks for the next wait, which Next takes.
+	r.Force()
+	clock.Next(t)
+	if cert.Current().Leaf != leaf || r.Problem() != "" {
+		t.Errorf("certificate replaced %v, problem %q", cert.Current().Leaf != leaf, r.Problem())
+	}
+}

@@ -144,7 +144,8 @@ type Server struct {
 	// Plugins are the layers compiled into chalkd and those of them the image carries; nil
 	// serves the node API alone, as on an image of the base alone.
 	Plugins *layer.Registry
-	// Renewal renews the node certificate; nil on a node that renews none.
+	// Renewal renews the node certificate in normal mode, through the image's issuer when it has
+	// one; nil in maintenance mode.
 	Renewal *renewal.Renewal
 	// RenewOnApplyConfig renews the node certificate and the layers' certificates after each
 	// ApplyConfig that delivers config, due or not. Only test images set it, to renew within a

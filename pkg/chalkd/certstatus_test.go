@@ -14,6 +14,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -113,14 +114,27 @@ func TestStatusCertificatesWithoutKubernetes(t *testing.T) {
 	}
 }
 
-// A node without Kubernetes renews its node certificate only when told to, so the status names
-// the command with the node's name.
+// A node whose image has no issuer renews its node certificate only when told to, so once it is
+// due, or expired, the status says so and names the command with the node's name; with the
+// renewal running as in normal mode or without it.
 func TestStatusNamesTheNodeToRenew(t *testing.T) {
 	s, _ := installedServer(t, section("", ""), false)
 	withNodeCertificate(t, s)
-	want := "less than a third of its lifetime remains; renew it with chalkctl node renew n1"
-	if got := s.certificates(time.Now().Add(pki.LeafValidity * 3 / 4))[0]; got.Name != "node" || got.Problem != want {
-		t.Errorf("%s: problem %q, want %q", got.Name, got.Problem, want)
+	leaf := s.Certificate.Current().Leaf
+	date := leaf.NotAfter.UTC().Format(time.DateOnly)
+	for _, r := range []*renewal.Renewal{nil, NewNodeRenewal(s.Certificate, nil)} {
+		s.Renewal = r
+		due := s.certificates(time.Now().Add(pki.LeafValidity * 3 / 4))[0]
+		if want := "the node certificate expires on " + date + "; this image cannot renew it on its own; run chalkctl node renew n1"; due.Name != "node" || due.Problem != want {
+			t.Errorf("due, renewal %v: problem %q, want %q", r != nil, due.Problem, want)
+		}
+		expired := s.certificates(leaf.NotAfter.Add(time.Hour))[0]
+		if want := "the node certificate expired on " + date + "; this image cannot renew it on its own; run chalkctl node renew n1"; expired.Problem != want {
+			t.Errorf("expired, renewal %v: problem %q, want %q", r != nil, expired.Problem, want)
+		}
+		if fresh := s.certificates(time.Now())[0]; fresh.Problem != "" {
+			t.Errorf("not due, renewal %v: problem %q", r != nil, fresh.Problem)
+		}
 	}
 }
 

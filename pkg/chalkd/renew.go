@@ -17,15 +17,29 @@ import (
 )
 
 // NewNodeRenewal renews the node certificate once two thirds of its lifetime have passed, with a
-// certificate issue obtains for a new key.
+// certificate issue obtains for a new key. Without issue nothing on the node renews it, and the
+// renewal only logs once it is due.
 func NewNodeRenewal(cert *NodeCertificate, issue func(context.Context, []byte) (string, error)) *renewal.Renewal {
 	due := func(now time.Time) (bool, time.Time, error) {
 		leaf := cert.Current().Leaf
 		return !now.Before(pki.RenewAt(leaf)), leaf.NotAfter, nil
 	}
+	if issue == nil {
+		return renewal.New("node certificate", due, nil)
+	}
 	return renewal.New("node certificate", due, func(ctx context.Context, now time.Time) error {
 		return renewNodeCertificate(ctx, cert, issue, now)
 	})
+}
+
+// cannotRenew is the problem of a node certificate that is due on a node whose image has no
+// issuer: chalkctl node renew renews it.
+func cannotRenew(leaf *x509.Certificate, now time.Time, node string) string {
+	verb := "expires"
+	if !now.Before(leaf.NotAfter) {
+		verb = "expired"
+	}
+	return fmt.Sprintf("the node certificate %s on %s; this image cannot renew it on its own; run chalkctl node renew %s", verb, leaf.NotAfter.UTC().Format(time.DateOnly), node)
 }
 
 // renewNodeCertificate obtains a node certificate for a new key, checks it is for exactly the
