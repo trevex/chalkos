@@ -13,11 +13,11 @@ Shows an installed node's status: the config it runs and whether it is the one t
 gives; its platform; the image it booted, by its store's root hash and the tag and revision it
 was built from as far as the node knows them, the boot entry and whether that boot was found
 healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled back,
-with the journal of the boot that failed; the previous config and image a rollback restores;
-whether its store is the image the inventory names for it; its volumes and their state;
-Kubernetes, with the nodes revoked in the cluster on a control plane; a router's BGP sessions;
-the certificates it serves and when they expire; the CAs it trusts; its clock; and the units that
-failed. The command needs a reader client file or the secrets file.
+with the journal of the boot that failed; a config on trial and when it rolls back; the previous
+config and image a rollback restores; whether its store is the image the inventory names for it;
+its volumes and their state; Kubernetes, with the nodes revoked in the cluster on a control plane;
+a router's BGP sessions; the certificates it serves and when they expire; the CAs it trusts; its
+clock; and the units that failed. The command needs a reader client file or the secrets file.
 
 ## Flags
 

@@ -48,6 +48,9 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	state := t.cluster.configState(t.name, s.ConfigVersion, false)
 	// A node installed before config documents runs an identity alone.
 	fmt.Fprintf(a.stdout, "config %s (%s)\n", cmp.Or(s.ConfigVersion, "none"), state)
+	if s.Trial != nil {
+		fmt.Fprintln(a.stdout, trialLine(s.Trial))
+	}
 	if s.PreviousConfigVersion != "" {
 		fmt.Fprintf(a.stdout, "previous config %s (apply-config --rollback restores it)\n", s.PreviousConfigVersion)
 	}

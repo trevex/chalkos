@@ -206,6 +206,22 @@ certificate and layer payloads such as a Kubernetes share stay as they are. An u
 starts without a previous config. With --diff it prints what the rollback changes. It needs no
 inventory.
 
+--try applies the config on trial for the duration given, from 10s to 24h. Unless chalkctl
+confirms the config within it, the node rolls the config back by itself through the same steps as
+--rollback. chalkctl confirms it over a new connection, which proves that the config left the node
+reachable, once the node is healthy as an upgrade's boot must be: chalkd serves, no unit of the
+boot failed, and the image's layers find their services healthy. The check leaves out the units the
+image ignores and those --ignore-unit names, one unit per flag. chalkctl warns of units that failed
+before the trial, which keep the check from passing unless they recover. A trial delivers config
+alone and is refused for a config that changes the node's storage. While it is open, the node
+refuses other deliveries, upgrades and image rollbacks; --rollback rolls the config back at once
+and ends the trial, and a reboot boots the config from before it. --no-confirm leaves the trial
+open, and --confirm confirms it later; it needs no inventory. A delivery on trial that fails after
+it changed the config leaves the trial open, and chalkctl does not confirm it. When the rollback at
+the deadline fails, the node tries it again each minute and --confirm still keeps the config,
+unless the failed rollback changed the node; --rollback then finishes it. After a trial's rollback,
+the config on trial is the node's previous config, which --rollback delivers again without a trial.
+
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
 says which nodes are revoked; --force delivers it without asking. The command needs the secrets
@@ -224,17 +240,24 @@ const applyConfigExample = `  # Apply w1's changed network and labels.
   chalkctl apply-config w1 --secrets secrets.age --staged
 
   # Undo w1's last config delivery.
-  chalkctl apply-config w1 --secrets secrets.age --rollback`
+  chalkctl apply-config w1 --secrets secrets.age --rollback
+
+  # Try w1's changed network for five minutes; w1 rolls it back unless chalkctl reaches it again.
+  chalkctl apply-config w1 --secrets secrets.age --try 5m
+
+  # Keep a trial open while you test by hand, then keep the config.
+  chalkctl apply-config w1 --secrets secrets.age --try 30m --no-confirm
+  chalkctl apply-config w1 --secrets secrets.age --confirm`
 
 const statusLong = `Shows an installed node's status: the config it runs and whether it is the one the inventory
 gives; its platform; the image it booted, by its store's root hash and the tag and revision it
 was built from as far as the node knows them, the boot entry and whether that boot was found
 healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled back,
-with the journal of the boot that failed; the previous config and image a rollback restores;
-whether its store is the image the inventory names for it; its volumes and their state;
-Kubernetes, with the nodes revoked in the cluster on a control plane; a router's BGP sessions;
-the certificates it serves and when they expire; the CAs it trusts; its clock; and the units that
-failed. The command needs a reader client file or the secrets file.`
+with the journal of the boot that failed; a config on trial and when it rolls back; the previous
+config and image a rollback restores; whether its store is the image the inventory names for it;
+its volumes and their state; Kubernetes, with the nodes revoked in the cluster on a control plane;
+a router's BGP sessions; the certificates it serves and when they expire; the CAs it trusts; its
+clock; and the units that failed. The command needs a reader client file or the secrets file.`
 
 const statusExample = `  chalkctl status cp1
 

@@ -12,9 +12,11 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
@@ -27,6 +29,39 @@ type applyConfigFlags struct {
 	layers       []layerFlags
 	// payloadFlags names the layers' flags that ask for payloads, which --force goes with.
 	payloadFlags string
+	// try is how long the config is on trial; zero applies it for good. noConfirm leaves the
+	// trial open; confirm confirms an open one. ignoreUnits are the units the trial's health
+	// check leaves out.
+	try                time.Duration
+	noConfirm, confirm bool
+	ignoreUnits        []string
+}
+
+// payloads reports whether a layer's flag asks for payloads.
+func (f applyConfigFlags) payloads() bool {
+	return slices.ContainsFunc(f.layers, func(l layerFlags) bool { return l.f.Requested() })
+}
+
+// checkTrial refuses what --try, --no-confirm and --ignore-unit do not go with. The node checks
+// the units' names.
+func (f applyConfigFlags) checkTrial() error {
+	switch {
+	case f.noConfirm && f.try == 0:
+		return cli.Usagef("--no-confirm goes with --try")
+	case len(f.ignoreUnits) > 0 && f.try == 0:
+		return cli.Usagef("--ignore-unit goes with --try")
+	case f.try == 0:
+		return nil
+	case f.try < minTrial || f.try > maxTrial:
+		return cli.Usagef("--try takes from %v to %v, not %v", minTrial, maxTrial, f.try)
+	case f.staged:
+		return cli.Usagef("--try applies config to the running image; --staged goes without it")
+	case f.diff:
+		return cli.Usagef("--diff changes nothing, so it tries nothing; drop --try")
+	case f.force || f.payloads():
+		return cli.Usagef("--try delivers config alone, which a rollback undoes; deliver %s without it", f.payloadFlags)
+	}
+	return nil
 }
 
 // layerFlags are a layer's apply-config flags with the layer that registered them.
@@ -60,20 +95,29 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the node's image in the inventory")
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing")
 	fs.BoolVar(&f.rollback, "rollback", false, "deliver the node's previous config again, the one its image ran before the last delivery, instead of the inventory's")
+	fs.DurationVar(&f.try, "try", 0, "apply the config on trial: the node rolls it back by itself unless chalkctl confirms it within the duration, from 10s to 24h, over a new connection once the node is healthy")
+	fs.BoolVar(&f.noConfirm, "no-confirm", false, "with --try, leave the trial open for apply-config --confirm")
+	fs.BoolVar(&f.confirm, "confirm", false, "confirm the node's open trial once the node is healthy, so it keeps the config on trial")
+	fs.StringArrayVar(&f.ignoreUnits, "ignore-unit", nil, "with --try, leave the unit out of the health check the confirmation waits for, as the image's check leaves out the units it ignores")
 	return cmd
 }
 
 func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
-	if f.rollback {
+	switch {
+	case f.confirm:
+		return a.confirmConfig(ctx, f, pos[0])
+	case f.rollback:
 		return a.rollbackConfig(ctx, f, pos[0])
+	}
+	if err := f.checkTrial(); err != nil {
+		return err
 	}
 	for _, l := range f.layers {
 		if err := l.f.Check(f.staged); err != nil {
 			return err
 		}
 	}
-	requested := slices.ContainsFunc(f.layers, func(l layerFlags) bool { return l.f.Requested() })
-	if f.force && !requested {
+	if f.force && !f.payloads() {
 		return cli.Usagef("--force goes with %s", f.payloadFlags)
 	}
 	t, err := a.target(ctx, f.node, pos[0])
@@ -110,6 +154,22 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 	if err != nil {
 		return err
+	}
+	// The node refuses every delivery while a config is on trial; --diff changes nothing.
+	if !f.diff {
+		if err := trialOpen(t.name, st.Msg); err != nil {
+			return err
+		}
+	}
+	if f.try > 0 && st.Msg.ConfigVersion == d.Version {
+		return fmt.Errorf("%s runs config %s already; --try needs a config that changes it", t.name, d.Version)
+	}
+	// A unit that failed before the trial keeps its confirmation from passing, also later with
+	// --confirm, unless it recovers or is left out.
+	if f.try > 0 {
+		if w := failedUnitsWarning(st.Msg.FailedUnits, f.ignoreUnits); w != "" {
+			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: %s\n", t.name, w)
+		}
 	}
 	if !f.staged && st.Msg.Boot.GetStaged() != nil {
 		fmt.Fprintln(a.stderr, stagedNote(t.name, st.Msg))
@@ -157,8 +217,17 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		}
 		payloads = append(payloads, p...)
 	}
-	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, Layers: payloads, Staged: f.staged}))
+	req := &nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, Layers: payloads, Staged: f.staged}
+	// chalkctl's deadline starts before the node's, so it falls before it.
+	deadline := time.Now().Add(f.try)
+	if f.try > 0 {
+		req.Try, req.IgnoreUnits = durationpb.New(f.try), f.ignoreUnits
+	}
+	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(req))
 	if err != nil {
+		if f.try > 0 {
+			return failedTrial(ctx, conn, t.name, d.Version, nodeError(err, t.name))
+		}
 		return nodeError(err, t.name)
 	}
 	for _, c := range resp.Msg.Changes {
@@ -168,12 +237,40 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		fmt.Fprintf(a.stdout, "restarted %s\n", u)
 	}
 	a.warnDelivery(t.name, resp.Msg)
-	if f.staged {
+	switch {
+	case f.staged:
 		fmt.Fprintf(a.stdout, "%s boots config %s with its staged image\n", t.name, d.Version)
 		return nil
+	case f.try == 0:
+		fmt.Fprintf(a.stdout, "%s runs config %s\n", t.name, d.Version)
+		return nil
 	}
-	fmt.Fprintf(a.stdout, "%s runs config %s\n", t.name, d.Version)
-	return nil
+	fmt.Fprintf(a.stdout, "%s runs config %s on trial; it rolls back to config %s by itself unless confirmed within %v\n", t.name, d.Version, st.Msg.ConfigVersion, f.try)
+	if f.noConfirm {
+		fmt.Fprintln(a.stdout, endTrialHint(t.name))
+		return nil
+	}
+	// The delivery's connection survives what the config changes, as established connections do
+	// through a firewall; only a new one proves the node reachable.
+	conn.Close()
+	return a.confirmTrial(ctx, t, d.Version, st.Msg.ConfigVersion, deadline)
+}
+
+// failedTrial returns err, which failed the delivery of config version on trial. A delivery that
+// failed after it changed the config leaves the config on trial until its deadline, as err says;
+// chalkctl then does not confirm a config that failed to apply, and names the commands that end
+// the trial.
+func failedTrial(ctx context.Context, conn *client.Conn, name, version string, err error) error {
+	st, serr := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	if serr == nil && st.Msg.Trial.GetVersion() == version {
+		return fmt.Errorf("%w; %s", err, endTrialHint(name))
+	}
+	return err
+}
+
+// endTrialHint names the commands that end the node's open trial.
+func endTrialHint(name string) string {
+	return fmt.Sprintf("chalkctl apply-config --confirm %s keeps it; chalkctl apply-config --rollback %s rolls it back now", name, name)
 }
 
 // rollbackConfig delivers the node's previous config again, as the node keeps it, and prints what
@@ -182,8 +279,10 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	switch {
 	case f.staged:
 		return cli.Usagef("--rollback restores the running image's previous config; --staged goes without it")
-	case f.force || slices.ContainsFunc(f.layers, func(l layerFlags) bool { return l.f.Requested() }):
+	case f.force || f.payloads():
 		return cli.Usagef("--rollback restores config alone; deliver %s without it", f.payloadFlags)
+	case f.try != 0 || f.noConfirm || len(f.ignoreUnits) > 0:
+		return cli.Usagef("--rollback goes without --try, --no-confirm, --ignore-unit and --confirm")
 	case f.passwordFile != "":
 		return cli.Usagef("--rollback adds no volume, so it takes no --password-file")
 	}
@@ -203,7 +302,17 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	if err != nil {
 		return nodeError(err, t.name)
 	}
-	version := st.Msg.PreviousConfigVersion
+	version, replaced := st.Msg.PreviousConfigVersion, st.Msg.ConfigVersion
+	// During a trial the node rolls back to the config from before it alone. A node that runs that
+	// config already, as a rollback at the deadline that failed after it wrote the config leaves
+	// it, delivers it again to finish that rollback, and the config on trial stays its previous.
+	tr := st.Msg.Trial
+	if tr != nil {
+		version = tr.PreviousVersion
+		if replaced == version {
+			replaced = tr.Version
+		}
+	}
 	if version == "" {
 		return fmt.Errorf("%s keeps no previous config of the image it runs; it keeps one once apply-config replaced the config the image was installed or upgraded with", t.name)
 	}
@@ -211,9 +320,11 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	if err != nil {
 		return fmt.Errorf("%s: %w", t.name, err)
 	}
-	previous, err := previousConfig(ctx, conn)
-	if err != nil {
-		return fmt.Errorf("%s: %w", t.name, err)
+	previous := running
+	if version != st.Msg.ConfigVersion {
+		if previous, err = previousConfig(ctx, conn); err != nil {
+			return fmt.Errorf("%s: %w", t.name, err)
+		}
 	}
 	changes := diffConfig(running, previous)
 	fmt.Fprintf(a.stdout, "%s: %s\n", t.name, changes.summary())
@@ -232,7 +343,10 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 		fmt.Fprintf(a.stdout, "restarted %s\n", u)
 	}
 	a.warnDelivery(t.name, &nodev1.ApplyConfigResponse{Warnings: resp.Msg.Warnings})
-	fmt.Fprintf(a.stdout, "%s runs config %s again; config %s is its previous one now\n", t.name, version, st.Msg.ConfigVersion)
+	fmt.Fprintf(a.stdout, "%s runs config %s again; config %s is its previous one now\n", t.name, version, replaced)
+	if tr != nil {
+		fmt.Fprintf(a.stdout, "%s: the trial of config %s ended\n", t.name, tr.Version)
+	}
 	return nil
 }
 

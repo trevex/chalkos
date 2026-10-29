@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -348,14 +349,38 @@ func slotOf(t *testing.T, s *chalkd.Server) string {
 	return dir
 }
 
-type fakeRunner struct{ calls []string }
+// fakeRunner records the commands run and answers each with nothing, but systemctl's list of
+// failed units with failedUnits, which a test sets before the node serves, and a command with the
+// argument fail with an error. A trial's deadline runs commands besides the requests, so it locks.
+type fakeRunner struct {
+	mu          sync.Mutex
+	calls       []string
+	failedUnits string
+	fail        string
+}
+
+// setFail has the commands with the argument given fail from now on; "" has none fail.
+func (f *fakeRunner) setFail(arg string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fail = arg
+}
 
 func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return f.RunWithEnv(ctx, nil, name, args...)
 }
 
 func (f *fakeRunner) RunWithEnv(_ context.Context, _ []string, name string, args ...string) ([]byte, error) {
-	f.calls = append(f.calls, strings.Join(append([]string{name}, args...), " "))
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cmd := strings.Join(append([]string{name}, args...), " ")
+	f.calls = append(f.calls, cmd)
+	switch {
+	case f.fail != "" && slices.Contains(args, f.fail):
+		return nil, errors.New(cmd + " failed")
+	case strings.HasPrefix(cmd, "systemctl list-units --state=failed"):
+		return []byte(f.failedUnits), nil
+	}
 	return nil, nil
 }
 
