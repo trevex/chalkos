@@ -1,6 +1,7 @@
 package chalkctl
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"fmt"
@@ -111,7 +112,7 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		return err
 	}
 	if !f.staged && st.Msg.Boot.GetStaged() != nil {
-		fmt.Fprintf(a.stderr, "%s has a staged image with its own config (version %s); apply-config --staged updates it\n", t.name, cmp.Or(st.Msg.StagedConfigVersion, "none"))
+		fmt.Fprintln(a.stderr, stagedNote(t.name, st.Msg))
 	}
 	if f.staged && st.Msg.Boot.GetStaged() == nil {
 		return fmt.Errorf("%s: no image is staged to boot next; apply the config to the running image", t.name)
@@ -287,4 +288,16 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 	}
 	fmt.Fprintf(a.stdout, "volume %s of %s was wiped and created again\n", pos[1], t.name)
 	return nil
+}
+
+// stagedNote is the line apply-config prints of a node whose status names an image staged to boot
+// next, which keeps its own config. The image a rollback staged while the running image's boot is
+// not found healthy is the one the node falls back to, which keeps the config it last ran, so
+// apply-config --staged is not offered for it.
+func stagedNote(name string, st *nodev1.StatusResponse) string {
+	b := st.GetBoot()
+	if !b.GetBlessed() && bytes.Equal(b.GetRollback().GetRootHash(), b.GetStaged().GetRootHash()) {
+		return fmt.Sprintf("%s boots the image a rollback staged next, with the config it last ran (version %s), which stays until the boot of the running image is found healthy", name, cmp.Or(st.GetStagedConfigVersion(), "none"))
+	}
+	return fmt.Sprintf("%s has a staged image with its own config (version %s); apply-config --staged updates it", name, cmp.Or(st.GetStagedConfigVersion(), "none"))
 }

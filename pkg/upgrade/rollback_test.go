@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -236,23 +235,18 @@ func TestRollbackBeforeTheBootIsHealthy(t *testing.T) {
 	if _, err := l.node.Rollback(ctx, newImage(t, "c", 1).root, nil); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_3.efi") {
 		t.Errorf("a rollback to another image: %v", err)
 	}
-	// An upgrade to the image finds it staged. A refusal of its check keeps it: the node falls
-	// back to it.
+	// An upgrade to the image finds it staged, the node's known-good image, which boots with the
+	// config it last ran: its store is neither checked nor given config again, and it stays.
+	l.node.CheckStore = func(Store) error {
+		t.Error("checked the known-good image again")
+		return nil
+	}
 	if res, err := l.install(a); err != nil || !res.AlreadyStaged || res.Entry != "chalkos_3.efi" {
 		t.Errorf("an upgrade to a = %+v, %v; want it staged already", res, err)
 	}
-	var calls []string
-	run := l.node.Run
-	l.node.Run = storeRunner{Runner: run, calls: &calls, mounted: func(dir string) { writeStore(t, dir) }}
-	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
-	l.node.CheckStore = func(Store) error { return errors.New("the config does not suit the image") }
-	var retired *StagedRetiredError
-	if _, err := l.install(a); err == nil || !strings.Contains(err.Error(), "does not suit") || errors.As(err, &retired) {
-		t.Errorf("an upgrade to a refused by its check = %v, want the refusal alone", err)
-	}
-	l.node.Run, l.node.CheckStore = run, nil
+	l.node.CheckStore = nil
 	if e, name := l.boot(); name != "a" || e.File != "chalkos_3.efi" {
-		t.Errorf("after a refused upgrade the disk boots %s from %s, want a from chalkos_3.efi", name, e.File)
+		t.Errorf("after the upgrade the disk boots %s from %s, want a from chalkos_3.efi", name, e.File)
 	}
 	if e := l.attempt(); e.File != "chalkos_3.efi" {
 		t.Fatalf("booted %s", e.File)

@@ -25,30 +25,71 @@ import (
 // upgrade or a rollback without a reboot leaves it; nil without one. A node whose config slots are
 // the running image's alone has none, whatever the ESP holds: no upgrade wrote config for another.
 func (s *Server) stagedImage() ([]byte, error) {
+	staged, _, ok, err := s.stagedEntry()
+	if err != nil || !ok {
+		return nil, err
+	}
+	return staged.RootHash, nil
+}
+
+// stagedEntry is the entry of the image staged to boot next, as stagedImage finds it, with the
+// entry the node booted; false without one.
+func (s *Server) stagedEntry() (staged, booted esp.Entry, ok bool, err error) {
 	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
-		return nil, err
+		return esp.Entry{}, esp.Entry{}, false, err
 	}
 	hashes, err := slot.List(s.Loader.Slots)
 	if err != nil {
-		return nil, err
+		return esp.Entry{}, esp.Entry{}, false, err
 	}
 	if !slices.ContainsFunc(hashes, func(h []byte) bool { return !bytes.Equal(h, running) }) {
-		return nil, nil
+		return esp.Entry{}, esp.Entry{}, false, nil
 	}
 	entries, err := esp.Entries(s.Paths.ESP)
 	if err != nil {
-		return nil, err
+		return esp.Entry{}, esp.Entry{}, false, err
 	}
-	booted, err := upgrade.Booted(entries, s.Paths.EFIVars, running)
+	booted, err = upgrade.Booted(entries, s.Paths.EFIVars, running)
 	if err != nil {
-		return nil, err
+		return esp.Entry{}, esp.Entry{}, false, err
 	}
-	e, ok := esp.StagedEntry(entries, readOSRelease(s.Paths.OSRelease)["IMAGE_ID"], booted)
-	if !ok {
-		return nil, nil
+	staged, ok = esp.StagedEntry(entries, readOSRelease(s.Paths.OSRelease)["IMAGE_ID"], booted)
+	return staged, booted, ok, nil
+}
+
+// keepsKnownGood refuses config for the image of the root hash while it is staged as the node's
+// known-good image, as upgrade.KnownGood tells: a rollback from a boot that was not found healthy
+// staged it, and it boots with the config it last ran. text, the config delivered, passes when it
+// is that config; empty delivers none. It reports whether the image is the known-good one. The
+// caller holds s.mu.
+func (s *Server) keepsKnownGood(rootHash []byte, text string) (bool, error) {
+	staged, booted, ok, err := s.stagedEntry()
+	if err != nil {
+		return false, failed(connect.CodeInternal, "find the staged image: %v", err)
 	}
-	return e.RootHash, nil
+	if !ok || !bytes.Equal(staged.RootHash, rootHash) || !upgrade.KnownGood(staged, booted) {
+		return false, nil
+	}
+	if text == "" {
+		return true, nil
+	}
+	docs, err := config.Parse(strings.NewReader(text))
+	if err != nil {
+		return true, failed(connect.CodeInvalidArgument, "parse the config: %v", err)
+	}
+	version, err := config.Hash(docs)
+	if err != nil {
+		return true, failed(connect.CodeInvalidArgument, "hash the config: %v", err)
+	}
+	held, err := slot.Version(slot.Dir(s.Loader.Slots, rootHash))
+	if err != nil {
+		return true, failed(connect.CodeInternal, "read the staged image's config slot: %v", err)
+	}
+	if version != held {
+		return true, failed(connect.CodeFailedPrecondition, "the image %x staged to boot next is the one the node falls back to while the boot of %s is not found healthy; its config stays as it last ran until that boot is found healthy", rootHash, booted.File)
+	}
+	return true, nil
 }
 
 // readImage reads the store of an image the inactive slot holds, as an upgrade checks one, and
@@ -84,6 +125,14 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 	}
 	if staged == nil {
 		return nil, failed(connect.CodeFailedPrecondition, "no image is staged to boot next; apply the config to the running image")
+	}
+	knownGood, err := s.keepsKnownGood(staged, m.Config)
+	if err != nil {
+		return nil, err
+	}
+	// The known-good image's own config, delivered again, changes nothing.
+	if knownGood {
+		return connect.NewResponse(&nodev1.ApplyConfigResponse{}), nil
 	}
 	recorded, _, err := s.recorded()
 	if err != nil {

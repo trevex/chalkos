@@ -85,7 +85,9 @@ func (n *Node) Rollback(ctx context.Context, rootHash []byte, record func() erro
 				return Result{}, err
 			}
 			return Result{AlreadyStaged: true, Entry: staged.File}, nil
-		// Only a rollback leaves a staged entry without tries.
+		// An upgrade counts the tries of the entry it stages. One without tries is the image a
+		// rollback from a boot not found healthy staged, or a blessed entry above the booted one,
+		// as when the boot menu picked an entry below it.
 		case staged.TriesLeft < 0:
 			return Result{}, fmt.Errorf("the image %x is staged to boot next from %s", staged.RootHash, staged.File)
 		}
@@ -158,4 +160,12 @@ func (n *Node) checkPreviousUKI(path, imageID string, rootHash []byte) (int, err
 	}
 	h := Header{ImageID: imageID, Platform: n.OSRelease["CHALKOS_PLATFORM"], Architecture: n.Architecture, RootHash: rootHash, UKISize: info.Size()}
 	return CheckUKI(f, h, n.EFIVars)
+}
+
+// KnownGood reports whether the staged entry is the node's known-good image, as a rollback from
+// a boot that was not found healthy stages it: without tries, while the booted entry's are
+// counted. The node falls back to that image, which boots with the config it last ran, until the
+// boot is found healthy.
+func KnownGood(staged, booted esp.Entry) bool {
+	return staged.TriesLeft < 0 && booted.TriesLeft >= 0
 }

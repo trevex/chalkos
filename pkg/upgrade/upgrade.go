@@ -191,6 +191,11 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	// The image boots next already, as after an upgrade without a reboot. The check runs again: the
 	// upgrade brings the config the image boots with, which replaces the one staged with it.
 	if staged, ok := esp.StagedEntry(all, h.ImageID, booted); ok && bytes.Equal(staged.RootHash, h.RootHash) && inactive.Holds(h.RootHash) {
+		// The node's known-good image boots with the config it last ran: the caller refuses other
+		// config for it, and nothing is checked or written again.
+		if KnownGood(staged, booted) {
+			return Result{AlreadyStaged: true, Entry: staged.File}, nil
+		}
 		if err := n.recheck(ctx, h, inactive, staged, all, booted, running); err != nil {
 			return Result{}, err
 		}
@@ -302,8 +307,8 @@ func (n *Node) recheck(ctx context.Context, h Header, slot storeslot.Slot, stage
 	if err == nil {
 		return nil
 	}
-	// Until the running image's boot is found healthy, the staged image, which a rollback left, is
-	// the one the node falls back to, so it stays.
+	// Until the running image's boot is found healthy, the staged image may be the one the node
+	// falls back to, so it stays.
 	if booted.TriesLeft >= 0 {
 		return err
 	}

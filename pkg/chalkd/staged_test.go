@@ -3,6 +3,7 @@ package chalkd
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
@@ -243,4 +244,78 @@ func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 	if err := send(stagedImage); err == nil || !strings.Contains(err.Error(), "the image staged to boot next was retired with it") || strings.Contains(err.Error(), "--staged") {
 		t.Errorf("upgrade of the staged image whose store did not mount = %v, want it retired and no --staged named", err)
 	}
+}
+
+// knownGoodServer is stagedServer after a rollback from a boot that was not found healthy: the
+// running image booted from the counted chalkos_2+1-2.efi, and the image staged to boot next from
+// the uncounted chalkos_3.efi is the one the node falls back to.
+func knownGoodServer(t *testing.T) (*Server, *tooltest.Runner) {
+	t.Helper()
+	s, r := stagedServer(t, fixtureSchemas(t))
+	for _, f := range []string{"chalkos_2.efi", "chalkos_3+3.efi"} {
+		if err := os.Remove(filepath.Join(s.Paths.ESP, "EFI", "Linux", f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2+1-2.efi", "chalkos_3.efi")
+	return s, r
+}
+
+// TestKnownGoodImageKeepsItsConfig refuses other config for the image a rollback staged as the
+// node's known-good one, from apply-config --staged and from an upgrade, as it boots with the
+// config it last ran; the same config, or an upgrade without config, changes nothing and keeps
+// the record of the rollback.
+func TestKnownGoodImageKeepsItsConfig(t *testing.T) {
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	t.Run("apply-config --staged", func(t *testing.T) {
+		s, r := knownGoodServer(t)
+		if err := sendStaged(s, next); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "is the one the node falls back to while the boot of chalkos_2+1-2.efi is not found healthy; its config stays as it last ran") {
+			t.Errorf("other config = %v", err)
+		}
+		if err := sendStaged(s, baseConfig); err != nil {
+			t.Errorf("the same config = %v", err)
+		}
+		if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+			t.Errorf("staged version = %q, want it unchanged", v)
+		}
+		if len(r.Calls) != 0 {
+			t.Errorf("ran %v", r.Calls)
+		}
+	})
+	t.Run("upgrade", func(t *testing.T) {
+		c := newCreds(t)
+		s, _ := knownGoodServer(t)
+		record := filepath.Join(s.Paths.StateDir, "chalkd", "rollback")
+		if err := os.MkdirAll(filepath.Dir(record), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(record, []byte(hex.EncodeToString(stagedImage)+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
+			io.Copy(io.Discard, r)
+			return upgrade.Result{AlreadyStaged: true, Entry: "chalkos_3.efi"}, nil
+		}
+		conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
+		send := func(config string) error {
+			stream := conn.Upgrade(context.Background())
+			header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: stagedImage}, Config: config}
+			if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
+				t.Fatal(err)
+			}
+			_, err := stream.CloseAndReceive()
+			return err
+		}
+		if err := send(next); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "its config stays as it last ran until that boot is found healthy") {
+			t.Errorf("an upgrade with other config = %v", err)
+		}
+		for _, config := range []string{"", baseConfig} {
+			if err := send(config); err != nil {
+				t.Errorf("an upgrade with the config %q = %v", config, err)
+			}
+		}
+		if data, err := os.ReadFile(record); err != nil || string(data) != hex.EncodeToString(stagedImage)+"\n" {
+			t.Errorf("the record of the rollback = %q, %v; want it kept", data, err)
+		}
+	})
 }

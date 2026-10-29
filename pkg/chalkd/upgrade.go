@@ -67,6 +67,13 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
 	}
 	header := imageHeader(img)
+	// The node's known-good image, staged by a rollback, keeps the config it last ran.
+	s.mu.Lock()
+	knownGood, err := s.keepsKnownGood(img.GetRootHash(), h.GetConfig())
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	parts := chunks(stream)
 	if src := h.GetSource(); src != nil {
 		ref := src.GetOci().GetReference()
@@ -118,11 +125,17 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		log.Printf("%x runs already", img.GetRootHash())
 		return connect.NewResponse(resp), nil
 	}
-	// The upgrade replaced how the node got to the image it stages; one to the image it runs
-	// already leaves the record of a rollback to that image.
-	s.forgetRollback()
-	if res.AlreadyStaged {
+	switch {
+	case res.AlreadyStaged && knownGood:
+		// Nothing changed, so the record of the rollback that staged the image stays.
+		log.Printf("%x boots next already, as %s, with the config it last ran", img.GetRootHash(), res.Entry)
+	case res.AlreadyStaged:
+		s.forgetRollback()
 		log.Printf("%x boots next already, as %s; its config is replaced", img.GetRootHash(), res.Entry)
+	default:
+		// The upgrade replaced how the node got to the image it stages; one to the image it runs
+		// already leaves the record of a rollback to that image.
+		s.forgetRollback()
 	}
 	if h.Reboot {
 		log.Printf("rebooting into %x", img.GetRootHash())

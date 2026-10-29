@@ -1,6 +1,7 @@
 package chalkctl
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -306,6 +308,25 @@ func TestApplyConfigRollback(t *testing.T) {
 	for _, args := range [][]string{{"--staged"}, {"--kubernetes-share"}, {"--force"}} {
 		if err := run(append([]string{"apply-config", "n1", "--rollback"}, args...)...); err == nil || !strings.Contains(err.Error(), "--rollback") {
 			t.Errorf("--rollback %s = %v, want a usage error", args[0], err)
+		}
+	}
+}
+
+// stagedNote offers apply-config --staged for a staged image, but not for the one a rollback
+// staged while the running image's boot is not found healthy, which keeps the config it last ran.
+func TestStagedNote(t *testing.T) {
+	staged := &nodev1.BootImage{RootHash: bytes.Repeat([]byte{3}, 32)}
+	for _, tc := range []struct {
+		name string
+		boot *nodev1.BootStatus
+		want string
+	}{
+		{"an upgrade", &nodev1.BootStatus{Blessed: true, Staged: staged}, "n1 has a staged image with its own config (version v2); apply-config --staged updates it"},
+		{"a rollback from a healthy boot", &nodev1.BootStatus{Blessed: true, Staged: staged, Rollback: staged}, "n1 has a staged image with its own config (version v2); apply-config --staged updates it"},
+		{"a rollback from a boot not found healthy", &nodev1.BootStatus{Staged: staged, Rollback: staged}, "n1 boots the image a rollback staged next, with the config it last ran (version v2), which stays until the boot of the running image is found healthy"},
+	} {
+		if got := stagedNote("n1", &nodev1.StatusResponse{Boot: tc.boot, StagedConfigVersion: "v2"}); got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }
