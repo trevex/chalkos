@@ -235,6 +235,7 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
 	}
+	running := dir
 	switch {
 	case req.Msg.Staged && req.Msg.Previous:
 		return nil, failed(connect.CodeInvalidArgument, "ask for the staged image's config or the running image's previous one, not both")
@@ -253,6 +254,15 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 	stored, found, err := slot.Read(dir)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "read the config slot: %v", err)
+	}
+	// A write interrupted between the previous link and the slot's leaves both naming one set,
+	// which is no config to roll back to, as Status and RollbackConfig say.
+	if found && req.Msg.Previous {
+		version, err := slot.Version(running)
+		if err != nil {
+			return nil, failed(connect.CodeInternal, "read the config's version: %v", err)
+		}
+		found = stored.Version != "" && stored.Version != version
 	}
 	switch {
 	case !found && req.Msg.Previous:

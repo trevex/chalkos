@@ -104,18 +104,25 @@ func TestRollbackConfigMeetsTheRules(t *testing.T) {
 	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret})); err != nil {
 		t.Fatal(err)
 	}
+	r.Calls = nil
 	_, err := sendRollback(s, hashOf(t, baseConfig))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "Volume extra: the config removes it; only a reinstall of n1 removes a volume") {
 		t.Errorf("rollback = %v, want the storage rule's refusal", err)
 	}
+	if len(r.Calls) != 0 {
+		t.Errorf("the refusal ran %v", r.Calls)
+	}
 	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, extraConfig("ext4")) {
 		t.Errorf("running version = %q, want it unchanged", v)
+	}
+	if v, _ := slot.Version(slot.Previous(slotOf(t, s))); v != hashOf(t, baseConfig) {
+		t.Errorf("previous version = %q, want it unchanged", v)
 	}
 }
 
 // TestRollbackConfigAfterAnInterruptedWrite treats a previous config that is the set the slot
 // holds, as a write interrupted between the two links leaves it, as none: Status names no previous
-// config, and a rollback is refused as on a node without one.
+// config, GetConfig serves none, and a rollback is refused as on a node without one.
 func TestRollbackConfigAfterAnInterruptedWrite(t *testing.T) {
 	s, r := configServer(t)
 	dir := slotOf(t, s)
@@ -132,6 +139,9 @@ func TestRollbackConfigAfterAnInterruptedWrite(t *testing.T) {
 	}
 	if resp.Msg.ConfigVersion != hashOf(t, baseConfig) || resp.Msg.PreviousConfigVersion != "" {
 		t.Errorf("status names config %q and previous %q, want baseConfig and none", resp.Msg.ConfigVersion, resp.Msg.PreviousConfigVersion)
+	}
+	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true})); connect.CodeOf(err) != connect.CodeNotFound || !strings.Contains(err.Error(), "the node keeps no previous config of the running image") {
+		t.Errorf("previous config = %v, want not found", err)
 	}
 	r.Calls = nil
 	if _, err := sendRollback(s, hashOf(t, baseConfig)); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node keeps no previous config of the running image") {
