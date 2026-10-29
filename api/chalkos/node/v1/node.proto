@@ -536,9 +536,8 @@ message BootImage {
 
 // What the node trusts of one kind, and what it issues with.
 message TrustStatus {
-  // What is trusted: "OS CA" on every node; "Kubernetes CA" on nodes with Kubernetes; on
-  // control-plane nodes also "front-proxy CA", "etcd CA", "service-account keys" and "encryption
-  // keys".
+  // What is trusted: "OS CA" on every node; a layer adds what it trusts, such as "Kubernetes
+  // CA" on a node with Kubernetes.
   string name = 1;
   // The SHA-256 fingerprints of what is trusted, in lower-case hex: of certificates and of public
   // keys in DER, and of encryption keys hashed apart from both. The one that issues or signs
@@ -551,17 +550,16 @@ message TrustStatus {
 
 // A certificate the node holds or issues with.
 message CertificateStatus {
-  // What the certificate is: "node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA",
-  // "etcd CA", "Kubernetes control plane" (the control plane's leaf certificates, by the one
-  // that expires first), "kubelet client" or "kubelet serving"; "Kubernetes share" when the
-  // node's share cannot be read, so the certificates it holds are unknown.
+  // What the certificate is: "node" and "OS CA" on every node; a layer adds its own, such as
+  // "node CA" on a node that issues node certificates or "kubelet client".
   string name = 1;
   // When the certificate expires; unset when the expiry is unknown.
   google.protobuf.Timestamp not_after = 2;
   // Why a renewal fails, such as "renewal failing: <reason>; expires <date>", or a warning, such
-  // as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl
-  // node-ca rotate"; empty when there is nothing to do. A command it advises names the node, or
-  // says <node> when the node cannot tell its name.
+  // as "less than a third of its lifetime remains" or "the node certificate expires on <date>;
+  // this image cannot renew it on its own; run chalkctl node renew <node>"; empty when there is
+  // nothing to do. A command it advises names the node, or says <node> when the node cannot tell
+  // its name.
   string problem = 3;
   // The SHA-256 fingerprint of the certificate, in lower-case hex.
   string fingerprint = 4;

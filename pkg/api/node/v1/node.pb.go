@@ -2532,9 +2532,8 @@ func (x *BootImage) GetTag() string {
 // What the node trusts of one kind, and what it issues with.
 type TrustStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// What is trusted: "OS CA" on every node; "Kubernetes CA" on nodes with Kubernetes; on
-	// control-plane nodes also "front-proxy CA", "etcd CA", "service-account keys" and "encryption
-	// keys".
+	// What is trusted: "OS CA" on every node; a layer adds what it trusts, such as "Kubernetes
+	// CA" on a node with Kubernetes.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// The SHA-256 fingerprints of what is trusted, in lower-case hex: of certificates and of public
 	// keys in DER, and of encryption keys hashed apart from both. The one that issues or signs
@@ -2601,17 +2600,16 @@ func (x *TrustStatus) GetIssuing() string {
 // A certificate the node holds or issues with.
 type CertificateStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// What the certificate is: "node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA",
-	// "etcd CA", "Kubernetes control plane" (the control plane's leaf certificates, by the one
-	// that expires first), "kubelet client" or "kubelet serving"; "Kubernetes share" when the
-	// node's share cannot be read, so the certificates it holds are unknown.
+	// What the certificate is: "node" and "OS CA" on every node; a layer adds its own, such as
+	// "node CA" on a node that issues node certificates or "kubelet client".
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// When the certificate expires; unset when the expiry is unknown.
 	NotAfter *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=not_after,json=notAfter,proto3" json:"not_after,omitempty"`
 	// Why a renewal fails, such as "renewal failing: <reason>; expires <date>", or a warning, such
-	// as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl
-	// node-ca rotate"; empty when there is nothing to do. A command it advises names the node, or
-	// says <node> when the node cannot tell its name.
+	// as "less than a third of its lifetime remains" or "the node certificate expires on <date>;
+	// this image cannot renew it on its own; run chalkctl node renew <node>"; empty when there is
+	// nothing to do. A command it advises names the node, or says <node> when the node cannot tell
+	// its name.
 	Problem string `protobuf:"bytes,3,opt,name=problem,proto3" json:"problem,omitempty"`
 	// The SHA-256 fingerprint of the certificate, in lower-case hex.
 	Fingerprint string `protobuf:"bytes,4,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`

@@ -435,9 +435,9 @@ A certificate the node holds or issues with.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `name` | string | What the certificate is: "node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA", "etcd CA", "Kubernetes control plane" (the control plane's leaf certificates, by the one that expires first), "kubelet client" or "kubelet serving"; "Kubernetes share" when the node's share cannot be read, so the certificates it holds are unknown. |
+| `name` | string | What the certificate is: "node" and "OS CA" on every node; a layer adds its own, such as "node CA" on a node that issues node certificates or "kubelet client". |
 | `not_after` | google.protobuf.Timestamp | When the certificate expires; unset when the expiry is unknown. |
-| `problem` | string | Why a renewal fails, such as "renewal failing: &lt;reason>; expires &lt;date>", or a warning, such as "less than a third of its lifetime remains" or "node CA expires &lt;date>; run chalkctl node-ca rotate"; empty when there is nothing to do. A command it advises names the node, or says &lt;node> when the node cannot tell its name. |
+| `problem` | string | Why a renewal fails, such as "renewal failing: &lt;reason>; expires &lt;date>", or a warning, such as "less than a third of its lifetime remains" or "the node certificate expires on &lt;date>; this image cannot renew it on its own; run chalkctl node renew &lt;node>"; empty when there is nothing to do. A command it advises names the node, or says &lt;node> when the node cannot tell its name. |
 | `fingerprint` | string | The SHA-256 fingerprint of the certificate, in lower-case hex. |
 | `issuer` | string | The SHA-256 fingerprint of the certificate that issued it, in lower-case hex; empty when the node does not hold that one. |
 
@@ -665,7 +665,7 @@ What the node trusts of one kind, and what it issues with.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `name` | string | What is trusted: "OS CA" on every node; "Kubernetes CA" on nodes with Kubernetes; on control-plane nodes also "front-proxy CA", "etcd CA", "service-account keys" and "encryption keys". |
+| `name` | string | What is trusted: "OS CA" on every node; a layer adds what it trusts, such as "Kubernetes CA" on a node with Kubernetes. |
 | `fingerprints` | list of string | The SHA-256 fingerprints of what is trusted, in lower-case hex: of certificates and of public keys in DER, and of encryption keys hashed apart from both. The one that issues or signs comes first. |
 | `issuing` | string | The fingerprint of the value the node issues, signs or encrypts with; empty where it does none of these. |
 
