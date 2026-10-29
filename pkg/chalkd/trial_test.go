@@ -373,6 +373,9 @@ func TestReadTrialRefusesNoDeadline(t *testing.T) {
 // TestRollbackConfigFailingKeepsTheTrial keeps the trial open when the rollback on request fails,
 // so the config on trial still waits for its confirmation or its deadline.
 func TestRollbackConfigFailingKeepsTheTrial(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
 	s, _ := configServer(t)
 	rec := recordTrial(t, s, nextConfig)
 	slots := filepath.Dir(slotOf(t, s))
@@ -396,6 +399,9 @@ func TestRollbackConfigFailingKeepsTheTrial(t *testing.T) {
 // record cannot be removed, warns of it, and keeps the record and the deadline. The next delivery
 // finds the trial ended and removes the record.
 func TestRollbackConfigKeepsATrialItCannotRemove(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
 	s, _ := configServer(t)
 	rec := recordTrial(t, s, nextConfig)
 	timer := time.AfterFunc(time.Hour, func() {})
@@ -410,7 +416,7 @@ func TestRollbackConfigKeepsATrialItCannotRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "the config was rolled back, but the record of its trial could not be removed: "
+	want := "the config was rolled back, but the record of its trial could not be removed for good: "
 	if !slices.ContainsFunc(resp.Warnings, func(w string) bool { return strings.HasPrefix(w, want) }) {
 		t.Errorf("warnings = %q, want one starting %q", resp.Warnings, want)
 	}
@@ -434,6 +440,12 @@ func TestRollbackConfigKeepsATrialItCannotRemove(t *testing.T) {
 	}
 	if trialOpenOn(t, s) {
 		t.Error("the delivery kept the ended trial's record")
+	}
+	s.mu.Lock()
+	stopped := s.trialTimer == nil
+	s.mu.Unlock()
+	if !stopped {
+		t.Error("the delivery kept the ended trial's deadline")
 	}
 }
 
@@ -478,6 +490,31 @@ func TestChangesPassAnEndedTrial(t *testing.T) {
 				t.Error("the ended trial's record stays")
 			}
 		})
+	}
+}
+
+// TestChangesStopAtAnEndedTrialTheyCannotRemove refuses a change with INTERNAL when the record of
+// a trial that ended cannot be removed, and keeps the record.
+func TestChangesStopAtAnEndedTrialTheyCannotRemove(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
+	s, _ := configServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Dir(filepath.Join(s.Paths.StateDir, trialFile))
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	_, err := sendConfig(s, nextConfig)
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "remove the record of the ended trial of config "+rec.Version) {
+		t.Errorf("err = %v, want the record that stays", err)
+	}
+	if !trialOpenOn(t, s) {
+		t.Error("the record is gone")
 	}
 }
 
@@ -770,6 +807,9 @@ func TestTrialExpiryRetries(t *testing.T) {
 // TestTrialExpiryFailingPartWay records that a rollback at the deadline failed once it changed the
 // node, and a confirmation is then refused: a rollback on request finishes the trial's.
 func TestTrialExpiryFailingPartWay(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
 	s := trialServer(t)
 	s.trialRetry = time.Hour
 	if _, err := sendTrial(s, nextConfig, time.Hour); err != nil {
@@ -834,5 +874,31 @@ func TestResumeTrial(t *testing.T) {
 	s.ResumeTrial()
 	if _, err := os.Stat(filepath.Join(s.Paths.StateDir, trialFile)); !os.IsNotExist(err) {
 		t.Errorf("a record that cannot be read stays: %v", err)
+	}
+}
+
+// TestTrialExpiryKeepsARecordItCannotRemove arms the deadline again when the record of a trial
+// that ended cannot be removed, so the trial is not lost.
+func TestTrialExpiryKeepsARecordItCannotRemove(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
+	s := trialServer(t)
+	s.trialRetry = time.Hour
+	rec := recordTrial(t, s, nextConfig)
+	if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Dir(filepath.Join(s.Paths.StateDir, trialFile))
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	s.expireTrial(rec.Version, rec.Deadline)
+	s.mu.Lock()
+	armed := s.trialTimer != nil
+	s.mu.Unlock()
+	if !trialOpenOn(t, s) || !armed {
+		t.Errorf("the record stays %v and the deadline is armed %v, want both", trialOpenOn(t, s), armed)
 	}
 }

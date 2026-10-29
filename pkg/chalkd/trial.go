@@ -196,7 +196,7 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 }
 
 // endTrial removes the trial's record and then stops its deadline; the caller holds s.mu. A record
-// that cannot be removed keeps the deadline armed, which finds the trial ended and removes it.
+// that cannot be removed keeps the deadline, if one is armed, so the trial is not lost.
 func (s *Server) endTrial() error {
 	if err := removeTrial(s.Paths.StateDir); err != nil {
 		return err
@@ -222,11 +222,20 @@ func (s *Server) trialStatus() *nodev1.ConfigTrial {
 	return &nodev1.ConfigTrial{Version: r.Version, PreviousVersion: r.Previous, Deadline: timestamppb.New(r.Deadline), Error: r.Error, IgnoreUnits: r.IgnoreUnits}
 }
 
+// refuseOnTrialLocking is refuseOnTrial under s.mu, for an upgrade and an image rollback, which
+// hold s.upgrading and take s.mu only while they read or write what it guards.
+func (s *Server) refuseOnTrialLocking(what string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.refuseOnTrial(what)
+}
+
 // refuseOnTrial refuses what would change the node while a config is on trial, so the trial's
 // rollback restores what the node ran before it. what names the change. A record whose slot runs
 // the config from before the trial already, as a rollback whose record a crash or a failed removal
 // kept leaves it, is removed, and the change goes ahead. The caller holds s.mu, which a trial's
-// delivery holds while it writes the record; an upgrade and an image rollback hold s.upgrading too.
+// delivery holds while it writes the record; an upgrade and an image rollback call it through
+// refuseOnTrialLocking.
 func (s *Server) refuseOnTrial(what string) error {
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
@@ -406,8 +415,10 @@ func (s *Server) expireTrial(version string, deadline time.Time) {
 	case trialLost:
 		log.Printf("the trial of config %s ended: its slot runs neither it nor config %s", r.Version, r.Previous)
 	}
+	// The deadline that fired is armed no longer, so a record that stays is tried again.
 	if err := s.endTrial(); err != nil {
-		log.Printf("remove the record of the config's trial: %v", err)
+		log.Printf("remove the record of the config's trial: %v; trying again in %v", err, s.retryTrial())
+		s.armTrial(r, s.retryTrial())
 	}
 }
 

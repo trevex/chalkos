@@ -45,7 +45,7 @@ func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1
 	if _, open, _ := readTrial(s.Paths.StateDir); open {
 		if err := s.endTrial(); err != nil {
 			log.Printf("end the trial: %v", err)
-			resp.Warnings = append(resp.Warnings, fmt.Sprintf("the config was rolled back, but the record of its trial could not be removed: %v; the next delivery, upgrade or image rollback removes it", err))
+			resp.Warnings = append(resp.Warnings, fmt.Sprintf("the config was rolled back, but the record of its trial could not be removed for good: %v; Status shows the trial until the next delivery, upgrade or image rollback, the trial's deadline or chalkd's next start removes the record", err))
 		} else {
 			log.Print("the trial ended with the rollback")
 		}
@@ -120,10 +120,7 @@ func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.
 		return nil, failed(connect.CodeAborted, "an upgrade or a config delivery is running")
 	}
 	defer s.upgrading.Unlock()
-	s.mu.Lock()
-	err := s.refuseOnTrial("an image rollback")
-	s.mu.Unlock()
-	if err != nil {
+	if err := s.refuseOnTrialLocking("an image rollback"); err != nil {
 		return nil, err
 	}
 	running, err := uki.RunningHash(s.Paths.Cmdline)
