@@ -13,7 +13,7 @@ it in seconds.
 
 ```text
 certificates:
-  node   expires <date>  less than a third of its lifetime remains; renew it with chalkctl node renew w1
+  node   expires <date>  the node certificate expires on <date>; this image cannot renew it on its own; run chalkctl node renew w1
   OS CA  expires <date>
 trust:
   OS CA  <fingerprint>
@@ -75,17 +75,23 @@ lives one hour and exists only in memory.
 
 ## A node renews its certificate through a control plane
 
-chalkd checks its node certificate about hourly and renews it once two thirds of its lifetime have
-passed. It creates a new key and asks a control plane for a certificate through the Kubernetes
-layer's [RenewNodeCertificate](../../reference/api.md#kubernetes-method-renewnodecertificate), on
+chalkd checks its node certificate about hourly on every node in normal mode. Once two thirds of
+its lifetime have passed, the certificate is due. An image whose layer issues node certificates,
+Kubernetes on the shipped variant, then renews it, and any other image reports it.
+
+On a Kubernetes node, chalkd creates a new key and asks a control plane for a certificate through
+the Kubernetes layer's [RenewNodeCertificate](../../reference/api.md#kubernetes-method-renewnodecertificate), on
 port 50000 of the cluster endpoint's host. It authenticates with its current certificate, and the
 control plane signs exactly the names of that certificate, whatever the request asks for. A
 control plane signs its own with the node CA it holds. A failed attempt keeps the current
 certificate and is retried after a minute, doubling up to an hour.
 
-A node whose image runs no Kubernetes reaches no control plane, so it does not renew its node
-certificate by itself. [`chalkctl node renew`](../../reference/cli/chalkctl_node_renew.md) issues a
-new one from the secrets file and delivers it, and the status line above names the command.
+A node whose image runs no Kubernetes, such as a router, reaches no control plane, so it does not
+renew its node certificate by itself. Once the certificate is due, chalkd logs
+`node certificate is due for renewal and expires <time>; nothing on this node renews it` once,
+and the status shows the line above with the expiry date, or `expired on` after it.
+[`chalkctl node renew`](../../reference/cli/chalkctl_node_renew.md) issues a new certificate from
+the secrets file and delivers it.
 
 `chalkctl node renew` also renews a node whose certificate expired, for example after a year
 switched off. Such a node cannot renew itself, because the control plane no longer accepts the
@@ -155,9 +161,15 @@ version kept as `<file>.prev`, unless `--out` names a new file. An encrypted fil
 again to the recipients recorded inside it.
 
 [`chalkctl rotate node-ca`](../../reference/cli/chalkctl_rotate.md) replaces the node CA alone, in
-one go without pausing. It issues a new node CA from the OS CA, delivers it to the nodes that hold
-the node CA, and gives every node a certificate of it. Node certificates of the old node CA stay
-valid until they expire, because they chain to the same OS CA.
+one go without pausing, on every kind of node. The accept and the finish change nothing on the
+nodes, because they trust the OS CA the new node CA chains to. The switch delivers the new node CA
+to the nodes that hold it, the control planes on the shipped variant; on a cluster without
+Kubernetes no node holds it. The refresh issues every node a certificate of it from the secrets
+file. Control planes come first, then the other nodes by name. Node certificates of the old node CA
+stay valid until they expire, because they chain to the same OS CA.
+
+chalkctl writes the secrets file once per phase, so after a rotation `<file>.prev` holds the
+version the last phase wrote.
 
 ## A rotation leaves client files behind
 
@@ -178,7 +190,7 @@ its CA is removed. A leaked client file is revoked by rotating `os-ca`, which al
 other client file of the old OS CA. Short `--ttl` values on client files limit how long a leak
 matters.
 
-`chalkctl node-ca rotate` revokes nothing: chalkd trusts every node CA the OS CA signed, so only
+`chalkctl rotate node-ca` revokes nothing: chalkd trusts every node CA the OS CA signed, so only
 an `os-ca` rotation retires the certificates of the old node CA.
 
 !!! note "On the shipped variant, chalkctl node revoke shuts out one node"

@@ -133,8 +133,8 @@ Two other ways to keep the file suit other setups:
 
 Committing `secrets.age` puts it under the same history and review as the rest of the cluster.
 Every clone then carries it, so its protection rests on the recipients' keys alone.
-`chalkctl rotate` and `chalkctl node-ca rotate` later rewrite the file in place and leave
-`secrets.age.prev` and, while they run, `secrets.age.lock` beside it. Keep both out of git.
+`chalkctl rotate` later rewrites the file in place and leaves `secrets.age.prev` and, while it
+runs, `secrets.age.lock` beside it. Keep both out of git.
 
 !!! danger "A lost secrets file cannot be generated again"
 
@@ -207,7 +207,7 @@ others take a client file of a high enough role, or the secrets file, which coun
 | Command | Secrets file | Admin client file | Operator client file | Reader client file |
 | --- | --- | --- | --- | --- |
 | `install`, `apply-config`, `config new` | yes | no | no | no |
-| `recovery-key`, `node renew`, `node-ca rotate`, `rotate` | yes | no | no | no |
+| `recovery-key`, `node renew`, `rotate` | yes | no | no | no |
 | `storage reset` | yes | yes | no | no |
 | `upgrade` with config, `upgrade --diff` | yes | yes | no | no |
 | `upgrade` without config, `reboot` | yes | yes | yes | no |

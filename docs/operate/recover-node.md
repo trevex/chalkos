@@ -100,14 +100,22 @@ describes.
 ## The node certificate expired
 
 chalkctl refuses the node's certificate as expired, so every command against the node fails. The
-node itself still runs. A node renews its node certificate once two thirds of its year have
-passed, so a certificate expires only when the node could not renew for four months. It was
-switched off, could not reach a control plane, or has no Kubernetes and nobody renewed it by
-hand. Before the expiry, its status showed why:
+node itself still runs. A node of a Kubernetes cluster renews its node certificate once two
+thirds of its year have passed, so its certificate expires only when it could not renew for four
+months: it was switched off or could not reach a control plane. Before the expiry, its status
+showed why:
 
 ```text
 certificates:
   node  expires <date>  renewal failing: <reason>; expires <time>
+```
+
+A node whose image runs no Kubernetes cannot renew on its own, and its certificate expires when
+nobody ran `chalkctl node renew` for it. Its status said so from the renewal point on:
+
+```text
+certificates:
+  node  expires <date>  the node certificate expires on <date>; this image cannot renew it on its own; run chalkctl node renew w1
 ```
 
 `chalkctl node renew` issues and delivers a new certificate, also to a node whose certificate
@@ -171,7 +179,7 @@ node CA expires.
 These are gone:
 
 - installing or reinstalling a node, and `apply-config`;
-- `chalkctl node renew`, `node-ca rotate` and every `rotate`;
+- `chalkctl node renew` and every `rotate`;
 - new client files;
 - recovery keys, so a node whose TPM stops unsealing cannot be unlocked.
 

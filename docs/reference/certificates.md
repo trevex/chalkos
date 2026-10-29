@@ -61,11 +61,11 @@ carries a note when something needs doing:
 | Note | Shown for |
 | --- | --- |
 | `less than a third of its lifetime remains` | A node or control plane certificate whose renewal is due |
-| `less than a third of its lifetime remains; renew it with chalkctl node renew <node>` | A node certificate on a node without Kubernetes, whose renewal is due |
+| `the node certificate expires on <date>; this image cannot renew it on its own; run chalkctl node renew <node>` | A node certificate on a node without Kubernetes, whose renewal is due; `expired on` once it expired |
 | `renewal failing: <reason>; expires <date>` | A renewal that failed |
 | `less than a tenth of its lifetime remains, though the kubelet renews it itself` | A kubelet certificate close to its end |
 | `<CA> expires <date>` | A CA in its last year |
-| `node CA expires <date>; run chalkctl node-ca rotate` | The node CA in its last 18 months |
+| `node CA expires <date>; run chalkctl rotate node-ca` | The node CA in its last 18 months |
 | `expired`, `<CA> expired <date>` | A certificate or CA past its end |
 | `expired; deliver a new one with chalkctl apply-config <node> --kubernetes-share` | A worker's kubelet client certificate, when the one the kubelet renewed was lost with VAR and the one in its Kubernetes share has expired too |
 

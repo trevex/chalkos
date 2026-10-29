@@ -389,15 +389,17 @@ that image's [image directory](#image-directory). See
 ## Node CA { #node-ca }
 
 An intermediate CA under the [OS CA](#os-ca) that may issue only server and client certificates.
-Control planes hold it and renew every node's certificate with it, so
-they never hold the OS CA's key. See [Certificates](../how-it-works/node/certificates.md).
+On a Kubernetes cluster, control planes hold it and renew every node's certificate with it, so
+they never hold the OS CA's key. `chalkctl rotate node-ca` replaces it. See
+[Certificates](../how-it-works/node/certificates.md).
 
 ## Node certificate { #node-certificate }
 <!-- abbr: node certificates, Node certificates -->
 
 The certificate chalkd serves and authenticates with. The [node CA](#node-ca) issues it for the
 node's name, host name and addresses, valid for one year. chalkd takes the node's name from its
-subject and renews it through a control plane once two thirds of its lifetime have passed. See
+subject. Once two thirds of its lifetime have passed, a Kubernetes node renews it through a control
+plane, and any other node reports that `chalkctl node renew` is due. See
 [Certificates](../how-it-works/node/certificates.md).
 
 ## Node name { #node-name }

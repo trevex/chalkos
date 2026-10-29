@@ -79,9 +79,10 @@ $ chalkctl node renew w1 --secrets secrets.age
 w1 serves a new node certificate; it expires <date>
 ```
 
-`<date>` is a year from the renewal, in RFC 3339 form. Such a node's status shows when renewal is
-due, with
-`less than a third of its lifetime remains; renew it with chalkctl node renew w1`.
+`<date>` is a year from the renewal, in RFC 3339 form. chalkd checks the certificate on such a
+node too. Once two thirds of its lifetime have passed, the node's status shows
+`the node certificate expires on <date>; this image cannot renew it on its own; run chalkctl node renew w1`,
+with `expired on` once it has expired.
 
 `chalkctl node renew` also renews a node whose certificate has expired, such as a node switched off
 for months. To reach it, chalkctl trusts the node's old key, so someone who stole that key and sits
@@ -110,19 +111,30 @@ node-ca: the accept phase
 the rotation of the node CA is finished: every node serves a certificate of the new node CA, and certificates of the old one stay valid until they expire, since both chain to the same OS CA; the previous version is secrets.age.prev; secrets.pub.json holds the new public half
 ```
 
-The rotation runs in one go, without pausing. Certificates of the old node CA stay valid until they
-expire, because both node CAs chain to the same OS CA. The rotation therefore cuts off no node, not
-even a removed one: chalkd trusts every node CA the OS CA signed. A node that could not be reached
-stops the rotation, and `chalkctl rotate node-ca --resume` continues it.
+The rotation runs in one go, without pausing. It reaches the control planes first, then the other
+nodes by name. Certificates of the old node CA stay valid until they expire, because both node CAs
+chain to the same OS CA. The rotation therefore cuts off no node, not even a removed one: chalkd
+trusts every node CA the OS CA signed. A node that could not be reached stops the rotation, and
+`chalkctl rotate node-ca --resume` continues it.
+
+On a cluster without Kubernetes, such as a pair of routers, no node holds the node CA. The switch
+then prints
+`no node renews node certificates itself; chalkctl node renew issues them from the new node CA`,
+and every node still gets a certificate of the new node CA.
+
+chalkctl writes the secrets file once per phase. After the rotation, `secrets.age.prev` holds the
+version the last phase wrote, and the version from before the rotation is gone. To keep it, back
+up the secrets file before you rotate.
 
 ## Choose what to rotate
 
-`chalkctl rotate` replaces one of four kinds of value across the cluster. Two of them exist only on
-the shipped variant's Kubernetes:
+`chalkctl rotate` replaces one of five kinds of value across the cluster. Three of them exist only
+on the shipped variant's Kubernetes:
 
 | Kind | What it replaces | What it revokes |
 | --- | --- | --- |
 | `os-ca` | The OS CA and the node CA, and every node certificate | Every client file issued before, and the node certificates of nodes outside the rotation |
+| `node-ca` | The node CA, and every node certificate | Nothing |
 | `kubernetes-ca` (Kubernetes) | The Kubernetes, front-proxy and etcd CAs, and every certificate they issued | Every kubeconfig issued before |
 | `service-account-key` (Kubernetes) | The key that signs service-account tokens | Tokens signed with the old key |
 | `encryption-key` (Kubernetes) | The key that encrypts Secrets in etcd | Nothing; old data is encrypted again |
@@ -148,7 +160,7 @@ it issued, so it cuts off everyone who holds an old one. Choose by what was lost
 
 A control plane needs the rotations because its disk holds the node CA's and the Kubernetes CA's
 keys, with which it can issue itself new certificates. A cluster without Kubernetes keeps no list
-of revoked nodes. `chalkctl node-ca rotate` cuts off no node, because chalkd trusts every node CA
+of revoked nodes. `chalkctl rotate node-ca` cuts off no node, because chalkd trusts every node CA
 the OS CA signed.
 
 A revoked name stays blocked until `chalkctl node unrevoke` lets it back in. Reusing the name
@@ -274,7 +286,7 @@ certificate's expiry, and a problem beside it when one needs doing, such as a re
   run the command again`: an editor or a `git checkout` changed the file during the command.
 - `a rotation of the OS CA runs, in its accept phase; continue it with chalkctl rotate os-ca
   --resume or --finish`: a rotation started earlier is not finished. Finish it before you start
-  another or run `chalkctl node-ca rotate`.
+  another, such as `chalkctl rotate node-ca`.
 - A node that stays unreachable blocks every phase. Remove it from the inventory, or reinstall it,
   before you resume. A rotation skips a revoked node and says
   `skipping w1: revoked since <time>`, where `<time>` is when the node was revoked.

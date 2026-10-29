@@ -245,6 +245,9 @@ kubectl --kubeconfig=admin.kubeconfig get nodes
 
 ## If something goes wrong
 
+- `the cluster has no control-plane node, through which the rotation of the <kind> runs`: the
+  inventory names no control plane, so no node can carry the rotation. chalkctl refuses before it
+  writes the secrets file. Rotate with an inventory that names the control planes.
 - `the <phase> phase of the rotation of the <kind> stopped: ...; once that is fixed, continue with
   chalkctl rotate <kind> --resume`: a node did not confirm the phase within `--timeout`, or could
   not be reached. Fix the node and run the command it names. A phase applied again redoes nothing

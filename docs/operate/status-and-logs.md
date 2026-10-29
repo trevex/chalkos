@@ -139,9 +139,11 @@ lists every state, and [Troubleshoot Kubernetes](../kubernetes/troubleshooting.m
 Each line names a certificate the node holds or issues and its expiry. A third column names what
 needs doing:
 
-- `less than a third of its lifetime remains`: the node certificate is due for renewal. A node of
-  a Kubernetes cluster renews it through a control plane. Any other node adds
-  `; renew it with chalkctl node renew w1`.
+- `less than a third of its lifetime remains`: the node certificate is due for renewal, and a node
+  of a Kubernetes cluster renews it through a control plane.
+- `the node certificate expires on <date>; this image cannot renew it on its own; run chalkctl node renew w1`:
+  the node certificate is due for renewal on a node whose image runs no Kubernetes, such as a
+  router. Run the command it names. Once the certificate has expired, the line says `expired on`.
 - `renewal failing: <reason>; expires <time>`: the node could not renew through a control plane.
   Fix what the reason names, often a cluster endpoint that does not reach chalkd on port 50000.
 - `expired`: the certificate expired.
@@ -149,7 +151,7 @@ needs doing:
   back.
 - `OS CA expires <date>`: the OS CA has less than a year left.
   [Rotate the OS CA](access.md#rotate-the-os-ca) replaces it.
-- `node CA expires <date>; run chalkctl node-ca rotate`: the node CA has less than 18 months left.
+- `node CA expires <date>; run chalkctl rotate node-ca`: the node CA has less than 18 months left.
   [Rotate the node CA before it expires](access.md#rotate-the-node-ca-before-it-expires) covers
   it.
 

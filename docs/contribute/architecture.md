@@ -87,7 +87,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `chalkd/layer` | The interfaces of chalkd's layer plugins, their optional hooks and the registry of the compiled and active plugins. |
 | `chalkd/layers/kubernetes` | chalkd's Kubernetes layer: KubernetesService, the node's Kubernetes loops, the control plane's, the join and the VIP election, the issuer of node certificates, and the `chalkd kubernetes` commands and actions. |
 | `chalkd/layers/router` | chalkd's router layer: RouterService, with the state of the node's FRR, Jool and Unbound and the kernel's routes. |
-| `chalkd/renewal` | Renews a certificate, or a set of them, once it is due, for the node certificate and a layer's own. |
+| `chalkd/renewal` | Renews a certificate, or a set of them, once it is due, for the node certificate and a layer's own; without anything to renew it with, it logs once that the certificate is due. |
 | `chalklab` | The chalklab command tree. |
 | `client` | Connections to chalkd, each with one way to verify the node: by fingerprint in maintenance mode, by the OS CA otherwise; the names chalkd's status gives certificates and trusted values. |
 | `clustersecrets` | The secrets file: the OS CA and node CA with their keys, the Kubernetes secrets, the recovery secret, the file's age encryption, the rotation of what it holds, and the lock and in-place replacement of the file, which keeps its previous version. |
@@ -207,11 +207,14 @@ comment of each hook in `pkg/chalkd/layer/layer.go` names the plugins chalkd ask
 live in `pkg/chalkd/layers/kubernetes` and `pkg/chalkd/layers/router`.
 
 `pkg/chalkctl/layer` declares chalkctl's side in the same way: a `Plugin` with hooks for commands,
-a node's status section, image facts, the payloads of a delivery and their admission, an
-upgrade's checks and a rotation's steps. chalkctl asks every compiled plugin for what the
-inventory and the secrets file drive, such as commands, payloads and rotations. For what it reads
-from a node's layer services, such as the node's status section and its part in an upgrade, it
-asks only the plugins of the layers the node's Info names. A plugin reaches the cluster and its
+a node's status section, image facts, the payloads of a delivery and their admission, the
+coordinators that upgrade and rotate take first, an upgrade's checks and the rotation kinds a layer
+runs. A plugin also names the nodes every rotation leaves out and those that hold the node CA.
+chalkctl runs the rotations of the OS CA and the node CA itself, in `pkg/chalkctl/rotate_ca.go`,
+since every node takes part in them, and asks the plugins for their kinds. For what the inventory
+and the secrets file drive, such as commands, payloads and rotations, it asks every compiled
+plugin. For what it reads from a node's layer services, such as the node's status section and its
+part in an upgrade, it asks only the plugins of the layers the node's Info names. A plugin reaches the cluster and its
 nodes through the `Host` chalkctl gives it. `pkg/chalkctl/layers.go` lists the plugins, which live in
 `pkg/chalkctl/layers/kubernetes` and `pkg/chalkctl/layers/router`.
 

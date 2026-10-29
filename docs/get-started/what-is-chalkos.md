@@ -118,10 +118,11 @@ rollback. A Kubernetes upgrade is an image upgrade too. See [Upgrades](../how-it
 
 ## Certificates renew themselves, CAs rotate on command
 
-Each node renews its node certificate through a control plane, and control planes renew the
-Kubernetes leaf certificates in place, so no certificate of a running cluster expires unattended.
-A CA or key changes only when an operator runs `chalkctl rotate`, and rotating is also how access
-is revoked. See [Certificates](../how-it-works/node/certificates.md).
+Each node of a Kubernetes cluster renews its node certificate through a control plane, and control
+planes renew the Kubernetes leaf certificates in place, so no certificate of a running cluster
+expires unattended. A node without Kubernetes, such as a router, reports in its status when its
+node certificate needs `chalkctl node renew`. A CA or key changes only when an operator runs
+`chalkctl rotate`, and rotating is also how access is revoked. See [Certificates](../how-it-works/node/certificates.md).
 
 ## Where chalkos fits
 
