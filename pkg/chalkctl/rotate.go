@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -17,7 +16,6 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
-	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -78,9 +76,11 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	if err := c.checkAddresses(addresses); err != nil {
 		return err
 	}
-	// Every node's kind is read before any node is sent anything.
-	if _, err := c.nodesOf("", ""); err != nil {
-		return err
+	// Every node's config is read before any node is sent anything.
+	for _, name := range c.nodeNames() {
+		if _, err := c.config(name); err != nil {
+			return err
+		}
 	}
 	file, err := a.openSecrets(ctx, sf, change)
 	if err != nil {
@@ -114,8 +114,8 @@ type rotation struct {
 	addresses map[string]string
 	// timeout bounds each wait for a node; poll is the time between two looks.
 	timeout, poll time.Duration
-	// revoked are the nodes the rotation skips, because a control plane lists them as revoked.
-	// With ignoreRevoked, the list is not read and no node is skipped.
+	// revoked are the nodes the rotation skips, because a layer lists them as revoked. With
+	// ignoreRevoked, the lists are not read and no node is skipped.
 	revoked       map[string]bool
 	ignoreRevoked bool
 }
@@ -266,14 +266,6 @@ func rotator(kind clustersecrets.RotationKind) layer.Rotation {
 	return nil
 }
 
-// nodesOf lists the cluster's nodes of a Node type in name order, but the revoked ones: control
-// planes, workers, or with kind "" those without one.
-func (r *rotation) nodesOf(kind string) []string {
-	// rotate read every node's kind before it started, so no error is left to report.
-	names, _ := r.cluster.nodesOf(kind, "")
-	return slices.DeleteFunc(names, func(name string) bool { return r.revoked[name] })
-}
-
 // skipRevoked reads the revoked nodes from every layer that lists them and leaves those of the
 // cluster out of the rotation, naming each as it first skips it. Without a layer's list no phase
 // runs, so none hands a certificate to a revoked node. A node stays skipped for the rest of the
@@ -307,9 +299,23 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 	return nil
 }
 
-// allNodes lists every node, control planes first.
+// nodeNames lists the cluster's nodes in name order, but the revoked ones.
+func (r *rotation) nodeNames() []string {
+	return slices.DeleteFunc(slices.Clone(r.cluster.nodeNames()), func(name string) bool { return r.revoked[name] })
+}
+
+// allNodes lists the nodes that take part, the coordinators first, each group in name order.
 func (r *rotation) allNodes() []string {
-	return slices.Concat(r.nodesOf(kubernetes.KindControlPlane), r.nodesOf(kubernetes.KindWorker), r.nodesOf(""))
+	var coordinators, others []string
+	for _, name := range r.nodeNames() {
+		// rotate read every node's config before it started, so no error is left to report.
+		if ok, _ := listedCoordinator(r.cluster, name); ok {
+			coordinators = append(coordinators, name)
+		} else {
+			others = append(others, name)
+		}
+	}
+	return append(coordinators, others...)
 }
 
 // nodes reaches the nodes with the secrets as they are now: chalkctl's admin certificate comes
@@ -381,7 +387,8 @@ func (r *rotation) Secrets() clustersecrets.Secrets { return r.file.secrets }
 func (r *rotation) Now() time.Time                  { return r.a.now() }
 func (r *rotation) Timeout() time.Duration          { return r.timeout }
 func (r *rotation) Poll() time.Duration             { return r.poll }
-func (r *rotation) NodesOf(kind string) []string    { return r.nodesOf(kind) }
+func (r *rotation) Cluster() layer.Cluster          { return pluginCluster{r.cluster} }
+func (r *rotation) NodeNames() []string             { return r.nodeNames() }
 
 func (r *rotation) Call(name string, fn func(conn *client.Conn) error) error {
 	return r.call(name, fn)
@@ -389,18 +396,6 @@ func (r *rotation) Call(name string, fn func(conn *client.Conn) error) error {
 
 func (r *rotation) Status(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
 	return r.status(ctx, name)
-}
-
-func (r *rotation) WaitFor(ctx context.Context, what string, check func() error) error {
-	return r.waitFor(ctx, what, check)
-}
-
-func (r *rotation) WaitStatus(ctx context.Context, name, what string, check func(st *nodev1.StatusResponse) error) error {
-	return r.waitStatus(ctx, name, what, check)
-}
-
-func (r *rotation) EachNode(names []string, fn func(name string) error) error {
-	return r.eachNode(names, fn)
 }
 
 func (r *rotation) DeliverPayloads(ctx context.Context, name string) error {
@@ -415,36 +410,6 @@ func (r *rotation) Nodes() (layer.Nodes, error) {
 	return pluginNodes{nodes}, nil
 }
 
-// waitFor checks until check passes, up to the rotation's timeout.
-func (r *rotation) waitFor(ctx context.Context, what string, check func() error) error {
-	return layer.WaitFor(ctx, what, r.timeout, r.poll, check)
-}
-
-// waitStatus waits until a node's status passes check.
-func (r *rotation) waitStatus(ctx context.Context, name, what string, check func(st *nodev1.StatusResponse) error) error {
-	return r.waitFor(ctx, name+" "+what, func() error {
-		st, err := r.status(ctx, name)
-		if err != nil {
-			return err
-		}
-		return check(st)
-	})
-}
-
-// eachNode runs fn for every node, also after one failed, and names those that failed.
-func (r *rotation) eachNode(names []string, fn func(name string) error) error {
-	var failed []string
-	for _, name := range names {
-		if err := fn(name); err != nil {
-			failed = append(failed, fmt.Sprintf("%s: %v", name, err))
-		}
-	}
-	if len(failed) > 0 {
-		return errors.New(strings.Join(failed, "; "))
-	}
-	return nil
-}
-
 // applyOSCA runs a phase of the OS CA's rotation: nodes trust both OS CAs, control planes renew
 // node certificates with the new node CA, every node gets a certificate of it, and finally nodes
 // trust the new OS CA alone.
@@ -457,11 +422,11 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 		if err != nil {
 			return err
 		}
-		return r.eachNode(r.allNodes(), func(name string) error {
+		return layer.EachNode(r.allNodes(), func(name string) error {
 			if err := r.deliver(ctx, name, &nodev1.ApplyConfigRequest{Trust: []byte(bundle)}); err != nil {
 				return err
 			}
-			if err := r.waitStatus(ctx, name, "to trust the OS CAs", func(st *nodev1.StatusResponse) error {
+			if err := layer.WaitStatus(ctx, r, name, "to trust the OS CAs", func(st *nodev1.StatusResponse) error {
 				return layer.Trusts(st, client.NameOSCA, want, "")
 			}); err != nil {
 				return err
@@ -479,11 +444,11 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 			return err
 		}
 		holders = slices.DeleteFunc(holders, func(name string) bool { return r.revoked[name] })
-		return r.eachNode(holders, func(name string) error {
+		return layer.EachNode(holders, func(name string) error {
 			if err := r.deliverPayloads(ctx, name); err != nil {
 				return err
 			}
-			if err := r.waitStatus(ctx, name, "to hold the new node CA", func(st *nodev1.StatusResponse) error {
+			if err := layer.WaitStatus(ctx, r, name, "to hold the new node CA", func(st *nodev1.StatusResponse) error {
 				if c := layer.CertificateOf(st, client.NameNodeCA); c == nil || c.Fingerprint != nodeCA {
 					return errors.New("holds another node CA")
 				}
@@ -499,7 +464,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 		if err != nil {
 			return err
 		}
-		return r.eachNode(r.allNodes(), func(name string) error {
+		return layer.EachNode(r.allNodes(), func(name string) error {
 			// A node renewed since, or in an earlier run, keeps its certificate.
 			if st, err := r.status(ctx, name); err == nil && layer.IssuedBy(st, client.NameNode, nodeCA) == nil {
 				r.say("  %s serves a certificate of the new node CA already", name)
@@ -516,7 +481,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 			if err := r.deliver(ctx, name, &nodev1.ApplyConfigRequest{NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key)}); err != nil {
 				return err
 			}
-			if err := r.waitStatus(ctx, name, "to serve a certificate of the new node CA", func(st *nodev1.StatusResponse) error {
+			if err := layer.WaitStatus(ctx, r, name, "to serve a certificate of the new node CA", func(st *nodev1.StatusResponse) error {
 				return layer.IssuedBy(st, client.NameNode, nodeCA)
 			}); err != nil {
 				return err

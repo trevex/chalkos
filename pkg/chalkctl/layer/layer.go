@@ -17,7 +17,6 @@ import (
 	"github.com/spf13/pflag"
 	"google.golang.org/protobuf/types/known/anypb"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
@@ -141,57 +140,6 @@ type Upgrading interface {
 	QuorumWait() time.Duration
 	// Poll is the time between two looks at what the run waits for.
 	Poll() time.Duration
-}
-
-// Rotation is a plugin whose layer runs rotations of chalkctl rotate, and which names the nodes
-// every rotation leaves out or delivers the node CA to. chalkctl asks every compiled plugin.
-type Rotation interface {
-	// Rotates reports whether the layer runs the rotation of kind.
-	Rotates(kind clustersecrets.RotationKind) bool
-	// ApplyRotation delivers a phase of the rotation of kind to the nodes and waits until each
-	// confirms it.
-	ApplyRotation(ctx context.Context, r Rotating, kind clustersecrets.RotationKind, phase clustersecrets.Phase) error
-	// FinishGuard refuses to remove an old value of kind something still needs; force is --force.
-	FinishGuard(ctx context.Context, r Rotating, kind clustersecrets.RotationKind, force bool) error
-	// Paused says what the operator does before the rotation continues.
-	Paused(ctx context.Context, r Rotating, rot clustersecrets.Rotation) error
-	// RevokedNodes are the nodes the layer lists as revoked, each with when it was, as
-	// "since <time>". A rotation hands them nothing.
-	RevokedNodes(ctx context.Context, r Rotating) (map[string]string, error)
-	// NodeCAHolders are the nodes that hold the node CA and renew node certificates with it, in
-	// name order.
-	NodeCAHolders(c Cluster) ([]string, error)
-}
-
-// Rotating is a run of chalkctl rotate, as a plugin's rotations use it.
-type Rotating interface {
-	// Say prints a line of the run's progress.
-	Say(format string, args ...any)
-	// Secrets are the secrets file's as the rotation has them now.
-	Secrets() clustersecrets.Secrets
-	// Now is the time the run issues at.
-	Now() time.Time
-	// Timeout bounds each wait for a node.
-	Timeout() time.Duration
-	// Poll is the time between two looks at what the run waits for.
-	Poll() time.Duration
-	// NodesOf lists the cluster's nodes of a Node type in name order, the revoked ones left out.
-	NodesOf(kind string) []string
-	// Call runs fn on a connection to the installed node.
-	Call(name string, fn func(conn *client.Conn) error) error
-	// Status reads a node's status.
-	Status(ctx context.Context, name string) (*nodev1.StatusResponse, error)
-	// WaitFor checks until check passes, up to the timeout.
-	WaitFor(ctx context.Context, what string, check func() error) error
-	// WaitStatus waits until a node's status passes check.
-	WaitStatus(ctx context.Context, name, what string, check func(st *nodev1.StatusResponse) error) error
-	// EachNode runs fn for every node, also after one failed, and names those that failed.
-	EachNode(names []string, fn func(name string) error) error
-	// DeliverPayloads sends a node the payloads its layers issue it from the secrets as they are
-	// now.
-	DeliverPayloads(ctx context.Context, name string) error
-	// Nodes reaches the cluster's nodes with the secrets as they are now.
-	Nodes() (Nodes, error)
 }
 
 // Host is what chalkctl gives its plugins' commands.

@@ -35,7 +35,7 @@ func (p *Plugin) Rotates(kind clustersecrets.RotationKind) bool {
 // RevokedNodes are the nodes the first control plane that answers with them lists as revoked, as
 // revokedNodesOf reads them.
 func (p *Plugin) RevokedNodes(ctx context.Context, r layer.Rotating) (map[string]string, error) {
-	list, err := revokedNodesOf(ctx, r.NodesOf(k8s.KindControlPlane), func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+	list, err := revokedNodesOf(ctx, rotatingNodesOf(r, k8s.KindControlPlane), func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
 		return kubernetesStatus(ctx, r, name)
 	})
 	if err != nil {
@@ -140,7 +140,7 @@ func applied(st *nodev1.StatusResponse, want []expectation) error {
 // on its new files with a healthy etcd before the next one restarts; workers follow for the
 // Kubernetes CAs.
 func (p *Plugin) ApplyRotation(ctx context.Context, r layer.Rotating, kind clustersecrets.RotationKind, phase clustersecrets.Phase) error {
-	workers := r.NodesOf(k8s.KindWorker)
+	workers := rotatingNodesOf(r, k8s.KindWorker)
 	if phase == clustersecrets.PhaseRefresh {
 		switch kind {
 		case clustersecrets.RotateKubernetesCA:
@@ -195,14 +195,14 @@ func controlPlanesInTurn(ctx context.Context, r layer.Rotating, kind clustersecr
 	if err != nil {
 		return err
 	}
-	for _, name := range r.NodesOf(k8s.KindControlPlane) {
+	for _, name := range rotatingNodesOf(r, k8s.KindControlPlane) {
 		if err := waitQuorum(ctx, r, name); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
 		if err := r.DeliverPayloads(ctx, name); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
-		if err := r.WaitStatus(ctx, name, "to run on its new files", func(st *nodev1.StatusResponse) error {
+		if err := layer.WaitStatus(ctx, r, name, "to run on its new files", func(st *nodev1.StatusResponse) error {
 			if err := applied(st, want); err != nil {
 				return err
 			}
@@ -232,7 +232,7 @@ func controlPlanesInTurn(ctx context.Context, r layer.Rotating, kind clustersecr
 func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
 	window := min(10*r.Poll(), r.Timeout())
 	var silent time.Time
-	return r.WaitFor(ctx, "etcd's members to be healthy", func() error {
+	return layer.WaitFor(ctx, "etcd's members to be healthy", r.Timeout(), r.Poll(), func() error {
 		var members []*kubernetesv1.EtcdMember
 		var answer error
 		err := r.Call(name, func(conn *client.Conn) error {
@@ -276,11 +276,11 @@ func workersTrust(ctx context.Context, r layer.Rotating, workers []string) error
 	if err != nil {
 		return err
 	}
-	return r.EachNode(workers, func(name string) error {
+	return layer.EachNode(workers, func(name string) error {
 		if err := r.DeliverPayloads(ctx, name); err != nil {
 			return err
 		}
-		if err := r.WaitStatus(ctx, name, "to trust the Kubernetes CAs", func(st *nodev1.StatusResponse) error { return applied(st, want) }); err != nil {
+		if err := layer.WaitStatus(ctx, r, name, "to trust the Kubernetes CAs", func(st *nodev1.StatusResponse) error { return applied(st, want) }); err != nil {
 			return err
 		}
 		r.Say("  %s trusts the Kubernetes CAs", name)
@@ -296,20 +296,20 @@ func refreshKubernetesCA(ctx context.Context, r layer.Rotating, workers []string
 	if err != nil {
 		return err
 	}
-	if err := r.EachNode(workers, func(name string) error {
+	if err := layer.EachNode(workers, func(name string) error {
 		if st, err := r.Status(ctx, name); err == nil && layer.IssuedBy(st, client.NameKubeletClient, ca) == nil {
 			return nil
 		}
 		if err := r.DeliverPayloads(ctx, name); err != nil {
 			return err
 		}
-		return r.WaitStatus(ctx, name, "to use a kubelet client certificate of the new CA", func(st *nodev1.StatusResponse) error {
+		return layer.WaitStatus(ctx, r, name, "to use a kubelet client certificate of the new CA", func(st *nodev1.StatusResponse) error {
 			return layer.IssuedBy(st, client.NameKubeletClient, ca)
 		})
 	}); err != nil {
 		return err
 	}
-	return r.EachNode(append(r.NodesOf(k8s.KindControlPlane), workers...), func(name string) error {
+	return layer.EachNode(append(rotatingNodesOf(r, k8s.KindControlPlane), workers...), func(name string) error {
 		if st, err := r.Status(ctx, name); err == nil && layer.IssuedBy(st, client.NameKubeletServing, ca) == nil {
 			r.Say("  %s's kubelet serves a certificate of the new CA already", name)
 			return nil
@@ -322,7 +322,7 @@ func refreshKubernetesCA(ctx context.Context, r layer.Rotating, workers []string
 		}); err != nil {
 			return err
 		}
-		if err := r.WaitStatus(ctx, name, "for a kubelet serving certificate of the new CA", func(st *nodev1.StatusResponse) error {
+		if err := layer.WaitStatus(ctx, r, name, "for a kubelet serving certificate of the new CA", func(st *nodev1.StatusResponse) error {
 			return layer.IssuedBy(st, client.NameKubeletServing, ca)
 		}); err != nil {
 			return err
@@ -423,7 +423,7 @@ func rotationThroughControlPlane(ctx context.Context, r layer.Rotating, fn func(
 	if err != nil {
 		return err
 	}
-	names := r.NodesOf(k8s.KindControlPlane)
+	names := rotatingNodesOf(r, k8s.KindControlPlane)
 	if len(names) == 0 {
 		return errors.New("the cluster has no control-plane node to ask")
 	}

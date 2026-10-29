@@ -108,35 +108,6 @@ func (c *cluster) config(name string) (*inventory.NodeConfig, error) {
 	return nc, nil
 }
 
-// kind is what a node is in Kubernetes: the type its Node document names; empty without
-// Kubernetes and on a partial cluster.
-func (c *cluster) kind(name string) (string, error) {
-	if c.partial() {
-		return "", nil
-	}
-	nc, err := c.config(name)
-	if err != nil {
-		return "", err
-	}
-	return nc.Type, nil
-}
-
-// nodesOf lists the cluster's nodes of a Kubernetes kind but skip, in name order; kind "" lists
-// those without Kubernetes.
-func (c *cluster) nodesOf(kind, skip string) ([]string, error) {
-	var names []string
-	for _, name := range c.nodeNames() {
-		k, err := c.kind(name)
-		if err != nil {
-			return nil, err
-		}
-		if k == kind && name != skip {
-			names = append(names, name)
-		}
-	}
-	return names, nil
-}
-
 // platform is the platform of a node's image: that of the directory of its image in the
 // inventory.
 func (c *cluster) platform(name string) (string, error) {

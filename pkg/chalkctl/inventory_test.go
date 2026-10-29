@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -426,23 +425,6 @@ func TestSecretsOnlyFromTheFlag(t *testing.T) {
 		if got := strings.TrimSpace(ta.stdout.String()); got != want {
 			t.Errorf("recovery key from %s = %q, want %q", secrets, got, want)
 		}
-	}
-}
-
-// TestNodesOfTheInventory lists nodes by the type their Node documents give them.
-func TestNodesOfTheInventory(t *testing.T) {
-	c, err := loadInventory(context.Background(), writeNodes(t, t.TempDir(), []testNode{
-		{"cp3", kubernetes.KindControlPlane, "k8s"}, {"cp1", kubernetes.KindControlPlane, "k8s"},
-		{"w1", kubernetes.KindWorker, "k8s"}, {"n1", "", "plain"},
-	}, nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := c.nodesOf(kubernetes.KindControlPlane, "cp3"); err != nil || !slices.Equal(got, []string{"cp1"}) {
-		t.Errorf("control planes but cp3 = %q, %v", got, err)
-	}
-	if got, err := c.nodesOf("", ""); err != nil || !slices.Equal(got, []string{"n1"}) {
-		t.Errorf("nodes without Kubernetes = %q, %v", got, err)
 	}
 }
 

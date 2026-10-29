@@ -29,3 +29,16 @@ func nodesOf(c layer.Cluster, kind, skip string) ([]string, error) {
 	}
 	return names, nil
 }
+
+// rotatingNodesOf lists the nodes of a Kubernetes kind that take part in the rotation, in name
+// order.
+func rotatingNodesOf(r layer.Rotating, kind string) []string {
+	var names []string
+	for _, name := range r.NodeNames() {
+		// rotate read every node's config before it started, so no error is left to report.
+		if k, _ := kindOf(r.Cluster(), name); k == kind {
+			names = append(names, name)
+		}
+	}
+	return names
+}
