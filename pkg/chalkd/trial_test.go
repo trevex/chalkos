@@ -923,7 +923,7 @@ func TestTrialExpiryKeepsARecordItCannotRemove(t *testing.T) {
 
 // TestRestoreTrialAtBoot restores the config from before an open trial, as chalkos-config does
 // before it applies the slot, and removes the record. A trial that was never applied or ended
-// leaves the slot as it is, and a record that cannot be read goes.
+// leaves the slot as it is. A record that cannot be read stays.
 func TestRestoreTrialAtBoot(t *testing.T) {
 	s := trialServer(t)
 	rec := recordTrial(t, s, nextConfig)
@@ -967,11 +967,71 @@ func TestRestoreTrialAtBoot(t *testing.T) {
 	if err := RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots); err == nil || !strings.Contains(err.Error(), "cannot be read") {
 		t.Errorf("a record that cannot be read: %v", err)
 	}
-	check("a record that cannot be read")
+	if got := readFile(t, filepath.Join(s.Paths.StateDir, trialFile)); got != "{" {
+		t.Errorf("a record that cannot be read is %q, want it kept", got)
+	}
 }
 
-// TestRestoreTrialAtBootFailing keeps the record of a trial whose slot cannot be restored, so
-// chalkd rolls the trial back as it starts.
+// checkExpiredAtBoot checks that the boot kept the record of the trial rec with its deadline
+// moved to the boot's time, so chalkd rolls the trial back as it starts.
+func checkExpiredAtBoot(t *testing.T, s *Server, rec trialRecord, booted time.Time) {
+	t.Helper()
+	r, open, err := readTrial(s.Paths.StateDir)
+	if err != nil || !open {
+		t.Fatalf("the record is gone: %v", err)
+	}
+	if r.Deadline.Before(booted) || r.Deadline.After(time.Now()) {
+		t.Errorf("the deadline is %v, want the boot's time", r.Deadline)
+	}
+	r.Deadline = rec.Deadline
+	if !r.sameTrial(rec) {
+		t.Errorf("the record is %+v, want %+v with another deadline", r, rec)
+	}
+}
+
+// TestRestoreTrialAtBootUnreadableSlot keeps the record of a trial whose slot cannot be read, with
+// its deadline moved to the boot's time.
+func TestRestoreTrialAtBootUnreadableSlot(t *testing.T) {
+	s := trialServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	version := filepath.Join(slotOf(t, s), "version")
+	if err := os.Remove(version); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(version, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	booted := time.Now()
+	if err := RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots); err == nil || !strings.Contains(err.Error(), "read the config of the trial's slot") {
+		t.Errorf("err = %v, want the slot that cannot be read", err)
+	}
+	checkExpiredAtBoot(t, s, rec, booted)
+}
+
+// TestRollbackConfigRemovesAnUnreadableTrial removes a trial record that cannot be read, which
+// refuses every other change, and rolls the config back.
+func TestRollbackConfigRemovesAnUnreadableTrial(t *testing.T) {
+	s, _ := configServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	write(t, filepath.Join(s.Paths.StateDir, trialFile), "{")
+	want := "read the record of the config's trial: the trial record cannot be read"
+	hint := "roll the config back with chalkctl apply-config --rollback n1, which removes the record"
+	if _, err := sendConfig(s, baseConfig); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), hint) {
+		t.Errorf("a delivery: %v, want %q and %q", err, want, hint)
+	}
+	if _, err := sendRollback(s, rec.Previous); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Paths.StateDir, trialFile)); !os.IsNotExist(err) {
+		t.Errorf("the record stays: %v", err)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != rec.Previous {
+		t.Errorf("the node runs %s, want %s", v, rec.Previous)
+	}
+}
+
+// TestRestoreTrialAtBootFailing keeps the record of a trial whose slot cannot be restored, with
+// its deadline moved to the boot's time, so chalkd rolls the trial back as it starts.
 func TestRestoreTrialAtBootFailing(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root writes to read-only directories")
@@ -984,15 +1044,14 @@ func TestRestoreTrialAtBootFailing(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(slots, 0o755) })
+	booted := time.Now()
 	if err := RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots); err == nil || !strings.Contains(err.Error(), "restore config "+rec.Previous) {
 		t.Errorf("err = %v, want the failed restore", err)
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != rec.Version {
 		t.Errorf("the node runs %s, want the config on trial", v)
 	}
-	if r, open, err := readTrial(s.Paths.StateDir); err != nil || !open || !r.sameTrial(rec) {
-		t.Errorf("the record is %+v, %v, %v, want it kept", r, open, err)
-	}
+	checkExpiredAtBoot(t, s, rec, booted)
 }
 
 // failRestartOnce has the next restart of demo.service fail.

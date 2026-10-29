@@ -27,7 +27,8 @@ import (
 // trial: a trial's slot keeps the config from before it as its previous one. A slot that runs that
 // config already, as a rollback at the deadline that failed after it wrote the slot leaves it,
 // keeps the config on trial as its previous one instead, so the rollback delivers the config the
-// slot runs again, which finishes the rollback.
+// slot runs again, which finishes the rollback. A trial record that cannot be read goes, and the
+// rollback goes ahead as without a trial.
 func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1.RollbackConfigRequest]) (*connect.Response[nodev1.RollbackConfigResponse], error) {
 	version := req.Msg.Version
 	if version == "" {
@@ -41,7 +42,13 @@ func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1
 	defer s.upgrading.Unlock()
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "read the record of the config's trial: %v", err)
+		// A record that cannot be read refuses every other change, and a rollback is where every
+		// trial may end, so it goes, and the rollback goes ahead as without a trial.
+		log.Printf("read the record of the config's trial: %v; removing it for the rollback", err)
+		if err := s.endTrial(); err != nil {
+			return nil, failed(connect.CodeInternal, "remove the record of the config's trial, which cannot be read: %v", err)
+		}
+		open = false
 	}
 	if !open {
 		resp, _, err := s.rollbackConfig(ctx, version)

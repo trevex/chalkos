@@ -171,7 +171,8 @@ func parseHealthArgs(args []string) (healthArgs, error) {
 
 // loadConfig applies the config recorded on STATE, with the image's layers writing what they
 // derive from it. A config's trial that is still open ends first: the slot runs the config from
-// before it again. A trial that cannot be ended is logged, and chalkd settles it as it starts.
+// before it again. A trial that cannot be ended is logged, and its record takes a deadline that
+// passed, so chalkd rolls it back at once as it starts.
 func loadConfig() error {
 	// Only the layers' config is asked for, so the server they are bound to serves nothing.
 	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}

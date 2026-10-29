@@ -418,7 +418,8 @@ layers' payloads stay as they are. An upgrade's image starts without a previous 
 During a trial it takes only the version from before the trial, ConfigTrial.previous_version,
 rolls the config on trial back at once and ends the trial. Once a rollback at the trial's
 deadline wrote that config and failed after, the node runs it already: RollbackConfig then
-delivers it again, which finishes the rollback, and ends the trial. Available in normal mode to
+delivers it again, which finishes the rollback, and ends the trial. A trial record the node
+cannot read goes, and the rollback goes ahead as without a trial. Available in normal mode to
 admins.
 
 Request: RollbackConfigRequest. Response: RollbackConfigResponse.
@@ -492,8 +493,8 @@ deadline, unless the rollback at the deadline failed: while ConfigTrial.error is
 confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
 changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
 the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
-answers INTERNAL when the node cannot read the trial's record. Available in normal mode to
-admins.
+answers INTERNAL when the node cannot read the trial's record, which RollbackConfig removes.
+Available in normal mode to admins.
 
 Request: ConfirmConfigRequest. Response: ConfirmConfigResponse.
 

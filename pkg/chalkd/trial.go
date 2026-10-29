@@ -152,7 +152,7 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 	defer s.mu.Unlock()
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "read the record of the config's trial: %v", err)
+		return nil, s.unreadableTrial(err)
 	}
 	if !open {
 		dir, err := s.Loader.Slot()
@@ -224,6 +224,12 @@ func (s *Server) trialStatus() *nodev1.ConfigTrial {
 	return &nodev1.ConfigTrial{Version: r.Version, PreviousVersion: r.Previous, Deadline: timestamppb.New(r.Deadline), Error: r.Error, IgnoreUnits: r.IgnoreUnits, RollbackChanged: r.Changed}
 }
 
+// unreadableTrial refuses a request for err, which kept the trial's record from being read. The
+// record stays until RollbackConfig removes it: every trial may end in a rollback.
+func (s *Server) unreadableTrial(err error) error {
+	return failed(connect.CodeInternal, "read the record of the config's trial: %v; roll the config back with chalkctl apply-config --rollback %s, which removes the record", err, s.nodeName())
+}
+
 // refuseOnTrialLocking is refuseOnTrial under s.mu, for an upgrade and an image rollback, which
 // hold s.upgrading and take s.mu only while they read or write what it guards.
 func (s *Server) refuseOnTrialLocking(what string) error {
@@ -244,7 +250,7 @@ func (s *Server) refuseOnTrialLocking(what string) error {
 func (s *Server) refuseOnTrial(what string, holdsUpgrading bool) error {
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
-		return failed(connect.CodeInternal, "read the record of the config's trial: %v", err)
+		return s.unreadableTrial(err)
 	}
 	if !open {
 		return nil
@@ -504,8 +510,8 @@ func (s *Server) expireTrial(version string, deadline time.Time, armed uint64) {
 // ResumeTrial settles a trial recorded before chalkd started, as settleTrial does: one past its
 // deadline rolls back at once, and one whose slot runs the config from before it, as a crash
 // before the slot was written leaves it, is finished. A record that cannot be read stays, so
-// every change is refused until a boot or RollbackConfig removes it. chalkd calls it in normal
-// mode before it serves.
+// every change is refused until RollbackConfig removes it. chalkd calls it in normal mode before
+// it serves.
 func (s *Server) ResumeTrial() {
 	s.upgrading.Lock()
 	defer s.upgrading.Unlock()
@@ -513,7 +519,7 @@ func (s *Server) ResumeTrial() {
 	defer s.mu.Unlock()
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
-		log.Printf("read the record of the config's trial: %v; keeping it, so the node takes no change until a boot removes it", err)
+		log.Printf("read the record of the config's trial: %v; keeping it, so the node takes no change until a rollback removes it", err)
 		return
 	}
 	if open {
@@ -526,28 +532,38 @@ func (s *Server) ResumeTrial() {
 // the slot: the slot's previous config, the one from before the trial, becomes its config again,
 // and the config on trial its previous one. Every boot ends a trial, before its deadline or after,
 // so a reset undoes a config that cut the node off. A trial that was never applied or was rolled
-// back leaves the slot as it is. The record goes, also one that cannot be read, but stays when the
-// slot cannot be read or restored: chalkd then settles the trial as it starts.
+// back leaves the slot as it is, and the record goes. When the slot cannot be read or restored,
+// the record stays with the boot's time as its deadline: chalkd then rolls the trial back at once
+// as it starts, and no confirmation keeps it. A record that cannot be read stays as well, and the
+// node takes no change until RollbackConfig removes it.
 func RestoreTrialAtBoot(stateDir, slots string) error {
 	r, open, err := readTrial(stateDir)
-	if err != nil {
-		return errors.Join(err, removeTrial(stateDir))
-	}
-	if !open {
-		return nil
+	if err != nil || !open {
+		return err
 	}
 	dir, st, err := r.state(slots)
 	if err != nil {
-		return fmt.Errorf("read the config of the trial's slot: %w", err)
+		return expireAtBoot(stateDir, r, fmt.Errorf("read the config of the trial's slot: %w", err))
 	}
 	switch st {
 	case trialApplied:
 		if err := slot.RestorePrevious(dir); err != nil {
-			return fmt.Errorf("restore config %s from before the trial of config %s: %w", r.Previous, r.Version, err)
+			return expireAtBoot(stateDir, r, fmt.Errorf("restore config %s from before the trial of config %s: %w", r.Previous, r.Version, err))
 		}
 		log.Printf("the trial of config %s was open at boot; restored config %s", r.Version, r.Previous)
 	case trialLost:
 		log.Printf("the trial of config %s was open at boot, but its slot runs neither it nor config %s", r.Version, r.Previous)
 	}
 	return removeTrial(stateDir)
+}
+
+// expireAtBoot records the boot's time as the deadline of the trial r, which the boot could not
+// end for err, so chalkd rolls it back at once as it starts. It returns err, joined with the
+// failure to write the record.
+func expireAtBoot(stateDir string, r trialRecord, err error) error {
+	r.Deadline = time.Now()
+	if werr := writeTrial(stateDir, r); werr != nil {
+		return errors.Join(err, fmt.Errorf("move the trial's deadline to now: %w", werr))
+	}
+	return err
 }

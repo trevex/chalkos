@@ -151,7 +151,8 @@ type NodeServiceClient interface {
 	// During a trial it takes only the version from before the trial, ConfigTrial.previous_version,
 	// rolls the config on trial back at once and ends the trial. Once a rollback at the trial's
 	// deadline wrote that config and failed after, the node runs it already: RollbackConfig then
-	// delivers it again, which finishes the rollback, and ends the trial. Available in normal mode to
+	// delivers it again, which finishes the rollback, and ends the trial. A trial record the node
+	// cannot read goes, and the rollback goes ahead as without a trial. Available in normal mode to
 	// admins.
 	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
 	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
@@ -176,8 +177,8 @@ type NodeServiceClient interface {
 	// confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
 	// changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
 	// the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
-	// answers INTERNAL when the node cannot read the trial's record. Available in normal mode to
-	// admins.
+	// answers INTERNAL when the node cannot read the trial's record, which RollbackConfig removes.
+	// Available in normal mode to admins.
 	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
 }
 
@@ -469,7 +470,8 @@ type NodeServiceHandler interface {
 	// During a trial it takes only the version from before the trial, ConfigTrial.previous_version,
 	// rolls the config on trial back at once and ends the trial. Once a rollback at the trial's
 	// deadline wrote that config and failed after, the node runs it already: RollbackConfig then
-	// delivers it again, which finishes the rollback, and ends the trial. Available in normal mode to
+	// delivers it again, which finishes the rollback, and ends the trial. A trial record the node
+	// cannot read goes, and the rollback goes ahead as without a trial. Available in normal mode to
 	// admins.
 	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
 	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
@@ -494,8 +496,8 @@ type NodeServiceHandler interface {
 	// confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
 	// changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
 	// the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
-	// answers INTERNAL when the node cannot read the trial's record. Available in normal mode to
-	// admins.
+	// answers INTERNAL when the node cannot read the trial's record, which RollbackConfig removes.
+	// Available in normal mode to admins.
 	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
 }
 
