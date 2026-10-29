@@ -149,7 +149,8 @@ func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.
 const rollbackRecord = "chalkd/rollback"
 
 // rolledBackTo is the root hash the rollback record names; nil without a record, or with one that
-// cannot be read, which is logged: the record is reported, never relied on by the node.
+// cannot be read, which is logged. The record is reported, and it lets a repeated rollback find
+// its counted entry staged; an unreadable one counts as none, which refuses that repeat.
 func (s *Server) rolledBackTo() []byte {
 	data, err := os.ReadFile(filepath.Join(s.Paths.StateDir, rollbackRecord))
 	if errors.Is(err, fs.ErrNotExist) {
