@@ -133,8 +133,9 @@ type Server struct {
 	// config against it; nil mounts it from the boot disk. Tests replace it.
 	ReadImage func(ctx context.Context, rootHash []byte, read func(st imageStore, system string) error) error
 	// ReactivateImage makes the image the inactive slot holds, by its root hash, boot next again,
-	// as a rollback does; nil re-activates it on the boot disk. Tests replace it.
-	ReactivateImage func(ctx context.Context, rootHash []byte) (upgrade.Result, error)
+	// as a rollback does, calling record as upgrade.Node.Rollback does; nil re-activates it on the
+	// boot disk. Tests replace it.
+	ReactivateImage func(ctx context.Context, rootHash []byte, record func() error) (upgrade.Result, error)
 	// Journal streams the journal of the boot, or of one unit.
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.

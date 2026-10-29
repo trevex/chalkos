@@ -155,10 +155,11 @@ func TestRollbackConfigAfterAnInterruptedWrite(t *testing.T) {
 // TestRollbackImage re-activates the previous image, whose config slot STATE keeps, records it as
 // the image the last rollback rolled back to, and reboots when asked into an image the node does
 // not run; an image without a config slot is refused before anything changes, as it would boot
-// without config.
+// without config, and a rollback the node refuses keeps the record of the last one.
 func TestRollbackImage(t *testing.T) {
 	c := newCreds(t)
 	previous := bytes.Repeat([]byte{0x31}, 32)
+	earlier := hex.EncodeToString(bytes.Repeat([]byte{0x32}, 32)) + "\n"
 	for _, tc := range []struct {
 		name       string
 		reboot     bool
@@ -178,11 +179,23 @@ func TestRollbackImage(t *testing.T) {
 			if err := slot.Write(slot.Dir(s.Loader.Slots, previous), slot.Stored{Version: "v1", Identity: []byte("{}")}); err != nil {
 				t.Fatal(err)
 			}
+			recordPath := filepath.Join(s.Paths.StateDir, "chalkd", "rollback")
+			if err := os.MkdirAll(filepath.Dir(recordPath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(recordPath, []byte(earlier), 0o644); err != nil {
+				t.Fatal(err)
+			}
 			rebooted := make(chan struct{})
 			s.RebootNode = func() { close(rebooted) }
-			s.ReactivateImage = func(_ context.Context, rootHash []byte) (upgrade.Result, error) {
+			s.ReactivateImage = func(_ context.Context, rootHash []byte, record func() error) (upgrade.Result, error) {
 				if !bytes.Equal(rootHash, previous) {
 					t.Errorf("re-activates %x", rootHash)
+				}
+				if tc.err == nil && !tc.result.AlreadyInstalled {
+					if err := record(); err != nil {
+						return upgrade.Result{}, err
+					}
 				}
 				return tc.result, tc.err
 			}
@@ -198,11 +211,12 @@ func TestRollbackImage(t *testing.T) {
 			case resp.Msg.Entry != tc.result.Entry || resp.Msg.AlreadyInstalled != tc.result.AlreadyInstalled || resp.Msg.AlreadyStaged != tc.result.AlreadyStaged || resp.Msg.Rebooting != tc.wantReboot:
 				t.Errorf("response %+v", resp.Msg)
 			}
-			if tc.err == nil {
-				data, err := os.ReadFile(filepath.Join(s.Paths.StateDir, "chalkd", "rollback"))
-				if err != nil || string(data) != hex.EncodeToString(previous)+"\n" {
-					t.Errorf("the record of the last rollback = %q, %v", data, err)
-				}
+			want := hex.EncodeToString(previous) + "\n"
+			if tc.err != nil || tc.result.AlreadyInstalled {
+				want = earlier
+			}
+			if data, err := os.ReadFile(recordPath); err != nil || string(data) != want {
+				t.Errorf("the record of the last rollback = %q, %v; want %q", data, err, want)
 			}
 			select {
 			case <-rebooted:
@@ -218,7 +232,7 @@ func TestRollbackImage(t *testing.T) {
 	}
 	t.Run("without a config slot", func(t *testing.T) {
 		s, _ := newTestServer(t, normal, vda)
-		s.ReactivateImage = func(context.Context, []byte) (upgrade.Result, error) {
+		s.ReactivateImage = func(context.Context, []byte, func() error) (upgrade.Result, error) {
 			t.Error("re-activated an image without a config slot")
 			return upgrade.Result{}, nil
 		}

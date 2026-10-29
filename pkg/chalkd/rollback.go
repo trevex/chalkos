@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -110,13 +111,17 @@ func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.
 		if !kept {
 			return nil, failed(connect.CodeFailedPrecondition, "STATE holds no config for the image %x, so it would boot without config", m.RootHash)
 		}
-		// The record comes first: Status reports it only while the node runs or stages the image,
-		// so a rollback that fails leaves it unreported.
-		if err := atomicfile.WriteFile(filepath.Join(s.Paths.StateDir, rollbackRecord), []byte(hex.EncodeToString(m.RootHash)+"\n"), 0o644); err != nil {
-			return nil, failed(connect.CodeInternal, "record the rollback: %v", err)
-		}
 	}
-	res, err := s.reactivate(ctx, m.RootHash)
+	// The record is written once the rollback's checks passed, before the rename that stages the
+	// image, so a refused rollback keeps the record of the last one. Status reports it only while
+	// the node runs or stages the image, so a rename that fails leaves it unreported.
+	record := func() error {
+		if err := atomicfile.WriteFile(filepath.Join(s.Paths.StateDir, rollbackRecord), []byte(hex.EncodeToString(m.RootHash)+"\n"), 0o644); err != nil {
+			return fmt.Errorf("record the rollback: %w", err)
+		}
+		return nil
+	}
+	res, err := s.reactivate(ctx, m.RootHash, record)
 	if err != nil {
 		log.Printf("rollback to %x failed: %v", m.RootHash, err)
 		return nil, failed(connect.CodeFailedPrecondition, "roll back: %v", err)
@@ -168,16 +173,17 @@ func (s *Server) forgetRollback() {
 	}
 }
 
-// reactivate makes the image the inactive slot holds, by its root hash, boot next again.
-func (s *Server) reactivate(ctx context.Context, rootHash []byte) (upgrade.Result, error) {
+// reactivate makes the image the inactive slot holds, by its root hash, boot next again; record
+// is called once the rollback's checks passed, before the image is staged.
+func (s *Server) reactivate(ctx context.Context, rootHash []byte, record func() error) (upgrade.Result, error) {
 	if s.ReactivateImage != nil {
-		return s.ReactivateImage(ctx, rootHash)
+		return s.ReactivateImage(ctx, rootHash, record)
 	}
 	n, err := s.upgradeNode()
 	if err != nil {
 		return upgrade.Result{}, err
 	}
-	return n.Rollback(ctx, rootHash)
+	return n.Rollback(ctx, rootHash, record)
 }
 
 // keepsSlot reports whether STATE keeps a config slot of the image whose store has the root hash,

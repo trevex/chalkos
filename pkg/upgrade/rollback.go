@@ -48,12 +48,17 @@ func Previous(entries []esp.Entry, imageID string, booted esp.Entry, running []b
 //
 // The rename is the only change, so until it the running image boots next; a rollback stopped
 // before it changed nothing, and one asked for again after it finds the image staged. The caller
-// keeps Install from running meanwhile, as Install retires the slot.
+// keeps Install from running meanwhile, as Install retires the slot. record, when set, is called
+// once every check passed, just before the rename, and when the image boots next already; its
+// error stops the rollback, so a refused one leaves what record writes as it was.
 //   - A node that runs the image answers AlreadyInstalled, and one that boots it next already
 //     AlreadyStaged, so a rollback asked for twice happens once.
 //   - Another image staged to boot next replaced the image before, as an upgrade's retirement
 //     removed its UKI; Rollback refuses.
-func (n *Node) Rollback(ctx context.Context, rootHash []byte) (Result, error) {
+func (n *Node) Rollback(ctx context.Context, rootHash []byte, record func() error) (Result, error) {
+	if record == nil {
+		record = func() error { return nil }
+	}
 	running, err := uki.RunningHash(n.Cmdline)
 	if err != nil {
 		return Result{}, err
@@ -76,6 +81,9 @@ func (n *Node) Rollback(ctx context.Context, rootHash []byte) (Result, error) {
 	if staged, ok := esp.StagedEntry(all, imageID, booted); ok {
 		switch {
 		case bytes.Equal(staged.RootHash, rootHash):
+			if err := record(); err != nil {
+				return Result{}, err
+			}
 			return Result{AlreadyStaged: true, Entry: staged.File}, nil
 		// Only a rollback leaves a staged entry without tries.
 		case staged.TriesLeft < 0:
@@ -123,6 +131,9 @@ func (n *Node) Rollback(ctx context.Context, rootHash []byte) (Result, error) {
 	name := esp.CountedEntryName(imageID, generation, tries)
 	if booted.TriesLeft >= 0 {
 		name = esp.EntryName(imageID, generation)
+	}
+	if err := record(); err != nil {
+		return Result{}, err
 	}
 	if err := esp.Name(n.ESP, path, name, n.Change); err != nil {
 		return Result{}, err
