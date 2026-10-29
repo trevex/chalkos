@@ -426,8 +426,8 @@ func checkLink(dir string) error {
 	}
 }
 
-// fillDir makes tmp readable by all, fills it and syncs every directory in it, so the new set is
-// on disk before a link names it.
+// fillDir makes tmp readable by all, fills it and syncs every directory in it, tmp included, so
+// the new set is on disk before a link names it.
 func fillDir(tmp string, fill func(string) error) error {
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		return err
@@ -435,12 +435,7 @@ func fillDir(tmp string, fill func(string) error) error {
 	if err := fill(tmp); err != nil {
 		return err
 	}
-	return syncTree(tmp)
-}
-
-// syncTree syncs every directory below root, root included.
-func syncTree(root string) error {
-	return filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
+	return filepath.WalkDir(tmp, func(path string, e fs.DirEntry, err error) error {
 		if err != nil || !e.IsDir() {
 			return err
 		}
