@@ -1386,7 +1386,7 @@ func TestTrialExpiryStaleDeadline(t *testing.T) {
 // attempt, and tries it again.
 func TestTrialExpiryTimesOut(t *testing.T) {
 	s := trialServer(t)
-	s.trialTimeout = 200 * time.Millisecond
+	s.trialTimeout = time.Second
 	first := openTrialOf(t, s, nextConfig)
 	writeOutputs(t, s, map[string]outputs.Definition{
 		"demo": demoOutput(t, s, `exec sleep 10`, ""), "networkd": networkdOutput(t, s), "chrony": chronyOutput(t, s),
