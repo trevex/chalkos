@@ -502,7 +502,8 @@ func (s *Server) expireTrial(version string, deadline time.Time, armed uint64) {
 		s.keepTrial(r, fmt.Errorf("read the config of the trial's slot: %w", err), false)
 		return
 	case st == trialEnded:
-		s.finishTrial(r)
+		// A failure is logged, and the retry is armed.
+		_ = s.finishTrial(r)
 		return
 	case st == trialLost:
 		log.Printf("the trial of config %s ended: its slot runs neither it nor config %s", r.Version, r.Previous)
@@ -544,7 +545,8 @@ func (s *Server) ResumeTrial(ctx context.Context) {
 	}
 	if open {
 		log.Printf("config %s is on trial until %s", r.Version, r.Deadline.UTC().Format(time.RFC3339))
-		s.settleTrial(r)
+		// A failure is logged, and the retry is armed.
+		_, _ = s.settleTrial(r)
 	}
 }
 
