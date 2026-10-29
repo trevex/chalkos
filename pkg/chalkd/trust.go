@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -52,7 +53,7 @@ func (s *Server) checkKeptNodeCA(osCA string) error {
 
 // peerOf returns the verified client certificate of the call, if there is one.
 func peerOf(ctx context.Context) []*x509.Certificate {
-	if peer, ok := ctx.Value(peerKey{}).(*x509.Certificate); ok && peer != nil {
+	if peer := layer.Peer(ctx); peer != nil {
 		return []*x509.Certificate{peer}
 	}
 	return nil

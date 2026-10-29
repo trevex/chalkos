@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -132,12 +133,12 @@ func TestCertificateProblems(t *testing.T) {
 		got  string
 		want string
 	}{
-		{"leaf early", leafProblem(cert(-time.Hour, 300*24*time.Hour), now), ""},
-		{"leaf in its last third", leafProblem(cert(-250*24*time.Hour, 100*24*time.Hour), now), "less than a third of its lifetime remains"},
-		{"leaf expired", leafProblem(cert(-400*24*time.Hour, -time.Hour), now), "expired"},
-		{"CA with years left", caProblem(cert(0, 2*caWarning), now, caWarning), ""},
-		{"CA within its warning", caProblem(cert(0, caWarning-time.Hour), now, caWarning), "expires " + now.Add(caWarning-time.Hour).UTC().Format(time.DateOnly)},
-		{"node CA within 18 months", caProblem(cert(0, 500*24*time.Hour), now, nodeCAWarning), "expires " + now.Add(500*24*time.Hour).UTC().Format(time.DateOnly)},
+		{"leaf early", layer.LeafProblem(cert(-time.Hour, 300*24*time.Hour), now), ""},
+		{"leaf in its last third", layer.LeafProblem(cert(-250*24*time.Hour, 100*24*time.Hour), now), "less than a third of its lifetime remains"},
+		{"leaf expired", layer.LeafProblem(cert(-400*24*time.Hour, -time.Hour), now), "expired"},
+		{"CA with years left", layer.CAProblem(cert(0, 2*layer.CAWarning), now, layer.CAWarning), ""},
+		{"CA within its warning", layer.CAProblem(cert(0, layer.CAWarning-time.Hour), now, layer.CAWarning), "expires " + now.Add(layer.CAWarning-time.Hour).UTC().Format(time.DateOnly)},
+		{"node CA within 18 months", layer.CAProblem(cert(0, 500*24*time.Hour), now, layer.NodeCAWarning), "expires " + now.Add(500*24*time.Hour).UTC().Format(time.DateOnly)},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.name, tc.got, tc.want)

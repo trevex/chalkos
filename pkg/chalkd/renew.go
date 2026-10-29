@@ -16,6 +16,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/client"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -24,7 +25,7 @@ import (
 )
 
 func (s *Server) RenewNodeCertificate(ctx context.Context, req *connect.Request[nodev1.RenewNodeCertificateRequest]) (*connect.Response[nodev1.RenewNodeCertificateResponse], error) {
-	peer, _ := ctx.Value(peerKey{}).(*x509.Certificate)
+	peer := layer.Peer(ctx)
 	if peer == nil {
 		return nil, failed(connect.CodeUnauthenticated, "renewing a node certificate needs the node's current one")
 	}

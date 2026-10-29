@@ -8,41 +8,14 @@ import (
 	"path/filepath"
 	"time"
 
-	"google.golang.org/protobuf/types/known/timestamppb"
-
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
-
-// How long before they expire CAs are reported: a year, and for the node CA 18 months, as node
-// certificates never outlive it and it needs replacing well before.
-const (
-	caWarning     = 365 * 24 * time.Hour
-	nodeCAWarning = 548 * 24 * time.Hour
-)
-
-// certificateStatus describes a certificate with its fingerprint and, when known, its issuer's.
-func certificateStatus(name string, cert, issuer *x509.Certificate, problem string) *nodev1.CertificateStatus {
-	st := &nodev1.CertificateStatus{Name: name, NotAfter: timestamppb.New(cert.NotAfter), Problem: problem, Fingerprint: pki.Fingerprint(cert.Raw)}
-	if issuer != nil {
-		st.Issuer = pki.Fingerprint(issuer.Raw)
-	}
-	return st
-}
-
-// issuerIn returns the certificate of cas that signed cert; nil when none did.
-func issuerIn(cert *x509.Certificate, cas []*x509.Certificate) *x509.Certificate {
-	for _, ca := range cas {
-		if cert.CheckSignatureFrom(ca) == nil {
-			return ca
-		}
-	}
-	return nil
-}
 
 // osCAs returns the OS CAs the node trusts.
 func (s *Server) osCAs() string {
@@ -105,8 +78,8 @@ func (k *Kubernetes) trust() []*nodev1.TrustStatus {
 		for _, cert := range certs {
 			st.Fingerprints = append(st.Fingerprints, pki.Fingerprint(cert.Raw))
 		}
-		if leaf, err := readPEMCertificate(file(ca.leaf)); err == nil {
-			if issuer := issuerIn(leaf, certs); issuer != nil {
+		if leaf, err := layer.ReadPEMCertificate(file(ca.leaf)); err == nil {
+			if issuer := layer.IssuerIn(leaf, certs); issuer != nil {
 				st.Issuing = pki.Fingerprint(issuer.Raw)
 			}
 		}
@@ -147,11 +120,11 @@ func (k *Kubernetes) trust() []*nodev1.TrustStatus {
 func (s *Server) certificates(now time.Time) []*nodev1.CertificateStatus {
 	var list []*nodev1.CertificateStatus
 	add := func(name string, cert, issuer *x509.Certificate, problem string) {
-		list = append(list, certificateStatus(name, cert, issuer, problem))
+		list = append(list, layer.CertificateStatus(name, cert, issuer, problem))
 	}
 	if s.Certificate != nil {
 		leaf := s.Certificate.Current().Leaf
-		problem := leafProblem(leaf, now)
+		problem := layer.LeafProblem(leaf, now)
 		switch {
 		case s.Renewal != nil && s.Renewal.Problem() != "":
 			problem = s.Renewal.Problem()
@@ -167,7 +140,7 @@ func (s *Server) certificates(now time.Time) []*nodev1.CertificateStatus {
 	}
 	if osCAs, err := pki.ParseBundle(s.osCAs()); err == nil {
 		for _, osCA := range osCAs {
-			problem := caProblem(osCA, now, caWarning)
+			problem := layer.CAProblem(osCA, now, layer.CAWarning)
 			if problem != "" {
 				problem = client.NameOSCA + " " + problem
 			}
@@ -205,7 +178,7 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 		}
 	}
 	add := func(name string, cert *x509.Certificate, problem string) {
-		list = append(list, certificateStatus(name, cert, issuerIn(cert, issuers), problem))
+		list = append(list, layer.CertificateStatus(name, cert, layer.IssuerIn(cert, issuers), problem))
 	}
 	cas := []struct {
 		name    string
@@ -213,17 +186,17 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 		warning time.Duration
 		hint    string
 	}{
-		{client.NameNodeCA, share.NodeCA, nodeCAWarning, "; run chalkctl node-ca rotate"},
-		{client.NameKubernetesCA, &share.CA, caWarning, ""},
-		{client.NameFrontProxyCA, share.FrontProxyCA, caWarning, ""},
-		{client.NameEtcdCA, share.EtcdCA, caWarning, ""},
+		{client.NameNodeCA, share.NodeCA, layer.NodeCAWarning, "; run chalkctl node-ca rotate"},
+		{client.NameKubernetesCA, &share.CA, layer.CAWarning, ""},
+		{client.NameFrontProxyCA, share.FrontProxyCA, layer.CAWarning, ""},
+		{client.NameEtcdCA, share.EtcdCA, layer.CAWarning, ""},
 	}
 	for _, ca := range cas {
 		if ca.ca == nil {
 			continue
 		}
 		if cert, err := pki.ParseCertificate([]byte(ca.ca.Certificate)); err == nil {
-			problem := caProblem(cert, now, ca.warning)
+			problem := layer.CAProblem(cert, now, ca.warning)
 			if problem != "" {
 				problem = ca.name + " " + problem + ca.hint
 			}
@@ -232,14 +205,14 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 	}
 	if share.Kind == k8s.KindControlPlane {
 		if _, first, err := knode.ControlPlaneRenewAt(k.Paths); err == nil {
-			problem := leafProblem(first, now)
+			problem := layer.LeafProblem(first, now)
 			if p := k.LeavesProblem(); p != "" {
 				problem = p
 			}
 			add(client.NameControlPlane, first, problem)
 		}
 	}
-	kubelet, clientErr := readPEMCertificate(k.Paths.KubeletClient())
+	kubelet, clientErr := layer.ReadPEMCertificate(k.Paths.KubeletClient())
 	if clientErr == nil {
 		add(client.NameKubeletClient, kubelet, kubeletProblem(kubelet, now))
 	}
@@ -254,22 +227,10 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 			add(client.NameKubeletClient, cert, "expired; deliver a new one with chalkctl apply-config "+name+" --kubernetes-share")
 		}
 	}
-	if serving, err := readPEMCertificate(k.Paths.KubeletServing()); err == nil {
+	if serving, err := layer.ReadPEMCertificate(k.Paths.KubeletServing()); err == nil {
 		add(client.NameKubeletServing, serving, kubeletProblem(serving, now))
 	}
 	return list
-}
-
-// leafProblem warns once less than a third of a certificate's lifetime remains, when it is due
-// for renewal.
-func leafProblem(cert *x509.Certificate, now time.Time) string {
-	switch {
-	case !now.Before(cert.NotAfter):
-		return "expired"
-	case !now.Before(pki.RenewAt(cert)):
-		return "less than a third of its lifetime remains"
-	}
-	return ""
 }
 
 // kubeletProblem warns once less than a tenth of a kubelet certificate's lifetime remains: the
@@ -282,25 +243,4 @@ func kubeletProblem(cert *x509.Certificate, now time.Time) string {
 		return "less than a tenth of its lifetime remains, though the kubelet renews it itself"
 	}
 	return ""
-}
-
-// caProblem warns when a CA has less than warning left.
-func caProblem(cert *x509.Certificate, now time.Time, warning time.Duration) string {
-	switch {
-	case !now.Before(cert.NotAfter):
-		return "expired " + cert.NotAfter.UTC().Format(time.DateOnly)
-	case cert.NotAfter.Sub(now) < warning:
-		return "expires " + cert.NotAfter.UTC().Format(time.DateOnly)
-	}
-	return ""
-}
-
-// readPEMCertificate reads the first certificate of a PEM file, such as one of the kubelet's,
-// which hold their key too.
-func readPEMCertificate(path string) (*x509.Certificate, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return pki.FirstCertificate(data)
 }

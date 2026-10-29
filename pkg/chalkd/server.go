@@ -20,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/effects"
@@ -184,51 +185,41 @@ type permission struct {
 	layer string
 }
 
-// The modes an RPC may be called in.
-var (
-	anyMode         = []nodev1.Mode{maintenance, normal}
-	maintenanceOnly = []nodev1.Mode{maintenance}
-	normalOnly      = []nodev1.Mode{normal}
-)
-
 // permissions are the modes, least role and layer of each RPC. The authorizer refuses an RPC
 // without an entry, and one of a layer the image lacks as unimplemented, so the handlers of a
 // layer's RPCs run only on images with it.
 var permissions = map[string]permission{
-	nodev1connect.NodeServiceInfoProcedure:                 {anyMode, pki.RoleReader, layers.Base},
-	nodev1connect.NodeServiceDisksProcedure:                {anyMode, pki.RoleReader, layers.Base},
-	nodev1connect.NodeServiceContractProcedure:             {anyMode, pki.RoleReader, layers.Base},
-	nodev1connect.NodeServiceInstallProcedure:              {maintenanceOnly, pki.RoleAdmin, layers.Base},
-	nodev1connect.NodeServiceApplyConfigProcedure:          {normalOnly, pki.RoleAdmin, layers.Base},
-	nodev1connect.NodeServiceGetConfigProcedure:            {normalOnly, pki.RoleAdmin, layers.Base},
-	nodev1connect.NodeServiceResetVolumeProcedure:          {normalOnly, pki.RoleAdmin, layers.Base},
-	nodev1connect.NodeServiceStatusProcedure:               {normalOnly, pki.RoleReader, layers.Base},
-	nodev1connect.NodeServiceLogsProcedure:                 {anyMode, pki.RoleReader, layers.Base},
-	nodev1connect.NodeServiceRebootProcedure:               {anyMode, pki.RoleOperator, layers.Base},
-	nodev1connect.NodeServiceBootstrapProcedure:            {normalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceEtcdMembersProcedure:          {normalOnly, pki.RoleReader, layers.Kubernetes},
-	nodev1connect.NodeServiceEtcdRemoveMemberProcedure:     {normalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceEtcdLeaveProcedure:            {normalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceRenewNodeCertificateProcedure: {normalOnly, pki.RoleNode, layers.Base},
-	nodev1connect.NodeServiceRotationStepProcedure:         {normalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceDrainNodeProcedure:            {normalOnly, pki.RoleOperator, layers.Kubernetes},
-	nodev1connect.NodeServiceUncordonNodeProcedure:         {normalOnly, pki.RoleOperator, layers.Kubernetes},
-	nodev1connect.NodeServiceRevokeNodeProcedure:           {normalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceUnrevokeNodeProcedure:         {normalOnly, pki.RoleAdmin, layers.Kubernetes},
-	nodev1connect.NodeServiceDiagnosticsProcedure:          {anyMode, pki.RoleReader, layers.Base},
+	nodev1connect.NodeServiceInfoProcedure:                 {layer.AnyMode, pki.RoleReader, layers.Base},
+	nodev1connect.NodeServiceDisksProcedure:                {layer.AnyMode, pki.RoleReader, layers.Base},
+	nodev1connect.NodeServiceContractProcedure:             {layer.AnyMode, pki.RoleReader, layers.Base},
+	nodev1connect.NodeServiceInstallProcedure:              {layer.MaintenanceOnly, pki.RoleAdmin, layers.Base},
+	nodev1connect.NodeServiceApplyConfigProcedure:          {layer.NormalOnly, pki.RoleAdmin, layers.Base},
+	nodev1connect.NodeServiceGetConfigProcedure:            {layer.NormalOnly, pki.RoleAdmin, layers.Base},
+	nodev1connect.NodeServiceResetVolumeProcedure:          {layer.NormalOnly, pki.RoleAdmin, layers.Base},
+	nodev1connect.NodeServiceStatusProcedure:               {layer.NormalOnly, pki.RoleReader, layers.Base},
+	nodev1connect.NodeServiceLogsProcedure:                 {layer.AnyMode, pki.RoleReader, layers.Base},
+	nodev1connect.NodeServiceRebootProcedure:               {layer.AnyMode, pki.RoleOperator, layers.Base},
+	nodev1connect.NodeServiceBootstrapProcedure:            {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
+	nodev1connect.NodeServiceEtcdMembersProcedure:          {layer.NormalOnly, pki.RoleReader, layers.Kubernetes},
+	nodev1connect.NodeServiceEtcdRemoveMemberProcedure:     {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
+	nodev1connect.NodeServiceEtcdLeaveProcedure:            {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
+	nodev1connect.NodeServiceRenewNodeCertificateProcedure: {layer.NormalOnly, pki.RoleNode, layers.Base},
+	nodev1connect.NodeServiceRotationStepProcedure:         {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
+	nodev1connect.NodeServiceDrainNodeProcedure:            {layer.NormalOnly, pki.RoleOperator, layers.Kubernetes},
+	nodev1connect.NodeServiceUncordonNodeProcedure:         {layer.NormalOnly, pki.RoleOperator, layers.Kubernetes},
+	nodev1connect.NodeServiceRevokeNodeProcedure:           {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
+	nodev1connect.NodeServiceUnrevokeNodeProcedure:         {layer.NormalOnly, pki.RoleAdmin, layers.Kubernetes},
+	nodev1connect.NodeServiceDiagnosticsProcedure:          {layer.AnyMode, pki.RoleReader, layers.Base},
 	// RunDiagnostic also needs the diagnostic's own role, which it checks itself, as the table
 	// cannot see the request.
-	nodev1connect.NodeServiceRunDiagnosticProcedure: {anyMode, pki.RoleReader, layers.Base},
+	nodev1connect.NodeServiceRunDiagnosticProcedure: {layer.AnyMode, pki.RoleReader, layers.Base},
 	// Upgrade needs the admin role when its header carries config or a fallback secret, as
 	// ApplyConfig does; Upgrade checks that itself, as the table cannot see the header.
-	nodev1connect.NodeServiceUpgradeProcedure: {normalOnly, pki.RoleOperator, layers.Base},
-	nodev1connect.NodeServiceRoutesProcedure:  {normalOnly, pki.RoleReader, layers.Router},
+	nodev1connect.NodeServiceUpgradeProcedure: {layer.NormalOnly, pki.RoleOperator, layers.Base},
+	nodev1connect.NodeServiceRoutesProcedure:  {layer.NormalOnly, pki.RoleReader, layers.Router},
 }
 
 type roleKey struct{}
-
-// peerKey holds the verified client certificate.
-type peerKey struct{}
 
 // unverifiedKey holds why a client certificate no longer verifies.
 type unverifiedKey struct{}
@@ -259,7 +250,7 @@ func (s *Server) Handler() http.Handler {
 				break
 			}
 			role, _ = pki.ClientRole(chains)
-			ctx = context.WithValue(ctx, peerKey{}, chains[0][0])
+			ctx = layer.WithPeer(ctx, chains[0][0])
 		case s.AnyClient:
 			role = pki.RoleAdmin
 		}
@@ -433,6 +424,26 @@ func (s *Server) nodeName() string {
 	}
 	return "<node>"
 }
+
+// Server is the layer.Node its plugins are given.
+var _ layer.Node = (*Server)(nil)
+
+func (s *Server) NodeName() string { return s.nodeName() }
+
+func (s *Server) NodeCertificate() layer.Certificate {
+	if s.Certificate == nil {
+		return nil
+	}
+	return s.Certificate
+}
+
+func (s *Server) Changes() sync.Locker { return &s.mu }
+
+func (s *Server) Runner() tool.Runner { return s.Run }
+
+func (s *Server) Slot() (string, error) { return s.Loader.Slot() }
+
+func (s *Server) StateDir() string { return s.Paths.StateDir }
 
 func failed(code connect.Code, format string, args ...any) error {
 	return connect.NewError(code, fmt.Errorf(format, args...))

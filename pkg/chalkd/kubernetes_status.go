@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
@@ -168,7 +169,7 @@ func (k *Kubernetes) checkControlPlane(ctx context.Context, c k8s.Cluster, share
 // servesFile checks that the TLS server at addr presents the certificate the file holds. The
 // server is not verified: its certificate is only compared with the file, and nothing is sent.
 func servesFile(ctx context.Context, addr, file string) error {
-	want, err := readPEMCertificate(file)
+	want, err := layer.ReadPEMCertificate(file)
 	if err != nil {
 		return fmt.Errorf("has no certificate: %v", err)
 	}

@@ -19,6 +19,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -44,7 +45,7 @@ func adminOf(t *testing.T, osCA pki.CertKey) (*tls.Certificate, *x509.Certificat
 
 // asCaller is the context of a call whose client certificate is cert.
 func asCaller(cert *x509.Certificate) context.Context {
-	return context.WithValue(context.Background(), peerKey{}, cert)
+	return layer.WithPeer(context.Background(), cert)
 }
 
 // TestApplyConfigReplacesTheOSCAs checks that a node trusts the OS CAs delivered to it from
