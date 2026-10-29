@@ -42,7 +42,7 @@ func (a *app) installCommand() *cobra.Command {
 	fs.StringVar(&f.image, "image", "", "image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory, which chalkctl sends (default the node's image in the inventory: from its directory, or from a registry, which the installer pulls)")
 	fs.BoolVar(&f.wipeDisk, "wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
 	registerPasswordFile(fs, &f.passwordFile)
-	fs.BoolVar(&f.force, "force", false, "install the node without asking the control planes whether its name is revoked")
+	fs.BoolVar(&f.force, "force", false, "install the node without asking whether its name is revoked")
 	return cmd
 }
 

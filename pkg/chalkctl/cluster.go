@@ -26,8 +26,9 @@ func (c *clusterFlags) register(fs *pflag.FlagSet) {
 }
 
 // cluster is what chalkctl knows of the cluster it operates: its name, the inventory's, which
-// messages call it by, its Kubernetes endpoint, its nodes and their config, from an inventory.
-// Without one it is partial and nameless: each command names its node and --address reaches it.
+// messages call it by, the endpoint its Cluster document names, its nodes and their config, from
+// an inventory. Without one it is partial and nameless: each command names its node and --address
+// reaches it.
 type cluster struct {
 	name, endpoint string
 	inv            *inventory.Inventory

@@ -152,16 +152,16 @@ which can be checked against the console afterwards.
 
 chalkctl sends the node its config, checked against the schemas of the image it installs, a node
 certificate with the node's name in the inventory, the OS CA, the secret of its volumes' second
-keyslot and, on a Kubernetes node, its Kubernetes share. A node that runs its image already
-installs in place. A node that runs the installer also gets the image --image names, or the node's
-image in the inventory, and writes it to the disk its SystemDisk names: a disk on which blkid finds
-no signature, one holding an unfinished install of the node, or any disk with --wipe-disk. The node
-then reboots into the image. See
+keyslot and the payloads of its layers, such as a Kubernetes node's share. A node that runs its
+image already installs in place. A node that runs the installer also gets the image --image names,
+or the node's image in the inventory, and writes it to the disk its SystemDisk names: a disk on
+which blkid finds no signature, one holding an unfinished install of the node, or any disk with
+--wipe-disk. The node then reboots into the image. See
 https://trevex.github.io/chalkos/how-it-works/node/overview/#an-install-turns-a-machine-in-maintenance-mode-into-a-node.
 
-A name revoked with chalkctl node revoke is refused, as is any node while control planes were
-bootstrapped and none says which nodes are revoked; --force installs without asking. The command
-needs the secrets file.`
+A name revoked with chalkctl node revoke is refused, as is any node while a layer cannot say which
+names are revoked, as when a bootstrapped Kubernetes cluster's control planes do not answer;
+--force installs without asking. The command needs the secrets file.`
 
 const installExample = `  # Install cp1, comparing the certificate with the fingerprint on its console.
   chalkctl install cp1 --secrets secrets.age \

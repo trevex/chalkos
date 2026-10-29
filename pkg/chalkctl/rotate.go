@@ -139,7 +139,7 @@ func (r *rotation) save(change func(s *clustersecrets.Secrets) error) error {
 }
 
 func (r *rotation) start(ctx context.Context, kind clustersecrets.RotationKind) error {
-	if err := r.rotator(kind).CheckStart(ctx, r, kind); err != nil {
+	if err := rotatorOf(r, kind).CheckStart(ctx, r, kind); err != nil {
 		return err
 	}
 	if err := r.save(func(s *clustersecrets.Secrets) error { return s.BeginRotation(kind, r.a.now()) }); err != nil {
@@ -176,7 +176,7 @@ func (r *rotation) finish(ctx context.Context, kind clustersecrets.RotationKind,
 		if rot.Phase != clustersecrets.PhaseRefresh || !rot.Applied {
 			return fmt.Errorf("the rotation of the %s is in its %s phase; finish it once its refresh phase is applied, after chalkctl rotate %s --resume", kind.Name(), rot.Phase, kind)
 		}
-		if err := r.finishGuard(ctx, kind, force); err != nil {
+		if err := rotatorOf(r, kind).FinishGuard(ctx, r, kind, force); err != nil {
 			return err
 		}
 		if err := r.save(func(s *clustersecrets.Secrets) error { return s.FinishRotation() }); err != nil {
@@ -184,11 +184,6 @@ func (r *rotation) finish(ctx context.Context, kind clustersecrets.RotationKind,
 		}
 	}
 	return r.run(ctx)
-}
-
-// finishGuard refuses to remove an old value something still needs.
-func (r *rotation) finishGuard(ctx context.Context, kind clustersecrets.RotationKind, force bool) error {
-	return r.rotator(kind).FinishGuard(ctx, r, kind, force)
 }
 
 // run applies the phase the secrets file records and the ones after it, up to the kind's pause
@@ -207,15 +202,15 @@ func (r *rotation) run(ctx context.Context) error {
 			}
 			first = false
 			r.say("%s: the %s phase", rot.Kind, rot.Phase)
-			if err := r.apply(ctx, rot.Kind, rot.Phase); err != nil {
+			if err := rotatorOf(r, rot.Kind).ApplyRotation(ctx, r, rot.Kind, rot.Phase); err != nil {
 				return fmt.Errorf("the %s phase of the rotation of the %s stopped: %w; once that is fixed, continue with chalkctl rotate %s --resume", rot.Phase, rot.Kind.Name(), err, rot.Kind)
 			}
 			if err := r.save(func(s *clustersecrets.Secrets) error { return s.RecordApplied(r.a.now()) }); err != nil {
 				return err
 			}
 			r.say("%s: every node applied the %s phase", rot.Kind, rot.Phase)
-			if r.rotator(rot.Kind).PausesAfter(rot.Kind, rot.Phase) {
-				return r.paused(ctx, rot)
+			if rotatorOf(r, rot.Kind).PausesAfter(rot.Kind, rot.Phase) {
+				return rotatorOf(r, rot.Kind).Paused(ctx, r, rot)
 			}
 		}
 		var err error
@@ -225,11 +220,11 @@ func (r *rotation) run(ctx context.Context) error {
 		case clustersecrets.PhaseSwitch:
 			err = r.save(func(s *clustersecrets.Secrets) error { return s.RefreshRotation() })
 		case clustersecrets.PhaseRefresh:
-			if r.rotator(rot.Kind).PausesAfter(rot.Kind, rot.Phase) {
-				return r.paused(ctx, rot)
+			if rotatorOf(r, rot.Kind).PausesAfter(rot.Kind, rot.Phase) {
+				return rotatorOf(r, rot.Kind).Paused(ctx, r, rot)
 			}
 			// A kind that does not pause after its refresh finishes at once.
-			if err := r.finishGuard(ctx, rot.Kind, false); err != nil {
+			if err := rotatorOf(r, rot.Kind).FinishGuard(ctx, r, rot.Kind, false); err != nil {
 				return err
 			}
 			err = r.save(func(s *clustersecrets.Secrets) error { return s.FinishRotation() })
@@ -237,7 +232,7 @@ func (r *rotation) run(ctx context.Context) error {
 			if err := r.save(func(s *clustersecrets.Secrets) error { return s.EndRotation() }); err != nil {
 				return err
 			}
-			state, advice := r.rotator(rot.Kind).Finished(rot.Kind)
+			state, advice := rotatorOf(r, rot.Kind).Finished(rot.Kind)
 			r.say("the rotation of the %s is finished: %s; %s", rot.Kind.Name(), state, r.file.written())
 			if advice != "" {
 				r.say("%s", advice)
@@ -250,23 +245,15 @@ func (r *rotation) run(ctx context.Context) error {
 	}
 }
 
-// apply delivers a phase to the nodes and waits until each confirms it.
-func (r *rotation) apply(ctx context.Context, kind clustersecrets.RotationKind, phase clustersecrets.Phase) error {
-	return r.rotator(kind).ApplyRotation(ctx, r, kind, phase)
-}
-
-// paused says what the operator does before the rotation continues.
-func (r *rotation) paused(ctx context.Context, rot clustersecrets.Rotation) error {
-	return r.rotator(rot.Kind).Paused(ctx, r, rot)
-}
-
 // rotators are what runs each kind of rotation: chalkctl's own for what every node takes part in,
 // then every compiled plugin's.
 func rotators(r *rotation) []layer.Rotation {
 	return append([]layer.Rotation{caRotation{r}}, compiled[layer.Rotation]()...)
 }
 
-// rotatorOf is what runs the rotation of kind; nil when nothing does.
+// rotatorOf is what runs the rotation of kind; nil when nothing does. rotate refused a kind
+// without one, and running a recorded kind other than the one named, so the rotation's own calls
+// never get nil.
 func rotatorOf(r *rotation, kind clustersecrets.RotationKind) layer.Rotation {
 	for _, p := range rotators(r) {
 		if slices.Contains(p.Kinds(), kind) {
@@ -274,12 +261,6 @@ func rotatorOf(r *rotation, kind clustersecrets.RotationKind) layer.Rotation {
 		}
 	}
 	return nil
-}
-
-// rotator is what runs the rotation of kind. rotate refused a kind without one, and running a
-// recorded kind other than the one named.
-func (r *rotation) rotator(kind clustersecrets.RotationKind) layer.Rotation {
-	return rotatorOf(r, kind)
 }
 
 // rotationKinds are the kinds chalkctl rotate runs, in the order it names them.
