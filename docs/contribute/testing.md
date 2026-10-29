@@ -55,9 +55,9 @@ run them in isolation:
   mount, LUKS, the TPM and the firmware's variables with directories and fakes. They stop an
   install or upgrade before each change it makes and check that the disk still boots, so they
   cover interruptions that a VM test could reach only one at a time.
-- The `vxlan-rule` check runs `chalkd vxlan-rule` as a worker's unit does, with the worker's
-  firewall as NixOS renders it, in a network namespace, with a peer and a pod in namespaces of
-  their own, and sends UDP to check what the VXLAN rule accepts. The unit tests of
+- The `vxlan-rule` check runs `chalkd kubernetes vxlan-rule` as a worker's unit does, with the
+  worker's firewall as NixOS renders it, in a network namespace, with a peer and a pod in
+  namespaces of their own, and sends UDP to check what the VXLAN rule accepts. The unit tests of
   `pkg/kubernetes/vxlan` cover what the rule makes of its files.
 - The `router-firewall` check runs a router image's `chalkos-firewall.service` with the rulesets
   that chalkos-render's golden test keeps, in a network namespace with a LAN peer and a WAN peer
@@ -155,7 +155,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | --- | --- |
 | Go code in `pkg/` or `cmd/` | `go-unit`, `go-lint`, and the end-to-end checks covering the behaviour |
 | End-to-end tests in `test/e2e` | `go-lint`, and the end-to-end checks of the changed tests |
-| `api/chalkos/node/v1/node.proto` | `api-generated`, `docs-generated`, `go-unit`, `go-lint` |
+| `api/chalkos/*/v1/*.proto` | `api-generated`, `docs-generated`, `go-unit`, `go-lint` |
 | Command help, option descriptions | `docs-generated`, `docs` |
 | Pages in `docs/` | `docs` |
 | Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, and the build and end-to-end checks of what the module does |

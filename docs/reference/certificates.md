@@ -76,4 +76,6 @@ The clock's line is `time: synchronised to <source>, offset <seconds> s`, or
 `time: not synchronised; certificates are checked against this clock`.
 
 Sources: `pkg/pki`, `pkg/clustersecrets/kubernetes.go`, `pkg/kubernetes/pki`, `pkg/chalkd/renew.go`,
-`pkg/chalkd/certstatus.go`, `pkg/chalkctl/credentials.go` and `pkg/chalkctl/node.go`.
+`pkg/chalkd/renewal`, `pkg/chalkd/certstatus.go`, `pkg/chalkd/layers/kubernetes/issuer.go`,
+`pkg/chalkd/layers/kubernetes/certificates.go`, `pkg/chalkctl/credentials.go` and
+`pkg/chalkctl/node.go`.

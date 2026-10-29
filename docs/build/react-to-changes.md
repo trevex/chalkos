@@ -75,7 +75,7 @@ reference it, and chalkd applies `Addon` documents itself.
 ## An effect reloads, restarts or runs a command
 
 An effect takes at least one action of `reload`, `restart`, `run` and `chalkd`, or the image's
-evaluation fails. `start` changes what `restart` does:
+evaluation fails. `start` changes what `restart` does, and `hint` what a failed restart reports:
 
 | Option | Action |
 | --- | --- |
@@ -83,7 +83,8 @@ evaluation fails. `start` changes what `restart` does:
 | `restart` | Restarts the units, by their full names. A unit that does not run stays stopped. |
 | `start` | With `restart`, starts the units that do not run too. |
 | `run` | Runs one command after the reloads and before the restarts. |
-| `chalkd` | Acts on chalkd's own Kubernetes loops; the note below covers it. |
+| `chalkd` | Runs a layer's action on what chalkd itself holds, named `<layer>:<action>`, such as `kubernetes:restart`. The image must carry the layer; the note below covers the actions. |
+| `hint` | Why the effect's units may fail to restart: `text`, and a `file` whose content follows it, which the delivery's error adds to systemctl's. |
 
 `start` is for a unit that only the delivery lets start, such as a unit whose condition the
 delivered config meets for the first time. Without it, a stopped unit stays stopped.
@@ -95,14 +96,28 @@ name on chalkd's `PATH`. A module adds a program to that `PATH` with
 or not any unit runs. A command that fails fails the delivery, so a command that talks to a
 service that may be stopped first checks that the service runs.
 
+A layer adds subcommands to chalkd, run as `chalkd <layer> <command>`, such as
+`chalkd kubernetes registry-credentials`. The image's units run them, and an effect's `run` may
+too. The evaluation fails on a `run` of `chalkd <layer> ...` or a `chalkd` action whose layer the
+image does not carry.
+
+`hint` is for a unit whose failure systemctl explains badly, such as a oneshot unit that writes
+why it failed to a file. When a unit of `restart` fails, the delivery's error adds `text` after
+systemctl's error, followed by the content of `file`. An effect with a `file` adds its hint only
+while the file holds text. chalkos's own `kubernetes` effect names `prepare.error`, so a delivery
+whose preparation fails says why.
+
 The image build fails on an effect that restarts or reloads a unit the image does not define, and
 the evaluation on one whose `outputs` names no output.
 
 !!! note "Kubernetes: chalkd's own loops"
 
-    An effect's `chalkd` option acts on chalkd's Kubernetes loops, which run inside chalkd and have
-    no unit. `reload` starts the control plane's loop again, and `restart` restarts every
-    Kubernetes loop. chalkos's own Kubernetes effects use it. Without Kubernetes, it does nothing.
+    The Kubernetes layer's loops run inside chalkd and have no unit, so an effect acts on them
+    through its `chalkd` option. `kubernetes:restart` starts every Kubernetes loop again, and
+    each reads the cluster when it starts. `kubernetes:reload` starts the control plane's loop
+    again, which reads the share and applies the control plane's objects. chalkd runs each due
+    action once, however many effects name it. chalkos's own Kubernetes effects use them; an
+    image without the Kubernetes layer has neither.
 
 ## A when condition fires on what no output renders
 
@@ -167,7 +182,7 @@ flowchart TD
     run --> failed["3. reset-failed the failed units of restart and reload"]
     failed --> start["4. restart them and the units of an effect with start"]
     start --> try["5. try-restart the other units of restart"]
-    try --> loops["6. Act on chalkd's own loops"]
+    try --> loops["6. Run the layers' actions"]
 ```
 
 The diagram shows the decision for each effect and the order of the actions of all due effects:
@@ -184,7 +199,8 @@ The diagram shows the decision for each effect and the order of the actions of a
    `start`. `systemctl restart` starts a unit that does not run.
 5. It restarts the other units in one `systemctl try-restart`. A unit that runs, or ran and stays
    active, restarts. A unit that never started or was stopped stays so.
-6. It acts on its own loops, where an effect's `chalkd` option asks it to.
+6. It runs the layers' actions that the effects' `chalkd` options name, each once, on what
+   chalkd itself holds.
 
 A oneshot unit that should run again on a change sets `RemainAfterExit = true`, so it stays
 active and `try-restart` runs it again. The homelab's rack unit does.

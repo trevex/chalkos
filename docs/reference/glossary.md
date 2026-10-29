@@ -198,7 +198,7 @@ read. Each block of the [store](#store) is hashed into a hash tree whose top is 
 <!-- abbr: nolower, Effects, effects -->
 
 An action on the node's services after a delivery is applied, such as a unit restart. An effect
-restarts or reloads units, runs a command or acts on chalkd's loops, as
+restarts or reloads units, runs a command or runs a layer's action in chalkd, as
 [`chalkos.effects`](extension-api.md#chalkoseffects) declares it. It fires when one of its
 [outputs](#output) or the documents of one of its kinds changed, or when its CEL rule, like a
 [change rule](#change-rule), holds. See

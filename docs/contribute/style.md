@@ -7,7 +7,7 @@ description: "How chalkos documentation is written: readers, voice, examples, di
 
 This guide sets the rules for every hand-written page of the chalkos documentation. Generated
 reference text follows the voice and word rules too; it is written in command help, option
-descriptions, schemas and `node.proto`. How to build, check and generate the site is on
+descriptions, schemas and the proto files. How to build, check and generate the site is on
 [Writing documentation](writing-docs.md).
 
 ## Audiences

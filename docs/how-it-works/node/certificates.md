@@ -76,12 +76,12 @@ lives one hour and exists only in memory.
 ## A node renews its certificate through a control plane
 
 chalkd checks its node certificate about hourly and renews it once two thirds of its lifetime have
-passed. It creates a new key and asks a control plane for a certificate through
-[RenewNodeCertificate](../../reference/api.md#kubernetes-method-renewnodecertificate), on port 50000 of the
-cluster endpoint's host. It authenticates with its current certificate, and the control plane
-signs exactly the names of that certificate, whatever the request asks for. A control plane signs
-its own with the node CA it holds. A failed attempt keeps the current certificate and is retried
-after a minute, doubling up to an hour.
+passed. It creates a new key and asks a control plane for a certificate through the Kubernetes
+layer's [RenewNodeCertificate](../../reference/api.md#kubernetes-method-renewnodecertificate), on
+port 50000 of the cluster endpoint's host. It authenticates with its current certificate, and the
+control plane signs exactly the names of that certificate, whatever the request asks for. A
+control plane signs its own with the node CA it holds. A failed attempt keeps the current
+certificate and is retried after a minute, doubling up to an hour.
 
 A node whose image runs no Kubernetes reaches no control plane, so it does not renew its node
 certificate by itself. [`chalkctl node renew`](../../reference/cli/chalkctl_node_renew.md) issues a

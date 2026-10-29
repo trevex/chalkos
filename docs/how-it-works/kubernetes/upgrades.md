@@ -108,12 +108,12 @@ control plane always needs the flag.
 
 ## A control plane's chalkd drains each node
 
-Drains run on a control plane's chalkd, through the
-[DrainNode](../../reference/api.md#kubernetes-method-drainnode) method, because an operator's client file
-carries no Kubernetes credentials. chalkd cordons the node, marks it with the annotation
-`chalkos.dev/upgrade-cordon` and evicts its pods through the eviction API, so PodDisruptionBudgets
-hold. It keeps DaemonSet pods, mirror pods, finished pods and pods without a controller, which
-nothing would start elsewhere, and chalkctl names those. Pods with emptyDir volumes are evicted
+Drains run on a control plane's chalkd, through the Kubernetes layer's
+[DrainNode](../../reference/api.md#kubernetes-method-drainnode) method, because an operator's
+client file carries no Kubernetes credentials. chalkd cordons the node, marks it with the
+annotation `chalkos.dev/upgrade-cordon` and evicts its pods through the eviction API, so
+PodDisruptionBudgets hold. It keeps DaemonSet pods, mirror pods, finished pods and pods without a
+controller, which nothing would start elsewhere, and chalkctl names those. Pods with emptyDir volumes are evicted
 only with `--delete-emptydir-data`, which deletes their data. Without it, a node that runs such a
 pod is not drained, the run stops and the node stays cordoned. A drain that does not finish within
 `--timeout`, 30 minutes by default, stops the run and leaves the node cordoned.

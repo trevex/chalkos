@@ -40,7 +40,7 @@ These units do chalkos's work when an installed node boots. The second column sa
 | `chalkos-storage.service` | in the initrd | `chalkos-storage initrd` | Creates the volumes recorded on STATE and mounts VAR |
 | `chalkos-config.service` | before networkd | `chalkd load-config` | Applies the config on STATE: the hostname, the documents in `/run/chalkos/config`, the secrets the granted units read, and the outputs, networkd's units and chrony's time servers among them |
 | `chalkd.service` | after the network | `chalkd serve` | Serves the node API and carries out its requests |
-| `chalkos-kubernetes.service` | on images with Kubernetes, once the network is online | `chalkd prepare-kubernetes` | Waits for the node's addresses and prepares its Kubernetes certificates, kubeconfigs and kubelet flags |
+| `chalkos-kubernetes.service` | on images with Kubernetes, once the network is online | `chalkd kubernetes prepare` | Waits for the node's addresses and prepares its Kubernetes certificates, kubeconfigs and kubelet flags |
 | `chalkos-health.service` | only on a boot that systemd-boot counts | `chalkd health` | Decides whether a new image is healthy |
 
 The installer runs none of `chalkos-state.service`, `chalkos-storage.service` and

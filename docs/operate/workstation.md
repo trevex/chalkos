@@ -192,7 +192,7 @@ file of their own, with the least role their work needs:
 
 - reader reads node information, disks, status and logs.
 - operator may also reboot and upgrade nodes.
-- admin may call every method of the node API, but for the one nodes renew their own
+- admin may call every method chalkd serves, but for the one nodes renew their own
   certificates with.
 
 Nothing revokes a single client file.

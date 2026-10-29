@@ -78,9 +78,9 @@ A change needs:
   for what needs a booted node, and extends an existing end-to-end test where it can.
   [Testing](testing.md) explains which to write and the budget the VM tests keep to.
 - Documentation of what the change does for a user: the command help in
-  `pkg/chalkctl/help.go`, `pkg/chalklab/help.go` or `pkg/chalkbuild/help.go`, an option's
-  description in `modules/`, a comment in `api/chalkos/node/v1/node.proto`, and the hand-written
-  pages it affects.
+  `pkg/chalkctl/help.go`, `pkg/chalkctl/layers/*/help.go`, `pkg/chalklab/help.go` or
+  `pkg/chalkbuild/help.go`, an option's description in `modules/`, a comment in a proto file
+  below `api/chalkos/`, and the hand-written pages it affects.
   [Writing documentation](writing-docs.md) explains how.
 - Formatting and linting: `nix fmt` formats the Nix files, `gofmt` the Go code, and go vet and
   staticcheck lint the Go code.
@@ -94,8 +94,8 @@ commits what they generate too. A check fails when they differ.
 
 | Source | Command | Generated | Check |
 | --- | --- | --- | --- |
-| `api/chalkos/node/v1/node.proto` | `buf generate` | `pkg/api/node/v1/`, `docs/reference/api.md` | `api-generated`, `docs-generated` |
-| Command help, option declarations, the kinds' JSON Schemas, `node.proto` | `nix run .#docgen` | `docs/reference/cli/`, `docs/reference/mkimages.md`, `docs/reference/image-options.md`, `docs/reference/extension-api.md`, `docs/reference/kinds.md`, `docs/reference/api.md`, the navigation in `zensical.toml` | `docs-generated` |
+| `api/chalkos/*/v1/*.proto` | `buf generate` | `pkg/api/*/v1/`, `docs/reference/api.md` | `api-generated`, `docs-generated` |
+| Command help, option declarations, the kinds' JSON Schemas, the proto files | `nix run .#docgen` | `docs/reference/cli/`, `docs/reference/mkimages.md`, `docs/reference/image-options.md`, `docs/reference/extension-api.md`, `docs/reference/kinds.md`, `docs/reference/api.md`, the navigation in `zensical.toml` | `docs-generated` |
 | `docs/reference/glossary.md` | `nix run .#docgen` | `includes/abbreviations.md` | `docs-generated` |
 | `go.mod`, `go.sum` | `nix build .#chalkctl`, with `vendorHash` set to `lib.fakeHash` first | `vendorHash` in `nix/go-module.nix` | every Go package's build |
 

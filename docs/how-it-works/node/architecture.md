@@ -115,9 +115,22 @@ node's interfaces. An image carries one layer at most, and mkImages refuses a va
 for two.
 
 Each layer writes an empty marker, `/etc/chalkos/layers/<layer>`. chalkd reads the directory when
-it starts and reports the layers in `Info` and `Contract`. It serves the methods of a layer only
-on an image with that layer. On any other image, such a method fails with `UNIMPLEMENTED` and the
-message `the kubernetes layer is not in this image`, before chalkd checks the mode or the role.
+it starts and reports the layers in `Info` and `Contract`.
+
+chalkd and chalkctl each carry a plugin of every layer, compiled in. chalkd starts a layer's
+plugin only on an image that carries the layer. In chalkd, the plugin serves the layer's API beside
+NodeService: KubernetesService for the Kubernetes layer, RouterService for the router layer. It
+also runs the layer's loops, adds its certificates and health check to the node's, and takes its
+part of a delivery, such as the Kubernetes share. On an image without the layer, a method of its
+API fails with `UNIMPLEMENTED` and the message `the kubernetes layer is not in this image`, before
+chalkd checks the mode or the role. In chalkctl, the plugin adds the layer's commands, such as
+`chalkctl etcd`, its section of `chalkctl status`, and its steps of an upgrade or a rotation.
+
+A layer's units run its chalkd subcommands as `chalkd <layer> <command>`, such as
+`chalkd kubernetes prepare`. An effect may name an action of a layer as `<layer>:<action>`, such
+as `kubernetes:restart`, which acts on what only the running chalkd holds;
+[React to changes](../../build/react-to-changes.md#an-effect-reloads-restarts-or-runs-a-command)
+covers both. An image whose effects name a layer it does not carry fails to evaluate.
 
 ## The installed marker decides chalkd's mode
 

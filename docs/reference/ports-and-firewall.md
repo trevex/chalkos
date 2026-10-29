@@ -55,11 +55,12 @@ builds from the node's `Cluster` and `Flannel` documents. While those ranges are
 the node's config holds no `Cluster` document or the file cannot be read, or when a family has no
 pod range or a source range is empty, the chain drops all UDP 8472 the node forwards.
 
-`chalkd vxlan-rule` empties the table's `input` chain before chalkd picks the node's addresses at
-boot. `chalkd prepare-kubernetes --vxlan-rule` then fills it from `/run/chalkos/kubernetes/vxlan`,
-which it writes once it picked them. Without that file, or with one it cannot parse, the table
-holds no marking rule and the node refuses all VXLAN. When nft refuses the table, the node
-refuses all VXLAN and drops all UDP 8472 it forwards; when nft refuses that too, the table goes.
+`chalkd kubernetes vxlan-rule` empties the table's `input` chain before chalkd picks the node's
+addresses at boot. `chalkd kubernetes prepare --vxlan-rule` then fills it from
+`/run/chalkos/kubernetes/vxlan`, which it writes once it picked them. Without that file, or with
+one it cannot parse, the table holds no marking rule and the node refuses all VXLAN. When nft
+refuses the table, the node refuses all VXLAN and drops all UDP 8472 it forwards; when nft
+refuses that too, the table goes.
 
 ## Listeners the firewall keeps closed
 
