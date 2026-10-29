@@ -459,3 +459,52 @@ func TestWriteKeepingPreviousThatFailsLate(t *testing.T) {
 		t.Errorf("after a failed write the slot holds %q and its previous config %q, want v2 and v1", current, previous)
 	}
 }
+
+// TestRestorePrevious makes the previous config the slot's again and the config it held the
+// previous one, so a second restore undoes the first; a slot without a previous config, or whose
+// previous link names the set it holds, as an interrupted write leaves it, is refused.
+func TestRestorePrevious(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "config")
+	if err := WriteKeepingPrevious(dir, stored(t, "v1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestorePrevious(dir); err == nil || !strings.Contains(err.Error(), "keeps no previous config") {
+		t.Errorf("without a previous config: %v", err)
+	}
+	if err := WriteKeepingPrevious(dir, stored(t, "v2")); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range [][2]string{{"v1", "v2"}, {"v2", "v1"}} {
+		if err := RestorePrevious(dir); err != nil {
+			t.Fatal(err)
+		}
+		running, _ := Version(dir)
+		previous, _ := Version(Previous(dir))
+		if running != want[0] || previous != want[1] {
+			t.Errorf("after a restore the slot runs %q and keeps %q, want %q and %q", running, previous, want[0], want[1])
+		}
+		if got, found, err := Read(dir); err != nil || !found || len(got.Delivered) != 3 {
+			t.Errorf("the restored set reads %+v, %v, %v; want it whole", got, found, err)
+		}
+		if l := leftovers(t, dir); len(l) != 2 {
+			t.Errorf("the directories next to the slot are %v, want both sets", l)
+		}
+		if _, err := os.Lstat(filepath.Join(filepath.Dir(dir), ".config.link")); !os.IsNotExist(err) {
+			t.Errorf("a temporary link is left: %v", err)
+		}
+	}
+	held, err := os.Readlink(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := relink(Previous(dir), held); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestorePrevious(dir); err == nil || !strings.Contains(err.Error(), "keeps no previous config") {
+		t.Errorf("with both links on one set: %v", err)
+	}
+	// A slot that does not exist has nothing to restore.
+	if err := RestorePrevious(filepath.Join(filepath.Dir(dir), "none")); err == nil {
+		t.Error("a slot that does not exist was restored")
+	}
+}

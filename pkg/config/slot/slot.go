@@ -216,6 +216,37 @@ func WriteKeepingPrevious(dir string, s Stored) error {
 	return err
 }
 
+// RestorePrevious makes the slot dir's previous config its config again, and the set the slot
+// held its previous one, as a boot that ends a config's trial does. It writes no set: the two links
+// trade places. The slot's link moves first, through the temporary name replace gives it, so a
+// power cut before the previous link follows leaves both naming the restored set, which callers
+// take for no previous config. The set the slot held may then go with the next write, never the
+// restored one.
+func RestorePrevious(dir string) error {
+	prev := Previous(dir)
+	if err := checkLink(dir); err != nil {
+		return err
+	}
+	if err := checkLink(prev); err != nil {
+		return err
+	}
+	held, err := os.Readlink(dir)
+	if err != nil {
+		return err
+	}
+	kept, err := os.Readlink(prev)
+	if errors.Is(err, fs.ErrNotExist) || err == nil && kept == held {
+		return fmt.Errorf("%s keeps no previous config", dir)
+	}
+	if err != nil {
+		return err
+	}
+	if err := relinkVia(dir, filepath.Join(filepath.Dir(dir), "."+filepath.Base(dir)+".link"), kept); err != nil {
+		return err
+	}
+	return relink(prev, held)
+}
+
 // fill fills a new slot's directory with s.
 func fill(s Stored) func(tmp string) error {
 	return func(tmp string) error {
@@ -241,7 +272,11 @@ func fill(s Stored) func(tmp string) error {
 // relink makes link a relative symbolic link to target, a name in link's directory, in one rename,
 // and syncs the directory.
 func relink(link, target string) error {
-	tmp := link + ".link"
+	return relinkVia(link, link+".link", target)
+}
+
+// relinkVia is relink with tmp as the new link that is renamed over link.
+func relinkVia(link, tmp, target string) error {
 	if err := os.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
