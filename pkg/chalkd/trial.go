@@ -393,13 +393,18 @@ func (s *Server) settleTrial(r trialRecord) (trialState, error) {
 const trialRollbackTimeout = 5 * time.Minute
 
 // rollbackContext is the context of a rollback at a trial's deadline or the delivery that
-// finishes one: they outlive every request, so it is a context of their own, with their timeout.
+// finishes one: they outlive every request, so it is a context of their own, with their timeout,
+// which ends once chalkd stops as well. The caller holds s.mu.
 func (s *Server) rollbackContext() (context.Context, context.CancelFunc) {
 	d := s.trialTimeout
 	if d <= 0 {
 		d = trialRollbackTimeout
 	}
-	return context.WithTimeout(context.Background(), d)
+	parent := s.trialCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(parent, d)
 }
 
 // finishTrial ends a trial whose slot runs the config from before it again. It delivers that
@@ -519,13 +524,17 @@ func (s *Server) expireTrial(version string, deadline time.Time, armed uint64) {
 // ResumeTrial settles a trial recorded before chalkd started, as settleTrial does: one past its
 // deadline rolls back at once, and one whose slot runs the config from before it, as a crash
 // before the slot was written leaves it, is finished. A record that cannot be read stays, so
-// every change is refused until RollbackConfig removes it. chalkd calls it in normal mode before
-// it serves.
-func (s *Server) ResumeTrial() {
+// every change is refused until RollbackConfig removes it. ctx ends when chalkd stops, and so do
+// the rollbacks of trials from then on, this one's and those at a deadline.
+//
+// chalkd calls it in normal mode once it serves, so a rollback does not keep the node from being
+// reached: until it ends, a request that changes the node is refused with ABORTED or waits.
+func (s *Server) ResumeTrial(ctx context.Context) {
 	s.upgrading.Lock()
 	defer s.upgrading.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.trialCtx = ctx
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
 		log.Printf("read the record of the config's trial: %v; keeping it, so the node takes no change until a rollback removes it", err)

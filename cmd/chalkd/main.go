@@ -420,16 +420,17 @@ func serve() error {
 		go srv.Renewal.Run(ctx)
 	}
 	go announceAddresses(srv.CurrentFingerprint)
-	// A trial recorded before chalkd started gets its deadline again, and one the boot could not
-	// end rolls back at once. Its delivery reads srv.Renewal and the layers, so it comes once
-	// they are set and their loops run.
-	if creds.mode == nodev1.Mode_MODE_NORMAL {
-		srv.ResumeTrial()
-	}
 
 	ln, err := net.Listen("tcp", ":50000")
 	if err != nil {
 		return err
+	}
+	// A trial recorded before chalkd started gets its deadline again, and one the boot could not
+	// end rolls back at once. Its delivery reads srv.Renewal and the layers, so it comes once
+	// they are set and their loops run, and once chalkd listens, so the node can be reached while
+	// it runs. It ends with ctx, and chalkd waits for it as for the loops.
+	if creds.mode == nodev1.Mode_MODE_NORMAL {
+		loops.Go(func() { srv.ResumeTrial(ctx) })
 	}
 	served := make(chan error, 1)
 	go func() {

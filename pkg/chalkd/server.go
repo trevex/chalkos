@@ -183,6 +183,9 @@ type Server struct {
 	// trialTimeout is the time a rollback at a trial's deadline may take; zero is
 	// trialRollbackTimeout. Tests set it.
 	trialTimeout time.Duration
+	// trialCtx is the context the rollbacks of trials derive theirs from, which ends when chalkd
+	// stops; nil is context.Background. ResumeTrial sets it, and s.mu guards it.
+	trialCtx context.Context
 	// logStreams counts the Logs calls running.
 	logStreams atomic.Int32
 	// diagnosticRuns counts the RunDiagnostic calls running.

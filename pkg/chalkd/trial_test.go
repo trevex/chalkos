@@ -920,7 +920,7 @@ func TestResumeTrial(t *testing.T) {
 	if err := writeTrial(s.Paths.StateDir, rec); err != nil {
 		t.Fatal(err)
 	}
-	s.ResumeTrial()
+	s.ResumeTrial(context.Background())
 	eventually(t, "the rollback", func() bool { return !trialOpenOn(t, s) })
 	if v, _ := slot.Version(slotOf(t, s)); v != rec.Previous {
 		t.Errorf("the node runs %s, want %s", v, rec.Previous)
@@ -930,7 +930,7 @@ func TestResumeTrial(t *testing.T) {
 	if err := writeTrial(s.Paths.StateDir, pending); err != nil {
 		t.Fatal(err)
 	}
-	s.ResumeTrial()
+	s.ResumeTrial(context.Background())
 	s.mu.Lock()
 	armed := s.trialTimer != nil
 	s.mu.Unlock()
@@ -938,12 +938,52 @@ func TestResumeTrial(t *testing.T) {
 		t.Error("a trial whose slot was never written stays")
 	}
 	write(t, filepath.Join(s.Paths.StateDir, trialFile), "{")
-	s.ResumeTrial()
+	s.ResumeTrial(context.Background())
 	if got := readFile(t, filepath.Join(s.Paths.StateDir, trialFile)); got != "{" {
 		t.Errorf("a record that cannot be read is %q, want it kept", got)
 	}
 	if _, err := sendConfig(s, nextConfig); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the record of the config's trial") {
 		t.Errorf("a delivery past a record that cannot be read: %v", err)
+	}
+}
+
+// TestResumeTrialStopsWithChalkd ends the delivery that finishes a trial's rollback, and a
+// rollback at the deadline, once the context ResumeTrial was given ends, as when chalkd stops,
+// before their own timeout; the trial stays open for the next start.
+func TestResumeTrialStopsWithChalkd(t *testing.T) {
+	for name, prepare := range map[string]func(*testing.T, *Server, *trialRecord){
+		"ended": func(t *testing.T, s *Server, _ *trialRecord) {
+			if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"past its deadline": func(_ *testing.T, _ *Server, r *trialRecord) { r.Deadline = time.Now().Add(-time.Minute) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := trialServer(t)
+			s.trialTimeout, s.trialRetry = time.Hour, time.Hour
+			rec := recordTrial(t, s, nextConfig)
+			prepare(t, s, &rec)
+			if err := writeTrial(s.Paths.StateDir, rec); err != nil {
+				t.Fatal(err)
+			}
+			writeOutputs(t, s, map[string]outputs.Definition{
+				"demo": demoOutput(t, s, `exec sleep 10`, ""), "networkd": networkdOutput(t, s), "chrony": chronyOutput(t, s),
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
+			start := time.Now()
+			s.ResumeTrial(ctx)
+			eventually(t, "the failed attempt", func() bool {
+				s.mu.Lock()
+				defer s.mu.Unlock()
+				r, _, _ := readTrial(s.Paths.StateDir)
+				return r.Attempts == 1
+			})
+			if took := time.Since(start); took > 5*time.Second {
+				t.Errorf("the rollback took %v after chalkd stopped", took)
+			}
+		})
 	}
 }
 
