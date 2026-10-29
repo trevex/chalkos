@@ -78,13 +78,15 @@ func TestNextGeneration(t *testing.T) {
 }
 
 // TestStagedEntry finds the entry that boots next: the image's highest generation, not the
-// booted entry, and not bad, counted or not, as a rollback from a boot not found healthy leaves it.
+// booted entry, not bad and not of the booted store, counted or not, as a rollback from a boot not
+// found healthy leaves it.
 func TestStagedEntry(t *testing.T) {
 	entry := func(file string, generation uint64, left int) Entry {
 		id, _, _ := parseEntryName(file)
 		return Entry{File: file, ID: id, ImageID: "chalkos", Generation: generation, TriesLeft: left}
 	}
 	booted := entry("chalkos_2.efi", 2, -1)
+	booted.RootHash = []byte{2}
 	for _, tc := range []struct {
 		name    string
 		entries []Entry
@@ -102,6 +104,8 @@ func TestStagedEntry(t *testing.T) {
 		// systemd-boot orders entries of one generation by no rule chalkd relies on.
 		{"two names of the highest generation", []Entry{booted, entry("chalkos_06+3.efi", 0, 3), entry("chalkos_6+3.efi", 6, 3)}, ""},
 		{"a lower generation twice", []Entry{booted, entry("chalkos_02+3.efi", 0, 3), entry("chalkos_3+3.efi", 3, 3)}, "chalkos_3+3.efi"},
+		// The running image boots next again, as after the boot menu picked an entry below.
+		{"an entry of the booted store above", []Entry{booted, {File: "chalkos_3.efi", ID: "chalkos_3.efi", ImageID: "chalkos", Generation: 3, TriesLeft: -1, RootHash: booted.RootHash}}, ""},
 	} {
 		got, ok := StagedEntry(tc.entries, "chalkos", booted)
 		if got.File != tc.want || ok != (tc.want != "") {

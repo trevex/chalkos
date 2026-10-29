@@ -54,7 +54,7 @@ func (s *Server) bootStatus() *nodev1.BootStatus {
 	// The staged entry is the one that boots next, counted after an upgrade and not after a
 	// rollback from a boot that was not found healthy; a counted entry below the booted one, as an
 	// image the node rolled back from leaves it, does not boot next.
-	if e, ok := esp.StagedEntry(entries, booted.ImageID, booted); ok && !bytes.Equal(e.RootHash, running) {
+	if e, ok := esp.StagedEntry(entries, booted.ImageID, booted); ok {
 		st.Staged = bootImage(images, e.RootHash, e.Generation)
 	}
 	if failed.File != "" {
