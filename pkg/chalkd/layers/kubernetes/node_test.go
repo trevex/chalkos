@@ -31,7 +31,6 @@ func (n *fakeNode) NodeCertificate() layer.Certificate { return n.cert }
 func (n *fakeNode) Changes() sync.Locker               { return &n.mu }
 func (n *fakeNode) Runner() tool.Runner                { return n.run }
 func (n *fakeNode) Slot() (string, error)              { return n.slot, nil }
-func (n *fakeNode) StateDir() string                   { return n.state }
 
 // fakeCertificate is the node certificate as the plugin reads it: the OS CAs the node trusts.
 type fakeCertificate struct{ osCA string }

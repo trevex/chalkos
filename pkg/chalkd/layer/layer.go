@@ -70,8 +70,6 @@ type Node interface {
 	Runner() tool.Runner
 	// Slot returns the running image's config slot on STATE.
 	Slot() (string, error)
-	// StateDir is where STATE is mounted.
-	StateDir() string
 }
 
 // Certificate is the node certificate chalkd serves, as plugins use it.

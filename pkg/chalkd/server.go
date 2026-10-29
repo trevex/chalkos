@@ -445,8 +445,6 @@ func (s *Server) Runner() tool.Runner { return s.Run }
 
 func (s *Server) Slot() (string, error) { return s.Loader.Slot() }
 
-func (s *Server) StateDir() string { return s.Paths.StateDir }
-
 func failed(code connect.Code, format string, args ...any) error {
 	return connect.NewError(code, fmt.Errorf(format, args...))
 }
