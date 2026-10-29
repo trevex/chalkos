@@ -46,7 +46,10 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeAborted, "an upgrade or a config delivery is running")
 	}
 	defer s.upgrading.Unlock()
-	if err := s.refuseOnTrial("an upgrade"); err != nil {
+	s.mu.Lock()
+	err := s.refuseOnTrial("an upgrade")
+	s.mu.Unlock()
+	if err != nil {
 		return nil, err
 	}
 	if !stream.Receive() {

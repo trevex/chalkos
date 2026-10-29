@@ -14,6 +14,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -337,5 +338,116 @@ func TestReadTrialRefusesNoDeadline(t *testing.T) {
 	}
 	if _, _, err := readTrial(dir); err == nil || !strings.Contains(err.Error(), "names no deadline") {
 		t.Errorf("readTrial = %v, want the missing deadline", err)
+	}
+}
+
+// TestRollbackConfigFailingKeepsTheTrial keeps the trial open when the rollback on request fails,
+// so the config on trial still waits for its confirmation or its deadline.
+func TestRollbackConfigFailingKeepsTheTrial(t *testing.T) {
+	s, _ := configServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	slots := filepath.Dir(slotOf(t, s))
+	// The directory of slots takes no new slot directory.
+	if err := os.Chmod(slots, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(slots, 0o755) })
+	if _, err := sendRollback(s, rec.Previous); err == nil || !strings.Contains(err.Error(), "store the config") {
+		t.Fatalf("err = %v, want the slot's failure", err)
+	}
+	if !trialOpenOn(t, s) {
+		t.Error("a failed rollback ended the trial")
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != rec.Version {
+		t.Errorf("the node runs %s, want the config on trial", v)
+	}
+}
+
+// TestRollbackConfigKeepsATrialItCannotRemove rolls the config on trial back even when the trial's
+// record cannot be removed, warns of it, and keeps the record and the deadline. The next delivery
+// finds the trial ended and removes the record.
+func TestRollbackConfigKeepsATrialItCannotRemove(t *testing.T) {
+	s, _ := configServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	timer := time.AfterFunc(time.Hour, func() {})
+	defer timer.Stop()
+	s.trialTimer = timer
+	dir := filepath.Dir(filepath.Join(s.Paths.StateDir, trialFile))
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	resp, err := sendRollback(s, rec.Previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "the config was rolled back, but the record of its trial could not be removed: "
+	if !slices.ContainsFunc(resp.Warnings, func(w string) bool { return strings.HasPrefix(w, want) }) {
+		t.Errorf("warnings = %q, want one starting %q", resp.Warnings, want)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != rec.Previous {
+		t.Errorf("the node runs %s, want %s", v, rec.Previous)
+	}
+	if !trialOpenOn(t, s) {
+		t.Error("the record is gone")
+	}
+	s.mu.Lock()
+	armed := s.trialTimer == timer
+	s.mu.Unlock()
+	if !armed {
+		t.Error("the deadline was stopped although the record stays")
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sendConfig(s, nextConfig); err != nil {
+		t.Fatalf("a delivery after the rollback: %v", err)
+	}
+	if trialOpenOn(t, s) {
+		t.Error("the delivery kept the ended trial's record")
+	}
+}
+
+// TestChangesPassAnEndedTrial lets every change through a trial record whose slot runs the config
+// from before the trial already, as after a rollback whose record a crash or a failed removal
+// kept, and removes the record.
+func TestChangesPassAnEndedTrial(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		call func(s *Server, conn *client.Conn) error
+		want string
+	}{
+		{"delivery", func(s *Server, _ *client.Conn) error {
+			_, err := sendConfig(s, nextConfig)
+			return err
+		}, ""},
+		{"image rollback", func(s *Server, _ *client.Conn) error {
+			_, err := s.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: bytes.Repeat([]byte{1}, 32)}))
+			return err
+		}, "STATE holds no config for the image"},
+		{"upgrade", func(_ *Server, conn *client.Conn) error {
+			stream := conn.Upgrade(ctx)
+			stream.Send(&nodev1.UpgradeRequest{})
+			_, err := stream.CloseAndReceive()
+			return err
+		}, "the first upgrade message must be the header"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := configServer(t)
+			recordTrial(t, s, nextConfig)
+			if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
+				t.Fatal(err)
+			}
+			c := newCreds(t)
+			conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
+			err := tc.call(s, conn)
+			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+			if trialOpenOn(t, s) {
+				t.Error("the ended trial's record stays")
+			}
+		})
 	}
 }
