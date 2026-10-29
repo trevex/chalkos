@@ -165,12 +165,15 @@ type NodeServiceClient interface {
 	// the config from then on. The node must be healthy as the health check of a boot finds it:
 	// chalkd serves, no unit of the boot failed but those the image ignores, and the image's layers
 	// find their services healthy. It answers UNAVAILABLE while the node is not, and when the trial
-	// changed while the node's health was checked, so a client asks again. It answers
-	// FAILED_PRECONDITION when no trial of the version is open, unless the node runs that version, so
-	// a request sent twice confirms once. It answers FAILED_PRECONDITION too when the node no longer
-	// runs the version on trial, and after the deadline, unless the rollback at the deadline failed:
-	// while ConfigTrial.error is set, a confirmation ends the trial and the rollback's retries.
-	// Available in normal mode to admins.
+	// changed while the node's health was checked, as when the rollback at the deadline was tried
+	// meanwhile, so a client asks again. It answers FAILED_PRECONDITION when no trial of the version
+	// is open, unless the node runs that version, so a request sent twice confirms once. It answers
+	// FAILED_PRECONDITION too when the node no longer runs the version on trial, and after the
+	// deadline, unless the rollback at the deadline failed: while ConfigTrial.error is set, a
+	// confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
+	// changed the node, it answers FAILED_PRECONDITION all the same: RollbackConfig finishes the
+	// rollback. It answers INTERNAL when the node cannot read the trial's record. Available in normal
+	// mode to admins.
 	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
 }
 
@@ -476,12 +479,15 @@ type NodeServiceHandler interface {
 	// the config from then on. The node must be healthy as the health check of a boot finds it:
 	// chalkd serves, no unit of the boot failed but those the image ignores, and the image's layers
 	// find their services healthy. It answers UNAVAILABLE while the node is not, and when the trial
-	// changed while the node's health was checked, so a client asks again. It answers
-	// FAILED_PRECONDITION when no trial of the version is open, unless the node runs that version, so
-	// a request sent twice confirms once. It answers FAILED_PRECONDITION too when the node no longer
-	// runs the version on trial, and after the deadline, unless the rollback at the deadline failed:
-	// while ConfigTrial.error is set, a confirmation ends the trial and the rollback's retries.
-	// Available in normal mode to admins.
+	// changed while the node's health was checked, as when the rollback at the deadline was tried
+	// meanwhile, so a client asks again. It answers FAILED_PRECONDITION when no trial of the version
+	// is open, unless the node runs that version, so a request sent twice confirms once. It answers
+	// FAILED_PRECONDITION too when the node no longer runs the version on trial, and after the
+	// deadline, unless the rollback at the deadline failed: while ConfigTrial.error is set, a
+	// confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
+	// changed the node, it answers FAILED_PRECONDITION all the same: RollbackConfig finishes the
+	// rollback. It answers INTERNAL when the node cannot read the trial's record. Available in normal
+	// mode to admins.
 	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
 }
 

@@ -186,7 +186,7 @@ func TestApplyConfigWaitsForAnUpgrade(t *testing.T) {
 	s, _ := configServer(t)
 	s.upgrading.Lock()
 	defer s.upgrading.Unlock()
-	if _, err := sendConfig(s, baseConfig); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err := sendConfig(s, baseConfig); connect.CodeOf(err) != connect.CodeAborted || !strings.Contains(err.Error(), "an upgrade, an image rollback or the rollback at a trial's deadline is running; apply the config once it ended") {
 		t.Errorf("err = %v, want aborted", err)
 	}
 }

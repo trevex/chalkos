@@ -25,6 +25,8 @@ type applyRequest struct {
 	next     slot.Stored
 	schemas  *schema.Schemas
 	msg      *nodev1.ApplyConfigRequest
+	// try is how long the config is on trial; zero applies it for good.
+	try time.Duration
 }
 
 func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
@@ -34,19 +36,23 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 	if err := s.refuseOnTrial("another delivery"); err != nil {
 		return nil, err
 	}
+	try, err := trialOf(req.Msg)
+	if err != nil {
+		return nil, err
+	}
 	// An upgrade writes its image's slot, checked against the machine, before the image is
 	// staged, so a machine change in between would escape checkStaged. TryLock never waits: the
-	// upgrade holds upgrading while it takes s.mu.
+	// upgrade, an image rollback and a trial's deadline hold upgrading while they take s.mu.
 	if req.Msg.Config != "" {
 		if !s.upgrading.TryLock() {
-			return nil, failed(connect.CodeAborted, "an upgrade is running, which writes the node's config too; apply the config once it ended")
+			return nil, failed(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; apply the config once it ended")
 		}
 		defer s.upgrading.Unlock()
 	}
 	if req.Msg.Staged {
 		return s.applyStaged(ctx, req.Msg)
 	}
-	r := applyRequest{msg: req.Msg}
+	r := applyRequest{msg: req.Msg, try: try}
 	if req.Msg.Config != "" {
 		name, err := s.name()
 		if err != nil {
@@ -61,6 +67,9 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 			return nil, err
 		}
 		r.identity, r.next, r.schemas = string(c.Identity), c, schemas
+	}
+	if try > 0 {
+		return s.applyTrial(ctx, r)
 	}
 	return s.apply(ctx, r)
 }
@@ -85,6 +94,9 @@ type delivery struct {
 	// dir is the running image's config slot, and stored the config written to it; unset with keep.
 	dir    string
 	stored slot.Stored
+	// replaced is the version of the config the slot held, which the delivery replaces; unset
+	// with keep.
+	replaced string
 	// identity is the identity the node runs once the delivery is applied.
 	identity delivered
 	// osCA is the OS CAs the node trusts once the delivery is applied.
@@ -125,7 +137,7 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 		}
 		data = string(prev.Identity)
 	} else {
-		d.dir, d.stored = dir, r.next
+		d.dir, d.stored, d.replaced = dir, r.next, prev.Version
 	}
 	if d.identity, err = s.parseIdentity(data); err != nil {
 		return nil, err
@@ -176,6 +188,12 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 			if err := s.checkStaged(r.schemas, name, r.next.Documents, d.identity.section, loaded); err != nil {
 				return nil, err
 			}
+		}
+	}
+	// A config on trial must be one its rollback undoes whole.
+	if r.try > 0 {
+		if err := checkTrial(found, d.replaced, r.next.Version, d.machine); err != nil {
+			return nil, err
 		}
 	}
 	// The effects compare the delivery with the running slot, the facts once it is applied with

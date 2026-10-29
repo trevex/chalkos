@@ -32,10 +32,10 @@ func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.upgrading.TryLock() {
-		return nil, failed(connect.CodeAborted, "an upgrade is running, which writes the node's config too; roll back once it ended")
+		return nil, failed(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; roll back once it ended")
 	}
 	defer s.upgrading.Unlock()
-	resp, err := s.rollbackConfig(ctx, req.Msg.Version)
+	resp, _, err := s.rollbackConfig(ctx, req.Msg.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -54,50 +54,57 @@ func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1
 }
 
 // rollbackConfig delivers the previous config of the running image's slot, whose version must be
-// version, through apply: checked by the image's rules against the config the node runs, the
-// machine and the facts, rendered, written and acted on by the effects as any delivery, and
-// refused as a whole when anything refuses it. The config it replaces becomes the slot's previous
-// one. Only the documents return: the OS CAs, the node certificate and the layers' payloads are
-// the node's, not the slot's. The documents are translated again, as delivered, against the
-// running image. The caller holds s.mu and s.upgrading.
-func (s *Server) rollbackConfig(ctx context.Context, version string) (*nodev1.ApplyConfigResponse, error) {
+// version, through the pipeline of a delivery: checked by the image's rules against the config
+// the node runs, the machine and the facts, rendered, written and acted on by the effects as any
+// delivery, and refused as a whole when anything refuses it. The config it replaces becomes the
+// slot's previous one. Only the documents return: the OS CAs, the node certificate and the
+// layers' payloads are the node's, not the slot's. The documents are translated again, as
+// delivered, against the running image. changed reports whether a rollback that failed did so
+// after it began to change the node, which another rollback then finishes. The caller holds s.mu
+// and s.upgrading.
+func (s *Server) rollbackConfig(ctx context.Context, version string) (resp *nodev1.ApplyConfigResponse, changed bool, err error) {
 	dir, err := s.Loader.Slot()
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
+		return nil, false, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
 	}
 	running, err := slot.Version(dir)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "read the config's version: %v", err)
+		return nil, false, failed(connect.CodeInternal, "read the config's version: %v", err)
 	}
 	prev, found, err := slot.Read(slot.Previous(dir))
 	switch {
 	case err != nil:
-		return nil, failed(connect.CodeInternal, "read the previous config: %v", err)
+		return nil, false, failed(connect.CodeInternal, "read the previous config: %v", err)
 	// A write interrupted between the previous link and the slot's leaves both naming one set,
 	// which is no config to roll back to.
 	case !found || prev.Version == "" || prev.Version == running:
-		return nil, failed(connect.CodeFailedPrecondition, "the node keeps no previous config of the running image: it keeps one once a delivery replaced the config the image was installed or upgraded with")
+		return nil, false, failed(connect.CodeFailedPrecondition, "the node keeps no previous config of the running image: it keeps one once a delivery replaced the config the image was installed or upgraded with")
 	case prev.Version != version:
-		return nil, failed(connect.CodeFailedPrecondition, "the node's previous config is %s, not %s", prev.Version, version)
+		return nil, false, failed(connect.CodeFailedPrecondition, "the node's previous config is %s, not %s", prev.Version, version)
 	}
 	name, err := s.name()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	t, schemas, err := s.runningTarget()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	next, err := translateSlot(name, prev.Delivered, schemas, t)
 	if err != nil {
-		return nil, failed(connect.CodeFailedPrecondition, "the previous config no longer suits the running image: %v", err)
+		return nil, false, failed(connect.CodeFailedPrecondition, "the previous config no longer suits the running image: %v", err)
 	}
 	log.Printf("rolling back to the previous config %s", version)
-	resp, err := s.apply(ctx, applyRequest{identity: string(next.Identity), next: next, schemas: schemas, msg: &nodev1.ApplyConfigRequest{}})
+	d, err := s.planDelivery(ctx, applyRequest{identity: string(next.Identity), next: next, schemas: schemas, msg: &nodev1.ApplyConfigRequest{}})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return resp.Msg, nil
+	defer d.staged.Discard()
+	r, err := d.commit(ctx)
+	if err != nil {
+		return nil, true, err
+	}
+	return r.Msg, false, nil
 }
 
 // RollbackImage makes the previous image boot next again, through the upgrade path without

@@ -84,7 +84,7 @@ func TestRollbackConfigRefuses(t *testing.T) {
 		t.Errorf("another version: %v", err)
 	}
 	s.upgrading.Lock()
-	if _, err := sendRollback(s, hashOf(t, baseConfig)); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err := sendRollback(s, hashOf(t, baseConfig)); connect.CodeOf(err) != connect.CodeAborted || !strings.Contains(err.Error(), "an upgrade, an image rollback or the rollback at a trial's deadline is running; roll back once it ended") {
 		t.Errorf("during an upgrade: %v, want aborted", err)
 	}
 	s.upgrading.Unlock()
