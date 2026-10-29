@@ -1781,7 +1781,10 @@ func (x *ApplyConfigRequest) GetLayers() []*anypb.Any {
 type GetConfigRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Whether the response holds the staged image's config instead of the running one's.
-	Staged        bool `protobuf:"varint,1,opt,name=staged,proto3" json:"staged,omitempty"`
+	Staged bool `protobuf:"varint,1,opt,name=staged,proto3" json:"staged,omitempty"`
+	// Whether the response holds the running image's previous config, which RollbackConfig delivers
+	// again, instead of the one it runs. Not together with staged.
+	Previous      bool `protobuf:"varint,2,opt,name=previous,proto3" json:"previous,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1819,6 +1822,13 @@ func (*GetConfigRequest) Descriptor() ([]byte, []int) {
 func (x *GetConfigRequest) GetStaged() bool {
 	if x != nil {
 		return x.Staged
+	}
+	return false
+}
+
+func (x *GetConfigRequest) GetPrevious() bool {
+	if x != nil {
+		return x.Previous
 	}
 	return false
 }
@@ -2169,9 +2179,13 @@ type StatusResponse struct {
 	// the running one's; empty without a staged image or config for it.
 	StagedConfigVersion string `protobuf:"bytes,10,opt,name=staged_config_version,json=stagedConfigVersion,proto3" json:"staged_config_version,omitempty"`
 	// The image's outputs, by name.
-	Outputs       []*OutputStatus `protobuf:"bytes,11,rep,name=outputs,proto3" json:"outputs,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Outputs []*OutputStatus `protobuf:"bytes,11,rep,name=outputs,proto3" json:"outputs,omitempty"`
+	// The version of the running image's previous config, which RollbackConfig delivers again, as
+	// config_version gives the running one's; empty while the node keeps none, as after an install
+	// or an upgrade.
+	PreviousConfigVersion string `protobuf:"bytes,12,opt,name=previous_config_version,json=previousConfigVersion,proto3" json:"previous_config_version,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
@@ -2279,6 +2293,13 @@ func (x *StatusResponse) GetOutputs() []*OutputStatus {
 		return x.Outputs
 	}
 	return nil
+}
+
+func (x *StatusResponse) GetPreviousConfigVersion() string {
+	if x != nil {
+		return x.PreviousConfigVersion
+	}
+	return ""
 }
 
 // The state of one output of the running image.
@@ -3960,9 +3981,10 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x05trust\x18\x04 \x01(\fR\x05trust\x12\x16\n" +
 	"\x06config\x18\x05 \x01(\tR\x06config\x12\x16\n" +
 	"\x06staged\x18\x06 \x01(\bR\x06staged\x12,\n" +
-	"\x06layers\x18\a \x03(\v2\x14.google.protobuf.AnyR\x06layers\"*\n" +
+	"\x06layers\x18\a \x03(\v2\x14.google.protobuf.AnyR\x06layers\"F\n" +
 	"\x10GetConfigRequest\x12\x16\n" +
-	"\x06staged\x18\x01 \x01(\bR\x06staged\"K\n" +
+	"\x06staged\x18\x01 \x01(\bR\x06staged\x12\x1a\n" +
+	"\bprevious\x18\x02 \x01(\bR\bprevious\"K\n" +
 	"\x11GetConfigResponse\x12\x1c\n" +
 	"\tdocuments\x18\x01 \x01(\tR\tdocuments\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\"\x94\x01\n" +
@@ -3978,7 +4000,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x0ffallback_secret\x18\x02 \x01(\tR\x0efallbackSecret\x12\x16\n" +
 	"\x06config\x18\x03 \x01(\tR\x06config\"\x15\n" +
 	"\x13ResetVolumeResponse\"\x0f\n" +
-	"\rStatusRequest\"\xad\x04\n" +
+	"\rStatusRequest\"\xe5\x04\n" +
 	"\x0eStatusResponse\x121\n" +
 	"\x05disks\x18\x01 \x03(\v2\x1b.chalkos.node.v1.DiskStatusR\x05disks\x127\n" +
 	"\avolumes\x18\x02 \x03(\v2\x1d.chalkos.node.v1.VolumeStatusR\avolumes\x12!\n" +
@@ -3991,7 +4013,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x0econfig_version\x18\t \x01(\tR\rconfigVersion\x122\n" +
 	"\x15staged_config_version\x18\n" +
 	" \x01(\tR\x13stagedConfigVersion\x127\n" +
-	"\aoutputs\x18\v \x03(\v2\x1d.chalkos.node.v1.OutputStatusR\aoutputs\"L\n" +
+	"\aoutputs\x18\v \x03(\v2\x1d.chalkos.node.v1.OutputStatusR\aoutputs\x126\n" +
+	"\x17previous_config_version\x18\f \x01(\tR\x15previousConfigVersion\"L\n" +
 	"\fOutputStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\tR\x04hash\x12\x14\n" +

@@ -36,9 +36,9 @@ service NodeService {
   // such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
   // refused; additive ones are applied live. Available in normal mode to admins.
   rpc ApplyConfig(ApplyConfigRequest) returns (ApplyConfigResponse);
-  // GetConfig returns the config a slot keeps, the running image's or the staged image's, as it
-  // was delivered, with secret values replaced by their hashes. Available in normal mode to
-  // admins.
+  // GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
+  // image's, as it was delivered, with secret values replaced by their hashes. Available in normal
+  // mode to admins.
   rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
   // ResetVolume wipes one volume and creates it again as the delivered config defines it. It
   // refuses VAR, a volume the config no longer has and a volume the config moves to another
@@ -403,6 +403,9 @@ message ApplyConfigRequest {
 message GetConfigRequest {
   // Whether the response holds the staged image's config instead of the running one's.
   bool staged = 1;
+  // Whether the response holds the running image's previous config, which RollbackConfig delivers
+  // again, instead of the one it runs. Not together with staged.
+  bool previous = 2;
 }
 
 // The response of GetConfig: the config one slot keeps.
@@ -481,6 +484,10 @@ message StatusResponse {
   string staged_config_version = 10;
   // The image's outputs, by name.
   repeated OutputStatus outputs = 11;
+  // The version of the running image's previous config, which RollbackConfig delivers again, as
+  // config_version gives the running one's; empty while the node keeps none, as after an install
+  // or an upgrade.
+  string previous_config_version = 12;
 }
 
 // The state of one output of the running image.

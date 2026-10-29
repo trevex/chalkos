@@ -197,7 +197,7 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 //  1. the OS CAs, which the layers checked against what they keep;
 //  2. the machine's storage, the identity and what the layers derive from the config;
 //  3. the node certificate and the layers' payloads;
-//  4. the running slot, last;
+//  4. the running slot, last, which keeps the config it replaces as the image's previous one;
 //  5. the effects.
 //
 // Until the slot is written, STATE holds the identity and the documents the node ran before, which
@@ -254,7 +254,7 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 	// The documents and the identity are written in one rename.
 	if !d.keep {
 		d.stored.Identity = d.identity.data
-		if err := slot.Write(d.dir, d.stored); err != nil {
+		if err := slot.WriteKeepingPrevious(d.dir, d.stored); err != nil {
 			s.failedPartWay(ctx, d.fx, m.FallbackSecret)
 			return nil, failed(connect.CodeInternal, "store the config: %v", err)
 		}

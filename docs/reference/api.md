@@ -179,9 +179,9 @@ Field types: [StorageChange](#message-storagechange).
 
 ### GetConfig { #method-getconfig }
 
-GetConfig returns the config a slot keeps, the running image's or the staged image's, as it
-was delivered, with secret values replaced by their hashes. Available in normal mode to
-admins.
+GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
+image's, as it was delivered, with secret values replaced by their hashes. Available in normal
+mode to admins.
 
 Request: GetConfigRequest. Response: GetConfigResponse.
 
@@ -192,6 +192,7 @@ The request of GetConfig.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `staged` | bool | Whether the response holds the staged image's config instead of the running one's. |
+| `previous` | bool | Whether the response holds the running image's previous config, which RollbackConfig delivers again, instead of the one it runs. Not together with staged. |
 
 #### GetConfigResponse { #message-getconfigresponse }
 
@@ -257,6 +258,7 @@ The response of Status: the state of an installed node.
 | `config_version` | string | SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by its own SHA-256. Empty on a node that runs no config. |
 | `staged_config_version` | string | The version of the config kept for the image staged to boot next, as config_version gives the running one's; empty without a staged image or config for it. |
 | `outputs` | list of OutputStatus | The image's outputs, by name. |
+| `previous_config_version` | string | The version of the running image's previous config, which RollbackConfig delivers again, as config_version gives the running one's; empty while the node keeps none, as after an install or an upgrade. |
 
 Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus).
 

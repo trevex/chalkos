@@ -87,9 +87,9 @@ type NodeServiceClient interface {
 	// such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
 	// refused; additive ones are applied live. Available in normal mode to admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
-	// GetConfig returns the config a slot keeps, the running image's or the staged image's, as it
-	// was delivered, with secret values replaced by their hashes. Available in normal mode to
-	// admins.
+	// GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
+	// image's, as it was delivered, with secret values replaced by their hashes. Available in normal
+	// mode to admins.
 	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error)
 	// ResetVolume wipes one volume and creates it again as the delivered config defines it. It
 	// refuses VAR, a volume the config no longer has and a volume the config moves to another
@@ -328,9 +328,9 @@ type NodeServiceHandler interface {
 	// such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
 	// refused; additive ones are applied live. Available in normal mode to admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
-	// GetConfig returns the config a slot keeps, the running image's or the staged image's, as it
-	// was delivered, with secret values replaced by their hashes. Available in normal mode to
-	// admins.
+	// GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
+	// image's, as it was delivered, with secret values replaced by their hashes. Available in normal
+	// mode to admins.
 	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error)
 	// ResetVolume wipes one volume and creates it again as the delivered config defines it. It
 	// refuses VAR, a volume the config no longer has and a volume the config moves to another

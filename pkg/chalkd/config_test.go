@@ -1171,3 +1171,40 @@ func TestStatusToleratesACorruptOutputStatus(t *testing.T) {
 		t.Errorf("outputs = %v", got)
 	}
 }
+
+// TestApplyConfigKeepsThePreviousConfig keeps the config a delivery replaces as the running
+// image's previous one, which Status names and GetConfig serves, and keeps it when the same config
+// comes again.
+func TestApplyConfigKeepsThePreviousConfig(t *testing.T) {
+	s, _ := configServer(t)
+	status := func() *nodev1.StatusResponse {
+		t.Helper()
+		resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.Msg
+	}
+	if v := status().PreviousConfigVersion; v != "" {
+		t.Errorf("previous version before any delivery = %q", v)
+	}
+	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true})); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("previous config before any delivery: %v, want not found", err)
+	}
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	for range 2 {
+		if _, err := sendConfig(s, next); err != nil {
+			t.Fatal(err)
+		}
+		if st := status(); st.ConfigVersion != hashOf(t, next) || st.PreviousConfigVersion != hashOf(t, baseConfig) {
+			t.Errorf("status names config %s and previous %s, want next and baseConfig", st.ConfigVersion, st.PreviousConfigVersion)
+		}
+	}
+	resp, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true}))
+	if err != nil || resp.Msg.Version != hashOf(t, baseConfig) || !strings.Contains(resp.Msg.Documents, `"name":"first"`) || strings.Contains(resp.Msg.Documents, "s3cret") {
+		t.Errorf("previous config = %+v, %v; want baseConfig with its secret hidden", resp, err)
+	}
+	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true, Staged: true})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("staged and previous: %v, want invalid argument", err)
+	}
+}
