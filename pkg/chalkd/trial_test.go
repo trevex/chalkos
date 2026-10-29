@@ -902,3 +902,77 @@ func TestTrialExpiryKeepsARecordItCannotRemove(t *testing.T) {
 		t.Errorf("the record stays %v and the deadline is armed %v, want both", trialOpenOn(t, s), armed)
 	}
 }
+
+// TestRestoreTrialAtBoot restores the config from before an open trial, as chalkos-config does
+// before it applies the slot, and removes the record. A trial that was never applied or ended
+// leaves the slot as it is, and a record that cannot be read goes.
+func TestRestoreTrialAtBoot(t *testing.T) {
+	s := trialServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	if err := RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots); err != nil {
+		t.Fatal(err)
+	}
+	dir := slotOf(t, s)
+	check := func(name string) {
+		t.Helper()
+		running, _ := slot.Version(dir)
+		previous, _ := slot.Version(slot.Previous(dir))
+		if running != rec.Previous || previous != rec.Version {
+			t.Errorf("%s: the slot runs %s and keeps %s, want %s and %s", name, running, previous, rec.Previous, rec.Version)
+		}
+		if _, err := os.Stat(filepath.Join(s.Paths.StateDir, trialFile)); !os.IsNotExist(err) {
+			t.Errorf("%s: the record stays: %v", name, err)
+		}
+	}
+	check("an open trial")
+	if err := RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots); err != nil {
+		t.Errorf("without a record: %v", err)
+	}
+	check("without a record")
+	if err := writeTrial(s.Paths.StateDir, rec); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots); err != nil {
+		t.Errorf("an ended trial: %v", err)
+	}
+	check("an ended trial")
+	lost := rec
+	lost.Version, lost.Previous = "other", "another"
+	if err := writeTrial(s.Paths.StateDir, lost); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots); err != nil {
+		t.Errorf("a lost trial: %v", err)
+	}
+	check("a lost trial")
+	write(t, filepath.Join(s.Paths.StateDir, trialFile), "{")
+	if err := RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots); err == nil || !strings.Contains(err.Error(), "cannot be read") {
+		t.Errorf("a record that cannot be read: %v", err)
+	}
+	check("a record that cannot be read")
+}
+
+// TestRestoreTrialAtBootFailing keeps the record of a trial whose slot cannot be restored, so
+// chalkd rolls the trial back as it starts.
+func TestRestoreTrialAtBootFailing(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
+	s := trialServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	slots := filepath.Dir(slotOf(t, s))
+	// The directory of slots takes no new link.
+	if err := os.Chmod(slots, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(slots, 0o755) })
+	if err := RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots); err == nil || !strings.Contains(err.Error(), "restore config "+rec.Previous) {
+		t.Errorf("err = %v, want the failed restore", err)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != rec.Version {
+		t.Errorf("the node runs %s, want the config on trial", v)
+	}
+	if r, open, err := readTrial(s.Paths.StateDir); err != nil || !open || !r.sameTrial(rec) {
+		t.Errorf("the record is %+v, %v, %v, want it kept", r, open, err)
+	}
+}

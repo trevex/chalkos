@@ -305,3 +305,21 @@ func TestHealthPresentsTheNodeCertificate(t *testing.T) {
 		t.Error("chalkd never saw the node's certificate")
 	}
 }
+
+// A trial's health check leaves out its own units besides the image's, and leaves the image's
+// check as it was.
+func TestHealthCheckIgnoring(t *testing.T) {
+	addr, cert := kubernetestest.ChalkdServing(t)
+	units := tooltest.Rule{Prefix: "systemctl list-dependencies --all --plain --no-legend --no-pager multi-user.target sysinit.target", Out: bootUnits}
+	failed := tooltest.Rule{Prefix: "systemctl list-units --state=failed", Out: "broken.service loaded failed failed Something\nchalkd.service loaded failed failed Something\n"}
+	h := &Health{Run: &tooltest.Runner{Rules: []tooltest.Rule{units, failed}}, Chalkd: addr, NodeCertificate: cert, IgnoreUnits: []string{"chalkd.service"}}
+	if err := h.CheckIgnoring(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "units failed: broken.service") || strings.Contains(err.Error(), "chalkd.service") {
+		t.Errorf("without the trial's units: %v", err)
+	}
+	if err := h.CheckIgnoring(context.Background(), []string{"broken.service"}); err != nil {
+		t.Errorf("with broken.service left out: %v", err)
+	}
+	if len(h.IgnoreUnits) != 1 {
+		t.Errorf("the image's units became %q", h.IgnoreUnits)
+	}
+}

@@ -74,6 +74,14 @@ func (h *Health) Check(ctx context.Context) error {
 	return h.applied(ctx)
 }
 
+// CheckIgnoring is Check with the units given left out besides those the image ignores, as a
+// config's trial names them. h stays as it is.
+func (h *Health) CheckIgnoring(ctx context.Context, ignore []string) error {
+	c := *h
+	c.IgnoreUnits = append(slices.Clone(h.IgnoreUnits), ignore...)
+	return c.Check(ctx)
+}
+
 // chalkdServes checks that chalkd completes a TLS handshake with the node's certificate: the node
 // is reachable and managed. The check presents that certificate too, so chalkd does not log a
 // refused handshake every few seconds.

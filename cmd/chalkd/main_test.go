@@ -289,3 +289,13 @@ func TestLookupFindsLayerCommands(t *testing.T) {
 		}
 	}
 }
+
+// chalkd's unit passes the units the image's health check ignores, which a config's trial
+// ignores too, separated by spaces.
+func TestHealthIgnoreUnits(t *testing.T) {
+	for value, want := range map[string][]string{"": nil, "a.service": {"a.service"}, " a.service  b.service ": {"a.service", "b.service"}} {
+		if got := healthIgnoreUnits(func(string) string { return value }); !slices.Equal(got, want) {
+			t.Errorf("%q: %q, want %q", value, got, want)
+		}
+	}
+}

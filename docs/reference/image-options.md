@@ -174,7 +174,7 @@ Type: list of string · Default: `[ ]` · Declared in: [modules/node/upgrade.nix
 
 Units of the boot whose failure leaves a node without Kubernetes healthy. Only units
 multi-user.target and sysinit.target pull in count; jobs that timers and sockets start
-never do.
+never do. A config's trial ignores them too.
 
 Example: `[ "example-sync.service" ]`
 

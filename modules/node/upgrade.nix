@@ -38,7 +38,7 @@ in
       description = ''
         Units of the boot whose failure leaves a node without Kubernetes healthy. Only units
         multi-user.target and sysinit.target pull in count; jobs that timers and sockets start
-        never do.
+        never do. A config's trial ignores them too.
       '';
     };
   };
@@ -83,6 +83,11 @@ in
         # again, in a loop.
         ExecStopPost = "${lib.getExe chalkd} health --stopped";
       };
+    };
+    # chalkd confirms a config's trial only on a node this check would find healthy, so it ignores
+    # the same units.
+    systemd.services.chalkd.environment = lib.mkIf (cfg.healthIgnoreUnits != [ ]) {
+      CHALKD_HEALTH_IGNORE_UNITS = lib.concatStringsSep " " cfg.healthIgnoreUnits;
     };
 
     system.nixos.extraOSReleaseArgs = {

@@ -442,3 +442,33 @@ func (s *Server) ResumeTrial() {
 		s.settleTrial(r)
 	}
 }
+
+// RestoreTrialAtBoot ends a trial that was open when the node booted, before chalkos-config applies
+// the slot: the slot's previous config, the one from before the trial, becomes its config again,
+// and the config on trial its previous one. Every boot ends a trial, before its deadline or after,
+// so a reset undoes a config that cut the node off. A trial that was never applied or was rolled
+// back leaves the slot as it is. The record goes, also one that cannot be read, but stays when the
+// slot cannot be read or restored: chalkd then settles the trial as it starts.
+func RestoreTrialAtBoot(stateDir, slots string) error {
+	r, open, err := readTrial(stateDir)
+	if err != nil {
+		return errors.Join(err, removeTrial(stateDir))
+	}
+	if !open {
+		return nil
+	}
+	dir, st, err := r.state(slots)
+	if err != nil {
+		return fmt.Errorf("read the config of the trial's slot: %w", err)
+	}
+	switch st {
+	case trialApplied:
+		if err := slot.RestorePrevious(dir); err != nil {
+			return fmt.Errorf("restore config %s from before the trial of config %s: %w", r.Previous, r.Version, err)
+		}
+		log.Printf("the trial of config %s was open at boot; restored config %s", r.Version, r.Previous)
+	case trialLost:
+		log.Printf("the trial of config %s was open at boot, but its slot runs neither it nor config %s", r.Version, r.Previous)
+	}
+	return removeTrial(stateDir)
+}

@@ -43,7 +43,8 @@ const commonUsage = `usage: chalkd <command>
 
 commands:
   serve                            serve the node API
-  load-config                      apply the config recorded on STATE: its identity and documents
+  load-config                      apply the config recorded on STATE: its identity and documents,
+                                   after ending a config's trial that is still open
   health [--wait SECONDS] [--ignore-unit UNIT]...
                                    check whether this boot is healthy; with --wait, check until
                                    it is, and reboot after an unhealthy boot of an image the
@@ -169,7 +170,8 @@ func parseHealthArgs(args []string) (healthArgs, error) {
 }
 
 // loadConfig applies the config recorded on STATE, with the image's layers writing what they
-// derive from it.
+// derive from it. A config's trial that is still open ends first: the slot runs the config from
+// before it again. A trial that cannot be ended is logged, and chalkd settles it as it starts.
 func loadConfig() error {
 	// Only the layers' config is asked for, so the server they are bound to serves nothing.
 	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
@@ -179,6 +181,9 @@ func loadConfig() error {
 	}
 	loader := nodeconfig.Default()
 	loader.Layers = layer.Active[nodeconfig.Layer](reg)
+	if err := chalkd.RestoreTrialAtBoot(node.Paths.StateDir, loader.Slots); err != nil {
+		log.Printf("end the open trial of a config: %v", err)
+	}
 	return loader.Load()
 }
 
@@ -327,6 +332,12 @@ func renewOnApplyConfig(getenv func(string) string) bool {
 	return true
 }
 
+// healthIgnoreUnits are the units whose failure leaves the node healthy, as the image's health
+// check ignores them, which chalkd's unit passes in CHALKD_HEALTH_IGNORE_UNITS separated by spaces.
+func healthIgnoreUnits(getenv func(string) string) []string {
+	return strings.Fields(getenv("CHALKD_HEALTH_IGNORE_UNITS"))
+}
+
 func serve() error {
 	paths := chalkd.DefaultPaths()
 	creds, err := loadCredentials(paths.StateDir, "/etc/chalkos/os-ca.crt", "/run/chalkd", time.Now())
@@ -363,6 +374,15 @@ func serve() error {
 		return err
 	}
 	srv.Loader.Layers = layer.Active[nodeconfig.Layer](srv.Plugins)
+	if creds.mode == nodev1.Mode_MODE_NORMAL {
+		// A config's trial is confirmed only on a node the boot's health check would find
+		// healthy, with the units it ignores.
+		h := chalkd.DefaultHealth(layer.Active[layer.Health](srv.Plugins))
+		h.IgnoreUnits = healthIgnoreUnits(os.Getenv)
+		srv.Healthy = h.CheckIgnoring
+		// A trial recorded before chalkd started gets its deadline again.
+		srv.ResumeTrial()
+	}
 
 	switch {
 	case creds.mode == nodev1.Mode_MODE_NORMAL:

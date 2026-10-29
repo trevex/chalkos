@@ -1809,6 +1809,30 @@ lib.runTests {
       bless = true;
     };
   };
+  # chalkd confirms a config's trial with the boot's health check, so it ignores the units the
+  # image's check ignores; an image that ignores none sets nothing.
+  testHealthIgnoreUnitsReachChalkd = {
+    expr =
+      let
+        environment = c: c.systemd.services.chalkd.environment;
+        ignoring = worker [
+          {
+            chalkos.upgrade.healthIgnoreUnits = [
+              "a.service"
+              "b.service"
+            ];
+          }
+        ];
+      in
+      {
+        units = (environment ignoring).CHALKD_HEALTH_IGNORE_UNITS or null;
+        none = (environment (worker [ ])) ? CHALKD_HEALTH_IGNORE_UNITS;
+      };
+    expected = {
+      units = "a.service b.service";
+      none = false;
+    };
+  };
   # An image has no version: chalkos orders boot entries by generation, so a node image or the
   # installer that sets system.image.version fails to build. The os-release the UKI carries names
   # an empty IMAGE_VERSION, without which systemd-boot would order entries by VERSION. The UKI
