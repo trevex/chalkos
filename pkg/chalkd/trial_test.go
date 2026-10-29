@@ -911,8 +911,8 @@ func TestTrialExpiryFailingPartWay(t *testing.T) {
 
 // TestResumeTrial arms a recorded trial as chalkd starts: one past its deadline rolls back at
 // once; a record a crash left before the slot was written goes once the running config is
-// delivered again. A record that cannot be read stays, and every change is refused until a boot
-// removes it.
+// delivered again. A record that cannot be read stays, and every change is refused until a
+// rollback removes it.
 func TestResumeTrial(t *testing.T) {
 	s := trialServer(t)
 	rec := recordTrial(t, s, nextConfig)
@@ -1419,7 +1419,7 @@ func TestChangesWaitForAnEndedTrialsRollback(t *testing.T) {
 	s.upgrading.Lock()
 	_, err := sendConfig(s, nextConfig)
 	s.upgrading.Unlock()
-	if connect.CodeOf(err) != connect.CodeAborted || !strings.Contains(err.Error(), "the trial of config "+rec.Version+" ended; chalkd finishes its rollback") {
+	if connect.CodeOf(err) != connect.CodeAborted || !strings.Contains(err.Error(), "the trial of config "+rec.Version+" ended, and its record goes once the node delivered config "+rec.Previous+" again") {
 		t.Errorf("err = %v, want the rollback to finish first", err)
 	}
 	if !trialOpenOn(t, s) {

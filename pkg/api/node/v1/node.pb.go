@@ -2676,16 +2676,20 @@ type ConfigTrial struct {
 	PreviousVersion string `protobuf:"bytes,2,opt,name=previous_version,json=previousVersion,proto3" json:"previous_version,omitempty"`
 	// When the node rolls the config back, unless it is confirmed first.
 	Deadline *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=deadline,proto3" json:"deadline,omitempty"`
-	// Why the rollback at the deadline failed, which the node tries again each minute; empty before
-	// the deadline and while none failed. While it is set, ConfirmConfig still confirms the config
-	// and stops the retries, unless rollback_changed is set.
+	// Why the last attempt to roll the config back failed, which the node tries again each minute:
+	// the rollback at the deadline, or a delivery of previous_version, which the node runs already,
+	// that finishes a rollback or a trial whose delivery failed before it wrote the config. Empty
+	// while none failed. While it is set, ConfirmConfig still confirms the config and stops the
+	// retries, unless rollback_changed is set.
 	Error string `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
 	// The units the trial's health check leaves out besides those the image ignores, as
 	// ApplyConfigRequest.ignore_units named them.
 	IgnoreUnits []string `protobuf:"bytes,5,rep,name=ignore_units,json=ignoreUnits,proto3" json:"ignore_units,omitempty"`
-	// Whether a rollback at the deadline failed after it changed the node, as when it wrote the
-	// config and a restart failed after. ConfirmConfig refuses then; the node keeps trying to finish
-	// the rollback each minute, and RollbackConfig to previous_version finishes it at once.
+	// Whether an attempt to roll the config back failed after it changed the node, as when a
+	// rollback at the deadline wrote the config and a restart failed after. A failed delivery of
+	// previous_version that finishes a rollback sets it too. ConfirmConfig refuses then; the node
+	// keeps trying to finish the rollback each minute, and RollbackConfig to previous_version
+	// finishes it at once.
 	RollbackChanged bool `protobuf:"varint,6,opt,name=rollback_changed,json=rollbackChanged,proto3" json:"rollback_changed,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache

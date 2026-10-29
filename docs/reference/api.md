@@ -570,9 +570,9 @@ confirms it first.
 | `version` | string | The version of the config on trial, as StatusResponse.config_version gives it. |
 | `previous_version` | string | The version of the config the node ran before, which the rollback delivers again. |
 | `deadline` | google.protobuf.Timestamp | When the node rolls the config back, unless it is confirmed first. |
-| `error` | string | Why the rollback at the deadline failed, which the node tries again each minute; empty before the deadline and while none failed. While it is set, ConfirmConfig still confirms the config and stops the retries, unless rollback_changed is set. |
+| `error` | string | Why the last attempt to roll the config back failed, which the node tries again each minute: the rollback at the deadline, or a delivery of previous_version, which the node runs already, that finishes a rollback or a trial whose delivery failed before it wrote the config. Empty while none failed. While it is set, ConfirmConfig still confirms the config and stops the retries, unless rollback_changed is set. |
 | `ignore_units` | list of string | The units the trial's health check leaves out besides those the image ignores, as ApplyConfigRequest.ignore_units named them. |
-| `rollback_changed` | bool | Whether a rollback at the deadline failed after it changed the node, as when it wrote the config and a restart failed after. ConfirmConfig refuses then; the node keeps trying to finish the rollback each minute, and RollbackConfig to previous_version finishes it at once. |
+| `rollback_changed` | bool | Whether an attempt to roll the config back failed after it changed the node, as when a rollback at the deadline wrote the config and a restart failed after. A failed delivery of previous_version that finishes a rollback sets it too. ConfirmConfig refuses then; the node keeps trying to finish the rollback each minute, and RollbackConfig to previous_version finishes it at once. |
 
 ### Diagnostic { #message-diagnostic }
 
