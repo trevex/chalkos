@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -76,6 +80,11 @@ func TestApplyConfigOnTrial(t *testing.T) {
 	contains("n1 runs config "+second+" on trial; it rolls back to config "+first+" by itself unless confirmed within 1m0s",
 		"n1: waiting for a new connection and the node's health to confirm config "+second,
 		"n1 keeps config "+second+": the trial is confirmed")
+	// The confirmation came over a connection of its own, not the delivery's.
+	applied, confirmed := ta.remotes("ApplyConfig"), ta.remotes("ConfirmConfig")
+	if len(applied) != 2 || len(confirmed) == 0 || slices.Contains(applied, confirmed[len(confirmed)-1]) {
+		t.Errorf("deliveries from %q, confirmations from %q", applied, confirmed)
+	}
 	if err := run("apply-config", "n1", "--try", "1m"); err == nil || !strings.Contains(err.Error(), "n1 runs config "+second+" already; --try needs a config that changes it") {
 		t.Errorf("--try with the running config: %v", err)
 	}
@@ -154,6 +163,133 @@ func TestApplyConfigOnTrialUnconfirmed(t *testing.T) {
 	}
 }
 
+// holdAnswer has the node carry out each request for the procedure, then drop the connection
+// without an answer, as a config that cuts chalkctl off does, or answer only after delay.
+func holdAnswer(procedure string, delay time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasSuffix(r.URL.Path, "/"+procedure) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			rec := httptest.NewRecorder()
+			next.ServeHTTP(rec, r.WithContext(context.WithoutCancel(r.Context())))
+			if delay == 0 {
+				panic(http.ErrAbortHandler)
+			}
+			time.Sleep(delay)
+			maps.Copy(w.Header(), rec.Header())
+			w.WriteHeader(rec.Code)
+			w.Write(rec.Body.Bytes())
+		})
+	}
+}
+
+// refuse has the node refuse each request for the procedure with err.
+func refuse(procedure string, err *connect.Error) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasSuffix(r.URL.Path, "/"+procedure) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			connect.NewErrorWriter().Write(w, r, err)
+		})
+	}
+}
+
+// trialNode serves n1, which runs the inventory's config, lets --try take a second, and has the
+// inventory give n1 a second config. It returns the node, a run of chalkctl against it, and the
+// versions of the first config and the second.
+func trialNode(t *testing.T, ta *testApp) (s *chalkd.Server, run func(ctx context.Context, args ...string) error, first, second string) {
+	t.Helper()
+	m := minTrial
+	t.Cleanup(func() { minTrial = m })
+	minTrial = time.Second
+	ta.pollInterval = 20 * time.Millisecond
+	s, _ = installedNode(t, ta, []byte(`{}`))
+	addr := ta.startNode(t, s)
+	run = func(ctx context.Context, args ...string) error {
+		ta.stdout.Reset()
+		return ta.run(ctx, ta.args(args, addr))
+	}
+	if err := run(context.Background(), "apply-config", "n1"); err != nil {
+		t.Fatal(err)
+	}
+	first = ta.configVersion(t)
+	ta.writeNode(t, n1SystemDisk, n1Network, timeSync("ntp.lan"))
+	return s, run, first, ta.configVersion(t)
+}
+
+// TestApplyConfigOnTrialAnswerLost: a delivery on trial whose answer never comes, as when the
+// config cuts chalkctl off, or comes only after the deadline, is not confirmed; chalkctl waits for
+// the node to roll it back at the deadline, says so and fails.
+func TestApplyConfigOnTrialAnswerLost(t *testing.T) {
+	for name, delay := range map[string]time.Duration{"dropped": 0, "late": 2 * time.Second} {
+		t.Run(name, func(t *testing.T) {
+			ta := newTestApp(t)
+			s, run, first, second := trialNode(t, ta)
+			ta.setWrap(holdAnswer("ApplyConfig", delay))
+			err := run(context.Background(), "apply-config", "n1", "--try", "1s")
+			if err == nil || !strings.Contains(err.Error(), "n1: the answer to the delivery on trial was lost: ") {
+				t.Fatalf("a delivery on trial whose answer was lost = %v\n%s", err, ta.stdout)
+			}
+			if strings.Contains(err.Error(), "failed_precondition") || strings.Contains(ta.stdout.String(), "waiting") {
+				t.Errorf("chalkctl tried to confirm config %s: %v\n%s", second, err, ta.stdout)
+			}
+			if want := "n1 rolled back to config " + first + " at the trial's deadline"; !strings.Contains(ta.stdout.String(), want) {
+				t.Errorf("output lacks %q:\n%s", want, ta.stdout)
+			}
+			if v, _ := slot.Version(slotOf(t, s)); v != first {
+				t.Errorf("the node runs %s, want %s", v, first)
+			}
+		})
+	}
+}
+
+// TestConfirmAnswerLate: a confirmation the node carried out, whose answer came after chalkctl
+// stopped waiting at the deadline, is found in the node's status and reported as confirmed.
+func TestConfirmAnswerLate(t *testing.T) {
+	ta := newTestApp(t)
+	s, run, _, second := trialNode(t, ta)
+	ta.setWrap(holdAnswer("ConfirmConfig", 2*time.Second))
+	if err := run(context.Background(), "apply-config", "n1", "--try", "1s"); err != nil {
+		t.Fatalf("%v\n%s", err, ta.stdout)
+	}
+	if want := "n1 keeps config " + second + ": the trial is confirmed"; !strings.Contains(ta.stdout.String(), want) {
+		t.Errorf("output lacks %q:\n%s", want, ta.stdout)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != second {
+		t.Errorf("the node runs %s, want %s", v, second)
+	}
+}
+
+// TestConfirmInterrupted: chalkctl stopped while it waits to confirm leaves the trial open, and
+// says until when and how to end it.
+func TestConfirmInterrupted(t *testing.T) {
+	ta := newTestApp(t)
+	_, run, _, second := trialNode(t, ta)
+	ta.setWrap(refuse("ConfirmConfig", connect.NewError(connect.CodeUnavailable, errors.New("the node is not healthy: units failed: demo.service"))))
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	err := run(ctx, "apply-config", "n1", "--try", "1m")
+	if err == nil || !strings.Contains(err.Error(), "; n1 runs config "+second+" on trial until ") || !strings.Contains(err.Error(), "; chalkctl apply-config --confirm n1 keeps it; chalkctl apply-config --rollback n1 rolls it back now") {
+		t.Errorf("an interrupted confirmation = %v\n%s", err, ta.stdout)
+	}
+}
+
+// TestConfirmRefused: a confirmation the node refuses for good before the deadline ends the
+// attempts, and chalkctl says when the node rolls back and how to end the trial before.
+func TestConfirmRefused(t *testing.T) {
+	ta := newTestApp(t)
+	_, run, _, _ := trialNode(t, ta)
+	ta.setWrap(refuse("ConfirmConfig", connect.NewError(connect.CodeFailedPrecondition, errors.New("the trial is of config x, not y"))))
+	err := run(context.Background(), "apply-config", "n1", "--try", "1m")
+	if err == nil || !strings.Contains(err.Error(), "the trial is of config x, not y; it rolls back at ") || !strings.Contains(err.Error(), " unless confirmed; chalkctl apply-config --confirm n1 keeps it; chalkctl apply-config --rollback n1 rolls it back now") {
+		t.Errorf("a refused confirmation = %v\n%s", err, ta.stdout)
+	}
+}
+
 // TestConfirmAfterAFailedRollback confirms a trial past its deadline whose rollback failed and is
 // tried again, which the node still lets a confirmation end, within a window of chalkctl's own;
 // once a failed rollback changed the node, the node refuses, and chalkctl says nothing rolled back.
@@ -177,7 +313,7 @@ func TestConfirmAfterAFailedRollback(t *testing.T) {
 	// The armed deadline is of the record as written, so it leaves the rewritten one alone.
 	past := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)
 	rewriteTrial(t, s, map[string]any{"deadline": past, "error": "output demo failed", "attempts": 1})
-	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "; the rollback at the deadline failed and is tried again each minute: output demo failed") {
+	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "; an attempt to roll the config back failed and is tried again each minute: output demo failed") {
 		t.Errorf("status = %v:\n%s", err, ta.stdout)
 	}
 	if err := run("apply-config", "n1", "--confirm"); err != nil {
@@ -192,7 +328,7 @@ func TestConfirmAfterAFailedRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	rewriteTrial(t, s, map[string]any{"deadline": past, "error": "restart demo.service failed", "attempts": 1, "changed": true})
-	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "; the rollback at the deadline failed after it changed the node and is tried again each minute: restart demo.service failed; apply-config --confirm no longer keeps the config, and apply-config --rollback finishes the rollback now") {
+	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "; an attempt to roll the config back failed after it changed the node and is tried again each minute: restart demo.service failed; apply-config --confirm no longer keeps the config, and apply-config --rollback finishes the rollback now") {
 		t.Errorf("status = %v:\n%s", err, ta.stdout)
 	}
 	err := run("apply-config", "n1", "--confirm")
@@ -286,9 +422,9 @@ func TestApplyConfigTrialUsage(t *testing.T) {
 		{[]string{"--try", "1m", "--staged"}, "--try applies config to the running image; --staged goes without it"},
 		{[]string{"--try", "1m", "--diff"}, "--diff changes nothing, so it tries nothing; drop --try"},
 		{[]string{"--try", "1m", "--kubernetes-share"}, "--try delivers config alone, which a rollback undoes"},
-		{[]string{"--rollback", "--try", "1m"}, "--rollback goes without --try, --no-confirm, --ignore-unit and --confirm"},
-		{[]string{"--rollback", "--no-confirm"}, "--rollback goes without --try, --no-confirm, --ignore-unit and --confirm"},
-		{[]string{"--rollback", "--ignore-unit", "late.service"}, "--rollback goes without --try, --no-confirm, --ignore-unit and --confirm"},
+		{[]string{"--rollback", "--try", "1m"}, "--rollback goes without --try, --no-confirm and --ignore-unit"},
+		{[]string{"--rollback", "--no-confirm"}, "--rollback goes without --try, --no-confirm and --ignore-unit"},
+		{[]string{"--rollback", "--ignore-unit", "late.service"}, "--rollback goes without --try, --no-confirm and --ignore-unit"},
 		{[]string{"--ignore-unit", "late.service"}, "--ignore-unit goes with --try"},
 		{[]string{"--confirm", "--ignore-unit", "late.service"}, "--confirm confirms the node's open trial"},
 		{[]string{"--confirm", "--rollback"}, "--confirm confirms the node's open trial and takes no other apply-config flag but the node's"},
@@ -311,11 +447,11 @@ func TestTrialLine(t *testing.T) {
 		t.Errorf("with ignored units: %q", got)
 	}
 	tr.Error = "output demo failed"
-	if got := trialLine(tr); !strings.HasSuffix(got, "; the rollback at the deadline failed and is tried again each minute: output demo failed") {
+	if got := trialLine(tr); !strings.HasSuffix(got, "; an attempt to roll the config back failed and is tried again each minute: output demo failed") {
 		t.Errorf("with an error: %q", got)
 	}
 	tr.RollbackChanged = true
-	if got := trialLine(tr); !strings.HasSuffix(got, "; the rollback at the deadline failed after it changed the node and is tried again each minute: output demo failed; apply-config --confirm no longer keeps the config, and apply-config --rollback finishes the rollback now") {
+	if got := trialLine(tr); !strings.HasSuffix(got, "; an attempt to roll the config back failed after it changed the node and is tried again each minute: output demo failed; apply-config --confirm no longer keeps the config, and apply-config --rollback finishes the rollback now") {
 		t.Errorf("with a rollback that changed the node: %q", got)
 	}
 }

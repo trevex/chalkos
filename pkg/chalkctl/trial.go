@@ -29,20 +29,21 @@ var trialEnd = 2 * time.Minute
 // config previous. Each attempt dials a new connection, so a confirmation proves that a client
 // still reaches the node after the delivery, and the node confirms only once it finds itself
 // healthy. Attempts end at deadline, chalkctl's reckoning of the node's own, which falls after
-// it, and a trial not confirmed by then is waited for: the node rolls it back by itself. A
-// deadline that passed already is of a trial whose rollback at the deadline failed, which the
-// node still lets a confirmation end: its attempts end after trialEnd, and nothing rolls back
-// when they fail. An answer that asking again does not change ends the attempts at once.
-func (a *app) confirmTrial(ctx context.Context, t *target, version, previous string, deadline time.Time) error {
-	late := !time.Now().Before(deadline)
+// it, and a trial not confirmed by then is waited for: the node rolls it back by itself. late
+// tells that the deadline passed already, as for a trial whose rollback at the deadline failed,
+// which the node still lets a confirmation end: its attempts end after trialEnd, and nothing
+// rolls back when they fail. An answer that asking again does not change ends the attempts at
+// once.
+func (a *app) confirmTrial(ctx context.Context, t *target, version, previous string, deadline time.Time, late bool) error {
+	until := deadline
 	if late {
-		deadline = time.Now().Add(trialEnd)
+		until = a.now().Add(trialEnd)
 	}
 	fmt.Fprintf(a.stdout, "%s: waiting for a new connection and the node's health to confirm config %s\n", t.name, version)
 	var last error
 	permanent := false
-	err := layer.WaitFor(ctx, "", time.Until(deadline), a.poll(), func() error {
-		err := confirmOnce(ctx, t, version, deadline)
+	err := layer.WaitFor(ctx, "", until.Sub(a.now()), a.poll(), func() error {
+		err := confirmOnce(ctx, t, version, until.Sub(a.now()))
 		// An attempt the deadline cut short says less than the one before it.
 		if err != nil && (last == nil || connect.CodeOf(err) != connect.CodeDeadlineExceeded) {
 			last = err
@@ -57,23 +58,29 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 		}
 		return err
 	})
-	if err == nil {
+	switch {
+	case err == nil:
 		fmt.Fprintf(a.stdout, "%s keeps config %s: the trial is confirmed\n", t.name, version)
 		return nil
-	}
-	if ctx.Err() != nil {
-		return err
+	// Interrupted, chalkctl leaves the trial open.
+	case ctx.Err() != nil && late:
+		return fmt.Errorf("%w; %s runs config %s on trial; %s", err, t.name, version, endTrialHint(t.name))
+	case ctx.Err() != nil:
+		return fmt.Errorf("%w; %s runs config %s on trial until %s; %s", err, t.name, version, deadline.UTC().Format(time.RFC3339), endTrialHint(t.name))
 	}
 	failure := fmt.Errorf("%s: config %s was not confirmed within its trial: %w", t.name, version, cmp.Or(last, err))
-	if late || permanent {
+	switch {
+	case late:
 		return failure
+	case permanent:
+		return fmt.Errorf("%w; it rolls back at %s unless confirmed; %s", failure, deadline.UTC().Format(time.RFC3339), endTrialHint(t.name))
 	}
-	return a.trialRolledBack(ctx, t, previous, failure)
+	return a.trialRolledBack(ctx, t, version, previous, deadline, failure)
 }
 
-// confirmOnce asks the node to confirm the trial over a new connection, until the deadline.
-func confirmOnce(ctx context.Context, t *target, version string, deadline time.Time) error {
-	ctx, cancel := context.WithDeadline(ctx, deadline)
+// confirmOnce asks the node to confirm the trial over a new connection, for at most timeout.
+func confirmOnce(ctx context.Context, t *target, version string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	conn, err := dialInstalled(t)
 	if err != nil {
@@ -84,11 +91,16 @@ func confirmOnce(ctx context.Context, t *target, version string, deadline time.T
 	return nodeError(err, t.name)
 }
 
-// trialRolledBack waits, over new connections, for the node to end the trial that chalkctl could
-// not confirm for failure, says how it ended, and returns failure.
-func (a *app) trialRolledBack(ctx context.Context, t *target, previous string, failure error) error {
+// trialRolledBack waits, over new connections, until trialEnd after the deadline, for the node to
+// end the trial of config version that chalkctl could not confirm for failure, says how it ended,
+// and returns failure. A node that kept the config, as when a confirmation went through but its
+// answer came too late, ends it confirmed, without an error.
+func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous string, deadline time.Time, failure error) error {
+	until := deadline.Add(trialEnd)
 	var st *nodev1.StatusResponse
-	err := layer.WaitFor(ctx, "", trialEnd, a.poll(), func() error {
+	err := layer.WaitFor(ctx, "", until.Sub(a.now()), a.poll(), func() error {
+		ctx, cancel := context.WithTimeout(ctx, until.Sub(a.now()))
+		defer cancel()
 		conn, err := dialInstalled(t)
 		if err != nil {
 			return err
@@ -100,7 +112,7 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, previous string, f
 		}
 		if tr := resp.Msg.Trial; tr != nil {
 			if tr.Error != "" {
-				return fmt.Errorf("its trial of config %s is still open: the rollback at the deadline failed: %s", tr.Version, tr.Error)
+				return fmt.Errorf("its trial of config %s is still open: an attempt to roll the config back failed: %s", tr.Version, tr.Error)
 			}
 			return fmt.Errorf("its trial of config %s is still open", tr.Version)
 		}
@@ -110,6 +122,11 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, previous string, f
 	switch {
 	case err != nil:
 		return fmt.Errorf("%w; the node did not answer after the deadline either: %v; chalkctl status %s shows where it stands", failure, err, t.name)
+	case st.ConfigVersion == version:
+		fmt.Fprintf(a.stdout, "%s keeps config %s: the trial is confirmed\n", t.name, version)
+		return nil
+	case st.ConfigVersion == previous && a.now().Before(deadline):
+		fmt.Fprintf(a.stdout, "%s runs config %s from before the trial\n", t.name, previous)
 	case st.ConfigVersion == previous:
 		fmt.Fprintf(a.stdout, "%s rolled back to config %s at the trial's deadline\n", t.name, previous)
 	default:
@@ -143,7 +160,8 @@ func (a *app) confirmConfig(ctx context.Context, f applyConfigFlags, name string
 	if tr == nil {
 		return fmt.Errorf("%s has no open trial to confirm; it runs config %s", t.name, cmp.Or(resp.Msg.ConfigVersion, "none"))
 	}
-	return a.confirmTrial(ctx, t, tr.Version, tr.PreviousVersion, tr.Deadline.AsTime())
+	deadline := tr.Deadline.AsTime()
+	return a.confirmTrial(ctx, t, tr.Version, tr.PreviousVersion, deadline, !a.now().Before(deadline))
 }
 
 // trialOpen refuses a change to a node whose status shows a config on trial, which the node
@@ -167,10 +185,10 @@ func trialLine(tr *nodev1.ConfigTrial) string {
 	}
 	switch {
 	case tr.Error != "" && tr.RollbackChanged:
-		line += "; the rollback at the deadline failed after it changed the node and is tried again each minute: " + tr.Error +
+		line += "; an attempt to roll the config back failed after it changed the node and is tried again each minute: " + tr.Error +
 			"; apply-config --confirm no longer keeps the config, and apply-config --rollback finishes the rollback now"
 	case tr.Error != "":
-		line += "; the rollback at the deadline failed and is tried again each minute: " + tr.Error
+		line += "; an attempt to roll the config back failed and is tried again each minute: " + tr.Error
 	}
 	return line
 }

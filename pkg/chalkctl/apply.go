@@ -218,15 +218,20 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		payloads = append(payloads, p...)
 	}
 	req := &nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, Layers: payloads, Staged: f.staged}
-	// chalkctl's deadline starts before the node's, so it falls before it.
-	deadline := time.Now().Add(f.try)
+	// chalkctl's deadline starts before the node's, so it falls before it. An answer that comes
+	// after it is of no use: the node may have rolled the config back by then.
+	deadline := a.now().Add(f.try)
+	applyCtx := ctx
 	if f.try > 0 {
 		req.Try, req.IgnoreUnits = durationpb.New(f.try), f.ignoreUnits
+		var cancel context.CancelFunc
+		applyCtx, cancel = context.WithTimeout(ctx, f.try)
+		defer cancel()
 	}
-	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(req))
+	resp, err := conn.ApplyConfig(applyCtx, connect.NewRequest(req))
 	if err != nil {
 		if f.try > 0 {
-			return failedTrial(ctx, conn, t.name, d.Version, nodeError(err, t.name))
+			return a.failedTrial(ctx, conn, t, d.Version, st.Msg.ConfigVersion, deadline, err)
 		}
 		return nodeError(err, t.name)
 	}
@@ -253,17 +258,35 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	// The delivery's connection survives what the config changes, as established connections do
 	// through a firewall; only a new one proves the node reachable.
 	conn.Close()
-	return a.confirmTrial(ctx, t, d.Version, st.Msg.ConfigVersion, deadline)
+	return a.confirmTrial(ctx, t, d.Version, st.Msg.ConfigVersion, deadline, false)
 }
 
-// failedTrial returns err, which failed the delivery of config version on trial. A delivery that
-// failed after it changed the config leaves the config on trial until its deadline, as err says;
-// chalkctl then does not confirm a config that failed to apply, and names the commands that end
-// the trial.
-func failedTrial(ctx context.Context, conn *client.Conn, name, version string, err error) error {
+// failedTrial returns err, which failed the delivery of config version on trial, which would
+// replace config previous until deadline. A delivery the node refused after it changed the config
+// leaves the config on trial until its deadline, as err says; chalkctl then does not confirm a
+// config that failed to apply, and names the commands that end the trial. The node's status is
+// read on conn, or on a new connection when conn fails. An answer that did not come, as when the
+// config cut the connection off or the node answered after the deadline, may be of a config the
+// node applied: chalkctl does not confirm it either, and waits for the node to end the trial, as
+// after a confirmation that did not go through.
+func (a *app) failedTrial(ctx context.Context, conn *client.Conn, t *target, version, previous string, deadline time.Time, err error) error {
+	switch {
+	case ctx.Err() != nil:
+		return fmt.Errorf("%w; %s may run config %s on trial until %s; %s", err, t.name, version, deadline.UTC().Format(time.RFC3339), endTrialHint(t.name))
+	case !connect.IsWireError(err):
+		conn.Close()
+		return a.trialRolledBack(ctx, t, version, previous, deadline, fmt.Errorf("%s: the answer to the delivery on trial was lost: %w", t.name, err))
+	}
+	err = nodeError(err, t.name)
 	st, serr := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	if serr != nil {
+		if c, derr := dialInstalled(t); derr == nil {
+			st, serr = c.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			c.Close()
+		}
+	}
 	if serr == nil && st.Msg.Trial.GetVersion() == version {
-		return fmt.Errorf("%w; %s", err, endTrialHint(name))
+		return fmt.Errorf("%w; %s", err, endTrialHint(t.name))
 	}
 	return err
 }
@@ -282,7 +305,7 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	case f.force || f.payloads():
 		return cli.Usagef("--rollback restores config alone; deliver %s without it", f.payloadFlags)
 	case f.try != 0 || f.noConfirm || len(f.ignoreUnits) > 0:
-		return cli.Usagef("--rollback goes without --try, --no-confirm, --ignore-unit and --confirm")
+		return cli.Usagef("--rollback goes without --try, --no-confirm and --ignore-unit")
 	case f.passwordFile != "":
 		return cli.Usagef("--rollback adds no volume, so it takes no --password-file")
 	}

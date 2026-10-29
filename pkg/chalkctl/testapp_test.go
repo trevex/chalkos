@@ -49,6 +49,26 @@ type testApp struct {
 	// prompts records what chalkctl asked on the terminal; answers are given in order.
 	prompts []string
 	answers []string
+	// wrap, when set, wraps the handler of the nodes startNode serves for each request, as a
+	// network between chalkctl and the node would change the answers. requests are the addresses
+	// the requests came from, by their procedure. mu guards both.
+	mu       sync.Mutex
+	wrap     func(http.Handler) http.Handler
+	requests map[string][]string
+}
+
+// setWrap has the nodes startNode serves wrap their handler with wrap from now on.
+func (ta *testApp) setWrap(wrap func(http.Handler) http.Handler) {
+	ta.mu.Lock()
+	defer ta.mu.Unlock()
+	ta.wrap = wrap
+}
+
+// remotes are the addresses the requests for the procedure came from, one per request, in order.
+func (ta *testApp) remotes(procedure string) []string {
+	ta.mu.Lock()
+	defer ta.mu.Unlock()
+	return slices.Clone(ta.requests[procedure])
 }
 
 func newTestApp(t *testing.T) *testApp {
@@ -182,7 +202,23 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
 	s.ClientCAs = chalkd.StaticCAs(pool)
-	return serveTLS(t, s.Handler(), chalkd.TLSConfig(chalkd.StaticCertificate(&pair), s.ClientCAs))
+	h := s.Handler()
+	record := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		procedure := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		ta.mu.Lock()
+		if ta.requests == nil {
+			ta.requests = map[string][]string{}
+		}
+		ta.requests[procedure] = append(ta.requests[procedure], r.RemoteAddr)
+		wrap := ta.wrap
+		ta.mu.Unlock()
+		if wrap != nil {
+			wrap(h).ServeHTTP(w, r)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+	return serveTLS(t, record, chalkd.TLSConfig(chalkd.StaticCertificate(&pair), s.ClientCAs))
 }
 
 // serveTLS serves h with the configuration as chalkd does, and returns the address. httptest's
