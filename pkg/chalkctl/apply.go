@@ -336,6 +336,12 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 			replaced = tr.Version
 		}
 	}
+	// A trial whose record the node cannot read names no config from before it, so the rollback
+	// goes to the previous config, which a rollback at the trial's deadline may have made the config
+	// on trial.
+	if e := st.Msg.TrialError; e != "" && version != "" {
+		fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the rollback delivers config %s, the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already\n", t.name, e, version)
+	}
 	if version == "" {
 		return fmt.Errorf("%s keeps no previous config of the image it runs; it keeps one once apply-config replaced the config the image was installed or upgraded with", t.name)
 	}

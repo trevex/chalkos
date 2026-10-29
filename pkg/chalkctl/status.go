@@ -51,6 +51,9 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	if s.Trial != nil {
 		fmt.Fprintln(a.stdout, trialLine(s.Trial))
 	}
+	if s.TrialError != "" {
+		fmt.Fprintf(a.stdout, "the record of a config's trial cannot be read: %s; other changes are refused until apply-config --rollback restores the previous config\n", s.TrialError)
+	}
 	if s.PreviousConfigVersion != "" {
 		fmt.Fprintf(a.stdout, "previous config %s (apply-config --rollback restores it)\n", s.PreviousConfigVersion)
 	}

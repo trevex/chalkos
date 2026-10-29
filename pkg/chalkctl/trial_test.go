@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -290,6 +291,37 @@ func TestConfirmRefused(t *testing.T) {
 	}
 }
 
+// TestUnreadableTrialRecord: a trial whose record the node cannot read shows in status, holds back
+// deliveries, and --rollback warns which config it delivers, which ends it.
+func TestUnreadableTrialRecord(t *testing.T) {
+	ta := newTestApp(t)
+	s, run, first, _ := trialNode(t, ta)
+	if err := run(context.Background(), "apply-config", "n1", "--try", "1m", "--no-confirm"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", "trial"), "{")
+	if err := run(context.Background(), "status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "\nthe record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; other changes are refused until apply-config --rollback restores the previous config\n") {
+		t.Errorf("status = %v:\n%s", err, ta.stdout)
+	}
+	ta.writeNode(t, n1SystemDisk, n1Network, timeSync("ntp2.lan"))
+	if err := run(context.Background(), "apply-config", "n1"); err == nil || !strings.Contains(err.Error(), "n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; other changes are refused until chalkctl apply-config --rollback n1 restores the previous config") {
+		t.Errorf("a delivery past a record that cannot be read: %v", err)
+	}
+	ta.stderr.Reset()
+	if err := run(context.Background(), "apply-config", "n1", "--rollback"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "chalkctl: warning: n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; the rollback delivers config " + first + ", the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already"; !strings.Contains(ta.stderr.String(), want) {
+		t.Errorf("stderr lacks %q:\n%s", want, ta.stderr)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != first {
+		t.Errorf("the node runs %s, want %s", v, first)
+	}
+	if err := run(context.Background(), "status", "n1"); err != nil || strings.Contains(ta.stdout.String(), "trial") {
+		t.Errorf("status after the rollback = %v:\n%s", err, ta.stdout)
+	}
+}
+
 // TestConfirmAfterAFailedRollback confirms a trial past its deadline whose rollback failed and is
 // tried again, which the node still lets a confirmation end, within a window of chalkctl's own;
 // once a failed rollback changed the node, the node refuses, and chalkctl says nothing rolled back.
@@ -514,5 +546,25 @@ func TestApplyConfigOnTrialIgnoresUnits(t *testing.T) {
 	// The trial's health check cannot pass: it ends with a rollback on request.
 	if err := run("apply-config", "n1", "--rollback"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestTrialOpen refuses a change to a node with an open trial or a trial record it cannot read,
+// but not to one that runs the config from before its trial again, which the node finishes.
+func TestTrialOpen(t *testing.T) {
+	tr := &nodev1.ConfigTrial{Version: "v2", PreviousVersion: "v1", Deadline: timestamppb.New(time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC))}
+	for _, tc := range []struct {
+		st   *nodev1.StatusResponse
+		want string
+	}{
+		{&nodev1.StatusResponse{ConfigVersion: "v1"}, ""},
+		{&nodev1.StatusResponse{ConfigVersion: "v2", Trial: tr}, "n1 runs config v2 on trial until 2026-10-29T12:00:00Z; confirm it with chalkctl apply-config --confirm n1, or roll it back with chalkctl apply-config --rollback n1, first"},
+		{&nodev1.StatusResponse{ConfigVersion: "v1", Trial: tr}, ""},
+		{&nodev1.StatusResponse{ConfigVersion: "v2", TrialError: "parse the trial record: unexpected EOF"}, "n1: the record of a config's trial cannot be read: parse the trial record: unexpected EOF; other changes are refused until chalkctl apply-config --rollback n1 restores the previous config"},
+	} {
+		err := trialOpen("n1", tc.st)
+		if got := fmt.Sprint(err); tc.want == "" && err != nil || tc.want != "" && got != tc.want {
+			t.Errorf("%v: %v, want %q", tc.st, err, tc.want)
+		}
 	}
 }

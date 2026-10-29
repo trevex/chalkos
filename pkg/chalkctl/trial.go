@@ -167,8 +167,12 @@ func (a *app) confirmConfig(ctx context.Context, f applyConfigFlags, name string
 // trialOpen refuses a change to a node whose status shows a config on trial, which the node
 // refuses until the trial ends. A trial whose node runs the config from before it again, as a
 // rollback at the deadline that failed after it wrote the config leaves it, holds nothing back:
-// the node finishes that rollback before the change.
+// the node finishes that rollback before the change. A trial whose record the node cannot read
+// holds back every change but a rollback.
 func trialOpen(name string, st *nodev1.StatusResponse) error {
+	if e := st.GetTrialError(); e != "" {
+		return fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl apply-config --rollback %s restores the previous config", name, e, name)
+	}
 	tr := st.GetTrial()
 	if tr == nil || st.GetConfigVersion() == tr.PreviousVersion {
 		return nil
