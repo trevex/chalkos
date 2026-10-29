@@ -290,6 +290,8 @@ func misnamed(e esp.Entry, imageID string) error {
 //     running image stays the next boot. The error is a StagedRetiredError, which holds a
 //     CheckError when CheckStore refused the image.
 //   - when the retirement fails too, the staged image still boots next, and the error says so.
+//   - while the running image's boot has not been found healthy, nothing is retired: the staged
+//     image is the one the node falls back to.
 func (n *Node) recheck(ctx context.Context, h Header, slot storeslot.Slot, staged esp.Entry, all []esp.Entry, booted esp.Entry, running []byte) error {
 	if n.CheckStore == nil {
 		return nil
@@ -299,6 +301,11 @@ func (n *Node) recheck(ctx context.Context, h Header, slot storeslot.Slot, stage
 	err := n.checkStore(ctx, h, slot, filepath.Join(n.ESP, esp.LinuxDir, staged.File))
 	if err == nil {
 		return nil
+	}
+	// Until the running image's boot is found healthy, the staged image, which a rollback left, is
+	// the one the node falls back to, so it stays.
+	if booted.TriesLeft >= 0 {
+		return err
 	}
 	if rerr := n.retire(ctx, all, h.ImageID, booted, running, slot); rerr != nil {
 		return errors.Join(err, fmt.Errorf("retire the staged image, which still boots next: %w", rerr))

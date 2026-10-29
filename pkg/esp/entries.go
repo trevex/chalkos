@@ -90,8 +90,9 @@ func NextGeneration(entries []Entry, imageID string) (uint64, error) {
 }
 
 // StagedEntry is the image's entry that boots next instead of the booted one: the highest
-// generation any name gives, while its UKI is of the image and has tries left. false when that is
-// the booted entry or none has tries.
+// generation any name gives, while its UKI is of the image and its tries are not used up. It
+// counts tries after an upgrade, and not after a rollback from a boot that was not found healthy.
+// false when that is the booted entry or a bad one.
 func StagedEntry(entries []Entry, imageID string, booted Entry) (Entry, bool) {
 	var highest Entry
 	var generation uint64
@@ -111,7 +112,7 @@ func StagedEntry(entries []Entry, imageID string, booted Entry) (Entry, bool) {
 	}
 	// Of two names that give the highest generation, such as chalkos_06+3.efi and chalkos_6+3.efi,
 	// systemd-boot's order does not tell which boots next.
-	if generation == 0 || tied || highest.ImageID != imageID || highest.ID == booted.ID || highest.TriesLeft <= 0 {
+	if generation == 0 || tied || highest.ImageID != imageID || highest.ID == booted.ID || highest.Bad() {
 		return Entry{}, false
 	}
 	return highest, true

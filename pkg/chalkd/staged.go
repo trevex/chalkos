@@ -44,7 +44,7 @@ func (s *Server) stagedImage() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	e, ok := upgrade.Staged(entries, readOSRelease(s.Paths.OSRelease)["IMAGE_ID"], booted)
+	e, ok := esp.StagedEntry(entries, readOSRelease(s.Paths.OSRelease)["IMAGE_ID"], booted)
 	if !ok {
 		return nil, nil
 	}

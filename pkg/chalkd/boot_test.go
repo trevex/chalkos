@@ -44,6 +44,12 @@ func TestStatusReportsTheBoot(t *testing.T) {
 			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2+2-1.efi"}},
 		{"staged", []string{"chalkos_2.efi", "chalkos_3+3.efi"}, nil, "",
 			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true, Staged: &nodev1.BootImage{RootHash: next, Generation: 3}}},
+		// A rollback before the boot was found healthy stages the image before without tries; once
+		// that image boots, the image it rolled back from is counted below it and boots no more.
+		{"a rollback staged uncounted", []string{"chalkos_2+2-1.efi", "chalkos_3.efi"}, nil, "",
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2+2-1.efi", Staged: &nodev1.BootImage{RootHash: next, Generation: 3}}},
+		{"rolled back uncounted", []string{"chalkos_1+1-1.efi", "chalkos_2.efi"}, nil, "",
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true}},
 		{"rolled back", []string{"chalkos_2.efi", "chalkos_3+0-3.efi"}, nil, header + journal,
 			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true, Failed: &nodev1.BootImage{RootHash: next, Generation: 3}, Journal: strings.Split(strings.TrimSpace(journal), "\n")}},
 		{"rolled back, recorded for another generation", []string{"chalkos_2.efi", "chalkos_3+0-3.efi"}, nil, "usrhash=" + strings.Repeat("33", 32) + " generation=1\n" + journal,

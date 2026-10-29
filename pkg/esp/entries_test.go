@@ -78,7 +78,7 @@ func TestNextGeneration(t *testing.T) {
 }
 
 // TestStagedEntry finds the entry that boots next: the image's highest generation, not the
-// booted entry, with tries left.
+// booted entry, and not bad, counted or not, as a rollback from a boot not found healthy leaves it.
 func TestStagedEntry(t *testing.T) {
 	entry := func(file string, generation uint64, left int) Entry {
 		id, _, _ := parseEntryName(file)
@@ -94,7 +94,7 @@ func TestStagedEntry(t *testing.T) {
 		{"counted once", []Entry{booted, entry("chalkos_3+2-1.efi", 3, 2)}, "chalkos_3+2-1.efi"},
 		{"its tries used up", []Entry{booted, entry("chalkos_3+0-3.efi", 3, 0)}, ""},
 		{"the booted entry the highest", []Entry{entry("chalkos_1.efi", 1, -1), booted}, ""},
-		{"a blessed entry above the booted one", []Entry{booted, entry("chalkos_3.efi", 3, -1)}, ""},
+		{"an uncounted entry above the booted one", []Entry{booted, entry("chalkos_3.efi", 3, -1)}, "chalkos_3.efi"},
 		{"another image's above", []Entry{booted, {File: "rescue_9+3.efi", ID: "rescue_9.efi", ImageID: "rescue", Generation: 9, TriesLeft: 3}}, ""},
 		// systemd-boot boots an entry whose name is higher first, whatever its UKI holds.
 		{"an unreadable UKI above", []Entry{booted, entry("chalkos_3+3.efi", 3, 3), {File: "chalkos_4.efi", ID: "chalkos_4.efi", TriesLeft: -1}}, ""},
