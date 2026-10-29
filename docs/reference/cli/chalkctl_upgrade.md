@@ -23,7 +23,18 @@ Delivering config needs the admin role: with an operator client file, each node 
 config over. A new volume is enrolled with the recovery key, which only the secrets file gives, or
 the password --password-file holds.
 
-Run again, the command continues where it stopped, and --retry-failed installs the image once more
+--rollback boots the image the nodes ran before their last upgrade again instead of installing
+one, which their inactive slots still hold with its config until the next upgrade writes over
+them. chalkctl takes that image from the nodes' status: every node named, or every node of the
+cluster, must roll back to the same image or run it already, or the command refuses and asks for
+--nodes. Boot counting protects the boot as it protects an upgrade's, except on a node whose
+running image's boot was not found healthy: the image before, found healthy once, then boots
+uncounted, as the node's known-good image, and is not fallen back from. The run holds and releases
+each node as an upgrade does. Run again, it continues with the same image and leaves the nodes
+that run it alone. Once the nodes run the image before, an upgrade to the inventory's image undoes
+the rollback.
+
+Run again, an upgrade continues where it stopped, and --retry-failed installs the image once more
 on nodes that fell back from it. See
 [Upgrades](../../how-it-works/node/upgrades.md) and
 [Kubernetes upgrades](../../how-it-works/kubernetes/upgrades.md). The command needs an
@@ -46,6 +57,7 @@ operator client file or the secrets file.
 | `--nodes`{ #flag-nodes } | string | every node of the cluster, or with --image every node that runs the image's variant | Comma-separated nodes to upgrade. |
 | `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |
 | `--retry-failed`{ #flag-retry-failed } | boolean | `false` | Install an image again, once, on nodes that fell back from it. |
+| `--rollback`{ #flag-rollback } | boolean | `false` | Boot the image the nodes ran before their last upgrade again, which their inactive slots still hold, instead of installing an image. |
 | `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
 | `--timeout`{ #flag-timeout } | duration | `30m0s` | How long to wait for each node to come back healthy and for its drain. |
 
@@ -57,6 +69,9 @@ chalkctl upgrade
 
 # Upgrade the nodes that run an image's variant, two at a time, with an image chalkbuild signed.
 chalkctl upgrade --image ./worker-image --max-unavailable 2
+
+# Boot the image w1 and w2 ran before their last upgrade again.
+chalkctl upgrade --rollback --nodes w1,w2
 ```
 
 ## See also

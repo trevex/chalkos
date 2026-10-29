@@ -294,7 +294,18 @@ Delivering config needs the admin role: with an operator client file, each node 
 config over. A new volume is enrolled with the recovery key, which only the secrets file gives, or
 the password --password-file holds.
 
-Run again, the command continues where it stopped, and --retry-failed installs the image once more
+--rollback boots the image the nodes ran before their last upgrade again instead of installing
+one, which their inactive slots still hold with its config until the next upgrade writes over
+them. chalkctl takes that image from the nodes' status: every node named, or every node of the
+cluster, must roll back to the same image or run it already, or the command refuses and asks for
+--nodes. Boot counting protects the boot as it protects an upgrade's, except on a node whose
+running image's boot was not found healthy: the image before, found healthy once, then boots
+uncounted, as the node's known-good image, and is not fallen back from. The run holds and releases
+each node as an upgrade does. Run again, it continues with the same image and leaves the nodes
+that run it alone. Once the nodes run the image before, an upgrade to the inventory's image undoes
+the rollback.
+
+Run again, an upgrade continues where it stopped, and --retry-failed installs the image once more
 on nodes that fell back from it. See
 https://trevex.github.io/chalkos/how-it-works/node/upgrades/ and
 https://trevex.github.io/chalkos/how-it-works/kubernetes/upgrades/. The command needs an
@@ -304,7 +315,10 @@ const upgradeExample = `  # Upgrade the whole cluster, each node to the image th
   chalkctl upgrade
 
   # Upgrade the nodes that run an image's variant, two at a time, with an image chalkbuild signed.
-  chalkctl upgrade --image ./worker-image --max-unavailable 2`
+  chalkctl upgrade --image ./worker-image --max-unavailable 2
+
+  # Boot the image w1 and w2 ran before their last upgrade again.
+  chalkctl upgrade --rollback --nodes w1,w2`
 
 const validateLong = `Checks the config of the nodes named, or of every node of the inventory, as each node would
 check it on its image: the set the inventory gives the node, every document against the schemas of

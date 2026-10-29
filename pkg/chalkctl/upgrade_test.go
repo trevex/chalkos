@@ -128,6 +128,14 @@ type upgradeFake struct {
 	alreadyStaged bool
 	// header is the header the last upgrade sent.
 	header *nodev1.UpgradeHeader
+	// previous, previousRoot and previousConfig are the image an upgrade replaced, which the node
+	// can roll back to, and its config.
+	previous       string
+	previousRoot   []byte
+	previousConfig string
+	// rolledBackTo is the root hash of the image the last rollback rolled back to, as chalkd records
+	// it; an upgrade that stages an image removes it.
+	rolledBackTo []byte
 }
 
 // upgradeLab is a cluster of fake nodes.
@@ -150,6 +158,11 @@ type upgradeLab struct {
 	cordoned map[string]bool
 	// refuseUpgrade makes the node refuse its next upgrade, as if the transfer broke.
 	refuseUpgrade string
+	// refuseRollback makes the node refuse its next rollback, as if its UKI could not be renamed.
+	refuseRollback string
+	// uncountedRollback makes the nodes stage a rollback's image without tries, as chalkd does while
+	// the boot a node runs was not found healthy.
+	uncountedRollback bool
 	// emptyDir holds the nodes drained deleting emptyDir data.
 	emptyDir map[string]bool
 	// notReady holds the nodes whose Node is not Ready.
@@ -218,6 +231,12 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 	if n.staged != "" {
 		st.Boot.Staged = &nodev1.BootImage{RootHash: n.stagedRoot, Generation: n.generation + 1}
 		st.StagedConfigVersion = versionOf(n.stagedConfig)
+	}
+	if n.previous != "" {
+		st.Boot.Previous = &nodev1.BootImage{RootHash: n.previousRoot, Generation: n.generation - 1}
+	}
+	if n.rolledBackTo != nil && (bytes.Equal(n.rolledBackTo, n.root) || bytes.Equal(n.rolledBackTo, n.stagedRoot)) {
+		st.Boot.Rollback = &nodev1.BootImage{RootHash: n.rolledBackTo}
 	}
 	if n.failed != "" {
 		st.Boot.Failed = &nodev1.BootImage{RootHash: n.failedRoot, Generation: n.generation + 1}
@@ -302,6 +321,7 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	}
 	name, _ := testImageNames.Load(string(h.RootHash))
 	n.staged, n.stagedRoot, n.failed, n.failedRoot = name.(string), h.RootHash, "", nil
+	n.previous, n.previousRoot, n.previousConfig, n.rolledBackTo = "", nil, "", nil
 	n.stagedConfig, n.secret = header.GetConfig(), header.GetFallbackSecret()
 	n.stagedStoreSize, n.stagedVeritySize = h.Store.Size, h.HashTree.Size
 	n.header = header
@@ -334,12 +354,46 @@ func (n *upgradeFake) Reboot(context.Context, *connect.Request[nodev1.RebootRequ
 		case unhealthy:
 			n.failed, n.failedRoot, n.staged, n.stagedRoot = n.staged, n.stagedRoot, "", nil
 		default:
+			n.previous, n.previousRoot, n.previousConfig = n.image, n.root, n.config
 			n.image, n.root, n.staged, n.stagedRoot = n.staged, n.stagedRoot, "", nil
 			n.config, n.stagedConfig = n.stagedConfig, ""
 			n.generation++
 		}
 	}()
 	return connect.NewResponse(&nodev1.RebootResponse{}), nil
+}
+
+// RollbackImage stages the image an upgrade replaced and records it, as chalkd re-activates it.
+func (n *upgradeFake) RollbackImage(_ context.Context, req *connect.Request[nodev1.RollbackImageRequest]) (*connect.Response[nodev1.RollbackImageResponse], error) {
+	if err := n.down(); err != nil {
+		return nil, err
+	}
+	n.lab.record("%s rollback", n.name)
+	n.lab.mu.Lock()
+	refuse := n.lab.refuseRollback == n.name
+	if refuse {
+		n.lab.refuseRollback = ""
+	}
+	entry := "chalkos_%d+3.efi"
+	if n.lab.uncountedRollback {
+		entry = "chalkos_%d.efi"
+	}
+	n.lab.mu.Unlock()
+	if refuse {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("roll back: name the UKI chalkos_3+3.efi: input/output error"))
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	switch {
+	case bytes.Equal(req.Msg.RootHash, n.root):
+		return connect.NewResponse(&nodev1.RollbackImageResponse{AlreadyInstalled: true}), nil
+	case n.previous == "" || !bytes.Equal(req.Msg.RootHash, n.previousRoot):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("roll back: the node keeps no image it ran before to roll back to"))
+	}
+	n.staged, n.stagedRoot, n.stagedConfig = n.previous, n.previousRoot, n.previousConfig
+	n.previous, n.previousRoot, n.previousConfig = "", nil, ""
+	n.rolledBackTo = req.Msg.RootHash
+	return connect.NewResponse(&nodev1.RollbackImageResponse{Entry: fmt.Sprintf(entry, n.generation+1)}), nil
 }
 
 func (n upgradeKubernetes) EtcdMembers(context.Context, *connect.Request[kubernetesv1.EtcdMembersRequest]) (*connect.Response[kubernetesv1.EtcdMembersResponse], error) {
@@ -1775,5 +1829,139 @@ func TestUpgradeDiff(t *testing.T) {
 	// The image renders its outputs at its first boot, which the run says.
 	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: config unchanged\nw1: installed ") || !strings.Contains(out, " renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs\n") {
 		t.Errorf("output:\n%s", out)
+	}
+}
+
+// TestUpgradeRollsBack boots the nodes' previous image again through the upgrade's steps:
+// drained, the image staged, rebooted, waited for and uncordoned. Run again, it finds every node
+// on the image and changes nothing; an upgrade to the inventory's image undoes the rollback, after
+// which a rollback works again.
+func TestUpgradeRollsBack(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	if err := l.upgrade(img, "--nodes", "w1,w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	l.ta.stdout.Reset()
+	if err := l.run("upgrade", "--rollback", "--nodes", "w1,w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	want := []string{"w1 drain", "w1 rollback", "w1 reboot", "w1 uncordon", "w2 drain", "w2 rollback", "w2 reboot", "w2 uncordon"}
+	if got := l.takeEvents(); !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+	for _, w := range []string{"w1", "w2"} {
+		if v := l.images()[w]; v != "0.1.0" {
+			t.Errorf("%s runs %s, want 0.1.0", w, v)
+		}
+	}
+	for _, line := range []string{"rolling back 2 nodes to 010101010101: w1, w2", "w1: rolling back to 010101010101",
+		"w1: 010101010101 boots next as chalkos_3+3.efi", "w1: runs 010101010101, found healthy", "rolled back 2 nodes to 010101010101"} {
+		if !strings.Contains(l.ta.stdout.String(), line) {
+			t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
+		}
+	}
+	// Run again: the nodes run the image a rollback got them to, so nothing changes.
+	if err := l.run("upgrade", "--rollback", "--nodes", "w1,w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got := l.takeEvents(); len(got) != 0 {
+		t.Errorf("a second run asked %q", got)
+	}
+	if v := l.images()["w1"]; v != "0.1.0" {
+		t.Errorf("after a second run w1 runs %s, want 0.1.0", v)
+	}
+	// An upgrade undoes the rollback; a rollback then boots the image before it again.
+	if err := l.upgrade(img, "--nodes", "w1,w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if err := l.run("upgrade", "--rollback", "--nodes", "w1,w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if v := l.images()["w2"]; v != "0.1.0" {
+		t.Errorf("after the upgrade and another rollback w2 runs %s, want 0.1.0", v)
+	}
+}
+
+// TestUpgradeRollbackContinues runs again after a run stopped at a node: the node a rollback got
+// to the image is left alone, and the run goes on with the others to the same image instead of
+// booting that node's own previous image.
+func TestUpgradeRollbackContinues(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1,w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.refuseRollback = "w2"
+	if err := l.run("upgrade", "--rollback", "--nodes", "w1,w2"); err == nil || !strings.HasPrefix(err.Error(), "w2: ") {
+		t.Fatalf("rollback = %v, want w2's refusal", err)
+	}
+	l.takeEvents()
+	if err := l.run("upgrade", "--rollback", "--nodes", "w1,w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got, want := l.takeEvents(), []string{"w2 drain", "w2 rollback", "w2 reboot", "w2 uncordon"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+	for _, w := range []string{"w1", "w2"} {
+		if v := l.images()[w]; v != "0.1.0" {
+			t.Errorf("%s runs %s, want 0.1.0", w, v)
+		}
+	}
+}
+
+// TestUpgradeRollbackSkipsNodesOnTheTarget rolls back every node of the cluster when only one was
+// upgraded: the others run the image it rolls back to, and are left alone. The node stages the
+// image without boot counting, which the run says.
+func TestUpgradeRollbackSkipsNodesOnTheTarget(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	l.uncountedRollback = true
+	l.ta.stdout.Reset()
+	if err := l.run("upgrade", "--rollback"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got, want := l.takeEvents(), []string{"w1 drain", "w1 rollback", "w1 reboot", "w1 uncordon"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+	if line := "w1: 010101010101 boots next as chalkos_3.efi, without boot counting"; !strings.Contains(l.ta.stdout.String(), line) {
+		t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
+	}
+}
+
+// TestUpgradeRollbackRefuses stops before any node changes when no node keeps a previous image,
+// when the nodes would roll back to different images, and when a node keeps none and does not run
+// the others' target; it refuses flags that install an image or deliver config.
+func TestUpgradeRollbackRefuses(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	if err := l.run("upgrade", "--rollback"); err == nil || !strings.Contains(err.Error(), "no node keeps a previous image to roll back to") {
+		t.Errorf("without previous images: %v", err)
+	}
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1,w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.3.0"), "--nodes", "w1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	err := l.run("upgrade", "--rollback", "--nodes", "w1,w2")
+	if err == nil || !strings.Contains(err.Error(), "the nodes roll back to different images: ") || !strings.Contains(err.Error(), "roll them back separately with --nodes") {
+		t.Errorf("different previous images: %v", err)
+	}
+	l.nodes["n1"].root = bytes.Repeat([]byte{9}, 32)
+	if err := l.run("upgrade", "--rollback", "--nodes", "w2,n1"); err == nil || !strings.Contains(err.Error(), "n1 does not run 010101010101, which the other nodes roll back to, and keeps no previous image") {
+		t.Errorf("a node off the target without a previous image: %v", err)
+	}
+	if got := l.takeEvents(); len(got) != 0 {
+		t.Errorf("refused runs asked %q", got)
+	}
+	img := testUpgradeImage(t, "w", "0.4.0")
+	for _, args := range [][]string{{"--image", img}, {"--diff"}, {"--retry-failed"}} {
+		if err := l.run(append([]string{"upgrade", "--rollback"}, args...)...); err == nil || !strings.Contains(err.Error(), "--rollback") {
+			t.Errorf("--rollback %s = %v, want a usage error", args[0], err)
+		}
 	}
 }

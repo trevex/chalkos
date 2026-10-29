@@ -41,7 +41,9 @@ type upgradeRun struct {
 	withholdOnce sync.Once
 	// diffing is set for upgrade --diff, which changes nothing.
 	diffing bool
-	out     sync.Mutex
+	// rollback is set for upgrade --rollback, which boots the nodes' previous image.
+	rollback bool
+	out      sync.Mutex
 }
 
 // upgradeOptions are how a run upgrades, as its flags give it.
@@ -67,7 +69,7 @@ type upgradeFlags struct {
 	addresses             addressList
 	maxUnavailable        positiveInt
 	noReboot, retryFailed bool
-	diff                  bool
+	diff, rollback        bool
 	layers                map[string]any
 	timeout               time.Duration
 }
@@ -114,6 +116,7 @@ func (a *app) upgradeCommand() *cobra.Command {
 	}
 	fs.BoolVar(&f.noReboot, "no-reboot", false, "install the images on the nodes without draining or rebooting them; they boot with their next reboot")
 	fs.BoolVar(&f.retryFailed, "retry-failed", false, "install an image again, once, on nodes that fell back from it")
+	fs.BoolVar(&f.rollback, "rollback", false, "boot the image the nodes ran before their last upgrade again, which their inactive slots still hold, instead of installing an image")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
 	registerPasswordFile(fs, &f.passwordFile)
 	fs.BoolVar(&f.diff, "diff", false, "print what each node's config changes against the config of the image it runs, document by document and field by field, and change nothing; needs the admin role")
@@ -121,6 +124,16 @@ func (a *app) upgradeCommand() *cobra.Command {
 }
 
 func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
+	if f.rollback {
+		switch {
+		case f.image != "":
+			return cli.Usagef("--rollback boots the image the nodes ran before; --image goes without it")
+		case f.diff:
+			return cli.Usagef("--rollback delivers no config; --diff goes without it")
+		case f.retryFailed:
+			return cli.Usagef("--retry-failed goes without --rollback")
+		}
+	}
 	c, err := loadCluster(ctx, f.cluster)
 	if err != nil {
 		return err
@@ -142,16 +155,23 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 			return err
 		}
 		defer img.Close()
-	} else if c.partial() {
+	} else if c.partial() && !f.rollback {
 		return errors.New("without --image each node gets the image the inventory names for it, which needs an inventory; pass --image, or --inventory")
 	}
 	r := &upgradeRun{
 		a: a, cluster: c, reach: nodeSet{cluster: c, creds: creds, addresses: f.addresses},
 		upgradeOptions: f.options(a.poll()), role: creds.role(),
+		rollback: f.rollback,
 	}
 	var named []string
 	if f.nodes != "" {
 		named = strings.Split(f.nodes, ",")
+	}
+	if f.rollback {
+		if err := r.planRollback(ctx, named); err != nil {
+			return err
+		}
+		return r.run(ctx)
 	}
 	err = r.plan(ctx, named, img)
 	defer r.closeImages()
@@ -441,6 +461,9 @@ func (r *upgradeRun) run(ctx context.Context) error {
 		r.say("upgrading %s on %s to %s: %s", g.variant, g.platform, g.image.name(), strings.Join(g.nodes, ", "))
 		images[g.image.name()] = true
 	}
+	if r.rollback {
+		r.say("rolling back %s to %s: %s", layer.Count(len(r.nodes), "node"), bootImageName(r.rollbackTo), strings.Join(r.order(), ", "))
+	}
 	for _, name := range coordinators {
 		if err := r.node(ctx, r.nodes[name]); err != nil {
 			return err
@@ -462,9 +485,14 @@ func (r *upgradeRun) run(ctx context.Context) error {
 		}
 	}
 	names := strings.Join(slices.Sorted(maps.Keys(images)), ", ")
-	if r.noReboot {
+	switch {
+	case r.rollback && r.noReboot:
+		r.say("staged %s on %s; it boots with their next reboot", bootImageName(r.rollbackTo), layer.Count(len(r.nodes), "node"))
+	case r.rollback:
+		r.say("rolled back %s to %s", layer.Count(len(r.nodes), "node"), bootImageName(r.rollbackTo))
+	case r.noReboot:
 		r.say("installed %s on %s; it boots with their next reboot", names, layer.Count(len(r.nodes), "node"))
-	} else {
+	default:
 		r.say("upgraded %s to %s", layer.Count(len(r.nodes), "node"), names)
 	}
 	return nil
@@ -476,7 +504,7 @@ func (r *upgradeRun) run(ctx context.Context) error {
 // it reboots and release it after. An image is its store's root hash: a node runs, stages or fell
 // back from the image when it names that root hash.
 func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
-	image, target := n.image.name(), n.image.header.RootHash
+	image, target := n.target()
 	_, st, _, err := r.probe(ctx, n.name)
 	if err != nil {
 		return err
@@ -538,12 +566,14 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 // so the image is not sent again: a staged image is sent again only for its config.
 func (r *upgradeRun) stagedAlready(n *upgradeNode, st *nodev1.StatusResponse) bool {
 	d := r.deliveryOf(n)
-	return bytes.Equal(st.GetBoot().GetStaged().GetRootHash(), n.image.header.RootHash) && (d == nil || st.GetStagedConfigVersion() == d.Version)
+	_, target := n.target()
+	return bytes.Equal(st.GetBoot().GetStaged().GetRootHash(), target) && (d == nil || st.GetStagedConfigVersion() == d.Version)
 }
 
 // installs reports whether the run sends the node its image, as node decides from its status.
 func (r *upgradeRun) installs(n *upgradeNode, st *nodev1.StatusResponse) bool {
-	boot, target := st.GetBoot(), n.image.header.RootHash
+	boot := st.GetBoot()
+	_, target := n.target()
 	switch {
 	case boot.GetError() != "", bytes.Equal(boot.GetRunning().GetRootHash(), target):
 		return false
@@ -588,6 +618,9 @@ func (r *upgradeRun) fallbacks(ctx context.Context) error {
 // install sends the node its image with its config, and the fallback secret when the config adds
 // an encrypted volume, which the node creates before the image boots.
 func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
+	if n.rollbackTo != nil {
+		return r.reactivate(ctx, n)
+	}
 	name, img := n.name, n.image
 	parts := io.MultiReader()
 	if ref := img.source.GetOci().GetReference(); ref != "" {
@@ -642,10 +675,43 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	return nil
 }
 
+// reactivate has the node boot the rollback's image next again, its previous image.
+func (r *upgradeRun) reactivate(ctx context.Context, n *upgradeNode) error {
+	image, root := n.target()
+	r.say("%s: rolling back to %s", n.name, image)
+	var resp *nodev1.RollbackImageResponse
+	if err := r.call(n.name, func(conn *client.Conn) error {
+		res, err := conn.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: root}))
+		if err == nil {
+			resp = res.Msg
+		}
+		return err
+	}); err != nil {
+		return err
+	}
+	switch {
+	case resp.AlreadyInstalled:
+		r.say("%s: runs %s already", n.name, image)
+	case resp.AlreadyStaged:
+		r.say("%s: %s is staged already, as %s", n.name, image, resp.Entry)
+	case counted(resp.Entry):
+		r.say("%s: %s boots next as %s", n.name, image, resp.Entry)
+	default:
+		r.say("%s: %s boots next as %s, without boot counting: the boot the node runs was not found healthy, so the image before, found healthy once, is its known-good image again and is not fallen back from", n.name, image, resp.Entry)
+	}
+	return nil
+}
+
+// counted reports whether systemd-boot counts the boots of the entry, whose name then gives its
+// tries, as in chalkos_3+3.efi.
+func counted(entry string) bool {
+	return strings.Contains(strings.TrimSuffix(entry, ".efi"), "+")
+}
+
 // waitHealthy waits until the node runs the image, its boot was found healthy, and it serves the
 // clusters of its layers again, or until it fell back.
 func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
-	image, target := n.image.name(), n.image.header.RootHash
+	image, target := n.target()
 	var fellBack error
 	err := layer.WaitFor(ctx, "", r.timeout, r.poll, func() error {
 		var st *nodev1.StatusResponse
@@ -688,6 +754,9 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 // node that serves a cluster stays held there, for an operator to look at.
 func (r *upgradeRun) rolledBack(n *upgradeNode, boot *nodev1.BootStatus) error {
 	msg := fmt.Sprintf("%s: upgrade to %s failed: rolled back to %s", n.name, bootImageName(boot.Failed), bootImageName(boot.Running))
+	if r.rollback {
+		msg = fmt.Sprintf("%s: rollback to %s failed: it fell back to %s", n.name, bootImageName(boot.Failed), bootImageName(boot.Running))
+	}
 	if n.roles.member() && !r.noReboot {
 		msg += "; it stays cordoned"
 	}

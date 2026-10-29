@@ -1,13 +1,16 @@
 package chalkctl
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 )
 
@@ -22,6 +25,18 @@ type upgradeNode struct {
 	// secret is the fallback secret the delivery's new encrypted volumes are enrolled with, asked
 	// for before any node is drained; empty when it adds none.
 	secret string
+	// rollbackTo is the image a rollback run boots on every node, as planRollback chose it; nil
+	// for an upgrade.
+	rollbackTo *nodev1.BootImage
+}
+
+// target is the image the node gets: the image to install, or the one a rollback boots; by its
+// name in messages and its root hash.
+func (n *upgradeNode) target() (string, []byte) {
+	if n.rollbackTo != nil {
+		return bootImageName(n.rollbackTo), n.rollbackTo.GetRootHash()
+	}
+	return n.image.name(), n.image.header.RootHash
 }
 
 // upgradeRole is a node's role in the cluster of one of its layers, with the layer's hooks.
@@ -62,6 +77,8 @@ type upgradePlan struct {
 	// coordinators are the cluster's nodes that act for the others, which the layers drain and
 	// release nodes through.
 	coordinators []string
+	// rollbackTo is the image a rollback run boots on its nodes; nil for an upgrade.
+	rollbackTo *nodev1.BootImage
 }
 
 // plan finds the nodes to upgrade and opens the image of each group from its directory, which
@@ -178,13 +195,18 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	for _, key := range slices.Sorted(maps.Keys(groups)) {
 		r.groups = append(r.groups, groups[key])
 	}
-	// The coordinators drain the nodes and keep their cluster's quorum, so every node's role is
-	// read, also of nodes the run leaves alone. Loading the inventory read every node's files
-	// already, so a node whose files are broken stops every command, and this adds only a node
-	// whose files hold the same document twice. Without an inventory, the nodes --address names
-	// that the run leaves alone are asked.
+	return r.findCoordinators(ctx, probed)
+}
+
+// findCoordinators names the cluster's coordinators: the nodes probed, or asked now, that act for
+// the others, and those the inventory lists. The coordinators drain the nodes and keep their
+// cluster's quorum, so every node's role is read, also of nodes the run leaves alone. Loading the
+// inventory read every node's files already, so a node whose files are broken stops every command,
+// and this adds only a node whose files hold the same document twice. Without an inventory, the
+// nodes --address names that the run leaves alone are asked.
+func (r *upgradeRun) findCoordinators(ctx context.Context, probed map[string]bool) error {
 	for _, name := range r.nodeNames() {
-		if _, ok := probed[name]; c.partial() && !ok {
+		if _, ok := probed[name]; r.cluster.partial() && !ok {
 			_, _, roles, err := r.probe(ctx, name)
 			if err != nil {
 				return err
@@ -207,6 +229,98 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		}
 	}
 	return nil
+}
+
+// planRollback chooses the image a rollback run boots, before any node is sent anything: the one
+// image the nodes named, or every node of the cluster, roll back to, as rollbackVote reads it from
+// each node's status. A node without a vote must run that image already, as a node an upgrade
+// leaves alone runs the upgrade's image. The image is the same on a run again after one that
+// stopped, so the run continues instead of booting the nodes it rolled back forward again.
+func (r *upgradeRun) planRollback(ctx context.Context, named []string) error {
+	candidates := named
+	if len(candidates) == 0 {
+		candidates = r.nodeNames()
+	}
+	if len(candidates) == 0 && r.cluster.partial() {
+		return errors.New("without an inventory, give each node's address with --address NODE=ADDR")
+	}
+	r.nodes = map[string]*upgradeNode{}
+	probed := map[string]bool{}
+	boots := map[string]*nodev1.BootStatus{}
+	// votes are the nodes by the root hash, in hex, of the image they roll back to, and images
+	// that image as a node's status names it.
+	votes := map[string][]string{}
+	images := map[string]*nodev1.BootImage{}
+	for _, name := range candidates {
+		if err := r.cluster.node(name); err != nil {
+			return err
+		}
+		_, st, roles, err := r.probe(ctx, name)
+		if err != nil {
+			return err
+		}
+		b := st.GetBoot()
+		if b.GetError() != "" {
+			return fmt.Errorf("%s: its boot is unknown: %s", name, b.GetError())
+		}
+		probed[name], boots[name] = roles.coordinator(), b
+		r.nodes[name] = &upgradeNode{name: name, roles: roles}
+		if v := rollbackVote(b); v != nil {
+			key := hex.EncodeToString(v.GetRootHash())
+			votes[key] = append(votes[key], name)
+			// A status that names the image's provenance names it best.
+			if images[key] == nil || images[key].GetRevision() == "" && images[key].GetTag() == "" {
+				images[key] = v
+			}
+		}
+	}
+	target, err := rollbackTarget(votes, images)
+	if err != nil {
+		return err
+	}
+	for _, name := range candidates {
+		if b := boots[name]; rollbackVote(b) == nil && !bytes.Equal(b.GetRunning().GetRootHash(), target.GetRootHash()) {
+			return fmt.Errorf("%s does not run %s, which the other nodes roll back to, and keeps no previous image: %s; leave it out with --nodes", name, bootImageName(target), noPrevious(b))
+		}
+		r.nodes[name].rollbackTo = target
+	}
+	r.rollbackTo = target
+	return r.findCoordinators(ctx, probed)
+}
+
+// rollbackVote is the image a rollback boots on a node, as its status names it: the image a
+// rollback got it to already, which it runs or boots next, or else its previous image; nil
+// without either.
+func rollbackVote(b *nodev1.BootStatus) *nodev1.BootImage {
+	if b.GetRollback() != nil {
+		return b.GetRollback()
+	}
+	return b.GetPrevious()
+}
+
+// rollbackTarget is the one image the votes name; an error when they name none or several.
+func rollbackTarget(votes map[string][]string, images map[string]*nodev1.BootImage) (*nodev1.BootImage, error) {
+	switch len(votes) {
+	case 0:
+		return nil, errors.New("no node keeps a previous image to roll back to: an upgrade found healthy keeps the image before it, until the next upgrade")
+	case 1:
+		for key := range images {
+			return images[key], nil
+		}
+	}
+	var parts []string
+	for _, key := range slices.Sorted(maps.Keys(votes)) {
+		parts = append(parts, strings.Join(votes[key], ", ")+" to "+bootImageName(images[key]))
+	}
+	return nil, fmt.Errorf("the nodes roll back to different images: %s; roll them back separately with --nodes", strings.Join(parts, "; "))
+}
+
+// noPrevious says why a node's status names no previous image.
+func noPrevious(b *nodev1.BootStatus) string {
+	if b.GetStaged() != nil {
+		return "its inactive slot holds " + bootImageName(b.GetStaged()) + ", staged to boot next; chalkctl reboot boots it"
+	}
+	return "its inactive slot holds no image it booted before, as after an install or an upgrade it fell back from"
 }
 
 // nodeNames are the cluster's nodes: the inventory's, or without one those --address names.
