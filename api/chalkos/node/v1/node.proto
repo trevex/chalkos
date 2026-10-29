@@ -8,6 +8,7 @@ option go_package = "github.com/trevex/chalkos/pkg/api/node/v1;nodev1";
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
 
 // NodeService is the API chalkd serves on each node. Each method's comment names the modes it is
 // available in, maintenance mode, normal mode or both, and the least role a client certificate
@@ -34,7 +35,10 @@ service NodeService {
   rpc Install(stream InstallRequest) returns (InstallResponse);
   // ApplyConfig replaces the config of an installed node, or delivers it payloads of its layers,
   // such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
-  // refused; additive ones are applied live. Available in normal mode to admins.
+  // refused; additive ones are applied live. With try, the config is on trial: the node rolls it
+  // back by itself, as RollbackConfig does, unless ConfirmConfig confirms it in time. While a
+  // config is on trial, the node refuses every ApplyConfig, an Upgrade and a RollbackImage with
+  // FAILED_PRECONDITION. Available in normal mode to admins.
   rpc ApplyConfig(ApplyConfigRequest) returns (ApplyConfigResponse);
   // GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
   // image's, as it was delivered, with secret values replaced by their hashes. Available in normal
@@ -85,7 +89,8 @@ service NodeService {
   // refusal names the rule. The config it replaces becomes the previous one, so a second rollback
   // undoes the first. Only the config documents return: the OS CAs, the node certificate and the
   // layers' payloads stay as they are. An upgrade's image starts without a previous config.
-  // Available in normal mode to admins.
+  // During a trial it rolls the config on trial back at once and ends the trial. Available in
+  // normal mode to admins.
   rpc RollbackConfig(RollbackConfigRequest) returns (RollbackConfigResponse);
   // RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
   // store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
@@ -97,6 +102,13 @@ service NodeService {
   // reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
   // previous image, as while an upgrade's image is staged. Available in normal mode to operators.
   rpc RollbackImage(RollbackImageRequest) returns (RollbackImageResponse);
+  // ConfirmConfig ends the trial of a config that ApplyConfig delivered with try, and the node keeps
+  // the config from then on. The node must be healthy as the health check of a boot finds it:
+  // chalkd serves, no unit of the boot failed but those the image ignores, and the image's layers
+  // find their services healthy. It answers UNAVAILABLE while the node is not, so a client asks
+  // again. It answers FAILED_PRECONDITION when no trial of the version is open, unless the node
+  // runs that version, so a request sent twice confirms once. Available in normal mode to admins.
+  rpc ConfirmConfig(ConfirmConfigRequest) returns (ConfirmConfigResponse);
 }
 
 // The mode chalkd serves the node in.
@@ -416,6 +428,18 @@ message ApplyConfigRequest {
   // node's, each kept by the layer whose type it is; the node refuses a payload no layer of its
   // image takes. Empty keeps the layers' payloads.
   repeated google.protobuf.Any layers = 7;
+  // How long the config is on trial: the node rolls it back by itself, as RollbackConfig does,
+  // unless ConfirmConfig confirms it within the duration, and a boot before that restores the
+  // config from before it. A trial takes config for the running image alone, without staged,
+  // layer payloads, a node certificate or OS CAs, and lasts at most 24 hours. The node refuses it
+  // with FAILED_PRECONDITION for a config that changes the node's storage, which a rollback cannot
+  // undo, for the config it runs already and on a node without config. Unset applies the config
+  // for good.
+  google.protobuf.Duration try = 8;
+  // With try, systemd units the health check that ConfirmConfig waits for leaves out, besides those
+  // the image ignores, such as demo.service: a unit that failed before the trial and is not the
+  // trial's concern. Each must be a unit name. The node keeps them with the trial.
+  repeated string ignore_units = 9;
 }
 
 // The request of GetConfig.
@@ -515,6 +539,15 @@ message RollbackImageResponse {
   bool already_staged = 4;
 }
 
+// The request of ConfirmConfig.
+message ConfirmConfigRequest {
+  // The version of the config on trial, as ConfigTrial.version gives it. Required.
+  string version = 1;
+}
+
+// The response of ConfirmConfig, once the trial ended.
+message ConfirmConfigResponse {}
+
 // The request of Status.
 message StatusRequest {}
 
@@ -549,6 +582,25 @@ message StatusResponse {
   // config_version gives the running one's; empty while the node keeps none, as after an install
   // or an upgrade.
   string previous_config_version = 12;
+  // The config on trial, while one is; unset otherwise.
+  ConfigTrial trial = 13;
+}
+
+// A config on trial, which the node rolls back by itself at the deadline unless ConfirmConfig
+// confirms it first.
+message ConfigTrial {
+  // The version of the config on trial, as StatusResponse.config_version gives it.
+  string version = 1;
+  // The version of the config the node ran before, which the rollback delivers again.
+  string previous_version = 2;
+  // When the node rolls the config back, unless it is confirmed first.
+  google.protobuf.Timestamp deadline = 3;
+  // Why the rollback at the deadline failed, which the node tries again each minute; empty before
+  // the deadline and while none failed.
+  string error = 4;
+  // The units the trial's health check leaves out besides those the image ignores, as
+  // ApplyConfigRequest.ignore_units named them.
+  repeated string ignore_units = 5;
 }
 
 // The state of one output of the running image.

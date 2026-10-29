@@ -147,7 +147,10 @@ No fields.
 
 ApplyConfig replaces the config of an installed node, or delivers it payloads of its layers,
 such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
-refused; additive ones are applied live. Available in normal mode to admins.
+refused; additive ones are applied live. With try, the config is on trial: the node rolls it
+back by itself, as RollbackConfig does, unless ConfirmConfig confirms it in time. While a
+config is on trial, the node refuses every ApplyConfig, an Upgrade and a RollbackImage with
+FAILED_PRECONDITION. Available in normal mode to admins.
 
 Request: ApplyConfigRequest. Response: ApplyConfigResponse.
 
@@ -164,6 +167,8 @@ The request of ApplyConfig: a config, or layer payloads, a node certificate or O
 | `config` | string | The node's config, as InstallHeader.config holds it, checked against the running image's schemas. It replaces the node's config as a whole. Empty keeps the node's config and storage, for a request that delivers only layer payloads, a node certificate or OS CAs. |
 | `staged` | bool | Whether the config is for the image staged to boot next: chalkd checks it against that image and keeps it in that image's config slot, changing nothing the running image runs but the machine's storage. The config meets that image's change rules, compared with the running slot's config and the machine as for the running image, and the storage changes they accept are made at once, with fallback_secret. It takes the config and the fallback secret alone, and an image staged. |
 | `layers` | list of google.protobuf.Any | Payloads of the image's layers, such as a new chalkos.kubernetes.v1.Share replacing the node's, each kept by the layer whose type it is; the node refuses a payload no layer of its image takes. Empty keeps the layers' payloads. |
+| `try` | google.protobuf.Duration | How long the config is on trial: the node rolls it back by itself, as RollbackConfig does, unless ConfirmConfig confirms it within the duration, and a boot before that restores the config from before it. A trial takes config for the running image alone, without staged, layer payloads, a node certificate or OS CAs, and lasts at most 24 hours. The node refuses it with FAILED_PRECONDITION for a config that changes the node's storage, which a rollback cannot undo, for the config it runs already and on a node without config. Unset applies the config for good. |
+| `ignore_units` | list of string | With try, systemd units the health check that ConfirmConfig waits for leaves out, besides those the image ignores, such as demo.service: a unit that failed before the trial and is not the trial's concern. Each must be a unit name. The node keeps them with the trial. |
 
 #### ApplyConfigResponse { #message-applyconfigresponse }
 
@@ -259,8 +264,9 @@ The response of Status: the state of an installed node.
 | `staged_config_version` | string | The version of the config kept for the image staged to boot next, as config_version gives the running one's; empty without a staged image or config for it. |
 | `outputs` | list of OutputStatus | The image's outputs, by name. |
 | `previous_config_version` | string | The version of the running image's previous config, which RollbackConfig delivers again, as config_version gives the running one's; empty while the node keeps none, as after an install or an upgrade. |
+| `trial` | ConfigTrial | The config on trial, while one is; unset otherwise. |
 
-Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus).
+Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [ConfigTrial](#message-configtrial).
 
 ### Logs { #method-logs }
 
@@ -409,7 +415,8 @@ with the config the node runs and the machine, storage changes, outputs and effe
 refusal names the rule. The config it replaces becomes the previous one, so a second rollback
 undoes the first. Only the config documents return: the OS CAs, the node certificate and the
 layers' payloads stay as they are. An upgrade's image starts without a previous config.
-Available in normal mode to admins.
+During a trial it rolls the config on trial back at once and ends the trial. Available in
+normal mode to admins.
 
 Request: RollbackConfigRequest. Response: RollbackConfigResponse.
 
@@ -468,6 +475,31 @@ The response of RollbackImage.
 | `rebooting` | bool | Whether the node reboots into the image. |
 | `already_staged` | bool | Whether the image boots next already, from entry, as a rollback without a reboot left it. |
 
+### ConfirmConfig { #method-confirmconfig }
+
+ConfirmConfig ends the trial of a config that ApplyConfig delivered with try, and the node keeps
+the config from then on. The node must be healthy as the health check of a boot finds it:
+chalkd serves, no unit of the boot failed but those the image ignores, and the image's layers
+find their services healthy. It answers UNAVAILABLE while the node is not, so a client asks
+again. It answers FAILED_PRECONDITION when no trial of the version is open, unless the node
+runs that version, so a request sent twice confirms once. Available in normal mode to admins.
+
+Request: ConfirmConfigRequest. Response: ConfirmConfigResponse.
+
+#### ConfirmConfigRequest { #message-confirmconfigrequest }
+
+The request of ConfirmConfig.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `version` | string | The version of the config on trial, as ConfigTrial.version gives it. Required. |
+
+#### ConfirmConfigResponse { #message-confirmconfigresponse }
+
+The response of ConfirmConfig, once the trial ended.
+
+No fields.
+
 ## Messages { #messages }
 
 These messages are held by fields of other messages.
@@ -512,6 +544,19 @@ A certificate the node holds or issues with.
 | `problem` | string | Why a renewal fails, such as "renewal failing: &lt;reason>; expires &lt;date>", or a warning, such as "less than a third of its lifetime remains" or "the node certificate expires on &lt;date>; this image cannot renew it on its own; run chalkctl node renew &lt;node>"; empty when there is nothing to do. A command it advises names the node, or says &lt;node> when the node cannot tell its name. |
 | `fingerprint` | string | The SHA-256 fingerprint of the certificate, in lower-case hex. |
 | `issuer` | string | The SHA-256 fingerprint of the certificate that issued it, in lower-case hex; empty when the node does not hold that one. |
+
+### ConfigTrial { #message-configtrial }
+
+A config on trial, which the node rolls back by itself at the deadline unless ConfirmConfig
+confirms it first.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `version` | string | The version of the config on trial, as StatusResponse.config_version gives it. |
+| `previous_version` | string | The version of the config the node ran before, which the rollback delivers again. |
+| `deadline` | google.protobuf.Timestamp | When the node rolls the config back, unless it is confirmed first. |
+| `error` | string | Why the rollback at the deadline failed, which the node tries again each minute; empty before the deadline and while none failed. |
+| `ignore_units` | list of string | The units the trial's health check leaves out besides those the image ignores, as ApplyConfigRequest.ignore_units named them. |
 
 ### Diagnostic { #message-diagnostic }
 

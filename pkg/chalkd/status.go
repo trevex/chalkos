@@ -42,6 +42,7 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 	if resp.PreviousConfigVersion == resp.ConfigVersion {
 		resp.PreviousConfigVersion = ""
 	}
+	resp.Trial = s.trialStatus()
 
 	var status storage.Status
 	if raw, err := os.ReadFile(s.Paths.StorageStatus); err == nil {

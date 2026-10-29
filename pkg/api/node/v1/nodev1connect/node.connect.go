@@ -68,6 +68,9 @@ const (
 	// NodeServiceRollbackImageProcedure is the fully-qualified name of the NodeService's RollbackImage
 	// RPC.
 	NodeServiceRollbackImageProcedure = "/chalkos.node.v1.NodeService/RollbackImage"
+	// NodeServiceConfirmConfigProcedure is the fully-qualified name of the NodeService's ConfirmConfig
+	// RPC.
+	NodeServiceConfirmConfigProcedure = "/chalkos.node.v1.NodeService/ConfirmConfig"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -91,7 +94,10 @@ type NodeServiceClient interface {
 	Install(context.Context) *connect.ClientStreamForClient[v1.InstallRequest, v1.InstallResponse]
 	// ApplyConfig replaces the config of an installed node, or delivers it payloads of its layers,
 	// such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
-	// refused; additive ones are applied live. Available in normal mode to admins.
+	// refused; additive ones are applied live. With try, the config is on trial: the node rolls it
+	// back by itself, as RollbackConfig does, unless ConfirmConfig confirms it in time. While a
+	// config is on trial, the node refuses every ApplyConfig, an Upgrade and a RollbackImage with
+	// FAILED_PRECONDITION. Available in normal mode to admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
 	// GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
 	// image's, as it was delivered, with secret values replaced by their hashes. Available in normal
@@ -142,7 +148,8 @@ type NodeServiceClient interface {
 	// refusal names the rule. The config it replaces becomes the previous one, so a second rollback
 	// undoes the first. Only the config documents return: the OS CAs, the node certificate and the
 	// layers' payloads stay as they are. An upgrade's image starts without a previous config.
-	// Available in normal mode to admins.
+	// During a trial it rolls the config on trial back at once and ends the trial. Available in
+	// normal mode to admins.
 	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
 	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
 	// store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
@@ -154,6 +161,13 @@ type NodeServiceClient interface {
 	// reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
 	// previous image, as while an upgrade's image is staged. Available in normal mode to operators.
 	RollbackImage(context.Context, *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error)
+	// ConfirmConfig ends the trial of a config that ApplyConfig delivered with try, and the node keeps
+	// the config from then on. The node must be healthy as the health check of a boot finds it:
+	// chalkd serves, no unit of the boot failed but those the image ignores, and the image's layers
+	// find their services healthy. It answers UNAVAILABLE while the node is not, so a client asks
+	// again. It answers FAILED_PRECONDITION when no trial of the version is open, unless the node
+	// runs that version, so a request sent twice confirms once. Available in normal mode to admins.
+	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -257,6 +271,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("RollbackImage")),
 			connect.WithClientOptions(opts...),
 		),
+		confirmConfig: connect.NewClient[v1.ConfirmConfigRequest, v1.ConfirmConfigResponse](
+			httpClient,
+			baseURL+NodeServiceConfirmConfigProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("ConfirmConfig")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -277,6 +297,7 @@ type nodeServiceClient struct {
 	runDiagnostic  *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
 	rollbackConfig *connect.Client[v1.RollbackConfigRequest, v1.RollbackConfigResponse]
 	rollbackImage  *connect.Client[v1.RollbackImageRequest, v1.RollbackImageResponse]
+	confirmConfig  *connect.Client[v1.ConfirmConfigRequest, v1.ConfirmConfigResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -354,6 +375,11 @@ func (c *nodeServiceClient) RollbackImage(ctx context.Context, req *connect.Requ
 	return c.rollbackImage.CallUnary(ctx, req)
 }
 
+// ConfirmConfig calls chalkos.node.v1.NodeService.ConfirmConfig.
+func (c *nodeServiceClient) ConfirmConfig(ctx context.Context, req *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error) {
+	return c.confirmConfig.CallUnary(ctx, req)
+}
+
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in maintenance and normal mode to readers.
@@ -375,7 +401,10 @@ type NodeServiceHandler interface {
 	Install(context.Context, *connect.ClientStream[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
 	// ApplyConfig replaces the config of an installed node, or delivers it payloads of its layers,
 	// such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
-	// refused; additive ones are applied live. Available in normal mode to admins.
+	// refused; additive ones are applied live. With try, the config is on trial: the node rolls it
+	// back by itself, as RollbackConfig does, unless ConfirmConfig confirms it in time. While a
+	// config is on trial, the node refuses every ApplyConfig, an Upgrade and a RollbackImage with
+	// FAILED_PRECONDITION. Available in normal mode to admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
 	// GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
 	// image's, as it was delivered, with secret values replaced by their hashes. Available in normal
@@ -426,7 +455,8 @@ type NodeServiceHandler interface {
 	// refusal names the rule. The config it replaces becomes the previous one, so a second rollback
 	// undoes the first. Only the config documents return: the OS CAs, the node certificate and the
 	// layers' payloads stay as they are. An upgrade's image starts without a previous config.
-	// Available in normal mode to admins.
+	// During a trial it rolls the config on trial back at once and ends the trial. Available in
+	// normal mode to admins.
 	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
 	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
 	// store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
@@ -438,6 +468,13 @@ type NodeServiceHandler interface {
 	// reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
 	// previous image, as while an upgrade's image is staged. Available in normal mode to operators.
 	RollbackImage(context.Context, *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error)
+	// ConfirmConfig ends the trial of a config that ApplyConfig delivered with try, and the node keeps
+	// the config from then on. The node must be healthy as the health check of a boot finds it:
+	// chalkd serves, no unit of the boot failed but those the image ignores, and the image's layers
+	// find their services healthy. It answers UNAVAILABLE while the node is not, so a client asks
+	// again. It answers FAILED_PRECONDITION when no trial of the version is open, unless the node
+	// runs that version, so a request sent twice confirms once. Available in normal mode to admins.
+	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -537,6 +574,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("RollbackImage")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceConfirmConfigHandler := connect.NewUnaryHandler(
+		NodeServiceConfirmConfigProcedure,
+		svc.ConfirmConfig,
+		connect.WithSchema(nodeServiceMethods.ByName("ConfirmConfig")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -569,6 +612,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceRollbackConfigHandler.ServeHTTP(w, r)
 		case NodeServiceRollbackImageProcedure:
 			nodeServiceRollbackImageHandler.ServeHTTP(w, r)
+		case NodeServiceConfirmConfigProcedure:
+			nodeServiceConfirmConfigHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -636,4 +681,8 @@ func (UnimplementedNodeServiceHandler) RollbackConfig(context.Context, *connect.
 
 func (UnimplementedNodeServiceHandler) RollbackImage(context.Context, *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RollbackImage is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.ConfirmConfig is not implemented"))
 }

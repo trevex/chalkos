@@ -136,6 +136,11 @@ type Server struct {
 	// as a rollback does, calling record as upgrade.Node.Rollback does; nil re-activates it on the
 	// boot disk. Tests replace it.
 	ReactivateImage func(ctx context.Context, rootHash []byte, record func() error) (upgrade.Result, error)
+	// Healthy checks the node as the health check of a boot does, the image's layers included,
+	// which ConfirmConfig waits for before it ends a config's trial. ignore names the units the
+	// trial leaves out besides those the image ignores. nil finds the node healthy. Tests replace
+	// it.
+	Healthy func(ctx context.Context, ignore []string) error
 	// Journal streams the journal of the boot, or of one unit.
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.
@@ -166,6 +171,12 @@ type Server struct {
 	installed bool
 	// upgrading is held while an upgrade runs, which changes only the inactive slot and the ESP.
 	upgrading sync.Mutex
+	// trialTimer rolls the config on trial back at its deadline; nil without a trial. s.mu guards
+	// it.
+	trialTimer *time.Timer
+	// trialRetry is the time before a rollback at a trial's deadline that failed is tried again;
+	// zero is a minute. Tests set it.
+	trialRetry time.Duration
 	// logStreams counts the Logs calls running.
 	logStreams atomic.Int32
 	// diagnosticRuns counts the RunDiagnostic calls running.
@@ -183,6 +194,7 @@ var permissions = map[string]layer.Permission{
 	nodev1connect.NodeServiceGetConfigProcedure:      {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
 	nodev1connect.NodeServiceResetVolumeProcedure:    {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
 	nodev1connect.NodeServiceRollbackConfigProcedure: {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceConfirmConfigProcedure:  {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
 	nodev1connect.NodeServiceStatusProcedure:         {Modes: layer.NormalOnly, Role: pki.RoleReader},
 	nodev1connect.NodeServiceLogsProcedure:           {Modes: layer.AnyMode, Role: pki.RoleReader},
 	nodev1connect.NodeServiceRebootProcedure:         {Modes: layer.AnyMode, Role: pki.RoleOperator},
