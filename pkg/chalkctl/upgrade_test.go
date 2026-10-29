@@ -1997,7 +1997,7 @@ func TestUpgradeRollbackWithoutAReboot(t *testing.T) {
 	if got, want := l.takeEvents(), []string{"w1 drain", "w1 reboot", "w1 uncordon"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
-	if line := "w1: 010101010101 is installed already"; !strings.Contains(l.ta.stdout.String(), line) {
+	if line := "w1: 010101010101 is staged already"; !strings.Contains(l.ta.stdout.String(), line) {
 		t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
 	}
 	if v := l.images()["w1"]; v != "0.1.0" {

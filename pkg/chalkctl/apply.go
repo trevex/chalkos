@@ -184,6 +184,8 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 		return cli.Usagef("--rollback restores the running image's previous config; --staged goes without it")
 	case f.force || slices.ContainsFunc(f.layers, func(l layerFlags) bool { return l.f.Requested() }):
 		return cli.Usagef("--rollback restores config alone; deliver %s without it", f.payloadFlags)
+	case f.passwordFile != "":
+		return cli.Usagef("--rollback adds no volume, so it takes no --password-file")
 	}
 	// The node keeps the config it rolls back to, so no inventory needs to give it.
 	n := f.node

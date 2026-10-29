@@ -542,7 +542,11 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 			// A rollback stages its image without tries while the boot the node runs was not
 			// found healthy.
 			n.uncounted = n.rollbackTo != nil && !boot.GetBlessed()
-			r.say("%s: %s is installed already", n.name, image)
+			if r.rollback {
+				r.say("%s: %s is staged already", n.name, image)
+			} else {
+				r.say("%s: %s is installed already", n.name, image)
+			}
 		} else if err := r.install(ctx, n); err != nil {
 			return err
 		}

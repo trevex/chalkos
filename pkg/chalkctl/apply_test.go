@@ -305,10 +305,13 @@ func TestApplyConfigRollback(t *testing.T) {
 	if v, _ := slot.Version(slotOf(t, s)); v != first {
 		t.Errorf("after a rollback without an inventory the node runs %s, want %s", v, first)
 	}
-	for _, args := range [][]string{{"--staged"}, {"--kubernetes-share"}, {"--force"}} {
+	for _, args := range [][]string{{"--staged"}, {"--kubernetes-share"}, {"--force"}, {"--password-file", filepath.Join(ta.dir, "pw")}} {
 		if err := run(append([]string{"apply-config", "n1", "--rollback"}, args...)...); err == nil || !strings.Contains(err.Error(), "--rollback") {
 			t.Errorf("--rollback %s = %v, want a usage error", args[0], err)
 		}
+	}
+	if err := run("apply-config", "n1", "--rollback", "--password-file", filepath.Join(ta.dir, "pw")); err == nil || !strings.Contains(err.Error(), "--rollback adds no volume, so it takes no --password-file") {
+		t.Errorf("--rollback --password-file = %v", err)
 	}
 }
 
