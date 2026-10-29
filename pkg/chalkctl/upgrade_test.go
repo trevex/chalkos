@@ -2004,3 +2004,81 @@ func TestUpgradeRollbackWithoutAReboot(t *testing.T) {
 		t.Errorf("w1 runs %s, want 0.1.0", v)
 	}
 }
+
+// TestUpgradeRollbackWithoutAnInventory rolls back the nodes --address names, as a partial
+// cluster: the rollback needs no inventory, as it installs no image and delivers no config.
+func TestUpgradeRollbackWithoutAnInventory(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	l.ta.stdout.Reset()
+	args := []string{"upgrade", "--rollback"}
+	for _, name := range []string{"cp1", "w1"} {
+		args = append(args, "--address", name+"="+l.addrs[name])
+	}
+	if err := l.ta.run(context.Background(), args); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if v := l.images()["w1"]; v != "0.1.0" {
+		t.Errorf("w1 runs %s, want 0.1.0", v)
+	}
+	if got := l.takeEvents(); !slices.Contains(got, "w1 rollback") || !slices.Contains(got, "w1 reboot") {
+		t.Errorf("events %q, want w1 rolled back and rebooted", got)
+	}
+	if line := "rolled back 2 nodes to 010101010101"; !strings.Contains(l.ta.stdout.String(), line) {
+		t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
+	}
+}
+
+// TestUpgradeRollbackFallsBack stops at a node whose rollback image falls back after its tries,
+// with the image it fell back to and the node left cordoned.
+func TestUpgradeRollbackFallsBack(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	if err := l.upgrade(img, "--nodes", "w1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	l.unhealthy["0.1.0"] = true
+	err := l.run("upgrade", "--rollback", "--nodes", "w1")
+	if err == nil || !strings.Contains(err.Error(), "w1: rollback to 010101010101 failed: it fell back to "+shortOf(t, img)+"; it stays cordoned") {
+		t.Fatalf("rollback = %v", err)
+	}
+	if got, want := l.takeEvents(), []string{"w1 drain", "w1 rollback", "w1 reboot"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+	if !l.cordoned["w1"] {
+		t.Error("w1 was uncordoned")
+	}
+}
+
+// TestUpgradeRollbackOfAControlPlane rolls back a control plane as an upgrade takes it down: only
+// while the others keep etcd's quorum, drained before it reboots and uncordoned once back.
+func TestUpgradeRollbackOfAControlPlane(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	if err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0"), "--nodes", "cp1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	l.unhealthyMembers = []string{"cp2"}
+	if err := l.run("upgrade", "--rollback", "--nodes", "cp1", "--timeout", "100ms"); err == nil || !strings.Contains(err.Error(), "without cp1 etcd has 1 healthy voter of 3") {
+		t.Errorf("rollback without quorum = %v", err)
+	}
+	for _, e := range l.takeEvents() {
+		if !strings.HasSuffix(e, " members") {
+			t.Errorf("the refused run asked %q", e)
+		}
+	}
+	l.unhealthyMembers = nil
+	if err := l.run("upgrade", "--rollback", "--nodes", "cp1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got, want := l.takeEvents(), []string{"cp1 members", "cp1 rollback", "cp1 drain", "cp1 reboot", "cp1 uncordon"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+	if v := l.images()["cp1"]; v != "0.1.0" {
+		t.Errorf("cp1 runs %s, want 0.1.0", v)
+	}
+}
