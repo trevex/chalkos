@@ -62,7 +62,7 @@ func TestEveryControlPlaneReadsRevoked(t *testing.T) {
 		}
 		if name == "router" {
 			// Wrapped, as chalkctl returns it.
-			return nil, fmt.Errorf("%s: %w", name, ErrNoKubernetes)
+			return nil, fmt.Errorf("%s: %w", name, errNoKubernetes)
 		}
 		return nil, errors.New("connection refused")
 	}

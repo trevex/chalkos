@@ -40,24 +40,24 @@ func throughControlPlane(h layer.Host, ctx context.Context, f viaFlags, skip str
 	if len(names) == 0 {
 		return errors.New("the cluster has no other control-plane node to ask")
 	}
-	return nodes.ViaControlPlanes(names, TryNextControlPlane, call)
+	return nodes.ViaControlPlanes(names, tryNextControlPlane, call)
 }
 
-// TryNextControlPlane reports whether another control plane may answer where one failed with
+// tryNextControlPlane reports whether another control plane may answer where one failed with
 // err: one that is down, or one that is no etcd member, as before it joined.
-func TryNextControlPlane(err error) bool {
+func tryNextControlPlane(err error) bool {
 	switch connect.CodeOf(err) {
 	case connect.CodeUnavailable, connect.CodeDeadlineExceeded:
 		return true
 	case connect.CodeFailedPrecondition:
-		return NotEtcdMember(err)
+		return notEtcdMember(err)
 	}
 	return false
 }
 
-// NotEtcdMember reports whether chalkd refused a request because the node is no etcd member, by
+// notEtcdMember reports whether chalkd refused a request because the node is no etcd member, by
 // the NotEtcdMember detail of its error.
-func NotEtcdMember(err error) bool {
+func notEtcdMember(err error) bool {
 	var ce *connect.Error
 	if !errors.As(err, &ce) {
 		return false

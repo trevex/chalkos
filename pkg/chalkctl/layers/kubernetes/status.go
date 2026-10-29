@@ -50,13 +50,13 @@ func revokedLines(k *kubernetesv1.StatusResponse) []string {
 	}
 	lines := []string{"revoked nodes:"}
 	for _, n := range k.RevokedNodes {
-		lines = append(lines, "  "+n.Name+"\t"+RevokedSince(n))
+		lines = append(lines, "  "+n.Name+"\t"+revokedSince(n))
 	}
 	return lines
 }
 
-// RevokedSince says when a node was revoked.
-func RevokedSince(n *kubernetesv1.RevokedNode) string {
+// revokedSince says when a node was revoked.
+func revokedSince(n *kubernetesv1.RevokedNode) string {
 	if n.RevokedAt == nil {
 		return "at an unknown time"
 	}

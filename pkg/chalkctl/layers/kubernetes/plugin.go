@@ -1,8 +1,9 @@
 // Package kubernetes is chalkctl's Kubernetes layer: the commands that run the cluster's
 // Kubernetes and its etcd and that revoke nodes by name, the Kubernetes section of a node's
 // status, the facts of its images that config is translated with, the share chalkctl delivers a
-// node once no control plane lists it as revoked, and an upgrade's checks of etcd's quorum, its
-// drains and its uncordons.
+// node once no control plane lists it as revoked, an upgrade's checks of etcd's quorum, its
+// drains and its uncordons, and the rotations of the Kubernetes CAs, the service-account key and
+// the encryption key.
 package kubernetes
 
 import (
@@ -22,6 +23,7 @@ var (
 	_ layer.ImageFacts = (*Plugin)(nil)
 	_ layer.Delivery   = (*Plugin)(nil)
 	_ layer.Upgrade    = (*Plugin)(nil)
+	_ layer.Rotation   = (*Plugin)(nil)
 )
 
 // New returns chalkctl's Kubernetes layer.

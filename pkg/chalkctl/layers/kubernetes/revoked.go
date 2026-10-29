@@ -14,18 +14,18 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
 
-// RevokedNodesOf reads the revoked nodes by name from the first of the control planes whose
+// revokedNodesOf reads the revoked nodes by name from the first of the control planes whose
 // status lists them. A control plane that was never bootstrapped keeps no list, so a cluster
 // whose control planes all answer and none of which was bootstrapped has revoked no node yet.
 // Otherwise the list is unknown while no control plane gives it: one does not when it does not
 // answer, cannot read the list, or does not say it read it, as a chalkd from before revocation.
 // The error then names why each did not.
-func RevokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error)) (map[string]*kubernetesv1.RevokedNode, error) {
+func revokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error)) (map[string]*kubernetesv1.RevokedNode, error) {
 	var why []string
 	bootstrapped := false
 	for _, name := range controlPlanes {
 		k, err := status(ctx, name)
-		if errors.Is(err, ErrNoKubernetes) {
+		if errors.Is(err, errNoKubernetes) {
 			why = append(why, fmt.Sprintf("%s: is not bootstrapped: no Kubernetes", name))
 			continue
 		}
@@ -58,7 +58,7 @@ func RevokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx
 }
 
 // notInstalledYet is the error of a control plane that did not answer as an installed node, as
-// before it is installed: RevokedNodesOf counts it among those not bootstrapped.
+// before it is installed: revokedNodesOf counts it among those not bootstrapped.
 type notInstalledYet struct{ error }
 
 func (n notInstalledYet) Unwrap() error { return n.error }
@@ -72,8 +72,8 @@ func (p *Plugin) AdmitInstall(ctx context.Context, t layer.Target) error {
 	if err != nil {
 		return err
 	}
-	status := NodeStatusOf(t.Nodes())
-	list, err := RevokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+	status := nodeStatusOf(t.Nodes())
+	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
 		st, err := status(ctx, name)
 		switch connect.CodeOf(err) {
 		case connect.CodeUnavailable, connect.CodeDeadlineExceeded:
@@ -85,7 +85,7 @@ func (p *Plugin) AdmitInstall(ctx context.Context, t layer.Target) error {
 		return fmt.Errorf("%w; install installs %s only once one does, or with --force", err, t.Name())
 	}
 	if n, ok := list[t.Name()]; ok {
-		return fmt.Errorf("%s is revoked %s, and install installs it only once chalkctl node unrevoke %s lets it back in, or with --force", t.Name(), RevokedSince(n), t.Name())
+		return fmt.Errorf("%s is revoked %s, and install installs it only once chalkctl node unrevoke %s lets it back in, or with --force", t.Name(), revokedSince(n), t.Name())
 	}
 	return nil
 }
@@ -97,8 +97,8 @@ func (p *Plugin) Admit(ctx context.Context, t layer.Target, does string) error {
 	if err != nil {
 		return err
 	}
-	status := NodeStatusOf(t.Nodes())
-	list, err := RevokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+	status := nodeStatusOf(t.Nodes())
+	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
 		// The target is reached where the command reaches it, the others where the inventory says.
 		if name == t.Name() {
 			var st *kubernetesv1.StatusResponse
@@ -115,7 +115,7 @@ func (p *Plugin) Admit(ctx context.Context, t layer.Target, does string) error {
 		return fmt.Errorf("%w; %s only once one does, or with --force", err, does)
 	}
 	if n, ok := list[t.Name()]; ok {
-		return fmt.Errorf("%s is revoked %s, and %s only once chalkctl node unrevoke %s lets it back in, or with --force", t.Name(), RevokedSince(n), does, t.Name())
+		return fmt.Errorf("%s is revoked %s, and %s only once chalkctl node unrevoke %s lets it back in, or with --force", t.Name(), revokedSince(n), does, t.Name())
 	}
 	return nil
 }

@@ -31,8 +31,8 @@ func TestTryNextControlPlane(t *testing.T) {
 		{connect.NewError(connect.CodeNotFound, errors.New("etcd has no member cp9")), false},
 		{errors.New("certificate mismatch"), false},
 	} {
-		if got := TryNextControlPlane(tc.err); got != tc.next {
-			t.Errorf("TryNextControlPlane(%v) = %v, want %v", tc.err, got, tc.next)
+		if got := tryNextControlPlane(tc.err); got != tc.next {
+			t.Errorf("tryNextControlPlane(%v) = %v, want %v", tc.err, got, tc.next)
 		}
 	}
 }

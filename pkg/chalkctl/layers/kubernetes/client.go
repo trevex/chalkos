@@ -29,10 +29,10 @@ func Status(ctx context.Context, conn *client.Conn) (*kubernetesv1.StatusRespons
 	return resp.Msg, nil
 }
 
-// ErrNoKubernetes is the error of a node whose image does not carry the Kubernetes layer.
-var ErrNoKubernetes = errors.New("the node's image has no Kubernetes layer")
+// errNoKubernetes is the error of a node whose image does not carry the Kubernetes layer.
+var errNoKubernetes = errors.New("the node's image has no Kubernetes layer")
 
-// nodeStatus reads the state of the node's Kubernetes over conn; ErrNoKubernetes when its Info
+// nodeStatus reads the state of the node's Kubernetes over conn; errNoKubernetes when its Info
 // names no Kubernetes layer.
 func nodeStatus(ctx context.Context, conn *client.Conn) (*kubernetesv1.StatusResponse, error) {
 	info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
@@ -40,13 +40,13 @@ func nodeStatus(ctx context.Context, conn *client.Conn) (*kubernetesv1.StatusRes
 		return nil, err
 	}
 	if !slices.Contains(info.Msg.Layers, layers.Kubernetes) {
-		return nil, ErrNoKubernetes
+		return nil, errNoKubernetes
 	}
 	return Status(ctx, conn)
 }
 
-// NodeStatusOf reads the state of an installed node's Kubernetes through nodes, as nodeStatus does.
-func NodeStatusOf(nodes layer.Nodes) func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+// nodeStatusOf reads the state of an installed node's Kubernetes through nodes, as nodeStatus does.
+func nodeStatusOf(nodes layer.Nodes) func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
 	return func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
 		var st *kubernetesv1.StatusResponse
 		err := nodes.Call(name, func(conn *client.Conn) error {

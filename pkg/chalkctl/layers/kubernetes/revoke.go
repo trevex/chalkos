@@ -98,7 +98,7 @@ func controlPlanesRead(h layer.Host, ctx context.Context, f viaFlags, name strin
 	if err != nil {
 		return err
 	}
-	return everyControlPlaneReads(ctx, controlPlanes, name, NodeStatusOf(nodes))
+	return everyControlPlaneReads(ctx, controlPlanes, name, nodeStatusOf(nodes))
 }
 
 // everyControlPlaneReads refuses to revoke the node while a control plane may renew its node
@@ -110,7 +110,7 @@ func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name st
 	var why []string
 	for _, cp := range controlPlanes {
 		k, err := status(ctx, cp)
-		if errors.Is(err, ErrNoKubernetes) {
+		if errors.Is(err, errNoKubernetes) {
 			continue
 		}
 		if err != nil {

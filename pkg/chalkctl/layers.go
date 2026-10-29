@@ -48,3 +48,21 @@ func payloadsOf(t *target, now time.Time) ([]*anypb.Any, error) {
 	}
 	return payloads, nil
 }
+
+// nodeCAHolders are the nodes that every compiled layer names as holders of the node CA, in the
+// layers' order and each once.
+func nodeCAHolders(c *cluster) ([]string, error) {
+	var names []string
+	for _, p := range compiled[layer.Rotation]() {
+		holders, err := p.NodeCAHolders(pluginCluster{c})
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range holders {
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	return names, nil
+}

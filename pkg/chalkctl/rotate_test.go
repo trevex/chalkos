@@ -990,3 +990,16 @@ func TestRotateIgnoreRevoked(t *testing.T) {
 		t.Errorf("err = %v, want a refusal naming --ignore-revoked", err)
 	}
 }
+
+// TestRotateRefusesAKindNoLayerRotates checks that a kind no compiled layer rotates is refused
+// before anything is read or sent.
+func TestRotateRefusesAKindNoLayerRotates(t *testing.T) {
+	saved := plugins
+	plugins = nil
+	t.Cleanup(func() { plugins = saved })
+	ta := newTestApp(t)
+	err := ta.run(context.Background(), []string{"rotate", "kubernetes-ca"})
+	if err == nil || !strings.Contains(err.Error(), "no layer of chalkctl rotates") {
+		t.Fatalf("err = %v, want the kind refused", err)
+	}
+}

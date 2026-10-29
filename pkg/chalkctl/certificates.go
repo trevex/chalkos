@@ -15,7 +15,6 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
-	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -113,7 +112,7 @@ func (a *app) nodeCARotate(ctx context.Context, f nodeCARotateFlags) error {
 	if err := c.requireNodes("node-ca rotate"); err != nil {
 		return err
 	}
-	controlPlanes, err := c.nodesOf(kubernetes.KindControlPlane, "")
+	controlPlanes, err := nodeCAHolders(c)
 	if err != nil {
 		return err
 	}

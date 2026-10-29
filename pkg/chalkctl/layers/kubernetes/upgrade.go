@@ -86,7 +86,7 @@ func quorum(ctx context.Context, u layer.Upgrading, name string) error {
 // With 4 voters a reboot needs 3 healthy others, a removal 2.
 func quorumOnce(ctx context.Context, u layer.Upgrading, name string) error {
 	var members []*kubernetesv1.EtcdMember
-	err := u.ViaCoordinators(name, TryNextControlPlane, func(conn *client.Conn) error {
+	err := u.ViaCoordinators(name, tryNextControlPlane, func(conn *client.Conn) error {
 		resp, err := Client(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
 		if err == nil {
 			members = resp.Msg.Members
@@ -127,7 +127,7 @@ func quorumOnce(ctx context.Context, u layer.Upgrading, name string) error {
 // after it timed out, when the node's pods may still be stopping and another drain would only
 // wait as long again.
 func drainElsewhere(err error) bool {
-	return connect.CodeOf(err) != connect.CodeDeadlineExceeded && TryNextControlPlane(err)
+	return connect.CodeOf(err) != connect.CodeDeadlineExceeded && tryNextControlPlane(err)
 }
 
 // drain cordons a node of the cluster and evicts its pods.
@@ -157,7 +157,7 @@ func drain(ctx context.Context, u layer.Upgrading, name string) error {
 // uncordon makes a node of the cluster schedulable again, when the upgrade cordoned it.
 func uncordon(ctx context.Context, u layer.Upgrading, name string) error {
 	var uncordoned bool
-	err := u.ViaCoordinators(name, TryNextControlPlane, func(conn *client.Conn) error {
+	err := u.ViaCoordinators(name, tryNextControlPlane, func(conn *client.Conn) error {
 		resp, err := Client(conn).UncordonNode(ctx, connect.NewRequest(&kubernetesv1.UncordonNodeRequest{Node: name}))
 		if err == nil {
 			uncordoned = resp.Msg.Uncordoned

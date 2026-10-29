@@ -12,10 +12,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
-	kuberneteslayer "github.com/trevex/chalkos/pkg/chalkctl/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
@@ -66,6 +64,9 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	kind := clustersecrets.RotationKind(pos[0])
 	if !slices.Contains(clustersecrets.RotationKinds, kind) {
 		return cli.Usagef("unknown kind %q; rotate one of %s", kind, clustersecrets.RotationKindList())
+	}
+	if kind != clustersecrets.RotateOSCA && rotator(kind) == nil {
+		return cli.Usagef("no layer of chalkctl rotates the %s", kind.Name())
 	}
 	c, err := loadCluster(ctx, cf)
 	if err != nil {
@@ -188,7 +189,7 @@ func (r *rotation) finishGuard(ctx context.Context, kind clustersecrets.Rotation
 	if kind == clustersecrets.RotateOSCA {
 		return nil
 	}
-	return r.finishGuardKubernetes(ctx, kind, force)
+	return rotator(kind).FinishGuard(ctx, r, kind, force)
 }
 
 // run applies the phase the secrets file records and the ones after it, up to the kind's pause
@@ -251,29 +252,48 @@ func (r *rotation) apply(ctx context.Context, kind clustersecrets.RotationKind, 
 	if kind == clustersecrets.RotateOSCA {
 		return r.applyOSCA(ctx, phase)
 	}
-	return r.applyKubernetes(ctx, kind, phase)
+	return rotator(kind).ApplyRotation(ctx, r, kind, phase)
 }
 
-// nodesOf lists the cluster's nodes of a Kubernetes kind in name order, but the revoked ones:
-// control planes, workers, or with kind "" those without Kubernetes.
+// rotator is the plugin that runs the rotation of kind; nil for the OS CA's, which the driver
+// runs.
+func rotator(kind clustersecrets.RotationKind) layer.Rotation {
+	for _, p := range compiled[layer.Rotation]() {
+		if p.Rotates(kind) {
+			return p
+		}
+	}
+	return nil
+}
+
+// nodesOf lists the cluster's nodes of a Node type in name order, but the revoked ones: control
+// planes, workers, or with kind "" those without one.
 func (r *rotation) nodesOf(kind string) []string {
 	// rotate read every node's kind before it started, so no error is left to report.
 	names, _ := r.cluster.nodesOf(kind, "")
 	return slices.DeleteFunc(names, func(name string) bool { return r.revoked[name] })
 }
 
-// skipRevoked reads the revoked nodes from the first control plane that answers with them and
-// leaves those of the cluster out of the rotation, naming each as it first skips it. Without the
-// list no phase runs, so none hands a certificate to a revoked node. A node stays skipped for the
-// rest of the run once it is: it missed the phases before.
+// skipRevoked reads the revoked nodes from every layer that lists them and leaves those of the
+// cluster out of the rotation, naming each as it first skips it. Without a layer's list no phase
+// runs, so none hands a certificate to a revoked node. A node stays skipped for the rest of the
+// run once it is: it missed the phases before.
 func (r *rotation) skipRevoked(ctx context.Context) error {
 	if r.ignoreRevoked {
 		return nil
 	}
 	nodes := r.allNodes()
-	list, err := kuberneteslayer.RevokedNodesOf(ctx, r.nodesOf(kubernetes.KindControlPlane), r.kubernetesStatus)
-	if err != nil {
-		return fmt.Errorf("%w; rotate runs only once one does, so it never hands a certificate to a revoked node, or with --ignore-revoked", err)
+	list := map[string]string{}
+	for _, p := range compiled[layer.Rotation]() {
+		revoked, err := p.RevokedNodes(ctx, r)
+		if err != nil {
+			return fmt.Errorf("%w; rotate runs only once one does, so it never hands a certificate to a revoked node, or with --ignore-revoked", err)
+		}
+		for name, since := range revoked {
+			if _, ok := list[name]; !ok {
+				list[name] = since
+			}
+		}
 	}
 	if r.revoked == nil {
 		r.revoked = map[string]bool{}
@@ -281,7 +301,7 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 	for _, name := range slices.Sorted(maps.Keys(list)) {
 		if slices.Contains(nodes, name) && !r.revoked[name] {
 			r.revoked[name] = true
-			r.say("skipping %s: revoked %s", name, kuberneteslayer.RevokedSince(list[name]))
+			r.say("skipping %s: revoked %s", name, list[name])
 		}
 	}
 	return nil
@@ -354,13 +374,45 @@ func (r *rotation) status(ctx context.Context, name string) (*nodev1.StatusRespo
 	return nodes.status(ctx, name)
 }
 
-// kubernetesStatus reads the state of a node's Kubernetes.
-func (r *rotation) kubernetesStatus(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+var _ layer.Rotating = (*rotation)(nil)
+
+func (r *rotation) Say(format string, args ...any)  { r.say(format, args...) }
+func (r *rotation) Secrets() clustersecrets.Secrets { return r.file.secrets }
+func (r *rotation) Now() time.Time                  { return r.a.now() }
+func (r *rotation) Timeout() time.Duration          { return r.timeout }
+func (r *rotation) Poll() time.Duration             { return r.poll }
+func (r *rotation) NodesOf(kind string) []string    { return r.nodesOf(kind) }
+
+func (r *rotation) Call(name string, fn func(conn *client.Conn) error) error {
+	return r.call(name, fn)
+}
+
+func (r *rotation) Status(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
+	return r.status(ctx, name)
+}
+
+func (r *rotation) WaitFor(ctx context.Context, what string, check func() error) error {
+	return r.waitFor(ctx, what, check)
+}
+
+func (r *rotation) WaitStatus(ctx context.Context, name, what string, check func(st *nodev1.StatusResponse) error) error {
+	return r.waitStatus(ctx, name, what, check)
+}
+
+func (r *rotation) EachNode(names []string, fn func(name string) error) error {
+	return r.eachNode(names, fn)
+}
+
+func (r *rotation) DeliverPayloads(ctx context.Context, name string) error {
+	return r.deliverPayloads(ctx, name)
+}
+
+func (r *rotation) Nodes() (layer.Nodes, error) {
 	nodes, err := r.nodes()
 	if err != nil {
 		return nil, err
 	}
-	return kuberneteslayer.NodeStatusOf(pluginNodes{nodes})(ctx, name)
+	return pluginNodes{nodes}, nil
 }
 
 // waitFor checks until check passes, up to the rotation's timeout.
@@ -422,7 +474,12 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 		if err != nil {
 			return err
 		}
-		return r.eachNode(r.nodesOf(kubernetes.KindControlPlane), func(name string) error {
+		holders, err := nodeCAHolders(r.cluster)
+		if err != nil {
+			return err
+		}
+		holders = slices.DeleteFunc(holders, func(name string) bool { return r.revoked[name] })
+		return r.eachNode(holders, func(name string) error {
 			if err := r.deliverPayloads(ctx, name); err != nil {
 				return err
 			}
@@ -482,7 +539,7 @@ func pausesAfter(kind clustersecrets.RotationKind, phase clustersecrets.Phase) b
 func (r *rotation) paused(ctx context.Context, rot clustersecrets.Rotation) error {
 	switch {
 	case rot.Kind != clustersecrets.RotateOSCA:
-		return r.pausedKubernetes(ctx, rot)
+		return rotator(rot.Kind).Paused(ctx, r, rot)
 	case rot.Phase == clustersecrets.PhaseAccept:
 		r.say("Every node trusts the old and the new OS CA. Issue new client files now with chalkctl config new: they carry both OS CAs and work throughout the rotation and after it. Client files from before the rotation stop verifying the nodes from the switch on and are refused at the finish. Then continue with chalkctl rotate %s --resume, which makes the new OS CA issue.", rot.Kind)
 	default:
