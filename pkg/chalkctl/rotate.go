@@ -15,6 +15,7 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	kuberneteslayer "github.com/trevex/chalkos/pkg/chalkctl/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
@@ -280,7 +281,7 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 	for _, name := range slices.Sorted(maps.Keys(list)) {
 		if slices.Contains(nodes, name) && !r.revoked[name] {
 			r.revoked[name] = true
-			r.say("skipping %s: revoked %s", name, revokedSince(list[name]))
+			r.say("skipping %s: revoked %s", name, kuberneteslayer.RevokedSince(list[name]))
 		}
 	}
 	return nil

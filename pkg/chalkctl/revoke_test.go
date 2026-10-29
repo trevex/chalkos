@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -141,16 +140,6 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 	out := ta.stdout.String()
 	if !strings.Contains(out, "revoked nodes:\n  w1  since 2026-10-23T12:00:00Z\n  w2  at an unknown time\n") {
 		t.Errorf("status:\n%s", out)
-	}
-}
-
-func TestRevokedLines(t *testing.T) {
-	if got := revokedLines(&kubernetesv1.StatusResponse{Kind: "worker"}); got != nil {
-		t.Errorf("a worker's lines = %q", got)
-	}
-	got := revokedLines(&kubernetesv1.StatusResponse{RevokedNodesError: "read the revoked nodes: connection refused"})
-	if want := []string{"revoked nodes unknown: read the revoked nodes: connection refused"}; !slices.Equal(got, want) {
-		t.Errorf("lines = %q, want %q", got, want)
 	}
 }
 

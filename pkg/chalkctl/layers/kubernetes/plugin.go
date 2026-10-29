@@ -1,5 +1,6 @@
 // Package kubernetes is chalkctl's Kubernetes layer: the commands that run the cluster's
-// Kubernetes and its etcd, and that revoke nodes by name.
+// Kubernetes and its etcd and that revoke nodes by name, the Kubernetes section of a node's
+// status, and the facts of its images that config is translated with.
 package kubernetes
 
 import (
@@ -13,8 +14,10 @@ import (
 type Plugin struct{}
 
 var (
-	_ layer.Plugin   = (*Plugin)(nil)
-	_ layer.Commands = (*Plugin)(nil)
+	_ layer.Plugin     = (*Plugin)(nil)
+	_ layer.Commands   = (*Plugin)(nil)
+	_ layer.Status     = (*Plugin)(nil)
+	_ layer.ImageFacts = (*Plugin)(nil)
 )
 
 // New returns chalkctl's Kubernetes layer.

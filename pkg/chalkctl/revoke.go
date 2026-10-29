@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"connectrpc.com/connect"
 
@@ -13,30 +12,6 @@ import (
 	kuberneteslayer "github.com/trevex/chalkos/pkg/chalkctl/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 )
-
-// revokedLines are the status lines of the nodes a control plane lists as revoked, or of why
-// it could not read them.
-func revokedLines(k *kubernetesv1.StatusResponse) []string {
-	if k.RevokedNodesError != "" {
-		return []string{"revoked nodes unknown: " + k.RevokedNodesError}
-	}
-	if len(k.RevokedNodes) == 0 {
-		return nil
-	}
-	lines := []string{"revoked nodes:"}
-	for _, n := range k.RevokedNodes {
-		lines = append(lines, "  "+n.Name+"\t"+revokedSince(n))
-	}
-	return lines
-}
-
-// revokedSince says when a node was revoked.
-func revokedSince(n *kubernetesv1.RevokedNode) string {
-	if n.RevokedAt == nil {
-		return "at an unknown time"
-	}
-	return "since " + n.RevokedAt.AsTime().UTC().Format(time.RFC3339)
-}
 
 // revokedNodesOf reads the revoked nodes by name from the first of the control planes whose
 // status lists them. A control plane that was never bootstrapped keeps no list, so a cluster
@@ -109,7 +84,7 @@ func installNotRevoked(ctx context.Context, t *target) error {
 		return fmt.Errorf("%w; install installs %s only once one does, or with --force", err, t.name)
 	}
 	if n, ok := list[t.name]; ok {
-		return fmt.Errorf("%s is revoked %s, and install installs it only once chalkctl node unrevoke %s lets it back in, or with --force", t.name, revokedSince(n), t.name)
+		return fmt.Errorf("%s is revoked %s, and install installs it only once chalkctl node unrevoke %s lets it back in, or with --force", t.name, kuberneteslayer.RevokedSince(n), t.name)
 	}
 	return nil
 }
@@ -133,7 +108,7 @@ func notRevoked(ctx context.Context, t *target, does string) error {
 		return fmt.Errorf("%w; %s only once one does, or with --force", err, does)
 	}
 	if n, ok := list[t.name]; ok {
-		return fmt.Errorf("%s is revoked %s, and %s only once chalkctl node unrevoke %s lets it back in, or with --force", t.name, revokedSince(n), does, t.name)
+		return fmt.Errorf("%s is revoked %s, and %s only once chalkctl node unrevoke %s lets it back in, or with --force", t.name, kuberneteslayer.RevokedSince(n), does, t.name)
 	}
 	return nil
 }

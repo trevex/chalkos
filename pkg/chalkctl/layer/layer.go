@@ -10,9 +10,11 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/config"
 )
 
 // Plugin is a layer of chalkctl.
@@ -26,6 +28,23 @@ type Commands interface {
 	// Commands are the layer's commands by the group they join: "" for chalkctl itself, or a
 	// group's name, such as "node".
 	Commands(h Host) map[string][]*cobra.Command
+}
+
+// Status is a plugin that adds its section to a node's status.
+type Status interface {
+	// PrintStatus prints the layer's section of the status of the node conn reaches, whose image
+	// carries the layer.
+	PrintStatus(ctx context.Context, h Host, conn *client.Conn) error
+}
+
+// ImageFacts is a plugin whose layer's images carry facts config is translated with.
+type ImageFacts interface {
+	// ContractFacts reads the facts of an image's contract: read takes a file name within the
+	// image's directory, as its contract layer holds it. They are nil for an image without them.
+	ContractFacts(read func(name string) ([]byte, error)) (*anypb.Any, error)
+	// Target sets on t what the facts give config's translation; claimed is false for facts of
+	// another layer.
+	Target(facts *anypb.Any, t *config.Target) (claimed bool, err error)
 }
 
 // Host is what chalkctl gives its plugins' commands.

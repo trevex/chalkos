@@ -1,4 +1,5 @@
-// Package router is chalkctl's router layer: the command that shows a router's routes.
+// Package router is chalkctl's router layer: the command that shows a router's routes, and the
+// router's section of a node's status.
 package router
 
 import (
@@ -14,6 +15,7 @@ type Plugin struct{}
 var (
 	_ layer.Plugin   = (*Plugin)(nil)
 	_ layer.Commands = (*Plugin)(nil)
+	_ layer.Status   = (*Plugin)(nil)
 )
 
 // New returns chalkctl's router layer.

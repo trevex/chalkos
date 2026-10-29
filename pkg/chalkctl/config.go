@@ -12,11 +12,11 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/inventory"
-	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -30,8 +30,8 @@ type contract struct {
 	// have none.
 	facts   []*anypb.Any
 	schemas *schema.Schemas
-	// image is the image's Kubernetes facts; nil on an image without Kubernetes.
-	image *k8s.Image
+	// target is what the facts give config's translation, without the platform.
+	target config.Target
 }
 
 func newContract(files map[string][]byte, facts []*anypb.Any) (contract, error) {
@@ -41,34 +41,39 @@ func newContract(files map[string][]byte, facts []*anypb.Any) (contract, error) 
 	}
 	c := contract{files: files, facts: facts, schemas: s}
 	for _, f := range facts {
-		img, ok, err := k8s.ImageOfPayload(f)
-		if !ok {
+		claimed := false
+		for _, p := range compiled[layer.ImageFacts]() {
+			if claimed, err = p.Target(f, &c.target); claimed || err != nil {
+				break
+			}
+		}
+		switch {
+		case err != nil:
+			return contract{}, err
+		case !claimed:
 			return contract{}, fmt.Errorf("the image's contract carries facts of type %s, which this chalkctl does not know", f.GetTypeUrl())
-		}
-		if err != nil {
-			return contract{}, fmt.Errorf("image.json: %w", err)
-		}
-		if c.image == nil {
-			c.image = &img
 		}
 	}
 	return c, nil
 }
 
-// imageFacts are the layer facts of an image.json as an image holds it; none for an image
-// without one.
-func imageFacts(imageJSON []byte) ([]*anypb.Any, error) {
-	if len(imageJSON) == 0 {
-		return nil, nil
+// contractFacts are the layer facts of an image's contract, whose files read reads by their names
+// in the image's directory; none for an image whose layers have none.
+func contractFacts(read func(name string) ([]byte, error)) ([]*anypb.Any, error) {
+	var facts []*anypb.Any
+	for _, p := range compiled[layer.ImageFacts]() {
+		f, err := p.ContractFacts(read)
+		if err != nil {
+			return nil, err
+		}
+		if f != nil {
+			facts = append(facts, f)
+		}
 	}
-	p, err := k8s.FactsPayload(imageJSON)
-	if err != nil {
-		return nil, err
-	}
-	return []*anypb.Any{p}, nil
+	return facts, nil
 }
 
-// imageContract reads the contract of an image directory: its schemas/ and image.json.
+// imageContract reads the contract of an image directory: its schemas/ and its layers' facts.
 func imageContract(dir string) (contract, error) {
 	paths, err := filepath.Glob(filepath.Join(dir, "schemas", "*.json"))
 	if err != nil {
@@ -85,19 +90,15 @@ func imageContract(dir string) (contract, error) {
 		}
 		files[filepath.Base(p)] = data
 	}
-	imageJSON, err := os.ReadFile(filepath.Join(dir, "image.json"))
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		// An image directory of an older chalkos carries its cluster file instead, which no node
-		// translates config with any more: read without image.json, the image would pass for one
-		// without Kubernetes.
+	// An image directory of an older chalkos carries its cluster file instead of image.json, which
+	// no node translates config with any more: read without image.json, the image would pass for
+	// one without Kubernetes.
+	if _, err := os.Stat(filepath.Join(dir, "image.json")); errors.Is(err, fs.ErrNotExist) {
 		if _, err := os.Stat(filepath.Join(dir, "kubernetes.json")); err == nil {
 			return contract{}, fmt.Errorf("%s has kubernetes.json but no image.json, so it was built by an older chalkos; build the image again with this version", dir)
 		}
-	case err != nil:
-		return contract{}, err
 	}
-	facts, err := imageFacts(imageJSON)
+	facts, err := contractFacts(func(name string) ([]byte, error) { return os.ReadFile(filepath.Join(dir, name)) })
 	if err != nil {
 		return contract{}, err
 	}
@@ -155,7 +156,9 @@ func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 // with config.Translate, and against the image's change rules that chalkctl can check without
 // the node's config. It returns the config as chalkctl delivers it.
 func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
-	set, id, err := config.Translate(nc.Name, nc.Documents, c.schemas, config.Target{Platform: c.platform, Image: c.image})
+	t := c.target
+	t.Platform = c.platform
+	set, id, err := config.Translate(nc.Name, nc.Documents, c.schemas, t)
 	if err != nil {
 		return delivery{}, err
 	}
@@ -234,7 +237,7 @@ func inventoryContract(nc *inventory.NodeConfig) (contract, error) {
 	if err != nil {
 		return contract{}, err
 	}
-	facts, err := imageFacts(a.Contract.ImageJSON)
+	facts, err := contractFacts(a.Contract.ReadFile)
 	if err != nil {
 		return contract{}, err
 	}

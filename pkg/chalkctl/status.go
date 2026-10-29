@@ -6,21 +6,15 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
-	kuberneteslayer "github.com/trevex/chalkos/pkg/chalkctl/layers/kubernetes"
-	routerlayer "github.com/trevex/chalkos/pkg/chalkctl/layers/router"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
-	"github.com/trevex/chalkos/pkg/layers"
 )
 
 func (a *app) statusCommand() *cobra.Command {
@@ -100,26 +94,8 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
-	if slices.Contains(info.Msg.Layers, layers.Kubernetes) {
-		k, err := kuberneteslayer.Status(ctx, conn)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(a.stdout, kubernetesLine(k))
-		w := a.table()
-		for _, line := range revokedLines(k) {
-			fmt.Fprintln(w, line)
-		}
-		if err := w.Flush(); err != nil {
-			return err
-		}
-	}
-	if slices.Contains(info.Msg.Layers, layers.Router) {
-		resp, err := routerlayer.Client(conn).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
-		if err != nil {
-			return err
-		}
-		if err := a.routerStatus(resp.Msg); err != nil {
+	for _, p := range pluginsOf[layer.Status](info.Msg.Layers) {
+		if err := p.PrintStatus(ctx, host{a}, conn); err != nil {
 			return err
 		}
 	}
@@ -150,65 +126,6 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 		fmt.Fprintf(a.stdout, "failed unit %s\n", u)
 	}
 	return nil
-}
-
-// routerStatus prints a router's BGP sessions, its NAT64 instances and its resolver, or why their
-// state is unknown. A router without NAT64 instances or a resolver prints no line of them.
-func (a *app) routerStatus(r *routerv1.StatusResponse) error {
-	if err := a.bgpStatus(r); err != nil {
-		return err
-	}
-	switch {
-	case r.Nat64Error != "":
-		fmt.Fprintf(a.stdout, "nat64: unknown: %s\n", r.Nat64Error)
-	case len(r.Nat64) > 0:
-		fmt.Fprintln(a.stdout, "nat64:")
-		w := a.table()
-		fmt.Fprintln(w, "  INSTANCE\tSESSIONS\tBINDINGS\tPOOL TCP\tPOOL UDP\tPOOL ICMP")
-		for _, n := range r.Nat64 {
-			pools := map[string]string{}
-			for _, p := range n.Pools {
-				if p.Size > 0 {
-					pools[p.Protocol] = strconv.FormatUint(p.Size, 10)
-				}
-			}
-			fmt.Fprintf(w, "  %s\t%d\t%d\t%s\t%s\t%s\n", n.Name, n.Sessions, n.Bindings, cmp.Or(pools["tcp"], "-"), cmp.Or(pools["udp"], "-"), cmp.Or(pools["icmp"], "-"))
-		}
-		if err := w.Flush(); err != nil {
-			return err
-		}
-	}
-	switch {
-	case r.Resolver == nil:
-	case r.Resolver.Running:
-		fmt.Fprintln(a.stdout, "resolver: running")
-	default:
-		fmt.Fprintf(a.stdout, "resolver: not running: %s\n", r.Resolver.Error)
-	}
-	return nil
-}
-
-// bgpStatus prints a router's BGP sessions, or why their state is unknown.
-func (a *app) bgpStatus(r *routerv1.StatusResponse) error {
-	switch {
-	case r.BgpError != "":
-		fmt.Fprintf(a.stdout, "bgp: unknown: %s\n", r.BgpError)
-		return nil
-	case len(r.Peers) == 0:
-		fmt.Fprintln(a.stdout, "bgp: no sessions")
-		return nil
-	}
-	fmt.Fprintln(a.stdout, "bgp:")
-	w := a.table()
-	fmt.Fprintln(w, "  PEER\tNEIGHBOR\tSTATE\tUPTIME\tRECEIVED\tSENT\tBFD")
-	for _, p := range r.Peers {
-		uptime := "-"
-		if p.State == "Established" {
-			uptime = (time.Duration(p.UptimeSeconds) * time.Second).String()
-		}
-		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%d\t%d\t%s\n", p.Name, p.Neighbor, p.State, uptime, p.PrefixesReceived, p.PrefixesSent, cmp.Or(p.Bfd, "-"))
-	}
-	return w.Flush()
 }
 
 // bootLines are the status lines of the node's boot: the image it runs, an upgrade it boots next,
@@ -273,21 +190,6 @@ func timeLine(t *nodev1.TimeStatus) string {
 		return "time: not synchronised; certificates are checked against this clock"
 	}
 	return fmt.Sprintf("time: synchronised to %s, offset %+.6f s", t.Source, t.OffsetSeconds)
-}
-
-// kubernetesLine is the status line of the node's Kubernetes side.
-func kubernetesLine(k *kubernetesv1.StatusResponse) string {
-	line := fmt.Sprintf("kubernetes %s: %s", k.Kind, k.State)
-	if k.NodeReady != "" {
-		line += ", node ready: " + k.NodeReady
-	}
-	if k.Vip != "" {
-		line += ", vip " + k.Vip
-	}
-	if k.ControlPlane != "" {
-		line += ", control plane " + k.ControlPlane
-	}
-	return line
 }
 
 // outputLine is an output's line of the status: the start of the hash of the files the node

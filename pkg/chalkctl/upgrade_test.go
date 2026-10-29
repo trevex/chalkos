@@ -1165,7 +1165,7 @@ func TestImageContractRefusesAnOlderImageDirectory(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	writeFile(t, filepath.Join(dir, "image.json"), testImageJSON)
-	if c, err := imageContract(dir); err != nil || c.image == nil {
+	if c, err := imageContract(dir); err != nil || c.target.Image == nil {
 		t.Fatalf("contract = %+v, %v", c, err)
 	}
 }
