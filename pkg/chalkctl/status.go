@@ -146,7 +146,10 @@ func bootLines(b *nodev1.BootStatus) []string {
 		line += ", not found healthy yet"
 	}
 	lines := []string{line}
-	if b.Staged != nil {
+	switch {
+	case b.Staged != nil && bytes.Equal(b.GetRollback().GetRootHash(), b.Staged.GetRootHash()):
+		lines = append(lines, fmt.Sprintf("rollback to %s staged; it boots next", bootImageName(b.Staged)))
+	case b.Staged != nil:
 		lines = append(lines, fmt.Sprintf("upgrade to %s installed; it boots next", bootImageName(b.Staged)))
 	}
 	if b.Previous != nil {

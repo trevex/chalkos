@@ -276,6 +276,9 @@ func TestApplyConfigRollback(t *testing.T) {
 	if err := run("apply-config", "n1", "--rollback", "--diff"); err != nil || !strings.Contains(ta.stdout.String(), "n1: config 0 added, 1 removed (TimeSync \"default\"), 0 changed") {
 		t.Errorf("--diff = %v:\n%s", err, ta.stdout)
 	}
+	if want := "- TimeSync \"default\" (in the running config, not in the previous one)\n"; !strings.Contains(ta.stdout.String(), want) {
+		t.Errorf("--diff lacks %q:\n%s", want, ta.stdout)
+	}
 	if v, _ := slot.Version(slotOf(t, s)); v != second {
 		t.Errorf("--diff changed the node's config to %s", v)
 	}

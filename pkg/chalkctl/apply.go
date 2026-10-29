@@ -215,7 +215,7 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	changes := diffConfig(running, previous)
 	fmt.Fprintf(a.stdout, "%s: %s\n", t.name, changes.summary())
 	if f.diff {
-		changes.write(a.stdout)
+		changes.writeRemoved(a.stdout, "in the running config, not in the previous one")
 		return nil
 	}
 	resp, err := conn.RollbackConfig(ctx, connect.NewRequest(&nodev1.RollbackConfigRequest{Version: version}))

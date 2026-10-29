@@ -90,6 +90,8 @@ func TestBootLines(t *testing.T) {
 		{&nodev1.BootStatus{Running: running, Entry: "chalkos_7+2-1.efi"}, []string{"image 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6), booted from chalkos_7+2-1.efi, not found healthy yet"}},
 		{&nodev1.BootStatus{Running: running, Entry: "chalkos_7.efi", Blessed: true, Staged: next},
 			[]string{"image 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6), booted from chalkos_7.efi", "upgrade to 3fa93fa93fa9 (v1.5.0) installed; it boots next"}},
+		{&nodev1.BootStatus{Running: running, Entry: "chalkos_7.efi", Blessed: true, Staged: next, Rollback: next},
+			[]string{"image 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6), booted from chalkos_7.efi", "rollback to 3fa93fa93fa9 (v1.5.0) staged; it boots next"}},
 		{&nodev1.BootStatus{Running: running, Entry: "chalkos_7.efi", Blessed: true, Previous: &nodev1.BootImage{RootHash: next.RootHash, Generation: 6, Tag: "v1.5.0"}},
 			[]string{"image 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6), booted from chalkos_7.efi", "previous image 3fa93fa93fa9 (v1.5.0) (upgrade --rollback boots it)"}},
 		{&nodev1.BootStatus{Running: running, Entry: "chalkos_7.efi", Blessed: true, Failed: next, Journal: []string{"a", "b"}},

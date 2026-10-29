@@ -192,15 +192,21 @@ func (c configDiff) summary() string {
 	return fmt.Sprintf("%s, %d changed", line, changed)
 }
 
-// write writes the whole diff, a line per document and one per changed field, the path with the
-// old and the new value, or that a secret field changed.
+// write writes the whole diff of the inventory's config against the node's, as writeRemoved does.
 func (c configDiff) write(w io.Writer) {
+	c.writeRemoved(w, "on the node, not in the inventory")
+}
+
+// writeRemoved writes the whole diff, a line per document and one per changed field, the path with
+// the old and the new value, or that a secret field changed. A removed document's line says where
+// it is and is not, as removed gives it.
+func (c configDiff) writeRemoved(w io.Writer, removed string) {
 	for _, d := range c {
 		switch d.op {
 		case '+':
 			fmt.Fprintf(w, "+ %s\n", d.doc)
 		case '-':
-			fmt.Fprintf(w, "- %s (on the node, not in the inventory)\n", d.doc)
+			fmt.Fprintf(w, "- %s (%s)\n", d.doc, removed)
 		default:
 			fmt.Fprintf(w, "~ %s\n", d.doc)
 			for _, f := range d.fields {
