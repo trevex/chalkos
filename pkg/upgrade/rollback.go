@@ -37,11 +37,18 @@ func Previous(entries []esp.Entry, imageID string, booted esp.Entry, running []b
 
 // Rollback makes the image Previous names, whose store has the root hash, boot next again. Nothing
 // is written to the inactive slot, which must still hold the store. The image's UKI is checked as
-// an upgrade checks a new one, then renamed to the image's next generation with the tries it asks
-// for: systemd-boot counts its boots and falls back to the running image should they fail, as
-// after an upgrade. The rename is the only change, so until it the running image boots next; a
-// rollback stopped before it changed nothing, and one asked for again after it finds the image
-// staged. The caller keeps Install from running meanwhile, as Install retires the slot.
+// an upgrade checks a new one, then renamed to the image's next generation. How the node falls
+// back depends on whether the running image's boot was found healthy:
+//   - It was: the name carries the tries the UKI asks for, so systemd-boot counts the image's
+//     boots and falls back to the running image should they fail, as after an upgrade.
+//   - It was not, as when the upgrade that replaced the image is the one to leave: the name
+//     carries no tries. The image's boot was found healthy before and it boots with the config
+//     slot it last ran with, so it stays the node's known-good entry; a counted one would leave
+//     only entries whose boots were never found healthy once its tries were used up.
+//
+// The rename is the only change, so until it the running image boots next; a rollback stopped
+// before it changed nothing, and one asked for again after it finds the image staged. The caller
+// keeps Install from running meanwhile, as Install retires the slot.
 //   - A node that runs the image answers AlreadyInstalled, and one that boots it next already
 //     AlreadyStaged, so a rollback asked for twice happens once.
 //   - Another image staged to boot next replaced the image before, as an upgrade's retirement
@@ -65,6 +72,12 @@ func (n *Node) Rollback(ctx context.Context, rootHash []byte) (Result, error) {
 	booted, err := Booted(all, n.EFIVars, running)
 	if err != nil {
 		return Result{}, err
+	}
+	if staged, ok := rolledBack(all, imageID, booted); ok {
+		if bytes.Equal(staged.RootHash, rootHash) {
+			return Result{AlreadyStaged: true, Entry: staged.File}, nil
+		}
+		return Result{}, fmt.Errorf("the image %x is staged to boot next from %s", staged.RootHash, staged.File)
 	}
 	if staged, ok := esp.StagedEntry(all, imageID, booted); ok {
 		if bytes.Equal(staged.RootHash, rootHash) {
@@ -110,11 +123,30 @@ func (n *Node) Rollback(ctx context.Context, rootHash []byte) (Result, error) {
 		return Result{}, err
 	}
 	name := esp.CountedEntryName(imageID, generation, tries)
+	if booted.TriesLeft >= 0 {
+		name = esp.EntryName(imageID, generation)
+	}
 	if err := esp.Name(n.ESP, path, name, n.Change); err != nil {
 		return Result{}, err
 	}
 	log.Printf("%s %x boots next again as %s", imageID, rootHash, name)
 	return Result{Entry: name}, nil
+}
+
+// rolledBack is the entry a rollback while the running image's boot was not found healthy left:
+// the image's highest generation, above the booted entry's, without tries. esp.StagedEntry finds
+// the counted entries an upgrade or a rollback leaves otherwise.
+func rolledBack(entries []esp.Entry, imageID string, booted esp.Entry) (esp.Entry, bool) {
+	var highest esp.Entry
+	var generation uint64
+	for _, e := range entries {
+		if g := esp.EntryGeneration(e.ID, imageID); g > generation {
+			highest, generation = e, g
+		}
+	}
+	top := esp.EntryGeneration(booted.ID, imageID)
+	ok := top > 0 && generation > top && highest.ImageID == imageID && highest.TriesLeft < 0
+	return highest, ok
 }
 
 // checkPreviousUKI checks the UKI at path of the image a rollback boots as CheckUKI checks an

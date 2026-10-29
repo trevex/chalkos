@@ -180,3 +180,50 @@ func TestRollbackRefuses(t *testing.T) {
 		t.Errorf("the disk boots %s from %s, want b", name, e.File)
 	}
 }
+
+// TestRollbackBeforeTheBootIsHealthy rolls back while the upgrade's boot has not been found
+// healthy: the image before gets the highest generation without tries, so the node keeps a
+// known-good entry, and asking again finds it staged. From that image, whose entry is uncounted,
+// a rollback to the upgrade's image is counted again.
+func TestRollbackBeforeTheBootIsHealthy(t *testing.T) {
+	a, b := newImage(t, "a", 3), newImage(t, "b", 2)
+	l := newLab(t, a)
+	if _, err := l.install(b); err != nil {
+		t.Fatal(err)
+	}
+	e := l.attempt()
+	l.runFrom(b, e.File, 4, 5)
+	ctx := context.Background()
+
+	res, err := l.node.Rollback(ctx, a.root)
+	if err != nil || res.Entry != "chalkos_3.efi" || res.AlreadyStaged {
+		t.Fatalf("rollback = %+v, %v; want a's UKI as generation 3 without tries", res, err)
+	}
+	entries, err := esp.Entries(l.esp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if g := esp.EntryGeneration(e.ID, "chalkos"); g >= 3 && e.File != "chalkos_3.efi" {
+			t.Errorf("%s is above a's entry", e.File)
+		}
+	}
+	if e, name := l.boot(); name != "a" || e.File != "chalkos_3.efi" || e.TriesLeft != -1 {
+		t.Errorf("the disk boots %s from %s (%d tries left), want a from chalkos_3.efi uncounted", name, e.File, e.TriesLeft)
+	}
+	if again, err := l.node.Rollback(ctx, a.root); err != nil || !again.AlreadyStaged || again.Entry != "chalkos_3.efi" {
+		t.Errorf("a second request = %+v, %v; want it staged already", again, err)
+	}
+	if _, err := l.node.Rollback(ctx, newImage(t, "c", 1).root); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_3.efi") {
+		t.Errorf("a rollback to another image: %v", err)
+	}
+	if e := l.attempt(); e.File != "chalkos_3.efi" {
+		t.Fatalf("booted %s", e.File)
+	}
+	l.runFrom(a, "chalkos_3.efi", 2, 3)
+	res, err = l.node.Rollback(ctx, b.root)
+	if err != nil || res.Entry != "chalkos_4+2.efi" {
+		t.Fatalf("rollback to b = %+v, %v; want it counted", res, err)
+	}
+	l.boots(b, 2)
+}

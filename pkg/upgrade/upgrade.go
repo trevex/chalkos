@@ -25,7 +25,9 @@
 //
 // The running slot and its UKI are never written. A rollback, Node.Rollback, makes the image before
 // an upgrade boot next again while the inactive slot still holds it: it renames that image's UKI
-// to the next generation, as step 4 names a new one.
+// to the next generation, as step 4 names a new one. The name carries the UKI's tries while the
+// running image's boot was found healthy, so the node falls back to it; before that it carries
+// none, so the image, whose boot was found healthy before, stays a known-good entry.
 //
 // The installer shares the checks of an image's UKI and boot loader, CheckUKI and CheckSecureBoot,
 // and writes slot A of the disk it installs a node onto with the same slot writer,
