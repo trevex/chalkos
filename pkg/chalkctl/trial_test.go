@@ -270,9 +270,19 @@ func TestConfirmAnswerLate(t *testing.T) {
 func TestConfirmInterrupted(t *testing.T) {
 	ta := newTestApp(t)
 	_, run, _, second := trialNode(t, ta)
-	ta.setWrap(refuse("ConfirmConfig", connect.NewError(connect.CodeUnavailable, errors.New("the node is not healthy: units failed: demo.service"))))
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	// chalkctl is interrupted once it asks for the confirmation, which the node refuses meanwhile.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	unhealthy := refuse("ConfirmConfig", connect.NewError(connect.CodeUnavailable, errors.New("the node is not healthy: units failed: demo.service")))
+	ta.setWrap(func(next http.Handler) http.Handler {
+		h := unhealthy(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/ConfirmConfig") {
+				cancel()
+			}
+			h.ServeHTTP(w, r)
+		})
+	})
 	err := run(ctx, "apply-config", "n1", "--try", "1m")
 	if err == nil || !strings.Contains(err.Error(), "; n1 runs config "+second+" on trial until ") || !strings.Contains(err.Error(), "; chalkctl apply-config --confirm n1 keeps it; chalkctl apply-config --rollback n1 rolls it back now") {
 		t.Errorf("an interrupted confirmation = %v\n%s", err, ta.stdout)
