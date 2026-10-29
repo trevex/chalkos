@@ -1121,6 +1121,33 @@ func TestTrialExpiryFinishesAFailedRestart(t *testing.T) {
 	checkRolledBack(t, s, rec)
 }
 
+// TestTrialExpiryUndoesAFailedTrialDelivery rolls back a trial whose delivery restarted
+// demo.service on the config on trial and failed after it: the rollback at the deadline restarts
+// demo.service on the config from before the trial again.
+func TestTrialExpiryUndoesAFailedTrialDelivery(t *testing.T) {
+	s := trialServer(t)
+	s.trialRetry = time.Hour
+	write(t, s.Loader.Effects, lateHookEffects)
+	r := s.Run.(*tooltest.Runner)
+	r.Rules = append([]tooltest.Rule{{Prefix: "hook", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
+	if _, err := sendTrial(s, nextConfig, time.Hour); err == nil || !strings.Contains(err.Error(), "stays on trial") {
+		t.Fatalf("err = %v, want the hook's failure with the config on trial", err)
+	}
+	rec, open, err := readTrial(s.Paths.StateDir)
+	if err != nil || !open {
+		t.Fatalf("no trial recorded: %v", err)
+	}
+	r.ResetCalls()
+	expire(s, rec)
+	if trialOpenOn(t, s) {
+		t.Error("the trial is open after its rollback")
+	}
+	if !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Errorf("the rollback ran %v, want demo.service restarted", r.Calls)
+	}
+	checkRolledBack(t, s, rec)
+}
+
 // TestRollbackConfigFinishesATrialsRollback finishes a rollback at the deadline that failed after
 // it wrote the slot: a rollback on request to the config from before the trial, which the slot
 // runs already, delivers it again, restarts demo.service and ends the trial.

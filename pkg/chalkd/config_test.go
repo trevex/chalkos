@@ -282,6 +282,72 @@ func TestApplyConfigRetriesEffectsOnKinds(t *testing.T) {
 	}
 }
 
+// lateHookEffects restart demo.service when the demo output changes, and run hook after the
+// restarts' states are read, so a hook that fails ends a delivery that restarted demo.service.
+const lateHookEffects = `{"demo": {"outputs": ["demo"], "restart": ["demo.service"]}, "late": {"outputs": ["demo"], "run": "hook"}}`
+
+// TestApplyConfigUndoesAFailedDelivery: a delivery that fails after it restarted demo.service on
+// its config leaves demo.service running that config. The delivery of the config from before it,
+// which the baseline holds, restarts demo.service again, and so does one after a delivery that
+// failed before it wrote the slot, whose outputs were rendered.
+func TestApplyConfigUndoesAFailedDelivery(t *testing.T) {
+	s, r := configServer(t)
+	write(t, s.Loader.Effects, lateHookEffects)
+	r.Rules = append([]tooltest.Rule{{Prefix: "hook", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
+	if _, err := sendConfig(s, nextConfig); err == nil || !strings.Contains(err.Error(), "run hook") {
+		t.Fatalf("err = %v, want the hook's failure", err)
+	}
+	if !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Fatalf("the failed delivery ran %v, want demo.service restarted", r.Calls)
+	}
+	r.ResetCalls()
+	if _, err := sendConfig(s, baseConfig); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Errorf("the config from before ran %v, want demo.service restarted", r.Calls)
+	}
+	if exists(s.Paths.EffectsBaseline) {
+		t.Error("the baseline stays after a delivery applied whole")
+	}
+	r.ResetCalls()
+	if _, err := sendConfig(s, baseConfig); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Errorf("the same config again ran %v", r.Calls)
+	}
+}
+
+// TestApplyConfigUndoesADeliveryFailedBeforeItsSlot: a delivery that fails before it writes the
+// slot may have applied the identity and the layers' files of its config; the delivery of the
+// config from before it takes the effects that compare it with that config.
+func TestApplyConfigUndoesADeliveryFailedBeforeItsSlot(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
+	s, r := configServer(t)
+	slots := filepath.Dir(slotOf(t, s))
+	// The directory of slots takes no new slot directory.
+	if err := os.Chmod(slots, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(slots, 0o755) })
+	if _, err := sendConfig(s, nextConfig); err == nil || !strings.Contains(err.Error(), "store the config") {
+		t.Fatalf("err = %v, want the slot's failure", err)
+	}
+	if err := os.Chmod(slots, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r.ResetCalls()
+	if _, err := sendConfig(s, baseConfig); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Errorf("the config from before ran %v, want demo.service restarted", r.Calls)
+	}
+}
+
 // TestApplyConfigComparesKindsWithTheBaselineOnAKeptDelivery: a delivery without config checks no
 // document against schemas, so it compares a kind's hash, here and in the baseline an earlier
 // failed delivery left, with the running image's own schemas; without them a Secret a kind's

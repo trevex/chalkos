@@ -228,14 +228,23 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 // Until the slot is written, STATE holds the identity and the documents the node ran before, which
 // a boot applies whole. A retry applies the identity and the granted units' config again, and its
 // effects compare with the baseline effectsOf recorded, so it restarts what they ask for whatever
-// the failed attempt wrote. storage.json is the machine's rather than an image's: applyStorage
-// records the section once its additive changes are made, so a retry makes none twice.
-func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+// the failed attempt wrote. The baseline records what that attempt applied as well, so another
+// delivery, even one of the config the node ran before, takes the effects that undo it.
+// storage.json is the machine's rather than an image's: applyStorage records the section once its
+// additive changes are made, so a retry makes none twice.
+func (d *delivery) commit(ctx context.Context) (_ *connect.Response[nodev1.ApplyConfigResponse], err error) {
 	s, m := d.s, d.msg
+	refused := false
+	defer func() {
+		if err != nil && !refused {
+			s.failedAttempt(d.fx, d.staged.States())
+		}
+	}()
 	if len(m.Trust) > 0 {
 		if err := s.Certificate.ReplaceTrust(d.osCA, peerOf(ctx)...); err != nil {
 			if isRefusedTrust(err) {
 				s.refused(d.fx)
+				refused = true
 				return nil, failed(connect.CodeInvalidArgument, "%v", err)
 			}
 			return nil, failed(connect.CodeInternal, "%v", err)

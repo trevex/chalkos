@@ -29,6 +29,19 @@ type baseline struct {
 	// Kinds are the hashes of the kinds' documents, by kind, as config.KindHashes gives them. A
 	// baseline an older chalkd wrote has none, which makes every effect on a kind due.
 	Kinds map[string]string `json:"kinds"`
+	// Attempts are what each delivery that failed part way since applied, or may have: a unit it
+	// restarted runs that delivery's config, which a later delivery of the baseline's own config
+	// must undo.
+	Attempts []baselineAttempt `json:"attempts,omitempty"`
+}
+
+// baselineAttempt is what a delivery that failed part way applied, or may have: its documents,
+// with their secret values hashed, the states of the outputs it rendered and the hashes of its
+// kinds.
+type baselineAttempt struct {
+	Documents []map[string]any         `json:"documents"`
+	Outputs   map[string]outputs.State `json:"outputs"`
+	Kinds     map[string]string        `json:"kinds"`
 }
 
 // baselineFact is a fact as a rule read it: its value, or why it could not be loaded, which says
@@ -59,10 +72,7 @@ func readBaseline(path string) (b baseline, found bool, err error) {
 // newBaseline records old, the running slot's config, the facts the rules read, names, as f
 // loads them, the states of the outputs the node serves and the hashes of old's kinds.
 func newBaseline(old []config.Document, names []string, f rules.Facts, states map[string]outputs.State, kinds map[string]string) baseline {
-	b := baseline{Facts: map[string]baselineFact{}, Outputs: states, Kinds: kinds}
-	for _, d := range config.Redact(old) {
-		b.Documents = append(b.Documents, d.Object)
-	}
+	b := baseline{Documents: redacted(old), Facts: map[string]baselineFact{}, Outputs: states, Kinds: kinds}
 	for _, name := range names {
 		v, err := f.Fact(name)
 		if err != nil {
@@ -83,13 +93,56 @@ func (b baseline) write(path string) error {
 	return atomicfile.WriteFile(path, data, 0o600)
 }
 
+// addAttempt adds a, what a delivery that failed part way applied, to the baseline at path, which
+// that delivery compared with. An attempt the baseline holds already, as a retry of the same
+// delivery leaves it, is not added again.
+func addAttempt(path string, a baselineAttempt) error {
+	b, found, err := readBaseline(path)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("the delivery left no baseline")
+	}
+	data, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+	for _, o := range b.Attempts {
+		if od, err := json.Marshal(o); err == nil && bytes.Equal(od, data) {
+			return nil
+		}
+	}
+	b.Attempts = append(b.Attempts, a)
+	return b.write(path)
+}
+
 // documents are the baseline's documents, with their secret values hashed.
 func (b baseline) documents() []config.Document {
-	docs := make([]config.Document, len(b.Documents))
-	for i, obj := range b.Documents {
+	return fromObjects(b.Documents)
+}
+
+// documents are the attempt's documents, with their secret values hashed.
+func (a baselineAttempt) documents() []config.Document {
+	return fromObjects(a.Documents)
+}
+
+// fromObjects are the documents of a baseline's objects.
+func fromObjects(objects []map[string]any) []config.Document {
+	docs := make([]config.Document, len(objects))
+	for i, obj := range objects {
 		docs[i] = config.FromObject(obj)
 	}
 	return docs
+}
+
+// redacted are docs as a baseline records them, with their secret values hashed.
+func redacted(docs []config.Document) []map[string]any {
+	var objects []map[string]any
+	for _, d := range config.Redact(docs) {
+		objects = append(objects, d.Object)
+	}
+	return objects
 }
 
 // Fact is the fact name as it was; a fact the rules did not read then, which the running image's

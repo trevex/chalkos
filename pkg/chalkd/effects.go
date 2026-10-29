@@ -39,6 +39,9 @@ type pendingEffects struct {
 	// schemas that tell their secretRefs.
 	kinds   map[string]string
 	schemas *schema.Schemas
+	// attempts are what the deliveries that failed part way since the baseline was recorded
+	// applied, which the rules, outputs and kinds compare with too.
+	attempts []baselineAttempt
 }
 
 // effectsOf compiles the rules of the running image's effects and loads every fact they read.
@@ -48,12 +51,12 @@ type pendingEffects struct {
 //   - The image's build compiled the rules already, so one that does not compile is the node's
 //     own failure.
 //   - While a baseline exists, as a delivery that failed part way leaves one, the rules compare
-//     with it. Otherwise effectsOf records old, the facts, the outputs' states and the kinds'
-//     hashes as the baseline.
+//     with it, and with what each delivery that failed since applied. Otherwise effectsOf
+//     records old, the facts, the outputs' states and the kinds' hashes as the baseline.
 //
 // consume removes the baseline once the delivery is applied whole, and refused once it is refused
 // before it changed anything. Until then a retry, or another delivery, takes the effects of what
-// the failed delivery changed too.
+// the failed delivery changed too, even one that delivers the baseline's config again.
 func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.Document, schemas *schema.Schemas, secret string) (*pendingEffects, error) {
 	defs, err := effects.Read(s.Loader.Effects)
 	if err != nil {
@@ -99,7 +102,7 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 		log.Printf("the baseline of the effects: %v; comparing with the running slot", err)
 	}
 	if found {
-		e.old, e.oldHashed, e.before, e.outputs, e.kinds = b.documents(), true, b, b.Outputs, b.Kinds
+		e.old, e.oldHashed, e.before, e.outputs, e.kinds, e.attempts = b.documents(), true, b, b.Outputs, b.Kinds, b.Attempts
 		return e, nil
 	}
 	if e.outputs, err = s.Loader.OutputStates(old, schemas); err != nil {
@@ -145,9 +148,10 @@ func (e *pendingEffects) oldConfig() map[string]any {
 }
 
 // due returns the sorted names of the effects due once the delivery is applied. An effect is due
-// when:
-//   - one of its outputs has a state in states, the outputs swapped in, that differs from before;
-//   - the documents of one of its kinds, or a Secret they reference, changed;
+// when, compared with before the delivery or with what a delivery that failed part way since
+// applied:
+//   - one of its outputs has a state in states, the outputs swapped in, that differs;
+//   - the documents of one of its kinds, or a Secret they reference, differ;
 //   - its rule holds on the facts as they are now.
 //
 // A rule that cannot be evaluated counts as true. Its error goes to the journal and to warnings,
@@ -159,30 +163,56 @@ func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]o
 	}
 	// Command facts read the old config as the rules do.
 	after.Input = map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": e.oldConfig()}
-	ruled, errs := rules.Due(e.rules, rules.EffectInput{
-		Documents: e.next, Old: e.old, OldHashed: e.oldHashed, Node: e.node, Facts: after, OldFacts: e.before,
-	})
-	for _, err := range errs {
-		w := fmt.Sprintf("the rule of %v; taking the effect all the same", err)
-		log.Print(w)
-		warnings = append(warnings, w)
-	}
-	for _, r := range ruled {
-		due = append(due, r.Name)
-	}
 	kinds, err := config.KindHashes(e.next, e.schemas)
 	if err != nil {
 		return nil, nil, failed(connect.CodeInternal, "the kinds of the delivery: %v", err)
 	}
-	for name, d := range e.defs {
-		changedOutput := slices.ContainsFunc(d.Outputs, func(o string) bool { st, ok := states[o]; return ok && st != e.outputs[o] })
-		changedKind := slices.ContainsFunc(d.Kinds, func(k string) bool { return kinds[k] != e.kinds[k] })
-		if changedOutput || changedKind {
-			due = append(due, name)
+	// A failed delivery's facts are not recorded: its rules compare with the facts from before.
+	olds := []baselineAttempt{{Outputs: e.outputs, Kinds: e.kinds}}
+	oldDocs := [][]config.Document{e.old}
+	for _, a := range e.attempts {
+		olds, oldDocs = append(olds, a), append(oldDocs, a.documents())
+	}
+	for i, old := range olds {
+		ruled, errs := rules.Due(e.rules, rules.EffectInput{
+			Documents: e.next, Old: oldDocs[i], OldHashed: e.oldHashed || i > 0, Node: e.node, Facts: after, OldFacts: e.before,
+		})
+		for _, err := range errs {
+			w := fmt.Sprintf("the rule of %v; taking the effect all the same", err)
+			if !slices.Contains(warnings, w) {
+				log.Print(w)
+				warnings = append(warnings, w)
+			}
+		}
+		for _, r := range ruled {
+			due = append(due, r.Name)
+		}
+		for name, d := range e.defs {
+			changedOutput := slices.ContainsFunc(d.Outputs, func(o string) bool { st, ok := states[o]; return ok && st != old.Outputs[o] })
+			changedKind := slices.ContainsFunc(d.Kinds, func(k string) bool { return kinds[k] != old.Kinds[k] })
+			if changedOutput || changedKind {
+				due = append(due, name)
+			}
 		}
 	}
 	slices.Sort(due)
 	return slices.Compact(due), warnings, nil
+}
+
+// failedAttempt adds what the delivery of e applied, or may have, to the baseline once it failed
+// after it began to change the node: its documents, the states of the outputs it rendered,
+// states, and the hashes of its kinds. A unit it restarted runs its config then, so the next
+// delivery takes the effects that compare with it too, even one of the config from before it.
+// The attempts go with the baseline once a delivery is applied whole.
+func (s *Server) failedAttempt(e *pendingEffects, states map[string]outputs.State) {
+	kinds, err := config.KindHashes(e.next, e.schemas)
+	if err != nil {
+		// Without them every effect on a kind the delivery holds is due.
+		log.Printf("the kinds of the failed delivery: %v", err)
+	}
+	if err := addAttempt(s.Paths.EffectsBaseline, baselineAttempt{Documents: redacted(e.next), Outputs: states, Kinds: kinds}); err != nil {
+		log.Printf("record the failed delivery in the baseline of the effects: %v", err)
+	}
 }
 
 // consume takes the effects a delivery asks for once it is applied, in this order:
