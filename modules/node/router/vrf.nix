@@ -14,10 +14,9 @@ let
   networkd = config.chalkos.outputs.networkd.dir;
   # Removes each kernel VRF that no .netdev of Kind=vrf declares with its table, after flushing the
   # unreachable defaults that networkd put into its table, and reloads a running networkd when it
-  # removed one, which creates the VRF anew with its members. Reloading
-  # networkd itself leaves no VRF removed whatever order a delivery's reloads take; a networkd that
-  # does not run, as at boot, reads every unit when it starts. systemctl and networkctl come from
-  # the unit's PATH.
+  # removed one, which creates the VRF anew with its members. Reloading networkd itself leaves no
+  # VRF removed whatever order a delivery's reloads take; a networkd that does not run, as at boot,
+  # reads every unit when it starts. systemctl and networkctl come from the unit's PATH.
   apply = pkgs.writeShellApplication {
     name = "chalkos-vrf";
     runtimeInputs = [
