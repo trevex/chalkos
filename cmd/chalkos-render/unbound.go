@@ -10,11 +10,29 @@ import (
 	"strings"
 )
 
-// unboundFile is the file renderUnbound writes.
+// unboundFile is the file renderUnbound writes for the default VRF's resolver; a VRF's resolver
+// gets unbound-<vrf>.conf.
 const unboundFile = "unbound.conf"
 
-// unboundControl is the socket on which unbound-control, and chalkd through it, reach Unbound.
+// unboundControl is the socket on which unbound-control, and chalkd through it, reach the default
+// VRF's Unbound; a VRF's Unbound listens on /run/unbound-<vrf>/unbound.ctl.
 const unboundControl = "/run/unbound/unbound.ctl"
+
+// unboundFileOf is the config file of the resolver of vrf.
+func unboundFileOf(vrf string) string {
+	if vrf == defaultVRF {
+		return unboundFile
+	}
+	return "unbound-" + vrf + ".conf"
+}
+
+// unboundControlOf is the control socket of the resolver of vrf.
+func unboundControlOf(vrf string) string {
+	if vrf == defaultVRF {
+		return unboundControl
+	}
+	return "/run/unbound-" + vrf + "/unbound.ctl"
+}
 
 // ipv4OnlyZone is the zone RFC 8880 has a DNS64 resolver answer itself.
 const ipv4OnlyZone = "ipv4only.arpa."
@@ -30,10 +48,13 @@ var dnsName = regexp.MustCompile(`^([a-z0-9_]([-a-z0-9_]{0,61}[a-z0-9])?\.)*[a-z
 // localZoneTypes are the local zone types the schema takes, which Unbound names alike.
 var localZoneTypes = []string{"static", "transparent", "typetransparent", "redirect", "refuse", "deny", "always_nxdomain"}
 
-// renderUnbound writes Unbound's config of the node's Resolver to out/unbound.conf: the addresses
-// it answers on and the clients it answers, DNSSEC validation with the root's trust anchor in the
-// file trustAnchor, DNS64 with the zone ipv4only.arpa of the file zoneFile, the local zones, the
-// forwarders, and the control socket. A node without a Resolver gets no file and runs no Unbound.
+// renderUnbound writes Unbound's config of each Resolver, out/unbound.conf for the default VRF's
+// and out/unbound-<vrf>.conf for a VRF's: the addresses it answers on and the clients it answers,
+// DNSSEC validation with the root's trust anchor in the file trustAnchor, DNS64 with the zone
+// ipv4only.arpa of the file zoneFile, the local zones, the forwarders, and the control socket. A
+// node without a Resolver gets no file and runs no Unbound. It refuses two resolvers of one VRF, a
+// VRF no document declares, and a listen address that Network documents give only to links of
+// other VRFs.
 func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) error {
 	for _, f := range []string{trustAnchor, zoneFile} {
 		if !storeFile.MatchString(f) || filepath.Clean(f) != f {
@@ -44,24 +65,69 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 	if err != nil {
 		return err
 	}
-	switch len(d.Resolvers) {
-	case 0:
-		return nil
-	case 1:
-	default:
-		return fmt.Errorf("the config holds %d Resolver documents; a node has one", len(d.Resolvers))
+	declared := map[string]bool{defaultVRF: true}
+	for _, v := range d.VRFs {
+		declared[v.Name] = true
 	}
-	r := d.Resolvers[0]
-	text, err := unboundConfig(r.Spec, trustAnchor, zoneFile)
-	if err != nil {
-		return fmt.Errorf("Resolver %s: %w", r.Name, err)
+	served := map[string]string{}
+	for _, r := range d.Resolvers {
+		vrf := vrfOf(r.Spec.VRF)
+		if !declared[vrf] || !plainInterface.MatchString(vrf) {
+			return fmt.Errorf("Resolver %s names the VRF %q, which no VRF document declares; leave vrf out for the default VRF", r.Name, vrf)
+		}
+		if other, ok := served[vrf]; ok {
+			return fmt.Errorf("Resolver %s and Resolver %s both serve the VRF %s; a VRF has one resolver", other, r.Name, vrf)
+		}
+		served[vrf] = r.Name
+		if err := checkListenVRF(d, r, vrf); err != nil {
+			return err
+		}
+		text, err := unboundConfig(r.Spec, vrf, trustAnchor, zoneFile)
+		if err != nil {
+			return fmt.Errorf("Resolver %s: %w", r.Name, err)
+		}
+		if err := writeFile(out, unboundFileOf(vrf), []byte(text)); err != nil {
+			return err
+		}
 	}
-	return writeFile(out, unboundFile, []byte(text))
+	return nil
 }
 
-func unboundConfig(r resolverSpec, trustAnchor, zoneFile string) (string, error) {
+// checkListenVRF refuses an address of r's listen that Network documents give only to links of
+// other VRFs than vrf: the resolver's sockets are bound to vrf and never see its queries. An
+// address the documents do not give, such as one from DHCP, passes.
+func checkListenVRF(d routerDocuments, r named[resolverSpec], vrf string) error {
+	for _, l := range r.Spec.Listen {
+		a, err := netip.ParseAddr(l)
+		if err != nil {
+			continue
+		}
+		var others []string
+		mine := false
+		for _, n := range d.Addresses {
+			if n.prefix.Addr() != a {
+				continue
+			}
+			if v := d.networkVRFOf(n.network); v == vrf {
+				mine = true
+			} else {
+				others = appendNew(others, "Network "+n.network+" in VRF "+v)
+			}
+		}
+		if !mine && len(others) > 0 {
+			return fmt.Errorf("Resolver %s: the address %s of listen belongs to links of %s alone, so the resolver of VRF %s never receives its queries; listen on an address of the VRF's links", r.Name, a, strings.Join(others, " and "), vrf)
+		}
+	}
+	return nil
+}
+
+func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, error) {
 	var b strings.Builder
-	b.WriteString("# Unbound's config, rendered by chalkos-render unbound from the node's Resolver.\n" +
+	from := "the node's Resolver"
+	if vrf != defaultVRF {
+		from = "the Resolver of VRF " + vrf
+	}
+	b.WriteString("# Unbound's config, rendered by chalkos-render unbound from " + from + ".\n" +
 		"# unbound-control reload_keep_cache applies it.\n" +
 		"server:\n" +
 		"  username: \"\"\n" +
@@ -144,7 +210,7 @@ func unboundConfig(r resolverSpec, trustAnchor, zoneFile string) (string, error)
 			fmt.Fprintf(&b, "  forward-addr: %s\n", addr)
 		}
 	}
-	fmt.Fprintf(&b, "remote-control:\n  control-enable: yes\n  control-interface: %s\n", unboundControl)
+	fmt.Fprintf(&b, "remote-control:\n  control-enable: yes\n  control-interface: %s\n", unboundControlOf(vrf))
 	return b.String(), nil
 }
 

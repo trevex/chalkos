@@ -354,7 +354,7 @@ func TestUnboundAccessControl(t *testing.T) {
 		if err := json.Unmarshal([]byte(`{"listen": ["2001:db8:ffff::1"], "allow": `+allow+`}`), &r); err != nil {
 			t.Fatal(err)
 		}
-		text, err := unboundConfig(r, testTrustAnchor, testZoneFile)
+		text, err := unboundConfig(r, defaultVRF, testTrustAnchor, testZoneFile)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -791,7 +791,8 @@ func TestUnboundRefusals(t *testing.T) {
 		docs []any
 		want string
 	}{
-		"two resolvers":                 {args, []any{resolver(""), routerDoc(t, "Resolver", "other", `{"listen": ["2001:db8:ffff::2"], "allow": ["2001:db8::/32"]}`)}, "the config holds 2 Resolver documents; a node has one"},
+		"two resolvers":                 {args, []any{routerDoc(t, "Resolver", "other", `{"listen": ["2001:db8:ffff::2"], "allow": ["2001:db8::/32"]}`), resolver("")}, "Resolver other and Resolver resolver both serve the VRF default; a VRF has one resolver"},
+		"a VRF no document declares":    {args, []any{resolver(`, "vrf": "nosuch"`)}, `Resolver resolver names the VRF "nosuch", which no VRF document declares; leave vrf out for the default VRF`},
 		"no address":                    {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": [], "allow": ["2001:db8::/32"]}`)}, "Resolver resolver: it listens on no address"},
 		"no client":                     {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": []}`)}, "Resolver resolver: it answers no client"},
 		"the unspecified address":       {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["::"], "allow": ["2001:db8::/32"]}`)}, `listen: "::" is no unicast address`},
@@ -863,6 +864,48 @@ func TestUnboundRefusals(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, c.args, map[string][]any{"Resolver": c.docs}, c.want) })
 	}
+}
+
+// Each VRF's resolver renders a config of its own, unbound-<vrf>.conf, with a control socket of
+// its own; the default VRF's stays unbound.conf. A listen address that Network documents give only
+// to links of other VRFs is refused, one that the resolver's VRF holds too is not.
+func TestUnboundPerVRF(t *testing.T) {
+	docs := func(listen string) map[string][]any {
+		return map[string][]any{
+			"VRF": {routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3"]}`)},
+			"Network": {
+				document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}, "network": {"address": ["2001:db8:ffff::1/128", "2001:db8:3::9/64"]}}`),
+				document(t, "Network", "40-guest", `{"match": {"name": "eth3"}, "network": {"address": ["2001:db8:3::1/64", "2001:db8:3::9/64"]}}`),
+			},
+			"Resolver": {
+				routerDoc(t, "Resolver", "guest", `{"vrf": "guest", "listen": ["`+listen+`"], "allow": ["2001:db8:3::/64"], "forwarders": [], "dnssec": false, "dns64": {"prefix": "64:ff9b::/96"}, "localZones": []}`),
+				routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": [], "dnssec": false, "dns64": null, "localZones": []}`),
+			},
+		}
+	}
+	args := []string{"unbound", testTrustAnchor, testZoneFile}
+	for _, listen := range []string{"2001:db8:3::1", "2001:db8:3::9"} {
+		got, err := unitFiles(t, args, docs(listen))
+		if err != nil {
+			t.Fatal(err)
+		}
+		guest := got["unbound-guest.conf"]
+		for _, want := range []string{
+			"# Unbound's config, rendered by chalkos-render unbound from the Resolver of VRF guest.\n",
+			"  interface: " + listen + "\n",
+			"  dns64-prefix: 64:ff9b::/96\n",
+			"remote-control:\n  control-enable: yes\n  control-interface: /run/unbound-guest/unbound.ctl\n",
+		} {
+			if !strings.Contains(guest, want) {
+				t.Errorf("unbound-guest.conf lacks %q:\n%s", want, guest)
+			}
+		}
+		if !strings.Contains(got["unbound.conf"], "  control-interface: /run/unbound/unbound.ctl\n") || len(got) != 2 {
+			t.Errorf("files = %v", got)
+		}
+	}
+	refused(t, args, docs("2001:db8:ffff::1"),
+		"Resolver guest: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-eth0 in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links")
 }
 
 // A peer in a VRF has its ports opened on its VRF's links by the VRF's device and sdifname: the
