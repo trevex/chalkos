@@ -39,6 +39,8 @@ func defaultRouter() routerSpec {
 
 type zoneSpec struct {
 	Interfaces []string `json:"interfaces"`
+	// VRFs are the VRF documents whose links are all in the zone.
+	VRFs []string `json:"vrfs"`
 }
 
 type policySpec struct {

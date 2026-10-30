@@ -416,6 +416,7 @@ lib.runTests {
   # which a change of the output networkd reloads, runs before networkd at boot and removes the
   # VRFs the rendered units no longer declare. FRR orders after networkd, which creates a VRF's
   # device before FRR's reload configures its instance, and the BGP and BFD diagnostics take a VRF.
+  # The firewall reads the VRFs and the Network documents.
   testRouterVRF = {
     expr =
       let
@@ -438,6 +439,9 @@ lib.runTests {
         reloads = vrf.serviceConfig.ExecReload == vrf.serviceConfig.ExecStart;
         capabilities = vrf.serviceConfig.CapabilityBoundingSet;
         frrAfter = lib.elem "systemd-networkd.service" edge.systemd.services.frr.after;
+        firewallInputs = lib.filter (
+          k: k == "VRF" || k == "Network"
+        ) edge.chalkos.outputs.router-nftables.inputs;
         commands = map (d: lib.last edge.chalkos.diagnostics.${d}.command) [
           "bgp-summary"
           "bgp-neighbor"
@@ -470,6 +474,10 @@ lib.runTests {
       reloads = true;
       capabilities = [ "CAP_NET_ADMIN" ];
       frrAfter = true;
+      firewallInputs = [
+        "VRF"
+        "Network"
+      ];
       commands = [
         "show bgp vrf {vrf} summary"
         "show bgp vrf {vrf} neighbors {peer}"

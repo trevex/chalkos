@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"net/netip"
 	"slices"
 	"strconv"
@@ -61,7 +62,7 @@ type opening struct {
 // bgpOpenings are the ports of each BGPPeer, on its interfaces, of its VRF, or from its address
 // alone: BGP's TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of single-hop sessions,
 // and 4784 of multi-hop ones from an address peer; a peer on a link is one hop away. The output
-// frr refuses a peer on a VRF's device; router-nftables reads no VRF or Network documents.
+// frr refuses a peer on a VRF's device.
 func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 	var out []opening
 	for _, p := range peers {
@@ -139,7 +140,7 @@ func resolverOpenings(resolvers []named[resolverSpec]) ([]opening, error) {
 // firewall is what the ruleset is rendered from.
 type firewall struct {
 	router   routerSpec
-	zones    map[string][]string
+	zones    map[string]zoneLinks
 	sets     map[string]addressSetSpec
 	setNames []string
 	policies []named[policySpec]
@@ -152,7 +153,7 @@ type firewall struct {
 func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 	f := &firewall{
 		router:   d.router(),
-		zones:    map[string][]string{},
+		zones:    map[string]zoneLinks{},
 		sets:     map[string]addressSetSpec{},
 		policies: d.Policies,
 		nat:      d.NAT,
@@ -164,12 +165,11 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 			return nil, err
 		}
 	}
-	for _, z := range d.Zones {
-		if err := checkInterfaces("FirewallZone "+z.Name, z.Spec.Interfaces); err != nil {
-			return nil, err
-		}
-		f.zones[z.Name] = z.Spec.Interfaces
+	zones, err := zoneLinksOf(d)
+	if err != nil {
+		return nil, err
 	}
+	f.zones = zones
 	for _, n := range d.NAT {
 		for _, place := range []*natPlace{n.Spec.In, n.Spec.Out} {
 			if place != nil && place.Interface != nil {
@@ -197,6 +197,115 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		}
 	}
 	return f, nil
+}
+
+// zoneLinks are where the hooks see a zone's connections. The input and forward hooks see a
+// packet from a VRF's link with the VRF's device as iifname and the link as sdifname; prerouting,
+// postrouting and forward's oifname see the links themselves, and prerouting a packet from a
+// VRF's link first with the link, the pass that decides its conntrack zone and translation.
+type zoneLinks struct {
+	// in are the zone's interfaces that may be links of no VRF, and the devices of its VRFs.
+	in []string
+	// sdif are the zone's interfaces that may be links of a VRF.
+	sdif []string
+	// links are the zone's interfaces and the links of its VRFs.
+	links []string
+}
+
+// entries are the matches of the zone's connections in the input and forward hooks.
+func (z zoneLinks) entries() []string {
+	var out []string
+	if len(z.in) > 0 {
+		out = append(out, "iifname "+interfaceSet(z.in))
+	}
+	if len(z.sdif) > 0 {
+		out = append(out, "meta sdifname "+interfaceSet(z.sdif))
+	}
+	return out
+}
+
+// zoneLinksOf finds where the hooks see each zone's connections. Without VRFs a zone's
+// interfaces are its in and its links, as before VRFs. It refuses a zone of no interface and no
+// VRF, a VRF no document declares or that two zones hold, an interface that matches a VRF's
+// device, which the input and forward hooks see for each of the VRF's links, and an interface
+// that may be a link of a VRF another zone holds.
+func zoneLinksOf(d routerDocuments) (map[string]zoneLinks, error) {
+	declared := map[string]bool{}
+	for _, v := range d.VRFs {
+		declared[v.Name] = true
+	}
+	// The VRFs' devices: those of the VRF documents and of the Networks' own VRF=.
+	devices := maps.Clone(declared)
+	for _, m := range d.Membership.Members {
+		devices[m.vrf] = true
+	}
+	held := map[string]string{}
+	for _, z := range d.Zones {
+		for _, v := range z.Spec.VRFs {
+			if !declared[v] {
+				return nil, fmt.Errorf("FirewallZone %s names the VRF %q, which no VRF document declares", z.Name, v)
+			}
+			if _, ok := held[v]; ok {
+				return nil, fmt.Errorf("the VRF %s is in more than one FirewallZone, or twice in one", v)
+			}
+			held[v] = z.Name
+		}
+	}
+	out := map[string]zoneLinks{}
+	for _, z := range d.Zones {
+		what := "FirewallZone " + z.Name
+		if len(z.Spec.Interfaces) == 0 && len(z.Spec.VRFs) == 0 {
+			return nil, fmt.Errorf("%s names no interface and no VRF", what)
+		}
+		if len(z.Spec.Interfaces) > 0 {
+			if err := checkInterfaces(what, z.Spec.Interfaces); err != nil {
+				return nil, err
+			}
+		}
+		var zl zoneLinks
+		for _, i := range z.Spec.Interfaces {
+			for _, dev := range slices.Sorted(maps.Keys(devices)) {
+				if matchesGlob(i, dev) {
+					return nil, fmt.Errorf("%s: %s matches %s, the device of VRF %s; name the VRF in vrfs", what, i, dev, dev)
+				}
+			}
+			vrfs, err := d.Membership.interfaceVRFs(i)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", what, err)
+			}
+			for _, v := range vrfs {
+				if v == defaultVRF {
+					zl.in = appendNew(zl.in, i)
+					continue
+				}
+				if other, ok := held[v]; ok && other != z.Name {
+					return nil, fmt.Errorf("%s names %s, which may be a link of VRF %s, which FirewallZone %s holds; give each link one zone", what, i, v, other)
+				}
+				zl.sdif = appendNew(zl.sdif, i)
+			}
+			zl.links = appendNew(zl.links, i)
+		}
+		for _, v := range z.Spec.VRFs {
+			links, err := d.Membership.links(v)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", what, err)
+			}
+			zl.in = appendNew(zl.in, v)
+			for _, l := range links {
+				zl.links = appendNew(zl.links, l)
+			}
+		}
+		out[z.Name] = zl
+	}
+	return out, nil
+}
+
+// appendNew appends s to l unless l holds it.
+func appendNew(l []string, s string) []string {
+	if slices.Contains(l, s) {
+		return l
+	}
+	return append(l, s)
 }
 
 // The ICMP and ICMPv6 types the protected rules accept: errors, echo requests, and on IPv6
@@ -306,7 +415,9 @@ func (f *firewall) input(b *strings.Builder) error {
 	}
 	for _, p := range f.policies {
 		if p.Spec.To == "local" {
-			fmt.Fprintf(b, "\t\tiifname %s jump policy-%s\n", interfaceSet(f.zones[p.Spec.From]), p.Name)
+			for _, from := range f.zones[p.Spec.From].entries() {
+				fmt.Fprintf(b, "\t\t%s jump policy-%s\n", from, p.Name)
+			}
 		}
 	}
 	b.WriteString("\t}\n")
@@ -316,7 +427,7 @@ func (f *firewall) input(b *strings.Builder) error {
 // forward accepts everything while no policy goes between two zones and the ruleset is not
 // closed. Otherwise it accepts the protected traffic and destination-translated connections,
 // hands each connection to the policy of its pair of zones, and drops the rest, also from or to
-// an interface in no zone.
+// an interface in no zone. A policy to a zone of no link has no line.
 func (f *firewall) forward(b *strings.Builder) {
 	var between []named[policySpec]
 	for _, p := range f.policies {
@@ -338,7 +449,13 @@ func (f *firewall) forward(b *strings.Builder) {
 		b.WriteString("\t\tct status dnat accept\n")
 	}
 	for _, p := range between {
-		fmt.Fprintf(b, "\t\tiifname %s oifname %s jump policy-%s\n", interfaceSet(f.zones[p.Spec.From]), interfaceSet(f.zones[p.Spec.To]), p.Name)
+		to := f.zones[p.Spec.To].links
+		if len(to) == 0 {
+			continue
+		}
+		for _, from := range f.zones[p.Spec.From].entries() {
+			fmt.Fprintf(b, "\t\t%s oifname %s jump policy-%s\n", from, interfaceSet(to), p.Name)
+		}
 	}
 	b.WriteString("\t}\n")
 }
@@ -389,11 +506,14 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 	}
 	switch {
 	case place.Zone != nil && place.Interface == nil:
-		ifaces, ok := f.zones[*place.Zone]
+		z, ok := f.zones[*place.Zone]
 		if !ok {
 			return "", fmt.Errorf("the zone %s is no FirewallZone", *place.Zone)
 		}
-		parts = append(parts, dir+" "+interfaceSet(ifaces))
+		if len(z.links) == 0 {
+			return "", fmt.Errorf("the zone %s holds no link", *place.Zone)
+		}
+		parts = append(parts, dir+" "+interfaceSet(z.links))
 	case place.Interface != nil && place.Zone == nil:
 		parts = append(parts, dir+" "+interfaceSet([]string{*place.Interface}))
 	default:

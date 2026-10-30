@@ -24,14 +24,18 @@ const defaultVRF = "default"
 // and vrfLinks refuses one that does.
 const vrfUnitPrefix = "00-vrf-"
 
-// vrfMembership is the VRF of each Network document, as vrfLinks finds them, and the units that
-// put links in them.
+// vrfMembership is the VRF of each Network document, as vrfLinks finds them, the units that put
+// links in them, and the globs of the links each VRF holds.
 type vrfMembership struct {
 	// Networks are the Network documents, by name, with the VRF of the links they are the first
 	// to match; a Network of no VRF's links is not in the map.
 	Networks map[string]string
 	// Units are the .network units networkd reads, sorted as it picks them.
 	Units []networkUnit
+	// Members are the interfaces of the VRF documents and the words of Name= of the Networks
+	// whose own VRF= names a VRF. vrfLinks checked that each Network it puts in a VRF matches
+	// links these cover, so they cover the links networkd puts in each VRF.
+	Members []vrfMember
 }
 
 // linkVRF is the VRF networkd puts the link in: that of the .network unit it picks for the link,
@@ -60,6 +64,52 @@ func (m vrfMembership) linkVRF(link string) (string, error) {
 		return "", fmt.Errorf("networkd puts %s in VRF %s only if the other [Match] keys of Network %s match it; give the link a Network that matches it by Name= alone", link, vrf, last.name)
 	}
 	return vrf, nil
+}
+
+// links are the links the VRF holds as nftables matches them: its members, once each, without
+// those another of them covers. It refuses a member of a Network's Name= that is neither a name
+// nor a prefix and *, which nftables cannot match.
+func (m vrfMembership) links(vrf string) ([]string, error) {
+	var globs []string
+	for _, mem := range m.Members {
+		if mem.vrf != vrf {
+			continue
+		}
+		if mem.text == "" || !interfaceName.MatchString(mem.text) {
+			return nil, fmt.Errorf("VRF %s holds the links of Network %s's Name=%s, which nftables cannot match; name them by a name or a prefix and *", vrf, mem.network, mem.text)
+		}
+		globs = append(globs, mem.text)
+	}
+	slices.Sort(globs)
+	globs = slices.Compact(globs)
+	return slices.DeleteFunc(slices.Clone(globs), func(g string) bool {
+		return slices.ContainsFunc(globs, func(o string) bool { return o != g && globContains(o, g) })
+	}), nil
+}
+
+// interfaceVRFs are the VRFs whose links the interface or glob i, as a zone names it, may be,
+// sorted, defaultVRF standing for links of no VRF. A literal interface is in the VRF networkd
+// puts it in. A glob may be links of each VRF a member of which it overlaps, and links of no VRF
+// unless a member covers it.
+func (m vrfMembership) interfaceVRFs(i string) ([]string, error) {
+	if isLiteral(i) {
+		vrf, err := m.linkVRF(i)
+		if err != nil {
+			return nil, err
+		}
+		return []string{vrf}, nil
+	}
+	in, covered := map[string]bool{}, false
+	for _, mem := range m.Members {
+		if globsOverlap(mem.glob, i) {
+			in[mem.vrf] = true
+		}
+		covered = covered || globContains(mem.glob, i)
+	}
+	if !covered {
+		in[defaultVRF] = true
+	}
+	return slices.Sorted(maps.Keys(in)), nil
 }
 
 // vrfMember is a glob of links a VRF holds: an interface of its document, or a word of the Name=
@@ -163,7 +213,7 @@ func vrfLinks(vrfs []named[vrfSpec], links []string, byKind map[string]any) (vrf
 	if err := checkNetworkVRFs(units, members, networks); err != nil {
 		return none, err
 	}
-	return vrfMembership{Networks: networks, Units: units}, nil
+	return vrfMembership{Networks: networks, Units: units, Members: members}, nil
 }
 
 // anyNetworkVRF reports whether a Network document of byKind gives VRF=, or a value of VRF= that
@@ -617,8 +667,8 @@ func withNetworkVRF(doc map[string]any, vrf string) map[string]any {
 
 // checkPeerDevices refuses a peer's interface that is a VRF's device, and a glob of its
 // interfaces that matches one: bgpd runs no session on the device, and the input hook sees it
-// as the iifname of every packet from the VRF's links, so router-nftables, which cannot tell,
-// would open the peer's ports on all of them.
+// as the iifname of every packet from the VRF's links, so router-nftables would open the peer's
+// ports on all of them.
 func checkPeerDevices(s peerSpec, vrfs []named[vrfSpec]) error {
 	for _, v := range vrfs {
 		if s.Interface != nil && *s.Interface == v.Name {

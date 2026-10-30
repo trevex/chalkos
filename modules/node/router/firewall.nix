@@ -91,6 +91,9 @@ in
         "NATRule"
         "BGPPeer"
         "Resolver"
+        # The links of each VRF, which the zones and conntrack zones match.
+        "VRF"
+        "Network"
       ];
       render = "${render} router-nftables ${chalkdPort}";
       # nft checks a ruleset with the kernel, which takes CAP_NET_ADMIN; the check has it in a
