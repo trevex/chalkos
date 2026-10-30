@@ -17,7 +17,7 @@ var (
 			"count":   {Type: TypeInt, Min: bound(1), Max: bound(10), Default: "4"},
 		},
 	}
-	// loose takes any integer, any string and values a declaration should not hold, which Argv
+	// loose takes any integer, any string and values a declaration should not hold, which Call
 	// refuses still where they could read as options or break a line.
 	loose = Definition{
 		Command: []string{"/nix/store/x/bin/t", "{n}", "{p}", "{e}"},
@@ -44,7 +44,7 @@ var (
 	}
 )
 
-// Argv fills each placeholder with its argument in its canonical form, or with the parameter's
+// Call fills each placeholder with its argument in its canonical form, or with the parameter's
 // default, and drops an argument that names an optional parameter left out.
 func TestArgv(t *testing.T) {
 	for name, tc := range map[string]struct {
@@ -59,15 +59,15 @@ func TestArgv(t *testing.T) {
 		"in an argument":  {drill, map[string]string{"name": "example.org.", "type": "AAAA", "server": "192.0.2.53"}, []string{"/nix/store/x-ldns/bin/drill", "example.org.", "AAAA", "@192.0.2.53"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, err := tc.d.Argv(tc.args)
+			got, _, err := tc.d.Call(tc.args)
 			if err != nil || !slices.Equal(got, tc.want) {
-				t.Errorf("Argv = %q, %v; want %q", got, err, tc.want)
+				t.Errorf("Call = %q, %v; want %q", got, err, tc.want)
 			}
 		})
 	}
 }
 
-// Argv refuses a call that leaves out a required parameter, names one the diagnostic lacks, or
+// Call refuses a call that leaves out a required parameter, names one the diagnostic lacks, or
 // gives a value that is not of its parameter's type.
 func TestArgvRefuses(t *testing.T) {
 	for name, tc := range map[string]struct {
@@ -93,7 +93,7 @@ func TestArgvRefuses(t *testing.T) {
 		"a newline of an enum":   {loose, map[string]string{"e": "b\n"}, `e: "b\n" holds a control character`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := tc.d.Argv(tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
+			if _, _, err := tc.d.Call(tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}
 		})
@@ -136,24 +136,22 @@ func TestParameterNames(t *testing.T) {
 	}
 }
 
-// Namespace fills the network namespace's placeholders as Argv fills the command's, and is empty
-// for a diagnostic of the host's network.
+// Call fills the network namespace's placeholders as it fills the command's, and gives no
+// namespace for a diagnostic of the host's network.
 func TestNamespace(t *testing.T) {
-	if ns, err := links.Namespace(map[string]string{"name": "blue"}); err != nil || ns != "ns-blue" {
-		t.Errorf("Namespace = %q, %v", ns, err)
+	argv, ns, err := links.Call(map[string]string{"name": "blue"})
+	if err != nil || ns != "ns-blue" || !slices.Equal(argv, []string{"/nix/store/x-iproute2/bin/ip", "-json", "link"}) {
+		t.Errorf("Call = %q, %q, %v", argv, ns, err)
 	}
-	if argv, err := links.Argv(map[string]string{"name": "blue"}); err != nil || !slices.Equal(argv, []string{"/nix/store/x-iproute2/bin/ip", "-json", "link"}) {
-		t.Errorf("Argv = %q, %v", argv, err)
+	if _, ns, err := ping.Call(map[string]string{"address": "192.0.2.1"}); err != nil || ns != "" {
+		t.Errorf("namespace of the host's network = %q, %v", ns, err)
 	}
-	if ns, err := ping.Namespace(map[string]string{"address": "192.0.2.1"}); err != nil || ns != "" {
-		t.Errorf("Namespace of the host's network = %q, %v", ns, err)
-	}
-	if _, err := links.Namespace(map[string]string{}); err == nil {
-		t.Error("Namespace without the parameter it names succeeded")
+	if _, _, err := links.Call(map[string]string{}); err == nil {
+		t.Error("Call without the parameter the namespace names succeeded")
 	}
 }
 
-// Namespace refuses a filled name that leaves /run/netns or is no file's name there, whatever the
+// Call refuses a filled namespace that leaves /run/netns or is no file's name there, whatever the
 // parameter's declaration lets through.
 func TestNamespaceStaysBelowTheDirectory(t *testing.T) {
 	free := Definition{
@@ -162,11 +160,11 @@ func TestNamespaceStaysBelowTheDirectory(t *testing.T) {
 		Parameters:       map[string]Parameter{"name": {Type: TypePattern, Regex: "^.*$"}},
 	}
 	for _, v := range []string{".", "..", "../etc", "a/b", "a b", "", strings.Repeat("a", 256)} {
-		if ns, err := free.Namespace(map[string]string{"name": v}); err == nil {
-			t.Errorf("Namespace(%q) = %q", v, ns)
+		if _, ns, err := free.Call(map[string]string{"name": v}); err == nil {
+			t.Errorf("Call(%q) = %q", v, ns)
 		}
 	}
-	if ns, err := free.Namespace(map[string]string{"name": "nat64-a.b_c"}); err != nil || ns != "nat64-a.b_c" {
-		t.Errorf("Namespace = %q, %v", ns, err)
+	if _, ns, err := free.Call(map[string]string{"name": "nat64-a.b_c"}); err != nil || ns != "nat64-a.b_c" {
+		t.Errorf("Call = %q, %v", ns, err)
 	}
 }

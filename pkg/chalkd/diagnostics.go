@@ -60,11 +60,7 @@ func (s *Server) RunDiagnostic(ctx context.Context, req *connect.Request[nodev1.
 	if role, _ := ctx.Value(roleKey{}).(pki.Role); !role.Allows(pki.Role(d.Role)) {
 		return failed(connect.CodePermissionDenied, "the diagnostic %s needs the %s role", name, d.Role)
 	}
-	argv, err := d.Argv(req.Msg.Arguments)
-	if err != nil {
-		return failed(connect.CodeInvalidArgument, "diagnostic %s: %v", name, err)
-	}
-	ns, err := d.Namespace(req.Msg.Arguments)
+	argv, ns, err := d.Call(req.Msg.Arguments)
 	if err != nil {
 		return failed(connect.CodeInvalidArgument, "diagnostic %s: %v", name, err)
 	}

@@ -200,15 +200,17 @@ func (d Definition) values(args map[string]string) (map[string]string, error) {
 	return values, nil
 }
 
-// Argv checks a call's arguments, by parameter name, and returns the command line to run. Each
-// placeholder becomes its argument, in the form its type gives it, or the parameter's default. An
-// argument of the command that names an optional parameter the call leaves out is dropped.
-func (d Definition) Argv(args map[string]string) ([]string, error) {
+// Call checks a call's arguments, by parameter name, and returns the command line to run and the
+// network namespace it runs in. Each placeholder becomes its argument, in the form its type gives
+// it, or the parameter's default. An argument of the command that names an optional parameter the
+// call leaves out is dropped. The namespace is empty for the host's network; Call refuses one
+// that fills to no file's name below NamespaceDir, such as one with a slash or of dots alone.
+func (d Definition) Call(args map[string]string) (argv []string, ns string, err error) {
 	values, err := d.values(args)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	argv := []string{d.Command[0]}
+	argv = []string{d.Command[0]}
 	for _, arg := range d.Command[1:] {
 		dropped := false
 		filled := placeholder.ReplaceAllStringFunc(arg, func(m string) string {
@@ -220,25 +222,14 @@ func (d Definition) Argv(args map[string]string) ([]string, error) {
 			argv = append(argv, filled)
 		}
 	}
-	return argv, nil
-}
-
-// Namespace checks a call's arguments as Argv does and returns the network namespace the call
-// runs in, its placeholders filled; empty for the host's network. It refuses a name that is no
-// file's name below NamespaceDir, such as one with a slash or of dots alone.
-func (d Definition) Namespace(args map[string]string) (string, error) {
 	if d.NetworkNamespace == "" {
-		return "", nil
+		return argv, "", nil
 	}
-	values, err := d.values(args)
-	if err != nil {
-		return "", err
-	}
-	ns := placeholder.ReplaceAllStringFunc(d.NetworkNamespace, func(m string) string { return values[m[1:len(m)-1]] })
+	ns = placeholder.ReplaceAllStringFunc(d.NetworkNamespace, func(m string) string { return values[m[1:len(m)-1]] })
 	if err := checkNamespace(ns); err != nil {
-		return "", err
+		return nil, "", err
 	}
-	return ns, nil
+	return argv, ns, nil
 }
 
 // checkNamespace refuses a network namespace's name that is no file's name below NamespaceDir.
