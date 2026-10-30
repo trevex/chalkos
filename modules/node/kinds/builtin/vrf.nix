@@ -80,6 +80,11 @@ in
           messageExpression = ''documents.filter(n, n == "default" || size(n) > 15).map(n, "VRF " + n).join(", ") + ": a VRF is named as its device, in 15 characters at most, and default names the VRF of every link no VRF holds"'';
         }
         {
+          description = "A VRF's name does not start with n64-, which starts the names of the NAT64s' links.";
+          rule = ''documents.all(n, !n.startsWith("n64-"))'';
+          messageExpression = ''documents.filter(n, n.startsWith("n64-")).map(n, "VRF " + n).join(", ") + ": n64- starts the names of the NAT64s' links; give the VRF another name"'';
+        }
+        {
           description = "A VRF's table is none of the kernel's own: 253, 254 and 255.";
           rule = "documents.all(n, !(documents[n].spec.table in [253, 254, 255]))";
           messageExpression = ''documents.filter(n, documents[n].spec.table in [253, 254, 255]).map(n, "VRF " + n).join(", ") + " uses table 253, 254 or 255, which the kernel keeps for the default VRF; give it another number"'';

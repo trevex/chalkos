@@ -272,6 +272,8 @@ func TestVRFRefusals(t *testing.T) {
 			"VRF a and VRF b both use table 100"},
 		"a VRF named default": {map[string][]any{"VRF": {vrf("default", `{"table": 100}`)}, "Network": {link("eth0")}},
 			"VRF default: a VRF is named as its device"},
+		"a VRF of a NAT64 link's name": {map[string][]any{"VRF": {vrf("n64-a", `{"table": 100}`)}, "Network": {link("eth0")}},
+			"VRF n64-a: n64- starts the names of the NAT64s' links; give the VRF another name"},
 		"a VRF name that adds a section": {map[string][]any{"VRF": {vrf("a\n[Network]", `{"table": 100}`)}},
 			"is no document name"},
 		"an interface that adds a key": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["eth1\nVRF=b"]}`)}, "Network": {link("eth1")}},

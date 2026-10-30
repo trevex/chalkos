@@ -11,7 +11,7 @@ import (
 )
 
 // The VRF kind's rules accept an edge with two VRFs and refuse the name default, a name past 15
-// characters, a table of the kernel's, two VRFs of one table, an interface in two VRFs, a
+// characters, a name a NAT64's link starts with, a table of the kernel's, two VRFs of one table, an interface in two VRFs, a
 // management interface in a VRF or of a VRF's device, a node whose node API answers on every interface but whose
 // Network documents all name links of VRFs, a NetDev of a VRF's name, two VRFs of one conntrack
 // zone, and a VRF with a zone that imports routes or whose routes another VRF imports. Two VRFs'
@@ -89,6 +89,8 @@ func TestVRFRules(t *testing.T) {
 			[]string{"VRF default: a VRF is named as its device, in 15 characters at most, and default names the VRF of every link no VRF holds"}},
 		{"a name of 16 characters", with(edge, doc("VRF", "tenant-12345678x", `{"table": 300}`)),
 			[]string{"VRF tenant-12345678x: a VRF is named as its device, in 15 characters at most, and default names the VRF of every link no VRF holds"}},
+		{"a name of a NAT64's link", with(edge, doc("VRF", "n64-a", `{"table": 300}`)),
+			[]string{"VRF n64-a: n64- starts the names of the NAT64s' links; give the VRF another name"}},
 		{"the main table", with(edge, doc("VRF", "lab", `{"table": 254}`)),
 			[]string{"VRF lab uses table 253, 254 or 255, which the kernel keeps for the default VRF; give it another number"}},
 		{"two VRFs of one table", with(edge, doc("VRF", "lab", `{"table": 100}`)),

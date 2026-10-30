@@ -155,6 +155,9 @@ func vrfLinks(vrfs []named[vrfSpec], links []string, byKind map[string]any) (vrf
 		if v.Name == defaultVRF || len(v.Name) > 15 {
 			return none, fmt.Errorf("%s: a VRF is named as its device, in 15 characters at most, and not %s", what, defaultVRF)
 		}
+		if strings.HasPrefix(v.Name, nat64LinkPrefix) {
+			return none, fmt.Errorf("%s: %s starts the names of the NAT64s' links; give the VRF another name", what, nat64LinkPrefix)
+		}
 		if slices.Contains(links, v.Name) {
 			return none, fmt.Errorf("%s: a Network document names the link %s, the VRF's device", what, v.Name)
 		}
