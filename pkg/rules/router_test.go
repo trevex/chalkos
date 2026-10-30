@@ -39,9 +39,9 @@ func network(t *testing.T, name, match string) config.Document {
 }
 
 // The router kinds' rules accept a fabric edge's documents and a zone of a VRF, and refuse a
-// dangling zone, set or VRF, two zones of one interface or VRF, a zone of nothing, a policy from
-// local, two policies between one pair, a set beside ranges, addresses of another family and
-// ports without a protocol.
+// dangling zone, set or VRF, two zones of one interface or VRF, a zone of nothing, a zone's or
+// NAT rule's interface that is a VRF's device, a policy from local, two policies between one
+// pair, a set beside ranges, addresses of another family and ports without a protocol.
 func TestRouterRules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -131,6 +131,12 @@ func TestRouterRules(t *testing.T) {
 			[]string{"FirewallZone tenant names the VRF tenant, which no VRF document declares"}},
 		{"a VRF in two zones", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"vrfs": ["tenant"]}`), doc("FirewallZone", "more", `{"vrfs": ["tenant"]}`)),
 			[]string{"the VRF tenant is in more than one FirewallZone, or twice in one; give each VRF one zone"}},
+		{"a zone of a VRF's device", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"interfaces": ["eth3", "tenant"]}`)),
+			[]string{"FirewallZone tenant: tenant is the device of VRF tenant; name the VRF in vrfs"}},
+		{"a zone of an interface beside a VRF's name", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"interfaces": ["tenant0", "ten*"]}`)), nil},
+		{"a NAT interface of a VRF's device", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("NATRule", "out", `{"type": "masquerade", "out": {"interface": "tenant"}}`)),
+			[]string{"NATRule out: tenant is the device of VRF tenant; name the VRF's links or a zone of the VRF"}},
+		{"a NAT glob beside a VRF's name", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("NATRule", "out", `{"type": "masquerade", "out": {"interface": "*"}}`)), nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})

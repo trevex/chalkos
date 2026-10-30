@@ -635,6 +635,7 @@ cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in conf
 | 3 | — | A FirewallZone names an interface or a VRF. | `refuse` | `documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)` | after the table |
 | 4 | — | A FirewallZone's VRFs are VRF documents. | `refuse` | after the table | after the table |
 | 5 | — | A VRF is in one FirewallZone, once. | `refuse` | after the table | after the table |
+| 6 | — | No interface of a FirewallZone is a VRF's device, which takes the VRF document's name; the output router-nftables also refuses globs that match one. | `refuse` | after the table | after the table |
 
 Expression of rule 2:
 
@@ -676,6 +677,18 @@ Message of rule 5:
 
 ```text
 cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), "the VRF " + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each VRF one zone")
+```
+
+Expression of rule 6:
+
+```text
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, !(i in vrfs))))
+```
+
+Message of rule 6:
+
+```text
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(i, all.filter(i, i in vrfs)[0], "FirewallZone " + documents.filter(n, i in documents[n].spec.interfaces)[0] + ": " + i + " is the device of VRF " + i + "; name the VRF in vrfs")))
 ```
 
 #### NAT64 { #rules-nat64 }
@@ -790,9 +803,10 @@ Message of rule 10:
 | 1 | — | masquerade and snat name out alone, dnat names in alone. | `refuse` | after the table | after the table |
 | 2 | — | out and in name a zone or an interface, one of them. | `refuse` | after the table | after the table |
 | 3 | — | A NATRule's zone is a FirewallZone document. | `refuse` | after the table | after the table |
-| 4 | — | snat and dnat give to, masquerade does not. | `refuse` | `documents.all(n, (documents[n].spec.type == "masquerade") == (documents[n].spec.to == null))` | after the table |
-| 5 | — | A NATRule's addresses are of its family. | `refuse` | after the table | after the table |
-| 6 | — | Ports go with match.protocol. | `refuse` | after the table | after the table |
+| 4 | — | A NATRule's interface is no VRF's device, which takes the VRF document's name; the output router-nftables also refuses a glob that matches devices alone. | `refuse` | after the table | after the table |
+| 5 | — | snat and dnat give to, masquerade does not. | `refuse` | `documents.all(n, (documents[n].spec.type == "masquerade") == (documents[n].spec.to == null))` | after the table |
+| 6 | — | A NATRule's addresses are of its family. | `refuse` | after the table | after the table |
+| 7 | — | Ports go with match.protocol. | `refuse` | after the table | after the table |
 
 Expression of rule 1:
 
@@ -830,31 +844,43 @@ Message of rule 3:
 cel.bind(zones, (("router.chalkos.dev/v1alpha1" in config && "FirewallZone" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].FirewallZone : {}), documents.filter(n, ![documents[n].spec.out, documents[n].spec["in"]].all(p, p == null || p.zone == null || p.zone in zones)).map(n, "NATRule " + n).join(", ") + " names a zone that no FirewallZone document declares")
 ```
 
+Expression of rule 4:
+
+```text
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.all(n, ![documents[n].spec.out, documents[n].spec["in"]].exists(p, p != null && p.interface != null && p.interface in vrfs)))
+```
+
 Message of rule 4:
 
 ```text
-documents.filter(n, (documents[n].spec.type == "masquerade") != (documents[n].spec.to == null)).map(n, "NATRule " + n).join(", ") + ": snat and dnat translate to the address of to, masquerade to that of the interface and has no to"
-```
-
-Expression of rule 5:
-
-```text
-documents.all(n, cel.bind(s, documents[n].spec, (s.match.source + s.match.destination).all(a, cidr(a).ip(0).family() == s.family) && (s.to == null || ip(s.to.address).family() == s.family)))
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(n, documents.filter(n, [documents[n].spec.out, documents[n].spec["in"]].exists(p, p != null && p.interface != null && p.interface in vrfs))[0], cel.bind(i, [documents[n].spec.out, documents[n].spec["in"]].filter(p, p != null && p.interface != null && p.interface in vrfs)[0].interface, "NATRule " + n + ": " + i + " is the device of VRF " + i + "; name the VRF's links or a zone of the VRF")))
 ```
 
 Message of rule 5:
 
 ```text
-documents.filter(n, cel.bind(s, documents[n].spec, !((s.match.source + s.match.destination).all(a, cidr(a).ip(0).family() == s.family) && (s.to == null || ip(s.to.address).family() == s.family)))).map(n, "NATRule " + n + " has addresses of another family than " + documents[n].spec.family).join("; ")
+documents.filter(n, (documents[n].spec.type == "masquerade") != (documents[n].spec.to == null)).map(n, "NATRule " + n).join(", ") + ": snat and dnat translate to the address of to, masquerade to that of the interface and has no to"
 ```
 
 Expression of rule 6:
 
 ```text
-documents.all(n, cel.bind(s, documents[n].spec, s.match.protocol != null || size(s.match.destinationPorts) == 0 && (s.to == null || s.to.port == null)))
+documents.all(n, cel.bind(s, documents[n].spec, (s.match.source + s.match.destination).all(a, cidr(a).ip(0).family() == s.family) && (s.to == null || ip(s.to.address).family() == s.family)))
 ```
 
 Message of rule 6:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, !((s.match.source + s.match.destination).all(a, cidr(a).ip(0).family() == s.family) && (s.to == null || ip(s.to.address).family() == s.family)))).map(n, "NATRule " + n + " has addresses of another family than " + documents[n].spec.family).join("; ")
+```
+
+Expression of rule 7:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, s.match.protocol != null || size(s.match.destinationPorts) == 0 && (s.to == null || s.to.port == null)))
+```
+
+Message of rule 7:
 
 ```text
 documents.filter(n, cel.bind(s, documents[n].spec, s.match.protocol == null && (size(s.match.destinationPorts) > 0 || s.to != null && s.to.port != null))).map(n, "NATRule " + n).join(", ") + ": ports need match.protocol"

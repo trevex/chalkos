@@ -32,6 +32,13 @@ let
   # rather than over each zone's VRFs: nested loops, or a loop over a list flattened in place,
   # would cost more than chalkd allows.
   zoneVRFs = body: "cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), ${body})";
+  # Binds, for body, all to the interfaces of every FirewallZone as one list, as zoneVRFs does.
+  zoneInterfaces =
+    body: "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), ${body})";
+  # The places out and in of the NATRule n.
+  natPlaces = ''[documents[n].spec.out, documents[n].spec["in"]]'';
+  # Whether the place p of a NATRule names the device of a VRF of vrfs.
+  natDevice = "p != null && p.interface != null && p.interface in vrfs";
   verdict = types.enum [
     "accept"
     "drop"
@@ -268,6 +275,11 @@ in
             rule = zoneVRFs "all.all(v, size(all.filter(w, w == v)) == 1)";
             messageExpression = zoneVRFs ''"the VRF " + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each VRF one zone"'';
           }
+          {
+            description = "No interface of a FirewallZone is a VRF's device, which takes the VRF document's name; the output router-nftables also refuses globs that match one.";
+            rule = "cel.bind(vrfs, ${delivered "VRF"}, ${zoneInterfaces "all.all(i, !(i in vrfs))"})";
+            messageExpression = "cel.bind(vrfs, ${delivered "VRF"}, ${zoneInterfaces ''cel.bind(i, all.filter(i, i in vrfs)[0], "FirewallZone " + documents.filter(n, i in documents[n].spec.interfaces)[0] + ": " + i + " is the device of VRF " + i + "; name the VRF in vrfs")''})";
+          }
         ];
         spec = {
           interfaces = mkOption {
@@ -398,6 +410,11 @@ in
             description = "A NATRule's zone is a FirewallZone document.";
             rule = ''cel.bind(zones, ${delivered "FirewallZone"}, documents.all(n, [documents[n].spec.out, documents[n].spec["in"]].all(p, p == null || p.zone == null || p.zone in zones)))'';
             messageExpression = ''cel.bind(zones, ${delivered "FirewallZone"}, documents.filter(n, ![documents[n].spec.out, documents[n].spec["in"]].all(p, p == null || p.zone == null || p.zone in zones)).map(n, "NATRule " + n).join(", ") + " names a zone that no FirewallZone document declares")'';
+          }
+          {
+            description = "A NATRule's interface is no VRF's device, which takes the VRF document's name; the output router-nftables also refuses a glob that matches devices alone.";
+            rule = "cel.bind(vrfs, ${delivered "VRF"}, documents.all(n, !${natPlaces}.exists(p, ${natDevice})))";
+            messageExpression = ''cel.bind(vrfs, ${delivered "VRF"}, cel.bind(n, documents.filter(n, ${natPlaces}.exists(p, ${natDevice}))[0], cel.bind(i, ${natPlaces}.filter(p, ${natDevice})[0].interface, "NATRule " + n + ": " + i + " is the device of VRF " + i + "; name the VRF's links or a zone of the VRF")))'';
           }
           {
             description = "snat and dnat give to, masquerade does not.";

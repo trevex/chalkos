@@ -431,7 +431,7 @@ A zone of the router's firewall: interfaces and VRFs whose connections the Firew
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 5 [change rules](builtins.md#rules-firewallzone).
+A node's config may hold several, each with a name of its own. It has 6 [change rules](builtins.md#rules-firewallzone).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -460,7 +460,7 @@ An address translation of the router, which applies whether or not any FirewallP
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 6 [change rules](builtins.md#rules-natrule).
+A node's config may hold several, each with a name of its own. It has 7 [change rules](builtins.md#rules-natrule).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

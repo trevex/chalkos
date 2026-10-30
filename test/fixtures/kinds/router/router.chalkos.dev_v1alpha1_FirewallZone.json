@@ -100,6 +100,12 @@
         "messageExpression": "cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), \"the VRF \" + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + \" is in more than one FirewallZone, or twice in one; give each VRF one zone\")",
         "rule": "cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), all.all(v, size(all.filter(w, w == v)) == 1))",
         "takes": "refuse"
+      },
+      {
+        "description": "No interface of a FirewallZone is a VRF's device, which takes the VRF document's name; the output router-nftables also refuses globs that match one.",
+        "messageExpression": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(i, all.filter(i, i in vrfs)[0], \"FirewallZone \" + documents.filter(n, i in documents[n].spec.interfaces)[0] + \": \" + i + \" is the device of VRF \" + i + \"; name the VRF in vrfs\")))",
+        "rule": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, !(i in vrfs))))",
+        "takes": "refuse"
       }
     ],
     "version": "v1alpha1"

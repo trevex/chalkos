@@ -257,6 +257,12 @@
         "takes": "refuse"
       },
       {
+        "description": "A NATRule's interface is no VRF's device, which takes the VRF document's name; the output router-nftables also refuses a glob that matches devices alone.",
+        "messageExpression": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), cel.bind(n, documents.filter(n, [documents[n].spec.out, documents[n].spec[\"in\"]].exists(p, p != null && p.interface != null && p.interface in vrfs))[0], cel.bind(i, [documents[n].spec.out, documents[n].spec[\"in\"]].filter(p, p != null && p.interface != null && p.interface in vrfs)[0].interface, \"NATRule \" + n + \": \" + i + \" is the device of VRF \" + i + \"; name the VRF's links or a zone of the VRF\")))",
+        "rule": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), documents.all(n, ![documents[n].spec.out, documents[n].spec[\"in\"]].exists(p, p != null && p.interface != null && p.interface in vrfs)))",
+        "takes": "refuse"
+      },
+      {
         "description": "snat and dnat give to, masquerade does not.",
         "messageExpression": "documents.filter(n, (documents[n].spec.type == \"masquerade\") != (documents[n].spec.to == null)).map(n, \"NATRule \" + n).join(\", \") + \": snat and dnat translate to the address of to, masquerade to that of the interface and has no to\"",
         "rule": "documents.all(n, (documents[n].spec.type == \"masquerade\") == (documents[n].spec.to == null))",
