@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"errors"
 	"io"
 	"maps"
 	"slices"
@@ -78,7 +79,7 @@ func (s *Server) RunDiagnostic(ctx context.Context, req *connect.Request[nodev1.
 	out := &diagnosticOutput{stream: stream, stop: stop, left: diagnostics.MaxOutput}
 	run := diagnostics.Run{Name: name, Argv: argv, Capabilities: d.Capabilities, Groups: d.Groups, NetworkNamespace: ns, Timeout: d.RunTime()}
 	exit, err := s.diagnose().Run(runCtx, run, out.writer(false), out.writer(true))
-	return out.finish(ctx, name, exit, err)
+	return out.finish(ctx, name, ns, exit, err)
 }
 
 func (s *Server) diagnose() diagnostics.Runner {
@@ -132,9 +133,9 @@ func (o *diagnosticOutput) writer(stderr bool) io.Writer {
 	})
 }
 
-// finish ends the output once the run returned, with how the run ended: the stream's last
-// message, or the error the call fails with.
-func (o *diagnosticOutput) finish(ctx context.Context, name string, exit diagnostics.Exit, err error) error {
+// finish ends the output once the run of the diagnostic name in the network namespace ns
+// returned, with how the run ended: the stream's last message, or the error the call fails with.
+func (o *diagnosticOutput) finish(ctx context.Context, name, ns string, exit diagnostics.Exit, err error) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.done = true
@@ -146,6 +147,8 @@ func (o *diagnosticOutput) finish(ctx context.Context, name string, exit diagnos
 		exit = diagnostics.Exit{Stopped: diagnostics.StoppedOutputLimit}
 	case ctx.Err() != nil:
 		return ctx.Err()
+	case errors.Is(err, diagnostics.ErrNoNamespace):
+		return failed(connect.CodeFailedPrecondition, "diagnostic %s: the network namespace %s does not exist", name, ns)
 	case err != nil:
 		return failed(connect.CodeInternal, "run the diagnostic %s: %v", name, err)
 	}

@@ -3,6 +3,7 @@ package chalkd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"slices"
@@ -181,6 +182,20 @@ func TestRunDiagnosticInANamespace(t *testing.T) {
 	}
 	if got := f.recorded(); len(got) != 1 {
 		t.Errorf("runs = %+v", got)
+	}
+}
+
+// RunDiagnostic fails a run whose network namespace does not exist as a failed precondition that
+// names the namespace.
+func TestRunDiagnosticInAMissingNamespace(t *testing.T) {
+	f := &fakeDiagnose{err: fmt.Errorf("wrapped: %w", diagnostics.ErrNoNamespace)}
+	s, conn := diagnosticsNode(t, f, pki.RoleOperator)
+	write(t, s.Paths.Diagnostics, `{"links": {"description": "A namespace's links.", "command": ["/nix/store/x-iproute2/bin/ip", "-json", "link"],
+	  "networkNamespace": "ns-{name}", "parameters": {"name": {"type": "pattern", "regex": "^[a-z]+$", "description": "A namespace."}},
+	  "role": "operator", "timeout": "10s"}}`)
+	_, _, _, err := runDiagnostic(conn, "links", map[string]string{"name": "gone"})
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "diagnostic links: the network namespace ns-gone does not exist") {
+		t.Errorf("err = %v, want a failed precondition naming ns-gone", err)
 	}
 }
 

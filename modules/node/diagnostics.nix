@@ -151,7 +151,7 @@ let
         type = types.nullOr (types.strMatching namespaceForm);
         default = null;
         example = "blue-{name}";
-        description = "Network namespace the run joins, by its name below `/run/netns`, which may name parameters as `command` does; null runs it in the host's network. The name holds letters, digits, `_`, `.` and `-` and starts with neither `.` nor `-`; chalkd refuses a call whose values fill it to anything else. A parameter it names is not `optional`.";
+        description = "Network namespace the run joins, by its name below `/run/netns`, which may name parameters as `command` does; null runs it in the host's network. The name holds letters, digits, `_`, `.` and `-` and starts with neither `.` nor `-`; chalkd refuses a call whose values fill it to anything else, and fails one whose namespace does not exist before the command runs. A parameter it names is not `optional`.";
       };
     };
   };

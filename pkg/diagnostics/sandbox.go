@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +30,29 @@ import (
 //
 // A failed unit stays loaded, so its result tells a timeout apart from an exit status; chalkd
 // resets it after reading it.
-type Sandbox struct{}
+type Sandbox struct {
+	// NamespaceDir holds the named network namespaces a run may join; empty for NamespaceDir.
+	NamespaceDir string
+}
+
+// ErrNoNamespace is what a run in a network namespace that does not exist fails with, before its
+// unit starts: systemd would fail the unit with an exit status that reads as the program's.
+var ErrNoNamespace = errors.New("the network namespace does not exist")
+
+// noNamespace is ErrNoNamespace for the namespace of that name.
+type noNamespace string
+
+func (n noNamespace) Error() string { return "the network namespace " + string(n) + " does not exist" }
+
+func (noNamespace) Is(err error) bool { return err == ErrNoNamespace }
+
+// namespaces is the directory of the named network namespaces.
+func (s Sandbox) namespaces() string {
+	if s.NamespaceDir != "" {
+		return s.NamespaceDir
+	}
+	return NamespaceDir
+}
 
 // stopMargin is how much longer than a run's timeout chalkd waits for systemd-run, so the unit's
 // own limit stops the program first and its result says so; it also bounds each systemctl call.
@@ -58,8 +83,8 @@ var sandbox = []string{
 	"--property=TasksMax=64",
 }
 
-// sandboxArgs are the arguments of systemd-run that run r as unit.
-func sandboxArgs(unit string, r Run) []string {
+// args are the arguments of systemd-run that run r as unit.
+func (s Sandbox) args(unit string, r Run) []string {
 	caps := strings.Join(r.Capabilities, " ")
 	// Without --expand-environment=no, systemd-run would expand $NAME and ${NAME} in the
 	// command's arguments, which hold the call's values.
@@ -75,7 +100,7 @@ func sandboxArgs(unit string, r Run) []string {
 	// systemd joins the namespace before it drops the run's privileges, which RestrictNamespaces=
 	// would refuse the program itself.
 	if r.NetworkNamespace != "" {
-		args = append(args, "--property=NetworkNamespacePath="+NamespaceDir+"/"+r.NetworkNamespace)
+		args = append(args, "--property=NetworkNamespacePath="+filepath.Join(s.namespaces(), r.NetworkNamespace))
 	}
 	return append(append(args, "--"), r.Argv...)
 }
@@ -94,7 +119,7 @@ func systemctl(args ...string) ([]byte, error) {
 	return command.Run(ctx, append([]string{"systemctl"}, args...), nil, command.MaxOutput)
 }
 
-func (Sandbox) Run(ctx context.Context, r Run, stdout, stderr io.Writer) (Exit, error) {
+func (s Sandbox) Run(ctx context.Context, r Run, stdout, stderr io.Writer) (Exit, error) {
 	if r.Timeout <= 0 {
 		return Exit{}, fmt.Errorf("diagnostic %s: its timeout %v is not positive", r.Name, r.Timeout)
 	}
@@ -102,11 +127,16 @@ func (Sandbox) Run(ctx context.Context, r Run, stdout, stderr io.Writer) (Exit, 
 		if err := checkNamespace(r.NetworkNamespace); err != nil {
 			return Exit{}, fmt.Errorf("diagnostic %s: %w", r.Name, err)
 		}
+		if _, err := os.Stat(filepath.Join(s.namespaces(), r.NetworkNamespace)); errors.Is(err, fs.ErrNotExist) {
+			return Exit{}, noNamespace(r.NetworkNamespace)
+		} else if err != nil {
+			return Exit{}, fmt.Errorf("diagnostic %s: %w", r.Name, err)
+		}
 	}
 	unit := unitName(r.Name)
 	waitCtx, cancel := context.WithTimeout(ctx, r.Timeout+stopMargin)
 	defer cancel()
-	cmd := exec.CommandContext(waitCtx, "systemd-run", sandboxArgs(unit, r)...)
+	cmd := exec.CommandContext(waitCtx, "systemd-run", s.args(unit, r)...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	// The unit's program holds the pipes, so the unit stops first, then systemd-run.

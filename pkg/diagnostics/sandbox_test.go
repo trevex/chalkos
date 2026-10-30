@@ -115,7 +115,7 @@ func TestSandboxArgs(t *testing.T) {
 			t.Errorf("the sandbox lacks %s", p)
 		}
 	}
-	got := sandboxArgs("chalkos-diagnostic-ping-0123456789ab.service", Run{
+	got := Sandbox{}.args("chalkos-diagnostic-ping-0123456789ab.service", Run{
 		Argv:         []string{"/nix/store/x-iputils/bin/ping", "-c", "4", "192.0.2.1"},
 		Capabilities: []string{"CAP_NET_RAW"},
 		Groups:       []string{"bird", "wheel"},
@@ -130,16 +130,20 @@ func TestSandboxArgs(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("sandboxArgs =\n%q\nwant\n%q", got, want)
 	}
-	none := sandboxArgs("u.service", Run{Argv: []string{"/nix/store/x/bin/ip"}, Timeout: time.Second})
+	none := Sandbox{}.args("u.service", Run{Argv: []string{"/nix/store/x/bin/ip"}, Timeout: time.Second})
 	if !slices.Contains(none, "--property=CapabilityBoundingSet=") || !slices.Contains(none, "--property=AmbientCapabilities=") {
 		t.Errorf("a run without capabilities keeps some: %q", none)
 	}
 	if slices.ContainsFunc(none, func(a string) bool { return strings.HasPrefix(a, "--property=SupplementaryGroups") }) {
 		t.Errorf("a run without groups gets some: %q", none)
 	}
-	ns := sandboxArgs("u.service", Run{Argv: []string{"/nix/store/x/bin/ip"}, NetworkNamespace: "ns-blue", Timeout: time.Second})
+	ns := Sandbox{}.args("u.service", Run{Argv: []string{"/nix/store/x/bin/ip"}, NetworkNamespace: "ns-blue", Timeout: time.Second})
 	if !slices.Contains(ns, "--property=NetworkNamespacePath=/run/netns/ns-blue") {
 		t.Errorf("a run in a namespace does not join it: %q", ns)
+	}
+	other := Sandbox{NamespaceDir: "/tmp/netns"}.args("u.service", Run{Argv: []string{"/nix/store/x/bin/ip"}, NetworkNamespace: "ns-blue", Timeout: time.Second})
+	if !slices.Contains(other, "--property=NetworkNamespacePath=/tmp/netns/ns-blue") {
+		t.Errorf("a run in a namespace of another directory does not join it: %q", other)
 	}
 	if slices.ContainsFunc(none, func(a string) bool { return strings.HasPrefix(a, "--property=NetworkNamespacePath") }) {
 		t.Errorf("a run of the host's network joins a namespace: %q", none)
@@ -157,6 +161,28 @@ func TestSandboxRefusesANamespaceOutsideTheDirectory(t *testing.T) {
 	}
 	if unit := recorded(t, dir, "unit"); unit != "" {
 		t.Errorf("systemd-run ran %q", unit)
+	}
+}
+
+// A run in a namespace that does not exist, as when what made it is gone, fails with
+// ErrNoNamespace before systemd-run starts, which would fail the unit with an exit status that
+// reads as the program's; a namespace that exists runs.
+func TestSandboxRefusesAMissingNamespace(t *testing.T) {
+	dir := fakeSystemd(t, "")
+	s := Sandbox{NamespaceDir: t.TempDir()}
+	r := Run{Name: "links", Argv: []string{"/bin/sh", "-c", "true"}, NetworkNamespace: "ns-gone", Timeout: time.Second}
+	_, err := s.Run(context.Background(), r, io.Discard, io.Discard)
+	if !errors.Is(err, ErrNoNamespace) || err.Error() != "the network namespace ns-gone does not exist" {
+		t.Errorf("err = %v, want ErrNoNamespace naming ns-gone", err)
+	}
+	if unit := recorded(t, dir, "unit"); unit != "" {
+		t.Errorf("systemd-run ran %q", unit)
+	}
+	if err := os.WriteFile(filepath.Join(s.NamespaceDir, "ns-gone"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if exit, err := s.Run(context.Background(), r, io.Discard, io.Discard); err != nil || exit != (Exit{}) {
+		t.Errorf("Run = %+v, %v", exit, err)
 	}
 }
 
