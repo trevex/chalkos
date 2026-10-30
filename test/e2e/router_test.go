@@ -213,6 +213,17 @@ func TestRouterLab(t *testing.T) {
 		}
 	}
 
+	// failedUnit tells whether the router's status out shows a failed unit, and logs the journal
+	// of each one it shows.
+	failedUnit := func(t *testing.T, name, inventory, out string) bool {
+		t.Helper()
+		units := regexp.MustCompile(`(?m)^failed unit (\S+)$`).FindAllStringSubmatch(out, -1)
+		for _, u := range units {
+			_, _ = chalkctl(t, nodes[name], inventory, "logs", name, "--unit", u[1])
+		}
+		return len(units) > 0
+	}
+
 	if !t.Run("bgp", func(t *testing.T) {
 		waitFor(t, 10*time.Minute, "r1's session with r2", func() error { return established("r1", "fabric") })
 		waitFor(t, 2*time.Minute, "r2's session with r1", func() error { return established("r2", "edge") })
@@ -233,7 +244,7 @@ func TestRouterLab(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		for _, name := range []string{"r1", "r2"} {
-			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || strings.Contains(out, "failed unit") {
+			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || failedUnit(t, name, "base", out) {
 				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
 			}
 			// A reader sees the sessions, and the password nowhere.
@@ -346,7 +357,7 @@ func TestRouterLab(t *testing.T) {
 			}
 		}
 		statusLines := regexp.MustCompile(`(?m)^  edge\s+[1-9]\d*\s+[1-9]\d*\s+4535\s+4535\s+4535$[\s\S]*^resolver: running$`)
-		if out, err := chalkctl(t, nodes["r1"], "base", "status", "r1"); err != nil || !statusLines.MatchString(out) || strings.Contains(out, "failed unit") {
+		if out, err := chalkctl(t, nodes["r1"], "base", "status", "r1"); err != nil || !statusLines.MatchString(out) || failedUnit(t, "r1", "base", out) {
 			t.Errorf("status of r1 shows no session of its NAT64, no running resolver or a failed unit: %v\n%s", err, out)
 		}
 		if out, err := chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "nat64-sessions", "instance=edge"); err != nil || !strings.Contains(out, "10.0.2.2#"+port) {
@@ -537,10 +548,10 @@ func TestRouterLab(t *testing.T) {
 		}
 		waitFor(t, time.Minute, "r2's resolver of fabric", resolverRunning("vrf"))
 		statusLine := regexp.MustCompile(`(?m)^  fabric\s+fabric\s+enp0s3\s+Established\s+\S+\s+\d+\s+[1-9]\d*\s+up$`)
-		if out, err := chalkctl(t, nodes["r1"], "vrf", "status", "r1"); err != nil || !statusLine.MatchString(out) || strings.Contains(out, "failed unit") {
+		if out, err := chalkctl(t, nodes["r1"], "vrf", "status", "r1"); err != nil || !statusLine.MatchString(out) || failedUnit(t, "r1", "vrf", out) {
 			t.Errorf("status of r1 shows no session in fabric, or a failed unit: %v\n%s", err, out)
 		}
-		if out, err := chalkctl(t, nodes["r2"], "vrf", "status", "r2"); err != nil || strings.Contains(out, "failed unit") {
+		if out, err := chalkctl(t, nodes["r2"], "vrf", "status", "r2"); err != nil || failedUnit(t, "r2", "vrf", out) {
 			t.Errorf("status of r2 shows a failed unit: %v\n%s", err, out)
 		}
 		tableLine := regexp.MustCompile(`(?m)^2001:db8:ffff::2/128\s+unicast\s+bgp\s+100\s`)
@@ -605,7 +616,7 @@ func TestRouterLab(t *testing.T) {
 				}
 			}
 		}
-		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "status", "r2"); err != nil || strings.Contains(out, "failed unit") {
+		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "status", "r2"); err != nil || failedUnit(t, "r2", "vrf-table", out) {
 			t.Errorf("status of r2 shows a failed unit: %v\n%s", err, out)
 		}
 
@@ -621,7 +632,7 @@ func TestRouterLab(t *testing.T) {
 		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in the default VRF", func() error { return learnedFrom("r1", "", "2001:db8:ffff::2/128", "64513") })
 		waitFor(t, 2*time.Minute, "r2's default route from r1 in the default VRF", func() error { return learned("::/0") })
 		for _, name := range []string{"r1", "r2"} {
-			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || strings.Contains(out, "failed unit") {
+			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || failedUnit(t, name, "base", out) {
 				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
 			}
 		}
