@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"path"
 	"regexp"
 	"slices"
@@ -383,10 +384,13 @@ type nameWord struct {
 }
 
 // parseNameMatch reads the Name= of the [Match] sections of the Network document network's spec
-// as systemd does: the values in order, each split into words at whitespace, an empty value
-// dropping the words before it. A value whose first word starts with ! negates all of its words,
-// and in another value a word that starts with ! negates itself. systemd drops a word that is no
-// interface name, and so does parseNameMatch. It refuses a word it cannot match as fnmatch does.
+// as systemd does: the values in order, each split into words at spaces, tabs and line breaks, a
+// value of only those dropping the words before it. A value whose first word starts with !
+// negates all of its words, and in another value a word that starts with ! negates itself.
+// systemd drops a word that is no interface name, and so does parseNameMatch. It refuses a
+// backslash, which systemd reads as an escape when it splits the value, and a word it cannot
+// match as fnmatch does. It reads interface names alone: networkd also matches a word against a
+// link's alternative names, which the documents do not give.
 func parseNameMatch(network string, spec map[string]any) (nameMatch, error) {
 	var m nameMatch
 	for _, s := range oneOrMany(spec["match"]) {
@@ -396,16 +400,19 @@ func parseNameMatch(network string, spec map[string]any) (nameMatch, error) {
 			if err != nil {
 				continue
 			}
-			if value == "" {
+			words := strings.FieldsFunc(value, func(r rune) bool { return strings.ContainsRune(unitWhitespace, r) })
+			if len(words) == 0 {
 				m.words = nil
 				continue
 			}
-			words := strings.Fields(value)
-			inverted := len(words) > 0 && strings.HasPrefix(words[0], "!")
+			inverted := strings.HasPrefix(words[0], "!")
 			if inverted {
 				words[0] = words[0][1:]
 			}
 			for _, w := range words {
+				if strings.Contains(w, `\`) {
+					return m, fmt.Errorf("Network %s: Name= holds %q, whose backslash networkd reads as an escape; name the links without one", network, w)
+				}
 				if !systemdIfname(w) {
 					continue
 				}
@@ -414,7 +421,7 @@ func parseNameMatch(network string, spec map[string]any) (nameMatch, error) {
 					w, word.negated = strings.CutPrefix(w, "!")
 				}
 				word.glob = goGlob(w)
-				if _, err := path.Match(word.glob, ""); err != nil {
+				if _, err := path.Match(word.glob, ""); err != nil || bracketHolds(w, '[') {
 					return m, fmt.Errorf("Network %s: Name= holds %q, which is no glob the renderer can match as networkd does", network, word.text)
 				}
 				m.words = append(m.words, word)
@@ -424,10 +431,13 @@ func parseNameMatch(network string, spec map[string]any) (nameMatch, error) {
 	return m, nil
 }
 
+// unitWhitespace are the characters systemd splits a value at, and strips around it.
+const unitWhitespace = " \t\n\r"
+
 // systemdIfname reports whether systemd takes a word of Name= for an interface name or glob; it
 // drops the others with a warning.
 func systemdIfname(word string) bool {
-	if word == "" || len(word) >= 128 || word == "." || word == ".." || word == "all" || word == "default" {
+	if word == "" || ifindex(word) || len(word) >= 128 || word == "." || word == ".." || word == "all" || word == "default" {
 		return false
 	}
 	numeric := true
@@ -441,22 +451,90 @@ func systemdIfname(word string) bool {
 	return !numeric
 }
 
+// ifindex reports whether systemd reads a word as an interface index: an integer from 1 that
+// fits an int, as strtol reads it in base 0, after a prefix 0b or 0o that sets base 2 or 8.
+func ifindex(word string) bool {
+	base := uint64(0)
+	if len(word) > 2 && word[0] == '0' {
+		switch word[1] {
+		case 'b', 'B':
+			base, word = 2, word[2:]
+		case 'o', 'O':
+			base, word = 8, word[2:]
+		}
+	}
+	negative := false
+	if word != "" && (word[0] == '+' || word[0] == '-') {
+		negative, word = word[0] == '-', word[1:]
+	}
+	digit := func(c byte) uint64 {
+		switch {
+		case c >= '0' && c <= '9':
+			return uint64(c - '0')
+		case c >= 'a' && c <= 'z':
+			return uint64(c-'a') + 10
+		case c >= 'A' && c <= 'Z':
+			return uint64(c-'A') + 10
+		}
+		return 36
+	}
+	prefixed := func(lower byte, b uint64) bool {
+		return (base == 0 || base == b) && len(word) > 2 && word[0] == '0' && word[1]|0x20 == lower && digit(word[2]) < b
+	}
+	switch {
+	case prefixed('x', 16):
+		base, word = 16, word[2:]
+	case prefixed('b', 2):
+		base, word = 2, word[2:]
+	case base == 0 && strings.HasPrefix(word, "0"):
+		base = 8
+	case base == 0:
+		base = 10
+	}
+	if word == "" {
+		return false
+	}
+	n := uint64(0)
+	for i := range len(word) {
+		d := digit(word[i])
+		if d >= base {
+			return false
+		}
+		if n = n*base + d; n > math.MaxInt32 {
+			return false
+		}
+	}
+	return !negative && n > 0
+}
+
 // goGlob is the fnmatch glob as path.Match takes it, which negates a bracket expression with ^
 // where fnmatch takes !.
 func goGlob(glob string) string {
-	var b strings.Builder
+	return strings.ReplaceAll(glob, "[!", "[^")
+}
+
+// bracketHolds reports whether a bracket expression of the glob holds c. The bracket
+// expressions of fnmatch read [ as the start of a class such as [:digit:], which path.Match
+// takes for the characters themselves.
+func bracketHolds(glob string, c byte) bool {
+	in := false
 	for i := 0; i < len(glob); i++ {
-		b.WriteByte(glob[i])
 		switch {
-		case glob[i] == '\\' && i+1 < len(glob):
-			i++
-			b.WriteByte(glob[i])
-		case glob[i] == '[' && i+1 < len(glob) && glob[i+1] == '!':
-			i++
-			b.WriteByte('^')
+		case !in && glob[i] == '[':
+			in = true
+			if i+1 < len(glob) && (glob[i+1] == '!' || glob[i+1] == '^') {
+				i++
+			}
+			if i+1 < len(glob) && glob[i+1] == ']' {
+				i++
+			}
+		case in && glob[i] == ']':
+			in = false
+		case in && glob[i] == c:
+			return true
 		}
 	}
-	return b.String()
+	return false
 }
 
 // matches reports whether networkd matches the link by this Name=.

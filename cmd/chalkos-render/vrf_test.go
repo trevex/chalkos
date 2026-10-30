@@ -93,9 +93,11 @@ func TestVRFLinks(t *testing.T) {
 	}
 }
 
-// Name= matches as systemd's does: globs per word, a first word with ! negating every word, a
-// later word with ! negating itself, an empty value resetting the values before it, and words
-// systemd takes for no interface name left out.
+// Name= matches as systemd's does: globs per word, split at spaces, tabs and line breaks, a
+// first word with ! negating every word, a later word with ! negating itself, a value of only
+// whitespace resetting the values before it, and words systemd takes for no interface name, an
+// interface index among them, left out. A backslash and a [ in a bracket expression, which
+// fnmatch and path.Match read differently, are refused.
 func TestNameMatch(t *testing.T) {
 	for _, c := range []struct {
 		names   any
@@ -112,6 +114,10 @@ func TestNameMatch(t *testing.T) {
 		{[]any{"eth0", ""}, []string{"eth0", "lo"}, nil},
 		{"eth0:1 eth1", []string{"eth1"}, []string{"eth0:1", "lo"}},
 		{nil, []string{"eth0"}, nil},
+		{[]any{"eth0", " \t "}, []string{"eth0", "lo"}, nil},
+		{"eth1 eth0\veth2", []string{"eth1"}, []string{"eth0", "eth2", "eth0\veth2"}},
+		{"0x1f 0b1 0o7 +5 017 08 0 eth1", []string{"eth1"}, []string{"0x1f", "0b1", "0o7", "+5", "017", "08", "0"}},
+		{"-5 0x 0x100000000 eth1", []string{"-5", "0x", "0x100000000", "eth1"}, []string{"lo"}},
 	} {
 		m, err := parseNameMatch("n", map[string]any{"match": map[string]any{"name": c.names}})
 		if err != nil {
@@ -128,8 +134,10 @@ func TestNameMatch(t *testing.T) {
 			}
 		}
 	}
-	if _, err := parseNameMatch("n", map[string]any{"match": map[string]any{"name": "eth[0"}}); err == nil {
-		t.Errorf("parseNameMatch takes Name=eth[0")
+	for _, name := range []string{"eth[0", `eth\0`, `eth1 eth\`, "eth[[=a=]]", "eth[[.a.]]", "eth[a[]"} {
+		if _, err := parseNameMatch("n", map[string]any{"match": map[string]any{"name": name}}); err == nil {
+			t.Errorf("parseNameMatch takes Name=%s", name)
+		}
 	}
 }
 
