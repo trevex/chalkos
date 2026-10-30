@@ -303,7 +303,7 @@ documents.filter(n, !documents[n].spec.prefixes.all(p, cidr(p).ip(0).family() ==
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | One BGP document serves a VRF. | `refuse` | after the table | after the table |
-| 2 | — | A BGP document's vrf is a VRF document. | `refuse` | after the table | after the table |
+| 2 | — | A BGP's vrf is a VRF document. | `refuse` | after the table | after the table |
 | 3 | — | A BGP instance does not import its own VRF. | `refuse` | after the table | after the table |
 | 4 | — | A delivery that drops the default VRF's BGP document keeps no running BGP instance of another VRF, as FRR keeps its default instance while another runs. | `refuse` | after the table | the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's |
 | 5 | `spec.asn` | BGP keeps its AS number. | `refuse` | `self == oldSelf` | after the table |

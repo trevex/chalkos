@@ -19,19 +19,12 @@ let
   inherit (import ./router-types.nix { inherit lib; })
     prefix
     address
-    delivered
     vrfOf
+    vrfDeclared
     ;
 
   # A VRF document's name, as a document's vrf gives it.
   vrfName = types.strMatching documentName;
-  # The rule that a document of the kind k names a VRF that a VRF document declares in vrf, or
-  # none.
-  vrfDeclared = k: {
-    description = "A ${k}'s vrf is a VRF document.";
-    rule = "cel.bind(vrfs, ${delivered "VRF"}, documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))";
-    messageExpression = ''cel.bind(vrfs, ${delivered "VRF"}, documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, "${k} " + n + " names the VRF " + documents[n].spec.vrf).join(", ") + ", which no VRF document declares; leave vrf out for the default VRF")'';
-  };
   # A NAT64's link n64-<name> is an interface's name of 15 characters.
   maxName = 11;
 

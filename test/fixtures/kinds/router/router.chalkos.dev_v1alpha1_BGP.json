@@ -324,7 +324,7 @@
         "takes": "refuse"
       },
       {
-        "description": "A BGP document's vrf is a VRF document.",
+        "description": "A BGP's vrf is a VRF document.",
         "messageExpression": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, \"BGP \" + n + \" names the VRF \" + documents[n].spec.vrf).join(\", \") + \", which no VRF document declares; leave vrf out for the default VRF\")",
         "rule": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))",
         "takes": "refuse"

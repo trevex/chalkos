@@ -28,6 +28,7 @@ let
     family
     delivered
     vrfOf
+    vrfDeclared
     ;
 
   name = types.strMatching documentName;
@@ -168,11 +169,7 @@ in
             rule = "cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), v.all(x, size(v.filter(y, y == x)) == 1))";
             messageExpression = ''cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), "more than one BGP document serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one BGP instance")'';
           }
-          {
-            description = "A BGP document's vrf is a VRF document.";
-            rule = "cel.bind(vrfs, ${delivered "VRF"}, documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))";
-            messageExpression = ''cel.bind(vrfs, ${delivered "VRF"}, documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, "BGP " + n + " names the VRF " + documents[n].spec.vrf).join(", ") + ", which no VRF document declares; leave vrf out for the default VRF")'';
-          }
+          (vrfDeclared "BGP")
           {
             description = "A BGP instance does not import its own VRF.";
             rule = ''documents.all(n, cel.bind(s, documents[n].spec, [s["import"].ipv4, s["import"].ipv6].all(f, f == null || !(${vrfOf "documents[n]"} in f.vrfs))))'';
@@ -331,11 +328,7 @@ in
             rule = "documents.all(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() == 1))";
             messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() != 1)).map(n, "BGPPeer " + n).join(", ") + " names not exactly one of address, interface and interfaces; a peer is reached at an address, on an interface or on each interface of a list"'';
           }
-          {
-            description = "A BGPPeer's vrf is a VRF document.";
-            rule = "cel.bind(vrfs, ${delivered "VRF"}, documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))";
-            messageExpression = ''cel.bind(vrfs, ${delivered "VRF"}, documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, "BGPPeer " + n + " names the VRF " + documents[n].spec.vrf).join(", ") + ", which no VRF document declares; leave vrf out for the default VRF")'';
-          }
+          (vrfDeclared "BGPPeer")
           {
             description = "A BGPPeer's VRF has a BGP document.";
             rule = "cel.bind(have, ${served}, documents.all(n, ${vrfOf "documents[n]"} in have))";

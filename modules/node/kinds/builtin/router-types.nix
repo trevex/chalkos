@@ -5,8 +5,11 @@ let
   inherit (lib) types;
   inherit (import ./lib.nix) apiVersions;
   cel = import ../../../../lib/cel.nix { inherit lib; };
+  # The documents of a router kind in the delivered config, by name.
+  delivered = kind: cel.documents "config" apiVersions.router kind;
 in
 {
+  inherit delivered;
   # An interface's name, or a glob of names: a prefix and `*`, the one wildcard nftables matches.
   interface = types.strMatching "[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*]";
   interfaceText = "by name or glob, a glob being a prefix followed by `*`";
@@ -19,10 +22,15 @@ in
     "ipv4"
     "ipv6"
   ];
-  # The documents of a router kind in the delivered config, by name.
-  delivered = kind: cel.documents "config" apiVersions.router kind;
   # The VRF of the document d: its vrf, or default for the default VRF.
   vrfOf = d: ''(${d}.spec.vrf == null ? "default" : ${d}.spec.vrf)'';
+  # The rule that each document of the kind k names a VRF that a VRF document declares in vrf, or
+  # none.
+  vrfDeclared = k: {
+    description = "A ${k}'s vrf is a VRF document.";
+    rule = "cel.bind(vrfs, ${delivered "VRF"}, documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))";
+    messageExpression = ''cel.bind(vrfs, ${delivered "VRF"}, documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, "${k} " + n + " names the VRF " + documents[n].spec.vrf).join(", ") + ", which no VRF document declares; leave vrf out for the default VRF")'';
+  };
   # The names and globs of Name= in the [Match] sections of the Network documents of the config c,
   # each value, or each of a list, as one string between spaces: systemd splits a value at spaces
   # and tabs. A list of names would cost a loop more than a string.
