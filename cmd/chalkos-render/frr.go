@@ -396,8 +396,9 @@ func (c *frr) checkNetworks(in *instance) error {
 }
 
 // checkImports refuses an import of an instance that names no VRF, its own VRF, a VRF twice or one
-// that no BGP document serves, and a policy of another family. Every VRF it names is then an
-// instance's, whose name the documents' checks took.
+// that no BGP document serves, an import into or out of a VRF with a conntrack zone, and a policy
+// of another family. Every VRF it names is then an instance's, whose name the documents' checks
+// took.
 func (c *frr) checkImports(in *instance) error {
 	for _, f := range []struct {
 		family string
@@ -420,6 +421,11 @@ func (c *frr) checkImports(in *instance) error {
 			case c.served(v) == nil:
 				return fmt.Errorf("%s names the VRF %q, which no BGP document serves", what, v)
 			}
+			for _, end := range []string{v, in.vrf} {
+				if c.zoned(end) {
+					return fmt.Errorf("%s names the VRF %s, and VRF %s has a conntrack zone, so the replies of leaked connections would land in another zone; drop the zone or the import", what, v, end)
+				}
+			}
 			seen[v] = true
 		}
 		if f.leak.Policy != nil {
@@ -429,6 +435,11 @@ func (c *frr) checkImports(in *instance) error {
 		}
 	}
 	return nil
+}
+
+// zoned reports whether the VRF has a conntrack zone of its own; the default VRF has none.
+func (c *frr) zoned(vrf string) bool {
+	return slices.ContainsFunc(c.vrfs, func(v named[vrfSpec]) bool { return v.Name == vrf && v.Spec.ConntrackZone != nil })
 }
 
 // prepends finds the AS number each RoutingPolicy's prepend repeats: that of the BGP instances

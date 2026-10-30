@@ -261,6 +261,8 @@ type localZone struct {
 type vrfSpec struct {
 	Table      uint32   `json:"table"`
 	Interfaces []string `json:"interfaces"`
+	// ConntrackZone is nil for a VRF that shares zone 0 with the default VRF.
+	ConntrackZone *int `json:"conntrackZone"`
 }
 
 // named is the spec of a document, with the document's name.

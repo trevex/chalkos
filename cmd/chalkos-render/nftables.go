@@ -146,8 +146,17 @@ type firewall struct {
 	policies []named[policySpec]
 	nat      []named[natSpec]
 	openings []opening
-	port     int
-	closed   bool
+	// ctZones are the VRFs with a conntrack zone and links, by name.
+	ctZones []ctZone
+	port    int
+	closed  bool
+}
+
+// ctZone is a VRF's conntrack zone and the links whose connections take it.
+type ctZone struct {
+	vrf   string
+	zone  int
+	links []string
 }
 
 func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
@@ -170,6 +179,27 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		return nil, err
 	}
 	f.zones = zones
+	zoneOf := map[int]string{}
+	for _, v := range d.VRFs {
+		if v.Spec.ConntrackZone == nil {
+			continue
+		}
+		z := *v.Spec.ConntrackZone
+		if z < 1 || z > 65535 {
+			return nil, fmt.Errorf("VRF %s: conntrackZone %d is no zone from 1 to 65535", v.Name, z)
+		}
+		if other, ok := zoneOf[z]; ok {
+			return nil, fmt.Errorf("VRF %s and VRF %s both use conntrack zone %d", other, v.Name, z)
+		}
+		zoneOf[z] = v.Name
+		links, err := d.Membership.links(v.Name)
+		if err != nil {
+			return nil, err
+		}
+		if len(links) > 0 {
+			f.ctZones = append(f.ctZones, ctZone{vrf: v.Name, zone: z, links: links})
+		}
+	}
 	for _, n := range d.NAT {
 		for _, place := range []*natPlace{n.Spec.In, n.Spec.Out} {
 			if place != nil && place.Interface != nil {
@@ -316,8 +346,8 @@ const (
 	icmpv6Local  = icmpv6Errors + ", echo-request, mld-listener-query, mld-listener-report, mld-listener-done, nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert, mld2-listener-report"
 )
 
-// ruleset renders the table: the AddressSets, a chain per FirewallPolicy, the reverse-path filter,
-// input, forward and the NAT chains.
+// ruleset renders the table: the AddressSets, a chain per FirewallPolicy, the conntrack zones, the
+// reverse-path filter, input, forward and the NAT chains.
 func (f *firewall) ruleset() (string, error) {
 	var b strings.Builder
 	b.WriteString("# The router's firewall, rendered by chalkos-render. Loading the file replaces the table\n" +
@@ -351,6 +381,7 @@ func (f *firewall) ruleset() (string, error) {
 		}
 		b.WriteString("\t\t" + v + "\n\t}\n")
 	}
+	f.conntrackZones(&b)
 	if err := f.prerouting(&b); err != nil {
 		return "", err
 	}
@@ -363,6 +394,24 @@ func (f *firewall) ruleset() (string, error) {
 	}
 	b.WriteString("}\n")
 	return b.String(), nil
+}
+
+// conntrackZones puts the connections through the links of each VRF with a conntrack zone in its
+// zone, at the raw priority before conntrack sees them. Prerouting sees a packet from a VRF's
+// link first with the link as iifname, which decides its zone, and output a packet the router
+// sends in a VRF first with the VRF's device, untracked, then with the link. A ruleset without
+// zones has neither chain.
+func (f *firewall) conntrackZones(b *strings.Builder) {
+	if len(f.ctZones) == 0 {
+		return
+	}
+	for _, c := range []struct{ name, hook, dir string }{{"ct-prerouting", "prerouting", "iifname"}, {"ct-output", "output", "oifname"}} {
+		fmt.Fprintf(b, "\tchain %s {\n\t\ttype filter hook %s priority raw; policy accept;\n", c.name, c.hook)
+		for _, z := range f.ctZones {
+			fmt.Fprintf(b, "\t\t%s %s ct zone set %d comment %q\n", c.dir, interfaceSet(z.links), z.zone, "VRF "+z.vrf)
+		}
+		b.WriteString("\t}\n")
+	}
 }
 
 // prerouting is the reverse-path filter, which NixOS's firewall applies on every other image.

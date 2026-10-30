@@ -811,6 +811,14 @@ func TestFRRVRFRefusals(t *testing.T) {
 		"a prepend for two AS numbers": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "networks": [{"prefix": "2001:db8:1::/48", "policy": "p"}]`),
 			bgp("tenant", 64513, `, "vrf": "tenant", "networks": [{"prefix": "2001:db8:2::/48", "policy": "p"}]`)}, "RoutingPolicy": {prepend}}),
 			"RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own"},
+		"an import of a VRF with a conntrack zone": {map[string][]any{
+			"VRF": {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"], "conntrackZone": 1}`)}, "Network": {eth2},
+			"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["tenant"]}}`), bgp("tenant", 64512, `, "vrf": "tenant"`)}},
+			"BGP bgp: import.ipv6 names the VRF tenant, and VRF tenant has a conntrack zone, so the replies of leaked connections would land in another zone; drop the zone or the import"},
+		"an import into a VRF with a conntrack zone": {map[string][]any{
+			"VRF": {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"], "conntrackZone": 1}`)}, "Network": {eth2},
+			"BGP": {bgp("bgp", 64512, ""), bgp("tenant", 64512, `, "vrf": "tenant", "import": {"ipv6": {"vrfs": ["default"]}}`)}},
+			"BGP tenant: import.ipv6 names the VRF default, and VRF tenant has a conntrack zone, so the replies of leaked connections would land in another zone; drop the zone or the import"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"frr"}, c.docs, c.want) })
 	}
@@ -1012,6 +1020,49 @@ func TestVRFZoneRefusals(t *testing.T) {
 		"a glob of another zone's VRF": {with(tenant, zone("x", `{"interfaces": ["swp1*"], "vrfs": []}`)), "FirewallZone x names swp1*, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
 		"links nftables cannot match":  {unmatchable, "FirewallZone tenant: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *"},
 		"a NAT zone of no link":        {empty, "NATRule n: the zone x holds no link"},
+	} {
+		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })
+	}
+}
+
+// A VRF with a conntrack zone puts the connections through its links in its zone before conntrack
+// sees them: in prerouting by the link a packet comes in on, whose pass decides its zone, and in
+// output by the link the router sends it through. Without zones the ruleset has neither chain.
+func TestConntrackZones(t *testing.T) {
+	docs := vrfZoneDocs(t)
+	docs["VRF"][0] = routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"], "conntrackZone": 1}`)
+	want := "\tchain ct-prerouting {\n" +
+		"\t\ttype filter hook prerouting priority raw; policy accept;\n" +
+		"\t\tiifname { \"eth3\", \"eth4\" } ct zone set 1 comment \"VRF guest\"\n" +
+		"\t}\n" +
+		"\tchain ct-output {\n" +
+		"\t\ttype filter hook output priority raw; policy accept;\n" +
+		"\t\toifname { \"eth3\", \"eth4\" } ct zone set 1 comment \"VRF guest\"\n" +
+		"\t}\n" +
+		"\tchain prerouting {\n"
+	if text := vrfRuleset(t, docs); !strings.Contains(text, want) {
+		t.Errorf("the ruleset lacks\n%s\nin\n%s", want, text)
+	}
+	if text := vrfRuleset(t, vrfZoneDocs(t)); strings.Contains(text, "ct zone") {
+		t.Errorf("a ruleset without conntrack zones sets one:\n%s", text)
+	}
+}
+
+// The firewall refuses conntrack zones the schema and rules refuse, should they bypass them.
+func TestConntrackZoneRefusals(t *testing.T) {
+	with := func(guest, internet string) map[string][]any {
+		docs := vrfZoneDocs(t)
+		docs["VRF"][0] = routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"]`+guest+`}`)
+		docs["VRF"][1] = routerDoc(t, "VRF", "internet", `{"table": 100, "interfaces": ["eth1"]`+internet+`}`)
+		return docs
+	}
+	for name, c := range map[string]struct {
+		docs map[string][]any
+		want string
+	}{
+		"zone 0":         {with(`, "conntrackZone": 0`, ""), "VRF guest: conntrackZone 0 is no zone from 1 to 65535"},
+		"zone 65536":     {with(`, "conntrackZone": 65536`, ""), "VRF guest: conntrackZone 65536 is no zone from 1 to 65535"},
+		"one zone twice": {with(`, "conntrackZone": 1`, `, "conntrackZone": 1`), "VRF guest and VRF internet both use conntrack zone 1"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })
 	}
