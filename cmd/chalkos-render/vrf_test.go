@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// router-networkd renders a VRF's device, of its table, and the .network that brings it up, and
-// gives VRF= to the Networks of the links the VRF holds by name or by glob, in their first
-// [Network] section, which a Network without one gains. The other units stay as networkd renders
-// them.
+// router-networkd renders a VRF's device, of its table, and the .network that brings it up and
+// ends the table in unreachable default routes of both families, and gives VRF= to the Networks
+// of the links the VRF holds by name or by glob, in their first [Network] section, which a
+// Network without one gains. The other units stay as networkd renders them.
 func TestRouterNetworkd(t *testing.T) {
 	got, err := unitFiles(t, []string{"router-networkd", networkFixture}, map[string][]any{
 		"VRF": {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2", "swp*"]}`)},
@@ -23,11 +23,13 @@ func TestRouterNetworkd(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"00-vrf-tenant.netdev":  "[NetDev]\nKind=vrf\nName=tenant\n\n[VRF]\nTable=100\n\n",
-		"00-vrf-tenant.network": "[Match]\nName=tenant\n\n[Link]\nRequiredForOnline=no\n\n",
-		"10-eth0.network":       "[Match]\nName=eth0\n\n[Network]\nDHCP=yes\n\n",
-		"20-eth2.network":       "[Match]\nName=eth2\n\n[Network]\nAddress=192.0.2.1/24\nVRF=tenant\n\n[Network]\nDNS=192.0.2.53\n\n",
-		"30-swp.network":        "[Match]\nName=swp1 swp2\n\n[Network]\nVRF=tenant\n\n",
+		"00-vrf-tenant.netdev": "[NetDev]\nKind=vrf\nName=tenant\n\n[VRF]\nTable=100\n\n",
+		"00-vrf-tenant.network": "[Match]\nName=tenant\n\n[Link]\nRequiredForOnline=no\n\n" +
+			"[Route]\nDestination=0.0.0.0/0\nMetric=4278198272\nTable=100\nType=unreachable\n\n" +
+			"[Route]\nDestination=::/0\nMetric=4278198272\nTable=100\nType=unreachable\n\n",
+		"10-eth0.network": "[Match]\nName=eth0\n\n[Network]\nDHCP=yes\n\n",
+		"20-eth2.network": "[Match]\nName=eth2\n\n[Network]\nAddress=192.0.2.1/24\nVRF=tenant\n\n[Network]\nDNS=192.0.2.53\n\n",
+		"30-swp.network":  "[Match]\nName=swp1 swp2\n\n[Network]\nVRF=tenant\n\n",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("units:\n%q\nwant:\n%q", got, want)

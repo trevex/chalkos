@@ -13,6 +13,18 @@ Name=internet
 [Link]
 RequiredForOnline=no
 
+[Route]
+Destination=0.0.0.0/0
+Metric=4278198272
+Table=100
+Type=unreachable
+
+[Route]
+Destination=::/0
+Metric=4278198272
+Table=100
+Type=unreachable
+
 # 00-vrf-tenant.netdev
 [NetDev]
 Kind=vrf
@@ -27,6 +39,18 @@ Name=tenant
 
 [Link]
 RequiredForOnline=no
+
+[Route]
+Destination=0.0.0.0/0
+Metric=4278198272
+Table=200
+Type=unreachable
+
+[Route]
+Destination=::/0
+Metric=4278198272
+Table=200
+Type=unreachable
 
 # 10-mgmt.network
 [Match]

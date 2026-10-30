@@ -287,6 +287,78 @@
             }
           ],
           "x-chalkos-networkd-key": "Gateway"
+        },
+        "metric": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Metric"
+        },
+        "table": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Table"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Type"
         }
       },
       "type": "object",

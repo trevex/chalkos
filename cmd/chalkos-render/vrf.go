@@ -467,9 +467,9 @@ func networkVRF(name string, spec map[string]any) (string, error) {
 
 // renderRouterNetworkd writes the networkd documents of in as renderNetworkd does, with the units
 // of the VRF documents: the device's 00-vrf-<name>.netdev, of Kind=vrf and the VRF's table, and
-// 00-vrf-<name>.network, which brings the device up and leaves it out of the node's online state,
-// and VRF=<name> in the [Network] section of each Network document that is the first to match
-// links the VRF holds.
+// 00-vrf-<name>.network, which brings the device up, leaves it out of the node's online state
+// and ends the table in unreachable default routes, and VRF=<name> in the [Network] section of
+// each Network document that is the first to match links the VRF holds.
 func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 	d, err := readRouterDocuments(in)
 	if err != nil {
@@ -537,6 +537,7 @@ func withVRFUnits(vrfs []named[vrfSpec], networks map[string]string, byKind map[
 		docs = append(docs, map[string]any{"metadata": unit, "spec": map[string]any{
 			"match": map[string]any{"name": v.Name},
 			"link":  map[string]any{"requiredForOnline": "no"},
+			"route": unreachableDefaults(v.Spec.Table),
 		}})
 	}
 	out := maps.Clone(byKind)
@@ -545,6 +546,29 @@ func withVRFUnits(vrfs []named[vrfSpec], networks map[string]string, byKind map[
 	}
 	out["NetDev"], out["Network"] = netdevs, docs
 	return out, nil
+}
+
+// vrfDefaultMetric is the metric of the unreachable default routes that end a VRF's table. FRR
+// reads a kernel route's metric as a distance in its highest byte, so it takes this one for
+// distance 255, and a default route of BGP or of a member's Network wins over it.
+const vrfDefaultMetric = "4278198272"
+
+// unreachableDefaults are the [Route] sections of a VRF device's .network that end the VRF's table
+// in unreachable default routes of both families. A lookup that the VRF's table does not answer
+// goes on to the main table otherwise, so the VRF's traffic would follow the default VRF's routes
+// and the loose reverse-path filter would accept sources that only the default VRF reaches.
+func unreachableDefaults(table uint32) []any {
+	t := json.Number(strconv.FormatUint(uint64(table), 10))
+	var routes []any
+	for _, destination := range []string{"0.0.0.0/0", "::/0"} {
+		routes = append(routes, map[string]any{
+			"type":        "unreachable",
+			"destination": destination,
+			"table":       t,
+			"metric":      json.Number(vrfDefaultMetric),
+		})
+	}
+	return routes
 }
 
 // withNetworkVRF is a copy of the Network document doc that gives its links VRF=vrf: as the last
