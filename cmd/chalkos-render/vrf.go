@@ -34,13 +34,32 @@ type vrfMembership struct {
 	Units []networkUnit
 }
 
-// linkVRF is the VRF networkd puts the link in: that of the first .network unit that matches it,
-// the default VRF for a link of no VRF's unit or of none.
-func (m vrfMembership) linkVRF(link string) string {
-	if vrf, ok := m.Networks[firstUnit(m.Units, link).name]; ok {
-		return vrf
+// linkVRF is the VRF networkd puts the link in: that of the .network unit it picks for the link,
+// the default VRF for a link of no VRF's unit or of none. The units that may be the first to
+// match the link are in its VRF once vrfLinks has checked them. When only units whose other
+// [Match] keys may not match the link do, networkd may also leave the link in no VRF, and
+// linkVRF refuses it unless its VRF is the default one.
+func (m vrfMembership) linkVRF(link string) (string, error) {
+	cs := candidates(m.Units, link)
+	if len(cs) == 0 {
+		return defaultVRF, nil
 	}
-	return defaultVRF
+	unitVRF := func(u networkUnit) string {
+		if vrf, ok := m.Networks[u.name]; ok {
+			return vrf
+		}
+		return defaultVRF
+	}
+	vrf := unitVRF(cs[0])
+	for _, u := range cs[1:] {
+		if other := unitVRF(u); other != vrf {
+			return "", fmt.Errorf("Network %s and Network %s may each be the first to match %s, which puts it in VRF %s or in VRF %s", cs[0].name, u.name, link, vrf, other)
+		}
+	}
+	if last := cs[len(cs)-1]; last.narrowed && vrf != defaultVRF {
+		return "", fmt.Errorf("networkd puts %s in VRF %s only if the other [Match] keys of Network %s match it; give the link a Network that matches it by Name= alone", link, vrf, last.name)
+	}
+	return vrf, nil
 }
 
 // vrfMember is a glob of links a VRF holds: an interface of its document, or a word of the Name=
@@ -50,23 +69,28 @@ type vrfMember struct {
 }
 
 // networkUnit is a .network unit as networkd picks it for a link: the first one by file name
-// whose [Match] matches. vrfLinks reads Name= alone, as the other keys of [Match] only narrow it.
+// whose [Match] matches. vrfLinks reads Name=, and whether other keys of [Match] narrow it, which
+// it cannot match: the documents give no link's address, driver or other properties.
 type networkUnit struct {
 	name  string
 	match nameMatch
 	// vrf is the unit's own VRF=, and device tells a VRF device's unit.
 	vrf    string
 	device bool
+	// narrowed tells a unit whose [Match] holds other keys, which may match a link its Name=
+	// matches, or not.
+	narrowed bool
 }
 
 // vrfLinks checks the VRF documents against the Network documents of byKind, as their rules do
 // and where the rules cannot, and returns the VRF of each link a Network document names and of
 // each Network. A VRF holds the links its document's interfaces match and those a Network
 // document's Name= matches whose own VRF= names it, whether a document of the VRF exists or not.
-// A Network document is in the VRF of the links it is the first to match, and vrfLinks refuses
-// unless all links it may match are in that VRF, so that VRF= on the Network puts in the VRF
-// the links that the VRF holds, and only those. It refuses a link two VRFs may hold, a literal
-// interface of a VRF no Network matches, and a VRF device whose first Network is not its own.
+// A Network document is in the VRF of the links it may be the first to match, and vrfLinks
+// refuses unless all links it may match are in that VRF, so that VRF= on the Network puts in the
+// VRF the links that the VRF holds, and only those. It refuses a link two VRFs may hold, a
+// literal interface of a VRF no Network matches by Name= alone, and a VRF device whose first
+// Network is not its own.
 func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (vrfMembership, error) {
 	var none vrfMembership
 	links := networkLinks(byKind)
@@ -116,13 +140,13 @@ func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (vrfMembership, erro
 		return none, err
 	}
 	for _, v := range vrfs {
-		if u := firstUnit(units, v.Name); u.name != vrfUnitPrefix+v.Name {
+		if u := candidates(units, v.Name)[0]; u.name != vrfUnitPrefix+v.Name {
 			return none, fmt.Errorf("Network %s matches the device of VRF %s before %s%s", u.name, v.Name, vrfUnitPrefix, v.Name)
 		}
 	}
 	for _, m := range members {
-		if m.network == "" && isLiteral(m.glob) && firstUnit(units, m.glob).name == "" {
-			return none, fmt.Errorf("VRF %s names the interface %s, which no Network document's [Match] Name= matches; VRF= reaches a link through its Network document, so give it one", m.vrf, m.glob)
+		if cs := candidates(units, m.glob); m.network == "" && isLiteral(m.glob) && (len(cs) == 0 || cs[len(cs)-1].narrowed) {
+			return none, fmt.Errorf("VRF %s names the interface %s, which no Network document's [Match] Name= matches without other [Match] keys; VRF= reaches a link through its Network document, so give it one", m.vrf, m.glob)
 		}
 	}
 	networks, err := firstNetworks(units, members)
@@ -164,7 +188,12 @@ func networkUnits(vrfs []named[vrfSpec], byKind map[string]any) ([]networkUnit, 
 		if err != nil {
 			return nil, err
 		}
-		units = append(units, networkUnit{name: name, match: match, vrf: vrf})
+		narrowed := otherMatchKeys(spec)
+		if len(match.words) == 0 && !narrowed {
+			// networkd ignores a .network whose [Match] is empty.
+			continue
+		}
+		units = append(units, networkUnit{name: name, match: match, vrf: vrf, narrowed: narrowed})
 	}
 	for _, v := range vrfs {
 		match := nameMatch{words: []nameWord{{glob: v.Name, text: v.Name}}}
@@ -174,14 +203,32 @@ func networkUnits(vrfs []named[vrfSpec], byKind map[string]any) ([]networkUnit, 
 	return units, nil
 }
 
-// firstUnit is the first of the sorted units that matches the link, the zero unit for none.
-func firstUnit(units []networkUnit, link string) networkUnit {
-	for _, u := range units {
-		if u.match.matches(link) {
-			return u
+// otherMatchKeys reports whether a Network document's spec gives [Match] keys besides Name=.
+func otherMatchKeys(spec map[string]any) bool {
+	for _, s := range oneOrMany(spec["match"]) {
+		section, _ := s.(map[string]any)
+		for k, v := range section {
+			if k != "name" && v != nil {
+				return true
+			}
 		}
 	}
-	return networkUnit{}
+	return false
+}
+
+// candidates are the sorted units that may be the first to match the link: those whose Name=
+// matches it, up to the first that other [Match] keys do not narrow.
+func candidates(units []networkUnit, link string) []networkUnit {
+	var cs []networkUnit
+	for _, u := range units {
+		if u.match.matches(link) {
+			cs = append(cs, u)
+			if !u.narrowed {
+				break
+			}
+		}
+	}
+	return cs
 }
 
 // checkVRFMembers refuses globs of two VRFs that may match one link.
@@ -213,10 +260,12 @@ func checkVRFMembers(members []vrfMember) error {
 	return nil
 }
 
-// firstNetworks are the Network documents that are the first unit to match a member's links, by
-// name, with the member's VRF. Of a literal member that is its first unit. Of a glob it is each
-// unit that may match some of its links, up to the first unit that matches all of them, unless
-// the units before it match all of the links its words share with the glob.
+// firstNetworks are the Network documents that may be the first unit to match a member's links,
+// by name, with the member's VRF. Of a literal member those are its candidates. Of a glob it is
+// each unit that may match some of its links, up to the first unit that matches all of them,
+// unless the units before it match all of the links its words share with the glob. A unit that
+// other [Match] keys narrow matches no link for certain, so it neither ends the units nor hides
+// the links from later ones.
 func firstNetworks(units []networkUnit, members []vrfMember) (map[string]string, error) {
 	networks := map[string]string{}
 	take := func(u networkUnit, vrf string) error {
@@ -233,7 +282,7 @@ func firstNetworks(units []networkUnit, members []vrfMember) (map[string]string,
 	}
 	for _, m := range members {
 		if isLiteral(m.glob) {
-			if u := firstUnit(units, m.glob); u.name != "" {
+			for _, u := range candidates(units, m.glob) {
 				if err := take(u, m.vrf); err != nil {
 					return nil, err
 				}
@@ -246,6 +295,9 @@ func firstNetworks(units []networkUnit, members []vrfMember) (map[string]string,
 				if err := take(u, m.vrf); err != nil {
 					return nil, err
 				}
+			}
+			if u.narrowed {
+				continue
 			}
 			if u.match.covers(m.glob) {
 				break
@@ -283,6 +335,8 @@ func checkNetworkVRFs(units []networkUnit, members []vrfMember, networks map[str
 				continue
 			}
 			switch {
+			case len(u.match.words) == 0:
+				return fmt.Errorf("Network %s matches by its other [Match] keys alone, as its Name= holds no word networkd takes, so it may match links of VRF %s and links outside it; name its links", u.name, vrf)
 			case w.text == "":
 				return fmt.Errorf("Network %s matches every link its Name= does not negate, links of VRF %s and links outside it; name its links", u.name, vrf)
 			case isLiteral(w.glob):

@@ -834,4 +834,8 @@ func TestFRRVRFInterfaceByGlob(t *testing.T) {
 	docs["Network"] = append(docs["Network"], document(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`))
 	docs["BGPPeer"] = []any{routerDoc(t, "BGPPeer", "leaves", `{"interfaces": ["sw*"], "remoteAS": "external", "families": {"ipv6": {}}}`)}
 	refused(t, []string{"frr"}, docs, "interfaces: sw* matches swp1, which is in the VRF tenant, not in the peer's VRF default")
+	// A Network whose other [Match] keys may not match swp1 leaves its VRF open.
+	docs["Network"] = []any{document(t, "Network", "30-swp", `{"match": {"name": "swp*", "macAddress": "02:00:00:00:00:01"}}`)}
+	docs["BGPPeer"] = peer(`, "vrf": "tenant"`)
+	refused(t, []string{"frr"}, docs, "networkd puts swp1 in VRF tenant only if the other [Match] keys of Network 30-swp match it")
 }

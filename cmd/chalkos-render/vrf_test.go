@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -196,8 +197,10 @@ func TestVRFRefusals(t *testing.T) {
 			"Network 05-all's Name=* may match links of VRF tenant and links outside it; name its links"},
 		"a Network of negations before a member's": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100, "interfaces": ["eth2"]}`)}, "Network": {net("05-rest", `{"match": {"name": "!eth0"}}`), link("eth2")}},
 			"Network 05-rest matches every link its Name= does not negate, links of VRF tenant and links outside it; name its links"},
-		"a Network of a reset Name= before a member's": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100, "interfaces": ["eth2"]}`)}, "Network": {net("05-rest", `{"match": {"name": ["eth2", ""]}}`), link("eth2")}},
-			"Network 05-rest matches every link its Name= does not negate"},
+		"a Network of a reset Name= and other keys before a member's": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100, "interfaces": ["eth2"]}`)}, "Network": {net("05-rest", `{"match": {"name": ["eth2", ""], "macAddress": "02:00:00:00:00:01"}}`), link("eth2")}},
+			"Network 05-rest matches by its other [Match] keys alone, as its Name= holds no word networkd takes, so it may match links of VRF tenant and links outside it; name its links"},
+		"a member only a Network of other keys matches": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100, "interfaces": ["eth1"]}`)}, "Network": {net("10-eth1", `{"match": {"name": "eth1", "macAddress": "02:00:00:00:00:01"}}`)}},
+			"VRF tenant names the interface eth1, which no Network document's [Match] Name= matches without other [Match] keys"},
 		"a Network before the VRF device's": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100}`)}, "Network": {net("00-all", `{"match": {"name": "t*"}}`)}},
 			"Network 00-all matches the device of VRF tenant before 00-vrf-tenant"},
 		"globs of two VRFs": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["swp*"]}`), vrf("b", `{"table": 200, "interfaces": ["swp1*"]}`)}, "Network": {link("eth0")}},
@@ -228,5 +231,60 @@ func TestVRFRefusals(t *testing.T) {
 			`"eth1\nVRF=b" is no interface name or glob`},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, args, c.docs, c.want) })
+	}
+}
+
+// A Network whose other [Match] keys narrow its Name= may match the links its Name= does, or
+// not: it gets VRF= for a VRF's links as later Networks that match them do, and it hides them
+// from none. A Network networkd ignores, of no [Match] it takes, gets none.
+func TestRouterNetworkdNarrowedMatch(t *testing.T) {
+	mac := `, "macAddress": "02:00:00:00:00:01"`
+	got, err := unitFiles(t, []string{"router-networkd", networkFixture}, map[string][]any{
+		"VRF": {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth1", "swp*"]}`)},
+		"Network": {
+			document(t, "Network", "05-none", `{"match": {"name": "eth1:0"}}`),
+			document(t, "Network", "10-eth1", `{"match": {"name": "eth1"`+mac+`}}`),
+			document(t, "Network", "10-swp1", `{"match": {"name": "swp1"`+mac+`}}`),
+			document(t, "Network", "20-eth1", `{"match": {"name": "eth1"}}`),
+			document(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"05-none.network": "[Match]\nName=eth1:0\n\n",
+		"10-eth1.network": "[Match]\nMACAddress=02:00:00:00:00:01\nName=eth1\n\n[Network]\nVRF=tenant\n\n",
+		"10-swp1.network": "[Match]\nMACAddress=02:00:00:00:00:01\nName=swp1\n\n[Network]\nVRF=tenant\n\n",
+		"20-eth1.network": "[Match]\nName=eth1\n\n[Network]\nVRF=tenant\n\n",
+		"20-swp1.network": "[Match]\nName=swp1\n\n[Network]\nVRF=tenant\n\n",
+	} {
+		if got[name] != want {
+			t.Errorf("%s:\n%q\nwant:\n%q", name, got[name], want)
+		}
+	}
+}
+
+// networkd puts a link in the VRF of the Network it picks, which a Network whose other [Match]
+// keys may not match leaves open unless a Network that matches the link by Name= alone follows.
+func TestLinkVRFNarrowed(t *testing.T) {
+	mac := `, "macAddress": "02:00:00:00:00:01"`
+	byKind := map[string]any{"Network": []any{
+		document(t, "Network", "10-swp", `{"match": {"name": "swp1 swp2"`+mac+`}}`),
+		document(t, "Network", "20-swp2", `{"match": {"name": "swp2"}}`),
+		document(t, "Network", "30-eth", `{"match": {"name": "eth0"`+mac+`}}`),
+	}}
+	m, err := vrfLinks([]named[vrfSpec]{{"tenant", vrfSpec{Table: 100, Interfaces: []string{"swp*"}}}}, byKind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for link, want := range map[string]string{"swp2": "tenant", "eth0": defaultVRF, "lo": defaultVRF} {
+		if got, err := m.linkVRF(link); err != nil || got != want {
+			t.Errorf("linkVRF(%s) = %q, %v, want %q", link, got, err, want)
+		}
+	}
+	want := "networkd puts swp1 in VRF tenant only if the other [Match] keys of Network 10-swp match it"
+	if _, err := m.linkVRF("swp1"); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("linkVRF(swp1): err = %v, want %q", err, want)
 	}
 }

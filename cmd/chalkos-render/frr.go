@@ -614,7 +614,11 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 		if err := linkNeighbour(*s.Interface); err != nil {
 			return nil, err
 		}
-		if in := c.membership.linkVRF(*s.Interface); in != vrf {
+		in, err := c.membership.linkVRF(*s.Interface)
+		if err != nil {
+			return nil, err
+		}
+		if in != vrf {
 			return nil, fmt.Errorf("interface %s is in the VRF %s, not in the peer's VRF %s", *s.Interface, in, vrf)
 		}
 		return []neighbour{{name: *s.Interface, onLink: true}}, nil
@@ -625,7 +629,11 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 	var ns []neighbour
 	for _, link := range c.links {
 		if i := slices.IndexFunc(s.Interfaces, func(glob string) bool { return matchesGlob(glob, link) }); i >= 0 {
-			if in := c.membership.linkVRF(link); in != vrf {
+			in, err := c.membership.linkVRF(link)
+			if err != nil {
+				return nil, err
+			}
+			if in != vrf {
 				return nil, fmt.Errorf("interfaces: %s matches %s, which is in the VRF %s, not in the peer's VRF %s", s.Interfaces[i], link, in, vrf)
 			}
 			if err := linkNeighbour(link); err != nil {
