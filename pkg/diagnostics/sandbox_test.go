@@ -128,7 +128,7 @@ func TestSandboxArgs(t *testing.T) {
 		"--property=SupplementaryGroups=bird wheel",
 		"--", "/nix/store/x-iputils/bin/ping", "-c", "4", "192.0.2.1")
 	if !slices.Equal(got, want) {
-		t.Errorf("sandboxArgs =\n%q\nwant\n%q", got, want)
+		t.Errorf("args =\n%q\nwant\n%q", got, want)
 	}
 	none := Sandbox{}.args("u.service", Run{Argv: []string{"/nix/store/x/bin/ip"}, Timeout: time.Second})
 	if !slices.Contains(none, "--property=CapabilityBoundingSet=") || !slices.Contains(none, "--property=AmbientCapabilities=") {

@@ -46,7 +46,7 @@ var (
 
 // Call fills each placeholder with its argument in its canonical form, or with the parameter's
 // default, and drops an argument that names an optional parameter left out.
-func TestArgv(t *testing.T) {
+func TestCall(t *testing.T) {
 	for name, tc := range map[string]struct {
 		d    Definition
 		args map[string]string
@@ -69,7 +69,7 @@ func TestArgv(t *testing.T) {
 
 // Call refuses a call that leaves out a required parameter, names one the diagnostic lacks, or
 // gives a value that is not of its parameter's type.
-func TestArgvRefuses(t *testing.T) {
+func TestCallRefuses(t *testing.T) {
 	for name, tc := range map[string]struct {
 		d    Definition
 		args map[string]string
