@@ -346,6 +346,7 @@ lib.runTests {
         after = lib.subtractLists frr.after [
           "chalkos-config.service"
           "chalkos-firewall.service"
+          "systemd-networkd.service"
         ];
         before = lib.elem "chalkos-node-addresses.target" frr.before;
         wantedBy = lib.elem "chalkos-node-addresses.target" frr.wantedBy;
@@ -408,6 +409,77 @@ lib.runTests {
       groups = [ "frrvty" ];
       plain = false;
       node = false;
+    };
+  };
+  # Router images accept VRF documents and render them with networkd's documents through
+  # chalkos-render router-networkd; other images render networkd's documents alone. chalkos-vrf,
+  # which a change of the output networkd reloads, runs before networkd at boot and removes the
+  # VRFs the rendered units no longer declare. FRR orders after networkd, which creates a VRF's
+  # device before FRR's reload configures its instance, and the BGP and BFD diagnostics take a VRF.
+  testRouterVRF = {
+    expr =
+      let
+        edge = layered.edge-metal.config;
+        vrf = edge.systemd.services.chalkos-vrf;
+      in
+      {
+        kind = edge.chalkos.kinds ? VRF;
+        inputs = edge.chalkos.outputs.networkd.inputs;
+        render = lib.hasInfix " router-networkd " edge.chalkos.outputs.networkd.render;
+        plainRender = lib.hasInfix " networkd " layered.plain-metal.config.chalkos.outputs.networkd.render;
+        plainKind = layered.plain-metal.config.chalkos.kinds ? VRF;
+        effect = {
+          inherit (edge.chalkos.effects.vrf) outputs reload;
+        };
+        after = vrf.after;
+        before = vrf.before;
+        defaults = vrf.unitConfig.DefaultDependencies;
+        wantedBy = vrf.wantedBy;
+        reloads = vrf.serviceConfig.ExecReload == vrf.serviceConfig.ExecStart;
+        capabilities = vrf.serviceConfig.CapabilityBoundingSet;
+        frrAfter = lib.elem "systemd-networkd.service" edge.systemd.services.frr.after;
+        commands = map (d: lib.last edge.chalkos.diagnostics.${d}.command) [
+          "bgp-summary"
+          "bgp-neighbor"
+          "bgp-route"
+          "bfd-peers"
+        ];
+        parameter = {
+          inherit (edge.chalkos.diagnostics.bgp-summary.parameters.vrf) type default;
+        };
+      };
+    expected = {
+      kind = true;
+      inputs = [
+        "Link"
+        "NetDev"
+        "Network"
+        "VRF"
+      ];
+      render = true;
+      plainRender = true;
+      plainKind = false;
+      effect = {
+        outputs = [ "networkd" ];
+        reload = [ "chalkos-vrf.service" ];
+      };
+      after = [ "chalkos-config.service" ];
+      before = [ "systemd-networkd.service" ];
+      defaults = false;
+      wantedBy = [ "multi-user.target" ];
+      reloads = true;
+      capabilities = [ "CAP_NET_ADMIN" ];
+      frrAfter = true;
+      commands = [
+        "show bgp vrf {vrf} summary"
+        "show bgp vrf {vrf} neighbors {peer}"
+        "show bgp vrf {vrf} {family} unicast {prefix}"
+        "show bfd vrf {vrf} peers"
+      ];
+      parameter = {
+        type = "pattern";
+        default = "default";
+      };
     };
   };
   # Router images carry Jool's module, loaded at boot, and run chalkos-nat64, which the output jool

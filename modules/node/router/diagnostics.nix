@@ -1,7 +1,7 @@
 # The diagnostics router images add to every image's: the routers on the path to an address, FRR's
-# BGP sessions, neighbours and paths and its BFD peers, which vtysh asks FRR for as a member of
-# frrvty, the group of FRR's sockets, and a NAT64 instance's sessions, which Jool shows to
-# CAP_NET_ADMIN alone.
+# BGP sessions, neighbours and paths and its BFD peers of a VRF, which vtysh asks FRR for as a
+# member of frrvty, the group of FRR's sockets, and a NAT64 instance's sessions, which Jool shows
+# to CAP_NET_ADMIN alone.
 {
   config,
   lib,
@@ -20,6 +20,13 @@ let
     role = "reader";
     timeout = "10s";
     groups = [ "frrvty" ];
+  };
+  # The VRF a vtysh diagnostic asks about; FRR names the default VRF default.
+  vrf = {
+    type = "pattern";
+    regex = "^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$";
+    default = "default";
+    description = "VRF to ask about, by the name of its VRF document, or default for the default VRF.";
   };
 in
 {
@@ -48,25 +55,27 @@ in
       timeout = "90s";
     };
     chalkos.diagnostics.bgp-summary =
-      vtysh "FRR's BGP sessions of each address family, as show bgp summary prints them."
-        "show bgp summary"
-        { };
+      vtysh "One VRF's BGP sessions of each address family, as show bgp summary prints them."
+        "show bgp vrf {vrf} summary"
+        { inherit vrf; };
     chalkos.diagnostics.bgp-neighbor =
       vtysh
         "One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes."
-        "show bgp neighbors {peer}"
+        "show bgp vrf {vrf} neighbors {peer}"
         {
           peer = {
             type = "pattern";
             regex = "^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$";
             description = "The session's interface or the neighbour's address, as the node's status lists it.";
           };
+          inherit vrf;
         };
     chalkos.diagnostics.bgp-route =
       vtysh
-        "BGP's paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best."
-        "show bgp {family} unicast {prefix}"
+        "One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best."
+        "show bgp vrf {vrf} {family} unicast {prefix}"
         {
+          inherit vrf;
           prefix = {
             type = "prefix";
             description = "Address range of the family, such as ::/0.";
@@ -105,7 +114,8 @@ in
       capabilities = [ "CAP_NET_ADMIN" ];
     };
     chalkos.diagnostics.bfd-peers =
-      vtysh "FRR's BFD sessions and their state, as show bfd peers prints them." "show bfd peers"
-        { };
+      vtysh "One VRF's BFD sessions and their state, as show bfd peers prints them."
+        "show bfd vrf {vrf} peers"
+        { inherit vrf; };
   };
 }

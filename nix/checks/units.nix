@@ -521,6 +521,45 @@ in
       grep -qx "reload sources" chronyc.log || fail "did not reload the sources of a running chronyd"
     '';
 
+  # chalkos-vrf in a network namespace: it removes the VRFs that no rendered .netdev of Kind=vrf
+  # declares and those whose table changed, keeps a declared VRF with its member and every link of
+  # another kind, and with no rendered units, as in maintenance mode, removes every VRF.
+  router-vrf =
+    let
+      script = checkLib.router.config.systemd.services.chalkos-vrf.serviceConfig.ExecReload;
+      dir = checkLib.router.config.chalkos.outputs.networkd.dir;
+    in
+    unitCheck "router-vrf" checkLib.networkTools ''
+      fail() {
+        echo "error: $*" >&2
+        ip -d link show >&2
+        exit 1
+      }
+      exists() { ip link show "$1" >/dev/null 2>&1; }
+      mkdir -p ${dir}
+      printf '[NetDev]\nKind=vrf\nName=keep\n\n[VRF]\nTable=100\n\n' >${dir}/00-vrf-keep.netdev
+      printf '[NetDev]\nKind=vrf\nName=moved\n\n[VRF]\nTable=300\n\n' >${dir}/00-vrf-moved.netdev
+      printf '[NetDev]\nKind=dummy\nName=gone\n\n' >${dir}/20-gone.netdev
+      ip link add keep type vrf table 100
+      ip link add moved type vrf table 200
+      ip link add gone type vrf table 400
+      ip link add d0 type dummy
+      ip link set d0 master keep
+      ${script} || fail "chalkos-vrf failed"
+      exists keep || fail "removed a VRF its .netdev declares"
+      ip -d link show keep | grep -q 'vrf table 100' || fail "changed the table of a declared VRF"
+      [ "$(ip -o link show master keep | wc -l)" = 1 ] || fail "a declared VRF lost its member"
+      if exists moved; then fail "kept a VRF whose table changed"; fi
+      if exists gone; then fail "kept a VRF that no .netdev of Kind=vrf declares"; fi
+      exists d0 || fail "removed a link of another kind"
+      ${script} || fail "a second run failed"
+      exists keep || fail "a second run removed a declared VRF"
+      rm ${dir}/*.netdev
+      ${script} || fail "chalkos-vrf without units failed"
+      if exists keep; then fail "kept a VRF without rendered units"; fi
+      exists d0 || fail "removed a link of another kind without rendered units"
+    '';
+
   # The router's firewall unit in network namespaces, with a LAN peer on lan0 and a WAN peer on
   # wan0, each over a veth pair. Without a rendered ruleset chalkos-firewall loads the fallback,
   # which accepts chalkd's port on every interface and forwards nothing. With the LAN example's

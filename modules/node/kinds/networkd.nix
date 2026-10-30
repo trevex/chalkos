@@ -73,10 +73,12 @@ in
   # schemas, which are the image's, so the units follow from the documents alone. chalkos-config
   # renders them before networkd starts, and nothing else writes the directory. networkd has no
   # offline validator, so the output has no check: the schemas accept exactly the sections and
-  # keys the image's networkd does, and the examples render when the image is built.
+  # keys the image's networkd does, and the examples render when the image is built. A layer may
+  # render the output with a renderer of its own, which writes the units of more kinds beside
+  # these.
   chalkos.outputs.networkd = {
     inputs = api.networkdKinds;
-    render = "${lib.getExe chalkosPackages.chalkos-render} networkd ${schemas}";
+    render = lib.mkDefault "${lib.getExe chalkosPackages.chalkos-render} networkd ${schemas}";
     dir = "/run/systemd/network";
     examples = ../examples/networkd;
   };
