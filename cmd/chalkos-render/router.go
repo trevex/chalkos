@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -271,6 +272,9 @@ type routerDocuments struct {
 	Links []string
 	// Members are the links of Links that a VRF holds, by link, with the VRF's name.
 	Members map[string]string
+	// NetworkVRFs are the Network documents that are the first to match links a VRF holds, by
+	// document name, with the VRF's name.
+	NetworkVRFs map[string]string
 }
 
 // readRouterDocuments decodes the router kinds' documents of in; a kind the output does not read
@@ -319,9 +323,11 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 		return d, err
 	}
 	d.Links = networkLinks(byKind)
-	if d.Members, err = vrfLinks(d.VRFs, byKind); err != nil {
+	m, err := vrfLinks(d.VRFs, byKind)
+	if err != nil {
 		return d, err
 	}
+	d.Members, d.NetworkVRFs = m.Links, m.Networks
 	return d, nil
 }
 
@@ -341,27 +347,203 @@ func networkLinks(byKind map[string]any) []string {
 }
 
 // matchLinks are the interface names in the [Match] sections' Name= of a Network document's
-// spec. A value, or each of a list, holds names between spaces and tabs, as systemd splits it; a
-// glob or a negation, starting with !, names no link, and a value whose first name starts with !
-// negates all of its names.
+// spec, as parseNameMatch reads it: the words that are neither globs nor negated. A Name= that
+// parseNameMatch refuses names the links of the words before the one it refuses.
 func matchLinks(spec map[string]any) []string {
+	m, _ := parseNameMatch("", spec)
 	var links []string
-	for _, m := range oneOrMany(spec["match"]) {
-		section, _ := m.(map[string]any)
-		for _, v := range oneOrMany(section["name"]) {
-			value, _ := v.(string)
-			names := strings.Fields(value)
-			if len(names) > 0 && strings.HasPrefix(names[0], "!") {
-				continue
-			}
-			for _, name := range names {
-				if !strings.ContainsAny(name, "*?[!") && interfaceName.MatchString(name) {
-					links = append(links, name)
-				}
-			}
+	for _, w := range m.words {
+		if !w.negated && isLiteral(w.glob) && interfaceName.MatchString(w.glob) {
+			links = append(links, w.glob)
 		}
 	}
 	return links
+}
+
+// nameMatch is the Name= of a Network document's [Match] sections as systemd-networkd reads it.
+// It matches a link that no negated word matches and, when there is a word that is not negated,
+// that one of those matches; without words it matches every link.
+type nameMatch struct {
+	words []nameWord
+}
+
+// nameWord is a word of Name=: glob is the word as path.Match takes it, text as Name= gives it.
+type nameWord struct {
+	glob, text string
+	negated    bool
+}
+
+// parseNameMatch reads the Name= of the [Match] sections of the Network document network's spec
+// as systemd does: the values in order, each split into words at whitespace, an empty value
+// dropping the words before it. A value whose first word starts with ! negates all of its words,
+// and in another value a word that starts with ! negates itself. systemd drops a word that is no
+// interface name, and so does parseNameMatch. It refuses a word it cannot match as fnmatch does.
+func parseNameMatch(network string, spec map[string]any) (nameMatch, error) {
+	var m nameMatch
+	for _, s := range oneOrMany(spec["match"]) {
+		section, _ := s.(map[string]any)
+		for _, v := range oneOrMany(section["name"]) {
+			value, err := unitValue(v)
+			if err != nil {
+				continue
+			}
+			if value == "" {
+				m.words = nil
+				continue
+			}
+			words := strings.Fields(value)
+			inverted := len(words) > 0 && strings.HasPrefix(words[0], "!")
+			if inverted {
+				words[0] = words[0][1:]
+			}
+			for _, w := range words {
+				if !systemdIfname(w) {
+					continue
+				}
+				word := nameWord{text: w, negated: inverted}
+				if !inverted {
+					w, word.negated = strings.CutPrefix(w, "!")
+				}
+				word.glob = goGlob(w)
+				if _, err := path.Match(word.glob, ""); err != nil {
+					return m, fmt.Errorf("Network %s: Name= holds %q, which is no glob the renderer can match as networkd does", network, word.text)
+				}
+				m.words = append(m.words, word)
+			}
+		}
+	}
+	return m, nil
+}
+
+// systemdIfname reports whether systemd takes a word of Name= for an interface name or glob; it
+// drops the others with a warning.
+func systemdIfname(word string) bool {
+	if word == "" || len(word) >= 128 || word == "." || word == ".." || word == "all" || word == "default" {
+		return false
+	}
+	numeric := true
+	for i := range len(word) {
+		c := word[i]
+		if c <= ' ' || c >= 127 || c == ':' || c == '/' || c == '%' {
+			return false
+		}
+		numeric = numeric && c >= '0' && c <= '9'
+	}
+	return !numeric
+}
+
+// goGlob is the fnmatch glob as path.Match takes it, which negates a bracket expression with ^
+// where fnmatch takes !.
+func goGlob(glob string) string {
+	var b strings.Builder
+	for i := 0; i < len(glob); i++ {
+		b.WriteByte(glob[i])
+		switch {
+		case glob[i] == '\\' && i+1 < len(glob):
+			i++
+			b.WriteByte(glob[i])
+		case glob[i] == '[' && i+1 < len(glob) && glob[i+1] == '!':
+			i++
+			b.WriteByte('^')
+		}
+	}
+	return b.String()
+}
+
+// matches reports whether networkd matches the link by this Name=.
+func (m nameMatch) matches(link string) bool {
+	positive, matched := false, false
+	for _, w := range m.words {
+		ok, _ := path.Match(w.glob, link)
+		if w.negated {
+			if ok {
+				return false
+			}
+			continue
+		}
+		positive = true
+		matched = matched || ok
+	}
+	return !positive || matched
+}
+
+// positives are the words that are not negated, or a word * when there are none, as the Name=
+// then matches every link the negated words leave.
+func (m nameMatch) positives() []nameWord {
+	var p []nameWord
+	for _, w := range m.words {
+		if !w.negated {
+			p = append(p, w)
+		}
+	}
+	if len(p) == 0 {
+		return []nameWord{{glob: "*"}}
+	}
+	return p
+}
+
+// mayMatch reports whether the Name= may match a link the glob matches. It reads the negated
+// words of the Name= only against a literal glob, so it may say so of a glob whose links the
+// negated words exclude.
+func (m nameMatch) mayMatch(glob string) bool {
+	if isLiteral(glob) {
+		return m.matches(glob)
+	}
+	return slices.ContainsFunc(m.positives(), func(w nameWord) bool { return globsOverlap(w.glob, glob) })
+}
+
+// covers reports whether the Name= matches every link the glob matches, as globContains finds.
+func (m nameMatch) covers(glob string) bool {
+	if isLiteral(glob) {
+		return m.matches(glob)
+	}
+	for _, w := range m.words {
+		if w.negated && globsOverlap(w.glob, glob) {
+			return false
+		}
+	}
+	return slices.ContainsFunc(m.positives(), func(w nameWord) bool { return globContains(w.glob, glob) })
+}
+
+// globPrefix is the part of a glob, as path.Match takes it, before its first special character.
+func globPrefix(glob string) string {
+	if i := strings.IndexAny(glob, `*?[\`); i >= 0 {
+		return glob[:i]
+	}
+	return glob
+}
+
+// isLiteral reports whether a glob matches only itself.
+func isLiteral(glob string) bool {
+	return globPrefix(glob) == glob
+}
+
+// globsOverlap reports whether two globs may match one name: two literal ones when they are
+// equal, a literal and a glob when the glob matches it, and two globs unless their literal
+// beginnings differ.
+func globsOverlap(a, b string) bool {
+	switch {
+	case isLiteral(a):
+		ok, _ := path.Match(b, a)
+		return ok
+	case isLiteral(b):
+		ok, _ := path.Match(a, b)
+		return ok
+	}
+	pa, pb := globPrefix(a), globPrefix(b)
+	return strings.HasPrefix(pa, pb) || strings.HasPrefix(pb, pa)
+}
+
+// globContains reports whether outer matches every name inner matches: a literal inner that
+// outer matches, an inner that is outer, or an inner that starts with what an outer of a literal
+// beginning and * starts with. Other globs it takes for not contained.
+func globContains(outer, inner string) bool {
+	if isLiteral(inner) {
+		ok, _ := path.Match(outer, inner)
+		return ok
+	}
+	prefix := globPrefix(outer)
+	return outer == inner || outer == prefix+"*" && strings.HasPrefix(globPrefix(inner), prefix)
 }
 
 // decodeKind decodes the specs of the documents of kind in byKind, in their order.

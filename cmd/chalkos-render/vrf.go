@@ -1,10 +1,10 @@
 package main
 
 import (
-	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,53 +17,126 @@ import (
 // defaultVRF names the VRF of every link no VRF holds, as FRR and the router kinds name it.
 const defaultVRF = "default"
 
-// vrfUnitPrefix starts the names of a VRF device's units, so that its .network sorts before the
-// node's own and networkd configures the device with it.
+// vrfUnitPrefix starts the names of a VRF device's units, so that their .network sorts before
+// most of the node's own. A Network whose name sorts before it may still match the device first,
+// and vrfLinks refuses one that does.
 const vrfUnitPrefix = "00-vrf-"
 
+// vrfMembership is the VRF of each link and Network document, as vrfLinks finds them.
+type vrfMembership struct {
+	// Links are the links a Network document names, by name, with the VRF that holds them; a
+	// link in no VRF is not in the map.
+	Links map[string]string
+	// Networks are the Network documents, by name, with the VRF of the links they are the first
+	// to match; a Network of no VRF's links is not in the map.
+	Networks map[string]string
+}
+
+// vrfMember is a glob of links a VRF holds: an interface of its document, or a word of the Name=
+// of the Network document network, whose own VRF= names the VRF.
+type vrfMember struct {
+	vrf, glob, network string
+}
+
+// networkUnit is a .network unit as networkd picks it for a link: the first one by file name
+// whose [Match] matches. vrfLinks reads Name= alone, as the other keys of [Match] only narrow it.
+type networkUnit struct {
+	name  string
+	match nameMatch
+	// vrf is the unit's own VRF=, and device tells a VRF device's unit.
+	vrf    string
+	device bool
+}
+
 // vrfLinks checks the VRF documents against the Network documents of byKind, as their rules do
-// and where the rules cannot, and returns the VRF of each link a Network document names: the VRF
-// whose document names the link or a glob that matches it, or the one its Network document gives
-// with VRF= itself. A link in no VRF is not in the map. A VRF's literal interface is a link a
-// Network document names, since VRF= reaches a link through its Network alone, and the links of
-// one Network document are in one VRF, or in none.
-func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (map[string]string, error) {
+// and where the rules cannot, and returns the VRF of each link a Network document names and of
+// each Network. A VRF holds the links its document's interfaces match and those a Network
+// document's Name= matches whose own VRF= names it, whether a document of the VRF exists or not.
+// A Network document is in the VRF of the links it is the first to match, and vrfLinks refuses
+// unless all links it may match are in that VRF, so that VRF= on the Network puts in the VRF
+// the links that the VRF holds, and only those. It refuses a link two VRFs may hold, a literal
+// interface of a VRF no Network matches, and a VRF device whose first Network is not its own.
+func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (vrfMembership, error) {
+	var none vrfMembership
 	links := networkLinks(byKind)
-	member := map[string]string{}
+	var members []vrfMember
 	tables := map[uint32]string{}
 	for _, v := range vrfs {
 		what := "VRF " + v.Name
 		if v.Name == defaultVRF || len(v.Name) > 15 {
-			return nil, fmt.Errorf("%s: a VRF is named as its device, in 15 characters at most, and not %s", what, defaultVRF)
+			return none, fmt.Errorf("%s: a VRF is named as its device, in 15 characters at most, and not %s", what, defaultVRF)
 		}
 		if slices.Contains(links, v.Name) {
-			return nil, fmt.Errorf("%s: a Network document names the link %s, the VRF's device", what, v.Name)
+			return none, fmt.Errorf("%s: a Network document names the link %s, the VRF's device", what, v.Name)
 		}
 		if t := v.Spec.Table; t == 0 || t >= 253 && t <= 255 {
-			return nil, fmt.Errorf("%s: table %d is no table of a VRF; 0, 253, 254 and 255 are the kernel's", what, t)
+			return none, fmt.Errorf("%s: table %d is no table of a VRF; 0, 253, 254 and 255 are the kernel's", what, t)
 		}
 		if other, ok := tables[v.Spec.Table]; ok {
-			return nil, fmt.Errorf("VRF %s and VRF %s both use table %d", other, v.Name, v.Spec.Table)
+			return none, fmt.Errorf("VRF %s and VRF %s both use table %d", other, v.Name, v.Spec.Table)
 		}
 		tables[v.Spec.Table] = v.Name
 		for _, i := range v.Spec.Interfaces {
 			if !interfaceName.MatchString(i) {
-				return nil, fmt.Errorf("%s: %q is no interface name or glob", what, i)
+				return none, fmt.Errorf("%s: %q is no interface name or glob", what, i)
 			}
-			held := []string{i}
-			if strings.HasSuffix(i, "*") {
-				held = slices.DeleteFunc(slices.Clone(links), func(l string) bool { return !matchesGlob(i, l) })
-			} else if !slices.Contains(links, i) {
-				return nil, fmt.Errorf("%s names the interface %s, which no Network document's [Match] Name= names; VRF= reaches a link through its Network document, so give it one", what, i)
-			}
-			for _, l := range held {
-				if other, ok := member[l]; ok && other != v.Name {
-					return nil, fmt.Errorf("the link %s is in VRF %s and in VRF %s", l, other, v.Name)
-				}
-				member[l] = v.Name
+			members = append(members, vrfMember{vrf: v.Name, glob: i})
+		}
+	}
+	for _, m := range members {
+		for _, v := range vrfs {
+			if ok, _ := path.Match(m.glob, v.Name); ok {
+				return none, fmt.Errorf("VRF %s's %s covers the device of VRF %s", m.vrf, m.glob, v.Name)
 			}
 		}
 	}
+	units, err := networkUnits(vrfs, byKind)
+	if err != nil {
+		return none, err
+	}
+	for _, u := range units {
+		if u.vrf != "" {
+			for _, w := range u.match.positives() {
+				members = append(members, vrfMember{vrf: u.vrf, glob: w.glob, network: u.name})
+			}
+		}
+	}
+	if err := checkVRFMembers(members); err != nil {
+		return none, err
+	}
+	for _, v := range vrfs {
+		if u := firstUnit(units, v.Name); u.name != vrfUnitPrefix+v.Name {
+			return none, fmt.Errorf("Network %s matches the device of VRF %s before %s%s", u.name, v.Name, vrfUnitPrefix, v.Name)
+		}
+	}
+	for _, m := range members {
+		if m.network == "" && isLiteral(m.glob) && firstUnit(units, m.glob).name == "" {
+			return none, fmt.Errorf("VRF %s names the interface %s, which no Network document's [Match] Name= matches; VRF= reaches a link through its Network document, so give it one", m.vrf, m.glob)
+		}
+	}
+	networks, err := firstNetworks(units, members)
+	if err != nil {
+		return none, err
+	}
+	if err := checkNetworkVRFs(units, members, networks); err != nil {
+		return none, err
+	}
+	held := map[string]string{}
+	for _, l := range links {
+		for _, m := range members {
+			if ok, _ := path.Match(m.glob, l); ok {
+				held[l] = m.vrf
+				break
+			}
+		}
+	}
+	return vrfMembership{Links: held, Networks: networks}, nil
+}
+
+// networkUnits are the .network units networkd reads: the Network documents of byKind and the
+// units of the VRFs' devices, sorted by file name as networkd sorts them.
+func networkUnits(vrfs []named[vrfSpec], byKind map[string]any) ([]networkUnit, error) {
+	var units []networkUnit
 	docs, _ := byKind["Network"].([]any)
 	for _, d := range docs {
 		doc, _ := d.(map[string]any)
@@ -72,31 +145,150 @@ func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (map[string]string, 
 			return nil, err
 		}
 		spec, _ := doc["spec"].(map[string]any)
-		own, err := networkVRF(name, spec)
+		vrf, err := networkVRF(name, spec)
 		if err != nil {
 			return nil, err
 		}
-		names := matchLinks(spec)
-		var in []string
-		for _, l := range names {
-			in = append(in, member[l])
+		match, err := parseNameMatch(name, spec)
+		if err != nil {
+			return nil, err
 		}
-		slices.Sort(in)
-		in = slices.Compact(in)
-		switch {
-		case len(in) > 1:
-			return nil, fmt.Errorf("Network %s matches links of %s; the links of one Network are in one VRF", name, vrfList(in))
-		case len(in) == 1 && in[0] != "":
-			if own != "" && own != in[0] {
-				return nil, fmt.Errorf("Network %s gives its links VRF=%s, but VRF %s holds them", name, own, in[0])
+		units = append(units, networkUnit{name: name, match: match, vrf: vrf})
+	}
+	for _, v := range vrfs {
+		match := nameMatch{words: []nameWord{{glob: v.Name, text: v.Name}}}
+		units = append(units, networkUnit{name: vrfUnitPrefix + v.Name, match: match, device: true})
+	}
+	slices.SortStableFunc(units, func(a, b networkUnit) int { return strings.Compare(a.name+".network", b.name+".network") })
+	return units, nil
+}
+
+// firstUnit is the first of the sorted units that matches the link, the zero unit for none.
+func firstUnit(units []networkUnit, link string) networkUnit {
+	for _, u := range units {
+		if u.match.matches(link) {
+			return u
+		}
+	}
+	return networkUnit{}
+}
+
+// checkVRFMembers refuses globs of two VRFs that may match one link.
+func checkVRFMembers(members []vrfMember) error {
+	for i, a := range members {
+		for _, b := range members[i+1:] {
+			if a.vrf == b.vrf || !globsOverlap(a.glob, b.glob) {
+				continue
 			}
-		case own != "":
-			for _, l := range names {
-				member[l] = own
+			switch {
+			case a.network == "" && b.network == "" && (isLiteral(a.glob) || isLiteral(b.glob)):
+				link := a.glob
+				if !isLiteral(link) {
+					link = b.glob
+				}
+				return fmt.Errorf("the link %s is in VRF %s and in VRF %s", link, a.vrf, b.vrf)
+			case a.network == "" && b.network == "":
+				return fmt.Errorf("VRF %s's %s and VRF %s's %s may hold one link", a.vrf, a.glob, b.vrf, b.glob)
+			case a.network == "" || b.network == "":
+				if a.network == "" {
+					a, b = b, a
+				}
+				return fmt.Errorf("Network %s gives its links VRF=%s, but VRF %s holds them", a.network, a.vrf, b.vrf)
+			default:
+				return fmt.Errorf("Network %s gives VRF=%s and Network %s VRF=%s to links both may match", a.network, a.vrf, b.network, b.vrf)
 			}
 		}
 	}
-	return member, nil
+	return nil
+}
+
+// firstNetworks are the Network documents that are the first unit to match a member's links, by
+// name, with the member's VRF. Of a literal member that is its first unit. Of a glob it is each
+// unit that may match some of its links, up to the first unit that matches all of them, unless
+// the units before it match all of the links its words share with the glob.
+func firstNetworks(units []networkUnit, members []vrfMember) (map[string]string, error) {
+	networks := map[string]string{}
+	take := func(u networkUnit, vrf string) error {
+		if u.device {
+			return nil
+		}
+		if other, ok := networks[u.name]; ok && other != vrf {
+			in := []string{other, vrf}
+			slices.Sort(in)
+			return fmt.Errorf("Network %s matches links of %s; the links of one Network are in one VRF", u.name, vrfList(in))
+		}
+		networks[u.name] = vrf
+		return nil
+	}
+	for _, m := range members {
+		if isLiteral(m.glob) {
+			if u := firstUnit(units, m.glob); u.name != "" {
+				if err := take(u, m.vrf); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		var before []nameMatch
+		for _, u := range units {
+			if u.match.mayMatch(m.glob) && !shadowed(u.match, m.glob, before) {
+				if err := take(u, m.vrf); err != nil {
+					return nil, err
+				}
+			}
+			if u.match.covers(m.glob) {
+				break
+			}
+			before = append(before, u.match)
+		}
+	}
+	return networks, nil
+}
+
+// shadowed reports whether units before one of Name= m match every link that m's words share
+// with the glob, so that m matches none of them first.
+func shadowed(m nameMatch, glob string, before []nameMatch) bool {
+	for _, w := range m.positives() {
+		if globsOverlap(w.glob, glob) && !slices.ContainsFunc(before, func(b nameMatch) bool { return b.covers(w.glob) }) {
+			return false
+		}
+	}
+	return true
+}
+
+// checkNetworkVRFs refuses a Network of a VRF that may match links outside the VRF, or whose own
+// VRF= names another VRF.
+func checkNetworkVRFs(units []networkUnit, members []vrfMember, networks map[string]string) error {
+	for _, u := range units {
+		vrf, ok := networks[u.name]
+		if !ok {
+			continue
+		}
+		if u.vrf != "" && u.vrf != vrf {
+			return fmt.Errorf("Network %s gives its links VRF=%s, but VRF %s holds them", u.name, u.vrf, vrf)
+		}
+		for _, w := range u.match.positives() {
+			if slices.ContainsFunc(members, func(m vrfMember) bool { return m.vrf == vrf && globContains(m.glob, w.glob) }) {
+				continue
+			}
+			switch {
+			case w.text == "":
+				return fmt.Errorf("Network %s matches every link its Name= does not negate, links of VRF %s and links outside it; name its links", u.name, vrf)
+			case isLiteral(w.glob):
+				in := []string{"", vrf}
+				for _, m := range members {
+					if ok, _ := path.Match(m.glob, w.glob); ok {
+						in[0] = m.vrf
+					}
+				}
+				slices.Sort(in)
+				return fmt.Errorf("Network %s matches links of %s; the links of one Network are in one VRF", u.name, vrfList(in))
+			default:
+				return fmt.Errorf("Network %s's Name=%s may match links of VRF %s and links outside it; name its links", u.name, w.text, vrf)
+			}
+		}
+	}
+	return nil
 }
 
 // vrfList names VRFs for a message, "" being no VRF.
@@ -111,13 +303,18 @@ func vrfList(vrfs []string) string {
 	return strings.Join(names, " and ")
 }
 
-// networkVRF is the VRF= a Network document's [Network] sections give, "" for none.
+// networkVRF is the VRF= a Network document's [Network] sections give, "" for none. An empty
+// VRF= drops the one before it, as systemd reads it.
 func networkVRF(name string, spec map[string]any) (string, error) {
 	vrf := ""
 	for _, s := range oneOrMany(spec["network"]) {
 		section, _ := s.(map[string]any)
 		for _, v := range oneOrMany(section["vrf"]) {
 			if v == nil {
+				continue
+			}
+			if v == "" {
+				vrf = ""
 				continue
 			}
 			value, ok := v.(string)
@@ -132,25 +329,26 @@ func networkVRF(name string, spec map[string]any) (string, error) {
 
 // renderRouterNetworkd writes the networkd documents of in as renderNetworkd does, with the units
 // of the VRF documents: the device's 00-vrf-<name>.netdev, of Kind=vrf and the VRF's table, and
-// 00-vrf-<name>.network, which brings the device up, and VRF=<name> in the [Network] section of
-// each Network document whose links the VRF holds.
+// 00-vrf-<name>.network, which brings the device up and leaves it out of the node's online state,
+// and VRF=<name> in the [Network] section of each Network document that is the first to match
+// links the VRF holds.
 func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 	d, err := readRouterDocuments(in)
 	if err != nil {
 		return err
 	}
 	byKind, _ := in["documents"].(map[string]any)
-	docs, err := withVRFUnits(d.VRFs, d.Members, byKind)
+	docs, err := withVRFUnits(d.VRFs, d.NetworkVRFs, byKind)
 	if err != nil {
 		return err
 	}
 	return renderNetworkd(schemas, map[string]any{"node": in["node"], "documents": docs}, out)
 }
 
-// withVRFUnits is byKind with each VRF's NetDev and Network documents added and VRF= set in the
-// Network documents of its links. It refuses a networkd document of a VRF unit's name and a
-// NetDev that creates a device of a VRF's name.
-func withVRFUnits(vrfs []named[vrfSpec], member map[string]string, byKind map[string]any) (map[string]any, error) {
+// withVRFUnits is byKind with each VRF's NetDev and Network documents added and VRF= set in each
+// Network document that networks puts in a VRF, of a document or not. It refuses a networkd
+// document of a VRF unit's name and a NetDev that creates a device of a VRF's name.
+func withVRFUnits(vrfs []named[vrfSpec], networks map[string]string, byKind map[string]any) (map[string]any, error) {
 	isVRF := func(name string) bool {
 		return slices.ContainsFunc(vrfs, func(v named[vrfSpec]) bool { return v.Name == name })
 	}
@@ -171,25 +369,24 @@ func withVRFUnits(vrfs []named[vrfSpec], member map[string]string, byKind map[st
 			spec, _ := doc["spec"].(map[string]any)
 			for _, s := range oneOrMany(spec["netDev"]) {
 				section, _ := s.(map[string]any)
-				if device, _ := section["name"].(string); isVRF(device) {
-					return nil, fmt.Errorf("NetDev %s creates the device %s, which VRF %s creates", name, device, device)
+				for _, n := range oneOrMany(section["name"]) {
+					if device, _ := n.(string); isVRF(device) {
+						return nil, fmt.Errorf("NetDev %s creates the device %s, which VRF %s creates", name, device, device)
+					}
 				}
 			}
 		}
 	}
 	netdevs, _ := byKind["NetDev"].([]any)
-	networks, _ := byKind["Network"].([]any)
-	netdevs, networks = slices.Clone(netdevs), slices.Clone(networks)
-	for i, d := range networks {
+	docs, _ := byKind["Network"].([]any)
+	netdevs, docs = slices.Clone(netdevs), slices.Clone(docs)
+	for i, d := range docs {
 		doc, _ := d.(map[string]any)
+		name, _ := documentName("Network", doc)
 		spec, _ := doc["spec"].(map[string]any)
-		vrf := ""
-		// vrfLinks found one VRF for all links of a Network, or none.
-		for _, l := range matchLinks(spec) {
-			vrf = cmp.Or(vrf, member[l])
-		}
-		if isVRF(vrf) {
-			networks[i] = withNetworkVRF(doc, vrf)
+		own, _ := networkVRF(name, spec)
+		if vrf, ok := networks[name]; ok && own != vrf {
+			docs[i] = withNetworkVRF(doc, vrf)
 		}
 	}
 	for _, v := range vrfs {
@@ -198,46 +395,57 @@ func withVRFUnits(vrfs []named[vrfSpec], member map[string]string, byKind map[st
 			"netDev": map[string]any{"kind": "vrf", "name": v.Name},
 			"vrf":    map[string]any{"table": json.Number(strconv.FormatUint(uint64(v.Spec.Table), 10))},
 		}})
-		networks = append(networks, map[string]any{"metadata": unit, "spec": map[string]any{
+		docs = append(docs, map[string]any{"metadata": unit, "spec": map[string]any{
 			"match": map[string]any{"name": v.Name},
+			"link":  map[string]any{"requiredForOnline": "no"},
 		}})
 	}
 	out := maps.Clone(byKind)
 	if out == nil {
 		out = map[string]any{}
 	}
-	out["NetDev"], out["Network"] = netdevs, networks
+	out["NetDev"], out["Network"] = netdevs, docs
 	return out, nil
 }
 
-// withNetworkVRF is a copy of the Network document doc with VRF=vrf in its first [Network]
-// section, which it gains when it has none.
+// withNetworkVRF is a copy of the Network document doc that gives its links VRF=vrf: as the last
+// VRF= of the last [Network] section that has one, else in its first [Network] section, which
+// it gains when it has none.
 func withNetworkVRF(doc map[string]any, vrf string) map[string]any {
 	spec, _ := doc["spec"].(map[string]any)
 	spec = maps.Clone(spec)
 	if spec == nil {
 		spec = map[string]any{}
 	}
-	withVRF := func(s any) map[string]any {
-		section, _ := s.(map[string]any)
-		section = maps.Clone(section)
-		if section == nil {
-			section = map[string]any{}
+	list, isList := spec["network"].([]any)
+	sections := slices.Clone(list)
+	if !isList || len(sections) == 0 {
+		sections = []any{spec["network"]}
+		if isList {
+			sections = []any{nil}
 		}
-		section["vrf"] = vrf
-		return section
 	}
-	switch sections := spec["network"].(type) {
-	case []any:
-		if len(sections) == 0 {
-			spec["network"] = withVRF(nil)
-			break
+	at := 0
+	for i, s := range sections {
+		if section, _ := s.(map[string]any); section["vrf"] != nil {
+			at = i
 		}
-		sections = slices.Clone(sections)
-		sections[0] = withVRF(sections[0])
+	}
+	section, _ := sections[at].(map[string]any)
+	section = maps.Clone(section)
+	if section == nil {
+		section = map[string]any{}
+	}
+	if old := section["vrf"]; old != nil {
+		section["vrf"] = append(slices.Clone(oneOrMany(old)), vrf)
+	} else {
+		section["vrf"] = vrf
+	}
+	sections[at] = section
+	if isList {
 		spec["network"] = sections
-	default:
-		spec["network"] = withVRF(sections)
+	} else {
+		spec["network"] = sections[0]
 	}
 	out := maps.Clone(doc)
 	out["spec"] = spec

@@ -23,13 +23,113 @@ func TestRouterNetworkd(t *testing.T) {
 	}
 	want := map[string]string{
 		"00-vrf-tenant.netdev":  "[NetDev]\nKind=vrf\nName=tenant\n\n[VRF]\nTable=100\n\n",
-		"00-vrf-tenant.network": "[Match]\nName=tenant\n\n",
+		"00-vrf-tenant.network": "[Match]\nName=tenant\n\n[Link]\nRequiredForOnline=no\n\n",
 		"10-eth0.network":       "[Match]\nName=eth0\n\n[Network]\nDHCP=yes\n\n",
 		"20-eth2.network":       "[Match]\nName=eth2\n\n[Network]\nAddress=192.0.2.1/24\nVRF=tenant\n\n[Network]\nDNS=192.0.2.53\n\n",
 		"30-swp.network":        "[Match]\nName=swp1 swp2\n\n[Network]\nVRF=tenant\n\n",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("units:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// A Network whose Name= globs a VRF's members, or whose own VRF= names the VRF, gets VRF= once,
+// and so does a Network before one whose VRF= names a VRF without a document;
+// a Network that a member's earlier Network shadows gets none, and an empty VRF= resets the
+// values before it.
+func TestRouterNetworkdMembers(t *testing.T) {
+	got, err := unitFiles(t, []string{"router-networkd", networkFixture}, map[string][]any{
+		"VRF": {
+			routerDoc(t, "VRF", "blue", `{"table": 200}`),
+			routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["swp*", "eth3"]}`),
+		},
+		"Network": {
+			document(t, "Network", "10-swp", `{"match": {"name": "swp[0-9]"}}`),
+			document(t, "Network", "20-swp", `{"match": {"name": "swp*"}}`),
+			document(t, "Network", "30-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "blue"}}`),
+			document(t, "Network", "40-eth3", `{"match": {"name": "eth3"}, "network": {"vrf": ["blue", ""]}}`),
+			document(t, "Network", "50-eth5", `{"match": {"name": "eth5"}}`),
+			document(t, "Network", "60-eth5", `{"match": {"name": "eth5"}, "network": {"vrf": "mgmt"}}`),
+			document(t, "Network", "90-eth3", `{"match": {"name": "eth3"}}`),
+			document(t, "Network", "99-all", `{"match": {"name": "*"}, "network": {"dhcp": "yes"}}`),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"10-swp.network":  "[Match]\nName=swp[0-9]\n\n[Network]\nVRF=tenant\n\n",
+		"20-swp.network":  "[Match]\nName=swp*\n\n[Network]\nVRF=tenant\n\n",
+		"30-eth1.network": "[Match]\nName=eth1\n\n[Network]\nVRF=blue\n\n",
+		"40-eth3.network": "[Match]\nName=eth3\n\n[Network]\nVRF=blue\nVRF=\nVRF=tenant\n\n",
+		"50-eth5.network": "[Match]\nName=eth5\n\n[Network]\nVRF=mgmt\n\n",
+		"90-eth3.network": "[Match]\nName=eth3\n\n",
+		"99-all.network":  "[Match]\nName=*\n\n[Network]\nDHCP=yes\n\n",
+	} {
+		if got[name] != want {
+			t.Errorf("%s:\n%q\nwant:\n%q", name, got[name], want)
+		}
+	}
+}
+
+// The links of the Network documents are in the VRF whose document or whose Network's own VRF=
+// holds them; the Networks are in the VRF of the links they are first to match.
+func TestVRFLinks(t *testing.T) {
+	byKind := map[string]any{"Network": []any{
+		document(t, "Network", "10-swp", `{"match": {"name": "swp1 swp2"}}`),
+		document(t, "Network", "20-swp", `{"match": {"name": "swp*"}}`),
+		document(t, "Network", "30-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "blue"}}`),
+		document(t, "Network", "40-eth0", `{"match": {"name": "eth0"}}`),
+	}}
+	got, err := vrfLinks([]named[vrfSpec]{{"tenant", vrfSpec{Table: 100, Interfaces: []string{"swp*"}}}}, byKind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"swp1": "tenant", "swp2": "tenant", "eth1": "blue"}; !reflect.DeepEqual(got.Links, want) {
+		t.Errorf("links = %v, want %v", got.Links, want)
+	}
+	if want := map[string]string{"10-swp": "tenant", "20-swp": "tenant", "30-eth1": "blue"}; !reflect.DeepEqual(got.Networks, want) {
+		t.Errorf("networks = %v, want %v", got.Networks, want)
+	}
+}
+
+// Name= matches as systemd's does: globs per word, a first word with ! negating every word, a
+// later word with ! negating itself, an empty value resetting the values before it, and words
+// systemd takes for no interface name left out.
+func TestNameMatch(t *testing.T) {
+	for _, c := range []struct {
+		names   any
+		matches []string
+		misses  []string
+	}{
+		{"eth0", []string{"eth0"}, []string{"eth1", "eth00"}},
+		{"eth* swp[12]", []string{"eth0", "swp2"}, []string{"swp3", "lo"}},
+		{"swp[!1]", []string{"swp2", "swp!"}, []string{"swp1", "swp"}},
+		{"!eth0 eth1", []string{"lo", "eth2"}, []string{"eth0", "eth1"}},
+		{"eth* !eth1", []string{"eth0"}, []string{"eth1", "lo"}},
+		{[]any{"eth0", "eth1"}, []string{"eth0", "eth1"}, []string{"eth2"}},
+		{[]any{"eth0", "", "eth1"}, []string{"eth1"}, []string{"eth0"}},
+		{[]any{"eth0", ""}, []string{"eth0", "lo"}, nil},
+		{"eth0:1 eth1", []string{"eth1"}, []string{"eth0:1", "lo"}},
+		{nil, []string{"eth0"}, nil},
+	} {
+		m, err := parseNameMatch("n", map[string]any{"match": map[string]any{"name": c.names}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range c.matches {
+			if !m.matches(l) {
+				t.Errorf("Name=%v misses %s", c.names, l)
+			}
+		}
+		for _, l := range c.misses {
+			if m.matches(l) {
+				t.Errorf("Name=%v matches %s", c.names, l)
+			}
+		}
+	}
+	if _, err := parseNameMatch("n", map[string]any{"match": map[string]any{"name": "eth[0"}}); err == nil {
+		t.Errorf("parseNameMatch takes Name=eth[0")
 	}
 }
 
@@ -65,7 +165,7 @@ func TestVRFRefusals(t *testing.T) {
 		want string
 	}{
 		"a member no Network names": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100, "interfaces": ["eth9"]}`)}, "Network": {link("eth1")}},
-			"VRF tenant names the interface eth9, which no Network document's [Match] Name= names"},
+			"VRF tenant names the interface eth9, which no Network document's [Match] Name= matches"},
 		"a link a glob puts in a second VRF": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["eth*"]}`), vrf("b", `{"table": 200, "interfaces": ["eth1"]}`)}, "Network": {link("eth1")}},
 			"the link eth1 is in VRF a and in VRF b"},
 		"a Network of two VRFs": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["eth1"]}`), vrf("b", `{"table": 200, "interfaces": ["eth2"]}`)}, "Network": {net("20-both", `{"match": {"name": "eth1 eth2"}}`)}},
@@ -74,6 +174,32 @@ func TestVRFRefusals(t *testing.T) {
 			"Network 20-both matches links of no VRF and VRF a"},
 		"a Network's VRF= of another VRF": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["eth1"]}`)}, "Network": {net("20-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "b"}}`)}},
 			"Network 20-eth1 gives its links VRF=b, but VRF a holds them"},
+		"a Network of a VRF member and other links, before the VRF= naming it": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100}`)}, "Network": {net("10-a", `{"match": {"name": "eth1 eth2"}}`), net("20-b", `{"match": {"name": "eth1"}, "network": {"vrf": "tenant"}}`)}},
+			"Network 10-a matches links of no VRF and VRF tenant"},
+		"a Network of a VRF member and other links, after the VRF= naming it": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100}`)}, "Network": {net("20-b", `{"match": {"name": "eth1"}, "network": {"vrf": "tenant"}}`), net("10-a", `{"match": {"name": "eth1 eth2"}}`)}},
+			"Network 10-a matches links of no VRF and VRF tenant"},
+		"two Networks' VRF= of one link": {map[string][]any{"Network": {net("20-b", `{"match": {"name": "eth*"}, "network": {"vrf": "y"}}`), net("10-a", `{"match": {"name": "eth1"}, "network": {"vrf": "x"}}`)}},
+			"Network 10-a gives VRF=x and Network 20-b VRF=y to links both may match"},
+		"a Network glob of a VRF member and other links": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100, "interfaces": ["swp1"]}`)}, "Network": {net("10-swp", `{"match": {"name": "swp*"}}`)}},
+			"Network 10-swp's Name=swp* may match links of VRF tenant and links outside it; name its links"},
+		"a Network glob wider than a VRF's": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100, "interfaces": ["swp*"]}`)}, "Network": {link("swp1"), net("30-sw", `{"match": {"name": "sw*"}}`)}},
+			"Network 30-sw's Name=sw* may match links of VRF tenant and links outside it; name its links"},
+		"a Network of every link before a member's": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100, "interfaces": ["eth2"]}`)}, "Network": {net("05-all", `{"match": {"name": "*"}}`), link("eth2")}},
+			"Network 05-all's Name=* may match links of VRF tenant and links outside it; name its links"},
+		"a Network of negations before a member's": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100, "interfaces": ["eth2"]}`)}, "Network": {net("05-rest", `{"match": {"name": "!eth0"}}`), link("eth2")}},
+			"Network 05-rest matches every link its Name= does not negate, links of VRF tenant and links outside it; name its links"},
+		"a Network of a reset Name= before a member's": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100, "interfaces": ["eth2"]}`)}, "Network": {net("05-rest", `{"match": {"name": ["eth2", ""]}}`), link("eth2")}},
+			"Network 05-rest matches every link its Name= does not negate"},
+		"a Network before the VRF device's": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100}`)}, "Network": {net("00-all", `{"match": {"name": "t*"}}`)}},
+			"Network 00-all matches the device of VRF tenant before 00-vrf-tenant"},
+		"globs of two VRFs": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["swp*"]}`), vrf("b", `{"table": 200, "interfaces": ["swp1*"]}`)}, "Network": {link("eth0")}},
+			"VRF a's swp* and VRF b's swp1* may hold one link"},
+		"a VRF glob of a VRF device": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["t*"]}`), vrf("tenant", `{"table": 200}`)}, "Network": {link("eth0")}},
+			"VRF a's t* covers the device of VRF tenant"},
+		"a NetDev of a VRF's device in a list of names": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {link("eth0")}, "NetDev": {document(t, "NetDev", "20-a", `{"netDev": {"kind": "dummy", "name": ["x", "a"]}}`)}},
+			"NetDev 20-a creates the device a, which VRF a creates"},
+		"a Name= glob the renderer cannot read": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {net("20-x", `{"match": {"name": "eth[0"}}`)}},
+			`Network 20-x: Name= holds "eth[0"`},
 		"a VRF= that adds a word": {map[string][]any{"Network": {net("20-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "b c"}}`)}},
 			"Network 20-eth1: VRF= names one VRF by its name"},
 		"a NetDev of a VRF's device": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {link("eth0")}, "NetDev": {document(t, "NetDev", "20-a", `{"netDev": {"kind": "dummy", "name": "a"}}`)}},

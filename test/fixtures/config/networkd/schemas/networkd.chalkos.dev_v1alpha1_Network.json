@@ -291,6 +291,37 @@
       },
       "type": "object",
       "x-chalkos-networkd-section": "Route"
+    },
+    "Link": {
+      "additionalProperties": false,
+      "properties": {
+        "requiredForOnline": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "RequiredForOnline"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "Link"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -373,6 +404,20 @@
             }
           ],
           "x-chalkos-networkd-section": "Route"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Link"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/Link"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "Link"
         }
       },
       "type": "object"

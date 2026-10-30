@@ -431,7 +431,7 @@ func TestFRRRefusals(t *testing.T) {
 		"a maximum of no prefix":                {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"maxPrefix": 0}}}`)}}, "maxPrefix 0 accepts no route"},
 		"an interface that reads as an address": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "192.0.2.9", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `interface "192.0.2.9" is an address`},
 		"a link that reads as an address": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interfaces": ["*"], "remoteAS": "external", "families": {"ipv6": {}}}`)},
-			"Network": {map[string]any{"apiVersion": config.NetworkdAPI, "kind": "Network", "metadata": map[string]any{"name": "n"}, "spec": map[string]any{"match": map[string]any{"name": "2001:db8::9"}}}}}, `interface "2001:db8::9" is an address`},
+			"Network": {map[string]any{"apiVersion": config.NetworkdAPI, "kind": "Network", "metadata": map[string]any{"name": "n"}, "spec": map[string]any{"match": map[string]any{"name": "192.0.2.10"}}}}}, `interface "192.0.2.10" is an address`},
 		"a description of spaces":              {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "  ", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
 		"a description of two spaces in a row": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "a  b", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
 		"a description that ends in a space":   {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "a ", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
@@ -540,6 +540,7 @@ func TestNetworkLinks(t *testing.T) {
 		network(map[string]any{"name": "swp1 swp2"}),
 		network([]any{map[string]any{"name": []any{"eth0", "!eth1 eth2"}}, map[string]any{"name": "swp* eth3 !eth4"}}),
 		network(map[string]any{"name": "!eth5 eth6"}),
+		network(map[string]any{"name": []any{"eth7", ""}}),
 	}})
 	if want := []string{"eth0", "eth3", "swp1", "swp2"}; !slices.Equal(got, want) {
 		t.Errorf("networkLinks = %v, want %v", got, want)
