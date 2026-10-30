@@ -547,9 +547,9 @@ func (f *firewall) input(b *strings.Builder) error {
 
 // forward accepts everything while no policy goes between two zones and the ruleset is not
 // closed. Otherwise it accepts the protected traffic, the NAT64s' translated traffic into and out
-// of their links, which no policy filters, and destination-translated connections, hands each connection to
-// the policy of its pair of zones, and drops the rest, also from or to an interface in no zone. A
-// policy to a zone of no link has no line.
+// of their links, which no policy filters, and destination-translated connections, hands each
+// connection to the policy of its pair of zones, and drops the rest, also from or to an interface
+// in no zone. A policy to a zone of no link has no line.
 func (f *firewall) forward(b *strings.Builder) {
 	var between []named[policySpec]
 	for _, p := range f.policies {
@@ -622,12 +622,15 @@ func (f *firewall) translation(b *strings.Builder) error {
 		}
 	}
 	// No rule translates the destination of a connection out of a NAT64's link, which Jool
-	// translated already, or to an explicit pool, whose addresses belong to the NAT64 whole.
+	// translated already, or to its prefix or explicit pool, whose addresses belong to the NAT64
+	// whole.
 	if len(dst) > 0 {
 		var exempt []string
 		for _, n := range f.nat64 {
 			c := strconv.Quote("NAT64 " + n.name)
-			exempt = append(exempt, fmt.Sprintf("iifname %s accept comment %s", strconv.Quote(nat64LinkPrefix+n.name), c))
+			exempt = append(exempt,
+				fmt.Sprintf("iifname %s accept comment %s", strconv.Quote(nat64LinkPrefix+n.name), c),
+				fmt.Sprintf("ip6 daddr %s accept comment %s", n.jool.Global.Pool6, c))
 			if len(n.pools) > 0 {
 				exempt = append(exempt, fmt.Sprintf("ip daddr %s accept comment %s", n.poolSet(), c))
 			}
@@ -714,6 +717,11 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if n.Type == "dnat" && side.dir == "daddr" {
+			if err := f.nat64Destinations(elements); err != nil {
+				return "", err
+			}
+		}
 		parts = append(parts, fmt.Sprintf("%s %s { %s }", family, side.dir, strings.Join(elements, ", ")))
 	}
 	if n.Match.Protocol != nil {
@@ -764,6 +772,26 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 		return "", fmt.Errorf("type %q is none of masquerade, snat and dnat", n.Type)
 	}
 	return strings.Join(parts, " "), nil
+}
+
+// nat64Destinations refuses a destination range of a dnat rule that lies in a NAT64's prefix or
+// explicit pool, whose connections the dstnat chain accepts before any rule.
+func (f *firewall) nat64Destinations(ranges []string) error {
+	for _, r := range ranges {
+		d := netip.MustParsePrefix(r)
+		for _, x := range f.nat64 {
+			held := slices.Clone(x.pools)
+			if p, err := netip.ParsePrefix(x.jool.Global.Pool6); err == nil {
+				held = append(held, p)
+			}
+			for _, p := range held {
+				if p.Bits() <= d.Bits() && p.Contains(d.Addr()) {
+					return fmt.Errorf("match.destination %s lies in %s of NAT64 %s, whose connections the firewall accepts before any NATRule; match a range outside it", d, p, x.name)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // familyWords are nftables's words for the address families: ip and ip6.

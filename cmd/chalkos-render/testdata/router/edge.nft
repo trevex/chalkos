@@ -56,6 +56,7 @@ table inet chalkos {
 	chain dstnat {
 		type nat hook prerouting priority dstnat; policy accept;
 		iifname "n64-edge" accept comment "NAT64 edge"
+		ip6 daddr 64:ff9b::/96 accept comment "NAT64 edge"
 		ip daddr { 192.0.2.252/30 } accept comment "NAT64 edge"
 		meta nfproto ipv4 iifname { "eth0" } ip daddr { 203.0.113.1/32 } tcp dport { 80, 443 } dnat ip to 192.0.2.10
 	}

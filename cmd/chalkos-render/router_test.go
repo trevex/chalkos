@@ -284,13 +284,14 @@ func TestResolverOpenings(t *testing.T) {
 	}
 }
 
-// The forward chain accepts the NAT64 links' translated traffic ahead of the policies, from a VRF's
-// link by sdifname: out of a link the prefix's IPv6 and IPv4 from the pool or the inner address,
-// into it IPv6 to the prefix and IPv4 to an explicit pool; source NAT translates nothing into a NAT64's link or from an explicit pool and
-// masquerades an own pool's inner address, ahead of the NATRules; a VRF's conntrack zone holds its
-// NAT64's link; and a VRF's resolver opens port 53 in its VRF alone. Without policies between
-// zones the forward chain accepts everything, and without NATRules an explicit pool needs no source
-// NAT chain.
+// The forward chain accepts the NAT64 links' translated traffic ahead of the policies, from a
+// VRF's link by sdifname: out of a link the prefix's IPv6 and IPv4 from the pool or the inner
+// address, into it IPv6 to the prefix and IPv4 to an explicit pool; destination NAT translates
+// nothing out of a NAT64's link or to its prefix or explicit pool; source NAT translates nothing
+// into a NAT64's link or from an explicit pool and masquerades an own pool's inner address, ahead
+// of the NATRules; a VRF's conntrack zone holds its NAT64's link; and a VRF's resolver opens port
+// 53 in its VRF alone. Without policies between zones the forward chain accepts everything, and
+// without NATRules an explicit pool needs no source NAT chain.
 func TestNAT64Firewall(t *testing.T) {
 	docs := map[string][]any{
 		"VRF":            {routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"], "conntrackZone": 1}`)},
@@ -340,8 +341,10 @@ func TestNAT64Firewall(t *testing.T) {
 		// pool's addresses, alone.
 		"\t\ttype nat hook prerouting priority dstnat; policy accept;\n" +
 			"\t\tiifname \"n64-edge\" accept comment \"NAT64 edge\"\n" +
+			"\t\tip6 daddr 64:ff9b::/96 accept comment \"NAT64 edge\"\n" +
 			"\t\tip daddr { 192.0.2.8/30 } accept comment \"NAT64 edge\"\n" +
 			"\t\tiifname \"n64-guest\" accept comment \"NAT64 guest\"\n" +
+			"\t\tip6 daddr 64:ff9b::/96 accept comment \"NAT64 guest\"\n" +
 			"\t\tmeta nfproto ipv4 iifname { \"*\" } tcp dport { 80 } dnat ip to 192.0.2.80\n",
 		"\t\tiifname \"guest\" ip6 saddr { 2001:db8:3::/64 } ip6 daddr { 2001:db8:3::1/128 } udp dport { 53 } accept comment \"Resolver guest\"\n",
 	} {
@@ -382,6 +385,32 @@ func TestNATRuleIntoNAT64Pool(t *testing.T) {
 		rule := routerDoc(t, "NATRule", "web", `{"type": "`+typ+`", "family": "ipv4", `+place+`, "to": {"address": "192.0.2.10"}}`)
 		refused(t, []string{"router-nftables", "50000"}, map[string][]any{"NAT64": {nat64}, "FirewallZone": {zone}, "NATRule": {rule}},
 			"NATRule web: to.address 192.0.2.10 lies in 192.0.2.8/30, the pool of NAT64 edge, whose addresses belong to the NAT64 whole; translate to an address outside the pool")
+	}
+}
+
+// A dnat rule whose destination lies in a NAT64's prefix or explicit pool is refused: the dstnat
+// chain accepts those connections before any NATRule. A wider destination is no NAT64's alone.
+func TestNATRuleFromNAT64Destination(t *testing.T) {
+	nat64 := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}]}`)
+	zone := routerDoc(t, "FirewallZone", "wan", `{"interfaces": ["eth0"]}`)
+	rule := func(family, destination, to string) any {
+		return routerDoc(t, "NATRule", "web", `{"type": "dnat", "family": "`+family+`", "in": {"zone": "wan"}, "match": {"destination": ["`+destination+`"]}, "to": {"address": "`+to+`"}}`)
+	}
+	for _, c := range []struct{ family, destination, to, held string }{
+		{"ipv4", "192.0.2.9/32", "198.51.100.1", "192.0.2.8/30"},
+		{"ipv4", "192.0.2.8/30", "198.51.100.1", "192.0.2.8/30"},
+		{"ipv6", "64:ff9b::c000:201/128", "2001:db8::1", "64:ff9b::/96"},
+	} {
+		refused(t, []string{"router-nftables", "50000"}, map[string][]any{"NAT64": {nat64}, "FirewallZone": {zone}, "NATRule": {rule(c.family, c.destination, c.to)}},
+			"NATRule web: match.destination "+c.destination+" lies in "+c.held+" of NAT64 edge, whose connections the firewall accepts before any NATRule; match a range outside it")
+	}
+	docs := map[string][]any{"NAT64": {nat64}, "FirewallZone": {zone}, "NATRule": {rule("ipv4", "192.0.2.0/24", "198.51.100.1")}}
+	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := renderedFile(t, []string{"router-nftables", "50000"}, string(input), rulesetFile); !strings.Contains(got, "ip daddr { 192.0.2.0/24 } dnat ip to 198.51.100.1") {
+		t.Errorf("a dnat rule of a range wider than the pool is missing:\n%s", got)
 	}
 }
 
