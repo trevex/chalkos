@@ -49,14 +49,17 @@ spec: {vrfs: [tenant]}
 ```
 
 To split one VRF's links into several zones, name the links in `interfaces` and leave the VRF out
-of `vrfs`. A zone needs `interfaces`, `vrfs` or both, and a VRF is in one zone. Each link is in one
-zone too. The output `router-nftables` refuses a zone that names a link, or a glob that may match
-one, of a VRF that another zone holds. It also refuses an interface or glob that matches a VRF's
-device, such as `ten*` beside the VRF `tenant`:
+of `vrfs`. A zone needs `interfaces`, `vrfs` or both, and a VRF is in one zone. A link of a VRF
+that a zone holds is in no other zone. The output `router-nftables` refuses a zone that names a
+link, or a glob that may match one, of a VRF that another zone holds. It also refuses an
+interface or glob that matches a VRF's device, such as `ten*` beside the VRF `tenant`:
 
 ```text
 FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs
 ```
+
+The rules refuse an interface of a VRF's own name, such as `tenant`, before delivery, so
+`chalkctl validate` catches it too.
 
 Policies and NAT rules name these zones as any other. A policy between the zones of two VRFs
 forwards only what the VRFs' tables route, and
