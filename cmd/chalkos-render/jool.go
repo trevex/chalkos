@@ -139,6 +139,8 @@ func nat64Instances(d routerDocuments) ([]nat64Instance, error) {
 		return nil, err
 	}
 	if len(d.NAT64) > 0 {
+		// The address alone counts: a link of 169.254.0.1/16 passes, since the routes to the
+		// NAT64s' /30s are more specific than its on-link prefix.
 		for _, a := range d.Addresses {
 			if nat64Range.Contains(a.prefix.Addr()) {
 				return nil, fmt.Errorf("Network %s gives a link the address %s, which lies in %s, the range of the NAT64s' links; give the link another address", a.network, a.prefix.Addr(), nat64Range)
