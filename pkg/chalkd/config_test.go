@@ -602,6 +602,7 @@ func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 		"systemctl show --property=ActiveState --value broken.service",
 		"systemctl show --property=ActiveState --value starter.service",
 		"systemctl show --property=ActiveState --value watcher.service",
+		"systemctl show --property=Names,After logger.service broken.service starter.service demo.service watcher.service",
 		"systemctl reload logger.service",
 		"democtl reload",
 		"systemctl reset-failed broken.service",
@@ -616,25 +617,87 @@ func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 	}
 }
 
-// TestApplyConfigReloadsInUnitOrder: chalkd hands systemctl the units to reload in their units'
+// TestApplyConfigActsInUnitOrder: chalkd hands systemctl the units of each call in their units'
 // order, each after those it is ordered after, as systemctl queues their jobs one by one and a
-// job queued first runs at once. A unit ordered against none of the others keeps its place.
-func TestApplyConfigReloadsInUnitOrder(t *testing.T) {
+// job queued first runs at once. After names a unit by its main name, which a unit given by an
+// alias matches through its Names. A unit ordered against none of the others keeps its place,
+// and the units of a cycle keep theirs after the others; units systemctl shows no order of keep
+// the order given.
+func TestApplyConfigActsInUnitOrder(t *testing.T) {
+	const effects = `{
+	  "reload": {"outputs": ["demo"], "reload": ["a.service", "b.service", "c.service", "d.service"]},
+	  "restart": {"outputs": ["demo"], "restart": ["x.service", "y.service"]}
+	}`
+	const show = "systemctl show --property=Names,After a.service b.service c.service d.service x.service y.service"
+	for _, tc := range []struct {
+		name, out     string
+		err           error
+		reload, retry string
+	}{
+		{
+			// a.service follows c.service, whose main name is real-c.service, and units outside
+			// the delivery; c.service follows d.service, as d.service's Before= says; y.service
+			// follows x.service.
+			name:   "order",
+			out:    "Names=a.service\nAfter=real-c.service sysinit.target\n\nNames=b.service\nAfter=\n\nAfter=d.service\nNames=real-c.service c.service\n\nNames=d.service\nAfter=basic.target\n\nNames=x.service\nAfter=\n\nNames=y.service\nAfter=x.service\n",
+			reload: "b.service d.service c.service a.service",
+			retry:  "x.service y.service",
+		},
+		{
+			// a.service and b.service follow each other, and come last in the order given;
+			// d.service follows c.service.
+			name:   "cycle",
+			out:    "Names=a.service\nAfter=b.service\n\nNames=b.service\nAfter=a.service\n\nNames=c.service\nAfter=\n\nNames=d.service\nAfter=c.service\n\nNames=x.service\nAfter=y.service\n\nNames=y.service\nAfter=\n",
+			reload: "c.service d.service a.service b.service",
+			retry:  "y.service x.service",
+		},
+		{
+			name:   "no answer",
+			err:    errors.New("exit status 1"),
+			reload: "a.service b.service c.service d.service",
+			retry:  "x.service y.service",
+		},
+		{
+			name:   "too few units",
+			out:    "Names=a.service\nAfter=d.service\n",
+			reload: "a.service b.service c.service d.service",
+			retry:  "x.service y.service",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, r := configServer(t)
+			write(t, s.Loader.Effects, effects)
+			r.Rules = append(r.Rules, tooltest.Rule{Prefix: show, Out: tc.out, Err: tc.err})
+			if _, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1)); err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{show, "systemctl reload " + tc.reload, "systemctl try-restart " + tc.retry} {
+				if !slices.Contains(r.Calls, want) {
+					t.Errorf("commands = %q, want %q", r.Calls, want)
+				}
+			}
+		})
+	}
+}
+
+// TestApplyConfigRestartsFailedInUnitOrder: a failed unit of reload restarts with the units that
+// start, after the reloads, in their order.
+func TestApplyConfigRestartsFailedInUnitOrder(t *testing.T) {
 	s, r := configServer(t)
 	write(t, s.Loader.Effects, `{
-	  "a": {"outputs": ["demo"], "reload": ["a.service", "b.service", "c.service", "d.service"]}
+	  "a": {"outputs": ["demo"], "reload": ["vrf.service", "resolvers.service"]},
+	  "b": {"outputs": ["demo"], "restart": ["late.service"], "start": true}
 	}`)
-	// a.service is ordered after c.service, which d.service's Before= orders after it, and after
-	// units outside the delivery.
-	r.Rules = append(r.Rules, tooltest.Rule{
-		Prefix: "systemctl show --property=Id,After a.service b.service c.service d.service",
-		Out:    "After=c.service sysinit.target\nId=a.service\n\nId=b.service\nAfter=\n\nAfter=d.service\nId=c.service\n\nId=d.service\nAfter=basic.target\n",
-	})
+	r.Rules = append(r.Rules,
+		tooltest.Rule{Prefix: "systemctl show --property=ActiveState --value vrf.service", Out: "failed\n"},
+		tooltest.Rule{Prefix: "systemctl show --property=Names,After resolvers.service vrf.service late.service", Out: "Names=resolvers.service\nAfter=vrf.service\n\nNames=vrf.service\nAfter=late.service\n\nNames=late.service\nAfter=\n"})
 	if _, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1)); err != nil {
 		t.Fatal(err)
 	}
-	if want := "systemctl reload b.service d.service c.service a.service"; !slices.Contains(r.Calls, want) {
-		t.Errorf("commands = %v, want %q", r.Calls, want)
+	reload := slices.Index(r.Calls, "systemctl reload resolvers.service")
+	restart := slices.Index(r.Calls, "systemctl restart late.service vrf.service")
+	if reload < 0 || restart < reload {
+		t.Errorf("commands = %q, want the reload of resolvers.service, then the restart of late.service and vrf.service", r.Calls)
 	}
 }
 

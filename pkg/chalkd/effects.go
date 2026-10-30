@@ -361,9 +361,11 @@ func actionsOf(defs map[string]effects.Definition, due []string) actions {
 // a.restart, and returns the restarted units. chalkd runs the layer actions last. A unit it
 // restarts is not reloaded, because the restart reads all a reload would. A unit of a.reload that
 // failed is restarted as a failed unit of a.restart is: systemctl reloads no failed unit, and its
-// start, such as a firewall's that loads the new ruleset, is what the new config needs.
+// start, such as a firewall's that loads the new ruleset, is what the new config needs. It
+// restarts after the reloads, so after units that are ordered after it: a unit whose reload
+// depends on such a unit's work has that unit ask for it, as chalkos-vrf asks chalkos-resolvers.
 //
-// The restarts take one systemctl call for each way of restarting:
+// The restarts take one systemctl call for each way of restarting, each in the units' order:
 //   - try-restart for a unit that runs, or ran and stays active, so a unit that never started,
 //     or was stopped, stays so;
 //   - restart for a unit whose effect starts it too;
@@ -401,8 +403,22 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 		}
 		reload = append(reload, unit)
 	}
+	var start, try []string
+	for _, unit := range a.restart {
+		switch {
+		case states[unit] == "failed":
+			failedUnits = append(failedUnits, unit)
+		case a.start[unit]:
+			start = append(start, unit)
+		default:
+			try = append(try, unit)
+		}
+	}
+	slices.Sort(failedUnits)
+	slices.Sort(start)
+	inOrder := s.unitOrder(ctx, reload, append(slices.Clone(failedUnits), start...), try)
 	byHand := actions{}
-	reload = s.inUnitOrder(ctx, reload)
+	reload = inOrder(reload)
 	if len(reload) > 0 {
 		if _, err := s.Run.Run(ctx, "systemctl", append([]string{"reload"}, reload...)...); err != nil {
 			byHand.reload = reload
@@ -414,17 +430,6 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 		if _, err := s.Run.Run(ctx, argv[0], argv[1:]...); err != nil {
 			byHand.run = append(byHand.run, command)
 			errs = append(errs, fmt.Errorf("run %s: %w", command, err))
-		}
-	}
-	var start, try []string
-	for _, unit := range a.restart {
-		switch {
-		case states[unit] == "failed":
-			failedUnits = append(failedUnits, unit)
-		case a.start[unit]:
-			start = append(start, unit)
-		default:
-			try = append(try, unit)
 		}
 	}
 	var restarted []string
@@ -450,8 +455,8 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 	}
 	start = append(failedUnits, start...)
 	slices.Sort(start)
-	run("restart", start)
-	run("try-restart", try)
+	run("restart", inOrder(start))
+	run("try-restart", inOrder(try))
 	if len(errs) > 0 {
 		slices.Sort(byHand.restart)
 		hand := byHand.byHand()
@@ -470,49 +475,74 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 	return restarted, nil
 }
 
-// inUnitOrder sorts units so that each follows the units among them it is ordered after, by its
-// After= or their Before=, which systemd shows as its After. systemctl queues the job of each
-// unit it is given in a transaction of its own, one after the other, and systemd holds a job back
-// only for the jobs already queued: a job queued first runs at once, whatever its unit's order.
-// Each step takes the first unit that follows none of the units left; units whose order systemctl
-// does not show keep theirs.
-func (s *Server) inUnitOrder(ctx context.Context, units []string) []string {
-	if len(units) < 2 {
-		return units
-	}
-	out, err := s.Run.Run(ctx, "systemctl", append([]string{"show", "--property=Id,After"}, units...)...)
-	if err != nil {
-		log.Printf("the order of %s: %v; reloading them in the order given", strings.Join(units, " "), err)
-		return units
-	}
-	// systemctl shows each unit's properties as lines of name=value, a blank line between units.
-	after := map[string][]string{}
-	for block := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n\n") {
-		var id string
-		var deps []string
-		for line := range strings.SplitSeq(block, "\n") {
-			if v, ok := strings.CutPrefix(line, "Id="); ok {
-				id = v
-			} else if v, ok := strings.CutPrefix(line, "After="); ok {
-				deps = strings.Fields(v)
+// unitOrder returns what sorts a list of the units of lists so that each unit follows the units
+// of the list it is ordered after, by its After= or their Before=, which systemd shows as its
+// After. systemctl queues the job of each unit it is given in a transaction of its own, one after
+// the other, and systemd holds a job back only for the jobs already queued: a job queued first
+// runs at once, whatever its unit's order. The order holds within one systemctl call alone, so
+// the reloads run before any restart, whatever the units' order.
+//
+// systemctl names the units of After by their main names, which a unit given by an alias matches
+// through its Names. Each step of the sort takes the first unit that follows none of the units
+// left, so units ordered against none of the others keep their place. The units of a cycle keep
+// theirs after the others, and the units of every list keep the order given when systemctl does
+// not answer.
+func (s *Server) unitOrder(ctx context.Context, lists ...[]string) func([]string) []string {
+	keep := func(units []string) []string { return units }
+	var units []string
+	ask := false
+	for _, l := range lists {
+		ask = ask || len(l) > 1
+		for _, u := range l {
+			if !slices.Contains(units, u) {
+				units = append(units, u)
 			}
 		}
-		after[id] = deps
 	}
-	rest := slices.Clone(units)
-	sorted := make([]string, 0, len(units))
-	for len(rest) > 0 {
-		i := slices.IndexFunc(rest, func(u string) bool {
-			return !slices.ContainsFunc(after[u], func(d string) bool { return d != u && slices.Contains(rest, d) })
-		})
-		if i < 0 {
-			// A cycle, which systemd breaks by dropping a job of it.
-			return append(sorted, rest...)
+	if !ask {
+		return keep
+	}
+	out, err := s.Run.Run(ctx, "systemctl", append([]string{"show", "--property=Names,After"}, units...)...)
+	// systemctl shows each unit's properties as lines of name=value, the units in the order
+	// given, a blank line between them.
+	blocks := strings.Split(strings.TrimSpace(string(out)), "\n\n")
+	if err == nil && len(blocks) != len(units) {
+		err = fmt.Errorf("systemctl showed %d units", len(blocks))
+	}
+	if err != nil {
+		log.Printf("the order of %s: %v; acting on them in the order given", strings.Join(units, " "), err)
+		return keep
+	}
+	names := map[string][]string{}
+	after := map[string][]string{}
+	for i, block := range blocks {
+		for line := range strings.SplitSeq(block, "\n") {
+			if v, ok := strings.CutPrefix(line, "Names="); ok {
+				names[units[i]] = strings.Fields(v)
+			} else if v, ok := strings.CutPrefix(line, "After="); ok {
+				after[units[i]] = strings.Fields(v)
+			}
 		}
-		sorted = append(sorted, rest[i])
-		rest = slices.Delete(rest, i, i+1)
 	}
-	return sorted
+	// follows tells whether the unit u is ordered after the unit v.
+	follows := func(u, v string) bool {
+		return u != v && slices.ContainsFunc(after[u], func(d string) bool { return d == v || slices.Contains(names[v], d) })
+	}
+	return func(list []string) []string {
+		rest := slices.Clone(list)
+		sorted := make([]string, 0, len(list))
+		for len(rest) > 0 {
+			i := slices.IndexFunc(rest, func(u string) bool {
+				return !slices.ContainsFunc(rest, func(v string) bool { return follows(u, v) })
+			})
+			if i < 0 {
+				return append(sorted, rest...)
+			}
+			sorted = append(sorted, rest[i])
+			rest = slices.Delete(rest, i, i+1)
+		}
+		return sorted
+	}
 }
 
 // hintText is a hint's text, followed by its file's while the file holds text; "" when its file

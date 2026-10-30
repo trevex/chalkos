@@ -40,6 +40,7 @@ func TestApplyConfigAndStatus(t *testing.T) {
 		"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking",
 		"systemctl show --property=ActiveState --value chalkos-kubernetes.service",
 		"systemctl show --property=ActiveState --value kubelet.service",
+		"systemctl show --property=Names,After chalkos-kubernetes.service kubelet.service",
 		"systemctl restart chalkos-kubernetes.service kubelet.service",
 	}) {
 		t.Errorf("node ran %v", r.calls)
