@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -109,7 +108,8 @@ func (r *side) ask(ctx, budget context.Context, program string, args ...string) 
 	return out, err
 }
 
-// vtysh runs one of the fixed show commands of package router.
+// vtysh runs one of the show commands of package router, which may carry a VRF's name that
+// matched router.ShortName.
 func (r *side) vtysh(ctx context.Context, command string) ([]byte, error) {
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
@@ -309,12 +309,9 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 // services.
 const defaultVRFDir = "/run/chalkos/config/router.chalkos.dev/VRF"
 
-// vrfName is a VRF document's name: a document name of 15 characters at most.
-var vrfName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`)
-
 // vrfTable is the table of the node's VRF of the name, as its running VRF document gives it.
 func (r *side) vrfTable(name string) (uint32, error) {
-	if !vrfName.MatchString(name) {
+	if !routing.ShortName.MatchString(name) {
 		return 0, failed(connect.CodeInvalidArgument, "vrf %q is no VRF document's name", name)
 	}
 	data, err := os.ReadFile(filepath.Join(cmp.Or(r.VRFDir, defaultVRFDir), name+".json"))
@@ -329,7 +326,10 @@ func (r *side) vrfTable(name string) (uint32, error) {
 			Table uint32 `json:"table"`
 		} `json:"spec"`
 	}
-	if err := json.Unmarshal(data, &doc); err != nil || doc.Spec.Table == 0 {
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return 0, failed(connect.CodeInternal, "read the VRF %s: %v", name, err)
+	}
+	if doc.Spec.Table == 0 {
 		return 0, failed(connect.CodeInternal, "read the VRF %s: its document holds no table", name)
 	}
 	return doc.Spec.Table, nil

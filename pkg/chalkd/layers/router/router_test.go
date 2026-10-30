@@ -248,13 +248,16 @@ func TestRouterResolverStatus(t *testing.T) {
 }
 
 // Routes of a VRF list its table, which the running VRF document gives, and its instance's paths;
-// default is the main table and the default instance. A request of a VRF and a table, of a VRF
-// the node lacks or of a name no VRF document takes is refused, and asks vtysh nothing.
+// default is the main table and the default instance, asked without a VRF. A request of a VRF
+// and a table, of a VRF the node lacks or of a name no VRF document takes is refused, and asks
+// vtysh nothing; a running VRF document without a table, or no JSON, is chalkd's error.
 func TestRoutesOfAVRF(t *testing.T) {
 	p, r := routerNode(t,
 		&routing.KernelRoute{Destination: "2001:db8:ffff::2/128", Type: "unicast", Protocol: "bgp", Table: 100, Metric: 20},
 		&routing.KernelRoute{Destination: "2001:db8:ffff::2/128", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20},
 	)
+	// The recording is of a default instance that imports fabric; it stands for tenant's paths,
+	// whose import of fabric has the same shape.
 	r.Rules = append(r.Rules,
 		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv4 unicast detail json", Out: "{}"},
 		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: routerRecording(t, "ipv6-detail-imported.json")},
@@ -275,11 +278,20 @@ func TestRoutesOfAVRF(t *testing.T) {
 	if len(got.Kernel) != 1 || got.Kernel[0].Table != 100 || len(got.Bgp) != 2 || got.Bgp[1].ImportedFrom != "fabric" || got.Bgp[1].AsPath != "64513" {
 		t.Errorf("routes of tenant = %v", got)
 	}
+	calls := len(r.Calls)
 	got, err = routes(&routerv1.RoutesRequest{Vrf: "default"})
 	if err != nil || len(got.Kernel) != 1 || got.Kernel[0].Table != 254 {
 		t.Errorf("routes of default = %v, %v", got, err)
 	}
-	calls := len(r.Calls)
+	if asked := r.Calls[calls:]; !slices.Equal(asked, []string{"vtysh -c show bgp ipv4 unicast detail json", "vtysh -c show bgp ipv6 unicast detail json"}) {
+		t.Errorf("routes of default asked %v, want the default instance's paths", asked)
+	}
+	for name, doc := range map[string]string{"notable": `{"spec": {"interfaces": ["swp2"]}}`, "broken": "{"} {
+		if err := os.WriteFile(filepath.Join(p.r.VRFDir, name+".json"), []byte(doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	calls = len(r.Calls)
 	for _, tc := range []struct {
 		req  *routerv1.RoutesRequest
 		code connect.Code
@@ -289,6 +301,8 @@ func TestRoutesOfAVRF(t *testing.T) {
 		{&routerv1.RoutesRequest{Vrf: "lab"}, connect.CodeNotFound, "the node has no VRF lab"},
 		{&routerv1.RoutesRequest{Vrf: "../tenant"}, connect.CodeInvalidArgument, `vrf "../tenant" is no VRF document's name`},
 		{&routerv1.RoutesRequest{Vrf: "tenant summary json\nshow"}, connect.CodeInvalidArgument, "is no VRF document's name"},
+		{&routerv1.RoutesRequest{Vrf: "notable"}, connect.CodeInternal, "read the VRF notable: its document holds no table"},
+		{&routerv1.RoutesRequest{Vrf: "broken"}, connect.CodeInternal, "read the VRF broken: unexpected end of JSON input"},
 	} {
 		if _, err := routes(tc.req); connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: err = %v, want %v with %q", tc.req, err, tc.code, tc.want)

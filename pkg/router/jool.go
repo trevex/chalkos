@@ -4,17 +4,12 @@ import (
 	"bytes"
 	"encoding/csv"
 	"fmt"
-	"regexp"
 	"slices"
 	"strconv"
 )
 
 // NAT64Protocols are the protocols Jool translates, in the order the status lists them.
 var NAT64Protocols = []string{"tcp", "udp", "icmp"}
-
-// joolName is the name of an instance as chalkos's NAT64 documents give them, which reaches
-// jool's command line.
-var joolName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`)
 
 // JoolInstancesArgs are jool's arguments that list its instances.
 var JoolInstancesArgs = []string{"instance", "display", "--csv", "--no-headers"}
@@ -59,7 +54,7 @@ func ParseJoolInstances(data []byte) ([]string, error) {
 		if len(row) != 3 {
 			return nil, fmt.Errorf("jool lists an instance as %q, not namespace, name and framework", row)
 		}
-		if joolName.MatchString(row[1]) {
+		if ShortName.MatchString(row[1]) {
 			names = append(names, row[1])
 		}
 	}

@@ -1,5 +1,12 @@
 package router
 
+import "regexp"
+
+// ShortName is the name of a document whose name names a device or an instance in the kernel, of
+// 15 characters at most, as a NAT64 or VRF document's. A name that matches it may reach jool's
+// and vtysh's command lines.
+var ShortName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`)
+
 // Peer is one BGP session of the router: a BGPPeer's address, or one of its interfaces, as FRR
 // reports it.
 type Peer struct {
