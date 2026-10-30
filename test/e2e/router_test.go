@@ -75,14 +75,16 @@ const bgpPassword = "lab-s3cret"
 //     of fabric runs again. The base inventory then brings the sessions and edge0 back to the
 //     default VRF.
 //   - default: a delivery has r1 send r2 its default route only while r1 routes 2001:db8:fff0::/48,
-//     a networkd route on its dummy uplink0. r1's BGP holds that route, marked no-advertise and
-//     with the tracked large community, r2 routes ::/0 through r1 and never learns the tracked
-//     prefix. A delivery without the route makes r2 lose ::/0 within FRR's 5 s scan, and the base
-//     inventory brings the unconditional default back.
+//     a networkd route on its dummy uplink0. Delivered without the route, it makes r2 lose the
+//     unconditional default of the base config within FRR's 5 s scan. Delivered with the route,
+//     r1's BGP holds it, marked no-advertise and with the tracked large community, r2 routes ::/0
+//     through r1 again and never learns the tracked prefix. The base inventory then brings the
+//     unconditional default back.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials, a minute for the VRF and half a
-// minute for the default route, about 6.5 minutes with the copies of the images. chalklab destroy removes the lab when the test ends.
+// minute for the default route, about 6.5 minutes with the copies of the images. chalklab destroy
+// removes the lab when the test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -677,32 +679,51 @@ func TestRouterLab(t *testing.T) {
 			}
 			return nil
 		}
-		if out, err := chalkctl(t, nodes["r1"], "default", "apply-config", "r1"); err != nil {
-			t.Fatalf("apply-config of r1's conditional default: %v\n%s", err, out)
-		}
-		waitFor(t, 2*time.Minute, "r1's tracked route in BGP", trackedInBGP)
-		waitFor(t, 2*time.Minute, "r2's default route from r1 while the route exists", func() error { return learned("::/0") })
-		if err := r2LacksTracked(); err != nil {
-			t.Error(err)
+		// r1Tracked describes what r1 holds for the tracked prefix: its kernel routes, which
+		// networkd keeps, and its BGP paths, which bgpd keeps.
+		r1Tracked := func() string {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			resp, err := routerOf(conns["r1"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: tracked}))
+			if err != nil {
+				return fmt.Sprintf("r1's routes to %s: %v", tracked, err)
+			}
+			return fmt.Sprintf("r1's kernel routes to %s: %v, BGP paths %v, BGP's error %q", tracked, resp.Msg.Kernel, resp.Msg.Bgp, resp.Msg.BgpError)
 		}
 
+		// r2 holds the unconditional default from the base config when the phase starts, so it
+		// has to lose it while r1 tracks a route it lacks.
 		if out, err := chalkctl(t, nodes["r1"], "default-gone", "apply-config", "r1"); err != nil {
-			t.Fatalf("apply-config of r1 without the tracked route: %v\n%s", err, out)
+			t.Fatalf("apply-config of r1's conditional default without the tracked route: %v\n%s", err, out)
 		}
 		waitFor(t, 2*time.Minute, "r2 to lose the default route", func() error {
 			if learned("::/0") == nil {
-				return errors.New("r2 still routes ::/0 through r1")
+				return fmt.Errorf("r2 still routes ::/0 through r1; %s", r1Tracked())
 			}
 			return nil
 		})
 		if err := trackedInBGP(); err == nil {
-			t.Errorf("r1's BGP still holds %s after the delivery without its route", tracked)
+			t.Errorf("r1's BGP holds %s without its route", tracked)
 		}
 		if err := r2LacksTracked(); err != nil {
 			t.Error(err)
 		}
 		if out, err := chalkctl(t, nodes["r1"], "default-gone", "status", "r1"); err != nil || failedUnit(t, "r1", "default-gone", out) {
 			t.Errorf("status of r1 shows a failed unit: %v\n%s", err, out)
+		}
+
+		if out, err := chalkctl(t, nodes["r1"], "default", "apply-config", "r1"); err != nil {
+			t.Fatalf("apply-config of r1's conditional default with the tracked route: %v\n%s", err, out)
+		}
+		waitFor(t, 2*time.Minute, "r1's tracked route in BGP", trackedInBGP)
+		waitFor(t, 2*time.Minute, "r2's default route from r1 once the route exists", func() error {
+			if err := learned("::/0"); err != nil {
+				return fmt.Errorf("%w; %s", err, r1Tracked())
+			}
+			return nil
+		})
+		if err := r2LacksTracked(); err != nil {
+			t.Error(err)
 		}
 
 		// The base inventory sends the default route whatever r1's table holds.
