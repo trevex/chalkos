@@ -36,6 +36,33 @@ not compare a glob with the names it matches: `eth*` in one zone and `eth0` in a
 the policy whose name sorts first then takes `eth0`'s connections. The zone `local` is the router
 itself and needs no document.
 
+## Put VRFs into zones
+
+On a router with [VRFs](vrfs.md), a zone can hold a whole VRF in `vrfs`. The links that join the
+VRF later belong to the zone too:
+
+```yaml
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: tenant}
+spec: {vrfs: [tenant]}
+```
+
+To split one VRF's links into several zones, name the links in `interfaces` and leave the VRF out
+of `vrfs`. A zone needs `interfaces`, `vrfs` or both, and a VRF is in one zone. Each link is in one
+zone too. The output `router-nftables` refuses a zone that names a link, or a glob that may match
+one, of a VRF that another zone holds. It also refuses an interface or glob that matches a VRF's
+device, such as `ten*` beside the VRF `tenant`:
+
+```text
+FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs
+```
+
+Policies and NAT rules name these zones as any other. A policy between the zones of two VRFs
+forwards only what the VRFs' tables route, and
+[importing routes](vrfs.md#import-routes-from-another-vrf) puts the routes there. A NAT rule's
+`in.interface` and `out.interface` name links, never a VRF's device.
+
 ## Let the LAN reach the WAN
 
 Without a policy between two zones, the router forwards everything. Once one policy goes between
@@ -157,6 +184,8 @@ anything. Each message names the document:
 | --- | --- |
 | `FirewallPolicy lan-dmz names the zone dmz, which no FirewallZone document declares` | Add the zone, or name one that exists. |
 | `the interface eth1 is in more than one FirewallZone, or twice in one; give each interface one zone` | Keep the interface in one zone. |
+| `FirewallZone guest names the VRF guest, which no VRF document declares` | Add the `VRF` document, or fix the name in `vrfs`. |
+| `the VRF tenant is in more than one FirewallZone, or twice in one; give each VRF one zone` | Keep the VRF in one zone, or name its links in the zones instead. |
 | `more than one FirewallPolicy goes from lan to wan; give each pair of zones one policy` | Merge the policies' rules into one. |
 | `FirewallPolicy "wan-local" spec.rules: a rule names an AddressSet that the config does not hold` | Add the `AddressSet`, or fix the name after `set:`. |
 | `NATRule web has addresses of another family than ipv4` | Set `family: ipv6`, or give IPv4 addresses. |

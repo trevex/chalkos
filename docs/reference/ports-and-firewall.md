@@ -134,9 +134,9 @@ no other table of chalkos filters the router's traffic.
 | Port | Protocol | Service | Accepted on |
 | --- | --- | --- | --- |
 | 50000 | TCP | chalkd's node API, mutual TLS | the interfaces of `Router.spec.management.interfaces`, or every interface while it is null; every interface while the node has no rendered ruleset, as in maintenance mode |
-| 179 | TCP | BGP, FRR's bgpd | the interfaces of each `BGPPeer` of `interface` or `interfaces`, matched as `sdifname`, the link a packet came in on, for a peer with `vrf`; and from the address of each of `address` |
+| 179 | TCP | BGP, FRR's bgpd | the interfaces of each `BGPPeer` of `interface` or `interfaces`, matched as `sdifname`, the link a packet came in on, for a peer with `vrf`; and from the address of each of `address`, with the VRF's device as `iifname` for a peer with `vrf` |
 | 3784, 3785 | UDP | BFD, FRR's bfdd: single-hop control and echo | as port 179, for each `BGPPeer` with `bfd` |
-| 4784 | UDP | BFD, FRR's bfdd: multi-hop control | from the address of each `BGPPeer` of `address` with `bfd` |
+| 4784 | UDP | BFD, FRR's bfdd: multi-hop control | from the address of each `BGPPeer` of `address` with `bfd`, as port 179 |
 | 53 | UDP and TCP | DNS, Unbound | from the ranges of the `Resolver`'s `allow` to the addresses of its `listen` |
 
 The table also accepts the loopback interface, established and related connections, ICMP and
@@ -149,7 +149,7 @@ build warns of each one set.
 
 | Table | Owner | Contents |
 | --- | --- | --- |
-| `inet chalkos` | `chalkos-firewall.service` | The `AddressSet` sets, a chain per `FirewallPolicy`, the reverse-path filter, the `input` and `forward` chains and the NAT chains, which the output `router-nftables` renders. |
+| `inet chalkos` | `chalkos-firewall.service` | The `AddressSet` sets, a chain per `FirewallPolicy`, the conntrack zones of the VRFs that have one, the reverse-path filter, the `input` and `forward` chains and the NAT chains, which the output `router-nftables` renders. |
 
 ## Connections a node makes
 

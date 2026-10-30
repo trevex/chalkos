@@ -211,7 +211,9 @@ of `frrvty`, the group of FRR's sockets, and need a reader.
 ## Limits
 
 - FRR announces a network of `BGP.spec.networks` only while the router's table holds a route to
-  it, whatever the policy says.
+  it, whatever the policy says. A VRF's table always holds a default route, the unreachable one
+  that ends it, so the renderer refuses a default route among a VRF instance's networks. A peer
+  family's `defaultOriginate` sends one instead.
 - zebra prefers a route the kernel holds from elsewhere over BGP's path to the same prefix, and
   then installs none of BGP's. A default route that networkd takes from router advertisements on
   an uplink keeps BGP's default route out of the kernel. `ipv6AcceptRA: false` on that `Network`

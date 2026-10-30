@@ -1,6 +1,6 @@
 ---
 title: "VRFs on a router"
-description: "How a router image runs VRFs: management in the default VRF, the units networkd gets, chalkos-vrf, FRR's instances, the firewall and chalkd"
+description: "How a router image runs VRFs: management in the default VRF, the units networkd gets, the unreachable defaults, chalkos-vrf, FRR's instances, the firewall and chalkd"
 ---
 
 # VRFs on a router
@@ -57,7 +57,7 @@ Table=200
 
 It also renders `00-vrf-tenant.network`, which brings the device up, as networkd leaves a device
 without a matching `.network` down. `RequiredForOnline=no` leaves the device out of the node's
-online state:
+online state. Its routes end the VRF's table in unreachable default routes:
 
 ```ini
 [Match]
@@ -65,7 +65,26 @@ Name=tenant
 
 [Link]
 RequiredForOnline=no
+
+[Route]
+Destination=0.0.0.0/0
+Metric=4278198272
+Table=200
+Type=unreachable
+
+[Route]
+Destination=::/0
+Metric=4278198272
+Table=200
+Type=unreachable
 ```
+
+When the VRF's table has no route for a destination, the kernel's lookup goes on to the main
+table. Without these routes, a VRF's traffic would follow the default VRF's routes and
+leave through its links. FRR reads the metric as distance 255, so a default route of BGP or of a
+member's `Network` wins over them. A default route among a VRF instance's `networks` would match
+them at all times, so the output `frr` refuses one and points to a peer family's
+`defaultOriginate` instead.
 
 The `Network` documents of the VRF's links get `VRF=` in a `[Network]` section:
 
@@ -114,6 +133,11 @@ remove a VRF whose `.netdev` went. `chalkos-vrf.service` covers both. It reads t
 of `Kind=vrf` from `/etc/systemd/network`, `/run/systemd/network`, `/usr/local/lib/systemd/network`
 and `/usr/lib/systemd/network`, with the first of a name winning as networkd reads them. It then
 removes each kernel VRF that no file declares with its table.
+
+The unreachable default routes stay in a table after its VRF goes, and a VRF that takes the table
+later would find them there. `chalkos-vrf.service` therefore flushes them from the old table
+first, and deletes the VRF only once they went. A run that fails between the two finds the VRF
+again and flushes once more.
 
 After it removes a VRF, `chalkos-vrf.service` reloads a running networkd, which creates the VRF
 anew with its new table and puts its links back into it. A change of `table` therefore ends the
@@ -201,7 +225,25 @@ iifname "tenant" meta sdifname { "swp*" } udp dport { 3784, 3785 } accept commen
 
 The rule matches the peer's globs against the links of its VRF alone, so a link of another VRF
 whose name the glob matches stays closed. A peer of the default VRF keeps its `iifname` rules,
-which match no VRF's link. A peer of `address` is accepted from that address in any VRF.
+which match no VRF's link.
+
+A peer of `address` with `vrf` is accepted from that address on the VRF's device, so the same
+address in another VRF stays closed:
+
+```text
+iifname "internet" ip saddr { 203.0.113.254/32 } tcp dport { 179 } accept comment "BGPPeer transit"
+```
+
+The rule of a peer of `address` in the default VRF names no interface, as on a router without
+VRFs. No socket of the default VRF takes a connection from a VRF's link, so bgpd answers it in
+the default VRF alone.
+
+## Zones and conntrack zones take VRFs
+
+A `FirewallZone` holds whole VRFs in `vrfs` or single links of a VRF in `interfaces`. A VRF with
+`conntrackZone` keeps its connections in a conntrack zone of its own, and the rules refuse an
+import into or out of such a VRF. [The router's firewall](firewall.md#zones-of-vrfs) shows how
+the ruleset matches them.
 
 ## chalkd reads the VRFs' state
 
@@ -220,7 +262,15 @@ The diagnostics `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers` take 
 
 ## Limits
 
-- The firewall's zones and NAT rules, NAT64 and the resolver do not take VRFs into account.
+- NAT64 and the resolver do not take VRFs into account yet, and the `Resolver`'s port 53 opens
+  without regard to VRFs.
+- The kernel's rule for the local table comes before the VRFs' tables. A VRF's packet to an
+  address of a default VRF's link is delivered to the router, and the kernel answers it, such as
+  with an echo reply or a TCP reset. chalkd stays out of reach, as no socket of the default VRF
+  takes it. The router's IPv6 echo reply to an address that a VRF and the default VRF both hold
+  leaves through the default VRF.
+- No protected rule covers the router's own traffic to its addresses in a VRF. The VRF's
+  policies to `local` decide it.
 - The rules read interface names and globs without knowing which links networkd matches. The
   renderers compare them with the names in the `Network` documents, not with the links the node
   has.
@@ -233,4 +283,4 @@ The diagnostics `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers` take 
 - [Separate routing with VRFs](../../router/vrfs.md) configures VRFs.
 - [BGP on a router](bgp.md): FRR's config, the passwords and the reload.
 - [How a router works](overview.md): the layer's outputs and the boot order.
-- [The router's firewall](firewall.md): the input chain.
+- [The router's firewall](firewall.md): the input chain, zones of VRFs and conntrack zones.

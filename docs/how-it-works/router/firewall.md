@@ -1,6 +1,6 @@
 ---
 title: "The router's firewall"
-description: "The nftables table of a router image: the protected rules, chalkd's port, zones and policies, NAT, the reverse-path filter and the fallback ruleset"
+description: "The nftables table of a router image: the protected rules, chalkd's port, zones and policies, NAT, zones of VRFs, conntrack zones, the reverse-path filter and the fallback ruleset"
 ---
 
 # The router's firewall
@@ -33,8 +33,8 @@ It holds these rules, in order:
 | --- | --- |
 | Protected | The loopback interface; established and related connections, after conntrack's invalid packets are dropped; ICMPv6 errors, echo requests, neighbour discovery, router solicitations and advertisements and multicast listener discovery; ICMP errors and echo requests; DHCPv6 replies from the server port to the client port of a link-local address. |
 | chalkd | TCP port 50000 on the interfaces of `Router.spec.management.interfaces`, or on every interface while it is null. |
-| Services | The ports of the router's own services, from the interfaces and sources their documents name: BGP's TCP port 179 of each `BGPPeer` and, for each with `bfd`, BFD's UDP ports 3784 and 3785, from its interfaces, matched as `sdifname` for a peer with `vrf`, or its address, and 4784 from its address; DNS's UDP and TCP port 53 from the `Resolver`'s `allow` to its `listen`. |
-| Policies to `local` | A jump to the chain of each `FirewallPolicy` whose `to` is `local`, for the interfaces of its `from` zone. |
+| Services | The ports of the router's own services, from the interfaces and sources their documents name: BGP's TCP port 179 of each `BGPPeer` and, for each with `bfd`, BFD's UDP ports 3784 and 3785, from its interfaces, matched as `sdifname` for a peer with `vrf`, or from its address, with its VRF's device as `iifname` for a peer with `vrf`, and 4784 from its address; DNS's UDP and TCP port 53 from the `Resolver`'s `allow` to its `listen`. |
+| Policies to `local` | A jump to the chain of each `FirewallPolicy` whose `to` is `local`, for the interfaces and VRFs of its `from` zone. |
 
 [BGP on a router](bgp.md#the-firewall-accepts-each-peers-ports) shows the rules of the `BGPPeer`
 documents, and
@@ -80,7 +80,8 @@ through.
 A `FirewallZone` names interfaces, by name or by a glob, a prefix followed by `*`, the one
 wildcard nftables matches. The zone `local` is the router itself and has no document. A rule
 refuses an interface or glob that two zones name as written. It does not compare globs with
-names, so `eth*` in one zone and `eth0` in another pass.
+names, so `eth*` in one zone and `eth0` in another pass. A zone may also hold VRFs, as
+[Zones of VRFs](#zones-of-vrfs) describes.
 
 A `FirewallPolicy` goes from a zone to another zone, to the same zone, or to `local`. Its rules
 match in order, and the first that matches decides. A connection no rule matches gets the policy's
@@ -130,6 +131,62 @@ connections first.
 [NAT64 and DNS64 on a router](nat64-and-dns.md#translated-connections-bypass-the-firewalls-nat)
 describes them.
 
+## Zones of VRFs
+
+nftables sees a packet from a VRF's link differently in each hook. The input and forward hooks
+name the VRF's device as `iifname` and the link as `sdifname`. Prerouting sees the packet twice:
+first with the link as `iifname`, the pass that decides its connection and its translation, then
+with the VRF's device. Forward's `oifname` and postrouting name the link that the packet leaves
+through. `sdifname` exists in the input and forward hooks alone. The renderer therefore matches a
+zone in three ways:
+
+| Where | A link of no VRF | A link of a VRF, named in `interfaces` | A VRF of `vrfs` |
+| --- | --- | --- | --- |
+| Input and forward, from the zone | `iifname` | `meta sdifname` | `iifname` of the VRF's device |
+| Forward, to the zone; NAT; conntrack zones | the link | the link | the VRF's links |
+
+A VRF's links are the interfaces of its document and the `Name=` words of the `Network`
+documents that give `VRF=` themselves. nftables matches names and a prefix followed by `*`. When a
+zone or a conntrack zone needs a VRF's links, the renderer refuses a `Name=` word of another form,
+such as `lab[12]`. The VRF example renders these jumps:
+
+```text
+iifname { "internet" } jump policy-internet-local
+meta sdifname { "eth3" } oifname { "eth4" } jump policy-guest-out
+iifname { "tenant" } oifname { "eth1" } jump policy-tenant-internet
+```
+
+A `NATRule` translates in prerouting and postrouting, which see links alone, so the renderer
+refuses a NAT rule's interface that matches a VRF's device. It refuses the same in a zone's
+`interfaces`, and in `Router.spec.management.interfaces`, as chalkd answers in the default VRF
+alone. A config without VRFs renders as it did before VRFs.
+
+## Conntrack zones
+
+A VRF with `conntrackZone` adds two chains at the raw priority, before conntrack sees a packet.
+For the VRF `guest` of the example:
+
+```text
+chain ct-prerouting {
+	type filter hook prerouting priority raw; policy accept;
+	iifname { "eth3", "eth4" } ct zone set 1 comment "VRF guest"
+}
+chain ct-output {
+	type filter hook output priority raw; policy accept;
+	oifname { "eth3", "eth4" } ct zone set 1 comment "VRF guest"
+}
+```
+
+The chains match the VRF's links, as prerouting's first pass, the one with the link,
+decides the packet's connection. In output, the router's own packet in a VRF passes first with
+the VRF's device, untracked, and then with the link. Each VRF gets a rule of its own, as an
+nftables map refuses keys whose globs overlap. A VRF with a zone but no links renders no rule, and
+a router whose VRFs have no zone renders neither chain.
+
+conntrack looks a packet's connection up in the packet's zone. Giving a VRF a zone, or changing it,
+therefore drops the VRF's established and translated connections: their next packets belong to
+another zone, where conntrack has no entry for them.
+
 ## The reverse-path filter
 
 `Router.spec.rpFilter` adds a chain on the prerouting hook. It drops a packet whose source the
@@ -138,6 +195,11 @@ through the interface the packet came in on. `off` renders no chain. DHCPv4 betw
 passes, as with NixOS's own filter on other images. The kernel's route lookup passes ICMPv6 from
 the unspecified address `::`, so duplicate address detection and multicast listener reports pass
 as well. The chain covers both families, so the kernel's IPv4 filter stays off.
+
+For a packet from a VRF's link, both modes look the source up in the VRF's table. That table ends
+in unreachable default routes, so `loose` drops a source that only the default VRF routes. Without
+them the lookup would go on to the main table and find a route there.
+[VRFs on a router](vrfs.md#the-output-networkd-renders-the-vrfs) shows the routes.
 
 ## The fallback ruleset
 
@@ -160,6 +222,13 @@ unit, which loads the new one.
 - With policies between zones, conntrack drops the packets it marks invalid, such as the middle of
   a TCP connection whose start took another router.
 - The router's own outgoing traffic is accepted. A policy cannot come from `local`.
+- No protected rule covers the router's own connections to its addresses in a VRF. They reach the
+  input chain as connections from the VRF's links: IPv4 with the VRF's device as `sdifname`,
+  IPv6 with the link that holds the address. The policies to `local` decide them.
+- The kernel's rule for the local table comes before the VRFs' tables. A packet from a VRF's link
+  to an address of a default VRF's link reaches the input chain with the VRF's device as
+  `iifname`, and the kernel answers it, such as with an echo reply or a TCP reset.
+- The `Resolver`'s port 53 opens without regard to VRFs.
 - The policies do not filter the connections a NAT64 translates.
 - A `dnat` rule that matches an address and ports of a NAT64's pool takes the replies of its
   connections before Jool does.

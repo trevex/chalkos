@@ -108,6 +108,22 @@ that one `Network` may match belong to the same VRF, or to none. `30-tenant` mat
 A `Network` may set `network.vrf` itself, for a VRF of a `NetDev` of `kind: vrf` that you write
 yourself. It may not name another VRF than the `VRF` document that holds its links.
 
+Each VRF's table ends in unreachable default routes of both families. The router drops a packet
+that the VRF's table has no route for, so the packet never follows the default VRF's routes. A
+default route of BGP or of a member's `Network` takes precedence over them.
+`chalkctl node routes --vrf` lists them as routes of the type `unreachable` and the protocol
+`static`:
+
+```sh
+chalkctl node routes r1 --vrf tenant --protocol static --secrets secrets.age
+```
+
+```text
+DESTINATION  TYPE         PROTOCOL  TABLE  METRIC      NEXT HOPS
+0.0.0.0/0    unreachable  static    200    4278198272  -
+::/0         unreachable  static    200    4278198272  lo
+```
+
 ## Run BGP in a VRF
 
 A router has one `BGP` document per VRF. `spec.vrf` names the VRF, and a document without it
@@ -141,7 +157,15 @@ spec:
 ```
 
 Each instance has its own AS number, router ID, multipath, BFD timers, graceful restart and
-networks. It announces a network while its VRF's table holds a route to it.
+networks. It announces a network while its VRF's table holds a route to it. The unreachable
+default routes would match a default route among a VRF instance's `networks` at all times, so the
+output `frr` refuses one:
+
+```text
+BGP tenant: network ::/0 of VRF tenant would always be announced, as the VRF's table ends in an unreachable default route; use a peer family's defaultOriginate
+```
+
+Send a VRF's peers a default route with `defaultOriginate` in the peer's family instead.
 
 A `BGPPeer` names its VRF the same way:
 
@@ -171,7 +195,7 @@ A peer's VRF needs a `BGP` document. A peer's `interfaces` stand for links of it
 in `tenant` runs a session on `swp1` and one on `swp2`. In the default VRF, a glob matches the
 links that no VRF holds. A peer's `interface` is a link of its own VRF, and a link that no
 `Network` names is in the default VRF. The firewall accepts the BGP and BFD ports of a VRF's peer
-on the links of that VRF.
+on the links of that VRF, and those of a peer of `address` from that address in its VRF alone.
 
 ## Import routes from another VRF
 
@@ -223,8 +247,89 @@ of that family. An instance imports no routes of its own VRF, and each VRF it na
 document. Only BGP's routes are imported. The static routes of a VRF's `Network` documents stay in
 that VRF.
 
+An import carries routes one way. A host of the importing VRF reaches the other VRF's networks
+through it, but the replies need a route back, so the other VRF imports the first one's routes as
+well. [Filter and translate a VRF's traffic](#filter-and-translate-a-vrfs-traffic) gives
+`internet` an import of `tenant`'s IPv4 routes for this reason.
+
 A `RoutingPolicy` with `prepend` repeats the AS number of the instances that use it, so instances
 of different AS numbers cannot share it.
+
+## Filter and translate a VRF's traffic
+
+A `FirewallZone` holds whole VRFs or single links of a VRF, as
+[Filter and translate traffic](firewall-and-nat.md#put-vrfs-into-zones) describes. The tenant
+reaches the internet through the VRF `internet`, which masquerades its IPv4. `internet` imports
+`tenant`'s IPv4 routes, so the replies find their way back:
+
+```yaml
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: internet}
+spec:
+  vrf: internet
+  asn: 64512
+  routerID: 192.0.2.1
+  networks: [{prefix: 198.51.100.0/24}]
+  import:
+    ipv4: {vrfs: [tenant]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: internet}
+spec: {vrfs: [internet]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: tenant}
+spec: {vrfs: [tenant]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: tenant-internet}
+spec: {from: tenant, to: internet, default: accept}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: internet-local}
+spec: {from: internet, to: local}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NATRule
+metadata: {name: internet-out}
+spec:
+  type: masquerade
+  out: {zone: internet}
+```
+
+`internet-local` drops every connection from the internet to the router, apart from what the
+firewall accepts before the policies, such as the transit's BGP session.
+
+### Keep a VRF's connections apart
+
+conntrack tells connections apart by their addresses and ports. Two VRFs that use the same
+addresses therefore share connections. A host of one VRF could then pass the firewall as part of
+a connection that a host of the other VRF opened. A conntrack zone of its own keeps a VRF's
+connections, and their translations, apart:
+
+```yaml
+apiVersion: router.chalkos.dev/v1alpha1
+kind: VRF
+metadata: {name: guest}
+spec: {table: 300, interfaces: [eth3, eth4], conntrackZone: 1}
+```
+
+A zone is a number from 1 to 65535 that no other VRF uses. The default VRF and every VRF without
+a zone share zone 0. Giving a VRF a `conntrackZone`, or changing it, drops the VRF's established
+and translated connections, as their packets then belong to another zone. Deliver the change when
+the VRF's hosts can reconnect.
+
+A VRF with a zone neither imports routes from another VRF nor gives its routes to one, because
+the replies of leaked connections would land in another zone. The rules refuse both:
+
+```text
+VRF guest: a VRF with a conntrack zone leaks no routes through a BGP import, as its connections would answer in another zone; drop the zone or the import
+```
 
 ## Check that it worked
 
@@ -295,16 +400,17 @@ chalkctl: r1: the config is refused: the config drops the default VRF's BGP docu
 ## Fix a refused delivery
 
 The rules read the documents' names and globs without knowing which links networkd matches. The
-renderers of the outputs `networkd` and `frr` check the rest against the `Network` documents when the router
-renders its config, before the delivery changes anything. `chalkctl validate` does not run them.
-A renderer's refusal fails the delivery with a message for each output that refused, such as:
+renderers of the outputs `networkd`, `frr` and `router-nftables` check the rest against the
+`Network` documents when the router renders its config, before the delivery changes anything.
+`chalkctl validate` does not run them. A renderer's refusal fails the delivery with a message for
+each output that refused, such as:
 
 ```text
 output networkd: its renderer failed (exit 1); see the node's journal
 ```
 
 `chalkctl logs r1` shows the reason on a line that starts with `chalkos-render:`. The renderers
-refuse what networkd or FRR would apply otherwise than the documents say:
+refuse what networkd, FRR or nftables would apply otherwise than the documents say:
 
 | Message | Fix |
 | --- | --- |
@@ -316,13 +422,25 @@ refuse what networkd or FRR would apply otherwise than the documents say:
 | `Network 20-x: Name= holds "eth[0", which is no glob the renderer can match as networkd does` | Write `Name=` without backslashes and bracket expressions. |
 | `BGPPeer leaves: interfaces: swp* matches no link of VRF default, only links of other VRFs` | Give the peer the VRF of its links. |
 | `BGPPeer x: interface tenant is the device of VRF tenant` | Name the VRF's links, not its device. |
+| `FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs` | Put the VRF into the zone's `vrfs`, or name its links. |
+| `FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone` | Take the VRF out of the other zone's `vrfs` and name its links in each zone, or drop the link here. |
+| `FirewallZone tenant: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *` | Write the `Network`'s `Name=` as names or a prefix and `*`. |
+| `NATRule n: inter* matches internet, the device of VRF internet; name its links or a zone of the VRF` | Name the VRF's links, or a zone that holds the VRF. |
+| `Router: the management interface tenant matches tenant, the device of VRF tenant; chalkd is reachable in the default VRF only` | Name links of the default VRF in `management.interfaces`. |
 
 ## Limits
 
-- The firewall's zones and NAT rules, NAT64 and the resolver do not take VRFs into account. The
-  kernel reports a VRF's device as the incoming interface of a packet from the VRF's links, so a
-  `FirewallZone` that names a link a VRF holds matches none of that link's traffic. Its policies
-  then accept nothing from the link, and the chains' defaults decide.
+- NAT64 and the resolver do not take VRFs into account yet. A `Resolver` has no VRF, and the
+  firewall opens its port 53 as on a router without VRFs.
+- The kernel looks up the router's own addresses before a VRF's table. A VRF's hosts therefore
+  get the kernel's answers from the addresses of the default VRF's links, such as echo replies
+  and TCP resets. No socket of the default VRF takes their connections, so chalkd stays out of
+  their reach. The router's IPv6 echo reply to an address that a VRF and the default VRF both
+  hold leaves through the default VRF.
+- No protected rule covers the router's own connections to its addresses in a VRF. They reach the
+  input chain as connections from the VRF's links, and the VRF's policies to `local` decide them.
+- A VRF instance cannot announce a default route from its `networks`. Use a peer family's
+  `defaultOriginate`.
 - networkd also matches `Name=` against a link's alternative names. The documents do not give
   them, so the renderer cannot tell which link a `Network` matches by an alternative name. Name
   links by their interface names.
