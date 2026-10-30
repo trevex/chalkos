@@ -85,8 +85,10 @@ spec:
 router's own. With `bfd`, BFD checks the link at the timers of the `BGP` document and ends the
 session when it finds the link down. With the default timers of 300 ms and a multiplier of 3 at
 both ends, that takes about 900 ms. `defaultOriginate` sends the leaves a default route whatever
-the router's own table holds. `extendedNextHop` carries IPv4 routes over IPv6 sessions, for a
-peer whose `families` gives `ipv4` too.
+the router's own table holds, unless `defaultOriginateWhen` says when, as
+[Send a default only while a route exists](#send-a-default-only-while-a-route-exists) shows.
+`extendedNextHop` carries IPv4 routes over IPv6 sessions, for a peer whose `families` gives
+`ipv4` too.
 
 `interfaces` and `interface` find their links in different ways:
 
@@ -239,6 +241,81 @@ once. A term that rejects sets nothing.
 
 The order of terms and entries gives their sequence numbers in FRR's config. A term or entry put
 before others renumbers those after it, and the reload rewrites them.
+
+## Send a default only while a route exists
+
+A leaf should get the edge's default route only while the edge itself has a way out. Here the
+way out is the IPv6 default route that the WAN's router advertisements give the edge. A
+`PrefixList` matches that route, and the fabric peer's family names it in
+`defaultOriginateWhen`:
+
+```yaml
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PrefixList
+metadata: {name: wan-default}
+spec:
+  family: ipv6
+  entries: [{prefix: "::/0"}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: fabric}
+spec:
+  interfaces: [eth1, eth2]
+  remoteAS: external
+  bfd: true
+  extendedNextHop: true
+  password: {secretRef: {name: bgp, key: fabric}}
+  description: the fabric's leaves
+  families:
+    ipv6: {defaultOriginate: true, defaultOriginateWhen: wan-default, import: from-fabric, export: to-fabric}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-wan}
+spec:
+  match: {name: eth0}
+  network: {address: [203.0.113.1/24], ipv6AcceptRA: true}
+```
+
+The router sends the default route while the peer's VRF holds a route that the list matches. The
+route can be one BGP learned, a kernel route or the prefix of a link that is up. Kernel routes
+include those from DHCP and router advertisements, a `Network`'s `[Route]` and a route someone
+added by hand. Blackhole and unreachable routes do not count. That includes the unreachable
+default that ends every VRF's table, so a VRF's peer can track `::/0` too.
+
+The router does not announce the routes it tracks. The list decides when the default route goes
+out, and the peer's policies still decide which other routes do. The default route follows the
+tracked route within about 5 seconds, when it appears and when it goes.
+
+The list is of the family of the block that names it. The rules refuse a list of the other
+family, a list the config lacks and `defaultOriginateWhen` without `defaultOriginate: true`:
+
+```text
+chalkctl: r1: the config is refused: BGPPeer "fabric" spec.families: the ipv6 family names defaultOriginateWhen without defaultOriginate: true; defaultOriginateWhen says when the router sends the default route that defaultOriginate originates
+```
+
+`chalkctl node routes` on the edge lists the tracked route as a path of its own, with the
+communities `noAdvertise` and `4200000000:0:1`. Among the other IPv6 routes, it shows:
+
+```sh
+chalkctl node routes r1 ::/0 --secrets secrets.age
+```
+
+```text
+DESTINATION  TYPE     PROTOCOL  TABLE  METRIC  NEXT HOPS
+::/0         unicast  ra        254    1024    fe80::1 on eth0
+
+BGP PREFIX   BEST  AS PATH  PEER   NEXT HOPS  LOCAL PREF  MED   COMMUNITIES
+::/0         *     -        local  fe80::1    -           1024  noAdvertise 4200000000:0:1
+```
+
+`chalkctl node routes` on a leaf shows `::/0` from the edge while the WAN gives the edge its
+default route, and none from that edge after the route goes.
+
+Keep the list narrow. A broad list matches the router's other routes too and changes how BGP
+treats them, as the
+[limits of BGP on a router](../how-it-works/router/bgp.md#limits) describe.
 
 ## Deliver and check the sessions
 

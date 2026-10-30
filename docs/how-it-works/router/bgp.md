@@ -1,6 +1,6 @@
 ---
 title: "BGP on a router"
-description: "How a router image runs BGP: FRR, the config the output frr renders from the BGP kinds, the passwords, the reload, the boot order, the firewall's ports and the state chalkd reads"
+description: "How a router image runs BGP: FRR, the config the output frr renders from the BGP kinds, conditional default routes, the passwords, the reload, the boot order, the firewall's ports and the state chalkd reads"
 ---
 
 # BGP on a router
@@ -73,6 +73,7 @@ The config follows these rules:
 | `BGP` | `router bgp <asn>`, or `router bgp <asn> vrf <name>` for a document with `vrf`, with `frr defaults traditional` and every count and timer of the document written out, so FRR's defaults decide nothing the document sets. Both address families list the document's networks of the family and its `maximum-paths`. |
 | `BGPPeer` | A peer group `peer-<name>` in the block of its VRF's instance, and a neighbour in it for the peer's address, its interface or each link its `interfaces` match. |
 | A peer's family | `activate`, and a route-map in each direction: the family's policy, or `accept-all` without one. FRR's `ebgp-requires-policy` then always holds. |
+| A peer's family with `defaultOriginateWhen` | `default-originate route-map do-<list>`, and in its instance's address family `redistribute kernel` and `redistribute connected` through `track-<vrf>-<family>`. |
 | `PrefixList` | `ip prefix-list` or `ipv6 prefix-list pl-<name>`, the entries at sequence numbers 5, 10, 15 and on. |
 | `CommunityList` | `bgp community-list standard cl-<name>`, or `bgp large-community-list` for large communities. |
 | `RoutingPolicy` | `route-map rp-<name>`, the terms at sequence numbers 10, 20, 30 and on, and the default at 65535. A term's AS path and the communities it removes get lists of their own, `asp-<policy>-<seq>` and `rm-<policy>-<seq>`. |
@@ -99,6 +100,83 @@ session. A glob expands over the links of the peer's VRF alone, as
 A peer's single `interface` renders as it is written, whether or not a `Network` names it, and
 must be a link of the peer's VRF. A name that reads as an address, such as `fe80::1`, is refused
 in both, because FRR could not tell the interface from a neighbour's address. Two peers that name one session are refused too.
+
+## A default route while a route exists
+
+A peer family's `defaultOriginateWhen` names a PrefixList, and the router sends the peer its
+default route while the peer's VRF holds a route that the list matches. The edge of
+[Route with BGP](../../router/bgp.md#send-a-default-only-while-a-route-exists) tracks the WAN's
+IPv6 default route and renders, in part:
+
+```text
+ipv6 prefix-list pl-wan-default seq 5 permit ::/0
+!
+route-map do-wan-default permit 10
+ match ipv6 address prefix-list pl-wan-default
+exit
+route-map track-default-ipv6 deny 5
+ match ipv6 next-hop type blackhole
+exit
+route-map track-default-ipv6 permit 10
+ match ipv6 address prefix-list pl-wan-default
+ set community no-advertise additive
+ set distance 255
+ set large-community 4200000000:0:1 additive
+exit
+!
+router bgp 64512
+ address-family ipv6 unicast
+  redistribute kernel route-map track-default-ipv6
+  redistribute connected route-map track-default-ipv6
+  neighbor peer-fabric default-originate route-map do-wan-default
+ exit-address-family
+exit
+```
+
+bgpd's `default-originate route-map` sends the default route while a path in the instance's BGP
+table passes the route-map, and `do-<list>` matches the list. zebra's kernel and connected
+routes reach that table only through redistribution. The instance therefore redistributes them
+through `track-<vrf>-<family>`, where `<vrf>` is `default` for the default VRF. Its first entry
+denies blackhole routes. Its other entries permit the routes of each list its peers track and
+set three attributes on them:
+
+- `no-advertise` keeps them from every peer.
+- `distance 255` keeps a path a peer sends for the same prefix the best path. bgpd compares the
+  administrative distance before weight and local preference. Without it, the redistributed path,
+  of distance 0, would win, and the peer's path would no longer be installed, announced or
+  leaked.
+- The large community `4200000000:0:1`, of the private-use AS 4200000000, marks them alike on
+  every router.
+
+The VRF tables end in unreachable default routes of the kernel metric 4278198272. zebra reads
+that metric as distance 255 and metric 8192, so a match on the metric would miss them. The
+route-map matches the next hop's type instead: zebra treats unreachable, prohibit and blackhole
+routes alike as blackhole next hops.
+
+A tracked route that another VRF's instance imports would land in that VRF's kernel table, with
+its next hop in this one. An import from a VRF that tracks routes of the family goes through
+`leak-<vrf>-<family>`. It denies `chalkos-tracked`, the large-community list of
+`4200000000:0:1`, and then calls the import's policy:
+
+```text
+bgp large-community-list standard chalkos-tracked seq 5 permit 4200000000:0:1
+!
+route-map leak-default-ipv6 deny 5
+ match large-community chalkos-tracked
+exit
+route-map leak-default-ipv6 permit 10
+ call rp-from-tenant
+exit
+```
+
+Here the default VRF's instance imports the VRF `tenant`, which tracks IPv6 routes, with the
+policy `from-tenant`. An import without a policy gets `permit 10` alone. Imports from VRFs that
+track nothing of the family use no leak route-map.
+
+bgpd checks the condition every 5 seconds, FRR's `bgp default-originate timer`. The default route
+therefore follows a tracked route within about 5 seconds. A delivery that changes the peer's
+family withdraws the default route at once, and the next check sends it again if the route
+exists.
 
 ## The check parses the config, and the renderer checks the rest
 
@@ -226,6 +304,9 @@ of `frrvty`, the group of FRR's sockets, and need a reader.
   `Network` that matches links by anything but `Name=` names none.
 - The AS number rule compares a `BGP` document with the running one of the same name. A `BGP`
   document of another name replaces the old one, AS number included.
+- The condition of `defaultOriginateWhen` counts BGP's paths too. A list that matches a prefix of
+  the instance's `networks`, a peer's route or an imported route holds while BGP holds that path.
+- Blackhole, unreachable and prohibit routes never satisfy `defaultOriginateWhen`.
 
 ## Related pages
 
