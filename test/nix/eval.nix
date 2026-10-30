@@ -2601,6 +2601,21 @@ lib.runTests {
             networkNamespace = "ns-{name}";
           };
         };
+        # A parameter fills a namespace's name with one character at least.
+        namespaceLongest = refusals {
+          in-namespace = plain // {
+            command = [ ip ];
+            networkNamespace = "${lib.strings.replicate 254 "a"}{name}";
+            parameters.name = table;
+          };
+        };
+        namespaceLong = refusals {
+          in-namespace = plain // {
+            command = [ ip ];
+            networkNamespace = "${lib.strings.replicate 255 "a"}{name}";
+            parameters.name = table;
+          };
+        };
       };
       expected = {
         accepted = [ ];
@@ -2635,6 +2650,10 @@ lib.runTests {
         ];
         namespaceParameter = [
           "chalkos.diagnostics.in-namespace: the command or networkNamespace names {name}, which is no parameter"
+        ];
+        namespaceLongest = [ ];
+        namespaceLong = [
+          "chalkos.diagnostics.in-namespace.networkNamespace: it is longer than 255 characters, each parameter counted as one"
         ];
       };
     };

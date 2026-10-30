@@ -22,6 +22,12 @@ let
   # The form of a diagnostic's network namespace: a name below /run/netns of letters, digits, _, .
   # and -, and placeholders, that starts with neither . nor -, so it never leaves the directory.
   namespaceForm = "([A-Za-z0-9_]|${placeholder})([A-Za-z0-9_.-]|${placeholder})*";
+  # The longest name of a file below /run/netns, which a filled network namespace takes.
+  maxNamespace = 255;
+  # The network namespace ns with each parameter filled by one character, as chalkd checks its
+  # length.
+  filled =
+    ns: lib.concatMapStrings (m: if lib.isList m then "x" else m) (builtins.split placeholder ns);
   # A timeout in seconds, of the form the option takes.
   seconds =
     t:
@@ -151,7 +157,7 @@ let
         type = types.nullOr (types.strMatching namespaceForm);
         default = null;
         example = "blue-{name}";
-        description = "Network namespace the run joins, by its name below `/run/netns`, which may name parameters as `command` does; null runs it in the host's network. The name holds letters, digits, `_`, `.` and `-` and starts with neither `.` nor `-`; chalkd refuses a call whose values fill it to anything else, and fails one whose namespace does not exist before the command runs. A parameter it names is not `optional`.";
+        description = "Network namespace the run joins, by its name below `/run/netns`, which may name parameters as `command` does; null runs it in the host's network. The name holds letters, digits, `_`, `.` and `-`, starts with neither `.` nor `-`, and fills to 255 characters at most; the build counts each parameter as one character, and chalkd refuses a call whose values fill it to anything else, and fails one whose namespace does not exist before the command runs. A parameter it names is not `optional`.";
       };
     };
   };
@@ -181,6 +187,10 @@ let
       lib.stringLength name > maxName
     ) "${where}: the name is longer than ${toString maxName} characters"
     ++ lib.optional (seconds d.timeout > 600) "${where}.timeout: ${d.timeout} is longer than 10m"
+    ++
+      lib.optional
+        (d.networkNamespace != null && lib.stringLength (filled d.networkNamespace) > maxNamespace)
+        "${where}.networkNamespace: it is longer than ${toString maxNamespace} characters, each parameter counted as one"
     ++ lib.optional (
       !lib.hasPrefix "${builtins.storeDir}/" program
     ) "${where}.command: its first argument, ${program}, is no program of the image's store"
