@@ -25,14 +25,14 @@ let
       cel.documents c apiVersions.router "Resolver"
     }, size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == null)))";
   # Starts the resolver of each VRF with a rendered config that does not run, reloads those that
-  # run and stops those without a config; with the argument stop, it stops all of them. A VRF
-  # networkd created anew, whose device systemd saw after the resolver started, stops the resolver
-  # bound to the old device, maybe only after the script looked: such a resolver restarts, and one
-  # that no longer runs after the reloads starts. networkd creates a VRF's device without waiting,
-  # and a unit bound to a device that never comes waits for it until the device's job times out,
-  # so the script waits 30 seconds at most for the devices and 30 more for the resolvers it
-  # started, and fails naming those that are not running then; a start still queued goes on once
-  # the device appears. systemctl and systemd-escape come from the unit's PATH.
+  # run and stops those without a config; with the argument stop, it stops all of them. systemd
+  # binds a resolver's sockets to the index its VRF's device had when the resolver started, which
+  # the resolver keeps in /run/unbound-<vrf>/ifindex. A VRF that chalkos-vrf removed and networkd
+  # created anew has a new index, or no device yet, so its resolver restarts on the new device. A
+  # unit that requires a device that never comes waits for it until the device's job times out, so
+  # the script waits 30 seconds at most for the devices and 30 more for the resolvers it started,
+  # and fails naming those that are not running then; a start still queued goes on once the device
+  # appears. systemctl and systemd-escape come from the unit's PATH.
   reconcile = pkgs.writeShellApplication {
     name = "chalkos-resolvers";
     runtimeInputs = [ pkgs.coreutils ];
@@ -40,7 +40,6 @@ let
       dir=${dir}
       declare -A want=()
       failed=()
-      reloaded=()
       started=()
       if [[ ''${1:-} != stop ]]; then
         shopt -s nullglob
@@ -75,21 +74,12 @@ let
           launch "$vrf" "$unit" start
           continue
         fi
-        device=sys-subsystem-net-devices-$(systemd-escape "$vrf").device
-        if [[ $(prop "$device" ActiveState) != active ]] ||
-          (($(prop "$device" ActiveEnterTimestampMonotonic) > $(prop "$unit" ActiveEnterTimestampMonotonic))); then
+        ifindex=$(cat "/sys/class/net/$vrf/ifindex" 2>/dev/null) || ifindex=
+        if [[ -z $ifindex || $ifindex != "$(cat "/run/unbound-$vrf/ifindex" 2>/dev/null)" ]]; then
           launch "$vrf" "$unit" restart
           continue
         fi
-        if systemctl reload "$unit"; then
-          reloaded+=("$vrf")
-        else
-          failed+=("reload $unit")
-        fi
-      done
-      for vrf in "''${reloaded[@]}"; do
-        unit=$(systemd-escape --template=unbound@.service "$vrf")
-        systemctl is-active --quiet "$unit" || launch "$vrf" "$unit" start
+        systemctl reload "$unit" || failed+=("reload $unit")
       done
       deadline=$((SECONDS + 30))
       for unit in "''${started[@]}"; do
@@ -118,6 +108,13 @@ let
       fi
     '';
   };
+  # Keeps the index of the device of the VRF $1 in the resolver's runtime directory, and fails
+  # while the VRF has no device.
+  recordDevice = pkgs.writeShellScript "unbound-vrf-device" ''
+    set -e
+    read -r ifindex <"/sys/class/net/$1/ifindex"
+    echo "$ifindex" >"$RUNTIME_DIRECTORY/ifindex"
+  '';
   # RFC 8880's answer for ipv4only.arpa, which a DNS64 resolver gives itself; the dns64 module
   # synthesizes its AAAA records from these A records.
   ipv4only = pkgs.writeText "ipv4only.arpa.zone" ''
@@ -194,7 +191,10 @@ in
       };
     };
     # A VRF's resolver: Unbound with the default VRF's hardening, whose sockets systemd binds to the
-    # VRF's device, as ip vrf exec would, and which stops when the device goes.
+    # VRF's device, as ip vrf exec would. systemd binds them to the index the device has when the
+    # unit starts, which the unit keeps for chalkos-resolvers. A device that goes and comes back
+    # stops nothing: chalkos-resolvers restarts the resolver once the device is back. systemd may
+    # see the old device go only after that, and BindsTo= would then stop the restarted resolver.
     systemd.services."unbound@" = {
       description = "Unbound of the VRF %I";
       after = [
@@ -204,16 +204,20 @@ in
         "chalkos-nat64.service"
       ];
       unitConfig = {
-        BindsTo = "sys-subsystem-net-devices-%i.device";
+        Requires = "sys-subsystem-net-devices-%i.device";
         ConditionPathExists = "${dir}/unbound-%I.conf";
       };
       # The default VRF's unit prepares nothing a VRF's needs.
       serviceConfig = removeAttrs config.systemd.services.unbound.serviceConfig [ "ExecStartPre" ] // {
         ExecStart = "${unbound}/bin/unbound -p -d -c ${dir}/unbound-%I.conf";
         ExecReload = "${unbound}/bin/unbound-control -c ${dir}/unbound-%I.conf reload_keep_cache";
+        # systemd starts a unit whose interface it cannot find without binding its sockets: this
+        # unit fails instead.
+        ExecStartPre = "${recordDevice} %I";
         BindNetworkInterface = "%I";
         # unbound-control reaches it through the socket the rendered config names in
-        # /run/unbound-<vrf>, which root, and so chalkd, may enter.
+        # /run/unbound-<vrf>, which root, and so chalkd, may enter, as may the group unbound, and
+        # so chalkos-resolvers, which reads the device's index there.
         RuntimeDirectory = "unbound-%I";
         RuntimeDirectoryMode = "0750";
       };
@@ -224,6 +228,7 @@ in
       description = "Run the resolvers of the router's VRFs";
       after = [
         "chalkos-config.service"
+        "chalkos-vrf.service"
         "systemd-networkd.service"
         "chalkos-firewall.service"
         "chalkos-nat64.service"
@@ -238,6 +243,7 @@ in
         ExecStop = "${lib.getExe reconcile} stop";
         # systemctl reaches systemd over its socket, for which root needs no capability.
         CapabilityBoundingSet = [ "" ];
+        SupplementaryGroups = [ "unbound" ];
         RestrictAddressFamilies = [ "AF_UNIX" ];
         NoNewPrivileges = true;
         PrivateDevices = true;

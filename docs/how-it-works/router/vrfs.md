@@ -260,9 +260,9 @@ shows the path of a packet.
 A `Resolver` with `vrf` runs as `unbound@<vrf>.service`. Its unit sets
 `BindNetworkInterface=<vrf>`, so systemd binds each of Unbound's sockets to the VRF's device: the
 resolver answers on the VRF's links and sends its queries through the VRF's table, while the unit
-keeps Unbound's hardening. `ip vrf exec` would need privileges that the hardening takes away. The
-unit is bound to the VRF's device unit, and stops when networkd removes the device.
-`chalkos-resolvers.service` starts it again once networkd has created the VRF anew. The input
+keeps Unbound's hardening. `ip vrf exec` would need privileges that the hardening takes away.
+systemd binds the sockets to the index the device has when the unit starts. When networkd creates
+the VRF anew, `chalkos-resolvers.service` restarts the resolver on the new device. The input
 chain opens the resolver's port 53 with the VRF's device as `iifname`.
 
 ## chalkd reads the VRFs' state

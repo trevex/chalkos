@@ -1337,15 +1337,16 @@ in
       '';
 
   # chalkos-resolvers over a systemctl and a systemd-escape of the unit's PATH that the check stubs:
-  # the systemctl keeps each unit's state, substate and the moment it became active in $SD, and
-  # each device the check makes is a directory below /sys/class/net, which the sandbox lacks, with
-  # its device unit. The script starts the resolver of each VRF with a config, VRF names with a dash
-  # escaped, and reloads them on the next run. A VRF made anew after its resolver started, and one
-  # whose device unit is not active, restart their resolvers, and a resolver that went inactive
-  # during the reloads starts again. Resolvers without a config are stopped, a failed one too, and
-  # reset. A VRF without a device and a resolver that does not come up fail the run within 30
-  # seconds each, naming them with the substate, while a device that appears during the wait gets
-  # its resolver. Stopping the unit stops every resolver.
+  # the systemctl keeps each unit's state and substate in $SD, and each device the check makes is a
+  # directory below /sys/class/net, which the sandbox lacks, with an index that grows with each
+  # device. A resolver the stub starts keeps its device's index in /run/unbound-<vrf>, as the unit
+  # does. The script starts the resolver of each VRF with a config, VRF names with a dash escaped,
+  # and reloads them on the next run. A VRF made anew after its resolver started, one whose device
+  # is still gone and appears during the run, and a resolver that kept no index restart their
+  # resolvers. Resolvers without a config are stopped, a failed one too, and reset. A VRF without a
+  # device and a resolver that does not come up fail the run within 30 seconds each, naming them
+  # with the substate, while a device that appears during the wait gets its resolver. Stopping the
+  # unit stops every resolver.
   router-resolvers =
     let
       inherit (checkLib.router.config.systemd.services.chalkos-resolvers.serviceConfig)
@@ -1363,14 +1364,14 @@ in
       }
       export SD=$PWD/sd
       mkdir -p stub "$SD" /sys/class/net ${dir}
-      echo 0 >"$SD/clock"
+      echo 0 >"$SD/ifindex"
       : >"$SD/log"
       cat >stub/systemctl <<'STUB'
       #!${pkgs.runtimeShell}
       # systemctl as chalkos-resolvers calls it, over the files of $SD: <unit>.state holds a unit's
-      # state, <unit>.sub its substate and <unit>.since when it became active. A unit started or
-      # restarted takes the state and substate of <unit>.next, active running without, and a
-      # reloaded one the state of <unit>.on-reload, which the reload uses up. Each call is logged.
+      # state and <unit>.sub its substate. A unit started or restarted takes the state and substate
+      # of <unit>.next, active running without, and keeps its VRF's device's index while it runs.
+      # Each call is logged.
       echo "$*" >>"$SD/log"
       quiet= property= args=
       for a in "$@"; do
@@ -1383,8 +1384,9 @@ in
       done
       set -- $args
       verb=$1 unit=''${2:-}
+      vrf=''${unit#unbound@}
+      vrf=$(echo "''${vrf%.service}" | sed 's/\\x2d/-/g')
       state() { cat "$SD/$1.state" 2>/dev/null || echo inactive; }
-      tick() { n=$(($(cat "$SD/clock") + 1)); echo "$n" >"$SD/clock"; echo "$n"; }
       case $verb in
       is-active)
         s=$(state "$unit")
@@ -1393,9 +1395,7 @@ in
         ;;
       show)
         case $property in
-        ActiveState) state "$unit" ;;
         SubState) cat "$SD/$unit.sub" 2>/dev/null || echo dead ;;
-        ActiveEnterTimestampMonotonic) cat "$SD/$unit.since" 2>/dev/null || echo 0 ;;
         *) echo "systemctl stub: no property $property" >&2; exit 1 ;;
         esac
         ;;
@@ -1403,16 +1403,17 @@ in
         next=$(cat "$SD/$unit.next" 2>/dev/null || echo active running)
         echo "''${next% *}" >"$SD/$unit.state"
         echo "''${next#* }" >"$SD/$unit.sub"
-        tick >"$SD/$unit.since"
+        mkdir -p "/run/unbound-$vrf"
+        cp "/sys/class/net/$vrf/ifindex" "/run/unbound-$vrf/ifindex"
         ;;
-      reload)
-        [ "$(state "$unit")" = active ] || exit 1
-        [ ! -e "$SD/$unit.on-reload" ] || mv "$SD/$unit.on-reload" "$SD/$unit.state"
+      reload) [ "$(state "$unit")" = active ] ;;
+      stop)
+        [ "$(state "$unit")" = failed ] || echo inactive >"$SD/$unit.state"
+        rm -rf "/run/unbound-$vrf"
         ;;
-      stop) [ "$(state "$unit")" = failed ] || echo inactive >"$SD/$unit.state" ;;
       reset-failed)
         case $(state "$unit") in
-        failed | inactive) rm -f "$SD/$unit.state" "$SD/$unit.sub" "$SD/$unit.since" ;;
+        failed | inactive) rm -f "$SD/$unit.state" "$SD/$unit.sub" ;;
         esac
         ;;
       list-units)
@@ -1447,18 +1448,22 @@ in
 
       unit() { systemd-escape --template=unbound@.service "$1"; }
       state() { cat "$SD/$1.state" 2>/dev/null || echo inactive; }
-      tick() { n=$(($(cat "$SD/clock") + 1)); echo "$n" >"$SD/clock"; echo "$n"; }
-      # Makes the device of the VRF $1, as networkd does, and its device unit, as systemd does.
+      # Makes the device of the VRF $1 anew, as networkd does, with the next index.
       device() {
+        local n
+        n=$(($(cat "$SD/ifindex") + 1))
+        echo "$n" >"$SD/ifindex"
+        rm -rf "/sys/class/net/$1"
         mkdir -p "/sys/class/net/$1"
-        local d
-        d=sys-subsystem-net-devices-$(systemd-escape "$1").device
-        echo active >"$SD/$d.state"
-        tick >"$SD/$d.since"
+        echo "$n" >"/sys/class/net/$1/ifindex"
       }
       called() { grep -qxF -- "$1" "$SD/log" || fail "$2: no call systemctl $1"; }
       not_called() { if grep -qxF -- "$1" "$SD/log"; then fail "$2: called systemctl $1"; fi; }
       running() { [ "$(state "$(unit "$1")")" = active ] || fail "$2: $(unit "$1") is $(state "$(unit "$1")")"; }
+      on_device() {
+        [ "$(cat "/run/unbound-$1/ifindex")" = "$(cat "/sys/class/net/$1/ifindex")" ] ||
+          fail "$2: $(unit "$1") runs on the device of index $(cat "/run/unbound-$1/ifindex")"
+      }
       for vrf in guest tenant dmz-a; do
         device "$vrf"
         : >${dir}/unbound-$vrf.conf
@@ -1471,6 +1476,7 @@ in
         called "reset-failed $(unit "$vrf")" "start"
         called "start --no-block $(unit "$vrf")" "start"
         running "$vrf" "start"
+        on_device "$vrf" "start"
       done
 
       : >"$SD/log"
@@ -1481,27 +1487,29 @@ in
         not_called "restart --no-block $(unit "$vrf")" "reload"
       done
 
-      # networkd makes tenant anew, whose resolver the old device's removal stops only later, and
-      # dmz-a's device unit is not active.
+      # chalkos-vrf removed tenant and dmz-a: networkd made tenant anew before the run, and makes
+      # dmz-a during it.
       : >"$SD/log"
       device tenant
-      echo inactive >"$SD/sys-subsystem-net-devices-$(systemd-escape dmz-a).device.state"
-      ${ExecReload} || fail "reloading after tenant was made anew failed"
-      called "restart --no-block $(unit tenant)" "tenant made anew"
-      not_called "reload $(unit tenant)" "tenant made anew"
-      called "restart --no-block $(unit dmz-a)" "dmz-a's device unit inactive"
-      not_called "reload $(unit dmz-a)" "dmz-a's device unit inactive"
+      rm -rf /sys/class/net/dmz-a
+      (sleep 2 && device dmz-a) &
+      ${ExecReload} || fail "reloading after tenant and dmz-a were made anew failed"
+      wait
+      for vrf in tenant dmz-a; do
+        called "restart --no-block $(unit "$vrf")" "$vrf made anew"
+        not_called "reload $(unit "$vrf")" "$vrf made anew"
+        running "$vrf" "$vrf made anew"
+        on_device "$vrf" "$vrf made anew"
+      done
       called "reload $(unit guest)" "tenant made anew"
       not_called "restart --no-block $(unit guest)" "tenant made anew"
-      device dmz-a
 
-      # guest's resolver goes inactive during the reloads, as the removal of its old device stops it.
+      # A resolver that runs without the index of its device restarts.
       : >"$SD/log"
-      echo inactive >"$SD/$(unit guest).on-reload"
-      ${ExecReload} || fail "reloading while guest's resolver stopped failed"
-      called "reload $(unit guest)" "guest stopped during the reloads"
-      called "start --no-block $(unit guest)" "guest stopped during the reloads"
-      running guest "guest stopped during the reloads"
+      rm /run/unbound-guest/ifindex
+      ${ExecReload} || fail "reloading a resolver without its device's index failed"
+      called "restart --no-block $(unit guest)" "no index"
+      on_device guest "no index"
 
       # Resolvers without a config, a running one and a failed one, are stopped and reset.
       : >"$SD/log"

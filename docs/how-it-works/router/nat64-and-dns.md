@@ -353,22 +353,27 @@ A VRF's resolver runs as `unbound@<vrf>.service`, a template unit with the defau
 hardening and `CAP_NET_BIND_SERVICE` alone. It reads `unbound-<vrf>.conf` and keeps its control
 socket in `/run/unbound-<vrf>`. `BindNetworkInterface=<vrf>` has systemd bind every socket of the
 unit to the VRF's device, as `ip vrf exec` would, so Unbound answers on the VRF's links and sends
-its queries through the VRF's table. `BindsTo=` the VRF's device unit stops the resolver when the
-device goes, such as when a delivery changes the VRF's table and networkd creates it anew.
+its queries through the VRF's table. systemd binds the sockets to the device's index, which it
+looks up when the unit starts. The unit writes that index to `/run/unbound-<vrf>/ifindex` before
+Unbound starts, and fails if the VRF has no device, since systemd would otherwise start Unbound
+with its sockets in the default VRF. The unit requires the VRF's device unit, so a start waits for
+the device to appear, but the device going away does not stop the resolver.
 
 `chalkos-resolvers.service` runs these units. It is a oneshot unit that starts at boot after
-networkd, which creates the VRFs. It starts the resolver of each rendered `unbound-<vrf>.conf`
-that does not run, once the VRF's device exists, and reloads those that run. A resolver whose VRF
-networkd made anew after it started is restarted. It stops the resolvers that have no config. It
-waits 30 seconds at most for the VRFs' devices and 30 more for the resolvers it started, and then
-fails, naming each that does not run. The effect `resolvers` reloads it when the output `unbound`
-or `networkd` changes, so a resolver that stopped with its VRF's device starts again once
-networkd has created the VRF.
+`chalkos-vrf.service` and networkd, which create the VRFs. It starts the resolver of each rendered
+`unbound-<vrf>.conf` that does not run, once the VRF's device exists, and reloads those that run.
+When a delivery changes a VRF's table, `chalkos-vrf.service` deletes the VRF and networkd creates
+it again with a new index. A running resolver whose recorded index differs from the device's, or
+whose VRF has no device yet, is restarted once the device exists, so its sockets bind to the new
+device. The unit stops the resolvers that have no config. It waits 30 seconds at most for the
+VRFs' devices and 30 more for the resolvers it started, and then fails, naming each that does not
+run. The effect `resolvers` reloads it when the output `unbound` or `networkd` changes. The unit
+reads the indexes as a member of the group `unbound`, without capabilities.
 
 chalkd reloads the units of one delivery in one `systemctl reload`, which follows their order:
-`chalkos-firewall`, then `chalkos-nat64`, then `frr`, `unbound` and `chalkos-resolvers`. So a
-resolver's port is open before it answers on a new address, and a new prefix's route exists
-before FRR announces it.
+`chalkos-firewall`, then `chalkos-nat64`, then `frr`, `unbound` and `chalkos-resolvers`, which
+also waits for `chalkos-vrf` and networkd. So a resolver's port is open before it answers on a
+new address, and a new prefix's route exists before FRR announces it.
 
 The node's own name lookups go through systemd-resolved as on every node, not through Unbound.
 
