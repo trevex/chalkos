@@ -501,7 +501,11 @@ lib.runTests {
   # removed starts or stops it. The firewall opens the resolver's port and reads the NAT64s, as
   # networkd does, chalkd asks jool in each instance's namespace and unbound-control for their
   # state, the image adds the diagnostic nat64-sessions in the instance's namespace, and the node's
-  # own names resolve as before. Other images run neither.
+  # own names resolve as before. Each VRF's resolver runs as unbound@<vrf> with the same hardening,
+  # bound to the VRF's device with BindNetworkInterface= and stopped with it, which chalkos-resolvers
+  # starts, reloads and stops once networkd and the NAT64s are up, whenever the output unbound or
+  # networkd changes; the output reads the VRFs and Networks and checks every config it renders.
+  # Other images run neither.
   testRouterNAT64AndResolver = {
     expr =
       let
@@ -573,6 +577,47 @@ lib.runTests {
         diagnostic = {
           inherit (edge.chalkos.diagnostics.nat64-sessions) role capabilities networkNamespace;
         };
+        vrfResolver =
+          let
+            u = edge.systemd.services."unbound@";
+          in
+          {
+            inherit (u.serviceConfig)
+              BindNetworkInterface
+              RuntimeDirectory
+              RuntimeDirectoryMode
+              AmbientCapabilities
+              CapabilityBoundingSet
+              User
+              Type
+              ProtectSystem
+              ;
+            start = lib.hasSuffix "/bin/unbound -p -d -c /run/chalkos/outputs/unbound/unbound-%I.conf" u.serviceConfig.ExecStart;
+            reload = lib.hasSuffix "/bin/unbound-control -c /run/chalkos/outputs/unbound/unbound-%I.conf reload_keep_cache" u.serviceConfig.ExecReload;
+            inherit (u.unitConfig) BindsTo ConditionPathExists;
+            after = lib.all (x: lib.elem x u.after) [
+              "sys-subsystem-net-devices-%i.device"
+              "chalkos-firewall.service"
+              "chalkos-nat64.service"
+            ];
+          };
+        resolvers =
+          let
+            r = edge.systemd.services.chalkos-resolvers;
+          in
+          {
+            after = lib.all (x: lib.elem x r.after) [
+              "systemd-networkd.service"
+              "chalkos-nat64.service"
+            ];
+            inherit (r.serviceConfig) Type RemainAfterExit;
+            reloads = r.serviceConfig.ExecReload == r.serviceConfig.ExecStart;
+            stops = lib.hasSuffix " stop" r.serviceConfig.ExecStop;
+            effect = {
+              inherit (edge.chalkos.effects.resolvers) outputs reload;
+            };
+          };
+        unboundCheck = lib.hasInfix ''for f in "$OUT"/*.conf'' edge.chalkos.outputs.unbound.check;
         plain = {
           unbound = layered.plain-metal.config.services.unbound.enable;
           jool = layered.plain-metal.config.chalkos.outputs ? jool;
@@ -587,7 +632,11 @@ lib.runTests {
           "VRF"
           "Network"
         ];
-        unbound = [ "Resolver" ];
+        unbound = [
+          "Resolver"
+          "VRF"
+          "Network"
+        ];
       };
       firewallReads = true;
       networkdReads = true;
@@ -631,6 +680,36 @@ lib.runTests {
         capabilities = [ "CAP_NET_ADMIN" ];
         networkNamespace = "nat64-{instance}";
       };
+      vrfResolver = {
+        BindNetworkInterface = "%I";
+        RuntimeDirectory = "unbound-%I";
+        RuntimeDirectoryMode = "0750";
+        AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
+        CapabilityBoundingSet = [ "CAP_NET_BIND_SERVICE" ];
+        User = "unbound";
+        Type = "notify";
+        ProtectSystem = "strict";
+        start = true;
+        reload = true;
+        BindsTo = "sys-subsystem-net-devices-%i.device";
+        ConditionPathExists = "/run/chalkos/outputs/unbound/unbound-%I.conf";
+        after = true;
+      };
+      resolvers = {
+        after = true;
+        Type = "oneshot";
+        RemainAfterExit = true;
+        reloads = true;
+        stops = true;
+        effect = {
+          outputs = [
+            "unbound"
+            "networkd"
+          ];
+          reload = [ "chalkos-resolvers.service" ];
+        };
+      };
+      unboundCheck = true;
       plain = {
         unbound = false;
         jool = false;

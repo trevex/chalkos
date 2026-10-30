@@ -1,6 +1,9 @@
-# The router's DNS resolver: Unbound, whose whole config the output unbound renders from the
-# node's Resolver document. A node without one runs no Unbound; a delivery that adds or removes
-# the document starts or stops it, and one that changes it reloads Unbound and keeps its cache.
+# The router's DNS resolvers: Unbound, whose whole config the output unbound renders from each
+# Resolver document, unbound.conf for the default VRF's and unbound-<vrf>.conf for a VRF's. The
+# default VRF's runs as unbound.service, each VRF's as unbound@<vrf>.service, whose sockets systemd
+# binds to the VRF's device. A node without a Resolver runs no Unbound; a delivery that adds or
+# removes a resolver starts or stops it, and one that changes it reloads Unbound and keeps its
+# cache.
 {
   chalkosPackages,
   config,
@@ -10,10 +13,83 @@
 }:
 let
   unbound = config.services.unbound.package;
-  rendered = "${config.chalkos.outputs.unbound.dir}/unbound.conf";
+  dir = config.chalkos.outputs.unbound.dir;
+  rendered = "${dir}/unbound.conf";
   cel = import ../../../lib/cel.nix { inherit lib; };
   inherit (import ../../../lib/kinds/api.nix) apiVersions;
-  resolvers = c: "size(${cel.documents c apiVersions.router "Resolver"})";
+  # The number of the default VRF's resolvers in the config c: a running config of an image whose
+  # Resolver had no vrf lacks the field.
+  defaultResolvers =
+    c:
+    "cel.bind(r, ${
+      cel.documents c apiVersions.router "Resolver"
+    }, size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == null)))";
+  # Starts the resolver of each VRF with a rendered config that does not run, reloads those that
+  # run and stops those without a config; with the argument stop, it stops all of them. networkd
+  # creates a VRF's device without waiting, and a unit bound to a device that never comes waits
+  # for it until the device's job times out, so the script waits 30 seconds at most for the
+  # devices and 30 more for the resolvers it started, and fails naming those that are not
+  # running then; a start still queued goes on once the device appears. systemctl and
+  # systemd-escape come from the unit's PATH.
+  reconcile = pkgs.writeShellApplication {
+    name = "chalkos-resolvers";
+    runtimeInputs = [ pkgs.coreutils ];
+    text = ''
+      dir=${dir}
+      declare -A want=()
+      failed=()
+      started=()
+      if [[ ''${1:-} != stop ]]; then
+        shopt -s nullglob
+        for file in "$dir"/unbound-*.conf; do
+          vrf=''${file#"$dir"/unbound-}
+          want[''${vrf%.conf}]=1
+        done
+        shopt -u nullglob
+      fi
+      deadline=$((SECONDS + 30))
+      for vrf in "''${!want[@]}"; do
+        unit=$(systemd-escape --template=unbound@.service "$vrf")
+        if systemctl is-active --quiet "$unit"; then
+          systemctl reload "$unit" || failed+=("reload $unit")
+          continue
+        fi
+        until [[ -e /sys/class/net/$vrf ]] || ((SECONDS >= deadline)); do
+          sleep 0.2
+        done
+        if [[ ! -e /sys/class/net/$vrf ]]; then
+          failed+=("start $unit, whose VRF has no device")
+          continue
+        fi
+        systemctl reset-failed "$unit" 2>/dev/null || true
+        if systemctl start --no-block "$unit"; then
+          started+=("$unit")
+        else
+          failed+=("start $unit")
+        fi
+      done
+      deadline=$((SECONDS + 30))
+      for unit in "''${started[@]}"; do
+        state=
+        until [[ $state == active || $state == failed ]] || ((SECONDS >= deadline)); do
+          state=$(systemctl is-active "$unit") || true
+          [[ $state == active || $state == failed ]] || sleep 0.2
+        done
+        [[ $state == active ]] || failed+=("start $unit, which is $state")
+      done
+      while read -r unit _; do
+        [[ -n $unit ]] || continue
+        vrf=$(systemd-escape --unescape --instance "$unit")
+        if [[ -z ''${want[$vrf]+x} ]]; then
+          systemctl stop "$unit" || failed+=("stop $unit")
+        fi
+      done < <(systemctl list-units --plain --no-legend --all 'unbound@*.service')
+      if ((''${#failed[@]} > 0)); then
+        printf 'chalkos-resolvers: failed to %s\n' "''${failed[@]}" >&2
+        exit 1
+      fi
+    '';
+  };
   # RFC 8880's answer for ipv4only.arpa, which a DNS64 resolver gives itself; the dns64 module
   # synthesizes its AAAA records from these A records.
   ipv4only = pkgs.writeText "ipv4only.arpa.zone" ''
@@ -38,21 +114,35 @@ in
     environment.etc."unbound/unbound.conf".source = lib.mkForce rendered;
 
     chalkos.outputs.unbound = {
-      inputs = [ "Resolver" ];
+      # The VRFs and the Networks tell which VRF holds each listen address.
+      inputs = [
+        "Resolver"
+        "VRF"
+        "Network"
+      ];
       render = "${lib.getExe chalkosPackages.chalkos-render} unbound ${pkgs.dns-root-data}/root.key ${ipv4only}";
-      check = ''[ ! -e "$OUT/unbound.conf" ] || ${unbound}/bin/unbound-checkconf "$OUT/unbound.conf"'';
+      check = ''for f in "$OUT"/*.conf; do [ ! -e "$f" ] || ${unbound}/bin/unbound-checkconf "$f" || exit; done'';
       examples = ../examples/router;
     };
     chalkos.effects.unbound = {
       outputs = [ "unbound" ];
       reload = [ "unbound.service" ];
     };
-    # A Resolver added starts Unbound, and one removed stops it: the unit's condition no longer
-    # holds once it restarts.
+    # The default VRF's resolver added starts Unbound, and one removed stops it: the unit's
+    # condition no longer holds once it restarts.
     chalkos.effects.unbound-start = {
-      when = "${resolvers "config"} != ${resolvers "oldConfig"}";
+      when = "${defaultResolvers "config"} != ${defaultResolvers "oldConfig"}";
       restart = [ "unbound.service" ];
       start = true;
+    };
+    # A VRF's resolver added, changed or removed, and a VRF networkd creates anew, which stopped the
+    # resolver bound to it.
+    chalkos.effects.resolvers = {
+      outputs = [
+        "unbound"
+        "networkd"
+      ];
+      reload = [ "chalkos-resolvers.service" ];
     };
 
     systemd.services.unbound = {
@@ -75,7 +165,69 @@ in
         CapabilityBoundingSet = lib.mkForce [ "CAP_NET_BIND_SERVICE" ];
       };
     };
-    # chalkd asks unbound-control whether the resolver runs.
+    # A VRF's resolver: Unbound with the default VRF's hardening, whose sockets systemd binds to the
+    # VRF's device, as ip vrf exec would, and which stops when the device goes.
+    systemd.services."unbound@" = {
+      description = "Unbound of the VRF %I";
+      after = [
+        "sys-subsystem-net-devices-%i.device"
+        "chalkos-config.service"
+        "chalkos-firewall.service"
+        "chalkos-nat64.service"
+      ];
+      unitConfig = {
+        BindsTo = "sys-subsystem-net-devices-%i.device";
+        ConditionPathExists = "${dir}/unbound-%I.conf";
+      };
+      # The default VRF's unit prepares nothing a VRF's needs.
+      serviceConfig = removeAttrs config.systemd.services.unbound.serviceConfig [ "ExecStartPre" ] // {
+        ExecStart = "${unbound}/bin/unbound -p -d -c ${dir}/unbound-%I.conf";
+        ExecReload = "${unbound}/bin/unbound-control -c ${dir}/unbound-%I.conf reload_keep_cache";
+        BindNetworkInterface = "%I";
+        # unbound-control reaches it through the socket the rendered config names in
+        # /run/unbound-<vrf>, which root, and so chalkd, may enter.
+        RuntimeDirectory = "unbound-%I";
+        RuntimeDirectoryMode = "0750";
+      };
+    };
+    # Runs the VRFs' resolvers of the rendered configs, after networkd, which creates the VRFs, and
+    # the NAT64s, as unbound.service does.
+    systemd.services.chalkos-resolvers = {
+      description = "Run the resolvers of the router's VRFs";
+      after = [
+        "chalkos-config.service"
+        "systemd-networkd.service"
+        "chalkos-firewall.service"
+        "chalkos-nat64.service"
+      ];
+      wantedBy = [ "multi-user.target" ];
+      path = [ config.systemd.package ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = lib.getExe reconcile;
+        ExecReload = lib.getExe reconcile;
+        ExecStop = "${lib.getExe reconcile} stop";
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+        NoNewPrivileges = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectKernelLogs = true;
+        ProtectClock = true;
+        ProtectHostname = true;
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        RestrictSUIDSGID = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = true;
+        SystemCallArchitectures = "native";
+        SystemCallFilter = [ "@system-service" ];
+      };
+    };
+    # chalkd asks unbound-control whether the resolvers run.
     systemd.services.chalkd.path = [ unbound ];
   };
 }

@@ -1338,7 +1338,7 @@ The outputs router images add, and the output `networkd` of every image as route
 | `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `NAT64`, `VRF` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |
 | `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGPPeer`, `Resolver`, `VRF`, `Network`, `NAT64` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
 | `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |
-| `unbound`{ #output-unbound } | `Resolver` | `/run/chalkos/outputs/unbound` | Command `chalkos-render unbound root.key ipv4only.arpa.zone` | yes |
+| `unbound`{ #output-unbound } | `Resolver`, `VRF`, `Network` | `/run/chalkos/outputs/unbound` | Command `chalkos-render unbound root.key ipv4only.arpa.zone` | yes |
 
 ## Effects { #effects }
 
@@ -1413,6 +1413,7 @@ The effects router images add.
 | --- | --- | --- |
 | `frr`{ #effect-frr } | The output `frr` changed. | Reloads `frr.service`. |
 | `jool`{ #effect-jool } | The output `jool` changed. | Reloads `chalkos-nat64.service`. |
+| `resolvers`{ #effect-resolvers } | One of the outputs `unbound` and `networkd` changed. | Reloads `chalkos-resolvers.service`. |
 | `router-nftables`{ #effect-router-nftables } | The output `router-nftables` changed. | Reloads `chalkos-firewall.service`. |
 | `router-sysctl`{ #effect-router-sysctl } | The output `router-sysctl` changed. | Restarts `systemd-sysctl.service`. |
 | `unbound`{ #effect-unbound } | The output `unbound` changed. | Reloads `unbound.service`. |
@@ -1422,7 +1423,7 @@ The effects router images add.
 `when` of `unbound-start`:
 
 ```text
-size((("router.chalkos.dev/v1alpha1" in config && "Resolver" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Resolver : {})) != size((("router.chalkos.dev/v1alpha1" in oldConfig && "Resolver" in oldConfig["router.chalkos.dev/v1alpha1"]) ? oldConfig["router.chalkos.dev/v1alpha1"].Resolver : {}))
+cel.bind(r, (("router.chalkos.dev/v1alpha1" in config && "Resolver" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Resolver : {}), size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == null))) != cel.bind(r, (("router.chalkos.dev/v1alpha1" in oldConfig && "Resolver" in oldConfig["router.chalkos.dev/v1alpha1"]) ? oldConfig["router.chalkos.dev/v1alpha1"].Resolver : {}), size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == null)))
 ```
 
 ## Diagnostics { #diagnostics }
