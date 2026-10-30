@@ -76,10 +76,10 @@ const bgpPassword = "lab-s3cret"
 //     default VRF.
 //   - default: a delivery has r1 send r2 its default route only while r1 routes 2001:db8:fff0::/48,
 //     a networkd route on its dummy uplink0. Delivered without the route, it makes r2 lose the
-//     unconditional default of the base config within FRR's 5 s scan. Delivered with the route,
-//     r1's BGP holds it, marked no-advertise and with the tracked large community, r2 routes ::/0
-//     through r1 again and never learns the tracked prefix. The base inventory then brings the
-//     unconditional default back.
+//     unconditional default of the base config at once and get none back for 15 s. Delivered with
+//     the route, r1's BGP holds it, marked no-advertise and with the tracked large community, r2
+//     routes ::/0 through r1 again and never learns the tracked prefix. The base inventory then
+//     brings the unconditional default back.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials, a minute for the VRF and half a
@@ -691,17 +691,36 @@ func TestRouterLab(t *testing.T) {
 			return fmt.Sprintf("r1's kernel routes to %s: %v, BGP paths %v, BGP's error %q", tracked, resp.Msg.Kernel, resp.Msg.Bgp, resp.Msg.BgpError)
 		}
 
-		// r2 holds the unconditional default from the base config when the phase starts, so it
-		// has to lose it while r1 tracks a route it lacks.
+		// r2Default is nil once a call to r2 succeeds and finds no default route, neither in its
+		// kernel table nor among its BGP paths; errDefault means it found one.
+		errDefault := errors.New("r2 holds a default route")
+		r2Default := func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			resp, err := routerOf(conns["r2"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: "::/0", Protocol: "bgp"}))
+			if err != nil {
+				return err
+			}
+			if slices.ContainsFunc(resp.Msg.Kernel, func(k *routerv1.KernelRoute) bool { return k.Destination == "::/0" }) ||
+				slices.ContainsFunc(resp.Msg.Bgp, func(b *routerv1.BGPRoute) bool { return b.Prefix == "::/0" }) {
+				return fmt.Errorf("%w: kernel %v, BGP %v; %s", errDefault, resp.Msg.Kernel, resp.Msg.Bgp, r1Tracked())
+			}
+			return nil
+		}
+
+		// r2 holds the unconditional default from the base config when the phase starts. It
+		// loses it at once when r1's family gains defaultOriginateWhen, and FRR's scan, every
+		// 5 s, must not send it again while r1 lacks the tracked route.
 		if out, err := chalkctl(t, nodes["r1"], "default-gone", "apply-config", "r1"); err != nil {
 			t.Fatalf("apply-config of r1's conditional default without the tracked route: %v\n%s", err, out)
 		}
-		waitFor(t, 2*time.Minute, "r2 to lose the default route", func() error {
-			if learned("::/0") == nil {
-				return fmt.Errorf("r2 still routes ::/0 through r1; %s", r1Tracked())
+		waitFor(t, 2*time.Minute, "r2 to lose the default route", r2Default)
+		for end := time.Now().Add(15 * time.Second); time.Now().Before(end); {
+			time.Sleep(3 * time.Second)
+			if err := r2Default(); errors.Is(err, errDefault) {
+				t.Fatalf("r2's default route came back without the tracked route: %v", err)
 			}
-			return nil
-		})
+		}
 		if err := trackedInBGP(); err == nil {
 			t.Errorf("r1's BGP holds %s without its route", tracked)
 		}
