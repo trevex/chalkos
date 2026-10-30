@@ -198,6 +198,9 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 	if f.nat64, err = nat64Instances(d); err != nil {
 		return nil, err
 	}
+	if err := f.nat64LinksUnnamed(d); err != nil {
+		return nil, err
+	}
 	zoneOf := map[int]string{}
 	for _, v := range d.VRFs {
 		if v.Spec.ConntrackZone == nil {
@@ -389,6 +392,49 @@ func onlyDevice(d routerDocuments, devices []string, i string) (string, bool) {
 		}
 	}
 	return dev, true
+}
+
+// nat64LinksUnnamed refuses a zone's interface that names or globs a NAT64's link, and a NAT
+// rule's interface that matches nothing else. The forward chain accepts a NAT64's translated
+// traffic ahead of the zones and drops the rest of its link's, which a zone of the link would
+// accept; destination and source NAT leave a NAT64's link alone ahead of the NAT rules, so a NAT
+// rule of NAT64s' links alone translates nothing.
+func (f *firewall) nat64LinksUnnamed(d routerDocuments) error {
+	match := func(i string) (string, string, bool) {
+		for _, n := range f.nat64 {
+			if link := nat64LinkPrefix + n.name; matchesGlob(i, link) {
+				return link, n.name, true
+			}
+		}
+		return "", "", false
+	}
+	for _, z := range d.Zones {
+		for _, i := range z.Spec.Interfaces {
+			if link, n, ok := match(i); ok {
+				return fmt.Errorf("FirewallZone %s: %s matches %s, the link of NAT64 %s, which no zone holds; name other links", z.Name, i, link, n)
+			}
+		}
+	}
+	// Whether the interface or glob i may match a link that is no NAT64's.
+	other := func(i string) bool {
+		for _, l := range d.Links {
+			if _, _, isNAT64 := match(l); !isNAT64 && matchesGlob(i, l) {
+				return true
+			}
+		}
+		return slices.ContainsFunc(d.Membership.Members, func(m vrfMember) bool { return globsOverlap(i, m.glob) })
+	}
+	for _, r := range d.NAT {
+		for _, place := range []*natPlace{r.Spec.In, r.Spec.Out} {
+			if place == nil || place.Interface == nil {
+				continue
+			}
+			if link, n, ok := match(*place.Interface); ok && !other(*place.Interface) {
+				return fmt.Errorf("NATRule %s: %s matches no link but %s, the link of NAT64 %s, which no NAT rule translates; name other links", r.Name, *place.Interface, link, n)
+			}
+		}
+	}
+	return nil
 }
 
 // vrfDeviceMatch returns the first VRF device of devices, as vrfDevices finds them, that the

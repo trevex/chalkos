@@ -1476,3 +1476,35 @@ func TestConntrackZoneRefusals(t *testing.T) {
 
 // ptr is a pointer to s.
 func ptr(s string) *string { return &s }
+
+// No zone names a NAT64's link, by name or glob: the forward chain lets the NAT64s' translated
+// traffic through ahead of the zones and drops the rest, which a zone of the link would accept. A
+// NAT rule of nothing but NAT64s' links translates nothing, as NAT leaves the links alone.
+func TestNAT64LinkOutsideZones(t *testing.T) {
+	with := func(zone, out string) map[string][]any {
+		docs := vrfZoneDocs(t)
+		docs["NAT64"] = []any{routerDoc(t, "NAT64", "guest", `{"vrf": "guest", "prefix": "64:ff9b::/96", "pool4": []}`)}
+		if zone != "" {
+			docs["FirewallZone"] = append(docs["FirewallZone"], routerDoc(t, "FirewallZone", "x", `{"interfaces": ["`+zone+`"], "vrfs": []}`))
+		}
+		if out != "" {
+			docs["NATRule"] = []any{routerDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "`+out+`"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}
+		}
+		return docs
+	}
+	for name, c := range map[string]struct {
+		docs map[string][]any
+		want string
+	}{
+		"a zone of the link":     {with("n64-guest", ""), "FirewallZone x: n64-guest matches n64-guest, the link of NAT64 guest, which no zone holds; name other links"},
+		"a zone's glob":          {with("n6*", ""), "FirewallZone x: n6* matches n64-guest, the link of NAT64 guest, which no zone holds; name other links"},
+		"a NAT rule of the link": {with("", "n64-guest"), "NATRule n: n64-guest matches no link but n64-guest, the link of NAT64 guest, which no NAT rule translates; name other links"},
+		"a NAT rule's glob":      {with("", "n6*"), "NATRule n: n6* matches no link but n64-guest, the link of NAT64 guest, which no NAT rule translates; name other links"},
+	} {
+		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })
+	}
+	// A link of another NAT64's name is no NAT64's, and a NAT rule of every link translates
+	// the others' connections.
+	vrfRuleset(t, with("n64-other", "n64-other"))
+	vrfRuleset(t, with("", "*"))
+}
