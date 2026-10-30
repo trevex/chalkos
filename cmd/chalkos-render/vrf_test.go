@@ -358,3 +358,33 @@ func TestOtherMatchKeys(t *testing.T) {
 		}
 	}
 }
+
+// router-networkd leaves each NAT64's link unmanaged with a .network that networkd picks for it
+// before the node's own, also without VRFs, and refuses a Network that networkd would pick first
+// and a networkd document of the unit's name.
+func TestNAT64Units(t *testing.T) {
+	nat64 := func(name string) any {
+		return routerDoc(t, "NAT64", name, `{"prefix": "64:ff9b::/96", "pool4": []}`)
+	}
+	got, err := unitFiles(t, []string{"router-networkd", networkFixture}, map[string][]any{
+		"NAT64":   {nat64("edge")},
+		"Network": {document(t, "Network", "10-all", `{"match": {"name": "*"}, "network": {"dhcp": "yes"}}`)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"00-n64-edge.network": "[Match]\nName=n64-edge\n\n[Link]\nUnmanaged=yes\n\n",
+		"10-all.network":      "[Match]\nName=*\n\n[Network]\nDHCP=yes\n\n",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("units:\n%q\nwant:\n%q", got, want)
+	}
+	args := []string{"router-networkd", networkFixture}
+	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "Network": {document(t, "Network", "00-a", `{"match": {"name": "n64-*"}}`)}},
+		"Network 00-a matches the link n64-edge of NAT64 edge before 00-n64-edge; rename it to sort after 00-n64-edge")
+	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "Network": {document(t, "Network", "00-a", `{"match": {"name": "n64-*", "macAddress": "02:00:00:00:00:01"}}`)}},
+		"Network 00-a may match the link n64-edge of NAT64 edge before 00-n64-edge, should its other [Match] keys match it")
+	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "Network": {document(t, "Network", "00-n64-edge", `{"match": {"name": "eth0"}}`)}},
+		"Network 00-n64-edge takes the name of NAT64 edge's unit; rename the document")
+}

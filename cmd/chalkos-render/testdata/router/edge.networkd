@@ -1,3 +1,10 @@
+# 00-n64-edge.network
+[Match]
+Name=n64-edge
+
+[Link]
+Unmanaged=yes
+
 # 10-wan.network
 [Match]
 Name=eth0

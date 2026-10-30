@@ -519,7 +519,8 @@ func networkVRF(name string, spec map[string]any) (string, error) {
 // of the VRF documents: the device's 00-vrf-<name>.netdev, of Kind=vrf and the VRF's table, and
 // 00-vrf-<name>.network, which brings the device up, leaves it out of the node's online state
 // and ends the table in unreachable default routes, and VRF=<name> in the [Network] section of
-// each Network document that is the first to match links the VRF holds.
+// each Network document that is the first to match links the VRF holds, and a .network per NAT64
+// that leaves its link n64-<name> to chalkos-nat64.
 func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 	d, err := readRouterDocuments(in)
 	if err != nil {
@@ -528,6 +529,9 @@ func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 	byKind, _ := in["documents"].(map[string]any)
 	docs, err := withVRFUnits(d.VRFs, d.Membership.Networks, byKind)
 	if err != nil {
+		return err
+	}
+	if docs, err = withNAT64Units(d.VRFs, d.NAT64, byKind, docs); err != nil {
 		return err
 	}
 	return renderNetworkd(schemas, map[string]any{"node": in["node"], "documents": docs}, out)
@@ -595,6 +599,56 @@ func withVRFUnits(vrfs []named[vrfSpec], networks map[string]string, byKind map[
 		out = map[string]any{}
 	}
 	out["NetDev"], out["Network"] = netdevs, docs
+	return out, nil
+}
+
+// withNAT64Units is docs, the networkd documents with the VRFs' units, with a Network document
+// 00-n64-<name> per NAT64 that leaves the link n64-<name> unmanaged: chalkos-nat64 configures the
+// link, and networkd would drop its addresses and routes once a Network of the node matched it. It
+// refuses a networkd document of byKind of such a unit's name and a Network of byKind that
+// networkd may pick for the link before it.
+func withNAT64Units(vrfs []named[vrfSpec], nat64 []named[nat64Spec], byKind, docs map[string]any) (map[string]any, error) {
+	if len(nat64) == 0 {
+		return docs, nil
+	}
+	units, err := networkUnits(vrfs, byKind)
+	if err != nil {
+		return nil, err
+	}
+	networks, _ := docs["Network"].([]any)
+	networks = slices.Clone(networks)
+	for _, n := range nat64 {
+		link, unit := nat64LinkPrefix+n.Name, nat64UnitPrefix+n.Name
+		if !plainInterface.MatchString(link) {
+			return nil, fmt.Errorf("NAT64 %s: its link %s is no interface name of 15 characters", n.Name, link)
+		}
+		for _, kind := range []string{"NetDev", "Network"} {
+			existing, _ := byKind[kind].([]any)
+			for _, d := range existing {
+				doc, _ := d.(map[string]any)
+				if name, _ := documentName(kind, doc); name == unit {
+					return nil, fmt.Errorf("%s %s takes the name of NAT64 %s's unit; rename the document", kind, name, n.Name)
+				}
+			}
+		}
+		units = append(units, networkUnit{name: unit, match: nameMatch{words: []nameWord{{glob: link, text: link}}}, device: true})
+		networks = append(networks, map[string]any{"metadata": map[string]any{"name": unit}, "spec": map[string]any{
+			"match": map[string]any{"name": link},
+			"link":  map[string]any{"unmanaged": "yes"},
+		}})
+	}
+	slices.SortStableFunc(units, func(a, b networkUnit) int { return strings.Compare(a.name+".network", b.name+".network") })
+	for _, n := range nat64 {
+		link, own := nat64LinkPrefix+n.Name, nat64UnitPrefix+n.Name
+		if u := candidates(units, link)[0]; u.name != own {
+			if u.narrowed {
+				return nil, fmt.Errorf("Network %s may match the link %s of NAT64 %s before %s, should its other [Match] keys match it; rename it to sort after %s", u.name, link, n.Name, own, own)
+			}
+			return nil, fmt.Errorf("Network %s matches the link %s of NAT64 %s before %s; rename it to sort after %s", u.name, link, n.Name, own, own)
+		}
+	}
+	out := maps.Clone(docs)
+	out["Network"] = networks
 	return out, nil
 }
 
