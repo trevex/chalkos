@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -248,5 +249,57 @@ func TestNAT64Schemas(t *testing.T) {
 		if err := s.Validate(d.Object); (err == nil) != tc.ok {
 			t.Errorf("Resolver %s: err = %v, want accepted %v", tc.spec, err, tc.ok)
 		}
+	}
+}
+
+// The NAT64 rules refuse a pool entry that holds a static IPv4 address a Network document gives a
+// link, in [Network] or [Address] Address= or [DHCPServer] ServerAddress=, with or without its
+// length and spaces, which the router answers itself, and a static address in 169.254.64.0/18,
+// the NAT64s' links' range, beside NAT64s. Values that are no address, IPv6 addresses and
+// addresses outside the pools pass, and so does the range without NAT64s.
+func TestNAT64StaticAddresses(t *testing.T) {
+	set, doc := routerRules(t)
+	nat64 := doc("NAT64", "edge", `{"pool4": [{"prefix": "192.0.2.8/30"}]}`)
+	net := func(name, spec string) config.Document {
+		return builtinDoc(t, config.NetworkdAPI, "Network", name, spec)
+	}
+	pool := func(a string) []string {
+		return []string{"NAT64 edge: the pool entry 192.0.2.8/30 holds " + a + ", an address a Network document gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through"}
+	}
+	linkRange := []string{"a Network document gives a link the address 169.254.100.1, which lies in 169.254.64.0/18, the range of the NAT64s' links; give the link another address"}
+	// many are n Network documents of four addresses each outside the pool, and one of an
+	// address in it, which the rules compare at the highest cost.
+	many := func(n int) []config.Document {
+		var out []config.Document
+		for i := range n {
+			out = append(out, net(fmt.Sprintf("%03d-lan", i), fmt.Sprintf(`{"match": {"name": "eth%d"}, "network": {"address": ["10.%d.0.1/24", "10.%d.1.1/24", "2001:db8:%x::1/64"]}, "address": [{"address": "10.%d.2.1/24"}]}`, i, i, i, i, i)))
+		}
+		return append(out, net("999-wan", `{"match": {"name": "wan"}, "dhcpServer": {"serverAddress": "192.0.2.11"}}`))
+	}
+	for _, tc := range []struct {
+		name string
+		docs []config.Document
+		want []string
+	}{
+		{"an address of [Network]", []config.Document{nat64, net("20-wan", `{"match": {"name": "eth0"}, "network": {"address": ["2001:db8::1/64", "192.0.2.9/24"]}}`)}, pool("192.0.2.9")},
+		{"an address of [Address]", []config.Document{nat64, net("20-wan", `{"match": {"name": "eth0"}, "address": {"address": "192.0.2.10"}}`)}, pool("192.0.2.10")},
+		{"[Address] sections", []config.Document{nat64, net("20-wan", `{"match": {"name": "eth0"}, "address": [{"address": "198.51.100.1/24"}, {"address": "192.0.2.10/24"}]}`)}, pool("192.0.2.10")},
+		{"an address between spaces", []config.Document{nat64, net("20-wan", `{"match": {"name": "eth0"}, "network": {"address": " 192.0.2.9/24 "}}`)}, pool("192.0.2.9")},
+		{"a DHCP server's address", []config.Document{nat64, net("20-wan", `{"match": {"name": "eth0"}, "dhcpServer": {"serverAddress": "192.0.2.11/24"}}`)}, pool("192.0.2.11")},
+		{"addresses beside the pool", []config.Document{nat64, net("20-wan", `{"match": {"name": "eth0"}, "network": {"address": ["192.0.2.12/24", "", "dhcp", "999.0.2.9/24", "192.0.2.009", "2001:db8::/64", 7], "dhcp": "yes"}}`), net("30-lan", `{"match": {"name": "eth1"}}`)}, nil},
+		{"an address in the links' range", []config.Document{nat64, net("30-lan", `{"match": {"name": "eth1"}, "network": {"address": "169.254.100.1/24"}}`)}, linkRange},
+		{"the links' range without NAT64s", []config.Document{net("30-lan", `{"match": {"name": "eth1"}, "network": {"address": "169.254.100.1/24"}}`)}, nil},
+		{"link-local beside the range", []config.Document{nat64, net("30-lan", `{"match": {"name": "eth1"}, "network": {"address": "169.254.0.1/16"}}`)}, nil},
+		{"many Networks", append(many(60), nat64, doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.0/28"}, {"prefix": "203.0.113.16/28"}, {"prefix": "203.0.113.32/28"}, {"prefix": "203.0.113.48/28"}]}`)), pool("192.0.2.11")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := messages(failures); !slices.Equal(got, tc.want) {
+				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
+			}
+		})
 	}
 }

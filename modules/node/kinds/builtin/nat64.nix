@@ -5,8 +5,9 @@
 #
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists. So the
 # rules over the pools of two NAT64 documents, or over two entries of one pool, loop over the
-# pools' ranges flattened, and the rules over the local zones' records loop over the records
-# flattened, without regular expressions.
+# pools' ranges flattened, the rules over the Network documents' static addresses bind their
+# sections and their values as flat lists, and the rules over the local zones' records loop over
+# the records flattened, without regular expressions.
 {
   config,
   lib,
@@ -14,7 +15,8 @@
 }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin groups;
+  inherit (import ./lib.nix) builtin groups apiVersions;
+  cel = import ../../../../lib/cel.nix { inherit lib; };
   inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) portRange documentName;
   inherit (import ./router-types.nix { inherit lib; })
     prefix
@@ -94,6 +96,32 @@ let
   overIPv4Only =
     z:
     ''(${z} == "ipv4only.arpa" || ${z}.endsWith(".ipv4only.arpa") || "ipv4only.arpa".endsWith("." + ${z}))'';
+
+  # An IPv4 address, with or without a length, as chalkos-render reads a link's address: four
+  # numbers of 0 to 255 without leading zeros, which ip() parses.
+  ipv4Text = "^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$";
+  # Binds, for body, statics to the static IPv4 addresses the Network documents give their links,
+  # without their lengths: the values of Address= in the [Network] and [Address] sections and of
+  # ServerAddress= in [DHCPServer], a value or a list of them, that are IPv4 addresses once the
+  # spaces around them go, as chalkos-render reads them. The sections and the values are each
+  # bound as one list before the next loop, which keeps each loop within two nested ones; naming
+  # each address's Network would cost a loop more, so the messages leave the Network out.
+  staticsBy =
+    body:
+    let
+      sections =
+        key:
+        "nets.map(n, has(nets[n].spec.${key}) ? ${cel.oneOrMany "nets[n].spec.${key}"} : []).flatten()";
+      values = key: list: "${list}.map(s, has(s.${key}) ? ${cel.oneOrMany "s.${key}"} : []).flatten()";
+    in
+    ''cel.bind(nets, ${
+      cel.documents "config" apiVersions.networkd "Network"
+    }, cel.bind(net, ${sections "network"}, cel.bind(addr, ${sections "address"}, cel.bind(dhcp, ${sections "dhcpServer"}, cel.bind(values, dyn(${values "address" "net"} + ${values "address" "addr"} + ${values "serverAddress" "dhcp"}), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("${ipv4Text}")).map(v, v.trim().split("/")[0]), ${body}))))))'';
+  # The prefixes of every NAT64 document's pool.
+  poolPrefixes = "documents.map(n, documents[n].spec.pool4.map(a, a.prefix)).flatten()";
+  # Whether the pool prefix x holds the address a of statics.
+  holds = x: a: "cidr(${x}).contains(ip(${a}))";
+  linkRange = "169.254.64.0/18";
 
   poolEntry = types.submodule {
     options = {
@@ -208,6 +236,16 @@ in
             rule = "cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.all(x, e.all(y, x[0] == y[0] || !(cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))))";
             messageExpression = ''cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.filter(x, e.exists(y, x[0] != y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))).map(x, "NAT64 " + x[0] + " " + x[1]).join(", ") + " share addresses; give each NAT64 a pool of its own")'';
           }
+          {
+            description = "No NAT64's pool holds a static address a Network document gives a link, which the router answers itself.";
+            rule = "cel.bind(e, ${poolPrefixes}, ${staticsBy "e.all(x, statics.all(a, !${holds "x" "a"}))"})";
+            messageExpression = "cel.bind(e, ${poolPrefixes}, ${staticsBy ''cel.bind(p, e.filter(x, statics.exists(a, ${holds "x" "a"}))[0], "NAT64 " + documents.filter(n, documents[n].spec.pool4.exists(a, a.prefix == p))[0] + ": the pool entry " + string(cidr(p)) + " holds " + string(ip(statics.filter(a, ${holds "p" "a"})[0])) + ", an address a Network document gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through")''})";
+          }
+          {
+            description = "Beside NAT64s, no Network document gives a link a static address in ${linkRange}, the range of the NAT64s' links.";
+            rule = "size(documents) == 0 || ${staticsBy ''statics.all(a, !cidr("${linkRange}").contains(ip(a)))''}";
+            messageExpression = staticsBy ''"a Network document gives a link the address " + string(ip(statics.filter(a, cidr("${linkRange}").contains(ip(a)))[0])) + ", which lies in ${linkRange}, the range of the NAT64s' links; give the link another address"'';
+          }
         ];
         spec = {
           vrf = mkOption {
@@ -226,7 +264,7 @@ in
             type = types.listOf poolEntry;
             default = [ ];
             example = [ { prefix = "192.0.2.10/32"; } ];
-            description = "IPv4 addresses, with their ports, that the translated connections leave from: addresses routed to the router, not addresses of its links, which the router answers itself. The renderer refuses an address that a `Network` document gives a link. An address from DHCP passes unchecked but does not work either; leave pool4 empty instead. Empty takes the address of the link a connection leaves through, with the ports 61001 to 65535, which the router masquerades. The firewall's NAT rules leave the translated connections alone.";
+            description = "IPv4 addresses, with their ports, that the translated connections leave from: addresses routed to the router, not addresses of its links, which the router answers itself. The rules refuse an address that a `Network` document gives a link. An address from DHCP passes them but does not work either; leave pool4 empty instead. Empty takes the address of the link a connection leaves through, with the ports 61001 to 65535, which the router masquerades. The firewall's NAT rules leave the translated connections alone.";
             rules = [
               {
                 description = "A pool's entries are IPv4 ranges of 65536 addresses at most.";
