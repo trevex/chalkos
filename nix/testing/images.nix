@@ -35,6 +35,24 @@ let
               role = "reader";
               timeout = "10s";
             };
+            # The test asks r2's resolver of fabric on edge0's address from within fabric, over a
+            # socket bound to the VRF's device, which needs no privilege on a socket not bound
+            # before. The query asks for the A records of ipv4only.arpa with the ID 0x1234; any
+            # answer shows that the resolver's sockets are bound to the VRF's device.
+            chalkos.diagnostics.chalktest-fabric-dns = {
+              description = "The first bytes of r2's fabric resolver's answer, asked from within fabric.";
+              command = [
+                (toString (
+                  pkgs.writeShellScript "chalktest-fabric-dns" ''
+                    printf '\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x08ipv4only\x04arpa\x00\x00\x01\x00\x01' |
+                      ${pkgs.socat}/bin/socat -t 3 -T 5 - 'UDP6:[2001:db8:ffff::2]:53,so-bindtodevice=fabric' |
+                      ${pkgs.coreutils}/bin/od -An -tx1 -N4
+                  ''
+                ))
+              ];
+              role = "reader";
+              timeout = "10s";
+            };
           }
         ];
       };

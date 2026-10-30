@@ -67,13 +67,13 @@ const bgpPassword = "lab-s3cret"
 //     confirmed over a new connection, so chalkd still answers on enp0s2. The sessions run in
 //     fabric, r1 routes r2's edge0 in table 100 and, through its default VRF's import of fabric,
 //     in the main table, with the path imported from fabric, and table 100 ends in unreachable
-//     default routes of both families; r2's resolver of fabric runs, chalkctl shows the VRF in
-//     the status and with --vrf, bgp-summary vrf=fabric lists the session, and no unit failed.
-//     r2's fabric then moves to table 200, which removes the VRF and creates it anew: the session
-//     comes back in fabric, r2's routes, edge0's address and the unreachable defaults sit in
-//     table 200, none of the defaults stays in table 100, r1 learns edge0 again and r2's resolver
-//     of fabric runs again. The base inventory then brings the sessions and edge0 back to the
-//     default VRF.
+//     default routes of both families; r2's resolver of fabric runs and answers a query from
+//     within fabric, chalkctl shows the VRF in the status and with --vrf, bgp-summary vrf=fabric
+//     lists the session, and no unit failed. r2's fabric then moves to table 200, which removes
+//     the VRF and creates it anew: the session comes back in fabric, r2's routes, edge0's address
+//     and the unreachable defaults sit in table 200, none of the defaults stays in table 100, r1
+//     learns edge0 again and r2's resolver of fabric runs and answers again. The base inventory
+//     then brings the sessions and edge0 back to the default VRF.
 //   - default: a delivery has r1 send r2 its default route only while r1 routes 2001:db8:fff0::/48,
 //     a networkd route on its dummy uplink0. Delivered without the route, it makes r2 lose the
 //     unconditional default of the base config at once and get none back for 15 s. Delivered with
@@ -553,7 +553,9 @@ func TestRouterLab(t *testing.T) {
 		waitFor(t, 2*time.Minute, "r2's session with r1 in fabric", func() error { return inFabric("r2", "edge", start) })
 		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in fabric", func() error { return learnedFrom("r1", "fabric", "2001:db8:ffff::2/128", "64513") })
 		waitFor(t, 2*time.Minute, "r1's leaked route to r2's edge0", func() error { return leaked("2001:db8:ffff::2/128", "fabric") })
-		// fabric's resolver runs bound to the VRF's device, which chalkos-resolvers started.
+		// fabric's resolver runs bound to the VRF's device, which chalkos-resolvers started, and
+		// answers a query from within fabric, which the test image's chalktest-fabric-dns sends
+		// with the ID 0x1234.
 		resolverRunning := func(inventory string) func() error {
 			return func() error {
 				out, err := chalkctl(t, nodes["r2"], inventory, "status", "r2")
@@ -562,6 +564,10 @@ func TestRouterLab(t *testing.T) {
 				}
 				if !regexp.MustCompile(`(?m)^resolver fabric: running$`).MatchString(out) {
 					return fmt.Errorf("status of r2 shows no running resolver of fabric:\n%s", out)
+				}
+				out, err = chalkctl(t, nodes["r2"], inventory, "node", "diag", "r2", "chalktest-fabric-dns")
+				if err != nil || !regexp.MustCompile(`^\s*12 34 8`).MatchString(out) {
+					return fmt.Errorf("r2's resolver of fabric did not answer from within fabric: %v\n%s", err, out)
 				}
 				return nil
 			}
