@@ -625,7 +625,14 @@ in
   # everything else and on dmz0, an interface of no zone, an AddressSet, forwarding by zone,
   # masquerade, destination NAT and the strict reverse-path filter. A reload replaces the table
   # alone, in one transaction, and keeps it when nft refuses the new one. The leaf example, loaded
-  # as at boot, forwards everything.
+  # as at boot, forwards everything. The VRF example's ruleset, with its links in VRFs as networkd
+  # leaves them and the routes its imports leak, forwards and masquerades between zones of whole
+  # VRFs in both families, opens the transit's BGP port in its VRF alone, masquerades and
+  # translates in guest, whose addresses the default VRF and internet also use, and keeps guest's
+  # connections in their conntrack zone, so that a guest host of a management host's address
+  # cannot pass as the management host's connection, as it does without the zone. The loose
+  # reverse-path filter drops a source of either family that only the default VRF routes, and
+  # passes link-local sources in a VRF.
   router-firewall =
     let
       inherit (checkLib.router.config.systemd.services.chalkos-firewall.serviceConfig)
@@ -684,9 +691,11 @@ in
         echo 0 >/proc/sys/net/ipv4/conf/$conf/rp_filter
       done
 
+      # Each listener holds a connection open for 5 s, so that a connection is established while
+      # another tries the same addresses and ports.
       for port in 50000 22 8080; do
-        socat TCP4-LISTEN:$port,fork,reuseaddr /dev/null &
-        socat TCP6-LISTEN:$port,fork,reuseaddr,ipv6only=1 /dev/null &
+        socat TCP4-LISTEN:$port,fork,reuseaddr EXEC:"sleep 5" &
+        socat TCP6-LISTEN:$port,fork,reuseaddr,ipv6only=1 EXEC:"sleep 5" &
       done
       for ns in on_lan on_wan; do
         $ns socat TCP4-LISTEN:80,fork,reuseaddr EXEC:${whoami} &
@@ -778,6 +787,176 @@ in
       ${ExecStart} || fail "chalkos-firewall did not load the leaf ruleset"
       accepted on_wan '[2001:db8:1::2]' 80
       refused on_lan 192.0.2.1 50000
+
+      where="with the VRF example's ruleset"
+      # The VRF example's links as networkd and FRR leave them: the VRFs of the example's tables,
+      # each ending in unreachable default routes, guest's links with the addresses of eth0 and of
+      # internet's eth1, and the routes internet's and tenant's imports leak. The earlier phases'
+      # links go, as eth0 and eth3 take lan0's address.
+      ip link del lan0
+      ip link del wan0
+      ip link del dmz0
+      echo 0 >/proc/sys/net/ipv6/conf/default/accept_dad
+      vrf() {
+        ip link add "$1" type vrf table "$2"
+        ip link set "$1" up
+        ip -4 route add unreachable default metric 4278198272 table "$2"
+        ip -6 route add unreachable default metric 4278198272 table "$2"
+      }
+      vrf internet 100
+      vrf tenant 200
+      vrf guest 300
+      unshare -n sh -c 'touch mgmt-ready; exec sleep 600' &
+      mgmt=$!
+      unshare -n sh -c 'touch isp-ready; exec sleep 600' &
+      isp=$!
+      unshare -n sh -c 'touch tenant-ready; exec sleep 600' &
+      tenant=$!
+      unshare -n sh -c 'touch guest-ready; exec sleep 600' &
+      guest=$!
+      unshare -n sh -c 'touch gisp-ready; exec sleep 600' &
+      gisp=$!
+      until [ -e mgmt-ready ] && [ -e isp-ready ] && [ -e tenant-ready ] && [ -e guest-ready ] && [ -e gisp-ready ]; do sleep 0.1; done
+      on_mgmt() { nsenter -t "$mgmt" -n "$@"; }
+      on_isp() { nsenter -t "$isp" -n "$@"; }
+      on_tenant() { nsenter -t "$tenant" -n "$@"; }
+      on_guest() { nsenter -t "$guest" -n "$@"; }
+      on_gisp() { nsenter -t "$gisp" -n "$@"; }
+      # vrflink <link> <VRF or -> <peer's PID> <router's address> <peer's address>: a veth pair to
+      # the peer's eth0 in a /24, the peer's default route through the router. Link-local
+      # addresses are usable at once, without duplicate address detection.
+      vrflink() {
+        nsenter -t "$3" -n sh -c 'echo 0 >/proc/sys/net/ipv6/conf/default/accept_dad'
+        ip link add "$1" type veth peer name eth0 netns "$3"
+        if [ "$2" != - ]; then ip link set "$1" master "$2"; fi
+        ip addr add "$4/24" dev "$1"
+        ip link set "$1" up
+        nsenter -t "$3" -n ip link set lo up
+        nsenter -t "$3" -n ip addr add "$5/24" dev eth0
+        nsenter -t "$3" -n ip link set eth0 up
+        nsenter -t "$3" -n ip route add default via "$4"
+      }
+      vrflink eth0 - "$mgmt" 192.0.2.1 192.0.2.10
+      vrflink eth1 internet "$isp" 203.0.113.1 203.0.113.254
+      vrflink eth2 tenant "$tenant" 198.51.100.1 198.51.100.10
+      vrflink eth3 guest "$guest" 192.0.2.1 192.0.2.10
+      vrflink eth4 guest "$gisp" 203.0.113.1 203.0.113.254
+      ip addr add 2001:db8:1::1/64 dev eth1 nodad
+      ip addr add 2001:db8:2::1/64 dev eth2 nodad
+      on_isp ip addr add 2001:db8:1::254/64 dev eth0 nodad
+      on_isp ip route add 2001:db8:2::/64 via 2001:db8:1::1
+      on_tenant ip addr add 2001:db8:2::10/64 dev eth0 nodad
+      on_tenant ip route add default via 2001:db8:2::1
+      # What the imports leak: internet's uplink into tenant, tenant's LAN into internet.
+      ip -4 route add 203.0.113.0/24 dev eth1 table 200
+      ip -6 route add 2001:db8:1::/64 dev eth1 table 200
+      ip -4 route add 198.51.100.0/24 dev eth2 table 100
+      ip -6 route add 2001:db8:2::/64 dev eth2 table 100
+      # guest's default route through its uplink's gateway.
+      ip -4 route add default via 203.0.113.254 dev eth4 table 300
+      # Ranges the default VRF alone routes, which tenant's spoofed sources take.
+      ip -4 route add 10.99.0.0/24 dev eth0
+      ip -6 route add 2001:db8:99::/64 dev eth0
+      for ns in on_isp on_tenant; do
+        $ns socat TCP4-LISTEN:80,fork,reuseaddr EXEC:${whoami} &
+        $ns socat TCP6-LISTEN:80,fork,reuseaddr,ipv6only=1 EXEC:${whoami} &
+      done
+      on_guest socat TCP4-LISTEN:80,fork,reuseaddr EXEC:${whoami} &
+      on_gisp socat TCP4-LISTEN:80,fork,reuseaddr EXEC:${whoami} &
+      # BGP's port in internet and in guest, whose uplink peer has the transit's address.
+      socat TCP4-LISTEN:179,fork,reuseaddr,so-bindtodevice=internet /dev/null &
+      socat TCP4-LISTEN:179,fork,reuseaddr,so-bindtodevice=guest /dev/null &
+      for try in $(seq 100); do
+        [ "$(ss -Hltn sport = :179 | wc -l)" = 2 ] && [ "$(on_isp ss -Hltn | wc -l)" = 2 ] && [ "$(on_tenant ss -Hltn | wc -l)" = 2 ] &&
+          [ "$(on_guest ss -Hltn | wc -l)" = 1 ] && [ "$(on_gisp ss -Hltn | wc -l)" = 1 ] && break
+        [ "$try" != 100 ] || fail "the VRF phase's listeners did not start"
+        sleep 0.1
+      done
+      # Counts what the input chain accepted on port 22, at a later priority, what reached input
+      # from tenant's spoofed sources, and the forwarded packets of conntrack zone 1.
+      nft -f - <<'NFT'
+      table inet passed {
+        counter mgmt22 {}
+        counter guest22 {}
+        counter spoofed {}
+        counter zoned {}
+        chain input {
+          type filter hook input priority filter + 10; policy accept;
+          iifname "eth0" tcp dport 22 counter name mgmt22
+          iifname "guest" tcp dport 22 counter name guest22
+        }
+        chain before {
+          type filter hook input priority filter - 10; policy accept;
+          ip saddr 10.99.0.99 counter name spoofed
+          ip6 saddr 2001:db8:99::99 counter name spoofed
+        }
+        chain forward {
+          type filter hook forward priority filter + 10; policy accept;
+          ct zone 1 counter name zoned
+        }
+      }
+      NFT
+      install -m 644 ${goldens}/vrf.nft ${dir}/ruleset.nft
+      ${ExecReload} || fail "chalkos-firewall did not reload the VRF ruleset"
+      none() { nft list counter inet passed "$1" | grep -q 'packets 0 '; }
+
+      # tenant reaches the internet by the leaked routes, masqueraded out of internet in IPv4 and
+      # unchanged in IPv6; the internet reaches neither the tenant nor the router's other ports.
+      [ "$(seen on_tenant 203.0.113.254)" = 203.0.113.1 ] || fail "tenant's IPv4 was not masqueraded out of internet"
+      [ "$(seen on_tenant '[2001:db8:1::254]')" = '[2001:0db8:0002:0000:0000:0000:0000:0010]' ] || fail "tenant's IPv6 did not reach internet unchanged"
+      refused on_isp 198.51.100.10 80
+      refused on_isp '[2001:db8:2::10]' 80
+      refused on_isp 203.0.113.1 22
+      # The transit's BGP port opens in internet alone: guest's uplink peer has its address.
+      accepted on_isp 203.0.113.1 179
+      refused on_gisp 203.0.113.1 179
+      # guest masquerades out of eth4 and forwards 8080 to its LAN, in its conntrack zone.
+      [ "$(seen on_guest 203.0.113.254)" = 203.0.113.1 ] || fail "guest's IPv4 was not masqueraded out of eth4"
+      [ "$(seen on_gisp 203.0.113.1 8080)" = 203.0.113.254 ] || fail "guest's destination NAT did not reach its LAN"
+      if none zoned; then fail "guest's connections are not in conntrack zone 1"; fi
+      # mgmt holds a connection from port 40000 to the router's port 22. guest's host has mgmt's
+      # address and tries the same ports: in zone 1 it is a new connection, which no policy
+      # accepts, not a packet of mgmt's.
+      established() {
+        for try in $(seq 50); do
+          [ -n "$(ss -Htn state established "( sport = :22 and dport = :$1 )")" ] && return
+          [ "$try" != 50 ] || fail "mgmt's connection from port $1 to port 22 was not established"
+          sleep 0.1
+        done
+      }
+      on_mgmt socat -u EXEC:"sleep 3" TCP:192.0.2.1:22,sourceport=40000,connect-timeout=1 &
+      established 40000
+      on_guest socat -u /dev/null TCP:192.0.2.1:22,sourceport=40000,connect-timeout=1 2>/dev/null || true
+      if none mgmt22; then fail "mgmt's connection to port 22 did not pass"; fi
+      none guest22 || fail "guest's connection rode mgmt's through the input chain"
+      # The loose reverse-path filter drops a source tenant's table does not route, which the
+      # default VRF alone does, while tenant's own sources reach input, and passes link-local
+      # sources in a VRF.
+      pings on_tenant 198.51.100.1
+      pings on_tenant 2001:db8:2::1
+      on_tenant ip addr add 10.99.0.99/32 dev eth0
+      on_tenant ip addr add 2001:db8:99::99/128 dev eth0 nodad
+      on_tenant ping -c 1 -W 1 -I 10.99.0.99 198.51.100.1 >/dev/null 2>&1 || true
+      on_tenant ping -c 1 -W 1 -I 2001:db8:99::99 2001:db8:2::1 >/dev/null 2>&1 || true
+      none spoofed || fail "the reverse-path filter passed a source only the default VRF routes"
+      ll=
+      for try in $(seq 50); do
+        read -r _ _ _ ll _ <<<"$(ip -6 -o addr show dev eth2 scope link)" || true
+        [ -n "$ll" ] && break
+        [ "$try" != 50 ] || fail "eth2 has no link-local address"
+        sleep 0.1
+      done
+      pings on_tenant "''${ll%/*}%eth0"
+
+      where="with the VRF example's ruleset without its conntrack zones"
+      # The same probe without the zones: guest's host passes as mgmt's connection.
+      sed '/^\tchain ct-\(prerouting\|output\) {$/,/^\t}$/d' ${goldens}/vrf.nft >${dir}/ruleset.nft
+      if grep -q 'ct zone' ${dir}/ruleset.nft; then fail "the ruleset still sets conntrack zones"; fi
+      ${ExecReload} || fail "chalkos-firewall did not reload the VRF ruleset without conntrack zones"
+      on_mgmt socat -u EXEC:"sleep 3" TCP:192.0.2.1:22,sourceport=40001,connect-timeout=1 &
+      established 40001
+      on_guest socat -u /dev/null TCP:192.0.2.1:22,sourceport=40001,connect-timeout=1 2>/dev/null || true
+      if none guest22; then fail "guest's connection did not ride mgmt's, so the probe shows nothing"; fi
     '';
 
   # frr.service fills the rendered config's password placeholders in from its credentials into
