@@ -1342,7 +1342,8 @@ lib.runTests {
           "kubelet.service"
         ];
         etcdMount = config.systemd.services.chalkos-controlplane.unitConfig.RequiresMountsFor;
-        # The kubelet waits for the mount too: its etcd pod would otherwise start on an empty directory.
+        # The kubelet waits for the mount too: its etcd pod would otherwise start on an empty
+        # directory.
         kubeletEtcdMount = config.systemd.services.kubelet.unitConfig.RequiresMountsFor;
         # Without the firewall the unit makes etcd's directory alone, and does not wait for it.
         afterAbsentFirewall =
@@ -1690,7 +1691,8 @@ lib.runTests {
               in
               builtins.length pre == 1
               && lib.hasSuffix "/bin/chalkd kubernetes vxlan-rule" (builtins.elemAt pre 0);
-            # The preparation fills the table as its last step, and nothing fills it after a failure.
+            # The preparation fills the table as its last step, and nothing fills it after a
+            # failure.
             prepareFills =
               lib.hasSuffix "/bin/chalkd kubernetes prepare --vxlan-rule" prepare.serviceConfig.ExecStart
               && !(prepare.serviceConfig ? ExecStartPost);

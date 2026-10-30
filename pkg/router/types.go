@@ -4,7 +4,8 @@ import "regexp"
 
 // ShortName is the name of a document whose name names a device or an instance in the kernel, of
 // 15 characters at most, as a NAT64 or VRF document's. A name that matches it may reach jool's
-// and vtysh's command lines.
+// and vtysh's command lines. The vrf pattern of the router diagnostics in
+// modules/node/router/diagnostics.nix holds the same regex; change both together.
 var ShortName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`)
 
 // Peer is one BGP session of the router: a BGPPeer's address, or one of its interfaces, as FRR

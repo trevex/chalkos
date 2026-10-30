@@ -19,8 +19,9 @@ func readTestdata(t *testing.T, name string) []byte {
 
 // The peers of show bgp vrf all neighbors json: the default VRF's sessions, recorded from FRR
 // 10.7 on a fabric edge whose session on eth2 BFD then ended, and a tenant VRF's session on swp1,
-// written by hand in the shape FRR 10.7.1 gave a VRF's session in the lab. One entry per session, the default VRF's first, by BGPPeer and neighbour, with its
-// VRF, state, the uptime of an established one, its routes of every family and its BFD state.
+// written by hand in the shape FRR 10.7.1 gave a VRF's session in the lab. One entry per
+// session, the default VRF's first, by BGPPeer and neighbour, with its VRF, state, the uptime of
+// an established one, its routes of every family and its BFD state.
 func TestParsePeers(t *testing.T) {
 	peers, err := ParsePeers(readTestdata(t, "neighbors.json"))
 	if err != nil {

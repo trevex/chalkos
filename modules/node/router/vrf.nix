@@ -1,8 +1,8 @@
 # VRFs on router images: the output networkd renders the VRF documents beside networkd's own, with
-# chalkos-render router-networkd, as a VRF device's units and VRF= on its members' Networks. networkd
-# creates a VRF on reload but neither changes an existing VRF's table nor removes a VRF whose unit
-# went, so chalkos-vrf removes those and reloads networkd, which then creates them anew with their
-# members.
+# chalkos-render router-networkd, as a VRF device's units and VRF= on its members' Networks.
+# networkd creates a VRF on reload but neither changes an existing VRF's table nor removes a VRF
+# whose unit went, so chalkos-vrf removes those and reloads networkd, which then creates them anew
+# with their members.
 {
   chalkosPackages,
   config,

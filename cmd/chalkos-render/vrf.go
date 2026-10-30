@@ -12,7 +12,9 @@ import (
 
 // The VRF documents: each link's VRF, which the outputs frr and router-nftables read, and the
 // units of the VRFs, which the output networkd renders on router images beside the networkd
-// documents.
+// documents. The VRF and BGPPeer documents' interfaces are names or a prefix and *, as the router
+// kinds' schemas take them, while the words of a Network's Name= are fnmatch globs, as networkd
+// reads them; the renderer keeps the two models on purpose and compares them with path.Match.
 
 // defaultVRF names the VRF of every link no VRF holds, as FRR and the router kinds name it.
 const defaultVRF = "default"

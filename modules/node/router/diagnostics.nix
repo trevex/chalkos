@@ -21,7 +21,8 @@ let
     timeout = "10s";
     groups = [ "frrvty" ];
   };
-  # The VRF a vtysh diagnostic asks about; FRR names the default VRF default.
+  # The VRF a vtysh diagnostic asks about; FRR names the default VRF default. The regex is that of
+  # ShortName in pkg/router, which chalkd checks a VRF's name against; change both together.
   vrf = {
     type = "pattern";
     regex = "^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$";

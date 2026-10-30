@@ -59,7 +59,8 @@ func routerStatus(h layer.Host, r *routerv1.StatusResponse) error {
 	return nil
 }
 
-// bgpStatus prints a router's BGP sessions, in chalkd's order, by VRF, or why their state is unknown.
+// bgpStatus prints a router's BGP sessions, in chalkd's order, by VRF, or why their state is
+// unknown.
 func bgpStatus(h layer.Host, r *routerv1.StatusResponse) error {
 	switch {
 	case r.BgpError != "":
