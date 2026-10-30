@@ -131,8 +131,9 @@ type path struct {
 	LocalPref *uint32 `json:"locPrf"`
 	Valid     bool    `json:"valid"`
 	Multipath bool    `json:"multipath"`
-	// Local is set for a network or aggregate of the instance, and Sourced for a network and for a
-	// route it redistributes; FRR marks neither on a path a peer sent.
+	// Local is set for a network or aggregate of the instance and for a path it imports from
+	// another VRF, and Sourced for a network, a route it redistributes and an imported path; FRR
+	// marks neither on a path a peer sent.
 	Local   bool `json:"local"`
 	Sourced bool `json:"sourced"`
 	Best    *struct {
