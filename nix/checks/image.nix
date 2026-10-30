@@ -421,10 +421,12 @@ in
           cat err >&2
           exit 1
         fi
-        # The check of FRR's config passes the edge example's and refuses a command no daemon
-        # takes, with vtysh alone.
+        # The check of FRR's config passes the edge example's and the IPv4 and IPv6 tracking of
+        # the renderer's tests, and refuses a command no daemon takes, with vtysh alone.
         check=$(jq -r .frr.check ${router.chalkosOutputs})
         mkdir frr
+        install -m 644 ${../../cmd/chalkos-render/testdata/router/tracked.frr} frr/frr.conf
+        OUT=$PWD/frr $check </dev/null
         install -m 644 ${../../cmd/chalkos-render/testdata/router/edge.frr} frr/frr.conf
         OUT=$PWD/frr $check </dev/null
         sed -i 's/^ neighbor peer-fabric bfd$/ neighbor peer-fabric bfd sometimes/' frr/frr.conf

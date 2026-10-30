@@ -1,0 +1,110 @@
+! FRR's config, rendered by chalkos-render frr. frr.service fills in the passwords, and
+! frr-reload.py applies the changes.
+frr defaults traditional
+hostname r1
+log syslog informational
+service integrated-vtysh-config
+!
+ipv6 prefix-list pl-tenant seq 5 permit 2001:db8:100::/40
+ipv6 prefix-list pl-uplink seq 5 permit ::/0
+ipv6 prefix-list pl-wan seq 5 permit 2001:db8:fff0::/48
+ip prefix-list pl-uplink4 seq 5 permit 0.0.0.0/0
+!
+bgp large-community-list standard chalkos-tracked seq 5 permit 4200000000:0:1
+!
+route-map rp-from-tenant permit 10
+ match ipv6 address prefix-list pl-tenant
+exit
+route-map rp-from-tenant deny 65535
+exit
+route-map accept-all permit 10
+exit
+route-map do-uplink permit 10
+ match ipv6 address prefix-list pl-uplink
+exit
+route-map do-uplink4 permit 10
+ match ip address prefix-list pl-uplink4
+exit
+route-map leak-default-ipv4 deny 5
+ match large-community chalkos-tracked
+exit
+route-map leak-default-ipv4 permit 10
+exit
+route-map leak-default-ipv6 deny 5
+ match large-community chalkos-tracked
+exit
+route-map leak-default-ipv6 permit 10
+ call rp-from-tenant
+exit
+route-map track-tenant-ipv4 deny 5
+ match ip next-hop type blackhole
+exit
+route-map track-tenant-ipv4 permit 10
+ match ip address prefix-list pl-uplink4
+ set community no-advertise additive
+ set distance 255
+ set large-community 4200000000:0:1 additive
+ set weight 0
+exit
+route-map track-tenant-ipv6 deny 5
+ match ipv6 next-hop type blackhole
+exit
+route-map track-tenant-ipv6 permit 10
+ match ipv6 address prefix-list pl-uplink
+ set community no-advertise additive
+ set distance 255
+ set large-community 4200000000:0:1 additive
+ set weight 0
+exit
+!
+router bgp 64512
+ bgp router-id 192.0.2.1
+ no bgp default ipv4-unicast
+ !
+ address-family ipv4 unicast
+  maximum-paths 1
+  maximum-paths ibgp 1
+  import vrf route-map leak-default-ipv4
+  import vrf tenant
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  maximum-paths 1
+  maximum-paths ibgp 1
+  import vrf route-map leak-default-ipv6
+  import vrf tenant
+ exit-address-family
+exit
+!
+router bgp 64512 vrf tenant
+ bgp router-id 192.0.2.1
+ no bgp default ipv4-unicast
+ neighbor peer-leaf peer-group
+ neighbor peer-leaf remote-as external
+ neighbor eth2 interface peer-group peer-leaf
+ !
+ address-family ipv4 unicast
+  redistribute kernel route-map track-tenant-ipv4
+  redistribute connected route-map track-tenant-ipv4
+  maximum-paths 1
+  maximum-paths ibgp 1
+  neighbor peer-leaf activate
+  neighbor peer-leaf default-originate route-map do-uplink4
+  neighbor peer-leaf route-map accept-all in
+  neighbor peer-leaf route-map accept-all out
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  redistribute kernel route-map track-tenant-ipv6
+  redistribute connected route-map track-tenant-ipv6
+  maximum-paths 1
+  maximum-paths ibgp 1
+  neighbor peer-leaf activate
+  neighbor peer-leaf default-originate route-map do-uplink
+  neighbor peer-leaf route-map accept-all in
+  neighbor peer-leaf route-map accept-all out
+  import vrf default
+ exit-address-family
+exit
+!
+end

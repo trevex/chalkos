@@ -1236,6 +1236,27 @@ func TestFRRDefaultOriginateWhen(t *testing.T) {
 		strings.Contains(one, "track-default-ipv6") {
 		t.Errorf("frr.conf with tenant's tracking alone:\n%s", one)
 	}
+	// tenant's IPv4 tracks too: its routes of IPv4 go through track-tenant-ipv4 and the default
+	// VRF's IPv4 import from tenant through leak-default-ipv4. The image's check parses the
+	// config with vtysh, as no example tracks IPv4.
+	docs["PrefixList"] = append(docs["PrefixList"], routerDoc(t, "PrefixList", "uplink4", `{"family": "ipv4", "entries": [{"prefix": "0.0.0.0/0", "action": "permit"}]}`))
+	docs["BGPPeer"] = []any{routerDoc(t, "BGPPeer", "leaf", `{"vrf": "tenant", "interface": "eth2", "remoteAS": "external", "families": {"ipv4": {"defaultOriginate": true, "defaultOriginateWhen": "uplink4"}, "ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "uplink"}}}`)}
+	both := conf()
+	for _, want := range []string{
+		"ip prefix-list pl-uplink4 seq 5 permit 0.0.0.0/0\n",
+		"route-map do-uplink4 permit 10\n match ip address prefix-list pl-uplink4\nexit\n",
+		"route-map leak-default-ipv4 deny 5\n match large-community chalkos-tracked\nexit\nroute-map leak-default-ipv4 permit 10\nexit\n",
+		"route-map track-tenant-ipv4 deny 5\n match ip next-hop type blackhole\nexit\n" +
+			"route-map track-tenant-ipv4 permit 10\n match ip address prefix-list pl-uplink4\n set community no-advertise additive\n set distance 255\n set large-community 4200000000:0:1 additive\n set weight 0\nexit\n",
+		"  import vrf route-map leak-default-ipv4\n  import vrf tenant\n",
+		"  redistribute kernel route-map track-tenant-ipv4\n  redistribute connected route-map track-tenant-ipv4\n",
+		"  neighbor peer-leaf default-originate route-map do-uplink4\n",
+	} {
+		if !strings.Contains(both, want) {
+			t.Errorf("frr.conf with both families tracked lacks %q:\n%s", want, both)
+		}
+	}
+	golden(t, "tracked.frr", both)
 }
 
 // A peer's interface is in the VRF of the first Network document networkd picks for it, which
