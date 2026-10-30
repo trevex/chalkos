@@ -319,14 +319,47 @@ func TestApplyConfigUndoesAFailedDelivery(t *testing.T) {
 	}
 }
 
+// TestApplyConfigUndoesADeliveryThatStoppedPartWay: a delivery that stops while it restarts
+// demo.service on its config, as a crash or a panic stops it, returns no error to record. The
+// baseline holds it from before its first change, so the delivery of the config from before it
+// restarts demo.service again.
+func TestApplyConfigUndoesADeliveryThatStoppedPartWay(t *testing.T) {
+	s, r := configServer(t)
+	stopped := false
+	r.Before = func(line string) {
+		if line == "systemctl try-restart demo.service" && !stopped {
+			stopped = true
+			panic("stopped")
+		}
+	}
+	func() {
+		defer func() { _ = recover() }()
+		_, _ = sendConfig(s, nextConfig)
+	}()
+	if !stopped {
+		t.Fatalf("the delivery ran %v, want demo.service restarted", r.Calls)
+	}
+	r.ResetCalls()
+	if _, err := sendConfig(s, baseConfig); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Errorf("the config from before ran %v, want demo.service restarted", r.Calls)
+	}
+}
+
 // TestApplyConfigUndoesADeliveryFailedBeforeItsSlot: a delivery that fails before it writes the
-// slot may have applied the identity and the layers' files of its config; the delivery of the
-// config from before it takes the effects that compare it with that config.
+// slot runs the layer action its rule asks for on the identity and the layers' files of its
+// config. The delivery of the config from before it runs the action again.
 func TestApplyConfigUndoesADeliveryFailedBeforeItsSlot(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root writes to read-only directories")
 	}
-	s, r := configServer(t)
+	s, _ := configServer(t)
+	addKubernetes(t, s, k8s.KindWorker, true)
+	write(t, s.Loader.Effects, `{"named": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.name != oldConfig[\"demo.example.org/v1alpha1\"].Demo.one.spec.name", "chalkd": "kubernetes:reload"}}`)
+	var acted []string
+	s.actedOnSelf = func(names []string) { acted = append(acted, names...) }
 	slots := filepath.Dir(slotOf(t, s))
 	// The directory of slots takes no new slot directory.
 	if err := os.Chmod(slots, 0o555); err != nil {
@@ -336,15 +369,18 @@ func TestApplyConfigUndoesADeliveryFailedBeforeItsSlot(t *testing.T) {
 	if _, err := sendConfig(s, nextConfig); err == nil || !strings.Contains(err.Error(), "store the config") {
 		t.Fatalf("err = %v, want the slot's failure", err)
 	}
+	if !slices.Contains(acted, "kubernetes:reload") {
+		t.Fatalf("the failed delivery acted on itself %v, want kubernetes:reload", acted)
+	}
 	if err := os.Chmod(slots, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	r.ResetCalls()
+	acted = nil
 	if _, err := sendConfig(s, baseConfig); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
-		t.Errorf("the config from before ran %v, want demo.service restarted", r.Calls)
+	if !slices.Contains(acted, "kubernetes:reload") {
+		t.Errorf("the config from before acted on itself %v, want kubernetes:reload", acted)
 	}
 }
 

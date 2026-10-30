@@ -199,20 +199,21 @@ func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]o
 	return slices.Compact(due), warnings, nil
 }
 
-// failedAttempt adds what the delivery of e applied, or may have, to the baseline once it failed
-// after it began to change the node: its documents, the states of the outputs it rendered,
-// states, and the hashes of its kinds. A unit it restarted runs its config then, so the next
-// delivery takes the effects that compare with it too, even one of the config from before it.
-// The attempts go with the baseline once a delivery is applied whole.
-func (s *Server) failedAttempt(e *pendingEffects, states map[string]outputs.State) {
+// recordAttempt adds what the delivery of e applies to the baseline before the delivery changes
+// anything: its documents, the states of the outputs it rendered, states, and the hashes of its
+// kinds. Should it fail or stop part way, as a crash stops it, a unit it restarted runs its
+// config, so the next delivery takes the effects that compare with it too, even one of the config
+// from before it. The attempts go with the baseline once a delivery is applied whole.
+func (s *Server) recordAttempt(e *pendingEffects, states map[string]outputs.State) error {
 	kinds, err := config.KindHashes(e.next, e.schemas)
 	if err != nil {
 		// Without them every effect on a kind the delivery holds is due.
-		log.Printf("the kinds of the failed delivery: %v", err)
+		log.Printf("the kinds of the delivery: %v", err)
 	}
 	if err := addAttempt(s.Paths.EffectsBaseline, baselineAttempt{Documents: redacted(e.next), Outputs: states, Kinds: kinds}); err != nil {
-		log.Printf("record the failed delivery in the baseline of the effects: %v", err)
+		return failed(connect.CodeInternal, "record the delivery in the baseline of the effects: %v", err)
 	}
+	return nil
 }
 
 // consume takes the effects a delivery asks for once it is applied, in this order:
