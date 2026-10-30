@@ -485,7 +485,9 @@ func (s *Server) expireTrial(version string, deadline time.Time, armed uint64) {
 	defer s.upgrading.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if armed != s.trialArmed {
+	// A deadline that fires once chalkd stopped leaves the trial to the next start, so its record
+	// takes no failure the stop caused.
+	if armed != s.trialArmed || s.trialCtx != nil && s.trialCtx.Err() != nil {
 		return
 	}
 	r, open, err := readTrial(s.Paths.StateDir)

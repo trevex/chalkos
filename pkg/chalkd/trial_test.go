@@ -1017,6 +1017,26 @@ func TestResumeTrialAfterChalkdStopped(t *testing.T) {
 	}
 }
 
+// TestTrialExpiryAfterChalkdStopped leaves a trial alone when its deadline fires once chalkd
+// stopped: the record takes no failure, and the next start settles the trial.
+func TestTrialExpiryAfterChalkdStopped(t *testing.T) {
+	s := trialServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.mu.Lock()
+	s.trialCtx = ctx
+	s.mu.Unlock()
+	expire(s, rec)
+	got, open, err := readTrial(s.Paths.StateDir)
+	if err != nil || !open || !got.sameTrial(rec) {
+		t.Errorf("after chalkd stopped the record is %+v, open %v, %v; want %+v", got, open, err, rec)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != rec.Version {
+		t.Errorf("the node runs %s, want %s", v, rec.Version)
+	}
+}
+
 // TestTrialExpiryKeepsARecordItCannotRemove arms the deadline again when the record of a trial
 // that ended cannot be removed, so the trial is not lost.
 func TestTrialExpiryKeepsARecordItCannotRemove(t *testing.T) {
