@@ -382,6 +382,46 @@ func TestApplyConfigUndoesAFailedDeliveryOnItsFacts(t *testing.T) {
 	}
 }
 
+// factSequence answers every command fact with the first of its values, which it drops while
+// others follow.
+type factSequence struct{ values []string }
+
+func (f *factSequence) Run(context.Context, []string, []byte, int) ([]byte, error) {
+	v := f.values[0]
+	if len(f.values) > 1 {
+		f.values = f.values[1:]
+	}
+	return []byte(v), nil
+}
+
+// TestApplyConfigUndoesAFailedDeliveryOfTheSameConfig: a delivery that keeps the config, as a
+// share's does, can change a fact alone. One that fails after it restarted namer.service on the
+// fact it changed leaves namer.service running that fact. The next delivery, which finds the fact
+// as it was, restarts namer.service again.
+func TestApplyConfigUndoesAFailedDeliveryOfTheSameConfig(t *testing.T) {
+	s, r := configServer(t)
+	lock := &factSequence{values: []string{`"a"`, `"b"`}}
+	s.Facts = lock
+	write(t, s.Paths.Facts, `{"lock": {"command": "lock"}}`)
+	write(t, s.Loader.Effects, `{"namer": {"when": "facts.lock != oldFacts.lock", "restart": ["namer.service"]},
+	  "late": {"when": "facts.lock != oldFacts.lock", "run": "hook"}}`)
+	r.Rules = append([]tooltest.Rule{{Prefix: "hook", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
+	if _, err := sendConfig(s, baseConfig); err == nil || !strings.Contains(err.Error(), "run hook") {
+		t.Fatalf("err = %v, want the hook's failure", err)
+	}
+	if !slices.Contains(r.Calls, "systemctl try-restart namer.service") {
+		t.Fatalf("the failed delivery ran %v, want namer.service restarted", r.Calls)
+	}
+	lock.values = []string{`"a"`}
+	r.ResetCalls()
+	if _, err := sendConfig(s, baseConfig); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(r.Calls, "systemctl try-restart namer.service") {
+		t.Errorf("the fact as it was ran %v, want namer.service restarted", r.Calls)
+	}
+}
+
 // TestApplyConfigUndoesADeliveryFailedBeforeItsSlot: a delivery that fails before it writes the
 // slot runs the layer action its rule asks for on the identity and the layers' files of its
 // config. The delivery of the config from before it runs the action again.

@@ -202,6 +202,32 @@ func TestRefusedTrustLeavesTheBaseline(t *testing.T) {
 	}
 }
 
+// TestTrustRefusedOnCommitLeavesTheBaseline checks that OS CAs refused once the delivery recorded
+// its attempt, as when they no longer verify the node by then, leave the baseline an earlier
+// delivery that failed part way recorded as it was, without that attempt.
+func TestTrustRefusedOnCommitLeavesTheBaseline(t *testing.T) {
+	s, _ := configServer(t)
+	earlier := `{"documents":[],"facts":{}}`
+	write(t, s.Paths.EffectsBaseline, earlier)
+	ctx := context.Background()
+	d, err := s.planDelivery(ctx, applyRequest{msg: &nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.staged.Discard()
+	other, err := pki.NewOSCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.osCA = other.Certificate
+	if _, err := d.commit(ctx); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("OS CAs that do not verify the node: %v, want a refusal", err)
+	}
+	if got := readFile(t, s.Paths.EffectsBaseline); got != earlier {
+		t.Errorf("baseline after a refused delivery = %s, want the earlier one %s", got, earlier)
+	}
+}
+
 // trustOf returns the node's status's trust entries by name.
 func trustOf(t *testing.T, s *Server) map[string]*nodev1.TrustStatus {
 	t.Helper()

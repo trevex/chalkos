@@ -81,13 +81,17 @@ func readBaseline(path string) (b baseline, found bool, err error) {
 	if err != nil {
 		return baseline{}, false, err
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	// Numbers stay json.Number, as documents and facts hold them.
-	dec.UseNumber()
-	if err := dec.Decode(&b); err != nil {
+	if err := decode(data, &b); err != nil {
 		return baseline{}, false, fmt.Errorf("%s: %w", path, err)
 	}
 	return b, true, nil
+}
+
+// decode decodes data into v, with numbers kept as json.Number, as documents and facts hold them.
+func decode(data []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	return dec.Decode(v)
 }
 
 // newBaseline records old, the running slot's config, the facts the rules read, names, as f
@@ -108,18 +112,55 @@ func (b baseline) write(path string) error {
 // applied is what the attempt applied, its facts left out, as JSON.
 func (a baselineAttempt) applied() ([]byte, error) {
 	a.Facts = nil
-	return json.Marshal(a)
+	return a.recorded()
+}
+
+// recorded is the attempt as JSON, as the baseline reads it back: its numbers, which the file
+// keeps as json.Number, compare with those of an attempt read from the file.
+func (a baselineAttempt) recorded() ([]byte, error) {
+	data, err := json.Marshal(a)
+	if err != nil {
+		return nil, err
+	}
+	var read baselineAttempt
+	if err := decode(data, &read); err != nil {
+		return nil, err
+	}
+	return json.Marshal(read)
 }
 
 // maxAttempts is how many attempts a baseline keeps, the newest.
 const maxAttempts = 16
 
 // addAttempt adds a, what a delivery applies, to the baseline at path, which that delivery
-// compares with. An attempt that applied the same, as a retry of the same delivery leaves it,
-// goes, so the baseline holds each once, with the facts of its last run. An attempt that applies
-// what the baseline holds, as a delivery of the baseline's config does, is not added: the
-// comparison with the baseline takes its effects. Beyond maxAttempts the oldest go.
-func addAttempt(path string, a baselineAttempt) error {
+// compares with, and returns the baseline as it was, for a delivery refused before it changed
+// anything to restore. Every delivery adds its attempt, a retry and one of the baseline's own
+// config among them: either can change the facts alone, as a share does. Beyond maxAttempts the
+// oldest go.
+func addAttempt(path string, a baselineAttempt) (previous []byte, err error) {
+	previous, err = os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, errors.New("the delivery left no baseline")
+	}
+	if err != nil {
+		return nil, err
+	}
+	var b baseline
+	if err := decode(previous, &b); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	b.Attempts = append(b.Attempts, a)
+	if n := len(b.Attempts); n > maxAttempts {
+		b.Attempts = b.Attempts[n-maxAttempts:]
+	}
+	return previous, b.write(path)
+}
+
+// setAttemptFacts records facts, as the delivery that applied what a applied loaded them once it
+// changed the node, on the newest attempt in the baseline at path, which addAttempt added for that
+// delivery. An older attempt that applied the same and read the same facts, as an earlier run of
+// a retried delivery, goes, so the baseline holds each once.
+func setAttemptFacts(path string, a baselineAttempt, facts recordedFacts) error {
 	b, found, err := readBaseline(path)
 	if err != nil {
 		return err
@@ -131,38 +172,24 @@ func addAttempt(path string, a baselineAttempt) error {
 	if err != nil {
 		return err
 	}
-	if own, err := (baselineAttempt{Documents: b.Documents, Outputs: b.Outputs, Kinds: b.Kinds}).applied(); err == nil && bytes.Equal(own, data) {
-		return nil
+	last := len(b.Attempts) - 1
+	if last < 0 {
+		return errors.New("the baseline holds no attempt of the delivery")
 	}
-	b.Attempts = slices.DeleteFunc(b.Attempts, func(o baselineAttempt) bool {
-		od, err := o.applied()
-		return err == nil && bytes.Equal(od, data)
-	})
-	b.Attempts = append(b.Attempts, a)
-	if n := len(b.Attempts); n > maxAttempts {
-		b.Attempts = b.Attempts[n-maxAttempts:]
+	if od, err := b.Attempts[last].applied(); err != nil || !bytes.Equal(od, data) {
+		return errors.New("the newest attempt in the baseline is not the delivery's")
 	}
-	return b.write(path)
-}
-
-// setAttemptFacts records facts, as the delivery that applied what a applied loaded them once it
-// changed the node, on that attempt in the baseline at path.
-func setAttemptFacts(path string, a baselineAttempt, facts recordedFacts) error {
-	b, found, err := readBaseline(path)
-	if err != nil || !found {
-		return err
-	}
-	data, err := a.applied()
+	b.Attempts[last].Facts = facts
+	whole, err := b.Attempts[last].recorded()
 	if err != nil {
 		return err
 	}
-	for i, o := range b.Attempts {
-		if od, err := o.applied(); err == nil && bytes.Equal(od, data) {
-			b.Attempts[i].Facts = facts
-			return b.write(path)
-		}
-	}
-	return nil
+	older := slices.DeleteFunc(b.Attempts[:last], func(o baselineAttempt) bool {
+		od, err := o.recorded()
+		return err == nil && bytes.Equal(od, whole)
+	})
+	b.Attempts = append(older, b.Attempts[last])
+	return b.write(path)
 }
 
 // documents are the baseline's documents, with their secret values hashed.

@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -43,8 +44,9 @@ type pendingEffects struct {
 	// applied, which the rules, outputs and kinds compare with too.
 	attempts []baselineAttempt
 	// attempt is what this delivery applies, as recordAttempt added it to the baseline; nil until
-	// then.
-	attempt *baselineAttempt
+	// then. withoutAttempt is the baseline as it was before, which refused restores.
+	attempt        *baselineAttempt
+	withoutAttempt []byte
 }
 
 // effectsOf compiles the rules of the running image's effects and loads every fact they read.
@@ -236,10 +238,11 @@ func (s *Server) recordAttempt(e *pendingEffects, states map[string]outputs.Stat
 		log.Printf("the kinds of the delivery: %v", err)
 	}
 	a := baselineAttempt{Documents: redacted(e.next), Outputs: states, Kinds: kinds}
-	if err := addAttempt(s.Paths.EffectsBaseline, a); err != nil {
+	previous, err := addAttempt(s.Paths.EffectsBaseline, a)
+	if err != nil {
 		return failed(connect.CodeInternal, "record the delivery in the baseline of the effects: %v", err)
 	}
-	e.attempt = &a
+	e.attempt, e.withoutAttempt = &a, previous
 	return nil
 }
 
@@ -282,10 +285,17 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 }
 
 // refused removes the baseline of a delivery refused before it changed anything, which leaves the
-// next one nothing to take again. A baseline an earlier delivery that failed part way left stays.
+// next one nothing to take again. A baseline an earlier delivery that failed part way left stays,
+// as it was before the delivery recorded its attempt.
 func (s *Server) refused(e *pendingEffects) {
-	if e.recorded {
+	switch {
+	case e.recorded:
 		s.dropBaseline()
+	case e.withoutAttempt != nil:
+		if err := atomicfile.WriteFile(s.Paths.EffectsBaseline, e.withoutAttempt, 0o600); err != nil {
+			// The attempt stays, without facts, which makes every rule that reads a fact due.
+			log.Printf("remove the refused delivery from the baseline of the effects: %v", err)
+		}
 	}
 }
 
