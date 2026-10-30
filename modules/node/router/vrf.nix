@@ -49,7 +49,9 @@ let
           section == "[VRF]" && key == "Table" { table = value }
           END { if (kind == "vrf" && name != "") printf "%s\t%s\n", name, table }' "$file")
       done
-      vrfs=$(ip -d -j link show type vrf | jq -r '.[] | "\(.ifname) \(.linkinfo.info_data.table)"')
+      # ip link show type vrf lists every link without a kind, as empty objects, while the
+      # kernel's vrf module is not loaded, so jq picks the VRFs from all links.
+      vrfs=$(ip -d -j link show | jq -r '.[] | select(.linkinfo.info_kind == "vrf") | "\(.ifname) \(.linkinfo.info_data.table)"')
       failed=()
       removed=false
       while read -r name table; do
