@@ -64,6 +64,7 @@ route-map track-default-ipv6 permit 10
  set community no-advertise additive
  set distance 255
  set large-community 4200000000:0:1 additive
+ set weight 0
 exit
 !
 router bgp 64512

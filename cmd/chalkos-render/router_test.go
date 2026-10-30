@@ -1189,12 +1189,12 @@ func TestFRRDefaultOriginateWhen(t *testing.T) {
 			"route-map do-uplink permit 10\n match ipv6 address prefix-list pl-uplink\nexit\n" +
 			"route-map do-wan permit 10\n match ipv6 address prefix-list pl-wan\nexit\n" +
 			"route-map track-default-ipv6 deny 5\n match ipv6 next-hop type blackhole\nexit\n" +
-			"route-map track-default-ipv6 permit 10\n match ipv6 address prefix-list pl-uplink\n set community no-advertise additive\n set distance 255\n set large-community 4200000000:0:1 additive\nexit\n" +
-			"route-map track-default-ipv6 permit 20\n match ipv6 address prefix-list pl-wan\n set community no-advertise additive\n set distance 255\n set large-community 4200000000:0:1 additive\nexit\n" +
+			"route-map track-default-ipv6 permit 10\n match ipv6 address prefix-list pl-uplink\n set community no-advertise additive\n set distance 255\n set large-community 4200000000:0:1 additive\n set weight 0\nexit\n" +
+			"route-map track-default-ipv6 permit 20\n match ipv6 address prefix-list pl-wan\n set community no-advertise additive\n set distance 255\n set large-community 4200000000:0:1 additive\n set weight 0\nexit\n" +
 			"route-map leak-default-ipv6 deny 5\n match large-community chalkos-tracked\nexit\n" +
 			"route-map leak-default-ipv6 permit 10\n call rp-from-tenant\nexit\n" +
 			"route-map track-tenant-ipv6 deny 5\n match ipv6 next-hop type blackhole\nexit\n" +
-			"route-map track-tenant-ipv6 permit 10\n match ipv6 address prefix-list pl-uplink\n set community no-advertise additive\n set distance 255\n set large-community 4200000000:0:1 additive\nexit\n" +
+			"route-map track-tenant-ipv6 permit 10\n match ipv6 address prefix-list pl-uplink\n set community no-advertise additive\n set distance 255\n set large-community 4200000000:0:1 additive\n set weight 0\nexit\n" +
 			"route-map leak-tenant-ipv6 deny 5\n match large-community chalkos-tracked\nexit\n" +
 			"route-map leak-tenant-ipv6 permit 10\nexit\n!\n",
 		// The default VRF's IPv4 tracks nothing and imports from a VRF that tracks no IPv4.

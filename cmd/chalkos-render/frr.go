@@ -987,7 +987,9 @@ func (c *frr) routeMaps(b *strings.Builder) {
 // defaults among them, count for nothing; zebra reads their kernel metric as a distance and a
 // metric of its own, so the route-map matches their type. A tracked path takes distance 255,
 // so a path a peer sends for the same prefix stays the best one, which bgpd installs, announces
-// and leaks. It reports whether it rendered any.
+// and leaks. It takes weight 0 too: bgpd compares no distance against a network of the
+// instance, and the network keeps its weight of 32768, so it stays the best path even when its
+// policy prepends or lowers its local preference. It reports whether it rendered any.
 func (c *frr) trackingMaps(b *strings.Builder) bool {
 	lists := map[string]bool{}
 	for _, byFamily := range c.tracked {
@@ -1007,7 +1009,7 @@ func (c *frr) trackingMaps(b *strings.Builder) bool {
 				name := trackMap(in.vrf, fam)
 				fmt.Fprintf(b, "route-map %s deny 5\n match %s next-hop type blackhole\nexit\n", name, ipWord(fam))
 				for i, l := range ls {
-					fmt.Fprintf(b, "route-map %s permit %d\n match %s address prefix-list %s%s\n set community no-advertise additive\n set distance 255\n set large-community %s additive\nexit\n",
+					fmt.Fprintf(b, "route-map %s permit %d\n match %s address prefix-list %s%s\n set community no-advertise additive\n set distance 255\n set large-community %s additive\n set weight 0\nexit\n",
 						name, 10*(i+1), ipWord(fam), prefixListPrefix, l, trackedCommunity)
 				}
 			}

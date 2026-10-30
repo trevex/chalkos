@@ -122,6 +122,7 @@ route-map track-default-ipv6 permit 10
  set community no-advertise additive
  set distance 255
  set large-community 4200000000:0:1 additive
+ set weight 0
 exit
 !
 router bgp 64512
@@ -138,13 +139,17 @@ table passes the route-map, and `do-<list>` matches the list. zebra's kernel and
 routes reach that table only through redistribution. The instance therefore redistributes them
 through `track-<vrf>-<family>`, where `<vrf>` is `default` for the default VRF. Its first entry
 denies blackhole routes. Its other entries permit the routes of each list its peers track and
-set three attributes on them:
+set four values on them:
 
 - `no-advertise` keeps them from every peer.
 - `distance 255` keeps a path a peer sends for the same prefix the best path. bgpd compares the
   administrative distance before weight and local preference. Without it, the redistributed path,
   of distance 0, would win, and the peer's path would no longer be installed, announced or
   leaked.
+- `weight 0` keeps a network of the instance the best path for its prefix. bgpd compares no
+  distance between a network and a redistributed path, and both would have the weight 32768. A
+  network whose policy prepends the AS path or lowers the local preference would then lose to
+  the redistributed path, and no peer would get it.
 - The large community `4200000000:0:1`, of the private-use AS 4200000000, marks them alike on
   every router.
 
