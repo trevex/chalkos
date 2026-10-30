@@ -435,7 +435,7 @@ A node's config may hold several, each with a name of its own. It has 5 [change 
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.interfaces` | list of string | `[]` | Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; it is then in no other zone through its VRF. |
+| `spec.interfaces` | list of string | `[]` | Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; the VRF itself is then in no other zone. |
 | `spec.vrfs` | list of string | `[]` | VRF documents whose links are all in the zone, those added later included; a VRF is in one zone at most. |
 
 ### NAT64 { #nat64 }

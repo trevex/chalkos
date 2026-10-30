@@ -50,7 +50,7 @@ func TestVRFRules(t *testing.T) {
 	}
 	importer := []config.Document{bgp("internet", `"internet"`, ""), bgp("tenant", `"tenant"`, `, "import": {"ipv4": {"vrfs": ["internet"]}}`)}
 	zoneMessage := func(vrf string) []string {
-		return []string{"VRF " + vrf + " has a conntrack zone and leaks routes through a BGP import, whose connections would answer in another zone; drop the zone or the import"}
+		return []string{"VRF " + vrf + ": a VRF with a conntrack zone leaks no routes through a BGP import, whose connections would answer in another zone; drop the zone or the import"}
 	}
 	// A node whose node API answers on every interface, with a VRF that holds the interfaces given
 	// and a Network document whose [Match] section has the Name= given, in JSON.
@@ -116,7 +116,8 @@ func TestVRFRules(t *testing.T) {
 			[]string{"more than one VRF uses conntrack zone 1; give each VRF a zone of its own"}},
 		{"a zoned VRF that imports", with(zoned(`, "conntrackZone": 1`, ""), importer...), zoneMessage("tenant")},
 		{"a zoned VRF that another imports", with(zoned("", `, "conntrackZone": 2`), importer...), zoneMessage("internet")},
-		{"a zoned VRF that the default VRF imports", with(zoned(`, "conntrackZone": 1`, ""), bgp("bgp", "null", `, "import": {"ipv6": {"vrfs": ["tenant"]}}`), bgp("tenant", `"tenant"`, "")), zoneMessage("tenant")},
+		{"a zoned VRF that imports the default VRF", with(zoned(`, "conntrackZone": 1`, ""), bgp("bgp", "null", ""), bgp("tenant", `"tenant"`, `, "import": {"ipv4": {"vrfs": ["default"]}}`)), zoneMessage("tenant")},
+		{"a zoned VRF that the default VRF imports",with(zoned(`, "conntrackZone": 1`, ""), bgp("bgp", "null", `, "import": {"ipv6": {"vrfs": ["tenant"]}}`), bgp("tenant", `"tenant"`, "")), zoneMessage("tenant")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})

@@ -27,7 +27,7 @@
       "properties": {
         "interfaces": {
           "default": [],
-          "description": "Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; it is then in no other zone through its VRF.",
+          "description": "Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; the VRF itself is then in no other zone.",
           "examples": [
             [
               "eth1",
@@ -85,7 +85,7 @@
       },
       {
         "description": "A FirewallZone names an interface or a VRF.",
-        "messageExpression": "documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, \"FirewallZone \" + n).join(\", \") + \" names no interface and no VRF; give it interfaces, vrfs or both\"",
+        "messageExpression": "documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, \"FirewallZone \" + n).join(\", \") + \": a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both\"",
         "rule": "documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)",
         "takes": "refuse"
       },

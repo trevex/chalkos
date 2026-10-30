@@ -256,7 +256,7 @@ in
           {
             description = "A FirewallZone names an interface or a VRF.";
             rule = "documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)";
-            messageExpression = ''documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, "FirewallZone " + n).join(", ") + " names no interface and no VRF; give it interfaces, vrfs or both"'';
+            messageExpression = ''documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, "FirewallZone " + n).join(", ") + ": a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"'';
           }
           {
             description = "A FirewallZone's VRFs are VRF documents.";
@@ -277,7 +277,7 @@ in
               "eth1"
               "vlan*"
             ];
-            description = "Interfaces of the zone, ${interfaceText}. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; it is then in no other zone through its VRF.";
+            description = "Interfaces of the zone, ${interfaceText}. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; the VRF itself is then in no other zone.";
           };
           vrfs = mkOption {
             type = types.listOf vrfName;

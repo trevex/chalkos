@@ -651,7 +651,7 @@ cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), "the int
 Message of rule 3:
 
 ```text
-documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, "FirewallZone " + n).join(", ") + " names no interface and no VRF; give it interfaces, vrfs or both"
+documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, "FirewallZone " + n).join(", ") + ": a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"
 ```
 
 Expression of rule 4:
@@ -1197,7 +1197,7 @@ cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["rou
 Message of rule 9:
 
 ```text
-cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + " has a conntrack zone and leaks routes through a BGP import, whose connections would answer in another zone; drop the zone or the import"))))
+cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + ": a VRF with a conntrack zone leaks no routes through a BGP import, whose connections would answer in another zone; drop the zone or the import"))))
 ```
 
 ## Facts { #facts }
