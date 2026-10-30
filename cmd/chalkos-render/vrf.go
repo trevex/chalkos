@@ -22,11 +22,9 @@ const defaultVRF = "default"
 // and vrfLinks refuses one that does.
 const vrfUnitPrefix = "00-vrf-"
 
-// vrfMembership is the VRF of each link and Network document, as vrfLinks finds them.
+// vrfMembership is the VRF of each Network document, as vrfLinks finds them, and the units that
+// put links in them.
 type vrfMembership struct {
-	// Links are the links a Network document names, by name, with the VRF that holds them; a
-	// link in no VRF is not in the map.
-	Links map[string]string
 	// Networks are the Network documents, by name, with the VRF of the links they are the first
 	// to match; a Network of no VRF's links is not in the map.
 	Networks map[string]string
@@ -84,8 +82,7 @@ type networkUnit struct {
 }
 
 // vrfLinks checks the VRF documents against the Network documents of byKind, as their rules do
-// and where the rules cannot, and returns the VRF of each link a Network document names and of
-// each Network. A VRF holds the links its document's interfaces match and those a Network
+// and where the rules cannot, and returns the VRF of each Network. A VRF holds the links its document's interfaces match and those a Network
 // document's Name= matches whose own VRF= names it, whether a document of the VRF exists or not.
 // A Network document is in the VRF of the links it may be the first to match, and vrfLinks
 // refuses unless all links it may match are in that VRF, so that VRF= on the Network puts in the
@@ -160,16 +157,7 @@ func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (vrfMembership, erro
 	if err := checkNetworkVRFs(units, members, networks); err != nil {
 		return none, err
 	}
-	held := map[string]string{}
-	for _, l := range links {
-		for _, m := range members {
-			if ok, _ := path.Match(m.glob, l); ok {
-				held[l] = m.vrf
-				break
-			}
-		}
-	}
-	return vrfMembership{Links: held, Networks: networks, Units: units}, nil
+	return vrfMembership{Networks: networks, Units: units}, nil
 }
 
 // networkUnits are the .network units networkd reads: the Network documents of byKind and the

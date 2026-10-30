@@ -82,8 +82,10 @@ func TestVRFLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := map[string]string{"swp1": "tenant", "swp2": "tenant", "eth1": "blue"}; !reflect.DeepEqual(got.Links, want) {
-		t.Errorf("links = %v, want %v", got.Links, want)
+	for link, want := range map[string]string{"swp1": "tenant", "swp2": "tenant", "eth1": "blue", "eth0": defaultVRF} {
+		if vrf, err := got.linkVRF(link); err != nil || vrf != want {
+			t.Errorf("linkVRF(%s) = %q, %v, want %q", link, vrf, err, want)
+		}
 	}
 	if want := map[string]string{"10-swp": "tenant", "20-swp": "tenant", "30-eth1": "blue"}; !reflect.DeepEqual(got.Networks, want) {
 		t.Errorf("networks = %v, want %v", got.Networks, want)
