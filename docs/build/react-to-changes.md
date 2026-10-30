@@ -213,7 +213,9 @@ fixed, or deliver it again`.
 
 Delivery is idempotent: a delivery that changes nothing an effect compares takes no effect. The
 same config delivered twice reloads bird once. A delivery that fails part way leaves a baseline,
-and the next delivery compares with it, so it takes every effect of the failed one again.
+and the next delivery compares with it, so it takes every effect of the failed one again. The
+next delivery also compares with the config and facts of the failed delivery, so a delivery of
+the config from before it takes the effects that undo it.
 [The config pipeline](../how-it-works/node/config-pipeline.md) describes the baseline.
 
 ## Built into chalkos
