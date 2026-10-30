@@ -1,0 +1,7 @@
+# r1's node API on its fabric link alone, which the host does not reach: the host reaches r1
+# through enp0s2. Only a trial delivers it, which r1 rolls back at its deadline.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Router
+metadata: {name: router}
+spec:
+  management: {interfaces: [enp0s3]}

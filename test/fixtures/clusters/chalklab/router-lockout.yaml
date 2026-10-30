@@ -1,0 +1,13 @@
+# The main cluster's r1 as chalkos.yaml gives it, with chalkd's port accepted on enp0s3 alone: a
+# delivery that cuts the host off from r1.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  images:
+    router-kvm: {source: {directory: images/router-kvm}}
+  all: {files: [cluster/*.yaml]}
+  groups:
+    router: {imageName: router-kvm, files: [groups/router.yaml]}
+  nodes:
+    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-bgp.yaml, nodes/r1-lockout.yaml]}

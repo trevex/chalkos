@@ -58,10 +58,13 @@ const bgpPassword = "lab-s3cret"
 //   - rollback: apply-config --rollback, without an inventory, brings r1 back to the config it
 //     ran before the reload, so r2 loses the route to r1's edge0, and a second rollback brings
 //     the route back; frr.conf stays root's with mode 0600.
+//   - trial: apply-config --try with the base inventory is confirmed over a new connection; one
+//     that accepts chalkd's port on enp0s3 alone cuts the host off, so chalkctl cannot confirm it,
+//     r1 rolls it back at the 30 s deadline and new connections reach it again.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
-// the node CA and about 10 s for the rollbacks, about 5 minutes with the copies of the images.
-// chalklab destroy removes the lab when the test ends.
+// the node CA, about 10 s for the rollbacks and 45 s for the trials, about 6 minutes with the
+// copies of the images. chalklab destroy removes the lab when the test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -345,7 +348,7 @@ func TestRouterLab(t *testing.T) {
 		return
 	}
 
-	t.Run("rollback", func(t *testing.T) {
+	if !t.Run("rollback", func(t *testing.T) {
 		status := func() *nodev1.StatusResponse {
 			t.Helper()
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -381,6 +384,60 @@ func TestRouterLab(t *testing.T) {
 			t.Fatalf("a second apply-config --rollback: %v", err)
 		}
 		waitFor(t, 2*time.Minute, "r2's route to r1's edge0", func() error { return learned("2001:db8:ffff::1/128") })
+		rootsConfig(t)
+	}) {
+		return
+	}
+
+	t.Run("trial", func(t *testing.T) {
+		// fresh is r1's status over a new connection, which proves that a client reaches r1: the
+		// test's own connections stay up through a firewall change, as established ones do.
+		fresh := func() (*nodev1.StatusResponse, error) {
+			c, err := dialInstalled(nodes["r1"], "r1", admin)
+			if err != nil {
+				return nil, err
+			}
+			defer c.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			st, err := c.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			if err != nil {
+				return nil, err
+			}
+			return st.Msg, nil
+		}
+		before, err := fresh()
+		if err != nil {
+			t.Fatal(err)
+		}
+		announced := before.ConfigVersion
+		// A trial that leaves r1 reachable is confirmed: r1 runs the base inventory's config again,
+		// without the address of edge0.
+		out, err := chalkctl(t, nodes["r1"], "base", "apply-config", "--try", "1m", "r1")
+		if err != nil || !regexp.MustCompile(`(?m)^r1 keeps config \S+: the trial is confirmed$`).MatchString(out) {
+			t.Fatalf("apply-config --try: %v", err)
+		}
+		st, err := fresh()
+		if err != nil || st.Trial != nil || st.TrialError != "" || st.ConfigVersion == announced || st.PreviousConfigVersion != announced {
+			t.Fatalf("after a confirmed trial r1's status is %v, %v; want no trial and config %s as the previous one", st, err, announced)
+		}
+		base := st.ConfigVersion
+		// A trial that accepts chalkd's port on enp0s3 alone cannot be confirmed: chalkctl's new
+		// connections through enp0s2 fail, r1 rolls the config back at the deadline and answers new
+		// connections again. The answer to the delivery may be lost as well, which ends the same.
+		start := time.Now()
+		out, err = chalkctl(t, nodes["r1"], "lockout", "apply-config", "--try", "30s", "r1")
+		if err == nil || !strings.Contains(out, "r1: config ") || !strings.Contains(out, " was not confirmed within its trial: ") ||
+			!strings.Contains(out, "r1 rolled back to config "+base+" at the trial's deadline\n") {
+			t.Fatalf("a trial that cuts chalkctl off: %v", err)
+		}
+		if elapsed := time.Since(start); elapsed < 30*time.Second {
+			t.Errorf("the trial ended after %v, before its deadline", elapsed.Round(time.Second))
+		}
+		st, err = fresh()
+		if err != nil || st.ConfigVersion != base || st.Trial != nil || st.TrialError != "" || st.PreviousConfigVersion == base || st.PreviousConfigVersion == "" {
+			t.Fatalf("after the trial's rollback r1's status is %v, %v; want config %s, no trial and the config that cut chalkctl off as the previous one", st, err, base)
+		}
 		rootsConfig(t)
 	})
 }
