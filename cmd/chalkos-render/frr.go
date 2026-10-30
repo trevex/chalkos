@@ -564,7 +564,8 @@ func (c *frr) policyOfFamily(policy, f string) error {
 // peerNeighbours are a peer's sessions: its address, its interface, which is a link of its VRF, or
 // the links of its VRF its interfaces name, globs matching the links the Network documents name.
 // A glob skips the links of other VRFs, those of no VRF for a peer of a VRF and those of a VRF
-// for a peer of the default one. An interface or glob of a VRF's device is refused.
+// for a peer of the default one, and is refused when it matches only those. An interface or glob
+// of a VRF's device is refused.
 func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error) {
 	s := p.Spec
 	if !s.namesOneNeighbour() {
@@ -634,19 +635,40 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 		return nil, err
 	}
 	var ns []neighbour
+	// own and other count the links of each glob in the peer's VRF and in other VRFs.
+	own, other := map[string]int{}, map[string]int{}
 	for _, link := range c.links {
-		if slices.ContainsFunc(s.Interfaces, func(glob string) bool { return matchesGlob(glob, link) }) {
-			linkIn, err := c.membership.linkVRF(link)
-			if err != nil {
-				return nil, err
+		var globs []string
+		for _, glob := range s.Interfaces {
+			if matchesGlob(glob, link) {
+				globs = append(globs, glob)
 			}
-			if linkIn != vrf {
-				continue
-			}
-			if err := linkNeighbour(link); err != nil {
-				return nil, err
-			}
-			ns = append(ns, neighbour{name: link, onLink: true})
+		}
+		if len(globs) == 0 {
+			continue
+		}
+		linkIn, err := c.membership.linkVRF(link)
+		if err != nil {
+			return nil, err
+		}
+		count := own
+		if linkIn != vrf {
+			count = other
+		}
+		for _, glob := range globs {
+			count[glob]++
+		}
+		if linkIn != vrf {
+			continue
+		}
+		if err := linkNeighbour(link); err != nil {
+			return nil, err
+		}
+		ns = append(ns, neighbour{name: link, onLink: true})
+	}
+	for _, glob := range s.Interfaces {
+		if own[glob] == 0 && other[glob] > 0 {
+			return nil, fmt.Errorf("interfaces: %s matches no link of VRF %s, only links of other VRFs", glob, vrf)
 		}
 	}
 	return ns, nil
