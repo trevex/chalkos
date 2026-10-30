@@ -30,9 +30,9 @@ const trialFile = "chalkd/trial"
 // previous config and a rollback delivers again; the deadline; and the units the trial's health
 // check leaves out besides the image's. Error is why the last attempt to roll the trial back
 // failed, at the deadline or as a delivery of the config from before it, which the node runs
-// already, that ends the trial; Attempts counts those that failed, and Changed is set once one
-// failed after it changed the node, which the deadline's retries or a rollback on request then
-// finish.
+// already, that ends the trial, or why the trial's slot could not be read at the deadline;
+// Attempts counts those that failed, and Changed is set once one failed after it changed the
+// node, which the deadline's retries or a rollback on request then finish.
 type trialRecord struct {
 	Slot        string    `json:"slot"`
 	Version     string    `json:"version"`

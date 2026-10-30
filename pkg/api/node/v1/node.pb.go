@@ -2689,8 +2689,9 @@ type ConfigTrial struct {
 	Deadline *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=deadline,proto3" json:"deadline,omitempty"`
 	// Why the last attempt to roll the config back failed, which the node tries again each minute:
 	// the rollback at the deadline, or a delivery of previous_version, which the node runs already,
-	// that finishes a rollback or a trial whose delivery failed before it wrote the config. Empty
-	// while none failed. While it is set, ConfirmConfig still confirms the config and stops the
+	// that finishes a rollback or a trial whose delivery failed before it wrote the config. It also
+	// holds why the node could not read the trial's config slot at the deadline, which it tries
+	// again as well. Empty while none failed. While it is set, ConfirmConfig still confirms the config and stops the
 	// retries, unless rollback_changed is set.
 	Error string `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
 	// The units the trial's health check leaves out besides those the image ignores, as

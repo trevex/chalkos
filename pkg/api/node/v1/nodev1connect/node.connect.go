@@ -97,7 +97,13 @@ type NodeServiceClient interface {
 	// refused; additive ones are applied live. With try, the config is on trial: the node rolls it
 	// back by itself, as RollbackConfig does, unless ConfirmConfig confirms it in time. While a
 	// config is on trial, the node refuses every ApplyConfig, an Upgrade and a RollbackImage with
-	// FAILED_PRECONDITION. Available in normal mode to admins.
+	// FAILED_PRECONDITION. A trial whose node runs the config from before it again, as after a
+	// rollback at the deadline that failed after it wrote the config, is finished first, by a
+	// delivery of that config, and the change goes ahead; while an Upgrade, a RollbackImage or the
+	// rollback at a trial's deadline holds the lock that delivery needs, the change is refused with
+	// ABORTED. A trial whose node runs neither config ends, and the change goes ahead. A trial
+	// record the node cannot read refuses the change with INTERNAL until RollbackConfig removes it.
+	// Available in normal mode to admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
 	// GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
 	// image's, as it was delivered, with secret values replaced by their hashes. Available in normal
@@ -419,7 +425,13 @@ type NodeServiceHandler interface {
 	// refused; additive ones are applied live. With try, the config is on trial: the node rolls it
 	// back by itself, as RollbackConfig does, unless ConfirmConfig confirms it in time. While a
 	// config is on trial, the node refuses every ApplyConfig, an Upgrade and a RollbackImage with
-	// FAILED_PRECONDITION. Available in normal mode to admins.
+	// FAILED_PRECONDITION. A trial whose node runs the config from before it again, as after a
+	// rollback at the deadline that failed after it wrote the config, is finished first, by a
+	// delivery of that config, and the change goes ahead; while an Upgrade, a RollbackImage or the
+	// rollback at a trial's deadline holds the lock that delivery needs, the change is refused with
+	// ABORTED. A trial whose node runs neither config ends, and the change goes ahead. A trial
+	// record the node cannot read refuses the change with INTERNAL until RollbackConfig removes it.
+	// Available in normal mode to admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
 	// GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
 	// image's, as it was delivered, with secret values replaced by their hashes. Available in normal

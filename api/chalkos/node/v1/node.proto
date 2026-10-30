@@ -38,7 +38,13 @@ service NodeService {
   // refused; additive ones are applied live. With try, the config is on trial: the node rolls it
   // back by itself, as RollbackConfig does, unless ConfirmConfig confirms it in time. While a
   // config is on trial, the node refuses every ApplyConfig, an Upgrade and a RollbackImage with
-  // FAILED_PRECONDITION. Available in normal mode to admins.
+  // FAILED_PRECONDITION. A trial whose node runs the config from before it again, as after a
+  // rollback at the deadline that failed after it wrote the config, is finished first, by a
+  // delivery of that config, and the change goes ahead; while an Upgrade, a RollbackImage or the
+  // rollback at a trial's deadline holds the lock that delivery needs, the change is refused with
+  // ABORTED. A trial whose node runs neither config ends, and the change goes ahead. A trial
+  // record the node cannot read refuses the change with INTERNAL until RollbackConfig removes it.
+  // Available in normal mode to admins.
   rpc ApplyConfig(ApplyConfigRequest) returns (ApplyConfigResponse);
   // GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
   // image's, as it was delivered, with secret values replaced by their hashes. Available in normal
@@ -617,8 +623,9 @@ message ConfigTrial {
   google.protobuf.Timestamp deadline = 3;
   // Why the last attempt to roll the config back failed, which the node tries again each minute:
   // the rollback at the deadline, or a delivery of previous_version, which the node runs already,
-  // that finishes a rollback or a trial whose delivery failed before it wrote the config. Empty
-  // while none failed. While it is set, ConfirmConfig still confirms the config and stops the
+  // that finishes a rollback or a trial whose delivery failed before it wrote the config. It also
+  // holds why the node could not read the trial's config slot at the deadline, which it tries
+  // again as well. Empty while none failed. While it is set, ConfirmConfig still confirms the config and stops the
   // retries, unless rollback_changed is set.
   string error = 4;
   // The units the trial's health check leaves out besides those the image ignores, as
