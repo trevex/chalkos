@@ -1,7 +1,7 @@
 # The edge's links and services: edge0 holds the address it announces once
 # nodes/r1-announce.yaml gives its BGP the network. Its NAT64 translates the well-known prefix from
-# the address QEMU's DHCP server gives enp0s2, and its resolver answers r2 with DNS64 on the
-# address of edge0. nodes/r1-peer.yaml gives it its session with r2.
+# the address QEMU's DHCP server gives enp0s2, with an empty pool4, and its resolver answers r2 with
+# DNS64 on the address of edge0. nodes/r1-peer.yaml gives it its session with r2.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: NetDev
 metadata: {name: 20-edge0}
@@ -18,8 +18,7 @@ spec:
 apiVersion: router.chalkos.dev/v1alpha1
 kind: NAT64
 metadata: {name: edge}
-spec:
-  pool4: [{prefix: 10.0.2.15/32}]
+spec: {}
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Resolver

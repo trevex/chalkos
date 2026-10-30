@@ -1,5 +1,6 @@
-# r2's BGP in the VRF fabric, whose instance peers with r1 and announces edge0's address. The VRF
-# document comes from nodes/r2-fabric-100.yaml or nodes/r2-fabric-200.yaml.
+# r2's BGP in the VRF fabric, whose instance peers with r1 and announces edge0's address, and
+# fabric's resolver on that address. The VRF document comes from nodes/r2-fabric-100.yaml or
+# nodes/r2-fabric-200.yaml.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: BGP
 metadata: {name: bgp}
@@ -21,3 +22,11 @@ spec:
   password: {secretRef: {name: bgp, key: fabric}}
   families:
     ipv6: {}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Resolver
+metadata: {name: fabric}
+spec:
+  vrf: fabric
+  listen: ["2001:db8:ffff::2"]
+  allow: ["2001:db8:ffff::/48"]

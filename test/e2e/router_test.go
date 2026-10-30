@@ -49,9 +49,10 @@ const bgpPassword = "lab-s3cret"
 //     root's with mode 0600, and restarts nothing.
 //   - nat64: from the address of its edge0, r2 asks r1's resolver for the AAAA records of
 //     ipv4only.arpa and gets those DNS64 synthesizes in the NAT64 prefix, and connects through
-//     r1's NAT64 and QEMU's user-mode network to a listener of the test on the host. r1's status,
-//     for an admin and for a reader, shows the connection's session and binding and its resolver
-//     running, the nat64-sessions diagnostic shows the session, and no unit of r1 failed.
+//     r1's NAT64, whose empty pool4 r1 masquerades, and QEMU's user-mode network to a listener of
+//     the test on the host. r1's status, for an admin and for a reader, shows the connection's
+//     session and binding and its resolver running, the nat64-sessions diagnostic shows the
+//     session, and no unit of r1 failed.
 //   - node-ca: chalkctl rotate node-ca over the lab's inventory, on a copy of the secrets file,
 //     gives r1 and r2 certificates of the new node CA, which a new connection verifies, and
 //     their status reports the node certificate without a problem.
@@ -62,16 +63,17 @@ const bgpPassword = "lab-s3cret"
 //     that accepts chalkd's port on enp0s3 alone cuts the host off, so chalkctl cannot confirm it,
 //     r1 rolls it back at the 30 s deadline and new connections reach it again.
 //   - vrf: apply-config --try with an inventory that puts both routers' enp0s3, and r2's edge0,
-//     into the VRF fabric of table 100, with their BGP sessions, is confirmed over a new
-//     connection, so chalkd still answers on enp0s2. The sessions run in fabric, r1 routes r2's
-//     edge0 in table 100 and, through its default VRF's import of fabric, in the main table, with
-//     the path imported from fabric, and table 100 ends in unreachable default routes of both
-//     families; chalkctl shows the VRF in the status and with --vrf, bgp-summary vrf=fabric
-//     lists the session, and no unit failed. r2's fabric then moves to table 200, which removes
-//     the VRF and creates it anew: the session comes back in fabric, r2's routes, edge0's
-//     address and the unreachable defaults sit in table 200, none of the defaults stays in
-//     table 100, and r1 learns edge0 again. The base inventory then brings the sessions and
-//     edge0 back to the default VRF.
+//     into the VRF fabric of table 100, with their BGP sessions, and r2's resolver of fabric, is
+//     confirmed over a new connection, so chalkd still answers on enp0s2. The sessions run in
+//     fabric, r1 routes r2's edge0 in table 100 and, through its default VRF's import of fabric,
+//     in the main table, with the path imported from fabric, and table 100 ends in unreachable
+//     default routes of both families; r2's resolver of fabric runs, chalkctl shows the VRF in
+//     the status and with --vrf, bgp-summary vrf=fabric lists the session, and no unit failed.
+//     r2's fabric then moves to table 200, which removes the VRF and creates it anew: the session
+//     comes back in fabric, r2's routes, edge0's address and the unreachable defaults sit in
+//     table 200, none of the defaults stays in table 100, r1 learns edge0 again and r2's resolver
+//     of fabric runs again. The base inventory then brings the sessions and edge0 back to the
+//     default VRF.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials and a minute for the VRF, about
@@ -322,8 +324,9 @@ func TestRouterLab(t *testing.T) {
 		case <-time.After(time.Minute):
 			t.Fatal("the host's listener saw no connection")
 		}
-		// Jool keeps the closed connection's session and binding for minutes. 10.0.2.15/32 with
-		// the ports 61001-65535 holds 4535 of each protocol.
+		// Jool keeps the closed connection's session and binding for minutes. The empty pool4
+		// takes the NAT64's inner address with the ports 61001-65535, 4535 of each protocol, which
+		// r1 masquerades to enp0s2's address.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		for role, c := range map[string]*client.Conn{"an admin": conns["r1"], "a reader": readers["r1"]} {
@@ -519,6 +522,20 @@ func TestRouterLab(t *testing.T) {
 		waitFor(t, 2*time.Minute, "r2's session with r1 in fabric", func() error { return inFabric("r2", "edge", start) })
 		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in fabric", func() error { return learnedFrom("r1", "fabric", "2001:db8:ffff::2/128", "64513") })
 		waitFor(t, 2*time.Minute, "r1's leaked route to r2's edge0", func() error { return leaked("2001:db8:ffff::2/128", "fabric") })
+		// fabric's resolver runs bound to the VRF's device, which chalkos-resolvers started.
+		resolverRunning := func(inventory string) func() error {
+			return func() error {
+				out, err := chalkctl(t, nodes["r2"], inventory, "status", "r2")
+				if err != nil {
+					return err
+				}
+				if !regexp.MustCompile(`(?m)^resolver fabric: running$`).MatchString(out) {
+					return fmt.Errorf("status of r2 shows no running resolver of fabric:\n%s", out)
+				}
+				return nil
+			}
+		}
+		waitFor(t, time.Minute, "r2's resolver of fabric", resolverRunning("vrf"))
 		statusLine := regexp.MustCompile(`(?m)^  fabric\s+fabric\s+enp0s3\s+Established\s+\S+\s+\d+\s+[1-9]\d*\s+up$`)
 		if out, err := chalkctl(t, nodes["r1"], "vrf", "status", "r1"); err != nil || !statusLine.MatchString(out) || strings.Contains(out, "failed unit") {
 			t.Errorf("status of r1 shows no session in fabric, or a failed unit: %v\n%s", err, out)
@@ -566,6 +583,9 @@ func TestRouterLab(t *testing.T) {
 		waitFor(t, 2*time.Minute, "r2's default route from r1 in fabric", func() error { return learnedFrom("r2", "fabric", "::/0", "64512") })
 		waitFor(t, 2*time.Minute, "r2's route to edge0's address in table 200", func() error { return inTable("r2", "2001:db8:ffff::2/128", "edge0", 200) })
 		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in fabric", func() error { return learnedFrom("r1", "fabric", "2001:db8:ffff::2/128", "64513") })
+		// The new device stopped the resolver bound to the old one, and chalkos-resolvers started
+		// it again on the device networkd created.
+		waitFor(t, time.Minute, "r2's resolver of fabric in table 200", resolverRunning("vrf-table"))
 		defaultLine := regexp.MustCompile(`(?m)^::/0\s+unicast\s+bgp\s+200\s`)
 		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "node", "routes", "r2", "::/0", "--vrf", "fabric"); err != nil || !defaultLine.MatchString(out) {
 			t.Errorf("node routes --vrf fabric of r2 shows no default route in table 200: %v\n%s", err, out)
