@@ -28,7 +28,7 @@ func renderRouterNftables(port string, closed bool, in map[string]any, out strin
 	if err != nil {
 		return err
 	}
-	if fw.openings, err = bgpOpenings(d.Peers, d.VRFs); err != nil {
+	if fw.openings, err = bgpOpenings(d.Peers); err != nil {
 		return err
 	}
 	dns, err := resolverOpenings(d.Resolvers)
@@ -60,9 +60,9 @@ type opening struct {
 
 // bgpOpenings are the ports of each BGPPeer, on its interfaces, of its VRF, or from its address
 // alone: BGP's TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of single-hop sessions,
-// and 4784 of multi-hop ones from an address peer; a peer on a link is one hop away. It refuses
-// an interface or glob of a VRF's device.
-func bgpOpenings(peers []named[peerSpec], vrfs []named[vrfSpec]) ([]opening, error) {
+// and 4784 of multi-hop ones from an address peer; a peer on a link is one hop away. The output
+// frr refuses a peer on a VRF's device; router-nftables reads no VRF or Network documents.
+func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 	var out []opening
 	for _, p := range peers {
 		what := "BGPPeer " + p.Name
@@ -70,9 +70,6 @@ func bgpOpenings(peers []named[peerSpec], vrfs []named[vrfSpec]) ([]opening, err
 		s := p.Spec
 		if !s.namesOneNeighbour() {
 			return nil, fmt.Errorf("%s names not exactly one of address, interface and interfaces", what)
-		}
-		if err := checkPeerDevices(s, vrfs); err != nil {
-			return nil, fmt.Errorf("%s: %w", what, err)
 		}
 		switch {
 		case s.Address != nil:

@@ -590,8 +590,9 @@ func withNetworkVRF(doc map[string]any, vrf string) map[string]any {
 }
 
 // checkPeerDevices refuses a peer's interface that is a VRF's device, and a glob of its
-// interfaces that matches one: the input hook sees the device as the iifname of every packet
-// from the VRF's links, and bgpd runs no session on it.
+// interfaces that matches one: bgpd runs no session on the device, and the input hook sees it
+// as the iifname of every packet from the VRF's links, so router-nftables, which cannot tell,
+// would open the peer's ports on all of them.
 func checkPeerDevices(s peerSpec, vrfs []named[vrfSpec]) error {
 	for _, v := range vrfs {
 		if s.Interface != nil && *s.Interface == v.Name {
