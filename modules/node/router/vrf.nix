@@ -57,11 +57,11 @@ let
       removed=false
       while read -r name table; do
         if [[ -n $name && ''${want[$name]-} != "$table" ]]; then
-          # The unreachable defaults that networkd installed would stay in the old table, which a
-          # VRF may take later. They go first, and the VRF only once they went, so that a retry
-          # finds the VRF and flushes them again.
-          if ip -4 route flush table "$table" exact 0.0.0.0/0 type unreachable &&
-            ip -6 route flush table "$table" exact ::/0 type unreachable &&
+          # The unreachable defaults that networkd installed, of protocol static, would stay in the
+          # old table, which a VRF may take later. They go first, and the VRF only once they went,
+          # so that a retry finds the VRF and flushes them again.
+          if ip -4 route flush table "$table" exact 0.0.0.0/0 type unreachable proto static &&
+            ip -6 route flush table "$table" exact ::/0 type unreachable proto static &&
             ip link delete "$name"; then
             removed=true
           else
