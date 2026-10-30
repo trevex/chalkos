@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/facts"
 )
 
 func TestWriteBuiltins(t *testing.T) {
@@ -191,5 +193,32 @@ func TestWriteBuiltinsRefusesWhatTheDefaultImageDeclaresOtherwise(t *testing.T) 
 	err = writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), def, "testdata/builtins/plain", "testdata/builtins/router")
 	if err == nil || !strings.Contains(err.Error(), "output networkd") {
 		t.Errorf("error %v, want one naming the output networkd", err)
+	}
+}
+
+// A fact the router images declare otherwise takes the section's anchor, by its name in lower
+// case, as the fact of every image keeps the plain one.
+func TestWriteFactsAnchorsAChangedFactInTheSection(t *testing.T) {
+	var b strings.Builder
+	img := builtinImage{facts: map[string]facts.Definition{"bootId": {File: "/proc/sys/kernel/random/boot_id"}}}
+	writeFacts(&b, "facts-router-images", "The facts router images add.", []string{"bootId"}, []string{"bootId"}, img)
+	if !strings.Contains(b.String(), "| `bootId`{ #facts-router-images-bootid } |") {
+		t.Errorf("section:\n%s\nlacks the row of bootId by the section's anchor", b.String())
+	}
+}
+
+// The intro of a layer's section names the built-ins the layer's images declare otherwise.
+func TestLayerIntro(t *testing.T) {
+	for _, c := range []struct {
+		changed []string
+		want    string
+	}{
+		{nil, "The outputs router images add."},
+		{[]string{"networkd"}, "The outputs router images add, and the output `networkd` of every image as router images declare it."},
+		{[]string{"networkd", "sysctl"}, "The outputs router images add, and the outputs `networkd` and `sysctl` of every image as router images declare them."},
+	} {
+		if got := layerIntro("The outputs router images add", "output", "router images", c.changed); got != c.want {
+			t.Errorf("layerIntro(%q) = %q, want %q", c.changed, got, c.want)
+		}
 	}
 }

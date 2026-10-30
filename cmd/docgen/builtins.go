@@ -603,7 +603,7 @@ func writeFacts(b *strings.Builder, anchor, intro string, names, changed []strin
 		if len(by) > 0 {
 			readBy = sentence(strings.Join(by, ", and "))
 		}
-		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s |\n", name, rowAnchor("fact", anchor, strings.ToLower(name), changed), tableCell(sentence(reads)), readBy)
+		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s |\n", name, strings.ToLower(rowAnchor("fact", anchor, name, changed)), tableCell(sentence(reads)), readBy)
 	}
 }
 
