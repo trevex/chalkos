@@ -192,7 +192,10 @@ let
           fi
         done <<<"$routes"
       done
-      links=$(ip -j link show type veth | jq -r '.[].ifname | select(startswith("n64-"))') || failed+=("list links")
+      # ip link show type veth lists every link without a kind, as empty objects, while the
+      # kernel's veth module is not loaded, so jq picks the veth links from all links.
+      links=$(ip -d -j link show | jq -r '.[] | select(.linkinfo.info_kind == "veth") | .ifname | select(startswith("n64-"))') ||
+        failed+=("list links")
       for link in $links; do
         if [[ -z ''${want[''${link#n64-}]+x} ]]; then
           ip link del "$link" || failed+=("remove the link $link")
