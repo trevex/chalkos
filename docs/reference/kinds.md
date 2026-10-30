@@ -568,7 +568,7 @@ A VRF of the router: a kernel VRF device of the document's name, its routing tab
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 9 [change rules](builtins.md#rules-vrf).
+A node's config may hold several, each with a name of its own. It has 10 [change rules](builtins.md#rules-vrf).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

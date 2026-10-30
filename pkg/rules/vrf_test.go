@@ -12,7 +12,7 @@ import (
 
 // The VRF kind's rules accept an edge with two VRFs and refuse the name default, a name past 15
 // characters, a table of the kernel's, two VRFs of one table, an interface in two VRFs, a
-// management interface in a VRF, a node whose node API answers on every interface but whose
+// management interface in a VRF or of a VRF's device, a node whose node API answers on every interface but whose
 // Network documents all name links of VRFs, a NetDev of a VRF's name, two VRFs of one conntrack
 // zone, and a VRF with a zone that imports routes or whose routes another VRF imports. Two VRFs'
 // members compare as written; against management interfaces and the Network documents' names,
@@ -69,6 +69,7 @@ func TestVRFRules(t *testing.T) {
 		return with(without(edge, "Router", "router"), doc("Router", "router", `{"management": {"interfaces": `+interfaces+`}}`))
 	}
 	const managementHeld = " is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"
+	const managementDevice = ", and chalkd answers in the default VRF alone; name the default VRF's links"
 	for _, tc := range []struct {
 		name string
 		docs []config.Document
@@ -100,6 +101,11 @@ func TestVRFRules(t *testing.T) {
 		{"a management glob over a VRF's interface", management(`["eth*"]`), []string{"the management interface eth*" + managementHeld}},
 		{"a management glob over a VRF's glob", management(`["sw*"]`), []string{"the management interface sw*" + managementHeld}},
 		{"a management glob over no VRF's interface", management(`["eth0*"]`), nil},
+		{"a management interface of a VRF's device", management(`["eth0", "tenant"]`),
+			[]string{"the management interface tenant matches the device of VRF tenant" + managementDevice}},
+		{"a management glob over a VRF's device", management(`["eth0", "inter*"]`),
+			[]string{"the management interface inter* matches the device of VRF internet" + managementDevice}},
+		{"a management glob's dot is no wildcard", management(`["eth0", "t.nant"]`), nil},
 		{"every link in a VRF without a Router", allInVRFs,
 			[]string{"every link the Network documents name is in a VRF, and chalkd answers in the default VRF alone, on every interface while Router.spec.management.interfaces is null; keep the link you reach the router through out of every VRF"}},
 		{"every link in a VRF with the node API on every interface", with(allInVRFs, doc("Router", "router", `{}`)),

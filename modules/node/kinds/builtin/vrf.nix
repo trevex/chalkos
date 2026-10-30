@@ -34,6 +34,15 @@ let
   # The interface type admits no other character that RE2 reads as more than itself, so escaping
   # `.` and `*` is enough.
   heldPattern = ''held.map(i, i.replace(".", "[.]").replace("*", "[^ ]*")).join("|")'';
+  # Binds, for body, deviceText to the VRFs' names, which their devices take, each between
+  # spaces. A test per pair of a management interface and a VRF would cost more than chalkd
+  # allows.
+  devicesBy = body: ''cel.bind(deviceText, documents.map(n, " " + n + " ").join(""), ${body})'';
+  # Whether the interface or glob i, inside devicesBy, matches the device of a VRF: a glob when a
+  # device's name starts with the glob's prefix, an interface when it is a device's whole name.
+  # contains takes `.` for itself.
+  namesDevice =
+    i: ''deviceText.contains(" " + (${i}.endsWith("*") ? ${i}.replace("*", "") : ${i} + " "))'';
   # Whether the names of matchNames are each held or a negation: a regular expression of
   # heldPattern's alternatives and negations matches the whole string.
   allHeld = ''${matchNames "config"}.matches("^( +(" + ${heldPattern} + "|![^ ]*))* *$")'';
@@ -89,6 +98,11 @@ in
           description = "No VRF holds an interface of Router.spec.management.interfaces; globs match as globs.";
           rule = "cel.bind(held, ${members}, cel.bind(api, ${managed}, ${heldBy "api.all(i, !${overlapsHeld "i"})"}))";
           messageExpression = "cel.bind(held, ${members}, cel.bind(api, ${managed}, ${heldBy ''"the management interface " + api.filter(i, ${overlapsHeld "i"})[0] + " is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"''}))";
+        }
+        {
+          description = "No interface of Router.spec.management.interfaces matches a VRF's device; globs match as globs.";
+          rule = "cel.bind(api, ${managed}, ${devicesBy "api.all(i, !${namesDevice "i"})"})";
+          messageExpression = "cel.bind(api, ${managed}, ${devicesBy ''cel.bind(m, api.filter(i, ${namesDevice "i"})[0], "the management interface " + m + " matches the device of VRF " + documents.filter(n, m.endsWith("*") ? n.startsWith(m.replace("*", "")) : n == m)[0] + ", and chalkd answers in the default VRF alone; name the default VRF's links")''})";
         }
         {
           description = "While the node API answers on every interface, a Network document names a link that no VRF holds; globs match as globs.";

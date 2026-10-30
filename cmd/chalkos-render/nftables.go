@@ -179,7 +179,7 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		for _, i := range m {
 			for _, dev := range devices {
 				if matchesGlob(i, dev) {
-					return nil, fmt.Errorf("Router: the management interface %s matches %s, the device of VRF %s; chalkd is reachable in the default VRF only", i, dev, dev)
+					return nil, fmt.Errorf("Router: the management interface %s matches %s, the device of VRF %s, and chalkd answers in the default VRF alone; name the default VRF's links", i, dev, dev)
 				}
 			}
 		}

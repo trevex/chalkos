@@ -69,6 +69,13 @@ globs as globs on both sides, so a VRF's `eth*` holds the management interface `
 chalkctl: r1: the config is refused: the management interface eth0 is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF
 ```
 
+They also refuse a management interface or glob that matches a VRF's device, which takes the
+VRF's name, such as `ten*` beside the VRF `tenant`:
+
+```text
+chalkctl: r1: the config is refused: the management interface ten* matches the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links
+```
+
 A router without management interfaces answers the node API on every interface. The rules then
 want at least one link that a `Network` document names and no VRF holds. They cannot know which
 link chalkctl reaches the router through, so deliver every change of VRFs as a trial. The router
@@ -426,7 +433,7 @@ refuse what networkd, FRR or nftables would apply otherwise than the documents s
 | `FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone` | Take the VRF out of the other zone's `vrfs` and name its links in each zone, or drop the link here. |
 | `FirewallZone tenant: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *` | Write the `Network`'s `Name=` as names or a prefix and `*`. |
 | `NATRule n: inter* matches internet, the device of VRF internet; name its links or a zone of the VRF` | Name the VRF's links, or a zone that holds the VRF. |
-| `Router: the management interface tenant matches tenant, the device of VRF tenant; chalkd is reachable in the default VRF only` | Name links of the default VRF in `management.interfaces`. |
+| `Router: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links` | Name links of the default VRF in `management.interfaces`. |
 
 ## Limits
 

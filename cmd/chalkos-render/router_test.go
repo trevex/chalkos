@@ -1084,8 +1084,8 @@ func TestVRFZoneRefusals(t *testing.T) {
 		"a NAT zone of no link":             {empty, "NATRule n: the zone x holds no link"},
 		"a NAT interface of a VRF's device": {device, "NATRule n: inter* matches internet, the device of VRF internet; name its links or a zone of the VRF"},
 		"a link of a narrowed Network":      {narrowed, "FirewallZone x: networkd puts swp3 in VRF tenant only if the other [Match] keys of Network 25-swp match it"},
-		"a management VRF device":           {management("tenant"), "Router: the management interface tenant matches tenant, the device of VRF tenant; chalkd is reachable in the default VRF only"},
-		"a management glob of a VRF device": {management("gu*"), "Router: the management interface gu* matches guest, the device of VRF guest; chalkd is reachable in the default VRF only"},
+		"a management VRF device":           {management("tenant"), "Router: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links"},
+		"a management glob of a VRF device": {management("gu*"), "Router: the management interface gu* matches guest, the device of VRF guest, and chalkd answers in the default VRF alone; name the default VRF's links"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })
 	}

@@ -1111,10 +1111,11 @@ self.all(t, t["then"].action == "accept" || t["then"].localPref == null && t["th
 | 3 | — | A table belongs to one VRF. | `refuse` | `cel.bind(t, documents.map(n, documents[n].spec.table), t.all(x, size(t.filter(y, y == x)) == 1))` | after the table |
 | 4 | — | An interface or glob is in one VRF, once; globs compare as written. | `refuse` | after the table | after the table |
 | 5 | — | No VRF holds an interface of Router.spec.management.interfaces; globs match as globs. | `refuse` | after the table | after the table |
-| 6 | — | While the node API answers on every interface, a Network document names a link that no VRF holds; globs match as globs. | `refuse` | after the table | every link the Network documents name is in a VRF, and chalkd answers in the default VRF alone, on every interface while Router.spec.management.interfaces is null; keep the link you reach the router through out of every VRF |
-| 7 | — | No NetDev document creates a device of a VRF's name. | `refuse` | after the table | after the table |
-| 8 | — | A conntrack zone belongs to one VRF. | `refuse` | after the table | after the table |
-| 9 | — | A VRF with a conntrack zone neither imports routes from another VRF nor gives its routes to one, through BGP. | `refuse` | after the table | after the table |
+| 6 | — | No interface of Router.spec.management.interfaces matches a VRF's device; globs match as globs. | `refuse` | after the table | after the table |
+| 7 | — | While the node API answers on every interface, a Network document names a link that no VRF holds; globs match as globs. | `refuse` | after the table | every link the Network documents name is in a VRF, and chalkd answers in the default VRF alone, on every interface while Router.spec.management.interfaces is null; keep the link you reach the router through out of every VRF |
+| 8 | — | No NetDev document creates a device of a VRF's name. | `refuse` | after the table | after the table |
+| 9 | — | A conntrack zone belongs to one VRF. | `refuse` | after the table | after the table |
+| 10 | — | A VRF with a conntrack zone neither imports routes from another VRF nor gives its routes to one, through BGP. | `refuse` | after the table | after the table |
 
 Message of rule 1:
 
@@ -1161,40 +1162,52 @@ cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bin
 Expression of rule 6:
 
 ```text
-size(documents) == 0 || cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.exists(k, routers[k].spec.management.interfaces != null)) || cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), !cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")).matches("^( +(" + held.map(i, i.replace(".", "[.]").replace("*", "[^ ]*")).join("|") + "|![^ ]*))* *$"))
+cel.bind(api, cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), cel.bind(deviceText, documents.map(n, " " + n + " ").join(""), api.all(i, !deviceText.contains(" " + (i.endsWith("*") ? i.replace("*", "") : i + " ")))))
+```
+
+Message of rule 6:
+
+```text
+cel.bind(api, cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), cel.bind(deviceText, documents.map(n, " " + n + " ").join(""), cel.bind(m, api.filter(i, deviceText.contains(" " + (i.endsWith("*") ? i.replace("*", "") : i + " ")))[0], "the management interface " + m + " matches the device of VRF " + documents.filter(n, m.endsWith("*") ? n.startsWith(m.replace("*", "")) : n == m)[0] + ", and chalkd answers in the default VRF alone; name the default VRF's links")))
 ```
 
 Expression of rule 7:
 
 ```text
-cel.bind(made, cel.bind(netdevs, (("networkd.chalkos.dev/v1alpha1" in config && "NetDev" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : "")).flatten()), documents.all(n, !(n in made)))
-```
-
-Message of rule 7:
-
-```text
-cel.bind(made, cel.bind(netdevs, (("networkd.chalkos.dev/v1alpha1" in config && "NetDev" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : "")).flatten()), "the VRF " + documents.filter(n, n in made)[0] + " takes the name of a device a NetDev document creates; rename the VRF or the NetDev")
+size(documents) == 0 || cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.exists(k, routers[k].spec.management.interfaces != null)) || cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), !cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")).matches("^( +(" + held.map(i, i.replace(".", "[.]").replace("*", "[^ ]*")).join("|") + "|![^ ]*))* *$"))
 ```
 
 Expression of rule 8:
 
 ```text
-cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), z.all(x, size(z.filter(y, y == x)) == 1))
+cel.bind(made, cel.bind(netdevs, (("networkd.chalkos.dev/v1alpha1" in config && "NetDev" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : "")).flatten()), documents.all(n, !(n in made)))
 ```
 
 Message of rule 8:
 
 ```text
-cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), "more than one VRF uses conntrack zone " + string(z.filter(x, size(z.filter(y, y == x)) > 1)[0]) + "; give each VRF a zone of its own")
+cel.bind(made, cel.bind(netdevs, (("networkd.chalkos.dev/v1alpha1" in config && "NetDev" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : "")).flatten()), "the VRF " + documents.filter(n, n in made)[0] + " takes the name of a device a NetDev document creates; rename the VRF or the NetDev")
 ```
 
 Expression of rule 9:
 
 ```text
-cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.all(n, documents[n].spec.conntrackZone == null || !(n in importers) && !(n in imported))))))
+cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), z.all(x, size(z.filter(y, y == x)) == 1))
 ```
 
 Message of rule 9:
+
+```text
+cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), "more than one VRF uses conntrack zone " + string(z.filter(x, size(z.filter(y, y == x)) > 1)[0]) + "; give each VRF a zone of its own")
+```
+
+Expression of rule 10:
+
+```text
+cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.all(n, documents[n].spec.conntrackZone == null || !(n in importers) && !(n in imported))))))
+```
+
+Message of rule 10:
 
 ```text
 cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + ": a VRF with a conntrack zone leaks no routes through a BGP import, as its connections would answer in another zone; drop the zone or the import"))))
