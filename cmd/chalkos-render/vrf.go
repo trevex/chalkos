@@ -605,8 +605,8 @@ func withVRFUnits(vrfs []named[vrfSpec], networks map[string]string, byKind map[
 // withNAT64Units is docs, the networkd documents with the VRFs' units, with a Network document
 // 00-n64-<name> per NAT64 that leaves the link n64-<name> unmanaged: chalkos-nat64 configures the
 // link, and networkd would drop its addresses and routes once a Network of the node matched it. It
-// refuses a networkd document of byKind of such a unit's name and a Network of byKind that
-// networkd may pick for the link before it.
+// refuses a Network of byKind of such a unit's name or that networkd may pick for the link before
+// it, and a NetDev of byKind that creates a device of the link's name.
 func withNAT64Units(vrfs []named[vrfSpec], nat64 []named[nat64Spec], byKind, docs map[string]any) (map[string]any, error) {
 	if len(nat64) == 0 {
 		return docs, nil
@@ -622,12 +622,24 @@ func withNAT64Units(vrfs []named[vrfSpec], nat64 []named[nat64Spec], byKind, doc
 		if !plainInterface.MatchString(link) {
 			return nil, fmt.Errorf("NAT64 %s: its link %s is no interface name of 15 characters", n.Name, link)
 		}
-		for _, kind := range []string{"NetDev", "Network"} {
-			existing, _ := byKind[kind].([]any)
-			for _, d := range existing {
-				doc, _ := d.(map[string]any)
-				if name, _ := documentName(kind, doc); name == unit {
-					return nil, fmt.Errorf("%s %s takes the name of NAT64 %s's unit; rename the document", kind, name, n.Name)
+		existing, _ := byKind["Network"].([]any)
+		for _, d := range existing {
+			doc, _ := d.(map[string]any)
+			if name, _ := documentName("Network", doc); name == unit {
+				return nil, fmt.Errorf("Network %s takes the name of NAT64 %s's unit; rename the document", name, n.Name)
+			}
+		}
+		netdevs, _ := byKind["NetDev"].([]any)
+		for _, d := range netdevs {
+			doc, _ := d.(map[string]any)
+			name, _ := documentName("NetDev", doc)
+			spec, _ := doc["spec"].(map[string]any)
+			for _, s := range oneOrMany(spec["netDev"]) {
+				section, _ := s.(map[string]any)
+				for _, device := range oneOrMany(section["name"]) {
+					if device == link {
+						return nil, fmt.Errorf("NetDev %s creates the device %s, the link of NAT64 %s; give the device another name", name, link, n.Name)
+					}
 				}
 			}
 		}

@@ -360,8 +360,8 @@ func TestOtherMatchKeys(t *testing.T) {
 }
 
 // router-networkd leaves each NAT64's link unmanaged with a .network that networkd picks for it
-// before the node's own, also without VRFs, and refuses a Network that networkd would pick first
-// and a networkd document of the unit's name.
+// before the node's own, also without VRFs, and refuses a Network that networkd would pick first,
+// a Network of the unit's name and a NetDev that creates a device of the link's name.
 func TestNAT64Units(t *testing.T) {
 	nat64 := func(name string) any {
 		return routerDoc(t, "NAT64", name, `{"prefix": "64:ff9b::/96", "pool4": []}`)
@@ -387,4 +387,10 @@ func TestNAT64Units(t *testing.T) {
 		"Network 00-a may match the link n64-edge of NAT64 edge before 00-n64-edge, should its other [Match] keys match it")
 	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "Network": {document(t, "Network", "00-n64-edge", `{"match": {"name": "eth0"}}`)}},
 		"Network 00-n64-edge takes the name of NAT64 edge's unit; rename the document")
+	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "NetDev": {document(t, "NetDev", "10-dummy", `{"netDev": {"kind": "dummy", "name": "n64-edge"}}`)}},
+		"NetDev 10-dummy creates the device n64-edge, the link of NAT64 edge; give the device another name")
+	// A .netdev of the unit's name is another file than the unit's .network.
+	if _, err := unitFiles(t, args, map[string][]any{"NAT64": {nat64("edge")}, "NetDev": {document(t, "NetDev", "00-n64-edge", `{"netDev": {"kind": "dummy", "name": "d0"}}`)}}); err != nil {
+		t.Errorf("a NetDev of the unit's name: %v", err)
+	}
 }
