@@ -1,6 +1,7 @@
-# NAT64 and DNS on images with the router layer: the router's stateful NAT64 instances, which the
-# output jool renders for Jool, and its DNS resolver with DNS64, which the output unbound renders
-# for Unbound (modules/node/router/nat64.nix and resolver.nix).
+# NAT64 and DNS on images with the router layer: the router's stateful NAT64 instances, each in a
+# network namespace of its own joined to its VRF, which the output jool renders for Jool, and a DNS
+# resolver with DNS64 per VRF, which the output unbound renders for Unbound
+# (modules/node/router/nat64.nix and resolver.nix).
 #
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists. So the
 # rules over the pools of two NAT64 documents, or over two entries of one pool, loop over the
@@ -14,8 +15,25 @@
 let
   inherit (lib) mkOption types;
   inherit (import ./lib.nix) builtin groups;
-  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) portRange;
-  inherit (import ./router-types.nix { inherit lib; }) prefix address;
+  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) portRange documentName;
+  inherit (import ./router-types.nix { inherit lib; })
+    prefix
+    address
+    delivered
+    vrfOf
+    ;
+
+  # A VRF document's name, as a document's vrf gives it.
+  vrfName = types.strMatching documentName;
+  # The rule that a document of the kind k names a VRF that a VRF document declares in vrf, or
+  # none.
+  vrfDeclared = k: {
+    description = "A ${k}'s vrf is a VRF document.";
+    rule = "cel.bind(vrfs, ${delivered "VRF"}, documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))";
+    messageExpression = ''cel.bind(vrfs, ${delivered "VRF"}, documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, "${k} " + n + " names the VRF " + documents[n].spec.vrf).join(", ") + ", which no VRF document declares; leave vrf out for the default VRF")'';
+  };
+  # A NAT64's link n64-<name> is an interface's name of 15 characters.
+  maxName = 11;
 
   # The rule that the field p holds a NAT64 prefix, as RFC 6052 gives them and Jool and Unbound
   # take them: an IPv6 range of one of its lengths, no IPv4-mapped one, of no link-local,
@@ -179,22 +197,18 @@ in
     chalkos.kinds = {
       NAT64 = builtin groups.router // {
         multiple = true;
-        description = "A stateful NAT64 of the router, an instance of Jool: it translates IPv6 connections to addresses of its prefix into IPv4 connections to the address each embeds, from the addresses of its pool.";
+        description = "A stateful NAT64 of the router, an instance of Jool in a network namespace of its own that a link joins to its VRF: it translates IPv6 connections to addresses of its prefix into IPv4 connections to the address each embeds, from the addresses of its pool.";
         rules = [
           {
-            description = "A NAT64's name has 15 characters at most, as Jool's instance names do.";
-            rule = "documents.all(n, size(n) <= 15)";
-            messageExpression = ''documents.filter(n, size(n) > 15).map(n, "NAT64 " + n).join(", ") + " has a name of more than 15 characters, which Jool does not take as an instance's name; give it a shorter one"'';
+            description = "A NAT64's name has ${toString maxName} characters at most, as its link n64-<name> is an interface's name of 15.";
+            rule = "documents.all(n, size(n) <= ${toString maxName})";
+            messageExpression = ''documents.filter(n, size(n) > ${toString maxName}).map(n, "NAT64 " + n).join(", ") + " has a name of more than ${toString maxName} characters, which its link n64-<name> does not take as an interface's name; give it a shorter one"'';
           }
+          (vrfDeclared "NAT64")
           {
-            description = "No two NAT64s translate addresses of one prefix.";
-            rule = "documents.all(n, documents.all(m, n == m || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))";
-            messageExpression = ''documents.filter(n, documents.exists(m, n != m && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, "NAT64 " + n).join(", ") + " translate addresses of one prefix; give each NAT64 a prefix of its own"'';
-          }
-          {
-            description = "One NAT64 at most has an empty pool4, which takes the router's own addresses.";
-            rule = "size(documents.filter(n, size(documents[n].spec.pool4) == 0)) <= 1";
-            messageExpression = ''documents.filter(n, size(documents[n].spec.pool4) == 0).map(n, "NAT64 " + n).join(", ") + " take the router's own addresses, with an empty pool4, and would share them; give all but one a pool4"'';
+            description = "No two NAT64s of one VRF translate addresses of one prefix.";
+            rule = "documents.all(n, documents.all(m, n == m || ${vrfOf "documents[n]"} != ${vrfOf "documents[m]"} || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))";
+            messageExpression = ''documents.filter(n, documents.exists(m, n != m && ${vrfOf "documents[n]"} == ${vrfOf "documents[m]"} && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, "NAT64 " + n).join(", ") + " translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"'';
           }
           {
             description = "No two NAT64s share an address of their pools.";
@@ -203,17 +217,23 @@ in
           }
         ];
         spec = {
+          vrf = mkOption {
+            type = types.nullOr vrfName;
+            default = null;
+            example = "tenant";
+            description = "VRF document whose links route the prefix to the NAT64 and carry its translated connections; null for the default VRF. The NAT64 runs in the network namespace nat64-<name>, which the link n64-<name> joins to the VRF.";
+          };
           prefix = lib.chalkos.mkOption {
             type = prefix;
             default = "64:ff9b::/96";
-            description = "IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router installs an unreachable route to it, which BGP announces when `BGP.spec.networks` names the prefix.";
+            description = "IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix.";
             rules = [ (nat64Prefix "self") ];
           };
           pool4 = lib.chalkos.mkOption {
             type = types.listOf poolEntry;
             default = [ ];
             example = [ { prefix = "192.0.2.10/32"; } ];
-            description = "IPv4 addresses, with their ports, that the translated connections leave from: addresses of the router, or addresses routed to it. Empty takes the router's own addresses with the ports 61001 to 65535, as Jool does; one NAT64 at most has an empty pool4. nftables's NAT does not apply to the translated connections.";
+            description = "IPv4 addresses, with their ports, that the translated connections leave from: addresses routed to the router, not addresses of its links, which the router answers itself. Empty takes the address of the link a connection leaves through, with the ports 61001 to 65535. The firewall's NAT rules leave the translated connections alone.";
             rules = [
               {
                 description = "A pool's entries are IPv4 ranges of 65536 addresses at most.";
@@ -224,6 +244,11 @@ in
                 description = "A pool's entries hold no unspecified, loopback, multicast or broadcast address.";
                 rule = "self.all(a, ${sendable})";
                 messageExpression = ''"the pool entry " + self.filter(a, !${sendable})[0].prefix + " holds addresses no connection leaves from: the unspecified address, loopback, multicast or broadcast"'';
+              }
+              {
+                description = "A pool's entries hold no link-local address; the NAT64s' links take 169.254.64.0/18.";
+                rule = ''self.all(a, !cidr("169.254.0.0/16").contains(cidr(a.prefix).ip(0)))'';
+                messageExpression = ''"the pool entry " + self.filter(a, cidr("169.254.0.0/16").contains(cidr(a.prefix).ip(0)))[0].prefix + " holds link-local addresses, which the NAT64s' links take"'';
               }
               {
                 description = "A pool entry's ports lie from 1 to 65535 and leave out the kernel's ephemeral ports, 32768 to 60999.";
@@ -246,8 +271,15 @@ in
       };
 
       Resolver = builtin groups.router // {
-        description = "The router's DNS resolver, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.";
+        multiple = true;
+        description = "A DNS resolver of the router in one VRF, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.";
         rules = [
+          {
+            description = "One Resolver serves a VRF.";
+            rule = "cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), v.all(x, size(v.filter(y, y == x)) == 1))";
+            messageExpression = ''cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), "more than one Resolver serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one resolver")'';
+          }
+          (vrfDeclared "Resolver")
           {
             description = "A Resolver listens on an address of a family its clients' ranges are of.";
             rule = ''documents.all(n, cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))'';
@@ -260,10 +292,16 @@ in
           }
         ];
         spec = {
+          vrf = mkOption {
+            type = types.nullOr vrfName;
+            default = null;
+            example = "tenant";
+            description = "VRF document on whose links the resolver answers and through whose links it sends its queries; null for the default VRF.";
+          };
           listen = lib.chalkos.mkOption {
             type = types.nonEmptyListOf address;
             example = [ "2001:db8:ffff::1" ];
-            description = "Addresses of the router on which the resolver answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`.";
+            description = "Addresses of the router in the resolver's VRF on which it answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`.";
             rules = [
               {
                 description = "The resolver listens on unicast addresses.";

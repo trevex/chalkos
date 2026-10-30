@@ -19,6 +19,10 @@ in
     "ipv4"
     "ipv6"
   ];
+  # The documents of a router kind in the delivered config, by name.
+  delivered = kind: cel.documents "config" apiVersions.router kind;
+  # The VRF of the document d: its vrf, or default for the default VRF.
+  vrfOf = d: ''(${d}.spec.vrf == null ? "default" : ${d}.spec.vrf)'';
   # The names and globs of Name= in the [Match] sections of the Network documents of the config c,
   # each value, or each of a list, as one string between spaces: systemd splits a value at spaces
   # and tabs. A list of names would cost a loop more than a string.

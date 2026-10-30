@@ -440,19 +440,20 @@ A node's config may hold several, each with a name of its own. It has 6 [change 
 
 ### NAT64 { #nat64 }
 
-A stateful NAT64 of the router, an instance of Jool: it translates IPv6 connections to addresses of its prefix into IPv4 connections to the address each embeds, from the addresses of its pool.
+A stateful NAT64 of the router, an instance of Jool in a network namespace of its own that a link joins to its VRF: it translates IPv6 connections to addresses of its prefix into IPv4 connections to the address each embeds, from the addresses of its pool.
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 10 [change rules](builtins.md#rules-nat64).
+A node's config may hold several, each with a name of its own. It has 11 [change rules](builtins.md#rules-nat64).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.pool4` | list of object | `[]` | IPv4 addresses, with their ports, that the translated connections leave from: addresses of the router, or addresses routed to it. Empty takes the router's own addresses with the ports 61001 to 65535, as Jool does; one NAT64 at most has an empty pool4. nftables's NAT does not apply to the translated connections. |
+| `spec.pool4` | list of object | `[]` | IPv4 addresses, with their ports, that the translated connections leave from: addresses routed to the router, not addresses of its links, which the router answers itself. Empty takes the address of the link a connection leaves through, with the ports 61001 to 65535. The firewall's NAT rules leave the translated connections alone. |
 | `spec.pool4[].ports` | integer from 1 to 65535 or string | `"61001-65535"` | Ports, or ICMP identifiers, of the addresses the translated connections take: a port or a range `<first>-<last>` that leaves out the kernel's ephemeral ports, 32768 to 60999, which the router's own connections take. |
 | `spec.pool4[].prefix` | string | required | IPv4 addresses the translated connections leave from, a range of 65536 addresses at most. |
 | `spec.pool4[].protocols` | list of one of `tcp`, `udp`, `icmp` | `["tcp","udp","icmp"]` | Protocols whose connections take the addresses and ports. |
-| `spec.prefix` | string | `"64:ff9b::/96"` | IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router installs an unreachable route to it, which BGP announces when `BGP.spec.networks` names the prefix. |
+| `spec.prefix` | string | `"64:ff9b::/96"` | IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix. |
+| `spec.vrf` | string or null | `null` | VRF document whose links route the prefix to the NAT64 and carry its translated connections; null for the default VRF. The NAT64 runs in the network namespace nat64-&lt;name>, which the link n64-&lt;name> joins to the VRF. |
 
 ### NATRule { #natrule }
 
@@ -499,11 +500,11 @@ A node's config may hold several, each with a name of its own. It has 2 [change 
 
 ### Resolver { #resolver }
 
-The router's DNS resolver, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.
+A DNS resolver of the router in one VRF, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config holds at most one. It has 17 [change rules](builtins.md#rules-resolver).
+A node's config may hold several, each with a name of its own. It has 19 [change rules](builtins.md#rules-resolver).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -512,7 +513,7 @@ A node's config holds at most one. It has 17 [change rules](builtins.md#rules-re
 | `spec.dns64.prefix` | string | `"64:ff9b::/96"` | NAT64 prefix the resolver synthesises AAAA records in, from the A records of names that have no AAAA record. |
 | `spec.dnssec` | boolean | `true` | Whether the resolver validates DNSSEC with the root's trust anchor of the image. The forwarders then pass DNSSEC records on. |
 | `spec.forwarders` | list of string | `[]` | Resolvers the router sends its queries to; empty resolves names itself, from the root servers. |
-| `spec.listen` | list of string | required | Addresses of the router on which the resolver answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`. |
+| `spec.listen` | list of string | required | Addresses of the router in the resolver's VRF on which it answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`. |
 | `spec.localZones` | list of object | `[]` | Zones the resolver answers from its own records, 150 records in all at most. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers. |
 | `spec.localZones[].name` | string | required | Name of the zone, in lower case and without the root's dot. |
 | `spec.localZones[].records` | list of object | `[]` | Records the router answers for names of the zone. |
@@ -521,6 +522,7 @@ A node's config holds at most one. It has 17 [change rules](builtins.md#rules-re
 | `spec.localZones[].records[].type` | one of `A`, `AAAA`, `CNAME`, `PTR`, `MX`, `SRV`, `TXT` | required | Type of the record. |
 | `spec.localZones[].records[].value` | string | required | Data of the record, of up to 255 printable ASCII characters other than quotes and backslashes: an address for `A` and `AAAA`, a name for `CNAME` and `PTR`, `<preference> <name>` for `MX`, `<priority> <weight> <port> <name>` for `SRV`, and text for `TXT`. |
 | `spec.localZones[].type` | one of `static`, `transparent`, `typetransparent`, `redirect`, `refuse`, `deny`, `always_nxdomain` | `"static"` | How Unbound answers names of the zone, as its `local-zone` types say: `static` answers from the records alone, `transparent` resolves the names the records lack, `typetransparent` also the types they lack, `redirect` answers every name below the zone with the zone's own records, `refuse` and `deny` refuse or drop the queries the records do not answer, and `always_nxdomain` answers that no name exists. |
+| `spec.vrf` | string or null | `null` | VRF document on whose links the resolver answers and through whose links it sends its queries; null for the default VRF. |
 
 ### Router { #router }
 

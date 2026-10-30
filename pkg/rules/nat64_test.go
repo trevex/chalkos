@@ -14,14 +14,16 @@ import (
 // chalkd's runtime cost limit.
 const maxRecords = 150
 
-// The NAT64 and Resolver rules accept a fabric edge's documents and refuse a name Jool does not
-// take, prefixes no NAT64 or DNS64 takes, two NAT64s of one prefix, of one pool's addresses or of
-// the router's own addresses, a pool entry of IPv6, of too many addresses, of addresses no
-// connection leaves from or of the kernel's ephemeral ports, a protocol named twice, two entries of
-// one protocol's addresses and ports, addresses no resolver listens on or forwards to, an address,
-// range or forwarder twice, local zones twice, with records outside them or over ipv4only.arpa
-// with DNS64, A and AAAA records of other data, a record twice, more records than the rules can
-// compare and names past 253 characters.
+// The NAT64 and Resolver rules accept a fabric edge's documents, NAT64s of empty pools, one prefix
+// in two VRFs and resolvers of two VRFs, and refuse a name whose link n64-<name> is too long,
+// prefixes no NAT64 or DNS64 takes, two NAT64s of one prefix in one VRF or of one pool's
+// addresses, a VRF no document declares, a pool entry of IPv6, of too many addresses, of addresses
+// no connection leaves from, of link-local addresses or of the kernel's ephemeral ports, a protocol
+// named twice, two entries of one protocol's addresses and ports, two resolvers of one VRF,
+// addresses no resolver listens on or forwards to, an address, range or forwarder twice, local
+// zones twice, with records outside them or over ipv4only.arpa with DNS64, A and AAAA records of
+// other data, a record twice, more records than the rules can compare and names past 253
+// characters.
 func TestNAT64Rules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -71,22 +73,37 @@ func TestNAT64Rules(t *testing.T) {
 		}
 		return out
 	}
+	// tenant is a VRF of eth1, with the Network documents that leave eth0 in the default VRF.
+	tenant := []config.Document{network(t, "10-eth0", `{"name": "eth0"}`), network(t, "20-eth1", `{"name": "eth1"}`), doc("VRF", "tenant", `{"table": 100, "interfaces": ["eth1"]}`)}
 	for _, tc := range []struct {
 		name string
 		docs []config.Document
 		want []string
 	}{
 		{"a fabric edge", edge, nil},
-		{"a name of 16 characters", replace(doc("NAT64", "abcdefghijklmnop", `{"prefix": "2001:db8:65::/96"}`)),
-			[]string{"NAT64 abcdefghijklmnop has a name of more than 15 characters, which Jool does not take as an instance's name; give it a shorter one"}},
+		{"a name of 12 characters", replace(doc("NAT64", "abcdefghijkl", `{"prefix": "2001:db8:65::/96"}`)),
+			[]string{"NAT64 abcdefghijkl has a name of more than 11 characters, which its link n64-<name> does not take as an interface's name; give it a shorter one"}},
+		{"a name of 11 characters", replace(doc("NAT64", "abcdefghijk", `{"prefix": "2001:db8:65::/96"}`)), nil},
 		{"a prefix of 95 bits", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/95"}`)),
 			[]string{`NAT64 "lab" spec.prefix: the prefix 2001:db8:64::/95 is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96`}},
 		{"an IPv4 prefix", replace(doc("NAT64", "lab", `{"prefix": "192.0.2.0/24"}`)),
 			[]string{`NAT64 "lab" spec.prefix: the prefix 192.0.2.0/24 is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96`}},
 		{"two NAT64s of one prefix", replace(doc("NAT64", "lab", `{"prefix": "64:ff9b::/96"}`)),
-			[]string{"NAT64 edge, NAT64 lab translate addresses of one prefix; give each NAT64 a prefix of its own"}},
+			[]string{"NAT64 edge, NAT64 lab translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"}},
 		{"a prefix within another's", replace(doc("NAT64", "lab", `{"prefix": "64:ff9b::/64"}`)),
-			[]string{"NAT64 edge, NAT64 lab translate addresses of one prefix; give each NAT64 a prefix of its own"}},
+			[]string{"NAT64 edge, NAT64 lab translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"}},
+		{"one prefix in two VRFs", replace(slices.Concat(tenant, []config.Document{doc("NAT64", "lab", `{"vrf": "tenant", "prefix": "64:ff9b::/96"}`)})...), nil},
+		{"two NAT64s of one prefix in a VRF", replace(slices.Concat(tenant, []config.Document{doc("NAT64", "lab", `{"vrf": "tenant", "prefix": "64:ff9b::/96"}`), doc("NAT64", "more", `{"vrf": "tenant", "prefix": "64:ff9b::/64"}`)})...),
+			[]string{"NAT64 lab, NAT64 more translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"}},
+		{"a VRF no document declares", replace(doc("NAT64", "lab", `{"vrf": "nosuch", "prefix": "2001:db8:64::/96"}`)),
+			[]string{"NAT64 lab names the VRF nosuch, which no VRF document declares; leave vrf out for the default VRF"}},
+		{"a link-local pool", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "169.254.64.0/30"}]}`)),
+			[]string{`NAT64 "lab" spec.pool4: the pool entry 169.254.64.0/30 holds link-local addresses, which the NAT64s' links take`}},
+		{"resolvers of two VRFs", replace(slices.Concat(tenant, []config.Document{doc("Resolver", "tenant", `{"vrf": "tenant", "listen": ["2001:db8:1::1"], "allow": ["2001:db8:1::/64"]}`)})...), nil},
+		{"two resolvers of one VRF", replace(doc("Resolver", "more", `{"listen": ["2001:db8:ffff::2"], "allow": ["2001:db8::/32"]}`)),
+			[]string{"more than one Resolver serves the VRF default; a VRF has one resolver"}},
+		{"a resolver of a VRF no document declares", replace(doc("Resolver", "resolver", `{"vrf": "nosuch", "listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"]}`)),
+			[]string{"Resolver resolver names the VRF nosuch, which no VRF document declares; leave vrf out for the default VRF"}},
 		{"two NAT64s of one pool's addresses", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "192.0.2.9/32", "ports": "1-32767"}]}`)),
 			[]string{"NAT64 edge 192.0.2.8/30, NAT64 lab 192.0.2.9/32 share addresses; give each NAT64 a pool of its own"}},
 		{"an IPv6 pool", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "2001:db8::/64"}]}`)),
@@ -139,8 +156,7 @@ func TestNAT64Rules(t *testing.T) {
 			[]string{`Resolver "resolver" spec.localZones: the record a.lan.example.org AAAA 2001:db8::1 appears more than once; Unbound keeps one`}},
 		{"a name of 254 characters", replace(resolver(`{"name": "` + long + `", "type": "A", "value": "192.0.2.1"}`)),
 			[]string{`Resolver "resolver" spec.localZones: the name ` + long + ` holds more than 253 characters`}},
-		{"two NAT64s of the router's own addresses", replace(doc("NAT64", "edge", `{}`), doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96"}`)),
-			[]string{"NAT64 edge, NAT64 lab take the router's own addresses, with an empty pool4, and would share them; give all but one a pool4"}},
+		{"two NAT64s of empty pools", replace(doc("NAT64", "edge", `{}`), doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96"}`)), nil},
 		{"a link-local prefix", replace(doc("NAT64", "lab", `{"prefix": "fe80::/64"}`)),
 			[]string{`NAT64 "lab" spec.prefix: the prefix fe80::/64 holds link-local, multicast or unspecified addresses`}},
 		{"a multicast prefix", replace(doc("NAT64", "lab", `{"prefix": "ff0e::/96"}`)),

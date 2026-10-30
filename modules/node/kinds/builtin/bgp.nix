@@ -13,7 +13,7 @@
 }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin groups apiVersions;
+  inherit (import ./lib.nix) builtin groups;
   inherit (import ../../../../lib/kinds/types.nix { inherit lib; })
     documentName
     peerAS
@@ -26,8 +26,9 @@ let
     prefix
     address
     family
+    delivered
+    vrfOf
     ;
-  cel = import ../../../../lib/cel.nix { inherit lib; };
 
   name = types.strMatching documentName;
   # A number from 1 to 2^32 - 1, as AS numbers and BGP's counts are.
@@ -54,10 +55,6 @@ let
   # Whether the PrefixList entry e is the one of its list, self, that matches what it matches.
   sameEntry = "self.exists_one(x, cidr(x.prefix) == cidr(e.prefix) && x.ge == e.ge && x.le == e.le)";
 
-  # The documents of a router kind in the delivered config, by name.
-  delivered = kind: cel.documents "config" apiVersions.router kind;
-  # The VRF of the document d: its vrf, or default for the default VRF.
-  vrfOf = d: ''(${d}.spec.vrf == null ? "default" : ${d}.spec.vrf)'';
   # The vrf of the running BGP document of the name n, null for the default VRF; a running config
   # of an image whose BGP had no vrf lacks the field.
   oldVRF = n: "(has(oldDocuments[${n}].spec.vrf) ? oldDocuments[${n}].spec.vrf : null)";
