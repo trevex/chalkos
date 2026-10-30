@@ -225,8 +225,9 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if f.try > 0 {
 		req.Try, req.IgnoreUnits = durationpb.New(f.try), f.ignoreUnits
 		var cancel context.CancelFunc
-		applyCtx, cancel = context.WithTimeout(ctx, f.try)
+		applyCtx, cancel = context.WithDeadline(ctx, deadline)
 		defer cancel()
+		fmt.Fprintf(a.stdout, "%s: delivering config %s on trial until %s\n", t.name, d.Version, deadline.UTC().Format(time.RFC3339))
 	}
 	resp, err := conn.ApplyConfig(applyCtx, connect.NewRequest(req))
 	if err != nil {
@@ -275,7 +276,7 @@ func (a *app) failedTrial(ctx context.Context, conn *client.Conn, t *target, ver
 		return fmt.Errorf("%w; %s may run config %s on trial until %s; %s", err, t.name, version, deadline.UTC().Format(time.RFC3339), endTrialHint(t.name))
 	case !connect.IsWireError(err):
 		conn.Close()
-		return a.trialRolledBack(ctx, t, version, previous, deadline, fmt.Errorf("%s: the answer to the delivery on trial was lost: %w", t.name, err))
+		return a.trialRolledBack(ctx, t, version, previous, deadline, fmt.Errorf("%s: config %s was not confirmed within its trial: the answer to its delivery did not come: %w", t.name, version, err))
 	}
 	err = nodeError(err, t.name)
 	st, serr := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))

@@ -70,7 +70,8 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 	}
 	failure := fmt.Errorf("%s: config %s was not confirmed within its trial: %w", t.name, version, cmp.Or(last, err))
 	switch {
-	case late:
+	// An INTERNAL refusal names its remedy, which neither the deadline nor a confirmation changes.
+	case late, connect.CodeOf(cmp.Or(last, err)) == connect.CodeInternal:
 		return failure
 	case permanent:
 		return fmt.Errorf("%w; it rolls back at %s unless confirmed; %s", failure, deadline.UTC().Format(time.RFC3339), endTrialHint(t.name))
@@ -94,10 +95,12 @@ func confirmOnce(ctx context.Context, t *target, version string, timeout time.Du
 // trialRolledBack waits, over new connections, until trialEnd after the deadline, for the node to
 // end the trial of config version that chalkctl could not confirm for failure, says how it ended,
 // and returns failure. A node that kept the config, as when a confirmation went through but its
-// answer came too late, ends it confirmed, without an error.
+// answer came too late, ends it confirmed, without an error. A node that cannot read the record
+// of the trial tells neither, and chalkctl names the rollback that removes it.
 func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous string, deadline time.Time, failure error) error {
 	until := deadline.Add(trialEnd)
 	var st *nodev1.StatusResponse
+	unreadable := ""
 	err := layer.WaitFor(ctx, "", until.Sub(a.now()), a.poll(), func() error {
 		ctx, cancel := context.WithTimeout(ctx, until.Sub(a.now()))
 		defer cancel()
@@ -110,6 +113,12 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous 
 		if err != nil {
 			return err
 		}
+		// A record the node cannot read tells neither a confirmation nor a rollback, and holds
+		// back every change until a rollback removes it.
+		if e := resp.Msg.TrialError; e != "" {
+			unreadable = e
+			return nil
+		}
 		if tr := resp.Msg.Trial; tr != nil {
 			if tr.Error != "" {
 				return fmt.Errorf("its trial of config %s is still open: an attempt to roll the config back failed: %s", tr.Version, tr.Error)
@@ -120,8 +129,13 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous 
 		return nil
 	})
 	switch {
+	// Interrupted, chalkctl leaves the trial open.
+	case ctx.Err() != nil:
+		return fmt.Errorf("%w; %s may run config %s on trial until %s; %s", failure, t.name, version, deadline.UTC().Format(time.RFC3339), endTrialHint(t.name))
 	case err != nil:
 		return fmt.Errorf("%w; the node did not answer after the deadline either: %v; chalkctl status %s shows where it stands", failure, err, t.name)
+	case unreadable != "":
+		return fmt.Errorf("%w; the record of its trial cannot be read: %s; chalkctl apply-config --rollback %s restores the previous config", failure, unreadable, t.name)
 	case st.ConfigVersion == version:
 		fmt.Fprintf(a.stdout, "%s keeps config %s: the trial is confirmed\n", t.name, version)
 		return nil
@@ -155,6 +169,9 @@ func (a *app) confirmConfig(ctx context.Context, f applyConfigFlags, name string
 	conn.Close()
 	if err != nil {
 		return nodeError(err, t.name)
+	}
+	if resp.Msg.TrialError != "" {
+		return trialOpen(t.name, resp.Msg)
 	}
 	tr := resp.Msg.Trial
 	if tr == nil {

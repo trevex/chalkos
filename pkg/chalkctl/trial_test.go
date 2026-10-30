@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -78,7 +79,8 @@ func TestApplyConfigOnTrial(t *testing.T) {
 	if err := run("apply-config", "n1", "--try", "1m"); err != nil {
 		t.Fatalf("%v\n%s", err, ta.stdout)
 	}
-	contains("n1 runs config "+second+" on trial; it rolls back to config "+first+" by itself unless confirmed within 1m0s",
+	contains("n1: delivering config "+second+" on trial until ",
+		"n1 runs config "+second+" on trial; it rolls back to config "+first+" by itself unless confirmed within 1m0s",
 		"n1: waiting for a new connection and the node's health to confirm config "+second,
 		"n1 keeps config "+second+": the trial is confirmed")
 	// The confirmation came over a connection of its own, not the delivery's.
@@ -232,14 +234,16 @@ func TestApplyConfigOnTrialAnswerLost(t *testing.T) {
 			s, run, first, second := trialNode(t, ta)
 			ta.setWrap(holdAnswer("ApplyConfig", delay))
 			err := run(context.Background(), "apply-config", "n1", "--try", "1s")
-			if err == nil || !strings.Contains(err.Error(), "n1: the answer to the delivery on trial was lost: ") {
+			if err == nil || !strings.Contains(err.Error(), "n1: config "+second+" was not confirmed within its trial: the answer to its delivery did not come: ") {
 				t.Fatalf("a delivery on trial whose answer was lost = %v\n%s", err, ta.stdout)
 			}
 			if strings.Contains(err.Error(), "failed_precondition") || strings.Contains(ta.stdout.String(), "waiting") {
 				t.Errorf("chalkctl tried to confirm config %s: %v\n%s", second, err, ta.stdout)
 			}
-			if want := "n1 rolled back to config " + first + " at the trial's deadline"; !strings.Contains(ta.stdout.String(), want) {
-				t.Errorf("output lacks %q:\n%s", want, ta.stdout)
+			for _, want := range []string{"n1: delivering config " + second + " on trial until ", "n1 rolled back to config " + first + " at the trial's deadline"} {
+				if !strings.Contains(ta.stdout.String(), want) {
+					t.Errorf("output lacks %q:\n%s", want, ta.stdout)
+				}
 			}
 			if v, _ := slot.Version(slotOf(t, s)); v != first {
 				t.Errorf("the node runs %s, want %s", v, first)
@@ -301,6 +305,86 @@ func TestConfirmRefused(t *testing.T) {
 	}
 }
 
+// spoilTrial has the node carry out each request for the procedure after it made the record of
+// its trial unreadable; with drop, it does so after the request and drops the connection without
+// an answer.
+func spoilTrial(s *chalkd.Server, procedure string, drop bool) func(http.Handler) http.Handler {
+	spoil := func() { os.WriteFile(filepath.Join(s.Paths.StateDir, "chalkd", "trial"), []byte("{"), 0o600) }
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case !strings.HasSuffix(r.URL.Path, "/"+procedure):
+				next.ServeHTTP(w, r)
+			case drop:
+				next.ServeHTTP(httptest.NewRecorder(), r.WithContext(context.WithoutCancel(r.Context())))
+				spoil()
+				panic(http.ErrAbortHandler)
+			default:
+				spoil()
+				next.ServeHTTP(w, r)
+			}
+		})
+	}
+}
+
+// TestUnreadableTrialAfterDelivery: a delivery on trial whose answer did not come, after which the
+// node cannot read the record of its trial, is not reported as confirmed; chalkctl names the
+// rollback that ends it.
+func TestUnreadableTrialAfterDelivery(t *testing.T) {
+	ta := newTestApp(t)
+	s, run, _, second := trialNode(t, ta)
+	ta.setWrap(spoilTrial(s, "ApplyConfig", true))
+	err := run(context.Background(), "apply-config", "n1", "--try", "1m")
+	if err == nil || !strings.Contains(err.Error(), "n1: config "+second+" was not confirmed within its trial: ") || !strings.Contains(err.Error(), "; the record of its trial cannot be read: parse the trial record: unexpected end of JSON input; chalkctl apply-config --rollback n1 restores the previous config") {
+		t.Errorf("a delivery whose trial record cannot be read = %v\n%s", err, ta.stdout)
+	}
+	if strings.Contains(ta.stdout.String(), "the trial is confirmed") {
+		t.Errorf("chalkctl reports the trial confirmed:\n%s", ta.stdout)
+	}
+}
+
+// TestConfirmUnreadableTrial: a confirmation the node refuses because it cannot read the record of
+// the trial names the rollback that ends it, and no deadline or --confirm.
+func TestConfirmUnreadableTrial(t *testing.T) {
+	ta := newTestApp(t)
+	s, run, _, second := trialNode(t, ta)
+	ta.setWrap(spoilTrial(s, "ConfirmConfig", false))
+	err := run(context.Background(), "apply-config", "n1", "--try", "1m")
+	if err == nil || !strings.Contains(err.Error(), "n1: config "+second+" was not confirmed within its trial: ") || !strings.Contains(err.Error(), "chalkctl apply-config --rollback n1 restores the previous config") {
+		t.Fatalf("a confirmation of a trial whose record cannot be read = %v\n%s", err, ta.stdout)
+	}
+	if strings.Contains(err.Error(), "it rolls back at") || strings.Contains(err.Error(), "--confirm n1 keeps it") {
+		t.Errorf("chalkctl names a deadline or --confirm: %v", err)
+	}
+}
+
+// TestTrialRollbackWaitInterrupted: chalkctl stopped while it waits for the node to end a trial
+// whose delivery did not answer leaves the trial open, and says until when and how to end it.
+func TestTrialRollbackWaitInterrupted(t *testing.T) {
+	ta := newTestApp(t)
+	_, run, _, second := trialNode(t, ta)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	lost := holdAnswer("ApplyConfig", 0)
+	var delivered atomic.Bool
+	ta.setWrap(func(next http.Handler) http.Handler {
+		h := lost(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/ApplyConfig"):
+				delivered.Store(true)
+			case strings.HasSuffix(r.URL.Path, "/Status") && delivered.Load():
+				cancel()
+			}
+			h.ServeHTTP(w, r)
+		})
+	})
+	err := run(ctx, "apply-config", "n1", "--try", "1m")
+	if err == nil || !strings.Contains(err.Error(), "the answer to its delivery did not come: ") || !strings.Contains(err.Error(), "; n1 may run config "+second+" on trial until ") || !strings.Contains(err.Error(), "; chalkctl apply-config --confirm n1 keeps it; chalkctl apply-config --rollback n1 rolls it back now") {
+		t.Errorf("an interrupted wait for the rollback = %v\n%s", err, ta.stdout)
+	}
+}
+
 // TestUnreadableTrialRecord: a trial whose record the node cannot read shows in status, holds back
 // deliveries, and --rollback warns which config it delivers, which ends it.
 func TestUnreadableTrialRecord(t *testing.T) {
@@ -316,6 +400,9 @@ func TestUnreadableTrialRecord(t *testing.T) {
 	ta.writeNode(t, n1SystemDisk, n1Network, timeSync("ntp2.lan"))
 	if err := run(context.Background(), "apply-config", "n1"); err == nil || !strings.Contains(err.Error(), "n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; other changes are refused until chalkctl apply-config --rollback n1 restores the previous config") {
 		t.Errorf("a delivery past a record that cannot be read: %v", err)
+	}
+	if err := run(context.Background(), "apply-config", "n1", "--confirm"); err == nil || !strings.Contains(err.Error(), "n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; other changes are refused until chalkctl apply-config --rollback n1 restores the previous config") {
+		t.Errorf("--confirm past a record that cannot be read: %v", err)
 	}
 	ta.stderr.Reset()
 	if err := run(context.Background(), "apply-config", "n1", "--rollback"); err != nil {
