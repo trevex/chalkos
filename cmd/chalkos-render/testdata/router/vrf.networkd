@@ -1,0 +1,54 @@
+# 00-vrf-internet.netdev
+[NetDev]
+Kind=vrf
+Name=internet
+
+[VRF]
+Table=100
+
+# 00-vrf-internet.network
+[Match]
+Name=internet
+
+[Link]
+RequiredForOnline=no
+
+# 00-vrf-tenant.netdev
+[NetDev]
+Kind=vrf
+Name=tenant
+
+[VRF]
+Table=200
+
+# 00-vrf-tenant.network
+[Match]
+Name=tenant
+
+[Link]
+RequiredForOnline=no
+
+# 10-mgmt.network
+[Match]
+Name=eth0
+
+[Network]
+DHCP=yes
+
+# 20-internet.network
+[Match]
+Name=eth1
+
+[Network]
+Address=203.0.113.1/24
+IPv6AcceptRA=false
+VRF=internet
+
+# 30-tenant.network
+[Match]
+Name=eth2 swp1 swp2
+
+[Network]
+IPv6AcceptRA=false
+VRF=tenant
+

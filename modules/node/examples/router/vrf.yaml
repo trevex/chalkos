@@ -1,0 +1,103 @@
+# An edge with two VRFs besides the default one. internet holds the uplink eth1 and peers with a
+# transit provider at an address; tenant holds eth2 and the swp links and peers unnumbered with a
+# tenant's leaves on each swp link the Network documents name, with BFD. The default VRF keeps the
+# management link eth0 and the node API. tenant imports the internet VRF's IPv4 routes, and the
+# default VRF imports tenant's IPv6 routes through a policy.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Router
+metadata: {name: router}
+spec:
+  management: {interfaces: [eth0]}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-mgmt}
+spec:
+  match: {name: eth0}
+  network: {dhcp: "yes"}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-internet}
+spec:
+  match: {name: eth1}
+  network: {address: [203.0.113.1/24], ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 30-tenant}
+spec:
+  match: {name: "eth2 swp1 swp2"}
+  network: {ipv6AcceptRA: false}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: VRF
+metadata: {name: internet}
+spec: {table: 100, interfaces: [eth1]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: VRF
+metadata: {name: tenant}
+spec: {table: 200, interfaces: [eth2, "swp*"]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: bgp}
+spec:
+  asn: 64512
+  routerID: 192.0.2.1
+  import:
+    ipv6: {vrfs: [tenant], policy: from-tenant}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: internet}
+spec:
+  vrf: internet
+  asn: 64512
+  routerID: 192.0.2.1
+  networks: [{prefix: 198.51.100.0/24}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: tenant}
+spec:
+  vrf: tenant
+  asn: 64512
+  routerID: 192.0.2.1
+  bfd: {receiveMs: 100, transmitMs: 100}
+  import:
+    ipv4: {vrfs: [internet]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: transit}
+spec:
+  vrf: internet
+  address: 203.0.113.254
+  remoteAS: 64496
+  families: {ipv4: {}}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: leaves}
+spec:
+  vrf: tenant
+  interfaces: ["swp*"]
+  remoteAS: external
+  bfd: true
+  extendedNextHop: true
+  families: {ipv4: {}, ipv6: {}}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PrefixList
+metadata: {name: tenant}
+spec:
+  family: ipv6
+  entries: [{prefix: "2001:db8:100::/40", le: 64}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: RoutingPolicy
+metadata: {name: from-tenant}
+spec:
+  terms: [{match: {prefixList: tenant}, then: {action: accept}}]

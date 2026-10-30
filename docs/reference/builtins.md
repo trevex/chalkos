@@ -1196,7 +1196,7 @@ The outputs router images add.
 
 | Output | Inputs | Directory | Renderer | Check |
 | --- | --- | --- | --- | --- |
-| `frr`{ #output-frr } | `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `Network` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
+| `frr`{ #output-frr } | `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `Network`, `VRF` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
 | `jool`{ #output-jool } | `NAT64` | `/run/chalkos/outputs/jool` | Command `chalkos-render jool` | yes |
 | `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGPPeer`, `Resolver` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
 | `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |

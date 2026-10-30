@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"net/netip"
 	"regexp"
 	"slices"
@@ -21,15 +22,17 @@ const (
 	policyPrefix     = "rp-"
 	// acceptAll is the route-map of a peer's family without a policy.
 	acceptAll = "accept-all"
-	// bfdProfile holds the BGP document's BFD timers.
+	// bfdProfile holds the BFD timers of the default VRF's BGP document; another VRF's profile
+	// is bfdProfile-<vrf>.
 	bfdProfile = "chalkos"
 )
 
-// renderFRR writes FRR's whole config to out/frr.conf: the BGP instance of the node's BGP document
-// with a peer group per BGPPeer, the PrefixList, CommunityList and RoutingPolicy documents as
-// prefix-lists, community-lists and route-maps, and the BFD profile of the BGP document's timers.
-// A peer's password is a placeholder, @secret_<secret>.<key>@, that frr.service fills in from its
-// credentials. A node without a BGP document runs no BGP.
+// renderFRR writes FRR's whole config to out/frr.conf: a BGP instance per BGP document, of the
+// default VRF or of another, with a peer group per BGPPeer of its VRF, the PrefixList,
+// CommunityList and RoutingPolicy documents as prefix-lists, community-lists and route-maps, and a
+// BFD profile of each instance's timers. A peer's password is a placeholder,
+// @secret_<secret>.<key>@, that frr.service fills in from its credentials. A node without a BGP
+// document runs no BGP.
 func renderFRR(in map[string]any, out string) error {
 	d, err := readRouterDocuments(in)
 	if err != nil {
@@ -57,8 +60,6 @@ func frrConfig(d routerDocuments, node string) (string, error) {
 	}
 	b.WriteString("log syslog informational\nservice integrated-vtysh-config\n!\n")
 	switch {
-	case len(d.BGP) > 1:
-		return "", fmt.Errorf("the config holds %d BGP documents; a node has one", len(d.BGP))
 	case len(d.BGP) == 0 && len(d.Peers) > 0:
 		return "", fmt.Errorf("the config holds BGPPeer documents but no BGP document")
 	case len(d.BGP) == 0:
@@ -72,7 +73,9 @@ func frrConfig(d routerDocuments, node string) (string, error) {
 	c.prefixLists(&b)
 	c.communityLists(&b)
 	c.routeMaps(&b)
-	c.router(&b)
+	for _, in := range c.instances {
+		c.router(&b, in)
+	}
 	c.bfd(&b)
 	b.WriteString("end\n")
 	return b.String(), nil
@@ -80,7 +83,8 @@ func frrConfig(d routerDocuments, node string) (string, error) {
 
 // frr is what frr.conf is rendered from once the documents passed their checks.
 type frr struct {
-	bgp         bgpSpec
+	// instances are the BGP documents, the default VRF's first and the others by VRF.
+	instances   []*instance
 	peers       []named[peerSpec]
 	prefixes    []named[prefixListSpec]
 	communities []named[communityListSpec]
@@ -96,7 +100,46 @@ type frr struct {
 	policyFamily map[string]string
 	// neighbours are the interfaces or the address of each peer, by peer name.
 	neighbours map[string][]neighbour
+	// links are the links the Network documents name, and membership tells the VRF networkd puts
+	// a link in.
 	links      []string
+	membership vrfMembership
+	// prependAS is the AS number the prepends of each RoutingPolicy with one repeat, by name.
+	prependAS map[string]uint32
+}
+
+// An instance is a BGP document: the BGP instance of one VRF, and the peers in that VRF.
+type instance struct {
+	name, vrf string
+	spec      bgpSpec
+	peers     []named[peerSpec]
+}
+
+// served is the instance of the VRF, nil when no BGP document serves it.
+func (c *frr) served(vrf string) *instance {
+	for _, in := range c.instances {
+		if in.vrf == vrf {
+			return in
+		}
+	}
+	return nil
+}
+
+// leak is what the instance imports of the family, nil for nothing.
+func (in *instance) leak(family string) *leakSpec {
+	if family == "ipv4" {
+		return in.spec.Import.IPv4
+	}
+	return in.spec.Import.IPv6
+}
+
+// profile is the BFD profile of the instance's timers: bfdProfile for the default VRF's, and
+// bfdProfile-<vrf> for another's.
+func (in *instance) profile() string {
+	if in.vrf == defaultVRF {
+		return bfdProfile
+	}
+	return bfdProfile + "-" + in.vrf
 }
 
 // A neighbour is one session of a peer: on the link of an interface, or with an address.
@@ -193,10 +236,9 @@ var description = regexp.MustCompile(`^[!-?A-~]+( [!-?A-~]+)*$`)
 var plainInterface = regexp.MustCompile(`^[A-Za-z0-9_.:@-]{1,15}$`)
 
 // newFRR checks the documents as the schemas and rules do, should one bypass them, and expands
-// each peer's interfaces against the links the Network documents name.
+// each peer's interfaces against the links the Network documents name, which are in its VRF.
 func newFRR(d routerDocuments) (*frr, error) {
 	c := &frr{
-		bgp:          d.BGP[0].Spec,
 		peers:        d.Peers,
 		prefixes:     d.Prefixes,
 		communities:  d.Communities,
@@ -207,26 +249,21 @@ func newFRR(d routerDocuments) (*frr, error) {
 		policyFamily: map[string]string{},
 		neighbours:   map[string][]neighbour{},
 		links:        d.Links,
+		membership:   d.Membership,
+		prependAS:    map[string]uint32{},
 	}
-	b := c.bgp
-	if b.ASN == 0 {
-		return nil, fmt.Errorf("BGP: asn 0 is no AS number")
-	}
-	if a, err := netip.ParseAddr(b.RouterID); err != nil || !a.Is4() || a.IsUnspecified() || a.IsMulticast() || a == netip.AddrFrom4([4]byte{255, 255, 255, 255}) {
-		return nil, fmt.Errorf("BGP: routerID %q is no IPv4 unicast address", b.RouterID)
-	}
-	for _, m := range []struct {
-		what      string
-		v, lo, hi int
-	}{
-		{"multipath.ebgp", b.Multipath.EBGP, 1, 64}, {"multipath.ibgp", b.Multipath.IBGP, 1, 64},
-		{"bfd.receiveMs", b.BFD.ReceiveMs, 10, 60000}, {"bfd.transmitMs", b.BFD.TransmitMs, 10, 60000},
-		{"bfd.multiplier", b.BFD.Multiplier, 2, 255},
-	} {
-		if m.v < m.lo || m.v > m.hi {
-			return nil, fmt.Errorf("BGP: %s %d lies outside %d to %d", m.what, m.v, m.lo, m.hi)
+	for _, g := range d.BGP {
+		in, err := newInstance(g, d.VRFs)
+		if err != nil {
+			return nil, err
 		}
+		if other := c.served(in.vrf); other != nil {
+			return nil, fmt.Errorf("BGP %s and BGP %s both serve the VRF %s; a VRF has one BGP instance", other.name, g.Name, in.vrf)
+		}
+		c.instances = append(c.instances, in)
 	}
+	// FRR takes the default VRF's instance first.
+	slices.SortStableFunc(c.instances, func(a, b *instance) int { return strings.Compare(vrfOrder(a.vrf), vrfOrder(b.vrf)) })
 	for _, l := range d.Prefixes {
 		entries, err := prefixEntries(l.Spec)
 		if err != nil {
@@ -260,44 +297,189 @@ func newFRR(d routerDocuments) (*frr, error) {
 			return nil, fmt.Errorf("RoutingPolicy %s: %w", p.Name, err)
 		}
 	}
-	// The network of each range, so two never announce one.
-	announced := map[netip.Prefix]string{}
-	for _, n := range b.Networks {
-		p, err := netip.ParsePrefix(n.Prefix)
-		if err != nil {
-			return nil, fmt.Errorf("BGP: network %q is no address range", n.Prefix)
+	for _, in := range c.instances {
+		if err := c.checkNetworks(in); err != nil {
+			return nil, err
 		}
-		if other, ok := announced[p.Masked()]; ok {
-			return nil, fmt.Errorf("BGP: networks %s and %s both announce %s; give each range one network", other, n.Prefix, p.Masked())
-		}
-		announced[p.Masked()] = n.Prefix
-		if n.Policy != nil {
-			if err := c.policyOfFamily(*n.Policy, familyOf(p.Addr())); err != nil {
-				return nil, fmt.Errorf("BGP: network %s: %w", n.Prefix, err)
-			}
+		if err := c.checkImports(in); err != nil {
+			return nil, err
 		}
 	}
-	// Who names each session, so two peers never name one.
-	owner := map[string]string{}
+	// Who names each session of a VRF, so two peers never name one, and who names each neighbour
+	// in any VRF, so none takes a peer group's name.
+	owner, sessions := map[string]string{}, map[string]string{}
 	for _, p := range d.Peers {
-		ns, err := c.peerNeighbours(p)
+		vrf := vrfOf(p.Spec.VRF)
+		in := c.served(vrf)
+		if in == nil {
+			return nil, fmt.Errorf("BGPPeer %s runs in the VRF %s, which no BGP document serves", p.Name, vrf)
+		}
+		ns, err := c.peerNeighbours(p, vrf)
 		if err != nil {
 			return nil, fmt.Errorf("BGPPeer %s: %w", p.Name, err)
 		}
 		for _, n := range ns {
-			if other, ok := owner[n.name]; ok {
+			key := vrf + " " + n.name
+			if other, ok := owner[key]; ok {
 				return nil, fmt.Errorf("BGPPeer %s and BGPPeer %s both name %s; give each session one peer", other, p.Name, n.name)
 			}
-			owner[n.name] = p.Name
+			owner[key] = p.Name
+			sessions[n.name] = p.Name
 		}
 		c.neighbours[p.Name] = ns
+		in.peers = append(in.peers, p)
 	}
 	for _, p := range d.Peers {
-		if peer, ok := owner[peerGroupPrefix+p.Name]; ok {
+		if peer, ok := sessions[peerGroupPrefix+p.Name]; ok {
 			return nil, fmt.Errorf("BGPPeer %s names %s%s, the peer group of BGPPeer %s; rename the document or the interface", peer, peerGroupPrefix, p.Name, p.Name)
 		}
 	}
+	if err := c.prepends(); err != nil {
+		return nil, err
+	}
 	return c, nil
+}
+
+// newInstance checks a BGP document's VRF, which a VRF document declares unless it is the default
+// one, and its settings.
+func newInstance(g named[bgpSpec], vrfs []named[vrfSpec]) (*instance, error) {
+	b := g.Spec
+	in := &instance{name: g.Name, vrf: vrfOf(b.VRF), spec: b}
+	what := "BGP " + g.Name
+	if in.vrf != defaultVRF && !slices.ContainsFunc(vrfs, func(v named[vrfSpec]) bool { return v.Name == in.vrf }) {
+		return nil, fmt.Errorf("%s: the VRF %q has no VRF document", what, in.vrf)
+	}
+	if b.ASN == 0 {
+		return nil, fmt.Errorf("%s: asn 0 is no AS number", what)
+	}
+	if a, err := netip.ParseAddr(b.RouterID); err != nil || !a.Is4() || a.IsUnspecified() || a.IsMulticast() || a == netip.AddrFrom4([4]byte{255, 255, 255, 255}) {
+		return nil, fmt.Errorf("%s: routerID %q is no IPv4 unicast address", what, b.RouterID)
+	}
+	for _, m := range []struct {
+		what      string
+		v, lo, hi int
+	}{
+		{"multipath.ebgp", b.Multipath.EBGP, 1, 64}, {"multipath.ibgp", b.Multipath.IBGP, 1, 64},
+		{"bfd.receiveMs", b.BFD.ReceiveMs, 10, 60000}, {"bfd.transmitMs", b.BFD.TransmitMs, 10, 60000},
+		{"bfd.multiplier", b.BFD.Multiplier, 2, 255},
+	} {
+		if m.v < m.lo || m.v > m.hi {
+			return nil, fmt.Errorf("%s: %s %d lies outside %d to %d", what, m.what, m.v, m.lo, m.hi)
+		}
+	}
+	return in, nil
+}
+
+// checkNetworks refuses a network of an instance that is no address range, two networks of one
+// range, and a policy of another family.
+func (c *frr) checkNetworks(in *instance) error {
+	announced := map[netip.Prefix]string{}
+	for _, n := range in.spec.Networks {
+		p, err := netip.ParsePrefix(n.Prefix)
+		if err != nil {
+			return fmt.Errorf("BGP %s: network %q is no address range", in.name, n.Prefix)
+		}
+		if other, ok := announced[p.Masked()]; ok {
+			return fmt.Errorf("BGP %s: networks %s and %s both announce %s; give each range one network", in.name, other, n.Prefix, p.Masked())
+		}
+		announced[p.Masked()] = n.Prefix
+		if n.Policy != nil {
+			if err := c.policyOfFamily(*n.Policy, familyOf(p.Addr())); err != nil {
+				return fmt.Errorf("BGP %s: network %s: %w", in.name, n.Prefix, err)
+			}
+		}
+	}
+	return nil
+}
+
+// checkImports refuses an import of an instance that names no VRF, its own VRF, a VRF twice or one
+// that no BGP document serves, and a policy of another family. Every VRF it names is then an
+// instance's, whose name the documents' checks took.
+func (c *frr) checkImports(in *instance) error {
+	for _, f := range []struct {
+		family string
+		leak   *leakSpec
+	}{{"ipv4", in.spec.Import.IPv4}, {"ipv6", in.spec.Import.IPv6}} {
+		if f.leak == nil {
+			continue
+		}
+		what := fmt.Sprintf("BGP %s: import.%s", in.name, f.family)
+		if len(f.leak.VRFs) == 0 {
+			return fmt.Errorf("%s names no VRF", what)
+		}
+		seen := map[string]bool{}
+		for _, v := range f.leak.VRFs {
+			switch {
+			case v == in.vrf:
+				return fmt.Errorf("%s names its own VRF %s", what, v)
+			case seen[v]:
+				return fmt.Errorf("%s names the VRF %s twice", what, v)
+			case c.served(v) == nil:
+				return fmt.Errorf("%s names the VRF %q, which no BGP document serves", what, v)
+			}
+			seen[v] = true
+		}
+		if f.leak.Policy != nil {
+			if err := c.policyOfFamily(*f.leak.Policy, f.family); err != nil {
+				return fmt.Errorf("%s: %w", what, err)
+			}
+		}
+	}
+	return nil
+}
+
+// prepends finds the AS number each RoutingPolicy's prepend repeats: that of the BGP instances
+// whose networks, peers or imports use the policy. A route-map serves every instance, so a policy
+// with a prepend that instances of two AS numbers use is refused; one that no instance uses
+// repeats the first instance's.
+func (c *frr) prepends() error {
+	uses := map[string]map[uint32]bool{}
+	use := func(policy *string, asn uint32) {
+		if policy == nil {
+			return
+		}
+		if uses[*policy] == nil {
+			uses[*policy] = map[uint32]bool{}
+		}
+		uses[*policy][asn] = true
+	}
+	for _, in := range c.instances {
+		asn := in.spec.ASN
+		for _, n := range in.spec.Networks {
+			use(n.Policy, asn)
+		}
+		for _, l := range []*leakSpec{in.spec.Import.IPv4, in.spec.Import.IPv6} {
+			if l != nil {
+				use(l.Policy, asn)
+			}
+		}
+		for _, p := range in.peers {
+			for _, f := range []*peerFamily{p.Spec.Families.IPv4, p.Spec.Families.IPv6} {
+				if f != nil {
+					use(f.Import, asn)
+					use(f.Export, asn)
+				}
+			}
+		}
+	}
+	for _, p := range c.policies {
+		prepends := false
+		for _, t := range p.Spec.Terms {
+			prepends = prepends || t.Then.Prepend != nil
+		}
+		if !prepends {
+			continue
+		}
+		switch asns := slices.Sorted(maps.Keys(uses[p.Name])); len(asns) {
+		case 0:
+			c.prependAS[p.Name] = c.instances[0].spec.ASN
+		case 1:
+			c.prependAS[p.Name] = asns[0]
+		default:
+			return fmt.Errorf("RoutingPolicy %s prepends the AS number, and BGP instances of AS %d and %d use it; give each AS a policy of its own", p.Name, asns[0], asns[1])
+		}
+	}
+	return nil
 }
 
 func familyOf(a netip.Addr) string {
@@ -376,9 +558,10 @@ func (c *frr) policyOfFamily(policy, f string) error {
 	return nil
 }
 
-// peerNeighbours are a peer's sessions: its address, its interface, or the links its interfaces
-// name, globs matching the links the Network documents name.
-func (c *frr) peerNeighbours(p named[peerSpec]) ([]neighbour, error) {
+// peerNeighbours are a peer's sessions: its address, its interface, which is a link of its VRF, or
+// the links of its VRF its interfaces name, globs matching the links the Network documents name.
+// A glob that matches a link of another VRF is refused, as it would run no session there.
+func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error) {
 	s := p.Spec
 	if !s.namesOneNeighbour() {
 		return nil, fmt.Errorf("it names not exactly one of address, interface and interfaces")
@@ -431,6 +614,9 @@ func (c *frr) peerNeighbours(p named[peerSpec]) ([]neighbour, error) {
 		if err := linkNeighbour(*s.Interface); err != nil {
 			return nil, err
 		}
+		if in := c.membership.linkVRF(*s.Interface); in != vrf {
+			return nil, fmt.Errorf("interface %s is in the VRF %s, not in the peer's VRF %s", *s.Interface, in, vrf)
+		}
 		return []neighbour{{name: *s.Interface, onLink: true}}, nil
 	}
 	if err := checkInterfaces("interfaces", s.Interfaces); err != nil {
@@ -438,7 +624,10 @@ func (c *frr) peerNeighbours(p named[peerSpec]) ([]neighbour, error) {
 	}
 	var ns []neighbour
 	for _, link := range c.links {
-		if slices.ContainsFunc(s.Interfaces, func(glob string) bool { return matchesGlob(glob, link) }) {
+		if i := slices.IndexFunc(s.Interfaces, func(glob string) bool { return matchesGlob(glob, link) }); i >= 0 {
+			if in := c.membership.linkVRF(link); in != vrf {
+				return nil, fmt.Errorf("interfaces: %s matches %s, which is in the VRF %s, not in the peer's VRF %s", s.Interfaces[i], link, in, vrf)
+			}
 			if err := linkNeighbour(link); err != nil {
 				return nil, err
 			}
@@ -659,7 +848,7 @@ func (c *frr) routeMaps(b *strings.Builder) {
 			if th.Prepend != nil {
 				asns := make([]string, *th.Prepend)
 				for k := range asns {
-					asns[k] = strconv.FormatUint(uint64(c.bgp.ASN), 10)
+					asns[k] = strconv.FormatUint(uint64(c.prependAS[p.Name]), 10)
 				}
 				fmt.Fprintf(b, " set as-path prepend %s\n", strings.Join(asns, " "))
 			}
@@ -687,18 +876,24 @@ func (c *frr) needsAcceptAll() bool {
 	return false
 }
 
-// router renders the BGP instance: its settings, a peer group per peer with its sessions, and
-// both address families with the networks and each peer's policies.
-func (c *frr) router(b *strings.Builder) {
-	g := c.bgp
-	fmt.Fprintf(b, "router bgp %d\n bgp router-id %s\n no bgp default ipv4-unicast\n", g.ASN, g.RouterID)
+// router renders a BGP instance: its settings, a peer group per peer of its VRF with its sessions,
+// and both address families with the networks, each peer's policies and the routes the instance
+// imports from other VRFs.
+func (c *frr) router(b *strings.Builder, in *instance) {
+	g := in.spec
+	if in.vrf == defaultVRF {
+		fmt.Fprintf(b, "router bgp %d\n", g.ASN)
+	} else {
+		fmt.Fprintf(b, "router bgp %d vrf %s\n", g.ASN, in.vrf)
+	}
+	fmt.Fprintf(b, " bgp router-id %s\n no bgp default ipv4-unicast\n", g.RouterID)
 	if g.Multipath.ASPathRelax {
 		b.WriteString(" bgp bestpath as-path multipath-relax\n")
 	}
 	if g.GracefulRestart {
 		b.WriteString(" bgp graceful-restart\n")
 	}
-	for _, p := range c.peers {
+	for _, p := range in.peers {
 		group := peerGroupPrefix + p.Name
 		s := p.Spec
 		fmt.Fprintf(b, " neighbor %s peer-group\n neighbor %s remote-as %s\n", group, group, s.RemoteAS)
@@ -709,7 +904,7 @@ func (c *frr) router(b *strings.Builder) {
 			fmt.Fprintf(b, " neighbor %s password @secret_%s.%s@\n", group, s.Password.SecretRef.Name, s.Password.SecretRef.Key)
 		}
 		if s.BFD {
-			fmt.Fprintf(b, " neighbor %s bfd\n neighbor %s bfd profile %s\n", group, group, bfdProfile)
+			fmt.Fprintf(b, " neighbor %s bfd\n neighbor %s bfd profile %s\n", group, group, in.profile())
 		}
 		if s.ExtendedNextHop {
 			fmt.Fprintf(b, " neighbor %s capability extended-nexthop\n", group)
@@ -739,7 +934,7 @@ func (c *frr) router(b *strings.Builder) {
 			b.WriteString(line + "\n")
 		}
 		fmt.Fprintf(b, "  maximum-paths %d\n  maximum-paths ibgp %d\n", g.Multipath.EBGP, g.Multipath.IBGP)
-		for _, p := range c.peers {
+		for _, p := range in.peers {
 			f := p.Spec.Families.IPv4
 			if fam == "ipv6" {
 				f = p.Spec.Families.IPv6
@@ -766,17 +961,34 @@ func (c *frr) router(b *strings.Builder) {
 				fmt.Fprintf(b, "  neighbor %s maximum-prefix %d\n", group, *f.MaxPrefix)
 			}
 		}
+		if l := in.leak(fam); l != nil {
+			if l.Policy != nil {
+				fmt.Fprintf(b, "  import vrf route-map %s%s\n", policyPrefix, *l.Policy)
+			}
+			for _, v := range l.VRFs {
+				fmt.Fprintf(b, "  import vrf %s\n", v)
+			}
+		}
 		b.WriteString(" exit-address-family\n")
 	}
 	b.WriteString("exit\n!\n")
 }
 
-// bfd renders the BFD profile of the BGP document's timers, which the peers with bfd use.
+// bfd renders a BFD profile of the timers of each instance with a peer of bfd.
 func (c *frr) bfd(b *strings.Builder) {
-	if !slices.ContainsFunc(c.peers, func(p named[peerSpec]) bool { return p.Spec.BFD }) {
-		return
+	written := false
+	for _, in := range c.instances {
+		if !slices.ContainsFunc(in.peers, func(p named[peerSpec]) bool { return p.Spec.BFD }) {
+			continue
+		}
+		if !written {
+			b.WriteString("bfd\n")
+			written = true
+		}
+		t := in.spec.BFD
+		fmt.Fprintf(b, " profile %s\n  receive-interval %d\n  transmit-interval %d\n  detect-multiplier %d\n exit\n", in.profile(), t.ReceiveMs, t.TransmitMs, t.Multiplier)
 	}
-	t := c.bgp.BFD
-	fmt.Fprintf(b, "bfd\n profile %s\n  receive-interval %d\n  transmit-interval %d\n  detect-multiplier %d\n exit\nexit\n!\n",
-		bfdProfile, t.ReceiveMs, t.TransmitMs, t.Multiplier)
+	if written {
+		b.WriteString("exit\n!\n")
+	}
 }

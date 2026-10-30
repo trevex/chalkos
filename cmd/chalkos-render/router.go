@@ -110,8 +110,10 @@ func (p *portRange) UnmarshalJSON(data []byte) error {
 }
 
 type bgpSpec struct {
-	ASN       uint32 `json:"asn"`
-	RouterID  string `json:"routerID"`
+	// VRF is nil for the default VRF's instance.
+	VRF       *string `json:"vrf"`
+	ASN       uint32  `json:"asn"`
+	RouterID  string  `json:"routerID"`
 	Multipath struct {
 		EBGP        int  `json:"ebgp"`
 		IBGP        int  `json:"ibgp"`
@@ -127,9 +129,21 @@ type bgpSpec struct {
 		Prefix string  `json:"prefix"`
 		Policy *string `json:"policy"`
 	} `json:"networks"`
+	Import struct {
+		IPv4 *leakSpec `json:"ipv4"`
+		IPv6 *leakSpec `json:"ipv6"`
+	} `json:"import"`
+}
+
+// leakSpec is what a BGP instance imports of one family from other VRFs' instances.
+type leakSpec struct {
+	VRFs   []string `json:"vrfs"`
+	Policy *string  `json:"policy"`
 }
 
 type peerSpec struct {
+	// VRF is nil for a peer of the default VRF.
+	VRF       *string `json:"vrf"`
 	Address   *string `json:"address"`
 	Interface *string `json:"interface"`
 	// Interfaces is nil when the peer names an address or an interface.
@@ -270,11 +284,8 @@ type routerDocuments struct {
 	VRFs            []named[vrfSpec]
 	// Links are the interface names the Network documents' [Match] sections name, sorted.
 	Links []string
-	// Members are the links of Links that a VRF holds, by link, with the VRF's name.
-	Members map[string]string
-	// NetworkVRFs are the Network documents that are the first to match links a VRF holds, by
-	// document name, with the VRF's name.
-	NetworkVRFs map[string]string
+	// Membership is the VRF of the links of Links and of the Network documents.
+	Membership vrfMembership
 }
 
 // readRouterDocuments decodes the router kinds' documents of in; a kind the output does not read
@@ -323,11 +334,9 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 		return d, err
 	}
 	d.Links = networkLinks(byKind)
-	m, err := vrfLinks(d.VRFs, byKind)
-	if err != nil {
+	if d.Membership, err = vrfLinks(d.VRFs, byKind); err != nil {
 		return d, err
 	}
-	d.Members, d.NetworkVRFs = m.Links, m.Networks
 	return d, nil
 }
 
@@ -578,6 +587,22 @@ func (d routerDocuments) router() routerSpec {
 		return defaultRouter()
 	}
 	return d.Routers[0].Spec
+}
+
+// vrfOf is the VRF a document's vrf names: its name, or the default VRF's when it is null.
+func vrfOf(v *string) string {
+	if v == nil {
+		return defaultVRF
+	}
+	return *v
+}
+
+// vrfOrder sorts the default VRF before the others, which follow by name.
+func vrfOrder(vrf string) string {
+	if vrf == defaultVRF {
+		return ""
+	}
+	return vrf
 }
 
 // routerName is a document's name as the schemas take it, which the ruleset writes unquoted in

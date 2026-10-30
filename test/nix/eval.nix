@@ -379,6 +379,7 @@ lib.runTests {
         "CommunityList"
         "RoutingPolicy"
         "Network"
+        "VRF"
       ];
       firewallReads = true;
       check = true;

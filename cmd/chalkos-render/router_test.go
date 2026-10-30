@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -141,13 +142,13 @@ func renderedFiles(t *testing.T, args []string, input string) string {
 
 // Each example of the router outputs renders its golden sysctl file, ruleset, FRR config, Jool
 // instances, Unbound config and networkd units: no documents, a leaf that only routes, a fabric
-// edge and a LAN router.
+// edge, a LAN router and an edge with VRFs.
 func TestRouterGolden(t *testing.T) {
 	examples, err := filepath.Glob(filepath.Join(routerExamples, "*.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(examples) != 4 {
+	if len(examples) != 5 {
 		t.Fatalf("examples = %v", examples)
 	}
 	for _, path := range examples {
@@ -406,7 +407,6 @@ func TestFRRRefusals(t *testing.T) {
 		want string
 	}{
 		"peers without BGP":      {map[string][]any{"BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "the config holds BGPPeer documents but no BGP document"},
-		"two BGP documents":      {map[string][]any{"BGP": {bgp(""), doc("BGP", "other", `{}`)}}, "the config holds 2 BGP documents"},
 		"an IPv6 router ID":      {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "2001:db8::1"}`)}}, `routerID "2001:db8::1" is no IPv4 unicast address`},
 		"an unknown remote AS":   {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "anyone", "families": {"ipv6": {}}}`)}}, "remoteAS is external, internal or an AS number"},
 		"a community of 17 bits": {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["65536:1"]}`)}}, `"65536:1" is no community`},
@@ -719,4 +719,119 @@ func TestUnboundRefusals(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, c.args, map[string][]any{"Resolver": c.docs}, c.want) })
 	}
+}
+
+// A peer in a VRF has its ports opened on its VRF's links by sdifname: the input hook sees a
+// packet from a VRF's link with the VRF's device as iifname and the link as sdifname. A peer of
+// an address is opened by its address in any VRF.
+func TestVRFPeerOpenings(t *testing.T) {
+	tenant, addr := "tenant", "192.0.2.9"
+	openings, err := bgpOpenings([]named[peerSpec]{
+		{Name: "leaves", Spec: peerSpec{Interfaces: []string{"swp*"}, VRF: &tenant}},
+		{Name: "far", Spec: peerSpec{Address: &addr, VRF: &tenant}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, o := range openings {
+		lines, err := o.lines()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, lines...)
+	}
+	want := []string{
+		`meta sdifname { "swp*" } tcp dport { 179 } accept comment "BGPPeer leaves"`,
+		`ip saddr { 192.0.2.9/32 } tcp dport { 179 } accept comment "BGPPeer far"`,
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("lines:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// FRR's config refuses BGP and BGPPeer documents per VRF that the rules refuse, should they
+// bypass them, and values that would add to the config.
+func TestFRRVRFRefusals(t *testing.T) {
+	timers := `"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}`
+	bgp := func(name string, asn int, more string) any {
+		return routerDoc(t, "BGP", name, fmt.Sprintf(`{"asn": %d, "routerID": "192.0.2.1", %s%s}`, asn, timers, more))
+	}
+	peer := func(name, more string) any {
+		return routerDoc(t, "BGPPeer", name, `{"remoteAS": "external", "families": {"ipv6": {}}, `+more+`}`)
+	}
+	tenant := routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)
+	eth2 := document(t, "Network", "20-eth2", `{"match": {"name": "eth2"}}`)
+	v6 := routerDoc(t, "PrefixList", "v6", `{"family": "ipv6", "entries": [{"prefix": "2001:db8::/32", "action": "permit"}]}`)
+	from := routerDoc(t, "RoutingPolicy", "from", `{"terms": [{"match": {"prefixList": "v6"}, "then": {"action": "accept"}}], "default": "reject"}`)
+	prepend := routerDoc(t, "RoutingPolicy", "p", `{"terms": [{"then": {"action": "accept", "prepend": 1}}], "default": "reject"}`)
+	withTenant := func(docs map[string][]any) map[string][]any {
+		docs["VRF"], docs["Network"] = []any{tenant}, []any{eth2}
+		return docs
+	}
+	for name, c := range map[string]struct {
+		docs map[string][]any
+		want string
+	}{
+		"two BGP documents of one VRF": {map[string][]any{"BGP": {bgp("bgp", 64512, ""), bgp("other", 64513, "")}},
+			"BGP bgp and BGP other both serve the VRF default"},
+		"an instance of a VRF without its document": {map[string][]any{"BGP": {bgp("tenant", 64512, `, "vrf": "tenant"`)}},
+			`BGP tenant: the VRF "tenant" has no VRF document`},
+		"a VRF that adds a command": {withTenant(map[string][]any{"BGP": {bgp("x", 64512, `, "vrf": "tenant\nrouter bgp 64999"`)}}),
+			`the VRF "tenant\nrouter bgp 64999" has no VRF document`},
+		"a peer in a VRF without BGP": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("leaves", `"vrf": "tenant", "interface": "eth2"`)}}),
+			"BGPPeer leaves runs in the VRF tenant, which no BGP document serves"},
+		"an interface of another VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "eth2"`)}}),
+			"interface eth2 is in the VRF tenant, not in the peer's VRF default"},
+		"an import of its own VRF": {map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["default"]}}`)}},
+			"BGP bgp: import.ipv6 names its own VRF default"},
+		"an import of no VRF": {map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": []}}`)}},
+			"BGP bgp: import.ipv6 names no VRF"},
+		"an import of a VRF without BGP": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["tenant"]}}`)}}),
+			`BGP bgp: import.ipv6 names the VRF "tenant", which no BGP document serves`},
+		"an import that adds a command": {map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["x\n neighbor 192.0.2.9 remote-as 64999"]}}`)}},
+			`names the VRF "x\n neighbor 192.0.2.9 remote-as 64999", which no BGP document serves`},
+		"an import of one VRF twice": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["tenant", "tenant"]}}`), bgp("tenant", 64512, `, "vrf": "tenant"`)}}),
+			"BGP bgp: import.ipv6 names the VRF tenant twice"},
+		"an import's policy of the other family": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv4": {"vrfs": ["tenant"], "policy": "from"}}`), bgp("tenant", 64512, `, "vrf": "tenant"`)},
+			"PrefixList": {v6}, "RoutingPolicy": {from}}),
+			"BGP bgp: import.ipv4: the RoutingPolicy from matches PrefixLists of ipv6, not ipv4"},
+		"a prepend for two AS numbers": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "networks": [{"prefix": "2001:db8:1::/48", "policy": "p"}]`),
+			bgp("tenant", 64513, `, "vrf": "tenant", "networks": [{"prefix": "2001:db8:2::/48", "policy": "p"}]`)}, "RoutingPolicy": {prepend}}),
+			"RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own"},
+	} {
+		t.Run(name, func(t *testing.T) { refused(t, []string{"frr"}, c.docs, c.want) })
+	}
+}
+
+// A peer's interface is in the VRF of the first Network document networkd picks for it, which
+// may match it by a glob, and the peer's session runs there.
+func TestFRRVRFInterfaceByGlob(t *testing.T) {
+	timers := `"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}`
+	docs := map[string][]any{
+		"BGP": {
+			routerDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers+`}`),
+			routerDoc(t, "BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1", `+timers+`}`),
+		},
+		"VRF":     {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["swp*"]}`)},
+		"Network": {document(t, "Network", "30-swp", `{"match": {"name": "swp*"}}`)},
+	}
+	peer := func(more string) []any {
+		return []any{routerDoc(t, "BGPPeer", "leaf", `{"interface": "swp1", "remoteAS": "external", "families": {"ipv6": {}}`+more+`}`)}
+	}
+	docs["BGPPeer"] = peer(`, "vrf": "tenant"`)
+	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := renderedFile(t, []string{"frr"}, string(input), frrFile)
+	if !strings.Contains(conf, "router bgp 64512 vrf tenant\n bgp router-id 192.0.2.1\n no bgp default ipv4-unicast\n neighbor peer-leaf peer-group\n neighbor peer-leaf remote-as external\n neighbor swp1 interface peer-group peer-leaf\n") {
+		t.Errorf("frr.conf runs no session on swp1 in tenant:\n%s", conf)
+	}
+	docs["BGPPeer"] = peer("")
+	refused(t, []string{"frr"}, docs, "interface swp1 is in the VRF tenant, not in the peer's VRF default")
+	// A glob of a default-VRF peer that matches a link of tenant would run no session there.
+	docs["Network"] = append(docs["Network"], document(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`))
+	docs["BGPPeer"] = []any{routerDoc(t, "BGPPeer", "leaves", `{"interfaces": ["sw*"], "remoteAS": "external", "families": {"ipv6": {}}}`)}
+	refused(t, []string{"frr"}, docs, "interfaces: sw* matches swp1, which is in the VRF tenant, not in the peer's VRF default")
 }

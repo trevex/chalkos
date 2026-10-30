@@ -79,6 +79,7 @@ in
         "CommunityList"
         "RoutingPolicy"
         "Network"
+        "VRF"
       ];
       render = "${render} frr";
       # vtysh parses the config as the daemons' commands take it, without the daemons.

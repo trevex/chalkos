@@ -47,17 +47,20 @@ func renderRouterNftables(port string, closed bool, in map[string]any, out strin
 // protected rules: from the interfaces and source ranges, and to the destination addresses, the
 // service's documents scope it to, empty for any, with a comment that names the document.
 type opening struct {
-	comment      string
-	protocol     string
-	ports        []portRange
-	interfaces   []string
+	comment    string
+	protocol   string
+	ports      []portRange
+	interfaces []string
+	// vrf tells that interfaces are links of a VRF. The input hook sees a packet from such a
+	// link with the VRF's device as iifname and the link as sdifname.
+	vrf          bool
 	sources      []string
 	destinations []string
 }
 
-// bgpOpenings are the ports of each BGPPeer, on its interfaces or from its address alone: BGP's
-// TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of single-hop sessions, and 4784 of
-// multi-hop ones from an address peer; a peer on a link is one hop away.
+// bgpOpenings are the ports of each BGPPeer, on its interfaces, of its VRF, or from its address
+// alone: BGP's TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of single-hop sessions,
+// and 4784 of multi-hop ones from an address peer; a peer on a link is one hop away.
 func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 	var out []opening
 	for _, p := range peers {
@@ -75,9 +78,9 @@ func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 			}
 			o.sources = []string{netip.PrefixFrom(a, a.BitLen()).String()}
 		case s.Interface != nil:
-			o.interfaces = []string{*s.Interface}
+			o.interfaces, o.vrf = []string{*s.Interface}, s.VRF != nil
 		default:
-			o.interfaces = s.Interfaces
+			o.interfaces, o.vrf = s.Interfaces, s.VRF != nil
 		}
 		// An opening without interfaces and sources would accept the port from anywhere.
 		if s.Address == nil {
@@ -660,7 +663,10 @@ func (o opening) lines() ([]string, error) {
 		return nil, err
 	}
 	head := ""
-	if len(o.interfaces) > 0 {
+	switch {
+	case len(o.interfaces) > 0 && o.vrf:
+		head = "meta sdifname " + interfaceSet(o.interfaces) + " "
+	case len(o.interfaces) > 0:
 		head = "iifname " + interfaceSet(o.interfaces) + " "
 	}
 	tail := fmt.Sprintf("%s accept comment %q", match, o.comment)

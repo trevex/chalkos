@@ -1,0 +1,94 @@
+! FRR's config, rendered by chalkos-render frr. frr.service fills in the passwords, and
+! frr-reload.py applies the changes.
+frr defaults traditional
+hostname r1
+log syslog informational
+service integrated-vtysh-config
+!
+ipv6 prefix-list pl-tenant seq 5 permit 2001:db8:100::/40 le 64
+!
+route-map rp-from-tenant permit 10
+ match ipv6 address prefix-list pl-tenant
+exit
+route-map rp-from-tenant deny 65535
+exit
+route-map accept-all permit 10
+exit
+!
+router bgp 64512
+ bgp router-id 192.0.2.1
+ no bgp default ipv4-unicast
+ !
+ address-family ipv4 unicast
+  maximum-paths 1
+  maximum-paths ibgp 1
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  maximum-paths 1
+  maximum-paths ibgp 1
+  import vrf route-map rp-from-tenant
+  import vrf tenant
+ exit-address-family
+exit
+!
+router bgp 64512 vrf internet
+ bgp router-id 192.0.2.1
+ no bgp default ipv4-unicast
+ neighbor peer-transit peer-group
+ neighbor peer-transit remote-as 64496
+ neighbor 203.0.113.254 peer-group peer-transit
+ !
+ address-family ipv4 unicast
+  network 198.51.100.0/24
+  maximum-paths 1
+  maximum-paths ibgp 1
+  neighbor peer-transit activate
+  neighbor peer-transit route-map accept-all in
+  neighbor peer-transit route-map accept-all out
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  maximum-paths 1
+  maximum-paths ibgp 1
+ exit-address-family
+exit
+!
+router bgp 64512 vrf tenant
+ bgp router-id 192.0.2.1
+ no bgp default ipv4-unicast
+ neighbor peer-leaves peer-group
+ neighbor peer-leaves remote-as external
+ neighbor peer-leaves bfd
+ neighbor peer-leaves bfd profile chalkos-tenant
+ neighbor peer-leaves capability extended-nexthop
+ neighbor swp1 interface peer-group peer-leaves
+ neighbor swp2 interface peer-group peer-leaves
+ !
+ address-family ipv4 unicast
+  maximum-paths 1
+  maximum-paths ibgp 1
+  neighbor peer-leaves activate
+  neighbor peer-leaves route-map accept-all in
+  neighbor peer-leaves route-map accept-all out
+  import vrf internet
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  maximum-paths 1
+  maximum-paths ibgp 1
+  neighbor peer-leaves activate
+  neighbor peer-leaves route-map accept-all in
+  neighbor peer-leaves route-map accept-all out
+ exit-address-family
+exit
+!
+bfd
+ profile chalkos-tenant
+  receive-interval 100
+  transmit-interval 100
+  detect-multiplier 3
+ exit
+exit
+!
+end

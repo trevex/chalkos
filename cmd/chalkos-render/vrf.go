@@ -30,6 +30,17 @@ type vrfMembership struct {
 	// Networks are the Network documents, by name, with the VRF of the links they are the first
 	// to match; a Network of no VRF's links is not in the map.
 	Networks map[string]string
+	// Units are the .network units networkd reads, sorted as it picks them.
+	Units []networkUnit
+}
+
+// linkVRF is the VRF networkd puts the link in: that of the first .network unit that matches it,
+// the default VRF for a link of no VRF's unit or of none.
+func (m vrfMembership) linkVRF(link string) string {
+	if vrf, ok := m.Networks[firstUnit(m.Units, link).name]; ok {
+		return vrf
+	}
+	return defaultVRF
 }
 
 // vrfMember is a glob of links a VRF holds: an interface of its document, or a word of the Name=
@@ -130,7 +141,7 @@ func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (vrfMembership, erro
 			}
 		}
 	}
-	return vrfMembership{Links: held, Networks: networks}, nil
+	return vrfMembership{Links: held, Networks: networks, Units: units}, nil
 }
 
 // networkUnits are the .network units networkd reads: the Network documents of byKind and the
@@ -338,7 +349,7 @@ func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 		return err
 	}
 	byKind, _ := in["documents"].(map[string]any)
-	docs, err := withVRFUnits(d.VRFs, d.NetworkVRFs, byKind)
+	docs, err := withVRFUnits(d.VRFs, d.Membership.Networks, byKind)
 	if err != nil {
 		return err
 	}
