@@ -104,6 +104,8 @@ type frr struct {
 	// a link in.
 	links      []string
 	membership vrfMembership
+	// vrfs are the VRF documents.
+	vrfs []named[vrfSpec]
 	// prependAS is the AS number the prepends of each RoutingPolicy with one repeat, by name.
 	prependAS map[string]uint32
 }
@@ -250,6 +252,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 		neighbours:   map[string][]neighbour{},
 		links:        d.Links,
 		membership:   d.Membership,
+		vrfs:         d.VRFs,
 		prependAS:    map[string]uint32{},
 	}
 	for _, g := range d.BGP {
@@ -560,7 +563,8 @@ func (c *frr) policyOfFamily(policy, f string) error {
 
 // peerNeighbours are a peer's sessions: its address, its interface, which is a link of its VRF, or
 // the links of its VRF its interfaces name, globs matching the links the Network documents name.
-// A glob that matches a link of another VRF is refused, as it would run no session there.
+// A glob that matches a link of another VRF is refused, as it would run no session there. An
+// interface or glob of a VRF's device is refused too.
 func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error) {
 	s := p.Spec
 	if !s.namesOneNeighbour() {
@@ -595,6 +599,9 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 		if f.fam.MaxPrefix != nil && *f.fam.MaxPrefix == 0 {
 			return nil, fmt.Errorf("families.%s: maxPrefix 0 accepts no route", f.name)
 		}
+	}
+	if err := checkPeerDevices(s, c.vrfs); err != nil {
+		return nil, err
 	}
 	switch {
 	case s.Address != nil:

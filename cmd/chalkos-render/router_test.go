@@ -234,7 +234,7 @@ func TestBGPOpenings(t *testing.T) {
 		{Name: "far", Spec: peerSpec{Address: &addr, BFD: true}},
 		{Name: "near", Spec: peerSpec{Interface: &link, BFD: true}},
 		{Name: "plain", Spec: peerSpec{Interfaces: []string{"swp*"}}},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -729,7 +729,7 @@ func TestVRFPeerOpenings(t *testing.T) {
 	openings, err := bgpOpenings([]named[peerSpec]{
 		{Name: "leaves", Spec: peerSpec{Interfaces: []string{"swp*"}, VRF: &tenant}},
 		{Name: "far", Spec: peerSpec{Address: &addr, VRF: &tenant}},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -747,6 +747,20 @@ func TestVRFPeerOpenings(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("lines:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// The ruleset opens no peer's port on a VRF's device, which the input hook sees as the iifname of
+// every packet from the VRF's links.
+func TestVRFDevicePeerOpenings(t *testing.T) {
+	for _, c := range []struct{ neighbour, want string }{
+		{`"interface": "tenant"`, "BGPPeer x: interface tenant is the device of VRF tenant"},
+		{`"interfaces": ["eth1", "ten*"]`, "BGPPeer x: interfaces: ten* matches tenant, the device of VRF tenant"},
+	} {
+		refused(t, []string{"router-nftables", "50000"}, map[string][]any{
+			"VRF":     {routerDoc(t, "VRF", "tenant", `{"table": 100}`)},
+			"BGPPeer": {routerDoc(t, "BGPPeer", "x", `{"remoteAS": "external", "families": {"ipv6": {}}, `+c.neighbour+`}`)},
+		}, c.want)
 	}
 }
 
@@ -781,6 +795,10 @@ func TestFRRVRFRefusals(t *testing.T) {
 			`the VRF "tenant\nrouter bgp 64999" has no VRF document`},
 		"a peer in a VRF without BGP": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("leaves", `"vrf": "tenant", "interface": "eth2"`)}}),
 			"BGPPeer leaves runs in the VRF tenant, which no BGP document serves"},
+		"an interface of a VRF's device": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "tenant"`)}}),
+			"interface tenant is the device of VRF tenant"},
+		"interfaces of a VRF's device": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interfaces": ["ten*"]`)}}),
+			"interfaces: ten* matches tenant, the device of VRF tenant"},
 		"an interface of another VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "eth2"`)}}),
 			"interface eth2 is in the VRF tenant, not in the peer's VRF default"},
 		"an import of its own VRF": {map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["default"]}}`)}},

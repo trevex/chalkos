@@ -547,3 +547,20 @@ func withNetworkVRF(doc map[string]any, vrf string) map[string]any {
 	out["spec"] = spec
 	return out
 }
+
+// checkPeerDevices refuses a peer's interface that is a VRF's device, and a glob of its
+// interfaces that matches one: the input hook sees the device as the iifname of every packet
+// from the VRF's links, and bgpd runs no session on it.
+func checkPeerDevices(s peerSpec, vrfs []named[vrfSpec]) error {
+	for _, v := range vrfs {
+		if s.Interface != nil && *s.Interface == v.Name {
+			return fmt.Errorf("interface %s is the device of VRF %s", v.Name, v.Name)
+		}
+		for _, glob := range s.Interfaces {
+			if matchesGlob(glob, v.Name) {
+				return fmt.Errorf("interfaces: %s matches %s, the device of VRF %s", glob, v.Name, v.Name)
+			}
+		}
+	}
+	return nil
+}
