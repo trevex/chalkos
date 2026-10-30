@@ -813,7 +813,11 @@ func TestFRRVRFRefusals(t *testing.T) {
 			bgp("tenant", 64513, `, "vrf": "tenant", "networks": [{"prefix": "2001:db8:2::/48", "policy": "p"}]`)}, "RoutingPolicy": {prepend}}),
 			"RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own"},
 		"a default-route network in a VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, ""), bgp("tenant", 64512, `, "vrf": "tenant", "networks": [{"prefix": "::/0"}]`)}}),
-			"BGP tenant: network ::/0 of VRF tenant would always be announced, as the VRF's table ends in an unreachable default route; use a peer's defaultOriginate"},
+			"BGP tenant: network ::/0 of VRF tenant would always be announced, as the VRF's table ends in an unreachable default route; use a peer family's defaultOriginate"},
+		"an IPv4 default-route network in a VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, ""), bgp("tenant", 64512, `, "vrf": "tenant", "networks": [{"prefix": "0.0.0.0/0"}]`)}}),
+			"BGP tenant: network 0.0.0.0/0 of VRF tenant would always be announced"},
+		"a default-route network with host bits in a VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, ""), bgp("tenant", 64512, `, "vrf": "tenant", "networks": [{"prefix": "10.0.0.0/0"}]`)}}),
+			"BGP tenant: network 10.0.0.0/0 of VRF tenant would always be announced"},
 		"an import of a VRF with a conntrack zone": {map[string][]any{
 			"VRF": {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"], "conntrackZone": 1}`)}, "Network": {eth2},
 			"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["tenant"]}}`), bgp("tenant", 64512, `, "vrf": "tenant"`)}},
@@ -824,6 +828,24 @@ func TestFRRVRFRefusals(t *testing.T) {
 			"BGP tenant: import.ipv6 names the VRF default, and VRF tenant has a conntrack zone, so the replies of leaked connections would land in another zone; drop the zone or the import"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"frr"}, c.docs, c.want) })
+	}
+}
+
+// The default VRF's table holds no unreachable default route, so its instance announces a
+// default-route network only while the table holds a default route.
+func TestFRRDefaultRouteNetwork(t *testing.T) {
+	timers := `"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}`
+	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": map[string][]any{
+		"BGP": {routerDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers+`, "networks": [{"prefix": "0.0.0.0/0"}, {"prefix": "::/0"}]}`)},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := renderedFile(t, []string{"frr"}, string(input), frrFile)
+	for _, want := range []string{"  network 0.0.0.0/0\n", "  network ::/0\n"} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("frr.conf lacks %q:\n%s", want, conf)
+		}
 	}
 }
 

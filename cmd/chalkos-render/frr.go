@@ -386,7 +386,7 @@ func (c *frr) checkNetworks(in *instance) error {
 			return fmt.Errorf("BGP %s: networks %s and %s both announce %s; give each range one network", in.name, other, n.Prefix, p.Masked())
 		}
 		if p.Bits() == 0 && in.vrf != defaultVRF {
-			return fmt.Errorf("BGP %s: network %s of VRF %s would always be announced, as the VRF's table ends in an unreachable default route; use a peer's defaultOriginate", in.name, n.Prefix, in.vrf)
+			return fmt.Errorf("BGP %s: network %s of VRF %s would always be announced, as the VRF's table ends in an unreachable default route; use a peer family's defaultOriginate", in.name, n.Prefix, in.vrf)
 		}
 		announced[p.Masked()] = n.Prefix
 		if n.Policy != nil {
