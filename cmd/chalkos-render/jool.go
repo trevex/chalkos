@@ -121,13 +121,20 @@ type nat64Instance struct {
 }
 
 // nat64Instances are the NAT64 documents of d as chalkos-nat64 runs them. It refuses what
-// joolInstances refuses, a VRF no document declares, two names whose hashes pick one link, and a
-// pool entry that holds a static address of a Network document: the router answers its own
-// addresses before any route to the link.
+// joolInstances refuses, a VRF no document declares, two names whose hashes pick one link, a
+// static address of a Network document in nat64Range, and a pool entry that holds a static address
+// of a Network document: the router answers its own addresses before any route to the link.
 func nat64Instances(d routerDocuments) ([]nat64Instance, error) {
 	jools, err := joolInstances(d.NAT64)
 	if err != nil {
 		return nil, err
+	}
+	if len(d.NAT64) > 0 {
+		for _, a := range d.Addresses {
+			if nat64Range.Contains(a.prefix.Addr()) {
+				return nil, fmt.Errorf("Network %s gives a link the address %s, which lies in %s, the range of the NAT64s' links; give the link another address", a.network, a.prefix.Addr(), nat64Range)
+			}
+		}
 	}
 	tables := map[string]uint32{defaultVRF: mainTable}
 	for _, v := range d.VRFs {
@@ -145,7 +152,7 @@ func nat64Instances(d routerDocuments) ([]nat64Instance, error) {
 		slot := nat64Slot(doc.Name)
 		outer, inner := nat64LinkAddresses(slot)
 		if o, ok := taken[slot]; ok {
-			return nil, fmt.Errorf("NAT64 %s and NAT64 %s both take the link addresses %s, which the hashes of their names pick; rename one of them", doc.Name, o, outer.Masked())
+			return nil, fmt.Errorf("NAT64 %s and NAT64 %s both take the link addresses %s, which the hashes of their names pick; rename NAT64 %s", doc.Name, o, outer.Masked(), doc.Name)
 		}
 		taken[slot] = doc.Name
 		n := nat64Instance{name: doc.Name, vrf: vrf, jool: jools[i], inner: inner.Addr(), link: nat64Link{
@@ -157,6 +164,8 @@ func nat64Instances(d routerDocuments) ([]nat64Instance, error) {
 				n.jool.Pool4 = append(n.jool.Pool4, joolPool4{Protocol: strings.ToUpper(proto), Prefix: own, PortRange: ownPorts})
 			}
 		} else {
+			// The check ignores VRFs on purpose: it refuses an address of a link in another VRF
+			// too, which costs a pool nothing it needs.
 			for _, e := range n.jool.Pool4 {
 				p := netip.MustParsePrefix(e.Prefix)
 				if slices.Contains(n.pools, p) {
@@ -215,8 +224,9 @@ func joolInstances(docs []named[nat64Spec]) ([]joolInstance, error) {
 	var pools []named[netip.Prefix]
 	for _, n := range docs {
 		what := "NAT64 " + n.Name
+		// A document's name holds no character an interface's name lacks, so only its length fails.
 		if link := nat64LinkPrefix + n.Name; !plainInterface.MatchString(link) {
-			return nil, fmt.Errorf("%s: its link %s is no interface name of 15 characters; give the NAT64 a name of %d characters at most", what, link, 15-len(nat64LinkPrefix))
+			return nil, fmt.Errorf("%s: its link %s is longer than an interface name's 15 characters; give the NAT64 a name of %d characters at most", what, link, 15-len(nat64LinkPrefix))
 		}
 		p, err := nat64Prefix(n.Spec.Prefix)
 		if err != nil {

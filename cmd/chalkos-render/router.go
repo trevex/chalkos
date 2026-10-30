@@ -374,9 +374,10 @@ type networkAddress struct {
 	prefix  netip.Prefix
 }
 
-// networkAddresses are the addresses of Address= in the [Network] and [Address] sections of the
-// Network documents of byKind that parse as an address, with or without a prefix length; others,
-// such as an empty value, give none.
+// networkAddresses are the addresses of Address= in the [Network] and [Address] sections and of
+// ServerAddress= in the [DHCPServer] section of the Network documents of byKind that parse as an
+// address, with or without a prefix length, once the spaces around them go; others, such as an
+// empty value, give none.
 func networkAddresses(byKind map[string]any) []networkAddress {
 	var out []networkAddress
 	docs, _ := byKind["Network"].([]any)
@@ -387,11 +388,12 @@ func networkAddresses(byKind map[string]any) []networkAddress {
 			continue
 		}
 		spec, _ := doc["spec"].(map[string]any)
-		for _, kind := range []string{"network", "address"} {
-			for _, s := range oneOrMany(spec[kind]) {
+		for _, key := range []struct{ section, key string }{{"network", "address"}, {"address", "address"}, {"dhcpServer", "serverAddress"}} {
+			for _, s := range oneOrMany(spec[key.section]) {
 				section, _ := s.(map[string]any)
-				for _, v := range oneOrMany(section["address"]) {
+				for _, v := range oneOrMany(section[key.key]) {
 					text, _ := v.(string)
+					text = strings.TrimSpace(text)
 					p, err := netip.ParsePrefix(text)
 					if err != nil {
 						a, err := netip.ParseAddr(text)

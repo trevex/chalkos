@@ -661,10 +661,10 @@ func TestJoolRefusals(t *testing.T) {
 		docs []any
 		want string
 	}{
-		"a name of 12 characters":         {[]any{nat64("abcdefghijkl", `{"prefix": "64:ff9b::/96", "pool4": []}`)}, "NAT64 abcdefghijkl: its link n64-abcdefghijkl is no interface name of 15 characters; give the NAT64 a name of 11 characters at most"},
+		"a name of 12 characters":         {[]any{nat64("abcdefghijkl", `{"prefix": "64:ff9b::/96", "pool4": []}`)}, "NAT64 abcdefghijkl: its link n64-abcdefghijkl is longer than an interface name's 15 characters; give the NAT64 a name of 11 characters at most"},
 		"a link-local pool":               {[]any{pool(`{"prefix": "169.254.64.0/30", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "169.254.64.0/30 holds link-local addresses, which the NAT64s' links take"},
 		"a VRF no document declares":      {[]any{nat64("edge", `{"vrf": "nosuch", "prefix": "64:ff9b::/96", "pool4": []}`)}, `NAT64 edge names the VRF "nosuch", which no VRF document declares`},
-		"two names of one link":           {[]any{nat64("nat282", `{"prefix": "2001:db8:282::/96", "pool4": []}`), nat64("nat8", `{"prefix": "2001:db8:8::/96", "pool4": []}`)}, "NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename one of them"},
+		"two names of one link":           {[]any{nat64("nat282", `{"prefix": "2001:db8:282::/96", "pool4": []}`), nat64("nat8", `{"prefix": "2001:db8:8::/96", "pool4": []}`)}, "NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8"},
 		"a prefix of 95 bits":             {[]any{nat64("edge", `{"prefix": "64:ff9b::/95", "pool4": []}`)}, `NAT64 edge: the prefix "64:ff9b::/95" is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits`},
 		"an IPv4 prefix":                  {[]any{nat64("edge", `{"prefix": "192.0.2.0/24", "pool4": []}`)}, `the prefix "192.0.2.0/24" is no IPv6 range`},
 		"an IPv4-mapped prefix":           {[]any{nat64("edge", `{"prefix": "::ffff:0:0/96", "pool4": []}`)}, `the prefix "::ffff:0:0/96" is no IPv6 range`},
@@ -711,6 +711,30 @@ func TestJoolPoolOfALink(t *testing.T) {
 		"NAT64 edge: the pool entry 192.0.2.8/30 holds 192.0.2.9, an address Network 20-wan gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through")
 	section := document(t, "Network", "20-wan", `{"match": {"name": "eth0"}, "address": [{"address": "192.0.2.10"}]}`)
 	refused(t, []string{"jool"}, map[string][]any{"NAT64": {nat64}, "Network": {section}}, "holds 192.0.2.10, an address Network 20-wan gives a link")
+	// A value of spaces around the address, and the address of a DHCP server, are the link's too.
+	spaced := document(t, "Network", "20-wan", `{"match": {"name": "eth0"}, "network": {"address": [" 192.0.2.9/24 "]}}`)
+	refused(t, []string{"jool"}, map[string][]any{"NAT64": {nat64}, "Network": {spaced}}, "holds 192.0.2.9, an address Network 20-wan gives a link")
+	server := document(t, "Network", "20-wan", `{"match": {"name": "eth0"}, "dhcpServer": {"serverAddress": "192.0.2.11/24"}}`)
+	refused(t, []string{"jool"}, map[string][]any{"NAT64": {nat64}, "Network": {server}}, "holds 192.0.2.11, an address Network 20-wan gives a link")
+}
+
+// A static address of a link in the NAT64s' links' range is refused beside a NAT64: the router
+// would route that link's traffic to a NAT64 or a NAT64's to that link. Without NAT64 documents
+// the range is free.
+func TestJoolLinkRange(t *testing.T) {
+	nat64 := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": []}`)
+	for _, a := range []string{"169.254.96.241/30", "169.254.100.1/24"} {
+		lan := document(t, "Network", "30-lan", `{"match": {"name": "eth1"}, "network": {"address": ["`+a+`"]}}`)
+		refused(t, []string{"jool"}, map[string][]any{"NAT64": {nat64}, "Network": {lan}},
+			"Network 30-lan gives a link the address "+strings.Split(a, "/")[0]+", which lies in 169.254.64.0/18, the range of the NAT64s' links; give the link another address")
+		input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": map[string][]any{"Network": {lan}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := render(t, []string{"jool"}, string(input)); err != nil {
+			t.Errorf("%s without NAT64s: %v", a, err)
+		}
+	}
 }
 
 // Each NAT64 renders Jool's file and its link's: an explicit pool's prefixes are routed to the
