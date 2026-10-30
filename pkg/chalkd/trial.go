@@ -366,8 +366,9 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 // stands: while its slot runs the config on trial, it arms the deadline; while the slot runs the
 // config from before it, as a delivery that failed before it wrote the slot or a crash leaves it,
 // it finishes the trial and returns finishTrial's error. A trial whose slot runs neither loses its
-// record; one that cannot be removed has the deadline try again. A slot that cannot be read leaves the decision to the deadline, as the trial applied.
-// The caller holds s.mu and s.upgrading.
+// record; one that cannot be removed has the deadline try again. A slot that cannot be read
+// leaves the decision to the deadline, as the trial applied. The caller holds s.mu and
+// s.upgrading.
 func (s *Server) settleTrial(r trialRecord) (trialState, error) {
 	_, st, err := r.state(s.Loader.Slots)
 	switch {
