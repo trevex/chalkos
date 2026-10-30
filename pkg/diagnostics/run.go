@@ -15,6 +15,9 @@ type Run struct {
 	Capabilities []string
 	Groups       []string
 	Timeout      time.Duration
+	// NetworkNamespace is the network namespace the run joins, by its name below NamespaceDir;
+	// empty for the host's network.
+	NetworkNamespace string
 }
 
 // Exit is how a run ended: Code is its exit status while Stopped is empty; Stopped says why the

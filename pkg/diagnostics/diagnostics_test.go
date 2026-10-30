@@ -84,6 +84,12 @@ func TestReadRefuses(t *testing.T) {
 		"a value as an option":      {"routes", table(`{"type": "enum", "values": ["main", "-x"]}`), `parameter table: its value "-x" starts with "-"`},
 		"a negative default":        {"routes", table(`{"type": "int", "default": "-1"}`), `parameter table: its default: "-1" starts with "-"`},
 		"capabilities and groups":   {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "capabilities": ["CAP_NET_RAW", "CAP_NET_ADMIN"], "groups": ["_bird", "bird-ctl"]}`, ""},
+		"a namespace of a slash":    {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": "a/b"}`, `its network namespace "a/b" is no name of letters, digits, _, . and - with parameters in braces`},
+		"a namespace of dots":       {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": ".."}`, `its network namespace ".." is no name of letters, digits, _, . and - with parameters in braces`},
+		"a long namespace":          {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": "` + strings.Repeat("a", 256) + `"}`, "is no name of letters, digits, _, . and - with parameters in braces"},
+		"a namespace's parameter":   {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": "ns-{name}"}`, "its command names {name}, which is no parameter"},
+		"an optional one":           {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": "ns-{name}", "parameters": {"name": {"type": "pattern", "regex": "^[a-z]+$", "optional": true}}}`, "parameter name: the network namespace names it, so it is not optional"},
+		"a namespace":               {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": "ns-{name}", "parameters": {"name": {"type": "pattern", "regex": "^[a-z]+$"}}}`, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := write(t, `{"`+tc.name+`": `+tc.diagnostic+`}`)

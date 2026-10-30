@@ -2442,6 +2442,28 @@ lib.runTests {
             timeout = "10m";
           };
         };
+        namespace = refusals {
+          in-namespace = plain // {
+            command = [ ip ];
+            networkNamespace = "ns-{name}";
+            parameters.name = table;
+          };
+        };
+        namespaceOptional = refusals {
+          in-namespace = plain // {
+            command = [ ip ];
+            networkNamespace = "ns-{name}";
+            parameters.name = table // {
+              optional = true;
+            };
+          };
+        };
+        namespaceParameter = refusals {
+          in-namespace = plain // {
+            command = [ ip ];
+            networkNamespace = "ns-{name}";
+          };
+        };
       };
       expected = {
         accepted = [ ];
@@ -2468,6 +2490,13 @@ lib.runTests {
         ];
         longTimeout = [ "chalkos.diagnostics.route.timeout: 601s is longer than 10m" ];
         longestTimeout = [ ];
+        namespace = [ ];
+        namespaceOptional = [
+          "chalkos.diagnostics.in-namespace.parameters.name: networkNamespace names it, so it is not optional"
+        ];
+        namespaceParameter = [
+          "chalkos.diagnostics.in-namespace.command names {name}, which is no parameter"
+        ];
       };
     };
   # The image writes its diagnostics to /etc/chalkos/diagnostics.json and system.build, as chalkd
@@ -2541,9 +2570,58 @@ lib.runTests {
           timeout = "5s";
           capabilities = [ ];
           groups = [ ];
+          networkNamespace = "";
         };
         same = true;
       };
+    };
+  # A diagnostic's network namespace is a name below /run/netns: the type refuses a slash, a space
+  # and a name that starts with . or -, so no value leaves the directory.
+  testDiagnosticNamespaceStaysBelowTheDirectory =
+    let
+      accepts =
+        ns:
+        (builtins.tryEval (
+          builtins.unsafeDiscardStringContext
+            (worker [
+              (
+                { pkgs, ... }:
+                {
+                  chalkos.diagnostics.in-namespace = {
+                    description = "A test.";
+                    command = [ "${pkgs.iproute2}/bin/ip" ];
+                    networkNamespace = ns;
+                  };
+                }
+              )
+            ]).environment.etc."chalkos/diagnostics.json".text
+        )).success;
+    in
+    {
+      expr = map accepts [
+        "nat64-a.b_c"
+        "_x"
+        ".."
+        "."
+        ".x"
+        "-x"
+        "a/b"
+        "../x"
+        "a b"
+        ""
+      ];
+      expected = [
+        true
+        true
+        false
+        false
+        false
+        false
+        false
+        false
+        false
+        false
+      ];
     };
   # Every image declares the base diagnostics, the installer among them, each running a program of
   # the store. Readers run those that read the node's state; ping, dns-query and tcp-connect send
@@ -2636,6 +2714,7 @@ lib.runTests {
           timeout = "10s";
           capabilities = [ ];
           groups = [ ];
+          networkNamespace = "";
         };
         routes = [
           "-json"

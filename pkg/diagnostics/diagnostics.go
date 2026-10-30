@@ -51,6 +51,14 @@ const MaxName = 64
 // groupForm is the form of a group a diagnostic's process belongs to.
 const groupForm = "[a-z_][a-z0-9_-]*"
 
+// NamespaceDir holds the named network namespaces a diagnostic may run in.
+const NamespaceDir = "/run/netns"
+
+// namespaceForm is the form of a diagnostic's network namespace: letters, digits, _, . and -, and
+// placeholders, starting with neither . nor -. A call's values fill it to a name of
+// filledNamespace, which Namespace checks again.
+const namespaceForm = `([A-Za-z0-9_]|\{` + nameForm + `\})([A-Za-z0-9_.-]|\{` + nameForm + `\})*`
+
 // capabilities are the names of the Linux capabilities.
 var capabilities = []string{
 	"CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_DAC_READ_SEARCH", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL",
@@ -69,12 +77,16 @@ var (
 	placeholder  = regexp.MustCompile(`\{(` + nameForm + `)\}`)
 	groupPattern = regexp.MustCompile("^" + groupForm + "$")
 	// timeoutPattern is the form of a timeout: seconds or minutes, as the image's option takes it.
-	timeoutPattern = regexp.MustCompile(`^[1-9][0-9]*[sm]$`)
+	timeoutPattern   = regexp.MustCompile(`^[1-9][0-9]*[sm]$`)
+	namespacePattern = regexp.MustCompile("^" + namespaceForm + "$")
+	// filledNamespace is a file's name below NamespaceDir, as `ip netns` names one: no . or .., no
+	// slash, and no character a program could read as an option.
+	filledNamespace = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$`)
 )
 
 // Definition is a diagnostic as diagnostics.json records it: the command chalkd runs, the
 // parameters a call fills its placeholders with, the least client role that runs it, how long
-// it may run, and the capabilities and groups its process gets.
+// it may run, the capabilities and groups its process gets, and the network namespace it runs in.
 type Definition struct {
 	Description  string               `json:"description"`
 	Command      []string             `json:"command"`
@@ -83,6 +95,9 @@ type Definition struct {
 	Timeout      string               `json:"timeout"`
 	Capabilities []string             `json:"capabilities"`
 	Groups       []string             `json:"groups"`
+	// NetworkNamespace is the network namespace a run joins, by its name below NamespaceDir, with
+	// placeholders as the command has them; empty runs in the host's network.
+	NetworkNamespace string `json:"networkNamespace"`
 }
 
 // Parameter is a value a call passes a diagnostic: of Type, from Min to Max for an int, one of
@@ -126,9 +141,10 @@ func Read(path string) (map[string]Definition, error) {
 }
 
 // Check refuses a diagnostic chalkd could not run as declared: a command that runs no program
-// of the image's store, a role, timeout, capability or group chalkd does not know, a placeholder
-// without its parameter or a parameter without its placeholder, and a parameter whose declaration
-// does not fit its type.
+// of the image's store, a role, timeout, capability or group chalkd does not know, a network
+// namespace that no call could fill to a name below NamespaceDir, a placeholder without its
+// parameter or a parameter without its placeholder, an optional parameter the network namespace
+// names, and a parameter whose declaration does not fit its type.
 func (d Definition) Check() error {
 	if len(d.Command) == 0 {
 		return errors.New("its command is empty")
@@ -152,6 +168,9 @@ func (d Definition) Check() error {
 			return fmt.Errorf("group %q is not of the form %s", g, groupForm)
 		}
 	}
+	if ns := d.NetworkNamespace; ns != "" && (!namespacePattern.MatchString(ns) || !filledNamespace.MatchString(placeholder.ReplaceAllString(ns, "x"))) {
+		return fmt.Errorf("its network namespace %q is no name of letters, digits, _, . and - with parameters in braces that starts with neither . nor - and fills to at most 255 characters", ns)
+	}
 	named := d.named()
 	for _, p := range named {
 		if _, ok := d.Parameters[p]; !ok {
@@ -164,6 +183,9 @@ func (d Definition) Check() error {
 		}
 		if !slices.Contains(named, p) {
 			return fmt.Errorf("parameter %s: its command names no {%s}", p, p)
+		}
+		if d.Parameters[p].Optional && slices.Contains(placeholders(d.NetworkNamespace), p) {
+			return fmt.Errorf("parameter %s: the network namespace names it, so it is not optional", p)
 		}
 		if err := d.Parameters[p].check(); err != nil {
 			return fmt.Errorf("parameter %s: %w", p, err)
@@ -178,15 +200,25 @@ func (d Definition) RunTime() time.Duration {
 	return t
 }
 
-// named are the parameters the command's arguments name, in the order they first name them.
+// named are the parameters the command's arguments and the network namespace name, in the order
+// they first name them.
 func (d Definition) named() []string {
 	var names []string
-	for _, arg := range d.Command[1:] {
-		for _, m := range placeholder.FindAllStringSubmatch(arg, -1) {
-			if !slices.Contains(names, m[1]) {
-				names = append(names, m[1])
+	for _, arg := range append(slices.Clone(d.Command[1:]), d.NetworkNamespace) {
+		for _, p := range placeholders(arg) {
+			if !slices.Contains(names, p) {
+				names = append(names, p)
 			}
 		}
+	}
+	return names
+}
+
+// placeholders are the parameters s names.
+func placeholders(s string) []string {
+	var names []string
+	for _, m := range placeholder.FindAllStringSubmatch(s, -1) {
+		names = append(names, m[1])
 	}
 	return names
 }

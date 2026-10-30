@@ -63,6 +63,10 @@ func (s *Server) RunDiagnostic(ctx context.Context, req *connect.Request[nodev1.
 	if err != nil {
 		return failed(connect.CodeInvalidArgument, "diagnostic %s: %v", name, err)
 	}
+	ns, err := d.Namespace(req.Msg.Arguments)
+	if err != nil {
+		return failed(connect.CodeInvalidArgument, "diagnostic %s: %v", name, err)
+	}
 	if s.diagnosticRuns.Add(1) > maxDiagnosticRuns {
 		s.diagnosticRuns.Add(-1)
 		return failed(connect.CodeResourceExhausted, "%d diagnostics run already; wait for one to end", maxDiagnosticRuns)
@@ -72,7 +76,7 @@ func (s *Server) RunDiagnostic(ctx context.Context, req *connect.Request[nodev1.
 	runCtx, stop := context.WithCancel(ctx)
 	defer stop()
 	out := &diagnosticOutput{stream: stream, stop: stop, left: diagnostics.MaxOutput}
-	run := diagnostics.Run{Name: name, Argv: argv, Capabilities: d.Capabilities, Groups: d.Groups, Timeout: d.RunTime()}
+	run := diagnostics.Run{Name: name, Argv: argv, Capabilities: d.Capabilities, Groups: d.Groups, NetworkNamespace: ns, Timeout: d.RunTime()}
 	exit, err := s.diagnose().Run(runCtx, run, out.writer(false), out.writer(true))
 	return out.finish(ctx, name, exit, err)
 }

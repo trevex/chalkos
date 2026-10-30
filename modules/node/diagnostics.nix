@@ -19,6 +19,9 @@ let
   maxName = 64;
   # The form of a group a diagnostic's process belongs to.
   groupForm = "[a-z_][a-z0-9_-]*";
+  # The form of a diagnostic's network namespace: a name below /run/netns of letters, digits, _, .
+  # and -, and placeholders, that starts with neither . nor -, so it never leaves the directory.
+  namespaceForm = "([A-Za-z0-9_]|${placeholder})([A-Za-z0-9_.-]|${placeholder})*";
   # A timeout in seconds, of the form the option takes.
   seconds =
     t:
@@ -144,6 +147,12 @@ let
         example = [ "bird" ];
         description = "Groups of the image the run's process belongs to, as for a daemon's control socket.";
       };
+      networkNamespace = mkOption {
+        type = types.nullOr (types.strMatching namespaceForm);
+        default = null;
+        example = "blue-{name}";
+        description = "Network namespace the run joins, by its name below `/run/netns`, which may name parameters as `command` does; null runs it in the host's network. The name holds letters, digits, `_`, `.` and `-` and starts with neither `.` nor `-`; chalkd refuses a call whose values fill it to anything else. A parameter it names is not `optional`.";
+      };
     };
   };
 
@@ -157,7 +166,12 @@ let
     let
       where = "chalkos.diagnostics.${name}";
       program = lib.head d.command;
-      named = lib.unique (lib.concatMap placeholders (lib.tail d.command));
+      named = lib.unique (
+        lib.concatMap placeholders (
+          lib.tail d.command ++ lib.optional (d.networkNamespace != null) d.networkNamespace
+        )
+      );
+      inNamespace = lib.optionals (d.networkNamespace != null) (placeholders d.networkNamespace);
       parameters = lib.attrNames d.parameters;
     in
     lib.optional (
@@ -183,6 +197,9 @@ let
       p:
       "${where}.parameters.${p}: it is optional and has a default; a default fills the arguments that name it, optional drops them"
     ) (lib.filter (p: d.parameters.${p}.optional && d.parameters.${p}.default != null) parameters)
+    ++ map (p: "${where}.parameters.${p}: networkNamespace names it, so it is not optional") (
+      lib.filter (p: lib.elem p inNamespace && d.parameters.${p}.optional) parameters
+    )
     ++ map (g: "${where}.groups: ${g} is not of the form ${groupForm}") (
       lib.filter (g: builtins.match groupForm g == null) d.groups
     )
@@ -200,6 +217,7 @@ let
       capabilities
       groups
       ;
+    networkNamespace = if d.networkNamespace == null then "" else d.networkNamespace;
     parameters = lib.mapAttrs (_: p: {
       inherit (p)
         type
@@ -223,7 +241,8 @@ in
       Read-only commands of the image that a client of the node API runs with
       `chalkctl node diag`, by names of the form `[a-z][a-z0-9-]*`. chalkd checks the caller's
       role and each argument against its parameter's type, then runs the command as a transient
-      systemd unit. The unit runs under a dynamic user, without new privileges, with only the
+      systemd unit, in the host's network or in the network namespace that `networkNamespace`
+      names. The unit runs under a dynamic user, without new privileges, with only the
       `capabilities` and `groups` given. It sees a read-only file system with a private `/tmp`,
       without STATE, `/var/lib`, or the config and credentials chalkd writes, and runs for at
       most `timeout`. chalkd sends at most 1 MiB of what the command prints. Every image declares

@@ -161,7 +161,8 @@ Type: map of submodule · Default: `{ }` · Declared in: [modules/node/diagnosti
 Read-only commands of the image that a client of the node API runs with
 `chalkctl node diag`, by names of the form `[a-z][a-z0-9-]*`. chalkd checks the caller's
 role and each argument against its parameter's type, then runs the command as a transient
-systemd unit. The unit runs under a dynamic user, without new privileges, with only the
+systemd unit, in the host's network or in the network namespace that `networkNamespace`
+names. The unit runs under a dynamic user, without new privileges, with only the
 `capabilities` and `groups` given. It sees a read-only file system with a private `/tmp`,
 without STATE, `/var/lib`, or the config and credentials chalkd writes, and runs for at
 most `timeout`. chalkd sends at most 1 MiB of what the command prints. Every image declares
@@ -175,6 +176,7 @@ The options within each, by their path below `chalkos.diagnostics`:
 | `<name>.command`{ #chalkosdiagnosticscommand } | non-empty (list of string) | required | The command chalkd runs, as a list of arguments that no shell reads. The first is a program of the image's store. `{<parameter>}` in an argument becomes the parameter's value within that argument alone, and an argument that names an optional parameter a call leaves out is dropped. Every placeholder names a parameter, and every parameter has a placeholder. Example: `[ "${pkgs.iproute2}/bin/ip" "-json" "route" "get" "{address}" ]` |
 | `<name>.description`{ #chalkosdiagnosticsdescription } | non-empty string | required | One sentence on what the diagnostic shows, which `chalkctl node diag` lists. Example: `"The route the kernel takes to an address."` |
 | `<name>.groups`{ #chalkosdiagnosticsgroups } | list of non-empty string | `[ ]` | Groups of the image the run's process belongs to, as for a daemon's control socket. Example: `[ "bird" ]` |
+| `<name>.networkNamespace`{ #chalkosdiagnosticsnetworknamespace } | string matching `([A-Za-z0-9_]|[{]([a-z][a-z0-9-]*)[}])([A-Za-z0-9_.-]|[{]([a-z][a-z0-9-]*)[}])*` or null | `null` | Network namespace the run joins, by its name below `/run/netns`, which may name parameters as `command` does; null runs it in the host's network. The name holds letters, digits, `_`, `.` and `-` and starts with neither `.` nor `-`; chalkd refuses a call whose values fill it to anything else. A parameter it names is not `optional`. Example: `"blue-{name}"` |
 | `<name>.parameters`{ #chalkosdiagnosticsparameters } | map of submodule | `{ }` | The values a call passes, by names of the form `[a-z][a-z0-9-]*`. |
 | `<name>.parameters.<name>.default`{ #chalkosdiagnosticsparametersdefault } | non-empty string or null | `null` | Value the parameter takes when a call leaves it out, of the parameter's type; null for none. A parameter with a default is not `optional` as well. Example: `"main"` |
 | `<name>.parameters.<name>.description`{ #chalkosdiagnosticsparametersdescription } | non-empty string | required | One sentence on the value, which `chalkctl node diag` lists. Example: `"IPv4 or IPv6 address."` |

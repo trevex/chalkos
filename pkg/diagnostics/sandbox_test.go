@@ -137,6 +137,27 @@ func TestSandboxArgs(t *testing.T) {
 	if slices.ContainsFunc(none, func(a string) bool { return strings.HasPrefix(a, "--property=SupplementaryGroups") }) {
 		t.Errorf("a run without groups gets some: %q", none)
 	}
+	ns := sandboxArgs("u.service", Run{Argv: []string{"/nix/store/x/bin/ip"}, NetworkNamespace: "ns-blue", Timeout: time.Second})
+	if !slices.Contains(ns, "--property=NetworkNamespacePath=/run/netns/ns-blue") {
+		t.Errorf("a run in a namespace does not join it: %q", ns)
+	}
+	if slices.ContainsFunc(none, func(a string) bool { return strings.HasPrefix(a, "--property=NetworkNamespacePath") }) {
+		t.Errorf("a run of the host's network joins a namespace: %q", none)
+	}
+}
+
+// A run in a namespace whose name would leave /run/netns is refused before systemd-run starts.
+func TestSandboxRefusesANamespaceOutsideTheDirectory(t *testing.T) {
+	dir := fakeSystemd(t, "")
+	for _, ns := range []string{"..", "../../proc/1/ns/net", "a/b", "."} {
+		r := Run{Name: "links", Argv: []string{"/bin/true"}, NetworkNamespace: ns, Timeout: time.Second}
+		if _, err := (Sandbox{}).Run(context.Background(), r, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "network namespace") {
+			t.Errorf("%q: err = %v, want a refusal of the network namespace", ns, err)
+		}
+	}
+	if unit := recorded(t, dir, "unit"); unit != "" {
+		t.Errorf("systemd-run ran %q", unit)
+	}
 }
 
 // A run without a time limit is refused before systemd-run starts.

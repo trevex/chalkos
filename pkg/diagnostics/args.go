@@ -171,10 +171,9 @@ func (p Parameter) bounds() string {
 	}
 }
 
-// Argv checks a call's arguments, by parameter name, and returns the command line to run. Each
-// placeholder becomes its argument, in the form its type gives it, or the parameter's default. An
-// argument of the command that names an optional parameter the call leaves out is dropped.
-func (d Definition) Argv(args map[string]string) ([]string, error) {
+// values are a call's arguments by parameter, checked and in the form their type gives them, with
+// the defaults of those it leaves out; an optional parameter it leaves out has none.
+func (d Definition) values(args map[string]string) (map[string]string, error) {
 	for _, name := range slices.Sorted(maps.Keys(args)) {
 		if _, ok := d.Parameters[name]; !ok {
 			return nil, fmt.Errorf("it has no parameter %s; %s", name, d.takes())
@@ -198,6 +197,17 @@ func (d Definition) Argv(args map[string]string) ([]string, error) {
 		}
 		values[name] = v
 	}
+	return values, nil
+}
+
+// Argv checks a call's arguments, by parameter name, and returns the command line to run. Each
+// placeholder becomes its argument, in the form its type gives it, or the parameter's default. An
+// argument of the command that names an optional parameter the call leaves out is dropped.
+func (d Definition) Argv(args map[string]string) ([]string, error) {
+	values, err := d.values(args)
+	if err != nil {
+		return nil, err
+	}
 	argv := []string{d.Command[0]}
 	for _, arg := range d.Command[1:] {
 		dropped := false
@@ -211,6 +221,32 @@ func (d Definition) Argv(args map[string]string) ([]string, error) {
 		}
 	}
 	return argv, nil
+}
+
+// Namespace checks a call's arguments as Argv does and returns the network namespace the call
+// runs in, its placeholders filled; empty for the host's network. It refuses a name that is no
+// file's name below NamespaceDir, such as one with a slash or of dots alone.
+func (d Definition) Namespace(args map[string]string) (string, error) {
+	if d.NetworkNamespace == "" {
+		return "", nil
+	}
+	values, err := d.values(args)
+	if err != nil {
+		return "", err
+	}
+	ns := placeholder.ReplaceAllStringFunc(d.NetworkNamespace, func(m string) string { return values[m[1:len(m)-1]] })
+	if err := checkNamespace(ns); err != nil {
+		return "", err
+	}
+	return ns, nil
+}
+
+// checkNamespace refuses a network namespace's name that is no file's name below NamespaceDir.
+func checkNamespace(ns string) error {
+	if !filledNamespace.MatchString(ns) {
+		return fmt.Errorf("the network namespace %q is no name below %s", ns, NamespaceDir)
+	}
+	return nil
 }
 
 // ParameterNames are the parameters a call must give, then the others, each in the order the

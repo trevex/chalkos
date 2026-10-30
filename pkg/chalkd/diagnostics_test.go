@@ -160,6 +160,30 @@ func TestRunDiagnostic(t *testing.T) {
 	}
 }
 
+// RunDiagnostic runs a diagnostic of a network namespace in the namespace its arguments fill, and
+// refuses arguments that fill no name below /run/netns.
+func TestRunDiagnosticInANamespace(t *testing.T) {
+	f := &fakeDiagnose{}
+	s, conn := diagnosticsNode(t, f, pki.RoleOperator)
+	write(t, s.Paths.Diagnostics, `{"links": {"description": "A namespace's links.", "command": ["/nix/store/x-iproute2/bin/ip", "-json", "link"],
+	  "networkNamespace": "ns-{name}", "parameters": {"name": {"type": "pattern", "regex": "^[a-z./]+$", "description": "A namespace."}},
+	  "role": "operator", "timeout": "10s"}}`)
+	if _, _, _, err := runDiagnostic(conn, "links", map[string]string{"name": "blue"}); err != nil {
+		t.Fatal(err)
+	}
+	want := []diagnostics.Run{{Name: "links", Argv: []string{"/nix/store/x-iproute2/bin/ip", "-json", "link"}, NetworkNamespace: "ns-blue", Timeout: 10 * time.Second}}
+	if got := f.recorded(); !reflect.DeepEqual(got, want) {
+		t.Errorf("runs = %+v, want %+v", got, want)
+	}
+	_, _, _, err := runDiagnostic(conn, "links", map[string]string{"name": "x/../../proc"})
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `the network namespace "ns-x/../../proc" is no name below /run/netns`) {
+		t.Errorf("err = %v, want a refusal of the namespace", err)
+	}
+	if got := f.recorded(); len(got) != 1 {
+		t.Errorf("runs = %+v", got)
+	}
+}
+
 // RunDiagnostic refuses, before it runs anything, a diagnostic the image lacks, a caller without
 // the diagnostic's role and arguments that do not fit its parameters.
 func TestRunDiagnosticRefuses(t *testing.T) {

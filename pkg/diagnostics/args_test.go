@@ -36,6 +36,12 @@ var (
 			"server": {Type: TypeAddress, Optional: true},
 		},
 	}
+	// links runs in the namespace its name fills.
+	links = Definition{
+		Command:          []string{"/nix/store/x-iproute2/bin/ip", "-json", "link"},
+		NetworkNamespace: "ns-{name}",
+		Parameters:       map[string]Parameter{"name": {Type: TypePattern, Regex: "^[a-z][a-z0-9.-]*$"}},
+	}
 )
 
 // Argv fills each placeholder with its argument in its canonical form, or with the parameter's
@@ -127,5 +133,40 @@ func TestParameterNames(t *testing.T) {
 	}
 	if got := drill.ParameterNames(); !slices.Equal(got, []string{"name", "type", "server"}) {
 		t.Errorf("drill: %q", got)
+	}
+}
+
+// Namespace fills the network namespace's placeholders as Argv fills the command's, and is empty
+// for a diagnostic of the host's network.
+func TestNamespace(t *testing.T) {
+	if ns, err := links.Namespace(map[string]string{"name": "blue"}); err != nil || ns != "ns-blue" {
+		t.Errorf("Namespace = %q, %v", ns, err)
+	}
+	if argv, err := links.Argv(map[string]string{"name": "blue"}); err != nil || !slices.Equal(argv, []string{"/nix/store/x-iproute2/bin/ip", "-json", "link"}) {
+		t.Errorf("Argv = %q, %v", argv, err)
+	}
+	if ns, err := ping.Namespace(map[string]string{"address": "192.0.2.1"}); err != nil || ns != "" {
+		t.Errorf("Namespace of the host's network = %q, %v", ns, err)
+	}
+	if _, err := links.Namespace(map[string]string{}); err == nil {
+		t.Error("Namespace without the parameter it names succeeded")
+	}
+}
+
+// Namespace refuses a filled name that leaves /run/netns or is no file's name there, whatever the
+// parameter's declaration lets through.
+func TestNamespaceStaysBelowTheDirectory(t *testing.T) {
+	free := Definition{
+		Command:          []string{"/nix/store/x-iproute2/bin/ip", "link"},
+		NetworkNamespace: "{name}",
+		Parameters:       map[string]Parameter{"name": {Type: TypePattern, Regex: "^.*$"}},
+	}
+	for _, v := range []string{".", "..", "../etc", "a/b", "a b", "", strings.Repeat("a", 256)} {
+		if ns, err := free.Namespace(map[string]string{"name": v}); err == nil {
+			t.Errorf("Namespace(%q) = %q", v, ns)
+		}
+	}
+	if ns, err := free.Namespace(map[string]string{"name": "nat64-a.b_c"}); err != nil || ns != "nat64-a.b_c" {
+		t.Errorf("Namespace = %q, %v", ns, err)
 	}
 }

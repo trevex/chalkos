@@ -21,7 +21,8 @@ import (
 //     diagnostic names;
 //   - on a read-only system with a private /tmp, without home directories, devices, STATE,
 //     /var/lib, or the config, credentials and Kubernetes keys chalkd writes below /run/chalkos;
-//   - in the host's network, with Unix, IPv4, IPv6 and netlink sockets alone;
+//   - in the host's network, or the network namespace the diagnostic names, with Unix, IPv4, IPv6
+//     and netlink sockets alone;
 //   - for at most the diagnostic's timeout, after which systemd stops the unit.
 //
 // A failed unit stays loaded, so its result tells a timeout apart from an exit status; chalkd
@@ -71,6 +72,11 @@ func sandboxArgs(unit string, r Run) []string {
 	if len(r.Groups) > 0 {
 		args = append(args, "--property=SupplementaryGroups="+strings.Join(r.Groups, " "))
 	}
+	// systemd joins the namespace before it drops the run's privileges, which RestrictNamespaces=
+	// would refuse the program itself.
+	if r.NetworkNamespace != "" {
+		args = append(args, "--property=NetworkNamespacePath="+NamespaceDir+"/"+r.NetworkNamespace)
+	}
 	return append(append(args, "--"), r.Argv...)
 }
 
@@ -91,6 +97,11 @@ func systemctl(args ...string) ([]byte, error) {
 func (Sandbox) Run(ctx context.Context, r Run, stdout, stderr io.Writer) (Exit, error) {
 	if r.Timeout <= 0 {
 		return Exit{}, fmt.Errorf("diagnostic %s: its timeout %v is not positive", r.Name, r.Timeout)
+	}
+	if r.NetworkNamespace != "" {
+		if err := checkNamespace(r.NetworkNamespace); err != nil {
+			return Exit{}, fmt.Errorf("diagnostic %s: %w", r.Name, err)
+		}
 	}
 	unit := unitName(r.Name)
 	waitCtx, cancel := context.WithTimeout(ctx, r.Timeout+stopMargin)
