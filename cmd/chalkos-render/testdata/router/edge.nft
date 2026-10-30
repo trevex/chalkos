@@ -46,6 +46,8 @@ table inet chalkos {
 		ct state invalid drop
 		icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem } accept
 		icmp type { destination-unreachable, time-exceeded, parameter-problem } accept
+		iifname "n64-edge" accept comment "NAT64 edge"
+		oifname "n64-edge" accept comment "NAT64 edge"
 		ct status dnat accept
 		iifname { "eth1", "eth2" } oifname { "eth0" } jump policy-fabric-wan
 	}
@@ -55,6 +57,8 @@ table inet chalkos {
 	}
 	chain srcnat {
 		type nat hook postrouting priority srcnat; policy accept;
+		oifname "n64-edge" accept comment "NAT64 edge"
+		ip saddr { 192.0.2.8/30 } accept comment "NAT64 edge"
 		meta nfproto ipv4 oifname { "eth0" } masquerade
 	}
 }

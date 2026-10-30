@@ -266,12 +266,80 @@ func TestResolverOpenings(t *testing.T) {
 	if want := []opening{udp, tcp}; !reflect.DeepEqual(got, want) {
 		t.Errorf("resolverOpenings =\n%+v\nwant\n%+v", got, want)
 	}
+	// A VRF's resolver opens its port on the VRF's device; resolverOpenings checks the VRF's name,
+	// and the output unbound that a VRF document declares it.
+	got, err = resolverOpenings([]named[resolverSpec]{{Name: "guest", Spec: resolverSpec{VRF: ptr("guest"), Listen: []string{"2001:db8:3::1"}, Allow: []string{"2001:db8:3::/64"}}}})
+	if err != nil || len(got) != 2 || got[0].vrf != "guest" || got[1].vrf != "guest" {
+		t.Errorf("resolverOpenings of a VRF's resolver = %+v, %v", got, err)
+	}
+	if _, err := resolverOpenings([]named[resolverSpec]{{Name: "bad", Spec: resolverSpec{VRF: ptr("a b"), Listen: []string{"2001:db8:3::1"}, Allow: []string{"2001:db8:3::/64"}}}}); err == nil || !strings.Contains(err.Error(), `Resolver bad: the VRF "a b" is no VRF's name`) {
+		t.Errorf("err = %v", err)
+	}
 	for spec, want := range map[string]string{
 		`{"listen": ["2001:db8:ffff::1", "2001:DB8:ffff::1"], "allow": ["2001:db8::/32"]}`:            "Resolver resolver: listen: 2001:db8:ffff::1 appears twice",
 		`{"listen": ["::ffff:192.0.2.1"], "allow": ["2001:db8::/32"]}`:                                `Resolver resolver: listen: "::ffff:192.0.2.1" is no unicast address`,
 		`{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32\" } accept\n\t\tip6 saddr ::/0"]}`: "is no address range",
 	} {
 		refused(t, []string{"router-nftables", "50000"}, map[string][]any{"Resolver": {routerDoc(t, "Resolver", "resolver", spec)}}, want)
+	}
+}
+
+// The forward chain accepts the NAT64 links' traffic ahead of the policies, from a VRF's link by
+// sdifname; source NAT translates nothing into a NAT64's link or from an explicit pool and
+// masquerades an own pool's inner address, ahead of the NATRules; a VRF's conntrack zone holds its
+// NAT64's link; and a VRF's resolver opens port 53 in its VRF alone. Without policies between
+// zones the forward chain accepts everything, and without NATRules an explicit pool needs no source
+// NAT chain.
+func TestNAT64Firewall(t *testing.T) {
+	docs := map[string][]any{
+		"VRF":            {routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"], "conntrackZone": 1}`)},
+		"Network":        {document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}}`), document(t, "Network", "40-guest", `{"match": {"name": "eth3 eth4"}}`)},
+		"FirewallZone":   {routerDoc(t, "FirewallZone", "lan", `{"interfaces": ["eth0"]}`), routerDoc(t, "FirewallZone", "wan", `{"interfaces": ["eth4"]}`)},
+		"FirewallPolicy": {routerDoc(t, "FirewallPolicy", "lan-wan", `{"from": "lan", "to": "wan", "default": "accept", "rules": []}`)},
+		"NATRule":        {routerDoc(t, "NATRule", "out", `{"type": "masquerade", "family": "ipv4", "out": {"zone": "wan"}}`)},
+		"NAT64": {
+			routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp", "icmp"]}]}`),
+			routerDoc(t, "NAT64", "guest", `{"vrf": "guest", "prefix": "64:ff9b::/96", "pool4": []}`),
+		},
+		"Resolver": {routerDoc(t, "Resolver", "guest", `{"vrf": "guest", "listen": ["2001:db8:3::1"], "allow": ["2001:db8:3::/64"]}`)},
+	}
+	ruleset := func(docs map[string][]any) string {
+		t.Helper()
+		input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return renderedFile(t, []string{"router-nftables", "50000"}, string(input), rulesetFile)
+	}
+	got := ruleset(docs)
+	for _, want := range []string{
+		"\t\ticmp type { destination-unreachable, time-exceeded, parameter-problem } accept\n" +
+			"\t\tiifname \"n64-edge\" accept comment \"NAT64 edge\"\n" +
+			"\t\toifname \"n64-edge\" accept comment \"NAT64 edge\"\n" +
+			"\t\tmeta sdifname \"n64-guest\" accept comment \"NAT64 guest\"\n" +
+			"\t\toifname \"n64-guest\" accept comment \"NAT64 guest\"\n" +
+			"\t\tiifname { \"eth0\" } oifname { \"eth4\" } jump policy-lan-wan\n",
+		"\t\tiifname { \"eth3\", \"eth4\", \"n64-guest\" } ct zone set 1 comment \"VRF guest\"\n",
+		"\t\toifname { \"eth3\", \"eth4\", \"n64-guest\" } ct zone set 1 comment \"VRF guest\"\n",
+		"\t\ttype nat hook postrouting priority srcnat; policy accept;\n" +
+			"\t\toifname \"n64-edge\" accept comment \"NAT64 edge\"\n" +
+			"\t\tip saddr { 192.0.2.8/30 } accept comment \"NAT64 edge\"\n" +
+			"\t\toifname \"n64-guest\" accept comment \"NAT64 guest\"\n" +
+			"\t\tip saddr 169.254.111.206 meta l4proto { tcp, udp } masquerade to :61001-65535 comment \"NAT64 guest\"\n" +
+			"\t\tip saddr 169.254.111.206 masquerade comment \"NAT64 guest\"\n" +
+			"\t\tmeta nfproto ipv4 oifname { \"eth4\" } masquerade\n",
+		"\t\tiifname \"guest\" ip6 saddr { 2001:db8:3::/64 } ip6 daddr { 2001:db8:3::1/128 } udp dport { 53 } accept comment \"Resolver guest\"\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the ruleset lacks\n%s\nin\n%s", want, got)
+		}
+	}
+	open := maps.Clone(docs)
+	delete(open, "FirewallPolicy")
+	delete(open, "NATRule")
+	open["NAT64"] = docs["NAT64"][:1]
+	if got := ruleset(open); strings.Contains(got, "NAT64") {
+		t.Errorf("a ruleset that forwards everything and translates nothing has NAT64 lines:\n%s", got)
 	}
 }
 

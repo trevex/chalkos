@@ -111,8 +111,8 @@ func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 	return out, nil
 }
 
-// resolverOpenings are DNS's UDP and TCP port 53 of the Resolver, from its clients' ranges to the
-// addresses it listens on.
+// resolverOpenings are DNS's UDP and TCP port 53 of each Resolver, from its clients' ranges to the
+// addresses it listens on, in its VRF alone; the default VRF's sockets take nothing from VRFs.
 func resolverOpenings(resolvers []named[resolverSpec]) ([]opening, error) {
 	var out []opening
 	for _, r := range resolvers {
@@ -122,6 +122,13 @@ func resolverOpenings(resolvers []named[resolverSpec]) ([]opening, error) {
 			return nil, fmt.Errorf("%s: %w", what, err)
 		}
 		o := opening{comment: what, ports: []portRange{"53"}}
+		// The input hook sees a packet from a VRF's link with the VRF's device as iifname.
+		if vrf := vrfOf(r.Spec.VRF); vrf != defaultVRF {
+			if !plainInterface.MatchString(vrf) {
+				return nil, fmt.Errorf("%s: the VRF %q is no VRF's name", what, vrf)
+			}
+			o.vrf = vrf
+		}
 		for _, a := range listen {
 			o.destinations = append(o.destinations, netip.PrefixFrom(a, a.BitLen()).String())
 		}
@@ -148,8 +155,10 @@ type firewall struct {
 	openings []opening
 	// ctZones are the VRFs with a conntrack zone and links, by name.
 	ctZones []ctZone
-	port    int
-	closed  bool
+	// nat64 are the NAT64 instances, whose links the forward chain and source NAT treat apart.
+	nat64  []nat64Instance
+	port   int
+	closed bool
 }
 
 // ctZone is a VRF's conntrack zone and the links whose connections take it.
@@ -186,6 +195,9 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		return nil, err
 	}
 	f.zones = zones
+	if f.nat64, err = nat64Instances(d); err != nil {
+		return nil, err
+	}
 	zoneOf := map[int]string{}
 	for _, v := range d.VRFs {
 		if v.Spec.ConntrackZone == nil {
@@ -202,6 +214,12 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		links, err := d.Membership.links(v.Name)
 		if err != nil {
 			return nil, err
+		}
+		// A NAT64's link carries the VRF's connections into and out of its namespace.
+		for _, n := range f.nat64 {
+			if n.vrf == v.Name {
+				links = appendNew(links, nat64LinkPrefix+n.name)
+			}
 		}
 		if len(links) > 0 {
 			f.ctZones = append(f.ctZones, ctZone{vrf: v.Name, zone: z, links: links})
@@ -528,9 +546,10 @@ func (f *firewall) input(b *strings.Builder) error {
 }
 
 // forward accepts everything while no policy goes between two zones and the ruleset is not
-// closed. Otherwise it accepts the protected traffic and destination-translated connections,
-// hands each connection to the policy of its pair of zones, and drops the rest, also from or to
-// an interface in no zone. A policy to a zone of no link has no line.
+// closed. Otherwise it accepts the protected traffic, the NAT64s' traffic into and out of their
+// links, which no policy filters, and destination-translated connections, hands each connection to
+// the policy of its pair of zones, and drops the rest, also from or to an interface in no zone. A
+// policy to a zone of no link has no line.
 func (f *firewall) forward(b *strings.Builder) {
 	var between []named[policySpec]
 	for _, p := range f.policies {
@@ -548,6 +567,15 @@ func (f *firewall) forward(b *strings.Builder) {
 		"\t\tct state invalid drop\n" +
 		"\t\ticmpv6 type { " + icmpv6Errors + " } accept\n" +
 		"\t\ticmp type { " + icmpErrors + " } accept\n")
+	for _, n := range f.nat64 {
+		link, c := strconv.Quote(nat64LinkPrefix+n.name), strconv.Quote("NAT64 "+n.name)
+		// The forward hook sees a packet from a VRF's link with the VRF's device as iifname.
+		from := "iifname " + link
+		if n.vrf != defaultVRF {
+			from = "meta sdifname " + link
+		}
+		fmt.Fprintf(b, "\t\t%s accept comment %s\n\t\toifname %s accept comment %s\n", from, c, link, c)
+	}
 	if slices.ContainsFunc(f.nat, func(n named[natSpec]) bool { return n.Spec.Type == "dnat" }) {
 		b.WriteString("\t\tct status dnat accept\n")
 	}
@@ -564,7 +592,8 @@ func (f *firewall) forward(b *strings.Builder) {
 }
 
 // translation renders the NATRule documents, in the order of their names: dnat in dstnat,
-// masquerade and snat in srcnat. A ruleset without NAT rules has neither chain.
+// masquerade and snat in srcnat after the NAT64s' lines. A ruleset without NAT rules and without an
+// own pool of a NAT64 has neither chain.
 func (f *firewall) translation(b *strings.Builder) error {
 	var dst, src []string
 	for _, n := range f.nat {
@@ -577,6 +606,9 @@ func (f *firewall) translation(b *strings.Builder) error {
 		} else {
 			src = append(src, line)
 		}
+	}
+	if len(src) > 0 || slices.ContainsFunc(f.nat64, func(n nat64Instance) bool { return len(n.pools) == 0 }) {
+		src = append(f.nat64Lines(), src...)
 	}
 	for _, c := range []struct {
 		name, hook, priority string
@@ -592,6 +624,30 @@ func (f *firewall) translation(b *strings.Builder) error {
 		b.WriteString("\t}\n")
 	}
 	return nil
+}
+
+// nat64Lines are the source NAT lines of the NAT64s, ahead of the NATRules': no rule translates a
+// connection into a NAT64's link or from its explicit pool, and the main namespace masquerades an
+// own pool's inner address to the address of the link a connection leaves through, within the
+// ports Jool takes of it.
+func (f *firewall) nat64Lines() []string {
+	var lines []string
+	for _, n := range f.nat64 {
+		c := strconv.Quote("NAT64 " + n.name)
+		lines = append(lines, fmt.Sprintf("oifname %s accept comment %s", strconv.Quote(nat64LinkPrefix+n.name), c))
+		if len(n.pools) == 0 {
+			lines = append(lines,
+				fmt.Sprintf("ip saddr %s meta l4proto { tcp, udp } masquerade to :%s comment %s", n.inner, ownPorts, c),
+				fmt.Sprintf("ip saddr %s masquerade comment %s", n.inner, c))
+			continue
+		}
+		pools := make([]string, len(n.pools))
+		for i, p := range n.pools {
+			pools[i] = p.String()
+		}
+		lines = append(lines, fmt.Sprintf("ip saddr { %s } accept comment %s", strings.Join(pools, ", "), c))
+	}
+	return lines
 }
 
 func (f *firewall) natLine(n natSpec) (string, error) {
