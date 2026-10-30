@@ -1302,7 +1302,8 @@ resolver.
 | `bgp_error` | string | Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is then empty. |
 | `nat64` | list of NAT64Status | The router's NAT64 instances, one per Jool instance, which a NAT64 document names, by name. |
 | `nat64_error` | string | Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then empty. |
-| `resolver` | ResolverStatus | The router's resolver; unset on a router without a Resolver document. |
+| `resolver` | ResolverStatus | The resolver of the router's default VRF; unset on a router without one. |
+| `vrf_resolvers` | list of ResolverStatus | The resolvers of the router's VRFs, one per VRF with a Resolver document, by VRF. |
 
 Field types: [BGPPeerStatus](#router-message-bgppeerstatus), [NAT64Status](#router-message-nat64status), [ResolverStatus](#router-message-resolverstatus).
 
@@ -1427,8 +1428,9 @@ The state of a router's resolver.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `running` | bool | Whether Unbound answers on its control socket. |
-| `error` | string | Why Unbound did not answer, such as unbound-control's error; empty while it runs. |
+| `running` | bool | Whether Unbound runs: the default VRF's answers on its control socket, and a VRF's unit is active. |
+| `error` | string | Why Unbound does not run, such as unbound-control's error or the state of a VRF's unit; empty while it runs. |
+| `vrf` | string | The VRF whose resolver this is; empty for the default VRF's. |
 
 Sources: `api/chalkos/node/v1/node.proto`, `api/chalkos/kubernetes/v1/kubernetes.proto` and
 `api/chalkos/router/v1/router.proto`, rendered by protoc-gen-doc with `api/markdown.tmpl`. The

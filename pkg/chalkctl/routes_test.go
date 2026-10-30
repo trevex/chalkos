@@ -46,18 +46,18 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv4 unicast detail json", Out: "{}"},
 		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: frr("ipv6-detail-imported.json")},
 	)}
-	conf, nat64, vrfs := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir(), t.TempDir()
+	conf, nat64, vrfs, resolvers := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir(), t.TempDir(), t.TempDir()
 	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"spec": {"table": 100}}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if documents {
-		for _, file := range []string{conf, filepath.Join(nat64, "edge.json")} {
+		for _, file := range []string{conf, filepath.Join(nat64, "edge.json"), filepath.Join(resolvers, "unbound-guest.conf")} {
 			if err := os.WriteFile(file, []byte("\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}
 	}
-	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{ResolverConfig: conf, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
+	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{ResolverConfig: conf, ResolverDir: resolvers, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
 		hops := func() []*router.NextHop {
 			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
@@ -127,7 +127,7 @@ func TestNodeRoutesWithoutTheLayer(t *testing.T) {
 }
 
 // status prints a router's NAT64 instances, a line each with its sessions, bindings and the size of
-// each protocol's pool, and whether its resolver runs.
+// each protocol's pool, and whether its resolvers run, the default VRF's first.
 func TestStatusRouterNAT64AndResolver(t *testing.T) {
 	ta := newTestApp(t)
 	pool := "0,TCP,192.0.2.8,61001,65535,1059,0\n"
@@ -144,24 +144,26 @@ func TestStatusRouterNAT64AndResolver(t *testing.T) {
 		"  INSTANCE  SESSIONS  BINDINGS  POOL TCP  POOL UDP  POOL ICMP\n" +
 		"  edge      3         2         4535      4535      -\n" +
 		"resolver: running\n" +
+		"resolver guest: running\n" +
 		"certificates:\n"
 	if got := ta.stdout.String(); !strings.Contains(got, want) {
 		t.Errorf("stdout:\n%s\nlacks:\n%s", got, want)
 	}
 }
 
-// status says why a router's NAT64 instances are unknown and why its resolver does not run.
+// status says why a router's NAT64 instances are unknown and why its resolvers do not run.
 func TestStatusRouterNAT64AndResolverDown(t *testing.T) {
 	ta := newTestApp(t)
 	addr := routerNode(t, ta, true,
 		tooltest.Rule{Prefix: "jool instance display", Err: &tool.Error{Command: "jool", Code: 1, Stderr: "Error: Jool's kernel module is not loaded.\n"}},
 		tooltest.Rule{Prefix: "unbound-control status", Err: &tool.Error{Command: "unbound-control", Code: 1, Stderr: "error: connect: No such file or directory for /run/unbound/unbound.ctl\n"}},
+		tooltest.Rule{Prefix: "systemctl is-active unbound@guest.service", Out: "inactive\n", Err: &tool.Error{Command: "systemctl is-active unbound@guest.service", Code: 3}},
 	)
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	got := ta.stdout.String()
-	for _, want := range []string{"\nnat64: unknown: ", "Jool's kernel module is not loaded", "\nresolver: not running: ", "No such file or directory"} {
+	for _, want := range []string{"\nnat64: unknown: ", "Jool's kernel module is not loaded", "\nresolver: not running: ", "No such file or directory", "\nresolver guest: not running: unbound@guest.service is inactive\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("stdout:\n%s\nlacks %q", got, want)
 		}

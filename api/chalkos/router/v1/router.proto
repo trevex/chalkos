@@ -38,8 +38,10 @@ message StatusResponse {
   // Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then
   // empty.
   string nat64_error = 4;
-  // The router's resolver; unset on a router without a Resolver document.
+  // The resolver of the router's default VRF; unset on a router without one.
   ResolverStatus resolver = 5;
+  // The resolvers of the router's VRFs, one per VRF with a Resolver document, by VRF.
+  repeated ResolverStatus vrf_resolvers = 6;
 }
 
 // One NAT64 instance of a router, as Jool reports it.
@@ -66,10 +68,14 @@ message NAT64PoolStatus {
 
 // The state of a router's resolver.
 message ResolverStatus {
-  // Whether Unbound answers on its control socket.
+  // Whether Unbound runs: the default VRF's answers on its control socket, and a VRF's unit is
+  // active.
   bool running = 1;
-  // Why Unbound did not answer, such as unbound-control's error; empty while it runs.
+  // Why Unbound does not run, such as unbound-control's error or the state of a VRF's unit; empty
+  // while it runs.
   string error = 2;
+  // The VRF whose resolver this is; empty for the default VRF's.
+  string vrf = 3;
 }
 
 // One BGP session of a router: a BGPPeer's address, or one of its interfaces.

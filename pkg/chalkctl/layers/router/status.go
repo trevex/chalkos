@@ -23,8 +23,9 @@ func (p *Plugin) PrintStatus(ctx context.Context, h layer.Host, conn *client.Con
 	return routerStatus(h, resp.Msg)
 }
 
-// routerStatus prints a router's BGP sessions, its NAT64 instances and its resolver, or why their
-// state is unknown. A router without NAT64 instances or a resolver prints no line of them.
+// routerStatus prints a router's BGP sessions, its NAT64 instances and its resolvers, the default
+// VRF's first, or why their state is unknown. A router without NAT64 instances or resolvers prints
+// no line of them.
 func routerStatus(h layer.Host, r *routerv1.StatusResponse) error {
 	if err := bgpStatus(h, r); err != nil {
 		return err
@@ -55,6 +56,13 @@ func routerStatus(h layer.Host, r *routerv1.StatusResponse) error {
 		fmt.Fprintln(h.Stdout(), "resolver: running")
 	default:
 		fmt.Fprintf(h.Stdout(), "resolver: not running: %s\n", r.Resolver.Error)
+	}
+	for _, v := range r.VrfResolvers {
+		if v.Running {
+			fmt.Fprintf(h.Stdout(), "resolver %s: running\n", v.Vrf)
+		} else {
+			fmt.Fprintf(h.Stdout(), "resolver %s: not running: %s\n", v.Vrf, v.Error)
+		}
 	}
 	return nil
 }

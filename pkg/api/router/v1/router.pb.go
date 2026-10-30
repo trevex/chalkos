@@ -76,8 +76,10 @@ type StatusResponse struct {
 	// Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then
 	// empty.
 	Nat64Error string `protobuf:"bytes,4,opt,name=nat64_error,json=nat64Error,proto3" json:"nat64_error,omitempty"`
-	// The router's resolver; unset on a router without a Resolver document.
-	Resolver      *ResolverStatus `protobuf:"bytes,5,opt,name=resolver,proto3" json:"resolver,omitempty"`
+	// The resolver of the router's default VRF; unset on a router without one.
+	Resolver *ResolverStatus `protobuf:"bytes,5,opt,name=resolver,proto3" json:"resolver,omitempty"`
+	// The resolvers of the router's VRFs, one per VRF with a Resolver document, by VRF.
+	VrfResolvers  []*ResolverStatus `protobuf:"bytes,6,rep,name=vrf_resolvers,json=vrfResolvers,proto3" json:"vrf_resolvers,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -143,6 +145,13 @@ func (x *StatusResponse) GetNat64Error() string {
 func (x *StatusResponse) GetResolver() *ResolverStatus {
 	if x != nil {
 		return x.Resolver
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetVrfResolvers() []*ResolverStatus {
+	if x != nil {
+		return x.VrfResolvers
 	}
 	return nil
 }
@@ -280,10 +289,14 @@ func (x *NAT64PoolStatus) GetSize() uint64 {
 // The state of a router's resolver.
 type ResolverStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Whether Unbound answers on its control socket.
+	// Whether Unbound runs: the default VRF's answers on its control socket, and a VRF's unit is
+	// active.
 	Running bool `protobuf:"varint,1,opt,name=running,proto3" json:"running,omitempty"`
-	// Why Unbound did not answer, such as unbound-control's error; empty while it runs.
-	Error         string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// Why Unbound does not run, such as unbound-control's error or the state of a VRF's unit; empty
+	// while it runs.
+	Error string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// The VRF whose resolver this is; empty for the default VRF's.
+	Vrf           string `protobuf:"bytes,3,opt,name=vrf,proto3" json:"vrf,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -328,6 +341,13 @@ func (x *ResolverStatus) GetRunning() bool {
 func (x *ResolverStatus) GetError() string {
 	if x != nil {
 		return x.Error
+	}
+	return ""
+}
+
+func (x *ResolverStatus) GetVrf() string {
+	if x != nil {
+		return x.Vrf
 	}
 	return ""
 }
@@ -879,14 +899,15 @@ var File_chalkos_router_v1_router_proto protoreflect.FileDescriptor
 const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"\n" +
 	"\x1echalkos/router/v1/router.proto\x12\x11chalkos.router.v1\"\x0f\n" +
-	"\rStatusRequest\"\xfb\x01\n" +
+	"\rStatusRequest\"\xc3\x02\n" +
 	"\x0eStatusResponse\x126\n" +
 	"\x05peers\x18\x01 \x03(\v2 .chalkos.router.v1.BGPPeerStatusR\x05peers\x12\x1b\n" +
 	"\tbgp_error\x18\x02 \x01(\tR\bbgpError\x124\n" +
 	"\x05nat64\x18\x03 \x03(\v2\x1e.chalkos.router.v1.NAT64StatusR\x05nat64\x12\x1f\n" +
 	"\vnat64_error\x18\x04 \x01(\tR\n" +
 	"nat64Error\x12=\n" +
-	"\bresolver\x18\x05 \x01(\v2!.chalkos.router.v1.ResolverStatusR\bresolver\"\x93\x01\n" +
+	"\bresolver\x18\x05 \x01(\v2!.chalkos.router.v1.ResolverStatusR\bresolver\x12F\n" +
+	"\rvrf_resolvers\x18\x06 \x03(\v2!.chalkos.router.v1.ResolverStatusR\fvrfResolvers\"\x93\x01\n" +
 	"\vNAT64Status\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bsessions\x18\x02 \x01(\x04R\bsessions\x12\x1a\n" +
@@ -894,10 +915,11 @@ const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"\x05pools\x18\x04 \x03(\v2\".chalkos.router.v1.NAT64PoolStatusR\x05pools\"A\n" +
 	"\x0fNAT64PoolStatus\x12\x1a\n" +
 	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x12\n" +
-	"\x04size\x18\x02 \x01(\x04R\x04size\"@\n" +
+	"\x04size\x18\x02 \x01(\x04R\x04size\"R\n" +
 	"\x0eResolverStatus\x12\x18\n" +
 	"\arunning\x18\x01 \x01(\bR\arunning\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\"\xf2\x01\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12\x10\n" +
+	"\x03vrf\x18\x03 \x01(\tR\x03vrf\"\xf2\x01\n" +
 	"\rBGPPeerStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bneighbor\x18\x02 \x01(\tR\bneighbor\x12\x14\n" +
@@ -974,19 +996,20 @@ var file_chalkos_router_v1_router_proto_depIdxs = []int32{
 	5,  // 0: chalkos.router.v1.StatusResponse.peers:type_name -> chalkos.router.v1.BGPPeerStatus
 	2,  // 1: chalkos.router.v1.StatusResponse.nat64:type_name -> chalkos.router.v1.NAT64Status
 	4,  // 2: chalkos.router.v1.StatusResponse.resolver:type_name -> chalkos.router.v1.ResolverStatus
-	3,  // 3: chalkos.router.v1.NAT64Status.pools:type_name -> chalkos.router.v1.NAT64PoolStatus
-	8,  // 4: chalkos.router.v1.RoutesResponse.kernel:type_name -> chalkos.router.v1.KernelRoute
-	10, // 5: chalkos.router.v1.RoutesResponse.bgp:type_name -> chalkos.router.v1.BGPRoute
-	9,  // 6: chalkos.router.v1.KernelRoute.next_hops:type_name -> chalkos.router.v1.NextHop
-	0,  // 7: chalkos.router.v1.RouterService.Status:input_type -> chalkos.router.v1.StatusRequest
-	6,  // 8: chalkos.router.v1.RouterService.Routes:input_type -> chalkos.router.v1.RoutesRequest
-	1,  // 9: chalkos.router.v1.RouterService.Status:output_type -> chalkos.router.v1.StatusResponse
-	7,  // 10: chalkos.router.v1.RouterService.Routes:output_type -> chalkos.router.v1.RoutesResponse
-	9,  // [9:11] is the sub-list for method output_type
-	7,  // [7:9] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	4,  // 3: chalkos.router.v1.StatusResponse.vrf_resolvers:type_name -> chalkos.router.v1.ResolverStatus
+	3,  // 4: chalkos.router.v1.NAT64Status.pools:type_name -> chalkos.router.v1.NAT64PoolStatus
+	8,  // 5: chalkos.router.v1.RoutesResponse.kernel:type_name -> chalkos.router.v1.KernelRoute
+	10, // 6: chalkos.router.v1.RoutesResponse.bgp:type_name -> chalkos.router.v1.BGPRoute
+	9,  // 7: chalkos.router.v1.KernelRoute.next_hops:type_name -> chalkos.router.v1.NextHop
+	0,  // 8: chalkos.router.v1.RouterService.Status:input_type -> chalkos.router.v1.StatusRequest
+	6,  // 9: chalkos.router.v1.RouterService.Routes:input_type -> chalkos.router.v1.RoutesRequest
+	1,  // 10: chalkos.router.v1.RouterService.Status:output_type -> chalkos.router.v1.StatusResponse
+	7,  // 11: chalkos.router.v1.RouterService.Routes:output_type -> chalkos.router.v1.RoutesResponse
+	10, // [10:12] is the sub-list for method output_type
+	8,  // [8:10] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_chalkos_router_v1_router_proto_init() }

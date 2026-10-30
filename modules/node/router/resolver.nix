@@ -259,7 +259,8 @@ in
         SystemCallFilter = [ "@system-service" ];
       };
     };
-    # chalkd asks unbound-control whether the resolvers run.
+    # chalkd asks unbound-control whether the default VRF's resolver runs, and systemctl whether
+    # the VRFs' units are active.
     systemd.services.chalkd.path = [ unbound ];
   };
 }

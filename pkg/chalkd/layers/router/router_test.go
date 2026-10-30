@@ -34,11 +34,11 @@ func (n runnerNode) Runner() tool.Runner { return n.run }
 func routerNode(t *testing.T, kernel ...*routing.KernelRoute) (*Plugin, *tooltest.Runner) {
 	t.Helper()
 	r := &tooltest.Runner{}
-	vrfs := t.TempDir()
+	vrfs, resolvers := t.TempDir(), t.TempDir()
 	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"apiVersion": "router.chalkos.dev/v1alpha1", "kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100, "interfaces": ["swp1"]}}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs}), r
+	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers}), r
 }
 
 // routerStatus is the state of the router as the layer serves it.
@@ -93,14 +93,14 @@ func (hangingRunner) Run(ctx context.Context, name string, args ...string) ([]by
 	return nil, ctx.Err()
 }
 
-// Daemons that hang cost Status one timeout altogether, as chalkd asks them side by side, and the
-// router's part says which hang.
+// Daemons that hang, systemd too, cost Status one timeout altogether, as chalkd asks them side by
+// side, and the router's part says which hang.
 func TestRouterStatusWhileDaemonsHang(t *testing.T) {
 	s, r := routerNode(t)
 	s.r.run = hangingRunner{r}
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
 	askTimeout = 200 * time.Millisecond
-	for _, file := range []string{s.r.ResolverConfig, filepath.Join(s.r.NAT64Dir, "edge.json")} {
+	for _, file := range []string{s.r.ResolverConfig, filepath.Join(s.r.NAT64Dir, "edge.json"), filepath.Join(s.r.ResolverDir, "unbound-guest.conf")} {
 		if err := os.WriteFile(file, []byte("\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -118,6 +118,9 @@ func TestRouterStatusWhileDaemonsHang(t *testing.T) {
 	}
 	if st.Resolver == nil || st.Resolver.Running || !strings.Contains(st.Resolver.Error, "unbound-control did not answer within 200ms") {
 		t.Errorf("router status while Unbound hangs = %v", st)
+	}
+	if len(st.VrfResolvers) != 1 || st.VrfResolvers[0].Running || !strings.Contains(st.VrfResolvers[0].Error, "systemctl did not answer within 200ms") {
+		t.Errorf("router status while systemd hangs = %v", st.VrfResolvers)
 	}
 }
 
@@ -246,6 +249,43 @@ func TestRouterResolverStatus(t *testing.T) {
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "unbound-control status", Err: &tool.Error{Command: "unbound-control", Code: 1, Stderr: "error: connect: No such file or directory for /run/unbound/unbound.ctl\n"}})
 	if st := routerStatus(t, s); st.GetResolver() == nil || st.Resolver.Running || !strings.Contains(st.Resolver.Error, "No such file or directory") {
 		t.Errorf("router status of a stopped resolver = %v", st)
+	}
+}
+
+// A router's status holds the resolver of each VRF whose config the output unbound rendered,
+// sorted by VRF, each the state of its unit unbound@<vrf>, whose name escapes the VRF's dashes as
+// systemd-escape does; a stopped one says what state its unit is in. A file of no VRF's name is
+// left out and reaches no command.
+func TestRouterVRFResolverStatus(t *testing.T) {
+	s, r := routerNode(t)
+	for _, vrf := range []string{"tenant", "dmz-a", "Bad_Name", "x;y"} {
+		if err := os.WriteFile(filepath.Join(s.r.ResolverDir, "unbound-"+vrf+".conf"), []byte("server:\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(s.r.ResolverDir, "unbound.conf"), []byte("server:\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active unbound@tenant.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active unbound@tenant.service", Code: 3}})
+	st := routerStatus(t, s)
+	if st.GetResolver() != nil || len(st.VrfResolvers) != 2 {
+		t.Fatalf("router status = %v", st)
+	}
+	dmz, tenant := st.VrfResolvers[0], st.VrfResolvers[1]
+	if dmz.Vrf != "dmz-a" || !dmz.Running || dmz.Error != "" {
+		t.Errorf("the resolver of dmz-a = %v", dmz)
+	}
+	if tenant.Vrf != "tenant" || tenant.Running || tenant.Error != `unbound@tenant.service is failed` {
+		t.Errorf("the resolver of tenant = %v", tenant)
+	}
+	if !slices.Contains(r.Calls, `systemctl is-active unbound@dmz\x2da.service`) {
+		t.Errorf("dmz-a's unit was not asked by its escaped name: %q", r.Calls)
+	}
+	if !r.Quiet["systemctl is-active unbound@tenant.service"] {
+		t.Error("systemctl's standard error reaches the console")
+	}
+	if slices.ContainsFunc(r.Calls, func(c string) bool { return strings.Contains(c, "Bad_Name") || strings.Contains(c, "x;y") }) {
+		t.Errorf("a file of no VRF's name reached a command: %q", r.Calls)
 	}
 }
 

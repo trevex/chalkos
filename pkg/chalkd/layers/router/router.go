@@ -37,6 +37,9 @@ type Options struct {
 	// ResolverConfig is Unbound's config, which exists on a node with a Resolver document;
 	// empty is /etc/unbound/unbound.conf.
 	ResolverConfig string
+	// ResolverDir is the output unbound's directory, with unbound-<vrf>.conf per VRF's Resolver;
+	// empty is /run/chalkos/outputs/unbound.
+	ResolverDir string
 	// NAT64Dir is the output jool's directory, with a file <name>.json per NAT64 document; empty
 	// is /run/chalkos/outputs/jool.
 	NAT64Dir string
@@ -47,8 +50,8 @@ type Options struct {
 
 // side is the node's router side: the state of its FRR, Jool and Unbound and the kernel's routes.
 type side struct {
-	// run runs vtysh, which FRR answers on its sockets in /run/frr, nsenter and jool, and
-	// unbound-control.
+	// run runs vtysh, which FRR answers on its sockets in /run/frr, nsenter and jool,
+	// unbound-control and systemctl.
 	run tool.Runner
 	Options
 }
@@ -149,6 +152,7 @@ func (r *side) status(ctx context.Context) *routerv1.StatusResponse {
 		}
 	})
 	wg.Go(func() { st.Resolver = r.resolver(ctx) })
+	wg.Go(func() { st.VrfResolvers = r.vrfResolvers(ctx) })
 	wg.Wait()
 	return st
 }
@@ -256,6 +260,41 @@ func (r *side) resolver(ctx context.Context) *routerv1.ResolverStatus {
 		return &routerv1.ResolverStatus{Error: err.Error()}
 	}
 	return &routerv1.ResolverStatus{Running: true}
+}
+
+// vrfResolvers are the state of the unit unbound@<vrf> of each VRF whose config the output unbound
+// rendered, sorted by VRF, all asked within one timeout.
+func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
+	files, _ := filepath.Glob(filepath.Join(cmp.Or(r.ResolverDir, filepath.Join(outputs.DefaultRoot, "unbound")), "unbound-*.conf"))
+	budget, cancel := context.WithTimeout(ctx, askTimeout)
+	defer cancel()
+	var resolvers []*routerv1.ResolverStatus
+	for _, f := range files {
+		vrf := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(f), "unbound-"), ".conf")
+		// Only a VRF's name reaches systemctl's command line.
+		if !routing.ShortName.MatchString(vrf) {
+			continue
+		}
+		unit := resolverUnit(vrf)
+		out, err := r.ask(ctx, budget, "systemctl", "is-active", unit)
+		s := &routerv1.ResolverStatus{Vrf: vrf, Running: err == nil}
+		// systemctl prints the state of a unit that is not active, such as failed.
+		switch state := strings.TrimSpace(string(out)); {
+		case err == nil:
+		case state != "":
+			s.Error = unit + " is " + state
+		default:
+			s.Error = err.Error()
+		}
+		resolvers = append(resolvers, s)
+	}
+	return resolvers
+}
+
+// resolverUnit is the unit of the resolver of the VRF vrf, a name that matched router.ShortName,
+// whose dashes systemd-escape escapes.
+func resolverUnit(vrf string) string {
+	return "unbound@" + strings.ReplaceAll(vrf, "-", `\x2d`) + ".service"
 }
 
 func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.RoutesRequest]) (*connect.Response[routerv1.RoutesResponse], error) {
