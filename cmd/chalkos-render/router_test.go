@@ -870,3 +870,40 @@ func TestFRRVRFInterfaceByGlob(t *testing.T) {
 	docs["BGPPeer"] = peer(`, "vrf": "tenant"`)
 	refused(t, []string{"frr"}, docs, "networkd puts swp1 in VRF tenant only if the other [Match] keys of Network 30-swp match it")
 }
+
+// A prepend repeats the AS of the instance that uses its policy, the default VRF's or another's,
+// and each instance with a BFD peer has a BFD profile of its own timers.
+func TestFRRVRFPrependAndBFD(t *testing.T) {
+	timers := func(rx int) string {
+		return fmt.Sprintf(`"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": %d, "transmitMs": 300, "multiplier": 3}`, rx)
+	}
+	docs := map[string][]any{
+		"BGP": {
+			routerDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers(300)+`}`),
+			routerDoc(t, "BGP", "tenant", `{"vrf": "tenant", "asn": 64513, "routerID": "192.0.2.1", "networks": [{"prefix": "2001:db8:2::/48", "policy": "p"}], `+timers(500)+`}`),
+		},
+		"VRF":           {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)},
+		"Network":       {document(t, "Network", "20-eth2", `{"match": {"name": "eth2"}}`)},
+		"RoutingPolicy": {routerDoc(t, "RoutingPolicy", "p", `{"terms": [{"then": {"action": "accept", "prepend": 1}}], "default": "reject"}`)},
+		"BGPPeer": {
+			routerDoc(t, "BGPPeer", "spine", `{"address": "2001:db8::9", "bfd": true, "remoteAS": "external", "families": {"ipv6": {}}}`),
+			routerDoc(t, "BGPPeer", "leaf", `{"vrf": "tenant", "interface": "eth2", "bfd": true, "remoteAS": "external", "families": {"ipv6": {}}}`),
+		},
+	}
+	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := renderedFile(t, []string{"frr"}, string(input), frrFile)
+	for _, want := range []string{
+		" set as-path prepend 64513\n",
+		" neighbor peer-spine bfd profile chalkos\n",
+		" neighbor peer-leaf bfd profile chalkos-tenant\n",
+		" profile chalkos\n  receive-interval 300\n",
+		" profile chalkos-tenant\n  receive-interval 500\n",
+	} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("frr.conf lacks %q:\n%s", want, conf)
+		}
+	}
+}
