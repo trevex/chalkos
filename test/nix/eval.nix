@@ -495,17 +495,17 @@ lib.runTests {
   # Router images carry Jool's module, loaded at boot, and run chalkos-nat64, which the output jool
   # renders NAT64 instances for and whose reload the effect asks for, after the firewall and
   # networkd and before FRR, with CAP_NET_ADMIN and CAP_SYS_ADMIN and no mount namespace of its
-  # own, so the host sees the instances' namespaces. They run Unbound of the config the output unbound renders, once
-  # one is rendered, after chalkos-nat64, with CAP_NET_BIND_SERVICE alone and its control socket's
-  # directory closed to other users; a changed resolver reloads it with its cache, and one added or
-  # removed starts or stops it. The firewall opens the resolver's port and reads the NAT64s, as
-  # networkd does, chalkd asks jool in each instance's namespace and unbound-control for their
-  # state, the image adds the diagnostic nat64-sessions in the instance's namespace, and the node's
-  # own names resolve as before. Each VRF's resolver runs as unbound@<vrf> with the same hardening,
-  # bound to the VRF's device with BindNetworkInterface= and stopped with it, which chalkos-resolvers
-  # starts, reloads and stops once networkd and the NAT64s are up, whenever the output unbound or
-  # networkd changes; the output reads the VRFs and Networks and checks every config it renders.
-  # Other images run neither.
+  # own, so the host sees the instances' namespaces. They run Unbound of the config the output
+  # unbound renders, once one is rendered, after chalkos-nat64, with CAP_NET_BIND_SERVICE alone and
+  # its control socket's directory closed to other users; a changed resolver reloads it with its
+  # cache, and one added or removed starts or stops it. The firewall opens the resolver's port and
+  # reads the NAT64s, as networkd does, chalkd asks jool in each instance's namespace and
+  # unbound-control for their state, the image adds the diagnostic nat64-sessions in the instance's
+  # namespace, and the node's own names resolve as before. Each VRF's resolver runs as
+  # unbound@<vrf> with the same hardening, bound to the VRF's device with BindNetworkInterface= and
+  # stopped with it, which chalkos-resolvers starts, reloads and stops once networkd and the NAT64s
+  # are up, whenever the output unbound or networkd changes; the output reads the VRFs and Networks
+  # and checks every config it renders. Other images run neither.
   testRouterNAT64AndResolver = {
     expr =
       let
@@ -556,7 +556,16 @@ lib.runTests {
             "ProtectControlGroups"
             "PrivateMounts"
             "ReadOnlyPaths"
+            "ReadWritePaths"
             "InaccessiblePaths"
+            "ProtectProc"
+            "ProcSubset"
+            "BindPaths"
+            "BindReadOnlyPaths"
+            "TemporaryFileSystem"
+            "RootDirectory"
+            "MountAPIVFS"
+            "PrivateUsers"
           ];
         };
         nat64Reloads = nat64.serviceConfig.ExecReload == nat64.serviceConfig.ExecStart;
@@ -2589,7 +2598,9 @@ lib.runTests {
         program = [
           "chalkos.diagnostics.route.command: its first argument, ip, is no program of the image's store"
         ];
-        placeholder = [ "chalkos.diagnostics.route: the command or networkNamespace names {address}, which is no parameter" ];
+        placeholder = [
+          "chalkos.diagnostics.route: the command or networkNamespace names {address}, which is no parameter"
+        ];
         parameter = [ "chalkos.diagnostics.route.parameters.table: the command names no {table}" ];
         parameterName = [
           "chalkos.diagnostics.route.parameters.Table: the command names no {Table}"
