@@ -666,18 +666,18 @@ func withNetworkVRF(doc map[string]any, vrf string) map[string]any {
 }
 
 // checkPeerDevices refuses a peer's interface that is a VRF's device, and a glob of its
-// interfaces that matches one: bgpd runs no session on the device, and the input hook sees it
-// as the iifname of every packet from the VRF's links, so router-nftables would open the peer's
-// ports on all of them.
-func checkPeerDevices(s peerSpec, vrfs []named[vrfSpec]) error {
-	for _, v := range vrfs {
-		if s.Interface != nil && *s.Interface == v.Name {
-			return fmt.Errorf("interface %s is the device of VRF %s", v.Name, v.Name)
+// interfaces that matches one, of the VRF devices that vrfDevices finds: bgpd runs no session on
+// the device, and the input hook sees it as the iifname of every packet from the VRF's links, so
+// router-nftables would open the peer's ports on all of them.
+func checkPeerDevices(s peerSpec, devices []string) error {
+	if s.Interface != nil {
+		if dev, ok := vrfDeviceMatch(*s.Interface, devices); ok {
+			return fmt.Errorf("interface %s is the device of VRF %s", dev, dev)
 		}
-		for _, glob := range s.Interfaces {
-			if matchesGlob(glob, v.Name) {
-				return fmt.Errorf("interfaces: %s matches %s, the device of VRF %s", glob, v.Name, v.Name)
-			}
+	}
+	for _, glob := range s.Interfaces {
+		if dev, ok := vrfDeviceMatch(glob, devices); ok {
+			return fmt.Errorf("interfaces: %s matches %s, the device of VRF %s", glob, dev, dev)
 		}
 	}
 	return nil

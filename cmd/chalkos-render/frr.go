@@ -106,6 +106,8 @@ type frr struct {
 	membership vrfMembership
 	// vrfs are the VRF documents.
 	vrfs []named[vrfSpec]
+	// devices are the VRF devices, as vrfDevices finds them.
+	devices []string
 	// prependAS is the AS number the prepends of each RoutingPolicy with one repeat, by name.
 	prependAS map[string]uint32
 }
@@ -253,6 +255,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 		links:        d.Links,
 		membership:   d.Membership,
 		vrfs:         d.VRFs,
+		devices:      vrfDevices(d),
 		prependAS:    map[string]uint32{},
 	}
 	for _, g := range d.BGP {
@@ -615,7 +618,7 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 			return nil, fmt.Errorf("families.%s: maxPrefix 0 accepts no route", f.name)
 		}
 	}
-	if err := checkPeerDevices(s, c.vrfs); err != nil {
+	if err := checkPeerDevices(s, c.devices); err != nil {
 		return nil, err
 	}
 	switch {
