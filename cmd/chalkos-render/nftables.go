@@ -591,8 +591,8 @@ func (f *firewall) forward(b *strings.Builder) {
 	b.WriteString("\t}\n")
 }
 
-// translation renders the NATRule documents, in the order of their names: dnat in dstnat,
-// masquerade and snat in srcnat after the NAT64s' lines. A ruleset without NAT rules and without an
+// translation renders the NATRule documents, in the order of their names: dnat in dstnat after
+// the NAT64s' links, masquerade and snat in srcnat after the NAT64s' lines. A ruleset without NAT rules and without an
 // own pool of a NAT64 has neither chain.
 func (f *firewall) translation(b *strings.Builder) error {
 	var dst, src []string
@@ -606,6 +606,15 @@ func (f *firewall) translation(b *strings.Builder) error {
 		} else {
 			src = append(src, line)
 		}
+	}
+	// No rule translates the destination of a connection out of a NAT64's link, which Jool
+	// translated already.
+	if len(dst) > 0 {
+		var exempt []string
+		for _, n := range f.nat64 {
+			exempt = append(exempt, fmt.Sprintf("iifname %s accept comment %s", strconv.Quote(nat64LinkPrefix+n.name), strconv.Quote("NAT64 "+n.name)))
+		}
+		dst = append(exempt, dst...)
 	}
 	if len(src) > 0 || slices.ContainsFunc(f.nat64, func(n nat64Instance) bool { return len(n.pools) == 0 }) {
 		src = append(f.nat64Lines(), src...)

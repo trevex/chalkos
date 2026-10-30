@@ -296,7 +296,8 @@ func TestNAT64Firewall(t *testing.T) {
 		"Network":        {document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}}`), document(t, "Network", "40-guest", `{"match": {"name": "eth3 eth4"}}`)},
 		"FirewallZone":   {routerDoc(t, "FirewallZone", "lan", `{"interfaces": ["eth0"]}`), routerDoc(t, "FirewallZone", "wan", `{"interfaces": ["eth4"]}`)},
 		"FirewallPolicy": {routerDoc(t, "FirewallPolicy", "lan-wan", `{"from": "lan", "to": "wan", "default": "accept", "rules": []}`)},
-		"NATRule":        {routerDoc(t, "NATRule", "out", `{"type": "masquerade", "family": "ipv4", "out": {"zone": "wan"}}`)},
+		"NATRule": {routerDoc(t, "NATRule", "out", `{"type": "masquerade", "family": "ipv4", "out": {"zone": "wan"}}`),
+			routerDoc(t, "NATRule", "web", `{"type": "dnat", "family": "ipv4", "in": {"interface": "*"}, "match": {"protocol": "tcp", "destinationPorts": [80]}, "to": {"address": "192.0.2.80"}}`)},
 		"NAT64": {
 			routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp", "icmp"]}]}`),
 			routerDoc(t, "NAT64", "guest", `{"vrf": "guest", "prefix": "64:ff9b::/96", "pool4": []}`),
@@ -318,6 +319,7 @@ func TestNAT64Firewall(t *testing.T) {
 			"\t\toifname \"n64-edge\" accept comment \"NAT64 edge\"\n" +
 			"\t\tmeta sdifname \"n64-guest\" accept comment \"NAT64 guest\"\n" +
 			"\t\toifname \"n64-guest\" accept comment \"NAT64 guest\"\n" +
+			"\t\tct status dnat accept\n" +
 			"\t\tiifname { \"eth0\" } oifname { \"eth4\" } jump policy-lan-wan\n",
 		"\t\tiifname { \"eth3\", \"eth4\", \"n64-guest\" } ct zone set 1 comment \"VRF guest\"\n",
 		"\t\toifname { \"eth3\", \"eth4\", \"n64-guest\" } ct zone set 1 comment \"VRF guest\"\n",
@@ -328,6 +330,11 @@ func TestNAT64Firewall(t *testing.T) {
 			"\t\tip saddr 169.254.111.206 meta l4proto { tcp, udp } masquerade to :61001-65535 comment \"NAT64 guest\"\n" +
 			"\t\tip saddr 169.254.111.206 masquerade comment \"NAT64 guest\"\n" +
 			"\t\tmeta nfproto ipv4 oifname { \"eth4\" } masquerade\n",
+		// A DNAT rule leaves the translated IPv4 that leaves a NAT64's link alone.
+		"\t\ttype nat hook prerouting priority dstnat; policy accept;\n" +
+			"\t\tiifname \"n64-edge\" accept comment \"NAT64 edge\"\n" +
+			"\t\tiifname \"n64-guest\" accept comment \"NAT64 guest\"\n" +
+			"\t\tmeta nfproto ipv4 iifname { \"*\" } tcp dport { 80 } dnat ip to 192.0.2.80\n",
 		"\t\tiifname \"guest\" ip6 saddr { 2001:db8:3::/64 } ip6 daddr { 2001:db8:3::1/128 } udp dport { 53 } accept comment \"Resolver guest\"\n",
 	} {
 		if !strings.Contains(got, want) {
