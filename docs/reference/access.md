@@ -44,6 +44,7 @@ KubernetesService on images with the `kubernetes` layer, and RouterService on im
 | Service | Method | Least role | Served in |
 | --- | --- | --- | --- |
 | NodeService | ApplyConfig | admin | normal mode |
+| NodeService | ConfirmConfig | admin | normal mode |
 | NodeService | Contract | reader | maintenance and normal mode |
 | NodeService | Diagnostics | reader | maintenance and normal mode |
 | NodeService | Disks | reader | maintenance and normal mode |

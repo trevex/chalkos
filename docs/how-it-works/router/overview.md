@@ -142,6 +142,10 @@ match into another document, or changes `spec.management.interfaces` too. A rout
 answers on every interface, the default, has nothing to guard. The rule reads the running config,
 so `chalkctl apply-config` and the node run it, and `chalkctl validate` does not.
 
+The guard cannot tell which interface chalkctl reaches the router through. A delivery with
+`apply-config --try` covers that case: the router rolls the config back at the trial's deadline
+unless chalkctl confirms it over a new connection, which the new ruleset must accept.
+
 ## Limits
 
 - An image carries the router layer or the Kubernetes layer, not both.

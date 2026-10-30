@@ -54,6 +54,18 @@ The firewall then accepts chalkd's port 50000 on `eth1` alone. Name the interfac
 workstation reaches the router through, or chalkctl loses the router once the delivery is
 applied. A glob, a prefix followed by `*` such as `mgmt*`, names several interfaces.
 
+Deliver a change of `spec.management.interfaces` on trial, so that the router rolls it back if
+chalkctl cannot reach it any more:
+
+```sh
+chalkctl apply-config r1 --secrets secrets.age --try 2m
+```
+
+chalkctl confirms the config over a new connection, which the firewall accepts only on a
+management interface. When the interfaces leave out the one you reach the router through, the
+confirmation fails, and the router rolls the config back at the deadline.
+[Try a config change](../operate/change-config.md#try-a-config-change) describes trials.
+
 The other fields keep their defaults here:
 
 | Field | Default | Sets |
@@ -97,6 +109,8 @@ chalkctl: r1: the config is refused: Router "router" spec.management.interfaces:
 To move the node API, change `spec.management.interfaces` in the delivery that changes the
 `Network` documents. The connection of that delivery stays up, because the firewall accepts
 established connections. The commands after it reach the router through the new interface alone.
+Deliver the change with `--try`, so that the router rolls it back unless chalkctl reaches it again
+over a new connection.
 
 The guard compares the names in each `Network`'s `[Match]` with the management interfaces, and a
 `Network` glob such as `eth*` covers `eth1`. It catches a removed `Network`. It cannot tell

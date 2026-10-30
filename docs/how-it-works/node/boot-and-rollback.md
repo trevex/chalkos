@@ -85,7 +85,8 @@ Stage 2 starts the node's own services in order:
    holds the hostname, the documents services read and the outputs rendered from them, networkd's
    units and chrony's time servers among them. A fallback boots the previous image with its own
    slot, so it runs the config it ran. An image without a slot fails here, and its boot is not
-   found healthy.
+   found healthy. A config's [trial](config.md#a-trial-rolls-a-config-back-unless-it-is-confirmed)
+   that is still open ends first: the slot gets the config from before the trial back.
 2. systemd-networkd brings up the network.
 3. chalkd starts. It finds the `installed` marker on STATE and serves in normal mode, or finds
    none and serves in maintenance mode.

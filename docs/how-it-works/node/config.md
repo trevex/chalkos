@@ -359,6 +359,56 @@ when an image is staged, whose slot keeps its own config:
 w1 has a staged image with its own config (version 6f0e…); apply-config --staged updates it
 ```
 
+## A trial rolls a config back unless it is confirmed
+
+`chalkctl apply-config --try` delivers config on trial, as
+[Try a config change](../../operate/change-config.md#try-a-config-change) shows. The trial's
+rollback is the slot's previous config, which every `apply-config` keeps. A trial therefore
+delivers config documents alone and to the running image. chalkd refuses a trial that changes the
+node's storage, or that carries OS CAs, a node certificate or a layer's payload, because the
+previous config does not restore them.
+
+Before the delivery changes anything, chalkd writes the trial's record to `/state/chalkd/trial`
+and syncs it. The record names the slot, the version on trial, the version from before it, the
+deadline and the units that the trial's health check leaves out. A crash after the record and
+before the slot was written leaves a slot that runs the version from before the trial, and chalkd
+ends that trial when it next reads the record.
+
+Once the delivery is applied, chalkd arms a timer for the deadline. ConfirmConfig ends the trial:
+it runs the health check of a counted boot, leaving out the units the image ignores and the
+trial's own, and then removes the record and stops the timer. The request names the version it
+confirms, so a client cannot confirm a later trial that another client started. A confirmation
+sent again after its answer was lost succeeds when the node runs that version and no trial is open.
+
+At the deadline, chalkd rolls the config back through the same steps as
+`apply-config --rollback`, then removes the record. A rollback that fails, as when the image's
+rules refuse it or an output does not render, leaves the record with the reason and whether the
+attempt changed the node. chalkd tries the rollback again each minute. ConfirmConfig still ends
+the trial, unless the failed attempt changed the node. Status reports the trial, with the reason
+of the last failure.
+
+While the record exists, chalkd refuses every delivery, upgrade and image rollback with
+`config <version> is on trial until <deadline>: confirm it with chalkctl apply-config --confirm
+<node>, or roll it back with chalkctl apply-config --rollback <node>, before ...`. A rollback to
+the config from before the trial ends the trial. A volume reset, a reboot and the requests of the
+image's layers go ahead. A record that chalkd cannot read refuses every change and every
+confirmation until a rollback removes it.
+
+A trial survives a restart of chalkd. When chalkd starts, it reads the record once it serves.
+It arms the timer again from the recorded deadline, or rolls the config back at once when the
+deadline has passed.
+
+A boot ends an open trial. `chalkos-config.service` runs `chalkd load-config`, which reads the
+record before it applies the slot. When the slot runs the config on trial, chalkd exchanges the
+slot's two links, so the config from before the trial is the slot's config again and the config on
+trial its previous one. Then it removes the record. A slot that it cannot read or restore keeps the
+record, with the boot's time as the deadline, and chalkd rolls the trial back as it starts.
+
+A rollback after a delivery that failed part way, the rollback of a trial included, takes the
+effects that delivery took, as
+[The baseline survives a failed delivery](config-pipeline.md#the-baseline-survives-a-failed-delivery)
+describes.
+
 ## Change rules decide which changes a node accepts
 
 The config is the image's; the machine state is the node's. The machine state is what a node keeps

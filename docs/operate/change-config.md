@@ -1,6 +1,6 @@
 ---
 title: "Change a node's config"
-description: "Deliver changed YAML to a running node with chalkctl apply-config, preview it with --diff and act on a refusal"
+description: "Deliver changed YAML to a running node with chalkctl apply-config, preview it with --diff, try it with --try and act on a refusal"
 ---
 
 # Change a node's config
@@ -234,12 +234,186 @@ A node without a previous config refuses the rollback with
 `w1 keeps no previous config of the image it runs; it keeps one once apply-config replaced the
 config the image was installed or upgraded with`.
 
+During a trial, `--rollback` delivers the config from before the trial and ends the trial, as
+[End a trial early](#end-a-trial-early) describes.
+
+## Try a config change
+
+A change can cut chalkctl off from the node, such as a change to the firewall or to the address
+chalkctl reaches. `--try` applies such a change on trial. The node rolls the config back by itself
+at the end of the duration unless chalkctl confirms it first. `--try` takes a duration from 10s to
+24h and has no default:
+
+```console
+$ chalkctl apply-config w1 --secrets secrets.age --try 5m
+w1: config 1 added, 0 removed, 0 changed
+w1: delivering config <version> on trial until <deadline>
+restarted <unit>
+w1 runs config <version> on trial; it rolls back to config <previous-version> by itself unless confirmed within 5m0s
+w1: waiting for a new connection and the node's health to confirm config <version>
+w1 keeps config <version>: the trial is confirmed
+```
+
+The delivery goes through the same checks, storage changes and effects as any delivery. Then
+chalkctl closes the delivery's connection and asks the node to confirm the config over a new one,
+every 3 seconds until the deadline. The connection that delivered the change can survive a
+firewall that drops new connections, so only a new one proves that the node is still reachable.
+
+The node confirms the config once it is healthy, as the health check of a new image's boot finds
+it: chalkd serves, no unit of the boot has failed, and the image's layers find their services
+healthy. [The health check decides whether a counted boot is good](../how-it-works/node/boot-and-rollback.md#the-health-check-decides-whether-a-counted-boot-is-good)
+describes the check.
+
+`--try` delivers one node's config per command. To try a change on several nodes, deliver it to
+each node with `--no-confirm`, then confirm each node with `--confirm`, as
+[Confirm a trial later](#confirm-a-trial-later) describes.
+
+### Units that failed before the trial
+
+Any failed unit keeps the node from confirming the config, even a unit that failed before the
+trial. The check leaves out the units the image lists in
+[`chalkos.upgrade.healthIgnoreUnits`](../reference/image-options.md#chalkosupgradehealthignoreunits),
+and those that `--ignore-unit` names, one unit per flag. Before the delivery, chalkctl warns of
+units that have failed already and that `--ignore-unit` does not name:
+
+```text
+chalkctl: warning: w1: units failed already: late.service; the trial rolls back at its deadline unless they recover, the image ignores them or --ignore-unit leaves them out
+```
+
+chalkctl delivers the config after the warning. The warning lists every failed unit that the
+node's status reports, so it can name a unit that the check leaves out anyway, such as a timer's
+job or a unit the image ignores. To leave a unit out of this trial's check, name it:
+
+```sh
+chalkctl apply-config w1 --secrets secrets.age --try 5m --ignore-unit late.service
+```
+
+The node keeps the trial's ignored units with the trial, so `--confirm` and a restart of chalkd
+leave them out too. `chalkctl status` lists them on the trial's line.
+
+### A config that is not confirmed rolls back
+
+When chalkctl cannot confirm the config by the deadline, the node rolls it back through the same
+steps as `--rollback`. chalkctl waits up to two minutes after the deadline, over new connections,
+for the node to report that the trial ended. It prints how the trial ended and exits non-zero:
+
+```text
+w1 rolled back to config <previous-version> at the trial's deadline
+```
+
+The error starts with `w1: config <version> was not confirmed within its trial:` and ends with the
+last reason, such as `the node is not healthy: units failed: demo.service`. When the node does not
+answer in those two minutes either, the error adds `the node did not answer after the deadline
+either: ...; chalkctl status w1 shows where it stands`.
+
+A config that cuts chalkctl off usually also loses the answer to its delivery. chalkctl does not
+confirm a config whose delivery it saw no answer to. It waits for the rollback in the same way, and
+the error says `the answer to its delivery did not come`.
+
+Interrupting chalkctl, for example with Ctrl-C, leaves the trial open. The error names the
+deadline and the two commands that end the trial earlier.
+
+A delivery on trial that fails after it wrote the config, as when a restart fails, leaves the
+config on trial until the deadline. The error says `config <version> stays on trial until
+<deadline>`, and chalkctl does not try to confirm it. A delivery that fails before it wrote the
+config ends the trial: the node delivers the config from before it again, and the error says
+`config <previous-version> is delivered again, and no trial is open`.
+
+### Confirm a trial later
+
+`--no-confirm` leaves the trial open, for example to test the change by hand. The command ends
+with the two commands that end the trial:
+
+```text
+chalkctl apply-config --confirm w1 keeps it; chalkctl apply-config --rollback w1 rolls it back now
+```
+
+`--confirm` confirms the trial in the same way as `--try`, over new connections and once the node
+is healthy, and tries until the trial's deadline:
+
+```sh
+chalkctl apply-config w1 --secrets secrets.age --try 30m --no-confirm
+chalkctl apply-config w1 --secrets secrets.age --confirm
+```
+
+The node keeps the config on trial, so `--confirm` needs no inventory. It takes no other
+apply-config flags but those that reach the node. A node without a trial refuses with
+`w1 has no open trial to confirm; it runs config <version>`.
+
+### A trial holds back other changes
+
+A trial delivers config documents alone. chalkctl refuses `--try` with `--staged`, `--diff` and
+the layers' payload flags such as `--kubernetes-share`, and with the config that the node runs
+already. The node refuses a config that changes its storage, because a rollback cannot undo that:
+`the config changes the node's storage, volume <name>: <reason>, which a rollback cannot undo;
+deliver it without a trial`.
+
+While a trial is open, the node refuses other changes, so that the trial's rollback returns it to
+what it ran before. It refuses every other delivery, which includes the certificates and shares
+that `chalkctl node renew` and `chalkctl rotate` deliver. It also refuses `chalkctl upgrade` and
+`chalkctl upgrade --rollback`. chalkctl checks first, before it changes anything, and refuses with:
+
+```text
+w1 runs config <version> on trial until <deadline>; confirm it with chalkctl apply-config --confirm w1, or roll it back with chalkctl apply-config --rollback w1, first
+```
+
+`apply-config --diff` still works during a trial.
+
+### End a trial early
+
+`--rollback` during a trial delivers the config from before the trial at once and ends the trial.
+Its output ends with `w1: the trial of config <version> ended`.
+
+A reboot ends an open trial as well. The boot restores the config from before the trial before
+networkd, the firewall and every other service start. Resetting the node therefore undoes a config
+that cut it off. A restart of chalkd keeps the trial and its deadline, and a deadline that passed
+while chalkd was stopped rolls the config back as chalkd starts.
+
+After a trial's rollback, at the deadline, with `--rollback` or at boot, the config that was on
+trial is the node's previous config. `--rollback` then delivers it again, without a trial. To try
+it again, deliver it with `--try`.
+
+### When the rollback at the deadline fails
+
+The image's rules or an output can refuse the rollback at the deadline. The node then keeps the
+trial open and tries the rollback again each minute. `chalkctl status` shows the failure at the end
+of the trial's line:
+
+```text
+; an attempt to roll the config back failed and is tried again each minute: <error>
+```
+
+`--confirm` still keeps the config on trial and stops the retries. Past the deadline it tries for
+two minutes. When a failed attempt changed the node, as when it wrote the config and a restart
+failed, the line reads `an attempt to roll the config back failed after it changed the node and
+is tried again each minute: <error>; apply-config --confirm no longer keeps the config, and
+apply-config --rollback finishes the rollback now`. `--rollback` then finishes the rollback at
+once.
+
+### The record of a trial cannot be read
+
+The node keeps each trial in a record on STATE. When it cannot read that record, `chalkctl status`
+shows:
+
+```text
+the record of a config's trial cannot be read: <why>; other changes are refused until apply-config --rollback restores the previous config
+```
+
+The node then refuses every change and every confirmation, and neither the deadline nor a reboot
+ends the trial. `chalkctl apply-config w1 --secrets secrets.age --rollback` delivers the previous
+config and removes the record. chalkctl first warns which config the rollback delivers. If a
+rollback at the deadline has replaced the config already, that previous config is the one that was
+on trial.
+
 ## If something goes wrong
 
 - `pass the secrets file with --secrets FILE, or --secrets - to read it from standard input`: the
   command ran with a client file. Pass the secrets file.
 - `chalkctl: warning: w1: ...`: chalkd could not evaluate the condition of an effect. It took the
   effect all the same, so a unit restarted that might not have needed to.
+- `w1 runs config <version> on trial until <deadline>; ...`: a trial is open on the node. Confirm
+  it or roll it back first, as [A trial holds back other changes](#a-trial-holds-back-other-changes)
+  describes.
 - `no image is staged to boot next; apply the config to the running image`: `--staged` found no
   staged image. Run the command without it.
 - `--staged delivers config alone; deliver the Kubernetes share to the running image`: `--staged`

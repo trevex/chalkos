@@ -112,6 +112,11 @@ request. Each one undoes one kind of change:
 The node's OS CAs, node certificate, storage and layer payloads stay as they are with either
 rollback.
 
+A config change that might cut chalkctl off from the node, such as a firewall change, goes on trial
+with `chalkctl apply-config w1 --secrets secrets.age --try 5m`. The node rolls it back by itself
+unless chalkctl confirms it over a new connection, and a reboot during the trial boots the config
+from before it. [Try a config change](change-config.md#try-a-config-change) describes it.
+
 ## The node certificate expired
 
 chalkctl refuses the node's certificate as expired, so every command against the node fails. The

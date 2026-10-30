@@ -82,6 +82,29 @@ image ran before the last delivery.
 [Roll back a config change](change-config.md#roll-back-a-config-change) delivers it again. The line
 is missing until a delivery replaced the config the image was installed or upgraded with.
 
+A node that runs a config on trial adds a line after the `config` line:
+
+```text
+config <version> on trial until <deadline>: it rolls back to config <previous-version> unless apply-config --confirm confirms it
+```
+
+The line gains an ending when one of these applies:
+
+- `; its health check leaves out <unit>, ...`: the units that `--ignore-unit` named for this trial.
+  The check leaves them out besides the units the image ignores.
+- `; an attempt to roll the config back failed and is tried again each minute: <error>`: the
+  rollback at the deadline failed, and the node keeps the trial open. `apply-config --confirm`
+  still keeps the config.
+- `; an attempt to roll the config back failed after it changed the node and is tried again each
+  minute: <error>; apply-config --confirm no longer keeps the config, and apply-config --rollback
+  finishes the rollback now`: the failed attempt changed the node, so only a rollback ends the
+  trial.
+
+`the record of a config's trial cannot be read: <why>; other changes are refused until
+apply-config --rollback restores the previous config` takes the line's place when the node cannot
+read the record of its trial.
+[Try a config change](change-config.md#try-a-config-change) describes trials.
+
 ## The platform and image lines name what the node booted
 
 `platform metal (the inventory's)` names the platform the node's image was built for. A node

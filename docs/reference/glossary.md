@@ -511,7 +511,8 @@ The return to the previous image after a new one used up its boot tries without 
 with the failed boot's last log lines, and `chalkctl upgrade` stops. Two more rollbacks run on
 request: [`chalkctl upgrade --rollback`](cli/chalkctl_upgrade.md) boots the image the inactive
 [slot](#slot) still holds, and [`chalkctl apply-config --rollback`](cli/chalkctl_apply-config.md)
-delivers the [previous config](#previous-config) again. See
+delivers the [previous config](#previous-config) again, as the node does by itself at the end of an
+unconfirmed [trial](#trial). See
 [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md).
 
 ## Root hash { #root-hash }
@@ -573,6 +574,15 @@ The machine's Trusted Platform Module 2.0, which seals disk keys to the Secure B
 seals the keys of [STATE](#state), [VAR](#var) and encrypted volumes to [PCR 7](#pcr-7), so they
 unlock without a password only under the same Secure Boot state. See
 [Security model](../how-it-works/node/security.md).
+
+## Trial { #trial }
+<!-- abbr: none -->
+
+A config delivered with `chalkctl apply-config --try`, which the node rolls back to its
+[previous config](#previous-config) at a deadline unless chalkctl confirms it. While it is open, the
+node refuses other deliveries, upgrades and image rollbacks, and a reboot ends it with the config
+from before it. See
+[Config and the inventory](../how-it-works/node/config.md#a-trial-rolls-a-config-back-unless-it-is-confirmed).
 
 ## UKI { #uki }
 <!-- abbr: UKIs -->
