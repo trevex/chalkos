@@ -327,7 +327,8 @@ spec: {table: 300, interfaces: [eth3, eth4], conntrackZone: 1}
 ```
 
 A zone is a number from 1 to 65535 that no other VRF uses. The default VRF and every VRF without
-a zone share zone 0. Giving a VRF a `conntrackZone`, or changing it, drops the VRF's established
+a zone share zone 0. The link of a VRF's NAT64 joins the VRF's zone, so a connection and its
+translation share it. Giving a VRF a `conntrackZone`, or changing it, drops the VRF's established
 and translated connections, as their packets then belong to another zone. Deliver the change when
 the VRF's hosts can reconnect.
 
@@ -393,8 +394,8 @@ in it end and start over. Deliver the change as a trial, as any change of VRFs.
 
 ## Remove a VRF
 
-Remove a VRF's `BGPPeer`, `BGP` and `VRF` documents in one delivery. The rules refuse a `VRF`
-document's removal while a `BGP` or `BGPPeer` document still names the VRF. Once the VRF is gone,
+Remove a VRF's `BGPPeer`, `BGP`, `NAT64`, `Resolver` and `VRF` documents in one delivery. The
+rules refuse a `VRF` document's removal while another document still names the VRF. Once the VRF is gone,
 its links are in the default VRF.
 
 FRR keeps the default VRF's instance while another VRF's runs. The rules therefore refuse a
@@ -425,6 +426,7 @@ refuse what networkd, FRR or nftables would apply otherwise than the documents s
 | `Network 20-both matches links of no VRF and VRF a; the links of one Network are in one VRF` | Split the `Network`, so that each matches the links of one VRF. |
 | `Network 10-swp's Name=swp* may match links of VRF tenant and links outside it; name its links` | Name the links in `Name=`, or put the whole glob into the VRF. |
 | `Network 00-all matches the device of VRF tenant before 00-vrf-tenant; rename it to sort after 00-vrf-tenant` | Rename the `Network`, or narrow its `Name=`. |
+| `Network 00-all matches the link n64-guest of NAT64 guest before 00-n64-guest; rename it to sort after 00-n64-guest` | Rename the `Network`, or narrow its `Name=`. |
 | `Network 10-a is the first to match eth5, so networkd never applies Network 20-b's VRF=mgmt to it; give 10-a VRF=mgmt, rename it to sort after 20-b, or drop 20-b's VRF=` | Take one of the remedies the message lists. |
 | `Network 20-x: Name= holds "eth[0", which is no glob the renderer can match as networkd does` | Write `Name=` without backslashes and bracket expressions. |
 | `BGPPeer leaves: interfaces: swp* matches no link of VRF default, only links of other VRFs` | Give the peer the VRF of its links. |
@@ -437,8 +439,6 @@ refuse what networkd, FRR or nftables would apply otherwise than the documents s
 
 ## Limits
 
-- NAT64 and the resolver do not take VRFs into account yet. A `Resolver` has no VRF, and the
-  firewall opens its port 53 as on a router without VRFs.
 - The kernel looks up the router's own addresses before a VRF's table. A VRF's hosts therefore
   get the kernel's answers from the addresses of the default VRF's links, such as echo replies
   and TCP resets. No socket of the default VRF takes their connections, so chalkd stays out of
@@ -455,6 +455,8 @@ refuse what networkd, FRR or nftables would apply otherwise than the documents s
 
 ## What next
 
+- [Translate and resolve in a VRF](nat64-and-dns.md#translate-and-resolve-in-a-vrf) gives a VRF
+  a NAT64 and a resolver of its own.
 - [VRFs on a router](../how-it-works/router/vrfs.md) explains the rendered units, the removal of
   VRFs, FRR's instances and the state chalkd reads.
 - [Route with BGP](bgp.md) configures an instance, its peers and its policies.

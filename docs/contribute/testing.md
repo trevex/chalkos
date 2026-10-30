@@ -18,7 +18,7 @@ Start at the top of the table and go down only when the level above cannot show 
 | Kind | Where | Proves | Cost |
 | --- | --- | --- | --- |
 | Go unit test | next to the code, `*_test.go` in `pkg/` and `cmd/` | logic, parsing, error paths, command output | seconds |
-| Namespace or disk-image test | `pkg/kubernetes/vip`, `pkg/install/parts_test.go`, `pkg/upgrade/lab_test.go`, the `vxlan-rule` and `router-firewall` checks | network rules, partition tables and file systems written by the real tools | seconds |
+| Namespace or disk-image test | `pkg/kubernetes/vip`, `pkg/install/parts_test.go`, `pkg/upgrade/lab_test.go`, the `vxlan-rule`, `router-firewall`, `router-nat64` and `router-resolvers` checks | network rules, partition tables and file systems written by the real tools | seconds |
 | Evaluation test | `test/nix/eval.nix`, `test/nix/kinds.nix` | the arguments of `mkImages`, option defaults, assertions, what a module sets in an image, config kinds | one evaluation |
 | Build check | `nix/checks/` | what an image build produces: kernel modules, sizes, the bootspec | one image build |
 | End-to-end test | `test/e2e/` | behaviour that needs a booted node: firmware, Secure Boot, the TPM, the initrd, a cluster | minutes and 2 GiB or more per VM |
@@ -65,6 +65,18 @@ run them in isolation:
   connects, pings and spoofs between them to check what the ruleset accepts, forwards and
   translates, that zones and conntrack zones of VRFs keep apart what they should, and that a
   reload replaces the table alone.
+- The `router-nat64` check runs a router image's `chalkos-nat64.service` over the NAT64s of the
+  golden test, one in the default VRF with an explicit pool and one in a VRF with an empty pool.
+  Jool's module cannot load there, so a stub of `jool` keeps the instances per network namespace.
+  The check proves each instance's namespace with forwarding off, its link in its VRF, the
+  addresses and routes, the removal of an older image's instance, routes and namespaces that no
+  file names, the 30-second wait for a VRF's table, a second run that changes nothing, and
+  `stop`. With the VRF example's ruleset, it sends a guest's packet into the NAT64's namespace and
+  a connection out of it, masqueraded to the uplink's address.
+- The `router-resolvers` check runs `chalkos-resolvers.service` with stubs of `systemctl` and
+  `systemd-escape`, which keep each unit's state in files. It proves that the resolvers of VRFs
+  start, reload, restart when their VRF is made anew and stop, and that a VRF without a device or
+  a resolver that does not come up fails the run within its 30-second waits.
 
 Prefer this level for anything about partitions, firewall rules or interfaces.
 
@@ -97,6 +109,8 @@ are `writeShellApplication` scripts, so shellcheck runs on them when they build.
 | `bootspec` | An image's bootspec names the UKI on the ESP and no initrd. |
 | `vxlan-rule` | The VXLAN firewall rule, in network namespaces. |
 | `router-firewall` | A router's firewall unit and rulesets, in network namespaces. |
+| `router-nat64` | A router's `chalkos-nat64.service`, with a stub of `jool`, in network namespaces. |
+| `router-resolvers` | A router's `chalkos-resolvers.service`, with stubs of `systemctl` and `systemd-escape`. |
 | `frr-credentials` | A router's `frr.service` fills its config's passwords in from its credentials, and refuses those FRR would not take. |
 | `rules` | The images' rules compile, their outputs render their examples and pass their checks, and a broken rule, effect, output or diagnostic fails its image. |
 | `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
@@ -121,7 +135,7 @@ the nodes with the real chalkctl. Each check runs one test or a group of them:
 | `e2e-upgrade` | Under Secure Boot, an upgrade that the node pulls through a mirror endpoint, a registry the test serves, with the endpoint's credentials, that boots from slot B and is found healthy, then one streamed from a directory that never becomes healthy and falls back. | 1 |
 | `e2e-kubernetes` | A dual-stack cluster of a control plane and a worker through chalklab: networking, DNS, a private image pulled through a mirror with the node's credentials, renewals and rotations, a reboot. | 2 |
 | `e2e-kubernetes-ha` | Three control planes of an IPv6-only cluster behind a VIP: joins, failover, reinstalls and a rolling upgrade. | 3 |
-| `e2e-router` | Two routers through chalklab, peering unnumbered over BGP with BFD and a password: the session in their status, a default route and the NAT64 prefix learned, a diagnostic, a delivery FRR reloads without ending the session, the Kubernetes API unimplemented, DNS64's answer for `ipv4only.arpa`, and a connection through NAT64 and QEMU's user-mode network to a listener of the test, with its session in the status and in `nat64-sessions`, a rotation of the node CA that gives both routers certificates of the new one, and both routers' session in a VRF with its table, a route imported into the default VRF, the unreachable defaults that end its table, a change of the VRF's table and chalkd still reachable. | 2 |
+| `e2e-router` | Two routers through chalklab, peering unnumbered over BGP with BFD and a password: the session in their status, a default route and the NAT64 prefix learned, a diagnostic, a delivery FRR reloads without ending the session, the Kubernetes API unimplemented, DNS64's answer for `ipv4only.arpa`, and a connection through a NAT64 with an empty pool, in its own namespace, and QEMU's user-mode network to a listener of the test, with its session in the status and in `nat64-sessions`, a rotation of the node CA that gives both routers certificates of the new one, and both routers' session in a VRF with its table, a route imported into the default VRF, the unreachable defaults that end its table, a resolver of the VRF running before and after a change of the VRF's table, and chalkd still reachable. | 2 |
 
 A VM gets 2 CPUs and 2 GiB of memory unless its test asks for less, on a 16 GiB sparse disk.
 The Kubernetes test gives its control plane 2048 MiB and its worker 1024 MiB; the HA test gives
@@ -166,7 +180,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |
 | The router's kinds, outputs or firewall | `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit` |
 | The router's BGP: its kinds, `frr` output, FRR's unit, `pkg/router` | `rules`, `frr-credentials`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
-| The router's NAT64 and resolver: their kinds, the `jool` and `unbound` outputs, their units, `pkg/router` | `rules`, `eval`, `eval-kinds`, `go-unit`, `image-size`, `e2e-router` |
+| The router's NAT64 and resolvers: their kinds, the `jool` and `unbound` outputs, their units, `pkg/router` | `router-nat64`, `router-resolvers`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `image-size`, `e2e-router` |
 | The router's VRFs: the `VRF` kind, `router-networkd`, `chalkos-vrf` | `rules`, `eval`, `eval-kinds`, `go-unit`, `router-vrf`, `router-firewall`, `e2e-router` |
 | `templates/lab` | `template-lab` |
 | `.github/workflows` | `workflows` |

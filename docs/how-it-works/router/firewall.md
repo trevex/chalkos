@@ -33,7 +33,7 @@ It holds these rules, in order:
 | --- | --- |
 | Protected | The loopback interface; established and related connections, after conntrack's invalid packets are dropped; ICMPv6 errors, echo requests, neighbour discovery, router solicitations and advertisements and multicast listener discovery; ICMP errors and echo requests; DHCPv6 replies from the server port to the client port of a link-local address. |
 | chalkd | TCP port 50000 on the interfaces of `Router.spec.management.interfaces`, or on every interface while it is null. |
-| Services | The ports of the router's own services, from the interfaces and sources their documents name: BGP's TCP port 179 of each `BGPPeer` and, for each with `bfd`, BFD's UDP ports 3784 and 3785, from its interfaces, matched as `sdifname` for a peer with `vrf`, or from its address, with its VRF's device as `iifname` for a peer with `vrf`, and 4784 from its address; DNS's UDP and TCP port 53 from the `Resolver`'s `allow` to its `listen`. |
+| Services | The ports of the router's own services, from the interfaces and sources their documents name: BGP's TCP port 179 of each `BGPPeer` and, for each with `bfd`, BFD's UDP ports 3784 and 3785, from its interfaces, matched as `sdifname` for a peer with `vrf`, or from its address, with its VRF's device as `iifname` for a peer with `vrf`, and 4784 from its address; DNS's UDP and TCP port 53 from each `Resolver`'s `allow` to its `listen`, with its VRF's device as `iifname` for a resolver with `vrf`. |
 | Policies to `local` | A jump to the chain of each `FirewallPolicy` whose `to` is `local`, for the interfaces and VRFs of its `from` zone. |
 
 [BGP on a router](bgp.md#the-firewall-accepts-each-peers-ports) shows the rules of the `BGPPeer`
@@ -67,8 +67,9 @@ The forward chain sees what the router routes from one interface to another.
   so a flow whose replies take another router passes too.
 - Once a policy goes between two zones, the chain's policy drops. It accepts established and
   related connections, drops conntrack's invalid packets, and accepts ICMP and ICMPv6 errors. It
-  accepts a connection that a `dnat` rule translated, then hands each connection to the policy of
-  its pair of zones. A connection between zones without a policy is dropped, and so is one from or
+  accepts what each NAT64 translated on its way into and out of the NAT64's link, then a
+  connection that a `dnat` rule translated, and hands each connection to the policy of its pair
+  of zones. A connection between zones without a policy is dropped, and so is one from or
   to an interface in no zone.
 
 From then on, traffic between two interfaces of one zone, such as `lan0` and `vlan10` of the zone
@@ -124,12 +125,17 @@ chain srcnat {
 A `dnat` rule opens its own forwarding: the forward chain accepts the connections it translated,
 whatever the policies say.
 
-Source NAT rules never see a packet a NAT64 translated, nor do the input and forward chains: Jool
-takes the packets at the prerouting hook and sends the translated ones itself. A `dnat` rule runs
-before Jool, so one that matches an address and ports of a NAT64's pool takes the replies of its
-connections first.
-[NAT64 and DNS64 on a router](nat64-and-dns.md#translated-connections-bypass-the-firewalls-nat)
-describes them.
+Each NAT64 runs in a network namespace of its own, so its traffic passes these chains on the way
+into and out of its link `n64-<name>`. The NAT rules leave it alone. The `srcnat` chain starts
+with the NAT64s' lines, ahead of the `NATRule` documents' lines. They accept connections into a
+NAT64's link and from its prefix and explicit pool, and masquerade an empty pool's address to the
+address of the link a connection leaves through. A NAT64 with an empty pool renders the chain
+even without NAT rules. With `dnat` rules, the `dstnat` chain starts with lines that accept
+connections out of a NAT64's link and to its prefix and explicit pool. The renderer refuses a
+`dnat` rule whose destination lies in a prefix or pool, and a rule that translates to an address
+of a pool.
+[NAT64 and DNS64 on a router](nat64-and-dns.md#the-firewall-around-the-nat64-links) shows the
+lines.
 
 ## Zones of VRFs
 
@@ -171,15 +177,16 @@ For the VRF `guest` of the example:
 ```text
 chain ct-prerouting {
 	type filter hook prerouting priority raw; policy accept;
-	iifname { "eth3", "eth4" } ct zone set 1 comment "VRF guest"
+	iifname { "eth3", "eth4", "n64-guest" } ct zone set 1 comment "VRF guest"
 }
 chain ct-output {
 	type filter hook output priority raw; policy accept;
-	oifname { "eth3", "eth4" } ct zone set 1 comment "VRF guest"
+	oifname { "eth3", "eth4", "n64-guest" } ct zone set 1 comment "VRF guest"
 }
 ```
 
-The chains match the VRF's links, as prerouting's first pass, the one with the link,
+The link of the VRF's NAT64, `n64-guest`, joins the zone, so a guest's connection and its
+translation share it. The chains match the VRF's links, as prerouting's first pass, the one with the link,
 decides the packet's connection. In output, the router's own packet in a VRF passes first with
 the VRF's device, untracked, and then with the link. Each VRF gets a rule of its own, as an
 nftables map refuses keys whose globs overlap. A VRF with a zone but no links renders no rule, and
@@ -230,10 +237,7 @@ unit, which loads the new one.
 - The kernel's rule for the local table comes before the VRFs' tables. A packet from a VRF's link
   to an address of a default VRF's link reaches the input chain with the VRF's device as
   `iifname`, and the kernel answers it, such as with an echo reply or a TCP reset.
-- The `Resolver`'s port 53 opens without regard to VRFs.
 - The policies do not filter the connections a NAT64 translates.
-- A `dnat` rule that matches an address and ports of a NAT64's pool takes the replies of its
-  connections before Jool does.
 
 ## Related pages
 

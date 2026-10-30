@@ -1,6 +1,6 @@
 ---
 title: "VRFs on a router"
-description: "How a router image runs VRFs: management in the default VRF, the units networkd gets, the unreachable defaults, chalkos-vrf, FRR's instances, the firewall and chalkd"
+description: "How a router image runs VRFs: management in the default VRF, the units networkd gets, the unreachable defaults, chalkos-vrf, FRR's instances, the firewall, NAT64s and resolvers in VRFs, and chalkd"
 ---
 
 # VRFs on a router
@@ -245,6 +245,25 @@ A `FirewallZone` holds whole VRFs in `vrfs` or single links of a VRF in `interfa
 import into or out of such a VRF. [The router's firewall](firewall.md#zones-of-vrfs) shows how
 the ruleset matches them.
 
+## NAT64s and resolvers join their VRFs
+
+A `NAT64` with `vrf` runs in a network namespace of its own, as every NAT64 does. Its link
+`n64-<name>` is a member of the VRF that no `VRF` document names: `chalkos-nat64.service` puts it
+into the VRF's device itself, and the output `networkd` renders a `.network` that leaves it to the
+unit. The VRF's table routes the NAT64's prefix and explicit pool to the link, and the forward chain matches
+the link's packets by `meta sdifname`. The renderer adds the link to the VRF's conntrack zone, so
+a connection and its translation share the zone.
+[Each instance runs in a namespace of its own](nat64-and-dns.md#each-instance-runs-in-a-namespace-of-its-own)
+shows the path of a packet.
+
+A `Resolver` with `vrf` runs as `unbound@<vrf>.service`. Its unit sets
+`BindNetworkInterface=<vrf>`, so systemd binds each of Unbound's sockets to the VRF's device: the
+resolver answers on the VRF's links and sends its queries through the VRF's table, while the unit
+keeps Unbound's hardening. `ip vrf exec` would need privileges that the hardening takes away. The
+unit is bound to the VRF's device unit, and stops when networkd removes the device.
+`chalkos-resolvers.service` starts it again once networkd has created the VRF anew. The input
+chain opens the resolver's port 53 with the VRF's device as `iifname`.
+
 ## chalkd reads the VRFs' state
 
 `chalkctl status` lists the sessions of every VRF. chalkd asks vtysh for
@@ -260,10 +279,11 @@ running document is refused with `the node has no VRF <name>`.
 The diagnostics `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers` take a `vrf` argument,
 `default` unless it is given, and pass it to vtysh as `vrf <name>`.
 
+The status lists each VRF's resolver after the default VRF's, as `resolver <vrf>: running`. chalkd
+asks systemd whether `unbound@<vrf>.service` is active.
+
 ## Limits
 
-- NAT64 and the resolver do not take VRFs into account yet, and the `Resolver`'s port 53 opens
-  without regard to VRFs.
 - The kernel's rule for the local table comes before the VRFs' tables. A VRF's packet to an
   address of a default VRF's link is delivered to the router, and the kernel answers it, such as
   with an echo reply or a TCP reset. chalkd stays out of reach, as no socket of the default VRF

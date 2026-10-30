@@ -137,7 +137,7 @@ no other table of chalkos filters the router's traffic.
 | 179 | TCP | BGP, FRR's bgpd | the interfaces of each `BGPPeer` of `interface` or `interfaces`, matched as `sdifname`, the link a packet came in on, for a peer with `vrf`; and from the address of each of `address`, with the VRF's device as `iifname` for a peer with `vrf` |
 | 3784, 3785 | UDP | BFD, FRR's bfdd: single-hop control and echo | as port 179, for each `BGPPeer` with `bfd` |
 | 4784 | UDP | BFD, FRR's bfdd: multi-hop control | from the address of each `BGPPeer` of `address` with `bfd`, as port 179 |
-| 53 | UDP and TCP | DNS, Unbound | from the ranges of the `Resolver`'s `allow` to the addresses of its `listen` |
+| 53 | UDP and TCP | DNS, Unbound | from the ranges of each `Resolver`'s `allow` to the addresses of its `listen`; for a resolver with `vrf`, on the links of its VRF alone, with the VRF's device as `iifname` |
 
 The table also accepts the loopback interface, established and related connections, ICMP and
 ICMPv6 errors and echo requests, ICMPv6 neighbour discovery, router solicitations and
@@ -150,6 +150,16 @@ build warns of each one set.
 | Table | Owner | Contents |
 | --- | --- | --- |
 | `inet chalkos` | `chalkos-firewall.service` | The `AddressSet` sets, a chain per `FirewallPolicy`, the conntrack zones of the VRFs that have one, the reverse-path filter, the `input` and `forward` chains and the NAT chains, which the output `router-nftables` renders. |
+
+Each NAT64 runs in a network namespace of its own, joined to its VRF by the link `n64-<name>`, so
+its traffic passes the table. Lines with the comment `NAT64 <name>` handle it:
+
+| Chain | Lines of each NAT64 |
+| --- | --- |
+| `forward` | Ahead of the policies, once the chain drops: accept IPv6 from the prefix and IPv4 from the pool, or from the link's inner address for an empty pool, out of the link, matched as `sdifname` for a NAT64 with `vrf`; accept IPv6 to the prefix and IPv4 to an explicit pool into the link. |
+| `srcnat` | Ahead of the `NATRule` lines: accept connections into the link and from the prefix and an explicit pool; for an empty pool, masquerade the inner address, TCP and UDP to the ports 61001 to 65535. |
+| `dstnat` | With `dnat` rules, ahead of them: accept connections out of the link and to the prefix and an explicit pool. |
+| `ct-prerouting`, `ct-output` | The link joins the conntrack zone of the NAT64's VRF. |
 
 ## Connections a node makes
 

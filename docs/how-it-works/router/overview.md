@@ -20,13 +20,13 @@ parts:
 | Part | What it is |
 | --- | --- |
 | Kinds | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `NAT64`, `Resolver` and `VRF`, which only router images accept. |
-| Outputs | `router-sysctl`, the kernel settings of the `Router` document; `router-nftables`, the firewall of the firewall kinds and the ports of the `BGPPeer` and `Resolver` documents; `frr`, FRR's config of the BGP kinds; `jool`, an instance of Jool per `NAT64`; `networkd`, which renders the `VRF` documents beside networkd's own; and `unbound`, Unbound's config of the `Resolver`. |
-| Effects | `router-sysctl` restarts `systemd-sysctl.service`, `router-nftables` reloads `chalkos-firewall.service`, `frr` reloads `frr.service`, `vrf` reloads `chalkos-vrf.service`, which removes the VRFs networkd keeps, `jool` reloads `chalkos-nat64.service` and `unbound` reloads `unbound.service`. `unbound-start` restarts `unbound.service` when a `Resolver` is added or removed. |
+| Outputs | `router-sysctl`, the kernel settings of the `Router` document; `router-nftables`, the firewall of the firewall kinds, the ports of the `BGPPeer` and `Resolver` documents and the lines around the NAT64s' links; `frr`, FRR's config of the BGP kinds; `jool`, an instance of Jool and its link per `NAT64`; `networkd`, which renders the `VRF` documents and a unit per NAT64's link beside networkd's own; and `unbound`, Unbound's config of each `Resolver`. |
+| Effects | `router-sysctl` restarts `systemd-sysctl.service`, `router-nftables` reloads `chalkos-firewall.service`, `frr` reloads `frr.service`, `vrf` reloads `chalkos-vrf.service`, which removes the VRFs networkd keeps, `jool` reloads `chalkos-nat64.service`, `unbound` reloads `unbound.service` and `resolvers` reloads `chalkos-resolvers.service`, which runs the VRFs' resolvers, when `unbound` or `networkd` changes. `unbound-start` restarts `unbound.service` when the default VRF's `Resolver` is added or removed. |
 | Firewall | The nftables table `inet chalkos` in place of NixOS's firewall. |
 | FRR | zebra, bgpd, bfdd and staticd, and vtysh, which chalkd asks for the router's BGP sessions and paths. |
-| Jool | The kernel module of the NAT64 instances, and `jool`, with which `chalkos-nat64.service` loads them and chalkd reads their sessions and pools. |
-| Unbound | The resolver, and `unbound-control`, which reloads it and tells chalkd whether it runs. |
-| Diagnostics | `traceroute`, the routers on the path to an address; `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers`, FRR's views of BGP and BFD; and `nat64-sessions`, a NAT64 instance's sessions. |
+| Jool | The kernel module of the NAT64 instances, which run in network namespaces of their own, and `jool`, with which `chalkos-nat64.service` loads them and chalkd, through `nsenter`, reads their sessions and pools. |
+| Unbound | The resolvers: `unbound.service` for the default VRF and `unbound@<vrf>.service` for each other VRF, and `unbound-control`, which reloads them and tells chalkd whether the default VRF's runs. |
+| Diagnostics | `traceroute`, the routers on the path to an address; `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers`, FRR's views of BGP and BFD; and `nat64-sessions`, a NAT64 instance's sessions, read in its network namespace. |
 
 [The router's firewall](firewall.md) describes the table, [BGP on a router](bgp.md) FRR's config,
 [VRFs on a router](vrfs.md) the VRFs and [NAT64 and DNS64 on a router](nat64-and-dns.md) Jool's
@@ -96,10 +96,16 @@ flowchart LR
     config --> frr["frr.service fills in the passwords and starts FRR"]
     firewall --> frr
     networkd --> frr
-    firewall --> nat64["chalkos-nat64 loads the NAT64 instances and their routes"]
+    firewall --> nat64["chalkos-nat64 runs the NAT64s in their namespaces and routes to them"]
+    networkd --> nat64
     nat64 --> frr
-    nat64 --> unbound["unbound.service starts the resolver"]
+    nat64 --> unbound["unbound.service starts the default VRF's resolver"]
+    nat64 --> resolvers["chalkos-resolvers starts the VRFs' resolvers"]
+    networkd --> resolvers
 ```
+
+`chalkos-nat64` runs after networkd, because a NAT64's link joins a VRF that networkd creates.
+It waits up to 30 seconds for each such VRF's device.
 
 `chalkos-firewall.service` loads the rendered ruleset. When the node has none, it loads a fallback
 ruleset that the image carries. That happens in maintenance mode, before the first install, and
@@ -123,8 +129,9 @@ leaves the loaded one in place and fails the delivery. chalkd still restarts
 `systemd-sysctl.service`, so the delivery's kernel settings apply with the old table.
 A delivery that changes FRR's config reloads `frr.service` in the same call as the firewall, and
 after it. [BGP on a router](bgp.md#a-delivery-reloads-frr) describes that reload. The same call
-reloads `chalkos-nat64.service` after the firewall and before FRR, so a NAT64 prefix's route exists
-before FRR announces it, and `unbound.service` after `chalkos-nat64.service`.
+reloads `chalkos-nat64.service` after the firewall and networkd and before FRR, so a NAT64
+prefix's route exists before FRR announces it. `unbound.service` and `chalkos-resolvers.service`
+reload after `chalkos-nat64.service`.
 [NAT64 and DNS64 on a router](nat64-and-dns.md#a-delivery-reloads-unbound-and-keeps-its-cache)
 describes both.
 
