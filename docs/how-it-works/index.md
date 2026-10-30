@@ -198,6 +198,15 @@ networks and filter what passes.
 
     [:octicons-arrow-right-24: Read](router/bgp.md)
 
+-   :material-call-split: __VRFs on a router__
+
+    ---
+
+    Why management stays in the default VRF, the units networkd gets, chalkos-vrf, FRR's
+    instance per VRF, imported routes and the state chalkd reads.
+
+    [:octicons-arrow-right-24: Read](router/vrfs.md)
+
 -   :material-swap-horizontal: __NAT64 and DNS64 on a router__
 
     ---

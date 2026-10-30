@@ -6,8 +6,9 @@ description: "How a router image runs BGP: FRR, the config the output frr render
 # BGP on a router
 
 A router image runs BGP with FRR: its daemons zebra, bgpd, bfdd and staticd, and vtysh, its shell.
-The output `frr` renders FRR's whole config from the node's `BGP`, `BGPPeer`, `PrefixList`,
-`CommunityList` and `RoutingPolicy` documents. No document holds FRR commands of its own.
+The output `frr` renders FRR's whole config, an instance per VRF, from the node's `BGP`, `BGPPeer`,
+`PrefixList`, `CommunityList`, `RoutingPolicy` and `VRF` documents. No document holds FRR commands
+of its own.
 
 ## The output frr renders FRR's whole config
 
@@ -69,13 +70,13 @@ The config follows these rules:
 
 | Documents | Config |
 | --- | --- |
-| `BGP` | `router bgp`, with `frr defaults traditional` and every count and timer of the document written out, so FRR's defaults decide nothing the document sets. Both address families list the document's networks of the family and its `maximum-paths`. |
-| `BGPPeer` | A peer group `peer-<name>`, and a neighbour in it for the peer's address, its interface or each link its `interfaces` match. |
+| `BGP` | `router bgp <asn>`, or `router bgp <asn> vrf <name>` for a document with `vrf`, with `frr defaults traditional` and every count and timer of the document written out, so FRR's defaults decide nothing the document sets. Both address families list the document's networks of the family and its `maximum-paths`. |
+| `BGPPeer` | A peer group `peer-<name>` in the block of its VRF's instance, and a neighbour in it for the peer's address, its interface or each link its `interfaces` match. |
 | A peer's family | `activate`, and a route-map in each direction: the family's policy, or `accept-all` without one. FRR's `ebgp-requires-policy` then always holds. |
 | `PrefixList` | `ip prefix-list` or `ipv6 prefix-list pl-<name>`, the entries at sequence numbers 5, 10, 15 and on. |
 | `CommunityList` | `bgp community-list standard cl-<name>`, or `bgp large-community-list` for large communities. |
 | `RoutingPolicy` | `route-map rp-<name>`, the terms at sequence numbers 10, 20, 30 and on, and the default at 65535. A term's AS path and the communities it removes get lists of their own, `asp-<policy>-<seq>` and `rm-<policy>-<seq>`. |
-| `bfd` of a peer | The profile `chalkos` of the `BGP` document's BFD timers. |
+| `bfd` of a peer | The profile of its instance's BFD timers: `chalkos` for the default VRF, `chalkos-<vrf>` for another. |
 
 The prefixes keep the names apart. FRR names peers and interfaces alike, and without them a peer
 group could take the name of an interface or of another list. The renderer refuses an interface
@@ -92,9 +93,11 @@ A peer's `interfaces` expand when the config renders. Each name or glob matches 
 those names left out. The leaf example's `interfaces: ["swp*"]` gives a session on each of `swp1`
 and `swp2`, which its documents `20-swp1` and `20-swp2` name. Its document `30-swp` matches the
 glob `swp*` and names no link of its own. A link that only a `Link` or `NetDev` names gets no
-session.
+session. A glob expands over the links of the peer's VRF alone, as
+[VRFs on a router](vrfs.md#frr-runs-an-instance-per-vrf) explains.
 
-A peer's single `interface` renders as it is written, whether or not a `Network` names it. A name
+A peer's single `interface` renders as it is written, whether or not a `Network` names it, and
+must be a link of the peer's VRF. A name
 that reads as an address, such as `fe80::1`, is refused in both, because FRR could not tell the
 interface from a neighbour's address. Two peers that name one session are refused too.
 
@@ -184,18 +187,22 @@ ip saddr { 203.0.113.254/32 } tcp dport { 179 } accept comment "BGPPeer transit"
 ```
 
 These rules come after chalkd's port and before the policies to `local`, which cannot close them.
-[The router's firewall](firewall.md#the-input-chain) describes the chain.
+[The router's firewall](firewall.md#the-input-chain) describes the chain. A peer of a VRF is
+accepted on that VRF's links by `meta sdifname`, as
+[VRFs on a router](vrfs.md#the-firewall-accepts-a-vrf-peers-ports-on-its-links) explains.
 
 ## chalkd reads FRR's state
 
-`chalkctl status` shows a router's BGP sessions. chalkd asks vtysh for `show bgp neighbors json`,
-within 5 seconds, and reports each session's peer, neighbour, state, uptime, routes received and
-sent, and BFD state. It finds a session's `BGPPeer` by the name of its peer group. When vtysh
-fails, the status gives its error, and the status's other parts stand.
+`chalkctl status` shows a router's BGP sessions. chalkd asks vtysh for
+`show bgp vrf all neighbors json`, within 5 seconds, and reports each session's VRF, peer,
+neighbour, state, uptime, routes received and sent, and BFD state. It finds a session's `BGPPeer`
+by the name of its peer group. When vtysh fails, the status gives its error, and the status's
+other parts stand.
 
 The `Routes` call lists the kernel's routes, which chalkd reads through netlink, and the paths BGP
-selected, from `show bgp ipv4 unicast detail json` and its IPv6 twin. A route of several next hops
-lists each with its weight, and an IPv4 route over an IPv6 next hop names it.
+selected, from `show bgp ipv4 unicast detail json` and its IPv6 twin. For another VRF it lists that
+VRF's table and asks for `show bgp vrf <name> ipv4 unicast detail json`. A route of several next
+hops lists each with its weight, and an IPv4 route over an IPv6 next hop names it.
 `chalkctl node routes` prints both. A node of another image answers that the router layer is not
 in its image.
 
@@ -223,6 +230,7 @@ of `frrvty`, the group of FRR's sockets, and need a reader.
 
 - [Route with BGP](../../router/bgp.md) configures BGP.
 - [How a router works](overview.md): the layer's outputs and the boot order.
+- [VRFs on a router](vrfs.md): an instance per VRF and imported routes.
 - [Config kinds](../../reference/kinds.md#router-chalkos-dev) for every field of the BGP kinds.
 - [Built-ins](../../reference/builtins.md#outputs-router-images) for the output, its effect, the
   rules and the diagnostics.

@@ -34,7 +34,9 @@ prefix. Turn router advertisements off on each interface whose default route sho
 
 ## Give the router a BGP instance
 
-A node has one `BGP` document at most. It gives the router its AS number and router ID:
+A node has one `BGP` document per VRF. This page uses the default VRF, whose document has no
+`vrf`; [Separate routing with VRFs](vrfs.md) runs instances in others. The document gives the
+instance its AS number and router ID:
 
 ```yaml
 apiVersion: router.chalkos.dev/v1alpha1
@@ -92,6 +94,9 @@ peer whose `families` gives `ipv4` too.
   `[Match]` sections' `Name=` of the node's `Network` documents. A link that no `Network` names
   that way gets no session, also when the interface exists.
 - `interface: eth1` names one link and runs its session whether or not a `Network` names it.
+
+Both stand for links of the peer's VRF. Here that is the default VRF, which holds the links that
+no `VRF` document holds.
 
 `description` holds up to 80 printable ASCII characters. An `@` and two spaces in a row are
 refused.
@@ -253,19 +258,19 @@ chalkctl status r1 --secrets secrets.age
 
 ```text
 bgp:
-  PEER     NEIGHBOR       STATE        UPTIME  RECEIVED  SENT  BFD
-  fabric   eth1           Established  1h2m3s  1         2     up
-  fabric   eth2           Idle         -       0         0     down
-  transit  203.0.113.254  Active       -       0         0     -
+  VRF      PEER     NEIGHBOR       STATE        UPTIME  RECEIVED  SENT  BFD
+  default  fabric   eth1           Established  1h2m3s  1         2     up
+  default  fabric   eth2           Idle         -       0         0     down
+  default  transit  203.0.113.254  Active       -       0         0     -
 ```
 
-Each line is a session: on a link, named by its interface, or with an address. `RECEIVED` counts
-the routes the router accepted from the neighbour and `SENT` those it sends, over every family.
-`STATE` is BGP's state of the session, and a session in any state but `Established`, such as
-`Active` or `Idle`, exchanges no routes. `bgp: no sessions` means the router has no BGP instance
-or no session. `bgp: unknown:` gives vtysh's error when chalkd could not read FRR's state, such as
-`failed to connect to any daemons` while FRR does not run. A node in maintenance mode runs no
-FRR.
+Each line is a session of a VRF: on a link, named by its interface, or with an address.
+`RECEIVED` counts the routes the router accepted from the neighbour and `SENT` those it sends,
+over every family. `STATE` is BGP's state of the session, and a session in any state but
+`Established`, such as `Active` or `Idle`, exchanges no routes. `bgp: no sessions` means the
+router has no BGP instance or no session. `bgp: unknown:` gives vtysh's error when chalkd could
+not read FRR's state, such as `failed to connect to any daemons` while FRR does not run. A node
+in maintenance mode runs no FRR.
 
 `chalkctl node routes` shows the kernel's routes and the paths BGP selected, to a prefix and
 within it when one is given, so `::/0` lists every IPv6 route. A leaf `r2` has sessions to two
@@ -292,7 +297,7 @@ BGP PREFIX            BEST  AS PATH  PEER   NEXT HOPS                  LOCAL PRE
 
 The kernel's routes from BGP have two next hops each, one for each path BGP installed. `*` marks
 the best path of a prefix, and `local` a path of the router's own networks. `--protocol` and
-`--table` narrow the kernel's routes, as
+`--table` narrow the kernel's routes, and `--vrf` lists another VRF's table and paths, as
 [chalkctl node routes](../reference/cli/chalkctl_node_routes.md) describes.
 
 The diagnostics `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers` print FRR's own views
@@ -304,8 +309,8 @@ chalkctl node diag r1 --secrets secrets.age bgp-route prefix=::/0
 chalkctl node diag r1 --secrets secrets.age bgp-route family=ipv4 prefix=192.0.2.0/24
 ```
 
-`bgp-route` asks for IPv6 unless `family` says `ipv4`. The status, the routes and these
-diagnostics need a reader client.
+`bgp-route` asks for IPv6 unless `family` says `ipv4`, and each asks the default VRF unless
+`vrf` names another. The status, the routes and these diagnostics need a reader client.
 
 ## Change the AS number
 
@@ -319,6 +324,11 @@ Deliver the config without the `BGP` and `BGPPeer` documents first, which ends e
 a `BGPPeer` needs a `BGP` document. Then deliver it with the new number. The rule compares the
 `BGP` document of one name. A `BGP` document of another name replaces the old one in one
 delivery, AS number included, and the change of AS ends the sessions too.
+
+The AS number of each VRF's instance stays the same way, by the name of its `BGP` document.
+While an instance of another VRF runs, the delivery without the default VRF's `BGP` document
+leaves out the other VRFs' `BGP` documents too, as
+[Separate routing with VRFs](vrfs.md#remove-a-vrf) explains.
 
 ## What next
 

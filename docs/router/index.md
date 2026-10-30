@@ -1,6 +1,6 @@
 ---
 title: "Run a router"
-description: "Set up chalkos nodes as routers: forwarding, the node API's interfaces, the firewall, NAT, BGP, NAT64 and DNS"
+description: "Set up chalkos nodes as routers: forwarding, the node API's interfaces, the firewall, NAT, BGP, VRFs, NAT64 and DNS"
 ---
 
 # Run a router
@@ -9,8 +9,8 @@ These pages are for operators who run nodes of a router image, one whose variant
 `router = true`. They build on [Operate nodes](../operate/index.md): a router installs, upgrades
 and recovers like any node, and its interfaces and addresses are `Network` documents as on any
 node. A router's own documents, of `router.chalkos.dev`, set how it forwards, what its firewall
-lets through, whom it exchanges routes with over BGP, and how it translates IPv6 to IPv4 and
-resolves names.
+lets through, whom it exchanges routes with over BGP, which links share a routing table, and how
+it translates IPv6 to IPv4 and resolves names.
 
 <div class="grid cards" markdown>
 
@@ -40,6 +40,15 @@ resolves names.
     policies and check the sessions.
 
     [:octicons-arrow-right-24: Read](bgp.md)
+
+-   :material-call-split: __Separate routing with VRFs__
+
+    ---
+
+    Put links into VRFs with tables of their own, run a BGP instance in each and import routes
+    between them, while the node API stays in the default VRF.
+
+    [:octicons-arrow-right-24: Read](vrfs.md)
 
 -   :material-swap-horizontal: __Translate to IPv4 and resolve names__
 

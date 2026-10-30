@@ -47,6 +47,7 @@ nav = [
     "router/set-up.md",
     "router/firewall-and-nat.md",
     "router/bgp.md",
+    "router/vrfs.md",
     "router/nat64-and-dns.md",
   ] },
   { "Build images" = [
@@ -92,6 +93,7 @@ nav = [
       "how-it-works/router/overview.md",
       "how-it-works/router/firewall.md",
       "how-it-works/router/bgp.md",
+      "how-it-works/router/vrfs.md",
       "how-it-works/router/nat64-and-dns.md",
     ] },
   ] },
