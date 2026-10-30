@@ -25,12 +25,14 @@ let
       cel.documents c apiVersions.router "Resolver"
     }, size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == null)))";
   # Starts the resolver of each VRF with a rendered config that does not run, reloads those that
-  # run and stops those without a config; with the argument stop, it stops all of them. networkd
-  # creates a VRF's device without waiting, and a unit bound to a device that never comes waits
-  # for it until the device's job times out, so the script waits 30 seconds at most for the
-  # devices and 30 more for the resolvers it started, and fails naming those that are not
-  # running then; a start still queued goes on once the device appears. systemctl and
-  # systemd-escape come from the unit's PATH.
+  # run and stops those without a config; with the argument stop, it stops all of them. A VRF
+  # networkd created anew, whose device systemd saw after the resolver started, stops the resolver
+  # bound to the old device, maybe only after the script looked: such a resolver restarts, and one
+  # that no longer runs after the reloads starts. networkd creates a VRF's device without waiting,
+  # and a unit bound to a device that never comes waits for it until the device's job times out,
+  # so the script waits 30 seconds at most for the devices and 30 more for the resolvers it
+  # started, and fails naming those that are not running then; a start still queued goes on once
+  # the device appears. systemctl and systemd-escape come from the unit's PATH.
   reconcile = pkgs.writeShellApplication {
     name = "chalkos-resolvers";
     runtimeInputs = [ pkgs.coreutils ];
@@ -38,6 +40,7 @@ let
       dir=${dir}
       declare -A want=()
       failed=()
+      reloaded=()
       started=()
       if [[ ''${1:-} != stop ]]; then
         shopt -s nullglob
@@ -48,40 +51,65 @@ let
         shopt -u nullglob
       fi
       deadline=$((SECONDS + 30))
-      for vrf in "''${!want[@]}"; do
-        unit=$(systemd-escape --template=unbound@.service "$vrf")
-        if systemctl is-active --quiet "$unit"; then
-          systemctl reload "$unit" || failed+=("reload $unit")
-          continue
-        fi
+      prop() { systemctl show --value --property="$2" "$1"; }
+      # Starts, or with restart restarts, the resolver of the VRF $1 once its device exists.
+      launch() {
+        local vrf=$1 unit=$2 verb=$3
         until [[ -e /sys/class/net/$vrf ]] || ((SECONDS >= deadline)); do
           sleep 0.2
         done
         if [[ ! -e /sys/class/net/$vrf ]]; then
-          failed+=("start $unit, whose VRF has no device")
-          continue
+          failed+=("$verb $unit, whose VRF has no device")
+          return
         fi
         systemctl reset-failed "$unit" 2>/dev/null || true
-        if systemctl start --no-block "$unit"; then
+        if systemctl "$verb" --no-block "$unit"; then
           started+=("$unit")
         else
-          failed+=("start $unit")
+          failed+=("$verb $unit")
         fi
+      }
+      for vrf in "''${!want[@]}"; do
+        unit=$(systemd-escape --template=unbound@.service "$vrf")
+        if ! systemctl is-active --quiet "$unit"; then
+          launch "$vrf" "$unit" start
+          continue
+        fi
+        device=sys-subsystem-net-devices-$(systemd-escape "$vrf").device
+        if [[ $(prop "$device" ActiveState) != active ]] ||
+          (($(prop "$device" ActiveEnterTimestampMonotonic) > $(prop "$unit" ActiveEnterTimestampMonotonic))); then
+          launch "$vrf" "$unit" restart
+          continue
+        fi
+        if systemctl reload "$unit"; then
+          reloaded+=("$vrf")
+        else
+          failed+=("reload $unit")
+        fi
+      done
+      for vrf in "''${reloaded[@]}"; do
+        unit=$(systemd-escape --template=unbound@.service "$vrf")
+        systemctl is-active --quiet "$unit" || launch "$vrf" "$unit" start
       done
       deadline=$((SECONDS + 30))
       for unit in "''${started[@]}"; do
-        state=
+        # Each unit is asked at least once, also after the wait for another used up the deadline.
+        state=$(systemctl is-active "$unit") || true
         until [[ $state == active || $state == failed ]] || ((SECONDS >= deadline)); do
+          sleep 0.2
           state=$(systemctl is-active "$unit") || true
-          [[ $state == active || $state == failed ]] || sleep 0.2
         done
-        [[ $state == active ]] || failed+=("start $unit, which is $state")
+        [[ $state == active ]] || failed+=("start $unit, which is $state ($(prop "$unit" SubState))")
       done
       while read -r unit _; do
         [[ -n $unit ]] || continue
         vrf=$(systemd-escape --unescape --instance "$unit")
         if [[ -z ''${want[$vrf]+x} ]]; then
-          systemctl stop "$unit" || failed+=("stop $unit")
+          if systemctl stop "$unit"; then
+            systemctl reset-failed "$unit" 2>/dev/null || true
+          else
+            failed+=("stop $unit")
+          fi
         fi
       done < <(systemctl list-units --plain --no-legend --all 'unbound@*.service')
       if ((''${#failed[@]} > 0)); then
