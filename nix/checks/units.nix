@@ -522,7 +522,7 @@ in
     '';
 
   # chalkos-vrf in a network namespace: it removes the VRFs that no .netdev of Kind=vrf declares
-  # and those whose table changed, flushes the unreachable defaults of their tables, keeps a
+  # and those whose table changed, flushes the unreachable defaults of their tables alone, keeps a
   # declared VRF with its member, the unreachable defaults of its table and every link of another
   # kind, and with no rendered units, as in maintenance mode, removes every VRF the rendered units
   # declared. It reads /etc's units before the rendered ones, by name, as networkd does. When it
@@ -573,11 +573,14 @@ in
       ip link add d0 type dummy
       ip link set d0 master keep
       # The unreachable defaults that networkd installs into each VRF's table, which stay in the
-      # table when the VRF goes.
+      # table when the VRF goes, and unreachable routes of another prefix, which are not
+      # networkd's defaults.
       for table in 100 200 400; do
         ip -4 route add unreachable default metric 4278198272 table "$table"
         ip -6 route add unreachable default metric 4278198272 table "$table"
       done
+      ip -4 route add unreachable 198.51.100.0/24 table 400
+      ip -6 route add unreachable 2001:db8::/32 table 400
       ${script} || fail "chalkos-vrf failed"
       exists keep || fail "removed a VRF its .netdev declares"
       ip -d link show keep | grep -q 'vrf table 100' || fail "changed the table of a declared VRF"
@@ -586,9 +589,12 @@ in
         ip "$family" route show table 100 | grep -q '^unreachable default' ||
           fail "removed the unreachable default ($family) of a declared VRF's table"
         for table in 200 400; do
-          [ -z "$(ip "$family" route show table "$table")" ] ||
+          if ip "$family" route show table "$table" | grep -q '^unreachable default'; then
             fail "kept the unreachable default ($family) of table $table, whose VRF it removed"
+          fi
         done
+        [ "$(ip "$family" route show table 400 | wc -l)" = 1 ] ||
+          fail "flushed more than the unreachable default ($family) of table 400"
       done
       if exists moved; then fail "kept a VRF whose table changed"; fi
       if exists gone; then fail "kept a VRF that no .netdev of Kind=vrf declares"; fi
