@@ -1298,7 +1298,7 @@ resolver.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `peers` | list of BGPPeerStatus | The router's BGP sessions, by BGPPeer document and then by interface or address. |
+| `peers` | list of BGPPeerStatus | The router's BGP sessions, by VRF, the default first, then by BGPPeer document and by interface or address. |
 | `bgp_error` | string | Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is then empty. |
 | `nat64` | list of NAT64Status | The router's NAT64 instances, one per Jool instance, which a NAT64 document names, by name. |
 | `nat64_error` | string | Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then empty. |
@@ -1308,9 +1308,10 @@ Field types: [BGPPeerStatus](#router-message-bgppeerstatus), [NAT64Status](#rout
 
 ### Routes { #router-method-routes }
 
-Routes lists the routes in the node's kernel, of the main table unless another is asked for,
-and the paths its BGP instance selected, each within an address range when one is given.
-Available in normal mode to readers, on images with the router layer.
+Routes lists the routes in the node's kernel, of the main table unless a VRF or another table
+is asked for, and the paths the BGP instance of that VRF selected, each within an address
+range when one is given. Available in normal mode to readers, on images with the router
+layer.
 
 Request: RoutesRequest. Response: RoutesResponse.
 
@@ -1322,7 +1323,8 @@ The request of Routes.
 | ----- | ---- | ----------- |
 | `prefix` | string | An address range, such as 2001:db8::/32: only the routes to it and to ranges within it. Empty for every route. |
 | `protocol` | string | Only the kernel's routes of this protocol: kernel, boot, static, ra, dhcp, bgp or another the kernel names, or its number. BGP's paths are listed for bgp and for an empty protocol alone. |
-| `table` | string | The kernel's routing table: main, local, default, all, or a table's number. Empty for main. |
+| `table` | string | The kernel's routing table: main, local, default, all, or a table's number. Empty for main, or for the table of vrf. |
+| `vrf` | string | The VRF whose routes to list, by the name of its VRF document, or default: the routes of its table, which the node's running VRF document gives, and the paths of its BGP instance. Empty for the default VRF. A request gives vrf or table, not both. |
 
 #### RoutesResponse { #router-message-routesresponse }
 
@@ -1353,6 +1355,7 @@ One BGP session of a router: a BGPPeer's address, or one of its interfaces.
 | `prefixes_received` | uint32 | Routes the router accepted from the neighbour, of every family. |
 | `prefixes_sent` | uint32 | Routes the router sends the neighbour, of every family. |
 | `bfd` | string | The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd. |
+| `vrf` | string | The VRF the session runs in: the name of its VRF document, or default. |
 
 ### BGPRoute { #router-message-bgproute }
 
@@ -1368,6 +1371,7 @@ A path of BGP's for a prefix, which its best path selection took.
 | `med` | uint32 | The path's multi-exit discriminator. |
 | `communities` | list of string | The path's standard and large communities. |
 | `best` | bool | Whether it is the best path; otherwise one of the equal paths BGP installs beside it. |
+| `imported_from` | string | The VRF whose BGP instance the path came from, through the importing instance's spec.import; empty for a path of the instance's own peers or networks. |
 
 ### KernelRoute { #router-message-kernelroute }
 

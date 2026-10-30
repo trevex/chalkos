@@ -46,9 +46,10 @@ type RouterServiceClient interface {
 	// Status reports the state of the router's routing daemons, its NAT64 instances and its
 	// resolver. Available in normal mode to readers, on images with the router layer.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
-	// Routes lists the routes in the node's kernel, of the main table unless another is asked for,
-	// and the paths its BGP instance selected, each within an address range when one is given.
-	// Available in normal mode to readers, on images with the router layer.
+	// Routes lists the routes in the node's kernel, of the main table unless a VRF or another table
+	// is asked for, and the paths the BGP instance of that VRF selected, each within an address
+	// range when one is given. Available in normal mode to readers, on images with the router
+	// layer.
 	Routes(context.Context, *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error)
 }
 
@@ -99,9 +100,10 @@ type RouterServiceHandler interface {
 	// Status reports the state of the router's routing daemons, its NAT64 instances and its
 	// resolver. Available in normal mode to readers, on images with the router layer.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
-	// Routes lists the routes in the node's kernel, of the main table unless another is asked for,
-	// and the paths its BGP instance selected, each within an address range when one is given.
-	// Available in normal mode to readers, on images with the router layer.
+	// Routes lists the routes in the node's kernel, of the main table unless a VRF or another table
+	// is asked for, and the paths the BGP instance of that VRF selected, each within an address
+	// range when one is given. Available in normal mode to readers, on images with the router
+	// layer.
 	Routes(context.Context, *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error)
 }
 

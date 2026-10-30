@@ -14,9 +14,10 @@ service RouterService {
   // Status reports the state of the router's routing daemons, its NAT64 instances and its
   // resolver. Available in normal mode to readers, on images with the router layer.
   rpc Status(StatusRequest) returns (StatusResponse);
-  // Routes lists the routes in the node's kernel, of the main table unless another is asked for,
-  // and the paths its BGP instance selected, each within an address range when one is given.
-  // Available in normal mode to readers, on images with the router layer.
+  // Routes lists the routes in the node's kernel, of the main table unless a VRF or another table
+  // is asked for, and the paths the BGP instance of that VRF selected, each within an address
+  // range when one is given. Available in normal mode to readers, on images with the router
+  // layer.
   rpc Routes(RoutesRequest) returns (RoutesResponse);
 }
 
@@ -26,7 +27,8 @@ message StatusRequest {}
 // The response of Status: the state of a router's routing daemons, its NAT64 instances and its
 // resolver.
 message StatusResponse {
-  // The router's BGP sessions, by BGPPeer document and then by interface or address.
+  // The router's BGP sessions, by VRF, the default first, then by BGPPeer document and by
+  // interface or address.
   repeated BGPPeerStatus peers = 1;
   // Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is
   // then empty.
@@ -87,6 +89,8 @@ message BGPPeerStatus {
   uint32 prefixes_sent = 6;
   // The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd.
   string bfd = 7;
+  // The VRF the session runs in: the name of its VRF document, or default.
+  string vrf = 8;
 }
 
 // The request of Routes.
@@ -97,8 +101,13 @@ message RoutesRequest {
   // Only the kernel's routes of this protocol: kernel, boot, static, ra, dhcp, bgp or another the
   // kernel names, or its number. BGP's paths are listed for bgp and for an empty protocol alone.
   string protocol = 2;
-  // The kernel's routing table: main, local, default, all, or a table's number. Empty for main.
+  // The kernel's routing table: main, local, default, all, or a table's number. Empty for main, or
+  // for the table of vrf.
   string table = 3;
+  // The VRF whose routes to list, by the name of its VRF document, or default: the routes of its
+  // table, which the node's running VRF document gives, and the paths of its BGP instance. Empty
+  // for the default VRF. A request gives vrf or table, not both.
+  string vrf = 4;
 }
 
 // The response of Routes.
@@ -159,4 +168,7 @@ message BGPRoute {
   repeated string communities = 7;
   // Whether it is the best path; otherwise one of the equal paths BGP installs beside it.
   bool best = 8;
+  // The VRF whose BGP instance the path came from, through the importing instance's
+  // spec.import; empty for a path of the instance's own peers or networks.
+  string imported_from = 9;
 }

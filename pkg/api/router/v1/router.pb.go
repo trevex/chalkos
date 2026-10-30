@@ -65,7 +65,8 @@ func (*StatusRequest) Descriptor() ([]byte, []int) {
 // resolver.
 type StatusResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The router's BGP sessions, by BGPPeer document and then by interface or address.
+	// The router's BGP sessions, by VRF, the default first, then by BGPPeer document and by
+	// interface or address.
 	Peers []*BGPPeerStatus `protobuf:"bytes,1,rep,name=peers,proto3" json:"peers,omitempty"`
 	// Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is
 	// then empty.
@@ -348,7 +349,9 @@ type BGPPeerStatus struct {
 	// Routes the router sends the neighbour, of every family.
 	PrefixesSent uint32 `protobuf:"varint,6,opt,name=prefixes_sent,json=prefixesSent,proto3" json:"prefixes_sent,omitempty"`
 	// The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd.
-	Bfd           string `protobuf:"bytes,7,opt,name=bfd,proto3" json:"bfd,omitempty"`
+	Bfd string `protobuf:"bytes,7,opt,name=bfd,proto3" json:"bfd,omitempty"`
+	// The VRF the session runs in: the name of its VRF document, or default.
+	Vrf           string `protobuf:"bytes,8,opt,name=vrf,proto3" json:"vrf,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -432,6 +435,13 @@ func (x *BGPPeerStatus) GetBfd() string {
 	return ""
 }
 
+func (x *BGPPeerStatus) GetVrf() string {
+	if x != nil {
+		return x.Vrf
+	}
+	return ""
+}
+
 // The request of Routes.
 type RoutesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -441,8 +451,13 @@ type RoutesRequest struct {
 	// Only the kernel's routes of this protocol: kernel, boot, static, ra, dhcp, bgp or another the
 	// kernel names, or its number. BGP's paths are listed for bgp and for an empty protocol alone.
 	Protocol string `protobuf:"bytes,2,opt,name=protocol,proto3" json:"protocol,omitempty"`
-	// The kernel's routing table: main, local, default, all, or a table's number. Empty for main.
-	Table         string `protobuf:"bytes,3,opt,name=table,proto3" json:"table,omitempty"`
+	// The kernel's routing table: main, local, default, all, or a table's number. Empty for main, or
+	// for the table of vrf.
+	Table string `protobuf:"bytes,3,opt,name=table,proto3" json:"table,omitempty"`
+	// The VRF whose routes to list, by the name of its VRF document, or default: the routes of its
+	// table, which the node's running VRF document gives, and the paths of its BGP instance. Empty
+	// for the default VRF. A request gives vrf or table, not both.
+	Vrf           string `protobuf:"bytes,4,opt,name=vrf,proto3" json:"vrf,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -494,6 +509,13 @@ func (x *RoutesRequest) GetProtocol() string {
 func (x *RoutesRequest) GetTable() string {
 	if x != nil {
 		return x.Table
+	}
+	return ""
+}
+
+func (x *RoutesRequest) GetVrf() string {
+	if x != nil {
+		return x.Vrf
 	}
 	return ""
 }
@@ -739,7 +761,10 @@ type BGPRoute struct {
 	// The path's standard and large communities.
 	Communities []string `protobuf:"bytes,7,rep,name=communities,proto3" json:"communities,omitempty"`
 	// Whether it is the best path; otherwise one of the equal paths BGP installs beside it.
-	Best          bool `protobuf:"varint,8,opt,name=best,proto3" json:"best,omitempty"`
+	Best bool `protobuf:"varint,8,opt,name=best,proto3" json:"best,omitempty"`
+	// The VRF whose BGP instance the path came from, through the importing instance's
+	// spec.import; empty for a path of the instance's own peers or networks.
+	ImportedFrom  string `protobuf:"bytes,9,opt,name=imported_from,json=importedFrom,proto3" json:"imported_from,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -830,6 +855,13 @@ func (x *BGPRoute) GetBest() bool {
 	return false
 }
 
+func (x *BGPRoute) GetImportedFrom() string {
+	if x != nil {
+		return x.ImportedFrom
+	}
+	return ""
+}
+
 var File_chalkos_router_v1_router_proto protoreflect.FileDescriptor
 
 const file_chalkos_router_v1_router_proto_rawDesc = "" +
@@ -853,7 +885,7 @@ const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"\x04size\x18\x02 \x01(\x04R\x04size\"@\n" +
 	"\x0eResolverStatus\x12\x18\n" +
 	"\arunning\x18\x01 \x01(\bR\arunning\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\"\xe0\x01\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"\xf2\x01\n" +
 	"\rBGPPeerStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bneighbor\x18\x02 \x01(\tR\bneighbor\x12\x14\n" +
@@ -861,11 +893,13 @@ const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"\x0euptime_seconds\x18\x04 \x01(\x04R\ruptimeSeconds\x12+\n" +
 	"\x11prefixes_received\x18\x05 \x01(\rR\x10prefixesReceived\x12#\n" +
 	"\rprefixes_sent\x18\x06 \x01(\rR\fprefixesSent\x12\x10\n" +
-	"\x03bfd\x18\a \x01(\tR\x03bfd\"Y\n" +
+	"\x03bfd\x18\a \x01(\tR\x03bfd\x12\x10\n" +
+	"\x03vrf\x18\b \x01(\tR\x03vrf\"k\n" +
 	"\rRoutesRequest\x12\x16\n" +
 	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x14\n" +
-	"\x05table\x18\x03 \x01(\tR\x05table\"\x94\x01\n" +
+	"\x05table\x18\x03 \x01(\tR\x05table\x12\x10\n" +
+	"\x03vrf\x18\x04 \x01(\tR\x03vrf\"\x94\x01\n" +
 	"\x0eRoutesResponse\x126\n" +
 	"\x06kernel\x18\x01 \x03(\v2\x1e.chalkos.router.v1.KernelRouteR\x06kernel\x12-\n" +
 	"\x03bgp\x18\x02 \x03(\v2\x1b.chalkos.router.v1.BGPRouteR\x03bgp\x12\x1b\n" +
@@ -880,7 +914,7 @@ const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"\aNextHop\x12\x18\n" +
 	"\agateway\x18\x01 \x01(\tR\agateway\x12\x1c\n" +
 	"\tinterface\x18\x02 \x01(\tR\tinterface\x12\x16\n" +
-	"\x06weight\x18\x03 \x01(\rR\x06weight\"\xe7\x01\n" +
+	"\x06weight\x18\x03 \x01(\rR\x06weight\"\x8c\x02\n" +
 	"\bBGPRoute\x12\x16\n" +
 	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x17\n" +
 	"\aas_path\x18\x02 \x01(\tR\x06asPath\x12\x1b\n" +
@@ -890,7 +924,8 @@ const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"local_pref\x18\x05 \x01(\rH\x00R\tlocalPref\x88\x01\x01\x12\x10\n" +
 	"\x03med\x18\x06 \x01(\rR\x03med\x12 \n" +
 	"\vcommunities\x18\a \x03(\tR\vcommunities\x12\x12\n" +
-	"\x04best\x18\b \x01(\bR\x04bestB\r\n" +
+	"\x04best\x18\b \x01(\bR\x04best\x12#\n" +
+	"\rimported_from\x18\t \x01(\tR\fimportedFromB\r\n" +
 	"\v_local_pref2\xad\x01\n" +
 	"\rRouterService\x12M\n" +
 	"\x06Status\x12 .chalkos.router.v1.StatusRequest\x1a!.chalkos.router.v1.StatusResponse\x12M\n" +
