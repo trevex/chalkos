@@ -219,12 +219,13 @@ Interrupting chalkctl leaves the trial open. A trial delivers config alone and i
 config that changes the node's storage. While it is open, the node refuses other deliveries,
 upgrades and image rollbacks; --rollback rolls the config back at once and ends the trial, and a
 reboot boots the config from before it. --no-confirm leaves the trial open, and --confirm confirms
-it later, trying until the trial's deadline while the node is unhealthy; --confirm needs no
-inventory. A delivery on trial that fails after it changed the config leaves the trial open, and
-chalkctl does not confirm it. When an attempt to roll the config back fails, the node tries again
-each minute and --confirm still keeps the config, unless the failed attempt changed the node;
---rollback then finishes the rollback. After a trial's rollback, the config on trial is the node's
-previous config, which --rollback delivers again without a trial.
+it later, trying until the trial's deadline while the node is unhealthy, or for two minutes past
+it, after a failed rollback; --confirm needs no inventory. A delivery on trial that fails after it
+changed the config leaves the trial open, and chalkctl does not confirm it. When an attempt to roll
+the config back fails, the node tries again each minute and --confirm still keeps the config,
+unless the failed attempt changed the node; --rollback then finishes the rollback. After a trial's
+rollback, the config on trial is the node's previous config, which --rollback delivers again
+without a trial.
 
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
