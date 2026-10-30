@@ -65,11 +65,13 @@ const bgpPassword = "lab-s3cret"
 //     into the VRF fabric of table 100, with their BGP sessions, is confirmed over a new
 //     connection, so chalkd still answers on enp0s2. The sessions run in fabric, r1 routes r2's
 //     edge0 in table 100 and, through its default VRF's import of fabric, in the main table, with
-//     the path imported from fabric; chalkctl shows the VRF in the status and with --vrf,
-//     bgp-summary vrf=fabric lists the session, and no unit failed. r2's fabric then moves to
-//     table 200, which removes the VRF and creates it anew: the session comes back in fabric,
-//     r2's routes and edge0's address sit in table 200 and r1 learns edge0 again. The base
-//     inventory then brings the sessions and edge0 back to the default VRF.
+//     the path imported from fabric, and table 100 ends in unreachable default routes of both
+//     families; chalkctl shows the VRF in the status and with --vrf, bgp-summary vrf=fabric
+//     lists the session, and no unit failed. r2's fabric then moves to table 200, which removes
+//     the VRF and creates it anew: the session comes back in fabric, r2's routes, edge0's
+//     address and the unreachable defaults sit in table 200, none of the defaults stays in
+//     table 100, and r1 learns edge0 again. The base inventory then brings the sessions and
+//     edge0 back to the default VRF.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials and a minute for the VRF, about
@@ -528,6 +530,22 @@ func TestRouterLab(t *testing.T) {
 		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "routes", "r1", "2001:db8:ffff::2/128", "--vrf", "fabric"); err != nil || !tableLine.MatchString(out) {
 			t.Errorf("node routes --vrf fabric of r1 shows no route in table 100: %v\n%s", err, out)
 		}
+		// unreachable matches the unreachable default routes of both families that end a table.
+		unreachable := func(table string) []*regexp.Regexp {
+			return []*regexp.Regexp{
+				regexp.MustCompile(`(?m)^0\.0\.0\.0/0\s+unreachable\s+static\s+` + table + `\s`),
+				regexp.MustCompile(`(?m)^::/0\s+unreachable\s+static\s+` + table + `\s`),
+			}
+		}
+		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "routes", "r1", "--vrf", "fabric", "--protocol", "static"); err != nil {
+			t.Errorf("node routes --vrf fabric of r1: %v\n%s", err, out)
+		} else {
+			for _, re := range unreachable("100") {
+				if !re.MatchString(out) {
+					t.Errorf("node routes --vrf fabric of r1 shows no route matching %s:\n%s", re, out)
+				}
+			}
+		}
 		importedLine := regexp.MustCompile(`(?m)^2001:db8:ffff::2/128\s+\*\s+64513\s+vrf fabric\s`)
 		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "routes", "r1", "2001:db8:ffff::2/128"); err != nil || !importedLine.MatchString(out) {
 			t.Errorf("node routes of r1 shows no path imported from fabric: %v\n%s", err, out)
@@ -551,6 +569,21 @@ func TestRouterLab(t *testing.T) {
 		defaultLine := regexp.MustCompile(`(?m)^::/0\s+unicast\s+bgp\s+200\s`)
 		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "node", "routes", "r2", "::/0", "--vrf", "fabric"); err != nil || !defaultLine.MatchString(out) {
 			t.Errorf("node routes --vrf fabric of r2 shows no default route in table 200: %v\n%s", err, out)
+		}
+		// chalkos-vrf flushes the old table's unreachable defaults before it removes the VRF.
+		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "node", "routes", "r2", "--table", "all", "--protocol", "static"); err != nil {
+			t.Errorf("node routes --table all of r2: %v\n%s", err, out)
+		} else {
+			for _, re := range unreachable("200") {
+				if !re.MatchString(out) {
+					t.Errorf("node routes --table all of r2 shows no route matching %s:\n%s", re, out)
+				}
+			}
+			for _, re := range unreachable("100") {
+				if re.MatchString(out) {
+					t.Errorf("node routes --table all of r2 still shows a route matching %s:\n%s", re, out)
+				}
+			}
 		}
 		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "status", "r2"); err != nil || strings.Contains(out, "failed unit") {
 			t.Errorf("status of r2 shows a failed unit: %v\n%s", err, out)
