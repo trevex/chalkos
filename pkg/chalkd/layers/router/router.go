@@ -5,13 +5,16 @@ package router
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +41,9 @@ type Options struct {
 	// NAT64Dir is the output jool's directory, with a file <name>.json per NAT64 document; empty
 	// is /run/chalkos/outputs/jool.
 	NAT64Dir string
+	// VRFDir holds the node's running VRF documents, <name>.json each; empty is
+	// /run/chalkos/config/router.chalkos.dev/VRF.
+	VRFDir string
 }
 
 // side is the node's router side: the state of its FRR, Jool and Unbound and the kernel's routes.
@@ -246,9 +252,21 @@ func (r *side) resolver(ctx context.Context) *routerv1.ResolverStatus {
 }
 
 func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.RoutesRequest]) (*connect.Response[routerv1.RoutesResponse], error) {
-	// The request's strings reach no command: the filter parses them, and vtysh is asked for
-	// whole families alone.
-	f, err := routing.NewFilter(req.Msg.Prefix, req.Msg.Protocol, req.Msg.Table)
+	// The request's strings reach no command: the filter parses them, a VRF's name passes its
+	// pattern and names a running VRF document, and vtysh is asked for whole families alone.
+	table, vrf := req.Msg.Table, req.Msg.Vrf
+	if vrf != "" && table != "" {
+		return nil, failed(connect.CodeInvalidArgument, "give a VRF or a table, not both: a VRF's routes are those of its table")
+	}
+	named := vrf != "" && vrf != routing.DefaultVRF
+	if named {
+		t, err := p.r.vrfTable(vrf)
+		if err != nil {
+			return nil, err
+		}
+		table = strconv.FormatUint(uint64(t), 10)
+	}
+	f, err := routing.NewFilter(req.Msg.Prefix, req.Msg.Protocol, table)
 	if err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "%v", err)
 	}
@@ -266,7 +284,11 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	}
 	if f.WantsBGP() {
 		for _, family := range []string{"ipv4", "ipv6"} {
-			out, err := p.r.vtysh(ctx, fmt.Sprintf(routing.RoutesCommand, family))
+			command := fmt.Sprintf(routing.RoutesCommand, family)
+			if named {
+				command = fmt.Sprintf(routing.VRFRoutesCommand, vrf, family)
+			}
+			out, err := p.r.vtysh(ctx, command)
 			var routes []*routing.BGPRoute
 			if err == nil {
 				routes, err = routing.ParseRoutes(out)
@@ -283,9 +305,39 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	return connect.NewResponse(resp), nil
 }
 
+// defaultVRFDir holds the running VRF documents, as chalkd writes the node's config for its
+// services.
+const defaultVRFDir = "/run/chalkos/config/router.chalkos.dev/VRF"
+
+// vrfName is a VRF document's name: a document name of 15 characters at most.
+var vrfName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`)
+
+// vrfTable is the table of the node's VRF of the name, as its running VRF document gives it.
+func (r *side) vrfTable(name string) (uint32, error) {
+	if !vrfName.MatchString(name) {
+		return 0, failed(connect.CodeInvalidArgument, "vrf %q is no VRF document's name", name)
+	}
+	data, err := os.ReadFile(filepath.Join(cmp.Or(r.VRFDir, defaultVRFDir), name+".json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, failed(connect.CodeNotFound, "the node has no VRF %s", name)
+	}
+	if err != nil {
+		return 0, failed(connect.CodeInternal, "read the VRF %s: %v", name, err)
+	}
+	var doc struct {
+		Spec struct {
+			Table uint32 `json:"table"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil || doc.Spec.Table == 0 {
+		return 0, failed(connect.CodeInternal, "read the VRF %s: its document holds no table", name)
+	}
+	return doc.Spec.Table, nil
+}
+
 // peerStatus is a BGP session as the router's status reports it.
 func peerStatus(p *routing.Peer) *routerv1.BGPPeerStatus {
-	return &routerv1.BGPPeerStatus{Name: p.Name, Neighbor: p.Neighbor, State: p.State, UptimeSeconds: p.UptimeSeconds,
+	return &routerv1.BGPPeerStatus{Vrf: p.VRF, Name: p.Name, Neighbor: p.Neighbor, State: p.State, UptimeSeconds: p.UptimeSeconds,
 		PrefixesReceived: p.PrefixesReceived, PrefixesSent: p.PrefixesSent, Bfd: p.BFD}
 }
 
@@ -301,7 +353,7 @@ func kernelRoute(r *routing.KernelRoute) *routerv1.KernelRoute {
 // bgpRoute is a BGP path as Routes answers it.
 func bgpRoute(r *routing.BGPRoute) *routerv1.BGPRoute {
 	return &routerv1.BGPRoute{Prefix: r.Prefix, AsPath: r.ASPath, NextHops: r.NextHops, Peer: r.Peer, LocalPref: r.LocalPref,
-		Med: r.MED, Communities: r.Communities, Best: r.Best}
+		Med: r.MED, Communities: r.Communities, Best: r.Best, ImportedFrom: r.ImportedFrom}
 }
 
 func failed(code connect.Code, format string, args ...any) error {

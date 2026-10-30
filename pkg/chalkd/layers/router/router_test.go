@@ -28,12 +28,17 @@ type runnerNode struct {
 
 func (n runnerNode) Runner() tool.Runner { return n.run }
 
-// routerNode is the router layer of a node whose FRR answers vtysh as the runner's rules say, and
-// whose kernel holds the routes given.
+// routerNode is the router layer of a node whose FRR answers vtysh as the runner's rules say,
+// whose kernel holds the routes given, and whose running config holds the VRF tenant of table
+// 100.
 func routerNode(t *testing.T, kernel ...*routing.KernelRoute) (*Plugin, *tooltest.Runner) {
 	t.Helper()
 	r := &tooltest.Runner{}
-	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()}), r
+	vrfs := t.TempDir()
+	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"apiVersion": "router.chalkos.dev/v1alpha1", "kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100, "interfaces": ["swp1"]}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs}), r
 }
 
 // routerStatus is the state of the router as the layer serves it.
@@ -61,19 +66,19 @@ func routerRecording(t *testing.T, name string) string {
 // stands.
 func TestRouterStatus(t *testing.T) {
 	s, r := routerNode(t)
-	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c show bgp neighbors json", Out: routerRecording(t, "neighbors.json"), Times: 1})
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c " + routing.NeighborsCommand, Out: routerRecording(t, "neighbors.json"), Times: 1})
 	st := routerStatus(t, s)
-	if st == nil || st.BgpError != "" || len(st.Peers) != 3 || st.Peers[0].Name != "fabric" || st.Peers[0].State != "Established" {
+	if st == nil || st.BgpError != "" || len(st.Peers) != 4 || st.Peers[0].Name != "fabric" || st.Peers[0].State != "Established" || st.Peers[0].Vrf != "default" || st.Peers[3].Vrf != "tenant" {
 		t.Fatalf("router status = %v", st)
 	}
-	if !r.Quiet["vtysh -c show bgp neighbors json"] {
+	if !r.Quiet["vtysh -c "+routing.NeighborsCommand] {
 		t.Error("vtysh's standard error reaches the console")
 	}
 	// Without NAT64 documents, Jool is not asked.
 	if st.Nat64Error != "" || slices.ContainsFunc(r.Calls, func(c string) bool { return strings.HasPrefix(c, "jool") }) {
 		t.Errorf("a router without NAT64 asked jool: %q, %v", st.Nat64Error, r.Calls)
 	}
-	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c show bgp neighbors json", Err: &tool.Error{Command: "vtysh", Code: 1, Stderr: "Exiting: failed to connect to any daemons.\n"}})
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c " + routing.NeighborsCommand, Err: &tool.Error{Command: "vtysh", Code: 1, Stderr: "Exiting: failed to connect to any daemons.\n"}})
 	st = routerStatus(t, s)
 	if st == nil || len(st.Peers) != 0 || !strings.Contains(st.BgpError, "failed to connect to any daemons") {
 		t.Errorf("router status while FRR is down = %v", st)
@@ -239,5 +244,57 @@ func TestRouterResolverStatus(t *testing.T) {
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "unbound-control status", Err: &tool.Error{Command: "unbound-control", Code: 1, Stderr: "error: connect: No such file or directory for /run/unbound/unbound.ctl\n"}})
 	if st := routerStatus(t, s); st.GetResolver() == nil || st.Resolver.Running || !strings.Contains(st.Resolver.Error, "No such file or directory") {
 		t.Errorf("router status of a stopped resolver = %v", st)
+	}
+}
+
+// Routes of a VRF list its table, which the running VRF document gives, and its instance's paths;
+// default is the main table and the default instance. A request of a VRF and a table, of a VRF
+// the node lacks or of a name no VRF document takes is refused, and asks vtysh nothing.
+func TestRoutesOfAVRF(t *testing.T) {
+	p, r := routerNode(t,
+		&routing.KernelRoute{Destination: "2001:db8:ffff::2/128", Type: "unicast", Protocol: "bgp", Table: 100, Metric: 20},
+		&routing.KernelRoute{Destination: "2001:db8:ffff::2/128", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20},
+	)
+	r.Rules = append(r.Rules,
+		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv4 unicast detail json", Out: "{}"},
+		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: routerRecording(t, "ipv6-detail-imported.json")},
+		tooltest.Rule{Prefix: "vtysh -c show bgp ipv4 unicast detail json", Out: "{}"},
+		tooltest.Rule{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: "{}"},
+	)
+	routes := func(req *routerv1.RoutesRequest) (*routerv1.RoutesResponse, error) {
+		resp, err := p.Routes(context.Background(), connect.NewRequest(req))
+		if err != nil {
+			return nil, err
+		}
+		return resp.Msg, nil
+	}
+	got, err := routes(&routerv1.RoutesRequest{Vrf: "tenant"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Kernel) != 1 || got.Kernel[0].Table != 100 || len(got.Bgp) != 2 || got.Bgp[1].ImportedFrom != "fabric" || got.Bgp[1].AsPath != "64513" {
+		t.Errorf("routes of tenant = %v", got)
+	}
+	got, err = routes(&routerv1.RoutesRequest{Vrf: "default"})
+	if err != nil || len(got.Kernel) != 1 || got.Kernel[0].Table != 254 {
+		t.Errorf("routes of default = %v, %v", got, err)
+	}
+	calls := len(r.Calls)
+	for _, tc := range []struct {
+		req  *routerv1.RoutesRequest
+		code connect.Code
+		want string
+	}{
+		{&routerv1.RoutesRequest{Vrf: "tenant", Table: "100"}, connect.CodeInvalidArgument, "give a VRF or a table, not both"},
+		{&routerv1.RoutesRequest{Vrf: "lab"}, connect.CodeNotFound, "the node has no VRF lab"},
+		{&routerv1.RoutesRequest{Vrf: "../tenant"}, connect.CodeInvalidArgument, `vrf "../tenant" is no VRF document's name`},
+		{&routerv1.RoutesRequest{Vrf: "tenant summary json\nshow"}, connect.CodeInvalidArgument, "is no VRF document's name"},
+	} {
+		if _, err := routes(tc.req); connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v: err = %v, want %v with %q", tc.req, err, tc.code, tc.want)
+		}
+	}
+	if len(r.Calls) != calls {
+		t.Errorf("refused requests asked %v", r.Calls[calls:])
 	}
 }
