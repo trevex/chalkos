@@ -360,6 +360,17 @@ func TestNAT64Firewall(t *testing.T) {
 	if got := ruleset(open); !strings.Contains(got, "\t\tip saddr 169.254.111.206 masquerade comment \"NAT64 guest\"\n") {
 		t.Errorf("a ruleset without NATRules lacks the masquerade of an own pool:\n%s", got)
 	}
+	// A VRF without a conntrack zone leaves its NAT64's link out of the zones, and the forward
+	// chain still picks the link by sdifname.
+	zoneless := maps.Clone(docs)
+	zoneless["VRF"] = []any{routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"]}`)}
+	got = ruleset(zoneless)
+	if strings.Contains(got, "ct zone") {
+		t.Errorf("a ruleset without conntrack zones sets one:\n%s", got)
+	}
+	if want := "\t\tmeta sdifname \"n64-guest\" ip6 saddr 64:ff9b::/96 accept comment \"NAT64 guest\"\n"; !strings.Contains(got, want) {
+		t.Errorf("the ruleset lacks\n%s\nin\n%s", want, got)
+	}
 }
 
 // A NATRule that translates to an address of a NAT64's explicit pool is refused: the pool's
@@ -961,6 +972,11 @@ func TestUnboundPerVRF(t *testing.T) {
 	}
 	refused(t, args, docs("2001:db8:ffff::1"),
 		"Resolver guest: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-eth0 in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links")
+	// The default VRF's resolver is refused an address of a VRF's links alike.
+	vrfOnly := docs("2001:db8:3::1")
+	vrfOnly["Resolver"] = []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:3::1"], "allow": ["2001:db8::/32"], "forwarders": [], "dnssec": false, "dns64": null, "localZones": []}`)}
+	refused(t, args, vrfOnly,
+		"Resolver resolver: the address 2001:db8:3::1 of listen belongs to links of Network 40-guest in VRF guest alone, so the resolver of VRF default never receives its queries")
 }
 
 // A peer in a VRF has its ports opened on its VRF's links by the VRF's device and sdifname: the
