@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"net/netip"
 	"path"
 	"regexp"
 	"slices"
@@ -226,6 +227,8 @@ type routingPolicySpec struct {
 }
 
 type nat64Spec struct {
+	// VRF is nil for a NAT64 of the default VRF.
+	VRF    *string     `json:"vrf"`
 	Prefix string      `json:"prefix"`
 	Pool4  []poolEntry `json:"pool4"`
 }
@@ -237,6 +240,8 @@ type poolEntry struct {
 }
 
 type resolverSpec struct {
+	// VRF is nil for the default VRF's resolver.
+	VRF        *string  `json:"vrf"`
 	Listen     []string `json:"listen"`
 	Allow      []string `json:"allow"`
 	Forwarders []string `json:"forwarders"`
@@ -289,6 +294,8 @@ type routerDocuments struct {
 	VRFs            []named[vrfSpec]
 	// Links are the interface names the Network documents' [Match] sections name, sorted.
 	Links []string
+	// Addresses are the static addresses the Network documents give their links.
+	Addresses []networkAddress
 	// Membership is the VRF of the links of Links and of the Network documents.
 	Membership vrfMembership
 }
@@ -339,6 +346,7 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 		return d, err
 	}
 	d.Links = networkLinks(byKind)
+	d.Addresses = networkAddresses(byKind)
 	if d.Membership, err = vrfLinks(d.VRFs, d.Links, byKind); err != nil {
 		return d, err
 	}
@@ -358,6 +366,54 @@ func networkLinks(byKind map[string]any) []string {
 		}
 	}
 	return slices.Sorted(maps.Keys(seen))
+}
+
+// networkAddress is a static address that the Network document network gives its links.
+type networkAddress struct {
+	network string
+	prefix  netip.Prefix
+}
+
+// networkAddresses are the addresses of Address= in the [Network] and [Address] sections of the
+// Network documents of byKind that parse as an address, with or without a prefix length; others,
+// such as an empty value, give none.
+func networkAddresses(byKind map[string]any) []networkAddress {
+	var out []networkAddress
+	docs, _ := byKind["Network"].([]any)
+	for _, d := range docs {
+		doc, _ := d.(map[string]any)
+		name, err := documentName("Network", doc)
+		if err != nil {
+			continue
+		}
+		spec, _ := doc["spec"].(map[string]any)
+		for _, kind := range []string{"network", "address"} {
+			for _, s := range oneOrMany(spec[kind]) {
+				section, _ := s.(map[string]any)
+				for _, v := range oneOrMany(section["address"]) {
+					text, _ := v.(string)
+					p, err := netip.ParsePrefix(text)
+					if err != nil {
+						a, err := netip.ParseAddr(text)
+						if err != nil {
+							continue
+						}
+						p = netip.PrefixFrom(a, a.BitLen())
+					}
+					out = append(out, networkAddress{network: name, prefix: p})
+				}
+			}
+		}
+	}
+	return out
+}
+
+// networkVRFOf is the VRF of the links of the Network document named n.
+func (d routerDocuments) networkVRFOf(n string) string {
+	if vrf, ok := d.Membership.Networks[n]; ok {
+		return vrf
+	}
+	return defaultVRF
 }
 
 // matchLinks are the interface names in the [Match] sections' Name= of a Network document's

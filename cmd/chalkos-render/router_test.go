@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -592,26 +593,28 @@ func TestJoolRefusals(t *testing.T) {
 		docs []any
 		want string
 	}{
-		"a name of 16 characters":              {[]any{nat64("abcdefghijklmnop", `{"prefix": "64:ff9b::/96", "pool4": []}`)}, "NAT64 abcdefghijklmnop: Jool takes an instance's name of 15 characters at most"},
-		"a prefix of 95 bits":                  {[]any{nat64("edge", `{"prefix": "64:ff9b::/95", "pool4": []}`)}, `NAT64 edge: the prefix "64:ff9b::/95" is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits`},
-		"an IPv4 prefix":                       {[]any{nat64("edge", `{"prefix": "192.0.2.0/24", "pool4": []}`)}, `the prefix "192.0.2.0/24" is no IPv6 range`},
-		"an IPv4-mapped prefix":                {[]any{nat64("edge", `{"prefix": "::ffff:0:0/96", "pool4": []}`)}, `the prefix "::ffff:0:0/96" is no IPv6 range`},
-		"bits 64 to 71 set":                    {[]any{nat64("edge", `{"prefix": "2001:db8:0:0:ff00::/96", "pool4": []}`)}, "the prefix 2001:db8:0:0:ff00::/96 sets bits 64 to 71, which RFC 6052 keeps zero"},
-		"a multicast prefix":                   {[]any{nat64("edge", `{"prefix": "ff0e::/96", "pool4": []}`)}, "the prefix ff0e::/96 holds link-local, multicast or unspecified addresses"},
-		"a link-local prefix":                  {[]any{nat64("edge", `{"prefix": "fe80::/64", "pool4": []}`)}, "the prefix fe80::/64 holds link-local, multicast or unspecified addresses"},
-		"the unspecified prefix":               {[]any{nat64("edge", `{"prefix": "::/96", "pool4": []}`)}, "the prefix ::/96 holds link-local, multicast or unspecified addresses"},
-		"two NAT64s of one prefix":             {[]any{nat64("a", `{"prefix": "64:ff9b::/96", "pool4": []}`), nat64("b", `{"prefix": "64:ff9b::/64", "pool4": []}`)}, "NAT64 b and NAT64 a both translate addresses of 64:ff9b::/64"},
-		"two NAT64s of the router's addresses": {[]any{nat64("a", `{"prefix": "64:ff9b::/96", "pool4": []}`), nat64("b", `{"prefix": "2001:db8:64::/96", "pool4": []}`)}, "NAT64 b and NAT64 a both take the router's own addresses, with an empty pool4"},
-		"an IPv6 pool":                         {[]any{pool(`{"prefix": "2001:db8::/64", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `NAT64 edge: pool entry 1: "2001:db8::/64" is no IPv4 range of 16 bits or more`},
-		"a pool of a /15":                      {[]any{pool(`{"prefix": "198.18.0.0/15", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `"198.18.0.0/15" is no IPv4 range of 16 bits or more`},
-		"a pool of the unspecified range":      {[]any{pool(`{"prefix": "0.0.0.0/16", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "0.0.0.0/16 holds addresses no connection leaves from"},
-		"a pool of multicast":                  {[]any{pool(`{"prefix": "224.0.0.0/24", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "224.0.0.0/24 holds addresses no connection leaves from"},
-		"a pool of the broadcast address":      {[]any{pool(`{"prefix": "255.255.255.255/32", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "255.255.255.255/32 holds addresses no connection leaves from"},
-		"ephemeral ports":                      {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "1-65535", "protocols": ["tcp"]}`)}, "the ports 1-65535 take the kernel's ephemeral ports, 32768 to 60999, which Jool refuses"},
-		"port zero":                            {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "0-100", "protocols": ["tcp"]}`)}, `"0-100" is no range of ports`},
-		"no protocol":                          {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": []}`)}, "NAT64 edge: pool entry 1: it names no protocol"},
-		"a protocol twice":                     {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["udp", "udp"]}`)}, "it names udp twice"},
-		"an unknown protocol":                  {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["sctp"]}`)}, `"sctp" is none of tcp, udp and icmp`},
+		"a name of 12 characters":         {[]any{nat64("abcdefghijkl", `{"prefix": "64:ff9b::/96", "pool4": []}`)}, "NAT64 abcdefghijkl: its link n64-abcdefghijkl is no interface name of 15 characters; give the NAT64 a name of 11 characters at most"},
+		"a link-local pool":               {[]any{pool(`{"prefix": "169.254.64.0/30", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "169.254.64.0/30 holds link-local addresses, which the NAT64s' links take"},
+		"a VRF no document declares":      {[]any{nat64("edge", `{"vrf": "nosuch", "prefix": "64:ff9b::/96", "pool4": []}`)}, `NAT64 edge names the VRF "nosuch", which no VRF document declares`},
+		"two names of one link":           {[]any{nat64("nat282", `{"prefix": "2001:db8:282::/96", "pool4": []}`), nat64("nat8", `{"prefix": "2001:db8:8::/96", "pool4": []}`)}, "NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename one of them"},
+		"a prefix of 95 bits":             {[]any{nat64("edge", `{"prefix": "64:ff9b::/95", "pool4": []}`)}, `NAT64 edge: the prefix "64:ff9b::/95" is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits`},
+		"an IPv4 prefix":                  {[]any{nat64("edge", `{"prefix": "192.0.2.0/24", "pool4": []}`)}, `the prefix "192.0.2.0/24" is no IPv6 range`},
+		"an IPv4-mapped prefix":           {[]any{nat64("edge", `{"prefix": "::ffff:0:0/96", "pool4": []}`)}, `the prefix "::ffff:0:0/96" is no IPv6 range`},
+		"bits 64 to 71 set":               {[]any{nat64("edge", `{"prefix": "2001:db8:0:0:ff00::/96", "pool4": []}`)}, "the prefix 2001:db8:0:0:ff00::/96 sets bits 64 to 71, which RFC 6052 keeps zero"},
+		"a multicast prefix":              {[]any{nat64("edge", `{"prefix": "ff0e::/96", "pool4": []}`)}, "the prefix ff0e::/96 holds link-local, multicast or unspecified addresses"},
+		"a link-local prefix":             {[]any{nat64("edge", `{"prefix": "fe80::/64", "pool4": []}`)}, "the prefix fe80::/64 holds link-local, multicast or unspecified addresses"},
+		"the unspecified prefix":          {[]any{nat64("edge", `{"prefix": "::/96", "pool4": []}`)}, "the prefix ::/96 holds link-local, multicast or unspecified addresses"},
+		"two NAT64s of one prefix":        {[]any{nat64("a", `{"prefix": "64:ff9b::/96", "pool4": []}`), nat64("b", `{"prefix": "64:ff9b::/64", "pool4": []}`)}, "NAT64 b and NAT64 a both translate addresses of 64:ff9b::/64 in VRF default"},
+		"an IPv6 pool":                    {[]any{pool(`{"prefix": "2001:db8::/64", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `NAT64 edge: pool entry 1: "2001:db8::/64" is no IPv4 range of 16 bits or more`},
+		"a pool of a /15":                 {[]any{pool(`{"prefix": "198.18.0.0/15", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `"198.18.0.0/15" is no IPv4 range of 16 bits or more`},
+		"a pool of the unspecified range": {[]any{pool(`{"prefix": "0.0.0.0/16", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "0.0.0.0/16 holds addresses no connection leaves from"},
+		"a pool of multicast":             {[]any{pool(`{"prefix": "224.0.0.0/24", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "224.0.0.0/24 holds addresses no connection leaves from"},
+		"a pool of the broadcast address": {[]any{pool(`{"prefix": "255.255.255.255/32", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "255.255.255.255/32 holds addresses no connection leaves from"},
+		"ephemeral ports":                 {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "1-65535", "protocols": ["tcp"]}`)}, "the ports 1-65535 take the kernel's ephemeral ports, 32768 to 60999, which Jool refuses"},
+		"port zero":                       {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "0-100", "protocols": ["tcp"]}`)}, `"0-100" is no range of ports`},
+		"no protocol":                     {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": []}`)}, "NAT64 edge: pool entry 1: it names no protocol"},
+		"a protocol twice":                {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["udp", "udp"]}`)}, "it names udp twice"},
+		"an unknown protocol":             {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["sctp"]}`)}, `"sctp" is none of tcp, udp and icmp`},
 		"two entries of one port": {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp"]},
 			{"prefix": "192.0.2.9/32", "ports": "65000-65535", "protocols": ["udp"]}`)}, "NAT64 edge: pool entry 2 shares udp addresses and ports with pool entry 1"},
 		"two NAT64s of one pool's address": {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}`),
@@ -628,6 +631,79 @@ func TestJoolRefusals(t *testing.T) {
 		"a protocol of a line break": {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp\n"]}`)}, "is none of tcp, udp and icmp"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"jool"}, map[string][]any{"NAT64": c.docs}, c.want) })
+	}
+}
+
+// A pool entry that holds an address a Network document gives a link is refused: the replies to
+// it are the router's own.
+func TestJoolPoolOfALink(t *testing.T) {
+	wan := document(t, "Network", "20-wan", `{"match": {"name": "eth0"}, "network": {"address": ["192.0.2.9/24"]}}`)
+	nat64 := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}]}`)
+	refused(t, []string{"jool"}, map[string][]any{"NAT64": {nat64}, "Network": {wan}},
+		"NAT64 edge: the pool entry 192.0.2.8/30 holds 192.0.2.9, an address Network 20-wan gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through")
+	section := document(t, "Network", "20-wan", `{"match": {"name": "eth0"}, "address": [{"address": "192.0.2.10"}]}`)
+	refused(t, []string{"jool"}, map[string][]any{"NAT64": {nat64}, "Network": {section}}, "holds 192.0.2.10, an address Network 20-wan gives a link")
+}
+
+// Each NAT64 renders Jool's file and its link's: an explicit pool's prefixes are routed to the
+// inner end, and an empty pool4 takes the inner address with the ports 61001-65535. The /30 of a
+// NAT64's link comes from the hash of its name alone, so a NAT64 keeps it while others come and
+// go; a VRF's NAT64 names the VRF and its table.
+func TestNAT64Links(t *testing.T) {
+	edge := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp"]}, {"prefix": "192.0.2.8/30", "ports": "1-1000", "protocols": ["icmp"]}]}`)
+	guest := routerDoc(t, "NAT64", "guest", `{"vrf": "guest", "prefix": "64:ff9b::/96", "pool4": []}`)
+	vrf := map[string][]any{
+		"VRF":     {routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3"]}`)},
+		"Network": {document(t, "Network", "40-guest", `{"match": {"name": "eth3"}}`)},
+	}
+	// rendered renders the output jool of the NAT64 documents nat64 beside the VRF guest.
+	rendered := func(nat64 ...any) string {
+		t.Helper()
+		docs := map[string][]any{"NAT64": nat64}
+		maps.Copy(docs, vrf)
+		input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := render(t, []string{"jool"}, string(input))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	read := func(out, name string, v any) {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(out, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	links := map[string]nat64Link{
+		"edge":  {Table: 254, Outer: "169.254.96.241/30", Inner: "169.254.96.242/30", Routes: []string{"192.0.2.8/30"}},
+		"guest": {VRF: ptr("guest"), Table: 300, Outer: "169.254.111.205/30", Inner: "169.254.111.206/30", Routes: []string{}},
+	}
+	both := rendered(edge, guest)
+	for name, want := range links {
+		var got nat64Link
+		read(both, name+".veth", &got)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s.veth = %+v, want %+v", name, got, want)
+		}
+	}
+	var g joolInstance
+	read(both, "guest.json", &g)
+	want := []joolPool4{{"TCP", "169.254.111.206/32", "61001-65535"}, {"UDP", "169.254.111.206/32", "61001-65535"}, {"ICMP", "169.254.111.206/32", "61001-65535"}}
+	if !slices.Equal(g.Pool4, want) {
+		t.Errorf("guest's pool4 = %v, want %v", g.Pool4, want)
+	}
+	// guest keeps its link without edge.
+	var alone nat64Link
+	read(rendered(guest), "guest.veth", &alone)
+	if !reflect.DeepEqual(alone, links["guest"]) {
+		t.Errorf("guest.veth alone = %+v, want %+v", alone, links["guest"])
 	}
 }
 
@@ -1186,3 +1262,6 @@ func TestConntrackZoneRefusals(t *testing.T) {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })
 	}
 }
+
+// ptr is a pointer to s.
+func ptr(s string) *string { return &s }

@@ -438,10 +438,11 @@ in
           exit 1
         fi
         # The check of Jool's instances passes the edge example's and refuses a port past 65535,
-        # with jool alone. The goldens start with a line that names the file.
+        # with jool alone. A golden holds its files, each after a line that names it; the check
+        # takes Jool's file of the edge example alone.
         check=$(jq -r .jool.check ${router.chalkosOutputs})
         mkdir jool
-        sed 1d ${../../cmd/chalkos-render/testdata/router/edge.jool} >jool/edge.json
+        awk 'NR > 1 && /^# /{ exit } NR > 1' ${../../cmd/chalkos-render/testdata/router/edge.jool} >jool/edge.json
         OUT=$PWD/jool $check </dev/null
         sed -i 's/"61001-65535"/"61001-70000"/' jool/edge.json
         if OUT=$PWD/jool $check </dev/null >err 2>&1; then
