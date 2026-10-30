@@ -916,6 +916,45 @@ func TestTrialExpiryFailingPartWay(t *testing.T) {
 	}
 }
 
+// TestTrialExpiryFailingBeforeItChanges records that a rollback at the deadline failed before it
+// changed the node, as when the attempt cannot go to the effects' baseline, and a confirmation
+// still keeps the config.
+func TestTrialExpiryFailingBeforeItChanges(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
+	s := trialServer(t)
+	s.trialRetry = time.Hour
+	if _, err := sendTrial(s, nextConfig, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := readTrial(s.Paths.StateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A baseline left by an earlier delivery is compared with, and its directory takes no attempt.
+	write(t, s.Paths.EffectsBaseline, `{"documents": [], "facts": {}, "outputs": {}}`)
+	dir := filepath.Dir(s.Paths.EffectsBaseline)
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	expire(s, first)
+	rec, open, err := readTrial(s.Paths.StateDir)
+	if err != nil || !open || !strings.Contains(rec.Error, "record the delivery in the baseline of the effects") || rec.Attempts != 1 || rec.Changed {
+		t.Fatalf("after a rollback that failed before it changed the node the record is %+v, open %v, %v; want it open and unchanged", rec, open, err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendConfirm(s, rec.Version); err != nil {
+		t.Errorf("a confirmation: %v", err)
+	}
+	if trialOpenOn(t, s) {
+		t.Error("the trial is open after the confirmation")
+	}
+}
+
 // TestResumeTrial arms a recorded trial as chalkd starts: one past its deadline rolls back at
 // once; a record a crash left before the slot was written goes once the running config is
 // delivered again. A record that cannot be read stays, and every change is refused until a

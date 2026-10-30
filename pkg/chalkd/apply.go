@@ -106,6 +106,9 @@ type delivery struct {
 	// held is set for a delivery of the config the slot runs already, which writes the slot no
 	// more: it applies the config and takes the effects, as the end of a trial's rollback does.
 	held bool
+	// started is set once commit recorded the attempt and may change the node; a commit that
+	// failed without it changed nothing.
+	started bool
 	// machine is what the config adds to the machine's storage; empty with keep.
 	machine machineChange
 	fx      *pendingEffects
@@ -239,9 +242,11 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 		s.refused(d.fx)
 		return nil, err
 	}
+	d.started = true
 	if len(m.Trust) > 0 {
 		if err := s.Certificate.ReplaceTrust(d.osCA, peerOf(ctx)...); err != nil {
 			if isRefusedTrust(err) {
+				d.started = false
 				s.refused(d.fx)
 				return nil, failed(connect.CodeInvalidArgument, "%v", err)
 			}

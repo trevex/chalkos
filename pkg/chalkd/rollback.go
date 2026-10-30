@@ -183,7 +183,7 @@ func (s *Server) deliverStored(ctx context.Context, stored slot.Stored, what str
 	d.held = d.replaced == next.Version
 	r, err := d.commit(ctx)
 	if err != nil {
-		return nil, true, err
+		return nil, d.started, err
 	}
 	return r.Msg, false, nil
 }
