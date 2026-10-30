@@ -313,9 +313,11 @@ BGP PREFIX   BEST  AS PATH  PEER   NEXT HOPS  LOCAL PREF  MED   COMMUNITIES
 `chalkctl node routes` on a leaf shows `::/0` from the edge while the WAN gives the edge its
 default route, and none from that edge after the route goes.
 
-Keep the list narrow. A broad list matches the router's other routes too and changes how BGP
-treats them, as the
-[limits of BGP on a router](../how-it-works/router/bgp.md#limits) describe.
+Keep the list narrow. A broad list also matches the paths BGP holds, such as the routes peers
+send, so the default route goes out while any of them exists. Each kernel or connected route the
+list matches becomes one more BGP path, and the check every 5 seconds walks them all. The
+[limits of BGP on a router](../how-it-works/router/bgp.md#limits) list what else the condition
+counts.
 
 The router marks the routes it tracks with the large community `4200000000:0:1`. An import of
 the VRF's routes into another VRF drops every route that carries it. Leave that community out of
