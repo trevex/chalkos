@@ -60,14 +60,17 @@ delivery again, the reloads and restarts that succeeded included, because what i
 predates them. The delivery that succeeds removes the file. A delivery refused before it changed
 anything leaves the file as it was.
 
-The file also records each delivery since the baseline as an attempt. Before step 4, chalkd adds
-the delivery's config and the hashes of its outputs and kinds. Once the delivery has made its
-changes, chalkd adds the facts that the effects' `when` rules read. The next delivery compares
-with every attempt as well as with the baseline. A delivery of the config from before the failure
-therefore restarts the units that the failed delivery restarted on its own config. This also
-holds when chalkd stopped part way through a delivery, because the attempt is recorded first. In the comparison with an attempt, `oldConfig` and `oldFacts` hold the attempt's
-config and facts. An attempt without facts, such as one that chalkd stopped before it loaded them,
-makes every `when` that reads a fact hold. The file keeps the 16 newest attempts.
+The file also records each delivery since the baseline as an attempt, including a delivery without
+config changes, which can change a fact alone. Before step 4, chalkd adds the delivery's config and
+the hashes of its outputs and kinds. Once the delivery has made its changes, chalkd adds the facts
+that the effects' `when` rules read. The next delivery compares with every attempt as well as with
+the baseline. A delivery of the config from before the failure therefore takes the effects that the
+failed delivery took on its own config. This also holds when chalkd stopped part way through a
+delivery, because the attempt is recorded first. In the comparison with an attempt, `oldConfig`
+and `oldFacts` hold the attempt's config and facts. An attempt without facts, such as one that
+chalkd stopped before it loaded them, makes every `when` that reads a fact hold. A retry that reads
+the same facts as an earlier run replaces that run's attempt. The file keeps the 16 newest
+attempts.
 
 A delivery without config, such as a Kubernetes share, the OS CAs or a node certificate, renders
 from the running slot's documents and does not change them. An output that fails then goes to the
