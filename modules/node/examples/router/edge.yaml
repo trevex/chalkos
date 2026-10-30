@@ -185,7 +185,7 @@ apiVersion: router.chalkos.dev/v1alpha1
 kind: NAT64
 metadata: {name: edge}
 spec:
-  pool4: [{prefix: 192.0.2.8/30}]
+  pool4: [{prefix: 192.0.2.252/30}]
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Resolver

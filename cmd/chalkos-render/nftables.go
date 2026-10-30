@@ -739,6 +739,13 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 		if err != nil || (a.Is4() != (n.Family == "ipv4")) {
 			return "", fmt.Errorf("to.address %q is no %s address", n.To.Address, n.Family)
 		}
+		for _, x := range f.nat64 {
+			for _, p := range x.pools {
+				if p.Contains(a) {
+					return "", fmt.Errorf("to.address %s lies in %s, the pool of NAT64 %s, whose addresses belong to the NAT64 whole; translate to an address outside the pool", a, p, x.name)
+				}
+			}
+		}
 		to := a.String()
 		if n.To.Port != nil {
 			if n.Match.Protocol == nil {

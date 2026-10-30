@@ -356,6 +356,22 @@ func TestNAT64Firewall(t *testing.T) {
 	if got := ruleset(open); strings.Contains(got, "NAT64") {
 		t.Errorf("a ruleset that forwards everything and translates nothing has NAT64 lines:\n%s", got)
 	}
+	open["NAT64"] = docs["NAT64"][1:]
+	if got := ruleset(open); !strings.Contains(got, "\t\tip saddr 169.254.111.206 masquerade comment \"NAT64 guest\"\n") {
+		t.Errorf("a ruleset without NATRules lacks the masquerade of an own pool:\n%s", got)
+	}
+}
+
+// A NATRule that translates to an address of a NAT64's explicit pool is refused: the pool's
+// addresses belong to the NAT64, whose route and exemptions take every connection to them.
+func TestNATRuleIntoNAT64Pool(t *testing.T) {
+	nat64 := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}]}`)
+	zone := routerDoc(t, "FirewallZone", "wan", `{"interfaces": ["eth0"]}`)
+	for typ, place := range map[string]string{"dnat": `"in": {"zone": "wan"}`, "snat": `"out": {"zone": "wan"}`} {
+		rule := routerDoc(t, "NATRule", "web", `{"type": "`+typ+`", "family": "ipv4", `+place+`, "to": {"address": "192.0.2.10"}}`)
+		refused(t, []string{"router-nftables", "50000"}, map[string][]any{"NAT64": {nat64}, "FirewallZone": {zone}, "NATRule": {rule}},
+			"NATRule web: to.address 192.0.2.10 lies in 192.0.2.8/30, the pool of NAT64 edge, whose addresses belong to the NAT64 whole; translate to an address outside the pool")
+	}
 }
 
 // Unbound refuses every client but those of allow, whose lines follow the refusals: of two lines of
