@@ -67,13 +67,12 @@ let
   links = "cel.bind(v, ${delivered "VRF"}, v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten())";
   # Whether the BGPPeer spec s names no interface, or one that held gives no VRF but the peer's.
   ownLink = "(s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf))";
-  # A VRF document's name or the default VRF's, as an import names it.
-  vrfName = types.strMatching documentName;
   # What a BGP instance imports of one family from other VRFs' instances.
   leak = types.submodule {
     options = {
       vrfs = mkOption {
-        type = types.nonEmptyListOf vrfName;
+        # A VRF document's name or the default VRF's, as an import names it.
+        type = types.nonEmptyListOf name;
         example = [ "tenant" ];
         description = "VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`.";
       };
