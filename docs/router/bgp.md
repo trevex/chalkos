@@ -281,8 +281,8 @@ spec:
 The router sends the default route while the peer's VRF holds a route that the list matches. The
 route can be one BGP learned, a kernel route or the prefix of a link that is up. Kernel routes
 include those from DHCP and router advertisements, a `Network`'s `[Route]` and a route someone
-added by hand. Blackhole and unreachable routes do not count. That includes the unreachable
-default that ends every VRF's table, so a VRF's peer can track `::/0` too.
+added by hand. Blackhole, unreachable and prohibit routes do not count. That includes the
+unreachable default that ends every VRF's table, so a VRF's peer can track `::/0` too.
 
 The router does not announce the routes it tracks. The list decides when the default route goes
 out, and the peer's policies still decide which other routes do. The default route follows the

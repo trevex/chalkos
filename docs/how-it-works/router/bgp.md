@@ -184,9 +184,9 @@ Such a route stays out of a VRF that imports it from a VRF that tracks routes of
 policy's `removeCommunities` strips the community from a peer's routes.
 
 bgpd checks the condition every 5 seconds, FRR's `bgp default-originate timer`. The default route
-therefore follows a tracked route within about 5 seconds. A delivery that changes the peer's
-family withdraws the default route at once, and the next check sends it again if the route
-exists.
+therefore follows a tracked route within about 5 seconds. A delivery that adds, changes or drops
+a peer family's `defaultOriginateWhen` withdraws the default route at once, and the next check
+sends it again if the route exists.
 
 ## The check parses the config, and the renderer checks the rest
 
