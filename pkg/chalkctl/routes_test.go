@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -22,7 +23,8 @@ import (
 // tests, and whose kernel holds the default route and an edge's address that BGP installed over
 // two links, to the recordings' next hops, and a blackhole. rules answer further commands, such as
 // jool's and unbound-control's, before the recordings; documents tells whether the node has a
-// NAT64 document edge and a Resolver, whose rendered files chalkd looks for.
+// NAT64 document edge and a Resolver, whose rendered files chalkd looks for. Its VRF tenant, of
+// table 100, holds a route over swp1, and tenant's instance imports a path from the VRF fabric.
 func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rule) string {
 	t.Helper()
 	current, _ := json.Marshal(ta.identity(t))
@@ -35,11 +37,16 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 		return string(data)
 	}
 	r := &tooltest.Runner{Rules: append(rules,
-		tooltest.Rule{Prefix: "vtysh -c show bgp neighbors json", Out: frr("neighbors.json")},
+		tooltest.Rule{Prefix: "vtysh -c " + router.NeighborsCommand, Out: frr("neighbors.json")},
 		tooltest.Rule{Prefix: "vtysh -c show bgp ipv4 unicast detail json", Out: frr("ipv4-detail.json")},
 		tooltest.Rule{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: frr("ipv6-detail.json")},
+		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv4 unicast detail json", Out: "{}"},
+		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: frr("ipv6-detail-imported.json")},
 	)}
-	conf, nat64 := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir()
+	conf, nat64, vrfs := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"spec": {"table": 100}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if documents {
 		for _, file := range []string{conf, filepath.Join(nat64, "edge.json")} {
 			if err := os.WriteFile(file, []byte("\n"), 0o644); err != nil {
@@ -47,7 +54,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 			}
 		}
 	}
-	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{ResolverConfig: conf, NAT64Dir: nat64, KernelRoutes: func() ([]*router.KernelRoute, error) {
+	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{ResolverConfig: conf, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
 		hops := func() []*router.NextHop {
 			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
@@ -56,6 +63,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 			{Destination: "::/0", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20, NextHops: hops()},
 			{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254, Metric: 1024},
 			{Destination: "2001:db8:ffff::1/128", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20, NextHops: hops()},
+			{Destination: "2001:db8:ffff::2/128", Type: "unicast", Protocol: "bgp", Table: 100, Metric: 20, NextHops: []*router.NextHop{{Gateway: "fe80::5054:ff:fe12:102", Interface: "swp1"}}},
 		}, nil
 	}}))
 	return ta.startNode(t, s)
@@ -84,7 +92,7 @@ func TestNodeRoutes(t *testing.T) {
 	}
 }
 
-// status prints a router's BGP sessions, the uptime of each established one.
+// status prints a router's BGP sessions by VRF, the uptime of each established one.
 func TestStatusRouter(t *testing.T) {
 	ta := newTestApp(t)
 	addr := routerNode(t, ta, false)
@@ -92,10 +100,11 @@ func TestStatusRouter(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "bgp:\n" +
-		"  PEER     NEIGHBOR       STATE        UPTIME  RECEIVED  SENT  BFD\n" +
-		"  fabric   eth1           Established  1h2m3s  1         2     up\n" +
-		"  fabric   eth2           Idle         -       0         0     down\n" +
-		"  transit  203.0.113.254  Active       -       0         0     -\n" +
+		"  VRF      PEER     NEIGHBOR       STATE        UPTIME  RECEIVED  SENT  BFD\n" +
+		"  default  fabric   eth1           Established  1h2m3s  1         2     up\n" +
+		"  default  fabric   eth2           Idle         -       0         0     down\n" +
+		"  default  transit  203.0.113.254  Active       -       0         0     -\n" +
+		"  tenant   leaves   swp1           Established  21s     1         2     -\n" +
 		"certificates:\n"
 	if got := ta.stdout.String(); !strings.Contains(got, want) {
 		t.Errorf("stdout:\n%s\nlacks:\n%s", got, want)
@@ -163,3 +172,28 @@ type runsWith struct {
 }
 
 func (n runsWith) Runner() tool.Runner { return n.r }
+
+// node routes --vrf prints a VRF's table and its instance's paths; a path the instance imports
+// names the VRF it came from as its peer.
+func TestNodeRoutesOfAVRF(t *testing.T) {
+	ta := newTestApp(t)
+	addr := routerNode(t, ta, false)
+	if err := ta.run(context.Background(), ta.args([]string{"node", "routes", "n1", "--vrf", "tenant"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, l := range strings.Split(strings.TrimSpace(ta.stdout.String()), "\n") {
+		got = append(got, strings.Join(strings.Fields(l), " "))
+	}
+	want := []string{
+		"DESTINATION TYPE PROTOCOL TABLE METRIC NEXT HOPS",
+		"2001:db8:ffff::2/128 unicast bgp 100 20 fe80::5054:ff:fe12:102 on swp1",
+		"",
+		"BGP PREFIX BEST AS PATH PEER NEXT HOPS LOCAL PREF MED COMMUNITIES",
+		"2001:db8:ffff::1/128 * - local :: - 0 -",
+		"2001:db8:ffff::2/128 * 64513 vrf fabric fe80::5054:ff:fe12:102 - 0 -",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("stdout:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}

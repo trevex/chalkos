@@ -22,8 +22,8 @@ func Client(conn *client.Conn) routerv1connect.RouterServiceClient {
 }
 
 type routesFlags struct {
-	node            layer.NodeFlags
-	protocol, table string
+	node                 layer.NodeFlags
+	protocol, table, vrf string
 }
 
 func nodeRoutesCommand(h layer.Host) *cobra.Command {
@@ -38,11 +38,12 @@ func nodeRoutesCommand(h layer.Host) *cobra.Command {
 	f.node = h.NodeFlags(cmd.Flags())
 	cmd.Flags().StringVar(&f.protocol, "protocol", "", "only the kernel's routes of this protocol, such as kernel, static, ra, dhcp or bgp")
 	cmd.Flags().StringVar(&f.table, "table", "", "the kernel's routing table: main, local, default, all or a number (default main)")
+	cmd.Flags().StringVar(&f.vrf, "vrf", "", "a VRF, by the name of its VRF document, or default: its table and its BGP instance's paths")
 	return cmd
 }
 
 func nodeRoutes(h layer.Host, ctx context.Context, f routesFlags, pos []string) error {
-	req := &routerv1.RoutesRequest{Protocol: f.protocol, Table: f.table}
+	req := &routerv1.RoutesRequest{Protocol: f.protocol, Table: f.table, Vrf: f.vrf}
 	if len(pos) > 1 {
 		req.Prefix = pos[1]
 	}
@@ -87,7 +88,11 @@ func nodeRoutes(h layer.Host, ctx context.Context, f routesFlags, pos []string) 
 			if b.LocalPref != nil {
 				pref = fmt.Sprint(*b.LocalPref)
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n", b.Prefix, best, cmp.Or(b.AsPath, "-"), cmp.Or(b.Peer, "local"),
+			peer := cmp.Or(b.Peer, "local")
+			if b.ImportedFrom != "" {
+				peer = "vrf " + b.ImportedFrom
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n", b.Prefix, best, cmp.Or(b.AsPath, "-"), peer,
 				cmp.Or(strings.Join(b.NextHops, ", "), "-"), pref, b.Med, cmp.Or(strings.Join(b.Communities, " "), "-"))
 		}
 		return w.Flush()

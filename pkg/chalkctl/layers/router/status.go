@@ -59,7 +59,7 @@ func routerStatus(h layer.Host, r *routerv1.StatusResponse) error {
 	return nil
 }
 
-// bgpStatus prints a router's BGP sessions, or why their state is unknown.
+// bgpStatus prints a router's BGP sessions, in chalkd's order, by VRF, or why their state is unknown.
 func bgpStatus(h layer.Host, r *routerv1.StatusResponse) error {
 	switch {
 	case r.BgpError != "":
@@ -71,13 +71,13 @@ func bgpStatus(h layer.Host, r *routerv1.StatusResponse) error {
 	}
 	fmt.Fprintln(h.Stdout(), "bgp:")
 	w := h.Table()
-	fmt.Fprintln(w, "  PEER\tNEIGHBOR\tSTATE\tUPTIME\tRECEIVED\tSENT\tBFD")
+	fmt.Fprintln(w, "  VRF\tPEER\tNEIGHBOR\tSTATE\tUPTIME\tRECEIVED\tSENT\tBFD")
 	for _, p := range r.Peers {
 		uptime := "-"
 		if p.State == "Established" {
 			uptime = (time.Duration(p.UptimeSeconds) * time.Second).String()
 		}
-		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%d\t%d\t%s\n", p.Name, p.Neighbor, p.State, uptime, p.PrefixesReceived, p.PrefixesSent, cmp.Or(p.Bfd, "-"))
+		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%d\t%d\t%s\n", cmp.Or(p.Vrf, "default"), p.Name, p.Neighbor, p.State, uptime, p.PrefixesReceived, p.PrefixesSent, cmp.Or(p.Bfd, "-"))
 	}
 	return w.Flush()
 }
