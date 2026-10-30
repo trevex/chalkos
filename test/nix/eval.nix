@@ -504,8 +504,9 @@ lib.runTests {
   # namespace, and the node's own names resolve as before. Each VRF's resolver runs as
   # unbound@<vrf> with the same hardening, bound to the VRF's device with BindNetworkInterface= and
   # stopped with it, which chalkos-resolvers starts, reloads and stops once networkd and the NAT64s
-  # are up, whenever the output unbound or networkd changes; the output reads the VRFs and Networks
-  # and checks every config it renders. Other images run neither.
+  # are up, whenever the output unbound or networkd changes, without capabilities, devices or write
+  # access to the cgroups; the output reads the VRFs and Networks and checks every config it
+  # renders. Other images run neither.
   testRouterNAT64AndResolver = {
     expr =
       let
@@ -619,7 +620,13 @@ lib.runTests {
               "systemd-networkd.service"
               "chalkos-nat64.service"
             ];
-            inherit (r.serviceConfig) Type RemainAfterExit;
+            inherit (r.serviceConfig)
+              Type
+              RemainAfterExit
+              CapabilityBoundingSet
+              PrivateDevices
+              ProtectControlGroups
+              ;
             reloads = r.serviceConfig.ExecReload == r.serviceConfig.ExecStart;
             stops = lib.hasSuffix " stop" r.serviceConfig.ExecStop;
             effect = {
@@ -708,6 +715,9 @@ lib.runTests {
         after = true;
         Type = "oneshot";
         RemainAfterExit = true;
+        CapabilityBoundingSet = [ "" ];
+        PrivateDevices = true;
+        ProtectControlGroups = true;
         reloads = true;
         stops = true;
         effect = {

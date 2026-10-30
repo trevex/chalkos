@@ -208,8 +208,12 @@ in
         ExecStart = lib.getExe reconcile;
         ExecReload = lib.getExe reconcile;
         ExecStop = "${lib.getExe reconcile} stop";
+        # systemctl reaches systemd over its socket, for which root needs no capability.
+        CapabilityBoundingSet = [ "" ];
         RestrictAddressFamilies = [ "AF_UNIX" ];
         NoNewPrivileges = true;
+        PrivateDevices = true;
+        ProtectControlGroups = true;
         ProtectSystem = "strict";
         ProtectHome = true;
         PrivateTmp = true;
