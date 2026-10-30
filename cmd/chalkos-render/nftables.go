@@ -605,9 +605,9 @@ func (f *firewall) forward(b *strings.Builder) {
 	b.WriteString("\t}\n")
 }
 
-// translation renders the NATRule documents, in the order of their names: dnat in dstnat after
-// the NAT64s' links, masquerade and snat in srcnat after the NAT64s' lines. A ruleset without NAT rules and without an
-// own pool of a NAT64 has neither chain.
+// translation renders the NATRule documents, in the order of their names: dnat in dstnat after the
+// NAT64s' links and pools, masquerade and snat in srcnat after the NAT64s' lines. A ruleset without
+// NAT rules and without an own pool of a NAT64 has neither chain.
 func (f *firewall) translation(b *strings.Builder) error {
 	var dst, src []string
 	for _, n := range f.nat {
@@ -622,11 +622,15 @@ func (f *firewall) translation(b *strings.Builder) error {
 		}
 	}
 	// No rule translates the destination of a connection out of a NAT64's link, which Jool
-	// translated already.
+	// translated already, or to an explicit pool, whose addresses belong to the NAT64 whole.
 	if len(dst) > 0 {
 		var exempt []string
 		for _, n := range f.nat64 {
-			exempt = append(exempt, fmt.Sprintf("iifname %s accept comment %s", strconv.Quote(nat64LinkPrefix+n.name), strconv.Quote("NAT64 "+n.name)))
+			c := strconv.Quote("NAT64 " + n.name)
+			exempt = append(exempt, fmt.Sprintf("iifname %s accept comment %s", strconv.Quote(nat64LinkPrefix+n.name), c))
+			if len(n.pools) > 0 {
+				exempt = append(exempt, fmt.Sprintf("ip daddr %s accept comment %s", n.poolSet(), c))
+			}
 		}
 		dst = append(exempt, dst...)
 	}
@@ -650,14 +654,16 @@ func (f *firewall) translation(b *strings.Builder) error {
 }
 
 // nat64Lines are the source NAT lines of the NAT64s, ahead of the NATRules': no rule translates a
-// connection into a NAT64's link or from its explicit pool, and the main namespace masquerades an
-// own pool's inner address to the address of the link a connection leaves through, within the
-// ports Jool takes of it.
+// connection into a NAT64's link, from its prefix, which IPv4 hosts open towards IPv6 through it,
+// or from its explicit pool, and the main namespace masquerades an own pool's inner address to the
+// address of the link a connection leaves through, within the ports Jool takes of it.
 func (f *firewall) nat64Lines() []string {
 	var lines []string
 	for _, n := range f.nat64 {
 		c := strconv.Quote("NAT64 " + n.name)
-		lines = append(lines, fmt.Sprintf("oifname %s accept comment %s", strconv.Quote(nat64LinkPrefix+n.name), c))
+		lines = append(lines,
+			fmt.Sprintf("oifname %s accept comment %s", strconv.Quote(nat64LinkPrefix+n.name), c),
+			fmt.Sprintf("ip6 saddr %s accept comment %s", n.jool.Global.Pool6, c))
 		if len(n.pools) == 0 {
 			lines = append(lines,
 				fmt.Sprintf("ip saddr %s meta l4proto { tcp, udp } masquerade to :%s comment %s", n.inner, ownPorts, c),
