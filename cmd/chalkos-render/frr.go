@@ -374,7 +374,7 @@ func newInstance(g named[bgpSpec], vrfs []named[vrfSpec]) (*instance, error) {
 }
 
 // checkNetworks refuses a network of an instance that is no address range, two networks of one
-// range, and a policy of another family.
+// range, a default route in a VRF, whose table always holds one, and a policy of another family.
 func (c *frr) checkNetworks(in *instance) error {
 	announced := map[netip.Prefix]string{}
 	for _, n := range in.spec.Networks {
@@ -384,6 +384,9 @@ func (c *frr) checkNetworks(in *instance) error {
 		}
 		if other, ok := announced[p.Masked()]; ok {
 			return fmt.Errorf("BGP %s: networks %s and %s both announce %s; give each range one network", in.name, other, n.Prefix, p.Masked())
+		}
+		if p.Bits() == 0 && in.vrf != defaultVRF {
+			return fmt.Errorf("BGP %s: network %s of VRF %s would always be announced, as the VRF's table ends in an unreachable default route; use a peer's defaultOriginate", in.name, n.Prefix, in.vrf)
 		}
 		announced[p.Masked()] = n.Prefix
 		if n.Policy != nil {

@@ -811,6 +811,8 @@ func TestFRRVRFRefusals(t *testing.T) {
 		"a prepend for two AS numbers": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "networks": [{"prefix": "2001:db8:1::/48", "policy": "p"}]`),
 			bgp("tenant", 64513, `, "vrf": "tenant", "networks": [{"prefix": "2001:db8:2::/48", "policy": "p"}]`)}, "RoutingPolicy": {prepend}}),
 			"RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own"},
+		"a default-route network in a VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, ""), bgp("tenant", 64512, `, "vrf": "tenant", "networks": [{"prefix": "::/0"}]`)}}),
+			"BGP tenant: network ::/0 of VRF tenant would always be announced, as the VRF's table ends in an unreachable default route; use a peer's defaultOriginate"},
 		"an import of a VRF with a conntrack zone": {map[string][]any{
 			"VRF": {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"], "conntrackZone": 1}`)}, "Network": {eth2},
 			"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["tenant"]}}`), bgp("tenant", 64512, `, "vrf": "tenant"`)}},
