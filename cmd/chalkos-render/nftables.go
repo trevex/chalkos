@@ -296,7 +296,7 @@ func zoneLinksOf(d routerDocuments) (map[string]zoneLinks, error) {
 	for _, z := range d.Zones {
 		what := "FirewallZone " + z.Name
 		if len(z.Spec.Interfaces) == 0 && len(z.Spec.VRFs) == 0 {
-			return nil, fmt.Errorf("%s names no interface and no VRF", what)
+			return nil, fmt.Errorf("%s: a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both", what)
 		}
 		if len(z.Spec.Interfaces) > 0 {
 			if err := checkInterfaces(what, z.Spec.Interfaces); err != nil {

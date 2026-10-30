@@ -354,7 +354,7 @@ func TestRouterRefusals(t *testing.T) {
 		"a management interface":        {[]string{"router-nftables", "50000"}, map[string][]any{"Router": {doc("Router", "router", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l4", "conntrackMax": null, "management": {"interfaces": ["eth0 accept"]}}`)}}, `"eth0 accept" is no interface name or glob`},
 		"a NAT rule's interface":        {[]string{"router-nftables", "50000"}, map[string][]any{"NATRule": {doc("NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "eth0\"; accept"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}}, `is no interface name or glob`},
 		"no management interface":       {[]string{"router-nftables", "50000"}, map[string][]any{"Router": {doc("Router", "router", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l4", "conntrackMax": null, "management": {"interfaces": []}}`)}}, "management.interfaces names no interface"},
-		"a zone without interfaces":     {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {doc("FirewallZone", "wan", `{"interfaces": []}`)}}, "FirewallZone wan names no interface and no VRF"},
+		"a zone without interfaces":     {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {doc("FirewallZone", "wan", `{"interfaces": []}`)}}, "FirewallZone wan: a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"},
 		// A BGPPeer's ports open on its interfaces or from its address alone.
 		"a peer's interface that ends a set": {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"interface": "eth1\" } accept; iifname { \"eth2"}`)}}, `is no interface name or glob`},
 		"a peer's address with a zone":       {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "fe80::1%eth1"}`)}}, `BGPPeer a: address "fe80::1%eth1" is no neighbour address`},
@@ -1092,7 +1092,7 @@ func TestVRFZoneRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"a zone of nothing":                  {with(zone("x", `{"interfaces": [], "vrfs": []}`)), "FirewallZone x names no interface and no VRF"},
+		"a zone of nothing":                  {with(zone("x", `{"interfaces": [], "vrfs": []}`)), "FirewallZone x: a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"},
 		"a VRF no document declares":         {with(zone("x", `{"interfaces": [], "vrfs": ["nosuch"]}`)), `FirewallZone x names the VRF "nosuch", which no VRF document declares`},
 		"a VRF in two zones":                 {with(tenant, zone("x", `{"interfaces": [], "vrfs": ["tenant"]}`)), "the VRF tenant is in more than one FirewallZone, or twice in one"},
 		"a VRF's device":                     {with(zone("x", `{"interfaces": ["ten*"], "vrfs": []}`)), "FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs"},
