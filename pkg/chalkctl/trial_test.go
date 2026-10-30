@@ -408,7 +408,7 @@ func TestUnreadableTrialRecord(t *testing.T) {
 	if err := run(context.Background(), "apply-config", "n1", "--rollback"); err != nil {
 		t.Fatal(err)
 	}
-	if want := "chalkctl: warning: n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; the rollback delivers config " + first + ", the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already"; !strings.Contains(ta.stderr.String(), want) {
+	if want := "chalkctl: warning: n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; the rollback delivers config " + first + ", the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second apply-config --rollback undoes it"; !strings.Contains(ta.stderr.String(), want) {
 		t.Errorf("stderr lacks %q:\n%s", want, ta.stderr)
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != first {
@@ -416,6 +416,72 @@ func TestUnreadableTrialRecord(t *testing.T) {
 	}
 	if err := run(context.Background(), "status", "n1"); err != nil || strings.Contains(ta.stdout.String(), "trial") {
 		t.Errorf("status after the rollback = %v:\n%s", err, ta.stdout)
+	}
+}
+
+// TestUnreadableTrialAfterDeadlineRollback: once a rollback at the deadline wrote the config from
+// before the trial, the node's previous config is the config on trial. A rollback past a record
+// the node cannot read delivers that config, and a second rollback undoes it.
+func TestUnreadableTrialAfterDeadlineRollback(t *testing.T) {
+	ta := newTestApp(t)
+	s, run, first, second := trialNode(t, ta)
+	if err := run(context.Background(), "apply-config", "n1", "--try", "1m", "--no-confirm"); err != nil {
+		t.Fatal(err)
+	}
+	if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", "trial"), "{")
+	ta.stderr.Reset()
+	if err := run(context.Background(), "apply-config", "n1", "--rollback"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "the rollback delivers config " + second + ", the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second apply-config --rollback undoes it"; !strings.Contains(ta.stderr.String(), want) {
+		t.Errorf("stderr lacks %q:\n%s", want, ta.stderr)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != second {
+		t.Fatalf("the node runs %s, want %s", v, second)
+	}
+	if err := run(context.Background(), "apply-config", "n1", "--rollback"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != first {
+		t.Errorf("after a second rollback the node runs %s, want %s", v, first)
+	}
+}
+
+// TestUnreadableTrialWithoutPreviousConfig: a rollback past a record the node cannot read, on a
+// node that keeps no previous config, delivers the config the node runs again, which removes the
+// record.
+func TestUnreadableTrialWithoutPreviousConfig(t *testing.T) {
+	ta := newTestApp(t)
+	s, run, first, _ := trialNode(t, ta)
+	if err := run(context.Background(), "apply-config", "n1", "--try", "1m", "--no-confirm"); err != nil {
+		t.Fatal(err)
+	}
+	dir := slotOf(t, s)
+	if err := slot.RestorePrevious(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(slot.Previous(dir)); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", "trial"), "{")
+	ta.stderr.Reset()
+	if err := run(context.Background(), "apply-config", "n1", "--rollback"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "chalkctl: warning: n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; the node keeps no previous config, so the rollback delivers config " + first + ", the config it runs, again"; !strings.Contains(ta.stderr.String(), want) {
+		t.Errorf("stderr lacks %q:\n%s", want, ta.stderr)
+	}
+	if want := "n1 runs config " + first + ", delivered again\n"; !strings.Contains(ta.stdout.String(), want) {
+		t.Errorf("output lacks %q:\n%s", want, ta.stdout)
+	}
+	if v, _ := slot.Version(dir); v != first {
+		t.Errorf("the node runs %s, want %s", v, first)
+	}
+	if _, err := os.Stat(filepath.Join(s.Paths.StateDir, "chalkd", "trial")); !os.IsNotExist(err) {
+		t.Errorf("the trial record stays: %v", err)
 	}
 }
 

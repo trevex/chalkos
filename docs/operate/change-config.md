@@ -403,7 +403,8 @@ The node then refuses every change and every confirmation, and neither the deadl
 ends the trial. `chalkctl apply-config w1 --secrets secrets.age --rollback` delivers the previous
 config and removes the record. chalkctl first warns which config the rollback delivers. If a
 rollback at the deadline has replaced the config already, that previous config is the one that was
-on trial.
+on trial, and a second `--rollback` undoes it. A node that keeps no previous config gets the config
+it runs delivered again, which removes the record as well.
 
 ## If something goes wrong
 

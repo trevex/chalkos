@@ -339,9 +339,14 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	}
 	// A trial whose record the node cannot read names no config from before it, so the rollback
 	// goes to the previous config, which a rollback at the trial's deadline may have made the config
-	// on trial.
-	if e := st.Msg.TrialError; e != "" && version != "" {
-		fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the rollback delivers config %s, the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already\n", t.name, e, version)
+	// on trial; a second rollback then undoes it. A node that keeps no previous config delivers the
+	// config it runs again, which removes the record as well.
+	if e := st.Msg.TrialError; e != "" {
+		if version != "" {
+			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the rollback delivers config %s, the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second apply-config --rollback undoes it\n", t.name, e, version)
+		} else if version = st.Msg.ConfigVersion; version != "" {
+			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the node keeps no previous config, so the rollback delivers config %s, the config it runs, again\n", t.name, e, version)
+		}
 	}
 	if version == "" {
 		return fmt.Errorf("%s keeps no previous config of the image it runs; it keeps one once apply-config replaced the config the image was installed or upgraded with", t.name)
@@ -373,7 +378,11 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 		fmt.Fprintf(a.stdout, "restarted %s\n", u)
 	}
 	a.warnDelivery(t.name, &nodev1.ApplyConfigResponse{Warnings: resp.Msg.Warnings})
-	fmt.Fprintf(a.stdout, "%s runs config %s again; config %s is its previous one now\n", t.name, version, replaced)
+	if version == replaced {
+		fmt.Fprintf(a.stdout, "%s runs config %s, delivered again\n", t.name, version)
+	} else {
+		fmt.Fprintf(a.stdout, "%s runs config %s again; config %s is its previous one now\n", t.name, version, replaced)
+	}
 	if tr != nil {
 		fmt.Fprintf(a.stdout, "%s: the trial of config %s ended\n", t.name, tr.Version)
 	}
