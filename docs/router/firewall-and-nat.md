@@ -153,7 +153,9 @@ NAT rules leave the connections of a NAT64 alone: they leave from the addresses 
 an empty pool's own masquerade translates them. The forward chain accepts a NAT64's translated
 traffic ahead of the policies, so no policy filters it. A NAT rule may not translate to an
 address of a NAT64's pool, nor a `dnat` rule match a destination in a pool or a NAT64 prefix.
-[Translate to IPv4 and resolve names](nat64-and-dns.md) sets a NAT64 up.
+No zone holds a NAT64's link `n64-<name>`: the output `router-nftables` refuses a zone whose
+`interfaces` name or glob one, such as `*`, and a NAT rule whose interface matches NAT64 links
+alone. [Translate to IPv4 and resolve names](nat64-and-dns.md) sets a NAT64 up.
 
 ## Deliver and check the firewall
 

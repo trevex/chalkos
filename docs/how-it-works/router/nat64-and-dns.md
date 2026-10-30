@@ -83,8 +83,8 @@ renderer takes the FNV-1a hash of the NAT64's name modulo 4096, so the /30 depen
 alone: `edge` takes `169.254.96.240/30` and `guest` `169.254.111.204/30`. The outer end takes the
 /30's first host and the inner end its second. A NAT64 keeps its addresses while other NAT64s come
 and go, and nothing moves another NAT64's link. Two names whose hashes pick one /30 are refused,
-the later name in the message. While the node has a NAT64, the renderer also refuses a static
-address of a `Network` document in `169.254.64.0/18`.
+the later name in the message. While the node has a NAT64, the rules and the renderer also
+refuse a static address of a `Network` document in `169.254.64.0/18`.
 
 `jool file check`, the output's check, reads a file's syntax and bounds alone. The renderer parses
 every value and refuses what Jool's kernel module or the link would refuse once the instance
@@ -99,6 +99,13 @@ loads:
 - two entries of one pool that share an address, a protocol and a port, and two NAT64s whose
   pools share an address;
 - a VRF that no `VRF` document declares.
+
+The rules refuse each of these too, so `chalkctl validate` reports them; two names of one /30
+are the renderer's alone. The rules read a link's static addresses from `Address=` in the
+`[Network]` and `[Address]` sections and `ServerAddress=` in `[DHCPServer]`, as the renderer
+does. Naming the `Network` of each address would cost the rules a loop more than chalkd allows,
+so their messages leave it out, while the renderer's name it. The rules also refuse a `VRF` whose
+name starts with `n64-`, which the NAT64s' links take.
 
 The output's inputs are `NAT64`, `VRF` and `Network`, so a change of a VRF's table changes
 `.veth` too.
@@ -149,13 +156,18 @@ networkd document of that name, a `NetDev` that creates a device of the link's n
 `frr.service`. Each delivery that changes the output reloads it. A start and a reload do the same:
 
 1. It reads every file first, Jool's with `jool file check` and the link's against the form that
-   chalkos-render writes. A file it refuses fails the unit, and no instance changes.
+   chalkos-render writes. A file it refuses fails the unit, and no instance changes. It then
+   reads the router's IPv4 addresses, those from DHCP included, which the rules cannot see. An
+   explicit pool that holds one fails the unit too, before any instance changes:
+   `chalkos-nat64: NAT64 edge: the pool entry 192.0.2.252/30 holds 192.0.2.253, an address of the link eth0, …`.
 2. Per instance, it creates the namespace, turns forwarding off inside it, and creates the veth
-   pair. A link whose other end is not in the namespace is made anew.
+   pair. A link whose other end is not in the namespace is made anew. A device of the link's name
+   and another kind, such as a dummy, stays, and the instance fails.
 3. It puts the outer end into its VRF, or out of every VRF for the default VRF. networkd creates
    a VRF without waiting, at boot and when a delivery changed its table, so the unit waits up to
    30 seconds for the VRF's device with the rendered table. A VRF that does not have it by then
-   fails the instance with `chalkos-nat64: VRF guest has no table 300 after 30 s`.
+   fails the instance with `chalkos-nat64: VRF guest has no table 300 after 30 s`. The unit
+   waits once per VRF, and the other instances of that VRF fail at once.
 4. It sets the addresses of both ends and the namespace's default routes.
 5. `jool file handle`, run in the namespace through `nsenter`, creates the instance or replaces it
    in one step. A replaced instance keeps its sessions, so a delivery that changes a pool ends no
@@ -210,7 +222,9 @@ oifname "n64-guest" ip6 daddr 64:ff9b::/96 accept comment "NAT64 guest"
 
 An empty pool's replies come back as part of the masqueraded connections, which the chain
 accepts as established. Anything else on a NAT64's link goes on to the zones' policies, and is
-dropped unless a zone holds the link.
+dropped: the renderer refuses a `FirewallZone` whose `interfaces` name or glob a NAT64's link, so
+no zone holds one. It also refuses a NAT rule whose interface matches nothing but NAT64 links,
+which the NAT chains leave alone.
 
 The NAT rules leave the NAT64s' traffic alone. The `srcnat` chain, when it exists, starts with
 the NAT64s' lines, and an empty pool adds the chain by itself. The edge's lines exempt connections
@@ -408,8 +422,8 @@ sessions show who connects where.
 
 - The firewall's policies do not limit who uses a NAT64. Routing to the prefix and the
   reverse-path filter do.
-- A pool entry holds no address of the router's links, which the router answers itself. An
-  address from DHCP is not checked and does not work in a pool.
+- A pool entry holds no address of the router's links, which the router answers itself. The
+  rules cannot see an address from DHCP, so `chalkos-nat64.service` refuses it when it runs.
 - An empty pool's connections are masqueraded, so conntrack lets in only the replies of
   connections that clients opened. Jool's own pools let a binding's remote hosts in.
 - Each translated connection takes two conntrack entries in the router's namespace, one per side.

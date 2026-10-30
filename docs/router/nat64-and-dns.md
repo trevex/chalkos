@@ -55,15 +55,22 @@ uplink whose address comes from DHCP. Several NAT64s may have an empty `pool4`.
 
 An entry of `pool4` holds addresses that the uplink routes to the router, never an address of
 the router's own links. The router answers its own addresses itself, so their replies never
-reach the NAT64. The output `jool` refuses an entry that holds an address a `Network` document
-gives a link, such as `192.0.2.253/24` on the uplink of `10-wan`:
+reach the NAT64. The rules refuse an entry that holds an address a `Network` document gives a
+link, such as `192.0.2.253/24` on the uplink of `10-wan`, so `chalkctl validate` reports it:
 
 ```text
-NAT64 edge: the pool entry 192.0.2.252/30 holds 192.0.2.253, an address Network 10-wan gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through
+NAT64 edge: the pool entry 192.0.2.252/30 holds 192.0.2.253, an address a Network document gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through
 ```
 
-An address that DHCP gives the uplink is not in any document, so the renderer cannot refuse it.
-It does not work in a pool either. Give such an uplink an empty `pool4`.
+An address that DHCP gives the uplink is not in any document, so the rules cannot refuse it.
+`chalkos-nat64.service` checks the router's addresses instead. When a pool holds one, the unit
+fails before it changes any instance and names the link:
+
+```text
+chalkos-nat64: NAT64 edge: the pool entry 192.0.2.252/30 holds 192.0.2.253, an address of the link eth0, which the router answers itself; leave pool4 empty to take the address of the link the connections leave through; no instance changed
+```
+
+Give such an uplink an empty `pool4`.
 
 Each address of a pool belongs to its NAT64 alone. No `Network` gives a link one of them, and no
 NAT rule translates to one or matches a destination among them. The output `router-nftables`
@@ -102,11 +109,11 @@ renames it, replaces the translator, and the connections it carried end.
 
 Each NAT64 joins the router through a link of its own, whose two ends take a /30 of
 `169.254.64.0/18`. The /30 follows from a hash of the NAT64's name alone, so a NAT64 keeps its
-link's addresses while others come and go. While the node has a NAT64, the output `jool` refuses
-a static address in that range on any other link:
+link's addresses while others come and go. While the node has a NAT64, the rules refuse a static
+address in that range on any other link:
 
 ```text
-Network 30-lan gives a link the address 169.254.96.241, which lies in 169.254.64.0/18, the range of the NAT64s' links; give the link another address
+a Network document gives a link the address 169.254.96.241, which lies in 169.254.64.0/18, the range of the NAT64s' links; give the link another address
 ```
 
 networkd's IPv4 link-local addressing picks an address of `169.254.0.0/16` by itself, which may
@@ -423,18 +430,41 @@ change, except that it runs one NAT64 with an empty `pool4` at most:
 - Rename each NAT64 whose name has more than 11 characters. The rules refuse it with
   `NAT64 <name> has a name of more than 11 characters, which its link n64-<name> does not take as an interface's name; give it a shorter one`.
   A rename replaces the translator, and its connections end.
-- Empty each `pool4` that holds an address of the router's own links. A static address is
-  refused, as [Add a NAT64](#add-a-nat64) shows. An address from DHCP passes and then translates
-  nothing. An empty pool takes the uplink's address, as before.
+- Empty each `pool4` that holds an address of the router's own links. An empty pool takes the
+  uplink's address, as before. `chalkctl validate` with the new image in the inventory refuses
+  a pool of a static address, as [Add a NAT64](#add-a-nat64) shows. A pool of an address from
+  DHCP passes it, and `chalkos-nat64.service` then fails at the new image's first boot, so the
+  router falls back to the image it ran.
 - Move every static address out of `169.254.64.0/18`, and leave IPv4 link-local addressing off
   on the router's links.
 - Give no `dnat` or `snat` rule a `to.address` in a NAT64's pool, and no `dnat` rule a
   `match.destination` in a NAT64's pool or prefix.
+- Give each VRF whose clients use a NAT64 a `NAT64` of its own, with `vrf` set. On older images
+  the one Jool of the router's namespace translated whatever reached its prefix, from any VRF
+  whose routes led there. Each NAT64 now translates the traffic of its own VRF alone, so a VRF
+  without one loses NAT64.
+
+`chalkctl validate` does not run the renderers, which check the rest when the new image renders
+the config at its first boot. A refusal there fails the boot, and the router falls back to the
+image it ran. Look for these before you upgrade:
+
+- Two NAT64 names whose hashes pick one /30, as
+  [Keep 169.254.64.0/18 free](#keep-16925464018-free) shows. Rename one of them.
+- A `Network` that sorts before `00-n64-<name>` and may match the NAT64's link `n64-<name>`, such
+  as a catch-all `00-all` with `Name=*`. The renderer refuses it with
+  `Network 00-all matches the link n64-edge of NAT64 edge before 00-n64-edge; rename it to sort after 00-n64-edge`.
+  Rename it to sort after `00-n64-<name>`, or narrow its `Name=`.
+- A `FirewallZone` whose `interfaces` name or glob a NAT64's link, such as `*` or `n*`, and a
+  NAT rule whose interface matches NAT64 links alone. Name the links the zone or rule means.
 
 The upgrade reboots the router, and the NAT64s' connections end. Once `chalkos-nat64.service`
 runs on the new image, clients connect again. The translated connections now pass the firewall's
 connection tracking: each takes two entries, one for its IPv6 side and one for its IPv4 side,
 where it took none before. Raise `Router.spec.conntrackMax` when the NAT64s carry many connections.
+
+The zones' policies do not filter the connections a NAT64 translates. Any host whose packets to
+a NAT64's prefix reach the router in the NAT64's VRF uses the NAT64. Limit who routes the prefix
+to the router, by the routes you announce and by the reverse-path filter.
 
 `chalkos-nat64.service` and `chalkos-resolvers.service` are units of the boot. When either fails
 on the new image, the boot's health check fails, and the router falls back to the image it ran,
