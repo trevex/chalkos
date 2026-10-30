@@ -370,7 +370,11 @@ resolver guest: running
 A NAT64 whose instance did not load has no line. After a boot the status then lists
 `failed unit chalkos-nat64.service`, and a delivery fails with the unit's error. A VRF's resolver
 that does not run shows its unit's state, such as
-`resolver guest: not running: unbound@guest.service is failed`.
+`resolver guest: not running: unbound@guest.service is failed`. One whose unit runs but whose
+sockets are bound to a device the VRF no longer has shows
+`resolver guest: not running: unbound@guest.service is active, but it is bound to a removed device of the VRF`.
+`chalkos-resolvers.service` restarts such a resolver when a delivery recreates its VRF, so the
+line points to a delivery whose effects failed.
 
 `nat64: unknown:` gives jool's error when chalkd could not read the NAT64s' state.
 `resolver: not running:` gives unbound-control's error. A router without `NAT64` documents prints

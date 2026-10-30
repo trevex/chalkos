@@ -526,8 +526,9 @@ in
   # keeps a declared VRF with its member, the unreachable defaults of its table and every link of
   # another kind, and with no rendered units, as in maintenance mode, removes every VRF the
   # rendered units declared. It reads /etc's units before the rendered ones, by name, as networkd
-  # does. When it removed a VRF it reloads a running networkd, through the systemctl and networkctl
-  # of the unit's PATH that the check stubs, and otherwise does not.
+  # does. When it removed a VRF it reloads a running networkd and, without waiting, a running
+  # chalkos-resolvers, through the systemctl and networkctl of the unit's PATH that the check
+  # stubs, and otherwise does not.
   router-vrf =
     let
       script = checkLib.router.config.systemd.services.chalkos-vrf.serviceConfig.ExecReload;
@@ -542,9 +543,16 @@ in
       exists() { ip link show "$1" >/dev/null 2>&1; }
       reloaded() {
         [ "$(cat networkctl.log)" = reload ] || fail "$1: networkctl was called with: $(cat networkctl.log)"
+        grep -qx 'reload --no-block chalkos-resolvers.service' systemctl.log ||
+          fail "$1: chalkos-resolvers was not reloaded: $(cat systemctl.log)"
         : >networkctl.log
+        : >systemctl.log
       }
-      not_reloaded() { [ ! -s networkctl.log ] || fail "$1: networkctl was called with: $(cat networkctl.log)"; }
+      not_reloaded() {
+        [ ! -s networkctl.log ] || fail "$1: networkctl was called with: $(cat networkctl.log)"
+        if grep -q '^reload' systemctl.log; then fail "$1: systemctl was called with: $(cat systemctl.log)"; fi
+        : >systemctl.log
+      }
       mkdir -p stub
       cat >stub/networkctl <<'STUB'
       #!/bin/sh
@@ -552,10 +560,12 @@ in
       STUB
       cat >stub/systemctl <<'STUB'
       #!/bin/sh
-      exit "''${ACTIVE:-0}"
+      echo "$@" >>systemctl.log
+      [ "$1" != is-active ] || exit "''${ACTIVE:-0}"
       STUB
       chmod +x stub/networkctl stub/systemctl
       : >networkctl.log
+      : >systemctl.log
       export PATH=$PWD/stub:$PATH
       mkdir -p ${dir} etc/systemd/network
       printf '[NetDev]\nKind=vrf\nName=keep\n\n[VRF]\nTable=100\n\n' >${dir}/00-vrf-keep.netdev

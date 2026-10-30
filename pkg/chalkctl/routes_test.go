@@ -47,6 +47,16 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: frr("ipv6-detail-imported.json")},
 	)}
 	conf, nat64, vrfs, resolvers := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir(), t.TempDir(), t.TempDir()
+	// guest's resolver is bound to its VRF's device, of index 7.
+	run, devices := t.TempDir(), t.TempDir()
+	for _, dir := range []string{filepath.Join(run, "unbound-guest"), filepath.Join(devices, "guest")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "ifindex"), []byte("7\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"spec": {"table": 100}}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +67,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 			}
 		}
 	}
-	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{ResolverConfig: conf, ResolverDir: resolvers, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
+	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{ResolverConfig: conf, ResolverDir: resolvers, RunDir: run, NetDir: devices, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
 		hops := func() []*router.NextHop {
 			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}

@@ -109,7 +109,10 @@ let
     '';
   };
   # Keeps the index of the device of the VRF $1 in the resolver's runtime directory, and fails
-  # while the VRF has no device.
+  # while the VRF has no device. systemd looked the index up when it set the unit's cgroup up, a
+  # moment before: a VRF removed and created anew within that moment leaves a record of the new
+  # index for sockets bound to the old one. Only chalkos-vrf removes a VRF, and chalkos-resolvers,
+  # which starts the resolvers, runs after it.
   recordDevice = pkgs.writeShellScript "unbound-vrf-device" ''
     set -e
     read -r ifindex <"/sys/class/net/$1/ifindex"

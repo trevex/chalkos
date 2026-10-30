@@ -38,7 +38,19 @@ func routerNode(t *testing.T, kernel ...*routing.KernelRoute) (*Plugin, *tooltes
 	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"apiVersion": "router.chalkos.dev/v1alpha1", "kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100, "interfaces": ["swp1"]}}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers}), r
+	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers, RunDir: t.TempDir(), NetDir: t.TempDir()}), r
+}
+
+// writeIndex writes the device index index into dir/ifindex, as the kernel shows a device's in
+// sysfs and a VRF's resolver records the one it is bound to.
+func writeIndex(t *testing.T, dir, index string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ifindex"), []byte(index+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // routerStatus is the state of the router as the layer serves it.
@@ -266,6 +278,8 @@ func TestRouterVRFResolverStatus(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(s.r.ResolverDir, "unbound.conf"), []byte("server:\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	writeIndex(t, filepath.Join(s.r.RunDir, "unbound-dmz-a"), "7")
+	writeIndex(t, filepath.Join(s.r.NetDir, "dmz-a"), "7")
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active unbound@tenant.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active unbound@tenant.service", Code: 3}})
 	st := routerStatus(t, s)
 	if st.GetResolver() != nil || len(st.VrfResolvers) != 2 {
@@ -286,6 +300,39 @@ func TestRouterVRFResolverStatus(t *testing.T) {
 	}
 	if slices.ContainsFunc(r.Calls, func(c string) bool { return strings.Contains(c, "Bad_Name") || strings.Contains(c, "x;y") }) {
 		t.Errorf("a file of no VRF's name reached a command: %q", r.Calls)
+	}
+}
+
+// An active resolver counts as running only while bound to its VRF's device: one bound to an
+// index the VRF's device no longer has, one whose VRF has no device and one that recorded no
+// device do not, and say so.
+func TestRouterVRFResolverStale(t *testing.T) {
+	s, _ := routerNode(t)
+	for _, vrf := range []string{"current", "moved", "gone", "unrecorded"} {
+		if err := os.WriteFile(filepath.Join(s.r.ResolverDir, "unbound-"+vrf+".conf"), []byte("server:\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for vrf, index := range map[string]string{"current": "5", "moved": "6", "gone": "8"} {
+		writeIndex(t, filepath.Join(s.r.RunDir, "unbound-"+vrf), index)
+	}
+	for vrf, index := range map[string]string{"current": "5", "moved": "9", "unrecorded": "10"} {
+		writeIndex(t, filepath.Join(s.r.NetDir, vrf), index)
+	}
+	want := map[string]string{
+		"current":    "",
+		"moved":      "unbound@moved.service is active, but it is bound to a removed device of the VRF",
+		"gone":       "unbound@gone.service is active, but the VRF has no device",
+		"unrecorded": "unbound@unrecorded.service is active, but it recorded no device",
+	}
+	st := routerStatus(t, s)
+	if len(st.VrfResolvers) != len(want) {
+		t.Fatalf("router status = %v", st)
+	}
+	for _, v := range st.VrfResolvers {
+		if v.Error != want[v.Vrf] || v.Running != (want[v.Vrf] == "") {
+			t.Errorf("the resolver of %s = %v, want the error %q", v.Vrf, v, want[v.Vrf])
+		}
 	}
 }
 

@@ -367,8 +367,10 @@ it again with a new index. A running resolver whose recorded index differs from 
 whose VRF has no device yet, is restarted once the device exists, so its sockets bind to the new
 device. The unit stops the resolvers that have no config. It waits 30 seconds at most for the
 VRFs' devices and 30 more for the resolvers it started, and then fails, naming each that does not
-run. The effect `resolvers` reloads it when the output `unbound` or `networkd` changes. The unit
-reads the indexes as a member of the group `unbound`, without capabilities.
+run. The effect `resolvers` reloads it when the output `unbound` or `networkd` changes, and
+`chalkos-vrf.service` reloads it, without waiting, after removing a VRF. That covers a failed
+`chalkos-vrf.service` that chalkd restarts only after the reloads. The unit reads the indexes as
+a member of the group `unbound`, without capabilities.
 
 chalkd reloads the units of one delivery in one `systemctl reload`, which follows their order:
 `chalkos-firewall`, then `chalkos-nat64`, then `frr`, `unbound` and `chalkos-resolvers`, which
@@ -413,7 +415,10 @@ Unbound side by side, and the questions to each have 5 seconds together.
   asks `unbound-control status`. The resolver runs when it answers.
 - The VRFs' resolvers: for each rendered `unbound-<vrf>.conf`, chalkd asks
   `systemctl is-active unbound@<vrf>.service`. A unit that is not active is reported with its
-  state, such as `unbound@guest.service is failed`.
+  state, such as `unbound@guest.service is failed`. An active unit counts as running only when
+  the index in `/run/unbound-<vrf>/ifindex` is that of the VRF's device. Otherwise the status
+  says why, such as `unbound@guest.service is active, but it is bound to a removed device of
+  the VRF`.
 
 When a question fails, the status gives its error, and the status's other parts stand.
 

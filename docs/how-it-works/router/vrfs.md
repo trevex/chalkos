@@ -140,7 +140,8 @@ first, and deletes the VRF only once they went. A run that fails between the two
 again and flushes once more.
 
 After it removes a VRF, `chalkos-vrf.service` reloads a running networkd, which creates the VRF
-anew with its new table and puts its links back into it. A change of `table` therefore ends the
+anew with its new table and puts its links back into it. It also reloads a running
+`chalkos-resolvers.service`, which restarts the VRF's resolver on the new device. A change of `table` therefore ends the
 sessions of the VRF, and they start over.
 
 The effect `vrf` reloads `chalkos-vrf.service` whenever the output `networkd` changes. chalkd
@@ -281,7 +282,9 @@ The diagnostics `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers` take 
 `default` unless it is given, and pass it to vtysh as `vrf <name>`.
 
 The status lists each VRF's resolver after the default VRF's, as `resolver <vrf>: running`. chalkd
-asks systemd whether `unbound@<vrf>.service` is active.
+asks systemd whether `unbound@<vrf>.service` is active, and compares the device index that the
+resolver recorded with the index of the VRF's device. A resolver still bound to a device that
+networkd has since replaced does not count as running.
 
 ## Limits
 

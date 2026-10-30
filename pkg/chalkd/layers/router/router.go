@@ -46,6 +46,11 @@ type Options struct {
 	// VRFDir holds the node's running VRF documents, <name>.json each; empty is
 	// /run/chalkos/config/router.chalkos.dev/VRF.
 	VRFDir string
+	// RunDir holds each VRF's resolver's runtime directory, unbound-<vrf>, with the index of the
+	// device the resolver's sockets are bound to; empty is /run.
+	RunDir string
+	// NetDir holds a directory per network device, with its index; empty is /sys/class/net.
+	NetDir string
 }
 
 // side is the node's router side: the state of its FRR, Jool and Unbound and the kernel's routes.
@@ -263,7 +268,8 @@ func (r *side) resolver(ctx context.Context) *routerv1.ResolverStatus {
 }
 
 // vrfResolvers are the state of the unit unbound@<vrf> of each VRF whose config the output unbound
-// rendered, sorted by VRF, all asked within one timeout.
+// rendered, sorted by VRF, all asked within one timeout. An active unit whose sockets are bound to
+// no device of its VRF does not count as running.
 func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 	files, _ := filepath.Glob(filepath.Join(cmp.Or(r.ResolverDir, filepath.Join(outputs.DefaultRoot, "unbound")), "unbound-*.conf"))
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
@@ -281,6 +287,9 @@ func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 		// systemctl prints the state of a unit that is not active, such as failed.
 		switch state := strings.TrimSpace(string(out)); {
 		case err == nil:
+			if stale := r.staleResolver(vrf); stale != "" {
+				s.Running, s.Error = false, unit+" is active, but "+stale
+			}
 		case state != "":
 			s.Error = unit + " is " + state
 		default:
@@ -289,6 +298,31 @@ func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 		resolvers = append(resolvers, s)
 	}
 	return resolvers
+}
+
+// staleResolver says why the running resolver of the VRF vrf answers on no device of the VRF, or
+// is "" when its sockets are bound to the VRF's device: systemd binds them to the index the device
+// had when the resolver started, which the resolver records, and a VRF made anew has a new one.
+// chalkos-resolvers restarts such a resolver, after a delivery that made the VRF anew.
+func (r *side) staleResolver(vrf string) string {
+	index := func(path string) string {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(data))
+	}
+	bound := index(filepath.Join(cmp.Or(r.RunDir, "/run"), "unbound-"+vrf, "ifindex"))
+	device := index(filepath.Join(cmp.Or(r.NetDir, "/sys/class/net"), vrf, "ifindex"))
+	switch {
+	case bound == "":
+		return "it recorded no device"
+	case device == "":
+		return "the VRF has no device"
+	case bound != device:
+		return "it is bound to a removed device of the VRF"
+	}
+	return ""
 }
 
 // resolverUnit is the unit of the resolver of the VRF vrf, a name that matched router.ShortName,

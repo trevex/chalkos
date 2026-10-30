@@ -14,9 +14,10 @@ let
   networkd = config.chalkos.outputs.networkd.dir;
   # Removes each kernel VRF that no .netdev of Kind=vrf declares with its table, after flushing the
   # unreachable defaults that networkd put into its table, and reloads a running networkd when it
-  # removed one, which creates the VRF anew with its members. Reloading networkd itself leaves no
-  # VRF removed whatever order a delivery's reloads take; a networkd that does not run, as at boot,
-  # reads every unit when it starts. systemctl and networkctl come from the unit's PATH.
+  # removed one, which creates the VRF anew with its members, and a running chalkos-resolvers, which
+  # restarts the VRF's resolver on the new device. Reloading networkd itself leaves no VRF removed
+  # whatever order a delivery's reloads take; a networkd that does not run, as at boot, reads every
+  # unit when it starts. systemctl and networkctl come from the unit's PATH.
   apply = pkgs.writeShellApplication {
     name = "chalkos-vrf";
     runtimeInputs = [
@@ -70,6 +71,14 @@ let
       done <<<"$vrfs"
       if $removed && systemctl is-active --quiet systemd-networkd.service && ! networkctl reload; then
         echo 'chalkos-vrf: failed to reload networkd, which creates the removed VRFs anew' >&2
+        exit 1
+      fi
+      # A reload of chalkos-resolvers that ran before this unit, as when chalkd restarts a failed
+      # chalkos-vrf after its reloads, saw the old VRF. --no-block, as chalkos-resolvers orders
+      # after this unit and its reload waits for this run to end.
+      if $removed && systemctl is-active --quiet chalkos-resolvers.service &&
+        ! systemctl reload --no-block chalkos-resolvers.service; then
+        echo 'chalkos-vrf: failed to reload chalkos-resolvers, which restarts the resolvers of the removed VRFs' >&2
         exit 1
       fi
       if ((''${#failed[@]} > 0)); then
