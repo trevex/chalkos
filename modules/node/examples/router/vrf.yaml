@@ -1,8 +1,11 @@
-# An edge with two VRFs besides the default one. internet holds the uplink eth1 and peers with a
+# An edge with three VRFs besides the default one. internet holds the uplink eth1 and peers with a
 # transit provider at an address; tenant holds eth2 and the swp links and peers unnumbered with a
-# tenant's leaves on each swp link the Network documents name, with BFD. The default VRF keeps the
-# management link eth0 and the node API. tenant imports the internet VRF's IPv4 routes, and the
-# default VRF imports tenant's IPv6 routes through a policy.
+# tenant's leaves on each swp link the Network documents name, with BFD. tenant and internet import
+# each other's IPv4 routes, so the tenant reaches the internet through internet's masquerade, and
+# the default VRF imports tenant's IPv6 routes through a policy. guest holds a guest LAN on eth3
+# and its own uplink on eth4, with the addresses of eth0 and of eth1; its conntrack zone keeps its
+# connections apart from theirs, and it masquerades and forwards a port of its own. The default
+# VRF keeps the management link eth0 and the node API.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Router
 metadata: {name: router}
@@ -14,7 +17,7 @@ kind: Network
 metadata: {name: 10-mgmt}
 spec:
   match: {name: eth0}
-  network: {dhcp: "yes"}
+  network: {address: [192.0.2.1/24], ipv6AcceptRA: false}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
@@ -30,6 +33,20 @@ spec:
   match: {name: "eth2 swp1 swp2"}
   network: {ipv6AcceptRA: false}
 ---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 40-guest-lan}
+spec:
+  match: {name: eth3}
+  network: {address: [192.0.2.1/24], ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 41-guest-wan}
+spec:
+  match: {name: eth4}
+  network: {address: [203.0.113.1/24], ipv6AcceptRA: false}
+---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: VRF
 metadata: {name: internet}
@@ -39,6 +56,11 @@ apiVersion: router.chalkos.dev/v1alpha1
 kind: VRF
 metadata: {name: tenant}
 spec: {table: 200, interfaces: [eth2, "swp*"]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: VRF
+metadata: {name: guest}
+spec: {table: 300, interfaces: [eth3, eth4], conntrackZone: 1}
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: BGP
@@ -57,6 +79,8 @@ spec:
   asn: 64512
   routerID: 192.0.2.1
   networks: [{prefix: 198.51.100.0/24}]
+  import:
+    ipv4: {vrfs: [tenant]}
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: BGP
@@ -101,3 +125,74 @@ kind: RoutingPolicy
 metadata: {name: from-tenant}
 spec:
   terms: [{match: {prefixList: tenant}, then: {action: accept}}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: mgmt}
+spec: {interfaces: [eth0]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: internet}
+spec: {vrfs: [internet]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: tenant}
+spec: {vrfs: [tenant]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: guest-lan}
+spec: {interfaces: [eth3]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: guest-wan}
+spec: {interfaces: [eth4]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: mgmt-local}
+spec:
+  from: mgmt
+  to: local
+  rules: [{protocol: tcp, destinationPorts: [22], action: accept}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: internet-local}
+spec: {from: internet, to: local}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: tenant-internet}
+spec: {from: tenant, to: internet, default: accept}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: guest-out}
+spec: {from: guest-lan, to: guest-wan, default: accept}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NATRule
+metadata: {name: internet-out}
+spec:
+  type: masquerade
+  out: {zone: internet}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NATRule
+metadata: {name: guest-out}
+spec:
+  type: masquerade
+  out: {zone: guest-wan}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NATRule
+metadata: {name: guest-web}
+spec:
+  type: dnat
+  in: {zone: guest-wan}
+  match: {protocol: tcp, destinationPorts: [8080]}
+  to: {address: 192.0.2.10, port: 80}

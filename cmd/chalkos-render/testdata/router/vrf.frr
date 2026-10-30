@@ -46,6 +46,7 @@ router bgp 64512 vrf internet
   neighbor peer-transit activate
   neighbor peer-transit route-map accept-all in
   neighbor peer-transit route-map accept-all out
+  import vrf tenant
  exit-address-family
  !
  address-family ipv6 unicast

@@ -3,6 +3,27 @@
 table inet chalkos
 delete table inet chalkos
 table inet chalkos {
+	chain policy-guest-out {
+		accept
+	}
+	chain policy-internet-local {
+		drop
+	}
+	chain policy-mgmt-local {
+		tcp dport { 22 } accept
+		drop
+	}
+	chain policy-tenant-internet {
+		accept
+	}
+	chain ct-prerouting {
+		type filter hook prerouting priority raw; policy accept;
+		iifname { "eth3", "eth4" } ct zone set 1 comment "VRF guest"
+	}
+	chain ct-output {
+		type filter hook output priority raw; policy accept;
+		oifname { "eth3", "eth4" } ct zone set 1 comment "VRF guest"
+	}
 	chain prerouting {
 		type filter hook prerouting priority mangle + 10; policy drop;
 		meta nfproto ipv4 udp sport . udp dport { 67 . 68, 68 . 67 } accept
@@ -20,8 +41,26 @@ table inet chalkos {
 		iifname "tenant" meta sdifname { "swp*" } tcp dport { 179 } accept comment "BGPPeer leaves"
 		iifname "tenant" meta sdifname { "swp*" } udp dport { 3784, 3785 } accept comment "BGPPeer leaves"
 		iifname "internet" ip saddr { 203.0.113.254/32 } tcp dport { 179 } accept comment "BGPPeer transit"
+		iifname { "internet" } jump policy-internet-local
+		iifname { "eth0" } jump policy-mgmt-local
 	}
 	chain forward {
-		type filter hook forward priority filter; policy accept;
+		type filter hook forward priority filter; policy drop;
+		ct state established,related accept
+		ct state invalid drop
+		icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem } accept
+		icmp type { destination-unreachable, time-exceeded, parameter-problem } accept
+		ct status dnat accept
+		meta sdifname { "eth3" } oifname { "eth4" } jump policy-guest-out
+		iifname { "tenant" } oifname { "eth1" } jump policy-tenant-internet
+	}
+	chain dstnat {
+		type nat hook prerouting priority dstnat; policy accept;
+		meta nfproto ipv4 iifname { "eth4" } tcp dport { 8080 } dnat ip to 192.0.2.10:80
+	}
+	chain srcnat {
+		type nat hook postrouting priority srcnat; policy accept;
+		meta nfproto ipv4 oifname { "eth4" } masquerade
+		meta nfproto ipv4 oifname { "eth1" } masquerade
 	}
 }

@@ -1,3 +1,30 @@
+# 00-vrf-guest.netdev
+[NetDev]
+Kind=vrf
+Name=guest
+
+[VRF]
+Table=300
+
+# 00-vrf-guest.network
+[Match]
+Name=guest
+
+[Link]
+RequiredForOnline=no
+
+[Route]
+Destination=0.0.0.0/0
+Metric=4278198272
+Table=300
+Type=unreachable
+
+[Route]
+Destination=::/0
+Metric=4278198272
+Table=300
+Type=unreachable
+
 # 00-vrf-internet.netdev
 [NetDev]
 Kind=vrf
@@ -57,7 +84,8 @@ Type=unreachable
 Name=eth0
 
 [Network]
-DHCP=yes
+Address=192.0.2.1/24
+IPv6AcceptRA=false
 
 # 20-internet.network
 [Match]
@@ -75,4 +103,22 @@ Name=eth2 swp1 swp2
 [Network]
 IPv6AcceptRA=false
 VRF=tenant
+
+# 40-guest-lan.network
+[Match]
+Name=eth3
+
+[Network]
+Address=192.0.2.1/24
+IPv6AcceptRA=false
+VRF=guest
+
+# 41-guest-wan.network
+[Match]
+Name=eth4
+
+[Network]
+Address=203.0.113.1/24
+IPv6AcceptRA=false
+VRF=guest
 
