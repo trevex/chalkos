@@ -108,7 +108,7 @@ in
         {
           description = "A VRF with a conntrack zone neither imports routes from another VRF nor gives its routes to one, through BGP.";
           rule = leaking "documents.all(n, documents[n].spec.conntrackZone == null || !(n in importers) && !(n in imported))";
-          messageExpression = leaking ''documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + ": a VRF with a conntrack zone leaks no routes through a BGP import, whose connections would answer in another zone; drop the zone or the import"'';
+          messageExpression = leaking ''documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + ": a VRF with a conntrack zone leaks no routes through a BGP import, as its connections would answer in another zone; drop the zone or the import"'';
         }
       ];
       spec = {
