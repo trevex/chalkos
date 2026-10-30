@@ -157,8 +157,10 @@ iifname { "tenant" } oifname { "eth1" } jump policy-tenant-internet
 ```
 
 A `NATRule` translates in prerouting and postrouting, which see links alone, so the renderer
-refuses a NAT rule's interface that matches a VRF's device. It refuses the same in a zone's
-`interfaces`, and in `Router.spec.management.interfaces`, as chalkd answers in the default VRF
+refuses a NAT rule's interface that matches a VRF's device and no link: a VRF's name, or a glob
+that matches no link the `Network` documents name. A glob such as `*` translates on the links it
+matches. The renderer refuses every interface that matches a VRF's device in a zone's
+`interfaces` and in `Router.spec.management.interfaces`, as chalkd answers in the default VRF
 alone. A config without VRFs renders as it did before VRFs.
 
 ## Conntrack zones

@@ -61,7 +61,8 @@ FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in v
 Policies and NAT rules name these zones as any other. A policy between the zones of two VRFs
 forwards only what the VRFs' tables route, and
 [importing routes](vrfs.md#import-routes-from-another-vrf) puts the routes there. A NAT rule's
-`in.interface` and `out.interface` name links, never a VRF's device.
+`in.interface` and `out.interface` name links: the renderer refuses one that matches a VRF's
+device and no link, such as `internet` or `inter*`, while `*` translates on every link.
 
 ## Let the LAN reach the WAN
 

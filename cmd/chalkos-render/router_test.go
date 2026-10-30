@@ -1045,9 +1045,24 @@ func TestVRFZoneOfAGlob(t *testing.T) {
 	}
 }
 
+// NAT translates by the links, and an interface of a NAT rule that matches the links the Network
+// documents name as well as a VRF's device, such as *, translates on those links.
+func TestVRFNATOfEveryInterface(t *testing.T) {
+	docs := vrfZoneDocs(t)
+	docs["Network"] = append(docs["Network"], document(t, "Network", "50-transit", `{"match": {"name": "transit0"}}`))
+	for _, i := range []string{"*", "t*"} {
+		docs["NATRule"] = []any{routerDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "`+i+`"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}
+		want := "\t\tmeta nfproto ipv4 oifname { \"" + i + "\" } masquerade\n"
+		if text := vrfRuleset(t, docs); !strings.Contains(text, want) {
+			t.Errorf("the ruleset lacks\n%s\nin\n%s", want, text)
+		}
+	}
+}
+
 // The firewall refuses zones the rules refuse, should they bypass them, and zones whose links it
 // cannot tell apart from a VRF's: an interface that matches a VRF's device, one that may be a
-// link of a VRF another zone holds, and a VRF whose links nftables cannot match.
+// link of a VRF another zone holds, and a VRF whose links nftables cannot match. A NAT rule's
+// interface that matches nothing but VRF devices translates nothing.
 func TestVRFZoneRefusals(t *testing.T) {
 	zone := func(name, spec string) any { return routerDoc(t, "FirewallZone", name, spec) }
 	tenant := zone("tenant", `{"interfaces": [], "vrfs": ["tenant"]}`)
@@ -1061,8 +1076,11 @@ func TestVRFZoneRefusals(t *testing.T) {
 	empty := with(zone("x", `{"interfaces": [], "vrfs": ["empty"]}`))
 	empty["VRF"] = append(empty["VRF"], routerDoc(t, "VRF", "empty", `{"table": 400, "interfaces": []}`))
 	empty["NATRule"] = []any{routerDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": "x", "interface": null}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}
-	device := with(tenant)
-	device["NATRule"] = []any{routerDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "inter*"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}
+	natOut := func(i string) map[string][]any {
+		docs := with(tenant)
+		docs["NATRule"] = []any{routerDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "`+i+`"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}
+		return docs
+	}
 	narrowed := with(zone("x", `{"interfaces": ["swp3"], "vrfs": []}`))
 	narrowed["Network"] = append(narrowed["Network"], document(t, "Network", "25-swp", `{"match": {"name": "swp3", "macAddress": "02:00:00:00:00:01"}}`))
 	management := func(i string) map[string][]any {
@@ -1074,18 +1092,19 @@ func TestVRFZoneRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"a zone of nothing":                 {with(zone("x", `{"interfaces": [], "vrfs": []}`)), "FirewallZone x names no interface and no VRF"},
-		"a VRF no document declares":        {with(zone("x", `{"interfaces": [], "vrfs": ["nosuch"]}`)), `FirewallZone x names the VRF "nosuch", which no VRF document declares`},
-		"a VRF in two zones":                {with(tenant, zone("x", `{"interfaces": [], "vrfs": ["tenant"]}`)), "the VRF tenant is in more than one FirewallZone, or twice in one"},
-		"a VRF's device":                    {with(zone("x", `{"interfaces": ["ten*"], "vrfs": []}`)), "FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs"},
-		"a link of another zone's VRF":      {with(tenant, zone("x", `{"interfaces": ["eth2"], "vrfs": []}`)), "FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
-		"a glob of another zone's VRF":      {with(tenant, zone("x", `{"interfaces": ["swp1*"], "vrfs": []}`)), "FirewallZone x names swp1*, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
-		"links nftables cannot match":       {unmatchable, "FirewallZone tenant: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *"},
-		"a NAT zone of no link":             {empty, "NATRule n: the zone x holds no link"},
-		"a NAT interface of a VRF's device": {device, "NATRule n: inter* matches internet, the device of VRF internet; name its links or a zone of the VRF"},
-		"a link of a narrowed Network":      {narrowed, "FirewallZone x: networkd puts swp3 in VRF tenant only if the other [Match] keys of Network 25-swp match it"},
-		"a management VRF device":           {management("tenant"), "Router: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links"},
-		"a management glob of a VRF device": {management("gu*"), "Router: the management interface gu* matches guest, the device of VRF guest, and chalkd answers in the default VRF alone; name the default VRF's links"},
+		"a zone of nothing":                  {with(zone("x", `{"interfaces": [], "vrfs": []}`)), "FirewallZone x names no interface and no VRF"},
+		"a VRF no document declares":         {with(zone("x", `{"interfaces": [], "vrfs": ["nosuch"]}`)), `FirewallZone x names the VRF "nosuch", which no VRF document declares`},
+		"a VRF in two zones":                 {with(tenant, zone("x", `{"interfaces": [], "vrfs": ["tenant"]}`)), "the VRF tenant is in more than one FirewallZone, or twice in one"},
+		"a VRF's device":                     {with(zone("x", `{"interfaces": ["ten*"], "vrfs": []}`)), "FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs"},
+		"a link of another zone's VRF":       {with(tenant, zone("x", `{"interfaces": ["eth2"], "vrfs": []}`)), "FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
+		"a glob of another zone's VRF":       {with(tenant, zone("x", `{"interfaces": ["swp1*"], "vrfs": []}`)), "FirewallZone x names swp1*, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
+		"links nftables cannot match":        {unmatchable, "FirewallZone tenant: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *"},
+		"a NAT zone of no link":              {empty, "NATRule n: the zone x holds no link"},
+		"a NAT interface of a VRF's device":  {natOut("internet"), "NATRule n: internet matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
+		"a NAT glob of a VRF's device alone": {natOut("inter*"), "NATRule n: inter* matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
+		"a link of a narrowed Network":       {narrowed, "FirewallZone x: networkd puts swp3 in VRF tenant only if the other [Match] keys of Network 25-swp match it"},
+		"a management VRF device":            {management("tenant"), "Router: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links"},
+		"a management glob of a VRF device":  {management("gu*"), "Router: the management interface gu* matches guest, the device of VRF guest, and chalkd answers in the default VRF alone; name the default VRF's links"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })
 	}

@@ -432,7 +432,7 @@ refuse what networkd, FRR or nftables would apply otherwise than the documents s
 | `FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs` | Put the VRF into the zone's `vrfs`, or name its links. |
 | `FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone` | Take the VRF out of the other zone's `vrfs` and name its links in each zone, or drop the link here. |
 | `FirewallZone tenant: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *` | Write the `Network`'s `Name=` as names or a prefix and `*`. |
-| `NATRule n: inter* matches internet, the device of VRF internet; name its links or a zone of the VRF` | Name the VRF's links, or a zone that holds the VRF. |
+| `NATRule n: inter* matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF` | Name the VRF's links, or a zone that holds the VRF. |
 | `Router: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links` | Name links of the default VRF in `management.interfaces`. |
 
 ## Limits

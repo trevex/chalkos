@@ -216,11 +216,10 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 				if err := checkInterfaces("NATRule "+n.Name, []string{*place.Interface}); err != nil {
 					return nil, err
 				}
-				// Prerouting and postrouting translate by the links, never by a VRF's device.
-				for _, dev := range devices {
-					if matchesGlob(*place.Interface, dev) {
-						return nil, fmt.Errorf("NATRule %s: %s matches %s, the device of VRF %s; name its links or a zone of the VRF", n.Name, *place.Interface, dev, dev)
-					}
+				// Prerouting and postrouting translate by the links, never by a VRF's device: an
+				// interface that matches a device and no link translates nothing.
+				if dev, ok := onlyDevice(d, devices, *place.Interface); ok {
+					return nil, fmt.Errorf("NATRule %s: %s matches no link, only %s, the device of VRF %s; name the VRF's links or a zone of the VRF", n.Name, *place.Interface, dev, dev)
 				}
 			}
 		}
@@ -357,6 +356,27 @@ func vrfDevices(d routerDocuments) []string {
 		devices[m.vrf] = true
 	}
 	return slices.Sorted(maps.Keys(devices))
+}
+
+// onlyDevice returns the first VRF device of devices that the interface or glob i matches, when
+// i matches no link: none the Network documents name and no glob of a VRF's links. A glob such
+// as *, which matches links too, is not one.
+func onlyDevice(d routerDocuments, devices []string, i string) (string, bool) {
+	at := slices.IndexFunc(devices, func(dev string) bool { return matchesGlob(i, dev) })
+	if at < 0 {
+		return "", false
+	}
+	for _, l := range d.Links {
+		if !slices.Contains(devices, l) && matchesGlob(i, l) {
+			return "", false
+		}
+	}
+	for _, m := range d.Membership.Members {
+		if globsOverlap(i, m.glob) {
+			return "", false
+		}
+	}
+	return devices[at], true
 }
 
 // appendNew appends s to l unless l holds it.
