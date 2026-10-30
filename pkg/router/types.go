@@ -3,6 +3,8 @@ package router
 // Peer is one BGP session of the router: a BGPPeer's address, or one of its interfaces, as FRR
 // reports it.
 type Peer struct {
+	// VRF is the VRF the session runs in: a VRF document's name, or DefaultVRF.
+	VRF string
 	// Name is the BGPPeer document's, and Neighbor the session's interface or address.
 	Name, Neighbor string
 	// State is the session's BGP state, such as Established.
@@ -45,4 +47,7 @@ type BGPRoute struct {
 	Communities []string
 	// Best is set for the best path; otherwise the path is one of the equal paths installed beside it.
 	Best bool
+	// ImportedFrom is the VRF whose instance the path came from, for a path the instance imports;
+	// empty for a path of its own peers or networks.
+	ImportedFrom string
 }

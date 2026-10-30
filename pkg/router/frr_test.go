@@ -17,9 +17,10 @@ func readTestdata(t *testing.T, name string) []byte {
 	return data
 }
 
-// The peers of show bgp neighbors json, recorded from FRR 10.7 on a fabric edge whose session on
-// eth2 BFD then ended: one entry per session, by BGPPeer and neighbour, with its state, the
-// uptime of an established one, its routes of every family and its BFD state.
+// The peers of show bgp vrf all neighbors json: the sessions of each VRF's instance, recorded
+// from FRR 10.7 on a fabric edge whose session on eth2 BFD then ended, and a tenant VRF's session
+// on swp1. One entry per session, the default VRF's first, by BGPPeer and neighbour, with its
+// VRF, state, the uptime of an established one, its routes of every family and its BFD state.
 func TestParsePeers(t *testing.T) {
 	peers, err := ParsePeers(readTestdata(t, "neighbors.json"))
 	if err != nil {
@@ -27,22 +28,24 @@ func TestParsePeers(t *testing.T) {
 	}
 	var got []string
 	for _, p := range peers {
-		got = append(got, fmt.Sprintf("%s %s %s up=%d rcvd=%d sent=%d bfd=%q", p.Name, p.Neighbor, p.State, p.UptimeSeconds, p.PrefixesReceived, p.PrefixesSent, p.BFD))
+		got = append(got, fmt.Sprintf("%s %s %s %s up=%d rcvd=%d sent=%d bfd=%q", p.VRF, p.Name, p.Neighbor, p.State, p.UptimeSeconds, p.PrefixesReceived, p.PrefixesSent, p.BFD))
 	}
 	want := []string{
-		`fabric eth1 Established up=3723 rcvd=1 sent=2 bfd="up"`,
-		`fabric eth2 Idle up=0 rcvd=0 sent=0 bfd="down"`,
-		`transit 203.0.113.254 Active up=0 rcvd=0 sent=0 bfd=""`,
+		`default fabric eth1 Established up=3723 rcvd=1 sent=2 bfd="up"`,
+		`default fabric eth2 Idle up=0 rcvd=0 sent=0 bfd="down"`,
+		`default transit 203.0.113.254 Active up=0 rcvd=0 sent=0 bfd=""`,
+		`tenant leaves swp1 Established up=21 rcvd=1 sent=2 bfd=""`,
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("peers:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
 
-// FRR prints {} without a BGP instance, and a session of no BGPPeer's peer group is left out;
-// what is no JSON is an error.
+// FRR prints an object per VRF without sessions, or {} without any instance; a VRF's vrfId and
+// vrfName are no sessions, and a session of no BGPPeer's peer group is left out. What is no JSON
+// is an error.
 func TestParsePeersWithout(t *testing.T) {
-	for _, data := range []string{`{}`, `{"eth9": {"bgpState": "Idle"}}`} {
+	for _, data := range []string{"{\n}\n", `{}`, `{"default": {"vrfId": 0, "vrfName": "default"}}`, `{"default": {"vrfId": 0, "vrfName": "default", "eth9": {"bgpState": "Idle"}}}`} {
 		if peers, err := ParsePeers([]byte(data)); err != nil || len(peers) != 0 {
 			t.Errorf("%s: %v, %v", data, peers, err)
 		}
@@ -112,5 +115,30 @@ func TestBFDState(t *testing.T) {
 		if got := bfdState(in); got != want {
 			t.Errorf("bfdState(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// An instance's paths of show bgp ipv6 unicast detail json, recorded from FRR 10.7.1 on a router
+// whose default instance imports the VRF fabric's routes: its own network, and a path FRR marks
+// local but imported from fabric, which keeps its AS path and next hop and names the VRF.
+func TestParseImportedRoutes(t *testing.T) {
+	routes, err := ParseRoutes(readTestdata(t, "ipv6-detail-imported.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range routes {
+		got = append(got, fmt.Sprintf("%s as=%q peer=%q from=%q hops=%v best=%v", r.Prefix, r.ASPath, r.Peer, r.ImportedFrom, r.NextHops, r.Best))
+	}
+	want := []string{
+		`2001:db8:ffff::1/128 as="" peer="" from="" hops=[::] best=true`,
+		`2001:db8:ffff::2/128 as="64513" peer="" from="fabric" hops=[fe80::5054:ff:fe12:102] best=true`,
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("routes:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	// A VRF without an instance answers with a warning and no paths.
+	if routes, err := ParseRoutes([]byte(`{"warning":"View/Vrf is unknown"}`)); err != nil || len(routes) != 0 {
+		t.Errorf("a VRF without an instance: %v, %v", routes, err)
 	}
 }

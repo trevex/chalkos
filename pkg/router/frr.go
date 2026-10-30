@@ -1,5 +1,5 @@
-// Package router reads a router's state: FRR's BGP sessions and paths from vtysh's JSON, and the
-// kernel's routes from netlink.
+// Package router reads a router's state: FRR's BGP sessions and paths of each VRF from vtysh's
+// JSON, and the kernel's routes from netlink.
 package router
 
 import (
@@ -16,14 +16,21 @@ import (
 // PeerGroupPrefix starts the name of the peer group frr.conf gives each BGPPeer document.
 const PeerGroupPrefix = "peer-"
 
+// DefaultVRF is the name FRR and the router kinds give the VRF of every link no VRF holds.
+const DefaultVRF = "default"
+
 // The vtysh commands whose JSON the parsers read.
 const (
-	NeighborsCommand = "show bgp neighbors json"
-	// RoutesCommand is the command of a family's paths, ipv4 or ipv6.
+	// NeighborsCommand lists the sessions of every VRF's instance.
+	NeighborsCommand = "show bgp vrf all neighbors json"
+	// RoutesCommand is the command of the default VRF's paths of a family, ipv4 or ipv6.
 	RoutesCommand = "show bgp %s unicast detail json"
+	// VRFRoutesCommand is the command of a VRF's paths of a family: the VRF's name, then ipv4 or
+	// ipv6.
+	VRFRoutesCommand = "show bgp vrf %s %s unicast detail json"
 )
 
-// neighbor is a session as show bgp neighbors json prints it.
+// neighbor is a session as show bgp vrf all neighbors json prints it.
 type neighbor struct {
 	PeerGroup         string `json:"peerGroup"`
 	State             string `json:"bgpState"`
@@ -37,39 +44,56 @@ type neighbor struct {
 	} `json:"peerBfdInfo"`
 }
 
-// ParsePeers reads the sessions of show bgp neighbors json, keyed by interface or address, into
-// the peers of a router's status, by BGPPeer document and then by neighbour. A session of no
+// ParsePeers reads the sessions of show bgp vrf all neighbors json, an object per VRF of its
+// vrfId, its vrfName and its sessions keyed by interface or address, into the peers of a router's
+// status: by VRF, the default first, then by BGPPeer document and neighbour. A session of no
 // BGPPeer's peer group is left out; FRR prints {} without a BGP instance.
 func ParsePeers(data []byte) ([]*Peer, error) {
 	if err := answered(data); err != nil {
 		return nil, err
 	}
-	var neighbors map[string]neighbor
-	if err := json.Unmarshal(data, &neighbors); err != nil {
+	var vrfs map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(data, &vrfs); err != nil {
 		return nil, fmt.Errorf("read FRR's BGP neighbours: %w", err)
 	}
 	var peers []*Peer
-	for key, n := range neighbors {
-		name, ok := strings.CutPrefix(n.PeerGroup, PeerGroupPrefix)
-		if !ok {
-			continue
+	for vrf, entries := range vrfs {
+		for key, raw := range entries {
+			// vrfId and vrfName are no sessions.
+			if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
+				continue
+			}
+			var n neighbor
+			if err := json.Unmarshal(raw, &n); err != nil {
+				return nil, fmt.Errorf("read FRR's BGP neighbour %s of the VRF %s: %w", key, vrf, err)
+			}
+			name, ok := strings.CutPrefix(n.PeerGroup, PeerGroupPrefix)
+			if !ok {
+				continue
+			}
+			p := &Peer{VRF: vrf, Name: name, Neighbor: key, State: n.State}
+			if n.State == "Established" {
+				p.UptimeSeconds = n.UpMsec / 1000
+			}
+			for _, af := range n.AddressFamilyInfo {
+				p.PrefixesReceived += af.Accepted
+				p.PrefixesSent += af.Sent
+			}
+			if n.BFD != nil {
+				p.BFD = bfdState(n.BFD.Status)
+			}
+			peers = append(peers, p)
 		}
-		p := &Peer{Name: name, Neighbor: key, State: n.State}
-		if n.State == "Established" {
-			p.UptimeSeconds = n.UpMsec / 1000
-		}
-		for _, af := range n.AddressFamilyInfo {
-			p.PrefixesReceived += af.Accepted
-			p.PrefixesSent += af.Sent
-		}
-		if n.BFD != nil {
-			p.BFD = bfdState(n.BFD.Status)
-		}
-		peers = append(peers, p)
 	}
-	slices.SortFunc(peers, func(a, b *Peer) int {
-		return strings.Compare(a.Name+"\x00"+a.Neighbor, b.Name+"\x00"+b.Neighbor)
-	})
+	// The default VRF sorts first, as no VRF document is named "".
+	order := func(p *Peer) string {
+		vrf := p.VRF
+		if vrf == DefaultVRF {
+			vrf = ""
+		}
+		return vrf + "\x00" + p.Name + "\x00" + p.Neighbor
+	}
+	slices.SortFunc(peers, func(a, b *Peer) int { return strings.Compare(order(a), order(b)) })
 	return peers, nil
 }
 
@@ -93,8 +117,13 @@ func bfdState(s string) string {
 	return "unknown"
 }
 
-// path is a path as show bgp <family> unicast detail json prints it.
+// path is a path as show bgp [vrf <name>] <family> unicast detail json prints it.
 type path struct {
+	// ImportedFrom is set for a path the instance imports from another VRF's, whose name
+	// NHVRFName holds.
+	ImportedFrom string `json:"importedFrom"`
+	NHVRFName    string `json:"nhVrfName"`
+
 	ASPath struct {
 		String string `json:"string"`
 	} `json:"aspath"`
@@ -121,9 +150,9 @@ type path struct {
 	} `json:"largeCommunity"`
 }
 
-// ParseRoutes reads the paths of show bgp <family> unicast detail json into the routes BGP
-// selected: the best path of each prefix and the equal paths installed beside it, by prefix.
-// FRR prints a warning and no routes without a BGP instance.
+// ParseRoutes reads the paths of show bgp [vrf <name>] <family> unicast detail json into the
+// routes BGP selected: the best path of each prefix and the equal paths installed beside it, by
+// prefix. FRR prints a warning and no routes without a BGP instance.
 func ParseRoutes(data []byte) ([]*BGPRoute, error) {
 	if err := answered(data); err != nil {
 		return nil, err
@@ -142,7 +171,15 @@ func ParseRoutes(data []byte) ([]*BGPRoute, error) {
 				continue
 			}
 			r := &BGPRoute{Prefix: prefix, MED: p.Metric, LocalPref: p.LocalPref, Best: best}
-			if !p.Local {
+			switch {
+			case p.ImportedFrom != "":
+				// FRR marks an imported path local; it keeps the AS path it had in its VRF, where
+				// the router's own networks have the path Local.
+				r.ImportedFrom = p.NHVRFName
+				if p.ASPath.String != "Local" {
+					r.ASPath = p.ASPath.String
+				}
+			case !p.Local:
 				r.ASPath = p.ASPath.String
 				r.Peer = cmp.Or(p.Peer.Interface, p.Peer.PeerID)
 			}

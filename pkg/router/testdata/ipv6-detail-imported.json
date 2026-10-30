@@ -1,0 +1,11 @@
+{
+ "vrfId": 0,
+ "vrfName": "default",
+ "tableVersion": 2,
+ "routerId": "192.0.2.1",
+ "defaultLocPrf": 100,
+ "localAS": 64512,
+ "routes": { "2001:db8:ffff::1/128": [{"aspath":{"string":"Local","segments":[],"length":0},"origin":"IGP","metric":0,"weight":32768,"valid":true,"version":1,"sourced":true,"local":true,"bestpath":{"overall":true,"selectionReason":"First path received"},"nexthops":[{"ip":"::","afi":"ipv6","scope":"global","linkLocalOnly":false,"length":16,"metric":0,"accessible":true,"used":true}],"peer":{"peerId":"::","routerId":"192.0.2.1"}}]
+,"2001:db8:ffff::2/128": [{"importedFrom":"192.0.2.1:2","aspath":{"string":"64513","segments":[{"type":"as-sequence","list":[64513]}],"length":1},"nhVrfName":"fabric","nhVrfId":5,"announceNexthopSelf":true,"origin":"IGP","metric":0,"valid":true,"version":2,"sourced":true,"local":true,"bestpath":{"overall":true,"selectionReason":"First path received"},"originatorId":"192.0.2.1","nexthops":[{"ip":"fe80::5054:ff:fe12:102","afi":"ipv6","scope":"link-local","linkLocalOnly":false,"length":32,"metric":0,"accessible":true},{"ip":"fe80::5054:ff:fe12:102","afi":"ipv6","scope":"link-local","length":32,"accessible":true,"used":true}],"peer":{"peerId":"::","routerId":"192.0.2.1"}}]
+ } , "totalRoutes": 2, "totalPaths": 2,"numRoutes":2
+ }
