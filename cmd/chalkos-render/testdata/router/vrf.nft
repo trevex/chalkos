@@ -19,7 +19,7 @@ table inet chalkos {
 		iifname { "eth0" } tcp dport 50000 accept
 		iifname "tenant" meta sdifname { "swp*" } tcp dport { 179 } accept comment "BGPPeer leaves"
 		iifname "tenant" meta sdifname { "swp*" } udp dport { 3784, 3785 } accept comment "BGPPeer leaves"
-		ip saddr { 203.0.113.254/32 } tcp dport { 179 } accept comment "BGPPeer transit"
+		iifname "internet" ip saddr { 203.0.113.254/32 } tcp dport { 179 } accept comment "BGPPeer transit"
 	}
 	chain forward {
 		type filter hook forward priority filter; policy accept;

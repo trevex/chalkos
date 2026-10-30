@@ -52,8 +52,8 @@ type opening struct {
 	protocol   string
 	ports      []portRange
 	interfaces []string
-	// vrf is the VRF whose links interfaces are, "" for links of no VRF. The input hook sees a
-	// packet from a VRF's link with the VRF's device as iifname and the link as sdifname.
+	// vrf is the VRF of the service, "" for the default VRF. The input hook sees a packet from a
+	// VRF's link with the VRF's device as iifname and the link as sdifname.
 	vrf          string
 	sources      []string
 	destinations []string
@@ -61,8 +61,8 @@ type opening struct {
 
 // bgpOpenings are the ports of each BGPPeer, on its interfaces, of its VRF, or from its address
 // alone: BGP's TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of single-hop sessions,
-// and 4784 of multi-hop ones from an address peer; a peer on a link is one hop away. The output
-// frr refuses a peer on a VRF's device.
+// and 4784 of multi-hop ones from an address peer; a peer on a link is one hop away. A peer of a
+// VRF is opened in its VRF alone. The output frr refuses a peer on a VRF's device.
 func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 	var out []opening
 	for _, p := range peers {
@@ -84,7 +84,7 @@ func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 		default:
 			o.interfaces = s.Interfaces
 		}
-		if vrf := vrfOf(s.VRF); s.Address == nil && vrf != defaultVRF {
+		if vrf := vrfOf(s.VRF); vrf != defaultVRF {
 			if !plainInterface.MatchString(vrf) {
 				return nil, fmt.Errorf("%s: the VRF %q is no VRF's name", what, vrf)
 			}
@@ -795,6 +795,8 @@ func (o opening) lines() ([]string, error) {
 		head = "iifname " + strconv.Quote(o.vrf) + " meta sdifname " + interfaceSet(o.interfaces) + " "
 	case len(o.interfaces) > 0:
 		head = "iifname " + interfaceSet(o.interfaces) + " "
+	case o.vrf != "":
+		head = "iifname " + strconv.Quote(o.vrf) + " "
 	}
 	tail := fmt.Sprintf("%s accept comment %q", match, o.comment)
 	if len(o.sources) == 0 && len(o.destinations) == 0 {

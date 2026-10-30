@@ -723,9 +723,9 @@ func TestUnboundRefusals(t *testing.T) {
 
 // A peer in a VRF has its ports opened on its VRF's links by the VRF's device and sdifname: the
 // input hook sees a packet from a VRF's link with the device as iifname and the link as
-// sdifname, so links of other VRFs that the peer's globs match stay closed. A peer of the VRF
-// named default is opened by iifname as one of no VRF, and a peer of an address by its address
-// in any VRF.
+// sdifname, so links of other VRFs that the peer's globs match stay closed. A peer of an address
+// in a VRF is opened by the VRF's device and its address, and a peer of the VRF named default by
+// iifname as one of no VRF.
 func TestVRFPeerOpenings(t *testing.T) {
 	tenant, def, addr := "tenant", defaultVRF, "192.0.2.9"
 	openings, err := bgpOpenings([]named[peerSpec]{
@@ -747,7 +747,7 @@ func TestVRFPeerOpenings(t *testing.T) {
 	want := []string{
 		`iifname "tenant" meta sdifname { "swp*" } tcp dport { 179 } accept comment "BGPPeer leaves"`,
 		`iifname { "eth*" } tcp dport { 179 } accept comment "BGPPeer spines"`,
-		`ip saddr { 192.0.2.9/32 } tcp dport { 179 } accept comment "BGPPeer far"`,
+		`iifname "tenant" ip saddr { 192.0.2.9/32 } tcp dport { 179 } accept comment "BGPPeer far"`,
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("lines:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
