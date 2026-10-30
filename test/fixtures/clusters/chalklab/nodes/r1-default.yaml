@@ -1,0 +1,27 @@
+# The edge's session when it sends r2 a default route only while it routes 2001:db8:fff0::/48, the
+# prefix of the dummy uplink0, which nodes/r1-default-route.yaml gives a route and
+# nodes/r1-default-noroute.yaml none.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: fabric}
+spec:
+  interfaces: [enp0s3]
+  remoteAS: external
+  bfd: true
+  extendedNextHop: true
+  password: {secretRef: {name: bgp, key: fabric}}
+  families:
+    ipv6: {defaultOriginate: true, defaultOriginateWhen: uplink}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PrefixList
+metadata: {name: uplink}
+spec:
+  family: ipv6
+  entries: [{prefix: "2001:db8:fff0::/48"}]
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-uplink0}
+spec:
+  netDev: {kind: dummy, name: uplink0}

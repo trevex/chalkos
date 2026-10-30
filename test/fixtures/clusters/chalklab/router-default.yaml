@@ -1,0 +1,13 @@
+# The main cluster's r1, sending r2 its default route only while it routes the prefix of its
+# uplink0, and routing it.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  images:
+    router-kvm: {source: {directory: images/router-kvm}}
+  all: {files: [cluster/*.yaml]}
+  groups:
+    router: {imageName: router-kvm, files: [groups/router.yaml]}
+  nodes:
+    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-bgp.yaml, nodes/r1-default.yaml, nodes/r1-default-route.yaml]}

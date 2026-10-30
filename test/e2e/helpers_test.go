@@ -148,17 +148,20 @@ func copyTree(src, dst string) error {
 // the same with an additive and with a destructive change of chalklab's storage, the same with
 // chalklab on the upgrade image with config only that image accepts, its router r1 announcing a
 // network and with chalkd's port on its fabric link alone, its routers with their fabric link in
-// a VRF and r2's VRF in another table, and the HA cluster.
+// a VRF and r2's VRF in another table, r1 sending its default route while a route exists, with
+// and without that route, and the HA cluster.
 var inventories = map[string]string{
-	"base":        "chalklab/chalkos.yaml",
-	"added":       "chalklab/added.yaml",
-	"destructive": "chalklab/destructive.yaml",
-	"upgrade":     "chalklab/upgrade.yaml",
-	"announce":    "chalklab/router-announce.yaml",
-	"lockout":     "chalklab/router-lockout.yaml",
-	"vrf":         "chalklab/router-vrf.yaml",
-	"vrf-table":   "chalklab/router-vrf-table.yaml",
-	"ha":          "chalklab-ha/chalkos.yaml",
+	"base":         "chalklab/chalkos.yaml",
+	"added":        "chalklab/added.yaml",
+	"destructive":  "chalklab/destructive.yaml",
+	"upgrade":      "chalklab/upgrade.yaml",
+	"announce":     "chalklab/router-announce.yaml",
+	"lockout":      "chalklab/router-lockout.yaml",
+	"vrf":          "chalklab/router-vrf.yaml",
+	"vrf-table":    "chalklab/router-vrf-table.yaml",
+	"default":      "chalklab/router-default.yaml",
+	"default-gone": "chalklab/router-default-gone.yaml",
+	"ha":           "chalklab-ha/chalkos.yaml",
 }
 
 // inventoryPath is the copied inventory of the name.

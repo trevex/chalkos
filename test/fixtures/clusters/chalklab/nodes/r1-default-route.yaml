@@ -1,0 +1,8 @@
+# uplink0 with a static route to 2001:db8:fff0::/48, which r1's peer of r2 tracks.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-uplink0}
+spec:
+  match: {name: uplink0}
+  network: {ipv6AcceptRA: false}
+  route: [{destination: "2001:db8:fff0::/48"}]

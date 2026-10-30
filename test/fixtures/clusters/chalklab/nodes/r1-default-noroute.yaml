@@ -1,0 +1,7 @@
+# uplink0 without the route r1's peer of r2 tracks.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-uplink0}
+spec:
+  match: {name: uplink0}
+  network: {ipv6AcceptRA: false}
