@@ -11,6 +11,7 @@ ipv6 prefix-list pl-edge-originated seq 15 deny ::/0
 ipv6 prefix-list pl-fabric seq 5 permit 2001:db8::/32 le 128
 ip prefix-list pl-transit-out seq 5 permit 192.0.2.0/24 ge 25 le 32
 ip prefix-list pl-transit-out seq 10 permit 192.0.2.0/24
+ipv6 prefix-list pl-wan-default seq 5 permit ::/0
 !
 bgp community-list standard cl-blackhole seq 5 permit 65001:666
 bgp community-list standard rm-from-transit-20 seq 5 permit 65001:100
@@ -52,6 +53,18 @@ route-map rp-to-transit permit 10
 exit
 route-map rp-to-transit deny 65535
 exit
+route-map do-wan-default permit 10
+ match ipv6 address prefix-list pl-wan-default
+exit
+route-map track-default-ipv6 deny 5
+ match ipv6 next-hop type blackhole
+exit
+route-map track-default-ipv6 permit 10
+ match ipv6 address prefix-list pl-wan-default
+ set community no-advertise additive
+ set distance 255
+ set large-community 4200000000:0:1 additive
+exit
 !
 router bgp 64512
  bgp router-id 192.0.2.1
@@ -83,10 +96,12 @@ router bgp 64512
  address-family ipv6 unicast
   network 2001:db8:ffff::1/128
   network 64:ff9b::/96 route-map rp-nat64
+  redistribute kernel route-map track-default-ipv6
+  redistribute connected route-map track-default-ipv6
   maximum-paths 64
   maximum-paths ibgp 1
   neighbor peer-fabric activate
-  neighbor peer-fabric default-originate
+  neighbor peer-fabric default-originate route-map do-wan-default
   neighbor peer-fabric route-map rp-from-fabric in
   neighbor peer-fabric route-map rp-to-fabric out
  exit-address-family

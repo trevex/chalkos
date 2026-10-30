@@ -1,9 +1,9 @@
 # A fabric edge: the node API from the WAN, SSH from an office's set, forwarding from the fabric
 # to the WAN, masquerade out of the WAN and a web server behind a destination NAT. It peers
 # unnumbered with the fabric's leaves on eth1 and eth2, with BFD and a password, sends them a
-# default route, and takes IPv4 routes from a transit peer on the WAN. Its NAT64 translates the
-# well-known prefix, which it announces, from addresses of the 192.0.2.0/24 it announces too, and
-# its resolver answers the fabric with DNS64.
+# default route while the WAN's router advertises one, and takes IPv4 routes from a transit peer
+# on the WAN. Its NAT64 translates the well-known prefix, which it announces, from addresses of
+# the 192.0.2.0/24 it announces too, and its resolver answers the fabric with DNS64.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Router
 metadata: {name: router}
@@ -63,7 +63,7 @@ kind: Network
 metadata: {name: 10-wan}
 spec:
   match: {name: eth0}
-  network: {address: [203.0.113.1/24]}
+  network: {address: [203.0.113.1/24], ipv6AcceptRA: true}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
@@ -95,7 +95,14 @@ spec:
   password: {secretRef: {name: bgp, key: fabric}}
   description: the fabric's leaves
   families:
-    ipv6: {defaultOriginate: true, import: from-fabric, export: to-fabric}
+    ipv6: {defaultOriginate: true, defaultOriginateWhen: wan-default, import: from-fabric, export: to-fabric}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PrefixList
+metadata: {name: wan-default}
+spec:
+  family: ipv6
+  entries: [{prefix: "::/0"}]
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: BGPPeer
