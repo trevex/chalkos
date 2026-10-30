@@ -629,6 +629,11 @@ func TestFRRRefusals(t *testing.T) {
 		"a list a term names that adds a command":     {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"prefixList": "v4\n set metric 1"}, "then": {"action": "accept"}}`)}}, "does not exist"},
 		"a policy a family names that adds a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"import": "p in\n neighbor 192.0.2.9 remote-as 64999"}}}`)}}, "does not exist"},
 		"a network's policy that adds a command":      {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24", "policy": "p\n neighbor 192.0.2.9 remote-as 64999"}`)}}, "does not exist"},
+		// A tracked list is one of the config's PrefixLists of the family.
+		"defaultOriginateWhen without defaultOriginate": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {v6}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"defaultOriginateWhen": "v6"}}}`)}}, "families.ipv6: defaultOriginateWhen needs defaultOriginate"},
+		"a tracked list the config lacks":               {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "v6"}}}`)}}, "families.ipv6: defaultOriginateWhen: the PrefixList v6 does not exist"},
+		"a tracked list of the other family":            {map[string][]any{"BGP": {bgp("")}, "PrefixList": {v4}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "v4"}}}`)}}, "families.ipv6: defaultOriginateWhen: the PrefixList v4 is of ipv4"},
+		"a tracked list that adds a command":            {map[string][]any{"BGP": {bgp("")}, "PrefixList": {v6}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "v6\n neighbor 192.0.2.9 remote-as 64999"}}}`)}}, "does not exist"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": c.docs})
@@ -1136,6 +1141,100 @@ func TestFRRDefaultRouteNetwork(t *testing.T) {
 		if !strings.Contains(conf, want) {
 			t.Errorf("frr.conf lacks %q:\n%s", want, conf)
 		}
+	}
+}
+
+// A peer family's defaultOriginateWhen sends the default route through the route-map do-<list>,
+// one per list, and its instance redistributes the kernel's routes and the links' prefixes of the
+// family that its peers' lists match, through track-<vrf>-<family>: blackhole routes, such as a
+// VRF table's unreachable default, never, the others with no-advertise and the tracked large
+// community. An import from a VRF that tracks routes of its family denies that community first,
+// then calls the import's policy. An instance or family that tracks nothing, and an import from
+// one, render as without defaultOriginateWhen.
+func TestFRRDefaultOriginateWhen(t *testing.T) {
+	timers := `"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}`
+	list := func(name, prefix string) any {
+		return routerDoc(t, "PrefixList", name, `{"family": "ipv6", "entries": [{"prefix": "`+prefix+`", "action": "permit"}]}`)
+	}
+	peers := func(leaf, spine, spine2 string) []any {
+		return []any{
+			routerDoc(t, "BGPPeer", "leaf", `{"vrf": "tenant", "interface": "eth2", "remoteAS": "external", "families": {"ipv4": {"defaultOriginate": true}, "ipv6": {"defaultOriginate": true`+leaf+`}}}`),
+			routerDoc(t, "BGPPeer", "spine", `{"address": "2001:db8::9", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true`+spine+`}}}`),
+			routerDoc(t, "BGPPeer", "spine2", `{"address": "2001:db8::10", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true`+spine2+`}}}`),
+		}
+	}
+	docs := map[string][]any{
+		"BGP": {
+			routerDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers+`, "import": {"ipv4": {"vrfs": ["tenant"]}, "ipv6": {"vrfs": ["tenant"], "policy": "from-tenant"}}}`),
+			routerDoc(t, "BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1", `+timers+`, "import": {"ipv6": {"vrfs": ["default"]}}}`),
+		},
+		"VRF":           {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)},
+		"Network":       {document(t, "Network", "20-eth2", `{"match": {"name": "eth2"}}`)},
+		"PrefixList":    {list("tenant", "2001:db8:100::/40"), list("uplink", "::/0"), list("wan", "2001:db8:fff0::/48")},
+		"RoutingPolicy": {routerDoc(t, "RoutingPolicy", "from-tenant", `{"terms": [{"match": {"prefixList": "tenant"}, "then": {"action": "accept"}}], "default": "reject"}`)},
+		"BGPPeer":       peers(`, "defaultOriginateWhen": "uplink"`, `, "defaultOriginateWhen": "wan"`, `, "defaultOriginateWhen": "uplink"`),
+	}
+	conf := func() string {
+		t.Helper()
+		input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return renderedFile(t, []string{"frr"}, string(input), frrFile)
+	}
+	tracked := conf()
+	for _, want := range []string{
+		"bgp large-community-list standard chalkos-tracked seq 5 permit 4200000000:0:1\n!\n",
+		"route-map accept-all permit 10\nexit\n" +
+			"route-map do-uplink permit 10\n match ipv6 address prefix-list pl-uplink\nexit\n" +
+			"route-map do-wan permit 10\n match ipv6 address prefix-list pl-wan\nexit\n" +
+			"route-map track-default-ipv6 deny 5\n match ipv6 next-hop type blackhole\nexit\n" +
+			"route-map track-default-ipv6 permit 10\n match ipv6 address prefix-list pl-uplink\n set community no-advertise additive\n set distance 255\n set large-community 4200000000:0:1 additive\nexit\n" +
+			"route-map track-default-ipv6 permit 20\n match ipv6 address prefix-list pl-wan\n set community no-advertise additive\n set distance 255\n set large-community 4200000000:0:1 additive\nexit\n" +
+			"route-map leak-default-ipv6 deny 5\n match large-community chalkos-tracked\nexit\n" +
+			"route-map leak-default-ipv6 permit 10\n call rp-from-tenant\nexit\n" +
+			"route-map track-tenant-ipv6 deny 5\n match ipv6 next-hop type blackhole\nexit\n" +
+			"route-map track-tenant-ipv6 permit 10\n match ipv6 address prefix-list pl-uplink\n set community no-advertise additive\n set distance 255\n set large-community 4200000000:0:1 additive\nexit\n" +
+			"route-map leak-tenant-ipv6 deny 5\n match large-community chalkos-tracked\nexit\n" +
+			"route-map leak-tenant-ipv6 permit 10\nexit\n!\n",
+		// The default VRF's IPv4 tracks nothing and imports from a VRF that tracks no IPv4.
+		" address-family ipv4 unicast\n  maximum-paths 1\n  maximum-paths ibgp 1\n  import vrf tenant\n exit-address-family\n",
+		" address-family ipv6 unicast\n  redistribute kernel route-map track-default-ipv6\n  redistribute connected route-map track-default-ipv6\n  maximum-paths 1\n",
+		"  neighbor peer-spine default-originate route-map do-wan\n",
+		"  neighbor peer-spine2 default-originate route-map do-uplink\n",
+		"  import vrf route-map leak-default-ipv6\n  import vrf tenant\n exit-address-family\n",
+		// tenant's IPv4 default stays unconditional.
+		" address-family ipv4 unicast\n  maximum-paths 1\n  maximum-paths ibgp 1\n  neighbor peer-leaf activate\n  neighbor peer-leaf default-originate\n  neighbor peer-leaf route-map accept-all in\n",
+		"  redistribute kernel route-map track-tenant-ipv6\n  redistribute connected route-map track-tenant-ipv6\n",
+		"  neighbor peer-leaf default-originate route-map do-uplink\n",
+		"  import vrf route-map leak-tenant-ipv6\n  import vrf default\n",
+	} {
+		if !strings.Contains(tracked, want) {
+			t.Errorf("frr.conf lacks %q:\n%s", want, tracked)
+		}
+	}
+	if n := strings.Count(tracked, "route-map do-uplink permit 10\n"); n != 1 {
+		t.Errorf("frr.conf renders do-uplink %d times:\n%s", n, tracked)
+	}
+	// Without defaultOriginateWhen nothing of the tracking remains, and the import keeps its policy.
+	docs["BGPPeer"] = peers("", "", "")
+	plain := conf()
+	for _, gone := range []string{"chalkos-tracked", "route-map do-", "track-", "leak-", "redistribute", "default-originate route-map"} {
+		if strings.Contains(plain, gone) {
+			t.Errorf("frr.conf without defaultOriginateWhen holds %q:\n%s", gone, plain)
+		}
+	}
+	if !strings.Contains(plain, "  import vrf route-map rp-from-tenant\n  import vrf tenant\n") {
+		t.Errorf("frr.conf without defaultOriginateWhen lost the import's policy:\n%s", plain)
+	}
+	// tenant alone tracks: the default VRF's import from tenant denies the community, tenant's
+	// import from the default VRF stays bare.
+	docs["BGPPeer"] = peers(`, "defaultOriginateWhen": "uplink"`, "", "")
+	one := conf()
+	if !strings.Contains(one, "  import vrf route-map leak-default-ipv6\n  import vrf tenant\n") ||
+		strings.Contains(one, "leak-tenant-ipv6") || !strings.Contains(one, " exit-address-family\n !\n address-family ipv6 unicast\n  redistribute kernel route-map track-tenant-ipv6\n") ||
+		strings.Contains(one, "track-default-ipv6") {
+		t.Errorf("frr.conf with tenant's tracking alone:\n%s", one)
 	}
 }
 

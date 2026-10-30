@@ -173,7 +173,10 @@ type peerFamily struct {
 	Import           *string `json:"import"`
 	Export           *string `json:"export"`
 	DefaultOriginate bool    `json:"defaultOriginate"`
-	MaxPrefix        *uint32 `json:"maxPrefix"`
+	// DefaultOriginateWhen is the PrefixList whose routes in the peer's VRF send the default
+	// route; nil sends it whatever the table holds.
+	DefaultOriginateWhen *string `json:"defaultOriginateWhen"`
+	MaxPrefix            *uint32 `json:"maxPrefix"`
 }
 
 // peerAS is a BGPPeer's remoteAS as FRR's remote-as takes it: external, internal or a number.

@@ -25,14 +25,28 @@ const (
 	// bfdProfile holds the BFD timers of the default VRF's BGP document; another VRF's profile
 	// is bfdProfile-<vrf>.
 	bfdProfile = "chalkos"
+	// originatePrefix names the route-map do-<list> that sends a peer's default route while a
+	// route of the PrefixList exists.
+	originatePrefix = "do-"
+	// trackPrefix names the route-map track-<vrf>-<family> through which an instance
+	// redistributes the routes its peers' defaults track, and leakPrefix the route-map
+	// leak-<vrf>-<family> of an import from a VRF that tracks routes of the family.
+	trackPrefix = "track-"
+	leakPrefix  = "leak-"
+	// trackedCommunity marks the routes an instance redistributes to track them, a large
+	// community of a private-use AS, and trackedList is the large-community list that matches it.
+	trackedCommunity = "4200000000:0:1"
+	trackedList      = "chalkos-tracked"
 )
 
 // renderFRR writes FRR's whole config to out/frr.conf: a BGP instance per BGP document, of the
 // default VRF or of another, with a peer group per BGPPeer of its VRF, the PrefixList,
 // CommunityList and RoutingPolicy documents as prefix-lists, community-lists and route-maps, and a
-// BFD profile of each instance's timers. A peer's password is a placeholder,
-// @secret_<secret>.<key>@, that frr.service fills in from its credentials. A node without a BGP
-// document runs no BGP.
+// BFD profile of each instance's timers. A peer's family with defaultOriginateWhen sends its
+// default route while the instance, which redistributes the kernel's routes and the links'
+// prefixes that the list matches without announcing them, holds a route of the list. A peer's
+// password is a placeholder, @secret_<secret>.<key>@, that frr.service fills in from its
+// credentials. A node without a BGP document runs no BGP.
 func renderFRR(in map[string]any, out string) error {
 	d, err := readRouterDocuments(in)
 	if err != nil {
@@ -110,6 +124,8 @@ type frr struct {
 	devices []string
 	// prependAS is the AS number the prepends of each RoutingPolicy with one repeat, by name.
 	prependAS map[string]uint32
+	// tracked are the PrefixLists the peers' defaults track, by VRF and family, sorted.
+	tracked map[string]map[string][]string
 }
 
 // An instance is a BGP document: the BGP instance of one VRF, and the peers in that VRF.
@@ -239,8 +255,9 @@ var description = regexp.MustCompile(`^[!-?A-~]+( [!-?A-~]+)*$`)
 // plainInterface is an interface's name without a glob.
 var plainInterface = regexp.MustCompile(`^[A-Za-z0-9_.:@-]{1,15}$`)
 
-// newFRR checks the documents as the schemas and rules do, should one bypass them, and expands
-// each peer's interfaces against the links the Network documents name, which are in its VRF.
+// newFRR checks the documents as the schemas and rules do, should one bypass them, expands each
+// peer's interfaces against the links the Network documents name, which are in its VRF, and notes
+// the PrefixLists each VRF's peers track.
 func newFRR(d routerDocuments) (*frr, error) {
 	c := &frr{
 		peers:        d.Peers,
@@ -257,6 +274,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 		vrfs:         d.VRFs,
 		devices:      vrfDevices(d),
 		prependAS:    map[string]uint32{},
+		tracked:      map[string]map[string][]string{},
 	}
 	for _, g := range d.BGP {
 		in, err := newInstance(g, d.VRFs)
@@ -334,6 +352,11 @@ func newFRR(d routerDocuments) (*frr, error) {
 		}
 		c.neighbours[p.Name] = ns
 		in.peers = append(in.peers, p)
+		for fam, f := range map[string]*peerFamily{"ipv4": p.Spec.Families.IPv4, "ipv6": p.Spec.Families.IPv6} {
+			if f != nil && f.DefaultOriginateWhen != nil {
+				c.track(vrf, fam, *f.DefaultOriginateWhen)
+			}
+		}
 	}
 	for _, p := range d.Peers {
 		if peer, ok := sessions[peerGroupPrefix+p.Name]; ok {
@@ -447,6 +470,29 @@ func (c *frr) checkImports(in *instance) error {
 func (c *frr) zoned(vrf string) bool {
 	return slices.ContainsFunc(c.vrfs, func(v named[vrfSpec]) bool { return v.Name == vrf && v.Spec.ConntrackZone != nil })
 }
+
+// track notes a PrefixList that a family of a peer in the VRF tracks, once.
+func (c *frr) track(vrf, family, list string) {
+	if c.tracked[vrf] == nil {
+		c.tracked[vrf] = map[string][]string{}
+	}
+	if !slices.Contains(c.tracked[vrf][family], list) {
+		c.tracked[vrf][family] = append(c.tracked[vrf][family], list)
+		slices.Sort(c.tracked[vrf][family])
+	}
+}
+
+// leaksTracked reports whether the instance imports routes of the family from a VRF whose
+// instance tracks routes of that family, which the import keeps out: the kernel would install
+// them in the importing VRF's table.
+func (c *frr) leaksTracked(in *instance, family string) bool {
+	l := in.leak(family)
+	return l != nil && slices.ContainsFunc(l.VRFs, func(v string) bool { return len(c.tracked[v][family]) > 0 })
+}
+
+// trackMap and leakMap name an instance's route-maps of a family.
+func trackMap(vrf, family string) string { return trackPrefix + vrf + "-" + family }
+func leakMap(vrf, family string) string  { return leakPrefix + vrf + "-" + family }
 
 // prepends finds the AS number each RoutingPolicy's prepend repeats: that of the BGP instances
 // whose networks, peers or imports use the policy. A route-map serves every instance, so a policy
@@ -616,6 +662,16 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 		}
 		if f.fam.MaxPrefix != nil && *f.fam.MaxPrefix == 0 {
 			return nil, fmt.Errorf("families.%s: maxPrefix 0 accepts no route", f.name)
+		}
+		if l := f.fam.DefaultOriginateWhen; l != nil {
+			switch fam, ok := c.families[*l]; {
+			case !f.fam.DefaultOriginate:
+				return nil, fmt.Errorf("families.%s: defaultOriginateWhen needs defaultOriginate, whose default route it sends while a route of the list exists", f.name)
+			case !ok:
+				return nil, fmt.Errorf("families.%s: defaultOriginateWhen: the PrefixList %s does not exist", f.name, *l)
+			case fam != f.name:
+				return nil, fmt.Errorf("families.%s: defaultOriginateWhen: the PrefixList %s is of %s", f.name, *l, fam)
+			}
 		}
 	}
 	if err := checkPeerDevices(s, c.devices); err != nil {
@@ -808,8 +864,8 @@ func communityList(name string, seq int, value string) string {
 	return fmt.Sprintf("bgp %s standard %s seq %d permit %s\n", kind, name, seq, value)
 }
 
-// communityLists renders each CommunityList, the communities a term removes and a term's AS path
-// as FRR's lists.
+// communityLists renders each CommunityList, the communities a term removes, a term's AS path and,
+// for the imports that keep tracked routes out, the tracked community, as FRR's lists.
 func (c *frr) communityLists(b *strings.Builder) {
 	written := false
 	for _, l := range c.communities {
@@ -830,6 +886,10 @@ func (c *frr) communityLists(b *strings.Builder) {
 			}
 		}
 	}
+	if slices.ContainsFunc(c.instances, func(in *instance) bool { return c.leaksTracked(in, "ipv4") || c.leaksTracked(in, "ipv6") }) {
+		b.WriteString(communityList(trackedList, 5, trackedCommunity))
+		written = true
+	}
 	if written {
 		b.WriteString("!\n")
 	}
@@ -845,7 +905,8 @@ func asPathList(policy string, i int) string { return fmt.Sprintf("asp-%s-%d", p
 func termSeq(i int) int { return 10 * (i + 1) }
 
 // routeMaps renders each RoutingPolicy as a route-map: an entry per term, and its default last,
-// and the route-map that accepts every route when a peer's family needs it.
+// the route-map that accepts every route when a peer's family needs it, and those of the defaults
+// sent while a route exists.
 func (c *frr) routeMaps(b *strings.Builder) {
 	for _, p := range c.policies {
 		for i, t := range p.Spec.Terms {
@@ -913,9 +974,55 @@ func (c *frr) routeMaps(b *strings.Builder) {
 	if c.needsAcceptAll() {
 		fmt.Fprintf(b, "route-map %s permit 10\nexit\n", acceptAll)
 	}
-	if len(c.policies) > 0 || c.needsAcceptAll() {
+	tracking := c.trackingMaps(b)
+	if len(c.policies) > 0 || c.needsAcceptAll() || tracking {
 		b.WriteString("!\n")
 	}
+}
+
+// trackingMaps renders the route-maps of the defaults sent while a route exists: do-<list> for
+// each PrefixList a peer tracks, and per instance and family track-<vrf>-<family>, through which
+// the instance redistributes the routes its peers track, and leak-<vrf>-<family> for an import
+// from a VRF that tracks routes of the family. Blackhole routes, the VRF tables' unreachable
+// defaults among them, count for nothing; zebra reads their kernel metric as a distance and a
+// metric of its own, so the route-map matches their type. A tracked path takes distance 255,
+// so a path a peer sends for the same prefix stays the best one, which bgpd installs, announces
+// and leaks. It reports whether it rendered any.
+func (c *frr) trackingMaps(b *strings.Builder) bool {
+	lists := map[string]bool{}
+	for _, byFamily := range c.tracked {
+		for _, ls := range byFamily {
+			for _, l := range ls {
+				lists[l] = true
+			}
+		}
+	}
+	for _, l := range slices.Sorted(maps.Keys(lists)) {
+		fmt.Fprintf(b, "route-map %s%s permit 10\n match %s address prefix-list %s%s\nexit\n", originatePrefix, l, ipWord(c.families[l]), prefixListPrefix, l)
+	}
+	written := len(lists) > 0
+	for _, in := range c.instances {
+		for _, fam := range []string{"ipv4", "ipv6"} {
+			if ls := c.tracked[in.vrf][fam]; len(ls) > 0 {
+				name := trackMap(in.vrf, fam)
+				fmt.Fprintf(b, "route-map %s deny 5\n match %s next-hop type blackhole\nexit\n", name, ipWord(fam))
+				for i, l := range ls {
+					fmt.Fprintf(b, "route-map %s permit %d\n match %s address prefix-list %s%s\n set community no-advertise additive\n set distance 255\n set large-community %s additive\nexit\n",
+						name, 10*(i+1), ipWord(fam), prefixListPrefix, l, trackedCommunity)
+				}
+			}
+			if c.leaksTracked(in, fam) {
+				name := leakMap(in.vrf, fam)
+				fmt.Fprintf(b, "route-map %s deny 5\n match large-community %s\nexit\nroute-map %s permit 10\n", name, trackedList, name)
+				if p := in.leak(fam).Policy; p != nil {
+					fmt.Fprintf(b, " call %s%s\n", policyPrefix, *p)
+				}
+				b.WriteString("exit\n")
+				written = true
+			}
+		}
+	}
+	return written
 }
 
 // needsAcceptAll reports whether a peer's family names no import or export policy.
@@ -931,8 +1038,8 @@ func (c *frr) needsAcceptAll() bool {
 }
 
 // router renders a BGP instance: its settings, a peer group per peer of its VRF with its sessions,
-// and both address families with the networks, each peer's policies and the routes the instance
-// imports from other VRFs.
+// and both address families with the networks, the redistribution of the routes its peers'
+// defaults track, each peer's policies and the routes the instance imports from other VRFs.
 func (c *frr) router(b *strings.Builder, in *instance) {
 	g := in.spec
 	if in.vrf == defaultVRF {
@@ -987,6 +1094,10 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 			}
 			b.WriteString(line + "\n")
 		}
+		if len(c.tracked[in.vrf][fam]) > 0 {
+			m := trackMap(in.vrf, fam)
+			fmt.Fprintf(b, "  redistribute kernel route-map %s\n  redistribute connected route-map %s\n", m, m)
+		}
 		fmt.Fprintf(b, "  maximum-paths %d\n  maximum-paths ibgp %d\n", g.Multipath.EBGP, g.Multipath.IBGP)
 		for _, p := range in.peers {
 			f := p.Spec.Families.IPv4
@@ -998,7 +1109,10 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 			}
 			group := peerGroupPrefix + p.Name
 			fmt.Fprintf(b, "  neighbor %s activate\n", group)
-			if f.DefaultOriginate {
+			switch {
+			case f.DefaultOriginate && f.DefaultOriginateWhen != nil:
+				fmt.Fprintf(b, "  neighbor %s default-originate route-map %s%s\n", group, originatePrefix, *f.DefaultOriginateWhen)
+			case f.DefaultOriginate:
 				fmt.Fprintf(b, "  neighbor %s default-originate\n", group)
 			}
 			for _, dir := range []struct {
@@ -1016,7 +1130,10 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 			}
 		}
 		if l := in.leak(fam); l != nil {
-			if l.Policy != nil {
+			switch {
+			case c.leaksTracked(in, fam):
+				fmt.Fprintf(b, "  import vrf route-map %s\n", leakMap(in.vrf, fam))
+			case l.Policy != nil:
 				fmt.Fprintf(b, "  import vrf route-map %s%s\n", policyPrefix, *l.Policy)
 			}
 			for _, v := range l.VRFs {
