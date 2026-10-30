@@ -131,8 +131,11 @@ type path struct {
 	LocalPref *uint32 `json:"locPrf"`
 	Valid     bool    `json:"valid"`
 	Multipath bool    `json:"multipath"`
-	Local     bool    `json:"local"`
-	Best      *struct {
+	// Local is set for a network or aggregate of the instance, and Sourced for a network and for a
+	// route it redistributes; FRR marks neither on a path a peer sent.
+	Local   bool `json:"local"`
+	Sourced bool `json:"sourced"`
+	Best    *struct {
 		Overall bool `json:"overall"`
 	} `json:"bestpath"`
 	NextHops []struct {
@@ -180,7 +183,7 @@ func ParseRoutes(data []byte) ([]*BGPRoute, error) {
 				if p.ASPath.String != "Local" {
 					r.ASPath = p.ASPath.String
 				}
-			case !p.Local:
+			case !p.Local && !p.Sourced:
 				r.ASPath = p.ASPath.String
 				r.Peer = cmp.Or(p.Peer.Interface, p.Peer.PeerID)
 			}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -147,5 +148,26 @@ func TestParseImportedRoutes(t *testing.T) {
 	// A VRF without an instance answers with a warning and no paths.
 	if routes, err := ParseRoutes([]byte(`{"warning":"View/Vrf is unknown"}`)); err != nil || len(routes) != 0 {
 		t.Errorf("a VRF without an instance: %v, %v", routes, err)
+	}
+}
+
+// A route the instance redistributes from the kernel, as FRR 10.7.1 prints it: sourced but not
+// local, from the peer ::. It reads as the router's own path, with its communities.
+func TestParseRedistributedRoute(t *testing.T) {
+	data := []byte(`{"routes":{"2001:db8:fff0::/48":[{"aspath":{"string":"Local","length":0},"origin":"incomplete",
+		"metric":0,"weight":32768,"valid":true,"sourced":true,"community":{"string":"no-advertise","list":["noAdvertise"]},
+		"largeCommunity":{"string":"4200000000:0:1","list":["4200000000:0:1"]},"bestpath":{"overall":true},
+		"nexthops":[{"ip":"::","afi":"ipv6","used":true}],"peer":{"peerId":"::","routerId":"192.0.2.1"}}]}}`)
+	routes, err := ParseRoutes(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes) != 1 {
+		t.Fatalf("routes: %v", routes)
+	}
+	r := routes[0]
+	if r.Prefix != "2001:db8:fff0::/48" || !r.Best || r.ASPath != "" || r.Peer != "" || r.ImportedFrom != "" ||
+		!slices.Equal(r.Communities, []string{"noAdvertise", "4200000000:0:1"}) {
+		t.Errorf("redistributed route = %+v", r)
 	}
 }
