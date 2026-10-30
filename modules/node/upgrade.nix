@@ -36,9 +36,9 @@ in
       default = [ ];
       example = [ "example-sync.service" ];
       description = ''
-        Units of the boot whose failure leaves a node without Kubernetes healthy. Only units
-        multi-user.target and sysinit.target pull in count; jobs that timers and sockets start
-        never do. A config's trial ignores them too.
+        Units of the boot whose failure leaves the node healthy. Only units multi-user.target and
+        sysinit.target pull in count; jobs that timers and sockets start never do. A config's trial
+        ignores them too.
       '';
     };
   };
