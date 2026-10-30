@@ -521,9 +521,12 @@ in
       grep -qx "reload sources" chronyc.log || fail "did not reload the sources of a running chronyd"
     '';
 
-  # chalkos-vrf in a network namespace: it removes the VRFs that no rendered .netdev of Kind=vrf
-  # declares and those whose table changed, keeps a declared VRF with its member and every link of
-  # another kind, and with no rendered units, as in maintenance mode, removes every VRF.
+  # chalkos-vrf in a network namespace: it removes the VRFs that no .netdev of Kind=vrf declares
+  # and those whose table changed, keeps a declared VRF with its member and every link of another
+  # kind, and with no rendered units, as in maintenance mode, removes every VRF the rendered units
+  # declared. It reads /etc's units before the rendered ones, by name, as networkd does. When it
+  # removed a VRF it reloads a running networkd, through the systemctl and networkctl of the unit's
+  # PATH that the check stubs, and otherwise does not.
   router-vrf =
     let
       script = checkLib.router.config.systemd.services.chalkos-vrf.serviceConfig.ExecReload;
@@ -536,13 +539,36 @@ in
         exit 1
       }
       exists() { ip link show "$1" >/dev/null 2>&1; }
-      mkdir -p ${dir}
+      reloaded() {
+        [ "$(cat networkctl.log)" = reload ] || fail "$1: networkctl was called with: $(cat networkctl.log)"
+        : >networkctl.log
+      }
+      not_reloaded() { [ ! -s networkctl.log ] || fail "$1: networkctl was called with: $(cat networkctl.log)"; }
+      mkdir -p stub
+      cat >stub/networkctl <<'STUB'
+      #!/bin/sh
+      echo "$@" >>networkctl.log
+      STUB
+      cat >stub/systemctl <<'STUB'
+      #!/bin/sh
+      exit "''${ACTIVE:-0}"
+      STUB
+      chmod +x stub/networkctl stub/systemctl
+      : >networkctl.log
+      export PATH=$PWD/stub:$PATH
+      mkdir -p ${dir} etc/systemd/network
       printf '[NetDev]\nKind=vrf\nName=keep\n\n[VRF]\nTable=100\n\n' >${dir}/00-vrf-keep.netdev
       printf '[NetDev]\nKind=vrf\nName=moved\n\n[VRF]\nTable=300\n\n' >${dir}/00-vrf-moved.netdev
       printf '[NetDev]\nKind=dummy\nName=gone\n\n' >${dir}/20-gone.netdev
+      # /etc's units, which networkd reads before the rendered ones of the same name.
+      printf '# A VRF of the image.\n[NetDev]\nName = local\nKind = vrf\n\n[VRF]\nTable = 500\n' >etc/systemd/network/10-local.netdev
+      printf '[NetDev]\nKind=vrf\nName=masked\n\n[VRF]\nTable=600\n\n' >${dir}/00-vrf-masked.netdev
+      ln -s /dev/null etc/systemd/network/00-vrf-masked.netdev
       ip link add keep type vrf table 100
       ip link add moved type vrf table 200
       ip link add gone type vrf table 400
+      ip link add local type vrf table 500
+      ip link add masked type vrf table 600
       ip link add d0 type dummy
       ip link set d0 master keep
       ${script} || fail "chalkos-vrf failed"
@@ -551,13 +577,23 @@ in
       [ "$(ip -o link show master keep | wc -l)" = 1 ] || fail "a declared VRF lost its member"
       if exists moved; then fail "kept a VRF whose table changed"; fi
       if exists gone; then fail "kept a VRF that no .netdev of Kind=vrf declares"; fi
+      exists local || fail "removed a VRF that a unit of /etc declares"
+      if exists masked; then fail "kept a VRF whose rendered unit /etc masks"; fi
       exists d0 || fail "removed a link of another kind"
+      reloaded "after removing VRFs"
       ${script} || fail "a second run failed"
       exists keep || fail "a second run removed a declared VRF"
+      not_reloaded "a run that removed nothing"
       rm ${dir}/*.netdev
       ${script} || fail "chalkos-vrf without units failed"
       if exists keep; then fail "kept a VRF without rendered units"; fi
+      exists local || fail "removed a VRF of /etc without rendered units"
       exists d0 || fail "removed a link of another kind without rendered units"
+      reloaded "after removing VRFs without rendered units"
+      ip link add other type vrf table 700
+      ACTIVE=3 ${script} || fail "chalkos-vrf failed while networkd does not run"
+      if exists other; then fail "kept a VRF while networkd does not run"; fi
+      not_reloaded "a run while networkd does not run"
     '';
 
   # The router's firewall unit in network namespaces, with a LAN peer on lan0 and a WAN peer on

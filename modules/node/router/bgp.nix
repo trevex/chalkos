@@ -95,8 +95,9 @@ in
     # chalkd loads the values the peers' password fields name as frr.service's credentials.
     systemd.services.frr = {
       chalkos.kinds = [ "BGPPeer" ];
-      # A new peer's ports are open, and a VRF's device and members exist, before FRR dials it: a
-      # delivery reloads these units in one job, which takes this order.
+      # A new peer's ports are open, and networkd has read the VRF's units, before FRR reloads: a
+      # delivery reloads these units with one systemctl call, whose job of each unit takes this
+      # order.
       after = [
         "chalkos-config.service"
         "chalkos-firewall.service"
