@@ -13,5 +13,6 @@
     ./router.nix
     ./bgp.nix
     ./nat64.nix
+    ./vrf.nix
   ];
 }

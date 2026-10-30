@@ -95,6 +95,7 @@ let
     "Resolver"
     "Router"
     "RoutingPolicy"
+    "VRF"
   ];
   # The installer.
   installer = (mkImages { variants = { }; }).nixos.installer.config;

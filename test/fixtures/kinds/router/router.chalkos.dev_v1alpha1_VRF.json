@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A VRF of the router: a kernel VRF device of the document's name, its routing table and the links it holds. Other router kinds name it by its name; the default VRF, of every link no VRF holds, has no document.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "VRF"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "interfaces": {
+          "default": [],
+          "description": "Links the VRF holds, by name or glob, a glob being a prefix followed by `*`; a glob stands for the links the node's Network documents name in a `[Match]` section's `Name=`. A link is named by a Network document, which gets `VRF=`, and every link of that Network is in this VRF.",
+          "examples": [
+            [
+              "eth2",
+              "swp*"
+            ]
+          ],
+          "items": {
+            "pattern": "^(?:[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*])$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "table": {
+          "description": "Routing table of the VRF, which no other VRF uses; not 253, 254 or 255, the kernel's tables of the default VRF. A change creates the VRF anew, which ends the sessions in it.",
+          "examples": [
+            100
+          ],
+          "maximum": 4294967295,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "table"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "VRF",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "VRF",
+    "multiple": true,
+    "rules": [
+      {
+        "description": "A VRF is named as its device, in 15 characters at most, and not default.",
+        "messageExpression": "documents.filter(n, n == \"default\" || size(n) > 15).map(n, \"VRF \" + n).join(\", \") + \": a VRF is named as its device, in 15 characters at most, and default names the VRF of every link no VRF holds\"",
+        "rule": "documents.all(n, n != \"default\" && size(n) <= 15)",
+        "takes": "refuse"
+      },
+      {
+        "description": "A VRF's table is none of the kernel's own: 253, 254 and 255.",
+        "messageExpression": "documents.filter(n, documents[n].spec.table in [253, 254, 255]).map(n, \"VRF \" + n).join(\", \") + \" uses table 253, 254 or 255, which the kernel keeps for the default VRF; give it another number\"",
+        "rule": "documents.all(n, !(documents[n].spec.table in [253, 254, 255]))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A table belongs to one VRF.",
+        "messageExpression": "cel.bind(t, documents.map(n, documents[n].spec.table), \"more than one VRF uses table \" + string(t.filter(x, size(t.filter(y, y == x)) > 1)[0]) + \"; give each VRF a table of its own\")",
+        "rule": "cel.bind(t, documents.map(n, documents[n].spec.table), t.all(x, size(t.filter(y, y == x)) == 1))",
+        "takes": "refuse"
+      },
+      {
+        "description": "An interface or glob is in one VRF, once; globs compare as written.",
+        "messageExpression": "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), \"the interface \" + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + \" is in more than one VRF, or twice in one; give each interface one VRF\")",
+        "rule": "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, size(all.filter(j, j == i)) == 1))",
+        "takes": "refuse"
+      },
+      {
+        "description": "No VRF holds an interface of Router.spec.management.interfaces; names and globs compare as written.",
+        "messageExpression": "cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(api, cel.bind(routers, ((\"router.chalkos.dev/v1alpha1\" in config && \"Router\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), \"the management interface \" + api.filter(i, i in held)[0] + \" is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF\"))",
+        "rule": "cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(api, cel.bind(routers, ((\"router.chalkos.dev/v1alpha1\" in config && \"Router\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), api.all(i, !(i in held))))",
+        "takes": "refuse"
+      },
+      {
+        "description": "While the node API answers on every interface, a Network document names a link that no VRF holds; names and globs compare as written.",
+        "message": "every link the Network documents name is in a VRF, and chalkd answers in the default VRF alone, on every interface while Router.spec.management.interfaces is null; keep the link you reach the router through out of every VRF",
+        "rule": "size(documents) == 0 || cel.bind(routers, ((\"router.chalkos.dev/v1alpha1\" in config && \"Router\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].Router : {}), routers.exists(k, routers[k].spec.management.interfaces != null)) || cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), !cel.bind(nets, ((\"networkd.chalkos.dev/v1alpha1\" in config && \"Network\" in config[\"networkd.chalkos.dev/v1alpha1\"]) ? config[\"networkd.chalkos.dev/v1alpha1\"].Network : {}), cel.bind(matches, dyn(nets.map(n, \"match\" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), \" \" + dyn(matches.map(m, \"name\" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(\" \").replace(\"\\t\", \" \") + \" \")).matches(\"^( +(\" + held.map(i, i.replace(\".\", \"[.]\").replace(\"*\", \"[*]\")).join(\"|\") + \"|![^ ]*))* *$\"))",
+        "takes": "refuse"
+      },
+      {
+        "description": "No NetDev document creates a device of a VRF's name.",
+        "messageExpression": "cel.bind(made, cel.bind(netdevs, ((\"networkd.chalkos.dev/v1alpha1\" in config && \"NetDev\" in config[\"networkd.chalkos.dev/v1alpha1\"]) ? config[\"networkd.chalkos.dev/v1alpha1\"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : \"\")).flatten()), \"the VRF \" + documents.filter(n, n in made)[0] + \" takes the name of a device a NetDev document creates; rename the VRF or the NetDev\")",
+        "rule": "cel.bind(made, cel.bind(netdevs, ((\"networkd.chalkos.dev/v1alpha1\" in config && \"NetDev\" in config[\"networkd.chalkos.dev/v1alpha1\"]) ? config[\"networkd.chalkos.dev/v1alpha1\"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : \"\")).flatten()), documents.all(n, !(n in made)))",
+        "takes": "refuse"
+      }
+    ],
+    "version": "v1alpha1"
+  }
+}

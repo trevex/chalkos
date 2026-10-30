@@ -951,6 +951,78 @@ Expression of rule 4:
 self.all(t, t["then"].action == "accept" || t["then"].localPref == null && t["then"].med == null && size(t["then"].addCommunities) == 0 && size(t["then"].removeCommunities) == 0 && t["then"].prepend == null)
 ```
 
+#### VRF { #rules-vrf }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | A VRF is named as its device, in 15 characters at most, and not default. | `refuse` | `documents.all(n, n != "default" && size(n) <= 15)` | after the table |
+| 2 | — | A VRF's table is none of the kernel's own: 253, 254 and 255. | `refuse` | `documents.all(n, !(documents[n].spec.table in [253, 254, 255]))` | after the table |
+| 3 | — | A table belongs to one VRF. | `refuse` | `cel.bind(t, documents.map(n, documents[n].spec.table), t.all(x, size(t.filter(y, y == x)) == 1))` | after the table |
+| 4 | — | An interface or glob is in one VRF, once; globs compare as written. | `refuse` | after the table | after the table |
+| 5 | — | No VRF holds an interface of Router.spec.management.interfaces; names and globs compare as written. | `refuse` | after the table | after the table |
+| 6 | — | While the node API answers on every interface, a Network document names a link that no VRF holds; names and globs compare as written. | `refuse` | after the table | every link the Network documents name is in a VRF, and chalkd answers in the default VRF alone, on every interface while Router.spec.management.interfaces is null; keep the link you reach the router through out of every VRF |
+| 7 | — | No NetDev document creates a device of a VRF's name. | `refuse` | after the table | after the table |
+
+Message of rule 1:
+
+```text
+documents.filter(n, n == "default" || size(n) > 15).map(n, "VRF " + n).join(", ") + ": a VRF is named as its device, in 15 characters at most, and default names the VRF of every link no VRF holds"
+```
+
+Message of rule 2:
+
+```text
+documents.filter(n, documents[n].spec.table in [253, 254, 255]).map(n, "VRF " + n).join(", ") + " uses table 253, 254 or 255, which the kernel keeps for the default VRF; give it another number"
+```
+
+Message of rule 3:
+
+```text
+cel.bind(t, documents.map(n, documents[n].spec.table), "more than one VRF uses table " + string(t.filter(x, size(t.filter(y, y == x)) > 1)[0]) + "; give each VRF a table of its own")
+```
+
+Expression of rule 4:
+
+```text
+cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, size(all.filter(j, j == i)) == 1))
+```
+
+Message of rule 4:
+
+```text
+cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), "the interface " + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + " is in more than one VRF, or twice in one; give each interface one VRF")
+```
+
+Expression of rule 5:
+
+```text
+cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(api, cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), api.all(i, !(i in held))))
+```
+
+Message of rule 5:
+
+```text
+cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(api, cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), "the management interface " + api.filter(i, i in held)[0] + " is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"))
+```
+
+Expression of rule 6:
+
+```text
+size(documents) == 0 || cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.exists(k, routers[k].spec.management.interfaces != null)) || cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), !cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")).matches("^( +(" + held.map(i, i.replace(".", "[.]").replace("*", "[*]")).join("|") + "|![^ ]*))* *$"))
+```
+
+Expression of rule 7:
+
+```text
+cel.bind(made, cel.bind(netdevs, (("networkd.chalkos.dev/v1alpha1" in config && "NetDev" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : "")).flatten()), documents.all(n, !(n in made)))
+```
+
+Message of rule 7:
+
+```text
+cel.bind(made, cel.bind(netdevs, (("networkd.chalkos.dev/v1alpha1" in config && "NetDev" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : "")).flatten()), "the VRF " + documents.filter(n, n in made)[0] + " takes the name of a device a NetDev document creates; rename the VRF or the NetDev")
+```
+
 ## Facts { #facts }
 
 A fact is node state that change rules and the `when` of effects read as `facts.<name>`. A

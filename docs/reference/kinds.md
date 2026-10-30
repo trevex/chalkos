@@ -552,6 +552,19 @@ A node's config may hold several, each with a name of its own. It has 4 [change 
 | `spec.terms[].then.prepend` | integer from 1 to 10 or null | `null` | How often the router puts its own AS number in front of the route's AS path; null puts none. |
 | `spec.terms[].then.removeCommunities` | list of string | `[]` | Communities removed from the route. |
 
+### VRF { #vrf }
+
+A VRF of the router: a kernel VRF device of the document's name, its routing table and the links it holds. Other router kinds name it by its name; the default VRF, of every link no VRF holds, has no document.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 7 [change rules](builtins.md#rules-vrf).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.interfaces` | list of string | `[]` | Links the VRF holds, by name or glob, a glob being a prefix followed by `*`; a glob stands for the links the node's Network documents name in a `[Match]` section's `Name=`. A link is named by a Network document, which gets `VRF=`, and every link of that Network is in this VRF. |
+| `spec.table` | integer from 1 to 4294967295 | required | Routing table of the VRF, which no other VRF uses; not 253, 254 or 255, the kernel's tables of the default VRF. A change creates the VRF anew, which ends the sessions in it. |
+
 ## storage.chalkos.dev { #storage-chalkos-dev }
 
 The kinds of `storage.chalkos.dev` lay out the node's disks: the system disk and the volumes.
