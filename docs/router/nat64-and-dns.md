@@ -250,8 +250,9 @@ DESTINATION   TYPE     PROTOCOL  TABLE  METRIC  NEXT HOPS
 ```
 
 A NAT64 of another VRF may translate the same prefix. Each VRF's table routes the prefix to its
-own NAT64, so the NAT64s never see each other's clients. Their pools still share no address. To
-announce a VRF's prefix, name it in `networks` of the VRF's `BGP` document.
+own NAT64, so the NAT64s never see each other's clients. Two NAT64s' pools share no address,
+whatever their VRFs. To announce a VRF's prefix, name it in `networks` of the VRF's `BGP`
+document.
 
 The resolver of `guest` answers on the VRF's links alone and sends its own queries out through
 them, so the VRF's table needs routes to the root servers or to the forwarders. `listen` holds

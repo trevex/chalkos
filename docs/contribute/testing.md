@@ -70,8 +70,9 @@ run them in isolation:
   Jool's module cannot load there, so a stub of `jool` keeps the instances per network namespace.
   The check proves each instance's namespace with forwarding off, its link in its VRF, the
   addresses and routes, the removal of an older image's instance, routes and namespaces that no
-  file names, the 30-second wait for a VRF's table, a second run that changes nothing, and
-  `stop`. With the VRF example's ruleset, it sends a guest's packet into the NAT64's namespace and
+  file names, the 30-second wait for a VRF's table, once for two NAT64s of one VRF, a second run
+  that changes nothing, and `stop`. A run fails without changing anything when a link holds an
+  address of an explicit pool, and leaves a device of another kind under a link's name alone. With the VRF example's ruleset, it sends a guest's packet into the NAT64's namespace and
   a connection out of it, masqueraded to the uplink's address.
 - The `router-resolvers` check runs `chalkos-resolvers.service` with stubs of `systemctl` and
   `systemd-escape`, which keep each unit's state in files. It proves that the resolvers of VRFs

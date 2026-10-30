@@ -186,8 +186,8 @@ chain ct-output {
 ```
 
 The link of the VRF's NAT64, `n64-guest`, joins the zone, so a guest's connection and its
-translation share it. The chains match the VRF's links, as prerouting's first pass, the one with the link,
-decides the packet's connection. In output, the router's own packet in a VRF passes first with
+translation share it. The chains match the VRF's links, as prerouting's first pass, the one with
+the link, decides the packet's connection. In output, the router's own packet in a VRF passes first with
 the VRF's device, untracked, and then with the link. Each VRF gets a rule of its own, as an
 nftables map refuses keys whose globs overlap. A VRF with a zone but no links renders no rule, and
 a router whose VRFs have no zone renders neither chain.

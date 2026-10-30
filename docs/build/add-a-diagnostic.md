@@ -102,9 +102,9 @@ a NAT64's sessions in the NAT64's namespace:
 networkNamespace = "nat64-{instance}";
 ```
 
-The name holds letters, digits, `_`, `.` and `-`, and starts with neither `.` nor `-`. A
-parameter that it names is not `optional`. chalkd refuses a call whose values fill the name to
-anything else. A call whose namespace does not exist fails before the command runs, with
+The name holds letters, digits, `_`, `.` and `-`, starts with neither `.` nor `-`, and has 255
+characters at most, each parameter counted as one. A parameter that it names is not `optional`.
+chalkd refuses a call whose values fill the name to anything else. A call whose namespace does not exist fails before the command runs, with
 `failed_precondition: diagnostic nat64-sessions: the network namespace nat64-guest does not exist`.
 
 ## The build checks the declaration

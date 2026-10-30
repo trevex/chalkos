@@ -395,8 +395,8 @@ in it end and start over. Deliver the change as a trial, as any change of VRFs.
 ## Remove a VRF
 
 Remove a VRF's `BGPPeer`, `BGP`, `NAT64`, `Resolver` and `VRF` documents in one delivery. The
-rules refuse a `VRF` document's removal while another document still names the VRF. Once the VRF is gone,
-its links are in the default VRF.
+rules refuse a `VRF` document's removal while another document still names the VRF. Once the VRF
+is gone, its links are in the default VRF.
 
 FRR keeps the default VRF's instance while another VRF's runs. The rules therefore refuse a
 delivery that removes the default VRF's `BGP` document and keeps another VRF's instance running:

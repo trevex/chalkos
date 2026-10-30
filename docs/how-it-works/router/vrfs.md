@@ -250,9 +250,10 @@ the ruleset matches them.
 A `NAT64` with `vrf` runs in a network namespace of its own, as every NAT64 does. Its link
 `n64-<name>` is a member of the VRF that no `VRF` document names: `chalkos-nat64.service` puts it
 into the VRF's device itself, and the output `networkd` renders a `.network` that leaves it to the
-unit. The VRF's table routes the NAT64's prefix and explicit pool to the link, and the forward chain matches
-the link's packets by `meta sdifname`. The renderer adds the link to the VRF's conntrack zone, so
-a connection and its translation share the zone.
+unit. The VRF's table routes the NAT64's prefix and explicit pool to the link, and the forward
+chain matches the link's packets by `meta sdifname`. The renderer adds the link to the VRF's
+conntrack zone, so a connection and its translation share the zone. No `VRF` takes a name that
+starts with `n64-`, and no `FirewallZone` names or globs a NAT64's link.
 [Each instance runs in a namespace of its own](nat64-and-dns.md#each-instance-runs-in-a-namespace-of-its-own)
 shows the path of a packet.
 
