@@ -155,7 +155,7 @@ func TestParseImportedRoutes(t *testing.T) {
 // local, from the peer ::. It reads as the router's own path, with its communities.
 func TestParseRedistributedRoute(t *testing.T) {
 	data := []byte(`{"routes":{"2001:db8:fff0::/48":[{"aspath":{"string":"Local","length":0},"origin":"incomplete",
-		"metric":0,"weight":32768,"valid":true,"sourced":true,"community":{"string":"no-advertise","list":["noAdvertise"]},
+		"metric":0,"valid":true,"sourced":true,"community":{"string":"no-advertise","list":["noAdvertise"]},
 		"largeCommunity":{"string":"4200000000:0:1","list":["4200000000:0:1"]},"bestpath":{"overall":true},
 		"nexthops":[{"ip":"::","afi":"ipv6","used":true}],"peer":{"peerId":"::","routerId":"192.0.2.1"}}]}}`)
 	routes, err := ParseRoutes(data)
