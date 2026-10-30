@@ -22,8 +22,8 @@ var update = flag.Bool("update", false, "rewrite the golden files")
 const (
 	// routerSchemas are the router kinds' schemas, as a router image generates them.
 	routerSchemas = "../../test/fixtures/kinds/router"
-	// routerExamples are the examples of the outputs router-sysctl, router-nftables, frr, jool and
-	// unbound.
+	// routerExamples are the examples of the outputs router-sysctl, router-nftables, frr, jool,
+	// unbound and router-networkd.
 	routerExamples = "../../modules/node/examples/router"
 	// testTrustAnchor and testZoneFile stand for the store paths the image gives chalkos-render
 	// unbound; the rules check replaces them with those of a router image.
@@ -32,7 +32,7 @@ const (
 )
 
 // routerKinds are the kinds of router.chalkos.dev.
-var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy", "NAT64", "Resolver"}
+var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF"}
 
 // routerInput is the input of the router outputs for the config file path, as chalkd builds it:
 // the documents of each router kind with their schema defaults, sorted by name.
@@ -52,14 +52,15 @@ func routerInput(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	byKind := map[string][]any{}
-	for _, kind := range append(slices.Clone(routerKinds), "Network") {
+	for _, kind := range append(slices.Clone(routerKinds), "Network", "NetDev") {
 		byKind[kind] = []any{}
 	}
 	slices.SortStableFunc(docs, func(a, b config.Document) int { return cmp.Compare(a.Name, b.Name) })
 	for _, d := range docs {
-		// The Network documents' [Match] names the links a BGPPeer's interfaces expand to; the
-		// renderers read nothing a default fills in.
-		if d.APIVersion == config.NetworkdAPI && d.Kind == "Network" {
+		// The Network documents' [Match] names the links a BGPPeer's interfaces expand to and the
+		// links of a VRF, and the networkd documents become units; the renderers read nothing a
+		// default fills in.
+		if d.APIVersion == config.NetworkdAPI && (d.Kind == "Network" || d.Kind == "NetDev") {
 			byKind[d.Kind] = append(byKind[d.Kind], d.Object)
 			continue
 		}
@@ -139,8 +140,8 @@ func renderedFiles(t *testing.T, args []string, input string) string {
 }
 
 // Each example of the router outputs renders its golden sysctl file, ruleset, FRR config, Jool
-// instances and Unbound config: no documents, a leaf that only routes, a fabric edge and a LAN
-// router.
+// instances, Unbound config and networkd units: no documents, a leaf that only routes, a fabric
+// edge and a LAN router.
 func TestRouterGolden(t *testing.T) {
 	examples, err := filepath.Glob(filepath.Join(routerExamples, "*.yaml"))
 	if err != nil {
@@ -158,6 +159,7 @@ func TestRouterGolden(t *testing.T) {
 			golden(t, name+".frr", renderedFile(t, []string{"frr"}, input, frrFile))
 			golden(t, name+".jool", renderedFiles(t, []string{"jool"}, input))
 			golden(t, name+".unbound", renderedFiles(t, []string{"unbound", testTrustAnchor, testZoneFile}, input))
+			golden(t, name+".networkd", renderedFiles(t, []string{"router-networkd", networkFixture}, input))
 		})
 	}
 }

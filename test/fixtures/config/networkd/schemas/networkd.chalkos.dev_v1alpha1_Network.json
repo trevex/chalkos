@@ -208,6 +208,30 @@
             }
           ],
           "x-chalkos-networkd-key": "IPv6AcceptRA"
+        },
+        "vrf": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "VRF"
         }
       },
       "type": "object",

@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A systemd-networkd .netdev file, which creates a virtual network device, such as a VLAN, a bond or a bridge.",
+  "properties": {
+    "apiVersion": {
+      "const": "networkd.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "NetDev"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "netDev": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NetDev"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/NetDev"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "NetDev"
+        },
+        "vrf": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VRF"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/VRF"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "VRF"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "NetDev",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "networkd.chalkos.dev",
+    "kind": "NetDev",
+    "multiple": true,
+    "version": "v1alpha1"
+  },
+  "$defs": {
+    "NetDev": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Kind"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Name"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "NetDev"
+    },
+    "VRF": {
+      "additionalProperties": false,
+      "properties": {
+        "table": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Table"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "VRF"
+    }
+  }
+}

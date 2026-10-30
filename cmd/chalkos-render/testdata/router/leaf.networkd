@@ -1,0 +1,19 @@
+# 10-mgmt.network
+[Match]
+Name=mgmt0
+
+[Network]
+DHCP=yes
+
+# 20-swp1.network
+[Match]
+Name=swp1
+
+# 20-swp2.network
+[Match]
+Name=swp2
+
+# 30-swp.network
+[Match]
+Name=swp*
+

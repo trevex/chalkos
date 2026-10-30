@@ -1,9 +1,9 @@
 // Command chalkos-render is the renderer of the outputs the helpers of lib.chalkos.render build,
-// and of the built-in outputs networkd, router-sysctl, router-nftables, frr, jool and unbound.
-// chalkd runs it in the sandbox of an output: it reads the output's input as JSON on standard
-// input, {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}, and writes files into
-// $OUT, the only path it may write. A router image's build runs it once more for the image's
-// fallback ruleset.
+// and of the built-in outputs networkd, router-networkd, router-sysctl, router-nftables, frr, jool
+// and unbound. chalkd runs it in the sandbox of an output: it reads the output's input as JSON on
+// standard input, {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}, and writes
+// files into $OUT, the only path it may write. A router image's build runs it once more for the
+// image's fallback ruleset.
 package main
 
 import (
@@ -24,6 +24,7 @@ import (
 const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render documents KIND...
        chalkos-render networkd SCHEMAS
+       chalkos-render router-networkd SCHEMAS
        chalkos-render router-sysctl
        chalkos-render router-nftables PORT
        chalkos-render router-nftables-fallback PORT
@@ -35,10 +36,12 @@ template executes the Go text/template TEMPLATE on the input and writes the resu
 the template has the functions join, quote, json and default. documents writes each document of
 the kinds KIND as $OUT/<Kind>/<name>.json. networkd writes each Network, NetDev and Link document
 as the networkd unit $OUT/<name>.network, .netdev or .link, with the section and key names of the
-kinds' schemas in the directory SCHEMAS. router-sysctl writes the kernel settings of the Router
-document as $OUT/90-chalkos-router.conf. router-nftables writes the firewall of the documents of
-the router kinds as the nftables table inet chalkos in $OUT/ruleset.nft, which accepts chalkd's TCP
-port PORT; router-nftables-fallback writes the table of a node without a rendered ruleset, which
+kinds' schemas in the directory SCHEMAS. router-networkd writes them as networkd does, with each
+VRF document's device as $OUT/00-vrf-<name>.netdev and .network and VRF= in the Network units of
+the links it holds. router-sysctl writes the kernel settings of the Router document as
+$OUT/90-chalkos-router.conf. router-nftables writes the firewall of the documents of the router
+kinds as the nftables table inet chalkos in $OUT/ruleset.nft, which accepts chalkd's TCP port
+PORT; router-nftables-fallback writes the table of a node without a rendered ruleset, which
 forwards nothing. frr writes FRR's config of the BGP documents as $OUT/frr.conf. jool writes Jool's
 config of each NAT64 document as $OUT/<name>.json. unbound writes Unbound's config of the Resolver
 document as $OUT/unbound.conf, with the root's trust anchor in the file TRUST-ANCHOR and the zone
@@ -75,6 +78,8 @@ func run(args []string, stdin io.Reader, out string) error {
 		return writeDocuments(args[1:], in, out)
 	case args[0] == "networkd" && len(args) == 2:
 		return renderNetworkd(args[1], in, out)
+	case args[0] == "router-networkd" && len(args) == 2:
+		return renderRouterNetworkd(args[1], in, out)
 	case args[0] == "router-sysctl" && len(args) == 1:
 		return renderRouterSysctl(in, out)
 	case args[0] == "router-nftables" && len(args) == 2:

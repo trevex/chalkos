@@ -9,19 +9,26 @@ import (
 	"testing"
 )
 
-// networkFixture holds the schema of networkd's Network kind, as an image generates it, with some
-// of its sections.
+// networkFixture holds the schemas of networkd's Network and NetDev kinds, as an image generates
+// them, with some of their sections.
 const networkFixture = "../../test/fixtures/config/networkd/schemas"
 
 // networkd renders the documents of input, by kind, with the schemas of dir and returns the unit
 // files by name.
 func networkd(t *testing.T, dir string, documents map[string][]any) (map[string]string, error) {
 	t.Helper()
+	return unitFiles(t, []string{"networkd", dir}, documents)
+}
+
+// unitFiles renders the documents of input, by kind, with the command line args and returns the
+// files by name.
+func unitFiles(t *testing.T, args []string, documents map[string][]any) (map[string]string, error) {
+	t.Helper()
 	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "cp1"}, "documents": documents})
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := render(t, []string{"networkd", dir}, string(input))
+	out, err := render(t, args, string(input))
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +118,7 @@ func TestNetworkdRefusesWhatTheSchemasRefuse(t *testing.T) {
 		"an object as a value":     {"Network", `{"match": {"name": {"x": 1}}}`, "is not a string, number or boolean"},
 		"an unannotated section":   {"Network", `{"bogus": {"foo": "bar"}}`, "spec.bogus has no x-chalkos-networkd-section annotation"},
 		"an unannotated key":       {"Network", `{"match": {"bogus": "x"}}`, "Match.bogus has no x-chalkos-networkd-key annotation"},
-		"a kind without a schema":  {"NetDev", `{"netDev": {"name": "x"}}`, "the image's networkd schema"},
+		"a kind without a schema":  {"Link", `{"link": {"name": "x"}}`, "the image's networkd schema"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := networkd(t, networkFixture, map[string][]any{c.kind: {document(t, c.kind, "a", c.spec)}})

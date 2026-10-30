@@ -240,6 +240,11 @@ type localZone struct {
 	} `json:"records"`
 }
 
+type vrfSpec struct {
+	Table      uint32   `json:"table"`
+	Interfaces []string `json:"interfaces"`
+}
+
 // named is the spec of a document, with the document's name.
 type named[T any] struct {
 	Name string
@@ -261,8 +266,11 @@ type routerDocuments struct {
 	RoutingPolicies []named[routingPolicySpec]
 	NAT64           []named[nat64Spec]
 	Resolvers       []named[resolverSpec]
+	VRFs            []named[vrfSpec]
 	// Links are the interface names the Network documents' [Match] sections name, sorted.
 	Links []string
+	// Members are the links of Links that a VRF holds, by link, with the VRF's name.
+	Members map[string]string
 }
 
 // readRouterDocuments decodes the router kinds' documents of in; a kind the output does not read
@@ -307,37 +315,53 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 	if d.Resolvers, err = decodeKind[resolverSpec](byKind, "Resolver"); err != nil {
 		return d, err
 	}
+	if d.VRFs, err = decodeKind[vrfSpec](byKind, "VRF"); err != nil {
+		return d, err
+	}
 	d.Links = networkLinks(byKind)
+	if d.Members, err = vrfLinks(d.VRFs, byKind); err != nil {
+		return d, err
+	}
 	return d, nil
 }
 
 // networkLinks are the interface names in the [Match] sections' Name= of the Network documents
-// of byKind, sorted and once each. A value, or each of a list, holds names between spaces and
-// tabs, as systemd splits it; a glob or a negation, starting with !, names no link, and a value
-// whose first name starts with ! negates all of its names.
+// of byKind, sorted and once each, as matchLinks reads them.
 func networkLinks(byKind map[string]any) []string {
 	docs, _ := byKind["Network"].([]any)
 	seen := map[string]bool{}
 	for _, d := range docs {
 		doc, _ := d.(map[string]any)
 		spec, _ := doc["spec"].(map[string]any)
-		for _, m := range oneOrMany(spec["match"]) {
-			section, _ := m.(map[string]any)
-			for _, v := range oneOrMany(section["name"]) {
-				value, _ := v.(string)
-				names := strings.Fields(value)
-				if len(names) > 0 && strings.HasPrefix(names[0], "!") {
-					continue
-				}
-				for _, name := range names {
-					if !strings.ContainsAny(name, "*?[!") && interfaceName.MatchString(name) {
-						seen[name] = true
-					}
+		for _, l := range matchLinks(spec) {
+			seen[l] = true
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
+
+// matchLinks are the interface names in the [Match] sections' Name= of a Network document's
+// spec. A value, or each of a list, holds names between spaces and tabs, as systemd splits it; a
+// glob or a negation, starting with !, names no link, and a value whose first name starts with !
+// negates all of its names.
+func matchLinks(spec map[string]any) []string {
+	var links []string
+	for _, m := range oneOrMany(spec["match"]) {
+		section, _ := m.(map[string]any)
+		for _, v := range oneOrMany(section["name"]) {
+			value, _ := v.(string)
+			names := strings.Fields(value)
+			if len(names) > 0 && strings.HasPrefix(names[0], "!") {
+				continue
+			}
+			for _, name := range names {
+				if !strings.ContainsAny(name, "*?[!") && interfaceName.MatchString(name) {
+					links = append(links, name)
 				}
 			}
 		}
 	}
-	return slices.Sorted(maps.Keys(seen))
+	return links
 }
 
 // decodeKind decodes the specs of the documents of kind in byKind, in their order.
