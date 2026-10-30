@@ -3,6 +3,7 @@ package chalkctl
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -50,8 +51,8 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 		}
 		switch connect.CodeOf(err) {
 		// UNAVAILABLE is an unhealthy node, a trial that changed while the node checked its
-		// health or a node not reached, which may all pass. INTERNAL names its remedy, such as
-		// a trial record the node cannot read, which only a rollback removes.
+		// health or a node not reached, which may all pass. INTERNAL is a trial record the node
+		// cannot read, which only a rollback removes, or a failure asking again does not mend.
 		case connect.CodeFailedPrecondition, connect.CodeInvalidArgument, connect.CodePermissionDenied, connect.CodeUnauthenticated, connect.CodeInternal:
 			permanent = true
 			return layer.Permanent{Err: err}
@@ -70,13 +71,21 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 	}
 	failure := fmt.Errorf("%s: config %s was not confirmed within its trial: %w", t.name, version, cmp.Or(last, err))
 	switch {
-	// An INTERNAL refusal names its remedy, which neither the deadline nor a confirmation changes.
-	case late, connect.CodeOf(cmp.Or(last, err)) == connect.CodeInternal:
+	// A record the node cannot read names its remedy, which neither the deadline nor a
+	// confirmation changes.
+	case late, unreadableTrial(cmp.Or(last, err)):
 		return failure
 	case permanent:
 		return fmt.Errorf("%w; it rolls back at %s unless confirmed; %s", failure, deadline.UTC().Format(time.RFC3339), endTrialHint(t.name))
 	}
 	return a.trialRolledBack(ctx, t, version, previous, deadline, failure)
+}
+
+// unreadableTrial reports whether err is the node's refusal of a trial whose record it cannot
+// read.
+func unreadableTrial(err error) bool {
+	var ce *connect.Error
+	return errors.As(err, &ce) && ce.Code() == connect.CodeInternal && strings.HasPrefix(ce.Message(), "read the record of the config's trial: ")
 }
 
 // confirmOnce asks the node to confirm the trial over a new connection, for at most timeout.

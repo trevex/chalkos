@@ -305,6 +305,19 @@ func TestConfirmRefused(t *testing.T) {
 	}
 }
 
+// TestConfirmFailingToEndTheTrial: a confirmation the node fails with an internal error other than
+// an unreadable record, as when it cannot remove the record, leaves the trial open, and chalkctl
+// says when the node rolls back and how to end the trial before.
+func TestConfirmFailingToEndTheTrial(t *testing.T) {
+	ta := newTestApp(t)
+	_, run, _, _ := trialNode(t, ta)
+	ta.setWrap(refuse("ConfirmConfig", connect.NewError(connect.CodeInternal, errors.New("end the trial: remove chalkd/trial: read-only file system"))))
+	err := run(context.Background(), "apply-config", "n1", "--try", "1m")
+	if err == nil || !strings.Contains(err.Error(), "end the trial: remove chalkd/trial: read-only file system; it rolls back at ") || !strings.Contains(err.Error(), " unless confirmed; chalkctl apply-config --confirm n1 keeps it; chalkctl apply-config --rollback n1 rolls it back now") {
+		t.Errorf("a confirmation that failed to end the trial = %v\n%s", err, ta.stdout)
+	}
+}
+
 // spoilTrial has the node carry out each request for the procedure after it made the record of
 // its trial unreadable; with drop, it does so after the request and drops the connection without
 // an answer.

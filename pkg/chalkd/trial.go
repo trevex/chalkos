@@ -227,7 +227,8 @@ func (s *Server) trialStatus() (*nodev1.ConfigTrial, string) {
 }
 
 // unreadableTrial refuses a request for err, which kept the trial's record from being read. The
-// record stays until RollbackConfig removes it: every trial may end in a rollback.
+// record stays until RollbackConfig removes it: every trial may end in a rollback. chalkctl tells
+// this refusal from other internal errors by its message's start, so it stays as it is.
 func (s *Server) unreadableTrial(err error) error {
 	return failed(connect.CodeInternal, "read the record of the config's trial: %v; other changes are refused until chalkctl apply-config --rollback %s restores the previous config, which removes the record", err, s.nodeName())
 }
