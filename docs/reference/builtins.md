@@ -302,23 +302,109 @@ documents.filter(n, !documents[n].spec.prefixes.all(p, cidr(p).ip(0).family() ==
 
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `spec.asn` | BGP keeps its AS number. | `refuse` | `self == oldSelf` | after the table |
-| 2 | `spec.networks` | A network's prefix is an address range. | `refuse` | `self.all(w, cidr(w.prefix).prefix() >= 0)` | a network is no address range |
-| 3 | `spec.networks` | A network's policy is a RoutingPolicy document. | `refuse` | after the table | after the table |
+| 1 | — | One BGP document serves a VRF. | `refuse` | after the table | after the table |
+| 2 | — | A BGP document's vrf is a VRF document. | `refuse` | after the table | after the table |
+| 3 | — | A BGP instance does not import its own VRF. | `refuse` | after the table | after the table |
+| 4 | — | A delivery that drops the default VRF's BGP document keeps no running BGP instance of another VRF, as FRR keeps its default instance while another runs. | `refuse` | after the table | the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's |
+| 5 | `spec.asn` | BGP keeps its AS number. | `refuse` | `self == oldSelf` | after the table |
+| 6 | `spec.import` | An import's VRFs have BGP documents. | `refuse` | after the table | after the table |
+| 7 | `spec.import` | An import names each VRF once. | `refuse` | `[self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, size(f.vrfs.filter(w, w == v)) == 1))` | the import names a VRF twice |
+| 8 | `spec.import` | An import's policy is a RoutingPolicy document. | `refuse` | after the table | after the table |
+| 9 | `spec.import` | An import's policy matches PrefixLists of its family alone. | `refuse` | after the table | after the table |
+| 10 | `spec.networks` | A network's prefix is an address range. | `refuse` | `self.all(w, cidr(w.prefix).prefix() >= 0)` | a network is no address range |
+| 11 | `spec.networks` | A network's policy is a RoutingPolicy document. | `refuse` | after the table | after the table |
+
+Expression of rule 1:
+
+```text
+cel.bind(v, documents.map(n, (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf)), v.all(x, size(v.filter(y, y == x)) == 1))
+```
 
 Message of rule 1:
 
 ```text
-"the AS number stays " + string(oldSelf) + "; to change it, deliver the config without the BGP document, which ends the router's sessions, and then with the new AS number"
+cel.bind(v, documents.map(n, (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf)), "more than one BGP document serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one BGP instance")
+```
+
+Expression of rule 2:
+
+```text
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))
+```
+
+Message of rule 2:
+
+```text
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, "BGP " + n + " names the VRF " + documents[n].spec.vrf).join(", ") + ", which no VRF document declares; leave vrf out for the default VRF")
 ```
 
 Expression of rule 3:
 
 ```text
-cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), self.all(w, w.policy == null || w.policy in pols))
+documents.all(n, cel.bind(s, documents[n].spec, [s["import"].ipv4, s["import"].ipv6].all(f, f == null || !((documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf) in f.vrfs))))
 ```
 
 Message of rule 3:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, ![s["import"].ipv4, s["import"].ipv6].all(f, f == null || !((documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf) in f.vrfs)))).map(n, "BGP " + n).join(", ") + " imports the routes of its own VRF; name other VRFs"
+```
+
+Expression of rule 4:
+
+```text
+!oldDocuments.exists(n, (has(oldDocuments[n].spec.vrf) ? oldDocuments[n].spec.vrf : null) == null) || documents.exists(n, documents[n].spec.vrf == null) || !documents.exists(n, documents[n].spec.vrf != null && oldDocuments.exists(m, (has(oldDocuments[m].spec.vrf) ? oldDocuments[m].spec.vrf : null) == documents[n].spec.vrf))
+```
+
+Message of rule 5:
+
+```text
+"the AS number stays " + string(oldSelf) + "; to change it, deliver the config without the BGP document, which ends the router's sessions, and then with the new AS number"
+```
+
+Expression of rule 6:
+
+```text
+cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf))), [self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, v in have)))
+```
+
+Message of rule 6:
+
+```text
+cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf))), "the import names the VRF " + [self.ipv4, self.ipv6].filter(f, f != null).map(f, f.vrfs.filter(v, !(v in have))).flatten()[0] + ", which no BGP document serves; leaking takes routes from BGP alone")
+```
+
+Expression of rule 8:
+
+```text
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), [self.ipv4, self.ipv6].all(f, f == null || f.policy == null || f.policy in pols))
+```
+
+Message of rule 8:
+
+```text
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), "an import names the RoutingPolicy " + [self.ipv4, self.ipv6].filter(f, f != null && f.policy != null && !(f.policy in pols))[0].policy + ", which the config does not hold")
+```
+
+Expression of rule 9:
+
+```text
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), (self.ipv4 == null || self.ipv4.policy == null || (!(self.ipv4.policy in pols) || cel.bind(named, pols[self.ipv4.policy].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4"))) && (self.ipv6 == null || self.ipv6.policy == null || (!(self.ipv6.policy in pols) || cel.bind(named, pols[self.ipv6.policy].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")))))
+```
+
+Message of rule 9:
+
+```text
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), "the " + (self.ipv4 == null || self.ipv4.policy == null || (!(self.ipv4.policy in pols) || cel.bind(named, pols[self.ipv4.policy].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4")) ? "ipv6" : "ipv4") + " import's RoutingPolicy matches PrefixLists of another family"))
+```
+
+Expression of rule 11:
+
+```text
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), self.all(w, w.policy == null || w.policy in pols))
+```
+
+Message of rule 11:
 
 ```text
 cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), "a network names the RoutingPolicy " + self.filter(w, w.policy != null && !(w.policy in pols))[0].policy + ", which the config does not hold")
@@ -329,15 +415,17 @@ cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in c
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A BGPPeer names exactly one of address, interface and interfaces. | `refuse` | after the table | after the table |
-| 2 | — | BGPPeer documents need the node's BGP document. | `refuse` | after the table | the config holds BGPPeer documents but no BGP document, which gives the router its AS number; add one |
-| 3 | `spec.address` | A BGPPeer's address is a unicast address. | `refuse` | after the table | `"the address " + self + " is no neighbour's: give a unicast address"` |
-| 4 | `spec.description` | A BGPPeer's description holds 80 characters at most. | `refuse` | `self == null || size(self) <= 80` | the description holds more than 80 characters |
-| 5 | `spec.families` | A BGPPeer exchanges the routes of one family at least. | `refuse` | `self.ipv4 != null || self.ipv6 != null` | the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route |
-| 6 | `spec.families` | A family's policies are RoutingPolicy documents. | `refuse` | after the table | after the table |
-| 7 | `spec.families` | A family's policies match PrefixLists of that family alone. | `refuse` | after the table | after the table |
-| 8 | `spec.interface` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
-| 9 | `spec.interfaces` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
-| 10 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
+| 2 | — | A BGPPeer's vrf is a VRF document. | `refuse` | after the table | after the table |
+| 3 | — | A BGPPeer's VRF has a BGP document. | `refuse` | after the table | after the table |
+| 4 | — | A BGPPeer's interface is no link another VRF than the peer's holds; names compare as written. | `refuse` | after the table | after the table |
+| 5 | `spec.address` | A BGPPeer's address is a unicast address. | `refuse` | after the table | `"the address " + self + " is no neighbour's: give a unicast address"` |
+| 6 | `spec.description` | A BGPPeer's description holds 80 characters at most. | `refuse` | `self == null || size(self) <= 80` | the description holds more than 80 characters |
+| 7 | `spec.families` | A BGPPeer exchanges the routes of one family at least. | `refuse` | `self.ipv4 != null || self.ipv6 != null` | the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route |
+| 8 | `spec.families` | A family's policies are RoutingPolicy documents. | `refuse` | after the table | after the table |
+| 9 | `spec.families` | A family's policies match PrefixLists of that family alone. | `refuse` | after the table | after the table |
+| 10 | `spec.interface` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
+| 11 | `spec.interfaces` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
+| 12 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
 
 Expression of rule 1:
 
@@ -354,64 +442,94 @@ documents.filter(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.in
 Expression of rule 2:
 
 ```text
-size(documents) == 0 || size((("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {})) > 0
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))
+```
+
+Message of rule 2:
+
+```text
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, "BGPPeer " + n + " names the VRF " + documents[n].spec.vrf).join(", ") + ", which no VRF document declares; leave vrf out for the default VRF")
 ```
 
 Expression of rule 3:
 
 ```text
+cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf))), documents.all(n, (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf) in have))
+```
+
+Message of rule 3:
+
+```text
+cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf))), documents.filter(n, !((documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf) in have)).map(n, "BGPPeer " + n + " runs in the VRF " + (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf)).join(", ") + ": a peer's VRF needs a BGP document, which gives the router its AS number there")
+```
+
+Expression of rule 4:
+
+```text
+cel.bind(held, cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.all(n, cel.bind(s, documents[n].spec, (s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))))
+```
+
+Message of rule 4:
+
+```text
+cel.bind(held, cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.filter(n, cel.bind(s, documents[n].spec, !(s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))).map(n, "BGPPeer " + n + " names the interface " + documents[n].spec.interface).join(", ") + ", which a VRF document puts in another VRF than the peer's; give the peer that VRF or the interface another")
+```
+
+Expression of rule 5:
+
+```text
 self == null || cel.bind(a, ip(self), a != ip("0.0.0.0") && a != ip("::") && !cidr("224.0.0.0/4").contains(a) && !cidr("ff00::/8").contains(a))
-```
-
-Expression of rule 6:
-
-```text
-cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), (self.ipv4 == null || self.ipv4["import"] == null || self.ipv4["import"] in pols) && (self.ipv4 == null || self.ipv4["export"] == null || self.ipv4["export"] in pols) && (self.ipv6 == null || self.ipv6["import"] == null || self.ipv6["import"] in pols) && (self.ipv6 == null || self.ipv6["export"] == null || self.ipv6["export"] in pols))
-```
-
-Message of rule 6:
-
-```text
-cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4["import"] == null || self.ipv4["import"] in pols ? [] : [self.ipv4["import"], "ipv4"]), (self.ipv4 == null || self.ipv4["export"] == null || self.ipv4["export"] in pols ? [] : [self.ipv4["export"], "ipv4"]), (self.ipv6 == null || self.ipv6["import"] == null || self.ipv6["import"] in pols ? [] : [self.ipv6["import"], "ipv6"]), (self.ipv6 == null || self.ipv6["export"] == null || self.ipv6["export"] in pols ? [] : [self.ipv6["export"], "ipv6"])].filter(u, size(u) > 0)[0], "the " + u[1] + " family names the RoutingPolicy " + u[0] + ", which the config does not hold"))
-```
-
-Expression of rule 7:
-
-```text
-cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), (self.ipv4 == null || self.ipv4["import"] == null || (!(self.ipv4["import"] in pols) || cel.bind(named, pols[self.ipv4["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4"))) && (self.ipv4 == null || self.ipv4["export"] == null || (!(self.ipv4["export"] in pols) || cel.bind(named, pols[self.ipv4["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4"))) && (self.ipv6 == null || self.ipv6["import"] == null || (!(self.ipv6["import"] in pols) || cel.bind(named, pols[self.ipv6["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6"))) && (self.ipv6 == null || self.ipv6["export"] == null || (!(self.ipv6["export"] in pols) || cel.bind(named, pols[self.ipv6["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")))))
-```
-
-Message of rule 7:
-
-```text
-cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4["import"] == null || (!(self.ipv4["import"] in pols) || cel.bind(named, pols[self.ipv4["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4")) ? [] : [self.ipv4["import"], "ipv4"]), (self.ipv4 == null || self.ipv4["export"] == null || (!(self.ipv4["export"] in pols) || cel.bind(named, pols[self.ipv4["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4")) ? [] : [self.ipv4["export"], "ipv4"]), (self.ipv6 == null || self.ipv6["import"] == null || (!(self.ipv6["import"] in pols) || cel.bind(named, pols[self.ipv6["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")) ? [] : [self.ipv6["import"], "ipv6"]), (self.ipv6 == null || self.ipv6["export"] == null || (!(self.ipv6["export"] in pols) || cel.bind(named, pols[self.ipv6["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")) ? [] : [self.ipv6["export"], "ipv6"])].filter(u, size(u) > 0)[0], "the " + u[1] + " family's RoutingPolicy " + u[0] + " matches a PrefixList of another family")))
 ```
 
 Expression of rule 8:
 
 ```text
-self == null || [self].all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), (self.ipv4 == null || self.ipv4["import"] == null || self.ipv4["import"] in pols) && (self.ipv4 == null || self.ipv4["export"] == null || self.ipv4["export"] in pols) && (self.ipv6 == null || self.ipv6["import"] == null || self.ipv6["import"] in pols) && (self.ipv6 == null || self.ipv6["export"] == null || self.ipv6["export"] in pols))
 ```
 
 Message of rule 8:
 
 ```text
-"the interface " + [self].filter(i, i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4["import"] == null || self.ipv4["import"] in pols ? [] : [self.ipv4["import"], "ipv4"]), (self.ipv4 == null || self.ipv4["export"] == null || self.ipv4["export"] in pols ? [] : [self.ipv4["export"], "ipv4"]), (self.ipv6 == null || self.ipv6["import"] == null || self.ipv6["import"] in pols ? [] : [self.ipv6["import"], "ipv6"]), (self.ipv6 == null || self.ipv6["export"] == null || self.ipv6["export"] in pols ? [] : [self.ipv6["export"], "ipv6"])].filter(u, size(u) > 0)[0], "the " + u[1] + " family names the RoutingPolicy " + u[0] + ", which the config does not hold"))
 ```
 
 Expression of rule 9:
 
 ```text
-self == null || self.all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), (self.ipv4 == null || self.ipv4["import"] == null || (!(self.ipv4["import"] in pols) || cel.bind(named, pols[self.ipv4["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4"))) && (self.ipv4 == null || self.ipv4["export"] == null || (!(self.ipv4["export"] in pols) || cel.bind(named, pols[self.ipv4["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4"))) && (self.ipv6 == null || self.ipv6["import"] == null || (!(self.ipv6["import"] in pols) || cel.bind(named, pols[self.ipv6["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6"))) && (self.ipv6 == null || self.ipv6["export"] == null || (!(self.ipv6["export"] in pols) || cel.bind(named, pols[self.ipv6["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")))))
 ```
 
 Message of rule 9:
 
 ```text
-"the interface " + self.filter(i, i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"
+cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4["import"] == null || (!(self.ipv4["import"] in pols) || cel.bind(named, pols[self.ipv4["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4")) ? [] : [self.ipv4["import"], "ipv4"]), (self.ipv4 == null || self.ipv4["export"] == null || (!(self.ipv4["export"] in pols) || cel.bind(named, pols[self.ipv4["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4")) ? [] : [self.ipv4["export"], "ipv4"]), (self.ipv6 == null || self.ipv6["import"] == null || (!(self.ipv6["import"] in pols) || cel.bind(named, pols[self.ipv6["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")) ? [] : [self.ipv6["import"], "ipv6"]), (self.ipv6 == null || self.ipv6["export"] == null || (!(self.ipv6["export"] in pols) || cel.bind(named, pols[self.ipv6["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")) ? [] : [self.ipv6["export"], "ipv6"])].filter(u, size(u) > 0)[0], "the " + u[1] + " family's RoutingPolicy " + u[0] + " matches a PrefixList of another family")))
 ```
 
 Expression of rule 10:
+
+```text
+self == null || [self].all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))
+```
+
+Message of rule 10:
+
+```text
+"the interface " + [self].filter(i, i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"
+```
+
+Expression of rule 11:
+
+```text
+self == null || self.all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))
+```
+
+Message of rule 11:
+
+```text
+"the interface " + self.filter(i, i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"
+```
+
+Expression of rule 12:
 
 ```text
 self == null || self.secretRef.name.matches("^[A-Za-z0-9._-]+$") && self.secretRef.key.matches("^[A-Za-z0-9._-]+$")

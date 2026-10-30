@@ -328,19 +328,26 @@ A node's config may hold several, each with a name of its own. It has a [change 
 
 ### BGP { #bgp }
 
-The node's BGP instance: its AS number and router ID, how many equal paths it installs, its BFD timers and the networks it announces.
+A BGP instance of the router in one VRF: its AS number and router ID, how many equal paths it installs, its BFD timers, the networks it announces and the routes it imports from other VRFs.
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config holds at most one. It has 3 [change rules](builtins.md#rules-bgp).
+A node's config may hold several, each with a name of its own. It has 11 [change rules](builtins.md#rules-bgp).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.asn` | integer from 1 to 4294967295 | required | AS number of the router. It stays while the BGP document keeps its name; a BGP document of another name replaces the old one, AS number included. |
+| `spec.asn` | integer from 1 to 4294967295 | required | AS number of the instance. It stays while the BGP document keeps its name; a BGP document of another name replaces the old one, AS number included. |
 | `spec.bfd.multiplier` | integer from 2 to 255 | `3` | BFD packets in a row a peer may miss before the router takes it for down and ends the session. |
 | `spec.bfd.receiveMs` | integer from 10 to 60000 | `300` | Shortest interval in milliseconds at which the router accepts BFD packets of the peers with `bfd`. |
 | `spec.bfd.transmitMs` | integer from 10 to 60000 | `300` | Shortest interval in milliseconds at which the router sends BFD packets. |
 | `spec.gracefulRestart` | boolean | `false` | Whether the router keeps a peer's routes while the peer restarts and asks its peers to keep its own. |
+| `spec.import` | object | `{}` | Routes the instance takes from the BGP instances of other VRFs, which the kernel installs in this VRF's table with their next hops in the other VRF. Static routes of a VRF's links are not leaked. |
+| `spec.import.ipv4` | object or null | `null` | IPv4 routes the instance takes from other VRFs' instances; null takes none. |
+| `spec.import.ipv4.policy` | string or null | `null` | RoutingPolicy that decides the routes the instance takes from all of `vrfs`; null takes every route. |
+| `spec.import.ipv4.vrfs` | list of string | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. |
+| `spec.import.ipv6` | object or null | `null` | IPv6 routes the instance takes from other VRFs' instances; null takes none. |
+| `spec.import.ipv6.policy` | string or null | `null` | RoutingPolicy that decides the routes the instance takes from all of `vrfs`; null takes every route. |
+| `spec.import.ipv6.vrfs` | list of string | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. |
 | `spec.multipath.asPathRelax` | boolean | `false` | Whether paths through different neighbouring ASes count as equal when their AS paths are equally long, as for two leaves of a fabric. |
 | `spec.multipath.ebgp` | integer from 1 to 64 | `1` | Equal paths from external peers the router installs for one prefix at most. |
 | `spec.multipath.ibgp` | integer from 1 to 64 | `1` | Equal paths from internal peers the router installs for one prefix at most. |
@@ -348,6 +355,7 @@ A node's config holds at most one. It has 3 [change rules](builtins.md#rules-bgp
 | `spec.networks[].policy` | string or null | `null` | RoutingPolicy whose terms set the announcement's attributes; null announces it as it is. |
 | `spec.networks[].prefix` | string | required | Address range the router announces while its table holds a route to it. |
 | `spec.routerID` | string | required | Router ID, in IPv4 notation, which the router's peers know it by; give an IPv6-only router one too. |
+| `spec.vrf` | string or null | `null` | VRF document whose instance this is; null for the default VRF, which holds every link no VRF holds. |
 
 ### BGPPeer { #bgppeer }
 
@@ -355,7 +363,7 @@ A BGP neighbour of the router, or the neighbours on a set of interfaces: where t
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 10 [change rules](builtins.md#rules-bgppeer).
+A node's config may hold several, each with a name of its own. It has 12 [change rules](builtins.md#rules-bgppeer).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -375,10 +383,11 @@ A node's config may hold several, each with a name of its own. It has 10 [change
 | `spec.families.ipv6.import` | string or null | `null` | RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route. |
 | `spec.families.ipv6.maxPrefix` | integer from 1 to 4294967295 or null | `null` | Routes the router accepts from the peer at most; past them it ends the session. null sets no limit. |
 | `spec.interface` | string or null | `null` | Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address` and `interfaces`. A name that reads as an address is refused. |
-| `spec.interfaces` | list of string or null | `null` | Interfaces, by name or glob, a glob being a prefix followed by `*`, with a session each, as for `interface`; a glob stands for the interfaces the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address` and `interface`. |
+| `spec.interfaces` | list of string or null | `null` | Interfaces, by name or glob, a glob being a prefix followed by `*`, with a session each, as for `interface`; a glob stands for the interfaces of the peer's VRF that the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address` and `interface`. |
 | `spec.password` | secret reference or null | `null` | Key of a Secret that holds the session's TCP MD5 password, of 80 characters at most and no white space; null for none. The Secret's name and key hold letters, digits, `.`, `_` and `-` alone. |
 | `spec.remoteAS` | one of `external`, `internal` or integer from 1 to 4294967295 | required | AS of the neighbour: a number, `external` for any AS but the router's, or `internal` for the router's own. |
 | `spec.shutdown` | boolean | `false` | Whether the router keeps the session down while the document stays. |
+| `spec.vrf` | string or null | `null` | VRF document whose BGP instance runs the session; null for the default VRF. The peer's interfaces are links of that VRF. |
 
 ### CommunityList { #communitylist }
 

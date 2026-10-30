@@ -55,7 +55,7 @@ func TestBGPRules(t *testing.T) {
 		{"no way to reach a peer", replace(edge, doc("BGPPeer", "upstream", `{"remoteAS": 64496, "families": {"ipv4": {}}}`)),
 			[]string{"BGPPeer upstream names not exactly one of address, interface and interfaces; a peer is reached at an address, on an interface or on each interface of a list"}},
 		{"peers without BGP", without(edge, "BGP"),
-			[]string{"the config holds BGPPeer documents but no BGP document, which gives the router its AS number; add one"}},
+			[]string{"BGPPeer fabric runs in the VRF default, BGPPeer upstream runs in the VRF default: a peer's VRF needs a BGP document, which gives the router its AS number there"}},
 		{"a peer of no family", replace(edge, doc("BGPPeer", "upstream", `{"address": "198.51.100.1", "remoteAS": 64496}`)),
 			[]string{`BGPPeer "upstream" spec.families: the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route`}},
 		{"a policy the config lacks", replace(edge, doc("BGPPeer", "upstream", `{"address": "198.51.100.1", "remoteAS": 64496, "families": {"ipv4": {"export": "to-upstream"}}}`)),
@@ -196,5 +196,128 @@ func TestBGPSchemas(t *testing.T) {
 		if err := s.Validate(d.Object); (err == nil) != tc.ok {
 			t.Errorf("%s %s: err = %v, want accepted %v", tc.kind, tc.spec, err, tc.ok)
 		}
+	}
+}
+
+// The BGP kinds' rules per VRF accept a BGP document per VRF that imports another VRF's routes,
+// and peers in each, and refuse two documents of one VRF, a VRF no VRF document declares, an
+// instance that imports its own VRF, an import of a VRF without BGP, of one VRF twice or through a
+// policy the config lacks or of the other family, a peer in a VRF without BGP or of no VRF
+// document, and a peer's interface that another VRF holds.
+func TestBGPPerVRF(t *testing.T) {
+	set, doc := routerRules(t)
+	// eth0 stays out of every VRF, as the VRF kind's rules want of a node whose node API answers
+	// on every interface.
+	base := []config.Document{
+		network(t, "10-eth0", `{"name": "eth0"}`),
+		doc("VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`),
+		doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "import": {"ipv6": {"vrfs": ["tenant"], "policy": "from-tenant"}}}`),
+		doc("BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1", "import": {"ipv6": {"vrfs": ["default"]}}}`),
+		doc("BGPPeer", "fabric", `{"interfaces": ["eth1"], "remoteAS": "external", "families": {"ipv6": {}}}`),
+		doc("BGPPeer", "leaves", `{"vrf": "tenant", "interface": "eth2", "remoteAS": "external", "families": {"ipv6": {}}}`),
+		doc("PrefixList", "tenant", `{"family": "ipv6", "entries": [{"prefix": "2001:db8:100::/40", "le": 64}]}`),
+		doc("RoutingPolicy", "from-tenant", `{"terms": [{"match": {"prefixList": "tenant"}, "then": {"action": "accept"}}]}`),
+	}
+	replace := func(docs []config.Document, with ...config.Document) []config.Document {
+		out := slices.Clone(docs)
+		for _, w := range with {
+			i := slices.IndexFunc(out, func(d config.Document) bool { return d.Kind == w.Kind && d.Name == w.Name })
+			if i < 0 {
+				out = append(out, w)
+			} else {
+				out[i] = w
+			}
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name string
+		docs []config.Document
+		want []string
+	}{
+		{"an instance per VRF", base, nil},
+		{"two instances of one VRF", replace(base, doc("BGP", "other", `{"vrf": "tenant", "asn": 64513, "routerID": "192.0.2.2"}`)),
+			[]string{"more than one BGP document serves the VRF tenant; a VRF has one BGP instance"}},
+		{"two instances of the default VRF", replace(base, doc("BGP", "other", `{"asn": 64513, "routerID": "192.0.2.2"}`)),
+			[]string{"more than one BGP document serves the VRF default; a VRF has one BGP instance"}},
+		{"a VRF no document declares", replace(base, doc("BGP", "lab", `{"vrf": "lab", "asn": 64512, "routerID": "192.0.2.1"}`)),
+			[]string{"BGP lab names the VRF lab, which no VRF document declares; leave vrf out for the default VRF"}},
+		{"an instance that imports its own VRF", replace(base, doc("BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1", "import": {"ipv6": {"vrfs": ["default", "tenant"]}}}`)),
+			[]string{"BGP tenant imports the routes of its own VRF; name other VRFs"}},
+		{"an import of a VRF without BGP", replace(base, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "import": {"ipv4": {"vrfs": ["lab"]}}}`)),
+			[]string{`BGP "bgp" spec.import: the import names the VRF lab, which no BGP document serves; leaking takes routes from BGP alone`}},
+		{"an import of one VRF twice", replace(base, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "import": {"ipv6": {"vrfs": ["tenant", "tenant"]}}}`)),
+			[]string{`BGP "bgp" spec.import: the import names a VRF twice`}},
+		{"an import's policy the config lacks", replace(base, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "import": {"ipv6": {"vrfs": ["tenant"], "policy": "nope"}}}`)),
+			[]string{`BGP "bgp" spec.import: an import names the RoutingPolicy nope, which the config does not hold`}},
+		{"an import's policy of the other family", replace(base, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "import": {"ipv4": {"vrfs": ["tenant"], "policy": "from-tenant"}}}`)),
+			[]string{`BGP "bgp" spec.import: the ipv4 import's RoutingPolicy matches PrefixLists of another family`}},
+		{"a peer in a VRF without BGP", replace(base, doc("VRF", "lab", `{"table": 200, "interfaces": ["eth3"]}`),
+			doc("BGPPeer", "lab", `{"vrf": "lab", "interface": "eth3", "remoteAS": "external", "families": {"ipv6": {}}}`)),
+			[]string{"BGPPeer lab runs in the VRF lab: a peer's VRF needs a BGP document, which gives the router its AS number there"}},
+		{"a peer's interface in another VRF", replace(base, doc("BGPPeer", "fabric", `{"interface": "eth2", "remoteAS": "external", "families": {"ipv6": {}}}`)),
+			[]string{"BGPPeer fabric names the interface eth2, which a VRF document puts in another VRF than the peer's; give the peer that VRF or the interface another"}},
+		{"a peer's interfaces in another VRF are no literal interface", replace(base, doc("BGPPeer", "fabric", `{"interfaces": ["eth2"], "remoteAS": "external", "families": {"ipv6": {}}}`)), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := messages(failures); !slices.Equal(got, tc.want) {
+				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
+			}
+		})
+	}
+	// A peer's vrf of no VRF document fails two rules of BGPPeer, in the order of the kind's rules:
+	// its VRF has no document and no BGP document serves it.
+	failures, err := set.Evaluate(Input{Documents: replace(base, doc("BGPPeer", "lab", `{"vrf": "lab", "interface": "eth3", "remoteAS": "external", "families": {"ipv6": {}}}`)), Node: "r1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"BGPPeer lab names the VRF lab, which no VRF document declares; leave vrf out for the default VRF",
+		"BGPPeer lab runs in the VRF lab: a peer's VRF needs a BGP document, which gives the router its AS number there",
+	}
+	if got := messages(failures); !slices.Equal(got, want) {
+		t.Errorf("a peer of no VRF document:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// FRR keeps its default instance while another VRF's runs, so a delivery that drops the default
+// VRF's BGP document drops every running instance with it; it may add an instance of a VRF that
+// did not run, as a router whose instance moves into a VRF does.
+func TestBGPKeepsTheDefaultInstance(t *testing.T) {
+	set, doc := routerRules(t)
+	eth0 := network(t, "10-eth0", `{"name": "eth0"}`)
+	tenant := doc("VRF", "tenant", `{"table": 100}`)
+	def := doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1"}`)
+	inTenant := doc("BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1"}`)
+	moved := doc("BGP", "bgp", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1"}`)
+	// A running config of an image whose BGP has no vrf holds documents without the field.
+	before := builtinDoc(t, config.RouterAPI, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1"}`)
+	refused := []string{"the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's"}
+	for _, tc := range []struct {
+		name      string
+		old, docs []config.Document
+		want      []string
+	}{
+		{"the default instance dropped, another kept", []config.Document{eth0, tenant, def, inTenant}, []config.Document{eth0, tenant, inTenant}, refused},
+		{"every instance dropped", []config.Document{eth0, tenant, def, inTenant}, []config.Document{eth0, tenant}, nil},
+		{"an instance moved into a VRF", []config.Document{eth0, tenant, def}, []config.Document{eth0, tenant, moved}, nil},
+		{"another VRF's instance dropped", []config.Document{eth0, tenant, def, inTenant}, []config.Document{eth0, tenant, def}, nil},
+		{"a first delivery", nil, []config.Document{eth0, tenant, inTenant}, nil},
+		{"a running config without vrf", []config.Document{eth0, before}, []config.Document{eth0, tenant, def, inTenant}, nil},
+		{"a running config without vrf, its instance dropped", []config.Document{eth0, before}, []config.Document{eth0, tenant, inTenant}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failures, err := set.Evaluate(Input{Documents: tc.docs, Old: tc.old, Node: "r1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := messages(failures); !slices.Equal(got, tc.want) {
+				t.Errorf("failures %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

@@ -267,7 +267,7 @@
             }
           ],
           "default": null,
-          "description": "Interfaces, by name or glob, a glob being a prefix followed by `*`, with a session each, as for `interface`; a glob stands for the interfaces the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address` and `interface`.",
+          "description": "Interfaces, by name or glob, a glob being a prefix followed by `*`, with a session each, as for `interface`; a glob stands for the interfaces of the peer's VRF that the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address` and `interface`.",
           "examples": [
             [
               "eth1",
@@ -359,6 +359,22 @@
           "default": false,
           "description": "Whether the router keeps the session down while the document stays.",
           "type": "boolean"
+        },
+        "vrf": {
+          "anyOf": [
+            {
+              "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VRF document whose BGP instance runs the session; null for the default VRF. The peer's interfaces are links of that VRF.",
+          "examples": [
+            "tenant"
+          ]
         }
       },
       "required": [
@@ -387,9 +403,21 @@
         "takes": "refuse"
       },
       {
-        "description": "BGPPeer documents need the node's BGP document.",
-        "message": "the config holds BGPPeer documents but no BGP document, which gives the router its AS number; add one",
-        "rule": "size(documents) == 0 || size(((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {})) > 0",
+        "description": "A BGPPeer's vrf is a VRF document.",
+        "messageExpression": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, \"BGPPeer \" + n + \" names the VRF \" + documents[n].spec.vrf).join(\", \") + \", which no VRF document declares; leave vrf out for the default VRF\")",
+        "rule": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A BGPPeer's VRF has a BGP document.",
+        "messageExpression": "cel.bind(have, cel.bind(bgps, ((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? \"default\" : bgps[n].spec.vrf))), documents.filter(n, !((documents[n].spec.vrf == null ? \"default\" : documents[n].spec.vrf) in have)).map(n, \"BGPPeer \" + n + \" runs in the VRF \" + (documents[n].spec.vrf == null ? \"default\" : documents[n].spec.vrf)).join(\", \") + \": a peer's VRF needs a BGP document, which gives the router its AS number there\")",
+        "rule": "cel.bind(have, cel.bind(bgps, ((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? \"default\" : bgps[n].spec.vrf))), documents.all(n, (documents[n].spec.vrf == null ? \"default\" : documents[n].spec.vrf) in have))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A BGPPeer's interface is no link another VRF than the peer's holds; names compare as written.",
+        "messageExpression": "cel.bind(held, cel.bind(v, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.filter(n, cel.bind(s, documents[n].spec, !(s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))).map(n, \"BGPPeer \" + n + \" names the interface \" + documents[n].spec.interface).join(\", \") + \", which a VRF document puts in another VRF than the peer's; give the peer that VRF or the interface another\")",
+        "rule": "cel.bind(held, cel.bind(v, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.all(n, cel.bind(s, documents[n].spec, (s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))))",
         "takes": "refuse"
       }
     ],
