@@ -12,8 +12,9 @@
 }:
 let
   networkd = config.chalkos.outputs.networkd.dir;
-  # Removes each kernel VRF that no .netdev of Kind=vrf declares with its table, and reloads
-  # a running networkd when it removed one, which creates the VRF anew with its members. Reloading
+  # Removes each kernel VRF that no .netdev of Kind=vrf declares with its table, flushes the
+  # unreachable routes that networkd put into its table, and reloads a running networkd when it
+  # removed one, which creates the VRF anew with its members. Reloading
   # networkd itself leaves no VRF removed whatever order a delivery's reloads take; a networkd that
   # does not run, as at boot, reads every unit when it starts. systemctl and networkctl come from
   # the unit's PATH.
@@ -54,10 +55,18 @@ let
       vrfs=$(ip -d -j link show | jq -r '.[] | select(.linkinfo.info_kind == "vrf") | "\(.ifname) \(.linkinfo.info_data.table)"')
       failed=()
       removed=false
+      flushed=true
       while read -r name table; do
         if [[ -n $name && ''${want[$name]-} != "$table" ]]; then
           if ip link delete "$name"; then
             removed=true
+            # The unreachable defaults that networkd installed stay in the old table, which a
+            # VRF may take later.
+            if ! ip -4 route flush table "$table" type unreachable ||
+              ! ip -6 route flush table "$table" type unreachable; then
+              printf 'chalkos-vrf: failed to flush the unreachable routes of table %s\n' "$table" >&2
+              flushed=false
+            fi
           else
             failed+=("$name")
           fi
@@ -71,6 +80,7 @@ let
         printf 'chalkos-vrf: failed to remove the VRF %s\n' "''${failed[@]}" >&2
         exit 1
       fi
+      $flushed || exit 1
     '';
   };
 in

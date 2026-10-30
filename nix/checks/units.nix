@@ -522,7 +522,8 @@ in
     '';
 
   # chalkos-vrf in a network namespace: it removes the VRFs that no .netdev of Kind=vrf declares
-  # and those whose table changed, keeps a declared VRF with its member and every link of another
+  # and those whose table changed, flushes the unreachable defaults of their tables, keeps a
+  # declared VRF with its member, the unreachable defaults of its table and every link of another
   # kind, and with no rendered units, as in maintenance mode, removes every VRF the rendered units
   # declared. It reads /etc's units before the rendered ones, by name, as networkd does. When it
   # removed a VRF it reloads a running networkd, through the systemctl and networkctl of the unit's
@@ -571,10 +572,24 @@ in
       ip link add masked type vrf table 600
       ip link add d0 type dummy
       ip link set d0 master keep
+      # The unreachable defaults that networkd installs into each VRF's table, which stay in the
+      # table when the VRF goes.
+      for table in 100 200 400; do
+        ip -4 route add unreachable default metric 4278198272 table "$table"
+        ip -6 route add unreachable default metric 4278198272 table "$table"
+      done
       ${script} || fail "chalkos-vrf failed"
       exists keep || fail "removed a VRF its .netdev declares"
       ip -d link show keep | grep -q 'vrf table 100' || fail "changed the table of a declared VRF"
       [ "$(ip -o link show master keep | wc -l)" = 1 ] || fail "a declared VRF lost its member"
+      for family in -4 -6; do
+        ip "$family" route show table 100 | grep -q '^unreachable default' ||
+          fail "removed the unreachable default ($family) of a declared VRF's table"
+        for table in 200 400; do
+          [ -z "$(ip "$family" route show table "$table")" ] ||
+            fail "kept the unreachable default ($family) of table $table, whose VRF it removed"
+        done
+      done
       if exists moved; then fail "kept a VRF whose table changed"; fi
       if exists gone; then fail "kept a VRF that no .netdev of Kind=vrf declares"; fi
       exists local || fail "removed a VRF that a unit of /etc declares"
