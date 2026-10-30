@@ -417,7 +417,7 @@ func TestFRRRefusals(t *testing.T) {
 			"RoutingPolicy": {policy("p", `{"match": {"prefixList": "v6"}, "then": {"action": "accept"}}`)}}, "the RoutingPolicy p matches PrefixLists of ipv6, not ipv4"},
 		"two peers of one session": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {
 			peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`),
-			peer("b", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer a and BGPPeer b both name eth1"},
+			peer("b", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer a and BGPPeer b both name eth1 in the VRF default"},
 		"an interface of a peer group's name": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {
 			peer("fabric", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`),
 			peer("x", `{"interface": "peer-fabric", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer x names peer-fabric, the peer group of BGPPeer fabric"},

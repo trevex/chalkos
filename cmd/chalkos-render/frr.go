@@ -324,7 +324,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 		for _, n := range ns {
 			key := vrf + " " + n.name
 			if other, ok := owner[key]; ok {
-				return nil, fmt.Errorf("BGPPeer %s and BGPPeer %s both name %s; give each session one peer", other, p.Name, n.name)
+				return nil, fmt.Errorf("BGPPeer %s and BGPPeer %s both name %s in the VRF %s; give each session one peer", other, p.Name, n.name, vrf)
 			}
 			owner[key] = p.Name
 			sessions[n.name] = p.Name
@@ -451,8 +451,8 @@ func (c *frr) prepends() error {
 		for _, n := range in.spec.Networks {
 			use(n.Policy, asn)
 		}
-		for _, l := range []*leakSpec{in.spec.Import.IPv4, in.spec.Import.IPv6} {
-			if l != nil {
+		for _, fam := range []string{"ipv4", "ipv6"} {
+			if l := in.leak(fam); l != nil {
 				use(l.Policy, asn)
 			}
 		}
