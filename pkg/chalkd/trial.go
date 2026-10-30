@@ -529,15 +529,24 @@ func (s *Server) expireTrial(version string, deadline time.Time, armed uint64) {
 // deadline rolls back at once, and one whose slot runs the config from before it, as a crash
 // before the slot was written leaves it, is finished. A record that cannot be read stays, so
 // every change is refused until RollbackConfig removes it. ctx ends when chalkd stops, and so do
-// the rollbacks of trials from then on, this one's and those at a deadline.
+// the rollbacks of trials from then on, this one's and those at a deadline. A trial chalkd
+// stopped before ResumeTrial took the locks stays as it is for the next start.
 //
 // chalkd calls it in normal mode once it serves, so a rollback does not keep the node from being
-// reached: until it ends, a request that changes the node is refused with ABORTED or waits.
+// reached. Until it ends, an upgrade or an image rollback is refused with ABORTED, and the
+// requests that take the config lock wait, such as a delivery, a confirmation, GetConfig and
+// PullImage; Status does not.
 func (s *Server) ResumeTrial(ctx context.Context) {
+	// chalkd serves before it calls ResumeTrial, so an upgrade or an image rollback may take
+	// s.upgrading first. It refuses itself on the record, or finishes a trial that ended under a
+	// context that does not end with chalkd, since s.trialCtx is not set yet.
 	s.upgrading.Lock()
 	defer s.upgrading.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
 	s.trialCtx = ctx
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {

@@ -994,6 +994,29 @@ func TestResumeTrialStopsWithChalkd(t *testing.T) {
 	}
 }
 
+// TestResumeTrialAfterChalkdStopped leaves a trial alone when chalkd stopped before ResumeTrial
+// took the locks: the next start settles it.
+func TestResumeTrialAfterChalkdStopped(t *testing.T) {
+	s := trialServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	rec.Deadline = time.Now().Add(-time.Minute)
+	if err := writeTrial(s.Paths.StateDir, rec); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.ResumeTrial(ctx)
+	s.mu.Lock()
+	armed := s.trialTimer != nil
+	s.mu.Unlock()
+	if armed {
+		t.Error("the trial's deadline is armed after chalkd stopped")
+	}
+	if !trialOpenOn(t, s) {
+		t.Error("the trial is not open")
+	}
+}
+
 // TestTrialExpiryKeepsARecordItCannotRemove arms the deadline again when the record of a trial
 // that ended cannot be removed, so the trial is not lost.
 func TestTrialExpiryKeepsARecordItCannotRemove(t *testing.T) {
