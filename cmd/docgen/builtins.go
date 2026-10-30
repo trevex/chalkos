@@ -91,7 +91,8 @@ type builtinImage struct {
 // system.build.chalkosRulesImage lays them out: that of the default variant, at def, that of an
 // image without Kubernetes, at plain, and that of a router image, at router. A built-in of the
 // plain image is one of every image; one the default image alone has is one of images with
-// Kubernetes, and one the router image alone has one of router images.
+// Kubernetes, and one the router image alone has one of router images. A built-in of every image
+// that the router image declares otherwise is listed again with router images, as they declare it.
 func writeBuiltins(page, def, plain, router string) error {
 	d, err := readBuiltinImage(def)
 	if err != nil {
@@ -124,57 +125,61 @@ func writeBuiltins(page, def, plain, router string) error {
 	writeRulesSection(&b, "rules-kubernetes", "The rules of the kinds that images with Kubernetes accept, and those they add to other kinds.", kubeRules, taken)
 	writeRulesSection(&b, "rules-router-images", "The rules of the kinds that router images accept, and those they add to other kinds.", routerRules, taken)
 
-	everyFacts, kubeFacts, err := split("fact", "the default image", d.facts, p.facts)
+	everyFacts, kubeFacts, err := splitEvery("fact", d.facts, p.facts)
 	if err != nil {
 		return err
 	}
-	_, routerFacts, err := split("fact", "the router image", r.facts, p.facts)
+	_, routerFacts, routerChangedFacts, err := split("fact", "the router image", r.facts, p.facts)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(&b, "\n## Facts { #facts }\n\n%s", factsIntro)
-	writeFacts(&b, "facts-every-image", "The facts every image declares.", everyFacts, d)
-	writeFacts(&b, "facts-kubernetes", "The facts images with Kubernetes add.", kubeFacts, d)
-	writeFacts(&b, "facts-router-images", "The facts router images add.", routerFacts, r)
+	writeFacts(&b, "facts-every-image", "The facts every image declares.", everyFacts, nil, d)
+	writeFacts(&b, "facts-kubernetes", "The facts images with Kubernetes add.", kubeFacts, nil, d)
+	writeFacts(&b, "facts-router-images", layerIntro("The facts router images add", "fact", "router images", routerChangedFacts),
+		sortedUnion(routerFacts, routerChangedFacts), routerChangedFacts, r)
 
-	everyOutputs, kubeOutputs, err := split("output", "the default image", d.outputs, p.outputs)
+	everyOutputs, kubeOutputs, err := splitEvery("output", d.outputs, p.outputs)
 	if err != nil {
 		return err
 	}
-	_, routerOutputs, err := split("output", "the router image", r.outputs, p.outputs)
+	_, routerOutputs, routerChangedOutputs, err := split("output", "the router image", r.outputs, p.outputs)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(&b, "\n## Outputs { #outputs }\n\n%s", outputsIntro)
-	writeOutputs(&b, "outputs-every-image", "The outputs every image renders.", everyOutputs, d.outputs)
-	writeOutputs(&b, "outputs-kubernetes", "The outputs images with Kubernetes add.", kubeOutputs, d.outputs)
-	writeOutputs(&b, "outputs-router-images", "The outputs router images add.", routerOutputs, r.outputs)
+	writeOutputs(&b, "outputs-every-image", "The outputs every image renders.", everyOutputs, nil, d.outputs)
+	writeOutputs(&b, "outputs-kubernetes", "The outputs images with Kubernetes add.", kubeOutputs, nil, d.outputs)
+	writeOutputs(&b, "outputs-router-images", layerIntro("The outputs router images add", "output", "router images", routerChangedOutputs),
+		sortedUnion(routerOutputs, routerChangedOutputs), routerChangedOutputs, r.outputs)
 
-	everyEffects, kubeEffects, err := split("effect", "the default image", d.effects, p.effects)
+	everyEffects, kubeEffects, err := splitEvery("effect", d.effects, p.effects)
 	if err != nil {
 		return err
 	}
-	_, routerEffects, err := split("effect", "the router image", r.effects, p.effects)
+	_, routerEffects, routerChangedEffects, err := split("effect", "the router image", r.effects, p.effects)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(&b, "\n## Effects { #effects }\n\n%s", effectsIntro)
-	writeEffects(&b, "effects-every-image", "The effects every image declares.", everyEffects, d.effects)
-	writeEffects(&b, "effects-kubernetes", "The effects images with Kubernetes add.", kubeEffects, d.effects)
-	writeEffects(&b, "effects-router-images", "The effects router images add.", routerEffects, r.effects)
+	writeEffects(&b, "effects-every-image", "The effects every image declares.", everyEffects, nil, d.effects)
+	writeEffects(&b, "effects-kubernetes", "The effects images with Kubernetes add.", kubeEffects, nil, d.effects)
+	writeEffects(&b, "effects-router-images", layerIntro("The effects router images add", "effect", "router images", routerChangedEffects),
+		sortedUnion(routerEffects, routerChangedEffects), routerChangedEffects, r.effects)
 
-	everyDiagnostics, kubeDiagnostics, err := split("diagnostic", "the default image", d.diagnostics, p.diagnostics)
+	everyDiagnostics, kubeDiagnostics, err := splitEvery("diagnostic", d.diagnostics, p.diagnostics)
 	if err != nil {
 		return err
 	}
-	_, routerDiagnostics, err := split("diagnostic", "the router image", r.diagnostics, p.diagnostics)
+	_, routerDiagnostics, routerChangedDiagnostics, err := split("diagnostic", "the router image", r.diagnostics, p.diagnostics)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(&b, "\n## Diagnostics { #diagnostics }\n\n%s", diagnosticsIntro)
-	writeDiagnostics(&b, "diagnostics-every-image", "The diagnostics every image declares.", everyDiagnostics, d.diagnostics)
-	writeDiagnostics(&b, "diagnostics-kubernetes", "The diagnostics images with Kubernetes add.", kubeDiagnostics, d.diagnostics)
-	writeDiagnostics(&b, "diagnostics-router-images", "The diagnostics router images add.", routerDiagnostics, r.diagnostics)
+	writeDiagnostics(&b, "diagnostics-every-image", "The diagnostics every image declares.", everyDiagnostics, nil, d.diagnostics)
+	writeDiagnostics(&b, "diagnostics-kubernetes", "The diagnostics images with Kubernetes add.", kubeDiagnostics, nil, d.diagnostics)
+	writeDiagnostics(&b, "diagnostics-router-images", layerIntro("The diagnostics router images add", "diagnostic", "router images", routerChangedDiagnostics),
+		sortedUnion(routerDiagnostics, routerChangedDiagnostics), routerChangedDiagnostics, r.diagnostics)
 
 	b.WriteString(builtinsSources)
 	return os.WriteFile(page, []byte(b.String()), 0o644)
@@ -360,23 +365,65 @@ func splitRules(def, plain []kindRules, image string) (every, added []kindRules,
 }
 
 // split splits the built-ins of a sort of def, the image named image, into those of every image,
-// which the plain image has alike, and those its layer adds, each by name. A built-in of the plain
-// image that def lacks, or has otherwise, fails it.
-func split[T any](sort, image string, def, plain map[string]T) (every, added []string, err error) {
+// which the plain image has alike, those its layer adds, and those of every image that its layer
+// declares otherwise, such as an output it renders with another renderer, each by name. A
+// built-in of the plain image that def lacks fails it.
+func split[T any](sort, image string, def, plain map[string]T) (every, added, changed []string, err error) {
 	for _, name := range slices.Sorted(maps.Keys(plain)) {
-		d, ok := def[name]
-		if !ok || !reflect.DeepEqual(d, plain[name]) {
-			return nil, nil, fmt.Errorf("the image without Kubernetes has the %s %s, which %s lacks or declares otherwise", sort, name, image)
+		if _, ok := def[name]; !ok {
+			return nil, nil, nil, fmt.Errorf("the image without Kubernetes has the %s %s, which %s lacks", sort, name, image)
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(def)) {
-		if _, ok := plain[name]; ok {
-			every = append(every, name)
-		} else {
+		p, ok := plain[name]
+		switch {
+		case !ok:
 			added = append(added, name)
+		case reflect.DeepEqual(def[name], p):
+			every = append(every, name)
+		default:
+			changed = append(changed, name)
 		}
 	}
-	return every, added, nil
+	return every, added, changed, nil
+}
+
+// splitEvery splits the built-ins of a sort of the default image as split does. The sections of
+// every image show them as the default image declares them, so a built-in of the plain image that
+// it declares otherwise fails it.
+func splitEvery[T any](sort string, def, plain map[string]T) (every, added []string, err error) {
+	every, added, changed, err := split(sort, "the default image", def, plain)
+	if err == nil && len(changed) > 0 {
+		err = fmt.Errorf("the default image declares the %s %s otherwise than the image without Kubernetes", sort, changed[0])
+	}
+	return every, added, err
+}
+
+// layerIntro is the opening of a layer's section, intro without its full stop, which names the
+// built-ins of every image that the layer's images declare otherwise.
+func layerIntro(intro, sort, images string, changed []string) string {
+	switch len(changed) {
+	case 0:
+		return intro + "."
+	case 1:
+		return fmt.Sprintf("%s, and the %s %s of every image as %s declare it.", intro, sort, code(changed[0]), images)
+	}
+	return fmt.Sprintf("%s, and the %ss %s of every image as %s declare them.", intro, sort, andList(codes(changed), "and"), images)
+}
+
+// sortedUnion is the names of a and b, sorted.
+func sortedUnion(a, b []string) []string {
+	return slices.Sorted(slices.Values(append(slices.Clone(a), b...)))
+}
+
+// rowAnchor is the anchor of a built-in's row: <prefix>-<name>, or, for a built-in of every image
+// that the section's images declare otherwise and whose own row has that anchor already, the
+// section's anchor and the name, such as #outputs-router-images-networkd.
+func rowAnchor(prefix, section, name string, changed []string) string {
+	if slices.Contains(changed, name) {
+		return section + "-" + name
+	}
+	return prefix + "-" + name
 }
 
 // inlineLimit is the length of the longest CEL expression a table's row holds; longer ones, and
@@ -494,7 +541,7 @@ func codes(items []string) []string {
 
 // writeFacts writes a section of facts, and which of the default image's kinds and effects read
 // each.
-func writeFacts(b *strings.Builder, anchor, intro string, names []string, img builtinImage) {
+func writeFacts(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage) {
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return
@@ -556,12 +603,12 @@ func writeFacts(b *strings.Builder, anchor, intro string, names []string, img bu
 		if len(by) > 0 {
 			readBy = sentence(strings.Join(by, ", and "))
 		}
-		fmt.Fprintf(b, "| `%s`{ #fact-%s } | %s | %s |\n", name, strings.ToLower(name), tableCell(sentence(reads)), readBy)
+		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s |\n", name, rowAnchor("fact", anchor, strings.ToLower(name), changed), tableCell(sentence(reads)), readBy)
 	}
 }
 
 // writeOutputs writes a section of outputs.
-func writeOutputs(b *strings.Builder, anchor, intro string, names []string, defs map[string]outputs.Definition) {
+func writeOutputs(b *strings.Builder, anchor, intro string, names, changed []string, defs map[string]outputs.Definition) {
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return
@@ -573,8 +620,8 @@ func writeOutputs(b *strings.Builder, anchor, intro string, names []string, defs
 		if o.Check != "" {
 			check = "yes"
 		}
-		fmt.Fprintf(b, "| `%s`{ #output-%s } | %s | %s | %s | %s |\n",
-			name, name, strings.Join(codes(o.Inputs), ", "), code(o.Dir), tableCell(renderer(o.Render)), check)
+		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s | %s | %s |\n",
+			name, rowAnchor("output", anchor, name, changed), strings.Join(codes(o.Inputs), ", "), code(o.Dir), tableCell(renderer(o.Render)), check)
 	}
 }
 
@@ -594,7 +641,7 @@ func renderer(render string) string {
 }
 
 // writeEffects writes a section of effects, each with when it fires and what it does.
-func writeEffects(b *strings.Builder, anchor, intro string, names []string, defs map[string]effects.Definition) {
+func writeEffects(b *strings.Builder, anchor, intro string, names, changed []string, defs map[string]effects.Definition) {
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return
@@ -654,15 +701,15 @@ func writeEffects(b *strings.Builder, anchor, intro string, names []string, defs
 		if e.Chalkd != "" {
 			does = append(does, "Runs chalkd's action "+code(e.Chalkd)+".")
 		}
-		fmt.Fprintf(b, "| `%s`{ #effect-%s } | %s | %s |\n",
-			name, name, tableCell(sentence(strings.Join(fires, ", or "))), tableCell(strings.Join(does, " ")))
+		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s |\n",
+			name, rowAnchor("effect", anchor, name, changed), tableCell(sentence(strings.Join(fires, ", or "))), tableCell(strings.Join(does, " ")))
 	}
 	b.WriteString(strings.Join(after, ""))
 }
 
 // writeDiagnostics writes a section of diagnostics, each with what it shows and runs, its
 // parameters, its role and the capabilities of its run.
-func writeDiagnostics(b *strings.Builder, anchor, intro string, names []string, defs map[string]diagnostics.Definition) {
+func writeDiagnostics(b *strings.Builder, anchor, intro string, names, changed []string, defs map[string]diagnostics.Definition) {
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return
@@ -698,7 +745,7 @@ func writeDiagnostics(b *strings.Builder, anchor, intro string, names []string, 
 		if len(d.Capabilities) > 0 {
 			caps = strings.Join(codes(d.Capabilities), ", ")
 		}
-		fmt.Fprintf(b, "| `%s`{ #diagnostic-%s } | %s | %s | %s | %s |\n", name, name, tableCell(does), tableCell(params), d.Role, caps)
+		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s | %s | %s |\n", name, rowAnchor("diagnostic", anchor, name, changed), tableCell(does), tableCell(params), d.Role, caps)
 	}
 	b.WriteString(strings.Join(after, ""))
 }

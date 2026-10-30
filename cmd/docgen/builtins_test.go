@@ -111,7 +111,13 @@ func TestWriteBuiltins(t *testing.T) {
 		"| `crictl-pods`{ #diagnostic-crictl-pods } | The pods the kubelet runs, as crictl pods prints them. Runs `crictl pods`. | — | reader | — |\n",
 		// The router image's built-ins are those it adds to the image without Kubernetes.
 		"| 1 | — | No FirewallZone is named local. | `refuse` | `!(\"local\" in documents)` | a zone is named local |\n",
-		"| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |\n",
+		// An output of every image that the router image declares otherwise is listed again, as
+		// the router image declares it, under an anchor of its section.
+		"The outputs router images add, and the output `networkd` of every image as router images declare it.\n\n" +
+			"| Output | Inputs | Directory | Renderer | Check |\n| --- | --- | --- | --- | --- |\n" +
+			"| `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `VRF` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |\n" +
+			"| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |\n",
+		"The effects router images add.\n\n",
 		"| `router-nftables`{ #effect-router-nftables } | The output `router-nftables` changed. | Reloads `chalkos-firewall.service`. |\n",
 		"| `traceroute`{ #diagnostic-traceroute } | The routers on the path to an address. Runs `traceroute -n -m 30 {address}`. | `address`, address | operator | — |\n",
 	} {
@@ -165,5 +171,25 @@ func TestWriteBuiltinsRefusesARuleOnlyThePlainImageHas(t *testing.T) {
 	err = writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), "testdata/builtins/default", plain, "testdata/builtins/router")
 	if err == nil || !strings.Contains(err.Error(), "a rule of Volume that the default image lacks: self != 'x'") {
 		t.Errorf("error %v, want one naming the rule of Volume", err)
+	}
+}
+
+// The sections of every image show the default image's built-ins, so it declares each of the
+// plain image's alike.
+func TestWriteBuiltinsRefusesWhatTheDefaultImageDeclaresOtherwise(t *testing.T) {
+	def := t.TempDir()
+	if err := os.CopyFS(def, os.DirFS("testdata/builtins/default")); err != nil {
+		t.Fatal(err)
+	}
+	router, err := os.ReadFile("testdata/builtins/router/outputs.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(def, "outputs.json"), router, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), def, "testdata/builtins/plain", "testdata/builtins/router")
+	if err == nil || !strings.Contains(err.Error(), "output networkd") {
+		t.Errorf("error %v, want one naming the output networkd", err)
 	}
 }
