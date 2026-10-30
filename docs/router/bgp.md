@@ -317,6 +317,11 @@ Keep the list narrow. A broad list matches the router's other routes too and cha
 treats them, as the
 [limits of BGP on a router](../how-it-works/router/bgp.md#limits) describe.
 
+The router marks the routes it tracks with the large community `4200000000:0:1`. An import of
+the VRF's routes into another VRF drops every route that carries it. Leave that community out of
+your policies' `addCommunities`. When a peer sends it, remove it in the import policy with
+`removeCommunities`.
+
 ## Deliver and check the sessions
 
 Validate the files and deliver them:

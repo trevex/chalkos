@@ -178,6 +178,11 @@ Here the default VRF's instance imports the VRF `tenant`, which tracks IPv6 rout
 policy `from-tenant`. An import without a policy gets `permit 10` alone. Imports from VRFs that
 track nothing of the family use no leak route-map.
 
+The large community `4200000000:0:1` is reserved for tracked routes. The leak route-maps deny
+every path that carries it, also one a peer sent with it or one an import policy marked with it.
+Such a route stays out of a VRF that imports it from a VRF that tracks routes of its family. A
+policy's `removeCommunities` strips the community from a peer's routes.
+
 bgpd checks the condition every 5 seconds, FRR's `bgp default-originate timer`. The default route
 therefore follows a tracked route within about 5 seconds. A delivery that changes the peer's
 family withdraws the default route at once, and the next check sends it again if the route
@@ -311,6 +316,10 @@ of `frrvty`, the group of FRR's sockets, and need a reader.
   document of another name replaces the old one, AS number included.
 - The condition of `defaultOriginateWhen` counts BGP's paths too. A list that matches a prefix of
   the instance's `networks`, a peer's route or an imported route holds while BGP holds that path.
+- The condition counts every path that passes the route-map. That includes an invalid path, such
+  as one whose next hop does not resolve, and a stale path that graceful restart keeps after its
+  session went down. Each check, up to every 5 seconds, walks the family's whole BGP table. That
+  costs CPU when the instance holds a full Internet table in that family.
 - Blackhole, unreachable and prohibit routes never satisfy `defaultOriginateWhen`.
 
 ## Related pages
