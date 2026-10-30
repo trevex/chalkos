@@ -563,8 +563,8 @@ func (c *frr) policyOfFamily(policy, f string) error {
 
 // peerNeighbours are a peer's sessions: its address, its interface, which is a link of its VRF, or
 // the links of its VRF its interfaces name, globs matching the links the Network documents name.
-// A glob that matches a link of another VRF is refused, as it would run no session there. An
-// interface or glob of a VRF's device is refused too.
+// A glob skips the links of other VRFs, those of no VRF for a peer of a VRF and those of a VRF
+// for a peer of the default one. An interface or glob of a VRF's device is refused.
 func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error) {
 	s := p.Spec
 	if !s.namesOneNeighbour() {
@@ -621,12 +621,12 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 		if err := linkNeighbour(*s.Interface); err != nil {
 			return nil, err
 		}
-		in, err := c.membership.linkVRF(*s.Interface)
+		linkIn, err := c.membership.linkVRF(*s.Interface)
 		if err != nil {
 			return nil, err
 		}
-		if in != vrf {
-			return nil, fmt.Errorf("interface %s is in the VRF %s, not in the peer's VRF %s", *s.Interface, in, vrf)
+		if linkIn != vrf {
+			return nil, fmt.Errorf("interface %s is in the VRF %s, not in the peer's VRF %s", *s.Interface, linkIn, vrf)
 		}
 		return []neighbour{{name: *s.Interface, onLink: true}}, nil
 	}
@@ -635,13 +635,13 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 	}
 	var ns []neighbour
 	for _, link := range c.links {
-		if i := slices.IndexFunc(s.Interfaces, func(glob string) bool { return matchesGlob(glob, link) }); i >= 0 {
-			in, err := c.membership.linkVRF(link)
+		if slices.ContainsFunc(s.Interfaces, func(glob string) bool { return matchesGlob(glob, link) }) {
+			linkIn, err := c.membership.linkVRF(link)
 			if err != nil {
 				return nil, err
 			}
-			if in != vrf {
-				return nil, fmt.Errorf("interfaces: %s matches %s, which is in the VRF %s, not in the peer's VRF %s", s.Interfaces[i], link, in, vrf)
+			if linkIn != vrf {
+				continue
 			}
 			if err := linkNeighbour(link); err != nil {
 				return nil, err

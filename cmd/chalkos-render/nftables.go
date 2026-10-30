@@ -51,9 +51,9 @@ type opening struct {
 	protocol   string
 	ports      []portRange
 	interfaces []string
-	// vrf tells that interfaces are links of a VRF. The input hook sees a packet from such a
-	// link with the VRF's device as iifname and the link as sdifname.
-	vrf          bool
+	// vrf is the VRF whose links interfaces are, "" for links of no VRF. The input hook sees a
+	// packet from a VRF's link with the VRF's device as iifname and the link as sdifname.
+	vrf          string
 	sources      []string
 	destinations []string
 }
@@ -82,9 +82,15 @@ func bgpOpenings(peers []named[peerSpec], vrfs []named[vrfSpec]) ([]opening, err
 			}
 			o.sources = []string{netip.PrefixFrom(a, a.BitLen()).String()}
 		case s.Interface != nil:
-			o.interfaces, o.vrf = []string{*s.Interface}, s.VRF != nil
+			o.interfaces = []string{*s.Interface}
 		default:
-			o.interfaces, o.vrf = s.Interfaces, s.VRF != nil
+			o.interfaces = s.Interfaces
+		}
+		if vrf := vrfOf(s.VRF); s.Address == nil && vrf != defaultVRF {
+			if !plainInterface.MatchString(vrf) {
+				return nil, fmt.Errorf("%s: the VRF %q is no VRF's name", what, vrf)
+			}
+			o.vrf = vrf
 		}
 		// An opening without interfaces and sources would accept the port from anywhere.
 		if s.Address == nil {
@@ -668,8 +674,8 @@ func (o opening) lines() ([]string, error) {
 	}
 	head := ""
 	switch {
-	case len(o.interfaces) > 0 && o.vrf:
-		head = "meta sdifname " + interfaceSet(o.interfaces) + " "
+	case len(o.interfaces) > 0 && o.vrf != "":
+		head = "iifname " + strconv.Quote(o.vrf) + " meta sdifname " + interfaceSet(o.interfaces) + " "
 	case len(o.interfaces) > 0:
 		head = "iifname " + interfaceSet(o.interfaces) + " "
 	}

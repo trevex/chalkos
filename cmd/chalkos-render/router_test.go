@@ -721,13 +721,16 @@ func TestUnboundRefusals(t *testing.T) {
 	}
 }
 
-// A peer in a VRF has its ports opened on its VRF's links by sdifname: the input hook sees a
-// packet from a VRF's link with the VRF's device as iifname and the link as sdifname. A peer of
-// an address is opened by its address in any VRF.
+// A peer in a VRF has its ports opened on its VRF's links by the VRF's device and sdifname: the
+// input hook sees a packet from a VRF's link with the device as iifname and the link as
+// sdifname, so links of other VRFs that the peer's globs match stay closed. A peer of the VRF
+// named default is opened by iifname as one of no VRF, and a peer of an address by its address
+// in any VRF.
 func TestVRFPeerOpenings(t *testing.T) {
-	tenant, addr := "tenant", "192.0.2.9"
+	tenant, def, addr := "tenant", defaultVRF, "192.0.2.9"
 	openings, err := bgpOpenings([]named[peerSpec]{
 		{Name: "leaves", Spec: peerSpec{Interfaces: []string{"swp*"}, VRF: &tenant}},
+		{Name: "spines", Spec: peerSpec{Interfaces: []string{"eth*"}, VRF: &def}},
 		{Name: "far", Spec: peerSpec{Address: &addr, VRF: &tenant}},
 	}, nil)
 	if err != nil {
@@ -742,7 +745,8 @@ func TestVRFPeerOpenings(t *testing.T) {
 		got = append(got, lines...)
 	}
 	want := []string{
-		`meta sdifname { "swp*" } tcp dport { 179 } accept comment "BGPPeer leaves"`,
+		`iifname "tenant" meta sdifname { "swp*" } tcp dport { 179 } accept comment "BGPPeer leaves"`,
+		`iifname { "eth*" } tcp dport { 179 } accept comment "BGPPeer spines"`,
 		`ip saddr { 192.0.2.9/32 } tcp dport { 179 } accept comment "BGPPeer far"`,
 	}
 	if !slices.Equal(got, want) {
@@ -848,10 +852,19 @@ func TestFRRVRFInterfaceByGlob(t *testing.T) {
 	}
 	docs["BGPPeer"] = peer("")
 	refused(t, []string{"frr"}, docs, "interface swp1 is in the VRF tenant, not in the peer's VRF default")
-	// A glob of a default-VRF peer that matches a link of tenant would run no session there.
-	docs["Network"] = append(docs["Network"], document(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`))
+	// A glob of a default-VRF peer expands to the links of no VRF alone.
+	docs["Network"] = append(docs["Network"],
+		document(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`),
+		document(t, "Network", "40-sw0", `{"match": {"name": "sw0"}}`))
 	docs["BGPPeer"] = []any{routerDoc(t, "BGPPeer", "leaves", `{"interfaces": ["sw*"], "remoteAS": "external", "families": {"ipv6": {}}}`)}
-	refused(t, []string{"frr"}, docs, "interfaces: sw* matches swp1, which is in the VRF tenant, not in the peer's VRF default")
+	input, err = json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf = renderedFile(t, []string{"frr"}, string(input), frrFile)
+	if !strings.Contains(conf, " neighbor sw0 interface peer-group peer-leaves\n") || strings.Contains(conf, "neighbor swp1 ") {
+		t.Errorf("frr.conf runs sw*'s sessions elsewhere than on sw0:\n%s", conf)
+	}
 	// A Network whose other [Match] keys may not match swp1 leaves its VRF open.
 	docs["Network"] = []any{document(t, "Network", "30-swp", `{"match": {"name": "swp*", "macAddress": "02:00:00:00:00:01"}}`)}
 	docs["BGPPeer"] = peer(`, "vrf": "tenant"`)
