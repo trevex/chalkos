@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"slices"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
@@ -24,24 +25,27 @@ import (
 // them as hashes. A reboot, which clears /run, starts every unit anyway.
 type baseline struct {
 	Documents []map[string]any         `json:"documents"`
-	Facts     map[string]baselineFact  `json:"facts"`
+	Facts     recordedFacts            `json:"facts"`
 	Outputs   map[string]outputs.State `json:"outputs"`
 	// Kinds are the hashes of the kinds' documents, by kind, as config.KindHashes gives them. A
 	// baseline an older chalkd wrote has none, which makes every effect on a kind due.
 	Kinds map[string]string `json:"kinds"`
-	// Attempts are what each delivery that failed part way since applied, or may have: a unit it
-	// restarted runs that delivery's config, which a later delivery of the baseline's own config
-	// must undo.
+	// Attempts are what each delivery since applied, or may have, as it records before its first
+	// change: a unit it restarted runs that delivery's config, which a later delivery of the
+	// baseline's own config must undo.
 	Attempts []baselineAttempt `json:"attempts,omitempty"`
 }
 
-// baselineAttempt is what a delivery that failed part way applied, or may have: its documents,
-// with their secret values hashed, the states of the outputs it rendered and the hashes of its
-// kinds.
+// baselineAttempt is what a delivery applied, or may have: its documents, with their secret
+// values hashed, the states of the outputs it rendered, the hashes of its kinds and the facts the
+// rules read once it changed the node.
 type baselineAttempt struct {
 	Documents []map[string]any         `json:"documents"`
 	Outputs   map[string]outputs.State `json:"outputs"`
 	Kinds     map[string]string        `json:"kinds"`
+	// Facts are recorded once the delivery loaded them, after its changes. An attempt without
+	// them, as one chalkd stopped before, makes every rule that reads a fact due.
+	Facts recordedFacts `json:"facts,omitempty"`
 }
 
 // baselineFact is a fact as a rule read it: its value, or why it could not be loaded, which says
@@ -49,6 +53,23 @@ type baselineAttempt struct {
 type baselineFact struct {
 	Value any    `json:"value"`
 	Error string `json:"error,omitempty"`
+}
+
+// recordedFacts are the facts the rules read, by name, as a baseline or an attempt records them.
+type recordedFacts map[string]baselineFact
+
+// recordFacts loads the facts names from f.
+func recordFacts(names []string, f rules.Facts) recordedFacts {
+	r := recordedFacts{}
+	for _, name := range names {
+		v, err := f.Fact(name)
+		if err != nil {
+			r[name] = baselineFact{Error: err.Error()}
+			continue
+		}
+		r[name] = baselineFact{Value: v}
+	}
+	return r
 }
 
 // readBaseline reads the baseline at path; found is false when there is none.
@@ -72,16 +93,7 @@ func readBaseline(path string) (b baseline, found bool, err error) {
 // newBaseline records old, the running slot's config, the facts the rules read, names, as f
 // loads them, the states of the outputs the node serves and the hashes of old's kinds.
 func newBaseline(old []config.Document, names []string, f rules.Facts, states map[string]outputs.State, kinds map[string]string) baseline {
-	b := baseline{Documents: redacted(old), Facts: map[string]baselineFact{}, Outputs: states, Kinds: kinds}
-	for _, name := range names {
-		v, err := f.Fact(name)
-		if err != nil {
-			b.Facts[name] = baselineFact{Error: err.Error()}
-			continue
-		}
-		b.Facts[name] = baselineFact{Value: v}
-	}
-	return b
+	return baseline{Documents: redacted(old), Facts: recordFacts(names, f), Outputs: states, Kinds: kinds}
 }
 
 // write records the baseline at path, readable by root alone.
@@ -93,9 +105,15 @@ func (b baseline) write(path string) error {
 	return atomicfile.WriteFile(path, data, 0o600)
 }
 
-// addAttempt adds a, what a delivery that failed part way applied, to the baseline at path, which
-// that delivery compared with. An attempt the baseline holds already, as a retry of the same
-// delivery leaves it, is not added again.
+// applied is what the attempt applied, its facts left out, as JSON.
+func (a baselineAttempt) applied() ([]byte, error) {
+	a.Facts = nil
+	return json.Marshal(a)
+}
+
+// addAttempt adds a, what a delivery applies, to the baseline at path, which that delivery
+// compares with. An attempt that applied the same, as a retry of the same delivery leaves it,
+// goes, so the baseline holds each once, with the facts of its last run.
 func addAttempt(path string, a baselineAttempt) error {
 	b, found, err := readBaseline(path)
 	if err != nil {
@@ -104,17 +122,36 @@ func addAttempt(path string, a baselineAttempt) error {
 	if !found {
 		return errors.New("the delivery left no baseline")
 	}
-	data, err := json.Marshal(a)
+	data, err := a.applied()
 	if err != nil {
 		return err
 	}
-	for _, o := range b.Attempts {
-		if od, err := json.Marshal(o); err == nil && bytes.Equal(od, data) {
-			return nil
-		}
-	}
+	b.Attempts = slices.DeleteFunc(b.Attempts, func(o baselineAttempt) bool {
+		od, err := o.applied()
+		return err == nil && bytes.Equal(od, data)
+	})
 	b.Attempts = append(b.Attempts, a)
 	return b.write(path)
+}
+
+// setAttemptFacts records facts, as the delivery that applied what a applied loaded them once it
+// changed the node, on that attempt in the baseline at path.
+func setAttemptFacts(path string, a baselineAttempt, facts recordedFacts) error {
+	b, found, err := readBaseline(path)
+	if err != nil || !found {
+		return err
+	}
+	data, err := a.applied()
+	if err != nil {
+		return err
+	}
+	for i, o := range b.Attempts {
+		if od, err := o.applied(); err == nil && bytes.Equal(od, data) {
+			b.Attempts[i].Facts = facts
+			return b.write(path)
+		}
+	}
+	return nil
 }
 
 // documents are the baseline's documents, with their secret values hashed.
@@ -147,15 +184,15 @@ func redacted(docs []config.Document) []map[string]any {
 
 // Fact is the fact name as it was; a fact the rules did not read then, which the running image's
 // rules all read, cannot be told, so the rules that read it are due.
-func (b baseline) Fact(name string) (any, error) {
-	f, ok := b.Facts[name]
+func (f recordedFacts) Fact(name string) (any, error) {
+	r, ok := f[name]
 	switch {
 	case !ok:
-		return nil, errors.New("not recorded before the delivery that failed")
-	case f.Error != "":
-		return nil, errors.New(f.Error)
+		return nil, errors.New("not recorded by the delivery that failed")
+	case r.Error != "":
+		return nil, errors.New(r.Error)
 	}
-	return f.Value, nil
+	return r.Value, nil
 }
 
 // dropBaseline removes the baseline once a delivery is applied whole. One left behind only makes

@@ -42,6 +42,9 @@ type pendingEffects struct {
 	// attempts are what the deliveries that failed part way since the baseline was recorded
 	// applied, which the rules, outputs and kinds compare with too.
 	attempts []baselineAttempt
+	// attempt is what this delivery applies, as recordAttempt added it to the baseline; nil until
+	// then.
+	attempt *baselineAttempt
 }
 
 // effectsOf compiles the rules of the running image's effects and loads every fact they read.
@@ -102,7 +105,7 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 		log.Printf("the baseline of the effects: %v; comparing with the running slot", err)
 	}
 	if found {
-		e.old, e.oldHashed, e.before, e.outputs, e.kinds, e.attempts = b.documents(), true, b, b.Outputs, b.Kinds, b.Attempts
+		e.old, e.oldHashed, e.before, e.outputs, e.kinds, e.attempts = b.documents(), true, b.Facts, b.Outputs, b.Kinds, b.Attempts
 		return e, nil
 	}
 	if e.outputs, err = s.Loader.OutputStates(old, schemas); err != nil {
@@ -152,10 +155,12 @@ func (e *pendingEffects) oldConfig() map[string]any {
 // applied:
 //   - one of its outputs has a state in states, the outputs swapped in, that differs;
 //   - the documents of one of its kinds, or a Secret they reference, differ;
-//   - its rule holds on the facts as they are now.
+//   - its rule holds on the facts as they are now, which it compares with the facts from before
+//     the delivery or with those the failed delivery loaded.
 //
 // A rule that cannot be evaluated counts as true. Its error goes to the journal and to warnings,
-// which say why without the values it read.
+// which say why without the values it read. The facts as they are now go to the delivery's
+// attempt in the baseline, which recordAttempt added.
 func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]outputs.State, secret string) (due, warnings []string, err error) {
 	after, err := s.factsFor(ctx, e.next, nil, secret)
 	if err != nil {
@@ -163,19 +168,27 @@ func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]o
 	}
 	// Command facts read the old config as the rules do.
 	after.Input = map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": e.oldConfig()}
+	if e.attempt != nil {
+		// The delivery changed the node by now, so the facts are those its units read.
+		if err := setAttemptFacts(s.Paths.EffectsBaseline, *e.attempt, recordFacts(e.factNames(), after)); err != nil {
+			// Without them every rule that reads a fact compares as due with this attempt.
+			log.Printf("record the facts of the delivery in the baseline of the effects: %v", err)
+		}
+	}
 	kinds, err := config.KindHashes(e.next, e.schemas)
 	if err != nil {
 		return nil, nil, failed(connect.CodeInternal, "the kinds of the delivery: %v", err)
 	}
-	// A failed delivery's facts are not recorded: its rules compare with the facts from before.
-	olds := []baselineAttempt{{Outputs: e.outputs, Kinds: e.kinds}}
-	oldDocs := [][]config.Document{e.old}
+	olds := []comparison{{docs: e.old, hashed: e.oldHashed, facts: after, oldFacts: e.before, outputs: e.outputs, kinds: e.kinds}}
 	for _, a := range e.attempts {
-		olds, oldDocs = append(olds, a), append(oldDocs, a.documents())
+		docs := a.documents()
+		// Command facts read the attempt's config as the old one.
+		facts := after.For(map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": rules.HashedConfigOf(docs)})
+		olds = append(olds, comparison{docs: docs, hashed: true, facts: facts, oldFacts: a.Facts, outputs: a.Outputs, kinds: a.Kinds})
 	}
-	for i, old := range olds {
+	for _, old := range olds {
 		ruled, errs := rules.Due(e.rules, rules.EffectInput{
-			Documents: e.next, Old: oldDocs[i], OldHashed: e.oldHashed || i > 0, Node: e.node, Facts: after, OldFacts: e.before,
+			Documents: e.next, Old: old.docs, OldHashed: old.hashed, Node: e.node, Facts: old.facts, OldFacts: old.oldFacts,
 		})
 		for _, err := range errs {
 			w := fmt.Sprintf("the rule of %v; taking the effect all the same", err)
@@ -188,8 +201,8 @@ func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]o
 			due = append(due, r.Name)
 		}
 		for name, d := range e.defs {
-			changedOutput := slices.ContainsFunc(d.Outputs, func(o string) bool { st, ok := states[o]; return ok && st != old.Outputs[o] })
-			changedKind := slices.ContainsFunc(d.Kinds, func(k string) bool { return kinds[k] != old.Kinds[k] })
+			changedOutput := slices.ContainsFunc(d.Outputs, func(o string) bool { st, ok := states[o]; return ok && st != old.outputs[o] })
+			changedKind := slices.ContainsFunc(d.Kinds, func(k string) bool { return kinds[k] != old.kinds[k] })
 			if changedOutput || changedKind {
 				due = append(due, name)
 			}
@@ -199,20 +212,34 @@ func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]o
 	return slices.Compact(due), warnings, nil
 }
 
+// comparison is a state due compares a delivery with: the old documents, hashed already or not,
+// the facts as they are now and as they were, the states of the outputs and the hashes of the
+// kinds.
+type comparison struct {
+	docs            []config.Document
+	hashed          bool
+	facts, oldFacts rules.Facts
+	outputs         map[string]outputs.State
+	kinds           map[string]string
+}
+
 // recordAttempt adds what the delivery of e applies to the baseline before the delivery changes
 // anything: its documents, the states of the outputs it rendered, states, and the hashes of its
-// kinds. Should it fail or stop part way, as a crash stops it, a unit it restarted runs its
-// config, so the next delivery takes the effects that compare with it too, even one of the config
-// from before it. The attempts go with the baseline once a delivery is applied whole.
+// kinds; due adds the facts once the delivery loaded them. Should it fail or stop part way, as a
+// crash stops it, a unit it restarted runs its config, so the next delivery takes the effects
+// that compare with it too, even one of the config from before it. The attempts go with the
+// baseline once a delivery is applied whole.
 func (s *Server) recordAttempt(e *pendingEffects, states map[string]outputs.State) error {
 	kinds, err := config.KindHashes(e.next, e.schemas)
 	if err != nil {
 		// Without them every effect on a kind the delivery holds is due.
 		log.Printf("the kinds of the delivery: %v", err)
 	}
-	if err := addAttempt(s.Paths.EffectsBaseline, baselineAttempt{Documents: redacted(e.next), Outputs: states, Kinds: kinds}); err != nil {
+	a := baselineAttempt{Documents: redacted(e.next), Outputs: states, Kinds: kinds}
+	if err := addAttempt(s.Paths.EffectsBaseline, a); err != nil {
 		return failed(connect.CodeInternal, "record the delivery in the baseline of the effects: %v", err)
 	}
+	e.attempt = &a
 	return nil
 }
 

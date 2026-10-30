@@ -348,6 +348,40 @@ func TestApplyConfigUndoesADeliveryThatStoppedPartWay(t *testing.T) {
 	}
 }
 
+// TestApplyConfigUndoesAFailedDeliveryOnItsFacts: a delivery that fails after it restarted
+// namer.service on the host name it wrote, which a rule reads as a fact alone, leaves
+// namer.service running that host name. The delivery of the config from before it compares the
+// facts with that delivery's as well, and restarts namer.service again.
+func TestApplyConfigUndoesAFailedDeliveryOnItsFacts(t *testing.T) {
+	s, r := configServer(t)
+	write(t, s.Paths.Facts, `{"node": {"file": "`+filepath.Join(s.Loader.RunDir, "node.json")+`", "fields": ["hostname"]}}`)
+	write(t, s.Loader.Effects, `{"namer": {"when": "facts.node != oldFacts.node", "restart": ["namer.service"]},
+	  "late": {"when": "facts.node != oldFacts.node", "run": "hook"}}`)
+	r.Rules = append([]tooltest.Rule{{Prefix: "hook", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
+	if _, err := sendConfig(s, baseConfig+hostConfig("default", "h2")); err == nil || !strings.Contains(err.Error(), "run hook") {
+		t.Fatalf("err = %v, want the hook's failure", err)
+	}
+	if !slices.Contains(r.Calls, "systemctl try-restart namer.service") {
+		t.Fatalf("the failed delivery ran %v, want namer.service restarted", r.Calls)
+	}
+	for _, step := range []struct {
+		name     string
+		restarts bool
+	}{{"the config from before", true}, {"the same config again", false}} {
+		r.ResetCalls()
+		resp, err := sendConfig(s, baseConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := slices.Contains(r.Calls, "systemctl try-restart namer.service"); got != step.restarts {
+			t.Errorf("%s: restarted %v, want %v: %v", step.name, got, step.restarts, r.Calls)
+		}
+		if len(resp.Warnings) > 0 {
+			t.Errorf("%s: warnings %q", step.name, resp.Warnings)
+		}
+	}
+}
+
 // TestApplyConfigUndoesADeliveryFailedBeforeItsSlot: a delivery that fails before it writes the
 // slot runs the layer action its rule asks for on the identity and the layers' files of its
 // config. The delivery of the config from before it runs the action again.
