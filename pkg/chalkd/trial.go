@@ -212,6 +212,14 @@ func (s *Server) endTrial() error {
 	return nil
 }
 
+// dropLostTrial ends the trial r, whose slot runs neither its config nor the one from before it,
+// which leaves nothing to confirm or roll back: its record goes, as endTrial says. The caller
+// holds s.mu.
+func (s *Server) dropLostTrial(r trialRecord) error {
+	log.Printf("the trial of config %s ended: its slot runs neither it nor config %s", r.Version, r.Previous)
+	return s.endTrial()
+}
+
 // trialStatus is the config on trial as Status reports it, nil without one, and why its record
 // cannot be read, which is logged and leaves the trial out.
 func (s *Server) trialStatus() (*nodev1.ConfigTrial, string) {
@@ -270,8 +278,7 @@ func (s *Server) refuseOnTrial(what string, holdsUpgrading bool) error {
 		}
 		return s.finishTrial(r)
 	} else if st == trialLost {
-		log.Printf("the trial of config %s ended: its slot runs neither it nor config %s", r.Version, r.Previous)
-		if err := s.endTrial(); err != nil {
+		if err := s.dropLostTrial(r); err != nil {
 			return failed(connect.CodeInternal, "remove the record of the lost trial of config %s: %v", r.Version, err)
 		}
 		return nil
@@ -382,8 +389,7 @@ func (s *Server) settleTrial(r trialRecord) (trialState, error) {
 	case st == trialEnded:
 		return st, s.finishTrial(r)
 	default:
-		log.Printf("the trial of config %s ended: its slot runs neither it nor config %s", r.Version, r.Previous)
-		if err := s.endTrial(); err != nil {
+		if err := s.dropLostTrial(r); err != nil {
 			// The deadline finds the trial lost again and removes the record then.
 			log.Printf("remove the record of the config's trial: %v; trying again in %v", err, s.retryTrial())
 			s.armTrial(r, s.retryTrial())
@@ -510,19 +516,20 @@ func (s *Server) expireTrial(version string, deadline time.Time, armed uint64) {
 		_ = s.finishTrial(r)
 		return
 	case st == trialLost:
-		log.Printf("the trial of config %s ended: its slot runs neither it nor config %s", r.Version, r.Previous)
+		err = s.dropLostTrial(r)
 	default:
 		log.Printf("config %s was not confirmed by its trial's deadline; rolling back to config %s", r.Version, r.Previous)
 		ctx, cancel := s.rollbackContext()
-		_, changed, err := s.rollbackConfig(ctx, r.Previous)
+		_, changed, rerr := s.rollbackConfig(ctx, r.Previous)
 		cancel()
-		if err != nil {
-			s.keepTrial(r, err, changed)
+		if rerr != nil {
+			s.keepTrial(r, rerr, changed)
 			return
 		}
+		err = s.endTrial()
 	}
 	// The deadline that fired is armed no longer, so a record that stays is tried again.
-	if err := s.endTrial(); err != nil {
+	if err != nil {
 		log.Printf("remove the record of the config's trial: %v; trying again in %v", err, s.retryTrial())
 		s.armTrial(r, s.retryTrial())
 	}
