@@ -402,6 +402,7 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 		reload = append(reload, unit)
 	}
 	byHand := actions{}
+	reload = s.inUnitOrder(ctx, reload)
 	if len(reload) > 0 {
 		if _, err := s.Run.Run(ctx, "systemctl", append([]string{"reload"}, reload...)...); err != nil {
 			byHand.reload = reload
@@ -467,6 +468,51 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 	}
 	slices.Sort(restarted)
 	return restarted, nil
+}
+
+// inUnitOrder sorts units so that each follows the units among them it is ordered after, by its
+// After= or their Before=, which systemd shows as its After. systemctl queues the job of each
+// unit it is given in a transaction of its own, one after the other, and systemd holds a job back
+// only for the jobs already queued: a job queued first runs at once, whatever its unit's order.
+// Each step takes the first unit that follows none of the units left; units whose order systemctl
+// does not show keep theirs.
+func (s *Server) inUnitOrder(ctx context.Context, units []string) []string {
+	if len(units) < 2 {
+		return units
+	}
+	out, err := s.Run.Run(ctx, "systemctl", append([]string{"show", "--property=Id,After"}, units...)...)
+	if err != nil {
+		log.Printf("the order of %s: %v; reloading them in the order given", strings.Join(units, " "), err)
+		return units
+	}
+	// systemctl shows each unit's properties as lines of name=value, a blank line between units.
+	after := map[string][]string{}
+	for block := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n\n") {
+		var id string
+		var deps []string
+		for line := range strings.SplitSeq(block, "\n") {
+			if v, ok := strings.CutPrefix(line, "Id="); ok {
+				id = v
+			} else if v, ok := strings.CutPrefix(line, "After="); ok {
+				deps = strings.Fields(v)
+			}
+		}
+		after[id] = deps
+	}
+	rest := slices.Clone(units)
+	sorted := make([]string, 0, len(units))
+	for len(rest) > 0 {
+		i := slices.IndexFunc(rest, func(u string) bool {
+			return !slices.ContainsFunc(after[u], func(d string) bool { return d != u && slices.Contains(rest, d) })
+		})
+		if i < 0 {
+			// A cycle, which systemd breaks by dropping a job of it.
+			return append(sorted, rest...)
+		}
+		sorted = append(sorted, rest[i])
+		rest = slices.Delete(rest, i, i+1)
+	}
+	return sorted
 }
 
 // hintText is a hint's text, followed by its file's while the file holds text; "" when its file

@@ -190,7 +190,9 @@ The diagram shows the decision for each effect and the order of the actions of a
 1. chalkd reloads, in one `systemctl reload`, the units of `reload` that are neither inactive nor
    failed, such as an active unit or one that is starting. An inactive unit reads its config when
    it starts, a failed one chalkd restarts in step 4, and a unit chalkd also restarts gets no
-   reload.
+   reload. systemctl queues the job of each unit it is given one at a time, and systemd holds a
+   job back only for jobs already queued. chalkd therefore names each unit after the units it
+   orders after, by its `After=` or their `Before=`, so the reloads keep the units' order.
 2. It runs the `run` commands, each once, in the order of their effects' names.
 3. It runs `systemctl reset-failed` on the units of `restart` and `reload` that failed. The new
    config may be what they lacked, systemd reloads no failed unit, and their earlier failures

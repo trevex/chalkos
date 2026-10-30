@@ -616,6 +616,28 @@ func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 	}
 }
 
+// TestApplyConfigReloadsInUnitOrder: chalkd hands systemctl the units to reload in their units'
+// order, each after those it is ordered after, as systemctl queues their jobs one by one and a
+// job queued first runs at once. A unit ordered against none of the others keeps its place.
+func TestApplyConfigReloadsInUnitOrder(t *testing.T) {
+	s, r := configServer(t)
+	write(t, s.Loader.Effects, `{
+	  "a": {"outputs": ["demo"], "reload": ["a.service", "b.service", "c.service", "d.service"]}
+	}`)
+	// a.service is ordered after c.service, which d.service's Before= orders after it, and after
+	// units outside the delivery.
+	r.Rules = append(r.Rules, tooltest.Rule{
+		Prefix: "systemctl show --property=Id,After a.service b.service c.service d.service",
+		Out:    "After=c.service sysinit.target\nId=a.service\n\nId=b.service\nAfter=\n\nAfter=d.service\nId=c.service\n\nId=d.service\nAfter=basic.target\n",
+	})
+	if _, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1)); err != nil {
+		t.Fatal(err)
+	}
+	if want := "systemctl reload b.service d.service c.service a.service"; !slices.Contains(r.Calls, want) {
+		t.Errorf("commands = %v, want %q", r.Calls, want)
+	}
+}
+
 // networkConfig is a networkd Network document, which the networkd output renders as a unit.
 const networkConfig = `---
 apiVersion: networkd.chalkos.dev/v1alpha1
