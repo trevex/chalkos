@@ -257,6 +257,7 @@ func TestBGPPerVRF(t *testing.T) {
 			[]string{"BGPPeer lab runs in the VRF lab: a peer's VRF needs a BGP document, which gives the router its AS number there"}},
 		{"a peer's interface in another VRF", replace(base, doc("BGPPeer", "fabric", `{"interface": "eth2", "remoteAS": "external", "families": {"ipv6": {}}}`)),
 			[]string{"BGPPeer fabric names the interface eth2, which a VRF document puts in another VRF than the peer's; give the peer that VRF or the interface another"}},
+		{"a peer of the default VRF on an interface no VRF holds", replace(base, doc("BGPPeer", "fabric", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)), nil},
 		{"a peer's interfaces in another VRF are no literal interface", replace(base, doc("BGPPeer", "fabric", `{"interfaces": ["eth2"], "remoteAS": "external", "families": {"ipv6": {}}}`)), nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
