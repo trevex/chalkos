@@ -1003,8 +1003,10 @@ in
   # the namespace, link and routes of a NAT64 that went. A second run changes nothing. With the VRF
   # example's ruleset, a guest's packet to the NAT64 prefix reaches guest's namespace past policies
   # and the conntrack zone, and a connection from the namespace's inner address leaves guest's
-  # uplink masqueraded to the uplink's address with its port. A VRF of another table than the
-  # file's fails the run after 30 s, keeps the link out of it and keeps the instance's routes. A
+  # uplink masqueraded to the uplink's address with its port. A link's address in an explicit
+  # pool fails the run before it changes anything. A VRF of another table than two files' fails
+  # the run after 30 s once, keeps the links out of it and keeps the instances' routes. A device
+  # of another kind of a link's name fails the run and stays. A
   # link whose namespace went while a process held it is made anew. Table 300 has a name, which ip
   # prints unless asked for numbers. A NAT64 moved into the default VRF with another prefix and a
   # pool of one address leaves guest and table 300, its pool stays routed, and its instance is
@@ -1241,19 +1243,50 @@ in
         [ "$got" = 203.0.113.1:61500 ] || fail "guest's uplink peer saw $got, not the uplink's address with the NAT64's port"
         nft delete table inet chalkos
 
-        # The edge's VRF has another table: the run fails after waiting for it, leaves the edge's
-        # link out of the VRF and guest as it was, and keeps the edge's routes.
+        # A link of the router holds an address of the edge's pool, as from DHCP: the run fails
+        # before it changes anything, naming the NAT64, the entry and the link.
+        ip addr add 192.0.2.253/24 dev eth4
+        state >before.txt
+        if ${ExecReload} 2>err.log; then fail "a run succeeded with a pool that holds a link's address"; fi
+        grep -q "NAT64 edge: the pool entry 192.0.2.252/30 holds 192.0.2.253, an address of the link eth4" err.log ||
+          fail "the run did not name the NAT64, the entry and the link: $(cat err.log)"
+        unchanged "a run refused for a link's address changed the links, routes or instances"
+        ip addr del 192.0.2.253/24 dev eth4
+
+        # The edge's and guest's VRF has another table: the run fails after waiting for it once,
+        # leaves the links out of the VRF, and keeps the edge's routes. guest's file names table
+        # 254 as the edge's does, so guest's route in table 300 goes.
         ip link add wrong type vrf table 301
         ip link set wrong up
         cp ${dir}/edge.veth edge.veth
+        cp ${dir}/guest.veth guest.veth
         jq '.vrf = "wrong"' edge.veth >${dir}/edge.veth
+        jq '.vrf = "wrong" | .table = 254' guest.veth >${dir}/guest.veth
         state >before.txt
+        start=$(date +%s)
         if ${ExecReload} 2>err.log; then fail "a run succeeded with a VRF that lacks its table"; fi
+        took=$(($(date +%s) - start))
+        [ "$took" -lt 50 ] || fail "two NAT64s of a VRF that lacks its table waited $took s"
         grep -q "VRF wrong has no table 254 after 30 s" err.log || fail "the run did not name the VRF: $(cat err.log)"
         grep -q "failed to bring up the namespace and link of edge" err.log || fail "the run did not name the edge: $(cat err.log)"
-        unchanged "a failed run changed the links, routes or instances"
+        grep -q "failed to bring up the namespace and link of guest" err.log || fail "the run did not name guest: $(cat err.log)"
+        state >now.txt
+        grep -v "dev n64-guest table guest-table proto 64" before.txt | diff - now.txt >&2 ||
+          fail "a failed run changed the links, routes or instances"
         cp edge.veth ${dir}/edge.veth
+        cp guest.veth ${dir}/guest.veth
         ip link del wrong
+
+        # A device of another kind takes guest's link's name: the run leaves it and fails guest,
+        # and with the device gone makes the link anew.
+        ip link del n64-guest
+        ip link add n64-guest type dummy
+        if ${ExecReload} 2>err.log; then fail "a run succeeded beside a dummy device of guest's link's name"; fi
+        grep -q "n64-guest is a device of kind dummy" err.log || fail "the run did not name the device: $(cat err.log)"
+        [ "$(ip -d -j link show n64-guest | jq -r '.[0].linkinfo.info_kind')" = dummy ] || fail "the run removed the dummy device"
+        ip link del n64-guest
+        ${ExecReload} || fail "a run after the dummy device went failed"
+        inside guest ip link show dev nat64 >/dev/null || fail "guest's namespace lacks the link's end after the dummy device went"
 
         # guest's namespace goes while a process holds it, which keeps its link: the next run makes
         # the link anew into the new namespace.
