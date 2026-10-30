@@ -621,8 +621,8 @@ func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 // order, each after those it is ordered after, as systemctl queues their jobs one by one and a
 // job queued first runs at once. After names a unit by its main name, which a unit given by an
 // alias matches through its Names. A unit ordered against none of the others keeps its place,
-// and the units of a cycle keep theirs after the others; units systemctl shows no order of keep
-// the order given.
+// and the units of a cycle keep theirs after the others. The units keep the order given when
+// systemctl does not answer, shows too few units or shows others than those asked for.
 func TestApplyConfigActsInUnitOrder(t *testing.T) {
 	const effects = `{
 	  "reload": {"outputs": ["demo"], "reload": ["a.service", "b.service", "c.service", "d.service"]},
@@ -654,6 +654,13 @@ func TestApplyConfigActsInUnitOrder(t *testing.T) {
 		{
 			name:   "no answer",
 			err:    errors.New("exit status 1"),
+			reload: "a.service b.service c.service d.service",
+			retry:  "x.service y.service",
+		},
+		{
+			// systemctl shows the units a glob matches in place of the glob.
+			name:   "other units",
+			out:    "Names=a@1.service\nAfter=d.service\n\nNames=b.service\nAfter=\n\nNames=c.service\nAfter=\n\nNames=d.service\nAfter=\n\nNames=x.service\nAfter=y.service\n\nNames=y.service\nAfter=\n",
 			reload: "a.service b.service c.service d.service",
 			retry:  "x.service y.service",
 		},

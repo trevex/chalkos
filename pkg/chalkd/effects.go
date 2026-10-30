@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -484,9 +485,10 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 //
 // systemctl names the units of After by their main names, which a unit given by an alias matches
 // through its Names. Each step of the sort takes the first unit that follows none of the units
-// left, so units ordered against none of the others keep their place. The units of a cycle keep
-// theirs after the others, and the units of every list keep the order given when systemctl does
-// not answer.
+// left, so units ordered against none of the others keep their place. Once only units that follow
+// one another in a cycle, or follow such units, are left, they all keep their order, after the
+// others. Every list keeps the order given when systemctl does not answer, or answers for other
+// units than those asked for, as for a glob.
 func (s *Server) unitOrder(ctx context.Context, lists ...[]string) func([]string) []string {
 	keep := func(units []string) []string { return units }
 	var units []string
@@ -509,20 +511,27 @@ func (s *Server) unitOrder(ctx context.Context, lists ...[]string) func([]string
 	if err == nil && len(blocks) != len(units) {
 		err = fmt.Errorf("systemctl showed %d units", len(blocks))
 	}
+	names := map[string][]string{}
+	after := map[string][]string{}
+	if err == nil {
+		for i, block := range blocks {
+			for line := range strings.SplitSeq(block, "\n") {
+				if v, ok := strings.CutPrefix(line, "Names="); ok {
+					names[units[i]] = strings.Fields(v)
+				} else if v, ok := strings.CutPrefix(line, "After="); ok {
+					after[units[i]] = strings.Fields(v)
+				}
+			}
+			// A glob, which an effect may name, shows the units it matches instead.
+			if !slices.Contains(names[units[i]], units[i]) {
+				err = fmt.Errorf("systemctl showed %s where %s was asked for", cmp.Or(strings.Join(names[units[i]], " "), "no unit"), units[i])
+				break
+			}
+		}
+	}
 	if err != nil {
 		log.Printf("the order of %s: %v; acting on them in the order given", strings.Join(units, " "), err)
 		return keep
-	}
-	names := map[string][]string{}
-	after := map[string][]string{}
-	for i, block := range blocks {
-		for line := range strings.SplitSeq(block, "\n") {
-			if v, ok := strings.CutPrefix(line, "Names="); ok {
-				names[units[i]] = strings.Fields(v)
-			} else if v, ok := strings.CutPrefix(line, "After="); ok {
-				after[units[i]] = strings.Fields(v)
-			}
-		}
 	}
 	// follows tells whether the unit u is ordered after the unit v.
 	follows := func(u, v string) bool {
