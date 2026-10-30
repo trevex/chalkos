@@ -63,9 +63,10 @@ func (m vrfMembership) linkVRF(link string) (string, error) {
 }
 
 // vrfMember is a glob of links a VRF holds: an interface of its document, or a word of the Name=
-// of the Network document network, whose own VRF= names the VRF.
+// of the Network document network, whose own VRF= names the VRF. text is the glob as the
+// document gives it.
 type vrfMember struct {
-	vrf, glob, network string
+	vrf, glob, text, network string
 }
 
 // networkUnit is a .network unit as networkd picks it for a link: the first one by file name
@@ -115,7 +116,7 @@ func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (vrfMembership, erro
 			if !interfaceName.MatchString(i) {
 				return none, fmt.Errorf("%s: %q is no interface name or glob", what, i)
 			}
-			members = append(members, vrfMember{vrf: v.Name, glob: i})
+			members = append(members, vrfMember{vrf: v.Name, glob: i, text: i})
 		}
 	}
 	for _, m := range members {
@@ -132,7 +133,7 @@ func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (vrfMembership, erro
 	for _, u := range units {
 		if u.vrf != "" {
 			for _, w := range u.match.positives() {
-				members = append(members, vrfMember{vrf: u.vrf, glob: w.glob, network: u.name})
+				members = append(members, vrfMember{vrf: u.vrf, glob: w.glob, text: w.text, network: u.name})
 			}
 		}
 	}
@@ -268,34 +269,40 @@ func checkVRFMembers(members []vrfMember) error {
 // the links from later ones.
 func firstNetworks(units []networkUnit, members []vrfMember) (map[string]string, error) {
 	networks := map[string]string{}
-	take := func(u networkUnit, vrf string) error {
+	take := func(u networkUnit, m vrfMember, after bool) error {
 		if u.device {
 			return nil
 		}
-		if other, ok := networks[u.name]; ok && other != vrf {
-			in := []string{other, vrf}
+		if m.network != "" && u.name != m.network && u.vrf != m.vrf {
+			return shadowsVRF(units, u, m, after)
+		}
+		if other, ok := networks[u.name]; ok && other != m.vrf {
+			in := []string{other, m.vrf}
 			slices.Sort(in)
 			return fmt.Errorf("Network %s matches links of %s; the links of one Network are in one VRF", u.name, vrfList(in))
 		}
-		networks[u.name] = vrf
+		networks[u.name] = m.vrf
 		return nil
 	}
 	for _, m := range members {
+		after := false
 		if isLiteral(m.glob) {
 			for _, u := range candidates(units, m.glob) {
-				if err := take(u, m.vrf); err != nil {
+				if err := take(u, m, after); err != nil {
 					return nil, err
 				}
+				after = after || u.name == m.network
 			}
 			continue
 		}
 		var before []nameMatch
 		for _, u := range units {
 			if u.match.mayMatch(m.glob) && !shadowed(u.match, m.glob, before) {
-				if err := take(u, m.vrf); err != nil {
+				if err := take(u, m, after); err != nil {
 					return nil, err
 				}
 			}
+			after = after || u.name == m.network
 			if u.narrowed {
 				continue
 			}
@@ -306,6 +313,29 @@ func firstNetworks(units []networkUnit, members []vrfMember) (map[string]string,
 		}
 	}
 	return networks, nil
+}
+
+// shadowsVRF is the refusal of the unit u, of no VRF= of m's VRF, that may match links of the
+// member m of a Network's own VRF= first: before that Network, or after it when the Network's
+// other [Match] keys or negated words may leave the links to u. VRF= on u would put the links in
+// the VRF where networkd does not, so the renderer refuses rather than give u one.
+func shadowsVRF(units []networkUnit, u networkUnit, m vrfMember, after bool) error {
+	links, them := "links of "+m.text, "them"
+	if isLiteral(m.glob) {
+		links, them = m.glob, "it"
+	}
+	if after {
+		owner := "Network " + m.network
+		if i := slices.IndexFunc(units, func(o networkUnit) bool { return o.name == m.network }); i >= 0 && units[i].narrowed {
+			owner = "the other [Match] keys of Network " + m.network
+		}
+		return fmt.Errorf("Network %s matches %s when %s do not, and networkd then does not apply %s's VRF=%s to %s; give %s VRF=%s", u.name, links, owner, m.network, m.vrf, them, u.name, m.vrf)
+	}
+	first, applies := "is the first", "never applies"
+	if u.narrowed {
+		first, applies = "may be the first", "may not apply"
+	}
+	return fmt.Errorf("Network %s %s to match %s, so networkd %s Network %s's VRF=%s to %s; give %s VRF=%s or drop %s", u.name, first, links, applies, m.network, m.vrf, them, u.name, m.vrf, m.network)
 }
 
 // shadowed reports whether units before one of Name= m match every link that m's words share
@@ -411,8 +441,9 @@ func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 }
 
 // withVRFUnits is byKind with each VRF's NetDev and Network documents added and VRF= set in each
-// Network document that networks puts in a VRF, of a document or not. It refuses a networkd
-// document of a VRF unit's name and a NetDev that creates a device of a VRF's name.
+// Network document that networks puts in a VRF without its own VRF= of it, which only a VRF
+// document's interfaces do. It refuses a networkd document of a VRF unit's name and a NetDev
+// that creates a device of a VRF's name.
 func withVRFUnits(vrfs []named[vrfSpec], networks map[string]string, byKind map[string]any) (map[string]any, error) {
 	isVRF := func(name string) bool {
 		return slices.ContainsFunc(vrfs, func(v named[vrfSpec]) bool { return v.Name == name })

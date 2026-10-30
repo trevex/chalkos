@@ -34,8 +34,7 @@ func TestRouterNetworkd(t *testing.T) {
 	}
 }
 
-// A Network whose Name= globs a VRF's members, or whose own VRF= names the VRF, gets VRF= once,
-// and so does a Network before one whose VRF= names a VRF without a document;
+// A Network whose Name= globs a VRF's members, or whose own VRF= names the VRF, gets VRF= once;
 // a Network that a member's earlier Network shadows gets none, and an empty VRF= resets the
 // values before it.
 func TestRouterNetworkdMembers(t *testing.T) {
@@ -49,8 +48,6 @@ func TestRouterNetworkdMembers(t *testing.T) {
 			document(t, "Network", "20-swp", `{"match": {"name": "swp*"}}`),
 			document(t, "Network", "30-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "blue"}}`),
 			document(t, "Network", "40-eth3", `{"match": {"name": "eth3"}, "network": {"vrf": ["blue", ""]}}`),
-			document(t, "Network", "50-eth5", `{"match": {"name": "eth5"}}`),
-			document(t, "Network", "60-eth5", `{"match": {"name": "eth5"}, "network": {"vrf": "mgmt"}}`),
 			document(t, "Network", "90-eth3", `{"match": {"name": "eth3"}}`),
 			document(t, "Network", "99-all", `{"match": {"name": "*"}, "network": {"dhcp": "yes"}}`),
 		},
@@ -63,7 +60,6 @@ func TestRouterNetworkdMembers(t *testing.T) {
 		"20-swp.network":  "[Match]\nName=swp*\n\n[Network]\nVRF=tenant\n\n",
 		"30-eth1.network": "[Match]\nName=eth1\n\n[Network]\nVRF=blue\n\n",
 		"40-eth3.network": "[Match]\nName=eth3\n\n[Network]\nVRF=blue\nVRF=\nVRF=tenant\n\n",
-		"50-eth5.network": "[Match]\nName=eth5\n\n[Network]\nVRF=mgmt\n\n",
 		"90-eth3.network": "[Match]\nName=eth3\n\n",
 		"99-all.network":  "[Match]\nName=*\n\n[Network]\nDHCP=yes\n\n",
 	} {
@@ -184,9 +180,17 @@ func TestVRFRefusals(t *testing.T) {
 		"a Network's VRF= of another VRF": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["eth1"]}`)}, "Network": {net("20-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "b"}}`)}},
 			"Network 20-eth1 gives its links VRF=b, but VRF a holds them"},
 		"a Network of a VRF member and other links, before the VRF= naming it": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100}`)}, "Network": {net("10-a", `{"match": {"name": "eth1 eth2"}}`), net("20-b", `{"match": {"name": "eth1"}, "network": {"vrf": "tenant"}}`)}},
-			"Network 10-a matches links of no VRF and VRF tenant"},
+			"Network 10-a is the first to match eth1, so networkd never applies Network 20-b's VRF=tenant to it"},
 		"a Network of a VRF member and other links, after the VRF= naming it": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100}`)}, "Network": {net("20-b", `{"match": {"name": "eth1"}, "network": {"vrf": "tenant"}}`), net("10-a", `{"match": {"name": "eth1 eth2"}}`)}},
-			"Network 10-a matches links of no VRF and VRF tenant"},
+			"Network 10-a is the first to match eth1, so networkd never applies Network 20-b's VRF=tenant to it"},
+		"a Network before the one whose VRF= names its link": {map[string][]any{"Network": {net("10-a", `{"match": {"name": "eth5"}}`), net("20-b", `{"match": {"name": "eth5"}, "network": {"vrf": "mgmt"}}`)}},
+			"Network 10-a is the first to match eth5, so networkd never applies Network 20-b's VRF=mgmt to it; give 10-a VRF=mgmt or drop 20-b"},
+		"a Network before the one whose VRF= globs its link": {map[string][]any{"Network": {net("10-a", `{"match": {"name": "eth5"}}`), net("20-b", `{"match": {"name": "eth*"}, "network": {"vrf": "mgmt"}}`)}},
+			"Network 10-a is the first to match links of eth*, so networkd never applies Network 20-b's VRF=mgmt to them; give 10-a VRF=mgmt or drop 20-b"},
+		"a Network of other keys before the one whose VRF= names its link": {map[string][]any{"Network": {net("10-a", `{"match": {"name": "eth5", "macAddress": "02:00:00:00:00:01"}}`), net("20-b", `{"match": {"name": "eth5"}, "network": {"vrf": "mgmt"}}`)}},
+			"Network 10-a may be the first to match eth5, so networkd may not apply Network 20-b's VRF=mgmt to it; give 10-a VRF=mgmt or drop 20-b"},
+		"a Network after one of other keys whose VRF= names its link": {map[string][]any{"Network": {net("10-a", `{"match": {"name": "eth5", "macAddress": "02:00:00:00:00:01"}, "network": {"vrf": "mgmt"}}`), net("20-b", `{"match": {"name": "eth5"}}`)}},
+			"Network 20-b matches eth5 when the other [Match] keys of Network 10-a do not, and networkd then does not apply 10-a's VRF=mgmt to it; give 20-b VRF=mgmt"},
 		"two Networks' VRF= of one link": {map[string][]any{"Network": {net("20-b", `{"match": {"name": "eth*"}, "network": {"vrf": "y"}}`), net("10-a", `{"match": {"name": "eth1"}, "network": {"vrf": "x"}}`)}},
 			"Network 10-a gives VRF=x and Network 20-b VRF=y to links both may match"},
 		"a Network glob of a VRF member and other links": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100, "interfaces": ["swp1"]}`)}, "Network": {net("10-swp", `{"match": {"name": "swp*"}}`)}},
