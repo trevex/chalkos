@@ -140,9 +140,9 @@ first, and deletes the VRF only once they went. A run that fails between the two
 again and flushes once more.
 
 After it removes a VRF, `chalkos-vrf.service` reloads a running networkd, which creates the VRF
-anew with its new table and puts its links back into it. It also reloads a running
-`chalkos-resolvers.service`, which restarts the VRF's resolver on the new device. A change of `table` therefore ends the
-sessions of the VRF, and they start over.
+anew with its new table and puts its links back into it. A change of `table` therefore ends the
+sessions of the VRF, and they start over. `chalkos-vrf.service` also reloads a running
+`chalkos-resolvers.service`, which restarts the VRF's resolver on the new device.
 
 The effect `vrf` reloads `chalkos-vrf.service` whenever the output `networkd` changes. chalkd
 reloads the units of one delivery in one `systemctl reload`, and the units' order applies:
