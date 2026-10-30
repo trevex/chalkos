@@ -1,3 +1,10 @@
+# 00-n64-guest.network
+[Match]
+Name=n64-guest
+
+[Link]
+Unmanaged=yes
+
 # 00-vrf-guest.netdev
 [NetDev]
 Kind=vrf
@@ -110,6 +117,7 @@ Name=eth3
 
 [Network]
 Address=192.0.2.1/24
+Address=2001:db8:3::1/64
 IPv6AcceptRA=false
 VRF=guest
 

@@ -6,8 +6,10 @@
 # through a policy, so that it routes them, but no FirewallPolicy forwards between its zone mgmt
 # and tenant. guest holds a guest LAN on eth3 and its own uplink on eth4, with the addresses of
 # eth0 and of eth1 and a default route through the uplink's gateway; its conntrack zone keeps its
-# connections apart from theirs, and it masquerades and forwards a port of its own. The default
-# VRF keeps the management link eth0 and the node API.
+# connections apart from theirs, and it masquerades and forwards a port of its own. Its IPv6-only
+# guests reach the IPv4 internet through guest's own NAT64, which leaves from the uplink's
+# address, and ask guest's own resolver, with DNS64. The default VRF keeps the management link
+# eth0 and the node API.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Router
 metadata: {name: router}
@@ -40,7 +42,7 @@ kind: Network
 metadata: {name: 40-guest-lan}
 spec:
   match: {name: eth3}
-  network: {address: [192.0.2.1/24], ipv6AcceptRA: false}
+  network: {address: [192.0.2.1/24, "2001:db8:3::1/64"], ipv6AcceptRA: false}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
@@ -211,3 +213,17 @@ spec:
   in: {zone: guest-wan}
   match: {protocol: tcp, destinationPorts: [8080]}
   to: {address: 192.0.2.10, port: 80}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NAT64
+metadata: {name: guest}
+spec: {vrf: guest}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Resolver
+metadata: {name: guest}
+spec:
+  vrf: guest
+  listen: ["2001:db8:3::1"]
+  allow: ["2001:db8:3::/64"]
+  dns64: {prefix: "64:ff9b::/96"}
