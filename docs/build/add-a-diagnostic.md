@@ -78,7 +78,8 @@ chalkd runs each call as a transient systemd unit. The unit runs:
 - with only the `capabilities` given, as its bounding and ambient sets, and the `groups` given;
 - on a read-only file system with a private `/tmp`, without home directories, devices, STATE,
   `/var/lib`, or the config, credentials and Kubernetes keys chalkd writes below `/run/chalkos`;
-- in the node's network, with Unix, IPv4, IPv6 and netlink sockets alone;
+- in the node's network, or in the network namespace that `networkNamespace` names, with Unix,
+  IPv4, IPv6 and netlink sockets alone;
 - with at most 256 MiB of memory and 64 tasks;
 - for at most `timeout`, `30s` by default and `10m` at most, after which systemd stops it.
 
@@ -90,6 +91,22 @@ bird makes its control socket writable for its group, `bird`. `groups = [ "bird"
 reach the socket. A daemon whose socket only root may use needs another way in. The base
 diagnostic `nft-ruleset` gets `CAP_NET_ADMIN` to read nftables, and `ping` gets `CAP_NET_RAW`.
 
+## Run in a network namespace
+
+A service that runs in a network namespace of its own answers there alone. `networkNamespace`
+names such a namespace below `/run/netns`, and may name parameters as `command` does. chalkd then
+runs the unit with `NetworkNamespacePath=/run/netns/<name>`. The router's `nat64-sessions` reads
+a NAT64's sessions in the NAT64's namespace:
+
+```nix
+networkNamespace = "nat64-{instance}";
+```
+
+The name holds letters, digits, `_`, `.` and `-`, and starts with neither `.` nor `-`. A
+parameter that it names is not `optional`. chalkd refuses a call whose values fill the name to
+anything else. A call whose namespace does not exist fails before the command runs, with
+`failed_precondition: diagnostic nat64-sessions: the network namespace nat64-guest does not exist`.
+
 ## The build checks the declaration
 
 The image fails to build when chalkd could not run the declaration:
@@ -98,6 +115,7 @@ The image fails to build when chalkd could not run the declaration:
   64 characters;
 - the first argument is no program of the store;
 - a placeholder names no parameter, or a parameter has no placeholder;
+- the network namespace is not of the form above, or names an optional parameter;
 - a parameter is optional and has a default, or its default is not of its type;
 - a group is none of the image's;
 - the timeout is not from `1s` to `10m`, a capability is none of Linux's, or a regex does not
