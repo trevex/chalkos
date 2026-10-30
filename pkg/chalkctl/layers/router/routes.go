@@ -61,6 +61,10 @@ func nodeRoutes(h layer.Host, ctx context.Context, f routesFlags, pos []string) 
 		return err
 	}
 	r := resp.Msg
+	// A node whose image does not know VRFs ignores vrf and answers with the main table.
+	if f.vrf != "" && r.Vrf != f.vrf {
+		return fmt.Errorf("the node's image does not know VRFs, so it cannot list the routes of VRF %s", f.vrf)
+	}
 	w := h.Table()
 	fmt.Fprintln(w, "DESTINATION\tTYPE\tPROTOCOL\tTABLE\tMETRIC\tNEXT HOPS")
 	for _, k := range r.Kernel {

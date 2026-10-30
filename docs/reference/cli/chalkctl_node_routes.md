@@ -14,9 +14,9 @@ Shows the routes of a node of a router image: the routes in its kernel, of the m
 the BGP instance of that VRF selected, the best of a prefix marked *. A path the instance
 imports from another VRF names that VRF as its peer. With a prefix, it shows the routes to that
 range and to ranges within it; with --protocol, the kernel's routes of that protocol alone, and
-BGP's paths only for bgp. --vrf and --table exclude each other. A node of another image answers
-that the router layer is not in its image. The command needs a reader client file or the
-secrets file.
+BGP's paths only for bgp. --vrf and --table exclude each other, and --vrf fails on a node whose
+image does not know VRFs. A node of another image answers that the router layer is not in its
+image. The command needs a reader client file or the secrets file.
 
 ## Flags
 

@@ -3,6 +3,7 @@ package chalkctl
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,8 @@ import (
 
 	"connectrpc.com/connect"
 
+	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
+	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/layers"
@@ -172,6 +175,43 @@ type runsWith struct {
 }
 
 func (n runsWith) Runner() tool.Runner { return n.r }
+
+// withoutVRFs answers Routes as the router layer of an image without VRFs does: it ignores the
+// request's VRF, lists the main table and the default instance's paths, and names no VRF.
+type withoutVRFs struct{ *routerplugin.Plugin }
+
+func (p withoutVRFs) Handler(opts ...connect.HandlerOption) (string, http.Handler) {
+	return routerv1connect.NewRouterServiceHandler(p, opts...)
+}
+
+func (p withoutVRFs) Routes(ctx context.Context, req *connect.Request[routerv1.RoutesRequest]) (*connect.Response[routerv1.RoutesResponse], error) {
+	req.Msg.Vrf = ""
+	resp, err := p.Plugin.Routes(ctx, req)
+	if err == nil {
+		resp.Msg.Vrf = ""
+	}
+	return resp, err
+}
+
+// node routes --vrf refuses the answer of a node whose image does not know VRFs, which lists the
+// main table instead of the VRF's.
+func TestNodeRoutesOfAVRFWithoutVRFs(t *testing.T) {
+	ta := newTestApp(t)
+	current, _ := json.Marshal(ta.identity(t))
+	s, _ := installedNode(t, ta, current)
+	r := &tooltest.Runner{Rules: []tooltest.Rule{{Prefix: "vtysh", Out: "{}"}}}
+	withPlugins(t, s, layers.Of(layers.Router), withoutVRFs{routerplugin.New(runsWith{s, r}, routerplugin.Options{
+		KernelRoutes: func() ([]*router.KernelRoute, error) { return nil, nil },
+	})})
+	addr := ta.startNode(t, s)
+	err := ta.run(context.Background(), ta.args([]string{"node", "routes", "n1", "--vrf", "tenant"}, addr))
+	if want := "the node's image does not know VRFs"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+	if out := ta.stdout.String(); out != "" {
+		t.Errorf("stdout:\n%s\nwant nothing", out)
+	}
+}
 
 // node routes --vrf prints a VRF's table and its instance's paths; a path the instance imports
 // names the VRF it came from as its peer.

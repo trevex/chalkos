@@ -265,9 +265,9 @@ BGP PREFIX         BEST  AS PATH  PEER        NEXT HOPS                 LOCAL PR
 ```
 
 The route sits in the main table, and its next hop is on `swp1`, a link of `tenant`. `--vrf` and
-`--table` exclude each other, and `--vrf default` is the main table. The diagnostics
-`bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers` take `vrf`, which is `default` when it
-is left out:
+`--table` exclude each other, and `--vrf default` is the main table. A node whose image does
+not know VRFs cannot list a VRF's routes, and `--vrf` fails on it. The diagnostics `bgp-summary`,
+`bgp-neighbor`, `bgp-route` and `bfd-peers` take `vrf`, which is `default` when it is left out:
 
 ```sh
 chalkctl node diag r1 --secrets secrets.age bgp-summary vrf=tenant
