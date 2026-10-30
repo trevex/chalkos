@@ -628,13 +628,15 @@ in
   # masquerade, destination NAT and the strict reverse-path filter. A reload replaces the table
   # alone, in one transaction, and keeps it when nft refuses the new one. The leaf example, loaded
   # as at boot, forwards everything. The VRF example's ruleset, with its links in VRFs as networkd
-  # leaves them and the routes its imports leak, forwards and masquerades between zones of whole
-  # VRFs in both families, opens the transit's BGP port in its VRF alone, masquerades and
+  # leaves them and the routes its imports leak, forwards and masquerades in IPv4 from the zone of
+  # VRF tenant to that of VRF internet and nothing back, forwards nothing between mgmt and tenant
+  # in IPv6, whose routes the default VRF imports, drops the internet's connections to the
+  # router's other ports, opens the transit's BGP port in its VRF alone, masquerades and
   # translates in guest, whose addresses the default VRF and internet also use, and keeps guest's
   # connections in their conntrack zone, so that a guest host of a management host's address
   # cannot pass as the management host's connection, as it does without the zone. The loose
-  # reverse-path filter drops a source of either family that only the default VRF routes, and
-  # passes link-local sources in a VRF.
+  # reverse-path filter drops a source of either family that only the default VRF routes, passes
+  # it once tenant's table routes it, and passes link-local sources in a VRF.
   router-firewall =
     let
       inherit (checkLib.router.config.systemd.services.chalkos-firewall.serviceConfig)
@@ -843,19 +845,24 @@ in
       vrflink eth2 tenant "$tenant" 198.51.100.1 198.51.100.10
       vrflink eth3 guest "$guest" 192.0.2.1 192.0.2.10
       vrflink eth4 guest "$gisp" 203.0.113.1 203.0.113.254
+      # IPv6 of mgmt, of internet's uplink and of tenant, in the range of the policy from-tenant.
+      ip addr add 2001:db8:10::1/64 dev eth0 nodad
       ip addr add 2001:db8:1::1/64 dev eth1 nodad
-      ip addr add 2001:db8:2::1/64 dev eth2 nodad
+      ip addr add 2001:db8:100::1/64 dev eth2 nodad
+      on_mgmt ip addr add 2001:db8:10::10/64 dev eth0 nodad
+      on_mgmt ip route add default via 2001:db8:10::1
       on_isp ip addr add 2001:db8:1::254/64 dev eth0 nodad
-      on_isp ip route add 2001:db8:2::/64 via 2001:db8:1::1
-      on_tenant ip addr add 2001:db8:2::10/64 dev eth0 nodad
-      on_tenant ip route add default via 2001:db8:2::1
-      # What the imports leak: internet's uplink into tenant, tenant's LAN into internet.
+      on_isp ip route add default via 2001:db8:1::1
+      on_tenant ip addr add 2001:db8:100::10/64 dev eth0 nodad
+      on_tenant ip route add default via 2001:db8:100::1
+      # What the imports leak: in IPv4 internet's uplink into tenant and tenant's LAN into
+      # internet, in IPv6 tenant's LAN into the default VRF, as from-tenant accepts it.
       ip -4 route add 203.0.113.0/24 dev eth1 table 200
-      ip -6 route add 2001:db8:1::/64 dev eth1 table 200
       ip -4 route add 198.51.100.0/24 dev eth2 table 100
-      ip -6 route add 2001:db8:2::/64 dev eth2 table 100
-      # guest's default route through its uplink's gateway.
+      ip -6 route add 2001:db8:100::/64 dev eth2
+      # guest's default route through its uplink's gateway, behind which lies 198.18.0.1.
       ip -4 route add default via 203.0.113.254 dev eth4 table 300
+      on_gisp ip addr add 198.18.0.1/32 dev lo
       # Ranges the default VRF alone routes, which tenant's spoofed sources take.
       ip -4 route add 10.99.0.0/24 dev eth0
       ip -6 route add 2001:db8:99::/64 dev eth0
@@ -863,6 +870,7 @@ in
         $ns socat TCP4-LISTEN:80,fork,reuseaddr EXEC:${whoami} &
         $ns socat TCP6-LISTEN:80,fork,reuseaddr,ipv6only=1 EXEC:${whoami} &
       done
+      on_mgmt socat TCP6-LISTEN:80,fork,reuseaddr,ipv6only=1 EXEC:${whoami} &
       on_guest socat TCP4-LISTEN:80,fork,reuseaddr EXEC:${whoami} &
       on_gisp socat TCP4-LISTEN:80,fork,reuseaddr EXEC:${whoami} &
       # BGP's port in internet and in guest, whose uplink peer has the transit's address.
@@ -870,31 +878,37 @@ in
       socat TCP4-LISTEN:179,fork,reuseaddr,so-bindtodevice=guest /dev/null &
       for try in $(seq 100); do
         [ "$(ss -Hltn sport = :179 | wc -l)" = 2 ] && [ "$(on_isp ss -Hltn | wc -l)" = 2 ] && [ "$(on_tenant ss -Hltn | wc -l)" = 2 ] &&
-          [ "$(on_guest ss -Hltn | wc -l)" = 1 ] && [ "$(on_gisp ss -Hltn | wc -l)" = 1 ] && break
+          [ "$(on_mgmt ss -Hltn | wc -l)" = 1 ] && [ "$(on_guest ss -Hltn | wc -l)" = 1 ] && [ "$(on_gisp ss -Hltn | wc -l)" = 1 ] && break
         [ "$try" != 100 ] || fail "the VRF phase's listeners did not start"
         sleep 0.1
       done
-      # Counts what the input chain accepted on port 22, at a later priority, what reached input
-      # from tenant's spoofed sources, and the forwarded packets of conntrack zone 1.
+      # Counts what the input chain accepted on port 22 and the forward chain between mgmt and
+      # tenant, at a later priority, what reached input from tenant's spoofed sources, and the
+      # forwarded packets of conntrack zone 1.
       nft -f - <<'NFT'
       table inet passed {
         counter mgmt22 {}
         counter guest22 {}
+        counter internet22 {}
+        counter mgmttenant {}
         counter spoofed {}
         counter zoned {}
         chain input {
           type filter hook input priority filter + 10; policy accept;
           iifname "eth0" tcp dport 22 counter name mgmt22
           iifname "guest" tcp dport 22 counter name guest22
+          iifname "internet" tcp dport 22 counter name internet22
         }
         chain before {
           type filter hook input priority filter - 10; policy accept;
-          ip saddr 10.99.0.99 counter name spoofed
-          ip6 saddr 2001:db8:99::99 counter name spoofed
+          ip saddr 10.99.0.99 icmp type echo-request counter name spoofed
+          ip6 saddr 2001:db8:99::99 icmpv6 type echo-request counter name spoofed
         }
         chain forward {
           type filter hook forward priority filter + 10; policy accept;
           ct zone 1 counter name zoned
+          iifname "eth0" oifname "eth2" counter name mgmttenant
+          iifname "tenant" oifname "eth0" counter name mgmttenant
         }
       }
       NFT
@@ -902,18 +916,25 @@ in
       ${ExecReload} || fail "chalkos-firewall did not reload the VRF ruleset"
       none() { nft list counter inet passed "$1" | grep -q 'packets 0 '; }
 
-      # tenant reaches the internet by the leaked routes, masqueraded out of internet in IPv4 and
-      # unchanged in IPv6; the internet reaches neither the tenant nor the router's other ports.
+      # tenant reaches the internet by the leaked routes, masqueraded out of internet; the
+      # internet reaches neither the tenant nor the router's other ports, which the input chain
+      # drops before a later chain counts them.
       [ "$(seen on_tenant 203.0.113.254)" = 203.0.113.1 ] || fail "tenant's IPv4 was not masqueraded out of internet"
-      [ "$(seen on_tenant '[2001:db8:1::254]')" = '[2001:0db8:0002:0000:0000:0000:0000:0010]' ] || fail "tenant's IPv6 did not reach internet unchanged"
       refused on_isp 198.51.100.10 80
-      refused on_isp '[2001:db8:2::10]' 80
       refused on_isp 203.0.113.1 22
+      refused on_isp '[2001:db8:1::1]' 22
+      none internet22 || fail "the input chain passed the internet's connections to port 22"
+      # The default VRF routes tenant's IPv6, but no policy forwards between mgmt and tenant;
+      # tenant's table holds no route to mgmt.
+      refused on_mgmt '[2001:db8:100::10]' 80
+      refused on_tenant '[2001:db8:10::10]' 80
+      none mgmttenant || fail "the forward chain passed packets between mgmt and tenant"
       # The transit's BGP port opens in internet alone: guest's uplink peer has its address.
       accepted on_isp 203.0.113.1 179
       refused on_gisp 203.0.113.1 179
       # guest masquerades out of eth4 and forwards 8080 to its LAN, in its conntrack zone.
       [ "$(seen on_guest 203.0.113.254)" = 203.0.113.1 ] || fail "guest's IPv4 was not masqueraded out of eth4"
+      [ "$(seen on_guest 198.18.0.1)" = 203.0.113.1 ] || fail "guest did not reach past its uplink's gateway"
       [ "$(seen on_gisp 203.0.113.1 8080)" = 203.0.113.254 ] || fail "guest's destination NAT did not reach its LAN"
       if none zoned; then fail "guest's connections are not in conntrack zone 1"; fi
       # mgmt holds a connection from port 40000 to the router's port 22. guest's host has mgmt's
@@ -933,14 +954,24 @@ in
       none guest22 || fail "guest's connection rode mgmt's through the input chain"
       # The loose reverse-path filter drops a source tenant's table does not route, which the
       # default VRF alone does, while tenant's own sources reach input, and passes link-local
-      # sources in a VRF.
+      # sources in a VRF. Once tenant's table routes the source, its pings reach input.
       pings on_tenant 198.51.100.1
-      pings on_tenant 2001:db8:2::1
+      pings on_tenant 2001:db8:100::1
       on_tenant ip addr add 10.99.0.99/32 dev eth0
       on_tenant ip addr add 2001:db8:99::99/128 dev eth0 nodad
-      on_tenant ping -c 1 -W 1 -I 10.99.0.99 198.51.100.1 >/dev/null 2>&1 || true
-      on_tenant ping -c 1 -W 1 -I 2001:db8:99::99 2001:db8:2::1 >/dev/null 2>&1 || true
+      spoof() {
+        on_tenant ping -c 1 -W 1 -I 10.99.0.99 198.51.100.1 >/dev/null 2>&1 || true
+        on_tenant ping -c 1 -W 1 -I 2001:db8:99::99 2001:db8:100::1 >/dev/null 2>&1 || true
+      }
+      spoof
       none spoofed || fail "the reverse-path filter passed a source only the default VRF routes"
+      ip -4 route add 10.99.0.0/24 dev eth2 table 200
+      ip -6 route add 2001:db8:99::/64 dev eth2 table 200
+      spoof
+      [ "$(nft list counter inet passed spoofed | grep -o 'packets [0-9]*')" = 'packets 2' ] ||
+        fail "the pings from sources tenant's table routes did not reach input, so the probe shows nothing"
+      ip -4 route del 10.99.0.0/24 dev eth2 table 200
+      ip -6 route del 2001:db8:99::/64 dev eth2 table 200
       ll=
       for try in $(seq 50); do
         read -r _ _ _ ll _ <<<"$(ip -6 -o addr show dev eth2 scope link)" || true
