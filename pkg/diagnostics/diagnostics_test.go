@@ -62,7 +62,7 @@ func TestReadRefuses(t *testing.T) {
 		"no timeout":                {"routes", `{"command": ["/nix/store/x/bin/ip"], "role": "reader"}`, `its timeout is "", not a duration from 1s to 10m`},
 		"a long timeout":            {"routes", `{"command": ["/nix/store/x/bin/ip"], "role": "reader", "timeout": "11m"}`, `its timeout is "11m", not a duration from 1s to 10m`},
 		"a capability":              {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "capabilities": ["net_raw"]}`, `"net_raw" is no capability, such as CAP_NET_RAW`},
-		"no parameter":              {"routes", `{` + ip + `, ` + ok + `}`, "its command names {table}, which is no parameter"},
+		"no parameter":              {"routes", `{` + ip + `, ` + ok + `}`, "its command or network namespace names {table}, which is no parameter"},
 		"no placeholder":            {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "parameters": {"table": {"type": "int"}}}`, "parameter table: its command names no {table}"},
 		"a parameter's name":        {"routes", `{"command": ["/nix/store/x/bin/ip", "{Table}"], ` + ok + `, "parameters": {"Table": {"type": "int"}}}`, `parameter "Table": the name is not of the form [a-z][a-z0-9-]*`},
 		"a type":                    {"routes", table(`{"type": "string"}`), `parameter table: its type is "string", not one of address, prefix, hostname, interface, int, enum, pattern`},
@@ -87,7 +87,7 @@ func TestReadRefuses(t *testing.T) {
 		"a namespace of a slash":    {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": "a/b"}`, `its network namespace "a/b" is no name of letters, digits, _, . and - with parameters in braces`},
 		"a namespace of dots":       {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": ".."}`, `its network namespace ".." is no name of letters, digits, _, . and - with parameters in braces`},
 		"a long namespace":          {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": "` + strings.Repeat("a", 256) + `"}`, "is no name of letters, digits, _, . and - with parameters in braces"},
-		"a namespace's parameter":   {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": "ns-{name}"}`, "its command names {name}, which is no parameter"},
+		"a namespace's parameter":   {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": "ns-{name}"}`, "its command or network namespace names {name}, which is no parameter"},
 		"an optional one":           {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": "ns-{name}", "parameters": {"name": {"type": "pattern", "regex": "^[a-z]+$", "optional": true}}}`, "parameter name: the network namespace names it, so it is not optional"},
 		"a namespace":               {"routes", `{"command": ["/nix/store/x/bin/ip"], ` + ok + `, "networkNamespace": "ns-{name}", "parameters": {"name": {"type": "pattern", "regex": "^[a-z]+$"}}}`, ""},
 	} {

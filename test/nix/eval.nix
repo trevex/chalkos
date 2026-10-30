@@ -2589,7 +2589,7 @@ lib.runTests {
         program = [
           "chalkos.diagnostics.route.command: its first argument, ip, is no program of the image's store"
         ];
-        placeholder = [ "chalkos.diagnostics.route.command names {address}, which is no parameter" ];
+        placeholder = [ "chalkos.diagnostics.route: the command or networkNamespace names {address}, which is no parameter" ];
         parameter = [ "chalkos.diagnostics.route.parameters.table: the command names no {table}" ];
         parameterName = [
           "chalkos.diagnostics.route.parameters.Table: the command names no {Table}"
@@ -2613,7 +2613,7 @@ lib.runTests {
           "chalkos.diagnostics.in-namespace.parameters.name: networkNamespace names it, so it is not optional"
         ];
         namespaceParameter = [
-          "chalkos.diagnostics.in-namespace.command names {name}, which is no parameter"
+          "chalkos.diagnostics.in-namespace: the command or networkNamespace names {name}, which is no parameter"
         ];
       };
     };

@@ -174,7 +174,7 @@ func (d Definition) Check() error {
 	named := d.named()
 	for _, p := range named {
 		if _, ok := d.Parameters[p]; !ok {
-			return fmt.Errorf("its command names {%s}, which is no parameter", p)
+			return fmt.Errorf("its command or network namespace names {%s}, which is no parameter", p)
 		}
 	}
 	for _, p := range slices.Sorted(maps.Keys(d.Parameters)) {

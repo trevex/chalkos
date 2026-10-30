@@ -103,8 +103,8 @@ The image fails to build when chalkd could not run the declaration:
 - the timeout is not from `1s` to `10m`, a capability is none of Linux's, or a regex does not
   compile or does not run from `^` to `$`.
 
-The message names the option, such as
-`chalkos.diagnostics.bird-protocols.command names {protocol}, which is no parameter`.
+The message names the diagnostic or its option, such as
+`chalkos.diagnostics.bird-protocols: the command or networkNamespace names {protocol}, which is no parameter`.
 
 ## Check that it worked
 

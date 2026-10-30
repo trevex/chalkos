@@ -184,7 +184,7 @@ let
     ++ lib.optional (
       !lib.hasPrefix "${builtins.storeDir}/" program
     ) "${where}.command: its first argument, ${program}, is no program of the image's store"
-    ++ map (p: "${where}.command names {${p}}, which is no parameter") (
+    ++ map (p: "${where}: the command or networkNamespace names {${p}}, which is no parameter") (
       lib.subtractLists parameters named
     )
     ++ map (p: "${where}.parameters.${p}: the command names no {${p}}") (
