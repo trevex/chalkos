@@ -423,9 +423,12 @@ cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in c
 | 7 | `spec.families` | A BGPPeer exchanges the routes of one family at least. | `refuse` | `self.ipv4 != null || self.ipv6 != null` | the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route |
 | 8 | `spec.families` | A family's policies are RoutingPolicy documents. | `refuse` | after the table | after the table |
 | 9 | `spec.families` | A family's policies match PrefixLists of that family alone. | `refuse` | after the table | after the table |
-| 10 | `spec.interface` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
-| 11 | `spec.interfaces` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
-| 12 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
+| 10 | `spec.families` | A family's defaultOriginateWhen comes with defaultOriginate. | `refuse` | after the table | after the table |
+| 11 | `spec.families` | A family's defaultOriginateWhen is a PrefixList document. | `refuse` | after the table | after the table |
+| 12 | `spec.families` | A family's defaultOriginateWhen is a PrefixList of that family. | `refuse` | after the table | after the table |
+| 13 | `spec.interface` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
+| 14 | `spec.interfaces` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
+| 15 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
 
 Expression of rule 1:
 
@@ -508,28 +511,64 @@ cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in c
 Expression of rule 10:
 
 ```text
-self == null || [self].all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))
+(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginate) && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginate)
 ```
 
 Message of rule 10:
 
 ```text
-"the interface " + [self].filter(i, i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"
+cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginate ? [] : ["ipv4", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginate ? [] : ["ipv6", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], "the " + u[0] + " family names defaultOriginateWhen without defaultOriginate: true; defaultOriginateWhen says when the router sends the default route that defaultOriginate originates")
 ```
 
 Expression of rule 11:
 
 ```text
-self == null || self.all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))
+cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), (self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginateWhen in lists) && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginateWhen in lists))
 ```
 
 Message of rule 11:
 
 ```text
-"the interface " + self.filter(i, i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"
+cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginateWhen in lists ? [] : ["ipv4", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginateWhen in lists ? [] : ["ipv6", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], "the " + u[0] + " family's defaultOriginateWhen names the PrefixList " + u[1] + ", which the config does not hold"))
 ```
 
 Expression of rule 12:
+
+```text
+cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), (self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || (!(self.ipv4.defaultOriginateWhen in lists) || lists[self.ipv4.defaultOriginateWhen].spec.family == "ipv4")) && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || (!(self.ipv6.defaultOriginateWhen in lists) || lists[self.ipv6.defaultOriginateWhen].spec.family == "ipv6")))
+```
+
+Message of rule 12:
+
+```text
+cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || (!(self.ipv4.defaultOriginateWhen in lists) || lists[self.ipv4.defaultOriginateWhen].spec.family == "ipv4") ? [] : ["ipv4", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || (!(self.ipv6.defaultOriginateWhen in lists) || lists[self.ipv6.defaultOriginateWhen].spec.family == "ipv6") ? [] : ["ipv6", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], "the " + u[0] + " family's defaultOriginateWhen names the PrefixList " + u[1] + " of " + lists[u[1]].spec.family + "; it tracks routes of the family whose default route it sends"))
+```
+
+Expression of rule 13:
+
+```text
+self == null || [self].all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))
+```
+
+Message of rule 13:
+
+```text
+"the interface " + [self].filter(i, i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"
+```
+
+Expression of rule 14:
+
+```text
+self == null || self.all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))
+```
+
+Message of rule 14:
+
+```text
+"the interface " + self.filter(i, i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"
+```
+
+Expression of rule 15:
 
 ```text
 self == null || self.secretRef.name.matches("^[A-Za-z0-9._-]+$") && self.secretRef.key.matches("^[A-Za-z0-9._-]+$")

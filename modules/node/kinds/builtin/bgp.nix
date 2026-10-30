@@ -130,6 +130,38 @@ let
           "ipv6"
         ]
     }].filter(u, size(u) > 0)[0]";
+  # Whether the defaultOriginateWhen of each of a peer's families, self, that gives one passes ok,
+  # a function of the family's field and the family's name as a CEL string. Written out per
+  # family, as a loop over them would cost a loop more.
+  eachTracked =
+    ok:
+    lib.concatMapStringsSep " && "
+      (f: "(self.${f} == null || self.${f}.defaultOriginateWhen == null || ${ok "self.${f}" ''"${f}"''})")
+      [
+        "ipv4"
+        "ipv6"
+      ];
+  # The first family of a peer, self, whose defaultOriginateWhen fails ok, as [family, list], for
+  # a rule's message.
+  firstTracked =
+    ok:
+    "[${
+      lib.concatMapStringsSep ", "
+        (
+          f:
+          ''(self.${f} == null || self.${f}.defaultOriginateWhen == null || ${ok "self.${f}" ''"${f}"''} ? [] : ["${f}", self.${f}.defaultOriginateWhen])''
+        )
+        [
+          "ipv4"
+          "ipv6"
+        ]
+    }].filter(u, size(u) > 0)[0]";
+  # Whether the family f's list is the config's PrefixList of the family n, when the config holds
+  # it; the rule before refuses a list it lacks. It reads the config's PrefixList documents as
+  # lists.
+  trackedOfFamily =
+    f: n:
+    "(!(${f}.defaultOriginateWhen in lists) || lists[${f}.defaultOriginateWhen].spec.family == ${n})";
 
   # What a peer does with the routes of one address family.
   peerFamily = types.submodule {
@@ -147,7 +179,13 @@ let
       defaultOriginate = mkOption {
         type = types.bool;
         default = false;
-        description = "Whether the router sends the peer a default route of the family, whatever its own table holds.";
+        description = "Whether the router sends the peer a default route of the family: whatever its own table holds, or while `defaultOriginateWhen` holds.";
+      };
+      defaultOriginateWhen = mkOption {
+        type = types.nullOr name;
+        default = null;
+        example = "uplink";
+        description = "PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole and unreachable routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds.";
       };
       maxPrefix = mkOption {
         type = types.nullOr positive32;
@@ -444,6 +482,27 @@ in
                 description = "A family's policies match PrefixLists of that family alone.";
                 rule = "cel.bind(pols, ${delivered "RoutingPolicy"}, cel.bind(lists, ${delivered "PrefixList"}, ${eachFamilyPolicy policyOfFamily}))";
                 messageExpression = ''cel.bind(pols, ${delivered "RoutingPolicy"}, cel.bind(lists, ${delivered "PrefixList"}, cel.bind(u, ${firstFamilyPolicy policyOfFamily}, "the " + u[1] + " family's RoutingPolicy " + u[0] + " matches a PrefixList of another family")))'';
+              }
+              {
+                description = "A family's defaultOriginateWhen comes with defaultOriginate.";
+                rule = eachTracked (f: _: "${f}.defaultOriginate");
+                messageExpression = ''cel.bind(u, ${
+                  firstTracked (f: _: "${f}.defaultOriginate")
+                }, "the " + u[0] + " family names defaultOriginateWhen without defaultOriginate: true; defaultOriginateWhen says when the router sends the default route that defaultOriginate originates")'';
+              }
+              {
+                description = "A family's defaultOriginateWhen is a PrefixList document.";
+                rule = "cel.bind(lists, ${delivered "PrefixList"}, ${
+                  eachTracked (f: _: "${f}.defaultOriginateWhen in lists")
+                })";
+                messageExpression = ''cel.bind(lists, ${delivered "PrefixList"}, cel.bind(u, ${
+                  firstTracked (f: _: "${f}.defaultOriginateWhen in lists")
+                }, "the " + u[0] + " family's defaultOriginateWhen names the PrefixList " + u[1] + ", which the config does not hold"))'';
+              }
+              {
+                description = "A family's defaultOriginateWhen is a PrefixList of that family.";
+                rule = "cel.bind(lists, ${delivered "PrefixList"}, ${eachTracked trackedOfFamily})";
+                messageExpression = ''cel.bind(lists, ${delivered "PrefixList"}, cel.bind(u, ${firstTracked trackedOfFamily}, "the " + u[0] + " family's defaultOriginateWhen names the PrefixList " + u[1] + " of " + lists[u[1]].spec.family + "; it tracks routes of the family whose default route it sends"))'';
               }
             ];
           };

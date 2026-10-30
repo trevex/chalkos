@@ -363,7 +363,7 @@ A BGP neighbour of the router, or the neighbours on a set of interfaces: where t
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 12 [change rules](builtins.md#rules-bgppeer).
+A node's config may hold several, each with a name of its own. It has 15 [change rules](builtins.md#rules-bgppeer).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -373,12 +373,14 @@ A node's config may hold several, each with a name of its own. It has 12 [change
 | `spec.extendedNextHop` | boolean | `false` | Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). FRR negotiates it on sessions of `interface` and `interfaces` whatever this says. |
 | `spec.families` | object | `{}` | The address families the session exchanges routes of, and how. |
 | `spec.families.ipv4` | object or null | `null` | IPv4 routes of the session; null exchanges none. |
-| `spec.families.ipv4.defaultOriginate` | boolean | `false` | Whether the router sends the peer a default route of the family, whatever its own table holds. |
+| `spec.families.ipv4.defaultOriginate` | boolean | `false` | Whether the router sends the peer a default route of the family: whatever its own table holds, or while `defaultOriginateWhen` holds. |
+| `spec.families.ipv4.defaultOriginateWhen` | string or null | `null` | PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole and unreachable routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds. |
 | `spec.families.ipv4.export` | string or null | `null` | RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has. |
 | `spec.families.ipv4.import` | string or null | `null` | RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route. |
 | `spec.families.ipv4.maxPrefix` | integer from 1 to 4294967295 or null | `null` | Routes the router accepts from the peer at most; past them it ends the session. null sets no limit. |
 | `spec.families.ipv6` | object or null | `null` | IPv6 routes of the session; null exchanges none. |
-| `spec.families.ipv6.defaultOriginate` | boolean | `false` | Whether the router sends the peer a default route of the family, whatever its own table holds. |
+| `spec.families.ipv6.defaultOriginate` | boolean | `false` | Whether the router sends the peer a default route of the family: whatever its own table holds, or while `defaultOriginateWhen` holds. |
+| `spec.families.ipv6.defaultOriginateWhen` | string or null | `null` | PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole and unreachable routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds. |
 | `spec.families.ipv6.export` | string or null | `null` | RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has. |
 | `spec.families.ipv6.import` | string or null | `null` | RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route. |
 | `spec.families.ipv6.maxPrefix` | integer from 1 to 4294967295 or null | `null` | Routes the router accepts from the peer at most; past them it ends the session. null sets no limit. |

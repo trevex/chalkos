@@ -92,8 +92,24 @@
                   "properties": {
                     "defaultOriginate": {
                       "default": false,
-                      "description": "Whether the router sends the peer a default route of the family, whatever its own table holds.",
+                      "description": "Whether the router sends the peer a default route of the family: whatever its own table holds, or while `defaultOriginateWhen` holds.",
                       "type": "boolean"
+                    },
+                    "defaultOriginateWhen": {
+                      "anyOf": [
+                        {
+                          "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole and unreachable routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds.",
+                      "examples": [
+                        "uplink"
+                      ]
                     },
                     "export": {
                       "anyOf": [
@@ -152,8 +168,24 @@
                   "properties": {
                     "defaultOriginate": {
                       "default": false,
-                      "description": "Whether the router sends the peer a default route of the family, whatever its own table holds.",
+                      "description": "Whether the router sends the peer a default route of the family: whatever its own table holds, or while `defaultOriginateWhen` holds.",
                       "type": "boolean"
+                    },
+                    "defaultOriginateWhen": {
+                      "anyOf": [
+                        {
+                          "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole and unreachable routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds.",
+                      "examples": [
+                        "uplink"
+                      ]
                     },
                     "export": {
                       "anyOf": [
@@ -224,6 +256,24 @@
               "description": "A family's policies match PrefixLists of that family alone.",
               "messageExpression": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4[\"import\"] == null || (!(self.ipv4[\"import\"] in pols) || cel.bind(named, pols[self.ipv4[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\")) ? [] : [self.ipv4[\"import\"], \"ipv4\"]), (self.ipv4 == null || self.ipv4[\"export\"] == null || (!(self.ipv4[\"export\"] in pols) || cel.bind(named, pols[self.ipv4[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\")) ? [] : [self.ipv4[\"export\"], \"ipv4\"]), (self.ipv6 == null || self.ipv6[\"import\"] == null || (!(self.ipv6[\"import\"] in pols) || cel.bind(named, pols[self.ipv6[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\")) ? [] : [self.ipv6[\"import\"], \"ipv6\"]), (self.ipv6 == null || self.ipv6[\"export\"] == null || (!(self.ipv6[\"export\"] in pols) || cel.bind(named, pols[self.ipv6[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\")) ? [] : [self.ipv6[\"export\"], \"ipv6\"])].filter(u, size(u) > 0)[0], \"the \" + u[1] + \" family's RoutingPolicy \" + u[0] + \" matches a PrefixList of another family\")))",
               "rule": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), (self.ipv4 == null || self.ipv4[\"import\"] == null || (!(self.ipv4[\"import\"] in pols) || cel.bind(named, pols[self.ipv4[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\"))) && (self.ipv4 == null || self.ipv4[\"export\"] == null || (!(self.ipv4[\"export\"] in pols) || cel.bind(named, pols[self.ipv4[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\"))) && (self.ipv6 == null || self.ipv6[\"import\"] == null || (!(self.ipv6[\"import\"] in pols) || cel.bind(named, pols[self.ipv6[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\"))) && (self.ipv6 == null || self.ipv6[\"export\"] == null || (!(self.ipv6[\"export\"] in pols) || cel.bind(named, pols[self.ipv6[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\")))))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A family's defaultOriginateWhen comes with defaultOriginate.",
+              "messageExpression": "cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginate ? [] : [\"ipv4\", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginate ? [] : [\"ipv6\", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], \"the \" + u[0] + \" family names defaultOriginateWhen without defaultOriginate: true; defaultOriginateWhen says when the router sends the default route that defaultOriginate originates\")",
+              "rule": "(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginate) && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginate)",
+              "takes": "refuse"
+            },
+            {
+              "description": "A family's defaultOriginateWhen is a PrefixList document.",
+              "messageExpression": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginateWhen in lists ? [] : [\"ipv4\", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginateWhen in lists ? [] : [\"ipv6\", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], \"the \" + u[0] + \" family's defaultOriginateWhen names the PrefixList \" + u[1] + \", which the config does not hold\"))",
+              "rule": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), (self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginateWhen in lists) && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginateWhen in lists))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A family's defaultOriginateWhen is a PrefixList of that family.",
+              "messageExpression": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || (!(self.ipv4.defaultOriginateWhen in lists) || lists[self.ipv4.defaultOriginateWhen].spec.family == \"ipv4\") ? [] : [\"ipv4\", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || (!(self.ipv6.defaultOriginateWhen in lists) || lists[self.ipv6.defaultOriginateWhen].spec.family == \"ipv6\") ? [] : [\"ipv6\", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], \"the \" + u[0] + \" family's defaultOriginateWhen names the PrefixList \" + u[1] + \" of \" + lists[u[1]].spec.family + \"; it tracks routes of the family whose default route it sends\"))",
+              "rule": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), (self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || (!(self.ipv4.defaultOriginateWhen in lists) || lists[self.ipv4.defaultOriginateWhen].spec.family == \"ipv4\")) && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || (!(self.ipv6.defaultOriginateWhen in lists) || lists[self.ipv6.defaultOriginateWhen].spec.family == \"ipv6\")))",
               "takes": "refuse"
             }
           ]

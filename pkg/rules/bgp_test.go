@@ -14,7 +14,8 @@ import (
 // family than a peer's family, a policy of both families, ge and le outside their range, entries
 // that match alike, a list of both kinds of community, a rejecting term that sets attributes, an
 // AS path or a description too long, a neighbour address that is no unicast address, an interface
-// named like an address and a password whose Secret names no credential.
+// named like an address, a password whose Secret names no credential, and a defaultOriginateWhen
+// without defaultOriginate, of a list the config lacks or of a list of the other family.
 func TestBGPRules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -102,6 +103,17 @@ func TestBGPRules(t *testing.T) {
 				"PrefixList fabric has an entry of another family, or a ge or le outside its range: both lie from the prefix length to 32 for IPv4 or 128 for IPv6, and ge no higher than le"}},
 		{"standard and large communities", replace(edge, doc("CommunityList", "blackhole", `{"communities": ["64512:666", "64512:666:1"]}`)),
 			[]string{"CommunityList blackhole holds standard and large communities; give each kind a list of its own"}},
+		{"a default while a route exists", replace(edge, doc("BGPPeer", "fabric", `{"interfaces": ["eth1", "eth2"], "remoteAS": "external",
+			"families": {"ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "fabric", "import": "from-fabric", "export": "to-fabric"}}}`)), nil},
+		{"defaultOriginateWhen without defaultOriginate", replace(edge, doc("BGPPeer", "fabric", `{"interfaces": ["eth1", "eth2"], "remoteAS": "external",
+			"families": {"ipv6": {"defaultOriginateWhen": "fabric"}}}`)),
+			[]string{`BGPPeer "fabric" spec.families: the ipv6 family names defaultOriginateWhen without defaultOriginate: true; defaultOriginateWhen says when the router sends the default route that defaultOriginate originates`}},
+		{"a tracked list the config lacks", replace(edge, doc("BGPPeer", "fabric", `{"interfaces": ["eth1", "eth2"], "remoteAS": "external",
+			"families": {"ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "uplink"}}}`)),
+			[]string{`BGPPeer "fabric" spec.families: the ipv6 family's defaultOriginateWhen names the PrefixList uplink, which the config does not hold`}},
+		{"a tracked list of the other family", replace(edge, doc("BGPPeer", "upstream", `{"address": "198.51.100.1", "remoteAS": 64496,
+			"families": {"ipv4": {"defaultOriginate": true, "defaultOriginateWhen": "fabric"}}}`)),
+			[]string{`BGPPeer "upstream" spec.families: the ipv4 family's defaultOriginateWhen names the PrefixList fabric of ipv6; it tracks routes of the family whose default route it sends`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
