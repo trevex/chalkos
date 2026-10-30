@@ -169,9 +169,19 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		port:     port,
 		closed:   closed,
 	}
+	devices := vrfDevices(d)
 	if m := f.router.Management.Interfaces; m != nil {
 		if err := checkInterfaces("Router: management.interfaces", m); err != nil {
 			return nil, err
+		}
+		// The input hook sees the VRF's device for each of its links, while chalkd listens in
+		// the default VRF alone.
+		for _, i := range m {
+			for _, dev := range devices {
+				if matchesGlob(i, dev) {
+					return nil, fmt.Errorf("Router: the management interface %s matches %s, the device of VRF %s; chalkd is reachable in the default VRF only", i, dev, dev)
+				}
+			}
 		}
 	}
 	zones, err := zoneLinksOf(d)
@@ -205,6 +215,12 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 			if place != nil && place.Interface != nil {
 				if err := checkInterfaces("NATRule "+n.Name, []string{*place.Interface}); err != nil {
 					return nil, err
+				}
+				// Prerouting and postrouting translate by the links, never by a VRF's device.
+				for _, dev := range devices {
+					if matchesGlob(*place.Interface, dev) {
+						return nil, fmt.Errorf("NATRule %s: %s matches %s, the device of VRF %s; name its links or a zone of the VRF", n.Name, *place.Interface, dev, dev)
+					}
 				}
 			}
 		}
@@ -264,11 +280,7 @@ func zoneLinksOf(d routerDocuments) (map[string]zoneLinks, error) {
 	for _, v := range d.VRFs {
 		declared[v.Name] = true
 	}
-	// The VRFs' devices: those of the VRF documents and of the Networks' own VRF=.
-	devices := maps.Clone(declared)
-	for _, m := range d.Membership.Members {
-		devices[m.vrf] = true
-	}
+	devices := vrfDevices(d)
 	held := map[string]string{}
 	for _, z := range d.Zones {
 		for _, v := range z.Spec.VRFs {
@@ -294,7 +306,7 @@ func zoneLinksOf(d routerDocuments) (map[string]zoneLinks, error) {
 		}
 		var zl zoneLinks
 		for _, i := range z.Spec.Interfaces {
-			for _, dev := range slices.Sorted(maps.Keys(devices)) {
+			for _, dev := range devices {
 				if matchesGlob(i, dev) {
 					return nil, fmt.Errorf("%s: %s matches %s, the device of VRF %s; name the VRF in vrfs", what, i, dev, dev)
 				}
@@ -308,8 +320,12 @@ func zoneLinksOf(d routerDocuments) (map[string]zoneLinks, error) {
 					zl.in = appendNew(zl.in, i)
 					continue
 				}
-				if other, ok := held[v]; ok && other != z.Name {
-					return nil, fmt.Errorf("%s names %s, which may be a link of VRF %s, which FirewallZone %s holds; give each link one zone", what, i, v, other)
+				if other, ok := held[v]; ok {
+					if other != z.Name {
+						return nil, fmt.Errorf("%s names %s, which may be a link of VRF %s, which FirewallZone %s holds; give each link one zone", what, i, v, other)
+					}
+					// The device of the zone's own VRF covers its links.
+					continue
 				}
 				zl.sdif = appendNew(zl.sdif, i)
 			}
@@ -328,6 +344,19 @@ func zoneLinksOf(d routerDocuments) (map[string]zoneLinks, error) {
 		out[z.Name] = zl
 	}
 	return out, nil
+}
+
+// vrfDevices are the VRFs' devices, sorted: those of the VRF documents and of the Networks' own
+// VRF=.
+func vrfDevices(d routerDocuments) []string {
+	devices := map[string]bool{}
+	for _, v := range d.VRFs {
+		devices[v.Name] = true
+	}
+	for _, m := range d.Membership.Members {
+		devices[m.vrf] = true
+	}
+	return slices.Sorted(maps.Keys(devices))
 }
 
 // appendNew appends s to l unless l holds it.
