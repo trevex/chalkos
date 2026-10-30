@@ -23,5 +23,5 @@ spec:
     chalklab-storage: {groups: [storage], files: [nodes/chalklab-storage.yaml]}
     cp1: {address: 192.168.100.11, groups: [k8s], files: [nodes/cp1.yaml]}
     w1: {address: 192.168.100.12, groups: [k8s], files: [nodes/w1.yaml]}
-    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-bgp.yaml]}
-    r2: {groups: [router], files: [nodes/r2.yaml]}
+    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-bgp.yaml, nodes/r1-peer.yaml]}
+    r2: {groups: [router], files: [nodes/r2.yaml, nodes/r2-bgp.yaml]}

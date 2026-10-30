@@ -10,4 +10,4 @@ spec:
   groups:
     router: {imageName: router-kvm, files: [groups/router.yaml]}
   nodes:
-    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-bgp.yaml, nodes/r1-lockout.yaml]}
+    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-bgp.yaml, nodes/r1-peer.yaml, nodes/r1-lockout.yaml]}

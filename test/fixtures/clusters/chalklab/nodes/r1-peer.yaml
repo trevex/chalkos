@@ -1,0 +1,13 @@
+# The edge's session: it peers unnumbered with the routers on its fabric links and sends them a
+# default route, whatever its own table holds.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: fabric}
+spec:
+  interfaces: [enp0s3]
+  remoteAS: external
+  bfd: true
+  extendedNextHop: true
+  password: {secretRef: {name: bgp, key: fabric}}
+  families:
+    ipv6: {defaultOriginate: true}

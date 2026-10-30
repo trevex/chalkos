@@ -1,0 +1,5 @@
+# r2's VRF fabric, of table 100, which holds enp0s3 and edge0 with its address.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: VRF
+metadata: {name: fabric}
+spec: {table: 100, interfaces: [enp0s3, edge0]}

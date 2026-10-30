@@ -1,0 +1,37 @@
+# r1 with enp0s3 in the VRF fabric, of table 100. fabric's BGP instance peers with r2 and sends it
+# a default route; the default VRF's announces the NAT64 prefix and imports fabric's routes.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: VRF
+metadata: {name: fabric}
+spec: {table: 100, interfaces: [enp0s3]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: bgp}
+spec:
+  asn: 64512
+  routerID: 192.0.2.1
+  networks: [{prefix: "64:ff9b::/96"}]
+  import:
+    ipv6: {vrfs: [fabric]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: fabric}
+spec:
+  vrf: fabric
+  asn: 64512
+  routerID: 192.0.2.1
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: fabric}
+spec:
+  vrf: fabric
+  interfaces: [enp0s3]
+  remoteAS: external
+  bfd: true
+  extendedNextHop: true
+  password: {secretRef: {name: bgp, key: fabric}}
+  families:
+    ipv6: {defaultOriginate: true}

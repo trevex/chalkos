@@ -1,0 +1,13 @@
+# The main cluster's r2 as router-vrf.yaml gives it, with its VRF fabric in table 200 instead of
+# 100.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  images:
+    router-kvm: {source: {directory: images/router-kvm}}
+  all: {files: [cluster/*.yaml]}
+  groups:
+    router: {imageName: router-kvm, files: [groups/router.yaml]}
+  nodes:
+    r2: {groups: [router], files: [nodes/r2.yaml, nodes/r2-vrf.yaml, nodes/r2-fabric-200.yaml]}

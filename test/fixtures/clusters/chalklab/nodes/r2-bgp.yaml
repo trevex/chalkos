@@ -1,0 +1,21 @@
+# The inner router's BGP: IPv6-only on the switch, it learns its default route and the NAT64
+# prefix from r1 and announces the address of its edge0.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: bgp}
+spec:
+  asn: 64513
+  routerID: 192.0.2.2
+  networks: [{prefix: "2001:db8:ffff::2/128"}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: edge}
+spec:
+  interface: enp0s3
+  remoteAS: 64512
+  bfd: true
+  extendedNextHop: true
+  password: {secretRef: {name: bgp, key: fabric}}
+  families:
+    ipv6: {}

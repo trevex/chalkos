@@ -1,0 +1,15 @@
+# The main cluster's routers with their fabric link in the VRF fabric and their session in it;
+# r1's default VRF imports fabric's routes. enp0s2, where chalkd answers, stays in the default
+# VRF.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  images:
+    router-kvm: {source: {directory: images/router-kvm}}
+  all: {files: [cluster/*.yaml]}
+  groups:
+    router: {imageName: router-kvm, files: [groups/router.yaml]}
+  nodes:
+    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-vrf.yaml]}
+    r2: {groups: [router], files: [nodes/r2.yaml, nodes/r2-vrf.yaml, nodes/r2-fabric-100.yaml]}

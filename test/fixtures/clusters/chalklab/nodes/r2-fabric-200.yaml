@@ -1,0 +1,6 @@
+# r2's VRF fabric moved to table 200, which networkd cannot change on a running VRF, so the
+# delivery removes the VRF and networkd creates it anew with its members.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: VRF
+metadata: {name: fabric}
+spec: {table: 200, interfaces: [enp0s3, edge0]}

@@ -61,10 +61,19 @@ const bgpPassword = "lab-s3cret"
 //   - trial: apply-config --try with the base inventory is confirmed over a new connection; one
 //     that accepts chalkd's port on enp0s3 alone cuts the host off, so chalkctl cannot confirm it,
 //     r1 rolls it back at the 30 s deadline and new connections reach it again.
+//   - vrf: apply-config --try with an inventory that puts both routers' enp0s3, and r2's edge0,
+//     into the VRF fabric of table 100, with their BGP sessions, is confirmed over a new
+//     connection, so chalkd still answers on enp0s2. The sessions run in fabric, r1 routes r2's
+//     edge0 in table 100 and, through its default VRF's import of fabric, in the main table, with
+//     the path imported from fabric; chalkctl shows the VRF in the status and with --vrf,
+//     bgp-summary vrf=fabric lists the session, and no unit failed. r2's fabric then moves to
+//     table 200, which removes the VRF and creates it anew: the session comes back in fabric,
+//     r2's routes and edge0's address sit in table 200 and r1 learns edge0 again. The base
+//     inventory then brings the sessions and edge0 back to the default VRF.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
-// the node CA, about 10 s for the rollbacks and 45 s for the trials, about 6 minutes with the
-// copies of the images. chalklab destroy removes the lab when the test ends.
+// the node CA, about 10 s for the rollbacks, 45 s for the trials and a minute for the VRF, about
+// 6 minutes with the copies of the images. chalklab destroy removes the lab when the test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -110,18 +119,33 @@ func TestRouterLab(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if p.State != "Established" || p.Bfd != "up" {
-			return fmt.Errorf("the session of %s on %s is %s, its BFD %q", peer, name, p.State, p.Bfd)
+		if p.State != "Established" || p.Bfd != "up" || p.Vrf != "default" {
+			return fmt.Errorf("the session of %s on %s is %s in the VRF %q, its BFD %q", peer, name, p.State, p.Vrf, p.Bfd)
 		}
 		return nil
 	}
-	// learnedFrom is nil once the router name routes the prefix through its peer of the AS as: zebra
-	// installed it over enp0s3 to an IPv6 link-local next hop, and BGP's best path came from as on
-	// enp0s3.
-	learnedFrom := func(name, prefix, as string) error {
+	// inFabric is nil once the router's session of the peer is up in the VRF fabric and has been
+	// for at most the time since start.
+	inFabric := func(name, peer string, start time.Time) error {
+		p, err := session(name, peer)
+		if err != nil {
+			return err
+		}
+		if p.State != "Established" || p.Bfd != "up" || p.Vrf != "fabric" {
+			return fmt.Errorf("the session of %s on %s is %s in the VRF %q, its BFD %q", peer, name, p.State, p.Vrf, p.Bfd)
+		}
+		if elapsed := time.Since(start); time.Duration(p.UptimeSeconds)*time.Second > elapsed+2*time.Second {
+			return fmt.Errorf("the session of %s on %s is up for %ds, since before the delivery %v ago", peer, name, p.UptimeSeconds, elapsed.Round(time.Second))
+		}
+		return nil
+	}
+	// learnedFrom is nil once the router name routes the prefix in the VRF through its peer of the
+	// AS as: zebra installed it over enp0s3 to an IPv6 link-local next hop, and BGP's best path came
+	// from as on enp0s3. An empty VRF is the default one.
+	learnedFrom := func(name, vrf, prefix, as string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		resp, err := routerOf(conns[name]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Protocol: "bgp"}))
+		resp, err := routerOf(conns[name]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Protocol: "bgp", Vrf: vrf}))
 		if err != nil {
 			return err
 		}
@@ -134,12 +158,47 @@ func TestRouterLab(t *testing.T) {
 			return b.Prefix == prefix && b.Best && b.AsPath == as && b.Peer == "enp0s3"
 		})
 		if !kernel || !bgp {
-			return fmt.Errorf("%s's routes to %s: kernel %v, BGP %v, BGP's error %q", name, prefix, resp.Msg.Kernel, resp.Msg.Bgp, resp.Msg.BgpError)
+			return fmt.Errorf("%s's routes to %s in the VRF %q: kernel %v, BGP %v, BGP's error %q", name, prefix, vrf, resp.Msg.Kernel, resp.Msg.Bgp, resp.Msg.BgpError)
 		}
 		return nil
 	}
 	// learned is nil once r2 routes the prefix through r1.
-	learned := func(prefix string) error { return learnedFrom("r2", prefix, "64512") }
+	learned := func(prefix string) error { return learnedFrom("r2", "", prefix, "64512") }
+	// leaked is nil once r1's default VRF routes the prefix over enp0s3, a link of the VRF from,
+	// and its BGP instance holds the best path imported from that VRF.
+	leaked := func(prefix, from string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		resp, err := routerOf(conns["r1"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Protocol: "bgp"}))
+		if err != nil {
+			return err
+		}
+		kernel := slices.ContainsFunc(resp.Msg.Kernel, func(k *routerv1.KernelRoute) bool {
+			return k.Destination == prefix && k.Table == 254 && slices.ContainsFunc(k.NextHops, func(h *routerv1.NextHop) bool { return h.Interface == "enp0s3" })
+		})
+		bgp := slices.ContainsFunc(resp.Msg.Bgp, func(b *routerv1.BGPRoute) bool {
+			return b.Prefix == prefix && b.Best && b.ImportedFrom == from
+		})
+		if !kernel || !bgp {
+			return fmt.Errorf("r1's default VRF's routes to %s: kernel %v, BGP %v, BGP's error %q", prefix, resp.Msg.Kernel, resp.Msg.Bgp, resp.Msg.BgpError)
+		}
+		return nil
+	}
+	// inTable is nil once the router's VRF fabric routes the prefix over the link in the table.
+	inTable := func(name, prefix, link string, table uint32) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		resp, err := routerOf(conns[name]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Vrf: "fabric"}))
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(resp.Msg.Kernel, func(k *routerv1.KernelRoute) bool {
+			return k.Destination == prefix && k.Table == table && slices.ContainsFunc(k.NextHops, func(h *routerv1.NextHop) bool { return h.Interface == link })
+		}) {
+			return fmt.Errorf("%s's VRF fabric routes %s over %s in no table %d: %v", name, prefix, link, table, resp.Msg.Kernel)
+		}
+		return nil
+	}
 	// rootsConfig checks that r1's filled frr.conf, which holds the password, is root's alone, as
 	// the test image's chalktest-frr-conf diagnostic shows it.
 	rootsConfig := func(t *testing.T) {
@@ -155,7 +214,7 @@ func TestRouterLab(t *testing.T) {
 		waitFor(t, 2*time.Minute, "r2's session with r1", func() error { return established("r2", "edge") })
 		waitFor(t, 2*time.Minute, "r2's default route from r1", func() error { return learned("::/0") })
 		waitFor(t, 2*time.Minute, "r2's route to r1's NAT64 prefix", func() error { return learned("64:ff9b::/96") })
-		sessionLine := regexp.MustCompile(`(?m)^  fabric\s+enp0s3\s+Established\s+\S+\s+\d+\s+[1-9]\d*\s+up$`)
+		sessionLine := regexp.MustCompile(`(?m)^  default\s+fabric\s+enp0s3\s+Established\s+\S+\s+\d+\s+[1-9]\d*\s+up$`)
 		if out, err := chalkctl(t, nodes["r1"], "base", "status", "r1"); err != nil || !sessionLine.MatchString(out) {
 			t.Errorf("status of r1 shows no established session sending routes: %v\n%s", err, out)
 		}
@@ -228,7 +287,7 @@ func TestRouterLab(t *testing.T) {
 
 	if !t.Run("nat64", func(t *testing.T) {
 		// r1 answers r2's edge0, the source of r2's connections and queries, through BGP.
-		waitFor(t, 2*time.Minute, "r1's route to r2's edge0", func() error { return learnedFrom("r1", "2001:db8:ffff::2/128", "64513") })
+		waitFor(t, 2*time.Minute, "r1's route to r2's edge0", func() error { return learnedFrom("r1", "", "2001:db8:ffff::2/128", "64513") })
 		out, err := chalkctl(t, nodes["r2"], "base", "node", "diag", "r2", "dns-query", "name=ipv4only.arpa", "type=AAAA", "server=2001:db8:ffff::1")
 		if err != nil || !strings.Contains(out, "64:ff9b::c000:aa") || !strings.Contains(out, "64:ff9b::c000:ab") {
 			t.Errorf("r2 got no synthesized AAAA records of ipv4only.arpa from r1's resolver: %v\n%s", err, out)
@@ -389,7 +448,7 @@ func TestRouterLab(t *testing.T) {
 		return
 	}
 
-	t.Run("trial", func(t *testing.T) {
+	if !t.Run("trial", func(t *testing.T) {
 		// fresh is r1's status over a new connection, which proves that a client reaches r1: the
 		// test's own connections stay up through a firewall change, as established ones do.
 		fresh := func() (*nodev1.StatusResponse, error) {
@@ -439,5 +498,79 @@ func TestRouterLab(t *testing.T) {
 			t.Fatalf("after the trial's rollback r1's status is %v, %v; want config %s, no trial and the config that cut chalkctl off as the previous one", st, err, base)
 		}
 		rootsConfig(t)
+	}) {
+		return
+	}
+
+	t.Run("vrf", func(t *testing.T) {
+		// A confirmed trial proves that chalkctl's new connections reach chalkd on enp0s2, in the
+		// default VRF, once enp0s3 is in fabric. r1's BGP instance of r2's session moves from the
+		// default VRF into fabric, and r2's only one with it.
+		start := time.Now()
+		for _, name := range []string{"r1", "r2"} {
+			out, err := chalkctl(t, nodes[name], "vrf", "apply-config", "--try", "2m", name)
+			if err != nil || !regexp.MustCompile(`(?m)^`+name+` keeps config \S+: the trial is confirmed$`).MatchString(out) {
+				t.Fatalf("apply-config --try of %s's VRF: %v\n%s", name, err, out)
+			}
+		}
+		waitFor(t, 2*time.Minute, "r1's session with r2 in fabric", func() error { return inFabric("r1", "fabric", start) })
+		waitFor(t, 2*time.Minute, "r2's session with r1 in fabric", func() error { return inFabric("r2", "edge", start) })
+		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in fabric", func() error { return learnedFrom("r1", "fabric", "2001:db8:ffff::2/128", "64513") })
+		waitFor(t, 2*time.Minute, "r1's leaked route to r2's edge0", func() error { return leaked("2001:db8:ffff::2/128", "fabric") })
+		statusLine := regexp.MustCompile(`(?m)^  fabric\s+fabric\s+enp0s3\s+Established\s+\S+\s+\d+\s+[1-9]\d*\s+up$`)
+		if out, err := chalkctl(t, nodes["r1"], "vrf", "status", "r1"); err != nil || !statusLine.MatchString(out) || strings.Contains(out, "failed unit") {
+			t.Errorf("status of r1 shows no session in fabric, or a failed unit: %v\n%s", err, out)
+		}
+		if out, err := chalkctl(t, nodes["r2"], "vrf", "status", "r2"); err != nil || strings.Contains(out, "failed unit") {
+			t.Errorf("status of r2 shows a failed unit: %v\n%s", err, out)
+		}
+		tableLine := regexp.MustCompile(`(?m)^2001:db8:ffff::2/128\s+unicast\s+bgp\s+100\s`)
+		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "routes", "r1", "2001:db8:ffff::2/128", "--vrf", "fabric"); err != nil || !tableLine.MatchString(out) {
+			t.Errorf("node routes --vrf fabric of r1 shows no route in table 100: %v\n%s", err, out)
+		}
+		importedLine := regexp.MustCompile(`(?m)^2001:db8:ffff::2/128\s+\*\s+64513\s+vrf fabric\s`)
+		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "routes", "r1", "2001:db8:ffff::2/128"); err != nil || !importedLine.MatchString(out) {
+			t.Errorf("node routes of r1 shows no path imported from fabric: %v\n%s", err, out)
+		}
+		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "diag", "r1", "bgp-summary", "vrf=fabric"); err != nil || !strings.Contains(out, "enp0s3") {
+			t.Errorf("bgp-summary vrf=fabric of r1 lists no session on enp0s3: %v\n%s", err, out)
+		}
+		rootsConfig(t)
+
+		// networkd changes no running VRF's table, so chalkos-vrf removes r2's fabric, which
+		// releases enp0s3 and edge0, and reloads networkd, which creates fabric in table 200 and
+		// puts them back. The session restarts in fabric, and edge0's static address comes back.
+		start = time.Now()
+		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "apply-config", "r2"); err != nil {
+			t.Fatalf("apply-config of r2's VRF in table 200: %v\n%s", err, out)
+		}
+		waitFor(t, 2*time.Minute, "r2's session with r1 in fabric of table 200", func() error { return inFabric("r2", "edge", start) })
+		waitFor(t, 2*time.Minute, "r2's default route from r1 in fabric", func() error { return learnedFrom("r2", "fabric", "::/0", "64512") })
+		waitFor(t, 2*time.Minute, "r2's route to edge0's address in table 200", func() error { return inTable("r2", "2001:db8:ffff::2/128", "edge0", 200) })
+		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in fabric", func() error { return learnedFrom("r1", "fabric", "2001:db8:ffff::2/128", "64513") })
+		defaultLine := regexp.MustCompile(`(?m)^::/0\s+unicast\s+bgp\s+200\s`)
+		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "node", "routes", "r2", "::/0", "--vrf", "fabric"); err != nil || !defaultLine.MatchString(out) {
+			t.Errorf("node routes --vrf fabric of r2 shows no default route in table 200: %v\n%s", err, out)
+		}
+		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "status", "r2"); err != nil || strings.Contains(out, "failed unit") {
+			t.Errorf("status of r2 shows a failed unit: %v\n%s", err, out)
+		}
+
+		// The base inventory brings the sessions and edge0 back to the default VRF, and r2's BGP
+		// instance with them.
+		for _, name := range []string{"r1", "r2"} {
+			if out, err := chalkctl(t, nodes[name], "base", "apply-config", name); err != nil {
+				t.Fatalf("apply-config of %s's base config: %v\n%s", name, err, out)
+			}
+		}
+		waitFor(t, 2*time.Minute, "r1's session with r2 in the default VRF", func() error { return established("r1", "fabric") })
+		waitFor(t, 2*time.Minute, "r2's session with r1 in the default VRF", func() error { return established("r2", "edge") })
+		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in the default VRF", func() error { return learnedFrom("r1", "", "2001:db8:ffff::2/128", "64513") })
+		waitFor(t, 2*time.Minute, "r2's default route from r1 in the default VRF", func() error { return learned("::/0") })
+		for _, name := range []string{"r1", "r2"} {
+			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || strings.Contains(out, "failed unit") {
+				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
+			}
+		}
 	})
 }
