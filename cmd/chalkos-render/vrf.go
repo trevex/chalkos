@@ -207,14 +207,28 @@ func networkUnits(vrfs []named[vrfSpec], byKind map[string]any) ([]networkUnit, 
 	return units, nil
 }
 
-// otherMatchKeys reports whether a Network document's spec gives [Match] keys besides Name=.
+// otherMatchKeys reports whether a Network document's spec gives [Match] keys besides Name=. An
+// empty value resets a key, as systemd reads it, so a key whose last value is empty is not given.
 func otherMatchKeys(spec map[string]any) bool {
+	given := map[string]bool{}
 	for _, s := range oneOrMany(spec["match"]) {
 		section, _ := s.(map[string]any)
 		for k, v := range section {
-			if k != "name" && v != nil {
-				return true
+			if k == "name" {
+				continue
 			}
+			for _, value := range oneOrMany(v) {
+				if value == nil {
+					continue
+				}
+				text, isText := value.(string)
+				given[k] = !isText || strings.Trim(text, unitWhitespace) != ""
+			}
+		}
+	}
+	for _, g := range given {
+		if g {
+			return true
 		}
 	}
 	return false

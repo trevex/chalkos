@@ -306,3 +306,26 @@ func TestLinkVRFNarrowed(t *testing.T) {
 		t.Errorf("linkVRF(swp1): err = %v, want %q", err, want)
 	}
 }
+
+// Other [Match] keys narrow a Network unless an empty value resets them, as systemd reads it.
+func TestOtherMatchKeys(t *testing.T) {
+	mac := "02:00:00:00:00:01"
+	for _, c := range []struct {
+		match any
+		want  bool
+	}{
+		{map[string]any{"name": "eth1"}, false},
+		{map[string]any{"name": "eth1", "macAddress": mac}, true},
+		{map[string]any{"name": "eth1", "macAddress": ""}, false},
+		{map[string]any{"name": "eth1", "macAddress": " \t"}, false},
+		{map[string]any{"name": "eth1", "macAddress": []any{}}, false},
+		{map[string]any{"name": "eth1", "macAddress": []any{mac, ""}}, false},
+		{map[string]any{"name": "eth1", "macAddress": []any{"", mac}}, true},
+		{[]any{map[string]any{"macAddress": mac}, map[string]any{"macAddress": ""}}, false},
+		{[]any{map[string]any{"macAddress": ""}, map[string]any{"driver": "e1000"}}, true},
+	} {
+		if got := otherMatchKeys(map[string]any{"match": c.match}); got != c.want {
+			t.Errorf("otherMatchKeys(%v) = %v, want %v", c.match, got, c.want)
+		}
+	}
+}
