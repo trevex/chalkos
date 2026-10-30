@@ -81,17 +81,21 @@ type networkUnit struct {
 	narrowed bool
 }
 
-// vrfLinks checks the VRF documents against the Network documents of byKind, as their rules do
-// and where the rules cannot, and returns the VRF of each Network. A VRF holds the links its document's interfaces match and those a Network
-// document's Name= matches whose own VRF= names it, whether a document of the VRF exists or not.
-// A Network document is in the VRF of the links it may be the first to match, and vrfLinks
-// refuses unless all links it may match are in that VRF, so that VRF= on the Network puts in the
-// VRF the links that the VRF holds, and only those. It refuses a link two VRFs may hold, a
-// literal interface of a VRF no Network matches by Name= alone, and a VRF device whose first
-// Network is not its own.
-func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (vrfMembership, error) {
+// vrfLinks checks the VRF documents against the Network documents of byKind, which name the
+// links, as their rules do and where the rules cannot, and returns the VRF of each Network. A VRF
+// holds the links its document's interfaces match and those a Network document's Name= matches
+// whose own VRF= names it, whether a document of the VRF exists or not. A Network document is in
+// the VRF of the links it may be the first to match, and vrfLinks refuses unless all links it may
+// match are in that VRF, so that VRF= on the Network puts in the VRF the links that the VRF
+// holds, and only those. It refuses a link two VRFs may hold, a literal interface of a VRF no
+// Network matches by Name= alone, and a VRF device whose first Network is not its own. Without
+// VRF documents and VRF= it checks nothing and puts every link in the default VRF, so that a
+// router image without VRFs takes the Network documents it took before them.
+func vrfLinks(vrfs []named[vrfSpec], links []string, byKind map[string]any) (vrfMembership, error) {
 	var none vrfMembership
-	links := networkLinks(byKind)
+	if len(vrfs) == 0 && !anyNetworkVRF(byKind) {
+		return none, nil
+	}
 	var members []vrfMember
 	tables := map[uint32]string{}
 	for _, v := range vrfs {
@@ -158,6 +162,20 @@ func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (vrfMembership, erro
 		return none, err
 	}
 	return vrfMembership{Networks: networks, Units: units}, nil
+}
+
+// anyNetworkVRF reports whether a Network document of byKind gives VRF=, or a value of VRF= that
+// networkVRF refuses.
+func anyNetworkVRF(byKind map[string]any) bool {
+	docs, _ := byKind["Network"].([]any)
+	for _, d := range docs {
+		doc, _ := d.(map[string]any)
+		spec, _ := doc["spec"].(map[string]any)
+		if vrf, err := networkVRF("", spec); vrf != "" || err != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // networkUnits are the .network units networkd reads: the Network documents of byKind and the

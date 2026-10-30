@@ -335,7 +335,7 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 		return d, err
 	}
 	d.Links = networkLinks(byKind)
-	if d.Membership, err = vrfLinks(d.VRFs, byKind); err != nil {
+	if d.Membership, err = vrfLinks(d.VRFs, d.Links, byKind); err != nil {
 		return d, err
 	}
 	return d, nil

@@ -78,7 +78,7 @@ func TestVRFLinks(t *testing.T) {
 		document(t, "Network", "30-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "blue"}}`),
 		document(t, "Network", "40-eth0", `{"match": {"name": "eth0"}}`),
 	}}
-	got, err := vrfLinks([]named[vrfSpec]{{"tenant", vrfSpec{Table: 100, Interfaces: []string{"swp*"}}}}, byKind)
+	got, err := vrfLinks([]named[vrfSpec]{{"tenant", vrfSpec{Table: 100, Interfaces: []string{"swp*"}}}}, networkLinks(byKind), byKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,6 +159,29 @@ func TestRouterNetworkdWithoutVRFs(t *testing.T) {
 	}
 	if !reflect.DeepEqual(plain, router) {
 		t.Errorf("router-networkd:\n%q\nnetworkd:\n%q", router, plain)
+	}
+}
+
+// Without VRF documents and VRF=, router-networkd and frr take a Name= the VRF checks cannot
+// read, such as one of a backslash or of an unclosed bracket, as router images did before VRFs.
+func TestRouterWithoutVRFsTakesAnyName(t *testing.T) {
+	docs := map[string][]any{"Network": {
+		document(t, "Network", "10-eth1", `{"match": {"name": "eth\\x31"}}`),
+		document(t, "Network", "20-eth", `{"match": {"name": "eth["}}`),
+	}}
+	plain, err := networkd(t, networkFixture, docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router, err := unitFiles(t, []string{"router-networkd", networkFixture}, docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(plain, router) {
+		t.Errorf("router-networkd:\n%q\nnetworkd:\n%q", router, plain)
+	}
+	if _, err := unitFiles(t, []string{"frr"}, docs); err != nil {
+		t.Errorf("frr: %v", err)
 	}
 }
 
@@ -296,7 +319,7 @@ func TestLinkVRFNarrowed(t *testing.T) {
 		document(t, "Network", "20-swp2", `{"match": {"name": "swp2"}}`),
 		document(t, "Network", "30-eth", `{"match": {"name": "eth0"`+mac+`}}`),
 	}}
-	m, err := vrfLinks([]named[vrfSpec]{{"tenant", vrfSpec{Table: 100, Interfaces: []string{"swp*"}}}}, byKind)
+	m, err := vrfLinks([]named[vrfSpec]{{"tenant", vrfSpec{Table: 100, Interfaces: []string{"swp*"}}}}, networkLinks(byKind), byKind)
 	if err != nil {
 		t.Fatal(err)
 	}
