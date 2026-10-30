@@ -11,12 +11,11 @@ import (
 	"strings"
 )
 
-// The names of a NAT64's link in its VRF, n64-<name>, and of its network namespace, nat64-<name>,
-// and the files of the namespace's .network of networkd.
+// The prefixes of the name of a NAT64's link in its VRF, n64-<name>, and of the files of the link's
+// .network of networkd, 00-n64-<name>.
 const (
-	nat64LinkPrefix      = "n64-"
-	nat64NamespacePrefix = "nat64-"
-	nat64UnitPrefix      = "00-n64-"
+	nat64LinkPrefix = "n64-"
+	nat64UnitPrefix = "00-n64-"
 )
 
 // nat64Range holds a /30 per NAT64 for the ends of its veth pair: the outer one in the VRF and the
