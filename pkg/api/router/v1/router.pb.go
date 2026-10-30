@@ -528,7 +528,11 @@ type RoutesResponse struct {
 	// The paths BGP selected and installs, in the order of their families and prefixes.
 	Bgp []*BGPRoute `protobuf:"bytes,2,rep,name=bgp,proto3" json:"bgp,omitempty"`
 	// Why BGP's paths could not be read, such as vtysh's error; empty when they were.
-	BgpError      string `protobuf:"bytes,3,opt,name=bgp_error,json=bgpError,proto3" json:"bgp_error,omitempty"`
+	BgpError string `protobuf:"bytes,3,opt,name=bgp_error,json=bgpError,proto3" json:"bgp_error,omitempty"`
+	// The VRF whose routes these are: the request's vrf, or default for a request without one. A
+	// node whose image does not know VRFs leaves it empty and lists the main table and the default
+	// instance's paths, whatever the request's vrf.
+	Vrf           string `protobuf:"bytes,4,opt,name=vrf,proto3" json:"vrf,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -580,6 +584,13 @@ func (x *RoutesResponse) GetBgp() []*BGPRoute {
 func (x *RoutesResponse) GetBgpError() string {
 	if x != nil {
 		return x.BgpError
+	}
+	return ""
+}
+
+func (x *RoutesResponse) GetVrf() string {
+	if x != nil {
+		return x.Vrf
 	}
 	return ""
 }
@@ -900,11 +911,12 @@ const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x14\n" +
 	"\x05table\x18\x03 \x01(\tR\x05table\x12\x10\n" +
-	"\x03vrf\x18\x04 \x01(\tR\x03vrf\"\x94\x01\n" +
+	"\x03vrf\x18\x04 \x01(\tR\x03vrf\"\xa6\x01\n" +
 	"\x0eRoutesResponse\x126\n" +
 	"\x06kernel\x18\x01 \x03(\v2\x1e.chalkos.router.v1.KernelRouteR\x06kernel\x12-\n" +
 	"\x03bgp\x18\x02 \x03(\v2\x1b.chalkos.router.v1.BGPRouteR\x03bgp\x12\x1b\n" +
-	"\tbgp_error\x18\x03 \x01(\tR\bbgpError\"\xc6\x01\n" +
+	"\tbgp_error\x18\x03 \x01(\tR\bbgpError\x12\x10\n" +
+	"\x03vrf\x18\x04 \x01(\tR\x03vrf\"\xc6\x01\n" +
 	"\vKernelRoute\x12 \n" +
 	"\vdestination\x18\x01 \x01(\tR\vdestination\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1a\n" +

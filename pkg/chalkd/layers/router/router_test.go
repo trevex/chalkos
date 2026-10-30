@@ -247,10 +247,11 @@ func TestRouterResolverStatus(t *testing.T) {
 	}
 }
 
-// Routes of a VRF list its table, which the running VRF document gives, and its instance's paths;
-// default is the main table and the default instance, asked without a VRF. A request of a VRF
-// and a table, of a VRF the node lacks or of a name no VRF document takes is refused, and asks
-// vtysh nothing; a running VRF document without a table, or no JSON, is chalkd's error.
+// Routes of a VRF list its table, which the running VRF document gives, and its instance's paths,
+// and name the VRF; default is the main table and the default instance, asked without a VRF, and
+// a request without a VRF lists default. A request of a VRF and a table, of a VRF the node lacks
+// or of a name no VRF document takes is refused, and asks vtysh nothing; a running VRF document
+// without a table, or no JSON, is chalkd's error.
 func TestRoutesOfAVRF(t *testing.T) {
 	p, r := routerNode(t,
 		&routing.KernelRoute{Destination: "2001:db8:ffff::2/128", Type: "unicast", Protocol: "bgp", Table: 100, Metric: 20},
@@ -275,16 +276,19 @@ func TestRoutesOfAVRF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Kernel) != 1 || got.Kernel[0].Table != 100 || len(got.Bgp) != 2 || got.Bgp[1].ImportedFrom != "fabric" || got.Bgp[1].AsPath != "64513" {
+	if got.Vrf != "tenant" || len(got.Kernel) != 1 || got.Kernel[0].Table != 100 || len(got.Bgp) != 2 || got.Bgp[1].ImportedFrom != "fabric" || got.Bgp[1].AsPath != "64513" {
 		t.Errorf("routes of tenant = %v", got)
 	}
 	calls := len(r.Calls)
 	got, err = routes(&routerv1.RoutesRequest{Vrf: "default"})
-	if err != nil || len(got.Kernel) != 1 || got.Kernel[0].Table != 254 {
+	if err != nil || got.Vrf != "default" || len(got.Kernel) != 1 || got.Kernel[0].Table != 254 {
 		t.Errorf("routes of default = %v, %v", got, err)
 	}
 	if asked := r.Calls[calls:]; !slices.Equal(asked, []string{"vtysh -c show bgp ipv4 unicast detail json", "vtysh -c show bgp ipv6 unicast detail json"}) {
 		t.Errorf("routes of default asked %v, want the default instance's paths", asked)
+	}
+	if got, err := routes(&routerv1.RoutesRequest{}); err != nil || got.Vrf != "default" {
+		t.Errorf("routes without a VRF = %v, %v, want those of default", got, err)
 	}
 	for name, doc := range map[string]string{"notable": `{"spec": {"interfaces": ["swp2"]}}`, "broken": "{"} {
 		if err := os.WriteFile(filepath.Join(p.r.VRFDir, name+".json"), []byte(doc), 0o644); err != nil {

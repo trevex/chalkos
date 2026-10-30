@@ -1335,6 +1335,7 @@ The response of Routes.
 | `kernel` | list of KernelRoute | The kernel's routes, in the order of their tables, families and destinations. |
 | `bgp` | list of BGPRoute | The paths BGP selected and installs, in the order of their families and prefixes. |
 | `bgp_error` | string | Why BGP's paths could not be read, such as vtysh's error; empty when they were. |
+| `vrf` | string | The VRF whose routes these are: the request's vrf, or default for a request without one. A node whose image does not know VRFs leaves it empty and lists the main table and the default instance's paths, whatever the request's vrf. |
 
 Field types: [KernelRoute](#router-message-kernelroute), [BGPRoute](#router-message-bgproute).
 

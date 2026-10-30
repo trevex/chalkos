@@ -118,6 +118,10 @@ message RoutesResponse {
   repeated BGPRoute bgp = 2;
   // Why BGP's paths could not be read, such as vtysh's error; empty when they were.
   string bgp_error = 3;
+  // The VRF whose routes these are: the request's vrf, or default for a request without one. A
+  // node whose image does not know VRFs leaves it empty and lists the main table and the default
+  // instance's paths, whatever the request's vrf.
+  string vrf = 4;
 }
 
 // A route in the kernel's routing tables.

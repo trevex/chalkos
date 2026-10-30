@@ -278,7 +278,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	resp := &routerv1.RoutesResponse{}
+	resp := &routerv1.RoutesResponse{Vrf: cmp.Or(vrf, routing.DefaultVRF)}
 	for _, r := range f.Kernel(kernel) {
 		resp.Kernel = append(resp.Kernel, kernelRoute(r))
 	}
