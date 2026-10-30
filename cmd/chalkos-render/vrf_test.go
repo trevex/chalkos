@@ -117,6 +117,8 @@ func TestNameMatch(t *testing.T) {
 		{"eth1 eth0\veth2", []string{"eth1"}, []string{"eth0", "eth2", "eth0\veth2"}},
 		{"0x1f 0b1 0o7 +5 017 08 0 eth1", []string{"eth1"}, []string{"0x1f", "0b1", "0o7", "+5", "017", "08", "0"}},
 		{"-5 0x 0x100000000 eth1", []string{"-5", "0x", "0x100000000", "eth1"}, []string{"lo"}},
+		{"0x7fffffff 0x80000000 eth1", []string{"0x80000000", "eth1"}, []string{"0x7fffffff"}},
+		{"0b0b1 +0b1 0b+1 eth1", []string{"eth1"}, []string{"0b0b1", "+0b1", "0b+1"}},
 	} {
 		m, err := parseNameMatch("n", map[string]any{"match": map[string]any{"name": c.names}})
 		if err != nil {
