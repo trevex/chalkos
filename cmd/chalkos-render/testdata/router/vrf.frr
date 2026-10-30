@@ -5,12 +5,18 @@ hostname r1
 log syslog informational
 service integrated-vtysh-config
 !
+ip prefix-list pl-internet seq 5 permit 198.51.100.0/24
 ipv6 prefix-list pl-tenant seq 5 permit 2001:db8:100::/40 le 64
 !
 route-map rp-from-tenant permit 10
  match ipv6 address prefix-list pl-tenant
 exit
 route-map rp-from-tenant deny 65535
+exit
+route-map rp-to-transit permit 10
+ match ip address prefix-list pl-internet
+exit
+route-map rp-to-transit deny 65535
 exit
 route-map accept-all permit 10
 exit
@@ -45,7 +51,7 @@ router bgp 64512 vrf internet
   maximum-paths ibgp 1
   neighbor peer-transit activate
   neighbor peer-transit route-map accept-all in
-  neighbor peer-transit route-map accept-all out
+  neighbor peer-transit route-map rp-to-transit out
   import vrf tenant
  exit-address-family
  !

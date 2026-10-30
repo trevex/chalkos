@@ -1,11 +1,13 @@
 # An edge with three VRFs besides the default one. internet holds the uplink eth1 and peers with a
-# transit provider at an address; tenant holds eth2 and the swp links and peers unnumbered with a
-# tenant's leaves on each swp link the Network documents name, with BFD. tenant and internet import
-# each other's IPv4 routes, so the tenant reaches the internet through internet's masquerade, and
-# the default VRF imports tenant's IPv6 routes through a policy. guest holds a guest LAN on eth3
-# and its own uplink on eth4, with the addresses of eth0 and of eth1; its conntrack zone keeps its
-# connections apart from theirs, and it masquerades and forwards a port of its own. The default
-# VRF keeps the management link eth0 and the node API.
+# transit provider at an address, which it announces 198.51.100.0/24 alone; tenant holds eth2 and
+# the swp links and peers unnumbered with a tenant's leaves on each swp link the Network documents
+# name, with BFD. tenant and internet import each other's IPv4 routes, so the tenant reaches the
+# internet through internet's masquerade. The default VRF imports tenant's IPv6 routes through a
+# policy, so that it routes them, but no FirewallPolicy forwards between its zone mgmt and tenant.
+# guest holds a guest LAN on eth3 and its own uplink on eth4, with the addresses of eth0 and of
+# eth1 and a default route through the uplink's gateway; its conntrack zone keeps its connections
+# apart from theirs, and it masquerades and forwards a port of its own. The default VRF keeps the
+# management link eth0 and the node API.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Router
 metadata: {name: router}
@@ -45,7 +47,7 @@ kind: Network
 metadata: {name: 41-guest-wan}
 spec:
   match: {name: eth4}
-  network: {address: [203.0.113.1/24], ipv6AcceptRA: false}
+  network: {address: [203.0.113.1/24], gateway: [203.0.113.254], ipv6AcceptRA: false}
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: VRF
@@ -100,7 +102,20 @@ spec:
   vrf: internet
   address: 203.0.113.254
   remoteAS: 64496
-  families: {ipv4: {}}
+  families: {ipv4: {export: to-transit}}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PrefixList
+metadata: {name: internet}
+spec:
+  family: ipv4
+  entries: [{prefix: 198.51.100.0/24}]
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: RoutingPolicy
+metadata: {name: to-transit}
+spec:
+  terms: [{match: {prefixList: internet}, then: {action: accept}}]
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: BGPPeer
