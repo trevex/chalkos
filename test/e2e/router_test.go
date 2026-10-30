@@ -231,6 +231,19 @@ func TestRouterLab(t *testing.T) {
 		return len(units) > 0
 	}
 
+	// failedJobs logs the journal of each unit whose job failed, as systemctl names it in the
+	// output out of a delivery that failed, which may repeat it.
+	failedJobs := func(t *testing.T, name, inventory, out string) {
+		t.Helper()
+		logged := map[string]bool{}
+		for _, u := range regexp.MustCompile(`Job for (\S+) failed`).FindAllStringSubmatch(out, -1) {
+			if !logged[u[1]] {
+				logged[u[1]] = true
+				_, _ = chalkctl(t, nodes[name], inventory, "logs", name, "--unit", u[1])
+			}
+		}
+	}
+
 	if !t.Run("bgp", func(t *testing.T) {
 		waitFor(t, 10*time.Minute, "r1's session with r2", func() error { return established("r1", "fabric") })
 		waitFor(t, 2*time.Minute, "r2's session with r1", func() error { return established("r2", "edge") })
@@ -595,14 +608,15 @@ func TestRouterLab(t *testing.T) {
 		// puts them back. The session restarts in fabric, and edge0's static address comes back.
 		start = time.Now()
 		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "apply-config", "r2"); err != nil {
+			failedJobs(t, "r2", "vrf-table", out)
 			t.Fatalf("apply-config of r2's VRF in table 200: %v\n%s", err, out)
 		}
 		waitFor(t, 2*time.Minute, "r2's session with r1 in fabric of table 200", func() error { return inFabric("r2", "edge", start) })
 		waitFor(t, 2*time.Minute, "r2's default route from r1 in fabric", func() error { return learnedFrom("r2", "fabric", "::/0", "64512") })
 		waitFor(t, 2*time.Minute, "r2's route to edge0's address in table 200", func() error { return inTable("r2", "2001:db8:ffff::2/128", "edge0", 200) })
 		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in fabric", func() error { return learnedFrom("r1", "fabric", "2001:db8:ffff::2/128", "64513") })
-		// The new device stopped the resolver bound to the old one, and chalkos-resolvers started
-		// it again on the device networkd created.
+		// chalkos-resolvers, which runs after chalkos-vrf and networkd, restarted the resolver on
+		// the device networkd created.
 		waitFor(t, time.Minute, "r2's resolver of fabric in table 200", resolverRunning("vrf-table"))
 		defaultLine := regexp.MustCompile(`(?m)^::/0\s+unicast\s+bgp\s+200\s`)
 		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "node", "routes", "r2", "::/0", "--vrf", "fabric"); err != nil || !defaultLine.MatchString(out) {
