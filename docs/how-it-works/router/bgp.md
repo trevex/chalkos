@@ -97,9 +97,8 @@ session. A glob expands over the links of the peer's VRF alone, as
 [VRFs on a router](vrfs.md#frr-runs-an-instance-per-vrf) explains.
 
 A peer's single `interface` renders as it is written, whether or not a `Network` names it, and
-must be a link of the peer's VRF. A name
-that reads as an address, such as `fe80::1`, is refused in both, because FRR could not tell the
-interface from a neighbour's address. Two peers that name one session are refused too.
+must be a link of the peer's VRF. A name that reads as an address, such as `fe80::1`, is refused
+in both, because FRR could not tell the interface from a neighbour's address. Two peers that name one session are refused too.
 
 ## The check parses the config, and the renderer checks the rest
 

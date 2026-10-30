@@ -325,9 +325,9 @@ a `BGPPeer` needs a `BGP` document. Then deliver it with the new number. The rul
 `BGP` document of one name. A `BGP` document of another name replaces the old one in one
 delivery, AS number included, and the change of AS ends the sessions too.
 
-The AS number of each VRF's instance stays the same way, by the name of its `BGP` document.
-While an instance of another VRF runs, the delivery without the default VRF's `BGP` document
-leaves out the other VRFs' `BGP` documents too, as
+The rule guards the AS number of each VRF's instance the same way, by the name of its `BGP`
+document. While an instance of another VRF runs, the delivery without the default VRF's `BGP`
+document leaves out the other VRFs' `BGP` documents too, as
 [Separate routing with VRFs](vrfs.md#remove-a-vrf) explains.
 
 ## What next
