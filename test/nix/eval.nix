@@ -411,11 +411,12 @@ lib.runTests {
       node = false;
     };
   };
-  # Router images accept VRF documents and render them with networkd's documents through
-  # chalkos-render router-networkd; other images render networkd's documents alone. chalkos-vrf,
-  # which a change of the output networkd reloads, runs before networkd at boot and removes the
-  # VRFs the rendered units no longer declare. FRR orders after networkd, which creates a VRF's
-  # device before FRR's reload configures its instance, and the BGP and BFD diagnostics take a VRF.
+  # Router images accept VRF documents and render them with networkd's documents and the NAT64s,
+  # whose links networkd leaves alone, through chalkos-render router-networkd; other images render
+  # networkd's documents alone. chalkos-vrf, which a change of the output networkd reloads, runs
+  # before networkd at boot and removes the VRFs the rendered units no longer declare. FRR orders
+  # after networkd, which creates a VRF's device before FRR's reload configures its instance, and
+  # the BGP and BFD diagnostics take a VRF.
   # The firewall reads the VRFs and the Network documents.
   testRouterVRF = {
     expr =
@@ -458,6 +459,7 @@ lib.runTests {
         "Link"
         "NetDev"
         "Network"
+        "NAT64"
         "VRF"
       ];
       render = true;
@@ -491,12 +493,14 @@ lib.runTests {
     };
   };
   # Router images carry Jool's module, loaded at boot, and run chalkos-nat64, which the output jool
-  # renders NAT64 instances for and whose reload the effect asks for, after the firewall and before
-  # FRR, with CAP_NET_ADMIN alone. They run Unbound of the config the output unbound renders, once
+  # renders NAT64 instances for and whose reload the effect asks for, after the firewall and
+  # networkd and before FRR, with CAP_NET_ADMIN and CAP_SYS_ADMIN and no mount namespace of its
+  # own, so the host sees the instances' namespaces. They run Unbound of the config the output unbound renders, once
   # one is rendered, after chalkos-nat64, with CAP_NET_BIND_SERVICE alone and its control socket's
   # directory closed to other users; a changed resolver reloads it with its cache, and one added or
-  # removed starts or stops it. The firewall opens the resolver's port, chalkd asks jool and
-  # unbound-control for their state, the image adds the diagnostic nat64-sessions, and the node's
+  # removed starts or stops it. The firewall opens the resolver's port and reads the NAT64s, as
+  # networkd does, chalkd asks jool in each instance's namespace and unbound-control for their
+  # state, the image adds the diagnostic nat64-sessions in the instance's namespace, and the node's
   # own names resolve as before. Other images run neither.
   testRouterNAT64AndResolver = {
     expr =
@@ -512,7 +516,11 @@ lib.runTests {
           jool = edge.chalkos.outputs.jool.inputs;
           unbound = edge.chalkos.outputs.unbound.inputs;
         };
-        firewallReads = lib.elem "Resolver" edge.chalkos.outputs.router-nftables.inputs;
+        firewallReads = lib.all (k: lib.elem k edge.chalkos.outputs.router-nftables.inputs) [
+          "Resolver"
+          "NAT64"
+        ];
+        networkdReads = lib.elem "NAT64" edge.chalkos.outputs.networkd.inputs;
         checks = {
           jool = lib.hasInfix "/bin/jool file check" edge.chalkos.outputs.jool.check;
           unbound = lib.hasInfix "/bin/unbound-checkconf" edge.chalkos.outputs.unbound.check;
@@ -527,9 +535,26 @@ lib.runTests {
         nat64After = lib.subtractLists nat64.after [
           "chalkos-config.service"
           "chalkos-firewall.service"
+          "systemd-networkd.service"
         ];
         nat64Before = nat64.before;
         nat64Capabilities = nat64.serviceConfig.CapabilityBoundingSet;
+        nat64Namespaces = {
+          inherit (nat64.serviceConfig) RestrictNamespaces;
+          mountNamespace = lib.any (o: nat64.serviceConfig ? ${o}) [
+            "ProtectSystem"
+            "PrivateTmp"
+            "PrivateDevices"
+            "ProtectHome"
+            "ProtectKernelLogs"
+            "ProtectKernelModules"
+            "ProtectKernelTunables"
+            "ProtectControlGroups"
+            "PrivateMounts"
+            "ReadOnlyPaths"
+            "InaccessiblePaths"
+          ];
+        };
         nat64Reloads = nat64.serviceConfig.ExecReload == nat64.serviceConfig.ExecStart;
         nat64Stops = lib.hasSuffix " stop" nat64.serviceConfig.ExecStop;
         unboundAfter = lib.elem "chalkos-nat64.service" unbound.after;
@@ -543,9 +568,10 @@ lib.runTests {
         chalkd = lib.subtractLists (map lib.getName edge.systemd.services.chalkd.path) [
           "jool-cli"
           "unbound"
+          "util-linux"
         ];
         diagnostic = {
-          inherit (edge.chalkos.diagnostics.nat64-sessions) role capabilities;
+          inherit (edge.chalkos.diagnostics.nat64-sessions) role capabilities networkNamespace;
         };
         plain = {
           unbound = layered.plain-metal.config.services.unbound.enable;
@@ -556,10 +582,15 @@ lib.runTests {
       module = [ "jool" ];
       loaded = true;
       inputs = {
-        jool = [ "NAT64" ];
+        jool = [
+          "NAT64"
+          "VRF"
+          "Network"
+        ];
         unbound = [ "Resolver" ];
       };
       firewallReads = true;
+      networkdReads = true;
       checks = {
         jool = true;
         unbound = true;
@@ -574,7 +605,14 @@ lib.runTests {
       };
       nat64After = [ ];
       nat64Before = [ "frr.service" ];
-      nat64Capabilities = [ "CAP_NET_ADMIN" ];
+      nat64Capabilities = [
+        "CAP_NET_ADMIN"
+        "CAP_SYS_ADMIN"
+      ];
+      nat64Namespaces = {
+        RestrictNamespaces = "net";
+        mountNamespace = false;
+      };
       nat64Reloads = true;
       nat64Stops = true;
       unboundAfter = true;
@@ -591,6 +629,7 @@ lib.runTests {
       diagnostic = {
         role = "operator";
         capabilities = [ "CAP_NET_ADMIN" ];
+        networkNamespace = "nat64-{instance}";
       };
       plain = {
         unbound = false;

@@ -1,7 +1,7 @@
 # The diagnostics router images add to every image's: the routers on the path to an address, FRR's
 # BGP sessions, neighbours and paths and its BFD peers of a VRF, which vtysh asks FRR for as a
 # member of frrvty, the group of FRR's sockets, and a NAT64 instance's sessions, which Jool shows
-# to CAP_NET_ADMIN alone.
+# to CAP_NET_ADMIN in the instance's namespace alone.
 {
   config,
   lib,
@@ -104,11 +104,15 @@ in
         "nat64-sessions"
         "{instance}"
       ];
+      # A NAT64 document's name of 11 characters at most, as the kinds take it, in ShortName's
+      # alphabet of pkg/router.
       parameters.instance = {
         type = "pattern";
-        regex = "^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$";
-        description = "Name of the NAT64 document, which names its instance.";
+        regex = "^[a-z0-9]([-a-z0-9.]{0,9}[a-z0-9])?$";
+        description = "Name of the NAT64 document, which names its instance and the instance's network namespace.";
       };
+      # Jool answers about the instances of the namespace it runs in.
+      networkNamespace = "nat64-{instance}";
       # The sessions show who connects where.
       role = "operator";
       timeout = "30s";

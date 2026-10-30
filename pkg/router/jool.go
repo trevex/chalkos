@@ -18,6 +18,19 @@ var JoolInstancesArgs = []string{"instance", "display", "--csv", "--no-headers"}
 // not exist in its network namespace, such as one removed while chalkd asks about it.
 const JoolMissingInstance = "This namespace lacks an instance named"
 
+// NAT64Namespace is the path of the network namespace in which chalkos-nat64 runs the Jool
+// instance of the NAT64 document of the name, which ShortName matched.
+func NAT64Namespace(instance string) string { return "/run/netns/nat64-" + instance }
+
+// NamespaceMissing is what nsenter says of a namespace that does not exist, such as that of an
+// instance removed while chalkd asks about it.
+const NamespaceMissing = "nsenter: cannot open /run/netns/"
+
+// InNamespace are nsenter's arguments that run jool with args in the instance's namespace.
+func InNamespace(instance string, args []string) []string {
+	return append([]string{"--net=" + NAT64Namespace(instance), "jool"}, args...)
+}
+
 // JoolStatsArgs are jool's arguments that list all of an instance's statistics, also those that
 // are zero.
 func JoolStatsArgs(instance string) []string {

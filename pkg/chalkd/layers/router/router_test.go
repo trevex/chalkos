@@ -132,7 +132,7 @@ func (j slowJool) Run(ctx context.Context, name string, args ...string) ([]byte,
 	if name == "jool" && args[0] == "instance" {
 		return []byte("8fb43ac0,edge,netfilter\n"), nil
 	}
-	if name == "jool" && slices.Contains(args, "stats") {
+	if name == "nsenter" && slices.Contains(args, "stats") {
 		return []byte("JSTAT_BIB_ENTRIES,0\nJSTAT_SESSIONS,0\n"), nil
 	}
 	select {
@@ -187,20 +187,22 @@ func TestVtyshCallerDeadline(t *testing.T) {
 
 // A router's status holds each Jool instance that a NAT64 document of the node names, with its
 // sessions, bindings and each protocol's pool size, recorded from Jool 4.1.15, asked without jool's
-// standard error reaching the console; an instance of another namespace or one removed meanwhile
-// is left out, and when jool fails, the NAT64 part says why and the rest of the status stands.
+// standard error reaching the console; an instance no NAT64 document names, one whose namespace or
+// instance went meanwhile is left out; chalkd asks Jool in each instance's namespace; and when jool
+// fails, the NAT64 part says why and the rest of the status stands.
 func TestRouterNAT64Status(t *testing.T) {
 	s, r := routerNode(t)
-	for _, name := range []string{"edge", "gone"} {
+	for _, name := range []string{"edge", "gone", "stale"} {
 		if err := os.WriteFile(filepath.Join(s.r.NAT64Dir, name+".json"), []byte("{}\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	r.Rules = append(r.Rules,
-		tooltest.Rule{Prefix: "jool instance display --csv --no-headers", Out: "8fb43ac0,edge,netfilter\n8fb43ac0,gone,netfilter\n51c2d0e7,other,netfilter\n51c2d0e7,Other Box,netfilter\n", Times: 1},
-		tooltest.Rule{Prefix: "jool -i edge stats display --csv --no-headers --all", Out: routerRecording(t, "jool-stats.csv")},
-		tooltest.Rule{Prefix: "jool -i edge pool4 display --csv --no-headers --tcp", Out: routerRecording(t, "jool-pool4-tcp.csv")},
-		tooltest.Rule{Prefix: "jool -i gone ", Err: &tool.Error{Command: "jool", Code: 1, Stderr: "Error: The kernel module returned error 3: This namespace lacks an instance named 'gone'.\n"}},
+		tooltest.Rule{Prefix: "jool instance display --csv --no-headers", Out: "8fb43ac0,edge,netfilter\n8fb43ac0,gone,netfilter\n8fb43ac0,stale,netfilter\n51c2d0e7,other,netfilter\n51c2d0e7,Other Box,netfilter\n", Times: 1},
+		tooltest.Rule{Prefix: "nsenter --net=/run/netns/nat64-edge jool -i edge stats display --csv --no-headers --all", Out: routerRecording(t, "jool-stats.csv")},
+		tooltest.Rule{Prefix: "nsenter --net=/run/netns/nat64-edge jool -i edge pool4 display --csv --no-headers --tcp", Out: routerRecording(t, "jool-pool4-tcp.csv")},
+		tooltest.Rule{Prefix: "nsenter --net=/run/netns/nat64-gone ", Err: &tool.Error{Command: "nsenter", Code: 1, Stderr: "nsenter: cannot open /run/netns/nat64-gone: No such file or directory\n"}},
+		tooltest.Rule{Prefix: "nsenter --net=/run/netns/nat64-stale ", Err: &tool.Error{Command: "nsenter", Code: 1, Stderr: "Error: The kernel module returned error 3: This namespace lacks an instance named 'stale'.\n"}},
 	)
 	st := routerStatus(t, s)
 	if st == nil || st.Nat64Error != "" || len(st.Nat64) != 1 || st.Nat64[0].Name != "edge" || st.Nat64[0].Sessions != 3 || st.Nat64[0].Bindings != 2 {
@@ -217,7 +219,7 @@ func TestRouterNAT64Status(t *testing.T) {
 		t.Error("jool's standard error reaches the console")
 	}
 	for _, call := range r.Calls {
-		if strings.HasPrefix(call, "jool -i other") || strings.Contains(call, "Other Box") {
+		if strings.Contains(call, "nat64-other") || strings.Contains(call, "Other Box") || strings.HasPrefix(call, "jool -i") {
 			t.Errorf("chalkd asked about an instance no NAT64 document of the node names: %s", call)
 		}
 	}

@@ -133,9 +133,9 @@ func TestStatusRouterNAT64AndResolver(t *testing.T) {
 	pool := "0,TCP,192.0.2.8,61001,65535,1059,0\n"
 	addr := routerNode(t, ta, true,
 		tooltest.Rule{Prefix: "jool instance display", Out: "8fb43ac0,edge,netfilter\n"},
-		tooltest.Rule{Prefix: "jool -i edge stats display --csv --no-headers --all", Out: "JSTAT_RECEIVED6,152\nJSTAT_BIB_ENTRIES,2\nJSTAT_SESSIONS,3\n"},
-		tooltest.Rule{Prefix: "jool -i edge pool4 display --csv --no-headers --tcp", Out: pool},
-		tooltest.Rule{Prefix: "jool -i edge pool4 display --csv --no-headers --udp", Out: pool},
+		tooltest.Rule{Prefix: "nsenter --net=/run/netns/nat64-edge jool -i edge stats display --csv --no-headers --all", Out: "JSTAT_RECEIVED6,152\nJSTAT_BIB_ENTRIES,2\nJSTAT_SESSIONS,3\n"},
+		tooltest.Rule{Prefix: "nsenter --net=/run/netns/nat64-edge jool -i edge pool4 display --csv --no-headers --tcp", Out: pool},
+		tooltest.Rule{Prefix: "nsenter --net=/run/netns/nat64-edge jool -i edge pool4 display --csv --no-headers --udp", Out: pool},
 	)
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)

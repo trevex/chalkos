@@ -47,7 +47,8 @@ type Options struct {
 
 // side is the node's router side: the state of its FRR, Jool and Unbound and the kernel's routes.
 type side struct {
-	// run runs vtysh, which FRR answers on its sockets in /run/frr, jool and unbound-control.
+	// run runs vtysh, which FRR answers on its sockets in /run/frr, nsenter and jool, and
+	// unbound-control.
 	run tool.Runner
 	Options
 }
@@ -57,8 +58,8 @@ type Plugin struct{ r *side }
 
 var _ layer.Plugin = (*Plugin)(nil)
 
-// New is the router layer of the node, which runs vtysh, jool and unbound-control through the
-// node's runner.
+// New is the router layer of the node, which runs vtysh, nsenter and jool, and unbound-control
+// through the node's runner.
 func New(node layer.Node, o Options) *Plugin {
 	return &Plugin{r: &side{run: node.Runner(), Options: o}}
 }
@@ -102,7 +103,12 @@ func (r *side) ask(ctx, budget context.Context, program string, args ...string) 
 			return nil, ctx.Err()
 		}
 		if errors.Is(budget.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("%s did not answer within %v", program, askTimeout)
+			// nsenter runs the program that did not answer.
+			who := program
+			if program == "nsenter" && len(args) > 1 {
+				who = args[1]
+			}
+			return nil, fmt.Errorf("%s did not answer within %v", who, askTimeout)
 		}
 	}
 	return out, err
@@ -167,7 +173,7 @@ func (r *side) nat64(ctx context.Context) ([]*routerv1.NAT64Status, error) {
 	var instances []*routerv1.NAT64Status
 	for _, name := range names {
 		// Jool lists the instances of every network namespace; the node's are those of its NAT64
-		// documents.
+		// documents, each in its namespace nat64-<name>.
 		if !slices.Contains(rendered, name) {
 			continue
 		}
@@ -189,9 +195,10 @@ var errInstanceGone = errors.New("the instance is gone")
 // nat64Instance is the state of one of Jool's instances: its counters of sessions and bindings
 // and the size of each protocol's pool.
 func (r *side) nat64Instance(ctx, budget context.Context, name string) (*routerv1.NAT64Status, error) {
+	// Each instance runs in a network namespace of its own, and jool asks the namespace it runs in.
 	jool := func(args []string) ([]byte, error) {
-		out, err := r.ask(ctx, budget, "jool", args...)
-		if te := (*tool.Error)(nil); errors.As(err, &te) && strings.Contains(te.Stderr, routing.JoolMissingInstance) {
+		out, err := r.ask(ctx, budget, "nsenter", routing.InNamespace(name, args)...)
+		if te := (*tool.Error)(nil); errors.As(err, &te) && (strings.Contains(te.Stderr, routing.JoolMissingInstance) || strings.Contains(te.Stderr, routing.NamespaceMissing)) {
 			return nil, errInstanceGone
 		}
 		return out, err
