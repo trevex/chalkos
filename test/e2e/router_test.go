@@ -415,7 +415,7 @@ func TestRouterLab(t *testing.T) {
 		// without the address of edge0.
 		out, err := chalkctl(t, nodes["r1"], "base", "apply-config", "--try", "1m", "r1")
 		if err != nil || !regexp.MustCompile(`(?m)^r1 keeps config \S+: the trial is confirmed$`).MatchString(out) {
-			t.Fatalf("apply-config --try: %v", err)
+			t.Fatalf("apply-config --try: %v\n%s", err, out)
 		}
 		st, err := fresh()
 		if err != nil || st.Trial != nil || st.TrialError != "" || st.ConfigVersion == announced || st.PreviousConfigVersion != announced {
@@ -429,7 +429,7 @@ func TestRouterLab(t *testing.T) {
 		out, err = chalkctl(t, nodes["r1"], "lockout", "apply-config", "--try", "30s", "r1")
 		if err == nil || !strings.Contains(out, "r1: config ") || !strings.Contains(out, " was not confirmed within its trial: ") ||
 			!strings.Contains(out, "r1 rolled back to config "+base+" at the trial's deadline\n") {
-			t.Fatalf("a trial that cuts chalkctl off: %v", err)
+			t.Fatalf("a trial that cuts chalkctl off: %v\n%s", err, out)
 		}
 		if elapsed := time.Since(start); elapsed < 30*time.Second {
 			t.Errorf("the trial ended after %v, before its deadline", elapsed.Round(time.Second))
