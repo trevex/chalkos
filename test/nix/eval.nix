@@ -502,11 +502,12 @@ lib.runTests {
   # reads the NAT64s, as networkd does, chalkd asks jool in each instance's namespace and
   # unbound-control for their state, the image adds the diagnostic nat64-sessions in the instance's
   # namespace, and the node's own names resolve as before. Each VRF's resolver runs as
-  # unbound@<vrf> with the same hardening, bound to the VRF's device with BindNetworkInterface= and
-  # stopped with it, which chalkos-resolvers starts, reloads and stops once networkd and the NAT64s
-  # are up, whenever the output unbound or networkd changes, without capabilities, devices or write
-  # access to the cgroups; the output reads the VRFs and Networks and checks every config it
-  # renders. Other images run neither.
+  # unbound@<vrf> with the same hardening, bound to the VRF's device with BindNetworkInterface=,
+  # whose index it records, requiring the device without stopping with it. chalkos-resolvers
+  # starts, reloads and stops them once chalkos-vrf, networkd and the NAT64s are up, whenever the
+  # output unbound or networkd changes, without capabilities, devices or write access to the
+  # cgroups, in the group unbound; the output reads the VRFs and Networks and checks every config
+  # it renders. Other images run neither.
   testRouterNAT64AndResolver = {
     expr =
       let
@@ -604,7 +605,11 @@ lib.runTests {
               ;
             start = lib.hasSuffix "/bin/unbound -p -d -c /run/chalkos/outputs/unbound/unbound-%I.conf" u.serviceConfig.ExecStart;
             reload = lib.hasSuffix "/bin/unbound-control -c /run/chalkos/outputs/unbound/unbound-%I.conf reload_keep_cache" u.serviceConfig.ExecReload;
-            inherit (u.unitConfig) BindsTo ConditionPathExists;
+            inherit (u.unitConfig) Requires ConditionPathExists;
+            bound = u.unitConfig ? BindsTo;
+            records =
+              lib.hasInfix "unbound-vrf-device" u.serviceConfig.ExecStartPre
+              && lib.hasSuffix " %I" u.serviceConfig.ExecStartPre;
             after = lib.all (x: lib.elem x u.after) [
               "sys-subsystem-net-devices-%i.device"
               "chalkos-firewall.service"
@@ -617,6 +622,7 @@ lib.runTests {
           in
           {
             after = lib.all (x: lib.elem x r.after) [
+              "chalkos-vrf.service"
               "systemd-networkd.service"
               "chalkos-nat64.service"
             ];
@@ -624,6 +630,7 @@ lib.runTests {
               Type
               RemainAfterExit
               CapabilityBoundingSet
+              SupplementaryGroups
               PrivateDevices
               ProtectControlGroups
               ;
@@ -707,7 +714,9 @@ lib.runTests {
         ProtectSystem = "strict";
         start = true;
         reload = true;
-        BindsTo = "sys-subsystem-net-devices-%i.device";
+        Requires = "sys-subsystem-net-devices-%i.device";
+        bound = false;
+        records = true;
         ConditionPathExists = "/run/chalkos/outputs/unbound/unbound-%I.conf";
         after = true;
       };
@@ -716,6 +725,7 @@ lib.runTests {
         Type = "oneshot";
         RemainAfterExit = true;
         CapabilityBoundingSet = [ "" ];
+        SupplementaryGroups = [ "unbound" ];
         PrivateDevices = true;
         ProtectControlGroups = true;
         reloads = true;
