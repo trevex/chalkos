@@ -17,9 +17,9 @@ func readTestdata(t *testing.T, name string) []byte {
 	return data
 }
 
-// The peers of show bgp vrf all neighbors json: the sessions of each VRF's instance, recorded
-// from FRR 10.7 on a fabric edge whose session on eth2 BFD then ended, and a tenant VRF's session
-// on swp1. One entry per session, the default VRF's first, by BGPPeer and neighbour, with its
+// The peers of show bgp vrf all neighbors json: the default VRF's sessions, recorded from FRR
+// 10.7 on a fabric edge whose session on eth2 BFD then ended, and a tenant VRF's session on swp1,
+// written by hand in the shape FRR 10.7.1 gave a VRF's session in the lab. One entry per session, the default VRF's first, by BGPPeer and neighbour, with its
 // VRF, state, the uptime of an established one, its routes of every family and its BFD state.
 func TestParsePeers(t *testing.T) {
 	peers, err := ParsePeers(readTestdata(t, "neighbors.json"))
@@ -42,10 +42,10 @@ func TestParsePeers(t *testing.T) {
 }
 
 // FRR prints an object per VRF without sessions, or {} without any instance; a VRF's vrfId and
-// vrfName are no sessions, and a session of no BGPPeer's peer group is left out. What is no JSON
-// is an error.
+// vrfName are no sessions, also the vrfId -1 of an instance whose VRF the kernel lacks, and a
+// session of no BGPPeer's peer group is left out. What is no JSON is an error.
 func TestParsePeersWithout(t *testing.T) {
-	for _, data := range []string{"{\n}\n", `{}`, `{"default": {"vrfId": 0, "vrfName": "default"}}`, `{"default": {"vrfId": 0, "vrfName": "default", "eth9": {"bgpState": "Idle"}}}`} {
+	for _, data := range []string{"{\n}\n", `{}`, `{"default": {"vrfId": 0, "vrfName": "default"}}`, `{"tenant": {"vrfId": -1, "vrfName": "tenant"}}`, `{"default": {"vrfId": 0, "vrfName": "default", "eth9": {"bgpState": "Idle"}}}`} {
 		if peers, err := ParsePeers([]byte(data)); err != nil || len(peers) != 0 {
 			t.Errorf("%s: %v, %v", data, peers, err)
 		}
@@ -136,6 +136,12 @@ func TestParseImportedRoutes(t *testing.T) {
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("routes:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	// A path FRR imported without naming the VRF of its next hop keeps the route distinguisher it
+	// came from, so it still reads as imported.
+	unnamed := strings.Replace(string(readTestdata(t, "ipv6-detail-imported.json")), `"nhVrfName":"fabric",`, "", 1)
+	if routes, err := ParseRoutes([]byte(unnamed)); err != nil || len(routes) != 2 || routes[1].ImportedFrom != "192.0.2.1:2" || routes[1].Peer != "" {
+		t.Errorf("an imported path without nhVrfName: %v, %v", routes, err)
 	}
 	// A VRF without an instance answers with a warning and no paths.
 	if routes, err := ParseRoutes([]byte(`{"warning":"View/Vrf is unknown"}`)); err != nil || len(routes) != 0 {

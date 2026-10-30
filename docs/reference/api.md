@@ -1371,7 +1371,7 @@ A path of BGP's for a prefix, which its best path selection took.
 | `med` | uint32 | The path's multi-exit discriminator. |
 | `communities` | list of string | The path's standard and large communities. |
 | `best` | bool | Whether it is the best path; otherwise one of the equal paths BGP installs beside it. |
-| `imported_from` | string | The VRF whose BGP instance the path came from, through the importing instance's spec.import; empty for a path of the instance's own peers or networks. |
+| `imported_from` | string | The VRF whose BGP instance the path came from, through the importing instance's spec.import, or the route distinguisher it came from when FRR names no VRF; empty for a path of the instance's own peers or networks. |
 
 ### KernelRoute { #router-message-kernelroute }
 

@@ -169,6 +169,7 @@ message BGPRoute {
   // Whether it is the best path; otherwise one of the equal paths BGP installs beside it.
   bool best = 8;
   // The VRF whose BGP instance the path came from, through the importing instance's
-  // spec.import; empty for a path of the instance's own peers or networks.
+  // spec.import, or the route distinguisher it came from when FRR names no VRF; empty for a
+  // path of the instance's own peers or networks.
   string imported_from = 9;
 }

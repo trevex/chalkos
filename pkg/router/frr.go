@@ -174,8 +174,9 @@ func ParseRoutes(data []byte) ([]*BGPRoute, error) {
 			switch {
 			case p.ImportedFrom != "":
 				// FRR marks an imported path local; it keeps the AS path it had in its VRF, where
-				// the router's own networks have the path Local.
-				r.ImportedFrom = p.NHVRFName
+				// the router's own networks have the path Local. A path that names no VRF of its
+				// next hop names the route distinguisher it came from.
+				r.ImportedFrom = cmp.Or(p.NHVRFName, p.ImportedFrom)
 				if p.ASPath.String != "Local" {
 					r.ASPath = p.ASPath.String
 				}

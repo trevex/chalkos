@@ -763,7 +763,8 @@ type BGPRoute struct {
 	// Whether it is the best path; otherwise one of the equal paths BGP installs beside it.
 	Best bool `protobuf:"varint,8,opt,name=best,proto3" json:"best,omitempty"`
 	// The VRF whose BGP instance the path came from, through the importing instance's
-	// spec.import; empty for a path of the instance's own peers or networks.
+	// spec.import, or the route distinguisher it came from when FRR names no VRF; empty for a
+	// path of the instance's own peers or networks.
 	ImportedFrom  string `protobuf:"bytes,9,opt,name=imported_from,json=importedFrom,proto3" json:"imported_from,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
