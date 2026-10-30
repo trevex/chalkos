@@ -284,8 +284,9 @@ func TestResolverOpenings(t *testing.T) {
 	}
 }
 
-// The forward chain accepts the NAT64 links' traffic ahead of the policies, from a VRF's link by
-// sdifname; source NAT translates nothing into a NAT64's link or from an explicit pool and
+// The forward chain accepts the NAT64 links' translated traffic ahead of the policies, from a VRF's
+// link by sdifname: out of a link the prefix's IPv6 and IPv4 from the pool or the inner address,
+// into it IPv6 to the prefix and IPv4 to an explicit pool; source NAT translates nothing into a NAT64's link or from an explicit pool and
 // masquerades an own pool's inner address, ahead of the NATRules; a VRF's conntrack zone holds its
 // NAT64's link; and a VRF's resolver opens port 53 in its VRF alone. Without policies between
 // zones the forward chain accepts everything, and without NATRules an explicit pool needs no source
@@ -315,10 +316,13 @@ func TestNAT64Firewall(t *testing.T) {
 	got := ruleset(docs)
 	for _, want := range []string{
 		"\t\ticmp type { destination-unreachable, time-exceeded, parameter-problem } accept\n" +
-			"\t\tiifname \"n64-edge\" accept comment \"NAT64 edge\"\n" +
-			"\t\toifname \"n64-edge\" accept comment \"NAT64 edge\"\n" +
-			"\t\tmeta sdifname \"n64-guest\" accept comment \"NAT64 guest\"\n" +
-			"\t\toifname \"n64-guest\" accept comment \"NAT64 guest\"\n" +
+			"\t\tiifname \"n64-edge\" ip6 saddr 64:ff9b::/96 accept comment \"NAT64 edge\"\n" +
+			"\t\tiifname \"n64-edge\" ip saddr { 192.0.2.8/30 } accept comment \"NAT64 edge\"\n" +
+			"\t\toifname \"n64-edge\" ip6 daddr 64:ff9b::/96 accept comment \"NAT64 edge\"\n" +
+			"\t\toifname \"n64-edge\" ip daddr { 192.0.2.8/30 } accept comment \"NAT64 edge\"\n" +
+			"\t\tmeta sdifname \"n64-guest\" ip6 saddr 64:ff9b::/96 accept comment \"NAT64 guest\"\n" +
+			"\t\tmeta sdifname \"n64-guest\" ip saddr 169.254.111.206 accept comment \"NAT64 guest\"\n" +
+			"\t\toifname \"n64-guest\" ip6 daddr 64:ff9b::/96 accept comment \"NAT64 guest\"\n" +
 			"\t\tct status dnat accept\n" +
 			"\t\tiifname { \"eth0\" } oifname { \"eth4\" } jump policy-lan-wan\n",
 		"\t\tiifname { \"eth3\", \"eth4\", \"n64-guest\" } ct zone set 1 comment \"VRF guest\"\n",

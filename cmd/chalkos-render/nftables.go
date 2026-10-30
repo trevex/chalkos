@@ -546,8 +546,8 @@ func (f *firewall) input(b *strings.Builder) error {
 }
 
 // forward accepts everything while no policy goes between two zones and the ruleset is not
-// closed. Otherwise it accepts the protected traffic, the NAT64s' traffic into and out of their
-// links, which no policy filters, and destination-translated connections, hands each connection to
+// closed. Otherwise it accepts the protected traffic, the NAT64s' translated traffic into and out
+// of their links, which no policy filters, and destination-translated connections, hands each connection to
 // the policy of its pair of zones, and drops the rest, also from or to an interface in no zone. A
 // policy to a zone of no link has no line.
 func (f *firewall) forward(b *strings.Builder) {
@@ -567,6 +567,10 @@ func (f *firewall) forward(b *strings.Builder) {
 		"\t\tct state invalid drop\n" +
 		"\t\ticmpv6 type { " + icmpv6Errors + " } accept\n" +
 		"\t\ticmp type { " + icmpErrors + " } accept\n")
+	// A NAT64's link carries what Jool translated: out of it IPv6 from the prefix and IPv4 from
+	// the pool or, for an own pool, the inner address; into it IPv6 to the prefix and IPv4 to an
+	// explicit pool. An own pool's IPv4 comes back to the masqueraded connections alone. Anything
+	// else on the link goes on to the zones, which hold no NAT64's link, and is dropped.
 	for _, n := range f.nat64 {
 		link, c := strconv.Quote(nat64LinkPrefix+n.name), strconv.Quote("NAT64 "+n.name)
 		// The forward hook sees a packet from a VRF's link with the VRF's device as iifname.
@@ -574,7 +578,17 @@ func (f *firewall) forward(b *strings.Builder) {
 		if n.vrf != defaultVRF {
 			from = "meta sdifname " + link
 		}
-		fmt.Fprintf(b, "\t\t%s accept comment %s\n\t\toifname %s accept comment %s\n", from, c, link, c)
+		prefix := n.jool.Global.Pool6
+		source := n.inner.String()
+		if len(n.pools) > 0 {
+			source = n.poolSet()
+		}
+		fmt.Fprintf(b, "\t\t%s ip6 saddr %s accept comment %s\n", from, prefix, c)
+		fmt.Fprintf(b, "\t\t%s ip saddr %s accept comment %s\n", from, source, c)
+		fmt.Fprintf(b, "\t\toifname %s ip6 daddr %s accept comment %s\n", link, prefix, c)
+		if len(n.pools) > 0 {
+			fmt.Fprintf(b, "\t\toifname %s ip daddr %s accept comment %s\n", link, n.poolSet(), c)
+		}
 	}
 	if slices.ContainsFunc(f.nat, func(n named[natSpec]) bool { return n.Spec.Type == "dnat" }) {
 		b.WriteString("\t\tct status dnat accept\n")
@@ -650,11 +664,7 @@ func (f *firewall) nat64Lines() []string {
 				fmt.Sprintf("ip saddr %s masquerade comment %s", n.inner, c))
 			continue
 		}
-		pools := make([]string, len(n.pools))
-		for i, p := range n.pools {
-			pools[i] = p.String()
-		}
-		lines = append(lines, fmt.Sprintf("ip saddr { %s } accept comment %s", strings.Join(pools, ", "), c))
+		lines = append(lines, fmt.Sprintf("ip saddr %s accept comment %s", n.poolSet(), c))
 	}
 	return lines
 }

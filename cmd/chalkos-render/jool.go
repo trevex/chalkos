@@ -120,6 +120,15 @@ type nat64Instance struct {
 	pools []netip.Prefix
 }
 
+// poolSet is the anonymous nftables set of the prefixes of n's explicit pool.
+func (n nat64Instance) poolSet() string {
+	pools := make([]string, len(n.pools))
+	for i, p := range n.pools {
+		pools[i] = p.String()
+	}
+	return "{ " + strings.Join(pools, ", ") + " }"
+}
+
 // nat64Instances are the NAT64 documents of d as chalkos-nat64 runs them. It refuses what
 // joolInstances refuses, a VRF no document declares, two names whose hashes pick one link, a
 // static address of a Network document in nat64Range, and a pool entry that holds a static address
