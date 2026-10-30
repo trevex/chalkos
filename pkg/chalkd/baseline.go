@@ -111,9 +111,14 @@ func (a baselineAttempt) applied() ([]byte, error) {
 	return json.Marshal(a)
 }
 
+// maxAttempts is how many attempts a baseline keeps, the newest.
+const maxAttempts = 16
+
 // addAttempt adds a, what a delivery applies, to the baseline at path, which that delivery
 // compares with. An attempt that applied the same, as a retry of the same delivery leaves it,
-// goes, so the baseline holds each once, with the facts of its last run.
+// goes, so the baseline holds each once, with the facts of its last run. An attempt that applies
+// what the baseline holds, as a delivery of the baseline's config does, is not added: the
+// comparison with the baseline takes its effects. Beyond maxAttempts the oldest go.
 func addAttempt(path string, a baselineAttempt) error {
 	b, found, err := readBaseline(path)
 	if err != nil {
@@ -126,11 +131,17 @@ func addAttempt(path string, a baselineAttempt) error {
 	if err != nil {
 		return err
 	}
+	if own, err := (baselineAttempt{Documents: b.Documents, Outputs: b.Outputs, Kinds: b.Kinds}).applied(); err == nil && bytes.Equal(own, data) {
+		return nil
+	}
 	b.Attempts = slices.DeleteFunc(b.Attempts, func(o baselineAttempt) bool {
 		od, err := o.applied()
 		return err == nil && bytes.Equal(od, data)
 	})
 	b.Attempts = append(b.Attempts, a)
+	if n := len(b.Attempts); n > maxAttempts {
+		b.Attempts = b.Attempts[n-maxAttempts:]
+	}
 	return b.write(path)
 }
 
