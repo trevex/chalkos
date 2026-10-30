@@ -141,8 +141,11 @@ func vrfLinks(vrfs []named[vrfSpec], byKind map[string]any) (vrfMembership, erro
 		return none, err
 	}
 	for _, v := range vrfs {
-		if u := candidates(units, v.Name)[0]; u.name != vrfUnitPrefix+v.Name {
-			return none, fmt.Errorf("Network %s matches the device of VRF %s before %s%s", u.name, v.Name, vrfUnitPrefix, v.Name)
+		if u, own := candidates(units, v.Name)[0], vrfUnitPrefix+v.Name; u.name != own {
+			if u.narrowed {
+				return none, fmt.Errorf("Network %s may match the device of VRF %s before %s, should its other [Match] keys match it; rename it to sort after %s", u.name, v.Name, own, own)
+			}
+			return none, fmt.Errorf("Network %s matches the device of VRF %s before %s; rename it to sort after %s", u.name, v.Name, own, own)
 		}
 	}
 	for _, m := range members {
@@ -320,22 +323,40 @@ func firstNetworks(units []networkUnit, members []vrfMember) (map[string]string,
 // other [Match] keys or negated words may leave the links to u. VRF= on u would put the links in
 // the VRF where networkd does not, so the renderer refuses rather than give u one.
 func shadowsVRF(units []networkUnit, u networkUnit, m vrfMember, after bool) error {
+	var owner networkUnit
+	if i := slices.IndexFunc(units, func(o networkUnit) bool { return o.name == m.network }); i >= 0 {
+		owner = units[i]
+	}
+	// A member of no text stands for the links of a Name= of negated words alone, or of none.
 	links, them := "links of "+m.text, "them"
-	if isLiteral(m.glob) {
+	switch {
+	case isLiteral(m.glob):
 		links, them = m.glob, "it"
+	case m.text != "":
+	case len(owner.match.words) == 0:
+		links = "links Network " + m.network + " may match"
+	case after && !owner.narrowed:
+		links = "links Network " + m.network + "'s Name= negates"
+	default:
+		links = "links Network " + m.network + "'s Name= does not negate"
 	}
 	if after {
-		owner := "Network " + m.network
-		if i := slices.IndexFunc(units, func(o networkUnit) bool { return o.name == m.network }); i >= 0 && units[i].narrowed {
-			owner = "the other [Match] keys of Network " + m.network
+		when := "Network " + m.network + " does not"
+		if owner.narrowed {
+			when = "the other [Match] keys of Network " + m.network + " do not"
 		}
-		return fmt.Errorf("Network %s matches %s when %s do not, and networkd then does not apply %s's VRF=%s to %s; give %s VRF=%s", u.name, links, owner, m.network, m.vrf, them, u.name, m.vrf)
+		return fmt.Errorf("Network %s matches %s when %s, and networkd then does not apply %s's VRF=%s to %s; give %s VRF=%s", u.name, links, when, m.network, m.vrf, them, u.name, m.vrf)
 	}
 	first, applies := "is the first", "never applies"
 	if u.narrowed {
 		first, applies = "may be the first", "may not apply"
 	}
-	return fmt.Errorf("Network %s %s to match %s, so networkd %s Network %s's VRF=%s to %s; give %s VRF=%s or drop %s", u.name, first, links, applies, m.network, m.vrf, them, u.name, m.vrf, m.network)
+	// Sorted after a Network whose other [Match] keys may not match, u may still match the links.
+	fix := fmt.Sprintf("give %s VRF=%s, rename it to sort after %s, or drop %s's VRF=", u.name, m.vrf, m.network, m.network)
+	if owner.narrowed {
+		fix = fmt.Sprintf("give %s VRF=%s or drop %s's VRF=", u.name, m.vrf, m.network)
+	}
+	return fmt.Errorf("Network %s %s to match %s, so networkd %s Network %s's VRF=%s to %s; %s", u.name, first, links, applies, m.network, m.vrf, them, fix)
 }
 
 // shadowed reports whether units before one of Name= m match every link that m's words share
