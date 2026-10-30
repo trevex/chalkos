@@ -185,7 +185,7 @@ let
         type = types.nullOr name;
         default = null;
         example = "uplink";
-        description = "PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole and unreachable routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds.";
+        description = "PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole, unreachable and prohibit routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds.";
       };
       maxPrefix = mkOption {
         type = types.nullOr positive32;
