@@ -26,6 +26,12 @@ let
   cel = import ../../../../lib/cel.nix { inherit lib; };
 
   zoneName = types.strMatching documentName;
+  # A VRF document's name.
+  vrfName = types.strMatching documentName;
+  # Binds, for body, all to the VRFs of every FirewallZone as one list, which a rule loops over
+  # rather than over each zone's VRFs: nested loops, or a loop over a list flattened in place,
+  # would cost more than chalkd allows.
+  zoneVRFs = body: "cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), ${body})";
   verdict = types.enum [
     "accept"
     "drop"
@@ -235,7 +241,7 @@ in
 
       FirewallZone = builtin groups.router // {
         multiple = true;
-        description = "A zone of the router's firewall: interfaces whose connections the FirewallPolicy documents treat alike. The zone local is the router itself and has no document.";
+        description = "A zone of the router's firewall: interfaces and VRFs whose connections the FirewallPolicy documents treat alike. The zone local is the router itself and has no document.";
         rules = [
           {
             description = "No FirewallZone is named local, the router itself.";
@@ -247,14 +253,38 @@ in
             rule = "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, size(all.filter(j, j == i)) == 1))";
             messageExpression = ''cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), "the interface " + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each interface one zone")'';
           }
+          {
+            description = "A FirewallZone names an interface or a VRF.";
+            rule = "documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)";
+            messageExpression = ''documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, "FirewallZone " + n).join(", ") + " names no interface and no VRF; give it interfaces, vrfs or both"'';
+          }
+          {
+            description = "A FirewallZone's VRFs are VRF documents.";
+            rule = "cel.bind(vrfs, ${delivered "VRF"}, ${zoneVRFs "all.all(v, v in vrfs)"})";
+            messageExpression = "cel.bind(vrfs, ${delivered "VRF"}, ${zoneVRFs ''cel.bind(v, all.filter(v, !(v in vrfs))[0], "FirewallZone " + documents.filter(n, v in documents[n].spec.vrfs)[0] + " names the VRF " + v + ", which no VRF document declares")''})";
+          }
+          {
+            description = "A VRF is in one FirewallZone, once.";
+            rule = zoneVRFs "all.all(v, size(all.filter(w, w == v)) == 1)";
+            messageExpression = zoneVRFs ''"the VRF " + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each VRF one zone"'';
+          }
         ];
-        spec.interfaces = mkOption {
-          type = types.nonEmptyListOf interface;
-          example = [
-            "eth1"
-            "vlan*"
-          ];
-          description = "Interfaces of the zone, ${interfaceText}.";
+        spec = {
+          interfaces = mkOption {
+            type = types.listOf interface;
+            default = [ ];
+            example = [
+              "eth1"
+              "vlan*"
+            ];
+            description = "Interfaces of the zone, ${interfaceText}. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; it is then in no other zone through its VRF.";
+          };
+          vrfs = mkOption {
+            type = types.listOf vrfName;
+            default = [ ];
+            example = [ "tenant" ];
+            description = "VRF documents whose links are all in the zone, those added later included; a VRF is in one zone at most.";
+          };
         };
       };
 

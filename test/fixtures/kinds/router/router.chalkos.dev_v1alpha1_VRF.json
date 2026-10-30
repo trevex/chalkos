@@ -25,6 +25,23 @@
     "spec": {
       "additionalProperties": false,
       "properties": {
+        "conntrackZone": {
+          "anyOf": [
+            {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Conntrack zone of the connections through the VRF's links, which no other VRF uses; null shares zone 0 with the default VRF and every VRF without one. A zone keeps the state and NAT of the VRF's connections apart from those of other VRFs with the same addresses. A VRF with a zone neither imports routes from another VRF nor gives its routes to one.",
+          "examples": [
+            1
+          ]
+        },
         "interfaces": {
           "default": [],
           "description": "Links the VRF holds, by name or glob, a glob being a prefix followed by `*`; a glob stands for the links the node's Network documents name in a `[Match]` section's `Name=`. A link is named by a Network document, which gets `VRF=`, and every link of that Network is in this VRF.",
@@ -109,6 +126,18 @@
         "description": "No NetDev document creates a device of a VRF's name.",
         "messageExpression": "cel.bind(made, cel.bind(netdevs, ((\"networkd.chalkos.dev/v1alpha1\" in config && \"NetDev\" in config[\"networkd.chalkos.dev/v1alpha1\"]) ? config[\"networkd.chalkos.dev/v1alpha1\"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : \"\")).flatten()), \"the VRF \" + documents.filter(n, n in made)[0] + \" takes the name of a device a NetDev document creates; rename the VRF or the NetDev\")",
         "rule": "cel.bind(made, cel.bind(netdevs, ((\"networkd.chalkos.dev/v1alpha1\" in config && \"NetDev\" in config[\"networkd.chalkos.dev/v1alpha1\"]) ? config[\"networkd.chalkos.dev/v1alpha1\"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : \"\")).flatten()), documents.all(n, !(n in made)))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A conntrack zone belongs to one VRF.",
+        "messageExpression": "cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), \"more than one VRF uses conntrack zone \" + string(z.filter(x, size(z.filter(y, y == x)) > 1)[0]) + \"; give each VRF a zone of its own\")",
+        "rule": "cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), z.all(x, size(z.filter(y, y == x)) == 1))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A VRF with a conntrack zone neither imports routes from another VRF nor gives its routes to one, through BGP.",
+        "messageExpression": "cel.bind(bgps, ((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec[\"import\"].ipv4, bgps[n].spec[\"import\"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec[\"import\"].ipv4 != null || bgps[n].spec[\"import\"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? \"default\" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, \"VRF \" + n).join(\", \") + \" has a conntrack zone and leaks routes through a BGP import, whose connections would answer in another zone; drop the zone or the import\"))))",
+        "rule": "cel.bind(bgps, ((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec[\"import\"].ipv4, bgps[n].spec[\"import\"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec[\"import\"].ipv4 != null || bgps[n].spec[\"import\"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? \"default\" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.all(n, documents[n].spec.conntrackZone == null || !(n in importers) && !(n in imported))))))",
         "takes": "refuse"
       }
     ],

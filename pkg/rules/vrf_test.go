@@ -13,9 +13,10 @@ import (
 // The VRF kind's rules accept an edge with two VRFs and refuse the name default, a name past 15
 // characters, a table of the kernel's, two VRFs of one table, an interface in two VRFs, a
 // management interface in a VRF, a node whose node API answers on every interface but whose
-// Network documents all name links of VRFs, and a NetDev of a VRF's name. Two VRFs' members
-// compare as written; against management interfaces and the Network documents' names, globs match
-// as globs.
+// Network documents all name links of VRFs, a NetDev of a VRF's name, two VRFs of one conntrack
+// zone, and a VRF with a zone that imports routes or whose routes another VRF imports. Two VRFs'
+// members compare as written; against management interfaces and the Network documents' names,
+// globs match as globs.
 func TestVRFRules(t *testing.T) {
 	set, doc := routerRules(t)
 	networks := []config.Document{
@@ -37,6 +38,20 @@ func TestVRFRules(t *testing.T) {
 	// Without the Router and eth0's Network, every named link is in a VRF: eth1 and eth2 by name,
 	// swp1 and swp2 by the glob swp*.
 	allInVRFs := without(without(edge, "Router", "router"), "Network", "10-eth0")
+	// tenant and internet with conntrack zones, and BGP instances that import or not.
+	zoned := func(tenantZone, internetZone string) []config.Document {
+		docs := without(without(edge, "VRF", "tenant"), "VRF", "internet")
+		return with(docs,
+			doc("VRF", "tenant", `{"table": 100, "interfaces": ["eth2", "swp*"]`+tenantZone+`}`),
+			doc("VRF", "internet", `{"table": 200, "interfaces": ["eth1"]`+internetZone+`}`))
+	}
+	bgp := func(name, vrf, imports string) config.Document {
+		return doc("BGP", name, `{"vrf": `+vrf+`, "asn": 64512, "routerID": "192.0.2.1"`+imports+`}`)
+	}
+	importer := []config.Document{bgp("internet", `"internet"`, ""), bgp("tenant", `"tenant"`, `, "import": {"ipv4": {"vrfs": ["internet"]}}`)}
+	zoneMessage := func(vrf string) []string {
+		return []string{"VRF " + vrf + " has a conntrack zone and leaks routes through a BGP import, whose connections would answer in another zone; drop the zone or the import"}
+	}
 	// A node whose node API answers on every interface, with a VRF that holds the interfaces given
 	// and a Network document whose [Match] section has the Name= given, in JSON.
 	held := func(name string, interfaces ...string) []config.Document {
@@ -95,6 +110,13 @@ func TestVRFRules(t *testing.T) {
 		{"a NetDev without a [NetDev] section", with(edge, builtinDoc(t, config.NetworkdAPI, "NetDev", "20-empty", `{}`)), nil},
 		{"NetDev sections, one of a VRF's name", with(edge, builtinDoc(t, config.NetworkdAPI, "NetDev", "20-two", `{"netDev": [{"kind": "dummy", "name": "edge0"}, {"kind": "dummy", "name": "tenant"}]}`)),
 			[]string{"the VRF tenant takes the name of a device a NetDev document creates; rename the VRF or the NetDev"}},
+		{"VRFs with conntrack zones", zoned(`, "conntrackZone": 1`, `, "conntrackZone": 2`), nil},
+		{"a zoned VRF without imports", with(zoned(`, "conntrackZone": 1`, ""), bgp("internet", `"internet"`, ""), bgp("tenant", `"tenant"`, "")), nil},
+		{"two VRFs of one conntrack zone", zoned(`, "conntrackZone": 1`, `, "conntrackZone": 1`),
+			[]string{"more than one VRF uses conntrack zone 1; give each VRF a zone of its own"}},
+		{"a zoned VRF that imports", with(zoned(`, "conntrackZone": 1`, ""), importer...), zoneMessage("tenant")},
+		{"a zoned VRF that another imports", with(zoned("", `, "conntrackZone": 2`), importer...), zoneMessage("internet")},
+		{"a zoned VRF that the default VRF imports", with(zoned(`, "conntrackZone": 1`, ""), bgp("bgp", "null", `, "import": {"ipv6": {"vrfs": ["tenant"]}}`), bgp("tenant", `"tenant"`, "")), zoneMessage("tenant")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
@@ -108,7 +130,8 @@ func TestVRFRules(t *testing.T) {
 	}
 }
 
-// The VRF kind's schema takes tables from 1 to 2^32 - 1 and interfaces by name or glob.
+// The VRF kind's schema takes tables from 1 to 2^32 - 1, interfaces by name or glob and conntrack
+// zones from 1 to 65535.
 func TestVRFSchema(t *testing.T) {
 	s, err := schema.LoadSchemas("../../test/fixtures/kinds/router")
 	if err != nil {
@@ -124,6 +147,9 @@ func TestVRFSchema(t *testing.T) {
 		{`{"table": 4294967296}`, false},
 		{`{"interfaces": ["eth1"]}`, false},
 		{`{"table": 100, "interfaces": ["eth 1"]}`, false},
+		{`{"table": 100, "conntrackZone": 65535}`, true},
+		{`{"table": 100, "conntrackZone": 0}`, false},
+		{`{"table": 100, "conntrackZone": 65536}`, false},
 	} {
 		d := builtinDoc(t, config.RouterAPI, "VRF", "tenant", tc.spec)
 		if err := s.Validate(d.Object); (err == nil) != tc.ok {

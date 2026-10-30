@@ -38,9 +38,10 @@ func network(t *testing.T, name, match string) config.Document {
 	return builtinDoc(t, config.NetworkdAPI, "Network", name, `{"match": `+match+`}`)
 }
 
-// The router kinds' rules accept a fabric edge's documents and refuse a dangling zone or set, two
-// zones of one interface, a policy from local, two policies between one pair, a set beside
-// ranges, addresses of another family and ports without a protocol.
+// The router kinds' rules accept a fabric edge's documents and a zone of a VRF, and refuse a
+// dangling zone, set or VRF, two zones of one interface or VRF, a zone of nothing, a policy from
+// local, two policies between one pair, a set beside ranges, addresses of another family and
+// ports without a protocol.
 func TestRouterRules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -122,6 +123,13 @@ func TestRouterRules(t *testing.T) {
 			[]string{"NATRule web has addresses of another family than ipv4"}},
 		{"NAT ports without a protocol", replace(edge, doc("NATRule", "web", `{"type": "dnat", "in": {"interface": "eth0"}, "match": {"destinationPorts": [80]}, "to": {"address": "192.0.2.10"}}`)),
 			[]string{"NATRule web: ports need match.protocol"}},
+		{"a zone of a VRF", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"vrfs": ["tenant"]}`)), nil},
+		{"a zone of nothing", replace(edge, doc("FirewallZone", "dmz", `{}`)),
+			[]string{"FirewallZone dmz names no interface and no VRF; give it interfaces, vrfs or both"}},
+		{"a zone of a VRF no document declares", replace(edge, doc("FirewallZone", "tenant", `{"vrfs": ["tenant"]}`)),
+			[]string{"FirewallZone tenant names the VRF tenant, which no VRF document declares"}},
+		{"a VRF in two zones", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"vrfs": ["tenant"]}`), doc("FirewallZone", "more", `{"vrfs": ["tenant"]}`)),
+			[]string{"the VRF tenant is in more than one FirewallZone, or twice in one; give each VRF one zone"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})

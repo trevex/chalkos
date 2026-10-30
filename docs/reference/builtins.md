@@ -632,6 +632,9 @@ cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in conf
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | No FirewallZone is named local, the router itself. | `refuse` | `!("local" in documents)` | a FirewallZone is named local, which is the router itself: FirewallPolicy documents name it without a document, so give the zone another name |
 | 2 | — | An interface or glob is in one FirewallZone, once; globs compare as written. | `refuse` | after the table | after the table |
+| 3 | — | A FirewallZone names an interface or a VRF. | `refuse` | `documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)` | after the table |
+| 4 | — | A FirewallZone's VRFs are VRF documents. | `refuse` | after the table | after the table |
+| 5 | — | A VRF is in one FirewallZone, once. | `refuse` | after the table | after the table |
 
 Expression of rule 2:
 
@@ -643,6 +646,36 @@ Message of rule 2:
 
 ```text
 cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), "the interface " + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each interface one zone")
+```
+
+Message of rule 3:
+
+```text
+documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, "FirewallZone " + n).join(", ") + " names no interface and no VRF; give it interfaces, vrfs or both"
+```
+
+Expression of rule 4:
+
+```text
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), all.all(v, v in vrfs)))
+```
+
+Message of rule 4:
+
+```text
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), cel.bind(v, all.filter(v, !(v in vrfs))[0], "FirewallZone " + documents.filter(n, v in documents[n].spec.vrfs)[0] + " names the VRF " + v + ", which no VRF document declares")))
+```
+
+Expression of rule 5:
+
+```text
+cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), all.all(v, size(all.filter(w, w == v)) == 1))
+```
+
+Message of rule 5:
+
+```text
+cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), "the VRF " + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each VRF one zone")
 ```
 
 #### NAT64 { #rules-nat64 }
@@ -1080,6 +1113,8 @@ self.all(t, t["then"].action == "accept" || t["then"].localPref == null && t["th
 | 5 | — | No VRF holds an interface of Router.spec.management.interfaces; globs match as globs. | `refuse` | after the table | after the table |
 | 6 | — | While the node API answers on every interface, a Network document names a link that no VRF holds; globs match as globs. | `refuse` | after the table | every link the Network documents name is in a VRF, and chalkd answers in the default VRF alone, on every interface while Router.spec.management.interfaces is null; keep the link you reach the router through out of every VRF |
 | 7 | — | No NetDev document creates a device of a VRF's name. | `refuse` | after the table | after the table |
+| 8 | — | A conntrack zone belongs to one VRF. | `refuse` | after the table | after the table |
+| 9 | — | A VRF with a conntrack zone neither imports routes from another VRF nor gives its routes to one, through BGP. | `refuse` | after the table | after the table |
 
 Message of rule 1:
 
@@ -1139,6 +1174,30 @@ Message of rule 7:
 
 ```text
 cel.bind(made, cel.bind(netdevs, (("networkd.chalkos.dev/v1alpha1" in config && "NetDev" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : "")).flatten()), "the VRF " + documents.filter(n, n in made)[0] + " takes the name of a device a NetDev document creates; rename the VRF or the NetDev")
+```
+
+Expression of rule 8:
+
+```text
+cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), z.all(x, size(z.filter(y, y == x)) == 1))
+```
+
+Message of rule 8:
+
+```text
+cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), "more than one VRF uses conntrack zone " + string(z.filter(x, size(z.filter(y, y == x)) > 1)[0]) + "; give each VRF a zone of its own")
+```
+
+Expression of rule 9:
+
+```text
+cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.all(n, documents[n].spec.conntrackZone == null || !(n in importers) && !(n in imported))))))
+```
+
+Message of rule 9:
+
+```text
+cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + " has a conntrack zone and leaks routes through a BGP import, whose connections would answer in another zone; drop the zone or the import"))))
 ```
 
 ## Facts { #facts }

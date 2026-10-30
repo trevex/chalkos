@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "A zone of the router's firewall: interfaces whose connections the FirewallPolicy documents treat alike. The zone local is the router itself and has no document.",
+  "description": "A zone of the router's firewall: interfaces and VRFs whose connections the FirewallPolicy documents treat alike. The zone local is the router itself and has no document.",
   "properties": {
     "apiVersion": {
       "const": "router.chalkos.dev/v1alpha1"
@@ -26,7 +26,8 @@
       "additionalProperties": false,
       "properties": {
         "interfaces": {
-          "description": "Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`.",
+          "default": [],
+          "description": "Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; it is then in no other zone through its VRF.",
           "examples": [
             [
               "eth1",
@@ -37,13 +38,23 @@
             "pattern": "^(?:[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*])$",
             "type": "string"
           },
-          "minItems": 1,
+          "type": "array"
+        },
+        "vrfs": {
+          "default": [],
+          "description": "VRF documents whose links are all in the zone, those added later included; a VRF is in one zone at most.",
+          "examples": [
+            [
+              "tenant"
+            ]
+          ],
+          "items": {
+            "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+            "type": "string"
+          },
           "type": "array"
         }
       },
-      "required": [
-        "interfaces"
-      ],
       "type": "object"
     }
   },
@@ -70,6 +81,24 @@
         "description": "An interface or glob is in one FirewallZone, once; globs compare as written.",
         "messageExpression": "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), \"the interface \" + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + \" is in more than one FirewallZone, or twice in one; give each interface one zone\")",
         "rule": "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, size(all.filter(j, j == i)) == 1))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A FirewallZone names an interface or a VRF.",
+        "messageExpression": "documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, \"FirewallZone \" + n).join(\", \") + \" names no interface and no VRF; give it interfaces, vrfs or both\"",
+        "rule": "documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)",
+        "takes": "refuse"
+      },
+      {
+        "description": "A FirewallZone's VRFs are VRF documents.",
+        "messageExpression": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), cel.bind(v, all.filter(v, !(v in vrfs))[0], \"FirewallZone \" + documents.filter(n, v in documents[n].spec.vrfs)[0] + \" names the VRF \" + v + \", which no VRF document declares\")))",
+        "rule": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), all.all(v, v in vrfs)))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A VRF is in one FirewallZone, once.",
+        "messageExpression": "cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), \"the VRF \" + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + \" is in more than one FirewallZone, or twice in one; give each VRF one zone\")",
+        "rule": "cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), all.all(v, size(all.filter(w, w == v)) == 1))",
         "takes": "refuse"
       }
     ],

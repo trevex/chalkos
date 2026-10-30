@@ -427,15 +427,16 @@ A node's config may hold several, each with a name of its own. It has 8 [change 
 
 ### FirewallZone { #firewallzone }
 
-A zone of the router's firewall: interfaces whose connections the FirewallPolicy documents treat alike. The zone local is the router itself and has no document.
+A zone of the router's firewall: interfaces and VRFs whose connections the FirewallPolicy documents treat alike. The zone local is the router itself and has no document.
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 2 [change rules](builtins.md#rules-firewallzone).
+A node's config may hold several, each with a name of its own. It has 5 [change rules](builtins.md#rules-firewallzone).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.interfaces` | list of string | required | Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. |
+| `spec.interfaces` | list of string | `[]` | Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; it is then in no other zone through its VRF. |
+| `spec.vrfs` | list of string | `[]` | VRF documents whose links are all in the zone, those added later included; a VRF is in one zone at most. |
 
 ### NAT64 { #nat64 }
 
@@ -567,10 +568,11 @@ A VRF of the router: a kernel VRF device of the document's name, its routing tab
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 7 [change rules](builtins.md#rules-vrf).
+A node's config may hold several, each with a name of its own. It has 9 [change rules](builtins.md#rules-vrf).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
+| `spec.conntrackZone` | integer from 1 to 65535 or null | `null` | Conntrack zone of the connections through the VRF's links, which no other VRF uses; null shares zone 0 with the default VRF and every VRF without one. A zone keeps the state and NAT of the VRF's connections apart from those of other VRFs with the same addresses. A VRF with a zone neither imports routes from another VRF nor gives its routes to one. |
 | `spec.interfaces` | list of string | `[]` | Links the VRF holds, by name or glob, a glob being a prefix followed by `*`; a glob stands for the links the node's Network documents name in a `[Match]` section's `Name=`. A link is named by a Network document, which gets `VRF=`, and every link of that Network is in this VRF. |
 | `spec.table` | integer from 1 to 4294967295 | required | Routing table of the VRF, which no other VRF uses; not 253, 254 or 255, the kernel's tables of the default VRF. A change creates the VRF anew, which ends the sessions in it. |
 

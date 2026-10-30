@@ -49,6 +49,15 @@ let
   overlapsHeld =
     i:
     ''(${i}.matches(heldName) || ${i}.endsWith("*") && heldText.contains(" " + ${i}.replace("*", "")))'';
+  # Binds, for body, importers to the VRFs whose BGP instances import routes of another VRF and
+  # imported to the VRFs they import from, "default" standing for the default VRF. The import
+  # families of every instance are bound as one list first: CEL estimates a list flattened in an
+  # expression at the product of its lists' sizes, a bound list at one list's.
+  leaking =
+    body:
+    ''cel.bind(bgps, ${delivered "BGP"}, cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), ${body}))))'';
+  # The conntrack zones of the VRF documents that have one.
+  zones = "documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone)";
 in
 {
   config = lib.mkIf config.chalkos.router.enable {
@@ -91,6 +100,16 @@ in
           rule = "cel.bind(made, ${devices}, documents.all(n, !(n in made)))";
           messageExpression = ''cel.bind(made, ${devices}, "the VRF " + documents.filter(n, n in made)[0] + " takes the name of a device a NetDev document creates; rename the VRF or the NetDev")'';
         }
+        {
+          description = "A conntrack zone belongs to one VRF.";
+          rule = "cel.bind(z, ${zones}, z.all(x, size(z.filter(y, y == x)) == 1))";
+          messageExpression = ''cel.bind(z, ${zones}, "more than one VRF uses conntrack zone " + string(z.filter(x, size(z.filter(y, y == x)) > 1)[0]) + "; give each VRF a zone of its own")'';
+        }
+        {
+          description = "A VRF with a conntrack zone neither imports routes from another VRF nor gives its routes to one, through BGP.";
+          rule = leaking "documents.all(n, documents[n].spec.conntrackZone == null || !(n in importers) && !(n in imported))";
+          messageExpression = leaking ''documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + " has a conntrack zone and leaks routes through a BGP import, whose connections would answer in another zone; drop the zone or the import"'';
+        }
       ];
       spec = {
         table = mkOption {
@@ -106,6 +125,12 @@ in
             "swp*"
           ];
           description = "Links the VRF holds, ${interfaceText}; a glob stands for the links the node's Network documents name in a `[Match]` section's `Name=`. A link is named by a Network document, which gets `VRF=`, and every link of that Network is in this VRF.";
+        };
+        conntrackZone = mkOption {
+          type = types.nullOr (types.ints.between 1 65535);
+          default = null;
+          example = 1;
+          description = "Conntrack zone of the connections through the VRF's links, which no other VRF uses; null shares zone 0 with the default VRF and every VRF without one. A zone keeps the state and NAT of the VRF's connections apart from those of other VRFs with the same addresses. A VRF with a zone neither imports routes from another VRF nor gives its routes to one.";
         };
       };
     };
