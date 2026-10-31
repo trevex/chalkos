@@ -1921,8 +1921,12 @@ in
       kill "$ghost"
       rm -f /run/kea/dhcp4-ghost.sock
       kill -HUP "$kea"
-      sleep 1
-      got "$(listed)" "$printer"$'\n'"$other" "dhcp-leases after a reload"
+      # Kea opens its control socket anew while it reads the config again.
+      for try in $(seq 100); do
+        [ "$(listed 2>/dev/null)" = "$printer"$'\n'"$other" ] && break
+        [ "$try" != 100 ] || got "$(listed)" "$printer"$'\n'"$other" "dhcp-leases after a reload"
+        sleep 0.1
+      done
       got "$(lease 52:54:00:12:34:56)" 'ip=192.0.2.10 router=192.0.2.1 dns=192.0.2.1 domain=lan.example.org search=lan.example.org hostname=printer siaddr= boot_file=' "the printer after a reload"
       kill "$kea"
     '';
