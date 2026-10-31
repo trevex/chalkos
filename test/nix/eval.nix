@@ -182,8 +182,8 @@ lib.runTests {
   };
   # Router images take DHCPSubnet documents and run Kea unless their modules set
   # chalkos.router.dhcp.enable to false, whose router outputs then render no example of DHCP at the
-  # build, and which carry no output kea, no Kea, its units, user or package, and no diagnostic
-  # dhcp-leases; other images never take them.
+  # build, and which carry no output kea or effect dhcp, no Kea, its units, user or package, and no
+  # diagnostic dhcp-leases; other images never take them.
   testRouterDHCPOptional = {
     expr =
       let
@@ -192,6 +192,7 @@ lib.runTests {
         # What of Kea the image c carries.
         kea = c: {
           output = c.chalkos.outputs ? kea;
+          effect = c.chalkos.effects ? dhcp;
           units = lib.filter (n: lib.hasPrefix "kea" n || n == "chalkos-dhcp") (
             lib.attrNames c.systemd.services
           );
@@ -237,6 +238,7 @@ lib.runTests {
       kea = {
         edge = {
           output = true;
+          effect = true;
           units = [
             "chalkos-dhcp"
             "kea-dhcp4"
@@ -249,6 +251,7 @@ lib.runTests {
         };
         without = {
           output = false;
+          effect = false;
           units = [ ];
           user = false;
           package = false;
