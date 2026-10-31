@@ -240,8 +240,8 @@ func serveSubnet(d routerDocuments, units []networkUnit, devices []string, s nam
 
 // subnetLinks are the links the interfaces of a subnet serve it on, sorted, and their VRF. Kea
 // reads and answers on raw sockets ahead of the firewall, so a subnet names each of its links: it
-// refuses a glob, as the schema does, an interface that is a VRF's device or a NAT64's link, and
-// links of two VRFs.
+// refuses a glob, as the schema does, an interface that is a VRF's device or a NAT64's link, links
+// of two VRFs and links in a VRF of a Network's VRF= that no VRF document declares.
 func subnetLinks(d routerDocuments, devices []string, interfaces []string) ([]string, string, error) {
 	if len(interfaces) == 0 {
 		return nil, "", fmt.Errorf("interfaces names no interface")
@@ -275,6 +275,9 @@ func subnetLinks(d routerDocuments, devices []string, interfaces []string) ([]st
 			return nil, "", fmt.Errorf("its links are in VRF %s and VRF %s; a subnet is served in one VRF", vrf, v)
 		}
 		vrf = v
+	}
+	if vrf != defaultVRF && !slices.ContainsFunc(d.VRFs, func(v named[vrfSpec]) bool { return v.Name == vrf }) {
+		return nil, "", fmt.Errorf("its links are in the VRF %q, which no VRF document declares", vrf)
 	}
 	return links, vrf, nil
 }

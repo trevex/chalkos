@@ -8,8 +8,9 @@ import (
 )
 
 // keaDocs are a LAN router's documents with the DHCPSubnet documents given: lan0 holds
-// 192.0.2.1/24 and 192.0.2.30/24, lan1 198.51.100.1/24 and 192.0.2.65/26, and vlan20 in the VRF
-// guest 192.0.2.1/24 as well; the NAT64 edge has the link n64-edge.
+// 192.0.2.1/24 and 192.0.2.30/24, lan1 198.51.100.1/24 and 192.0.2.65/26, vlan20 in the VRF guest
+// 192.0.2.1/24 as well and lan2, in the VRF ghost of no VRF document, 203.0.113.1/24; the NAT64
+// edge has the link n64-edge.
 func keaDocs(t *testing.T, subnets ...any) map[string][]any {
 	t.Helper()
 	return map[string][]any{
@@ -18,6 +19,7 @@ func keaDocs(t *testing.T, subnets ...any) map[string][]any {
 		"Network": {
 			document(t, "Network", "10-lan0", `{"match": {"name": "lan0"}, "network": {"address": ["192.0.2.1/24", "192.0.2.30/24"]}}`),
 			document(t, "Network", "11-lan1", `{"match": {"name": "lan1"}, "network": {"address": ["198.51.100.1/24", "192.0.2.65/26"]}}`),
+			document(t, "Network", "12-lan2", `{"match": {"name": "lan2"}, "network": {"vrf": ["ghost"], "address": ["203.0.113.1/24"]}}`),
 			document(t, "Network", "20-vlan20", `{"match": {"name": "vlan20"}, "network": {"address": ["192.0.2.1/24"]}}`),
 		},
 		"DHCPSubnet": subnets,
@@ -44,11 +46,11 @@ func subnetDoc(t *testing.T, name, spec string) any {
 
 // The renderer refuses what the schema and the rules refuse, should a document bypass them, and
 // what spans documents or takes an order of addresses: a subnet's links given by a glob, a VRF's
-// device, a NAT64's link, a link of no Network, links of two VRFs, a link without the router's
-// address in the subnet, a link of two subnets, subnets that overlap in a VRF, a pool or
-// reservation outside the subnet, of its network or broadcast address or of the router's, a pool
-// that ends before it starts or overlaps another, a reservation in a pool, and values Kea's config
-// would take otherwise.
+// device, a NAT64's link, a link of no Network, links of two VRFs or of a VRF no document
+// declares, a link without the router's address in the subnet, a link of two subnets, subnets
+// that overlap in a VRF, a pool or reservation outside the subnet, of its network or broadcast
+// address or of the router's, a pool that ends before it starts or overlaps another, a
+// reservation in a pool, and values Kea's config would take otherwise.
 func TestKeaRefusals(t *testing.T) {
 	office := func(more string) any {
 		return subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24"`+more+`}`)
@@ -72,6 +74,7 @@ func TestKeaRefusals(t *testing.T) {
 		"a VRF's device":          {[]any{subnetDoc(t, "office", `{"interfaces": ["guest"], "subnet": "192.0.2.0/24"}`)}, "DHCPSubnet office: guest is the device of VRF guest; name the VRF's links"},
 		"a NAT64's link":          {[]any{subnetDoc(t, "office", `{"interfaces": ["n64-edge"], "subnet": "192.0.2.0/24"}`)}, "DHCPSubnet office: n64-edge is the link of NAT64 edge"},
 		"links of two VRFs":       {[]any{subnetDoc(t, "office", `{"interfaces": ["lan0", "vlan20"], "subnet": "192.0.2.0/24"}`)}, "its links are in VRF default and VRF guest; a subnet is served in one VRF"},
+		"a VRF of no document":    {[]any{subnetDoc(t, "office", `{"interfaces": ["lan2"], "subnet": "203.0.113.0/24"}`)}, `DHCPSubnet office: its links are in the VRF "ghost", which no VRF document declares`},
 		"a link of no Network":    {[]any{subnetDoc(t, "office", `{"interfaces": ["lan9"], "subnet": "192.0.2.0/24"}`)}, "no Network document matches lan9 by Name= alone"},
 		"a link without address":  {[]any{subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "203.0.113.0/24"}`)}, "Network 10-lan0 gives lan0 no static address in the subnet 203.0.113.0/24, which Kea answers its clients from"},
 		"a link of two subnets":   {[]any{office(""), subnetDoc(t, "other", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24"}`)}, "DHCPSubnet office and DHCPSubnet other both serve lan0; a link takes one subnet"},
