@@ -658,10 +658,11 @@ in
       goldens = ../../cmd/chalkos-render/testdata/router;
       # Answers a connection with the address it came from.
       whoami = pkgs.writeShellScript "whoami" ''echo "$SOCAT_PEERADDR"'';
-      # rdisc6 sends a router solicitation.
+      # rdisc6 sends a router solicitation, radvd router advertisements.
       tools = checkLib.networkTools ++ [
         pkgs.iputils
         pkgs.ndisc6
+        pkgs.radvd
       ];
     in
     unitCheck "router-firewall" tools ''
@@ -1002,18 +1003,28 @@ in
       # device, where the fib check of a link-local source fails. tenant's host answers from an
       # address on its loopback, so it solicits the router from its link-local address, and the
       # router reaches that address through the host's link-local address, which advertises
-      # itself from there. Its router solicitations reach input.
+      # itself from there. Its router solicitations and, from radvd, advertisements reach input.
       install -m 644 ${goldens}/vrf-strict.nft ${dir}/ruleset.nft
       ${ExecReload} || fail "chalkos-firewall did not reload the VRF ruleset with the strict filter"
       nft -f - <<'NFT'
       table inet solicited {
         counter rs {}
+        counter ra {}
         chain input {
           type filter hook input priority filter - 10; policy accept;
           iifname { "eth2", "tenant" } icmpv6 type nd-router-solicit counter name rs
+          iifname { "eth2", "tenant" } icmpv6 type nd-router-advert counter name ra
         }
       }
       NFT
+      # counted <counter>: whether the counter of table solicited counts a packet within 10 s.
+      counted() {
+        for try in $(seq 50); do
+          nft list counter inet solicited "$1" | grep -q 'packets [1-9]' && return
+          [ "$try" != 50 ] || return 1
+          sleep 0.2
+        done
+      }
       read -r _ _ _ tll _ <<<"$(on_tenant ip -6 -o addr show dev eth0 scope link)"
       [ -n "$tll" ] || fail "tenant's eth0 has no link-local address"
       on_tenant ip addr add 2001:db8:ff::1/128 dev lo
@@ -1029,9 +1040,19 @@ in
       on_tenant ping -c 1 -W 1 -I 2001:db8:ff::1 2001:db8:100::1 >/dev/null ||
         fail "tenant's host did not resolve the router from its link-local address $where"
       on_tenant rdisc6 -r 1 -w 200 eth0 >/dev/null 2>&1 || true
-      if nft list counter inet solicited rs | grep -q 'packets 0 '; then
-        fail "tenant's router solicitation did not reach input $where"
-      fi
+      counted rs || fail "tenant's router solicitation did not reach input $where"
+      # radvd advertises at once when it starts, and wants forwarding on.
+      printf 'interface eth0 {\n  AdvSendAdvert on;\n  MinRtrAdvInterval 3;\n  MaxRtrAdvInterval 4;\n};\n' >radvd.conf
+      on_tenant sh -c 'echo 1 >/proc/sys/net/ipv6/conf/all/forwarding'
+      on_tenant radvd -n -m stderr -C "$PWD/radvd.conf" -p "$PWD/radvd.pid" 2>/dev/null &
+      radvd=$!
+      counted ra || fail "tenant's router advertisement did not reach input $where"
+      kill "$radvd"
+      wait "$radvd" || true
+      on_tenant sh -c 'echo 0 >/proc/sys/net/ipv6/conf/all/forwarding'
+      on_tenant ip addr del 2001:db8:ff::1/128 dev lo
+      ip -6 route del 2001:db8:ff::/64 table 200
+      nft delete table inet solicited
 
       where="with the VRF example's ruleset without its conntrack zones"
       # The same probe without the zones: guest's host passes as mgmt's connection.
