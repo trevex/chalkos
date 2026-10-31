@@ -140,6 +140,14 @@ clusters whose Addon documents bring their own, and ships every CNI reference pl
 
 Whether an image carries the router layer, and whether its node forwards packets between its interfaces.
 
+### `chalkos.router.dhcp.enable` { #chalkosrouterdhcpenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
+
+Whether router images carry the DHCP server, Kea, and accept the kind DHCPSubnet; only
+with the router layer. Set it false in a variant's modules to leave Kea out of its images,
+whose build then needs no local build of Kea.
+
 ### `chalkos.router.enable` { #chalkosrouterenable }
 
 Type: boolean · Default: `false` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)

@@ -592,6 +592,74 @@ Message of rule 1:
 documents.filter(n, cel.bind(c, documents[n].spec.communities, cel.bind(large, c[0].indexOf(":") != c[0].lastIndexOf(":"), !c.all(x, (x.indexOf(":") != x.lastIndexOf(":")) == large)))).map(n, "CommunityList " + n).join(", ") + " holds standard and large communities; give each kind a list of its own"
 ```
 
+#### DHCPSubnet { #rules-dhcpsubnet }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | A DHCPSubnet's pools lie inside its subnet. | `refuse` | after the table | after the table |
+| 2 | — | A DHCPSubnet's reservations lie inside its subnet. | `refuse` | after the table | after the table |
+| 3 | — | A DHCPSubnet's gateway lies inside its subnet. | `refuse` | after the table | after the table |
+| 4 | `spec.boot` | A boot names a file. | `refuse` | `self == null || self.bios != null || self.uefi != null || self.ipxe != null` | boot names no file; give bios, uefi or ipxe, or leave boot out |
+| 5 | `spec.boot` | A boot's server is an IPv4 address. | `refuse` | `self == null || self.server == null || ip(self.server).family() == "ipv4"` | boot's server is no IPv4 address |
+| 6 | `spec.dns` | The DNS servers are IPv4 addresses. | `refuse` | `self.all(a, ip(a).family() == "ipv4")` | `"the DNS server " + self.filter(a, ip(a).family() != "ipv4")[0] + " is no IPv4 address"` |
+| 7 | `spec.reservations` | A MAC address has one reservation. | `refuse` | `self.all(r, size(self.filter(x, x.mac == r.mac)) == 1)` | after the table |
+| 8 | `spec.reservations` | An address is reserved once. | `refuse` | `self.all(r, size(self.filter(x, ip(x.address) == ip(r.address))) == 1)` | after the table |
+| 9 | `spec.subnet` | A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3. | `refuse` | after the table | `"the subnet " + self + " is no IPv4 range of 30 bits at most of addresses a DHCP server leases"` |
+
+Expression of rule 1:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.pools.all(p, c.contains(ip(p.first)) && c.contains(ip(p.last))))))
+```
+
+Message of rule 1:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.pools.all(p, c.contains(ip(p.first)) && c.contains(ip(p.last))))))).map(n, "DHCPSubnet " + n).join(", ") + " has a pool outside its subnet"
+```
+
+Expression of rule 2:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.reservations.all(r, c.contains(ip(r.address))))))
+```
+
+Message of rule 2:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.reservations.all(r, c.contains(ip(r.address))))))).map(n, "DHCPSubnet " + n).join(", ") + " has a reservation outside its subnet"
+```
+
+Expression of rule 3:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.gateway == null || c.contains(ip(s.gateway)))))
+```
+
+Message of rule 3:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.gateway == null || c.contains(ip(s.gateway)))))).map(n, "DHCPSubnet " + n).join(", ") + " has a gateway outside its subnet"
+```
+
+Message of rule 7:
+
+```text
+"the MAC address " + self.filter(r, size(self.filter(x, x.mac == r.mac)) > 1)[0].mac + " has more than one reservation"
+```
+
+Message of rule 8:
+
+```text
+"the address " + self.filter(r, size(self.filter(x, ip(x.address) == ip(r.address))) > 1)[0].address + " is reserved more than once"
+```
+
+Expression of rule 9:
+
+```text
+cel.bind(c, cidr(self), c.ip(0).family() == "ipv4" && c.prefix() <= 30 && !["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"].exists(r, cidr(r).contains(c.ip(0))))
+```
+
 #### FirewallPolicy { #rules-firewallpolicy }
 
 | Rule | Field | Guards | Takes | Expression | Message |

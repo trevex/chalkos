@@ -87,6 +87,7 @@ let
     "BGP"
     "BGPPeer"
     "CommunityList"
+    "DHCPSubnet"
     "FirewallPolicy"
     "FirewallZone"
     "NAT64"

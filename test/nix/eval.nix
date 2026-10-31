@@ -180,6 +180,35 @@ lib.runTests {
       edge = false;
     };
   };
+  # Router images take DHCPSubnet documents unless their modules set chalkos.router.dhcp.enable to
+  # false; other images never do.
+  testRouterDHCPOptional = {
+    expr =
+      let
+        kinds = c: c.chalkos.kinds ? DHCPSubnet;
+        without =
+          (mkImages {
+            platforms = [ "metal" ];
+            variants.edge = {
+              kubernetes = false;
+              router = true;
+              modules = [ { chalkos.router.dhcp.enable = false; } ];
+            };
+          }).nixos.edge-metal.config;
+      in
+      {
+        edge = kinds layered.edge-metal.config;
+        without = kinds without;
+        node = kinds layered.node-metal.config;
+        plain = kinds layered.plain-metal.config;
+      };
+    expected = {
+      edge = true;
+      without = false;
+      node = false;
+      plain = false;
+    };
+  };
   # On a router image the router layer owns the firewall: NixOS's firewall and nftables service are
   # off, chalkos-firewall loads the table after chalkos-config renders it and before the network
   # comes up, the outputs router-sysctl and router-nftables render the router kinds, and their
