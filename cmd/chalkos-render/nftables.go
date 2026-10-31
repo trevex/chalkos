@@ -866,22 +866,34 @@ func (f *firewall) ruleLines(policy string, n int, r firewallRule) ([]string, er
 		// A log prefix holds 127 bytes at most.
 		verdict = fmt.Sprintf("log prefix %q %s", fmt.Sprintf("%.100s %d: ", policy, n), verdict)
 	}
+	matches, err := f.matchLines(r)
+	if err != nil {
+		return nil, err
+	}
+	lines := make([]string, len(matches))
+	for i, m := range matches {
+		lines[i] = joinWords(m.match, verdict)
+	}
+	return lines, nil
+}
+
+// familyMatch is the match of a rule's terms in a family, "" for both.
+type familyMatch struct {
+	family, match string
+}
+
+// matchLines are the matches of a rule's terms: one per family it matches, or one for both when
+// it names neither addresses nor a family. A family its addresses or sets leave no address of
+// has none.
+func (f *firewall) matchLines(r firewallRule) ([]familyMatch, error) {
 	protocol := ""
 	if r.Protocol != nil {
+		var err error
 		if protocol, err = protocolMatch(*r.Protocol, r.SourcePorts, r.DestinationPorts, r.ICMPTypes); err != nil {
 			return nil, err
 		}
 	} else if len(r.SourcePorts) > 0 || len(r.DestinationPorts) > 0 || len(r.ICMPTypes) > 0 {
 		return nil, fmt.Errorf("ports and ICMP types need a protocol")
-	}
-	join := func(parts ...string) string {
-		var kept []string
-		for _, p := range parts {
-			if p != "" {
-				kept = append(kept, p)
-			}
-		}
-		return strings.Join(kept, " ")
 	}
 	families := []string{"ipv4", "ipv6"}
 	if r.Family != nil {
@@ -897,9 +909,9 @@ func (f *firewall) ruleLines(policy string, n int, r firewallRule) ([]string, er
 		families = slices.DeleteFunc(families, func(f string) bool { return f != "ipv6" })
 	}
 	if len(families) == 2 && len(r.Source) == 0 && len(r.Destination) == 0 {
-		return []string{join(protocol, verdict)}, nil
+		return []familyMatch{{"", protocol}}, nil
 	}
-	var lines []string
+	var matches []familyMatch
 	for _, fam := range families {
 		src, ok, err := f.addressMatch(fam, "saddr", r.Source)
 		if err != nil || !ok {
@@ -915,14 +927,25 @@ func (f *firewall) ruleLines(policy string, n int, r firewallRule) ([]string, er
 			}
 			continue
 		}
-		match := join(src, dst)
+		match := joinWords(src, dst)
 		// An ICMP type match says the family by itself.
 		if match == "" && len(r.ICMPTypes) == 0 {
 			match = "meta nfproto " + fam
 		}
-		lines = append(lines, join(match, protocol, verdict))
+		matches = append(matches, familyMatch{fam, joinWords(match, protocol)})
 	}
-	return lines, nil
+	return matches, nil
+}
+
+// joinWords joins the parts that are not empty with spaces.
+func joinWords(parts ...string) string {
+	var kept []string
+	for _, p := range parts {
+		if p != "" {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, " ")
 }
 
 // addressMatch is the match of the address list l on the side dir, saddr or daddr, in the family
