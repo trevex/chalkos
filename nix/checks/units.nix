@@ -1826,6 +1826,332 @@ in
       done
     '';
 
+  # The dhcp example's server of the default VRF, as kea-dhcp4.service runs it, behind the
+  # example's firewall, which opens no port for it: Kea's raw sockets read and answer DHCP ahead
+  # of nftables. A client in a peer namespace, busybox's udhcpc, gets a lease of the pool with the
+  # subnet's gateway, DNS server and domain, the printer's reserved address and host name by its
+  # MAC address, and the boot files of BIOS, UEFI and iPXE clients with the boot server. The
+  # diagnostic dhcp-leases lists the leases, by subnet and by MAC address, the lease file holds
+  # them, and a reload keeps them.
+  router-dhcp =
+    let
+      router = checkLib.router.config;
+      inherit (router.systemd.services.kea-dhcp4.serviceConfig) ExecStart;
+      firewall = router.systemd.services.chalkos-firewall.serviceConfig.ExecStart;
+      dir = router.chalkos.outputs.kea.dir;
+      nftDir = router.chalkos.outputs.router-nftables.dir;
+      leases = lib.elemAt router.chalkos.diagnostics.dhcp-leases.command 2;
+      udhcpc = "${pkgs.busybox}/bin/busybox udhcpc";
+      goldens = ../../cmd/chalkos-render/testdata/router;
+    in
+    unitCheck "router-dhcp" checkLib.networkTools ''
+      fail() {
+        echo "error: $*" >&2
+        cat kea.log >&2
+        exit 1
+      }
+      ip link set lo up
+      unshare -n sh -c 'touch client-ready; exec sleep 600' &
+      client=$!
+      until [ -e client-ready ]; do sleep 0.1; done
+      on_client() { nsenter -t "$client" -n "$@"; }
+      ip link add lan0 type veth peer name eth0 netns "$client"
+      ip addr add 192.0.2.1/24 dev lan0
+      ip link set lan0 up
+      on_client ip link set lo up
+      on_client ip link set eth0 up
+
+      mkdir -p ${dir} ${nftDir}
+      install -m 644 ${goldens}/dhcp.nft ${nftDir}/ruleset.nft
+      ${firewall} || fail "chalkos-firewall did not load the dhcp example's ruleset"
+      awk '/^# kea-dhcp4.json$/ { take = 1; next } /^# / { take = 0 } take' ${goldens}/dhcp.kea >${dir}/kea-dhcp4.json
+      grep -q '"office"' ${dir}/kea-dhcp4.json || fail "the dhcp example's golden holds no server of the default VRF"
+      mkdir -p /var/lib
+      mkdir -m 0750 /run/kea /var/lib/kea
+      ${ExecStart} >kea.log 2>&1 &
+      kea=$!
+      for try in $(seq 100); do
+        [ -S /run/kea/dhcp4.sock ] && break
+        [ "$try" != 100 ] || fail "Kea opened no control socket"
+        sleep 0.1
+      done
+
+      # lease <MAC address> [<udhcpc options>]: what the client of the MAC address got: its
+      # address, gateway, DNS server, domain, search domain, host name, boot server and boot file.
+      cat >bound <<'SCRIPT'
+      #!${pkgs.runtimeShell}
+      [ "$1" = bound ] || exit 0
+      echo "ip=$ip router=$router dns=$dns domain=$domain search=$search hostname=$hostname siaddr=$siaddr boot_file=$boot_file"
+      SCRIPT
+      chmod +x bound
+      lease() {
+        on_client ip link set eth0 address "$1"
+        shift
+        on_client ${udhcpc} -i eth0 -n -q -f -s "$PWD/bound" -t 5 -T 1 -O search "$@" 2>/dev/null
+      }
+      got() {
+        [ "$1" = "$2" ] || fail "$3: the client got '$1', not '$2'"
+      }
+      pool='ip=192.0.2.100 router=192.0.2.1 dns=192.0.2.1 domain=lan.example.org search=lan.example.org'
+      got "$(lease 52:54:00:aa:bb:cc)" "$pool hostname= siaddr= boot_file=" "a client of the pool"
+      got "$(lease 52:54:00:12:34:56)" 'ip=192.0.2.10 router=192.0.2.1 dns=192.0.2.1 domain=lan.example.org search=lan.example.org hostname=printer siaddr= boot_file=' "the printer"
+      got "$(lease 52:54:00:aa:bb:cc -x 0x5d:0000)" "$pool hostname= siaddr=192.0.2.5 boot_file=undionly.kpxe" "a BIOS client"
+      got "$(lease 52:54:00:aa:bb:cc -x 0x5d:0007)" "$pool hostname= siaddr=192.0.2.5 boot_file=ipxe.efi" "a UEFI client of architecture 7"
+      got "$(lease 52:54:00:aa:bb:cc -x 0x5d:0009)" "$pool hostname= siaddr=192.0.2.5 boot_file=ipxe.efi" "a UEFI client of architecture 9"
+      got "$(lease 52:54:00:aa:bb:cc -x 0x5d:0007 -x 0x4d:69505845)" "$pool hostname= siaddr=192.0.2.5 boot_file=http://192.0.2.5/boot.ipxe" "iPXE on UEFI"
+      got "$(lease 52:54:00:aa:bb:cc -x 0x5d:0000 -x 0x4d:69505845)" "$pool hostname= siaddr=192.0.2.5 boot_file=http://192.0.2.5/boot.ipxe" "iPXE on BIOS"
+
+      # listed <arguments>: the leases dhcp-leases lists, without the header and their ends.
+      listed() { bash -c ${lib.escapeShellArg leases} dhcp-leases "$@" | tail -n +2 | cut -f 1-5; }
+      printer=$(printf 'default\toffice\t192.0.2.10\t52:54:00:12:34:56\tprinter')
+      other=$(printf 'default\toffice\t192.0.2.100\t52:54:00:aa:bb:cc\t-')
+      got "$(listed)" "$printer"$'\n'"$other" "dhcp-leases"
+      got "$(listed --subnet=office --mac=52:54:00:12:34:56)" "$printer" "dhcp-leases of the printer"
+      got "$(listed --subnet=guests)" "" "dhcp-leases of another subnet"
+      grep -q '^192.0.2.10,52:54:00:12:34:56,' /var/lib/kea/dhcp4.leases || fail "the lease file holds no lease of the printer"
+      kill -HUP "$kea"
+      sleep 1
+      got "$(listed)" "$printer"$'\n'"$other" "dhcp-leases after a reload"
+      got "$(lease 52:54:00:12:34:56)" 'ip=192.0.2.10 router=192.0.2.1 dns=192.0.2.1 domain=lan.example.org search=lan.example.org hostname=printer siaddr= boot_file=' "the printer after a reload"
+      kill "$kea"
+    '';
+
+  # chalkos-dhcp, with systemctl stubbed: it starts the server of each rendered config once the
+  # config's links and its VRF's device exist, reloads those that run, restarts a VRF's server
+  # whose device networkd made anew or that recorded none, stops and resets those without a
+  # config, names those whose links do not appear within 30 seconds or that do not run, without
+  # starting or reloading them, and stops them all with stop.
+  router-dhcp-instances =
+    let
+      inherit (checkLib.router.config.systemd.services.chalkos-dhcp.serviceConfig)
+        ExecStart
+        ExecReload
+        ExecStop
+        ;
+      dir = checkLib.router.config.chalkos.outputs.kea.dir;
+    in
+    unitCheck "router-dhcp-instances" [ pkgs.gnugrep ] ''
+      fail() {
+        echo "error: $*" >&2
+        cat "$SD/log" >&2
+        exit 1
+      }
+      export SD=$PWD/sd
+      mkdir -p stub "$SD" /sys/class/net /run/kea ${dir}
+      echo 0 >"$SD/ifindex"
+      : >"$SD/log"
+      cat >stub/systemctl <<'STUB'
+      #!${pkgs.runtimeShell}
+      # systemctl as chalkos-dhcp calls it, over the files of $SD: <unit>.state holds a unit's
+      # state and <unit>.sub its substate. A unit started or restarted takes the state and substate
+      # of <unit>.next, active running without, and a VRF's records its device's index while it
+      # runs. Each call is logged.
+      echo "$*" >>"$SD/log"
+      quiet= property= args=
+      for a in "$@"; do
+        case $a in
+        --quiet) quiet=1 ;;
+        --property=*) property=''${a#--property=} ;;
+        --*) ;;
+        *) args="$args $a" ;;
+        esac
+      done
+      set -- $args
+      verb=$1 unit=''${2:-}
+      vrf=
+      case $unit in kea-dhcp4@*)
+        vrf=''${unit#kea-dhcp4@}
+        vrf=$(echo "''${vrf%.service}" | sed 's/\\x2d/-/g')
+        ;;
+      esac
+      state() { cat "$SD/$1.state" 2>/dev/null || echo inactive; }
+      case $verb in
+      is-active)
+        s=$(state "$unit")
+        [ -n "$quiet" ] || echo "$s"
+        [ "$s" = active ]
+        ;;
+      show)
+        case $property in
+        SubState) cat "$SD/$unit.sub" 2>/dev/null || echo dead ;;
+        *) echo "systemctl stub: no property $property" >&2; exit 1 ;;
+        esac
+        ;;
+      start | restart)
+        next=$(cat "$SD/$unit.next" 2>/dev/null || echo active running)
+        echo "''${next% *}" >"$SD/$unit.state"
+        echo "''${next#* }" >"$SD/$unit.sub"
+        [ -z "$vrf" ] || cp "/sys/class/net/$vrf/ifindex" "/run/kea/dhcp4-$vrf.ifindex"
+        ;;
+      reload) [ "$(state "$unit")" = active ] ;;
+      stop)
+        [ "$(state "$unit")" = failed ] || echo inactive >"$SD/$unit.state"
+        [ -z "$vrf" ] || rm -f "/run/kea/dhcp4-$vrf.ifindex"
+        ;;
+      reset-failed)
+        case $(state "$unit") in
+        failed | inactive) rm -f "$SD/$unit.state" "$SD/$unit.sub" ;;
+        esac
+        ;;
+      list-units)
+        for f in "$SD"/kea-dhcp4.service.state "$SD"/kea-dhcp4@*.service.state; do
+          [ -e "$f" ] || continue
+          u=''${f##*/}
+          u=''${u%.state}
+          echo "$u loaded $(state "$u") $(cat "$SD/$u.sub" 2>/dev/null || echo dead) Kea"
+        done
+        ;;
+      *) echo "systemctl stub: $*" >&2; exit 2 ;;
+      esac
+      STUB
+      cat >stub/systemd-escape <<'STUB'
+      #!${pkgs.runtimeShell}
+      # systemd-escape as chalkos-dhcp calls it, for names whose only character to escape is a
+      # dash.
+      case $1 in
+      --template=*)
+        t=''${1#--template=}
+        echo "''${t%%@*}@$(echo "$2" | sed 's/-/\\x2d/g')''${t#*@}"
+        ;;
+      --unescape)
+        i=''${3#*@}
+        echo "''${i%.*}" | sed 's/\\x2d/-/g'
+        ;;
+      *) echo "$1" | sed 's/-/\\x2d/g' ;;
+      esac
+      STUB
+      chmod +x stub/systemctl stub/systemd-escape
+      export PATH=$PWD/stub:$PATH
+
+      unit() {
+        if [ "$1" = default ]; then echo kea-dhcp4.service; else systemd-escape --template=kea-dhcp4@.service "$1"; fi
+      }
+      state() { cat "$SD/$1.state" 2>/dev/null || echo inactive; }
+      # Makes the device $1 anew, as networkd does, with the next index.
+      device() {
+        local n
+        n=$(($(cat "$SD/ifindex") + 1))
+        echo "$n" >"$SD/ifindex"
+        rm -rf "/sys/class/net/$1"
+        mkdir -p "/sys/class/net/$1"
+        echo "$n" >"/sys/class/net/$1/ifindex"
+      }
+      # config <VRF> <link>...: the rendered config of the VRF's server of the links.
+      config() {
+        local vrf=$1 file=${dir}/kea-dhcp4.json
+        shift
+        [ "$vrf" = default ] || file=${dir}/kea-dhcp4-$vrf.json
+        printf '{"Dhcp4": {"interfaces-config": {"interfaces": [%s]}}}\n' "$(printf '"%s",' "$@" | sed 's/,$//')" >"$file"
+      }
+      called() { grep -qxF -- "$1" "$SD/log" || fail "$2: no call systemctl $1"; }
+      not_called() { if grep -qxF -- "$1" "$SD/log"; then fail "$2: called systemctl $1"; fi; }
+      running() { [ "$(state "$(unit "$1")")" = active ] || fail "$2: $(unit "$1") is $(state "$(unit "$1")")"; }
+      on_device() {
+        [ "$(cat "/run/kea/dhcp4-$1.ifindex")" = "$(cat "/sys/class/net/$1/ifindex")" ] ||
+          fail "$2: $(unit "$1") runs on the device of index $(cat "/run/kea/dhcp4-$1.ifindex")"
+      }
+      for link in lan0 vlan20 vlan30; do
+        device "$link"
+      done
+      for vrf in guest dmz-a; do
+        device "$vrf"
+      done
+      config default lan0
+      config guest vlan20
+      config dmz-a vlan30
+
+      ${ExecStart} || fail "starting the servers failed"
+      [ "$(unit dmz-a)" = 'kea-dhcp4@dmz\x2da.service' ] || fail "the stub escapes dmz-a as $(unit dmz-a)"
+      for vrf in default guest dmz-a; do
+        called "reset-failed $(unit "$vrf")" "start"
+        called "start --no-block $(unit "$vrf")" "start"
+        running "$vrf" "start"
+      done
+      on_device guest "start"
+      on_device dmz-a "start"
+
+      : >"$SD/log"
+      ${ExecReload} || fail "reloading the servers failed"
+      for vrf in default guest dmz-a; do
+        called "reload $(unit "$vrf")" "reload"
+        not_called "start --no-block $(unit "$vrf")" "reload"
+        not_called "restart --no-block $(unit "$vrf")" "reload"
+      done
+
+      # chalkos-vrf removed guest and networkd made it anew; vlan30 comes back during the run.
+      : >"$SD/log"
+      device guest
+      rm -rf /sys/class/net/vlan30
+      (sleep 2 && device vlan30) &
+      ${ExecReload} || fail "reloading after guest was made anew failed"
+      wait
+      called "restart --no-block $(unit guest)" "guest made anew"
+      not_called "reload $(unit guest)" "guest made anew"
+      on_device guest "guest made anew"
+      called "reload $(unit dmz-a)" "a link that appeared during the run"
+      called "reload $(unit default)" "guest made anew"
+
+      # A server that runs without the index of its device restarts.
+      : >"$SD/log"
+      rm /run/kea/dhcp4-dmz-a.ifindex
+      ${ExecReload} || fail "reloading a server without its device's index failed"
+      called "restart --no-block $(unit dmz-a)" "no index"
+      on_device dmz-a "no index"
+
+      # Servers without a config, a running one and a failed one, are stopped and reset.
+      : >"$SD/log"
+      echo active >"$SD/kea-dhcp4@old.service.state"
+      echo failed >"$SD/kea-dhcp4@stale.service.state"
+      ${ExecReload} || fail "stopping the servers without a config failed"
+      for u in kea-dhcp4@old.service kea-dhcp4@stale.service; do
+        called "stop $u" "a server without a config"
+        called "reset-failed $u" "a server without a config"
+        [ ! -e "$SD/$u.state" ] || fail "$u is still listed as $(state "$u")"
+      done
+      for vrf in default guest dmz-a; do
+        not_called "stop $(unit "$vrf")" "a server without a config"
+      done
+
+      # The default VRF's server's link is gone, gone's VRF has no device, stuck's server keeps
+      # restarting, and late's link appears during the wait.
+      : >"$SD/log"
+      rm -rf /sys/class/net/lan0
+      device vlan40
+      device stuck
+      device vlan50
+      config gone vlan40
+      config stuck vlan50
+      device late
+      config late vlan60
+      echo activating auto-restart >"$SD/$(unit stuck).next"
+      (sleep 2 && device vlan60) &
+      start=$SECONDS
+      if ${ExecReload} 2>err.log; then fail "a run succeeded with links without a device"; fi
+      wait
+      elapsed=$((SECONDS - start))
+      ((elapsed >= 30 && elapsed <= 65)) || fail "the run took $elapsed s"
+      grep -qxF "chalkos-dhcp: failed to run kea-dhcp4.service, whose links lan0 have no device" err.log ||
+        fail "the run did not name the default VRF's server: $(cat err.log)"
+      grep -qxF "chalkos-dhcp: failed to run $(unit gone), whose links gone have no device" err.log ||
+        fail "the run did not name gone: $(cat err.log)"
+      grep -qxF "chalkos-dhcp: failed to start $(unit stuck), which is activating (auto-restart)" err.log ||
+        fail "the run did not name stuck with its substate: $(cat err.log)"
+      if grep -q late err.log; then fail "the run failed late, whose link appeared: $(cat err.log)"; fi
+      not_called "reload $(unit default)" "a link without a device"
+      not_called "start --no-block $(unit gone)" "a VRF without a device"
+      running late "a link that appeared during the wait"
+      running default "a server whose link is gone"
+      for vrf in guest dmz-a; do
+        running "$vrf" "a run that failed for others"
+      done
+
+      : >"$SD/log"
+      ${ExecStop} || fail "stopping the servers failed"
+      for vrf in default guest dmz-a late stuck; do
+        called "stop $(unit "$vrf")" "stopping the unit"
+      done
+    '';
+
   # frr.service fills the rendered config's password placeholders in from its credentials into
   # /run/frr/frr.conf, readable by root alone and replaced whole, and loads the fallback config
   # without a rendered one. Only a peer group's password line takes a value: a placeholder
