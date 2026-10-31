@@ -197,6 +197,15 @@ lib.runTests {
             lib.attrNames c.systemd.services
           );
           user = c.users.users ? kea;
+          # A pinned ID, so that the user moves no other user's ID.
+          ids =
+            if c.users.users ? kea then
+              [
+                c.users.users.kea.uid
+                c.users.groups.kea.gid
+              ]
+            else
+              null;
           package = lib.any (p: lib.hasPrefix "kea" (lib.getName p)) c.environment.systemPackages;
           # A unit that runs one of Kea's programs.
           referenced = lib.any (u: lib.hasInfix "-kea-dhcp-" (u.text or "")) (lib.attrValues c.systemd.units);
@@ -245,6 +254,10 @@ lib.runTests {
             "kea-dhcp4@"
           ];
           user = true;
+          ids = [
+            328
+            328
+          ];
           package = false;
           referenced = true;
           diagnostic = true;
@@ -254,6 +267,7 @@ lib.runTests {
           effect = false;
           units = [ ];
           user = false;
+          ids = null;
           package = false;
           referenced = false;
           diagnostic = false;

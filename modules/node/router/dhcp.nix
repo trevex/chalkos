@@ -188,12 +188,16 @@ let
 in
 {
   config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.dhcp.enable) {
+    # The images allocate the IDs of users without one statically, from 999 down, so a user
+    # of an unpinned ID would move the IDs of the users after it, and the owners of their files
+    # on /var, whenever an image adds or drops it. 328 is free in NixOS's ids.nix.
     users.users.kea = {
       isSystemUser = true;
+      uid = 328;
       group = "kea";
       description = "Kea DHCP servers";
     };
-    users.groups.kea = { };
+    users.groups.kea.gid = 328;
 
     chalkos.outputs.kea = {
       # The VRFs and the Networks tell each link's VRF and its addresses.
