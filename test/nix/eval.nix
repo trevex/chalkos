@@ -21,6 +21,26 @@ let
         };
       };
     }).nixos;
+  # A router image on metal without the router features named, whose modules set their
+  # chalkos.router.<feature>.enable to false.
+  routerWithout =
+    features:
+    (mkImages {
+      platforms = [ "metal" ];
+      variants.edge = {
+        kubernetes = false;
+        router = true;
+        modules = [
+          {
+            chalkos.router = lib.genAttrs features (_: {
+              enable = false;
+            });
+          }
+        ];
+      };
+    }).nixos.edge-metal.config;
+  # The example files a router image's outputs render at its build.
+  examplesOf = c: lib.attrNames (builtins.readDir c.chalkos.router.examples);
 in
 lib.runTests {
   # mkImages builds each variant on each platform, metal and kvm unless the arguments name
@@ -273,6 +293,34 @@ lib.runTests {
           diagnostic = false;
         };
       };
+    };
+  };
+  # The router outputs render, at the image's build, the examples all of whose documents are of
+  # kinds the image accepts: every one on a router image with every feature, those without
+  # DHCPSubnet documents on one without DHCP.
+  testRouterExamples = {
+    expr = {
+      edge = examplesOf layered.edge-metal.config;
+      withoutDHCP = examplesOf (routerWithout [ "dhcp" ]);
+    };
+    expected = {
+      edge = [
+        "dhcp.yaml"
+        "edge.yaml"
+        "lan.yaml"
+        "leaf.yaml"
+        "none.yaml"
+        "policy.yaml"
+        "vrf.yaml"
+      ];
+      withoutDHCP = [
+        "edge.yaml"
+        "lan.yaml"
+        "leaf.yaml"
+        "none.yaml"
+        "policy.yaml"
+        "vrf.yaml"
+      ];
     };
   };
   # On a router image the router layer owns the firewall: NixOS's firewall and nftables service are

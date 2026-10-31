@@ -42,18 +42,26 @@
     internal = true;
     readOnly = true;
     default =
-      if config.chalkos.router.dhcp.enable then
-        ../examples/router
-      else
-        builtins.path {
-          name = "router-examples";
-          path = ../examples/router;
-          filter = p: _: baseNameOf p != "dhcp.yaml";
-        };
+      let
+        # The kinds the image accepts: its own and networkd's.
+        accepted = lib.attrNames config.chalkos.kinds ++ (import ../../../lib/kinds/api.nix).networkdKinds;
+        # The kinds of an example's documents, as their top-level kind: lines name them.
+        kindsOf =
+          file:
+          map (m: lib.elemAt m 1) (
+            lib.filter lib.isList (builtins.split "(^|\n)kind:[ ]*([A-Za-z0-9]+)" (builtins.readFile file))
+          );
+      in
+      builtins.path {
+        name = "router-examples";
+        path = ../examples/router;
+        filter = file: type: type != "regular" || lib.all (k: lib.elem k accepted) (kindsOf file);
+      };
     description = ''
-      The examples the router outputs render at the image's build: those of
-      modules/node/examples/router, without dhcp.yaml on images without DHCP, whose schemas
-      refuse its DHCPSubnet documents.
+      The examples the router outputs render at the image's build: the files of
+      modules/node/examples/router all of whose documents are of kinds the image accepts. An
+      image whose variant leaves a router feature out refuses that feature's kinds, and renders
+      the examples without them.
     '';
   };
 
