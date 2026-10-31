@@ -231,6 +231,7 @@ starts with `chalkos-render:`:
 | --- | --- |
 | `PolicyRoute lan: tran* matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF` | Name the VRF's links, or a zone that holds them. |
 | `PolicyRoute lan: n64-* matches n64-edge, the link of NAT64 edge, whose traffic Jool translates; name other links` | Narrow the glob, so it leaves out the NAT64's link. |
+| `PolicyRoute lan: the zone guest holds n*, which matches n64-guest, the link of NAT64 guest, whose traffic Jool translates; name the zone's other links in interfaces` | Name the zone's other links in `interfaces`, or narrow the `Network` that puts `n*` in the zone's VRF. |
 | `PolicyRoute lan: the zone core holds no link` | Give the zone a link, or name another zone. |
 | `PolicyRoute servers rule 1: the next hop 198.51.100.130 is on wanb0, which no Network document names; give it one, which gets the next hop's route` | Add a `Network` that names the link in `Name=`. |
 | `PolicyRoute servers rule 1: Network 21-wan matches wanb0 and other links, which would take its policy routing too; give wanb0 a Network of its own` | Give the next hop's link a `Network` that names it alone. |

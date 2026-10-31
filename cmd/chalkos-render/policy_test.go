@@ -48,7 +48,8 @@ func nextHopRoute(address, link string, table int) string {
 
 // The firewall's renderer refuses what the PolicyRoute rules refuse, should a document bypass
 // them, and what it alone can see: a glob of in that matches a VRF's device or a NAT64's link, a
-// zone without links, more than 255 tables, and values that would add syntax to the ruleset.
+// zone that holds a NAT64's link or no link, more than 255 tables, and values that would add
+// syntax to the ruleset.
 func TestPolicyRouteRefusals(t *testing.T) {
 	nft := []string{"router-nftables", "50000"}
 	dscp := `"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]`
@@ -65,6 +66,14 @@ func TestPolicyRouteRefusals(t *testing.T) {
 			d["NAT64"] = []any{routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": []}`)}
 			return d
 		}(), "PolicyRoute a: n64-* matches n64-edge, the link of NAT64 edge"},
+		"a zone of a NAT64's link": {func() map[string][]any {
+			d := policyDocs(t, "a", `{"in": {"zone": "core", "interfaces": []}, `+dscp+`}`)
+			d["VRF"] = append(d["VRF"], routerDoc(t, "VRF", "core", `{"table": 400, "interfaces": ["n*"]}`))
+			d["Network"] = append(d["Network"], document(t, "Network", "40-core", `{"match": {"name": "n*"}}`))
+			d["FirewallZone"] = append(d["FirewallZone"], routerDoc(t, "FirewallZone", "core", `{"interfaces": [], "vrfs": ["core"]}`))
+			d["NAT64"] = []any{routerDoc(t, "NAT64", "edge", `{"vrf": "core", "prefix": "64:ff9b::/96", "pool4": []}`)}
+			return d
+		}(), "PolicyRoute a: the zone core holds n*, which matches n64-edge, the link of NAT64 edge"},
 		"a zone without links": {func() map[string][]any {
 			d := policyDocs(t, "a", `{"in": {"zone": "core", "interfaces": []}, `+dscp+`}`)
 			d["VRF"] = append(d["VRF"], routerDoc(t, "VRF", "core", `{"table": 400, "interfaces": []}`))
