@@ -420,7 +420,7 @@
       },
       {
         "description": "A next hop's table is that next hop's alone: no other next hop and no rule's table takes it.",
-        "messageExpression": "cel.bind(tos, documents.map(n, documents[n].spec.rules.map(p, p.to)).flatten(), cel.bind(a, tos.filter(a, !(a.nextHop == null || tos.all(b, b.table != a.nextHop.table && (b.nextHop == null || b.nextHop.table != a.nextHop.table || b.nextHop == a.nextHop))))[0], \"the next hop \" + a.nextHop.address + \" takes table \" + string(a.nextHop.table) + \", which another next hop or a rule's table takes too; give each next hop a table of its own\"))",
+        "messageExpression": "cel.bind(tos, documents.map(n, documents[n].spec.rules.map(p, p.to)).flatten(), cel.bind(a, tos.filter(a, !(a.nextHop == null || tos.all(b, b.table != a.nextHop.table && (b.nextHop == null || b.nextHop.table != a.nextHop.table || b.nextHop == a.nextHop))))[0], \"PolicyRoute \" + documents.filter(n, documents[n].spec.rules.exists(p, p.to == a))[0] + \": the next hop \" + a.nextHop.address + \" takes table \" + string(a.nextHop.table) + \", which another next hop or a rule's table takes too; give each next hop a table of its own\"))",
         "rule": "cel.bind(tos, documents.map(n, documents[n].spec.rules.map(p, p.to)).flatten(), tos.all(a, a.nextHop == null || tos.all(b, b.table != a.nextHop.table && (b.nextHop == null || b.nextHop.table != a.nextHop.table || b.nextHop == a.nextHop))))",
         "takes": "refuse"
       }

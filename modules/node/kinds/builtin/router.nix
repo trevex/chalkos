@@ -630,7 +630,7 @@ in
           {
             description = "A next hop's table is that next hop's alone: no other next hop and no rule's table takes it.";
             rule = policyTargets "tos.all(a, ${ownTable})";
-            messageExpression = policyTargets ''cel.bind(a, tos.filter(a, !(${ownTable}))[0], "the next hop " + a.nextHop.address + " takes table " + string(a.nextHop.table) + ", which another next hop or a rule's table takes too; give each next hop a table of its own")'';
+            messageExpression = policyTargets ''cel.bind(a, tos.filter(a, !(${ownTable}))[0], "PolicyRoute " + documents.filter(n, documents[n].spec.rules.exists(p, p.to == a))[0] + ": the next hop " + a.nextHop.address + " takes table " + string(a.nextHop.table) + ", which another next hop or a rule's table takes too; give each next hop a table of its own")'';
           }
         ];
         spec = {

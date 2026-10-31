@@ -1029,7 +1029,7 @@ cel.bind(tos, documents.map(n, documents[n].spec.rules.map(p, p.to)).flatten(), 
 Message of rule 4:
 
 ```text
-cel.bind(tos, documents.map(n, documents[n].spec.rules.map(p, p.to)).flatten(), cel.bind(a, tos.filter(a, !(a.nextHop == null || tos.all(b, b.table != a.nextHop.table && (b.nextHop == null || b.nextHop.table != a.nextHop.table || b.nextHop == a.nextHop))))[0], "the next hop " + a.nextHop.address + " takes table " + string(a.nextHop.table) + ", which another next hop or a rule's table takes too; give each next hop a table of its own"))
+cel.bind(tos, documents.map(n, documents[n].spec.rules.map(p, p.to)).flatten(), cel.bind(a, tos.filter(a, !(a.nextHop == null || tos.all(b, b.table != a.nextHop.table && (b.nextHop == null || b.nextHop.table != a.nextHop.table || b.nextHop == a.nextHop))))[0], "PolicyRoute " + documents.filter(n, documents[n].spec.rules.exists(p, p.to == a))[0] + ": the next hop " + a.nextHop.address + " takes table " + string(a.nextHop.table) + ", which another next hop or a rule's table takes too; give each next hop a table of its own"))
 ```
 
 Expression of rule 5:

@@ -86,9 +86,9 @@ func TestPolicyRouteRules(t *testing.T) {
 		{"a next hop in a VRF's table", replace(lan, route("lan", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 100}}}]}`)),
 			[]string{`PolicyRoute "lan" spec.rules: a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own`}},
 		{"two next hops in one table", replace(lan, route("more", `{"rules": [{"match": {"dscp": [10]}, "to": {"nextHop": {"address": "198.51.100.131", "interface": "wanb0", "table": 200}}}]}`)),
-			[]string{"the next hop 198.51.100.131 takes table 200, which another next hop or a rule's table takes too; give each next hop a table of its own"}},
+			[]string{"PolicyRoute more: the next hop 198.51.100.131 takes table 200, which another next hop or a rule's table takes too; give each next hop a table of its own"}},
 		{"a next hop's table as a rule's", replace(lan, route("more", `{"rules": [{"match": {"dscp": [10]}, "to": {"table": 201}}]}`)),
-			[]string{"the next hop 2001:db8:b::2 takes table 201, which another next hop or a rule's table takes too; give each next hop a table of its own"}},
+			[]string{"PolicyRoute servers: the next hop 2001:db8:b::2 takes table 201, which another next hop or a rule's table takes too; give each next hop a table of its own"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
