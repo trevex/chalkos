@@ -37,6 +37,8 @@ type routeTarget struct {
 	mark  uint32
 	// hop is the next hop whose table this is; nil for a VRF's table or a rule's table.
 	hop *nextHop
+	// what names the first rule that sends traffic to the table, as PolicyRoute a rule 1.
+	what string
 }
 
 // policyTargets are the tables of the PolicyRoute documents' targets, sorted by number, each with
@@ -100,6 +102,7 @@ func policyTargets(d routerDocuments) ([]routeTarget, error) {
 				h.Address = a.String()
 				t.table, t.hop = h.Table, &h
 			}
+			t.what = what
 			if old, ok := byTable[t.table]; ok {
 				if (old.hop == nil) != (t.hop == nil) || old.hop != nil && *old.hop != *t.hop {
 					return nil, fmt.Errorf("%s: table %d is another next hop's, or a next hop's and a rule's; give each next hop a table of its own", what, t.table)
@@ -316,7 +319,13 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 	}
 	lo, err := loNetwork(units)
 	if err != nil {
-		return nil, err
+		var names []string
+		for _, p := range d.PolicyRoutes {
+			if len(p.Spec.Rules) > 0 {
+				names = append(names, p.Name)
+			}
+		}
+		return nil, fmt.Errorf("PolicyRoute %s: %w", strings.Join(names, ", "), err)
 	}
 	if lo == "" {
 		spec := map[string]any{"match": map[string]any{"name": "lo"}, "routingPolicyRule": rules}
@@ -336,10 +345,10 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 		}
 		link, err := soleNetwork(units, t.hop.Interface)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", t.what, err)
 		}
 		if link == "" {
-			return nil, fmt.Errorf("the next hop %s is on %s, which no Network document names; give it one, which gets the next hop's route", t.hop.Address, t.hop.Interface)
+			return nil, fmt.Errorf("%s: the next hop %s is on %s, which no Network document names; give it one, which gets the next hop's route", t.what, t.hop.Address, t.hop.Interface)
 		}
 		add(link, "route", []any{map[string]any{
 			"gateway": t.hop.Address,

@@ -139,23 +139,28 @@ func TestPolicyRouteUnitRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"a next hop's link without a Network": {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanc0", 200)), "the next hop 198.51.100.130 is on wanc0, which no Network document names"},
+		"a next hop's link without a Network": {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanc0", 200)), "PolicyRoute a rule 1: the next hop 198.51.100.130 is on wanc0, which no Network document names"},
 		"a Network of the next hop's link and others": {func() map[string][]any {
 			d := policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 200))
 			d["Network"][1] = document(t, "Network", "21-wanb", `{"match": {"name": "wan*"}}`)
 			return d
-		}(), "Network 21-wanb matches wanb0 and other links, which would take its policy routing too"},
+		}(), "PolicyRoute a rule 1: Network 21-wanb matches wanb0 and other links, which would take its policy routing too"},
 		"a Network of lo by other keys": {func() map[string][]any {
 			d := policyDocs(t, "a", dscp)
 			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
 			return d
-		}(), "Network 05-loopback may match lo by other [Match] keys"},
+		}(), "PolicyRoute a: Network 05-loopback may match lo by other [Match] keys"},
+		"a Network of lo by other keys and two PolicyRoutes": {func() map[string][]any {
+			d := policyDocs(t, "a", dscp, "b", `{"rules": []}`, "c", dscp)
+			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
+			return d
+		}(), "PolicyRoute a, c: Network 05-loopback may match lo by other [Match] keys"},
 		"a Network of other keys alone before the unit": {func() map[string][]any {
 			d := policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 300}}]}`)
 			delete(d, "VRF")
 			d["Network"] = append(d["Network"], document(t, "Network", "00-nic", `{"match": {"macAddress": "02:00:00:00:00:01"}}`))
 			return d
-		}(), "Network 00-nic may match lo by other [Match] keys"},
+		}(), "PolicyRoute a: Network 00-nic may match lo by other [Match] keys"},
 		"a Network of the unit's name": {func() map[string][]any {
 			d := policyDocs(t, "a", dscp)
 			d["Network"] = append(d["Network"], document(t, "Network", "00-policy-routing", `{"match": {"name": "dummy0"}}`))
