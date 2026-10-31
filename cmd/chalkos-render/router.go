@@ -273,6 +273,32 @@ type vrfSpec struct {
 	ConntrackZone *int `json:"conntrackZone"`
 }
 
+// dhcpSubnetSpec is a DHCPSubnet document's spec.
+type dhcpSubnetSpec struct {
+	Interfaces []string `json:"interfaces"`
+	Subnet     string   `json:"subnet"`
+	Pools      []struct {
+		First string `json:"first"`
+		Last  string `json:"last"`
+	} `json:"pools"`
+	// Gateway, Domain and Boot are nil when the document leaves them out.
+	Gateway      *string  `json:"gateway"`
+	DNS          []string `json:"dns"`
+	Domain       *string  `json:"domain"`
+	LeaseTime    string   `json:"leaseTime"`
+	Reservations []struct {
+		MAC      string  `json:"mac"`
+		Address  string  `json:"address"`
+		Hostname *string `json:"hostname"`
+	} `json:"reservations"`
+	Boot *struct {
+		Server *string `json:"server"`
+		BIOS   *string `json:"bios"`
+		UEFI   *string `json:"uefi"`
+		IPXE   *string `json:"ipxe"`
+	} `json:"boot"`
+}
+
 // policyRouteSpec is a PolicyRoute document's spec.
 type policyRouteSpec struct {
 	// In is nil for traffic from every link.
@@ -329,6 +355,7 @@ type routerDocuments struct {
 	Resolvers       []named[resolverSpec]
 	VRFs            []named[vrfSpec]
 	PolicyRoutes    []named[policyRouteSpec]
+	DHCPSubnets     []named[dhcpSubnetSpec]
 	// Links are the interface names the Network documents' [Match] sections name, sorted.
 	Links []string
 	// Addresses are the static addresses the Network documents give their links.
@@ -383,6 +410,9 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 		return d, err
 	}
 	if d.PolicyRoutes, err = decodeKind[policyRouteSpec](byKind, "PolicyRoute"); err != nil {
+		return d, err
+	}
+	if d.DHCPSubnets, err = decodeKind[dhcpSubnetSpec](byKind, "DHCPSubnet"); err != nil {
 		return d, err
 	}
 	d.Links = networkLinks(byKind)

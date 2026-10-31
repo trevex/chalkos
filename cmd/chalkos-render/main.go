@@ -1,7 +1,7 @@
 // Command chalkos-render is the renderer of the outputs the helpers of lib.chalkos.render build,
-// and of the built-in outputs networkd, router-networkd, router-sysctl, router-nftables, frr, jool
-// and unbound. chalkd runs it in the sandbox of an output: it reads the output's input as JSON on
-// standard input, {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}, and writes
+// and of the built-in outputs networkd, router-networkd, router-sysctl, router-nftables, frr, jool,
+// unbound and kea. chalkd runs it in the sandbox of an output: it reads the output's input as JSON
+// on standard input, {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}, and writes
 // files into $OUT, the only path it may write. A router image's build runs it once more for the
 // image's fallback ruleset.
 package main
@@ -31,6 +31,7 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render frr
        chalkos-render jool
        chalkos-render unbound TRUST-ANCHOR ZONE-FILE
+       chalkos-render kea
 
 template executes the Go text/template TEMPLATE on the input and writes the result to $OUT/FILE;
 the template has the functions join, quote, json and default. documents writes each document of
@@ -45,7 +46,9 @@ PORT; router-nftables-fallback writes the table of a node without a rendered rul
 forwards nothing. frr writes FRR's config of the BGP documents as $OUT/frr.conf. jool writes Jool's
 config of each NAT64 document as $OUT/<name>.json. unbound writes Unbound's config of the Resolver
 document as $OUT/unbound.conf, with the root's trust anchor in the file TRUST-ANCHOR and the zone
-ipv4only.arpa in the file ZONE-FILE.`
+ipv4only.arpa in the file ZONE-FILE. kea writes the config of Kea's DHCPv4 server of each VRF whose
+links DHCPSubnet documents serve as $OUT/kea-dhcp4.json for the default VRF and
+$OUT/kea-dhcp4-<vrf>.json for a VRF.`
 
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Getenv("OUT")); err != nil {
@@ -92,6 +95,8 @@ func run(args []string, stdin io.Reader, out string) error {
 		return renderJool(in, out)
 	case args[0] == "unbound" && len(args) == 3:
 		return renderUnbound(args[1], args[2], in, out)
+	case args[0] == "kea" && len(args) == 1:
+		return renderKea(in, out)
 	}
 	return errUsage
 }
