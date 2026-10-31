@@ -563,3 +563,27 @@ func TestRouterDHCPStatusWithoutKea(t *testing.T) {
 		t.Errorf("a router without Kea asked %q", r.Calls)
 	}
 }
+
+// An answer of Kea counts even when the questions' budget ends right after it; a question that
+// failed names the budget when it ran out, or the error.
+func TestKeaFailure(t *testing.T) {
+	spent, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	<-spent.Done()
+	ctx := context.Background()
+	for _, c := range []struct {
+		budget context.Context
+		err    error
+		want   string
+	}{
+		{spent, nil, ""},
+		{ctx, nil, ""},
+		{spent, errors.New("read: connection reset"), fmt.Sprintf("Kea did not answer within %v", askTimeout)},
+		{ctx, os.ErrDeadlineExceeded, fmt.Sprintf("Kea did not answer within %v", askTimeout)},
+		{ctx, errors.New("read: connection reset"), "read: connection reset"},
+	} {
+		if got := keaFailure(ctx, c.budget, c.err); got != c.want {
+			t.Errorf("keaFailure(%v, %v) = %q, want %q", c.budget.Err(), c.err, got, c.want)
+		}
+	}
+}

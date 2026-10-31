@@ -393,16 +393,8 @@ func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
 		if err == nil {
 			leases, err = routing.ParseKeaStatistics(args)
 		}
-		switch {
-		case ctx.Err() != nil:
-			s.Error = ctx.Err().Error()
-			continue
-		// The socket's deadline, the budget's, may pass a moment before the budget ends.
-		case errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(budget.Err(), context.DeadlineExceeded):
-			s.Error = fmt.Sprintf("Kea did not answer within %v", askTimeout)
-			continue
-		case err != nil:
-			s.Error = err.Error()
+		if msg := keaFailure(ctx, budget, err); msg != "" {
+			s.Error = msg
 			continue
 		}
 		s.Running = true
@@ -521,4 +513,21 @@ func bgpRoute(r *routing.BGPRoute) *routerv1.BGPRoute {
 
 func failed(code connect.Code, format string, args ...any) error {
 	return connect.NewError(code, fmt.Errorf(format, args...))
+}
+
+// keaFailure is the error of a server's status whose question to Kea ended with err, while the
+// request ctx and the questions' budget ran, or empty when Kea answered: an answer counts even if
+// the budget ran out right after it.
+func keaFailure(ctx, budget context.Context, err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case ctx.Err() != nil:
+		return ctx.Err().Error()
+	// The socket's deadline, the budget's, may pass a moment before the budget ends.
+	case errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(budget.Err(), context.DeadlineExceeded):
+		return fmt.Sprintf("Kea did not answer within %v", askTimeout)
+	default:
+		return err.Error()
+	}
 }
