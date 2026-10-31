@@ -1,4 +1,12 @@
-# r2's dhcp0 takes its address from r1's DHCP server.
+# r2's dhcp0, of the MAC address r1 reserves an address for, takes its address from r1's DHCP
+# server.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-dhcp0}
+spec:
+  netDev: {kind: macvlan, name: dhcp0, macAddress: "52:54:00:00:02:32"}
+  macvlan: {mode: bridge}
+---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
 metadata: {name: 20-dhcp0}

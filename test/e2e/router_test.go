@@ -84,13 +84,14 @@ const bgpPassword = "lab-s3cret"
 //     the route, r1's BGP holds it, marked no-advertise and with the tracked large community, r2
 //     routes ::/0 through r1 again and never learns the tracked prefix. The base inventory then
 //     brings the unconditional default back.
-//   - dhcp: a delivery gives both routers a VLAN dhcp0 on enp0s3. r1's, in the VRF lan, has a DHCP
-//     server that reserves 192.0.2.10 for r2's MAC address, with leases of two minutes, and r2's
-//     takes its address from DHCP. r1's status shows the server of lan running with r2's lease, r2
-//     holds the address, and the diagnostic dhcp-leases lists the lease. After a boot of r1 the
-//     server runs again with the lease and r2 renews it there. The base inventory stops the server;
-//     networkd keeps both routers' dhcp0 devices, as it keeps every netdev, and no diagnostic
-//     deletes a link, so the phase runs last.
+//   - dhcp: a delivery gives both routers a macvlan dhcp0 on enp0s3, untagged on the lab's switch,
+//     which drops the frames of VLANs. r1's dhcp0, in the VRF lan, has a DHCP server that reserves
+//     192.0.2.10 for the MAC address of r2's dhcp0, with leases of two minutes, and r2's takes its
+//     address from DHCP. r1's status shows the server of lan running with r2's lease, r2 holds the
+//     address, and the diagnostic dhcp-leases lists the lease. After a boot of r1 the server runs
+//     again with the lease and r2 renews it there. The base inventory stops the server; networkd
+//     keeps both routers' dhcp0 devices, as it keeps every netdev, and no diagnostic deletes a
+//     link, so the phase runs last.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials, two minutes for the VRF with
@@ -852,6 +853,14 @@ func TestRouterLab(t *testing.T) {
 	}
 
 	t.Run("dhcp", func(t *testing.T) {
+		// A failed phase logs the journals of r1's server and r2's client.
+		defer func() {
+			if t.Failed() {
+				_, _ = chalkctl(t, nodes["r1"], "dhcp", "logs", "r1", "--unit", "kea-dhcp4@lan.service")
+				_, _ = chalkctl(t, nodes["r1"], "dhcp", "logs", "r1", "--unit", "chalkos-dhcp.service")
+				_, _ = chalkctl(t, nodes["r2"], "dhcp", "logs", "r2", "--unit", "systemd-networkd.service")
+			}
+		}()
 		// r1 first, so its server answers r2's first request.
 		for _, name := range []string{"r1", "r2"} {
 			if out, err := chalkctl(t, nodes[name], "dhcp", "apply-config", name); err != nil {
@@ -885,11 +894,11 @@ func TestRouterLab(t *testing.T) {
 		}
 		// leaseEnd is when r1's lease of r2's address ends, as the diagnostic dhcp-leases lists it.
 		leaseEnd := func() (time.Time, error) {
-			out, err := chalkctl(t, nodes["r1"], "dhcp", "node", "diag", "r1", "dhcp-leases", "mac=52:54:00:00:02:02")
+			out, err := chalkctl(t, nodes["r1"], "dhcp", "node", "diag", "r1", "dhcp-leases", "mac=52:54:00:00:02:32")
 			if err != nil {
 				return time.Time{}, err
 			}
-			m := regexp.MustCompile(`(?m)^lan\tlab\t192\.0\.2\.10\t52:54:00:00:02:02\tr2\t(\S+)$`).FindStringSubmatch(out)
+			m := regexp.MustCompile(`(?m)^lan\tlab\t192\.0\.2\.10\t52:54:00:00:02:32\tr2\t(\S+)$`).FindStringSubmatch(out)
 			if m == nil {
 				return time.Time{}, fmt.Errorf("dhcp-leases of r1 lists no lease of r2's address:\n%s", out)
 			}

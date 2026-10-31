@@ -1,6 +1,13 @@
-# r1's DHCP server on dhcp0, in the VRF lan of table 400. It leases r2, whose switch NIC has the
-# MAC address 52:54:00:00:02:02, the reserved address 192.0.2.10 for two minutes, so r2 renews
-# its lease every minute.
+# r1's DHCP server on dhcp0, in the VRF lan of table 400. It leases r2's dhcp0, of the MAC address
+# 52:54:00:00:02:32, the reserved address 192.0.2.10 for two minutes, so r2 renews its lease
+# every minute.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-dhcp0}
+spec:
+  netDev: {kind: macvlan, name: dhcp0, macAddress: "52:54:00:00:02:31"}
+  macvlan: {mode: bridge}
+---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
 metadata: {name: 20-dhcp0}
@@ -24,4 +31,4 @@ spec:
   domain: lab.example.org
   leaseTime: 2m
   reservations:
-    - {mac: "52:54:00:00:02:02", address: 192.0.2.10, hostname: r2}
+    - {mac: "52:54:00:00:02:32", address: 192.0.2.10, hostname: r2}

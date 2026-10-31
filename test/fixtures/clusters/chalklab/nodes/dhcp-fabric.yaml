@@ -1,0 +1,10 @@
+# The macvlan dhcp0 on the routers' fabric link enp0s3, whose frames cross the lab's switch
+# untagged: the switch drops frames of a VLAN its ports are not members of. 05-fabric takes the
+# place of groups/router.yaml's 10-fabric, which networkd no longer picks for enp0s3, and adds the
+# macvlan, which r1-dhcp.yaml and r2-dhcp.yaml declare with a MAC address of each router.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 05-fabric}
+spec:
+  match: {name: enp0s3}
+  network: {ipv6AcceptRA: false, macvlan: [dhcp0]}
