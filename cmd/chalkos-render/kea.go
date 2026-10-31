@@ -16,7 +16,9 @@ import (
 // The output kea: the config of Kea's DHCPv4 server of each VRF whose links DHCPSubnet documents
 // serve, on the links the subnets name. The renderer checks across documents what the kind's rules
 // cannot: one VRF per subnet, one subnet per link, no overlap within a VRF, a static address of
-// the router in the subnet on each link, and the order of the pools' and reservations' addresses.
+// the router in the subnet on each link, the order of the pools' and reservations' addresses, and
+// pools and reservations apart from the router's, the gateway's and the DNS and boot servers'
+// addresses.
 
 // keaFile is the file renderKea writes for the default VRF's server; a VRF's server gets
 // kea-dhcp4-<vrf>.json.
@@ -142,8 +144,53 @@ func serveSubnet(d routerDocuments, units []networkUnit, devices []string, s nam
 	if err != nil {
 		return sub, err
 	}
+	// taken are the addresses no pool or reservation holds, each with what it is: the router's own
+	// on the subnet's links, the gateway and the DNS and boot servers.
+	var taken []takenAddress
+	for _, o := range own {
+		taken = append(taken, takenAddress{o, "the router's own address on the subnet's links"})
+	}
+	if g := s.Spec.Gateway; g != nil {
+		a, err := netip.ParseAddr(*g)
+		if err != nil || !a.Is4() || !sub.prefix.Contains(a) {
+			return sub, fmt.Errorf("the gateway %q is no address of the subnet %s", *g, sub.prefix)
+		}
+		if a == sub.prefix.Addr() || a == broadcast(sub.prefix) {
+			return sub, fmt.Errorf("the gateway, %s, is the network or broadcast address of the subnet %s", a, sub.prefix)
+		}
+		taken = append(taken, takenAddress{a, "the gateway"})
+	}
+	for _, a := range s.Spec.DNS {
+		addr, err := netip.ParseAddr(a)
+		if err != nil || !addr.Is4() {
+			return sub, fmt.Errorf("the DNS server %q is no IPv4 address", a)
+		}
+		taken = append(taken, takenAddress{addr, "a DNS server"})
+	}
+	if b := s.Spec.Boot; b != nil {
+		if b.Server != nil {
+			a, err := netip.ParseAddr(*b.Server)
+			if err != nil || !a.Is4() {
+				return sub, fmt.Errorf("boot's server %q is no IPv4 address", *b.Server)
+			}
+			taken = append(taken, takenAddress{a, "boot's server"})
+		}
+		files := 0
+		for _, f := range []*string{b.BIOS, b.UEFI, b.IPXE} {
+			if f == nil {
+				continue
+			}
+			if !bootFile.MatchString(*f) {
+				return sub, fmt.Errorf("boot's file %q is no file of 1 to 127 printable characters without spaces", *f)
+			}
+			files++
+		}
+		if files == 0 {
+			return sub, fmt.Errorf("boot names no file")
+		}
+	}
 	// inSubnet parses an address of a pool or reservation, which lies in the subnet and is neither
-	// its network's nor its broadcast address nor one of the router's.
+	// its network's nor its broadcast address nor taken.
 	inSubnet := func(what, a string) (netip.Addr, error) {
 		addr, err := netip.ParseAddr(a)
 		if err != nil || !addr.Is4() || !sub.prefix.Contains(addr) {
@@ -152,8 +199,10 @@ func serveSubnet(d routerDocuments, units []networkUnit, devices []string, s nam
 		if addr == sub.prefix.Addr() || addr == broadcast(sub.prefix) {
 			return addr, fmt.Errorf("%s, %s, is the network or broadcast address of the subnet %s", what, addr, sub.prefix)
 		}
-		if slices.Contains(own, addr) {
-			return addr, fmt.Errorf("%s, %s, is the router's own address on the subnet's links", what, addr)
+		for _, t := range taken {
+			if t.addr == addr {
+				return addr, fmt.Errorf("%s, %s, is %s", what, addr, t.what)
+			}
 		}
 		return addr, nil
 	}
@@ -169,9 +218,9 @@ func serveSubnet(d routerDocuments, units []networkUnit, devices []string, s nam
 		if last.Less(first) {
 			return sub, fmt.Errorf("the pool %s-%s ends before it starts", first, last)
 		}
-		for _, o := range own {
-			if !o.Less(first) && !last.Less(o) {
-				return sub, fmt.Errorf("the pool %s-%s holds %s, the router's own address on the subnet's links", first, last, o)
+		for _, t := range taken {
+			if !t.addr.Less(first) && !last.Less(t.addr) {
+				return sub, fmt.Errorf("the pool %s-%s holds %s, %s", first, last, t.addr, t.what)
 			}
 		}
 		for _, other := range sub.pools {
@@ -198,44 +247,19 @@ func serveSubnet(d routerDocuments, units []networkUnit, devices []string, s nam
 			return sub, fmt.Errorf("the reservation of %s: %q is no host name", r.MAC, *r.Hostname)
 		}
 	}
-	if g := s.Spec.Gateway; g != nil {
-		a, err := netip.ParseAddr(*g)
-		if err != nil || !a.Is4() || !sub.prefix.Contains(a) {
-			return sub, fmt.Errorf("the gateway %q is no address of the subnet %s", *g, sub.prefix)
-		}
-	}
-	for _, a := range s.Spec.DNS {
-		if addr, err := netip.ParseAddr(a); err != nil || !addr.Is4() {
-			return sub, fmt.Errorf("the DNS server %q is no IPv4 address", a)
-		}
-	}
 	if dom := s.Spec.Domain; dom != nil && !dhcpName.MatchString(*dom) {
 		return sub, fmt.Errorf("%q is no domain", *dom)
 	}
 	if sub.seconds, err = leaseSeconds(s.Spec.LeaseTime); err != nil {
 		return sub, err
 	}
-	if b := s.Spec.Boot; b != nil {
-		if b.Server != nil {
-			if a, err := netip.ParseAddr(*b.Server); err != nil || !a.Is4() {
-				return sub, fmt.Errorf("boot's server %q is no IPv4 address", *b.Server)
-			}
-		}
-		files := 0
-		for _, f := range []*string{b.BIOS, b.UEFI, b.IPXE} {
-			if f == nil {
-				continue
-			}
-			if !bootFile.MatchString(*f) {
-				return sub, fmt.Errorf("boot's file %q is no file of 1 to 127 printable characters without spaces", *f)
-			}
-			files++
-		}
-		if files == 0 {
-			return sub, fmt.Errorf("boot names no file")
-		}
-	}
 	return sub, nil
+}
+
+// takenAddress is an address of a subnet that no pool or reservation holds, and what it is.
+type takenAddress struct {
+	addr netip.Addr
+	what string
 }
 
 // subnetLinks are the links the interfaces of a subnet serve it on, sorted, and their VRF. Kea

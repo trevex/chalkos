@@ -167,7 +167,7 @@
             }
           ],
           "default": null,
-          "description": "Router the clients route through, inside the subnet; null gives them none.",
+          "description": "Router the clients route through, inside the subnet and neither its network nor its broadcast address; null gives them none.",
           "examples": [
             "192.0.2.1"
           ]
@@ -197,7 +197,7 @@
         },
         "pools": {
           "default": [],
-          "description": "Ranges the server leases addresses from to any client, inside the subnet, apart from each other and from the reservations; empty leases the reservations alone.",
+          "description": "Ranges the server leases addresses from to any client, inside the subnet, apart from each other, from the reservations and from the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone.",
           "examples": [
             [
               {
@@ -235,7 +235,7 @@
             "additionalProperties": false,
             "properties": {
               "address": {
-                "description": "Address the client always gets, inside the subnet and outside its pools.",
+                "description": "Address the client always gets, inside the subnet and outside its pools, neither the router's nor the gateway's nor a DNS or boot server's.",
                 "examples": [
                   "192.0.2.10"
                 ],

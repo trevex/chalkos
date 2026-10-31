@@ -88,13 +88,13 @@ in
               last = "192.0.2.199";
             }
           ];
-          description = "Ranges the server leases addresses from to any client, inside the subnet, apart from each other and from the reservations; empty leases the reservations alone.";
+          description = "Ranges the server leases addresses from to any client, inside the subnet, apart from each other, from the reservations and from the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone.";
         };
         gateway = mkOption {
           type = types.nullOr address;
           default = null;
           example = "192.0.2.1";
-          description = "Router the clients route through, inside the subnet; null gives them none.";
+          description = "Router the clients route through, inside the subnet and neither its network nor its broadcast address; null gives them none.";
         };
         dns = lib.chalkos.mkOption {
           type = types.listOf address;
@@ -133,7 +133,7 @@ in
                 address = mkOption {
                   type = address;
                   example = "192.0.2.10";
-                  description = "Address the client always gets, inside the subnet and outside its pools.";
+                  description = "Address the client always gets, inside the subnet and outside its pools, neither the router's nor the gateway's nor a DNS or boot server's.";
                 };
                 hostname = mkOption {
                   type = types.nullOr dnsName;

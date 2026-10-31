@@ -420,14 +420,14 @@ A node's config may hold several, each with a name of its own. It has 9 [change 
 | `spec.boot.uefi` | string or null | `null` | File of clients with x86-64 UEFI firmware, of architecture 7 or 9 in option 93. |
 | `spec.dns` | list of string | `[]` | DNS servers the clients ask, IPv4 addresses. |
 | `spec.domain` | string or null | `null` | Domain of the clients' names, which they also search; null gives none. |
-| `spec.gateway` | string or null | `null` | Router the clients route through, inside the subnet; null gives them none. |
+| `spec.gateway` | string or null | `null` | Router the clients route through, inside the subnet and neither its network nor its broadcast address; null gives them none. |
 | `spec.interfaces` | list of string | required | Links the server answers on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet. A link takes one subnet. |
 | `spec.leaseTime` | string | `"12h"` | How long a lease lasts: a number and s, m, h or d, 136 years at most. |
-| `spec.pools` | list of object | `[]` | Ranges the server leases addresses from to any client, inside the subnet, apart from each other and from the reservations; empty leases the reservations alone. |
+| `spec.pools` | list of object | `[]` | Ranges the server leases addresses from to any client, inside the subnet, apart from each other, from the reservations and from the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone. |
 | `spec.pools[].first` | string | required | First address of the pool. |
 | `spec.pools[].last` | string | required | Last address of the pool, no lower than the first. |
 | `spec.reservations` | list of object | `[]` | Clients that always get the same address, by their MAC address. |
-| `spec.reservations[].address` | string | required | Address the client always gets, inside the subnet and outside its pools. |
+| `spec.reservations[].address` | string | required | Address the client always gets, inside the subnet and outside its pools, neither the router's nor the gateway's nor a DNS or boot server's. |
 | `spec.reservations[].hostname` | string or null | `null` | Name the client gets; null gives none. |
 | `spec.reservations[].mac` | string | required | MAC address of the client, in lower case. |
 | `spec.subnet` | string | required | IPv4 range the subnet's addresses are in, of 30 bits at most. |
