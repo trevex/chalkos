@@ -483,6 +483,36 @@ A node's config may hold several, each with a name of its own. It has 7 [change 
 | `spec.to.port` | integer from 1 to 65535 or null | `null` | Port the rule translates to, with `match.protocol`; null keeps the port. |
 | `spec.type` | one of `masquerade`, `snat`, `dnat` | required | `masquerade` translates the source of a leaving connection to the address of the interface it leaves through, `snat` to `to.address`, and `dnat` the destination of an arriving connection to `to.address`. |
 
+### PolicyRoute { #policyroute }
+
+Policy routing of the router: rules that send the forwarded traffic they match, coming in on a zone's links, on interfaces or on any link, to a VRF's routing table, another table or a next hop, whatever its destination's route. The first rule that matches decides; documents apply in the order of their names.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 15 [change rules](builtins.md#rules-policyroute).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.in` | object or null | `null` | Where the traffic comes in: a zone or interfaces; null for every link. |
+| `spec.in.interfaces` | list of string | `[]` | Interfaces the traffic comes in on, by name or glob, a glob being a prefix followed by `*`; excludes `zone`. |
+| `spec.in.zone` | string or null | `null` | FirewallZone whose links the traffic comes in on; excludes `interfaces`. |
+| `spec.rules` | list of object | required | Rules in order: the first that matches a packet decides where it goes. |
+| `spec.rules[].match` | object | required | What the rule matches, at least one term: a rule for every packet says so, such as with `source: [0.0.0.0/0]`. |
+| `spec.rules[].match.destination` | list of string | `[]` | Destination address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every destination. |
+| `spec.rules[].match.destinationPorts` | list of integer from 1 to 65535 or string | `[]` | Destination ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
+| `spec.rules[].match.dscp` | list of integer from 0 to 63 | `[]` | DSCP values of the packets, each from 0 to 63; empty matches every value. |
+| `spec.rules[].match.family` | one of `ipv4`, `ipv6` or null | `null` | Address family the rule matches; null matches each family its protocol and addresses leave. |
+| `spec.rules[].match.protocol` | one of `tcp`, `udp`, `sctp`, `icmp`, `icmpv6`, `gre`, `esp`, `ah` or null | `null` | Protocol the rule matches; null matches every protocol. `icmp` is IPv4's and `icmpv6` IPv6's. |
+| `spec.rules[].match.source` | list of string | `[]` | Source address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every source. In each family the rule matches the ranges of that family. |
+| `spec.rules[].match.sourcePorts` | list of integer from 1 to 65535 or string | `[]` | Source ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
+| `spec.rules[].to` | object | required | Where the traffic the rule matches goes: `vrf`, `table` or `nextHop`. |
+| `spec.rules[].to.nextHop` | object or null | `null` | Router the traffic leaves through, by the default route of a table of its own; excludes `vrf` and `table`. |
+| `spec.rules[].to.nextHop.address` | string | required | Address of the router the traffic leaves through, of the family the rule matches. |
+| `spec.rules[].to.nextHop.interface` | string | required | Link the next hop is on, which a Network document names alone in its `[Match]` section; the route goes into that Network. |
+| `spec.rules[].to.nextHop.table` | integer from 1 to 4294967295 | required | Routing table of the next hop: a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. One next hop's alone; none of 253, 254 and 255, no VRF's table and no rule's `table`. |
+| `spec.rules[].to.table` | integer from 1 to 4294967295 or null | `null` | Routing table that routes the traffic, by number: 254 is the main table. Not 255, the kernel's local table, and no VRF's table, which `vrf` names. A destination the table has no route to takes the route it would take without the policy; excludes `vrf` and `nextHop`. |
+| `spec.rules[].to.vrf` | string or null | `null` | VRF document whose routing table routes the traffic; excludes `table` and `nextHop`. |
+
 ### PrefixList { #prefixlist }
 
 Address ranges of one family that a RoutingPolicy term matches routes against: entries in order, the first that matches a route deciding.

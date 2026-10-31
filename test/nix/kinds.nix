@@ -91,6 +91,7 @@ let
     "FirewallZone"
     "NAT64"
     "NATRule"
+    "PolicyRoute"
     "PrefixList"
     "Resolver"
     "Router"
