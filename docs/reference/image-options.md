@@ -140,6 +140,14 @@ clusters whose Addon documents bring their own, and ships every CNI reference pl
 
 Whether an image carries the router layer, and whether its node forwards packets between its interfaces.
 
+### `chalkos.router.bgp.enable` { #chalkosrouterbgpenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
+
+Whether router images carry FRR, which runs BGP and BFD, and accept the kinds BGP, BGPPeer,
+PrefixList, CommunityList and RoutingPolicy; only with the router layer. Set it false in a
+variant's modules to leave FRR and the Python of frr-reload.py out of its images.
+
 ### `chalkos.router.dhcp.enable` { #chalkosrouterdhcpenable }
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)

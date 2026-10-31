@@ -1,8 +1,8 @@
 # The diagnostics router images add to every image's: the routers on the path to an address, FRR's
-# BGP sessions, neighbours and paths and its BFD peers of a VRF, which vtysh asks FRR for as a
-# member of frrvty, the group of FRR's sockets, a NAT64 instance's sessions, which Jool shows to
-# CAP_NET_ADMIN in the instance's namespace alone, and the DHCP servers' leases, which Kea gives
-# on its control sockets to the group kea.
+# BGP sessions, neighbours and paths and its BFD peers of a VRF on images with BGP, which vtysh asks
+# FRR for as a member of frrvty, the group of FRR's sockets, a NAT64 instance's sessions, which Jool
+# shows to CAP_NET_ADMIN in the instance's namespace alone, and the DHCP servers' leases, which Kea
+# gives on its control sockets to the group kea.
 {
   config,
   lib,
@@ -101,11 +101,13 @@ in
       role = "operator";
       timeout = "90s";
     };
-    chalkos.diagnostics.bgp-summary =
+    # Only images with BGP run FRR.
+    chalkos.diagnostics.bgp-summary = lib.mkIf config.chalkos.router.bgp.enable (
       vtysh "One VRF's BGP sessions of each address family, as show bgp summary prints them."
         "show bgp vrf {vrf} summary"
-        { inherit vrf; };
-    chalkos.diagnostics.bgp-neighbor =
+        { inherit vrf; }
+    );
+    chalkos.diagnostics.bgp-neighbor = lib.mkIf config.chalkos.router.bgp.enable (
       vtysh
         "One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes."
         "show bgp vrf {vrf} neighbors {peer}"
@@ -116,8 +118,9 @@ in
             description = "The session's interface or the neighbour's address, as the node's status lists it.";
           };
           inherit vrf;
-        };
-    chalkos.diagnostics.bgp-route =
+        }
+    );
+    chalkos.diagnostics.bgp-route = lib.mkIf config.chalkos.router.bgp.enable (
       vtysh
         "One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best."
         "show bgp vrf {vrf} {family} unicast {prefix}"
@@ -136,7 +139,8 @@ in
             default = "ipv6";
             description = "Address family of the prefix.";
           };
-        };
+        }
+    );
     chalkos.diagnostics.nat64-sessions = {
       description = "A NAT64 instance's sessions, as jool session display prints them: each translated TCP, UDP and ICMP connection's IPv6 and IPv4 addresses and ports, and when it expires.";
       command = [
@@ -196,9 +200,10 @@ in
       # Kea's control sockets in /run/kea admit the group kea.
       groups = [ "kea" ];
     };
-    chalkos.diagnostics.bfd-peers =
+    chalkos.diagnostics.bfd-peers = lib.mkIf config.chalkos.router.bgp.enable (
       vtysh "One VRF's BFD sessions and their state, as show bfd peers prints them."
         "show bfd vrf {vrf} peers"
-        { inherit vrf; };
+        { inherit vrf; }
+    );
   };
 }

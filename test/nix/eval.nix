@@ -369,6 +369,126 @@ lib.runTests {
       };
     };
   };
+  # Router images run FRR and take the BGP kinds unless their modules set
+  # chalkos.router.bgp.enable to false, whose images carry no FRR: no BGP kinds, output frr,
+  # effect frr, frr.service, FRR's users, groups, package or config, no vtysh on chalkd's PATH,
+  # no unit that runs FRR's programs and no BGP or BFD diagnostics; their firewall reads no
+  # BGPPeer, and their outputs render no example with BGP at the build. networkd keeps the routes
+  # others install either way, and the build allocates the same IDs.
+  testRouterBGPOptional = {
+    expr =
+      let
+        of = c: {
+          kinds = lib.filter (k: c.chalkos.kinds ? ${k}) [
+            "BGP"
+            "BGPPeer"
+            "PrefixList"
+            "CommunityList"
+            "RoutingPolicy"
+          ];
+          output = c.chalkos.outputs ? frr;
+          effect = c.chalkos.effects ? frr;
+          unit = c.systemd.services ? frr;
+          users = lib.filter (n: c.users.users ? ${n}) [ "frr" ];
+          groups = lib.filter (n: c.users.groups ? ${n}) [
+            "frr"
+            "frrvty"
+          ];
+          package = lib.any (p: lib.getName p == "frr") c.environment.systemPackages;
+          chalkd = lib.any (p: lib.getName p == "frr") c.systemd.services.chalkd.path;
+          config = c.environment.etc ? "frr/frr.conf";
+          # A unit that runs one of FRR's programs.
+          referenced = lib.any (u: lib.hasInfix "-frr-" (u.text or "")) (lib.attrValues c.systemd.units);
+          diagnostics = lib.filter (n: lib.hasPrefix "bgp-" n || lib.hasPrefix "bfd-" n) (
+            lib.attrNames c.chalkos.diagnostics
+          );
+          firewallReads = lib.elem "BGPPeer" c.chalkos.outputs.router-nftables.inputs;
+          examples = lib.filter (lib.flip lib.elem [
+            "edge.yaml"
+            "leaf.yaml"
+            "vrf.yaml"
+          ]) (examplesOf c);
+          foreignRoutes = c.systemd.network.config.networkConfig;
+          unpinned = unpinned c;
+        };
+      in
+      {
+        edge = of layered.edge-metal.config;
+        without = of (routerWithout [ "bgp" ]);
+      };
+    expected =
+      let
+        foreignRoutes = {
+          ManageForeignNextHops = false;
+          ManageForeignRoutes = false;
+        };
+        unpinned = {
+          users = [
+            "chalkos-render"
+            "nscd"
+            "systemd-oom"
+          ];
+          groups = [
+            "chalkos-render"
+            "nscd"
+            "systemd-coredump"
+            "systemd-oom"
+          ];
+        };
+      in
+      {
+        edge = {
+          kinds = [
+            "BGP"
+            "BGPPeer"
+            "PrefixList"
+            "CommunityList"
+            "RoutingPolicy"
+          ];
+          output = true;
+          effect = true;
+          unit = true;
+          users = [ "frr" ];
+          groups = [
+            "frr"
+            "frrvty"
+          ];
+          package = true;
+          chalkd = true;
+          config = true;
+          referenced = true;
+          diagnostics = [
+            "bfd-peers"
+            "bgp-neighbor"
+            "bgp-route"
+            "bgp-summary"
+          ];
+          firewallReads = true;
+          examples = [
+            "edge.yaml"
+            "leaf.yaml"
+            "vrf.yaml"
+          ];
+          inherit foreignRoutes unpinned;
+        };
+        without = {
+          kinds = [ ];
+          output = false;
+          effect = false;
+          unit = false;
+          users = [ ];
+          groups = [ ];
+          package = false;
+          chalkd = false;
+          config = false;
+          referenced = false;
+          diagnostics = [ ];
+          firewallReads = false;
+          examples = [ ];
+          inherit foreignRoutes unpinned;
+        };
+      };
+  };
   # On a router image the router layer owns the firewall: NixOS's firewall and nftables service are
   # off, chalkos-firewall loads the table after chalkos-config renders it and before the network
   # comes up, the outputs router-sysctl and router-nftables render the router kinds, and their

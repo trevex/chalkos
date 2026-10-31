@@ -1,7 +1,8 @@
-# BGP on router images: FRR's zebra, bgpd, bfdd and staticd, whose whole config the output frr
-# renders from the node's BGP documents. frr.service fills the peers' passwords in from its
-# credentials into /run/frr/frr.conf before it starts and on each reload, which applies the
-# changes with frr-reload.py and keeps the sessions they leave alone.
+# BGP on router images whose chalkos.router.bgp.enable is true: FRR's zebra, bgpd, bfdd and
+# staticd, whose whole config the output frr renders from the node's BGP documents. frr.service
+# fills the peers' passwords in from its credentials into /run/frr/frr.conf before it starts and
+# on each reload, which applies the changes with frr-reload.py and keeps the sessions they leave
+# alone.
 {
   chalkosPackages,
   config,
@@ -63,7 +64,7 @@ let
   };
 in
 {
-  config = lib.mkIf config.chalkos.router.enable {
+  config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.bgp.enable) {
     # The images allocate the IDs of users and groups without one statically, from 999 down, so
     # FRR's would move the IDs of those after them whenever an image adds or drops BGP. 329 and
     # 330 are free in NixOS's ids.nix, as kea's 328 is.
@@ -130,12 +131,5 @@ in
     };
     # chalkd reads FRR's state with vtysh for the node's status and its routes.
     systemd.services.chalkd.path = [ frr ];
-
-    # zebra installs BGP's routes and next hops, which networkd would remove as foreign ones each
-    # time it configures a link.
-    systemd.network.config.networkConfig = {
-      ManageForeignRoutes = false;
-      ManageForeignNextHops = false;
-    };
   };
 }

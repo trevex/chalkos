@@ -1,6 +1,6 @@
-# BGP on images with the router layer: a BGP instance per VRF, its peers, and the prefix lists,
-# community lists and routing policies peers, networks and imports name, which the output frr
-# renders into FRR's config (modules/node/router/bgp.nix).
+# BGP on router images whose chalkos.router.bgp.enable is true: a BGP instance per VRF, its peers,
+# and the prefix lists, community lists and routing policies peers, networks and imports name,
+# which the output frr renders into FRR's config (modules/node/router/bgp.nix).
 #
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists. So the
 # rules over a peer's families sit on spec.families and those over an instance's networks and
@@ -196,7 +196,7 @@ let
   };
 in
 {
-  config = lib.mkIf config.chalkos.router.enable {
+  config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.bgp.enable) {
     chalkos.kinds = {
       BGP = builtin groups.router // {
         multiple = true;

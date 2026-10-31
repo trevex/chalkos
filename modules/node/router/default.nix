@@ -27,6 +27,16 @@
     '';
   };
 
+  options.chalkos.router.bgp.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Whether router images carry FRR, which runs BGP and BFD, and accept the kinds BGP, BGPPeer,
+      PrefixList, CommunityList and RoutingPolicy; only with the router layer. Set it false in a
+      variant's modules to leave FRR and the Python of frr-reload.py out of its images.
+    '';
+  };
+
   options.chalkos.router.dhcp.enable = lib.mkOption {
     type = lib.types.bool;
     default = true;
@@ -68,5 +78,12 @@
   config = lib.mkIf config.chalkos.router.enable {
     chalkos.layers.router = "";
     chalkos.forwarding.enable = true;
+
+    # zebra installs BGP's routes and next hops, and chalkos-nat64 the routes to the NAT64s'
+    # links, which networkd would remove as foreign ones each time it configures a link.
+    systemd.network.config.networkConfig = {
+      ManageForeignRoutes = false;
+      ManageForeignNextHops = false;
+    };
   };
 }
