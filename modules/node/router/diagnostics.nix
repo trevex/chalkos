@@ -1,7 +1,8 @@
 # The diagnostics router images add to every image's: the routers on the path to an address, FRR's
 # BGP sessions, neighbours and paths and its BFD peers of a VRF, which vtysh asks FRR for as a
-# member of frrvty, the group of FRR's sockets, and a NAT64 instance's sessions, which Jool shows
-# to CAP_NET_ADMIN in the instance's namespace alone.
+# member of frrvty, the group of FRR's sockets, a NAT64 instance's sessions, which Jool shows to
+# CAP_NET_ADMIN in the instance's namespace alone, and the DHCP servers' leases, which Kea gives
+# on its control sockets to the group kea.
 {
   config,
   lib,
@@ -29,6 +30,39 @@ let
     default = "default";
     description = "VRF to ask about, by the name of its VRF document, or default for the default VRF.";
   };
+  # Asks each DHCP server on its control socket for its subnets and its leases, and prints the
+  # leases of the subnet and MAC address of --subnet= and --mac=, or all, a line each. A server
+  # that does not answer is named on standard error, and the others still listed.
+  dhcpLeases = ''
+    set -euo pipefail
+    subnet= mac=
+    for a in "$@"; do
+      case $a in
+      --subnet=*) subnet=''${a#--subnet=} ;;
+      --mac=*) mac=''${a#--mac=} ;;
+      esac
+    done
+    ask() { printf '%s' "$2" | ${pkgs.socat}/bin/socat -t 10 - "UNIX-CONNECT:$1"; }
+    printf 'VRF\tSUBNET\tADDRESS\tMAC\tHOSTNAME\tENDS\n'
+    shopt -s nullglob
+    for socket in /run/kea/dhcp4.sock /run/kea/dhcp4-*.sock; do
+      vrf=''${socket#/run/kea/dhcp4}
+      vrf=''${vrf%.sock}
+      vrf=''${vrf#-}
+      vrf=''${vrf:-default}
+      if ! config=$(ask "$socket" '{"command": "config-get"}') || ! leases=$(ask "$socket" '{"command": "lease4-get-all"}'); then
+        echo "the DHCP server of VRF $vrf does not answer" >&2
+        continue
+      fi
+      ${lib.getExe pkgs.jq} -rn --argjson c "$config" --argjson l "$leases" --arg vrf "$vrf" --arg subnet "$subnet" --arg mac "$mac" '
+        ($c.arguments.Dhcp4.subnet4 | map({key: (.id | tostring), value: .["user-context"].name}) | from_entries) as $names
+        | ($l.arguments.leases // [])[]
+        | ($names[.["subnet-id"] | tostring] // "-") as $name
+        | select(($subnet == "" or $name == $subnet) and ($mac == "" or .["hw-address"] == $mac))
+        | [$vrf, $name, .["ip-address"], .["hw-address"], (if (.hostname // "") == "" then "-" else .hostname end), (.cltt + .["valid-lft"] | todate)]
+        | @tsv'
+    done
+  '';
 in
 {
   config = lib.mkIf config.chalkos.router.enable {
@@ -117,6 +151,38 @@ in
       role = "operator";
       timeout = "30s";
       capabilities = [ "CAP_NET_ADMIN" ];
+    };
+    # Only images with DHCP run Kea.
+    chalkos.diagnostics.dhcp-leases = lib.mkIf config.chalkos.router.dhcp.enable {
+      description = "The leases of the DHCP servers of every VRF, or of one subnet or MAC address: each lease's VRF, subnet, address, MAC address, host name and end, as Kea's lease commands report them.";
+      command = [
+        "${pkgs.bash}/bin/bash"
+        "-c"
+        dhcpLeases
+        "dhcp-leases"
+        "--subnet={subnet}"
+        "--mac={mac}"
+      ];
+      parameters = {
+        # A DHCPSubnet document's name, as the kinds take it.
+        subnet = {
+          type = "pattern";
+          regex = "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$";
+          optional = true;
+          description = "Name of the DHCPSubnet document whose leases to list.";
+        };
+        mac = {
+          type = "pattern";
+          regex = "^[0-9a-f]{2}(:[0-9a-f]{2}){5}$";
+          optional = true;
+          description = "MAC address, in lower case, whose leases to list.";
+        };
+      };
+      # The leases show which machines are on the networks.
+      role = "operator";
+      timeout = "30s";
+      # Kea's control sockets in /run/kea admit the group kea.
+      groups = [ "kea" ];
     };
     chalkos.diagnostics.bfd-peers =
       vtysh "One VRF's BFD sessions and their state, as show bfd peers prints them."

@@ -180,14 +180,27 @@ lib.runTests {
       edge = false;
     };
   };
-  # Router images take DHCPSubnet documents unless their modules set chalkos.router.dhcp.enable to
-  # false, whose router outputs then render no example of DHCP at the build; other images never
-  # take them.
+  # Router images take DHCPSubnet documents and run Kea unless their modules set
+  # chalkos.router.dhcp.enable to false, whose router outputs then render no example of DHCP at the
+  # build, and which carry no output kea, no Kea, its units, user or package, and no diagnostic
+  # dhcp-leases; other images never take them.
   testRouterDHCPOptional = {
     expr =
       let
         kinds = c: c.chalkos.kinds ? DHCPSubnet;
         example = c: builtins.pathExists "${c.chalkos.router.examples}/dhcp.yaml";
+        # What of Kea the image c carries.
+        kea = c: {
+          output = c.chalkos.outputs ? kea;
+          units = lib.filter (n: lib.hasPrefix "kea" n || n == "chalkos-dhcp") (
+            lib.attrNames c.systemd.services
+          );
+          user = c.users.users ? kea;
+          package = lib.any (p: lib.hasPrefix "kea" (lib.getName p)) c.environment.systemPackages;
+          # A unit that runs one of Kea's programs.
+          referenced = lib.any (u: lib.hasInfix "-kea-dhcp-" (u.text or "")) (lib.attrValues c.systemd.units);
+          diagnostic = c.chalkos.diagnostics ? dhcp-leases;
+        };
         without =
           (mkImages {
             platforms = [ "metal" ];
@@ -207,6 +220,10 @@ lib.runTests {
           edge = example layered.edge-metal.config;
           without = example without;
         };
+        kea = {
+          edge = kea layered.edge-metal.config;
+          without = kea without;
+        };
       };
     expected = {
       edge = true;
@@ -216,6 +233,28 @@ lib.runTests {
       examples = {
         edge = true;
         without = false;
+      };
+      kea = {
+        edge = {
+          output = true;
+          units = [
+            "chalkos-dhcp"
+            "kea-dhcp4"
+            "kea-dhcp4@"
+          ];
+          user = true;
+          package = false;
+          referenced = true;
+          diagnostic = true;
+        };
+        without = {
+          output = false;
+          units = [ ];
+          user = false;
+          package = false;
+          referenced = false;
+          diagnostic = false;
+        };
       };
     };
   };
@@ -551,6 +590,149 @@ lib.runTests {
       plainKind = false;
       firewall = true;
       networkd = true;
+    };
+  };
+  # Router images accept DHCPSubnet documents, which the output kea renders into a config per VRF
+  # and checks with kea-dhcp4 -t, and run the servers of Kea without its database backends, as the
+  # user kea with raw sockets and port 67 alone: kea-dhcp4 for the default VRF, kea-dhcp4@<vrf>
+  # bound to the VRF's device, whose index it records, requiring the device without stopping with
+  # it, both reloaded by SIGHUP and started again when they stop. chalkos-dhcp starts, reloads and
+  # stops them once the VRFs and networkd are up, whenever the output kea or networkd changes,
+  # without capabilities, in the group kea, which the diagnostic dhcp-leases runs in. The firewall
+  # does not read the subnets: Kea's raw sockets come before it. Other images run no Kea.
+  testRouterDHCP = {
+    expr =
+      let
+        edge = layered.edge-metal.config;
+        server = edge.systemd.services.kea-dhcp4;
+        vrf = edge.systemd.services."kea-dhcp4@";
+        dhcp = edge.systemd.services.chalkos-dhcp;
+        kea = lib.head (lib.splitString "/bin/" server.serviceConfig.ExecStart);
+      in
+      {
+        kind = edge.chalkos.kinds ? DHCPSubnet;
+        plainKind = layered.plain-metal.config.chalkos.kinds ? DHCPSubnet;
+        inputs = edge.chalkos.outputs.kea.inputs;
+        render = lib.hasSuffix "/bin/chalkos-render kea" edge.chalkos.outputs.kea.render;
+        check = lib.hasInfix "/bin/kea-dhcp4 -t" edge.chalkos.outputs.kea.check;
+        package = lib.hasSuffix "-kea-dhcp-3.2.0" kea;
+        firewallReads = lib.elem "DHCPSubnet" edge.chalkos.outputs.router-nftables.inputs;
+        user = edge.users.users.kea.isSystemUser;
+        server = {
+          start = lib.hasSuffix "/bin/kea-dhcp4 -c /run/chalkos/outputs/kea/kea-dhcp4.json" server.serviceConfig.ExecStart;
+          inherit (server.serviceConfig)
+            User
+            AmbientCapabilities
+            CapabilityBoundingSet
+            RestrictAddressFamilies
+            RuntimeDirectory
+            RuntimeDirectoryMode
+            RuntimeDirectoryPreserve
+            StateDirectory
+            Restart
+            ;
+          reload = lib.hasSuffix "kill -HUP $MAINPID" server.serviceConfig.ExecReload;
+          inherit (server.unitConfig) ConditionPathExists;
+          wanted = server.wantedBy;
+        };
+        vrfServer = {
+          start = lib.hasSuffix "/bin/kea-dhcp4 -c /run/chalkos/outputs/kea/kea-dhcp4-%I.json" vrf.serviceConfig.ExecStart;
+          inherit (vrf.serviceConfig) BindNetworkInterface User;
+          inherit (vrf.unitConfig) Requires ConditionPathExists;
+          bound = vrf.unitConfig ? BindsTo;
+          records =
+            lib.hasInfix "kea-vrf-device" vrf.serviceConfig.ExecStartPre
+            && lib.hasSuffix " %I" vrf.serviceConfig.ExecStartPre;
+        };
+        reconciler = {
+          after = lib.all (x: lib.elem x dhcp.after) [
+            "chalkos-vrf.service"
+            "systemd-networkd.service"
+          ];
+          inherit (dhcp) wantedBy;
+          inherit (dhcp.serviceConfig) Type CapabilityBoundingSet SupplementaryGroups;
+          reloads = dhcp.serviceConfig.ExecReload == dhcp.serviceConfig.ExecStart;
+          stops = lib.hasSuffix " stop" dhcp.serviceConfig.ExecStop;
+          effect = {
+            inherit (edge.chalkos.effects.dhcp) outputs reload;
+          };
+        };
+        diagnostic = {
+          inherit (edge.chalkos.diagnostics.dhcp-leases) role groups;
+        };
+        plain = layered.plain-metal.config.chalkos.outputs ? kea;
+      };
+    expected = {
+      kind = true;
+      plainKind = false;
+      inputs = [
+        "DHCPSubnet"
+        "VRF"
+        "Network"
+        "NAT64"
+      ];
+      render = true;
+      check = true;
+      package = true;
+      firewallReads = false;
+      user = true;
+      server = {
+        start = true;
+        User = "kea";
+        AmbientCapabilities = [
+          "CAP_NET_BIND_SERVICE"
+          "CAP_NET_RAW"
+        ];
+        CapabilityBoundingSet = [
+          "CAP_NET_BIND_SERVICE"
+          "CAP_NET_RAW"
+        ];
+        RestrictAddressFamilies = [
+          "AF_UNIX"
+          "AF_NETLINK"
+          "AF_INET"
+          "AF_INET6"
+          "AF_PACKET"
+        ];
+        RuntimeDirectory = "kea";
+        RuntimeDirectoryMode = "0750";
+        RuntimeDirectoryPreserve = true;
+        StateDirectory = "kea";
+        Restart = "on-failure";
+        reload = true;
+        ConditionPathExists = "/run/chalkos/outputs/kea/kea-dhcp4.json";
+        wanted = [ ];
+      };
+      vrfServer = {
+        start = true;
+        BindNetworkInterface = "%I";
+        User = "kea";
+        Requires = "sys-subsystem-net-devices-%i.device";
+        ConditionPathExists = "/run/chalkos/outputs/kea/kea-dhcp4-%I.json";
+        bound = false;
+        records = true;
+      };
+      reconciler = {
+        after = true;
+        wantedBy = [ "multi-user.target" ];
+        Type = "oneshot";
+        CapabilityBoundingSet = [ "" ];
+        SupplementaryGroups = [ "kea" ];
+        reloads = true;
+        stops = true;
+        effect = {
+          outputs = [
+            "kea"
+            "networkd"
+          ];
+          reload = [ "chalkos-dhcp.service" ];
+        };
+      };
+      diagnostic = {
+        role = "operator";
+        groups = [ "kea" ];
+      };
+      plain = false;
     };
   };
   # Router images carry Jool's module, loaded at boot, and run chalkos-nat64, which the output jool
