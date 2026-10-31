@@ -315,6 +315,7 @@ lib.runTests {
         "edge.yaml"
         "lan.yaml"
         "leaf.yaml"
+        "nat64.yaml"
         "none.yaml"
         "policy.yaml"
         "vrf.yaml"
@@ -323,6 +324,7 @@ lib.runTests {
         "edge.yaml"
         "lan.yaml"
         "leaf.yaml"
+        "nat64.yaml"
         "none.yaml"
         "policy.yaml"
         "vrf.yaml"
@@ -373,8 +375,8 @@ lib.runTests {
   # chalkos.router.bgp.enable to false, whose images carry no FRR: no BGP kinds, output frr,
   # effect frr, frr.service, FRR's users, groups, package or config, no vtysh on chalkd's PATH,
   # no unit that runs FRR's programs and no BGP or BFD diagnostics; their firewall reads no
-  # BGPPeer, and their outputs render no example with BGP at the build. networkd keeps the routes
-  # others install either way, and the build allocates the same IDs.
+  # BGPPeer, and their outputs render no example with BGP at the build but the NAT64 one.
+  # networkd keeps the routes others install either way, and the build allocates the same IDs.
   testRouterBGPOptional = {
     expr =
       let
@@ -408,6 +410,7 @@ lib.runTests {
             "leaf.yaml"
             "vrf.yaml"
           ]) (examplesOf c);
+          nat64Example = lib.elem "nat64.yaml" (examplesOf c);
           foreignRoutes = c.systemd.network.config.networkConfig;
           unpinned = unpinned c;
         };
@@ -469,6 +472,7 @@ lib.runTests {
             "leaf.yaml"
             "vrf.yaml"
           ];
+          nat64Example = true;
           inherit foreignRoutes unpinned;
         };
         without = {
@@ -485,6 +489,7 @@ lib.runTests {
           diagnostics = [ ];
           firewallReads = false;
           examples = [ ];
+          nat64Example = true;
           inherit foreignRoutes unpinned;
         };
       };
@@ -513,6 +518,7 @@ lib.runTests {
           );
           examples = lib.filter (lib.flip lib.elem [
             "edge.yaml"
+            "nat64.yaml"
             "vrf.yaml"
           ]) (examplesOf c);
           unpinned = unpinned c;
@@ -557,6 +563,7 @@ lib.runTests {
           ];
           examples = [
             "edge.yaml"
+            "nat64.yaml"
             "vrf.yaml"
           ];
           inherit unpinned;
@@ -582,7 +589,7 @@ lib.runTests {
   # output unbound, effects unbound, unbound-start and resolvers, units unbound, unbound@ and
   # chalkos-resolvers, Unbound's user, group, package or config and no unbound-control on
   # chalkd's PATH; their firewall reads no Resolver, and their outputs render no example with a
-  # Resolver at the build. The build allocates the same IDs.
+  # Resolver at the build but the NAT64 one. The build allocates the same IDs.
   testRouterResolverOptional = {
     expr =
       let
@@ -610,6 +617,7 @@ lib.runTests {
             "lan.yaml"
             "vrf.yaml"
           ]) (examplesOf c);
+          nat64Example = lib.elem "nat64.yaml" (examplesOf c);
           unpinned = unpinned c;
         };
       in
@@ -658,6 +666,7 @@ lib.runTests {
             "lan.yaml"
             "vrf.yaml"
           ];
+          nat64Example = true;
           inherit unpinned;
         };
         without = {
@@ -672,6 +681,7 @@ lib.runTests {
           config = false;
           firewallReads = false;
           examples = [ ];
+          nat64Example = true;
           inherit unpinned;
         };
       };

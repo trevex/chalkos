@@ -1,0 +1,38 @@
+# A router without BGP or a resolver that translates the well-known prefix for an IPv6-only LAN on
+# eth1, so that images without them render a NAT64 too. Its pool takes addresses of
+# 198.51.100.0/30, which the WAN's router routes to it, and its forward chain accepts the
+# translated traffic ahead of the policy from the LAN to the WAN.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: wan}
+spec: {interfaces: [eth0]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: lan}
+spec: {interfaces: [eth1]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: lan-wan}
+spec: {from: lan, to: wan, default: accept}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-wan}
+spec:
+  match: {name: eth0}
+  network: {address: [203.0.113.1/24], gateway: [203.0.113.254]}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-lan}
+spec:
+  match: {name: eth1}
+  network: {address: ["2001:db8:2::1/64"]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NAT64
+metadata: {name: lan}
+spec:
+  pool4: [{prefix: 198.51.100.0/30}]

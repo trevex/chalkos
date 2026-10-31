@@ -142,14 +142,15 @@ func renderedFiles(t *testing.T, args []string, input string) string {
 }
 
 // Each example of the router outputs renders its golden sysctl file, ruleset, FRR config, Jool
-// instances, Unbound config and networkd units: no documents, a leaf that only routes, a fabric
-// edge, a LAN router, an edge with VRFs and a LAN router with policy routing.
+// instances, Unbound config, networkd units and Kea config: no documents, a leaf that only routes,
+// a fabric edge, a LAN router, an edge with VRFs, a LAN router with policy routing, a DHCP server
+// and a router with a NAT64 alone.
 func TestRouterGolden(t *testing.T) {
 	examples, err := filepath.Glob(filepath.Join(routerExamples, "*.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(examples) != 7 {
+	if len(examples) != 8 {
 		t.Fatalf("examples = %v", examples)
 	}
 	for _, path := range examples {
