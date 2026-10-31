@@ -149,7 +149,7 @@ build warns of each one set.
 
 | Table | Owner | Contents |
 | --- | --- | --- |
-| `inet chalkos` | `chalkos-firewall.service` | The `AddressSet` sets, a chain per `FirewallPolicy`, the conntrack zones of the VRFs that have one, the reverse-path filter, the `input` and `forward` chains and the NAT chains, which the output `router-nftables` renders. |
+| `inet chalkos` | `chalkos-firewall.service` | The `AddressSet` sets, a chain per `FirewallPolicy`, the conntrack zones of the VRFs that have one, the reverse-path filter, the chain `policy-routing` of the `PolicyRoute` documents, which marks packets with bits of `0x00ff0000`, the `input` and `forward` chains and the NAT chains, which the output `router-nftables` renders. |
 
 Each NAT64 runs in a network namespace of its own, joined to its VRF by the link `n64-<name>`, so
 its traffic passes the table. Lines with the comment `NAT64 <name>` handle it:

@@ -1,6 +1,6 @@
 ---
 title: "Run a router"
-description: "Set up chalkos nodes as routers: forwarding, the node API's interfaces, the firewall, NAT, BGP, VRFs, NAT64 and DNS"
+description: "Set up chalkos nodes as routers: forwarding, the node API's interfaces, the firewall, NAT, BGP, VRFs, policy routing, NAT64 and DNS"
 ---
 
 # Run a router
@@ -49,6 +49,15 @@ it translates IPv6 to IPv4 and resolves names.
     between them, while the node API stays in the default VRF.
 
     [:octicons-arrow-right-24: Read](vrfs.md)
+
+-   :material-sign-direction: __Route traffic by policy__
+
+    ---
+
+    Send traffic by source, port or DSCP into a VRF, another table or through another router,
+    whatever its destination's route.
+
+    [:octicons-arrow-right-24: Read](policy-routing.md)
 
 -   :material-swap-horizontal: __Translate to IPv4 and resolve names__
 

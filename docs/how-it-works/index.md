@@ -207,6 +207,15 @@ networks and filter what passes.
 
     [:octicons-arrow-right-24: Read](router/vrfs.md)
 
+-   :material-sign-direction: __Policy routing on a router__
+
+    ---
+
+    The firewall's marks, the chain after the reverse-path filter, networkd's rules at priority
+    900 and the next hops' tables that fail closed.
+
+    [:octicons-arrow-right-24: Read](router/policy-routing.md)
+
 -   :material-swap-horizontal: __NAT64 and DNS64 on a router__
 
     ---

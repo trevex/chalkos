@@ -1,6 +1,6 @@
 ---
 title: "How a router works"
-description: "What the router layer adds to a node: the router kinds, forwarding set by a Router document, the firewall, BGP, NAT64, the resolver, the boot order and the management guard"
+description: "What the router layer adds to a node: the router kinds, forwarding set by a Router document, the firewall, policy routing, BGP, NAT64, the resolver, the boot order and the management guard"
 ---
 
 # How a router works
@@ -19,8 +19,8 @@ parts:
 
 | Part | What it is |
 | --- | --- |
-| Kinds | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `NAT64`, `Resolver` and `VRF`, which only router images accept. |
-| Outputs | `router-sysctl`, the kernel settings of the `Router` document; `router-nftables`, the firewall of the firewall kinds, the ports of the `BGPPeer` and `Resolver` documents and the lines around the NAT64s' links; `frr`, FRR's config of the BGP kinds; `jool`, an instance of Jool and its link per `NAT64`; `networkd`, which renders the `VRF` documents and a unit per NAT64's link beside networkd's own; and `unbound`, Unbound's config of each `Resolver`. |
+| Kinds | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `NAT64`, `Resolver`, `VRF` and `PolicyRoute`, which only router images accept. |
+| Outputs | `router-sysctl`, the kernel settings of the `Router` document; `router-nftables`, the firewall of the firewall kinds, the chain `policy-routing` of the `PolicyRoute` documents, the ports of the `BGPPeer` and `Resolver` documents and the lines around the NAT64s' links; `frr`, FRR's config of the BGP kinds; `jool`, an instance of Jool and its link per `NAT64`; `networkd`, which renders the `VRF` documents, the kernel's rules and next hops' routes of the `PolicyRoute` documents and a unit per NAT64's link beside networkd's own; and `unbound`, Unbound's config of each `Resolver`. |
 | Effects | `router-sysctl` restarts `systemd-sysctl.service`, `router-nftables` reloads `chalkos-firewall.service`, `frr` reloads `frr.service`, `vrf` reloads `chalkos-vrf.service`, which removes the VRFs networkd keeps, `jool` reloads `chalkos-nat64.service`, `unbound` reloads `unbound.service` and `resolvers` reloads `chalkos-resolvers.service`, which runs the VRFs' resolvers, when `unbound` or `networkd` changes. `unbound-start` restarts `unbound.service` when the default VRF's `Resolver` is added or removed. |
 | Firewall | The nftables table `inet chalkos` in place of NixOS's firewall. |
 | FRR | zebra, bgpd, bfdd and staticd, and vtysh, which chalkd asks for the router's BGP sessions and paths. |
@@ -29,8 +29,9 @@ parts:
 | Diagnostics | `traceroute`, the routers on the path to an address; `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers`, FRR's views of BGP and BFD; and `nat64-sessions`, a NAT64 instance's sessions, read in its network namespace. |
 
 [The router's firewall](firewall.md) describes the table, [BGP on a router](bgp.md) FRR's config,
-[VRFs on a router](vrfs.md) the VRFs and [NAT64 and DNS64 on a router](nat64-and-dns.md) Jool's
-instances and Unbound's config.
+[VRFs on a router](vrfs.md) the VRFs, [Policy routing on a router](policy-routing.md) the marks
+and the kernel's rules, and [NAT64 and DNS64 on a router](nat64-and-dns.md) Jool's instances
+and Unbound's config.
 [Built-ins](../../reference/builtins.md#outputs-router-images) lists the outputs, effects, rules
 and diagnostics.
 
@@ -178,6 +179,7 @@ unless chalkctl confirms it over a new connection, which the new ruleset must ac
 - [The router's firewall](firewall.md): the table, its chains and what each default does.
 - [BGP on a router](bgp.md): FRR's config, the passwords and the state chalkd reads.
 - [VRFs on a router](vrfs.md): the VRFs' units, chalkos-vrf and FRR's instances.
+- [Policy routing on a router](policy-routing.md): the marks, the chain and networkd's rules.
 - [NAT64 and DNS64 on a router](nat64-and-dns.md): Jool's instances and Unbound's config.
 - [Run a router](../../router/index.md): set up a router and its firewall.
 - [Config kinds](../../reference/kinds.md#router-chalkos-dev) for every field of the router kinds.

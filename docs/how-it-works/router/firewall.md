@@ -230,6 +230,12 @@ chain prerouting {
 }
 ```
 
+With `PolicyRoute` documents and VRFs, the chain accepts a packet that policy routing marked on
+a VRF device's second pass before its fib rule, as the first pass judged it before the mark. The
+chain `policy-routing`, which sets the marks, follows the filter at `mangle + 20`.
+[Policy routing on a router](policy-routing.md#the-chain-follows-the-reverse-path-filter) explains
+the order.
+
 ## The fallback ruleset
 
 `chalkos-firewall.service` loads a fallback ruleset when the node has no rendered one: in
@@ -262,5 +268,6 @@ unit, which loads the new one.
 ## Related pages
 
 - [How a router works](overview.md): the outputs, the boot order and the management guard.
+- [Policy routing on a router](policy-routing.md): the chain `policy-routing` and its marks.
 - [Filter and translate traffic](../../router/firewall-and-nat.md) for the documents.
 - [Ports and firewall](../../reference/ports-and-firewall.md#router-images).
