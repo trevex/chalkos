@@ -1065,14 +1065,15 @@ in
       if none guest22; then fail "guest's connection did not ride mgmt's, so the probe shows nothing"; fi
     '';
 
-  # The policy example's ruleset in network namespaces: a LAN peer on lan0, uplinks on wana0,
-  # which the main table routes, and wanb0, and a transit peer on vt0 in the VRF transit of table
-  # 100. The router holds the kernel's rules and the next hops' tables as networkd installs them
-  # from the example's units (cmd/chalkos-render/testdata/router/policy.networkd), and transit's
-  # table the routes of the example's Network of lan0. Each uplink and transit answer on the same
-  # far address with their name, so a probe tells which way the router sent it. Guests' HTTPS
-  # takes transit and their other ports the main table, DSCP 46 takes transit in both families,
-  # ahead of the next hops the servers' sources take in each family, and other traffic the main
+  # The policy example's ruleset in network namespaces: LAN peers on lan0 and lan1, uplinks on
+  # wana0, which the main table routes, and wanb0, and a transit peer on vt0 in the VRF transit of
+  # table 100. The router holds the kernel's rules and the next hops' tables as networkd installs
+  # them from the example's units (cmd/chalkos-render/testdata/router/policy.networkd), and
+  # transit's table the routes of the example's Networks of lan0 and lan1. Each uplink and transit
+  # answer on the same far address with their name, so a probe tells which way the router sent
+  # it. Guests' HTTPS takes transit and their other ports the main table, DSCP 46 takes transit
+  # in both families, ahead of the next hops the servers' sources take in each family, traffic
+  # between lan0 and lan1 the main table ahead of those next hops, and other traffic the main
   # table. While wanb0 is down the next hops' traffic is dropped, not routed by the main table,
   # and once networkd's route is back it takes wanb0 again.
   router-policy-routing =
@@ -1090,7 +1091,7 @@ in
         exit 1
       }
       ip link set lo up
-      for ns in lan wana wanb transit; do
+      for ns in lan lan1 wana wanb transit; do
         unshare -n sh -c "touch $ns-ready; exec sleep 600" &
         eval "$ns=\$!"
         until [ -e "$ns-ready" ]; do sleep 0.1; done
@@ -1103,7 +1104,8 @@ in
       ip link add transit type vrf table 100
       ip link set transit up
       # link <namespace> <router's link> <router's IPv4> <router's IPv6> <peer's IPv4> <peer's IPv6>:
-      # a veth pair whose peer routes everything through the router.
+      # a veth pair whose peer routes everything through the router and forwards nothing, so a
+      # packet the router sends the wrong way does not come back to it.
       link() {
         ip link add "$2" type veth peer name eth0 netns "''${!1}"
         if [ "$2" = vt0 ]; then ip link set vt0 master transit; fi
@@ -1111,6 +1113,7 @@ in
         ip addr add "$4" dev "$2" nodad
         ip link set "$2" up
         on "$1" ip link set lo up
+        on "$1" sh -c "echo 0 >/proc/sys/net/ipv4/ip_forward; echo 0 >/proc/sys/net/ipv6/conf/all/forwarding"
         on "$1" ip addr add "$5" dev eth0
         on "$1" ip addr add "$6" dev eth0 nodad
         on "$1" ip link set eth0 up
@@ -1118,6 +1121,7 @@ in
         on "$1" ip route add default via "''${4%/*}"
       }
       link lan lan0 192.0.2.1/25 2001:db8:1::1/64 192.0.2.2/25 2001:db8:1::2/64
+      link lan1 lan1 192.0.2.129/25 2001:db8:2::1/64 192.0.2.130/25 2001:db8:2::2/64
       link wana wana0 198.51.100.1/25 2001:db8:a::1/64 198.51.100.2/25 2001:db8:a::2/64
       link wanb wanb0 198.51.100.129/25 2001:db8:b::1/64 198.51.100.130/25 2001:db8:b::2/64
       link transit vt0 203.0.113.1/24 2001:db8:c::1/64 203.0.113.2/24 2001:db8:c::2/64
@@ -1131,13 +1135,15 @@ in
         on "$ns" ip addr add fd00:ff::1/128 dev lo
       done
       # The main table, as 20-wana's gateways give it, and transit's, as a BGP session in transit
-      # and 10-lan's routes of table 100 give it.
+      # and 10-lan's and 11-lan1's routes of table 100 give it.
       ip route add default via 198.51.100.2
       ip route add default via 2001:db8:a::2
       ip route add default via 203.0.113.2 table 100
       ip route add default via 2001:db8:c::2 table 100
       ip route add 192.0.2.0/25 dev lan0 table 100
       ip route add 2001:db8:1::/64 dev lan0 table 100
+      ip route add 192.0.2.128/25 dev lan1 table 100
+      ip route add 2001:db8:2::/64 dev lan1 table 100
       for family in -4 -6; do
         ip "$family" route add unreachable default metric 4278198272 table 100
       done
@@ -1170,8 +1176,10 @@ in
           on "$ns" socat TCP6-LISTEN:$port,fork,reuseaddr,ipv6only=1 EXEC:"echo $ns" &
         done
       done
+      on lan1 socat TCP4-LISTEN:80,fork,reuseaddr EXEC:"echo lan1" &
+      on lan1 socat TCP6-LISTEN:80,fork,reuseaddr,ipv6only=1 EXEC:"echo lan1" &
       for try in $(seq 100); do
-        [ "$(on wana ss -Hltn | wc -l)" = 4 ] && [ "$(on wanb ss -Hltn | wc -l)" = 4 ] && [ "$(on transit ss -Hltn | wc -l)" = 4 ] && break
+        [ "$(on wana ss -Hltn | wc -l)" = 4 ] && [ "$(on wanb ss -Hltn | wc -l)" = 4 ] && [ "$(on transit ss -Hltn | wc -l)" = 4 ] && [ "$(on lan1 ss -Hltn | wc -l)" = 2 ] && break
         [ "$try" != 100 ] || fail "the listeners did not start"
         sleep 0.1
       done
@@ -1180,7 +1188,7 @@ in
       # for the links' link-local addresses.
       settled() {
         for try in $(seq 100); do
-          [ -z "$(ip -6 addr show tentative)$(for ns in lan wana wanb transit; do on "$ns" ip -6 addr show tentative; done)" ] && return
+          [ -z "$(ip -6 addr show tentative)$(for ns in lan lan1 wana wanb transit; do on "$ns" ip -6 addr show tentative; done)" ] && return
           [ "$try" != 100 ] || fail "the links' IPv6 addresses stayed tentative"
           sleep 0.1
         done
@@ -1191,11 +1199,11 @@ in
       ${ExecStart} || fail "chalkos-firewall did not load the policy example's ruleset"
 
       # way <source> <port> [<socat options>]: the name of the peer that answered a connection
-      # from the LAN host's source to the far address, or none.
+      # from the LAN host's source to the far address, or to $far when it is set, or none.
       way() {
-        local to=TCP4:198.18.0.1 source=$1
+        local to=TCP4:''${far:-198.18.0.1} source=$1
         case $1 in *:*)
-          to='TCP6:[fd00:ff::1]'
+          to="TCP6:[''${far:-fd00:ff::1}]"
           source="[$1]"
           ;;
         esac
@@ -1216,6 +1224,8 @@ in
       takes wanb 192.0.2.33 80 "" "a server takes the next hop on wanb0"
       takes wanb 2001:db8:1::21 80 "" "a server takes the next hop on wanb0"
       takes transit 192.0.2.33 80 ip-tos=184 "the first rule that matches decides, and the documents apply by name"
+      far=192.0.2.130 takes lan1 192.0.2.33 80 "" "traffic between the LAN's links stays in the main table"
+      far=2001:db8:2::2 takes lan1 2001:db8:1::21 80 "" "traffic between the LAN's links stays in the main table"
 
       # The kernel removes a next hop's route when its link goes down; the table's unreachable
       # default drops the traffic then, where the main table would route it.

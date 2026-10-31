@@ -94,6 +94,23 @@ Table=100
 Destination=2001:db8:1::/64
 Table=100
 
+# 11-lan1.network
+[Match]
+Name=lan1
+
+[Network]
+Address=192.0.2.129/25
+Address=2001:db8:2::1/64
+IPv6AcceptRA=false
+
+[Route]
+Destination=192.0.2.128/25
+Table=100
+
+[Route]
+Destination=2001:db8:2::/64
+Table=100
+
 # 20-wana.network
 [Match]
 Name=wana0
