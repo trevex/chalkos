@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"net/netip"
@@ -266,4 +267,126 @@ func (f *firewall) policyMatches(r policyRule) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// withPolicyRoutes is docs, the networkd documents with the VRFs' and NAT64s' units, with the
+// kernel's rules of the PolicyRoute documents' targets and the unreachable default routes of the
+// next hops' tables in the Network of lo, and the default route through each next hop in the
+// Network of its link. A Network of byKind that networkd picks for lo or for the link takes them
+// when it matches that link alone by its Name=; without one for lo, a Network 00-policy-routing
+// of lo holds them. It refuses a next hop's link no Network matches, a Network that may match lo
+// or a next hop's link by other [Match] keys or that matches other links too, which would get the
+// routes, and a Network of byKind named 00-policy-routing. Without PolicyRoute documents it
+// changes nothing.
+func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[string]any, error) {
+	targets, err := policyTargets(d)
+	if err != nil || len(targets) == 0 {
+		return docs, err
+	}
+	units, err := networkUnits(d.VRFs, byKind)
+	if err != nil {
+		return nil, err
+	}
+	if slices.ContainsFunc(units, func(u networkUnit) bool { return u.name == policyUnit }) {
+		return nil, fmt.Errorf("Network %s takes the name of the policy routing's unit; rename the document", policyUnit)
+	}
+	networks, _ := docs["Network"].([]any)
+	networks = slices.Clone(networks)
+	// add appends the sections to the key of the Network document of that name.
+	add := func(name, key string, sections []any) {
+		for i, n := range networks {
+			doc, _ := n.(map[string]any)
+			if got, _ := documentName("Network", doc); got == name {
+				networks[i] = withSections(doc, key, sections)
+				return
+			}
+		}
+	}
+	var rules, unreachable []any
+	for _, t := range targets {
+		rules = append(rules, map[string]any{
+			"firewallMark": fmt.Sprintf("0x%x/0x%x", t.mark, policyMarkMask),
+			"table":        json.Number(strconv.FormatUint(uint64(t.table), 10)),
+			"priority":     json.Number(strconv.Itoa(policyRulePriority)),
+			"family":       "both",
+		})
+		if t.hop != nil {
+			unreachable = append(unreachable, unreachableDefaults(t.table)...)
+		}
+	}
+	lo, err := soleNetwork(units, "lo")
+	if err != nil {
+		return nil, err
+	}
+	if lo == "" {
+		spec := map[string]any{"match": map[string]any{"name": "lo"}, "routingPolicyRule": rules}
+		if len(unreachable) > 0 {
+			spec["route"] = unreachable
+		}
+		networks = append(networks, map[string]any{"metadata": map[string]any{"name": policyUnit}, "spec": spec})
+	} else {
+		add(lo, "routingPolicyRule", rules)
+		if len(unreachable) > 0 {
+			add(lo, "route", unreachable)
+		}
+	}
+	for _, t := range targets {
+		if t.hop == nil {
+			continue
+		}
+		link, err := soleNetwork(units, t.hop.Interface)
+		if err != nil {
+			return nil, err
+		}
+		if link == "" {
+			return nil, fmt.Errorf("the next hop %s is on %s, which no Network document names; give it one, which gets the next hop's route", t.hop.Address, t.hop.Interface)
+		}
+		add(link, "route", []any{map[string]any{
+			"gateway": t.hop.Address,
+			"table":   json.Number(strconv.FormatUint(uint64(t.table), 10)),
+		}})
+	}
+	out := maps.Clone(docs)
+	out["Network"] = networks
+	return out, nil
+}
+
+// soleNetwork is the Network document networkd picks for the link, "" when none matches it. It
+// refuses a VRF's device, a Network that other [Match] keys may keep from the link, and one whose
+// Name= may match other links, which would get what the link gets.
+func soleNetwork(units []networkUnit, link string) (string, error) {
+	cs := candidates(units, link)
+	if len(cs) == 0 {
+		return "", nil
+	}
+	u := cs[0]
+	switch {
+	case u.device:
+		return "", fmt.Errorf("%s is the device of VRF %s, which gets no next hop", link, link)
+	case u.narrowed:
+		return "", fmt.Errorf("Network %s may match %s by other [Match] keys; name %s in a Network that its Name= alone matches", u.name, link, link)
+	}
+	for _, w := range u.match.positives() {
+		if w.glob != link {
+			return "", fmt.Errorf("Network %s matches %s and other links, which would take its policy routing too; give %s a Network of its own", u.name, link, link)
+		}
+	}
+	return u.name, nil
+}
+
+// withSections is a copy of the Network document doc with the sections after those of its key.
+func withSections(doc map[string]any, key string, sections []any) map[string]any {
+	spec, _ := doc["spec"].(map[string]any)
+	spec = maps.Clone(spec)
+	if spec == nil {
+		spec = map[string]any{}
+	}
+	var have []any
+	if v, ok := spec[key]; ok && v != nil {
+		have = slices.Clone(oneOrMany(v))
+	}
+	spec[key] = append(have, sections...)
+	out := maps.Clone(doc)
+	out["spec"] = spec
+	return out
 }

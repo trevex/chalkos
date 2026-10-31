@@ -418,6 +418,109 @@
       },
       "type": "object",
       "x-chalkos-networkd-section": "Link"
+    },
+    "RoutingPolicyRule": {
+      "additionalProperties": false,
+      "properties": {
+        "family": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Family"
+        },
+        "firewallMark": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "FirewallMark"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Priority"
+        },
+        "table": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Table"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "RoutingPolicyRule"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -514,6 +617,20 @@
             }
           ],
           "x-chalkos-networkd-section": "Link"
+        },
+        "routingPolicyRule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoutingPolicyRule"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/RoutingPolicyRule"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "RoutingPolicyRule"
         }
       },
       "type": "object"

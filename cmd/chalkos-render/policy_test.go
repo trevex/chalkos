@@ -128,3 +128,65 @@ func TestPolicyRouteChain(t *testing.T) {
 		t.Errorf("a ruleset without PolicyRoute documents marks packets:\n%s", ruleset)
 	}
 }
+
+// The units' renderer refuses a next hop's link that no Network names, or whose Network matches
+// other links too, a Network that may match lo by other [Match] keys, and a Network of the name
+// of the policy routing's unit.
+func TestPolicyRouteUnitRefusals(t *testing.T) {
+	networkd := []string{"router-networkd", networkFixture}
+	dscp := `{"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]}`
+	for name, c := range map[string]struct {
+		docs map[string][]any
+		want string
+	}{
+		"a next hop's link without a Network": {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanc0", 200)), "the next hop 198.51.100.130 is on wanc0, which no Network document names"},
+		"a Network of the next hop's link and others": {func() map[string][]any {
+			d := policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 200))
+			d["Network"][1] = document(t, "Network", "21-wanb", `{"match": {"name": "wan*"}}`)
+			return d
+		}(), "Network 21-wanb matches wanb0 and other links, which would take its policy routing too"},
+		"a Network of lo by other keys": {func() map[string][]any {
+			d := policyDocs(t, "a", dscp)
+			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
+			return d
+		}(), "Network 05-loopback may match lo by other [Match] keys"},
+		"a Network of the unit's name": {func() map[string][]any {
+			d := policyDocs(t, "a", dscp)
+			d["Network"] = append(d["Network"], document(t, "Network", "00-policy-routing", `{"match": {"name": "dummy0"}}`))
+			return d
+		}(), "Network 00-policy-routing takes the name of the policy routing's unit"},
+		"a next hop's link that adds a key": {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0\nTable=1", 200)), `"wanb0\nTable=1" is no link of a next hop`},
+	} {
+		t.Run(name, func(t *testing.T) { refused(t, networkd, c.docs, c.want) })
+	}
+}
+
+// A Network of the config that matches lo alone takes the kernel's rules and the next hops'
+// unreachable defaults after its own sections, and a next hop's route goes into the Network of
+// its link. Without a Network of lo, 00-policy-routing holds them; without PolicyRoute documents
+// the units are those of the VRFs alone.
+func TestPolicyRouteUnits(t *testing.T) {
+	docs := policyDocs(t,
+		"a", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}, {"match": {"source": ["192.0.2.0/24"]}, "to": {"vrf": "transit"}}]}`)
+	units := func() string {
+		t.Helper()
+		return renderedFiles(t, []string{"router-networkd", networkFixture}, policyInput(t, docs))
+	}
+	rules := "[RoutingPolicyRule]\nFamily=both\nFirewallMark=0x10000/0xff0000\nPriority=900\nTable=100\n\n" +
+		"[RoutingPolicyRule]\nFamily=both\nFirewallMark=0x20000/0xff0000\nPriority=900\nTable=200\n\n"
+	unreachable := "[Route]\nDestination=0.0.0.0/0\nMetric=4278198272\nTable=200\nType=unreachable\n\n" +
+		"[Route]\nDestination=::/0\nMetric=4278198272\nTable=200\nType=unreachable\n\n"
+	hop := "# 21-wanb.network\n[Match]\nName=wanb0\n\n[Route]\nGateway=198.51.100.130\nTable=200\n\n"
+	if got := units(); !strings.Contains(got, "# 00-policy-routing.network\n[Match]\nName=lo\n\n"+unreachable+rules) || !strings.Contains(got, hop) {
+		t.Errorf("the units without a Network of lo:\n%s", got)
+	}
+	docs["Network"] = append(docs["Network"], document(t, "Network", "05-lo", `{"match": {"name": "lo"}, "address": {"address": "192.0.2.255/32"}}`))
+	if got := units(); !strings.Contains(got, "# 05-lo.network\n[Match]\nName=lo\n\n[Address]\nAddress=192.0.2.255/32\n\n"+unreachable+rules) ||
+		!strings.Contains(got, hop) || strings.Contains(got, "00-policy-routing") {
+		t.Errorf("the units with a Network of lo:\n%s", got)
+	}
+	delete(docs, "PolicyRoute")
+	if got := units(); strings.Contains(got, "RoutingPolicyRule") || strings.Contains(got, "Gateway=") || strings.Contains(got, "Table=200") {
+		t.Errorf("the units without PolicyRoute documents:\n%s", got)
+	}
+}
