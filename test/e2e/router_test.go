@@ -84,11 +84,17 @@ const bgpPassword = "lab-s3cret"
 //     the route, r1's BGP holds it, marked no-advertise and with the tracked large community, r2
 //     routes ::/0 through r1 again and never learns the tracked prefix. The base inventory then
 //     brings the unconditional default back.
+//   - dhcp: a delivery gives both routers a VLAN dhcp0 on enp0s3. r1's, in the VRF lan, has a DHCP
+//     server that reserves 192.0.2.10 for r2's MAC address, with leases of two minutes, and r2's
+//     takes its address from DHCP. r1's status shows the server of lan running with r2's lease, r2
+//     holds the address, and the diagnostic dhcp-leases lists the lease. After a boot of r1 the
+//     server runs again with the lease and r2 renews it there. The base inventory stops the server.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials, two minutes for the VRF with
-// r1's boot and half a minute for the default route, about 7.5 minutes with the copies of the
-// images. chalklab destroy removes the lab when the test ends.
+// r1's boot, half a minute for the default route and three minutes for DHCP with r1's boot,
+// about 10.5 minutes with the copies of the images. chalklab destroy removes the lab when the
+// test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -735,7 +741,7 @@ func TestRouterLab(t *testing.T) {
 		return
 	}
 
-	t.Run("default", func(t *testing.T) {
+	if !t.Run("default", func(t *testing.T) {
 		const tracked = "2001:db8:fff0::/48"
 		// trackedInBGP is nil once r1's BGP holds the tracked route as its own, marked so that
 		// no peer learns it, which shows that FRR runs the delivered config.
@@ -839,5 +845,105 @@ func TestRouterLab(t *testing.T) {
 		}
 		waitFor(t, 2*time.Minute, "r2's default route from r1 again", func() error { return learned("::/0") })
 		rootsConfig(t)
+	}) {
+		return
+	}
+
+	t.Run("dhcp", func(t *testing.T) {
+		// r1 first, so its server answers r2's first request.
+		for _, name := range []string{"r1", "r2"} {
+			if out, err := chalkctl(t, nodes[name], "dhcp", "apply-config", name); err != nil {
+				failedJobs(t, name, "dhcp", out)
+				t.Fatalf("apply-config of %s's DHCP: %v\n%s", name, err, out)
+			}
+		}
+		// serving is nil once r1's status shows the server of lan running, with one lease of
+		// lab's 100 pool addresses: r2's reserved one.
+		serving := func() error {
+			out, err := chalkctl(t, nodes["r1"], "dhcp", "status", "r1")
+			if err != nil {
+				return err
+			}
+			if !regexp.MustCompile(`(?m)^dhcp4 lan: running$`).MatchString(out) || !regexp.MustCompile(`(?m)^  lab\s+192\.0\.2\.0/24\s+1\s+100$`).MatchString(out) {
+				return fmt.Errorf("status of r1 shows no running DHCP server of lan with r2's lease:\n%s", out)
+			}
+			return nil
+		}
+		// leased is nil once r2's dhcp0 holds 192.0.2.10/24, the address its MAC address reserves,
+		// with the lifetime of a DHCP lease.
+		leased := func() error {
+			out, err := chalkctl(t, nodes["r2"], "dhcp", "node", "diag", "r2", "addresses")
+			if err != nil {
+				return err
+			}
+			if !regexp.MustCompile(`(?s)"ifname":"dhcp0".*?"local":"192\.0\.2\.10","prefixlen":24,[^}]*"dynamic":true`).MatchString(out) {
+				return fmt.Errorf("r2's dhcp0 holds no address from DHCP:\n%s", out)
+			}
+			return nil
+		}
+		// leaseEnd is when r1's lease of r2's address ends, as the diagnostic dhcp-leases lists it.
+		leaseEnd := func() (time.Time, error) {
+			out, err := chalkctl(t, nodes["r1"], "dhcp", "node", "diag", "r1", "dhcp-leases", "mac=52:54:00:00:02:02")
+			if err != nil {
+				return time.Time{}, err
+			}
+			m := regexp.MustCompile(`(?m)^lan\tlab\t192\.0\.2\.10\t52:54:00:00:02:02\tr2\t(\S+)$`).FindStringSubmatch(out)
+			if m == nil {
+				return time.Time{}, fmt.Errorf("dhcp-leases of r1 lists no lease of r2's address:\n%s", out)
+			}
+			return time.Parse(time.RFC3339, m[1])
+		}
+		waitFor(t, 2*time.Minute, "r1's DHCP server of lan with r2's lease", serving)
+		waitFor(t, 2*time.Minute, "r2's address from r1", leased)
+		if _, err := leaseEnd(); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := chalkctl(t, nodes["r1"], "dhcp", "status", "r1"); err != nil || failedUnit(t, "r1", "dhcp", out) {
+			t.Errorf("status of r1 shows a failed unit: %v\n%s", err, out)
+		}
+
+		// After a boot of r1, chalkos-dhcp starts the server once dhcp0 and lan exist, the lease
+		// file kept r2's lease, and r2's next renewal, a minute into its two-minute lease, reaches
+		// the server. A renewal before the boot ends at most two minutes after start; one after the
+		// boot, which takes half a minute at least, ends later than 140 s after it.
+		start := time.Now()
+		if out, err := chalkctl(t, nodes["r1"], "dhcp", "reboot", "r1"); err != nil {
+			t.Fatalf("reboot of r1: %v\n%s", err, out)
+		}
+		waitFor(t, 5*time.Minute, "r1's DHCP server of lan after its boot", serving)
+		waitFor(t, 3*time.Minute, "r2's renewal at r1 after its boot", func() error {
+			end, err := leaseEnd()
+			if err != nil {
+				return err
+			}
+			if !end.After(start.Add(140 * time.Second)) {
+				return fmt.Errorf("r2's lease ends at %v, renewed before r1's boot at %v", end, start)
+			}
+			return nil
+		})
+		waitFor(t, time.Minute, "r2's address from r1 after r1's boot", leased)
+		if out, err := chalkctl(t, nodes["r1"], "dhcp", "status", "r1"); err != nil || failedUnit(t, "r1", "dhcp", out) {
+			t.Errorf("status of r1 after its boot shows a failed unit: %v\n%s", err, out)
+		}
+
+		// The base inventory stops the server; r2 first, so its client does not ask a server that
+		// is gone.
+		for _, name := range []string{"r2", "r1"} {
+			if out, err := chalkctl(t, nodes[name], "base", "apply-config", name); err != nil {
+				t.Fatalf("apply-config of %s's base config: %v\n%s", name, err, out)
+			}
+		}
+		waitFor(t, time.Minute, "r1's DHCP server to stop", func() error {
+			out, err := chalkctl(t, nodes["r1"], "base", "status", "r1")
+			if err != nil || strings.Contains(out, "dhcp4 ") {
+				return fmt.Errorf("status of r1 after the base config: %v\n%s", err, out)
+			}
+			return nil
+		})
+		for _, name := range []string{"r1", "r2"} {
+			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || failedUnit(t, name, "base", out) {
+				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
+			}
+		}
 	})
 }

@@ -1,0 +1,7 @@
+# r2's dhcp0 takes its address from r1's DHCP server.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-dhcp0}
+spec:
+  match: {name: dhcp0}
+  network: {dhcp: ipv4, ipv6AcceptRA: false}
