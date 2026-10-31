@@ -37,6 +37,8 @@ let
       if [[ ''${1:-} != stop ]]; then
         shopt -s nullglob
         for file in "$dir"/kea-dhcp4.json "$dir"/kea-dhcp4-*.json; do
+          # kea-dhcp4.json is no pattern, so nullglob keeps it whether it exists or not.
+          [[ -e $file ]] || continue
           base=''${file#"$dir"/kea-dhcp4}
           base=''${base%.json}
           if [[ -z $base ]]; then
@@ -54,11 +56,15 @@ let
         systemd-escape --unescape --instance "$1"
       }
       # Waits for the links of the config $2 of the unit $1 and its VRF's device, and fails naming
-      # those that do not exist.
+      # those that do not exist, or the config when it cannot be read.
       links() {
-        local unit=$1 vrf missing=()
+        local unit=$1 vrf names missing=() devices=()
         vrf=$(vrfOf "$unit")
-        mapfile -t devices < <(jq -r '.Dhcp4["interfaces-config"].interfaces[]' "$2")
+        if ! names=$(jq -r '.Dhcp4["interfaces-config"].interfaces[]' "$2"); then
+          failed+=("run $unit, whose config $2 cannot be read")
+          return 1
+        fi
+        [[ -z $names ]] || mapfile -t devices <<<"$names"
         [[ -z $vrf ]] || devices+=("$vrf")
         for d in "''${devices[@]}"; do
           until [[ -e /sys/class/net/$d ]] || ((SECONDS >= deadline)); do

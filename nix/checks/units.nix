@@ -1931,11 +1931,12 @@ in
       kill "$kea"
     '';
 
-  # chalkos-dhcp, with systemctl stubbed: it starts the server of each rendered config once the
-  # config's links and its VRF's device exist, reloads those that run, restarts a VRF's server
-  # whose device networkd made anew or that recorded none, stops and resets those without a
-  # config, names those whose links do not appear within 30 seconds or that do not run, without
-  # starting or reloading them, and stops them all with stop.
+  # chalkos-dhcp, with systemctl stubbed: it runs no server without a config, the default VRF's
+  # neither, starts the server of each rendered config once the config's links and its VRF's
+  # device exist, reloads those that run, restarts a VRF's server whose device networkd made anew
+  # or that recorded none, stops and resets those without a config, names those whose links do not
+  # appear within 30 seconds or that do not run, without starting or reloading them, and stops them
+  # all with stop.
   router-dhcp-instances =
     let
       inherit (checkLib.router.config.systemd.services.chalkos-dhcp.serviceConfig)
@@ -2071,8 +2072,18 @@ in
       for vrf in guest dmz-a; do
         device "$vrf"
       done
-      config default lan0
+      # A router that serves no subnet has no config, and runs no server.
+      ${ExecStart} || fail "a run without configs failed"
+      if grep -q '^start' "$SD/log"; then fail "a run without configs started a server"; fi
+      # Nor does a VRF's config start the default VRF's server.
       config guest vlan20
+      ${ExecReload} || fail "a run with a VRF's config alone failed"
+      not_called "start --no-block kea-dhcp4.service" "a VRF's config alone"
+      running guest "a VRF's config alone"
+      rm -f "$SD/$(unit guest).state" "$SD/$(unit guest).sub" /run/kea/dhcp4-guest.ifindex
+      : >"$SD/log"
+
+      config default lan0
       config dmz-a vlan30
 
       ${ExecStart} || fail "starting the servers failed"
