@@ -232,6 +232,30 @@
             }
           ],
           "x-chalkos-networkd-key": "VRF"
+        },
+        "vlan": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "VLAN"
         }
       },
       "type": "object",

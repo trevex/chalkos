@@ -1,0 +1,60 @@
+# 00-vrf-guest.netdev
+[NetDev]
+Kind=vrf
+Name=guest
+
+[VRF]
+Table=300
+
+# 00-vrf-guest.network
+[Match]
+Name=guest
+
+[Link]
+RequiredForOnline=no
+
+[Route]
+Destination=0.0.0.0/0
+Metric=4278198272
+Table=300
+Type=unreachable
+
+[Route]
+Destination=::/0
+Metric=4278198272
+Table=300
+Type=unreachable
+
+# 10-lan0.network
+[Match]
+Name=lan0
+
+[Network]
+Address=192.0.2.1/24
+IPv6AcceptRA=false
+VLAN=vlan20
+
+# 20-vlan20.netdev
+[NetDev]
+Kind=vlan
+Name=vlan20
+
+[VLAN]
+Id=20
+
+# 20-vlan20.network
+[Match]
+Name=vlan20
+
+[Network]
+Address=198.51.100.1/24
+IPv6AcceptRA=false
+VRF=guest
+
+# 30-wan0.network
+[Match]
+Name=wan0
+
+[Network]
+DHCP=ipv4
+

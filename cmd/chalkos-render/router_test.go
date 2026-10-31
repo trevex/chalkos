@@ -34,7 +34,7 @@ const (
 )
 
 // routerKinds are the kinds of router.chalkos.dev.
-var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute"}
+var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute", "DHCPSubnet"}
 
 // routerInput is the input of the router outputs for the config file path, as chalkd builds it:
 // the documents of each router kind with their schema defaults, sorted by name.
@@ -149,7 +149,7 @@ func TestRouterGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(examples) != 6 {
+	if len(examples) != 7 {
 		t.Fatalf("examples = %v", examples)
 	}
 	for _, path := range examples {
@@ -162,6 +162,7 @@ func TestRouterGolden(t *testing.T) {
 			golden(t, name+".jool", renderedFiles(t, []string{"jool"}, input))
 			golden(t, name+".unbound", renderedFiles(t, []string{"unbound", testTrustAnchor, testZoneFile}, input))
 			golden(t, name+".networkd", renderedFiles(t, []string{"router-networkd", networkFixture}, input))
+			golden(t, name+".kea", renderedFiles(t, []string{"kea"}, input))
 		})
 	}
 }

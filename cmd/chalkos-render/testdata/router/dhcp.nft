@@ -1,0 +1,24 @@
+# The router's firewall, rendered by chalkos-render. Loading the file replaces the table
+# inet chalkos in one transaction.
+table inet chalkos
+delete table inet chalkos
+table inet chalkos {
+	chain prerouting {
+		type filter hook prerouting priority mangle + 10; policy drop;
+		meta nfproto ipv4 udp sport . udp dport { 67 . 68, 68 . 67 } accept
+		fib saddr . mark oif exists accept
+	}
+	chain input {
+		type filter hook input priority filter; policy drop;
+		iifname "lo" accept
+		ct state established,related accept
+		ct state invalid drop
+		icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, echo-request, mld-listener-query, mld-listener-report, mld-listener-done, nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert, mld2-listener-report } accept
+		icmp type { destination-unreachable, time-exceeded, parameter-problem, echo-request } accept
+		ip6 daddr fe80::/64 udp sport 547 udp dport 546 accept
+		iifname { "lan0" } tcp dport 50000 accept
+	}
+	chain forward {
+		type filter hook forward priority filter; policy accept;
+	}
+}

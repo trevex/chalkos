@@ -52,6 +52,20 @@
             }
           ],
           "x-chalkos-networkd-section": "VRF"
+        },
+        "vlan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VLAN"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/VLAN"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "VLAN"
         }
       },
       "type": "object"
@@ -157,6 +171,37 @@
       },
       "type": "object",
       "x-chalkos-networkd-section": "VRF"
+    },
+    "VLAN": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Id"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "VLAN"
     }
   }
 }

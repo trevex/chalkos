@@ -1,0 +1,72 @@
+# A LAN router that leases addresses. The office's subnet on lan0, in the default VRF, gives its
+# clients the router as gateway and resolver, a printer its reserved address and PXE clients the
+# files of a boot server: BIOS and UEFI firmware load iPXE over TFTP, and iPXE loads its script
+# over HTTP. The guests' VLAN vlan20 on lan0 is in the VRF guest, whose DHCP server runs apart
+# and leases for an hour. wan0 takes its own address from the provider's DHCP server.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Router
+metadata: {name: router}
+spec:
+  management: {interfaces: [lan0]}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-lan0}
+spec:
+  match: {name: lan0}
+  network: {address: [192.0.2.1/24], vlan: [vlan20], ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-vlan20}
+spec:
+  netDev: {kind: vlan, name: vlan20}
+  vlan: {id: 20}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-vlan20}
+spec:
+  match: {name: vlan20}
+  network: {address: [198.51.100.1/24], ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 30-wan0}
+spec:
+  match: {name: wan0}
+  network: {dhcp: ipv4}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: VRF
+metadata: {name: guest}
+spec: {table: 300, interfaces: [vlan20]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: DHCPSubnet
+metadata: {name: office}
+spec:
+  interfaces: [lan0]
+  subnet: 192.0.2.0/24
+  pools: [{first: 192.0.2.100, last: 192.0.2.199}]
+  gateway: 192.0.2.1
+  dns: [192.0.2.1]
+  domain: lan.example.org
+  reservations:
+    - {mac: "52:54:00:12:34:56", address: 192.0.2.10, hostname: printer}
+  boot:
+    server: 192.0.2.5
+    bios: undionly.kpxe
+    uefi: ipxe.efi
+    ipxe: http://192.0.2.5/boot.ipxe
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: DHCPSubnet
+metadata: {name: guests}
+spec:
+  interfaces: [vlan20]
+  subnet: 198.51.100.0/24
+  pools: [{first: 198.51.100.10, last: 198.51.100.250}]
+  gateway: 198.51.100.1
+  dns: [198.51.100.1]
+  leaseTime: 1h
