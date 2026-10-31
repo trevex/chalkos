@@ -61,10 +61,10 @@ run them in isolation:
   `pkg/kubernetes/vxlan` cover what the rule makes of its files.
 - The `router-firewall` check runs a router image's `chalkos-firewall.service` with the rulesets
   that chalkos-render's golden test keeps, in a network namespace with a LAN peer and a WAN peer
-  in namespaces of their own, and the VRF example's ruleset with peers on links in VRFs. It
-  connects, pings and spoofs between them to check what the ruleset accepts, forwards and
-  translates, that zones and conntrack zones of VRFs keep apart what they should, and that a
-  reload replaces the table alone.
+  in namespaces of their own, and the VRF example's ruleset, also with the strict reverse-path
+  filter, with peers on links in VRFs. It connects, pings and spoofs between them to check what
+  the ruleset accepts, forwards and translates, that zones and conntrack zones of VRFs keep apart
+  what they should, and that a reload replaces the table alone.
 - The `router-nat64` check runs a router image's `chalkos-nat64.service` over the NAT64s of the
   golden test, one in the default VRF with an explicit pool and one in a VRF with an empty pool.
   Jool's module cannot load there, so a stub of `jool` keeps the instances per network namespace.

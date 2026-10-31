@@ -646,7 +646,8 @@ in
   # connections in their conntrack zone, so that a guest host of a management host's address
   # cannot pass as the management host's connection, as it does without the zone. The loose
   # reverse-path filter drops a source of either family that only the default VRF routes, passes
-  # it once tenant's table routes it, and passes link-local sources in a VRF.
+  # it once tenant's table routes it, and passes link-local sources in a VRF. The strict one
+  # passes the neighbour discovery and router solicitations of link-local sources in a VRF.
   router-firewall =
     let
       inherit (checkLib.router.config.systemd.services.chalkos-firewall.serviceConfig)
@@ -657,8 +658,13 @@ in
       goldens = ../../cmd/chalkos-render/testdata/router;
       # Answers a connection with the address it came from.
       whoami = pkgs.writeShellScript "whoami" ''echo "$SOCAT_PEERADDR"'';
+      # rdisc6 sends a router solicitation.
+      tools = checkLib.networkTools ++ [
+        pkgs.iputils
+        pkgs.ndisc6
+      ];
     in
-    unitCheck "router-firewall" (checkLib.networkTools ++ [ pkgs.iputils ]) ''
+    unitCheck "router-firewall" tools ''
       fail() {
         echo "error: $*" >&2
         nft list ruleset >&2
@@ -990,6 +996,42 @@ in
         sleep 0.1
       done
       pings on_tenant "''${ll%/*}%eth0"
+
+      where="with the VRF example's ruleset and the strict reverse-path filter"
+      # A VRF's link passes neighbour discovery through prerouting a second time, with the VRF's
+      # device, where the fib check of a link-local source fails. tenant's host answers from an
+      # address on its loopback, so it solicits the router from its link-local address, and the
+      # router reaches that address through the host's link-local address, which advertises
+      # itself from there. Its router solicitations reach input.
+      install -m 644 ${goldens}/vrf-strict.nft ${dir}/ruleset.nft
+      ${ExecReload} || fail "chalkos-firewall did not reload the VRF ruleset with the strict filter"
+      nft -f - <<'NFT'
+      table inet solicited {
+        counter rs {}
+        chain input {
+          type filter hook input priority filter - 10; policy accept;
+          iifname { "eth2", "tenant" } icmpv6 type nd-router-solicit counter name rs
+        }
+      }
+      NFT
+      read -r _ _ _ tll _ <<<"$(on_tenant ip -6 -o addr show dev eth0 scope link)"
+      [ -n "$tll" ] || fail "tenant's eth0 has no link-local address"
+      on_tenant ip addr add 2001:db8:ff::1/128 dev lo
+      ip -6 route add 2001:db8:ff::/64 via "''${tll%/*}" dev eth2 table 200
+      flush() {
+        ip -6 neigh flush dev eth2
+        on_tenant ip -6 neigh flush dev eth0
+      }
+      flush
+      ping -c 1 -W 1 -I tenant 2001:db8:ff::1 >/dev/null ||
+        fail "the router did not resolve tenant's host by its link-local address $where"
+      flush
+      on_tenant ping -c 1 -W 1 -I 2001:db8:ff::1 2001:db8:100::1 >/dev/null ||
+        fail "tenant's host did not resolve the router from its link-local address $where"
+      on_tenant rdisc6 -r 1 -w 200 eth0 >/dev/null 2>&1 || true
+      if nft list counter inet solicited rs | grep -q 'packets 0 '; then
+        fail "tenant's router solicitation did not reach input $where"
+      fi
 
       where="with the VRF example's ruleset without its conntrack zones"
       # The same probe without the zones: guest's host passes as mgmt's connection.
