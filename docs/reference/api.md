@@ -1280,8 +1280,8 @@ checked.
 
 ### Status { #router-method-status }
 
-Status reports the state of the router's routing daemons, its NAT64 instances and its
-resolver. Available in normal mode to readers, on images with the router layer.
+Status reports the state of the router's routing daemons, its NAT64 instances, its resolvers
+and its DHCP servers. Available in normal mode to readers, on images with the router layer.
 
 Request: StatusRequest. Response: StatusResponse.
 
@@ -1293,8 +1293,8 @@ No fields.
 
 #### StatusResponse { #router-message-statusresponse }
 
-The response of Status: the state of a router's routing daemons, its NAT64 instances and its
-resolver.
+The response of Status: the state of a router's routing daemons, its NAT64 instances, its
+resolvers and its DHCP servers.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
@@ -1304,8 +1304,9 @@ resolver.
 | `nat64_error` | string | Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then empty. |
 | `resolver` | ResolverStatus | The resolver of the router's default VRF; unset on a router without one. |
 | `vrf_resolvers` | list of ResolverStatus | The resolvers of the router's VRFs, one per VRF with a Resolver document, by VRF. |
+| `dhcp` | list of DHCPServerStatus | The router's DHCP servers, one per VRF whose links DHCPSubnet documents serve, the default VRF's first, then by VRF. |
 
-Field types: [BGPPeerStatus](#router-message-bgppeerstatus), [NAT64Status](#router-message-nat64status), [ResolverStatus](#router-message-resolverstatus).
+Field types: [BGPPeerStatus](#router-message-bgppeerstatus), [NAT64Status](#router-message-nat64status), [ResolverStatus](#router-message-resolverstatus), [DHCPServerStatus](#router-message-dhcpserverstatus).
 
 ### Routes { #router-method-routes }
 
@@ -1374,6 +1375,31 @@ A path of BGP's for a prefix, which its best path selection took.
 | `communities` | list of string | The path's standard and large communities. |
 | `best` | bool | Whether it is the best path; otherwise one of the equal paths BGP installs beside it. |
 | `imported_from` | string | The VRF whose BGP instance the path came from, through the importing instance's spec.import, or the route distinguisher it came from when FRR names no VRF; empty for a path of the instance's own peers or networks. |
+
+### DHCPServerStatus { #router-message-dhcpserverstatus }
+
+A DHCP server of a router: Kea's DHCPv4 server of one VRF.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `vrf` | string | The VRF whose links the server serves: the name of its VRF document, or default. |
+| `family` | string | The address family the server leases: ipv4. |
+| `running` | bool | Whether the server runs: its unit is active, bound to its VRF's device, and it answers on its control socket. |
+| `error` | string | Why the server does not run, such as the state of its unit or why it did not answer; empty while it runs. |
+| `subnets` | list of DHCPSubnetStatus | The subnets the server serves, in the order of their documents; empty while it does not run. |
+
+Field types: [DHCPSubnetStatus](#router-message-dhcpsubnetstatus).
+
+### DHCPSubnetStatus { #router-message-dhcpsubnetstatus }
+
+A subnet of a DHCP server, as Kea counts its leases.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | string | Name of the DHCPSubnet document. |
+| `subnet` | string | The subnet's range, such as 192.0.2.0/24. |
+| `leased` | uint64 | Addresses the server leased that have not expired, reserved ones included. |
+| `pool` | uint64 | Addresses of the subnet's pools. |
 
 ### KernelRoute { #router-message-kernelroute }
 

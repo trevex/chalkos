@@ -3,6 +3,7 @@ package chalkctl
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,7 +27,8 @@ import (
 // tests, and whose kernel holds the default route and an edge's address that BGP installed over
 // two links, to the recordings' next hops, and a blackhole. rules answer further commands, such as
 // jool's and unbound-control's, before the recordings; documents tells whether the node has a
-// NAT64 document edge and a Resolver, whose rendered files chalkd looks for. Its VRF tenant, of
+// NAT64 document edge, a Resolver and DHCPSubnet documents, whose rendered files chalkd looks for:
+// the default VRF's DHCP server answers on its control socket, guest's has none. Its VRF tenant, of
 // table 100, holds a route over swp1, and tenant's instance imports a path from the VRF fabric.
 func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rule) string {
 	t.Helper()
@@ -46,7 +48,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv4 unicast detail json", Out: "{}"},
 		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: frr("ipv6-detail-imported.json")},
 	)}
-	conf, nat64, vrfs, resolvers := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir(), t.TempDir(), t.TempDir()
+	conf, nat64, vrfs, resolvers, kea := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
 	// guest's resolver is bound to its VRF's device, of index 7.
 	run, devices := t.TempDir(), t.TempDir()
 	for _, dir := range []string{filepath.Join(run, "unbound-guest"), filepath.Join(devices, "guest")} {
@@ -66,8 +68,36 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 				t.Fatal(err)
 			}
 		}
+		subnets := `{"Dhcp4": {"subnet4": [{"id": 3221225984, "subnet": "192.0.2.0/24", "user-context": {"name": "office"}}]}}`
+		for _, file := range []string{"kea-dhcp4.json", "kea-dhcp4-guest.json"} {
+			if err := os.WriteFile(filepath.Join(kea, file), []byte(subnets+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.MkdirAll(filepath.Join(run, "kea"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(run, "kea", "dhcp4-guest.ifindex"), []byte("7\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		l, err := net.Listen("unix", filepath.Join(run, "kea", "dhcp4.sock"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { l.Close() })
+		go func() {
+			for {
+				conn, err := l.Accept()
+				if err != nil {
+					return
+				}
+				_ = json.NewDecoder(conn).Decode(&struct{}{})
+				_, _ = conn.Write([]byte(`{"result": 0, "arguments": {"subnet[3221225984].assigned-addresses": [[2, "2026-11-01 10:00:00.000000"]], "subnet[3221225984].total-addresses": [[100, "2026-11-01 09:00:00.000000"]]}}`))
+				conn.Close()
+			}
+		}()
 	}
-	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{ResolverConfig: conf, ResolverDir: resolvers, RunDir: run, NetDir: devices, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
+	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{ResolverConfig: conf, ResolverDir: resolvers, KeaDir: kea, RunDir: run, NetDir: devices, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
 		hops := func() []*router.NextHop {
 			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
@@ -137,7 +167,8 @@ func TestNodeRoutesWithoutTheLayer(t *testing.T) {
 }
 
 // status prints a router's NAT64 instances, a line each with its sessions, bindings and the size of
-// each protocol's pool, and whether its resolvers run, the default VRF's first.
+// each protocol's pool, whether its resolvers run, the default VRF's first, and its DHCP servers:
+// a running one's subnets with their leased and pool addresses, and why another does not run.
 func TestStatusRouterNAT64AndResolver(t *testing.T) {
 	ta := newTestApp(t)
 	pool := "0,TCP,192.0.2.8,61001,65535,1059,0\n"
@@ -155,8 +186,12 @@ func TestStatusRouterNAT64AndResolver(t *testing.T) {
 		"  edge      3         2         4535      4535      -\n" +
 		"resolver: running\n" +
 		"resolver guest: running\n" +
-		"certificates:\n"
-	if got := ta.stdout.String(); !strings.Contains(got, want) {
+		"dhcp4 default: running\n" +
+		"  SUBNET  RANGE         LEASED  POOL\n" +
+		"  office  192.0.2.0/24  2       100\n" +
+		"dhcp4 guest: not running: dial unix "
+	got := ta.stdout.String()
+	if !strings.Contains(got, want) || !strings.Contains(got, "/kea/dhcp4-guest.sock: connect: no such file or directory\ncertificates:\n") {
 		t.Errorf("stdout:\n%s\nlacks:\n%s", got, want)
 	}
 }

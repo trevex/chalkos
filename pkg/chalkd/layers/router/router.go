@@ -1,5 +1,5 @@
 // Package router is chalkd's router layer: it serves RouterService with the state of the node's
-// FRR, Jool and Unbound and the kernel's routes.
+// FRR, Jool, Unbound and Kea and the kernel's routes.
 package router
 
 import (
@@ -40,6 +40,9 @@ type Options struct {
 	// ResolverDir is the output unbound's directory, with unbound-<vrf>.conf per VRF's Resolver;
 	// empty is /run/chalkos/outputs/unbound.
 	ResolverDir string
+	// KeaDir is the output kea's directory, with kea-dhcp4.json for the default VRF's DHCP server
+	// and kea-dhcp4-<vrf>.json per VRF's; empty is /run/chalkos/outputs/kea.
+	KeaDir string
 	// NAT64Dir is the output jool's directory, with a file <name>.json per NAT64 document; empty
 	// is /run/chalkos/outputs/jool.
 	NAT64Dir string
@@ -47,13 +50,15 @@ type Options struct {
 	// /run/chalkos/config/router.chalkos.dev/VRF.
 	VRFDir string
 	// RunDir holds each VRF's resolver's runtime directory, unbound-<vrf>, with the index of the
-	// device the resolver's sockets are bound to; empty is /run.
+	// device the resolver's sockets are bound to, and the DHCP servers' kea, with their control
+	// sockets and each VRF's server's index in dhcp4-<vrf>.ifindex; empty is /run.
 	RunDir string
 	// NetDir holds a directory per network device, with its index; empty is /sys/class/net.
 	NetDir string
 }
 
-// side is the node's router side: the state of its FRR, Jool and Unbound and the kernel's routes.
+// side is the node's router side: the state of its FRR, Jool, Unbound and Kea and the kernel's
+// routes.
 type side struct {
 	// run runs vtysh, which FRR answers on its sockets in /run/frr, nsenter and jool,
 	// unbound-control and systemctl.
@@ -67,7 +72,7 @@ type Plugin struct{ r *side }
 var _ layer.Plugin = (*Plugin)(nil)
 
 // New is the router layer of the node, which runs vtysh, nsenter and jool, and unbound-control
-// through the node's runner.
+// through the node's runner, and asks Kea on its control sockets.
 func New(node layer.Node, o Options) *Plugin {
 	return &Plugin{r: &side{run: node.Runner(), Options: o}}
 }
@@ -158,6 +163,7 @@ func (r *side) status(ctx context.Context) *routerv1.StatusResponse {
 	})
 	wg.Go(func() { st.Resolver = r.resolver(ctx) })
 	wg.Go(func() { st.VrfResolvers = r.vrfResolvers(ctx) })
+	wg.Go(func() { st.Dhcp = r.dhcpServers(ctx) })
 	wg.Wait()
 	return st
 }
@@ -287,7 +293,7 @@ func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 		// systemctl prints the state of a unit that is not active, such as failed.
 		switch state := strings.TrimSpace(string(out)); {
 		case err == nil:
-			if stale := r.staleResolver(vrf); stale != "" {
+			if stale := r.staleDevice(vrf, filepath.Join(cmp.Or(r.RunDir, "/run"), "unbound-"+vrf, "ifindex")); stale != "" {
 				s.Running, s.Error = false, unit+" is active, but "+stale
 			}
 		case state != "":
@@ -300,11 +306,12 @@ func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 	return resolvers
 }
 
-// staleResolver says why the running resolver of the VRF vrf answers on no device of the VRF, or
-// is "" when its sockets are bound to the VRF's device: systemd binds them to the index the device
-// had when the resolver started, which the resolver records, and a VRF made anew has a new one.
-// chalkos-resolvers restarts such a resolver, after a delivery that made the VRF anew.
-func (r *side) staleResolver(vrf string) string {
+// staleDevice says why a running service of the VRF vrf, a resolver or a DHCP server, serves no
+// device of the VRF, or is "" when its sockets are bound to the VRF's device: systemd binds them
+// to the index the device had when the service started, which the service records in the file
+// record, and a VRF made anew has a new one. chalkos-resolvers and chalkos-dhcp restart such a
+// service, after a delivery that made the VRF anew.
+func (r *side) staleDevice(vrf, record string) string {
 	index := func(path string) string {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -312,7 +319,7 @@ func (r *side) staleResolver(vrf string) string {
 		}
 		return strings.TrimSpace(string(data))
 	}
-	bound := index(filepath.Join(cmp.Or(r.RunDir, "/run"), "unbound-"+vrf, "ifindex"))
+	bound := index(record)
 	device := index(filepath.Join(cmp.Or(r.NetDir, "/sys/class/net"), vrf, "ifindex"))
 	switch {
 	case bound == "":
@@ -329,6 +336,82 @@ func (r *side) staleResolver(vrf string) string {
 // whose dashes systemd-escape escapes.
 func resolverUnit(vrf string) string {
 	return "unbound@" + strings.ReplaceAll(vrf, "-", `\x2d`) + ".service"
+}
+
+// dhcpServers are the state of the DHCP server of each VRF whose config the output kea rendered,
+// the default VRF's first, then by VRF, all asked within one timeout: whether its unit is active,
+// bound to its VRF's device, and its subnets' leases, which Kea counts.
+func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
+	dir := cmp.Or(r.KeaDir, filepath.Join(outputs.DefaultRoot, "kea"))
+	files, _ := filepath.Glob(filepath.Join(dir, "kea-dhcp4-*.json"))
+	if _, err := os.Stat(filepath.Join(dir, routing.KeaFile)); err == nil {
+		files = append([]string{filepath.Join(dir, routing.KeaFile)}, files...)
+	}
+	runDir := filepath.Join(cmp.Or(r.RunDir, "/run"), "kea")
+	budget, cancel := context.WithTimeout(ctx, askTimeout)
+	defer cancel()
+	var servers []*routerv1.DHCPServerStatus
+	for _, f := range files {
+		vrf, unit := "default", "kea-dhcp4.service"
+		if base := filepath.Base(f); base != routing.KeaFile {
+			vrf = strings.TrimSuffix(strings.TrimPrefix(base, "kea-dhcp4-"), ".json")
+			// Only a VRF's name reaches systemctl's command line.
+			if !routing.ShortName.MatchString(vrf) {
+				continue
+			}
+			unit = "kea-dhcp4@" + strings.ReplaceAll(vrf, "-", `\x2d`) + ".service"
+		}
+		s := &routerv1.DHCPServerStatus{Vrf: vrf, Family: "ipv4"}
+		servers = append(servers, s)
+		out, err := r.ask(ctx, budget, "systemctl", "is-active", unit)
+		// systemctl prints the state of a unit that is not active, such as failed.
+		switch state := strings.TrimSpace(string(out)); {
+		case err != nil && state != "":
+			s.Error = unit + " is " + state
+			continue
+		case err != nil:
+			s.Error = err.Error()
+			continue
+		}
+		if vrf != "default" {
+			if stale := r.staleDevice(vrf, filepath.Join(runDir, "dhcp4-"+vrf+".ifindex")); stale != "" {
+				s.Error = unit + " is active, but " + stale
+				continue
+			}
+		}
+		data, err := os.ReadFile(f)
+		var subnets []routing.KeaSubnet
+		if err == nil {
+			subnets, err = routing.ParseKeaSubnets(data)
+		}
+		if err != nil {
+			s.Error = err.Error()
+			continue
+		}
+		args, err := routing.KeaAsk(budget, routing.KeaSocket(runDir, vrf), "statistic-get-all")
+		var leases map[uint32]routing.KeaLeases
+		if err == nil {
+			leases, err = routing.ParseKeaStatistics(args)
+		}
+		switch {
+		case ctx.Err() != nil:
+			s.Error = ctx.Err().Error()
+			continue
+		// The socket's deadline, the budget's, may pass a moment before the budget ends.
+		case errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(budget.Err(), context.DeadlineExceeded):
+			s.Error = fmt.Sprintf("Kea did not answer within %v", askTimeout)
+			continue
+		case err != nil:
+			s.Error = err.Error()
+			continue
+		}
+		s.Running = true
+		for _, sub := range subnets {
+			l := leases[sub.ID]
+			s.Subnets = append(s.Subnets, &routerv1.DHCPSubnetStatus{Name: sub.Name, Subnet: sub.Subnet, Leased: l.Assigned, Pool: l.Total})
+		}
+	}
+	return servers
 }
 
 func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.RoutesRequest]) (*connect.Response[routerv1.RoutesResponse], error) {

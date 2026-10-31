@@ -11,8 +11,8 @@ option go_package = "github.com/trevex/chalkos/pkg/api/router/v1;routerv1";
 // without the router layer every method fails with UNIMPLEMENTED, before the mode and the role are
 // checked.
 service RouterService {
-  // Status reports the state of the router's routing daemons, its NAT64 instances and its
-  // resolver. Available in normal mode to readers, on images with the router layer.
+  // Status reports the state of the router's routing daemons, its NAT64 instances, its resolvers
+  // and its DHCP servers. Available in normal mode to readers, on images with the router layer.
   rpc Status(StatusRequest) returns (StatusResponse);
   // Routes lists the routes in the node's kernel, of the main table unless a VRF or another table
   // is asked for, and the paths the BGP instance of that VRF selected, each within an address
@@ -24,8 +24,8 @@ service RouterService {
 // The request of Status.
 message StatusRequest {}
 
-// The response of Status: the state of a router's routing daemons, its NAT64 instances and its
-// resolver.
+// The response of Status: the state of a router's routing daemons, its NAT64 instances, its
+// resolvers and its DHCP servers.
 message StatusResponse {
   // The router's BGP sessions, by VRF, the default first, then by BGPPeer document and by
   // interface or address.
@@ -42,6 +42,9 @@ message StatusResponse {
   ResolverStatus resolver = 5;
   // The resolvers of the router's VRFs, one per VRF with a Resolver document, by VRF.
   repeated ResolverStatus vrf_resolvers = 6;
+  // The router's DHCP servers, one per VRF whose links DHCPSubnet documents serve, the default VRF's
+  // first, then by VRF.
+  repeated DHCPServerStatus dhcp = 7;
 }
 
 // One NAT64 instance of a router, as Jool reports it.
@@ -76,6 +79,34 @@ message ResolverStatus {
   string error = 2;
   // The VRF whose resolver this is; empty for the default VRF's.
   string vrf = 3;
+}
+
+// A DHCP server of a router: Kea's DHCPv4 server of one VRF.
+message DHCPServerStatus {
+  // The VRF whose links the server serves: the name of its VRF document, or default.
+  string vrf = 1;
+  // The address family the server leases: ipv4.
+  string family = 2;
+  // Whether the server runs: its unit is active, bound to its VRF's device, and it answers on
+  // its control socket.
+  bool running = 3;
+  // Why the server does not run, such as the state of its unit or why it did not answer; empty
+  // while it runs.
+  string error = 4;
+  // The subnets the server serves, in the order of their documents; empty while it does not run.
+  repeated DHCPSubnetStatus subnets = 5;
+}
+
+// A subnet of a DHCP server, as Kea counts its leases.
+message DHCPSubnetStatus {
+  // Name of the DHCPSubnet document.
+  string name = 1;
+  // The subnet's range, such as 192.0.2.0/24.
+  string subnet = 2;
+  // Addresses the server leased that have not expired, reserved ones included.
+  uint64 leased = 3;
+  // Addresses of the subnet's pools.
+  uint64 pool = 4;
 }
 
 // One BGP session of a router: a BGPPeer's address, or one of its interfaces.

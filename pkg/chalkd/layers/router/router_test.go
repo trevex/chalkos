@@ -2,8 +2,10 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -38,7 +40,7 @@ func routerNode(t *testing.T, kernel ...*routing.KernelRoute) (*Plugin, *tooltes
 	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"apiVersion": "router.chalkos.dev/v1alpha1", "kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100, "interfaces": ["swp1"]}}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers, RunDir: t.TempDir(), NetDir: t.TempDir()}), r
+	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers, KeaDir: t.TempDir(), RunDir: t.TempDir(), NetDir: t.TempDir()}), r
 }
 
 // writeIndex writes the device index index into dir/ifindex, as the kernel shows a device's in
@@ -403,5 +405,161 @@ func TestRoutesOfAVRF(t *testing.T) {
 	}
 	if len(r.Calls) != calls {
 		t.Errorf("refused requests asked %v", r.Calls[calls:])
+	}
+}
+
+// fakeKea answers Kea's commands on the control socket socket with the answers given, by command,
+// and with an unknown command's answer otherwise, until the test ends; with hang it reads the
+// command and never answers.
+func fakeKea(t *testing.T, socket string, hang bool, answers map[string]string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(socket), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		close(done)
+		l.Close()
+	})
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				var c struct {
+					Command string `json:"command"`
+				}
+				if err := json.NewDecoder(conn).Decode(&c); err != nil {
+					return
+				}
+				if hang {
+					<-done
+					return
+				}
+				answer, ok := answers[c.Command]
+				if !ok {
+					answer = `{"result": 2, "text": "'` + c.Command + `' command not supported."}`
+				}
+				_, _ = conn.Write([]byte(answer))
+			}()
+		}
+	}()
+}
+
+// keaConfig is a config of the output kea of the subnets given, each a name, a range and Kea's
+// number for it.
+func keaConfig(t *testing.T, path string, subnets ...[3]string) {
+	t.Helper()
+	var s []string
+	for _, sub := range subnets {
+		s = append(s, `{"id": `+sub[2]+`, "subnet": "`+sub[1]+`", "user-context": {"name": "`+sub[0]+`"}}`)
+	}
+	if err := os.WriteFile(path, []byte(`{"Dhcp4": {"subnet4": [`+strings.Join(s, ", ")+`]}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A router's status holds the DHCP server of each VRF with a rendered config, the default VRF's
+// first: a running server's subnets with Kea's counts of their leased and pool addresses, by its
+// document's name, and a server whose unit is not active, which is bound to a removed device of
+// its VRF, which does not answer or which refuses the command, with why. A file of no VRF's name
+// reaches no command.
+func TestRouterDHCPStatus(t *testing.T) {
+	s, r := routerNode(t)
+	dir, run := s.r.KeaDir, filepath.Join(s.r.RunDir, "kea")
+	keaConfig(t, filepath.Join(dir, "kea-dhcp4.json"), [3]string{"office", "192.0.2.0/24", "3221225984"}, [3]string{"lab", "203.0.113.0/26", "3405803776"})
+	for _, vrf := range []string{"guest", "dmz-a", "moved", "silent", "refusing", "Bad_Name"} {
+		keaConfig(t, filepath.Join(dir, "kea-dhcp4-"+vrf+".json"), [3]string{"guests", "198.51.100.0/24", "3325256704"})
+	}
+	stats := `{"result": 0, "arguments": {
+		"subnet[3221225984].assigned-addresses": [[2, "2026-11-01 10:00:00.000000"], [1, "2026-11-01 09:00:00.000000"]],
+		"subnet[3221225984].total-addresses": [[100, "2026-11-01 09:00:00.000000"]],
+		"subnet[3405803776].assigned-addresses": [[0, "2026-11-01 09:00:00.000000"]],
+		"subnet[3405803776].total-addresses": [[62, "2026-11-01 09:00:00.000000"]],
+		"pkt4-received": [[7, "2026-11-01 10:00:00.000000"]]}}`
+	fakeKea(t, filepath.Join(run, "dhcp4.sock"), false, map[string]string{"statistic-get-all": stats})
+	fakeKea(t, filepath.Join(run, "dhcp4-dmz-a.sock"), false, map[string]string{"statistic-get-all": `{"result": 0, "arguments": {
+		"subnet[3325256704].assigned-addresses": [[5, "2026-11-01 10:00:00.000000"]],
+		"subnet[3325256704].total-addresses": [[241, "2026-11-01 09:00:00.000000"]]}}`})
+	fakeKea(t, filepath.Join(run, "dhcp4-refusing.sock"), false, nil)
+	for vrf, index := range map[string][2]string{"dmz-a": {"7", "7"}, "moved": {"6", "9"}, "silent": {"4", "4"}, "refusing": {"5", "5"}} {
+		if err := os.WriteFile(filepath.Join(run, "dhcp4-"+vrf+".ifindex"), []byte(index[0]+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		writeIndex(t, filepath.Join(s.r.NetDir, vrf), index[1])
+	}
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active kea-dhcp4@guest.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active kea-dhcp4@guest.service", Code: 3}})
+	st := routerStatus(t, s)
+	got := map[string]*routerv1.DHCPServerStatus{}
+	var order []string
+	for _, d := range st.Dhcp {
+		got[d.Vrf] = d
+		order = append(order, d.Vrf)
+	}
+	if !slices.Equal(order, []string{"default", "dmz-a", "guest", "moved", "refusing", "silent"}) {
+		t.Fatalf("DHCP servers = %v", st.Dhcp)
+	}
+	def := got["default"]
+	if !def.Running || def.Error != "" || def.Family != "ipv4" || len(def.Subnets) != 2 ||
+		def.Subnets[0].Name != "office" || def.Subnets[0].Subnet != "192.0.2.0/24" || def.Subnets[0].Leased != 2 || def.Subnets[0].Pool != 100 ||
+		def.Subnets[1].Name != "lab" || def.Subnets[1].Leased != 0 || def.Subnets[1].Pool != 62 {
+		t.Errorf("the default VRF's server = %v", def)
+	}
+	if d := got["dmz-a"]; !d.Running || len(d.Subnets) != 1 || d.Subnets[0].Leased != 5 || d.Subnets[0].Pool != 241 {
+		t.Errorf("dmz-a's server = %v", d)
+	}
+	for vrf, want := range map[string]string{
+		"guest":    "kea-dhcp4@guest.service is failed",
+		"moved":    "kea-dhcp4@moved.service is active, but it is bound to a removed device of the VRF",
+		"silent":   "connect: no such file or directory",
+		"refusing": "Kea answered statistic-get-all with result 2: 'statistic-get-all' command not supported.",
+	} {
+		if d := got[vrf]; d.Running || len(d.Subnets) != 0 || !strings.Contains(d.Error, want) {
+			t.Errorf("%s's server = %v, want an error with %q", vrf, d, want)
+		}
+	}
+	if !slices.Contains(r.Calls, `systemctl is-active kea-dhcp4@dmz\x2da.service`) || !slices.Contains(r.Calls, "systemctl is-active kea-dhcp4.service") {
+		t.Errorf("the units were not asked by their names: %q", r.Calls)
+	}
+	if slices.ContainsFunc(r.Calls, func(c string) bool { return strings.Contains(c, "Bad_Name") }) {
+		t.Errorf("a file of no VRF's name reached a command: %q", r.Calls)
+	}
+}
+
+// A DHCP server that hangs costs Status one timeout, and its part says so.
+func TestRouterDHCPStatusWhileKeaHangs(t *testing.T) {
+	s, _ := routerNode(t)
+	defer func(d time.Duration) { askTimeout = d }(askTimeout)
+	askTimeout = 200 * time.Millisecond
+	keaConfig(t, filepath.Join(s.r.KeaDir, "kea-dhcp4.json"), [3]string{"office", "192.0.2.0/24", "3221225984"})
+	fakeKea(t, filepath.Join(s.r.RunDir, "kea", "dhcp4.sock"), true, nil)
+	start := time.Now()
+	st := routerStatus(t, s)
+	if took := time.Since(start); took >= 2*askTimeout {
+		t.Errorf("Status took %v while Kea hangs, not about %v", took, askTimeout)
+	}
+	if len(st.Dhcp) != 1 || st.Dhcp[0].Running || st.Dhcp[0].Error != "Kea did not answer within 200ms" {
+		t.Errorf("DHCP servers while Kea hangs = %v", st.Dhcp)
+	}
+}
+
+// A router whose image runs no Kea, or that serves no subnet, has no output kea's configs: its
+// status holds no DHCP server and asks about none.
+func TestRouterDHCPStatusWithoutKea(t *testing.T) {
+	s, r := routerNode(t)
+	s.r.KeaDir = filepath.Join(t.TempDir(), "missing")
+	st := routerStatus(t, s)
+	if len(st.Dhcp) != 0 {
+		t.Errorf("DHCP servers without Kea = %v", st.Dhcp)
+	}
+	if slices.ContainsFunc(r.Calls, func(c string) bool { return strings.Contains(c, "kea") }) {
+		t.Errorf("a router without Kea asked %q", r.Calls)
 	}
 }

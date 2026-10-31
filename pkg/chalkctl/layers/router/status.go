@@ -14,7 +14,8 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 )
 
-// PrintStatus prints the router's BGP sessions, its NAT64 instances and its resolver.
+// PrintStatus prints the router's BGP sessions, its NAT64 instances, its resolvers and its DHCP
+// servers.
 func (p *Plugin) PrintStatus(ctx context.Context, h layer.Host, conn *client.Conn) error {
 	resp, err := Client(conn).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
 	if err != nil {
@@ -23,9 +24,9 @@ func (p *Plugin) PrintStatus(ctx context.Context, h layer.Host, conn *client.Con
 	return routerStatus(h, resp.Msg)
 }
 
-// routerStatus prints a router's BGP sessions, its NAT64 instances and its resolvers, the default
-// VRF's first, or why their state is unknown. A router without NAT64 instances or resolvers prints
-// no line of them.
+// routerStatus prints a router's BGP sessions, its NAT64 instances, its resolvers and its DHCP
+// servers with their subnets' leases, the default VRF's first, or why their state is unknown. A
+// router without NAT64 instances, resolvers or DHCP servers prints no line of them.
 func routerStatus(h layer.Host, r *routerv1.StatusResponse) error {
 	if err := bgpStatus(h, r); err != nil {
 		return err
@@ -62,6 +63,24 @@ func routerStatus(h layer.Host, r *routerv1.StatusResponse) error {
 			fmt.Fprintf(h.Stdout(), "resolver %s: running\n", v.Vrf)
 		} else {
 			fmt.Fprintf(h.Stdout(), "resolver %s: not running: %s\n", v.Vrf, v.Error)
+		}
+	}
+	for _, d := range r.Dhcp {
+		if !d.Running {
+			fmt.Fprintf(h.Stdout(), "dhcp4 %s: not running: %s\n", d.Vrf, d.Error)
+			continue
+		}
+		fmt.Fprintf(h.Stdout(), "dhcp4 %s: running\n", d.Vrf)
+		if len(d.Subnets) == 0 {
+			continue
+		}
+		w := h.Table()
+		fmt.Fprintln(w, "  SUBNET\tRANGE\tLEASED\tPOOL")
+		for _, s := range d.Subnets {
+			fmt.Fprintf(w, "  %s\t%s\t%d\t%d\n", s.Name, s.Subnet, s.Leased, s.Pool)
+		}
+		if err := w.Flush(); err != nil {
+			return err
 		}
 	}
 	return nil
