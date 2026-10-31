@@ -1909,6 +1909,17 @@ in
       got "$(listed --subnet=office --mac=52:54:00:12:34:56)" "$printer" "dhcp-leases of the printer"
       got "$(listed --subnet=guests)" "" "dhcp-leases of another subnet"
       grep -q '^192.0.2.10,52:54:00:12:34:56,' /var/lib/kea/dhcp4.leases || fail "the lease file holds no lease of the printer"
+      # A server whose socket closes without an answer is named, and the others still listed.
+      ${pkgs.socat}/bin/socat UNIX-LISTEN:/run/kea/dhcp4-ghost.sock,fork SYSTEM:true &
+      ghost=$!
+      until [ -S /run/kea/dhcp4-ghost.sock ]; do sleep 0.1; done
+      bash -c ${lib.escapeShellArg leases} dhcp-leases >all.tsv 2>errors.txt ||
+        fail "dhcp-leases failed beside a server that does not answer: $(cat errors.txt)"
+      grep -qx 'the DHCP server of VRF ghost does not answer' errors.txt ||
+        fail "dhcp-leases did not name the server that does not answer: $(cat errors.txt)"
+      got "$(tail -n +2 all.tsv | cut -f 1-5)" "$printer"$'\n'"$other" "dhcp-leases beside a server that does not answer"
+      kill "$ghost"
+      rm -f /run/kea/dhcp4-ghost.sock
       kill -HUP "$kea"
       sleep 1
       got "$(listed)" "$printer"$'\n'"$other" "dhcp-leases after a reload"

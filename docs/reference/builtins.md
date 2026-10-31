@@ -1772,7 +1772,13 @@ for a in "$@"; do
   --mac=*) mac=${a#--mac=} ;;
   esac
 done
-ask() { printf '%s' "$2" | socat -t 10 - "UNIX-CONNECT:$1"; }
+# The answer of the server of the socket $1 to the command $2; fails unless it is a JSON object.
+ask() {
+  local answer
+  answer=$(printf '%s' "$2" | socat -T 2 -t 2 - "UNIX-CONNECT:$1" 2>/dev/null) || return 1
+  jq -e 'type == "object"' <<<"$answer" >/dev/null 2>&1 || return 1
+  printf '%s' "$answer"
+}
 printf 'VRF\tSUBNET\tADDRESS\tMAC\tHOSTNAME\tENDS\n'
 shopt -s nullglob
 for socket in /run/kea/dhcp4.sock /run/kea/dhcp4-*.sock; do
@@ -1780,6 +1786,10 @@ for socket in /run/kea/dhcp4.sock /run/kea/dhcp4-*.sock; do
   vrf=${vrf%.sock}
   vrf=${vrf#-}
   vrf=${vrf:-default}
+  if ((SECONDS >= 24)); then
+    echo "the DHCP server of VRF $vrf was not asked: the others took too long" >&2
+    continue
+  fi
   if ! config=$(ask "$socket" '{"command": "config-get"}') || ! leases=$(ask "$socket" '{"command": "lease4-get-all"}'); then
     echo "the DHCP server of VRF $vrf does not answer" >&2
     continue
@@ -1790,7 +1800,7 @@ for socket in /run/kea/dhcp4.sock /run/kea/dhcp4-*.sock; do
     | ($names[.["subnet-id"] | tostring] // "-") as $name
     | select(($subnet == "" or $name == $subnet) and ($mac == "" or .["hw-address"] == $mac))
     | [$vrf, $name, .["ip-address"], .["hw-address"], (if (.hostname // "") == "" then "-" else .hostname end), (.cltt + .["valid-lft"] | todate)]
-    | @tsv'
+    | @tsv' || echo "the DHCP server of VRF $vrf answered without its subnets or leases" >&2
 done
 ```
 
