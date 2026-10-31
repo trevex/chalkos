@@ -47,8 +47,9 @@ the router layer or the Kubernetes layer, never both.
 ## The chain follows the reverse-path filter
 
 The chain hooks prerouting at `mangle + 20`, after the reverse-path filter at `mangle + 10`. The
-filter judges a packet by the table of the link it came in on, and its lookup
-`fib saddr . mark . iif` takes the mark into account. A mark set first would make the filter look
+filter judges a packet by the table of the link it came in on, and its lookup takes the mark into
+account: the strict filter's `fib saddr . mark . iif` and the loose filter's `fib saddr . mark`
+alike. A mark set first would make the filter look
 the source up in the policy's table and drop the packet. The routing decision follows every
 prerouting chain, so the mark still picks the table.
 
