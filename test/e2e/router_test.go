@@ -88,7 +88,9 @@ const bgpPassword = "lab-s3cret"
 //     server that reserves 192.0.2.10 for r2's MAC address, with leases of two minutes, and r2's
 //     takes its address from DHCP. r1's status shows the server of lan running with r2's lease, r2
 //     holds the address, and the diagnostic dhcp-leases lists the lease. After a boot of r1 the
-//     server runs again with the lease and r2 renews it there. The base inventory stops the server.
+//     server runs again with the lease and r2 renews it there. The base inventory stops the server;
+//     networkd keeps both routers' dhcp0 devices, as it keeps every netdev, and no diagnostic
+//     deletes a link, so the phase runs last.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials, two minutes for the VRF with
