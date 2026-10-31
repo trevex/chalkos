@@ -1147,12 +1147,17 @@ in
       for family in -4 -6; do
         ip "$family" route add unreachable default metric 4278198272 table 100
       done
-      # The units' rules and the next hops' tables, as networkd installs them.
-      for target in 1:100 2:200 3:201 4:254; do
+      # The units' rules and the next hops' tables, as networkd installs them: a rule per
+      # [RoutingPolicyRule] of the units, in both families.
+      awk -F= '/^\[RoutingPolicyRule\]/ { rule = 1; next } /^\[/ { rule = 0 }
+        rule && $1 == "FirewallMark" { mark = $2 } rule && $1 == "Table" { print mark, $2 }' \
+        ${goldens}/policy.networkd >rules
+      [ "$(wc -l <rules)" = 4 ] || fail "the example's units hold $(wc -l <rules) RoutingPolicyRules, not four"
+      while read -r mark table; do
         for family in -4 -6; do
-          ip "$family" rule add fwmark "0x''${target%%:*}0000/0xff0000" lookup "''${target##*:}" priority 900 protocol static
+          ip "$family" rule add fwmark "$mark" lookup "$table" priority 900 protocol static
         done
-      done
+      done <rules
       hops() {
         ip route add default via 198.51.100.130 dev wanb0 table 200 proto static
         ip -6 route add default via 2001:db8:b::2 dev wanb0 table 201 proto static
