@@ -274,10 +274,10 @@ func (f *firewall) policyMatches(r policyRule) ([]string, error) {
 // next hops' tables in the Network of lo, and the default route through each next hop in the
 // Network of its link. A Network of byKind that networkd picks for lo or for the link takes them
 // when it matches that link alone by its Name=; without one for lo, a Network 00-policy-routing
-// of lo holds them. It refuses a next hop's link no Network matches, a Network that may match lo
-// or a next hop's link by other [Match] keys or that matches other links too, which would get the
-// routes, and a Network of byKind named 00-policy-routing. Without PolicyRoute documents it
-// changes nothing.
+// of lo holds them. It refuses a next hop's link no Network matches, a Network that may match a
+// next hop's link by other [Match] keys, or lo as loNetwork finds, or that matches other links
+// too, which would get the routes, and a Network of byKind named 00-policy-routing. Without
+// PolicyRoute documents it changes nothing.
 func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[string]any, error) {
 	targets, err := policyTargets(d)
 	if err != nil || len(targets) == 0 {
@@ -314,7 +314,7 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 			unreachable = append(unreachable, unreachableDefaults(t.table)...)
 		}
 	}
-	lo, err := soleNetwork(units, "lo")
+	lo, err := loNetwork(units)
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +349,29 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 	out := maps.Clone(docs)
 	out["Network"] = networks
 	return out, nil
+}
+
+// loNetwork is the Network document of byKind that networkd picks for lo, "" when the unit of the
+// policy routing holds its sections. Without a Network that matches lo by its Name= alone, that
+// unit joins the units as networkd sorts them, so that a Network of other [Match] keys refuses
+// only when it sorts before the unit, which it may shadow, or when its Name= matches lo, which the
+// unit may shadow.
+func loNetwork(units []networkUnit) (string, error) {
+	if slices.ContainsFunc(units, func(u networkUnit) bool { return !u.narrowed && u.match.matches("lo") }) {
+		return soleNetwork(units, "lo")
+	}
+	own := networkUnit{name: policyUnit, match: nameMatch{words: []nameWord{{glob: "lo", text: "lo"}}}}
+	units = append(slices.Clone(units), own)
+	slices.SortStableFunc(units, func(a, b networkUnit) int { return strings.Compare(a.name+".network", b.name+".network") })
+	if _, err := soleNetwork(units, "lo"); err != nil {
+		return "", err
+	}
+	for _, u := range units {
+		if u.narrowed && len(u.match.words) > 0 && u.match.matches("lo") {
+			return "", fmt.Errorf("Network %s may match lo by other [Match] keys; name lo in a Network that its Name= alone matches", u.name)
+		}
+	}
+	return "", nil
 }
 
 // soleNetwork is the Network document networkd picks for the link, "" when none matches it. It

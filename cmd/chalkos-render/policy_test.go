@@ -130,8 +130,8 @@ func TestPolicyRouteChain(t *testing.T) {
 }
 
 // The units' renderer refuses a next hop's link that no Network names, or whose Network matches
-// other links too, a Network that may match lo by other [Match] keys, and a Network of the name
-// of the policy routing's unit.
+// other links too, a Network that may match lo by other [Match] keys and that sorts before the
+// policy routing's unit or names lo, and a Network of the name of the policy routing's unit.
 func TestPolicyRouteUnitRefusals(t *testing.T) {
 	networkd := []string{"router-networkd", networkFixture}
 	dscp := `{"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]}`
@@ -150,6 +150,12 @@ func TestPolicyRouteUnitRefusals(t *testing.T) {
 			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
 			return d
 		}(), "Network 05-loopback may match lo by other [Match] keys"},
+		"a Network of other keys alone before the unit": {func() map[string][]any {
+			d := policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 300}}]}`)
+			delete(d, "VRF")
+			d["Network"] = append(d["Network"], document(t, "Network", "00-nic", `{"match": {"macAddress": "02:00:00:00:00:01"}}`))
+			return d
+		}(), "Network 00-nic may match lo by other [Match] keys"},
 		"a Network of the unit's name": {func() map[string][]any {
 			d := policyDocs(t, "a", dscp)
 			d["Network"] = append(d["Network"], document(t, "Network", "00-policy-routing", `{"match": {"name": "dummy0"}}`))
@@ -163,8 +169,9 @@ func TestPolicyRouteUnitRefusals(t *testing.T) {
 
 // A Network of the config that matches lo alone takes the kernel's rules and the next hops'
 // unreachable defaults after its own sections, and a next hop's route goes into the Network of
-// its link. Without a Network of lo, 00-policy-routing holds them; without PolicyRoute documents
-// the units are those of the VRFs alone.
+// its link. Without a Network of lo, 00-policy-routing holds them, also beside a Network that
+// sorts after it and matches by other [Match] keys alone; without PolicyRoute documents the units
+// are those of the VRFs alone.
 func TestPolicyRouteUnits(t *testing.T) {
 	docs := policyDocs(t,
 		"a", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}, {"match": {"source": ["192.0.2.0/24"]}, "to": {"vrf": "transit"}}]}`)
@@ -179,6 +186,10 @@ func TestPolicyRouteUnits(t *testing.T) {
 	hop := "# 21-wanb.network\n[Match]\nName=wanb0\n\n[Route]\nGateway=198.51.100.130\nTable=200\n\n"
 	if got := units(); !strings.Contains(got, "# 00-policy-routing.network\n[Match]\nName=lo\n\n"+unreachable+rules) || !strings.Contains(got, hop) {
 		t.Errorf("the units without a Network of lo:\n%s", got)
+	}
+	docs["Network"] = append(docs["Network"], document(t, "Network", "50-nic", `{"match": {"macAddress": "02:00:00:00:00:01"}}`))
+	if got := units(); !strings.Contains(got, "# 00-policy-routing.network\n[Match]\nName=lo\n\n"+unreachable+rules) {
+		t.Errorf("the units with a Network of other keys alone after 00-policy-routing:\n%s", got)
 	}
 	docs["Network"] = append(docs["Network"], document(t, "Network", "05-lo", `{"match": {"name": "lo"}, "address": {"address": "192.0.2.255/32"}}`))
 	if got := units(); !strings.Contains(got, "# 05-lo.network\n[Match]\nName=lo\n\n[Address]\nAddress=192.0.2.255/32\n\n"+unreachable+rules) ||
