@@ -221,6 +221,7 @@ anything:
 | `PolicyRoute "lan" spec.rules: a rule names a VRF that no VRF document declares` | Add the `VRF` document, or fix the name. |
 | `PolicyRoute "lan" spec.rules: a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table` | Name the VRF in `vrf`, or take another table. |
 | `PolicyRoute "servers" spec.rules: a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own` | Take a table that is neither the kernel's nor a VRF's. |
+| `PolicyRoute "servers" spec.rules: a next hop's interface is lo, which no next hop is on; name the link the next hop is on` | Name the link the next hop is on in `interface`. |
 
 The renderers of the outputs `router-nftables` and `networkd` check the rest against the
 `Network` documents, before the delivery changes anything. `chalkctl validate` does not run them.

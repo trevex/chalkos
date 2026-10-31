@@ -377,6 +377,12 @@
               "message": "a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own",
               "rule": "cel.bind(v, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), cel.bind(tables, v.map(n, v[n].spec.table), self.all(p, p.to.nextHop == null || !(p.to.nextHop.table in [253, 254, 255]) && !(p.to.nextHop.table in tables))))",
               "takes": "refuse"
+            },
+            {
+              "description": "A next hop's interface is not lo; the output router-nftables also refuses it.",
+              "message": "a next hop's interface is lo, which no next hop is on; name the link the next hop is on",
+              "rule": "self.all(p, p.to.nextHop == null || p.to.nextHop.interface != \"lo\")",
+              "takes": "refuse"
             }
           ]
         }

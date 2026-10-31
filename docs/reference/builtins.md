@@ -983,6 +983,7 @@ documents.filter(n, cel.bind(s, documents[n].spec, s.match.protocol == null && (
 | 13 | `spec.rules` | A rule's VRF is a VRF document. | `refuse` | after the table | a rule names a VRF that no VRF document declares |
 | 14 | `spec.rules` | A rule's table is not 255, the kernel's local table, and no VRF's table. | `refuse` | after the table | a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table |
 | 15 | `spec.rules` | A next hop's table is none of 253, 254 and 255 and no VRF's table. | `refuse` | after the table | a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own |
+| 16 | `spec.rules` | A next hop's interface is not lo; the output router-nftables also refuses it. | `refuse` | `self.all(p, p.to.nextHop == null || p.to.nextHop.interface != "lo")` | a next hop's interface is lo, which no next hop is on; name the link the next hop is on |
 
 Expression of rule 1:
 

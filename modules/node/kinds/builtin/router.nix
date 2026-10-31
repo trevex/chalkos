@@ -717,6 +717,11 @@ in
                 rule = vrfTables "self.all(p, p.to.nextHop == null || !(p.to.nextHop.table in [253, 254, 255]) && !(p.to.nextHop.table in tables))";
                 message = "a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own";
               }
+              {
+                description = "A next hop's interface is not lo; the output router-nftables also refuses it.";
+                rule = ''self.all(p, p.to.nextHop == null || p.to.nextHop.interface != "lo")'';
+                message = "a next hop's interface is lo, which no next hop is on; name the link the next hop is on";
+              }
             ];
           };
         };

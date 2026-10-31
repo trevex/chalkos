@@ -489,7 +489,7 @@ Policy routing of the router: rules that send the forwarded traffic they match, 
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 15 [change rules](builtins.md#rules-policyroute).
+A node's config may hold several, each with a name of its own. It has 16 [change rules](builtins.md#rules-policyroute).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

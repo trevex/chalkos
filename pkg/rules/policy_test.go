@@ -12,8 +12,8 @@ import (
 // refuse an in of a zone and interfaces, a zone, set or VRF the config lacks, an in of a VRF's
 // device, an empty match, a set beside ranges, addresses of another family, ports without a
 // protocol, a to of no target or of two, a next hop of another family, the local table or a VRF's
-// as a table, a next hop's table of the kernel's or of a VRF, and a next hop's table that another
-// next hop or a rule's table takes.
+// as a table, a next hop's table of the kernel's or of a VRF, a next hop on lo, and a next hop's
+// table that another next hop or a rule's table takes.
 func TestPolicyRouteRules(t *testing.T) {
 	set, doc := routerRules(t)
 	lan := []config.Document{
@@ -85,6 +85,8 @@ func TestPolicyRouteRules(t *testing.T) {
 			[]string{`PolicyRoute "lan" spec.rules: a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own`}},
 		{"a next hop in a VRF's table", replace(lan, route("lan", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 100}}}]}`)),
 			[]string{`PolicyRoute "lan" spec.rules: a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own`}},
+		{"a next hop on lo", replace(lan, route("lan", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "lo", "table": 202}}}]}`)),
+			[]string{`PolicyRoute "lan" spec.rules: a next hop's interface is lo, which no next hop is on; name the link the next hop is on`}},
 		{"two next hops in one table", replace(lan, route("more", `{"rules": [{"match": {"dscp": [10]}, "to": {"nextHop": {"address": "198.51.100.131", "interface": "wanb0", "table": 200}}}]}`)),
 			[]string{"PolicyRoute more: the next hop 198.51.100.131 takes table 200, which another next hop or a rule's table takes too; give each next hop a table of its own"}},
 		{"a next hop's table as a rule's", replace(lan, route("more", `{"rules": [{"match": {"dscp": [10]}, "to": {"table": 201}}]}`)),
