@@ -156,9 +156,12 @@ type firewall struct {
 	// ctZones are the VRFs with a conntrack zone and links, by name.
 	ctZones []ctZone
 	// nat64 are the NAT64 instances, whose links the forward chain and source NAT treat apart.
-	nat64  []nat64Instance
-	port   int
-	closed bool
+	nat64 []nat64Instance
+	// vrfDevices are the VRFs' devices, on which the strict reverse-path filter accepts
+	// neighbour discovery from link-local sources.
+	vrfDevices []string
+	port       int
+	closed     bool
 }
 
 // ctZone is a VRF's conntrack zone and the links whose connections take it.
@@ -178,6 +181,7 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		closed:   closed,
 	}
 	devices := vrfDevices(d)
+	f.vrfDevices = devices
 	if m := f.router.Management.Interfaces; m != nil {
 		if err := checkInterfaces("Router: management.interfaces", m); err != nil {
 			return nil, err
@@ -535,6 +539,10 @@ func (f *firewall) conntrackZones(b *strings.Builder) {
 // prerouting is the reverse-path filter, which NixOS's firewall applies on every other image.
 // The kernel's fib expression passes ICMPv6 from :: to link-scope addresses: the neighbour
 // solicitations of duplicate address detection and the MLD reports of an address not yet assigned.
+// A VRF's link passes neighbour discovery through prerouting a second time, with the VRF's device
+// as iif. There the strict check of a link-local source finds its route on the link, not on the
+// device, and fails, so the strict filter accepts neighbour discovery from link-local sources on
+// the VRFs' devices first. The hop limit of 255, which no router forwards, keeps it to the link.
 func (f *firewall) prerouting(b *strings.Builder) error {
 	var fib string
 	switch f.router.RPFilter {
@@ -549,9 +557,12 @@ func (f *firewall) prerouting(b *strings.Builder) error {
 	}
 	b.WriteString("\tchain prerouting {\n" +
 		"\t\ttype filter hook prerouting priority mangle + 10; policy drop;\n" +
-		"\t\tmeta nfproto ipv4 udp sport . udp dport { 67 . 68, 68 . 67 } accept\n" +
-		"\t\t" + fib + "\n" +
-		"\t}\n")
+		"\t\tmeta nfproto ipv4 udp sport . udp dport { 67 . 68, 68 . 67 } accept\n")
+	if f.router.RPFilter == "strict" && len(f.vrfDevices) > 0 {
+		b.WriteString("\t\tiifname " + interfaceSet(f.vrfDevices) + " ip6 saddr fe80::/10 ip6 hoplimit 255 " +
+			"icmpv6 type { nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } accept\n")
+	}
+	b.WriteString("\t\t" + fib + "\n\t}\n")
 	return nil
 }
 

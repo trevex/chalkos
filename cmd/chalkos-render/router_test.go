@@ -172,6 +172,18 @@ func TestRouterFallbackGolden(t *testing.T) {
 	golden(t, "fallback.nft", renderedFile(t, []string{"router-nftables-fallback", "50000"}, `{"node": {"name": ""}, "documents": {}}`, rulesetFile))
 }
 
+// The VRF example under the strict reverse-path filter accepts the neighbour discovery of
+// link-local sources on the VRFs' devices before the fib check, which the router-firewall check
+// loads. The example's other goldens use the loose filter.
+func TestRouterStrictVRFGolden(t *testing.T) {
+	input := routerInput(t, filepath.Join(routerExamples, "vrf.yaml"))
+	if strings.Count(input, `"rpFilter":"loose"`) != 1 {
+		t.Fatalf("the VRF example's Router has no loose rpFilter: %s", input)
+	}
+	input = strings.Replace(input, `"rpFilter":"loose"`, `"rpFilter":"strict"`, 1)
+	golden(t, "vrf-strict.nft", renderedFile(t, []string{"router-nftables", "50000"}, input, rulesetFile))
+}
+
 // A node without a Router document renders the kind's defaults, as the schema gives them.
 func TestDefaultRouterMatchesTheSchema(t *testing.T) {
 	s, err := schema.LoadSchemas(routerSchemas)

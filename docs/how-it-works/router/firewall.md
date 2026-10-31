@@ -210,6 +210,26 @@ in unreachable default routes, so `loose` drops a source that only the default V
 them the lookup would go on to the main table and find a route there.
 [VRFs on a router](vrfs.md#the-output-networkd-renders-the-vrfs) shows the routes.
 
+Neighbour discovery from a VRF's link also passes prerouting twice, the second time with the VRF's
+device as `iifname`. The route of a link-local source names the link, so on that pass `strict`
+drops it. A neighbour that sends from an address on its loopback solicits the router from its
+link-local address and never resolves it, and a route whose next hop is a neighbour's link-local
+address never resolves that neighbour, whose advertisement comes from the same address. With VRFs,
+`strict` therefore first accepts router and neighbour solicitations and advertisements on the
+VRFs' devices from `fe80::/10` with a hop limit of 255. Each router on the way lowers the hop
+limit, so only the link's own neighbours can send these. The first pass and the default VRF's
+links need no such rule, because there the route of a link-local source names the link the packet
+came in on.
+
+```nft
+chain prerouting {
+	type filter hook prerouting priority mangle + 10; policy drop;
+	meta nfproto ipv4 udp sport . udp dport { 67 . 68, 68 . 67 } accept
+	iifname { "guest", "internet", "tenant" } ip6 saddr fe80::/10 ip6 hoplimit 255 icmpv6 type { nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } accept
+	fib saddr . mark . iif oif exists accept
+}
+```
+
 ## The fallback ruleset
 
 `chalkos-firewall.service` loads a fallback ruleset when the node has no rendered one: in
