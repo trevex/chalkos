@@ -19,12 +19,17 @@ import (
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
-// routerServer is an installed router whose FRR answers vtysh as the runner's rules say, and whose
-// kernel holds the routes given.
+// routerServer is an installed router with FRR, which answers vtysh as the runner's rules say, and
+// whose kernel holds the routes given.
 func routerServer(t *testing.T, kernel ...*router.KernelRoute) (*Server, *tooltest.Runner) {
 	t.Helper()
 	s, r := installedServer(t, section("", ""), false)
-	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(s, routerplugin.Options{KernelRoutes: func() ([]*router.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()}))
+	// A link to a config FRR has not filled in, as /etc/frr/frr.conf is before FRR starts.
+	frr := filepath.Join(t.TempDir(), "frr.conf")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "frr.conf"), frr); err != nil {
+		t.Fatal(err)
+	}
+	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(s, routerplugin.Options{KernelRoutes: func() ([]*router.KernelRoute, error) { return kernel, nil }, FRRConfig: frr, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()}))
 	return s, r
 }
 

@@ -34,6 +34,10 @@ import (
 type Options struct {
 	// KernelRoutes lists the kernel's routes; nil reads them through netlink.
 	KernelRoutes func() ([]*routing.KernelRoute, error)
+	// FRRConfig is FRR's config, a link to the config frr.service fills in, which images with BGP
+	// carry whether FRR runs or not; empty is /etc/frr/frr.conf. chalkd asks FRR nothing on an
+	// image without it.
+	FRRConfig string
 	// ResolverConfig is Unbound's config, which exists on a node with a Resolver document;
 	// empty is /etc/unbound/unbound.conf.
 	ResolverConfig string
@@ -127,6 +131,14 @@ func (r *side) ask(ctx, budget context.Context, program string, args ...string) 
 	return out, err
 }
 
+// hasBGP reports whether the image runs BGP: whether it carries FRR's config link, which counts
+// while FRR has not filled the config in. An error other than the link's absence counts as BGP,
+// whose questions then say what is wrong.
+func (r *side) hasBGP() bool {
+	_, err := os.Lstat(cmp.Or(r.FRRConfig, "/etc/frr/frr.conf"))
+	return !errors.Is(err, fs.ErrNotExist)
+}
+
 // vtysh runs one of the show commands of package router, which may carry a VRF's name that
 // matched router.ShortName.
 func (r *side) vtysh(ctx context.Context, command string) ([]byte, error) {
@@ -136,25 +148,27 @@ func (r *side) vtysh(ctx context.Context, command string) ([]byte, error) {
 }
 
 // status is the state of the router: its BGP sessions, its NAT64 instances and its resolver, or
-// why a daemon did not say. The daemons are asked side by side, so daemons that hang cost one
-// timeout altogether.
+// why a daemon did not say; an image without BGP asks FRR nothing. The daemons are asked side by
+// side, so daemons that hang cost one timeout altogether.
 func (r *side) status(ctx context.Context) *routerv1.StatusResponse {
-	st := &routerv1.StatusResponse{}
+	st := &routerv1.StatusResponse{BgpAbsent: !r.hasBGP()}
 	var wg sync.WaitGroup
-	wg.Go(func() {
-		out, err := r.vtysh(ctx, routing.NeighborsCommand)
-		var peers []*routing.Peer
-		if err == nil {
-			peers, err = routing.ParsePeers(out)
-		}
-		if err != nil {
-			st.BgpError = err.Error()
-			return
-		}
-		for _, p := range peers {
-			st.Peers = append(st.Peers, peerStatus(p))
-		}
-	})
+	if !st.BgpAbsent {
+		wg.Go(func() {
+			out, err := r.vtysh(ctx, routing.NeighborsCommand)
+			var peers []*routing.Peer
+			if err == nil {
+				peers, err = routing.ParsePeers(out)
+			}
+			if err != nil {
+				st.BgpError = err.Error()
+				return
+			}
+			for _, p := range peers {
+				st.Peers = append(st.Peers, peerStatus(p))
+			}
+		})
+	}
 	wg.Go(func() {
 		var err error
 		if st.Nat64, err = r.nat64(ctx); err != nil {
@@ -437,7 +451,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	for _, r := range f.Kernel(kernel) {
 		resp.Kernel = append(resp.Kernel, kernelRoute(r))
 	}
-	if f.WantsBGP() {
+	if f.WantsBGP() && p.r.hasBGP() {
 		for _, family := range []string{"ipv4", "ipv6"} {
 			command := fmt.Sprintf(routing.RoutesCommand, family)
 			if named {

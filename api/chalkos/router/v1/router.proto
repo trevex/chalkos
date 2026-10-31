@@ -45,6 +45,9 @@ message StatusResponse {
   // The router's DHCP servers, one per VRF whose links DHCPSubnet documents serve, the default VRF's
   // first, then by VRF.
   repeated DHCPServerStatus dhcp = 7;
+  // Whether the image carries no BGP, as an image whose variant leaves FRR out: peers and
+  // bgp_error are then empty.
+  bool bgp_absent = 8;
 }
 
 // One NAT64 instance of a router, as Jool reports it.
@@ -151,7 +154,8 @@ message RoutesRequest {
 message RoutesResponse {
   // The kernel's routes, in the order of their tables, families and destinations.
   repeated KernelRoute kernel = 1;
-  // The paths BGP selected and installs, in the order of their families and prefixes.
+  // The paths BGP selected and installs, in the order of their families and prefixes; none on an
+  // image without BGP.
   repeated BGPRoute bgp = 2;
   // Why BGP's paths could not be read, such as vtysh's error; empty when they were.
   string bgp_error = 3;

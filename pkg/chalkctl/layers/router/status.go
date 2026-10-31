@@ -26,7 +26,8 @@ func (p *Plugin) PrintStatus(ctx context.Context, h layer.Host, conn *client.Con
 
 // routerStatus prints a router's BGP sessions, its NAT64 instances, its resolvers and its DHCP
 // servers with their subnets' leases, the default VRF's first, or why their state is unknown. A
-// router without NAT64 instances, resolvers or DHCP servers prints no line of them.
+// router whose image carries no BGP prints no line of it, and one without NAT64 instances,
+// resolvers or DHCP servers none of them.
 func routerStatus(h layer.Host, r *routerv1.StatusResponse) error {
 	if err := bgpStatus(h, r); err != nil {
 		return err
@@ -90,6 +91,8 @@ func routerStatus(h layer.Host, r *routerv1.StatusResponse) error {
 // unknown.
 func bgpStatus(h layer.Host, r *routerv1.StatusResponse) error {
 	switch {
+	case r.BgpAbsent:
+		return nil
 	case r.BgpError != "":
 		fmt.Fprintf(h.Stdout(), "bgp: unknown: %s\n", r.BgpError)
 		return nil

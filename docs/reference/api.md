@@ -1305,6 +1305,7 @@ resolvers and its DHCP servers.
 | `resolver` | ResolverStatus | The resolver of the router's default VRF; unset on a router without one. |
 | `vrf_resolvers` | list of ResolverStatus | The resolvers of the router's VRFs, one per VRF with a Resolver document, by VRF. |
 | `dhcp` | list of DHCPServerStatus | The router's DHCP servers, one per VRF whose links DHCPSubnet documents serve, the default VRF's first, then by VRF. |
+| `bgp_absent` | bool | Whether the image carries no BGP, as an image whose variant leaves FRR out: peers and bgp_error are then empty. |
 
 Field types: [BGPPeerStatus](#router-message-bgppeerstatus), [NAT64Status](#router-message-nat64status), [ResolverStatus](#router-message-resolverstatus), [DHCPServerStatus](#router-message-dhcpserverstatus).
 
@@ -1335,7 +1336,7 @@ The response of Routes.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `kernel` | list of KernelRoute | The kernel's routes, in the order of their tables, families and destinations. |
-| `bgp` | list of BGPRoute | The paths BGP selected and installs, in the order of their families and prefixes. |
+| `bgp` | list of BGPRoute | The paths BGP selected and installs, in the order of their families and prefixes; none on an image without BGP. |
 | `bgp_error` | string | Why BGP's paths could not be read, such as vtysh's error; empty when they were. |
 | `vrf` | string | The VRF whose routes these are: the request's vrf, or default for a request without one. A node whose image does not know VRFs leaves it empty and lists the main table and the default instance's paths, whatever the request's vrf. |
 

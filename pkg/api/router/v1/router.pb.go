@@ -82,7 +82,10 @@ type StatusResponse struct {
 	VrfResolvers []*ResolverStatus `protobuf:"bytes,6,rep,name=vrf_resolvers,json=vrfResolvers,proto3" json:"vrf_resolvers,omitempty"`
 	// The router's DHCP servers, one per VRF whose links DHCPSubnet documents serve, the default VRF's
 	// first, then by VRF.
-	Dhcp          []*DHCPServerStatus `protobuf:"bytes,7,rep,name=dhcp,proto3" json:"dhcp,omitempty"`
+	Dhcp []*DHCPServerStatus `protobuf:"bytes,7,rep,name=dhcp,proto3" json:"dhcp,omitempty"`
+	// Whether the image carries no BGP, as an image whose variant leaves FRR out: peers and
+	// bgp_error are then empty.
+	BgpAbsent     bool `protobuf:"varint,8,opt,name=bgp_absent,json=bgpAbsent,proto3" json:"bgp_absent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -164,6 +167,13 @@ func (x *StatusResponse) GetDhcp() []*DHCPServerStatus {
 		return x.Dhcp
 	}
 	return nil
+}
+
+func (x *StatusResponse) GetBgpAbsent() bool {
+	if x != nil {
+		return x.BgpAbsent
+	}
+	return false
 }
 
 // One NAT64 instance of a router, as Jool reports it.
@@ -712,7 +722,8 @@ type RoutesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The kernel's routes, in the order of their tables, families and destinations.
 	Kernel []*KernelRoute `protobuf:"bytes,1,rep,name=kernel,proto3" json:"kernel,omitempty"`
-	// The paths BGP selected and installs, in the order of their families and prefixes.
+	// The paths BGP selected and installs, in the order of their families and prefixes; none on an
+	// image without BGP.
 	Bgp []*BGPRoute `protobuf:"bytes,2,rep,name=bgp,proto3" json:"bgp,omitempty"`
 	// Why BGP's paths could not be read, such as vtysh's error; empty when they were.
 	BgpError string `protobuf:"bytes,3,opt,name=bgp_error,json=bgpError,proto3" json:"bgp_error,omitempty"`
@@ -1066,7 +1077,7 @@ var File_chalkos_router_v1_router_proto protoreflect.FileDescriptor
 const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"\n" +
 	"\x1echalkos/router/v1/router.proto\x12\x11chalkos.router.v1\"\x0f\n" +
-	"\rStatusRequest\"\xfc\x02\n" +
+	"\rStatusRequest\"\x9b\x03\n" +
 	"\x0eStatusResponse\x126\n" +
 	"\x05peers\x18\x01 \x03(\v2 .chalkos.router.v1.BGPPeerStatusR\x05peers\x12\x1b\n" +
 	"\tbgp_error\x18\x02 \x01(\tR\bbgpError\x124\n" +
@@ -1075,7 +1086,9 @@ const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"nat64Error\x12=\n" +
 	"\bresolver\x18\x05 \x01(\v2!.chalkos.router.v1.ResolverStatusR\bresolver\x12F\n" +
 	"\rvrf_resolvers\x18\x06 \x03(\v2!.chalkos.router.v1.ResolverStatusR\fvrfResolvers\x127\n" +
-	"\x04dhcp\x18\a \x03(\v2#.chalkos.router.v1.DHCPServerStatusR\x04dhcp\"\x93\x01\n" +
+	"\x04dhcp\x18\a \x03(\v2#.chalkos.router.v1.DHCPServerStatusR\x04dhcp\x12\x1d\n" +
+	"\n" +
+	"bgp_absent\x18\b \x01(\bR\tbgpAbsent\"\x93\x01\n" +
 	"\vNAT64Status\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bsessions\x18\x02 \x01(\x04R\bsessions\x12\x1a\n" +

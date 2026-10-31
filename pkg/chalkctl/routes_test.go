@@ -49,6 +49,12 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: frr("ipv6-detail-imported.json")},
 	)}
 	conf, nat64, vrfs, resolvers, kea := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	// FRR's config link, to a config FRR has not filled in, as /etc/frr/frr.conf is before FRR
+	// starts.
+	frrConf := filepath.Join(t.TempDir(), "frr.conf")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "frr.conf"), frrConf); err != nil {
+		t.Fatal(err)
+	}
 	// guest's resolver is bound to its VRF's device, of index 7.
 	run, devices := t.TempDir(), t.TempDir()
 	for _, dir := range []string{filepath.Join(run, "unbound-guest"), filepath.Join(devices, "guest")} {
@@ -97,7 +103,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 			}
 		}()
 	}
-	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{ResolverConfig: conf, ResolverDir: resolvers, KeaDir: kea, RunDir: run, NetDir: devices, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
+	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{FRRConfig: frrConf, ResolverConfig: conf, ResolverDir: resolvers, KeaDir: kea, RunDir: run, NetDir: devices, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
 		hops := func() []*router.NextHop {
 			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
@@ -163,6 +169,44 @@ func TestNodeRoutesWithoutTheLayer(t *testing.T) {
 	err := ta.run(context.Background(), ta.args([]string{"node", "routes", "n1"}, addr))
 	if connect.CodeOf(err) != connect.CodeUnimplemented || !strings.Contains(err.Error(), "the router layer is not in this image") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// status and node routes of a router whose image carries no BGP print no BGP line and ask vtysh
+// nothing.
+func TestRouterWithoutBGP(t *testing.T) {
+	ta := newTestApp(t)
+	current, _ := json.Marshal(ta.identity(t))
+	s, _ := installedNode(t, ta, current)
+	r := &tooltest.Runner{}
+	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{
+		FRRConfig:      filepath.Join(t.TempDir(), "frr.conf"),
+		ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"),
+		ResolverDir:    t.TempDir(),
+		KeaDir:         t.TempDir(),
+		NAT64Dir:       t.TempDir(),
+		KernelRoutes: func() ([]*router.KernelRoute, error) {
+			return []*router.KernelRoute{{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254, Metric: 1024}}, nil
+		},
+	}))
+	addr := ta.startNode(t, s)
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if out := ta.stdout.String(); strings.Contains(out, "bgp") {
+		t.Errorf("status of a router without BGP:\n%s", out)
+	}
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), ta.args([]string{"node", "routes", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	want := "DESTINATION      TYPE       PROTOCOL  TABLE  METRIC  NEXT HOPS\n" +
+		"2001:db8:2::/48  blackhole  boot      254    1024    -\n"
+	if got := ta.stdout.String(); got != want {
+		t.Errorf("routes of a router without BGP:\n%s\nwant:\n%s", got, want)
+	}
+	if slices.ContainsFunc(r.Calls, func(c string) bool { return strings.HasPrefix(c, "vtysh") }) {
+		t.Errorf("a router without BGP asked vtysh: %v", r.Calls)
 	}
 }
 

@@ -40,7 +40,18 @@ func routerNode(t *testing.T, kernel ...*routing.KernelRoute) (*Plugin, *tooltes
 	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"apiVersion": "router.chalkos.dev/v1alpha1", "kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100, "interfaces": ["swp1"]}}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers, KeaDir: t.TempDir(), RunDir: t.TempDir(), NetDir: t.TempDir()}), r
+	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, FRRConfig: frrLink(t), ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers, KeaDir: t.TempDir(), RunDir: t.TempDir(), NetDir: t.TempDir()}), r
+}
+
+// frrLink is FRR's config link of an image with BGP, to a config FRR has not filled in, as
+// /etc/frr/frr.conf is before FRR starts.
+func frrLink(t *testing.T) string {
+	t.Helper()
+	link := filepath.Join(t.TempDir(), "frr.conf")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "frr.conf"), link); err != nil {
+		t.Fatal(err)
+	}
+	return link
 }
 
 // writeIndex writes the device index index into dir/ifindex, as the kernel shows a device's in
@@ -75,9 +86,9 @@ func routerRecording(t *testing.T, name string) string {
 	return string(data)
 }
 
-// A router's status holds its BGP sessions, as vtysh prints them, asked without its standard error
-// reaching the console; when vtysh fails, the router's part says why and the rest of the status
-// stands.
+// A router's status holds its BGP sessions, as vtysh prints them while FRR's config link exists,
+// asked without its standard error reaching the console; when vtysh fails, the router's part says
+// why and the rest of the status stands.
 func TestRouterStatus(t *testing.T) {
 	s, r := routerNode(t)
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c " + routing.NeighborsCommand, Out: routerRecording(t, "neighbors.json"), Times: 1})
@@ -96,6 +107,27 @@ func TestRouterStatus(t *testing.T) {
 	st = routerStatus(t, s)
 	if st == nil || len(st.Peers) != 0 || !strings.Contains(st.BgpError, "failed to connect to any daemons") {
 		t.Errorf("router status while FRR is down = %v", st)
+	}
+}
+
+// A router whose image carries no FRR reports no BGP and asks vtysh nothing: its status says that
+// BGP is absent, without an error, and its routes are the kernel's alone.
+func TestRouterWithoutBGP(t *testing.T) {
+	p, r := routerNode(t, &routing.KernelRoute{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254, Metric: 1024})
+	p.r.FRRConfig = filepath.Join(t.TempDir(), "frr.conf")
+	st := routerStatus(t, p)
+	if !st.BgpAbsent || st.BgpError != "" || len(st.Peers) != 0 {
+		t.Errorf("router status without BGP = %v", st)
+	}
+	resp, err := p.Routes(context.Background(), connect.NewRequest(&routerv1.RoutesRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Msg.Kernel) != 1 || len(resp.Msg.Bgp) != 0 || resp.Msg.BgpError != "" {
+		t.Errorf("routes without BGP = %v", resp.Msg)
+	}
+	if slices.ContainsFunc(r.Calls, func(c string) bool { return strings.HasPrefix(c, "vtysh") }) {
+		t.Errorf("a router without BGP asked vtysh: %v", r.Calls)
 	}
 }
 
