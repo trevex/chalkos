@@ -34,6 +34,7 @@
       find $out/lib/kea/hooks -type f ! -name libdhcp_lease_cmds.so -delete
       rm -rf $out/share/kea/scripts $out/share/kea/api $out/etc/kea $out/include $out/lib/pkgconfig \
         $out/share/doc $out/share/man
+      rmdir $out/share/kea $out/share $out/etc
     '';
     # libkea-cfgrpt holds the build's report, which names the tools of the build.
     postFixup = (old.postFixup or "") + ''
