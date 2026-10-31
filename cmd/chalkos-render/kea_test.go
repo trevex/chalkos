@@ -107,6 +107,8 @@ func TestKeaRefusals(t *testing.T) {
 		"a lease with a space":      {[]any{office(`, "leaseTime": "12 h"`)}, `leaseTime "12 h" is no number and s, m, h or d`},
 		"a boot of no file":         {[]any{office(`, "boot": {"server": "192.0.2.5", "bios": null, "uefi": null, "ipxe": null}`)}, "boot names no file"},
 		"a boot server of IPv6":     {[]any{office(`, "boot": {"server": "2001:db8::5", "bios": null, "uefi": "ipxe.efi", "ipxe": null}`)}, `boot's server "2001:db8::5" is no IPv4 address`},
+		"a BIOS file of no server":  {[]any{office(`, "boot": {"server": null, "bios": "undionly.kpxe", "uefi": null, "ipxe": "http://192.0.2.5/boot.ipxe"}`)}, "boot's bios and uefi files load over TFTP from boot's server; give server"},
+		"a UEFI file of no server":  {[]any{office(`, "boot": {"server": null, "bios": null, "uefi": "ipxe.efi", "ipxe": null}`)}, "boot's bios and uefi files load over TFTP from boot's server; give server"},
 		// Values Kea's config would take as something else.
 		"a host name of a quote":  {[]any{reserve("52:54:00:12:34:56", "192.0.2.10", `"printer\"x"`)}, `the reservation of 52:54:00:12:34:56: "printer\"x" is no host name`},
 		"a boot file of a space":  {[]any{office(`, "boot": {"server": null, "bios": "undionly.kpxe x", "uefi": null, "ipxe": null}`)}, `boot's file "undionly.kpxe x" is no file of 1 to 127 printable characters without spaces`},
@@ -180,16 +182,20 @@ func slicesSorted(files map[string]string) []string {
 }
 
 // A subnet's boot files become client classes that the subnet evaluates once Kea chose it: iPXE
-// first, then UEFI and BIOS, which leave iPXE's clients alone only when an iPXE file exists, each
-// with the boot server as next server when one is given.
+// first, then UEFI and BIOS, which leave iPXE's clients alone only when an iPXE file exists. BIOS
+// and UEFI files take the boot server as next server; an iPXE script of an HTTP URL needs none.
 func TestKeaBootClasses(t *testing.T) {
-	files, err := unitFiles(t, []string{"kea"}, keaDocs(t,
-		subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "boot": {"server": null, "bios": "undionly.kpxe", "uefi": "ipxe.efi", "ipxe": null}}`),
-	))
-	if err != nil {
-		t.Fatal(err)
+	render := func(boot string) string {
+		t.Helper()
+		files, err := unitFiles(t, []string{"kea"}, keaDocs(t,
+			subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "boot": `+boot+`}`),
+		))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return files["kea-dhcp4.json"]
 	}
-	config := files["kea-dhcp4.json"]
+	config := render(`{"server": "192.0.2.5", "bios": "undionly.kpxe", "uefi": "ipxe.efi", "ipxe": null}`)
 	for _, want := range []string{
 		`"evaluate-additional-classes": [
           "office-uefi",
@@ -197,12 +203,17 @@ func TestKeaBootClasses(t *testing.T) {
         ]`,
 		`"test": "(option[93].hex == 0x0007 or option[93].hex == 0x0009)"`,
 		`"test": "option[93].hex == 0x0000"`,
+		`"next-server": "192.0.2.5"`,
 	} {
 		if !strings.Contains(config, want) {
 			t.Errorf("kea-dhcp4.json lacks %s:\n%s", want, config)
 		}
 	}
-	if strings.Contains(config, "next-server") || strings.Contains(config, "office-ipxe") {
-		t.Errorf("kea-dhcp4.json has a next server or an iPXE class:\n%s", config)
+	if strings.Contains(config, "office-ipxe") {
+		t.Errorf("kea-dhcp4.json has an iPXE class:\n%s", config)
+	}
+	config = render(`{"server": null, "bios": null, "uefi": null, "ipxe": "http://192.0.2.5/boot.ipxe"}`)
+	if !strings.Contains(config, `"test": "substring(option[77].hex, 0, 4) == 'iPXE'"`) || strings.Contains(config, "next-server") {
+		t.Errorf("kea-dhcp4.json lacks the iPXE class or has a next server:\n%s", config)
 	}
 }

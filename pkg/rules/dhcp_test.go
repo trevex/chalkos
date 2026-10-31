@@ -12,8 +12,9 @@ import (
 // The DHCPSubnet rules accept an office's subnet with pools, reservations, options and PXE files
 // and a subnet of reservations alone, and refuse a subnet of IPv6, of more than 30 bits or of
 // addresses no server leases, a pool, reservation or gateway outside the subnet, a DNS server of
-// IPv6, two reservations of one MAC address or of one address, a boot of no file and a boot
-// server of IPv6.
+// IPv6, two reservations of one MAC address or of one address, a boot of no file, a boot server
+// of IPv6 and BIOS or UEFI files without a boot server. An iPXE script of an HTTP URL needs no
+// server.
 func TestDHCPSubnetRules(t *testing.T) {
 	set, doc := routerRules(t)
 	subnet := func(name, spec string) config.Document { return doc("DHCPSubnet", name, spec) }
@@ -59,6 +60,11 @@ func TestDHCPSubnetRules(t *testing.T) {
 			[]string{`DHCPSubnet "office" spec.boot: boot names no file; give bios, uefi or ipxe, or leave boot out`}},
 		{"a boot server of IPv6", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "boot": {"server": "2001:db8::5", "uefi": "ipxe.efi"}}`)},
 			[]string{`DHCPSubnet "office" spec.boot: boot's server is no IPv4 address`}},
+		{"an iPXE script without a server", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "boot": {"ipxe": "http://192.0.2.5/boot.ipxe"}}`)}, nil},
+		{"a BIOS file without a server", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "boot": {"bios": "undionly.kpxe", "ipxe": "http://192.0.2.5/boot.ipxe"}}`)},
+			[]string{`DHCPSubnet "office" spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server`}},
+		{"a UEFI file without a server", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "boot": {"uefi": "ipxe.efi"}}`)},
+			[]string{`DHCPSubnet "office" spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})

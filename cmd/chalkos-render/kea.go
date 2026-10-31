@@ -188,6 +188,11 @@ func serveSubnet(d routerDocuments, units []networkUnit, devices []string, s nam
 		if files == 0 {
 			return sub, fmt.Errorf("boot names no file")
 		}
+		// Firmware loads its file over TFTP from the next server, which only the boot server
+		// gives; iPXE also loads URLs.
+		if b.Server == nil && (b.BIOS != nil || b.UEFI != nil) {
+			return sub, fmt.Errorf("boot's bios and uefi files load over TFTP from boot's server; give server")
+		}
 	}
 	// inSubnet parses an address of a pool or reservation, which lies in the subnet and is neither
 	// its network's nor its broadcast address nor taken.

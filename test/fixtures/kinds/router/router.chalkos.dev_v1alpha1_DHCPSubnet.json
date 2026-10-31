@@ -41,7 +41,7 @@
                     }
                   ],
                   "default": null,
-                  "description": "File of clients with BIOS firmware, of architecture 0 in option 93.",
+                  "description": "File of clients with BIOS firmware, of architecture 0 in option 93, loaded over TFTP from server.",
                   "examples": [
                     "undionly.kpxe"
                   ]
@@ -73,7 +73,7 @@
                     }
                   ],
                   "default": null,
-                  "description": "IPv4 address of the TFTP server the files are on, the DHCP header's next server; null for none, such as for files of HTTP URLs.",
+                  "description": "IPv4 address of the TFTP server the files are on, the DHCP header's next server; needed with bios or uefi, whose firmware loads them over TFTP. null for none, as for an ipxe script of an HTTP URL alone.",
                   "examples": [
                     "192.0.2.5"
                   ]
@@ -89,7 +89,7 @@
                     }
                   ],
                   "default": null,
-                  "description": "File of clients with x86-64 UEFI firmware, of architecture 7 or 9 in option 93.",
+                  "description": "File of clients with x86-64 UEFI firmware, of architecture 7 or 9 in option 93, loaded over TFTP from server.",
                   "examples": [
                     "ipxe.efi"
                   ]
@@ -114,6 +114,12 @@
               "description": "A boot's server is an IPv4 address.",
               "message": "boot's server is no IPv4 address",
               "rule": "self == null || self.server == null || ip(self.server).family() == \"ipv4\"",
+              "takes": "refuse"
+            },
+            {
+              "description": "A boot of BIOS or UEFI files names their server.",
+              "message": "boot's bios and uefi files load over TFTP from boot's server; give server",
+              "rule": "self == null || self.server != null || (self.bios == null && self.uefi == null)",
               "takes": "refuse"
             }
           ]

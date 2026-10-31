@@ -409,15 +409,15 @@ A subnet the router's DHCP server leases IPv4 addresses of on its interfaces: po
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 9 [change rules](builtins.md#rules-dhcpsubnet).
+A node's config may hold several, each with a name of its own. It has 10 [change rules](builtins.md#rules-dhcpsubnet).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.boot` | object or null | `null` | Files PXE clients boot, by firmware; boot files are served elsewhere. null serves none. |
-| `spec.boot.bios` | string or null | `null` | File of clients with BIOS firmware, of architecture 0 in option 93. |
+| `spec.boot.bios` | string or null | `null` | File of clients with BIOS firmware, of architecture 0 in option 93, loaded over TFTP from server. |
 | `spec.boot.ipxe` | string or null | `null` | Script or file of clients that run iPXE already, whose user class (option 77) is iPXE; they get it instead of bios and uefi, so that iPXE does not load itself again. |
-| `spec.boot.server` | string or null | `null` | IPv4 address of the TFTP server the files are on, the DHCP header's next server; null for none, such as for files of HTTP URLs. |
-| `spec.boot.uefi` | string or null | `null` | File of clients with x86-64 UEFI firmware, of architecture 7 or 9 in option 93. |
+| `spec.boot.server` | string or null | `null` | IPv4 address of the TFTP server the files are on, the DHCP header's next server; needed with bios or uefi, whose firmware loads them over TFTP. null for none, as for an ipxe script of an HTTP URL alone. |
+| `spec.boot.uefi` | string or null | `null` | File of clients with x86-64 UEFI firmware, of architecture 7 or 9 in option 93, loaded over TFTP from server. |
 | `spec.dns` | list of string | `[]` | DNS servers the clients ask, IPv4 addresses. |
 | `spec.domain` | string or null | `null` | Domain of the clients' names, which they also search; null gives none. |
 | `spec.gateway` | string or null | `null` | Router the clients route through, inside the subnet and neither its network nor its broadcast address; null gives them none. |

@@ -167,19 +167,19 @@ in
                   type = types.nullOr address;
                   default = null;
                   example = "192.0.2.5";
-                  description = "IPv4 address of the TFTP server the files are on, the DHCP header's next server; null for none, such as for files of HTTP URLs.";
+                  description = "IPv4 address of the TFTP server the files are on, the DHCP header's next server; needed with bios or uefi, whose firmware loads them over TFTP. null for none, as for an ipxe script of an HTTP URL alone.";
                 };
                 bios = mkOption {
                   type = types.nullOr bootFile;
                   default = null;
                   example = "undionly.kpxe";
-                  description = "File of clients with BIOS firmware, of architecture 0 in option 93.";
+                  description = "File of clients with BIOS firmware, of architecture 0 in option 93, loaded over TFTP from server.";
                 };
                 uefi = mkOption {
                   type = types.nullOr bootFile;
                   default = null;
                   example = "ipxe.efi";
-                  description = "File of clients with x86-64 UEFI firmware, of architecture 7 or 9 in option 93.";
+                  description = "File of clients with x86-64 UEFI firmware, of architecture 7 or 9 in option 93, loaded over TFTP from server.";
                 };
                 ipxe = mkOption {
                   type = types.nullOr bootFile;
@@ -202,6 +202,11 @@ in
               description = "A boot's server is an IPv4 address.";
               rule = ''self == null || self.server == null || ip(self.server).family() == "ipv4"'';
               message = "boot's server is no IPv4 address";
+            }
+            {
+              description = "A boot of BIOS or UEFI files names their server.";
+              rule = "self == null || self.server != null || (self.bios == null && self.uefi == null)";
+              message = "boot's bios and uefi files load over TFTP from boot's server; give server";
             }
           ];
         };
