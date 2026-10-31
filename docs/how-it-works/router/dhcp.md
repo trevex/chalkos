@@ -123,16 +123,17 @@ the second case. So no server starts by itself at boot.
 `systemd-networkd.service` and `chalkos-firewall.service`, runs them, and the effect `dhcp`
 reloads it whenever the output `kea` or `networkd` changes. A start and a reload do the same:
 
-1. For each rendered config, it waits up to 30 seconds altogether for the config's links and its
+1. It stops and resets the servers that have no config, so that a subnet moved to another VRF
+   leaves its links before that VRF's server starts on them. A router that serves no subnet has
+   no config and runs no server, the default VRF's included.
+2. For each rendered config, it waits up to 30 seconds altogether for the config's links and its
    VRF's device to exist, as networkd creates VLANs and VRFs without waiting. A server whose links
    do not appear is neither started nor reloaded, and the unit fails naming it:
    `chalkos-dhcp: failed to run kea-dhcp4@guest.service, whose links vlan20 have no device`.
-2. It starts a server that does not run and reloads one that does. A reload sends Kea `SIGHUP`,
-   and Kea reads its config again and keeps its leases.
-3. A VRF's server whose VRF chalkos-vrf removed and networkd created anew restarts, as described
-   below.
-4. It waits up to 30 seconds for the servers it started, and stops and resets the servers that
-   have no config.
+3. It starts a server that does not run and reloads one that does. A reload sends Kea `SIGHUP`,
+   and Kea reads its config again and keeps its leases. A VRF's server whose VRF chalkos-vrf
+   removed and networkd created anew restarts instead, as described below.
+4. It waits up to 30 seconds for the servers it started to run.
 
 `stop` stops every server. In maintenance mode the node renders no output, so it runs no server.
 
