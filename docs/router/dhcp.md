@@ -17,7 +17,9 @@ You need a router set up as [Set up a router](set-up.md) describes, and the secr
 image must carry Kea. Router images do unless their variant sets the image option
 [`chalkos.router.dhcp.enable`](../reference/image-options.md#chalkosrouterdhcpenable) to `false`.
 An image without Kea does not accept `DHCPSubnet` documents: `chalkctl validate` reports that it
-`does not accept kind "DHCPSubnet"`. Ask the image author for an image with DHCP.
+`does not accept kind "DHCPSubnet"`. Ask the image author for an image with DHCP;
+[Leave router features out](../build/variants-and-platforms.md#leave-router-features-out) lists
+the options of every router feature.
 
 The examples configure a LAN router `r1` with these links:
 

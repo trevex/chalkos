@@ -14,8 +14,16 @@ both.
 
 ## Before you begin
 
-You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. The
-examples configure the fabric edge `r1` of [Route with BGP](bgp.md):
+You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. Its
+image must carry Jool for NAT64 and Unbound for the resolver. Router images do unless their
+variant sets the image option
+[`chalkos.router.nat64.enable`](../reference/image-options.md#chalkosrouternat64enable) or
+[`chalkos.router.resolver.enable`](../reference/image-options.md#chalkosrouterresolverenable)
+to `false`. An image without one refuses its documents: `chalkctl validate` reports that it
+`does not accept kind "NAT64"` or `does not accept kind "Resolver"`. A resolver's `dns64` does
+not need a NAT64 on the same router; it may synthesise addresses for a NAT64 another router runs.
+
+The examples configure the fabric edge `r1` of [Route with BGP](bgp.md):
 
 - Its IPv6-only clients are in `2001:db8::/32`, behind `eth1` and `eth2`.
 - Its uplink `eth0` reaches the IPv4 internet.

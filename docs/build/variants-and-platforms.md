@@ -54,33 +54,58 @@ A variant declares three things:
 - `router`, whether the variant's images carry the router layer, `false` by default. Its images
   forward IPv4 and IPv6 packets between their interfaces, accept the kinds of
   `router.chalkos.dev`, filter with the router's own firewall in place of NixOS's and run FRR
-  for BGP.
+  for BGP, Jool for NAT64, Unbound and Kea, unless the variant
+  [leaves router features out](#leave-router-features-out).
   [How a router works](../how-it-works/router/overview.md) describes the layer.
 
 An image carries one layer at most. A router variant therefore also sets `kubernetes = false`, and
 `mkImages` refuses a variant with both layers and names it.
 
-A router variant's images also carry Kea, the DHCP server that
-[Lease addresses with DHCP](../router/dhcp.md) configures. The binary cache does not hold Kea
-built without its database backends, so the first build of a router image after a nixpkgs update
-compiles it, about 5 minutes on 16 cores. A variant whose routers serve no DHCP leaves Kea out
-with the image option `chalkos.router.dhcp.enable`:
+A variant's name is lower-case letters, digits and dashes, and starts with a letter or digit. It
+becomes `CHALKOS_VARIANT` in its images' os-release and `variant` in their `metadata.json`. A name
+with a dash can collide with another on a platform with a dash, such as variant `a-b` on `metal`
+and variant `a` on `b-metal`; `mkImages` refuses that pair and names it.
+
+## Leave router features out
+
+A router variant's images carry every router feature unless the variant leaves one out. Each
+feature has an image option, `true` by default. Set it to `false` in the variant's modules to
+leave the feature's software, kinds, outputs, units and diagnostics out of its images:
 
 ```nix
 variants.edge = {
   kubernetes = false;
   router = true;
-  modules = [ { chalkos.router.dhcp.enable = false; } ];
+  modules = [
+    {
+      chalkos.router = {
+        nat64.enable = false;
+        dhcp.enable = false;
+      };
+    }
+  ];
 };
 ```
 
-Its nodes then refuse `DHCPSubnet` documents, and `chalkctl validate` reports that the image
-`does not accept kind "DHCPSubnet"`.
+| Option | Leaves out | Kinds the nodes refuse |
+| --- | --- | --- |
+| [`chalkos.router.bgp.enable`](../reference/image-options.md#chalkosrouterbgpenable) | FRR: zebra, bgpd, bfdd, staticd, vtysh and the Python of `frr-reload.py` | `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy` |
+| [`chalkos.router.nat64.enable`](../reference/image-options.md#chalkosrouternat64enable) | Jool's kernel module and `jool` | `NAT64` |
+| [`chalkos.router.resolver.enable`](../reference/image-options.md#chalkosrouterresolverenable) | Unbound | `Resolver` |
+| [`chalkos.router.dhcp.enable`](../reference/image-options.md#chalkosrouterdhcpenable) | Kea | `DHCPSubnet` |
 
-A variant's name is lower-case letters, digits and dashes, and starts with a letter or digit. It
-becomes `CHALKOS_VARIANT` in its images' os-release and `variant` in their `metadata.json`. A name
-with a dash can collide with another on a platform with a dash, such as variant `a-b` on `metal`
-and variant `a` on `b-metal`; `mkImages` refuses that pair and names it.
+The firewall, VRFs, policy routing and the kernel's forwarding settings run no daemon of their
+own, so every router image carries them. A metal router image with every feature takes 319 MiB of
+store; one without all four takes 205 MiB. FRR accounts for 97 MiB of the difference.
+
+The binary cache does not hold Kea built without its database backends, so the first build of a
+router image with DHCP after a nixpkgs update compiles it, about 5 minutes on 16 cores.
+
+A node whose image leaves a feature out refuses documents of its kinds. `chalkctl validate` and
+`chalkctl apply-config` report that the image `does not accept kind "BGP"`, and chalkd refuses
+an upgrade to such an image while the node's config holds them. To drop a feature from running
+nodes, remove its documents from their config with `chalkctl apply-config` first, then upgrade
+them to the new image. `chalkctl status` prints no line of a feature the image leaves out.
 
 ## Add a variant only for other software
 

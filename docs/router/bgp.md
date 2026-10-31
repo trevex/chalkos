@@ -12,8 +12,13 @@ FRR's config.
 
 ## Before you begin
 
-You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. The
-examples configure the fabric edge `r1`. It peers with the leaves of a fabric on `eth1` and
+You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. Its
+image must carry FRR. Router images do unless their variant sets the image option
+[`chalkos.router.bgp.enable`](../reference/image-options.md#chalkosrouterbgpenable) to `false`.
+An image without FRR does not accept the BGP kinds: `chalkctl validate` reports that it
+`does not accept kind "BGP"`. Ask the image author for an image with BGP.
+
+The examples configure the fabric edge `r1`. It peers with the leaves of a fabric on `eth1` and
 `eth2` without addresses of its own there, and with a transit provider at `203.0.113.254` on its
 WAN. Each of its interfaces has a `Network` document:
 
@@ -352,9 +357,10 @@ Each line is a session of a VRF: on a link, named by its interface, or with an a
 `RECEIVED` counts the routes the router accepted from the neighbour and `SENT` those it sends,
 over every family. `STATE` is BGP's state of the session, and a session in any state but
 `Established`, such as `Active` or `Idle`, exchanges no routes. `bgp: no sessions` means the
-router has no BGP instance or no session. `bgp: unknown:` gives vtysh's error when chalkd could
-not read FRR's state, such as `failed to connect to any daemons` while FRR does not run. A node
-in maintenance mode runs no FRR.
+router has no BGP instance or no session. A router whose image carries no FRR prints no `bgp`
+line, and `chalkctl node routes` shows its kernel's routes alone. `bgp: unknown:` gives vtysh's
+error when chalkd could not read FRR's state, such as `failed to connect to any daemons` while FRR
+does not run. A node in maintenance mode runs no FRR.
 
 `chalkctl node routes` shows the kernel's routes and the paths BGP selected, to a prefix and
 within it when one is given, so `::/0` lists every IPv6 route. A leaf `r2` has sessions to two
