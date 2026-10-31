@@ -141,7 +141,8 @@ in
           };
         }
     );
-    chalkos.diagnostics.nat64-sessions = {
+    # Only images with NAT64 run Jool.
+    chalkos.diagnostics.nat64-sessions = lib.mkIf config.chalkos.router.nat64.enable {
       description = "A NAT64 instance's sessions, as jool session display prints them: each translated TCP, UDP and ICMP connection's IPv6 and IPv4 addresses and ports, and when it expires.";
       command = [
         "${pkgs.bash}/bin/bash"

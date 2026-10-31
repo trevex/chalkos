@@ -165,6 +165,14 @@ the node's interfaces and accepts the kinds of `router.chalkos.dev`. An image ca
 Kubernetes layer or the router layer, not both. mkImages sets it from the variant's
 `router`; the installer carries no layer.
 
+### `chalkos.router.nat64.enable` { #chalkosrouternat64enable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
+
+Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and
+accept the kind NAT64; only with the router layer. Set it false in a variant's modules to
+leave Jool out of its images.
+
 ### `chalkos.forwarding.enable` { #chalkosforwardingenable }
 
 Type: boolean · Default: `false` · Declared in: [modules/node/network.nix](https://github.com/trevex/chalkos/blob/main/modules/node/network.nix)

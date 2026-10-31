@@ -1,7 +1,7 @@
-# NAT64 on router images: Jool's kernel module and tool, the output jool, which renders an
-# instance of Jool and its link per NAT64 document, and chalkos-nat64.service, which brings Jool's
-# instances, their namespaces and links and the routes to them to the rendered files at boot and
-# on each delivery that changes them.
+# NAT64 on router images whose chalkos.router.nat64.enable is true: Jool's kernel module and tool,
+# the output jool, which renders an instance of Jool and its link per NAT64 document, and
+# chalkos-nat64.service, which brings Jool's instances, their namespaces and links and the routes
+# to them to the rendered files at boot and on each delivery that changes them.
 {
   chalkosPackages,
   config,
@@ -265,7 +265,7 @@ let
   };
 in
 {
-  config = lib.mkIf config.chalkos.router.enable {
+  config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.nat64.enable) {
     boot.extraModulePackages = [ config.boot.kernelPackages.jool ];
     # Loaded at boot, so the image's module check proves the tree holds it and what it depends on.
     boot.kernelModules = [ "jool" ];

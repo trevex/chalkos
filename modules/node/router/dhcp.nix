@@ -200,13 +200,14 @@ in
     users.groups.kea.gid = 328;
 
     chalkos.outputs.kea = {
-      # The VRFs and the Networks tell each link's VRF and its addresses.
+      # The VRFs and the Networks tell each link's VRF and its addresses, and the NAT64s, on
+      # images with NAT64, the links no subnet may name.
       inputs = [
         "DHCPSubnet"
         "VRF"
         "Network"
-        "NAT64"
-      ];
+      ]
+      ++ lib.optional config.chalkos.router.nat64.enable "NAT64";
       render = "${lib.getExe chalkosPackages.chalkos-render} kea";
       # kea-dhcp4 -t refuses a config of links the check's network namespace lacks, so it checks
       # each config without them.

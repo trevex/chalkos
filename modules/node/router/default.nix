@@ -37,6 +37,16 @@
     '';
   };
 
+  options.chalkos.router.nat64.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and
+      accept the kind NAT64; only with the router layer. Set it false in a variant's modules to
+      leave Jool out of its images.
+    '';
+  };
+
   options.chalkos.router.dhcp.enable = lib.mkOption {
     type = lib.types.bool;
     default = true;

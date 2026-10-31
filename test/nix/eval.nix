@@ -489,6 +489,94 @@ lib.runTests {
         };
       };
   };
+  # Router images run Jool and take NAT64 documents unless their modules set
+  # chalkos.router.nat64.enable to false, whose images carry no Jool: no kind NAT64, output jool,
+  # effect jool, chalkos-nat64.service, kernel module or jool on chalkd's PATH, no unit that runs
+  # jool and no diagnostic nat64-sessions; no output reads NAT64 documents, and their outputs
+  # render no example with NAT64 at the build. The build allocates the same IDs.
+  testRouterNAT64Optional = {
+    expr =
+      let
+        of = c: {
+          kind = c.chalkos.kinds ? NAT64;
+          output = c.chalkos.outputs ? jool;
+          effect = c.chalkos.effects ? jool;
+          unit = c.systemd.services ? chalkos-nat64;
+          module = map lib.getName c.boot.extraModulePackages;
+          loaded = lib.elem "jool" c.boot.kernelModules;
+          chalkd = lib.any (p: lib.getName p == "jool-cli") c.systemd.services.chalkd.path;
+          # A unit that runs jool.
+          referenced = lib.any (u: lib.hasInfix "-jool-" (u.text or "")) (lib.attrValues c.systemd.units);
+          diagnostic = c.chalkos.diagnostics ? nat64-sessions;
+          reads = lib.filter (o: lib.elem "NAT64" c.chalkos.outputs.${o}.inputs) (
+            lib.attrNames c.chalkos.outputs
+          );
+          examples = lib.filter (lib.flip lib.elem [
+            "edge.yaml"
+            "vrf.yaml"
+          ]) (examplesOf c);
+          unpinned = unpinned c;
+        };
+      in
+      {
+        edge = of layered.edge-metal.config;
+        without = of (routerWithout [ "nat64" ]);
+      };
+    expected =
+      let
+        unpinned = {
+          users = [
+            "chalkos-render"
+            "nscd"
+            "systemd-oom"
+          ];
+          groups = [
+            "chalkos-render"
+            "nscd"
+            "systemd-coredump"
+            "systemd-oom"
+          ];
+        };
+      in
+      {
+        edge = {
+          kind = true;
+          output = true;
+          effect = true;
+          unit = true;
+          module = [ "jool" ];
+          loaded = true;
+          chalkd = true;
+          referenced = true;
+          diagnostic = true;
+          reads = [
+            "jool"
+            "kea"
+            "networkd"
+            "router-nftables"
+          ];
+          examples = [
+            "edge.yaml"
+            "vrf.yaml"
+          ];
+          inherit unpinned;
+        };
+        without = {
+          kind = false;
+          output = false;
+          effect = false;
+          unit = false;
+          module = [ ];
+          loaded = false;
+          chalkd = false;
+          referenced = false;
+          diagnostic = false;
+          reads = [ ];
+          examples = [ ];
+          inherit unpinned;
+        };
+      };
+  };
   # On a router image the router layer owns the firewall: NixOS's firewall and nftables service are
   # off, chalkos-firewall loads the table after chalkos-config renders it and before the network
   # comes up, the outputs router-sysctl and router-nftables render the router kinds, and their
