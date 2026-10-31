@@ -202,6 +202,7 @@ in
       # each config without them.
       check = ''
         t=$(mktemp -d)
+        trap 'rm -rf "$t"' EXIT
         for f in "$OUT"/*.json; do
           [ -e "$f" ] || continue
           ${lib.getExe pkgs.jq} '.Dhcp4["interfaces-config"].interfaces = []' "$f" >"$t/kea.json"
