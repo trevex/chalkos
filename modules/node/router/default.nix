@@ -75,17 +75,28 @@
       let
         # The kinds the image accepts: its own and networkd's.
         accepted = lib.attrNames config.chalkos.kinds ++ (import ../../../lib/kinds/api.nix).networkdKinds;
-        # The kinds of an example's documents, as their top-level kind: lines name them.
+        # The kinds of an example's documents. Each document names its kind on an unindented
+        # kind: line of its own, bare or quoted.
         kindsOf =
           file:
           map (m: lib.elemAt m 1) (
-            lib.filter lib.isList (builtins.split "(^|\n)kind:[ ]*([A-Za-z0-9]+)" (builtins.readFile file))
+            lib.filter lib.isList (
+              builtins.split "(^|\n)kind:[ \t]*[\"']?([A-Za-z0-9]+)" (builtins.readFile file)
+            )
           );
       in
       builtins.path {
         name = "router-examples";
         path = ../examples/router;
-        filter = file: type: type != "regular" || lib.all (k: lib.elem k accepted) (kindsOf file);
+        # A link would be copied as it is, past the kinds' filter, so the examples are files.
+        filter =
+          file: type:
+          if type == "directory" then
+            true
+          else if type == "regular" then
+            lib.all (k: lib.elem k accepted) (kindsOf file)
+          else
+            throw "the router example ${baseNameOf file} is a ${type}, not a file";
       };
     description = ''
       The examples the router outputs render at the image's build: the files of
