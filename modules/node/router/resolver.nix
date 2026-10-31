@@ -150,7 +150,7 @@ in
       ];
       render = "${lib.getExe chalkosPackages.chalkos-render} unbound ${pkgs.dns-root-data}/root.key ${ipv4only}";
       check = ''for f in "$OUT"/*.conf; do [ ! -e "$f" ] || ${unbound}/bin/unbound-checkconf "$f" || exit; done'';
-      examples = ../examples/router;
+      examples = config.chalkos.router.examples;
     };
     chalkos.effects.unbound = {
       outputs = [ "unbound" ];

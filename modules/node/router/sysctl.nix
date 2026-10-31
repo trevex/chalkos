@@ -13,7 +13,7 @@
       inputs = [ "Router" ];
       render = "${lib.getExe chalkosPackages.chalkos-render} router-sysctl";
       dir = "/run/sysctl.d";
-      examples = ../examples/router;
+      examples = config.chalkos.router.examples;
     };
     chalkos.effects.router-sysctl = {
       outputs = [ "router-sysctl" ];

@@ -281,7 +281,7 @@ in
       render = "${lib.getExe chalkosPackages.chalkos-render} jool";
       # jool file check reads a file as file handle does, without the kernel.
       check = ''for f in "$OUT"/*.json; do [ ! -e "$f" ] || ${jool}/bin/jool file check "$f" || exit; done'';
-      examples = ../examples/router;
+      examples = config.chalkos.router.examples;
     };
     chalkos.effects.jool = {
       outputs = [ "jool" ];

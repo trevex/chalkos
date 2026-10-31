@@ -35,6 +35,26 @@
     '';
   };
 
+  options.chalkos.router.examples = lib.mkOption {
+    type = lib.types.path;
+    internal = true;
+    readOnly = true;
+    default =
+      if config.chalkos.router.dhcp.enable then
+        ../examples/router
+      else
+        builtins.path {
+          name = "router-examples";
+          path = ../examples/router;
+          filter = p: _: baseNameOf p != "dhcp.yaml";
+        };
+    description = ''
+      The examples the router outputs render at the image's build: those of
+      modules/node/examples/router, without dhcp.yaml on images without DHCP, whose schemas
+      refuse its DHCPSubnet documents.
+    '';
+  };
+
   config = lib.mkIf config.chalkos.router.enable {
     chalkos.layers.router = "";
     chalkos.forwarding.enable = true;

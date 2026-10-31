@@ -181,11 +181,13 @@ lib.runTests {
     };
   };
   # Router images take DHCPSubnet documents unless their modules set chalkos.router.dhcp.enable to
-  # false; other images never do.
+  # false, whose router outputs then render no example of DHCP at the build; other images never
+  # take them.
   testRouterDHCPOptional = {
     expr =
       let
         kinds = c: c.chalkos.kinds ? DHCPSubnet;
+        example = c: builtins.pathExists "${c.chalkos.router.examples}/dhcp.yaml";
         without =
           (mkImages {
             platforms = [ "metal" ];
@@ -201,12 +203,20 @@ lib.runTests {
         without = kinds without;
         node = kinds layered.node-metal.config;
         plain = kinds layered.plain-metal.config;
+        examples = {
+          edge = example layered.edge-metal.config;
+          without = example without;
+        };
       };
     expected = {
       edge = true;
       without = false;
       node = false;
       plain = false;
+      examples = {
+        edge = true;
+        without = false;
+      };
     };
   };
   # On a router image the router layer owns the firewall: NixOS's firewall and nftables service are
