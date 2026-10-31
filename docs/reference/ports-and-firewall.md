@@ -138,6 +138,7 @@ no other table of chalkos filters the router's traffic.
 | 3784, 3785 | UDP | BFD, FRR's bfdd: single-hop control and echo | as port 179, for each `BGPPeer` with `bfd` |
 | 4784 | UDP | BFD, FRR's bfdd: multi-hop control | from the address of each `BGPPeer` of `address` with `bfd`, as port 179 |
 | 53 | UDP and TCP | DNS, Unbound | from the ranges of each `Resolver`'s `allow` to the addresses of its `listen`; for a resolver with `vrf`, on the links of its VRF alone, with the VRF's device as `iifname` |
+| 67 | UDP | DHCPv4, Kea | the links of each `DHCPSubnet`'s `interfaces`, through raw sockets ahead of the table, which has no line for it; see below |
 
 The table also accepts the loopback interface, established and related connections, ICMP and
 ICMPv6 errors and echo requests, ICMPv6 neighbour discovery, router solicitations and
@@ -146,6 +147,13 @@ a link-local address. A `FirewallPolicy` whose `to` is `local` accepts more. Of 
 [listeners the firewall keeps closed](#listeners-the-firewall-keeps-closed), a router has those
 of every node. The image ignores `networking.firewall` options, such as `allowedTCPPorts`, and its
 build warns of each one set.
+
+Kea, the DHCP server, reads and answers DHCPv4 on raw sockets of the links its subnets serve.
+Raw sockets take a link's frames before nftables sees them, and send past it, so the table needs
+no line for port 67 and a `FirewallPolicy` does not filter it. Kea's UDP socket on port 67 of
+each link's address takes what the input chain accepts, which is nothing by default.
+[DHCP on a router](../how-it-works/router/dhcp.md#keas-raw-sockets-come-before-the-firewall)
+explains why.
 
 | Table | Owner | Contents |
 | --- | --- | --- |

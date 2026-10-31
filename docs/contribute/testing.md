@@ -82,6 +82,17 @@ run them in isolation:
   `systemd-escape`, which keep each unit's state in files. It proves that the resolvers of VRFs
   start, reload, restart when their VRF is made anew and stop, and that a VRF without a device or
   a resolver that does not come up fails the run within its 30-second waits.
+- The `router-dhcp` check runs a router image's `kea-dhcp4.service` over the DHCP example's
+  server of the default VRF, behind the example's ruleset, with busybox's `udhcpc` as a client in
+  a peer namespace. It proves a lease of the pool with the subnet's options, a reservation by MAC
+  address, the boot files of BIOS, UEFI and iPXE clients, the diagnostic `dhcp-leases` by subnet
+  and MAC address, the lease file, and leases kept across a reload. Kea's raw sockets need no port
+  of the ruleset.
+- The `router-dhcp-instances` check runs `chalkos-dhcp.service` with stubs of `systemctl` and
+  `systemd-escape`, as `router-resolvers` does. It proves that the DHCP servers start once their
+  links exist, reload, restart when their VRF is made anew and stop, and that a link that does not
+  appear within 30 seconds or a server that does not come up fails the run without touching the
+  others.
 
 Prefer this level for anything about partitions, firewall rules or interfaces.
 
@@ -141,7 +152,7 @@ the nodes with the real chalkctl. Each check runs one test or a group of them:
 | `e2e-upgrade` | Under Secure Boot, an upgrade that the node pulls through a mirror endpoint, a registry the test serves, with the endpoint's credentials, that boots from slot B and is found healthy, then one streamed from a directory that never becomes healthy and falls back. | 1 |
 | `e2e-kubernetes` | A dual-stack cluster of a control plane and a worker through chalklab: networking, DNS, a private image pulled through a mirror with the node's credentials, renewals and rotations, a reboot. | 2 |
 | `e2e-kubernetes-ha` | Three control planes of an IPv6-only cluster behind a VIP: joins, failover, reinstalls and a rolling upgrade. | 3 |
-| `e2e-router` | Two routers through chalklab, peering unnumbered over BGP with BFD and a password: the session in their status, a default route and the NAT64 prefix learned, a diagnostic, a delivery FRR reloads without ending the session, the Kubernetes API unimplemented, DNS64's answer for `ipv4only.arpa`, and a connection through a NAT64 with an empty pool, in its own namespace, and QEMU's user-mode network to a listener of the test, with its session in the status and in `nat64-sessions`, a rotation of the node CA that gives both routers certificates of the new one, and both routers' session in a VRF with its table, a route imported into the default VRF, the unreachable defaults that end its table, a resolver of the VRF running before and after a change of the VRF's table, chalkd still reachable, and a policy's rules, next-hop table and chain on a router before and after its boot. | 2 |
+| `e2e-router` | Two routers through chalklab, peering unnumbered over BGP with BFD and a password: the session in their status, a default route and the NAT64 prefix learned, a diagnostic, a delivery FRR reloads without ending the session, the Kubernetes API unimplemented, DNS64's answer for `ipv4only.arpa`, and a connection through a NAT64 with an empty pool, in its own namespace, and QEMU's user-mode network to a listener of the test, with its session in the status and in `nat64-sessions`, a rotation of the node CA that gives both routers certificates of the new one, and both routers' session in a VRF with its table, a route imported into the default VRF, the unreachable defaults that end its table, a resolver of the VRF running before and after a change of the VRF's table, chalkd still reachable, and a policy's rules, next-hop table and chain on a router before and after its boot, and a DHCP server in a VRF that leases the other router its reserved address on a VLAN, with the lease kept and renewed across the server's boot. | 2 |
 
 A VM gets 2 CPUs and 2 GiB of memory unless its test asks for less, on a 16 GiB sparse disk.
 The Kubernetes test gives its control plane 2048 MiB and its worker 1024 MiB; the HA test gives

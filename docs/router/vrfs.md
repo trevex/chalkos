@@ -461,4 +461,5 @@ refuse what networkd, FRR or nftables would apply otherwise than the documents s
   VRFs, FRR's instances and the state chalkd reads.
 - [Route with BGP](bgp.md) configures an instance, its peers and its policies.
 - [Route traffic by policy](policy-routing.md) sends chosen traffic into a VRF or out of it.
+- [Lease addresses with DHCP](dhcp.md#serve-a-vrfs-links) runs a DHCP server of a VRF.
 - [Config kinds](../reference/kinds.md#router-chalkos-dev) describes each field.

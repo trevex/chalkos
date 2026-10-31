@@ -50,6 +50,7 @@ nav = [
     "router/vrfs.md",
     "router/policy-routing.md",
     "router/nat64-and-dns.md",
+    "router/dhcp.md",
   ] },
   { "Build images" = [
     "build/index.md",
@@ -97,6 +98,7 @@ nav = [
       "how-it-works/router/vrfs.md",
       "how-it-works/router/policy-routing.md",
       "how-it-works/router/nat64-and-dns.md",
+      "how-it-works/router/dhcp.md",
     ] },
   ] },
   { "Reference" = [

@@ -41,6 +41,9 @@ documents, and
 [NAT64 and DNS64 on a router](nat64-and-dns.md#the-firewall-accepts-dns-from-the-resolvers-clients)
 those of the `Resolver`. A policy to `local` may accept more. It cannot drop what the earlier rules
 accepted.
+DHCPv4 to the router's DHCP server reaches no rule of the chain: Kea reads it on raw sockets,
+ahead of the table, as [DHCP on a router](dhcp.md#keas-raw-sockets-come-before-the-firewall)
+describes.
 The input chain of a LAN router whose node API answers on `lan0` reads:
 
 ```text

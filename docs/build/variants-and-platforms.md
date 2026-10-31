@@ -60,6 +60,23 @@ A variant declares three things:
 An image carries one layer at most. A router variant therefore also sets `kubernetes = false`, and
 `mkImages` refuses a variant with both layers and names it.
 
+A router variant's images also carry Kea, the DHCP server that
+[Lease addresses with DHCP](../router/dhcp.md) configures. The binary cache does not hold Kea
+built without its database backends, so the first build of a router image after a nixpkgs update
+compiles it, about 5 minutes on 16 cores. A variant whose routers serve no DHCP leaves Kea out
+with the image option `chalkos.router.dhcp.enable`:
+
+```nix
+variants.edge = {
+  kubernetes = false;
+  router = true;
+  modules = [ { chalkos.router.dhcp.enable = false; } ];
+};
+```
+
+Its nodes then refuse `DHCPSubnet` documents, and `chalkctl validate` reports that the image
+`does not accept kind "DHCPSubnet"`.
+
 A variant's name is lower-case letters, digits and dashes, and starts with a letter or digit. It
 becomes `CHALKOS_VARIANT` in its images' os-release and `variant` in their `metadata.json`. A name
 with a dash can collide with another on a platform with a dash, such as variant `a-b` on `metal`

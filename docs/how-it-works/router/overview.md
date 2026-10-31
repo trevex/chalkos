@@ -19,19 +19,20 @@ parts:
 
 | Part | What it is |
 | --- | --- |
-| Kinds | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `NAT64`, `Resolver`, `VRF` and `PolicyRoute`, which only router images accept. |
-| Outputs | `router-sysctl`, the kernel settings of the `Router` document; `router-nftables`, the firewall of the firewall kinds, the chain `policy-routing` of the `PolicyRoute` documents, the ports of the `BGPPeer` and `Resolver` documents and the lines around the NAT64s' links; `frr`, FRR's config of the BGP kinds; `jool`, an instance of Jool and its link per `NAT64`; `networkd`, which renders the `VRF` documents, the kernel's rules and next hops' routes of the `PolicyRoute` documents and a unit per NAT64's link beside networkd's own; and `unbound`, Unbound's config of each `Resolver`. |
-| Effects | `router-sysctl` restarts `systemd-sysctl.service`, `router-nftables` reloads `chalkos-firewall.service`, `frr` reloads `frr.service`, `vrf` reloads `chalkos-vrf.service`, which removes the VRFs networkd keeps, `jool` reloads `chalkos-nat64.service`, `unbound` reloads `unbound.service` and `resolvers` reloads `chalkos-resolvers.service`, which runs the VRFs' resolvers, when `unbound` or `networkd` changes. `unbound-start` restarts `unbound.service` when the default VRF's `Resolver` is added or removed. |
+| Kinds | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `NAT64`, `Resolver`, `VRF`, `PolicyRoute` and `DHCPSubnet`, which only router images accept. |
+| Outputs | `router-sysctl`, the kernel settings of the `Router` document; `router-nftables`, the firewall of the firewall kinds, the chain `policy-routing` of the `PolicyRoute` documents, the ports of the `BGPPeer` and `Resolver` documents and the lines around the NAT64s' links; `frr`, FRR's config of the BGP kinds; `jool`, an instance of Jool and its link per `NAT64`; `networkd`, which renders the `VRF` documents, the kernel's rules and next hops' routes of the `PolicyRoute` documents and a unit per NAT64's link beside networkd's own; `unbound`, Unbound's config of each `Resolver`; and `kea`, the config of Kea's DHCPv4 server of each VRF whose links `DHCPSubnet` documents serve. |
+| Effects | `router-sysctl` restarts `systemd-sysctl.service`, `router-nftables` reloads `chalkos-firewall.service`, `frr` reloads `frr.service`, `vrf` reloads `chalkos-vrf.service`, which removes the VRFs networkd keeps, `jool` reloads `chalkos-nat64.service`, `unbound` reloads `unbound.service` and `resolvers` reloads `chalkos-resolvers.service`, which runs the VRFs' resolvers, when `unbound` or `networkd` changes. `unbound-start` restarts `unbound.service` when the default VRF's `Resolver` is added or removed. `dhcp` reloads `chalkos-dhcp.service`, which runs the DHCP servers, when `kea` or `networkd` changes. |
 | Firewall | The nftables table `inet chalkos` in place of NixOS's firewall. |
 | FRR | zebra, bgpd, bfdd and staticd, and vtysh, which chalkd asks for the router's BGP sessions and paths. |
 | Jool | The kernel module of the NAT64 instances, which run in network namespaces of their own, and `jool`, with which `chalkos-nat64.service` loads them and chalkd, through `nsenter`, reads their sessions and pools. |
 | Unbound | The resolvers: `unbound.service` for the default VRF and `unbound@<vrf>.service` for each other VRF, and `unbound-control`, which reloads them and tells chalkd whether the default VRF's runs. |
-| Diagnostics | `traceroute`, the routers on the path to an address; `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers`, FRR's views of BGP and BFD; and `nat64-sessions`, a NAT64 instance's sessions, read in its network namespace. |
+| Kea | The DHCP servers: `kea-dhcp4.service` for the default VRF and `kea-dhcp4@<vrf>.service` for each other VRF, which `chalkos-dhcp.service` starts once their links exist, and whose control sockets tell chalkd their leases. An image whose variant sets `chalkos.router.dhcp.enable` to `false` carries no Kea and no other part of DHCP: no kind `DHCPSubnet`, output `kea`, effect `dhcp` or diagnostic `dhcp-leases`. |
+| Diagnostics | `traceroute`, the routers on the path to an address; `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers`, FRR's views of BGP and BFD; `nat64-sessions`, a NAT64 instance's sessions, read in its network namespace; and `dhcp-leases`, the DHCP servers' leases. |
 
 [The router's firewall](firewall.md) describes the table, [BGP on a router](bgp.md) FRR's config,
 [VRFs on a router](vrfs.md) the VRFs, [Policy routing on a router](policy-routing.md) the marks
-and the kernel's rules, and [NAT64 and DNS64 on a router](nat64-and-dns.md) Jool's instances
-and Unbound's config.
+and the kernel's rules, [NAT64 and DNS64 on a router](nat64-and-dns.md) Jool's instances
+and Unbound's config, and [DHCP on a router](dhcp.md) Kea's servers.
 [Built-ins](../../reference/builtins.md#outputs-router-images) lists the outputs, effects, rules
 and diagnostics.
 

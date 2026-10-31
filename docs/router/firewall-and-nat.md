@@ -120,6 +120,8 @@ An `AddressSet` holds ranges of one family. A rule names it as `set:<name>`, alo
 or `destination`. A port is a number or a range `"<first>-<last>"`. A policy cannot drop what the
 firewall accepts before it: chalkd's port on the management interfaces, pings, ICMP errors,
 neighbour discovery and established connections.
+Nor does it filter DHCPv4 on the links a `DHCPSubnet` serves: the DHCP server reads it ahead of
+the firewall.
 
 ## Masquerade and forward ports
 
