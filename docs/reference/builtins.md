@@ -1648,6 +1648,7 @@ The diagnostics every image declares.
 | --- | --- | --- | --- | --- |
 | `addresses`{ #diagnostic-addresses } | The addresses of the node's interfaces, as ip -json address show prints them. Runs `ip -json address show`. | — | reader | — |
 | `dns-query`{ #diagnostic-dns-query } | Looks up a name in DNS, through the node's resolver or the server given. Runs `drill {name} {type} @{server}`. | `name`, hostname; `type`, enum of `A`, `AAAA`, `CAA`, `CNAME`, `DS`, `DNSKEY`, `MX`, `NS`, `PTR`, `SOA`, `SRV` or `TXT`, optional; `server`, address, optional | operator | — |
+| `ip-rules`{ #diagnostic-ip-rules } | The routing policy rules of one family, as ip -json rule show prints them: which table the kernel looks a packet's route up in, in the order of their priorities. Runs `ip -json -family {family} rule show`. | `family`, enum of `inet` or `inet6`, default `inet` | reader | — |
 | `links`{ #diagnostic-links } | The node's network interfaces and their state, as ip -json link show prints them. Runs `ip -json link show`. | — | reader | — |
 | `neighbours`{ #diagnostic-neighbours } | The neighbour table of IPv4 ARP and IPv6 neighbour discovery, as ip -json neighbour show prints it. Runs `ip -json neighbour show`. | — | reader | — |
 | `nft-ruleset`{ #diagnostic-nft-ruleset } | The node's nftables ruleset, as nft list ruleset prints it. Runs `nft list ruleset`. | — | operator | `CAP_NET_ADMIN` |

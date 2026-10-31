@@ -2830,6 +2830,7 @@ lib.runTests {
       names = [
         "addresses"
         "dns-query"
+        "ip-rules"
         "links"
         "neighbours"
         "nft-ruleset"
@@ -2851,6 +2852,7 @@ lib.runTests {
           command = lib.tail node.route-get.command;
         };
         routes = lib.tail node.routes.command;
+        ipRules = lib.tail node.ip-rules.command;
         ping = lib.tail node.ping.command;
         dnsQuery = lib.tail node.dns-query.command;
         tcpConnect = {
@@ -2870,6 +2872,7 @@ lib.runTests {
         roles = {
           addresses = "reader";
           dns-query = "operator";
+          ip-rules = "reader";
           links = "reader";
           neighbours = "reader";
           nft-ruleset = "operator";
@@ -2914,6 +2917,13 @@ lib.runTests {
           "show"
           "table"
           "{table}"
+        ];
+        ipRules = [
+          "-json"
+          "-family"
+          "{family}"
+          "rule"
+          "show"
         ];
         ping = [
           "-n"

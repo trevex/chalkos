@@ -270,6 +270,8 @@ dns-query             operator  Looks up a name in DNS, through the node's resol
   name=<hostname>               Name to look up.
   [type=<enum>]                 Record type; A when left out. One of A, AAAA, CAA, CNAME, DS, DNSKEY, MX, NS, PTR, SOA, SRV, TXT.
   [server=<address>]            Address of the DNS server to ask; the node's resolver when left out.
+ip-rules              reader    The routing policy rules of one family, as ip -json rule show prints them: which table the kernel looks a packet's route up in, in the order of their priorities.
+  [family=<enum>]               Address family: inet for IPv4, inet6 for IPv6. One of inet, inet6. Default: inet.
 links                 reader    The node's network interfaces and their state, as ip -json link show prints them.
 neighbours            reader    The neighbour table of IPv4 ARP and IPv6 neighbour discovery, as ip -json neighbour show prints it.
 nft-ruleset           operator  The node's nftables ruleset, as nft list ruleset prints it.

@@ -1,8 +1,8 @@
-# The diagnostics every image declares: the node's addresses, interfaces, routes and neighbours,
-# the route to an address, ping, DNS queries, TCP connects and the nftables ruleset. Those that
-# send traffic from the node or show its firewall need an operator. Each tool is the smallest that
-# does the job, as every image carries them: ip alone rather than iproute2, ldns's drill rather
-# than dig, and bash's /dev/tcp for a TCP connect.
+# The diagnostics every image declares: the node's addresses, interfaces, routes, routing policy
+# rules and neighbours, the route to an address, ping, DNS queries, TCP connects and the nftables
+# ruleset. Those that send traffic from the node or show its firewall need an operator. Each tool
+# is the smallest that does the job, as every image carries them: ip alone rather than iproute2,
+# ldns's drill rather than dig, and bash's /dev/tcp for a TCP connect.
 {
   chalkosPackages,
   lib,
@@ -70,6 +70,30 @@ in
           default = "main";
           description = "Routing table: main, local, default, all or a table's number.";
         };
+      };
+      role = "reader";
+      timeout = "10s";
+    };
+    # The kernel's routing policy rules, which pick the table a packet's route comes from: VRFs'
+    # and policy routing's among them. ip lists one family's.
+    ip-rules = {
+      description = "The routing policy rules of one family, as ip -json rule show prints them: which table the kernel looks a packet's route up in, in the order of their priorities.";
+      command = [
+        ip
+        "-json"
+        "-family"
+        "{family}"
+        "rule"
+        "show"
+      ];
+      parameters.family = {
+        type = "enum";
+        values = [
+          "inet"
+          "inet6"
+        ];
+        default = "inet";
+        description = "Address family: inet for IPv4, inet6 for IPv6.";
       };
       role = "reader";
       timeout = "10s";
