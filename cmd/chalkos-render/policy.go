@@ -152,12 +152,19 @@ func ruleTable(d routerDocuments, r policyRule) uint32 {
 }
 
 // policyLines are the lines of the chain policy-routing: a packet another pass marked keeps its
-// mark, then each rule of each PolicyRoute document in order marks the packets it matches with
-// the mark of its target and ends the chain, counting them. A document's in matches the links
-// themselves, as prerouting sees a packet from a VRF's link first with the link, the pass whose
-// mark the routing decision after the VRF's pass keeps.
+// mark, a packet to an address of the router in the VRF of its link takes no mark, then each rule
+// of each PolicyRoute document in order marks the packets it matches with the mark of its target
+// and ends the chain, counting them. A document's in matches the links themselves, as prerouting
+// sees a packet from a VRF's link first with the link, the pass whose mark the routing decision
+// after the VRF's pass keeps.
+//
+// The kernel puts the local routes of a VRF's links and device into the VRF's table, where the
+// rule of the local table at priority 0 does not see them, and a mark's rule at 900 would send
+// the packet past the VRF's rule at 1000. fib without iif looks the address up in the table of
+// the VRF of the packet's link, on the link's pass and on the VRF device's alike; with iif it
+// would find local only an address of that very link.
 func (f *firewall) policyLines(d routerDocuments) ([]string, error) {
-	lines := []string{fmt.Sprintf("meta mark & 0x%08x != 0 return", policyMarkMask)}
+	lines := []string{fmt.Sprintf("meta mark & 0x%08x != 0 return", policyMarkMask), "fib daddr type local return"}
 	for _, p := range d.PolicyRoutes {
 		head, err := f.policyHead(p)
 		if err != nil {

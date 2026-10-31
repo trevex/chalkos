@@ -18,6 +18,7 @@ table inet chalkos {
 	chain policy-routing {
 		type filter hook prerouting priority mangle + 20; policy accept;
 		meta mark & 0x00ff0000 != 0 return
+		fib daddr type local return
 		iifname { "lan0", "lan1" } ip daddr { 192.0.2.0/24 } counter meta mark set meta mark & 0xff00ffff | 0x00040000 return comment "lan 1"
 		iifname { "lan0", "lan1" } ip6 daddr { 2001:db8:1::/64, 2001:db8:2::/64 } counter meta mark set meta mark & 0xff00ffff | 0x00040000 return comment "lan 1"
 		iifname { "lan0", "lan1" } ip saddr @addresses-guests tcp dport { 443 } counter meta mark set meta mark & 0xff00ffff | 0x00010000 return comment "lan 2"

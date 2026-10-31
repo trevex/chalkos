@@ -15,6 +15,7 @@ chain:
 chain policy-routing {
 	type filter hook prerouting priority mangle + 20; policy accept;
 	meta mark & 0x00ff0000 != 0 return
+	fib daddr type local return
 	iifname { "lan0", "lan1" } ip daddr { 192.0.2.0/24 } counter meta mark set meta mark & 0xff00ffff | 0x00040000 return comment "lan 1"
 	iifname { "lan0", "lan1" } ip6 daddr { 2001:db8:1::/64, 2001:db8:2::/64 } counter meta mark set meta mark & 0xff00ffff | 0x00040000 return comment "lan 1"
 	iifname { "lan0", "lan1" } ip saddr @addresses-guests tcp dport { 443 } counter meta mark set meta mark & 0xff00ffff | 0x00010000 return comment "lan 2"
@@ -73,6 +74,23 @@ chain prerouting {
 }
 ```
 
+## The router's own addresses take no policy
+
+The chain's second line, `fib daddr type local return`, ends the chain for a packet to an
+address of the router before any rule can mark it. Without `iif`, nftables looks the destination
+up in the table of the VRF that the packet's link belongs to: the local table for the default
+VRF, the VRF's table for a VRF's link and for the VRF's device. The line therefore matches on
+both passes of a VRF's packet, and it matches an address on any link of the VRF or on its
+device. With `iif`, nftables would call an address local only when it is on the very link the
+packet came in on. That excludes the VRF device's pass and the addresses on the VRF's device.
+
+The router's own traffic in a VRF, such as BGP, BFD and the VRF's resolver, therefore stays in
+the VRF however broadly a document matches. Without the line, a document without `in` and with
+`source: [0.0.0.0/0]`, or with `dscp: [48]`, the class FRR's BGP sends with, would mark the
+packets of a VRF's BGP sessions. The mark's rule at priority 900 would then route them by the
+target table, away from the router. An address of another VRF is not local in the packet's VRF,
+so a policy may still send traffic to it.
+
 ## The kernel's rules at priority 900
 
 The kernel looks a packet's route up through its rules in order of priority. On the example's
@@ -90,8 +108,11 @@ router `ip -6 rule show` prints:
 
 Each target table has a rule that matches its mark within `0xff0000`. Priority 900 comes before
 the VRFs' rule at 1000, so a policy sends a VRF link's traffic out of the VRF, and the default
-VRF's traffic into one. The local table's rule at priority 0 still comes first, so the traffic to
-the router's own addresses takes no policy.
+VRF's traffic into one. The local table's rule at priority 0 still comes first, but the local
+table holds only the default VRF's addresses. The kernel puts the local routes of a VRF's links
+and device into the VRF's table, which only the rule at 1000 reaches. A mark would send a packet
+to such an address past that rule, so the chain leaves these packets unmarked, as
+[The router's own addresses take no policy](#the-routers-own-addresses-take-no-policy) describes.
 
 ## networkd keeps the rules and the next hops' tables
 

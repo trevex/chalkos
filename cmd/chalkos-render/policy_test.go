@@ -98,9 +98,9 @@ func TestPolicyRouteRefusals(t *testing.T) {
 	}
 }
 
-// The chain policy-routing keeps a mark another pass set, and each rule marks with its target
-// table's mark, (index+1)<<16 in the order of the tables, rules of one table alike. A next hop of
-// IPv4 marks IPv4 alone. The VRFs' devices accept a marked packet in the reverse-path filter, and
+// The chain policy-routing keeps a mark another pass set and leaves a packet to an address of the
+// router unmarked, and each rule marks with its target table's mark, (index+1)<<16 in the order
+// of the tables, rules of one table alike. A next hop of IPv4 marks IPv4 alone. The VRFs' devices accept a marked packet in the reverse-path filter, and
 // a ruleset without PolicyRoute documents marks nothing.
 func TestPolicyRouteChain(t *testing.T) {
 	docs := policyDocs(t,
@@ -112,6 +112,7 @@ func TestPolicyRouteChain(t *testing.T) {
 			"\t\tiifname { \"transit\" } meta mark & 0x00ff0000 != 0 accept\n\t\tmeta nfproto ipv4 udp sport",
 		"\tchain policy-routing {\n\t\ttype filter hook prerouting priority mangle + 20; policy accept;\n" +
 			"\t\tmeta mark & 0x00ff0000 != 0 return\n" +
+			"\t\tfib daddr type local return\n" +
 			"\t\tip dscp { 46 } counter meta mark set meta mark & 0xff00ffff | 0x00020000 return comment \"a 1\"\n" +
 			"\t\tip saddr { 192.0.2.0/24 } counter meta mark set meta mark & 0xff00ffff | 0x00010000 return comment \"a 2\"\n" +
 			"\t\tiifname { \"lan0\" } ip dscp { 10 } counter meta mark set meta mark & 0xff00ffff | 0x00020000 return comment \"b 1\"\n\t}\n",

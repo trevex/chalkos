@@ -1074,7 +1074,8 @@ in
   # it. Guests' HTTPS takes transit and their other ports the main table, DSCP 46 takes transit
   # in both families, ahead of the next hops the servers' sources take in each family, traffic
   # between lan0 and lan1 the main table ahead of those next hops, and other traffic the main
-  # table. While wanb0 is down the next hops' traffic is dropped, not routed by the main table,
+  # table. A rule without in that sends BGP to the main table leaves the router's BGP in transit
+  # alone in both families. While wanb0 is down the next hops' traffic is dropped, not routed by the main table,
   # and once networkd's route is back it takes wanb0 again.
   router-policy-routing =
     let
@@ -1183,8 +1184,11 @@ in
       done
       on lan1 socat TCP4-LISTEN:80,fork,reuseaddr EXEC:"echo lan1" &
       on lan1 socat TCP6-LISTEN:80,fork,reuseaddr,ipv6only=1 EXEC:"echo lan1" &
+      # The router's BGP in transit, which listens on the VRF's device.
+      socat TCP4-LISTEN:179,fork,reuseaddr,so-bindtodevice=transit EXEC:"echo router" &
+      socat TCP6-LISTEN:179,fork,reuseaddr,ipv6only=1,so-bindtodevice=transit EXEC:"echo router" &
       for try in $(seq 100); do
-        [ "$(on wana ss -Hltn | wc -l)" = 4 ] && [ "$(on wanb ss -Hltn | wc -l)" = 4 ] && [ "$(on transit ss -Hltn | wc -l)" = 4 ] && [ "$(on lan1 ss -Hltn | wc -l)" = 2 ] && break
+        [ "$(on wana ss -Hltn | wc -l)" = 4 ] && [ "$(on wanb ss -Hltn | wc -l)" = 4 ] && [ "$(on transit ss -Hltn | wc -l)" = 4 ] && [ "$(on lan1 ss -Hltn | wc -l)" = 2 ] && [ "$(ss -Hltn | wc -l)" = 2 ] && break
         [ "$try" != 100 ] || fail "the listeners did not start"
         sleep 0.1
       done
@@ -1231,6 +1235,17 @@ in
       takes transit 192.0.2.33 80 ip-tos=184 "the first rule that matches decides, and the documents apply by name"
       far=192.0.2.130 takes lan1 192.0.2.33 80 "" "traffic between the LAN's links stays in the main table"
       far=2001:db8:2::2 takes lan1 2001:db8:1::21 80 "" "traffic between the LAN's links stays in the main table"
+
+      # A rule of a document without in, which the example lacks, that sends BGP to the main
+      # table, and BGP, which the example's firewall keeps closed. The router's own addresses in
+      # transit take no policy: their local routes are in table 100, past which the mark's rule
+      # would send the packet to the main table's default.
+      nft 'add rule inet chalkos policy-routing tcp dport 179 counter meta mark set meta mark & 0xff00ffff | 0x00040000 return comment "bgp 1"'
+      nft 'add rule inet chalkos input tcp dport 179 accept'
+      for to in TCP4:203.0.113.1 'TCP6:[2001:db8:c::1]'; do
+        got=$(on transit socat -t 2 - "$to:179,connect-timeout=1" </dev/null 2>/dev/null || echo none)
+        [ "$got" = router ] || fail "transit's peer reached $got, not the router's BGP on $to, past a policy without in"
+      done
 
       # The kernel removes a next hop's route when its link goes down; the table's unreachable
       # default drops the traffic then, where the main table would route it.
