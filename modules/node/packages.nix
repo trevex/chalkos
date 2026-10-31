@@ -11,6 +11,7 @@
     chalkos-storage = pkgs.callPackage ../../nix/chalkos-storage.nix { };
     image-size = pkgs.callPackage ../../nix/image-size.nix { };
     iproute2-ip = pkgs.callPackage ../../nix/iproute2-ip.nix { };
+    kea = pkgs.callPackage ../../nix/kea.nix { };
     kernel-modules = pkgs.callPackage ../../nix/kernel-modules.nix { };
     relabel-partitions = pkgs.callPackage ../../nix/relabel-partitions.nix { };
   };
