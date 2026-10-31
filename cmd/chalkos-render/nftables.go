@@ -158,10 +158,14 @@ type firewall struct {
 	// nat64 are the NAT64 instances, whose links the forward chain and source NAT treat apart.
 	nat64 []nat64Instance
 	// vrfDevices are the VRFs' devices, on which the strict reverse-path filter accepts
-	// neighbour discovery from link-local sources.
+	// neighbour discovery from link-local sources, and the filter a marked packet's second pass.
 	vrfDevices []string
-	port       int
-	closed     bool
+	// targets are the tables of the PolicyRoute documents, with their marks, and policy the lines
+	// of the chain policy-routing.
+	targets []routeTarget
+	policy  []string
+	port    int
+	closed  bool
 }
 
 // ctZone is a VRF's conntrack zone and the links whose connections take it.
@@ -252,6 +256,14 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		}
 		f.sets[s.Name] = s.Spec
 		f.setNames = append(f.setNames, s.Name)
+	}
+	if f.targets, err = policyTargets(d); err != nil {
+		return nil, err
+	}
+	if len(d.PolicyRoutes) > 0 {
+		if f.policy, err = f.policyLines(d); err != nil {
+			return nil, err
+		}
 	}
 	for _, p := range d.Policies {
 		if p.Spec.From == "local" {
@@ -469,7 +481,7 @@ const (
 )
 
 // ruleset renders the table: the AddressSets, a chain per FirewallPolicy, the conntrack zones, the
-// reverse-path filter, input, forward and the NAT chains.
+// reverse-path filter, the chain policy-routing, input, forward and the NAT chains.
 func (f *firewall) ruleset() (string, error) {
 	var b strings.Builder
 	b.WriteString("# The router's firewall, rendered by chalkos-render. Loading the file replaces the table\n" +
@@ -507,6 +519,7 @@ func (f *firewall) ruleset() (string, error) {
 	if err := f.prerouting(&b); err != nil {
 		return "", err
 	}
+	f.policyRouting(&b)
 	if err := f.input(&b); err != nil {
 		return "", err
 	}
@@ -556,14 +569,35 @@ func (f *firewall) prerouting(b *strings.Builder) error {
 		return fmt.Errorf("Router: rpFilter %q is none of off, loose and strict", f.router.RPFilter)
 	}
 	b.WriteString("\tchain prerouting {\n" +
-		"\t\ttype filter hook prerouting priority mangle + 10; policy drop;\n" +
-		"\t\tmeta nfproto ipv4 udp sport . udp dport { 67 . 68, 68 . 67 } accept\n")
+		"\t\ttype filter hook prerouting priority mangle + 10; policy drop;\n")
+	// A packet from a VRF's link passes prerouting a second time with the VRF's device. The
+	// chain policy-routing marked it after the first pass, which the filter judged; judged again,
+	// it would be judged by its policy's table.
+	if len(f.policy) > 0 && len(f.vrfDevices) > 0 {
+		fmt.Fprintf(b, "\t\tiifname %s meta mark & 0x%08x != 0 accept\n", interfaceSet(f.vrfDevices), policyMarkMask)
+	}
+	b.WriteString("\t\tmeta nfproto ipv4 udp sport . udp dport { 67 . 68, 68 . 67 } accept\n")
 	if f.router.RPFilter == "strict" && len(f.vrfDevices) > 0 {
 		b.WriteString("\t\tiifname " + interfaceSet(f.vrfDevices) + " ip6 saddr fe80::/10 ip6 hoplimit 255 " +
 			"icmpv6 type { nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } accept\n")
 	}
 	b.WriteString("\t\t" + fib + "\n\t}\n")
 	return nil
+}
+
+// policyRouting is the chain policy-routing, after the reverse-path filter, which judges a packet
+// by the table of the link it came in on: marked before, it would be judged by its policy's
+// table. The routing decision follows every prerouting chain, so the mark decides it. A ruleset
+// without PolicyRoute documents has no chain.
+func (f *firewall) policyRouting(b *strings.Builder) {
+	if len(f.policy) == 0 {
+		return
+	}
+	b.WriteString("\tchain policy-routing {\n\t\ttype filter hook prerouting priority mangle + 20; policy accept;\n")
+	for _, l := range f.policy {
+		b.WriteString("\t\t" + l + "\n")
+	}
+	b.WriteString("\t}\n")
 }
 
 // input accepts the protected traffic, chalkd's port on the management interfaces, the openings,

@@ -273,6 +273,39 @@ type vrfSpec struct {
 	ConntrackZone *int `json:"conntrackZone"`
 }
 
+// policyRouteSpec is a PolicyRoute document's spec.
+type policyRouteSpec struct {
+	// In is nil for traffic from every link.
+	In *struct {
+		Zone       *string  `json:"zone"`
+		Interfaces []string `json:"interfaces"`
+	} `json:"in"`
+	Rules []policyRule `json:"rules"`
+}
+
+type policyRule struct {
+	Match struct {
+		Family           *string     `json:"family"`
+		Protocol         *string     `json:"protocol"`
+		SourcePorts      []portRange `json:"sourcePorts"`
+		DestinationPorts []portRange `json:"destinationPorts"`
+		Source           []string    `json:"source"`
+		Destination      []string    `json:"destination"`
+		DSCP             []int       `json:"dscp"`
+	} `json:"match"`
+	To struct {
+		VRF     *string  `json:"vrf"`
+		Table   *uint32  `json:"table"`
+		NextHop *nextHop `json:"nextHop"`
+	} `json:"to"`
+}
+
+type nextHop struct {
+	Address   string `json:"address"`
+	Interface string `json:"interface"`
+	Table     uint32 `json:"table"`
+}
+
 // named is the spec of a document, with the document's name.
 type named[T any] struct {
 	Name string
@@ -295,6 +328,7 @@ type routerDocuments struct {
 	NAT64           []named[nat64Spec]
 	Resolvers       []named[resolverSpec]
 	VRFs            []named[vrfSpec]
+	PolicyRoutes    []named[policyRouteSpec]
 	// Links are the interface names the Network documents' [Match] sections name, sorted.
 	Links []string
 	// Addresses are the static addresses the Network documents give their links.
@@ -346,6 +380,9 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 		return d, err
 	}
 	if d.VRFs, err = decodeKind[vrfSpec](byKind, "VRF"); err != nil {
+		return d, err
+	}
+	if d.PolicyRoutes, err = decodeKind[policyRouteSpec](byKind, "PolicyRoute"); err != nil {
 		return d, err
 	}
 	d.Links = networkLinks(byKind)
