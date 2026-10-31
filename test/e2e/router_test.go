@@ -698,7 +698,8 @@ func TestRouterLab(t *testing.T) {
 		}
 
 		// The base inventory brings the sessions and edge0 back to the default VRF, and r2's BGP
-		// instance with them.
+		// instance with them. r1's policy routing goes: its rules, table 300's routes and the
+		// chain. The dummy link policy0 stays, as networkd never deletes a netdev.
 		for _, name := range []string{"r1", "r2"} {
 			if out, err := chalkctl(t, nodes[name], "base", "apply-config", name); err != nil {
 				t.Fatalf("apply-config of %s's base config: %v\n%s", name, err, out)
@@ -712,6 +713,12 @@ func TestRouterLab(t *testing.T) {
 			out, err := chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "ip-rules", "family=inet6")
 			if err != nil || strings.Contains(out, `"priority":900`) {
 				return fmt.Errorf("ip-rules of r1 after the base config: %v\n%s", err, out)
+			}
+			for _, family := range []string{"inet", "inet6"} {
+				out, err = chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "routes", "family="+family, "table=300")
+				if err != nil || strings.Contains(out, `"dst":`) {
+					return fmt.Errorf("routes of r1's table 300 after the base config: %v\n%s", err, out)
+				}
 			}
 			out, err = chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "nft-ruleset")
 			if err != nil || strings.Contains(out, "policy-routing") {
