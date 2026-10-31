@@ -2109,11 +2109,18 @@ in
       called "restart --no-block $(unit dmz-a)" "no index"
       on_device dmz-a "no index"
 
-      # Servers without a config, a running one and a failed one, are stopped and reset.
+      # Servers without a config, a running one and a failed one, are stopped and reset, before a
+      # new server starts, as when a subnet moves from old's VRF to new's.
       : >"$SD/log"
       echo active >"$SD/kea-dhcp4@old.service.state"
       echo failed >"$SD/kea-dhcp4@stale.service.state"
+      device new
+      device vlan70
+      config new vlan70
       ${ExecReload} || fail "stopping the servers without a config failed"
+      [ "$(grep -nxF 'stop kea-dhcp4@old.service' "$SD/log" | cut -d: -f1)" -lt "$(grep -nxF 'start --no-block kea-dhcp4@new.service' "$SD/log" | cut -d: -f1)" ] ||
+        fail "new started before old stopped"
+      running new "a new server"
       for u in kea-dhcp4@old.service kea-dhcp4@stale.service; do
         called "stop $u" "a server without a config"
         called "reset-failed $u" "a server without a config"

@@ -15,14 +15,14 @@
 let
   inherit (chalkosPackages) kea;
   dir = config.chalkos.outputs.kea.dir;
-  # Starts the server of each rendered config that does not run, once its links and its VRF's
-  # device exist, reloads those that run and stops those without a config; with the argument stop,
-  # it stops all of them. systemd binds a VRF's server's sockets to the index its VRF's device had
-  # when the server started, which the server keeps in /run/kea/dhcp4-<vrf>.ifindex: a VRF that
-  # chalkos-vrf removed and networkd created anew has a new index, so its server restarts on the
-  # new device. The script waits 30 seconds at most for the links and 30 more for the servers it
-  # started, and fails naming those that are not running then. systemctl and systemd-escape come
-  # from the unit's PATH.
+  # Stops the servers without a config, then starts the server of each rendered config that does
+  # not run, once its links and its VRF's device exist, and reloads those that run; with the
+  # argument stop, it stops all of them. systemd binds a VRF's server's sockets to the index its
+  # VRF's device had when the server started, which the server keeps in
+  # /run/kea/dhcp4-<vrf>.ifindex: a VRF that chalkos-vrf removed and networkd created anew has a new
+  # index, so its server restarts on the new device. The script waits 30 seconds at most for the
+  # links and 30 more for the servers it started, and fails naming those that are not running then.
+  # systemctl and systemd-escape come from the unit's PATH.
   reconcile = pkgs.writeShellApplication {
     name = "chalkos-dhcp";
     runtimeInputs = [
@@ -71,6 +71,18 @@ let
           return 1
         fi
       }
+      # Stops the servers without a config first, so that a subnet that moved to another VRF
+      # leaves its links before the other VRF's server starts on them.
+      while read -r unit _; do
+        [[ -n $unit ]] || continue
+        if [[ -z ''${want[$unit]+x} ]]; then
+          if systemctl stop "$unit"; then
+            systemctl reset-failed "$unit" 2>/dev/null || true
+          else
+            failed+=("stop $unit")
+          fi
+        fi
+      done < <(systemctl list-units --plain --no-legend --all kea-dhcp4.service 'kea-dhcp4@*.service')
       for unit in "''${!want[@]}"; do
         links "$unit" "''${want[$unit]}" || continue
         verb=reload
@@ -103,16 +115,6 @@ let
         done
         [[ $state == active ]] || failed+=("start $unit, which is $state ($(systemctl show --value --property=SubState "$unit"))")
       done
-      while read -r unit _; do
-        [[ -n $unit ]] || continue
-        if [[ -z ''${want[$unit]+x} ]]; then
-          if systemctl stop "$unit"; then
-            systemctl reset-failed "$unit" 2>/dev/null || true
-          else
-            failed+=("stop $unit")
-          fi
-        fi
-      done < <(systemctl list-units --plain --no-legend --all kea-dhcp4.service 'kea-dhcp4@*.service')
       if ((''${#failed[@]} > 0)); then
         printf 'chalkos-dhcp: failed to %s\n' "''${failed[@]}" >&2
         exit 1
