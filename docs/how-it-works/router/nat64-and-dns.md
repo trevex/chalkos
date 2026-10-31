@@ -422,6 +422,14 @@ Unbound side by side, and the questions to each have 5 seconds together.
 
 When a question fails, the status gives its error, and the status's other parts stand.
 
+An image whose variant sets
+[`chalkos.router.nat64.enable`](../../reference/image-options.md#chalkosrouternat64enable) to
+`false` carries no Jool and refuses the kind NAT64. One that sets
+[`chalkos.router.resolver.enable`](../../reference/image-options.md#chalkosrouterresolverenable)
+to `false` carries no Unbound and refuses the kind Resolver. Such an image renders no file of
+that feature, so chalkd asks Jool or Unbound nothing. `chalkctl status` prints no `nat64` or
+`resolver` line, as on a router without NAT64 or Resolver documents.
+
 The diagnostic `nat64-sessions` lists an instance's sessions with `jool session display`, for TCP,
 UDP and ICMP. It declares `networkNamespace = "nat64-{instance}"`, so chalkd runs it with
 `NetworkNamespacePath=/run/netns/nat64-<instance>`, in the instance's namespace. Jool shows the

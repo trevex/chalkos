@@ -286,6 +286,13 @@ neighbour, state, uptime, routes received and sent, and BFD state. It finds a se
 by the name of its peer group. When vtysh fails, the status gives its error, and the status's
 other parts stand.
 
+An image whose variant sets
+[`chalkos.router.bgp.enable`](../../reference/image-options.md#chalkosrouterbgpenable) to `false`
+carries no FRR and refuses the kinds BGP, BGPPeer, PrefixList, CommunityList and RoutingPolicy.
+chalkd finds no `/etc/frr/frr.conf` there and asks vtysh nothing. The status sets `bgp_absent`,
+and `chalkctl status` prints no `bgp` line. A router with FRR and no sessions prints
+`bgp: no sessions` instead. On such an image the `Routes` call lists the kernel's routes alone.
+
 The `Routes` call lists the kernel's routes, which chalkd reads through netlink, and the paths BGP
 selected, from `show bgp ipv4 unicast detail json` and its IPv6 twin. For another VRF it lists that
 VRF's table and asks for `show bgp vrf <name> ipv4 unicast detail json`. A route of several next
