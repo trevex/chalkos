@@ -461,6 +461,7 @@ lib.runTests {
         "Network"
         "NAT64"
         "VRF"
+        "PolicyRoute"
       ];
       render = true;
       plainRender = true;
@@ -490,6 +491,27 @@ lib.runTests {
         type = "pattern";
         default = "default";
       };
+    };
+  };
+  # Router images accept PolicyRoute documents, which both the firewall, which marks the packets
+  # they match, and networkd, which keeps the kernel's rules and the next hops' tables, read;
+  # other images have no such kind.
+  testRouterPolicyRouting = {
+    expr =
+      let
+        edge = layered.edge-metal.config;
+      in
+      {
+        kind = edge.chalkos.kinds ? PolicyRoute;
+        plainKind = layered.plain-metal.config.chalkos.kinds ? PolicyRoute;
+        firewall = lib.elem "PolicyRoute" edge.chalkos.outputs.router-nftables.inputs;
+        networkd = lib.elem "PolicyRoute" edge.chalkos.outputs.networkd.inputs;
+      };
+    expected = {
+      kind = true;
+      plainKind = false;
+      firewall = true;
+      networkd = true;
     };
   };
   # Router images carry Jool's module, loaded at boot, and run chalkos-nat64, which the output jool

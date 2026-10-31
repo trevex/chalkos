@@ -34,7 +34,7 @@ const (
 )
 
 // routerKinds are the kinds of router.chalkos.dev.
-var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF"}
+var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute"}
 
 // routerInput is the input of the router outputs for the config file path, as chalkd builds it:
 // the documents of each router kind with their schema defaults, sorted by name.
@@ -143,13 +143,13 @@ func renderedFiles(t *testing.T, args []string, input string) string {
 
 // Each example of the router outputs renders its golden sysctl file, ruleset, FRR config, Jool
 // instances, Unbound config and networkd units: no documents, a leaf that only routes, a fabric
-// edge, a LAN router and an edge with VRFs.
+// edge, a LAN router, an edge with VRFs and a LAN router with policy routing.
 func TestRouterGolden(t *testing.T) {
 	examples, err := filepath.Glob(filepath.Join(routerExamples, "*.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(examples) != 5 {
+	if len(examples) != 6 {
 		t.Fatalf("examples = %v", examples)
 	}
 	for _, path := range examples {

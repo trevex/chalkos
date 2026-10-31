@@ -1541,8 +1541,8 @@ The outputs router images add, and the output `networkd` of every image as route
 | --- | --- | --- | --- | --- |
 | `frr`{ #output-frr } | `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `Network`, `VRF` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
 | `jool`{ #output-jool } | `NAT64`, `VRF`, `Network` | `/run/chalkos/outputs/jool` | Command `chalkos-render jool` | yes |
-| `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `NAT64`, `VRF` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |
-| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGPPeer`, `Resolver`, `VRF`, `Network`, `NAT64` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
+| `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `NAT64`, `VRF`, `PolicyRoute` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |
+| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGPPeer`, `Resolver`, `VRF`, `Network`, `NAT64`, `PolicyRoute` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
 | `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |
 | `unbound`{ #output-unbound } | `Resolver`, `VRF`, `Network` | `/run/chalkos/outputs/unbound` | Command `chalkos-render unbound root.key ipv4only.arpa.zone` | yes |
 

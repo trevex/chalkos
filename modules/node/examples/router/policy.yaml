@@ -1,0 +1,85 @@
+# A LAN router with two uplinks and a VRF. The main table routes the LAN out of wana0; the VRF
+# transit holds vt0. Guests' HTTPS and every packet of DSCP 46 take transit, a part of the LAN
+# leaves through the router on wanb0 in each family, each next hop by a table of its own, and
+# traffic between the LAN's own addresses stays in the main table. The namespace check
+# router-policy-routing probes this ruleset.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Router
+metadata: {name: router}
+spec:
+  management: {interfaces: [lan0]}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-lan}
+spec:
+  match: {name: lan0}
+  network: {address: [192.0.2.1/25, "2001:db8:1::1/64"], ipv6AcceptRA: false}
+  # The replies of the traffic a policy sends into transit come back in transit, whose table
+  # routes the LAN out of lan0 too.
+  route:
+    - {destination: 192.0.2.0/25, table: 100}
+    - {destination: "2001:db8:1::/64", table: 100}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-wana}
+spec:
+  match: {name: wana0}
+  network:
+    address: [198.51.100.1/25, "2001:db8:a::1/64"]
+    gateway: [198.51.100.2, "2001:db8:a::2"]
+    ipv6AcceptRA: false
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 21-wanb}
+spec:
+  match: {name: wanb0}
+  network: {address: [198.51.100.129/25, "2001:db8:b::1/64"], ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 30-transit}
+spec:
+  match: {name: vt0}
+  network: {address: [203.0.113.1/24, "2001:db8:c::1/64"], ipv6AcceptRA: false}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: VRF
+metadata: {name: transit}
+spec: {table: 100, interfaces: [vt0]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: lan}
+spec: {interfaces: [lan0]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: AddressSet
+metadata: {name: guests}
+spec: {family: ipv4, prefixes: [192.0.2.64/26]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PolicyRoute
+metadata: {name: lan}
+spec:
+  in: {zone: lan}
+  rules:
+    - match: {destination: [192.0.2.0/25, "2001:db8:1::/64"]}
+      to: {table: 254}
+    - match: {source: ["set:guests"], protocol: tcp, destinationPorts: [443]}
+      to: {vrf: transit}
+    - match: {dscp: [46]}
+      to: {vrf: transit}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PolicyRoute
+metadata: {name: servers}
+spec:
+  in: {interfaces: [lan0]}
+  rules:
+    - match: {source: [192.0.2.32/27]}
+      to: {nextHop: {address: 198.51.100.130, interface: wanb0, table: 200}}
+    - match: {source: ["2001:db8:1::20/123"]}
+      to: {nextHop: {address: "2001:db8:b::2", interface: wanb0, table: 201}}
