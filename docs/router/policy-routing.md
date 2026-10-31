@@ -207,7 +207,8 @@ same as the rendered `0xff00ffff`. A rule that counts no packets has matched not
 ## Fix a refused delivery
 
 The rules of the router kinds refuse documents that do not fit together, before chalkctl sends
-anything:
+anything. [The built-ins' reference](../reference/builtins.md#rules-policyroute) lists each
+`PolicyRoute` rule with its expression:
 
 | Message | Fix |
 | --- | --- |
@@ -216,6 +217,11 @@ anything:
 | `PolicyRoute lan: transit is the device of VRF transit; name the VRF's links, or a zone of the VRF` | Name the VRF's links in `interfaces`, or a zone that holds them. |
 | `PolicyRoute servers: the next hop 2001:db8:b::2 takes table 201, which another next hop or a rule's table takes too; give each next hop a table of its own` | Give the next hop a table that no other target uses. |
 | `PolicyRoute "lan" spec.rules: a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: [0.0.0.0/0]` | Add a term to the match. |
+| `PolicyRoute "lan" spec.rules: a rule's source or destination holds set:<name> beside other entries; a set stands alone, so give the other ranges a rule of their own or add them to the set` | Give the other ranges a rule of their own, or add them to the set. |
+| `PolicyRoute "lan" spec.rules: a rule names an AddressSet that the config does not hold` | Add the `AddressSet` document, or fix the name. |
+| `PolicyRoute "lan" spec.rules: a rule has addresses or a set of another family than its own` | Drop the other family's addresses, or change the rule's `family`. |
+| `PolicyRoute "lan" spec.rules: a rule matches no packet: its family, protocol, addresses and sets leave neither IPv4 nor IPv6` | Make the rule's family, protocol, addresses and sets agree on one family. |
+| `PolicyRoute "lan" spec.rules: a rule has ports without the protocol tcp, udp or sctp` | Set `protocol` to `tcp`, `udp` or `sctp`. |
 | `PolicyRoute "lan" spec.rules: a rule's to names a VRF, a table or a next hop, one of them` | Keep one target in `to`. |
 | `PolicyRoute "servers" spec.rules: a rule's next hop is of another family than the packets the rule matches` | Match the next hop's family, or take a next hop of the rule's family. |
 | `PolicyRoute "lan" spec.rules: a rule names a VRF that no VRF document declares` | Add the `VRF` document, or fix the name. |
