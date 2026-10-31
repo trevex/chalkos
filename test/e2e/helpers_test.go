@@ -210,12 +210,18 @@ func vmDir(t *testing.T) string {
 	return dir
 }
 
+// terminalControl matches what a serial console carries besides text: escape sequences of
+// the firmware and of systemd, and carriage returns. Nix's build log shows a line that ends
+// in a carriage return as an empty one.
+var terminalControl = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]|\x1b[]P^_X][^\x1b\x07]*(\x07|\x1b\\)?|\x1b[ -~]|\r`)
+
 func logConsoleTail(t *testing.T, path string, n int) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return
 	}
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	text := terminalControl.ReplaceAllString(string(data), "")
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
 	}
