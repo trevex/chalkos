@@ -263,7 +263,8 @@ in
   # bgp-examples/two-peers.yaml, which bird -p parses. A router image checks its rules, renders its
   # router examples and holds the modules of its firewall and Jool, its firewall check refuses what
   # the kernel would, its FRR check what vtysh would, its Jool check what jool would and its
-  # Unbound check what unbound-checkconf would.
+  # Unbound check what unbound-checkconf would. A router image without BGP, NAT64, the resolver
+  # or DHCP, and one without all four, checks its rules and renders the examples it accepts.
   rules =
     let
       build =
@@ -275,6 +276,18 @@ in
         ../../examples/homelab/extensions/bgp.nix
       ];
       router = checkLib.router.config.system.build;
+      # The rules check of the router image without the router features named.
+      routerWithout =
+        features:
+        (checkLib.router.extendModules {
+          modules = [
+            {
+              chalkos.router = lib.genAttrs features (_: {
+                enable = false;
+              });
+            }
+          ];
+        }).config.system.build.chalkosRulesCheck;
       # The router image loads nf_conntrack, the modules of its firewall and Jool, which its module
       # tree must hold with what they depend on.
       routerModules = lib.findFirst (
@@ -370,6 +383,16 @@ in
           homelab.chalkosRulesCheck
           router.chalkosRulesCheck
           routerModules
+          (routerWithout [ "bgp" ])
+          (routerWithout [ "nat64" ])
+          (routerWithout [ "resolver" ])
+          (routerWithout [ "dhcp" ])
+          (routerWithout [
+            "bgp"
+            "nat64"
+            "resolver"
+            "dhcp"
+          ])
         ];
       }
       ''

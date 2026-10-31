@@ -676,6 +676,96 @@ lib.runTests {
         };
       };
   };
+  # A router image without BGP, NAT64, the resolver and DHCP keeps the router's core: the router
+  # kinds of the firewall, VRFs and policy routing, the outputs and units of the firewall, the
+  # kernel settings and the VRFs, and the diagnostics of every image and traceroute. Its outputs
+  # render the examples of none of the four, and its build allocates the IDs of the same users and
+  # groups as an image with every feature.
+  testRouterWithoutFeatures = {
+    expr =
+      let
+        c = routerWithout [
+          "bgp"
+          "nat64"
+          "resolver"
+          "dhcp"
+        ];
+      in
+      {
+        kinds = lib.attrNames (lib.filterAttrs (_: k: k.group == "router.chalkos.dev") c.chalkos.kinds);
+        outputs = lib.attrNames c.chalkos.outputs;
+        effects = lib.attrNames c.chalkos.effects;
+        units = lib.filter (lib.hasPrefix "chalkos-") (lib.attrNames c.systemd.services);
+        diagnostics = lib.attrNames c.chalkos.diagnostics;
+        examples = examplesOf c;
+        unpinned = unpinned c;
+        same = unpinned c == unpinned layered.edge-metal.config;
+      };
+    expected = {
+      kinds = [
+        "AddressSet"
+        "FirewallPolicy"
+        "FirewallZone"
+        "NATRule"
+        "PolicyRoute"
+        "Router"
+        "VRF"
+      ];
+      outputs = [
+        "chrony"
+        "networkd"
+        "router-nftables"
+        "router-sysctl"
+      ];
+      effects = [
+        "chrony"
+        "chrony-dhcp"
+        "networkd"
+        "router-nftables"
+        "router-sysctl"
+        "vrf"
+      ];
+      units = [
+        "chalkos-chrony-dhcp"
+        "chalkos-chrony-dhcp-links"
+        "chalkos-config"
+        "chalkos-firewall"
+        "chalkos-health"
+        "chalkos-vrf"
+      ];
+      diagnostics = [
+        "addresses"
+        "dns-query"
+        "ip-rules"
+        "links"
+        "neighbours"
+        "nft-ruleset"
+        "ping"
+        "route-get"
+        "routes"
+        "tcp-connect"
+        "traceroute"
+      ];
+      examples = [
+        "none.yaml"
+        "policy.yaml"
+      ];
+      unpinned = {
+        users = [
+          "chalkos-render"
+          "nscd"
+          "systemd-oom"
+        ];
+        groups = [
+          "chalkos-render"
+          "nscd"
+          "systemd-coredump"
+          "systemd-oom"
+        ];
+      };
+      same = true;
+    };
+  };
   # On a router image the router layer owns the firewall: NixOS's firewall and nftables service are
   # off, chalkos-firewall loads the table after chalkos-config renders it and before the network
   # comes up, the outputs router-sysctl and router-nftables render the router kinds, and their
