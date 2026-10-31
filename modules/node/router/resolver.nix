@@ -129,6 +129,12 @@ let
 in
 {
   config = lib.mkIf config.chalkos.router.enable {
+    # The images allocate the IDs of users and groups without one statically, from 999 down, so
+    # Unbound's would move the IDs of those after them whenever an image adds or drops the
+    # resolver. 331 is free in NixOS's ids.nix.
+    users.users.unbound.uid = 331;
+    users.groups.unbound.gid = 331;
+
     services.unbound = {
       enable = true;
       # The rendered config holds the trust anchor of the image's root keys, which updates with

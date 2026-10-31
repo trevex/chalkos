@@ -41,6 +41,12 @@ let
     }).nixos.edge-metal.config;
   # The example files a router image's outputs render at its build.
   examplesOf = c: lib.attrNames (builtins.readDir c.chalkos.router.examples);
+  # The users and groups of an image whose IDs its build allocates from 999 down, in the order of
+  # their names: those without a pinned ID.
+  unpinned = c: {
+    users = lib.attrNames (lib.filterAttrs (_: u: u.enable && u.uid == null) c.users.users);
+    groups = lib.attrNames (lib.filterAttrs (_: g: g.gid == null) c.users.groups);
+  };
 in
 lib.runTests {
   # mkImages builds each variant on each platform, metal and kvm unless the arguments name
@@ -321,6 +327,46 @@ lib.runTests {
         "policy.yaml"
         "vrf.yaml"
       ];
+    };
+  };
+  # The users and groups of the router's features have pinned IDs, free in NixOS's ids.nix, so an
+  # image that adds or drops a feature moves no other user's or group's ID; the build allocates
+  # IDs to the router image's other users and groups alone.
+  testRouterUserIDs = {
+    expr =
+      let
+        c = layered.edge-metal.config;
+      in
+      {
+        users = lib.genAttrs [ "frr" "kea" "unbound" ] (n: c.users.users.${n}.uid);
+        groups = lib.genAttrs [ "frr" "frrvty" "kea" "unbound" ] (n: c.users.groups.${n}.gid);
+        unpinned = unpinned c;
+      };
+    expected = {
+      users = {
+        frr = 329;
+        kea = 328;
+        unbound = 331;
+      };
+      groups = {
+        frr = 329;
+        frrvty = 330;
+        kea = 328;
+        unbound = 331;
+      };
+      unpinned = {
+        users = [
+          "chalkos-render"
+          "nscd"
+          "systemd-oom"
+        ];
+        groups = [
+          "chalkos-render"
+          "nscd"
+          "systemd-coredump"
+          "systemd-oom"
+        ];
+      };
     };
   };
   # On a router image the router layer owns the firewall: NixOS's firewall and nftables service are

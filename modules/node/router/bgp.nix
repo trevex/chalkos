@@ -64,6 +64,13 @@ let
 in
 {
   config = lib.mkIf config.chalkos.router.enable {
+    # The images allocate the IDs of users and groups without one statically, from 999 down, so
+    # FRR's would move the IDs of those after them whenever an image adds or drops BGP. 329 and
+    # 330 are free in NixOS's ids.nix, as kea's 328 is.
+    users.users.frr.uid = 329;
+    users.groups.frr.gid = 329;
+    users.groups.frrvty.gid = 330;
+
     services.frr = {
       bgpd.enable = true;
       bfdd.enable = true;
