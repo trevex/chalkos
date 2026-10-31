@@ -35,3 +35,30 @@ spec:
   password: {secretRef: {name: bgp, key: fabric}}
   families:
     ipv6: {defaultOriginate: true}
+---
+# r1's policy routing: edge0's DNS to r2's edge0 takes fabric, and edge0's packets of DSCP 46 a
+# next hop on the dummy policy0, of table 300. Nothing arrives on edge0; the phase checks the
+# rules, the next hop's table and the firewall's chain that the delivery and a boot leave.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-policy0}
+spec:
+  netDev: {kind: dummy, name: policy0}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-policy0}
+spec:
+  match: {name: policy0}
+  network: {address: ["2001:db8:fffe::1/64"], ipv6AcceptRA: false}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PolicyRoute
+metadata: {name: edge}
+spec:
+  in: {interfaces: [edge0]}
+  rules:
+    - match: {destination: ["2001:db8:ffff::2/128"], protocol: udp, destinationPorts: [53]}
+      to: {vrf: fabric}
+    - match: {family: ipv6, dscp: [46]}
+      to: {nextHop: {address: "2001:db8:fffe::2", interface: policy0, table: 300}}

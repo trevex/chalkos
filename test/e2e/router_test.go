@@ -69,11 +69,15 @@ const bgpPassword = "lab-s3cret"
 //     in the main table, with the path imported from fabric, and table 100 ends in unreachable
 //     default routes of both families; r2's resolver of fabric runs and answers a query from
 //     within fabric, chalkctl shows the VRF in the status and with --vrf, bgp-summary vrf=fabric
-//     lists the session, and no unit failed. r2's fabric then moves to table 200, which removes
-//     the VRF and creates it anew: the session comes back in fabric, r2's routes, edge0's address
-//     and the unreachable defaults sit in table 200, none of the defaults stays in table 100, r1
-//     learns edge0 again and r2's resolver of fabric runs and answers again. The base inventory
-//     then brings the sessions and edge0 back to the default VRF.
+//     lists the session, and no unit failed. r1's PolicyRoute edge leaves a rule of priority 900
+//     per target table, table 300 with the default route through its next hop and an
+//     unreachable default, and the firewall's chain policy-routing, and so does a boot of r1,
+//     after which the session comes back in fabric and no unit failed. r2's fabric then moves to
+//     table 200, which removes the VRF and creates it anew: the session comes back in fabric,
+//     r2's routes, edge0's address and the unreachable defaults sit in table 200, none of the
+//     defaults stays in table 100, r1 learns edge0 again and r2's resolver of fabric runs and
+//     answers again. The base inventory then brings the sessions and edge0 back to the default
+//     VRF, and removes r1's policy rules and chain.
 //   - default: a delivery has r1 send r2 its default route only while r1 routes 2001:db8:fff0::/48,
 //     a networkd route on its dummy uplink0. Delivered without the route, it makes r2 lose the
 //     unconditional default of the base config at once and get none back for 15 s. Delivered with
@@ -82,9 +86,9 @@ const bgpPassword = "lab-s3cret"
 //     brings the unconditional default back.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
-// the node CA, about 10 s for the rollbacks, 45 s for the trials, a minute for the VRF and half a
-// minute for the default route, about 6.5 minutes with the copies of the images. chalklab destroy
-// removes the lab when the test ends.
+// the node CA, about 10 s for the rollbacks, 45 s for the trials, two minutes for the VRF with
+// r1's boot and half a minute for the default route, about 7.5 minutes with the copies of the
+// images. chalklab destroy removes the lab when the test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -609,6 +613,52 @@ func TestRouterLab(t *testing.T) {
 		}
 		rootsConfig(t)
 
+		// policyHeld is nil once r1 holds what its PolicyRoute edge renders: networkd's rule per
+		// target table, fabric's 100 and the next hop's 300, the next hop's table, and the
+		// firewall's chain.
+		policyHeld := func() error {
+			diag := func(args ...string) (string, error) {
+				return chalkctl(t, nodes["r1"], "vrf", append([]string{"node", "diag", "r1"}, args...)...)
+			}
+			out, err := diag("ip-rules", "family=inet6")
+			if err != nil {
+				return fmt.Errorf("ip-rules of r1: %w\n%s", err, out)
+			}
+			for _, want := range []string{
+				`{"priority":900,"src":"all","fwmark":"0x10000","fwmask":"0xff0000","table":"100","protocol":"static"}`,
+				`{"priority":900,"src":"all","fwmark":"0x20000","fwmask":"0xff0000","table":"300","protocol":"static"}`,
+			} {
+				if !strings.Contains(out, want) {
+					return fmt.Errorf("ip-rules of r1 lacks %s:\n%s", want, out)
+				}
+			}
+			out, err = diag("routes", "family=inet6", "table=300")
+			if err != nil {
+				return fmt.Errorf("routes of r1's table 300: %w\n%s", err, out)
+			}
+			for _, want := range []string{`"dst":"default","gateway":"2001:db8:fffe::2","dev":"policy0"`, `"type":"unreachable","dst":"default"`} {
+				if !strings.Contains(out, want) {
+					return fmt.Errorf("r1's table 300 lacks %s:\n%s", want, out)
+				}
+			}
+			out, err = diag("nft-ruleset")
+			if err != nil || !strings.Contains(out, "chain policy-routing {") {
+				return fmt.Errorf("r1's ruleset holds no chain policy-routing: %v\n%s", err, out)
+			}
+			return nil
+		}
+		waitFor(t, time.Minute, "r1's policy routing", policyHeld)
+		// A boot of r1 brings them back, with the session in fabric and no failed unit.
+		start = time.Now()
+		if out, err := chalkctl(t, nodes["r1"], "vrf", "reboot", "r1"); err != nil {
+			t.Fatalf("reboot of r1: %v\n%s", err, out)
+		}
+		waitFor(t, 5*time.Minute, "r1's session with r2 in fabric after its boot", func() error { return inFabric("r1", "fabric", start) })
+		waitFor(t, time.Minute, "r1's policy routing after its boot", policyHeld)
+		if out, err := chalkctl(t, nodes["r1"], "vrf", "status", "r1"); err != nil || failedUnit(t, "r1", "vrf", out) {
+			t.Errorf("status of r1 after its boot shows a failed unit: %v\n%s", err, out)
+		}
+
 		// networkd changes no running VRF's table, so chalkos-vrf removes r2's fabric, which
 		// releases enp0s3 and edge0, and reloads networkd, which creates fabric in table 200 and
 		// puts them back. The session restarts in fabric, and edge0's static address comes back.
@@ -658,6 +708,17 @@ func TestRouterLab(t *testing.T) {
 		waitFor(t, 2*time.Minute, "r2's session with r1 in the default VRF", func() error { return established("r2", "edge") })
 		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in the default VRF", func() error { return learnedFrom("r1", "", "2001:db8:ffff::2/128", "64513") })
 		waitFor(t, 2*time.Minute, "r2's default route from r1 in the default VRF", func() error { return learned("::/0") })
+		waitFor(t, time.Minute, "r1's policy routing to go", func() error {
+			out, err := chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "ip-rules", "family=inet6")
+			if err != nil || strings.Contains(out, `"priority":900`) {
+				return fmt.Errorf("ip-rules of r1 after the base config: %v\n%s", err, out)
+			}
+			out, err = chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "nft-ruleset")
+			if err != nil || strings.Contains(out, "policy-routing") {
+				return fmt.Errorf("r1's ruleset after the base config: %v\n%s", err, out)
+			}
+			return nil
+		})
 		for _, name := range []string{"r1", "r2"} {
 			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || failedUnit(t, name, "base", out) {
 				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
