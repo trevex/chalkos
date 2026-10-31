@@ -93,8 +93,8 @@ in
         "NATRule"
       ]
       ++ lib.optional config.chalkos.router.bgp.enable "BGPPeer"
+      ++ lib.optional config.chalkos.router.resolver.enable "Resolver"
       ++ [
-        "Resolver"
         # The links of each VRF, which the zones and conntrack zones match.
         "VRF"
         "Network"

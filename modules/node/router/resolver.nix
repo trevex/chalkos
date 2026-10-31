@@ -1,9 +1,9 @@
-# The router's DNS resolvers: Unbound, whose whole config the output unbound renders from each
-# Resolver document, unbound.conf for the default VRF's and unbound-<vrf>.conf for a VRF's. The
-# default VRF's runs as unbound.service, each VRF's as unbound@<vrf>.service, whose sockets systemd
-# binds to the VRF's device. A node without a Resolver runs no Unbound; a delivery that adds or
-# removes a resolver starts or stops it, and one that changes it reloads Unbound and keeps its
-# cache.
+# The router's DNS resolvers, on images whose chalkos.router.resolver.enable is true: Unbound,
+# whose whole config the output unbound renders from each Resolver document, unbound.conf for the
+# default VRF's and unbound-<vrf>.conf for a VRF's. The default VRF's runs as unbound.service, each
+# VRF's as unbound@<vrf>.service, whose sockets systemd binds to the VRF's device. A node without
+# a Resolver runs no Unbound; a delivery that adds or removes a resolver starts or stops it, and
+# one that changes it reloads Unbound and keeps its cache.
 {
   chalkosPackages,
   config,
@@ -128,7 +128,7 @@ let
   '';
 in
 {
-  config = lib.mkIf config.chalkos.router.enable {
+  config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.resolver.enable) {
     # The images allocate the IDs of users and groups without one statically, from 999 down, so
     # Unbound's would move the IDs of those after them whenever an image adds or drops the
     # resolver. 331 is free in NixOS's ids.nix.

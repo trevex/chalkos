@@ -306,154 +306,157 @@ in
         }
       );
 
-      Resolver = builtin groups.router // {
-        multiple = true;
-        description = "A DNS resolver of the router in one VRF, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.";
-        rules = [
-          {
-            description = "One Resolver serves a VRF.";
-            rule = "cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), v.all(x, size(v.filter(y, y == x)) == 1))";
-            messageExpression = ''cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), "more than one Resolver serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one resolver")'';
-          }
-          (vrfDeclared "Resolver")
-          {
-            description = "A Resolver listens on an address of a family its clients' ranges are of.";
-            rule = ''documents.all(n, cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))'';
-            messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, !["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, "Resolver " + n).join(", ") + " listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"'';
-          }
-          {
-            description = "With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64.";
-            rule = "documents.all(n, cel.bind(s, documents[n].spec, s.dns64 == null || !s.localZones.exists(z, ${overIPv4Only "z.name"})))";
-            messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, s.dns64 != null && s.localZones.exists(z, ${overIPv4Only "z.name"}))).map(n, "Resolver " + n).join(", ") + " has a local zone over ipv4only.arpa, which Unbound would answer before DNS64; drop the zone or DNS64"'';
-          }
-        ];
-        spec = {
-          vrf = mkOption {
-            type = types.nullOr vrfName;
-            default = null;
-            example = "tenant";
-            description = "VRF document on whose links the resolver answers and through whose links it sends its queries; null for the default VRF.";
-          };
-          listen = lib.chalkos.mkOption {
-            type = types.nonEmptyListOf address;
-            example = [ "2001:db8:ffff::1" ];
-            description = "Addresses of the router in the resolver's VRF on which it answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`.";
-            rules = [
-              {
-                description = "The resolver listens on unicast addresses.";
-                rule = "self.all(a, ${unicast "a"})";
-                messageExpression = ''"the address " + self.filter(a, !${unicast "a"})[0] + " is no unicast address the resolver can listen on"'';
-              }
-              (once "ip" "address")
-            ];
-          };
-          allow = lib.chalkos.mkOption {
-            type = types.nonEmptyListOf prefix;
-            example = [ "2001:db8::/32" ];
-            description = "Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone. A family's whole range, `0.0.0.0/0` or `::/0`, answers whoever reaches the addresses of `listen`: an open resolver, if one of them faces the internet.";
-            rules = [
-              {
-                description = "The resolver's clients are address ranges.";
-                rule = "self.all(p, cidr(p).prefix() >= 0)";
-                message = "a client is no address range";
-              }
-              (once "cidr" "range")
-            ];
-          };
-          forwarders = lib.chalkos.mkOption {
-            type = types.listOf address;
-            default = [ ];
-            example = [ "2001:db8::53" ];
-            description = "Resolvers the router sends its queries to; empty resolves names itself, from the root servers.";
-            rules = [
-              {
-                description = "The resolver forwards to unicast addresses.";
-                rule = "self.all(a, ${unicast "a"})";
-                messageExpression = ''"the forwarder " + self.filter(a, !${unicast "a"})[0] + " is no unicast address"'';
-              }
-              (once "ip" "forwarder")
-            ];
-          };
-          dnssec = mkOption {
-            type = types.bool;
-            default = true;
-            description = "Whether the resolver validates DNSSEC with the root's trust anchor of the image. The forwarders then pass DNSSEC records on.";
-          };
-          dns64 = lib.chalkos.mkOption {
-            type = types.nullOr (
-              types.submodule {
-                options.prefix = mkOption {
-                  type = prefix;
-                  default = "64:ff9b::/96";
-                  description = "NAT64 prefix the resolver synthesises AAAA records in, from the A records of names that have no AAAA record.";
-                };
-              }
-            );
-            default = null;
-            example = {
-              prefix = "64:ff9b::/96";
+      Resolver = lib.mkIf config.chalkos.router.resolver.enable (
+        builtin groups.router
+        // {
+          multiple = true;
+          description = "A DNS resolver of the router in one VRF, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.";
+          rules = [
+            {
+              description = "One Resolver serves a VRF.";
+              rule = "cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), v.all(x, size(v.filter(y, y == x)) == 1))";
+              messageExpression = ''cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), "more than one Resolver serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one resolver")'';
+            }
+            (vrfDeclared "Resolver")
+            {
+              description = "A Resolver listens on an address of a family its clients' ranges are of.";
+              rule = ''documents.all(n, cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))'';
+              messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, !["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, "Resolver " + n).join(", ") + " listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"'';
+            }
+            {
+              description = "With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64.";
+              rule = "documents.all(n, cel.bind(s, documents[n].spec, s.dns64 == null || !s.localZones.exists(z, ${overIPv4Only "z.name"})))";
+              messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, s.dns64 != null && s.localZones.exists(z, ${overIPv4Only "z.name"}))).map(n, "Resolver " + n).join(", ") + " has a local zone over ipv4only.arpa, which Unbound would answer before DNS64; drop the zone or DNS64"'';
+            }
+          ];
+          spec = {
+            vrf = mkOption {
+              type = types.nullOr vrfName;
+              default = null;
+              example = "tenant";
+              description = "VRF document on whose links the resolver answers and through whose links it sends its queries; null for the default VRF.";
             };
-            description = "DNS64: AAAA records the resolver synthesises for IPv4-only names, and its answer for `ipv4only.arpa`; null synthesises none.";
-            rules = [
-              (
-                let
-                  r = nat64Prefix "self.prefix";
-                in
-                r // { rule = "self == null || (${r.rule})"; }
-              )
-            ];
+            listen = lib.chalkos.mkOption {
+              type = types.nonEmptyListOf address;
+              example = [ "2001:db8:ffff::1" ];
+              description = "Addresses of the router in the resolver's VRF on which it answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`.";
+              rules = [
+                {
+                  description = "The resolver listens on unicast addresses.";
+                  rule = "self.all(a, ${unicast "a"})";
+                  messageExpression = ''"the address " + self.filter(a, !${unicast "a"})[0] + " is no unicast address the resolver can listen on"'';
+                }
+                (once "ip" "address")
+              ];
+            };
+            allow = lib.chalkos.mkOption {
+              type = types.nonEmptyListOf prefix;
+              example = [ "2001:db8::/32" ];
+              description = "Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone. A family's whole range, `0.0.0.0/0` or `::/0`, answers whoever reaches the addresses of `listen`: an open resolver, if one of them faces the internet.";
+              rules = [
+                {
+                  description = "The resolver's clients are address ranges.";
+                  rule = "self.all(p, cidr(p).prefix() >= 0)";
+                  message = "a client is no address range";
+                }
+                (once "cidr" "range")
+              ];
+            };
+            forwarders = lib.chalkos.mkOption {
+              type = types.listOf address;
+              default = [ ];
+              example = [ "2001:db8::53" ];
+              description = "Resolvers the router sends its queries to; empty resolves names itself, from the root servers.";
+              rules = [
+                {
+                  description = "The resolver forwards to unicast addresses.";
+                  rule = "self.all(a, ${unicast "a"})";
+                  messageExpression = ''"the forwarder " + self.filter(a, !${unicast "a"})[0] + " is no unicast address"'';
+                }
+                (once "ip" "forwarder")
+              ];
+            };
+            dnssec = mkOption {
+              type = types.bool;
+              default = true;
+              description = "Whether the resolver validates DNSSEC with the root's trust anchor of the image. The forwarders then pass DNSSEC records on.";
+            };
+            dns64 = lib.chalkos.mkOption {
+              type = types.nullOr (
+                types.submodule {
+                  options.prefix = mkOption {
+                    type = prefix;
+                    default = "64:ff9b::/96";
+                    description = "NAT64 prefix the resolver synthesises AAAA records in, from the A records of names that have no AAAA record.";
+                  };
+                }
+              );
+              default = null;
+              example = {
+                prefix = "64:ff9b::/96";
+              };
+              description = "DNS64: AAAA records the resolver synthesises for IPv4-only names, and its answer for `ipv4only.arpa`; null synthesises none.";
+              rules = [
+                (
+                  let
+                    r = nat64Prefix "self.prefix";
+                  in
+                  r // { rule = "self == null || (${r.rule})"; }
+                )
+              ];
+            };
+            localZones = lib.chalkos.mkOption {
+              type = types.listOf localZone;
+              default = [ ];
+              description = "Zones the resolver answers from its own records, ${toString maxRecords} records in all at most. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers.";
+              rules = [
+                {
+                  description = "A local zone appears once.";
+                  rule = "self.all(z, size(self.filter(y, y.name == z.name)) == 1)";
+                  messageExpression = ''"the local zone " + self.filter(z, size(self.filter(y, y.name == z.name)) > 1)[0].name + " appears more than once"'';
+                }
+                {
+                  description = "A local zone's records are of the zone's name or names below it.";
+                  rule = ''self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))'';
+                  messageExpression = ''cel.bind(z, self.filter(z, !z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))[0], "the local zone " + z.name + " holds a record of " + z.records.filter(r, !(r.name == z.name || r.name.endsWith("." + z.name)))[0].name + ", which is outside it")'';
+                }
+                {
+                  description = "The names of local zones and their records hold 253 characters at most.";
+                  rule = "self.all(z, size(z.name) <= 253) && ${records}.all(r, size(r.name) <= 253)";
+                  messageExpression = ''"the name " + (self.map(z, z.name) + ${records}.map(r, r.name)).filter(n, size(n) > 253)[0] + " holds more than 253 characters"'';
+                }
+                {
+                  description = "An A or AAAA record holds an address of its family.";
+                  rule = "${records}.all(r, ${recordAddress "r"})";
+                  messageExpression = ''cel.bind(r, ${records}.filter(r, !${recordAddress "r"})[0], "the " + r.type + " record of " + r.name + " holds " + r.value + ", which is no " + (r.type == "A" ? "IPv4" : "IPv6") + " address")'';
+                }
+                {
+                  description = "The local zones hold ${toString maxRecords} records at most, which the rules can compare in pairs.";
+                  rule = "size(${records}) <= ${toString maxRecords}";
+                  messageExpression = ''"the local zones hold " + string(size(${records})) + " records, more than the ${toString maxRecords} whose duplicates chalkd can check"'';
+                }
+                {
+                  description = "A record appears once, as Unbound keeps one of its copies.";
+                  rule = "cel.bind(e, ${records}, size(e) > ${toString maxRecords} || e.all(x, size(e.filter(y, ${sameRecord "x" "y"})) == 1))";
+                  # Naming the record compares every pair; past fewOfMessage records the message
+                  # says what is wrong alone.
+                  messageExpression = ''cel.bind(e, ${records}, size(e) > ${toString fewOfMessage} ? "a record appears more than once in the local zones, with one name, type and value; Unbound keeps one" : cel.bind(r, e.filter(x, size(e.filter(y, ${sameRecord "x" "y"})) > 1)[0], "the record " + r.name + " " + r.type + " " + (r.type == "AAAA" ? string(ip(r.value)) : r.value) + " appears more than once; Unbound keeps one"))'';
+                }
+                {
+                  description = "A redirect zone's records are of the zone's name, which Unbound answers for every name below it.";
+                  rule = ''self.all(z, z.type != "redirect" || z.records.all(r, r.name == z.name))'';
+                  messageExpression = ''cel.bind(z, self.filter(z, z.type == "redirect" && !z.records.all(r, r.name == z.name))[0], "the redirect zone " + z.name + " holds a record of " + z.records.filter(r, r.name != z.name)[0].name + "; a redirect zone's records are of its own name, which Unbound answers for every name below it")'';
+                }
+                {
+                  description = "A CNAME record's name holds no other record.";
+                  rule = ''cel.bind(e, ${records}, size(e) > ${toString maxRecords} || e.all(x, x.type != "CNAME" || size(e.filter(y, y.name == x.name)) == 1))'';
+                  messageExpression = ''cel.bind(e, ${records}, e.filter(x, x.type == "CNAME" && size(e.filter(y, y.name == x.name)) > 1)[0].name + " holds a CNAME record and another record; a CNAME's name holds it alone")'';
+                }
+              ];
+            };
           };
-          localZones = lib.chalkos.mkOption {
-            type = types.listOf localZone;
-            default = [ ];
-            description = "Zones the resolver answers from its own records, ${toString maxRecords} records in all at most. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers.";
-            rules = [
-              {
-                description = "A local zone appears once.";
-                rule = "self.all(z, size(self.filter(y, y.name == z.name)) == 1)";
-                messageExpression = ''"the local zone " + self.filter(z, size(self.filter(y, y.name == z.name)) > 1)[0].name + " appears more than once"'';
-              }
-              {
-                description = "A local zone's records are of the zone's name or names below it.";
-                rule = ''self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))'';
-                messageExpression = ''cel.bind(z, self.filter(z, !z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))[0], "the local zone " + z.name + " holds a record of " + z.records.filter(r, !(r.name == z.name || r.name.endsWith("." + z.name)))[0].name + ", which is outside it")'';
-              }
-              {
-                description = "The names of local zones and their records hold 253 characters at most.";
-                rule = "self.all(z, size(z.name) <= 253) && ${records}.all(r, size(r.name) <= 253)";
-                messageExpression = ''"the name " + (self.map(z, z.name) + ${records}.map(r, r.name)).filter(n, size(n) > 253)[0] + " holds more than 253 characters"'';
-              }
-              {
-                description = "An A or AAAA record holds an address of its family.";
-                rule = "${records}.all(r, ${recordAddress "r"})";
-                messageExpression = ''cel.bind(r, ${records}.filter(r, !${recordAddress "r"})[0], "the " + r.type + " record of " + r.name + " holds " + r.value + ", which is no " + (r.type == "A" ? "IPv4" : "IPv6") + " address")'';
-              }
-              {
-                description = "The local zones hold ${toString maxRecords} records at most, which the rules can compare in pairs.";
-                rule = "size(${records}) <= ${toString maxRecords}";
-                messageExpression = ''"the local zones hold " + string(size(${records})) + " records, more than the ${toString maxRecords} whose duplicates chalkd can check"'';
-              }
-              {
-                description = "A record appears once, as Unbound keeps one of its copies.";
-                rule = "cel.bind(e, ${records}, size(e) > ${toString maxRecords} || e.all(x, size(e.filter(y, ${sameRecord "x" "y"})) == 1))";
-                # Naming the record compares every pair; past fewOfMessage records the message
-                # says what is wrong alone.
-                messageExpression = ''cel.bind(e, ${records}, size(e) > ${toString fewOfMessage} ? "a record appears more than once in the local zones, with one name, type and value; Unbound keeps one" : cel.bind(r, e.filter(x, size(e.filter(y, ${sameRecord "x" "y"})) > 1)[0], "the record " + r.name + " " + r.type + " " + (r.type == "AAAA" ? string(ip(r.value)) : r.value) + " appears more than once; Unbound keeps one"))'';
-              }
-              {
-                description = "A redirect zone's records are of the zone's name, which Unbound answers for every name below it.";
-                rule = ''self.all(z, z.type != "redirect" || z.records.all(r, r.name == z.name))'';
-                messageExpression = ''cel.bind(z, self.filter(z, z.type == "redirect" && !z.records.all(r, r.name == z.name))[0], "the redirect zone " + z.name + " holds a record of " + z.records.filter(r, r.name != z.name)[0].name + "; a redirect zone's records are of its own name, which Unbound answers for every name below it")'';
-              }
-              {
-                description = "A CNAME record's name holds no other record.";
-                rule = ''cel.bind(e, ${records}, size(e) > ${toString maxRecords} || e.all(x, x.type != "CNAME" || size(e.filter(y, y.name == x.name)) == 1))'';
-                messageExpression = ''cel.bind(e, ${records}, e.filter(x, x.type == "CNAME" && size(e.filter(y, y.name == x.name)) > 1)[0].name + " holds a CNAME record and another record; a CNAME's name holds it alone")'';
-              }
-            ];
-          };
-        };
-      };
+        }
+      );
     };
   };
 }

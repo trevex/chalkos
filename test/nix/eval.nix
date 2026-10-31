@@ -577,6 +577,105 @@ lib.runTests {
         };
       };
   };
+  # Router images run Unbound and take Resolver documents unless their modules set
+  # chalkos.router.resolver.enable to false, whose images carry no Unbound: no kind Resolver,
+  # output unbound, effects unbound, unbound-start and resolvers, units unbound, unbound@ and
+  # chalkos-resolvers, Unbound's user, group, package or config and no unbound-control on
+  # chalkd's PATH; their firewall reads no Resolver, and their outputs render no example with a
+  # Resolver at the build. The build allocates the same IDs.
+  testRouterResolverOptional = {
+    expr =
+      let
+        of = c: {
+          kind = c.chalkos.kinds ? Resolver;
+          output = c.chalkos.outputs ? unbound;
+          effects = lib.filter (e: c.chalkos.effects ? ${e}) [
+            "resolvers"
+            "unbound"
+            "unbound-start"
+          ];
+          units = lib.filter (u: c.systemd.services ? ${u}) [
+            "chalkos-resolvers"
+            "unbound"
+            "unbound@"
+          ];
+          users = lib.filter (n: c.users.users ? ${n}) [ "unbound" ];
+          groups = lib.filter (n: c.users.groups ? ${n}) [ "unbound" ];
+          package = lib.any (p: lib.getName p == "unbound") c.environment.systemPackages;
+          chalkd = lib.any (p: lib.getName p == "unbound") c.systemd.services.chalkd.path;
+          config = c.environment.etc ? "unbound/unbound.conf";
+          firewallReads = lib.elem "Resolver" c.chalkos.outputs.router-nftables.inputs;
+          examples = lib.filter (lib.flip lib.elem [
+            "edge.yaml"
+            "lan.yaml"
+            "vrf.yaml"
+          ]) (examplesOf c);
+          unpinned = unpinned c;
+        };
+      in
+      {
+        edge = of layered.edge-metal.config;
+        without = of (routerWithout [ "resolver" ]);
+      };
+    expected =
+      let
+        unpinned = {
+          users = [
+            "chalkos-render"
+            "nscd"
+            "systemd-oom"
+          ];
+          groups = [
+            "chalkos-render"
+            "nscd"
+            "systemd-coredump"
+            "systemd-oom"
+          ];
+        };
+      in
+      {
+        edge = {
+          kind = true;
+          output = true;
+          effects = [
+            "resolvers"
+            "unbound"
+            "unbound-start"
+          ];
+          units = [
+            "chalkos-resolvers"
+            "unbound"
+            "unbound@"
+          ];
+          users = [ "unbound" ];
+          groups = [ "unbound" ];
+          package = true;
+          chalkd = true;
+          config = true;
+          firewallReads = true;
+          examples = [
+            "edge.yaml"
+            "lan.yaml"
+            "vrf.yaml"
+          ];
+          inherit unpinned;
+        };
+        without = {
+          kind = false;
+          output = false;
+          effects = [ ];
+          units = [ ];
+          users = [ ];
+          groups = [ ];
+          package = false;
+          chalkd = false;
+          config = false;
+          firewallReads = false;
+          examples = [ ];
+          inherit unpinned;
+        };
+      };
+  };
   # On a router image the router layer owns the firewall: NixOS's firewall and nftables service are
   # off, chalkos-firewall loads the table after chalkos-config renders it and before the network
   # comes up, the outputs router-sysctl and router-nftables render the router kinds, and their

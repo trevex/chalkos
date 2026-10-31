@@ -173,6 +173,14 @@ Whether router images carry Jool, the kernel module and tool of the NAT64 instan
 accept the kind NAT64; only with the router layer. Set it false in a variant's modules to
 leave Jool out of its images.
 
+### `chalkos.router.resolver.enable` { #chalkosrouterresolverenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
+
+Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the
+kind Resolver; only with the router layer. Set it false in a variant's modules to leave
+Unbound out of its images.
+
 ### `chalkos.forwarding.enable` { #chalkosforwardingenable }
 
 Type: boolean · Default: `false` · Declared in: [modules/node/network.nix](https://github.com/trevex/chalkos/blob/main/modules/node/network.nix)

@@ -47,6 +47,16 @@
     '';
   };
 
+  options.chalkos.router.resolver.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the
+      kind Resolver; only with the router layer. Set it false in a variant's modules to leave
+      Unbound out of its images.
+    '';
+  };
+
   options.chalkos.router.dhcp.enable = lib.mkOption {
     type = lib.types.bool;
     default = true;
