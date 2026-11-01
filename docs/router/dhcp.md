@@ -1,3 +1,4 @@
+| `the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer` | Delegate from smaller ranges or delegate shorter prefixes, so that all subnets together delegate 65 536 prefixes at most. |
 ---
 title: "Lease addresses with DHCP"
 description: "Serve IPv4 and IPv6 addresses on a router's links with Kea, delegate IPv6 prefixes to other routers and relay DHCP to servers elsewhere: pools, reservations, options, PXE boot files and a server per VRF"
@@ -449,6 +450,8 @@ fails the delivery, and `chalkctl logs r1` shows the reason on a line that start
 - Kea tells the router of a release without waiting for it to record the lease before. A release
   right after its lease can leave the prefix routed until the lease would have ended, the
   subnet's `leaseTime` at most.
+- The router routes 65 536 delegated prefixes at most, of all its subnets together. The renderer
+  refuses subnets that delegate more, such as two ranges of /40 that delegate /56s.
 - The servers update no DNS records for their clients.
 
 ## What next

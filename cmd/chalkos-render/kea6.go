@@ -396,3 +396,29 @@ func kea6Subnet(s servedSubnet) map[string]any {
 	}
 	return subnet
 }
+
+// maxDelegated is the number of delegated prefixes chalkd routes at most, pkg/router's
+// MaxPDRecords: one record each, of all servers.
+const maxDelegated = 65536
+
+// delegableWithin refuses subnets that delegate more prefixes altogether than chalkd routes.
+func delegableWithin(byServer map[keaServer][]servedSubnet) error {
+	total := 0
+	for _, subnets := range byServer {
+		for _, s := range subnets {
+			if !s.delegated.IsValid() {
+				continue
+			}
+			bits := s.length - s.delegated.Bits()
+			if bits > 16 {
+				total = maxDelegated + 1
+				break
+			}
+			total += 1 << bits
+		}
+	}
+	if total > maxDelegated {
+		return fmt.Errorf("the DHCPSubnet documents delegate more than %d prefixes, the most the router routes; delegate fewer", maxDelegated)
+	}
+	return nil
+}

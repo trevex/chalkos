@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -277,4 +278,21 @@ func TestKea6DelegatesNoConfiguredRoute(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The router routes 65536 delegated prefixes at most, so the subnets of all VRFs delegate no
+// more altogether.
+func TestKea6DelegatesAtMost65536(t *testing.T) {
+	cpe := func(name, link, subnet, prefix string, length int) any {
+		return subnetDoc(t, name, `{"interfaces": ["`+link+`"], "subnet": "`+subnet+`", "prefixDelegation": {"prefix": "`+prefix+`", "length": `+strconv.Itoa(length)+`}}`)
+	}
+	if _, err := unitFiles(t, []string{"kea", testPDHook}, kea6Docs(t, cpe("cpe", "lan1", "2001:db8:2::/64", "2001:db8:100::/40", 56))); err != nil {
+		t.Fatalf("65536 prefixes: %v", err)
+	}
+	refused(t, []string{"kea", testPDHook}, kea6Docs(t,
+		cpe("cpe", "lan1", "2001:db8:2::/64", "2001:db8:100::/40", 56),
+		cpe("guests6", "vlan30", "2001:db8:1::/64", "2001:db8:200::/48", 56),
+	), "the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer")
+	refused(t, []string{"kea", testPDHook}, kea6Docs(t, cpe("cpe", "lan1", "2001:db8:2::/64", "2001:db9::/32", 128)),
+		"the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer")
 }

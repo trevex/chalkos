@@ -193,9 +193,12 @@ maintenance mode, a run changes nothing.
 
 chalkd removes no record and trusts none, as `kea` writes them. It opens the directory and each
 record without following links and refuses a directory that every user may write. It reads
-regular files alone, without waiting for a writer, 128 bytes of each and 4096 records at most;
-beyond those it removes no route. The records live on `/var`, so a boot routes the prefixes again
-before their routers renew them. A server facing the LAN never changes routes itself: chalkd
+regular files alone, without waiting for a writer, and 128 bytes of each. It routes 65 536 records
+that have not ended at most and, beyond those, removes no route. The renderer keeps the subnets
+within that limit: it refuses subnets that delegate more than 65 536 prefixes altogether, in all
+VRFs. A record that ended counts toward no limit, but stays in the directory, as chalkd removes
+none; the hook leaves one behind only when it misses an expiry. The records live on `/var`, so a
+boot routes the prefixes again before their routers renew them. A server facing the LAN never changes routes itself: chalkd
 checks each record against the configs before it routes it.
 
 A route of a delegated prefix replaces a route of the same prefix and shadows longer ones in the

@@ -141,6 +141,9 @@ func renderKea(pdHook string, in map[string]any, out string) error {
 		}
 		byServer[sub.server()] = append(byServer[sub.server()], sub)
 	}
+	if err := delegableWithin(byServer); err != nil {
+		return err
+	}
 	servers := slices.Collect(maps.Keys(byServer))
 	slices.SortFunc(servers, func(a, b keaServer) int {
 		return strings.Compare(vrfOrder(a.vrf)+" "+a.family(), vrfOrder(b.vrf)+" "+b.family())
