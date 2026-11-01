@@ -225,15 +225,20 @@ func refusedByNode(err error) bool {
 	return false
 }
 
+// namedErr marks an error whose message names the node it is about already, as the errors of the
+// node's trial, of the config it holds and of chalkctl's check of the image's rules do. It changes
+// no message; namedError, by contrast, puts the name in place of <node>.
+type namedErr struct{ error }
+
+func (e namedErr) Unwrap() error { return e.error }
+
 // namedOnce is err as a line of several nodes' output names the node called name: prefixed with
-// the name unless the error starts with it already, as the errors of the node's trial, of the
-// config it holds and of chalkctl's check of the image's rules do.
+// the name unless err, or an error it wraps, is a namedErr.
 func namedOnce(name string, err error) string {
-	msg := err.Error()
-	if rest, ok := strings.CutPrefix(msg, name); ok && (strings.HasPrefix(rest, ":") || strings.HasPrefix(rest, " ")) {
-		return msg
+	if errors.As(err, new(namedErr)) {
+		return err.Error()
 	}
-	return name + ": " + msg
+	return name + ": " + err.Error()
 }
 
 // deliverConfig delivers the inventory's config to the node t, or with --dry-run has the node
@@ -277,7 +282,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		}
 	}
 	if f.try > 0 && st.Msg.ConfigVersion == d.Version {
-		return fmt.Errorf("%s runs config %s already; --try needs a config that changes it", t.name, d.Version)
+		return namedErr{fmt.Errorf("%s runs config %s already; --try needs a config that changes it", t.name, d.Version)}
 	}
 	// A unit that failed before the trial keeps its confirmation from passing, also later with
 	// --confirm, unless it recovers or is left out.
@@ -290,11 +295,11 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		fmt.Fprintln(a.stderr, stagedNote(t.name, st.Msg))
 	}
 	if f.staged && st.Msg.Boot.GetStaged() == nil {
-		return fmt.Errorf("%s: no image is staged to boot next; apply the config to the running image", t.name)
+		return namedErr{fmt.Errorf("%s: no image is staged to boot next; apply the config to the running image", t.name)}
 	}
 	nodeDocs, err := slotConfig(ctx, conn, f.staged)
 	if err != nil {
-		return fmt.Errorf("%s: %w", t.name, err)
+		return namedErr{fmt.Errorf("%s: %w", t.name, err)}
 	}
 	changes := diffConfig(nodeDocs, d.Documents)
 	fmt.Fprintf(a.stdout, "%s: %s\n", t.name, changes.summary())
@@ -310,11 +315,11 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	baseline := nodeDocs
 	if f.staged {
 		if baseline, err = slotConfig(ctx, conn, false); err != nil {
-			return fmt.Errorf("%s: %w", t.name, err)
+			return namedErr{fmt.Errorf("%s: %w", t.name, err)}
 		}
 	}
 	if err := checkRules(c, d.documents, baseline, t.name); err != nil {
-		return refusal{fmt.Errorf("%s: %w", t.name, err)}
+		return refusal{namedErr{fmt.Errorf("%s: %w", t.name, err)}}
 	}
 	fallback, err := a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, "")
 	if err != nil {

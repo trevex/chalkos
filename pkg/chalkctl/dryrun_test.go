@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -113,17 +114,29 @@ func TestApplyConfigDryRunUsage(t *testing.T) {
 	}
 }
 
-// A line of several nodes' output names its node once, also for an error that names it already.
+// A line of several nodes' output names its node once: an error marked as naming it, also
+// within a refusal or wrapped further, is printed as it is, and any other error after the name,
+// whatever its text starts with.
 func TestNamedOnce(t *testing.T) {
-	for err, want := range map[string]string{
-		"r1: the config is refused: x":      "r1: the config is refused: x",
-		"r1 runs config v2 on trial":        "r1 runs config v2 on trial",
-		"the cluster c has no node r1":      "r1: the cluster c has no node r1",
-		"r10: the config is refused: x":     "r1: r10: the config is refused: x",
-		"dial tcp 10.0.0.11:4443: no route": "r1: dial tcp 10.0.0.11:4443: no route",
+	named := namedErr{errors.New("r1 runs config v2 on trial")}
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{named, "r1 runs config v2 on trial"},
+		{refusal{namedErr{errors.New("the config of r1: x")}}, "the config of r1: x"},
+		{namedErr{refusal{errors.New("r1: x")}}, "r1: x"},
+		{fmt.Errorf("wrapped: %w", named), "wrapped: r1 runs config v2 on trial"},
+		{errors.New("r1: the config is refused: x"), "r1: r1: the config is refused: x"},
+		{refusal{errors.New("the node refused it")}, "r1: the node refused it"},
+		{errors.New("dial tcp 10.0.0.11:4443: no route"), "r1: dial tcp 10.0.0.11:4443: no route"},
 	} {
-		if got := namedOnce("r1", errors.New(err)); got != want {
-			t.Errorf("namedOnce(%q) = %q, want %q", err, got, want)
+		if got := namedOnce("r1", tc.err); got != tc.want {
+			t.Errorf("namedOnce(%q) = %q, want %q", tc.err, got, tc.want)
 		}
+	}
+	// A refusal that names its node is still a refusal, whichever wraps the other.
+	if !errors.As(namedErr{refusal{named}}, new(refusal)) || !errors.As(refusal{named}, new(namedErr)) {
+		t.Error("refusal and namedErr do not see through each other")
 	}
 }

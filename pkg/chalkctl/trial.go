@@ -197,14 +197,14 @@ func (a *app) confirmConfig(ctx context.Context, f applyConfigFlags, name string
 // holds back every change but a rollback.
 func trialOpen(name string, st *nodev1.StatusResponse) error {
 	if e := st.GetTrialError(); e != "" {
-		return fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl apply-config --rollback %s restores the previous config", name, e, name)
+		return namedErr{fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl apply-config --rollback %s restores the previous config", name, e, name)}
 	}
 	tr := st.GetTrial()
 	if tr == nil || st.GetConfigVersion() == tr.PreviousVersion {
 		return nil
 	}
-	return fmt.Errorf("%s runs config %s on trial until %s; confirm it with chalkctl apply-config --confirm %s, or roll it back with chalkctl apply-config --rollback %s, first",
-		name, tr.Version, deadlineOf(tr), name, name)
+	return namedErr{fmt.Errorf("%s runs config %s on trial until %s; confirm it with chalkctl apply-config --confirm %s, or roll it back with chalkctl apply-config --rollback %s, first",
+		name, tr.Version, deadlineOf(tr), name, name)}
 }
 
 // trialLine is the status line of a config on trial.

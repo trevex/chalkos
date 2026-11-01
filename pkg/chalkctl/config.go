@@ -147,7 +147,7 @@ func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 	}
 	d, err := checkNodeConfig(nc, ct)
 	if err != nil {
-		return delivery{}, fmt.Errorf("the config of %s: %w", name, err)
+		return delivery{}, namedErr{fmt.Errorf("the config of %s: %w", name, err)}
 	}
 	return d, nil
 }
