@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +42,7 @@ func routerNode(t *testing.T, kernel ...*routing.KernelRoute) (*Plugin, *tooltes
 	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"apiVersion": "router.chalkos.dev/v1alpha1", "kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100, "interfaces": ["swp1"]}}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, FRRConfig: frrLink(t), ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers, KeaDir: t.TempDir(), PDDir: t.TempDir(), RunDir: t.TempDir(), NetDir: t.TempDir()}), r
+	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, FRRConfig: frrLink(t), ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers, KeaDir: t.TempDir(), RelayDir: t.TempDir(), PDDir: t.TempDir(), RunDir: t.TempDir(), NetDir: t.TempDir()}), r
 }
 
 // frrLink is FRR's config link of an image with BGP, to a config FRR has not filled in, as
@@ -617,5 +619,95 @@ func TestKeaFailure(t *testing.T) {
 		if got := keaFailure(ctx, c.budget, c.err); got != c.want {
 			t.Errorf("keaFailure(%v, %v) = %q, want %q", c.budget.Err(), c.err, got, c.want)
 		}
+	}
+}
+
+// A router's status holds its DHCPv6 servers after the DHCPv4 server of each VRF: a running
+// server's subnets with Kea's counts of their leased and pool addresses and their delegated and
+// delegable prefixes, asked on the DHCPv6 server's socket, and a VRF's server bound to a removed
+// device of its VRF, whose index the server records apart from the DHCPv4 server's.
+func TestRouterDHCP6Status(t *testing.T) {
+	s, r := routerNode(t)
+	dir, run := s.r.KeaDir, filepath.Join(s.r.RunDir, "kea")
+	keaConfig(t, filepath.Join(dir, "kea-dhcp4.json"), [3]string{"office", "192.0.2.0/24", "3221225984"})
+	for _, f := range []string{"kea-dhcp6.json", "kea-dhcp6-access.json"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte(`{"Dhcp6": {"subnet6": [{"id": 2387838497, "subnet": "2001:db8:1::/64", "user-context": {"name": "office6"}}]}}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fakeKea(t, filepath.Join(run, "dhcp4.sock"), false, map[string]string{"statistic-get-all": `{"result": 0, "arguments": {}}`})
+	fakeKea(t, filepath.Join(run, "dhcp6.sock"), false, map[string]string{"statistic-get-all": `{"result": 0, "arguments": {
+		"subnet[2387838497].assigned-nas": [[1, "2026-11-01 10:00:00.000000"]],
+		"subnet[2387838497].total-nas": [[18446744073709551616, "2026-11-01 09:00:00.000000"]],
+		"subnet[2387838497].assigned-pds": [[2, "2026-11-01 10:00:00.000000"]],
+		"subnet[2387838497].total-pds": [[256, "2026-11-01 09:00:00.000000"]]}}`})
+	if err := os.WriteFile(filepath.Join(run, "dhcp6-access.ifindex"), []byte("6\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeIndex(t, filepath.Join(s.r.NetDir, "access"), "9")
+	st := routerStatus(t, s)
+	var order []string
+	for _, d := range st.Dhcp {
+		order = append(order, d.Vrf+" "+d.Family)
+	}
+	if !slices.Equal(order, []string{"default ipv4", "default ipv6", "access ipv6"}) {
+		t.Fatalf("DHCP servers = %v", st.Dhcp)
+	}
+	if d := st.Dhcp[1]; !d.Running || len(d.Subnets) != 1 || d.Subnets[0].Name != "office6" || d.Subnets[0].Leased != 1 || d.Subnets[0].Pool != math.MaxUint64 ||
+		d.Subnets[0].Delegated != 2 || d.Subnets[0].Delegable != 256 {
+		t.Errorf("the default VRF's DHCPv6 server = %v", d)
+	}
+	if d := st.Dhcp[2]; d.Running || d.Error != "kea-dhcp6@access.service is active, but it is bound to a removed device of the VRF" {
+		t.Errorf("access's DHCPv6 server = %v", d)
+	}
+	if !slices.Contains(r.Calls, "systemctl is-active kea-dhcp6.service") {
+		t.Errorf("the DHCPv6 server's unit was not asked: %q", r.Calls)
+	}
+}
+
+// A router's status holds the DHCP relay of each VRF with a rendered config, the default VRF's
+// first: whether its unit is active and bound to its VRF's device, or why not. A file of no VRF's
+// name reaches no command.
+func TestRouterDHCPRelayStatus(t *testing.T) {
+	s, r := routerNode(t)
+	s.r.RelayDir = t.TempDir()
+	for _, f := range []string{"dnsmasq-relay.conf", "dnsmasq-relay-guest.conf", "dnsmasq-relay-dmz-a.conf", "dnsmasq-relay-moved.conf", "dnsmasq-relay-Bad_Name.conf"} {
+		if err := os.WriteFile(filepath.Join(s.r.RelayDir, f), []byte("port=0\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runDir := filepath.Join(s.r.RunDir, "dnsmasq-relay")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for vrf, index := range map[string][2]string{"dmz-a": {"7", "7"}, "moved": {"6", "9"}} {
+		if err := os.WriteFile(filepath.Join(runDir, vrf+".ifindex"), []byte(index[0]+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		writeIndex(t, filepath.Join(s.r.NetDir, vrf), index[1])
+	}
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active dnsmasq-relay@guest.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active dnsmasq-relay@guest.service", Code: 3}})
+	st := routerStatus(t, s)
+	got := map[string]string{}
+	var order []string
+	for _, d := range st.DhcpRelays {
+		order = append(order, d.Vrf)
+		got[d.Vrf] = strconv.FormatBool(d.Running) + " " + d.Error
+	}
+	if !slices.Equal(order, []string{"default", "dmz-a", "guest", "moved"}) {
+		t.Fatalf("DHCP relays = %v", st.DhcpRelays)
+	}
+	for vrf, want := range map[string]string{
+		"default": "true ",
+		"dmz-a":   "true ",
+		"guest":   "false dnsmasq-relay@guest.service is failed",
+		"moved":   "false dnsmasq-relay@moved.service is active, but it is bound to a removed device of the VRF",
+	} {
+		if got[vrf] != want {
+			t.Errorf("%s's relay = %q, want %q", vrf, got[vrf], want)
+		}
+	}
+	if !slices.Contains(r.Calls, `systemctl is-active dnsmasq-relay@dmz\x2da.service`) || slices.ContainsFunc(r.Calls, func(c string) bool { return strings.Contains(c, "Bad_Name") }) {
+		t.Errorf("calls = %q", r.Calls)
 	}
 }

@@ -1281,7 +1281,8 @@ checked.
 ### Status { #router-method-status }
 
 Status reports the state of the router's routing daemons, its NAT64 instances, its resolvers
-and its DHCP servers. Available in normal mode to readers, on images with the router layer.
+and its DHCP servers and relays. Available in normal mode to readers, on images with the
+router layer.
 
 Request: StatusRequest. Response: StatusResponse.
 
@@ -1306,8 +1307,9 @@ resolvers and its DHCP servers.
 | `vrf_resolvers` | list of ResolverStatus | The resolvers of the router's VRFs, one per VRF with a Resolver document, by VRF. |
 | `dhcp` | list of DHCPServerStatus | The router's DHCP servers, one per VRF whose links DHCPSubnet documents serve, the default VRF's first, then by VRF. |
 | `bgp_absent` | bool | Whether the image carries no BGP, as an image whose variant leaves FRR out: peers and bgp_error are then empty. |
+| `dhcp_relays` | list of DHCPRelayStatus | The router's DHCP relays, one per VRF whose links DHCPRelay documents relay, the default VRF's first, then by VRF. |
 
-Field types: [BGPPeerStatus](#router-message-bgppeerstatus), [NAT64Status](#router-message-nat64status), [ResolverStatus](#router-message-resolverstatus), [DHCPServerStatus](#router-message-dhcpserverstatus).
+Field types: [BGPPeerStatus](#router-message-bgppeerstatus), [NAT64Status](#router-message-nat64status), [ResolverStatus](#router-message-resolverstatus), [DHCPServerStatus](#router-message-dhcpserverstatus), [DHCPRelayStatus](#router-message-dhcprelaystatus).
 
 ### Routes { #router-method-routes }
 
@@ -1377,14 +1379,24 @@ A path of BGP's for a prefix, which its best path selection took.
 | `best` | bool | Whether it is the best path; otherwise one of the equal paths BGP installs beside it. |
 | `imported_from` | string | The VRF whose BGP instance the path came from, through the importing instance's spec.import, or the route distinguisher it came from when FRR names no VRF; empty for a path of the instance's own peers or networks. |
 
+### DHCPRelayStatus { #router-message-dhcprelaystatus }
+
+A DHCP relay of a router: dnsmasq's relay of one VRF.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `vrf` | string | The VRF whose links the relay relays: the name of its VRF document, or default. |
+| `running` | bool | Whether the relay runs: its unit is active and bound to its VRF's device. |
+| `error` | string | Why the relay does not run, such as the state of its unit; empty while it runs. |
+
 ### DHCPServerStatus { #router-message-dhcpserverstatus }
 
-A DHCP server of a router: Kea's DHCPv4 server of one VRF.
+A DHCP server of a router: Kea's DHCPv4 or DHCPv6 server of one VRF.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `vrf` | string | The VRF whose links the server serves: the name of its VRF document, or default. |
-| `family` | string | The address family the server leases: ipv4. |
+| `family` | string | The address family the server leases: ipv4 or ipv6. |
 | `running` | bool | Whether the server runs: its unit is active, bound to its VRF's device, and it answers on its control socket. |
 | `error` | string | Why the server does not run, such as the state of its unit or why it did not answer; empty while it runs. |
 | `subnets` | list of DHCPSubnetStatus | The subnets the server serves, in the order of their documents; empty while it does not run. |
@@ -1400,7 +1412,9 @@ A subnet of a DHCP server, as Kea counts its leases.
 | `name` | string | Name of the DHCPSubnet document. |
 | `subnet` | string | The subnet's range, such as 192.0.2.0/24. |
 | `leased` | uint64 | Addresses the server leased that have not expired, reserved ones included. |
-| `pool` | uint64 | Addresses of the subnet's pools. |
+| `pool` | uint64 | Addresses of the subnet's pools; the largest 64-bit number for more. |
+| `delegated` | uint64 | Prefixes the server delegated that have not expired, of an IPv6 subnet. |
+| `delegable` | uint64 | Prefixes the subnet delegates from, of an IPv6 subnet; the largest 64-bit number for more. |
 
 ### KernelRoute { #router-message-kernelroute }
 

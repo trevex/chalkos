@@ -14,8 +14,8 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 )
 
-// PrintStatus prints the router's BGP sessions, its NAT64 instances, its resolvers and its DHCP
-// servers.
+// PrintStatus prints the router's BGP sessions, its NAT64 instances, its resolvers, its DHCP
+// servers and its DHCP relays.
 func (p *Plugin) PrintStatus(ctx context.Context, h layer.Host, conn *client.Conn) error {
 	resp, err := Client(conn).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
 	if err != nil {
@@ -25,9 +25,9 @@ func (p *Plugin) PrintStatus(ctx context.Context, h layer.Host, conn *client.Con
 }
 
 // routerStatus prints a router's BGP sessions, its NAT64 instances, its resolvers and its DHCP
-// servers with their subnets' leases, the default VRF's first, or why their state is unknown. A
-// router whose image carries no BGP prints no line of it, and one without NAT64 instances,
-// resolvers or DHCP servers none of them.
+// servers with their subnets' leases and delegated prefixes, and its DHCP relays, the default
+// VRF's first, or why their state is unknown. A router whose image carries no BGP prints no line
+// of it, and one without NAT64 instances, resolvers, DHCP servers or relays none of them.
 func routerStatus(h layer.Host, r *routerv1.StatusResponse) error {
 	if err := bgpStatus(h, r); err != nil {
 		return err
@@ -67,21 +67,41 @@ func routerStatus(h layer.Host, r *routerv1.StatusResponse) error {
 		}
 	}
 	for _, d := range r.Dhcp {
+		// A chalkd of DHCPv4 alone gives no family.
+		name := "dhcp4"
+		if d.Family == "ipv6" {
+			name = "dhcp6"
+		}
 		if !d.Running {
-			fmt.Fprintf(h.Stdout(), "dhcp4 %s: not running: %s\n", d.Vrf, d.Error)
+			fmt.Fprintf(h.Stdout(), "%s %s: not running: %s\n", name, d.Vrf, d.Error)
 			continue
 		}
-		fmt.Fprintf(h.Stdout(), "dhcp4 %s: running\n", d.Vrf)
+		fmt.Fprintf(h.Stdout(), "%s %s: running\n", name, d.Vrf)
 		if len(d.Subnets) == 0 {
 			continue
 		}
 		w := h.Table()
-		fmt.Fprintln(w, "  SUBNET\tRANGE\tLEASED\tPOOL")
+		if name == "dhcp6" {
+			fmt.Fprintln(w, "  SUBNET\tRANGE\tLEASED\tPOOL\tDELEGATED\tDELEGABLE")
+		} else {
+			fmt.Fprintln(w, "  SUBNET\tRANGE\tLEASED\tPOOL")
+		}
 		for _, s := range d.Subnets {
-			fmt.Fprintf(w, "  %s\t%s\t%d\t%d\n", s.Name, s.Subnet, s.Leased, s.Pool)
+			if name == "dhcp6" {
+				fmt.Fprintf(w, "  %s\t%s\t%d\t%d\t%d\t%d\n", s.Name, s.Subnet, s.Leased, s.Pool, s.Delegated, s.Delegable)
+			} else {
+				fmt.Fprintf(w, "  %s\t%s\t%d\t%d\n", s.Name, s.Subnet, s.Leased, s.Pool)
+			}
 		}
 		if err := w.Flush(); err != nil {
 			return err
+		}
+	}
+	for _, d := range r.DhcpRelays {
+		if d.Running {
+			fmt.Fprintf(h.Stdout(), "dhcp-relay %s: running\n", d.Vrf)
+		} else {
+			fmt.Fprintf(h.Stdout(), "dhcp-relay %s: not running: %s\n", d.Vrf, d.Error)
 		}
 	}
 	return nil

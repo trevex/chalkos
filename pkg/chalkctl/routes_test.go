@@ -48,7 +48,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv4 unicast detail json", Out: "{}"},
 		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: frr("ipv6-detail-imported.json")},
 	)}
-	conf, nat64, vrfs, resolvers, kea := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	conf, nat64, vrfs, resolvers, kea, relays := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
 	// FRR's config link, to a config FRR has not filled in, as /etc/frr/frr.conf is before FRR
 	// starts.
 	frrConf := filepath.Join(t.TempDir(), "frr.conf")
@@ -86,24 +86,45 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 		if err := os.WriteFile(filepath.Join(run, "kea", "dhcp4-guest.ifindex"), []byte("7\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		l, err := net.Listen("unix", filepath.Join(run, "kea", "dhcp4.sock"))
-		if err != nil {
+		subnets6 := `{"Dhcp6": {"subnet6": [{"id": 2387838497, "subnet": "2001:db8:1::/64", "user-context": {"name": "office6"}}]}}`
+		if err := os.WriteFile(filepath.Join(kea, "kea-dhcp6.json"), []byte(subnets6+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { l.Close() })
-		go func() {
-			for {
-				conn, err := l.Accept()
-				if err != nil {
-					return
-				}
-				_ = json.NewDecoder(conn).Decode(&struct{}{})
-				_, _ = conn.Write([]byte(`{"result": 0, "arguments": {"subnet[3221225984].assigned-addresses": [[2, "2026-11-01 10:00:00.000000"]], "subnet[3221225984].total-addresses": [[100, "2026-11-01 09:00:00.000000"]]}}`))
-				conn.Close()
+		// The relays of the default VRF and of guest, bound to guest's device.
+		for _, file := range []string{"dnsmasq-relay.conf", "dnsmasq-relay-guest.conf"} {
+			if err := os.WriteFile(filepath.Join(relays, file), []byte("port=0\n"), 0o644); err != nil {
+				t.Fatal(err)
 			}
-		}()
+		}
+		if err := os.MkdirAll(filepath.Join(run, "dnsmasq-relay"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(run, "dnsmasq-relay", "guest.ifindex"), []byte("7\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for socket, answer := range map[string]string{
+			"dhcp4.sock": `{"result": 0, "arguments": {"subnet[3221225984].assigned-addresses": [[2, "2026-11-01 10:00:00.000000"]], "subnet[3221225984].total-addresses": [[100, "2026-11-01 09:00:00.000000"]]}}`,
+			"dhcp6.sock": `{"result": 0, "arguments": {"subnet[2387838497].assigned-nas": [[1, "2026-11-01 10:00:00.000000"]], "subnet[2387838497].total-nas": [[256, "2026-11-01 09:00:00.000000"]], "subnet[2387838497].assigned-pds": [[1, "2026-11-01 10:00:00.000000"]], "subnet[2387838497].total-pds": [[256, "2026-11-01 09:00:00.000000"]]}}`,
+		} {
+			l, err := net.Listen("unix", filepath.Join(run, "kea", socket))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { l.Close() })
+			go func() {
+				for {
+					conn, err := l.Accept()
+					if err != nil {
+						return
+					}
+					_ = json.NewDecoder(conn).Decode(&struct{}{})
+					_, _ = conn.Write([]byte(answer))
+					conn.Close()
+				}
+			}()
+		}
 	}
-	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{FRRConfig: frrConf, ResolverConfig: conf, ResolverDir: resolvers, KeaDir: kea, RunDir: run, NetDir: devices, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
+	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{FRRConfig: frrConf, ResolverConfig: conf, ResolverDir: resolvers, KeaDir: kea, RelayDir: relays, RunDir: run, NetDir: devices, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
 		hops := func() []*router.NextHop {
 			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
@@ -212,7 +233,8 @@ func TestRouterWithoutBGP(t *testing.T) {
 
 // status prints a router's NAT64 instances, a line each with its sessions, bindings and the size of
 // each protocol's pool, whether its resolvers run, the default VRF's first, and its DHCP servers:
-// a running one's subnets with their leased and pool addresses, and why another does not run.
+// a running one's subnets with their leased and pool addresses, the DHCPv6 server's subnets with
+// their delegated and delegable prefixes too, and why another does not run, and its relays.
 func TestStatusRouterNAT64AndResolver(t *testing.T) {
 	ta := newTestApp(t)
 	pool := "0,TCP,192.0.2.8,61001,65535,1059,0\n"
@@ -233,9 +255,12 @@ func TestStatusRouterNAT64AndResolver(t *testing.T) {
 		"dhcp4 default: running\n" +
 		"  SUBNET  RANGE         LEASED  POOL\n" +
 		"  office  192.0.2.0/24  2       100\n" +
+		"dhcp6 default: running\n" +
+		"  SUBNET   RANGE            LEASED  POOL  DELEGATED  DELEGABLE\n" +
+		"  office6  2001:db8:1::/64  1       256   1          256\n" +
 		"dhcp4 guest: not running: dial unix "
 	got := ta.stdout.String()
-	if !strings.Contains(got, want) || !strings.Contains(got, "/kea/dhcp4-guest.sock: connect: no such file or directory\ncertificates:\n") {
+	if !strings.Contains(got, want) || !strings.Contains(got, "/kea/dhcp4-guest.sock: connect: no such file or directory\ndhcp-relay default: running\ndhcp-relay guest: running\ncertificates:\n") {
 		t.Errorf("stdout:\n%s\nlacks:\n%s", got, want)
 	}
 }

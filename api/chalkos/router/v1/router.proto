@@ -12,7 +12,8 @@ option go_package = "github.com/trevex/chalkos/pkg/api/router/v1;routerv1";
 // checked.
 service RouterService {
   // Status reports the state of the router's routing daemons, its NAT64 instances, its resolvers
-  // and its DHCP servers. Available in normal mode to readers, on images with the router layer.
+  // and its DHCP servers and relays. Available in normal mode to readers, on images with the
+  // router layer.
   rpc Status(StatusRequest) returns (StatusResponse);
   // Routes lists the routes in the node's kernel, of the main table unless a VRF or another table
   // is asked for, and the paths the BGP instance of that VRF selected, each within an address
@@ -48,6 +49,9 @@ message StatusResponse {
   // Whether the image carries no BGP, as an image whose variant leaves FRR out: peers and
   // bgp_error are then empty.
   bool bgp_absent = 8;
+  // The router's DHCP relays, one per VRF whose links DHCPRelay documents relay, the default
+  // VRF's first, then by VRF.
+  repeated DHCPRelayStatus dhcp_relays = 9;
 }
 
 // One NAT64 instance of a router, as Jool reports it.
@@ -84,11 +88,11 @@ message ResolverStatus {
   string vrf = 3;
 }
 
-// A DHCP server of a router: Kea's DHCPv4 server of one VRF.
+// A DHCP server of a router: Kea's DHCPv4 or DHCPv6 server of one VRF.
 message DHCPServerStatus {
   // The VRF whose links the server serves: the name of its VRF document, or default.
   string vrf = 1;
-  // The address family the server leases: ipv4.
+  // The address family the server leases: ipv4 or ipv6.
   string family = 2;
   // Whether the server runs: its unit is active, bound to its VRF's device, and it answers on
   // its control socket.
@@ -108,8 +112,22 @@ message DHCPSubnetStatus {
   string subnet = 2;
   // Addresses the server leased that have not expired, reserved ones included.
   uint64 leased = 3;
-  // Addresses of the subnet's pools.
+  // Addresses of the subnet's pools; the largest 64-bit number for more.
   uint64 pool = 4;
+  // Prefixes the server delegated that have not expired, of an IPv6 subnet.
+  uint64 delegated = 5;
+  // Prefixes the subnet delegates from, of an IPv6 subnet; the largest 64-bit number for more.
+  uint64 delegable = 6;
+}
+
+// A DHCP relay of a router: dnsmasq's relay of one VRF.
+message DHCPRelayStatus {
+  // The VRF whose links the relay relays: the name of its VRF document, or default.
+  string vrf = 1;
+  // Whether the relay runs: its unit is active and bound to its VRF's device.
+  bool running = 2;
+  // Why the relay does not run, such as the state of its unit; empty while it runs.
+  string error = 3;
 }
 
 // One BGP session of a router: a BGPPeer's address, or one of its interfaces.
