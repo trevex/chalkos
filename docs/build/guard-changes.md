@@ -1,4 +1,3 @@
-| `description` | One sentence on what the rule guards, which the reference pages show. The node never reads it. |
 ---
 title: "Guard changes with rules and facts"
 description: "Refuse a config change a node cannot make, with CEL rules on your kind and facts about the node"
