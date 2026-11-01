@@ -1,3 +1,4 @@
+| `DHCPSubnet office6 and DHCPSubnet lab6 get the same number 2387838497 in Kea; change one subnet's range` | Change the range of one IPv6 subnet, whose number is a hash of its range. |
 | `the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer` | Delegate from smaller ranges or delegate shorter prefixes, so that all subnets together delegate 65 536 prefixes at most. |
 ---
 title: "Lease addresses with DHCP"
