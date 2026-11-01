@@ -202,13 +202,14 @@ func (l Loader) Apply(data []byte) error {
 
 // RenderOutputs renders and checks every output of the image from docs, a config set with its
 // defaults, for the node called name, and stages those that pass; schemas tell the secretRef
-// fields of docs, the image's own when nil. It changes nothing a service reads.
-func (l Loader) RenderOutputs(ctx context.Context, name string, docs []config.Document, schemas *schema.Schemas) (*outputs.Staged, []outputs.Failure, error) {
+// fields of docs, the image's own when nil, and hashed that the secret values of docs are hashed
+// already. It changes nothing a service reads.
+func (l Loader) RenderOutputs(ctx context.Context, name string, docs []config.Document, schemas *schema.Schemas, hashed bool) (*outputs.Staged, []outputs.Failure, error) {
 	defs, schemas, err := l.outputs(docs, schemas)
 	if err != nil {
 		return nil, nil, err
 	}
-	staged, failures := l.Render.Render(ctx, defs, outputs.Input{Node: name, Documents: docs, Schemas: schemas})
+	staged, failures := l.Render.Render(ctx, defs, outputs.Input{Node: name, Documents: docs, Schemas: schemas, Hashed: hashed})
 	return staged, failures, nil
 }
 
@@ -260,7 +261,7 @@ func (l Loader) renderAtBoot(docs []config.Document) error {
 	if err != nil {
 		return fmt.Errorf("the node's name for its outputs: %w", err)
 	}
-	staged, failures, err := l.RenderOutputs(context.Background(), name, docs, nil)
+	staged, failures, err := l.RenderOutputs(context.Background(), name, docs, nil, false)
 	if err != nil {
 		return err
 	}

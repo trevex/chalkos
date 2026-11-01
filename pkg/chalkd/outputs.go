@@ -22,7 +22,7 @@ import (
 // The status records the failures either way. What renderers and checks write to standard error
 // goes to the journal alone.
 func (s *Server) renderOutputs(ctx context.Context, name string, docs []config.Document, schemas *schema.Schemas, refuse bool) (*outputs.Staged, error) {
-	staged, failures, err := s.Loader.RenderOutputs(ctx, name, docs, schemas)
+	staged, failures, err := s.Loader.RenderOutputs(ctx, name, docs, schemas, false)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "the running image's outputs: %v", err)
 	}

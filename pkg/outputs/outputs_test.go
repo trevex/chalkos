@@ -378,3 +378,27 @@ func TestSandboxArgs(t *testing.T) {
 		t.Errorf("a check may not talk netlink:\n%s", args)
 	}
 }
+
+// An input whose secret values are hashed already renders the files and states of the input with
+// its values: the renderer reads the hashes either way, and the state takes them as they are.
+func TestRenderHashed(t *testing.T) {
+	r := renderer(t)
+	d := def(t, r.Root, script(t, `cat > "$OUT/stdin.json"`), "")
+	in := input(t, demos)
+	hashed := in
+	hashed.Documents, hashed.Hashed = config.Redact(in.Documents), true
+	want, failures := r.Render(context.Background(), map[string]Definition{"demo": d}, in)
+	if len(failures) > 0 {
+		t.Fatal(failures)
+	}
+	got, failures := r.Render(context.Background(), map[string]Definition{"demo": d}, hashed)
+	if len(failures) > 0 {
+		t.Fatal(failures)
+	}
+	if got.States()["demo"] != want.States()["demo"] {
+		t.Errorf("the hashed input's state %v, the values' %v", got.States()["demo"], want.States()["demo"])
+	}
+	if live, err := Live(d, hashed); err != nil || live.Secrets != want.States()["demo"].Secrets {
+		t.Errorf("Live of the hashed input = %v, %v", live, err)
+	}
+}

@@ -22,11 +22,14 @@ import (
 )
 
 // Input is what outputs render from: a node's config set, with its defaults, the schemas that
-// tell its secretRef fields, and the node's name.
+// tell its secretRef fields, and the node's name. Hashed tells that the set's secret values are
+// hashed already, as config.Redact hashes them and as a check receives them: the renderers read
+// them so anyway, and the states hash the values of Secrets so too.
 type Input struct {
 	Node      string
 	Documents []config.Document
 	Schemas   *schema.Schemas
+	Hashed    bool
 }
 
 // stdin is what a renderer reads: the node's name and the documents of each input kind, sorted by
@@ -37,7 +40,11 @@ func (d Definition) stdin(in Input) ([]byte, error) {
 		docs[kind] = []any{}
 	}
 	for _, doc := range d.documents(in) {
-		docs[doc.Kind] = append(docs[doc.Kind], doc.Hashed())
+		obj := doc.Object
+		if !in.Hashed {
+			obj = doc.Hashed()
+		}
+		docs[doc.Kind] = append(docs[doc.Kind], obj)
 	}
 	return json.Marshal(map[string]any{
 		"node":      map[string]any{"name": in.Node},

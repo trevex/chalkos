@@ -23,15 +23,19 @@ type State struct {
 }
 
 // secrets hashes the values the secretRefs of the output's input documents name, by Secret and
-// key; empty for documents that reference none.
+// key; empty for documents that reference none. The values of a hashed input are their hashes
+// already, which the state takes as they are, so both give an output one state.
 func (d Definition) secrets(in Input) string {
 	secrets := config.Documents(in.Documents).Secrets()
 	var lines []string
 	for _, doc := range d.documents(in) {
 		for _, ref := range config.SecretRefs(doc, in.Schemas) {
-			v, _ := secrets.Lookup(ref)
-			sum := sha256.Sum256([]byte(v))
-			lines = append(lines, ref.Name+"\x00"+ref.Key+"\x00"+hex.EncodeToString(sum[:]))
+			v, ok := secrets.Lookup(ref)
+			if !in.Hashed || !ok {
+				sum := sha256.Sum256([]byte(v))
+				v = hex.EncodeToString(sum[:])
+			}
+			lines = append(lines, ref.Name+"\x00"+ref.Key+"\x00"+v)
 		}
 	}
 	if len(lines) == 0 {
