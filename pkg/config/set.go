@@ -69,7 +69,8 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 }
 
 // Refs returns the references of the set's documents, by the ID of the document that holds them;
-// a document without references has no entry. Every reference resolves within the set.
+// a document without references has no entry. Every reference resolves within the set. The map
+// and its slices are the set's own, which callers read and never change.
 func (s *Set) Refs() map[ID][]Ref { return s.refs }
 
 // Documents returns the set's documents, ordered by apiVersion, kind and name.
