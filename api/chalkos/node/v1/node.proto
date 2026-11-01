@@ -896,6 +896,31 @@ message UpgradeResponse {
   // it; the image was not written again, and the config the upgrade carries, or the running
   // image's, replaced the config kept for it.
   bool already_staged = 4;
+  // What the upgrade did with the config the node held pending as it began; unset when it held
+  // none.
+  PendingOutcome pending = 5;
+}
+
+// What an upgrade did with the node's pending config.
+message PendingOutcome {
+  // The pending config's version.
+  string version = 1;
+  // Whether the image took it, the upgrade's config replaced it, or the node keeps it.
+  PendingFate fate = 2;
+}
+
+// The fate of a pending config in an upgrade.
+enum PendingFate {
+  // No fate; chalkd never reports it.
+  PENDING_FATE_UNSPECIFIED = 0;
+  // The image boots next with it, which it checked first, and the node dropped it.
+  PENDING_FATE_TAKEN = 1;
+  // The image boots next with the config the upgrade carried, and the node dropped it.
+  PENDING_FATE_REPLACED = 2;
+  // The node keeps it for a later upgrade: the upgrade wrote no config slot, as for an image the
+  // node runs already or the known-good image a rollback staged with the config it last ran, or
+  // the node failed to remove it, which its journal records.
+  PENDING_FATE_KEPT = 3;
 }
 
 // The request of Diagnostics.

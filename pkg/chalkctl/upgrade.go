@@ -643,7 +643,6 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 		parts = stream
 	}
 	var resp *nodev1.UpgradeResponse
-	var note string
 	err := r.call(name, func(conn *client.Conn) error {
 		if _, err := r.configChanges(ctx, conn, n); err != nil {
 			return err
@@ -652,7 +651,6 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 		if d := r.deliveryOf(n); d != nil {
 			header.Config, header.FallbackSecret = d.Text, n.secret
 		}
-		pending := r.pendingConfig(ctx, conn, name)
 		stream := conn.Upgrade(ctx)
 		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 			return err
@@ -667,10 +665,6 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 			return err
 		}
 		resp = res.Msg
-		// An image the node runs already wrote no slot, and the pending config stays untouched.
-		if pending != nil && !resp.AlreadyInstalled {
-			note = r.pendingNote(ctx, conn, name, pending, header.Config != "")
-		}
 		return nil
 	})
 	if err != nil {
@@ -684,49 +678,27 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	default:
 		r.say("%s: installed %s, which boots next as %s", name, img.name(), resp.Entry)
 	}
-	if note != "" {
+	if note := pendingOutcome(name, resp.Pending); note != "" {
 		r.say("%s", note)
 	}
 	return nil
 }
 
-// pendingConfig is the config the node holds pending as an upgrade begins; nil without one. The
-// node's status only feeds pendingNote, so a failure to read it is a warning that costs the note
-// and not the upgrade.
-func (r *upgradeRun) pendingConfig(ctx context.Context, conn *client.Conn, name string) *nodev1.PendingConfig {
-	st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-	if err != nil {
-		r.warn("%s: cannot tell whether it holds config pending: %v", name, err)
-		return nil
-	}
-	return st.Msg.PendingConfig
-}
-
-// pendingNote says what an upgrade that wrote its image did with p, the pending config the node
-// held as the upgrade began, which the node drops once the image is staged: the image took it, or
-// the config the upgrade delivered replaced it. A node that holds it still kept it for a later
-// upgrade, as it does when the upgrade staged the known-good image a rollback left with the config
-// it last ran, or when the removal failed, which the node's journal records. A failure to read the
-// node's status is a warning, as for pendingConfig, and leaves no note.
-func (r *upgradeRun) pendingNote(ctx context.Context, conn *client.Conn, name string, p *nodev1.PendingConfig, delivered bool) string {
-	st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-	switch {
-	case err != nil:
-		r.warn("%s: cannot tell what the upgrade did with the pending config %s: %v", name, p.Version, err)
-		return ""
-	case st.Msg.PendingConfig.GetVersion() == p.Version:
-		return fmt.Sprintf("%s: keeps the pending config %s for a later upgrade", name, p.Version)
-	case delivered:
+// pendingOutcome says what an upgrade did with p, the pending config the node held as it began, as
+// the node answers: the image took it, the config the upgrade delivered replaced it, or the node
+// keeps it for a later upgrade, as when the upgrade wrote no config slot or the node failed to
+// remove it. The node answers, rather than a later Status, since it may reboot right after. Empty
+// without a pending config.
+func pendingOutcome(name string, p *nodev1.PendingOutcome) string {
+	switch p.GetFate() {
+	case nodev1.PendingFate_PENDING_FATE_TAKEN:
+		return fmt.Sprintf("%s: the image took the pending config %s, which it checked first", name, p.Version)
+	case nodev1.PendingFate_PENDING_FATE_REPLACED:
 		return fmt.Sprintf("%s: the inventory's config replaced the pending config %s", name, p.Version)
+	case nodev1.PendingFate_PENDING_FATE_KEPT:
+		return fmt.Sprintf("%s: keeps the pending config %s for a later upgrade", name, p.Version)
 	}
-	return fmt.Sprintf("%s: the image took the pending config %s, which it checked first", name, p.Version)
-}
-
-// warn prints a warning of the run, from any node's goroutine.
-func (r *upgradeRun) warn(format string, args ...any) {
-	r.out.Lock()
-	defer r.out.Unlock()
-	fmt.Fprintf(r.a.stderr, "chalkctl: warning: "+format+"\n", args...)
+	return ""
 }
 
 // reactivate has the node boot the rollback's image next again, its previous image.

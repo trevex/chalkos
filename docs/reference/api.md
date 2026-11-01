@@ -360,6 +360,9 @@ The response of Upgrade.
 | `entry` | string | The file name of the UKI that boots the image next, with its tries. |
 | `rebooting` | bool | Whether the node reboots into the image. |
 | `already_staged` | bool | Whether the image boots next already, from entry, as an earlier upgrade without a reboot left it; the image was not written again, and the config the upgrade carries, or the running image's, replaced the config kept for it. |
+| `pending` | PendingOutcome | What the upgrade did with the config the node held pending as it began; unset when it held none. |
+
+Field types: [PendingOutcome](#message-pendingoutcome).
 
 ### Diagnostics { #method-diagnostics }
 
@@ -786,6 +789,17 @@ the image it installs.
 | `version` | string | The config's version, as StatusResponse.config_version gives the running one's. |
 | `since` | google.protobuf.Timestamp | When the node stored it; unset for a dry run, which stores nothing. |
 
+### PendingOutcome { #message-pendingoutcome }
+
+What an upgrade did with the node's pending config.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `version` | string | The pending config's version. |
+| `fate` | PendingFate | Whether the image took it, the upgrade's config replaced it, or the node keeps it. |
+
+Field types: [PendingFate](#enum-pendingfate).
+
 ### Plan { #message-plan }
 
 What a delivery would do, as a dry run plans it before anything changes.
@@ -884,6 +898,17 @@ The mode chalkd serves the node in.
 | `MODE_UNSPECIFIED` | 0 | No mode; chalkd never reports it. |
 | `MODE_MAINTENANCE` | 1 | The node is not installed: chalkd serves a self-signed certificate. |
 | `MODE_NORMAL` | 2 | The node is installed: chalkd serves its node certificate and requires client certificates. |
+
+### PendingFate { #enum-pendingfate }
+
+The fate of a pending config in an upgrade.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| `PENDING_FATE_UNSPECIFIED` | 0 | No fate; chalkd never reports it. |
+| `PENDING_FATE_TAKEN` | 1 | The image boots next with it, which it checked first, and the node dropped it. |
+| `PENDING_FATE_REPLACED` | 2 | The image boots next with the config the upgrade carried, and the node dropped it. |
+| `PENDING_FATE_KEPT` | 3 | The node keeps it for a later upgrade: the upgrade wrote no config slot, as for an image the node runs already or the known-good image a rollback staged with the config it last ran, or the node failed to remove it, which its journal records. |
 
 ### SecureBoot { #enum-secureboot }
 

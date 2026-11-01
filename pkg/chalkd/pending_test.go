@@ -290,9 +290,9 @@ func TestStageConfigKeepsARefusedPendingConfig(t *testing.T) {
 
 // upgradePending runs an upgrade of newImage by role, carrying cfg, on s, whose installation
 // writes the image's slot and then returns fail; afterwards it runs after, which may change
-// what the node holds. It returns the version the image's slot was written with and the
-// upgrade's error.
-func upgradePending(t *testing.T, s *Server, role pki.Role, cfg string, fail error, after func()) (string, error) {
+// what the node holds. It returns the version the image's slot was written with, what the
+// upgrade's answer says became of the pending config, and the upgrade's error.
+func upgradePending(t *testing.T, s *Server, role pki.Role, cfg string, fail error, after func()) (string, *nodev1.PendingOutcome, error) {
 	t.Helper()
 	c := newCreds(t)
 	// The upgrade retires the slots of images the ESP does not boot, newImage's among them, so
@@ -317,13 +317,16 @@ func upgradePending(t *testing.T, s *Server, role pki.Role, cfg string, fail err
 	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := stream.CloseAndReceive()
-	return version, err
+	res, err := stream.CloseAndReceive()
+	if err != nil {
+		return version, nil, err
+	}
+	return version, res.Msg.Pending, nil
 }
 
 // TestUpgradeDropsThePendingConfig has an upgrade without config, as an operator's, boot the image
 // with the pending config an admin held, and an admin's upgrade with config replace it; either
-// drops the pending config once the image is staged.
+// drops the pending config once the image is staged, and its answer says which.
 func TestUpgradeDropsThePendingConfig(t *testing.T) {
 	pending := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	carried := strings.Replace(baseConfig, "name: first", "name: third", 1)
@@ -332,16 +335,20 @@ func TestUpgradeDropsThePendingConfig(t *testing.T) {
 		role   pki.Role
 		config string
 		want   string
+		fate   nodev1.PendingFate
 	}{
-		{"an operator's", pki.RoleOperator, "", pending},
-		{"an admin's with config", pki.RoleAdmin, carried, carried},
+		{"an operator's", pki.RoleOperator, "", pending, nodev1.PendingFate_PENDING_FATE_TAKEN},
+		{"an admin's with config", pki.RoleAdmin, carried, carried, nodev1.PendingFate_PENDING_FATE_REPLACED},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := configServer(t)
-			sendPending(t, s, pending)
-			version, err := upgradePending(t, s, tc.role, tc.config, nil, nil)
+			p := sendPending(t, s, pending)
+			version, outcome, err := upgradePending(t, s, tc.role, tc.config, nil, nil)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if outcome.GetVersion() != p.Version || outcome.GetFate() != tc.fate {
+				t.Errorf("pending outcome = %v, want %s %v", outcome, p.Version, tc.fate)
 			}
 			if version != hashOf(t, tc.want) {
 				t.Errorf("staged version = %q, want %q", version, hashOf(t, tc.want))
@@ -358,7 +365,7 @@ func TestUpgradeDropsThePendingConfig(t *testing.T) {
 func TestUpgradeKeepsThePendingConfigWhenStagingFails(t *testing.T) {
 	s, _ := configServer(t)
 	p := sendPending(t, s, strings.Replace(baseConfig, "name: first", "name: second", 1))
-	if _, err := upgradePending(t, s, pki.RoleOperator, "", errors.New("activate the UKI: no space left on device"), nil); err == nil || !strings.Contains(err.Error(), "no space left on device") {
+	if _, _, err := upgradePending(t, s, pki.RoleOperator, "", errors.New("activate the UKI: no space left on device"), nil); err == nil || !strings.Contains(err.Error(), "no space left on device") {
 		t.Fatalf("upgrade = %v, want the activation's failure", err)
 	}
 	if v := pendingVersion(t, s); v != p.Version {
@@ -387,8 +394,12 @@ func TestUpgradeSucceedsWhenThePendingConfigStays(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := upgradePending(t, s, pki.RoleOperator, "", nil, block); err != nil {
+	_, outcome, err := upgradePending(t, s, pki.RoleOperator, "", nil, block)
+	if err != nil {
 		t.Fatalf("upgrade = %v, want it staged", err)
+	}
+	if outcome.GetFate() != nodev1.PendingFate_PENDING_FATE_KEPT {
+		t.Errorf("pending outcome = %v, want it kept", outcome)
 	}
 	if got := status(t, s).PendingConfig; got.GetVersion() != "p9" {
 		t.Errorf("status names the pending config %v, want p9", got)
@@ -422,5 +433,32 @@ func TestApplyConfigDiscardPendingTakesStagedAlone(t *testing.T) {
 				t.Errorf("pending version = %q, want %s kept", v, p.Version)
 			}
 		})
+	}
+}
+
+// TestUpgradeAnswersAPendingConfigKept answers an upgrade that wrote no config slot, as one to the
+// image the node runs already, with the pending config kept.
+func TestUpgradeAnswersAPendingConfigKept(t *testing.T) {
+	s, _ := configServer(t)
+	p := sendPending(t, s, baseConfig)
+	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, imageConfig, error) {
+		io.Copy(io.Discard, r)
+		return upgrade.Result{AlreadyInstalled: true}, imageConfig{}, nil
+	}
+	c := newCreds(t)
+	stream := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator]).Upgrade(context.Background())
+	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: newImage}}
+	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := stream.CloseAndReceive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Msg.Pending; got.GetVersion() != p.Version || got.GetFate() != nodev1.PendingFate_PENDING_FATE_KEPT {
+		t.Errorf("pending outcome = %v, want %s kept", got, p.Version)
+	}
+	if v := pendingVersion(t, s); v != p.Version {
+		t.Errorf("pending version = %q, want %s kept", v, p.Version)
 	}
 }

@@ -156,27 +156,40 @@ func (c imageConfig) refused(err error, name string) error {
 	return fmt.Errorf("the pending config %s does not suit the image: %w; chalkctl apply-config --staged %s replaces it, and chalkctl apply-config --staged --discard %s drops it", c.pending, plain(err), name, name)
 }
 
-// dropStagedPending removes the pending config that c, the config stageConfig wrote to the image's
+// settlePending removes the pending config that c, the config stageConfig wrote to the image's
 // slot, names: the one the image an upgrade staged took, or the one the config the upgrade carried
 // replaced; c names none when no slot was written. That image boots next with its config now, and
 // a later upgrade must not take the pending config. Only now, once the image is staged, may it go:
 // an upgrade that fails after the image's slot was written, as when its UKI fails to activate,
 // keeps it for the upgrade after. The image is staged already, so a failure to remove it does not
 // fail the upgrade: the journal says so, Status keeps naming the pending config, and apply-config
-// --staged --discard drops it. The caller holds s.upgrading.
-func (s *Server) dropStagedPending(c imageConfig, rootHash []byte) {
-	if c.pending == "" {
-		return
-	}
+// --staged --discard drops it. It returns what became of the pending config for the upgrade's
+// answer, as chalkd knows it, since chalkd reboots soon after; nil when the node held none, or
+// when reading one it keeps failed, which the journal records. The caller holds s.upgrading.
+func (s *Server) settlePending(c imageConfig, rootHash []byte) *nodev1.PendingOutcome {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if c.pending == "" {
+		// No slot was written, as for an image the node runs already or the known-good image, so a
+		// pending config the node holds stays.
+		p, err := s.pendingConfig()
+		if err != nil {
+			log.Printf("the upgrade's answer names no pending config: %v", err)
+		}
+		if p == nil {
+			return nil
+		}
+		return &nodev1.PendingOutcome{Version: p.Version, Fate: nodev1.PendingFate_PENDING_FATE_KEPT}
+	}
+	kept := &nodev1.PendingOutcome{Version: c.pending, Fate: nodev1.PendingFate_PENDING_FATE_KEPT}
 	if err := slot.Remove(slot.Pending(s.Loader.Slots)); err != nil {
 		log.Printf("the pending config %s stays, although %x boots next with its config: remove it: %v", c.pending, rootHash, err)
-		return
+		return kept
 	}
 	if c.from == fromPending {
 		log.Printf("the pending config %s went to %x", c.pending, rootHash)
-	} else {
-		log.Printf("the pending config %s is dropped: the upgrade gave %x other config", c.pending, rootHash)
+		return &nodev1.PendingOutcome{Version: c.pending, Fate: nodev1.PendingFate_PENDING_FATE_TAKEN}
 	}
+	log.Printf("the pending config %s is dropped: the upgrade gave %x other config", c.pending, rootHash)
+	return &nodev1.PendingOutcome{Version: c.pending, Fate: nodev1.PendingFate_PENDING_FATE_REPLACED}
 }

@@ -134,8 +134,6 @@ type upgradeFake struct {
 	// keepPending makes the node keep its pending config through an upgrade, as one that stages the
 	// known-good image a rollback left with the config it last ran.
 	keepPending bool
-	// statusFailsOnce makes the node fail the next Status once an upgrade staged an image.
-	statusFailsOnce bool
 	// header is the header the last upgrade sent.
 	header *nodev1.UpgradeHeader
 	// previous, previousRoot and previousConfig are the image an upgrade replaced, which the node
@@ -234,10 +232,6 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.statusFailsOnce && n.header != nil {
-		n.statusFailsOnce = false
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("status is unavailable"))
-	}
 	st := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{
 		Running: &nodev1.BootImage{RootHash: n.root, Generation: n.generation},
 		Entry:   fmt.Sprintf("chalkos_%d.efi", n.generation), Blessed: true,
@@ -337,23 +331,39 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if bytes.Equal(h.RootHash, n.root) {
-		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyInstalled: true}), nil
+		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyInstalled: true, Pending: n.pendingOutcome(nodev1.PendingFate_PENDING_FATE_KEPT)}), nil
 	}
 	name, _ := testImageNames.Load(string(h.RootHash))
 	n.staged, n.stagedRoot, n.failed, n.failedRoot = name.(string), h.RootHash, "", nil
 	n.previous, n.previousRoot, n.previousConfig, n.rolledBackTo = "", nil, "", nil
 	// The image gets the pending config unless the upgrade carries config; either way the node
-	// drops it.
+	// drops it, and says so.
 	n.stagedConfig, n.secret = cmp.Or(header.GetConfig(), n.pending), header.GetFallbackSecret()
+	fate := nodev1.PendingFate_PENDING_FATE_TAKEN
+	switch {
+	case n.keepPending:
+		fate = nodev1.PendingFate_PENDING_FATE_KEPT
+	case header.GetConfig() != "":
+		fate = nodev1.PendingFate_PENDING_FATE_REPLACED
+	}
+	pending := n.pendingOutcome(fate)
 	if !n.keepPending {
 		n.pending = ""
 	}
 	n.stagedStoreSize, n.stagedVeritySize = h.Store.Size, h.HashTree.Size
 	n.header = header
 	if n.alreadyStaged {
-		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyStaged: true, Entry: fmt.Sprintf("chalkos_%d+3.efi", n.generation+1)}), nil
+		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyStaged: true, Entry: fmt.Sprintf("chalkos_%d+3.efi", n.generation+1), Pending: pending}), nil
 	}
-	return connect.NewResponse(&nodev1.UpgradeResponse{Entry: fmt.Sprintf("chalkos_%d+3.efi", n.generation+1)}), nil
+	return connect.NewResponse(&nodev1.UpgradeResponse{Entry: fmt.Sprintf("chalkos_%d+3.efi", n.generation+1), Pending: pending}), nil
+}
+
+// pendingOutcome is the answer of an upgrade that left the pending config to fate; nil without one.
+func (n *upgradeFake) pendingOutcome(fate nodev1.PendingFate) *nodev1.PendingOutcome {
+	if n.pending == "" {
+		return nil
+	}
+	return &nodev1.PendingOutcome{Version: versionOf(n.pending), Fate: fate}
 }
 
 // Reboot boots the staged image, which falls back after its tries when the lab makes it

@@ -130,8 +130,8 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	// The image boots next with the config stageConfig gave it, so the pending config it took or
 	// that the upgrade's config replaced goes. An image the node runs already or the known-good
 	// image kept with its config never had its slot written, and the pending config stays.
-	s.dropStagedPending(staged, img.GetRootHash())
-	resp := &nodev1.UpgradeResponse{AlreadyInstalled: res.AlreadyInstalled, AlreadyStaged: res.AlreadyStaged, Entry: res.Entry}
+	pending := s.settlePending(staged, img.GetRootHash())
+	resp := &nodev1.UpgradeResponse{AlreadyInstalled: res.AlreadyInstalled, AlreadyStaged: res.AlreadyStaged, Entry: res.Entry, Pending: pending}
 	if res.AlreadyInstalled {
 		log.Printf("%x runs already", img.GetRootHash())
 		return connect.NewResponse(resp), nil
