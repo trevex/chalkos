@@ -107,9 +107,9 @@ type Delivery interface {
 	// slot keeps it. chalkd asks every compiled plugin: the identity may be for another image, as
 	// an upgrade's slot is, so the check passes without the layer's part.
 	CheckIdentity(identity []byte) error
-	// Plan checks a delivery before the node changes and returns what applying it does. chalkd
-	// asks the active plugins, and the installer, whose image carries no layer, every compiled
-	// plugin.
+	// Plan checks a delivery before the node changes and returns what applying it does; it changes
+	// nothing itself, since a dry run calls it too and drops the Commit it returns. chalkd asks the
+	// active plugins, and the installer, whose image carries no layer, every compiled plugin.
 	Plan(ctx context.Context, d Planned) (Commit, error)
 }
 
