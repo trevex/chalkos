@@ -34,11 +34,13 @@ func kea6Docs(t *testing.T, subnets ...any) map[string][]any {
 // The renderer refuses an IPv6 subnet of more than 120 bits or of link-local addresses, on two
 // links, with a gateway or boot files, an IPv4 DNS server, a pool or reservation outside the
 // subnet, at the subnet routers' anycast address or of the router's own, a pool backwards,
-// delegated prefixes of the subnet, of the router's address on a link of the VRF or of a length
-// no longer than their range, an IPv4 subnet that delegates prefixes, two IPv6 subnets of one
-// link or that overlap, the subnet of one and the delegated prefixes of another, and links whose
-// Network sends no router advertisements with the flag that tells clients to ask: Managed for
-// addresses, Managed or OtherInformation for delegated prefixes and options alone.
+// pools that overlap or hold a DNS server, a reservation of a MAC address or host name that is
+// none, a domain that is none, delegated prefixes of ::/8, fe80::/10 or ff00::/8, of the subnet,
+// of the router's address on a link of the VRF or of a length no longer than their range, an
+// IPv4 subnet that delegates prefixes, two IPv6 subnets of one link or that overlap, the subnet
+// of one and the delegated prefixes of another, and links whose Network sends no router
+// advertisements with the flag that tells clients to ask: Managed for addresses, Managed or
+// OtherInformation for delegated prefixes and options alone.
 func TestKea6Refusals(t *testing.T) {
 	office := func(more string) any {
 		return subnetDoc(t, "office6", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/64"`+more+`}`)
@@ -59,6 +61,14 @@ func TestKea6Refusals(t *testing.T) {
 		"the router's address":        {[]any{office(`, "pools": [{"first": "2001:db8:1::1", "last": "2001:db8:1::ff"}]`)}, "the pool's first address, 2001:db8:1::1, is the router's own address on the subnet's link"},
 		"a pool backwards":            {[]any{office(`, "pools": [{"first": "2001:db8:1::1ff", "last": "2001:db8:1::100"}]`)}, "the pool 2001:db8:1::1ff-2001:db8:1::100 ends before it starts"},
 		"a reservation in a pool":     {[]any{office(pool + `, "reservations": [{"mac": "52:54:00:12:34:56", "address": "2001:db8:1::120", "hostname": null}]`)}, "the reservation of 52:54:00:12:34:56, 2001:db8:1::120, lies in the pool 2001:db8:1::100-2001:db8:1::1ff"},
+		"pools overlapping":           {[]any{office(`, "pools": [{"first": "2001:db8:1::100", "last": "2001:db8:1::1ff"}, {"first": "2001:db8:1::180", "last": "2001:db8:1::2ff"}]`)}, "the pools 2001:db8:1::100-2001:db8:1::1ff and 2001:db8:1::180-2001:db8:1::2ff overlap"},
+		"a DNS server in a pool":      {[]any{office(pool + `, "dns": ["2001:db8:1::150"]`)}, "the pool 2001:db8:1::100-2001:db8:1::1ff holds 2001:db8:1::150, a DNS server"},
+		"a MAC in upper case":         {[]any{office(`, "reservations": [{"mac": "52:54:00:12:34:AB", "address": "2001:db8:1::20", "hostname": null}]`)}, `"52:54:00:12:34:AB" is no MAC address in lower case`},
+		"a host name":                 {[]any{office(`, "reservations": [{"mac": "52:54:00:12:34:56", "address": "2001:db8:1::20", "hostname": "-printer"}]`)}, `the reservation of 52:54:00:12:34:56: "-printer" is no host name`},
+		"a domain":                    {[]any{office(`, "domain": "office..example.org"`)}, `"office..example.org" is no domain`},
+		"delegating from ::/8":        {[]any{office(`, "prefixDelegation": {"prefix": "::/48", "length": 56}`)}, `prefixDelegation's prefix "::/48" is no IPv6 range outside ::/8, fe80::/10 and ff00::/8`},
+		"delegating link-local":       {[]any{office(`, "prefixDelegation": {"prefix": "fe80:1::/48", "length": 56}`)}, `prefixDelegation's prefix "fe80:1::/48" is no IPv6 range outside`},
+		"delegating multicast":        {[]any{office(`, "prefixDelegation": {"prefix": "ff05::/32", "length": 48}`)}, `prefixDelegation's prefix "ff05::/32" is no IPv6 range outside`},
 		"delegating the subnet":       {[]any{office(`, "prefixDelegation": {"prefix": "2001:db8:1::/48", "length": 64}`)}, "prefixDelegation's prefix 2001:db8:1::/48 overlaps the subnet 2001:db8:1::/64"},
 		"delegating short prefixes":   {[]any{office(`, "prefixDelegation": {"prefix": "2001:db8:100::/56", "length": 56}`)}, "prefixDelegation's length 56 is not longer than its prefix 2001:db8:100::/56, nor 128 at most"},
 		"delegating IPv4":             {[]any{subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "prefixDelegation": {"prefix": "2001:db8:100::/56", "length": 64}}`)}, "DHCPSubnet office: prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of"},
@@ -213,5 +223,20 @@ func TestKea6DelegatesAddressesOfOtherVRFs(t *testing.T) {
 		subnetDoc(t, "guests6", `{"interfaces": ["vlan30"], "subnet": "2001:db8:1::/64", "prefixDelegation": {"prefix": "2001:db8:4::/48", "length": 56}}`),
 	)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Two subnets of one server whose ranges lie apart but whose numbers in Kea are the same, as two
+// hashes may be, are refused.
+func TestKeaSameNumber(t *testing.T) {
+	a := servedSubnet{name: "office6", vrf: defaultVRF, prefix: mustPrefix("2001:db8:1::/64"), id: 7}
+	b := servedSubnet{name: "lab6", vrf: defaultVRF, prefix: mustPrefix("2001:db8:2::/64"), id: 7}
+	want := "DHCPSubnet office6 and DHCPSubnet lab6 get the same number 7 in Kea; change one subnet's range"
+	if err := apart(a, b); err == nil || err.Error() != want {
+		t.Errorf("apart = %v; want %s", err, want)
+	}
+	b.id = 8
+	if err := apart(a, b); err != nil {
+		t.Errorf("apart of different numbers = %v", err)
 	}
 }
