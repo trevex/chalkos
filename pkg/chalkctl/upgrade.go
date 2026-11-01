@@ -35,8 +35,9 @@ type upgradeRun struct {
 	upgradeOptions
 	upgradePlan
 	// role is the credentials' role. Below admin a node accepts no config with an upgrade, so the
-	// run withholds config and each node carries its own over. A node that refuses to show its
-	// config makes the run withhold config too, in case the role chalkctl read is wrong.
+	// run withholds config and each node gives the image its pending config, else carries its own
+	// over. A node that refuses to show its config makes the run withhold config too, in case the
+	// role chalkctl read is wrong.
 	role         pki.Role
 	withheld     atomic.Bool
 	withholdOnce sync.Once
@@ -213,9 +214,9 @@ func (r *upgradeRun) chooseConfig(diff bool) error {
 		return r.diffNeedsAdmin()
 	case !r.role.Allows(pki.RoleAdmin):
 		// A partial cluster has no inventory, so there is no config to withhold, and each node
-		// says that it carries its own over.
+		// says what it gives the image.
 		if !r.cluster.partial() {
-			r.withhold("config not delivered: the %s role cannot deliver config; each node carries its own over", r.roleName())
+			r.withhold("config not delivered: the %s role cannot deliver config; each node gives the image its pending config, else carries its own over", r.roleName())
 		}
 		return nil
 	}
@@ -234,7 +235,7 @@ func (r *upgradeRun) withhold(format string, args ...any) {
 // withholdDenied withholds the run's config after the node refused to show its config to the
 // credentials, which read as admin, so it would refuse config with the upgrade too.
 func (r *upgradeRun) withholdDenied(name string) {
-	r.withhold("%s refuses to show its config to these credentials; config not delivered, each node carries its own over", name)
+	r.withhold("%s refuses to show its config to these credentials; config not delivered, each node gives the image its pending config, else carries its own over", name)
 }
 
 // showsConfig asks the first node the run sends its image for its config, once and before any
@@ -297,7 +298,7 @@ func roleLabel(role pki.Role) string {
 // diffNeedsAdmin is the error of upgrade --diff with credentials below admin, which may neither
 // read a node's config nor deliver one.
 func (r *upgradeRun) diffNeedsAdmin() error {
-	return fmt.Errorf("upgrade --diff compares the config an upgrade delivers, which needs the admin role; the %s role cannot deliver config, so each node carries its own over", r.roleName())
+	return fmt.Errorf("upgrade --diff compares the config an upgrade delivers, which needs the admin role; the %s role cannot deliver config, so each node gives the image its pending config, else carries its own over", r.roleName())
 }
 
 // deliveryOf is the config the node gets with its image; nil when the run withholds config or has
@@ -348,7 +349,7 @@ func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *up
 		return nil, nil
 	}
 	if n.delivery == nil {
-		r.say("%s: no inventory to compare the config with; the node carries its own over", n.name)
+		r.say("%s: no inventory to compare the config with; the node gives the image its pending config, else carries its own over", n.name)
 		return nil, nil
 	}
 	nodeDocs, err := slotConfig(ctx, conn, false)

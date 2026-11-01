@@ -16,7 +16,7 @@ import (
 
 // upgradeNode is a node to upgrade, by its roles in the clusters of its layers; the image it gets;
 // and the config it gets for the image, the inventory's, checked against the image; nil on a
-// partial cluster, where the node carries its own over.
+// partial cluster, where the node gives the image its pending config, else carries its own over.
 type upgradeNode struct {
 	name     string
 	roles    upgradeRoles

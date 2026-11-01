@@ -74,7 +74,7 @@ KubernetesService on images with the `kubernetes` layer, and RouterService on im
 | RouterService | Status | reader | normal mode |
 
 An Upgrade with config or a fallback secret from an operator fails with
-`/chalkos.node.v1.NodeService/Upgrade with config or a fallback secret needs the admin role; without them the node carries its own config over`.
+`/chalkos.node.v1.NodeService/Upgrade with config or a fallback secret needs the admin role; without them the node gives the image its pending config, else carries its own config over`.
 
 RunDiagnostic also needs the role the diagnostic names, which `chalkctl node diag` lists. A
 reader who runs `ping` fails with `the diagnostic ping needs the operator role`.

@@ -115,7 +115,7 @@ file, chalkctl sends no config. With an inventory it prints one line for the run
 line per node:
 
 ```text
-config not delivered: the operator role cannot deliver config; each node carries its own over
+config not delivered: the operator role cannot deliver config; each node gives the image its pending config, else carries its own over
 ```
 
 Without an inventory, chalkctl sends no config either. In both cases the node gives the new image

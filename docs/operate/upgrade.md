@@ -208,19 +208,19 @@ each node's password on the terminal before it drains the first node.
 
 Delivering config needs the admin role: the secrets file, or an admin client file. `--diff` needs
 it too. With an operator client file the upgrade runs and prints
-`config not delivered: the operator role cannot deliver config; each node carries its own over`.
-Each node then checks the config it runs against the new image and keeps it for that image. A
-reader client file cannot upgrade.
+`config not delivered: the operator role cannot deliver config; each node gives the image its pending config, else carries its own over`.
+Each node then checks its pending config, or else the config it runs, against the new image and
+keeps it for that image. A reader client file cannot upgrade.
 
 Before it asks for any password or drains a node, chalkctl asks the first node it upgrades for its
 config. A node that refuses to show its config to the credentials would refuse config with the
 upgrade too. The run then delivers no config to any node and prints
-`<node> refuses to show its config to these credentials; config not delivered, each node carries
-its own over`.
+`<node> refuses to show its config to these credentials; config not delivered, each node gives the image its pending config, else carries its own over`.
 
 Without an inventory, chalkctl has no config to send. An upgrade with `--image` and
 `--address <node>=<address>`, run outside the inventory's directory, prints
-`<node>: no inventory to compare the config with; the node carries its own over` for each node.
+`<node>: no inventory to compare the config with; the node gives the image its pending config, else carries its own over`
+for each node.
 
 A node can hold a pending config, which `chalkctl apply-config --staged` stores on a node without
 a staged image. An upgrade that sends no config gives the new image the pending config in place of

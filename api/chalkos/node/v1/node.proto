@@ -69,12 +69,13 @@ service NodeService {
   // The first message carries the header; the store, its hash tree and the UKI follow as chunks,
   // unless the header's source names an image in a registry, which the node pulls. Available in
   // normal mode to operators. Delivering config or a fallback secret with the upgrade needs the
-  // admin role, as ApplyConfig does; without them the node carries the running image's config
-  // over. The node checks that the image is of its platform, and, once the store is written and
-  // before the image becomes the next boot, that the schemas in the image accept the config it
-  // keeps for the image. It does not check that the image is one to trust: without Secure Boot,
-  // an operator can run any image as root, with STATE and VAR unsealed, as their keys are sealed
-  // to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
+  // admin role, as ApplyConfig does; without them the node gives the image its pending config,
+  // else carries the running image's config over. The node checks that the image is of its
+  // platform, and, once the store is written and before the image becomes the next boot, that the
+  // schemas in the image accept the config it keeps for the image. It does not check that the
+  // image is one to trust: without Secure Boot, an operator can run any image as root, with STATE
+  // and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
+  // to images signed for db.
   rpc Upgrade(stream UpgradeRequest) returns (UpgradeResponse);
   // Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
   // ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.

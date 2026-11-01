@@ -221,8 +221,8 @@ others take a client file of a high enough role, or the secrets file, which coun
 chalkctl: pass the secrets file with --secrets FILE, or --secrets - to read it from standard input
 ```
 
-`chalkctl upgrade` with an operator client file sends no config, and each node carries its own
-config over to the new image, as
+`chalkctl upgrade` with an operator client file sends no config, and each node gives the new image
+its pending config, else carries its own config over, as
 [Operator upgrades carry no config](../how-it-works/node/upgrades.md#operator-upgrades-carry-no-config)
 explains.
 

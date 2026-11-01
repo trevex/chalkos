@@ -949,8 +949,9 @@ func TestUpgradeWith4KiBVerityBlocks(t *testing.T) {
 }
 
 // TestUpgradeWithAnOperatorClientFile runs an upgrade without the secrets file. The operator role
-// cannot deliver config, so chalkctl sends none, says so once, and each node carries its own over;
-// --diff, which compares the config an upgrade delivers, needs the admin role.
+// cannot deliver config, so chalkctl sends none, says so once, and each node gives the image its
+// pending config, else carries its own over; --diff, which compares the config an upgrade
+// delivers, needs the admin role.
 func TestUpgradeWithAnOperatorClientFile(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
@@ -963,7 +964,7 @@ func TestUpgradeWithAnOperatorClientFile(t *testing.T) {
 		t.Errorf("n1 stages %q with the config %q, want 0.2.0 without config", n.staged, n.stagedConfig)
 	}
 	out := l.ta.stdout.String()
-	if line := "config not delivered: the operator role cannot deliver config; each node carries its own over\n"; strings.Count(out, line) != 1 || strings.Contains(out, "n1: config") {
+	if line := "config not delivered: the operator role cannot deliver config; each node gives the image its pending config, else carries its own over\n"; strings.Count(out, line) != 1 || strings.Contains(out, "n1: config") {
 		t.Errorf("output:\n%s\nwant %q once and no node's config line", out, line)
 	}
 	err := l.upgrade(testUpgradeImage(t, "plain", "0.2.0"), "--config", config, "--diff")
@@ -985,7 +986,7 @@ func TestUpgradeWithAnOperatorClientFileAlone(t *testing.T) {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	out := l.ta.stdout.String()
-	if !strings.Contains(out, "w1: no inventory to compare the config with; the node carries its own over") || strings.Contains(out, "config not delivered") {
+	if !strings.Contains(out, "w1: no inventory to compare the config with; the node gives the image its pending config, else carries its own over") || strings.Contains(out, "config not delivered") {
 		t.Errorf("output:\n%s\nwant the line without an inventory and none about withheld config", out)
 	}
 	if n := l.nodes["w1"]; n.staged != "0.2.0" || n.stagedConfig != "" {
@@ -1028,7 +1029,7 @@ func TestUpgradeWithholdsConfigANodeDoesNotShow(t *testing.T) {
 		}
 	}
 	out := l.ta.stdout.String()
-	if line := "w1 refuses to show its config to these credentials; config not delivered, each node carries its own over\n"; strings.Count(out, line) != 1 || strings.Contains(out, "role cannot deliver config") {
+	if line := "w1 refuses to show its config to these credentials; config not delivered, each node gives the image its pending config, else carries its own over\n"; strings.Count(out, line) != 1 || strings.Contains(out, "role cannot deliver config") {
 		t.Errorf("output:\n%s\nwant %q once", out, line)
 	}
 }
@@ -1081,7 +1082,7 @@ func TestUpgradeAsksTheFirstNodeItInstallsForItsConfig(t *testing.T) {
 	if len(*prompts) != 0 {
 		t.Errorf("asked %q", *prompts)
 	}
-	if line := "w2 refuses to show its config to these credentials; config not delivered, each node carries its own over\n"; strings.Count(l.ta.stdout.String(), line) != 1 {
+	if line := "w2 refuses to show its config to these credentials; config not delivered, each node gives the image its pending config, else carries its own over\n"; strings.Count(l.ta.stdout.String(), line) != 1 {
 		t.Errorf("output:\n%s\nwant %q once", l.ta.stdout, line)
 	}
 	if n := l.nodes["w2"]; n.staged != "0.2.0" || n.stagedConfig != "" {
@@ -1538,7 +1539,7 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	if v := l.images(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.1.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
 		t.Errorf("the nodes run %v", v)
 	}
-	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: no inventory to compare the config with; the node carries its own over") {
+	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: no inventory to compare the config with; the node gives the image its pending config, else carries its own over") {
 		t.Errorf("output lacks the line without an inventory:\n%s", out)
 	}
 	if out := l.ta.stdout.String(); !strings.Contains(out, "skipping w3 (kvm): the image is built for metal") {

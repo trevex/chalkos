@@ -19,9 +19,9 @@ Ready. A node that falls back to the image before stops the run.
 
 Each node gets its config with the image, checked against it before any node is drained, and
 chalkctl prints a line of what it changes; --diff prints the whole diff and changes nothing.
-Delivering config needs the admin role: with an operator client file, each node carries its own
-config over. A new volume is enrolled with the recovery key, which only the secrets file gives, or
-the password --password-file holds.
+Delivering config needs the admin role: with an operator client file, each node gives the image
+its pending config, else carries its own config over. A new volume is enrolled with the recovery
+key, which only the secrets file gives, or the password --password-file holds.
 
 --rollback boots the image the nodes ran before their last upgrade again instead of installing
 one, which their inactive slots still hold with its config until the next upgrade writes over
