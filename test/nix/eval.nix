@@ -1132,7 +1132,7 @@ lib.runTests {
         kind = edge.chalkos.kinds ? DHCPSubnet;
         plainKind = layered.plain-metal.config.chalkos.kinds ? DHCPSubnet;
         inputs = edge.chalkos.outputs.kea.inputs;
-        render = lib.hasSuffix "/bin/chalkos-render kea" edge.chalkos.outputs.kea.render;
+        render = lib.hasInfix "/bin/chalkos-render kea /nix/store/" edge.chalkos.outputs.kea.render;
         check = lib.hasInfix "/bin/kea-dhcp4 -t" edge.chalkos.outputs.kea.check;
         package = lib.hasSuffix "-kea-dhcp-3.2.0" kea;
         firewallReads = lib.elem "DHCPSubnet" edge.chalkos.outputs.router-nftables.inputs;

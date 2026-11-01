@@ -297,6 +297,17 @@ type dhcpSubnetSpec struct {
 		UEFI   *string `json:"uefi"`
 		IPXE   *string `json:"ipxe"`
 	} `json:"boot"`
+	// PrefixDelegation is nil for a subnet that delegates no prefixes, as an IPv4 one.
+	PrefixDelegation *struct {
+		Prefix string `json:"prefix"`
+		Length int    `json:"length"`
+	} `json:"prefixDelegation"`
+}
+
+// dhcpRelaySpec is a DHCPRelay document's spec.
+type dhcpRelaySpec struct {
+	Interfaces []string `json:"interfaces"`
+	Servers    []string `json:"servers"`
 }
 
 // policyRouteSpec is a PolicyRoute document's spec.
@@ -356,10 +367,13 @@ type routerDocuments struct {
 	VRFs            []named[vrfSpec]
 	PolicyRoutes    []named[policyRouteSpec]
 	DHCPSubnets     []named[dhcpSubnetSpec]
+	DHCPRelays      []named[dhcpRelaySpec]
 	// Links are the interface names the Network documents' [Match] sections name, sorted.
 	Links []string
 	// Addresses are the static addresses the Network documents give their links.
 	Addresses []networkAddress
+	// Networks are the Network documents' specs, by name.
+	Networks map[string]map[string]any
 	// Membership is the VRF of the links of Links and of the Network documents.
 	Membership vrfMembership
 }
@@ -415,8 +429,12 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 	if d.DHCPSubnets, err = decodeKind[dhcpSubnetSpec](byKind, "DHCPSubnet"); err != nil {
 		return d, err
 	}
+	if d.DHCPRelays, err = decodeKind[dhcpRelaySpec](byKind, "DHCPRelay"); err != nil {
+		return d, err
+	}
 	d.Links = networkLinks(byKind)
 	d.Addresses = networkAddresses(byKind)
+	d.Networks = networkSpecs(byKind)
 	if d.Membership, err = vrfLinks(d.VRFs, d.Links, byKind); err != nil {
 		return d, err
 	}

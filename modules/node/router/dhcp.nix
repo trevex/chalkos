@@ -208,7 +208,7 @@ in
         "Network"
       ]
       ++ lib.optional config.chalkos.router.nat64.enable "NAT64";
-      render = "${lib.getExe chalkosPackages.chalkos-render} kea";
+      render = "${lib.getExe chalkosPackages.chalkos-render} kea ${pkgs.coreutils}/bin/true";
       # kea-dhcp4 -t refuses a config of links the check's network namespace lacks, so it checks
       # each config without them.
       check = ''

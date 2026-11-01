@@ -31,7 +31,7 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render frr
        chalkos-render jool
        chalkos-render unbound TRUST-ANCHOR ZONE-FILE
-       chalkos-render kea
+       chalkos-render kea PD-HOOK
 
 template executes the Go text/template TEMPLATE on the input and writes the result to $OUT/FILE;
 the template has the functions join, quote, json and default. documents writes each document of
@@ -46,9 +46,10 @@ PORT; router-nftables-fallback writes the table of a node without a rendered rul
 forwards nothing. frr writes FRR's config of the BGP documents as $OUT/frr.conf. jool writes Jool's
 config of each NAT64 document as $OUT/<name>.json. unbound writes Unbound's config of the Resolver
 document as $OUT/unbound.conf, with the root's trust anchor in the file TRUST-ANCHOR and the zone
-ipv4only.arpa in the file ZONE-FILE. kea writes the config of Kea's DHCPv4 server of each VRF whose
-links DHCPSubnet documents serve as $OUT/kea-dhcp4.json for the default VRF and
-$OUT/kea-dhcp4-<vrf>.json for a VRF.`
+ipv4only.arpa in the file ZONE-FILE. kea writes the config of Kea's DHCPv4 and DHCPv6 servers of
+each VRF whose links DHCPSubnet documents serve as $OUT/kea-dhcp4.json and $OUT/kea-dhcp6.json for
+the default VRF and $OUT/kea-dhcp4-<vrf>.json and $OUT/kea-dhcp6-<vrf>.json for a VRF; a DHCPv6
+server whose subnets delegate prefixes runs the program PD-HOOK on their leases.`
 
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Getenv("OUT")); err != nil {
@@ -95,8 +96,8 @@ func run(args []string, stdin io.Reader, out string) error {
 		return renderJool(in, out)
 	case args[0] == "unbound" && len(args) == 3:
 		return renderUnbound(args[1], args[2], in, out)
-	case args[0] == "kea" && len(args) == 1:
-		return renderKea(in, out)
+	case args[0] == "kea" && len(args) == 2:
+		return renderKea(args[1], in, out)
 	}
 	return errUsage
 }

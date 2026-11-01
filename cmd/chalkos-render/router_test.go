@@ -31,6 +31,9 @@ const (
 	// unbound; the rules check replaces them with those of a router image.
 	testTrustAnchor = "/etc/unbound/root.key"
 	testZoneFile    = "/etc/unbound/ipv4only.arpa.zone"
+	// testPDHook stands for the store path of the program that records delegated prefixes, which
+	// the image gives chalkos-render kea.
+	testPDHook = "/etc/kea/chalkos-dhcp6-pd"
 )
 
 // routerKinds are the kinds of router.chalkos.dev.
@@ -163,7 +166,7 @@ func TestRouterGolden(t *testing.T) {
 			golden(t, name+".jool", renderedFiles(t, []string{"jool"}, input))
 			golden(t, name+".unbound", renderedFiles(t, []string{"unbound", testTrustAnchor, testZoneFile}, input))
 			golden(t, name+".networkd", renderedFiles(t, []string{"router-networkd", networkFixture}, input))
-			golden(t, name+".kea", renderedFiles(t, []string{"kea"}, input))
+			golden(t, name+".kea", renderedFiles(t, []string{"kea", testPDHook}, input))
 		})
 	}
 }

@@ -13,33 +13,43 @@ import (
 	"strings"
 )
 
-// The output kea: the config of Kea's DHCPv4 server of each VRF whose links DHCPSubnet documents
-// serve, on the links the subnets name. The renderer checks across documents what the kind's rules
-// cannot: one VRF per subnet, one subnet per link, no overlap within a VRF, a static address of
-// the router in the subnet on each link, the order of the pools' and reservations' addresses, and
-// pools and reservations apart from the router's, the gateway's and the DNS and boot servers'
-// addresses.
+// The output kea: the config of Kea's DHCPv4 and DHCPv6 servers of each VRF whose links
+// DHCPSubnet documents serve, on the links the subnets name. The renderer checks across documents
+// what the kind's rules cannot: one VRF per subnet, one subnet of each family per link, no overlap
+// within a VRF, a static address of the router in the subnet on each link, router advertisements
+// that send IPv6 clients to the DHCPv6 server, the order of the pools' and reservations'
+// addresses, and pools and reservations apart from the router's, the gateway's and the DNS and
+// boot servers' addresses.
 
-// keaFile is the file renderKea writes for the default VRF's server; a VRF's server gets
-// kea-dhcp4-<vrf>.json.
-const keaFile = "kea-dhcp4.json"
-
-// keaFileOf is the config file of the server of vrf.
-func keaFileOf(vrf string) string {
-	if vrf == defaultVRF {
-		return keaFile
-	}
-	return "kea-dhcp4-" + vrf + ".json"
+// keaServer is one of Kea's servers: that of a VRF and a family.
+type keaServer struct {
+	vrf string
+	v6  bool
 }
 
-// keaInstanceOf is the part of the server of vrf's control socket's and lease file's names:
-// dhcp4 for the default VRF's, dhcp4-<vrf> for a VRF's. Kea takes sockets in /run/kea alone and
-// lease files in /var/lib/kea alone, so the servers share both directories.
-func keaInstanceOf(vrf string) string {
-	if vrf == defaultVRF {
-		return "dhcp4"
+// family is dhcp4 or dhcp6, the server's part of its program's, config's, socket's and lease
+// file's names.
+func (s keaServer) family() string {
+	if s.v6 {
+		return "dhcp6"
 	}
-	return "dhcp4-" + vrf
+	return "dhcp4"
+}
+
+// file is the server's config file: kea-dhcp4.json for the default VRF's DHCPv4 server,
+// kea-dhcp6-<vrf>.json for a VRF's DHCPv6 server.
+func (s keaServer) file() string {
+	return "kea-" + s.instance() + ".json"
+}
+
+// instance is the part of the server's control socket's and lease file's names: dhcp4 for the
+// default VRF's DHCPv4 server, dhcp6-<vrf> for a VRF's DHCPv6 server. Kea takes sockets in
+// /run/kea alone and lease files in /var/lib/kea alone, so the servers share both directories.
+func (s keaServer) instance() string {
+	if s.vrf == defaultVRF {
+		return s.family()
+	}
+	return s.family() + "-" + s.vrf
 }
 
 // keaRetryWait and keaRetries are how often Kea tries again to open the sockets of a link that is
@@ -67,20 +77,35 @@ type servedSubnet struct {
 	spec  dhcpSubnetSpec
 	links []string
 	vrf   string
-	// prefix is the subnet, masked, and id Kea's number for it: its first address as an integer,
-	// unique within a VRF as no two subnets of a VRF overlap, so a subnet keeps its leases while
-	// documents come and go or are renamed.
+	// prefix is the subnet, masked, and id Kea's number for it, unique within its server: an IPv4
+	// subnet's first address as an integer, as no two subnets of a VRF overlap, and a hash of an
+	// IPv6 subnet; a subnet keeps its number, and its leases, while documents come and go or are
+	// renamed.
 	prefix netip.Prefix
 	id     uint32
 	pools  [][2]netip.Addr
 	// seconds is the lease time.
 	seconds uint64
+	// delegated is the range an IPv6 subnet delegates prefixes of length length from, invalid
+	// for one that delegates none.
+	delegated netip.Prefix
+	length    int
 }
 
-// renderKea writes Kea's DHCPv4 config of each VRF whose links DHCPSubnet documents serve,
-// out/kea-dhcp4.json for the default VRF and out/kea-dhcp4-<vrf>.json for a VRF. A node without a
-// DHCPSubnet gets no file and runs no server.
-func renderKea(in map[string]any, out string) error {
+// server is the Kea server that serves the subnet.
+func (s servedSubnet) server() keaServer {
+	return keaServer{vrf: s.vrf, v6: s.prefix.Addr().Is6()}
+}
+
+// renderKea writes the config of Kea's DHCPv4 and DHCPv6 servers of each VRF whose links
+// DHCPSubnet documents serve: out/kea-dhcp4.json and out/kea-dhcp6.json for the default VRF,
+// out/kea-dhcp4-<vrf>.json and out/kea-dhcp6-<vrf>.json for a VRF. A node without a DHCPSubnet
+// gets no file and runs no server. pdHook is the program Kea's run_script hook runs for an IPv6
+// server that delegates prefixes.
+func renderKea(pdHook string, in map[string]any, out string) error {
+	if !strings.HasPrefix(pdHook, "/") {
+		return fmt.Errorf("%q is no absolute path of the program that records delegated prefixes", pdHook)
+	}
 	d, err := readRouterDocuments(in)
 	if err != nil {
 		return err
@@ -91,36 +116,71 @@ func renderKea(in map[string]any, out string) error {
 		return err
 	}
 	devices := vrfDevices(d)
-	served := map[string]string{}
-	byVRF := map[string][]servedSubnet{}
+	// served are the subnets of each link, by family.
+	served := map[keaServer]map[string]string{}
+	byServer := map[keaServer][]servedSubnet{}
 	for _, s := range d.DHCPSubnets {
 		sub, err := serveSubnet(d, units, devices, s)
 		if err != nil {
 			return fmt.Errorf("DHCPSubnet %s: %w", s.Name, err)
 		}
+		family := keaServer{v6: sub.prefix.Addr().Is6()}
+		if served[family] == nil {
+			served[family] = map[string]string{}
+		}
 		for _, l := range sub.links {
-			if other, ok := served[l]; ok {
-				return fmt.Errorf("DHCPSubnet %s and DHCPSubnet %s both serve %s; a link takes one subnet", other, s.Name, l)
+			if other, ok := served[family][l]; ok {
+				return fmt.Errorf("DHCPSubnet %s and DHCPSubnet %s both serve %s; a link takes one subnet of each family", other, s.Name, l)
 			}
-			served[l] = s.Name
+			served[family][l] = s.Name
 		}
-		for _, other := range byVRF[sub.vrf] {
-			if other.prefix.Overlaps(sub.prefix) {
-				return fmt.Errorf("DHCPSubnet %s and DHCPSubnet %s overlap in VRF %s: %s and %s", other.name, s.Name, sub.vrf, other.prefix, sub.prefix)
+		for _, other := range byServer[sub.server()] {
+			if err := apart(other, sub); err != nil {
+				return err
 			}
 		}
-		byVRF[sub.vrf] = append(byVRF[sub.vrf], sub)
+		byServer[sub.server()] = append(byServer[sub.server()], sub)
 	}
-	vrfs := slices.Collect(maps.Keys(byVRF))
-	slices.SortFunc(vrfs, func(a, b string) int { return strings.Compare(vrfOrder(a), vrfOrder(b)) })
-	for _, vrf := range vrfs {
-		data, err := json.MarshalIndent(keaConfig(vrf, byVRF[vrf]), "", "  ")
+	servers := slices.Collect(maps.Keys(byServer))
+	slices.SortFunc(servers, func(a, b keaServer) int {
+		return strings.Compare(vrfOrder(a.vrf)+" "+a.family(), vrfOrder(b.vrf)+" "+b.family())
+	})
+	for _, srv := range servers {
+		var config map[string]any
+		if srv.v6 {
+			config = kea6Config(srv, byServer[srv], pdHook)
+		} else {
+			config = keaConfig(srv, byServer[srv])
+		}
+		data, err := json.MarshalIndent(config, "", "  ")
 		if err != nil {
 			return err
 		}
-		if err := writeFile(out, keaFileOf(vrf), append(data, '\n')); err != nil {
+		if err := writeFile(out, srv.file(), append(data, '\n')); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// apart refuses two subnets of one server whose ranges overlap, the ranges they delegate
+// prefixes from included, or whose numbers are the same.
+func apart(a, b servedSubnet) error {
+	ranges := func(s servedSubnet) []netip.Prefix {
+		if s.delegated.IsValid() {
+			return []netip.Prefix{s.prefix, s.delegated}
+		}
+		return []netip.Prefix{s.prefix}
+	}
+	for _, p := range ranges(a) {
+		for _, q := range ranges(b) {
+			if p.Overlaps(q) {
+				return fmt.Errorf("DHCPSubnet %s and DHCPSubnet %s overlap in VRF %s: %s and %s", a.name, b.name, a.vrf, p, q)
+			}
+		}
+	}
+	if a.id == b.id {
+		return fmt.Errorf("DHCPSubnet %s and DHCPSubnet %s get the same number %d in Kea; change one subnet's range", a.name, b.name, a.id)
 	}
 	return nil
 }
@@ -129,6 +189,9 @@ func renderKea(in map[string]any, out string) error {
 func serveSubnet(d routerDocuments, units []networkUnit, devices []string, s named[dhcpSubnetSpec]) (servedSubnet, error) {
 	sub := servedSubnet{name: s.Name, spec: s.Spec}
 	p, err := netip.ParsePrefix(s.Spec.Subnet)
+	if err == nil && p.Addr().Is6() && !p.Addr().Is4In6() {
+		return serveSubnet6(d, units, devices, s, p)
+	}
 	if err != nil || !p.Addr().Is4() || p.Bits() > 30 {
 		return sub, fmt.Errorf("the subnet %q is no IPv4 range of 30 bits at most", s.Spec.Subnet)
 	}
@@ -137,10 +200,13 @@ func serveSubnet(d routerDocuments, units []networkUnit, devices []string, s nam
 	if sub.id == 0 {
 		return sub, fmt.Errorf("the subnet %s starts at 0.0.0.0, which Kea numbers no subnet by", sub.prefix)
 	}
-	if sub.links, sub.vrf, err = subnetLinks(d, devices, s.Spec.Interfaces); err != nil {
+	if sub.links, sub.vrf, err = subnetLinks(d, devices, s.Spec.Interfaces, subnetWords); err != nil {
 		return sub, err
 	}
-	own, err := ownAddresses(d, units, sub)
+	if s.Spec.PrefixDelegation != nil {
+		return sub, fmt.Errorf("prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of")
+	}
+	own, err := ownAddresses(d, units, sub, "which Kea answers its clients from")
 	if err != nil {
 		return sub, err
 	}
@@ -267,11 +333,18 @@ type takenAddress struct {
 	what string
 }
 
-// subnetLinks are the links the interfaces of a subnet serve it on, sorted, and their VRF. Kea
-// reads and answers on raw sockets ahead of the firewall, so a subnet names each of its links: it
-// refuses a glob, as the schema does, an interface that is a VRF's device or a NAT64's link, links
-// of two VRFs and links in a VRF of a Network's VRF= that no VRF document declares.
-func subnetLinks(d routerDocuments, devices []string, interfaces []string) ([]string, string, error) {
+// linkWords end the refusals of subnetLinks for a kind: of a glob, and of links of two VRFs.
+type linkWords struct{ glob, oneVRF string }
+
+// subnetWords end the link refusals of a subnet.
+var subnetWords = linkWords{"a subnet names each link it is served on", "a subnet is served in one VRF"}
+
+// subnetLinks are the links the interfaces of a subnet or relay serve it on, sorted, and their
+// VRF. Kea reads and answers DHCPv4 on raw sockets ahead of the firewall, so a document names each
+// of its links: it refuses a glob, as the schema does, an interface that is a VRF's device or a
+// NAT64's link, links of two VRFs and links in a VRF of a Network's VRF= that no VRF document
+// declares.
+func subnetLinks(d routerDocuments, devices []string, interfaces []string, words linkWords) ([]string, string, error) {
 	if len(interfaces) == 0 {
 		return nil, "", fmt.Errorf("interfaces names no interface")
 	}
@@ -279,7 +352,7 @@ func subnetLinks(d routerDocuments, devices []string, interfaces []string) ([]st
 	for _, i := range interfaces {
 		if !plainInterface.MatchString(i) {
 			if interfaceName.MatchString(i) {
-				return nil, "", fmt.Errorf("interfaces: %q is a glob; a subnet names each link it is served on", i)
+				return nil, "", fmt.Errorf("interfaces: %q is a glob; %s", i, words.glob)
 			}
 			return nil, "", fmt.Errorf("interfaces: %q is no interface name", i)
 		}
@@ -301,7 +374,7 @@ func subnetLinks(d routerDocuments, devices []string, interfaces []string) ([]st
 			return nil, "", err
 		}
 		if vrf != "" && v != vrf {
-			return nil, "", fmt.Errorf("its links are in VRF %s and VRF %s; a subnet is served in one VRF", vrf, v)
+			return nil, "", fmt.Errorf("its links are in VRF %s and VRF %s; %s", vrf, v, words.oneVRF)
 		}
 		vrf = v
 	}
@@ -311,24 +384,36 @@ func subnetLinks(d routerDocuments, devices []string, interfaces []string) ([]st
 	return links, vrf, nil
 }
 
+// linkNetwork is the name of the Network document networkd picks for the link, which the
+// renderer reads the link's addresses and router advertisements from: one that matches it by
+// Name= alone.
+func linkNetwork(units []networkUnit, link, why string) (string, error) {
+	cs := candidates(units, link)
+	if len(cs) == 0 || cs[0].narrowed {
+		return "", fmt.Errorf("no Network document matches %s by Name= alone, so the renderer cannot find %s; give the link one", link, why)
+	}
+	return cs[0].name, nil
+}
+
 // ownAddresses are the router's static addresses in the subnet on its links, which the Network
-// networkd picks for each link gives. Kea answers a client on a link from the link's address in
-// the subnet, and leases no address of a link without one, so it refuses a link without one.
-func ownAddresses(d routerDocuments, units []networkUnit, sub servedSubnet) ([]netip.Addr, error) {
+// networkd picks for each link gives. Kea answers a DHCPv4 client on a link from the link's
+// address in the subnet, and the address routes an IPv6 subnet's addresses to the link, so it
+// refuses a link without one; why ends the refusal.
+func ownAddresses(d routerDocuments, units []networkUnit, sub servedSubnet, why string) ([]netip.Addr, error) {
 	var own []netip.Addr
 	for _, l := range sub.links {
-		cs := candidates(units, l)
-		if len(cs) == 0 || cs[0].narrowed {
-			return nil, fmt.Errorf("no Network document matches %s by Name= alone, so the renderer cannot find its address in the subnet %s; give the link one", l, sub.prefix)
+		network, err := linkNetwork(units, l, "its address in the subnet "+sub.prefix.String())
+		if err != nil {
+			return nil, err
 		}
 		found := false
 		for _, a := range d.Addresses {
-			if a.network == cs[0].name && a.prefix.Addr().Is4() && sub.prefix.Contains(a.prefix.Addr()) {
+			if a.network == network && sub.prefix.Contains(a.prefix.Addr()) {
 				own, found = appendNewAddr(own, a.prefix.Addr()), true
 			}
 		}
 		if !found {
-			return nil, fmt.Errorf("Network %s gives %s no static address in the subnet %s, which Kea answers its clients from", cs[0].name, l, sub.prefix)
+			return nil, fmt.Errorf("Network %s gives %s no static address in the subnet %s, %s", network, l, sub.prefix, why)
 		}
 	}
 	return own, nil
@@ -364,11 +449,11 @@ func leaseSeconds(t string) (uint64, error) {
 	return n, nil
 }
 
-// keaConfig is the config of the DHCPv4 server of vrf: raw sockets on the subnets' links, its
+// keaConfig is the config of the DHCPv4 server srv: raw sockets on the subnets' links, its
 // control socket with the lease commands, its leases in a file, a client class of each subnet's
 // boot file and the subnets.
-func keaConfig(vrf string, subnets []servedSubnet) map[string]any {
-	instance := keaInstanceOf(vrf)
+func keaConfig(srv keaServer, subnets []servedSubnet) map[string]any {
+	instance := srv.instance()
 	var links []string
 	var classes, subnet4 []any
 	for _, s := range subnets {
@@ -392,19 +477,24 @@ func keaConfig(vrf string, subnets []servedSubnet) map[string]any {
 		"lease-database":  map[string]any{"type": "memfile", "persist": true, "name": "/var/lib/kea/" + instance + ".leases", "lfc-interval": 3600},
 		"hooks-libraries": []any{map[string]any{"library": "libdhcp_lease_cmds.so"}},
 		"subnet4":         subnet4,
-		// Kea's messages go to the journal, which stamps them. Each command on the control socket
-		// logs a warning of the dhcp logger, and the commands logger names each, which chalkd's
-		// questions would fill the journal with.
-		"loggers": []any{
-			keaLogger("kea-dhcp4", "INFO"),
-			keaLogger("kea-dhcp4.dhcp", "ERROR"),
-			keaLogger("kea-dhcp4.commands", "WARN"),
-		},
+		"loggers":         keaLoggers(srv),
 	}
 	if len(classes) > 0 {
 		dhcp4["client-classes"] = classes
 	}
 	return map[string]any{"Dhcp4": dhcp4}
+}
+
+// keaLoggers are the loggers of the server srv: Kea's messages go to the journal, which stamps
+// them. Each command on the control socket logs a warning of the dhcp logger, and the commands
+// logger names each, which chalkd's questions would fill the journal with.
+func keaLoggers(srv keaServer) []any {
+	name := "kea-" + srv.family()
+	return []any{
+		keaLogger(name, "INFO"),
+		keaLogger(name+".dhcp", "ERROR"),
+		keaLogger(name+".commands", "WARN"),
+	}
 }
 
 // keaLogger logs the messages of the logger name from severity up to the journal.

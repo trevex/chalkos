@@ -33,7 +33,7 @@ func subnetDoc(t *testing.T, name, spec string) any {
 	if err := json.Unmarshal([]byte(spec), &s); err != nil {
 		t.Fatal(err)
 	}
-	full := map[string]any{"pools": []any{}, "gateway": nil, "dns": []any{}, "domain": nil, "leaseTime": "12h", "reservations": []any{}, "boot": nil}
+	full := map[string]any{"pools": []any{}, "gateway": nil, "dns": []any{}, "domain": nil, "leaseTime": "12h", "reservations": []any{}, "boot": nil, "prefixDelegation": nil}
 	for k, v := range s {
 		full[k] = v
 	}
@@ -66,7 +66,6 @@ func TestKeaRefusals(t *testing.T) {
 		subnets []any
 		want    string
 	}{
-		"an IPv6 subnet":            {[]any{subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "2001:db8::/64"}`)}, `DHCPSubnet office: the subnet "2001:db8::/64" is no IPv4 range of 30 bits at most`},
 		"a subnet of 31 bits":       {[]any{subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/31"}`)}, `the subnet "192.0.2.0/31" is no IPv4 range of 30 bits at most`},
 		"a subnet at 0.0.0.0":       {[]any{subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "0.0.0.0/24"}`)}, "the subnet 0.0.0.0/24 starts at 0.0.0.0, which Kea numbers no subnet by"},
 		"no interface":              {[]any{subnetDoc(t, "office", `{"interfaces": [], "subnet": "192.0.2.0/24"}`)}, "DHCPSubnet office: interfaces names no interface"},
@@ -114,7 +113,7 @@ func TestKeaRefusals(t *testing.T) {
 		"a boot file of a space":  {[]any{office(`, "boot": {"server": null, "bios": "undionly.kpxe x", "uefi": null, "ipxe": null}`)}, `boot's file "undionly.kpxe x" is no file of 1 to 127 printable characters without spaces`},
 		"an interface of a quote": {[]any{subnetDoc(t, "office", `{"interfaces": ["lan0\""], "subnet": "192.0.2.0/24"}`)}, `interfaces: "lan0\"" is no interface name`},
 	} {
-		t.Run(name, func(t *testing.T) { refused(t, []string{"kea"}, keaDocs(t, c.subnets...), c.want) })
+		t.Run(name, func(t *testing.T) { refused(t, []string{"kea", testPDHook}, keaDocs(t, c.subnets...), c.want) })
 	}
 }
 
@@ -123,7 +122,7 @@ func TestKeaRefusals(t *testing.T) {
 // A server answers on the links its subnets name, and a subnet is Kea's number of its first
 // address.
 func TestKeaPerVRF(t *testing.T) {
-	files, err := unitFiles(t, []string{"kea"}, keaDocs(t,
+	files, err := unitFiles(t, []string{"kea", testPDHook}, keaDocs(t,
 		subnetDoc(t, "office", `{"interfaces": ["lan1", "lan0"], "subnet": "192.0.2.0/24", "pools": [{"first": "192.0.2.100", "last": "192.0.2.199"}]}`),
 		subnetDoc(t, "guests", `{"interfaces": ["vlan20"], "subnet": "192.0.2.0/24", "leaseTime": "1h"}`),
 	))
@@ -187,7 +186,7 @@ func slicesSorted(files map[string]string) []string {
 func TestKeaBootClasses(t *testing.T) {
 	render := func(boot string) string {
 		t.Helper()
-		files, err := unitFiles(t, []string{"kea"}, keaDocs(t,
+		files, err := unitFiles(t, []string{"kea", testPDHook}, keaDocs(t,
 			subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "boot": `+boot+`}`),
 		))
 		if err != nil {
