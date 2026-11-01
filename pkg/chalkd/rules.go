@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/rules"
@@ -74,7 +75,7 @@ func (s *Server) checkRules(set *rules.Set, name string, next, old []config.Docu
 // evaluate returns the rules of set next does not meet, which see the node called name; an error
 // is a rule that could not be checked, which refuses the delivery too.
 func evaluate(set *rules.Set, name string, next, old []config.Document, f rules.Facts) ([]rules.Failure, error) {
-	failures, err := set.Evaluate(rules.Input{Documents: next, Old: old, Node: name, Facts: f})
+	failures, err := check.Rules(set, name, config.Redact(next), config.Redact(old), f)
 	if err != nil {
 		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 	}

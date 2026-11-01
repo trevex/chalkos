@@ -2,7 +2,6 @@ package chalkd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -12,6 +11,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -43,15 +43,11 @@ func translateSlot(name string, docs []config.Document, schemas *schema.Schemas,
 	if err != nil {
 		return slot.Stored{}, fmt.Errorf("hash the config: %w", err)
 	}
-	set, id, err := config.Translate(name, docs, schemas, t)
+	tr, err := check.Translate(name, docs, schemas, t)
 	if err != nil {
 		return slot.Stored{}, err
 	}
-	data, err := json.Marshal(id)
-	if err != nil {
-		return slot.Stored{}, fmt.Errorf("encode the identity: %w", err)
-	}
-	return slot.Stored{Delivered: docs, Documents: set.Documents(), Version: version, Identity: data}, nil
+	return slot.Stored{Delivered: docs, Documents: tr.Documents, Version: version, Identity: tr.Identity}, nil
 }
 
 // runningTarget is the running image, as config for it is translated, and its schemas.
