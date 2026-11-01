@@ -1,6 +1,7 @@
-# A router that relays its links' DHCP requests to central servers behind wan0. The office's
-# lan0 relays DHCPv4 and DHCPv6 to a server of each family; the guests' VLAN vlan20 on lan0, in
-# the VRF guest, relays DHCPv4 alone, through the VRF's table.
+# A router that relays its links' DHCP requests to central servers. The office's lan0 relays
+# DHCPv4 and DHCPv6 to a server of each family behind wan0, in the default VRF. The guests' VLAN
+# vlan20 on lan0, in the VRF guest, relays DHCPv4 alone to a server on the VRF's own uplink,
+# vlan30, a VLAN on wan0.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Router
 metadata: {name: router}
@@ -34,12 +35,26 @@ kind: Network
 metadata: {name: 30-wan0}
 spec:
   match: {name: wan0}
-  network: {address: [203.0.113.2/24, "2001:db8:ff::2/64"], gateway: [203.0.113.1, "2001:db8:ff::1"], ipv6AcceptRA: false}
+  network: {address: [203.0.113.2/25, "2001:db8:ff::2/64"], gateway: [203.0.113.1, "2001:db8:ff::1"], vlan: [vlan30], ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 30-vlan30}
+spec:
+  netDev: {kind: vlan, name: vlan30}
+  vlan: {id: 30}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 31-vlan30}
+spec:
+  match: {name: vlan30}
+  network: {address: [203.0.113.130/25], ipv6AcceptRA: false}
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: VRF
 metadata: {name: guest}
-spec: {table: 300, interfaces: [vlan20]}
+spec: {table: 300, interfaces: [vlan20, vlan30]}
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: DHCPRelay
@@ -53,4 +68,4 @@ kind: DHCPRelay
 metadata: {name: guests}
 spec:
   interfaces: [vlan20]
-  servers: [203.0.113.54]
+  servers: [203.0.113.154]

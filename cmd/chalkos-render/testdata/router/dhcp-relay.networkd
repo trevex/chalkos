@@ -56,14 +56,32 @@ Address=198.51.100.1/24
 IPv6AcceptRA=false
 VRF=guest
 
+# 30-vlan30.netdev
+[NetDev]
+Kind=vlan
+Name=vlan30
+
+[VLAN]
+Id=30
+
 # 30-wan0.network
 [Match]
 Name=wan0
 
 [Network]
-Address=203.0.113.2/24
+Address=203.0.113.2/25
 Address=2001:db8:ff::2/64
 Gateway=203.0.113.1
 Gateway=2001:db8:ff::1
 IPv6AcceptRA=false
+VLAN=vlan30
+
+# 31-vlan30.network
+[Match]
+Name=vlan30
+
+[Network]
+Address=203.0.113.130/25
+IPv6AcceptRA=false
+VRF=guest
 
