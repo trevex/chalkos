@@ -1,5 +1,3 @@
-| `DHCPSubnet office6 and DHCPSubnet lab6 get the same number 2387838497 in Kea; change one subnet's range` | Change the range of one IPv6 subnet, whose number is a hash of its range. |
-| `the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer` | Delegate from smaller ranges or delegate shorter prefixes, so that all subnets together delegate 65 536 prefixes at most. |
 ---
 title: "Lease addresses with DHCP"
 description: "Serve IPv4 and IPv6 addresses on a router's links with Kea, delegate IPv6 prefixes to other routers and relay DHCP to servers elsewhere: pools, reservations, options, PXE boot files and a server per VRF"
@@ -422,6 +420,7 @@ fails the delivery, and `chalkctl logs r1` shows the reason on a line that start
 | `DHCPSubnet office: n64-edge is the link of NAT64 edge` | Leave the NAT64's link out. |
 | `DHCPSubnet office and DHCPSubnet lab both serve lan0; a link takes one subnet of each family` | Serve the link in one subnet of each family. |
 | `DHCPSubnet office and DHCPSubnet servers overlap in VRF default: 192.0.2.0/24 and 192.0.2.64/26` | Give the subnets ranges apart. |
+| `DHCPSubnet office6 and DHCPSubnet lab6 get the same number 2387838497 in Kea; change one subnet's range` | Change the range of one IPv6 subnet, whose number is a hash of its range. |
 | `DHCPSubnet office: leaseTime 999999d is longer than 4294967295 seconds, the longest Kea takes` | Shorten the lease. |
 | `DHCPSubnet office6: Network 10-lan0 sends no router advertisements on lan0 with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA` | Send router advertisements with the Managed flag from the link's `Network`. |
 | `DHCPSubnet customers: Network 20-cust0 sends no router advertisements on cust0 with Managed=yes or OtherInformation=yes, which tell its clients to ask the DHCPv6 server; give it ipv6SendRA: true in network and otherInformation: true in ipv6SendRA` | Send router advertisements with the OtherInformation flag. |
@@ -430,6 +429,7 @@ fails the delivery, and `chalkctl logs r1` shows the reason on a line that start
 | `DHCPSubnet customers: prefixDelegation's prefix 2001:db8:100::/40 holds 2001:db8:100::1, the address Network 30-lan3 gives a link of VRF access` | Delegate from a range that holds none of the router's addresses in the VRF. |
 | `DHCPSubnet customers: prefixDelegation's prefix 2001:db8:100::/40 holds the route of 2001:db8:100:100::/56 that Network 30-lan3 gives a link of VRF access` | Delegate from a range apart from the VRF's static routes. |
 | `DHCPSubnet customers: prefixDelegation's prefix 2001:db8:100::/40 holds NAT64 edge's prefix 2001:db8:100:ff::/96 of VRF access` | Delegate from a range apart from the NAT64's prefix. |
+| `the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer` | Delegate from smaller ranges or delegate shorter prefixes, so that all subnets together delegate 65 536 prefixes at most. |
 | `DHCPRelay office: Network 10-lan0 gives lan0 no static global IPv6 address, which the relay forwards its clients' requests from` | Give the link a static address of each family the relay's servers have. |
 | `DHCPRelay office and DHCPRelay guests both relay lan0; a link takes one relay` | Relay the link in one document. |
 | `DHCPRelay office relays DHCPv4 in VRF default and DHCPSubnet lab serves DHCPv4 in VRF lab; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one` | Relay and serve the family in two VRFs other than the default one. |
