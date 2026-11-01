@@ -19,6 +19,7 @@ callPackage ./go-module.nix { } {
     ../pkg/facts
     ../pkg/identity
     ../pkg/image
+    ../pkg/imagecheck
     ../pkg/install
     ../pkg/jsonfile
     ../pkg/kubernetes
