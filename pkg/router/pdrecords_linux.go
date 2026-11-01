@@ -14,7 +14,7 @@ import (
 )
 
 // ErrTooManyPDRecords is the error of ReadPDRecords when the directory holds more than
-// MaxPDRecords records, of which it read MaxPDRecords.
+// MaxPDRecords records that have not ended, of which it read MaxPDRecords.
 var ErrTooManyPDRecords = fmt.Errorf("more than %d records of delegated prefixes", MaxPDRecords)
 
 // ReadPDRecords reads the records of delegated prefixes in dir, which the user kea writes, and
@@ -23,9 +23,15 @@ var ErrTooManyPDRecords = fmt.Errorf("more than %d records of delegated prefixes
 // the other records and files whose names start with a dot, the hook's own, half written. A
 // missing dir holds no records. It opens neither a dir nor a record that is a symbolic link,
 // refuses a dir that every user may write, reads regular files alone, without waiting, and
-// MaxPDRecordSize bytes of each, and MaxPDRecords records at most: beyond those, it returns the
-// routes it read and ErrTooManyPDRecords.
+// MaxPDRecordSize bytes of each, and MaxPDRecords records that have not ended at most: beyond
+// those, it returns the routes it read and ErrTooManyPDRecords. Records that ended, of leases
+// whose expiry the hook missed, count toward no limit; it reads them on each run all the same.
 func ReadPDRecords(dir string, pools []PDPool, now time.Time) ([]PDRoute, error) {
+	return readPDRecords(dir, pools, now, MaxPDRecords)
+}
+
+// readPDRecords is ReadPDRecords of limit records that have not ended at most.
+func readPDRecords(dir string, pools []PDPool, now time.Time, limit int) ([]PDRoute, error) {
 	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if errors.Is(err, unix.ENOENT) {
 		return nil, nil
@@ -43,25 +49,25 @@ func ReadPDRecords(dir string, pools []PDPool, now time.Time) ([]PDRoute, error)
 		return nil, fmt.Errorf("%s is no directory that only its owner writes", dir)
 	}
 	var routes []PDRoute
-	read := 0
+	live := 0
 	for {
 		names, err := d.Readdirnames(256)
 		for _, name := range names {
 			if strings.HasPrefix(name, ".") {
 				continue
 			}
-			if read == MaxPDRecords {
-				return sortPDRoutes(routes), ErrTooManyPDRecords
-			}
-			read++
 			link, prefix, ok := pdRecordName(name)
 			if !ok {
 				continue
 			}
 			data, ok := readPDRecord(fd, name)
-			if !ok {
+			if !ok || !pdRecordLive(data, now) {
 				continue
 			}
+			if live == limit {
+				return sortPDRoutes(routes), ErrTooManyPDRecords
+			}
+			live++
 			if r, ok := pdRoute(link, prefix, data, pools, now); ok {
 				routes = append(routes, r)
 			}

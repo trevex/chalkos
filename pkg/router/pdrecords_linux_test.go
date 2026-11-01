@@ -146,19 +146,29 @@ func TestReadPDRecordsOfOtherDirectories(t *testing.T) {
 	}
 }
 
-// ReadPDRecords reads MaxPDRecords records at most and says that there were more.
+// ReadPDRecords routes MaxPDRecords records that have not ended at most, and says that there
+// were more; records that ended, which the hook may have missed, do not count.
 func TestReadPDRecordsLimit(t *testing.T) {
-	dir := t.TempDir()
 	now := time.Unix(1_800_000_000, 0)
-	records := map[string]string{}
-	for i := range MaxPDRecords + 1 {
-		records[fmt.Sprintf("cust0_2001:db8:100:%x::_64", i)] = "fe80::1 " + strconv.FormatInt(now.Unix()+3600, 10) + "\n"
-	}
-	writeRecords(t, dir, records)
 	pools := []PDPool{{VRF: "access", Link: "cust0", Range: netip.MustParsePrefix("2001:db8:100::/40"), Length: 64}}
-	routes, err := ReadPDRecords(dir, pools, now)
-	if !errors.Is(err, ErrTooManyPDRecords) || len(routes) != MaxPDRecords {
-		t.Errorf("%d routes, %v", len(routes), err)
+	write := func(live, ended int) string {
+		dir := t.TempDir()
+		records := map[string]string{}
+		for i := range live + ended {
+			end := now.Unix() + 3600
+			if i >= live {
+				end = now.Unix() - 1
+			}
+			records[fmt.Sprintf("cust0_2001:db8:100:%x::_64", i)] = "fe80::1 " + strconv.FormatInt(end, 10) + "\n"
+		}
+		writeRecords(t, dir, records)
+		return dir
+	}
+	if routes, err := readPDRecords(write(3, 5), pools, now, 3); err != nil || len(routes) != 3 {
+		t.Errorf("3 records of 3 and 5 ended: %d routes, %v", len(routes), err)
+	}
+	if routes, err := readPDRecords(write(4, 0), pools, now, 3); !errors.Is(err, ErrTooManyPDRecords) || len(routes) != 3 {
+		t.Errorf("4 records of 3: %d routes, %v", len(routes), err)
 	}
 }
 

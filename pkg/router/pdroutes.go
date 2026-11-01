@@ -22,10 +22,11 @@ import (
 // owns it, in a directory it cannot write, so that it cannot put another directory in its place.
 const PDRecordDir = "/var/lib/chalkos-dhcp6-pd"
 
-// MaxPDRecords is the number of records ReadPDRecords reads at most, and MaxPDRecordSize the
-// bytes of a record it reads at most; a longer record is none.
+// MaxPDRecords is the number of records that have not ended that ReadPDRecords routes at most,
+// the delegable prefixes of all pools, which the renderer of the output kea keeps within it, and
+// MaxPDRecordSize the bytes of a record it reads at most; a longer record is none.
 const (
-	MaxPDRecords    = 4096
+	MaxPDRecords    = 65536
 	MaxPDRecordSize = 128
 )
 
@@ -145,4 +146,14 @@ func pdRoute(link string, prefix netip.Prefix, data []byte, pools []PDPool, now 
 		}
 	}
 	return r, false
+}
+
+// pdRecordLive reports whether the record data holds an end after now.
+func pdRecordLive(data []byte, now time.Time) bool {
+	fields := strings.Fields(string(data))
+	if len(fields) != 2 {
+		return false
+	}
+	ends, err := strconv.ParseInt(fields[1], 10, 64)
+	return err == nil && time.Unix(ends, 0).After(now)
 }
