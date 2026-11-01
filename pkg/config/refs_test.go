@@ -116,6 +116,39 @@ func TestRefsWithoutSchemas(t *testing.T) {
 	}
 }
 
+// Refs follows $ref into the schema's $defs, as the converter writes a repeated section, also
+// from one definition into another, and finds the references the definitions mark.
+func TestRefsFollowsDefs(t *testing.T) {
+	s, err := schema.LoadFiles(map[string][]byte{"hop.example.org_v1_Hop.json": []byte(`{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"type": "object",
+		"properties": {
+			"apiVersion": {"const": "hop.example.org/v1"}, "kind": {"const": "Hop"},
+			"metadata": {"type": "object"},
+			"spec": {"type": "object", "properties": {
+				"first": {"$ref": "#/$defs/Route"},
+				"routes": {"type": "array", "items": {"$ref": "#/$defs/Route"}}
+			}}
+		},
+		"$defs": {
+			"Route": {"type": "object", "properties": {"via": {"$ref": "#/$defs/LaneName"}}},
+			"LaneName": {"type": "string", "x-chalkos-ref": {"apiVersion": "lane.example.org/v1", "kind": "Lane"}}
+		},
+		"x-chalkos-kind": {"group": "hop.example.org", "version": "v1", "kind": "Hop", "multiple": true}
+	}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := parseOne(t, "apiVersion: hop.example.org/v1\nkind: Hop\nmetadata: {name: h}\nspec: {first: {via: a}, routes: [{via: b}, {}]}\n")
+	want := []Ref{
+		{Path: "spec.first.via", Target: lane("a")},
+		{Path: "spec.routes[0].via", Target: lane("b")},
+	}
+	if got := Refs(d, s); !reflect.DeepEqual(got, want) {
+		t.Errorf("Refs =\n%v\nwant\n%v", got, want)
+	}
+}
+
 // laneOf is a Lane document.
 func laneOf(name string) string {
 	return "---\napiVersion: lane.example.org/v1\nkind: Lane\nmetadata: {name: " + name + "}\nspec: {}\n"
