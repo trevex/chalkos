@@ -21,8 +21,8 @@ import (
 // every program they name, come from the image. The unit:
 //   - runs as a user of its own (DynamicUser), without capabilities, devices or network, on a
 //     read-only system without STATE, /var or what chalkd keeps below /run/chalkos, so it reads
-//     no Secret's value; checks may open netlink sockets in a network namespace of their own, as
-//     the renderer sandbox's do;
+//     no Secret's value; checks may open netlink sockets in a user and network namespace of their
+//     own, as nft --check takes, and create no other namespace;
 //   - runs the checker from Public/chalkd, an empty file on the running system that the image's
 //     chalkd is bound over: systemd-run looks the program up on the running system, whose store
 //     lacks the image's paths, and systemd runs it once the unit's mounts are in place;
@@ -71,12 +71,21 @@ var properties = []string{
 	"--property=TemporaryFileSystem=/tmp:size=128M,mode=1777",
 	"--property=PrivateDevices=yes",
 	"--property=PrivateNetwork=yes",
+	"--property=IPAddressDeny=any",
 	"--property=ProtectKernelTunables=yes",
 	"--property=ProtectKernelModules=yes",
 	"--property=ProtectKernelLogs=yes",
 	"--property=ProtectControlGroups=yes",
+	"--property=ProtectClock=yes",
+	"--property=ProtectHostname=yes",
+	"--property=LockPersonality=yes",
+	"--property=RestrictRealtime=yes",
+	"--property=SystemCallArchitectures=native",
+	"--property=RestrictNamespaces=user net",
 	"--property=RestrictAddressFamilies=AF_UNIX AF_NETLINK",
+	// The ESP is root's alone (umask=0077), and images have no /boot.
 	"--property=InaccessiblePaths=-/state -/var -/run/chalkos",
+	"--property=MemorySwapMax=0",
 	fmt.Sprintf("--property=LimitFSIZE=%d", MaxResult),
 	"--property=DefaultDependencies=no",
 }

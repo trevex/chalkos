@@ -2788,8 +2788,8 @@ in
   # renderer and command fact at store paths the VM's store lacks, so the check passes only when
   # the checker, its renderer and the fact's program come from the bound store. The image's Demo
   # kind reads the fact in a rule; its output's check refuses a Demo called refuse, and checks the
-  # sandbox: no root, no capabilities, /run/chalkos out of reach, and a user and network namespace
-  # of its own, as nft --check takes. While the checker waits for its fact, another user of the VM
+  # sandbox: no root, no capabilities, /run/chalkos out of reach, and nft --check in a user and
+  # network namespace of its own. While the checker waits for its fact, another user of the VM
   # reaches neither the facts socket nor the input or the result.
   image-checker =
     let
@@ -2820,6 +2820,7 @@ in
           pkgs.bash
           pkgs.coreutils
           pkgs.gnugrep
+          pkgs.nftables
           pkgs.util-linux
         ];
       };
@@ -2863,7 +2864,7 @@ in
             [ "$(id -u)" -ne 0 ]
             grep -q '^CapEff:[[:space:]]*0*$' /proc/self/status
             if cat /run/chalkos/secret 2>/dev/null; then exit 2; fi
-            unshare --map-root-user --net true
+            echo "table inet t { }" | unshare --map-root-user --net ${pkgs.nftables}/bin/nft --check --file -
             ! grep -q '"refuse"' "$OUT/demo.json"
             EOF
             cat >$out${fact}/bin/probe <<'EOF'
