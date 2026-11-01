@@ -78,13 +78,14 @@ func storageFailed(err error) error {
 }
 
 // checkFallback refuses before anything changes when a volume the section adds to recorded is
-// encrypted and the fallback secret it would be enrolled with is missing.
+// encrypted and the fallback secret it would be enrolled with is missing. Its refusal ends with
+// storage.NoFallbackSecret, which chalkd matches in an upgrade's refusal.
 func checkFallback(recorded, section storage.Section, secret string) error {
 	if secret != "" {
 		return nil
 	}
 	if name := enrolled(recorded, section); name != "" {
-		return failed(connect.CodeInvalidArgument, "volume %s is encrypted and the node's fallback is %s, but no fallback secret was sent", name, section.Fallback)
+		return failed(connect.CodeInvalidArgument, "volume %s is encrypted and the node's fallback is %s, but %s", name, section.Fallback, storage.NoFallbackSecret)
 	}
 	return nil
 }

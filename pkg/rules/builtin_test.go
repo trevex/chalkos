@@ -8,6 +8,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/storage"
 )
 
 // The built-in kinds' rules reach their schemas and compile: the storage kinds', Node's and
@@ -326,9 +327,10 @@ func TestStorageRules(t *testing.T) {
 		// The volume follows the node's encryption, and VAR too.
 		{name: "the node's encryption", systemDisk: edit(systemDisk, "encryption", `{"mode": "none", "fallback": "recovery-key"}`), volumes: map[string]string{"data": dataVolume}, takes: Reinstall,
 			want: []string{"VAR: encryption none instead of tpm2; only a reinstall of n1 carries it out", "Volume data: encryption none instead of tpm2; reset it with chalkctl storage reset n1 data"}},
+		// chalkd tells this refusal apart by storage.NoFallbackSecret, so the message ends with it.
 		{name: "an encrypted volume without the fallback secret", volumes: map[string]string{"data": dataVolume, "extra": `{"disk": null, "size": "1G", "format": "ext4", "mountPoint": null, "encryption": {"mode": null}}`},
 			fallback: map[string]any{"sent": false, "matches": nil},
-			want:     []string{"Volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent"}, takes: Refuse},
+			want:     []string{"Volume extra is encrypted and the node's fallback is recovery-key, but " + storage.NoFallbackSecret}, takes: Refuse},
 		{name: "an encrypted volume with a wrong fallback secret", volumes: map[string]string{"data": dataVolume, "extra": `{"disk": null, "size": "1G", "format": "ext4", "mountPoint": null, "encryption": {"mode": null}}`},
 			fallback: map[string]any{"sent": true, "matches": false},
 			want:     []string{"the fallback secret does not match the node's existing fallback keyslot"}, takes: Refuse},

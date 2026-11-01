@@ -239,6 +239,8 @@ in
         }
         # New encrypted volumes are enrolled with the fallback secret, which must open the node's
         # existing fallback keyslot, so a mistyped one cannot leave volumes whose fallbacks differ.
+        # The message ends with storage.NoFallbackSecret (pkg/storage/section.go), which chalkd
+        # matches in the refusal of an upgrade that gave the image the pending config.
         {
           description = "A new TPM2-encrypted volume, on a node with a fallback, comes with the fallback secret, which opens the node's fallback keyslot.";
           rule = ''facts.recorded == null || ${systemDiskSpec}.encryption.fallback == "none" || size(${enrolled}) == 0 || (facts.fallback.sent && facts.fallback.matches != false)'';

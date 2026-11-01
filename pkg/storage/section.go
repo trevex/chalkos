@@ -31,6 +31,13 @@ const (
 	FallbackNone        = "none"
 )
 
+// NoFallbackSecret ends the refusal of a config that adds a TPM2-encrypted volume, on a node with
+// a fallback, without the fallback secret the volume is enrolled with. Two refusals end with it:
+// the built-in Volume rule's, in modules/node/kinds/builtin/storage.nix, which an image's checker
+// gives, and chalkd's own checkFallback's. chalkd matches it in the refusal of an upgrade that gave
+// the image the pending config, which is kept without the secret, to say which upgrade carries it.
+const NoFallbackSecret = "no fallback secret was sent"
+
 // Section is the storage section of a node identity, as the node's config gives it and
 // /state/storage/storage.json records it on the node.
 type Section struct {
