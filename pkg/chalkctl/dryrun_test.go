@@ -58,7 +58,8 @@ func TestApplyConfigDryRunOfSeveralNodes(t *testing.T) {
 }
 
 // A config the node refuses on a dry run is refused, and a dry run of it alone exits with the
-// node's refusal; one of several nodes is counted apart from a node the dry run failed on.
+// node's refusal; one of several nodes is counted apart from a node the dry run failed on. A
+// config chalkctl refuses itself, against the image's schemas, is counted as refused too.
 func TestApplyConfigDryRunRefused(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{}`))
@@ -88,6 +89,17 @@ func TestApplyConfigDryRunRefused(t *testing.T) {
 		if strings.HasPrefix(c, "systemctl restart") || strings.HasPrefix(c, "mkfs") {
 			t.Errorf("node ran %s", c)
 		}
+	}
+
+	// A SystemDisk without a disk fails the image's schema before the node is asked.
+	ta.stderr.Reset()
+	writeFile(t, filepath.Join(filepath.Dir(ta.inventory), "nodes", "n1.yaml"), "apiVersion: storage.chalkos.dev/v1alpha1\nkind: SystemDisk\nmetadata: {name: system}\nspec: {}\n---\n"+n1Network)
+	err = ta.run(context.Background(), []string{"apply-config", "--dry-run", "n1", "n9", "--inventory", ta.inventory})
+	if err == nil || err.Error() != "the config of 1 node is refused: n1; the dry run failed on 1 node: n9" {
+		t.Errorf("err = %v", err)
+	}
+	if !strings.Contains(ta.stderr.String(), "chalkctl: the config of n1: ") {
+		t.Errorf("stderr = %q", ta.stderr)
 	}
 }
 

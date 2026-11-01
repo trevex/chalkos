@@ -136,7 +136,8 @@ type delivery struct {
 // checked as the node checks it. The node translates config for the platform its image is built
 // for, so an image of another platform than the node's is refused, rather than checked as one
 // thing and applied as another. The image's variant is not compared: the image's schemas decide
-// which config it takes.
+// which config it takes. A config the checks refuse comes back as a refusal; an image of another
+// platform and a node the inventory lacks are errors of their own, which refuse no config.
 func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 	if err := c.samePlatform(name, ct.platform); err != nil {
 		return delivery{}, err
@@ -147,7 +148,7 @@ func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 	}
 	d, err := checkNodeConfig(nc, ct)
 	if err != nil {
-		return delivery{}, namedErr{fmt.Errorf("the config of %s: %w", name, err)}
+		return delivery{}, refusal{namedErr{fmt.Errorf("the config of %s: %w", name, err)}}
 	}
 	return d, nil
 }

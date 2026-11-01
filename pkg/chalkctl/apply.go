@@ -207,9 +207,10 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 	return nil
 }
 
-// refusal is a dry run's refusal of a node's config: by the image's rules chalkctl checks, or by
-// the node's checks. A dry run that fails before the config is checked, as of a node missing from
-// the inventory, unreachable or on trial, refuses nothing.
+// refusal is a refusal of a node's config: by chalkctl's checks of it against the image's schemas
+// and rules, or by the node's checks. A dry run counts it apart from a failure before the config
+// is checked, as of a node missing from the inventory, unreachable or on trial, which refuses
+// nothing; other commands print it as any error.
 type refusal struct{ error }
 
 func (r refusal) Unwrap() error { return r.error }
