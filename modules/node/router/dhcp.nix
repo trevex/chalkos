@@ -449,6 +449,16 @@ in
         TriggerLimitIntervalSec = 0;
       };
     };
+    # The kernel drops the routes of a link that goes down, and nothing records a change when it
+    # comes up again, so the routes are made again every minute as well.
+    systemd.timers.chalkos-dhcp6-routes = {
+      description = "Route the prefixes the router's DHCPv6 servers delegate again";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "1min";
+        OnUnitActiveSec = "1min";
+      };
+    };
     # The records' directory exists before a server or the path unit looks at it.
     systemd.tmpfiles.rules = [
       "d /var/lib/kea 0750 kea kea - -"

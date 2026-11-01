@@ -1401,6 +1401,10 @@ lib.runTests {
             inherit (edge.systemd.paths.chalkos-dhcp6-routes) wantedBy;
             inherit (edge.systemd.paths.chalkos-dhcp6-routes.pathConfig) PathChanged TriggerLimitIntervalSec;
           };
+          timer = {
+            inherit (edge.systemd.timers.chalkos-dhcp6-routes) wantedBy;
+            inherit (edge.systemd.timers.chalkos-dhcp6-routes.timerConfig) OnBootSec OnUnitActiveSec;
+          };
           records = lib.elem "d /var/lib/chalkos-dhcp6-pd 0755 kea kea - -" edge.systemd.tmpfiles.rules;
         };
         reconciler = {
@@ -1512,6 +1516,11 @@ lib.runTests {
           wantedBy = [ "multi-user.target" ];
           PathChanged = "/var/lib/chalkos-dhcp6-pd";
           TriggerLimitIntervalSec = 0;
+        };
+        timer = {
+          wantedBy = [ "timers.target" ];
+          OnBootSec = "1min";
+          OnUnitActiveSec = "1min";
         };
         records = true;
       };
