@@ -11,8 +11,12 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
@@ -139,5 +143,59 @@ func TestEncodeOfRedactedDocuments(t *testing.T) {
 	out, err := Encode(config.Redact(docs))
 	if err != nil || strings.Contains(out[0], "s3cret") {
 		t.Errorf("Encode = %v, %v", out, err)
+	}
+}
+
+// chalkd refuses a fact's input that is no JSON object, and a request beyond its bound, before it
+// loads a fact.
+func TestFactsRefuseABadInput(t *testing.T) {
+	f := &fakeFacts{}
+	r := serve(t, f)
+	for input, want := range map[string]connect.Code{
+		"{":     connect.CodeInvalidArgument,
+		"[1]":   connect.CodeInvalidArgument,
+		"{} {}": connect.CodeInvalidArgument,
+		`"` + strings.Repeat("x", maxFactRequest) + `"`: connect.CodeResourceExhausted,
+	} {
+		_, err := r.client.Fact(context.Background(), connect.NewRequest(&checkv1.FactRequest{Name: "disks", Input: input}))
+		if connect.CodeOf(err) != want {
+			t.Errorf("%.10s: err = %v, want %v", input, err, want)
+		}
+	}
+	if len(f.asked) != 0 {
+		t.Errorf("asked %v", f.asked)
+	}
+}
+
+// exclusiveFacts fails a fact asked while another is loading.
+type exclusiveFacts struct {
+	busy atomic.Bool
+}
+
+func (f *exclusiveFacts) Fact(string, map[string]any) (any, error) {
+	if !f.busy.CompareAndSwap(false, true) {
+		return nil, errors.New("asked while another fact loads")
+	}
+	time.Sleep(time.Millisecond)
+	f.busy.Store(false)
+	return "ok", nil
+}
+
+// A checker that asks on several connections at once gets its facts one at a time.
+func TestFactsOneAtATime(t *testing.T) {
+	r := serve(t, &exclusiveFacts{})
+	var wg sync.WaitGroup
+	errs := make(chan error, 16)
+	for range 16 {
+		wg.Go(func() {
+			if _, err := r.For(nil, nil).Fact("disks"); err != nil {
+				errs <- err
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
 }

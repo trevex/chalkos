@@ -153,7 +153,7 @@ func (s *Server) stagedFacts(ctx context.Context, st imageStore, system string, 
 }
 
 // servedFacts loads the facts a checker asks for, each for the input it gives, with the overrides
-// in place of what the node holds.
+// in place of what the node holds. imagecheck asks it for one fact at a time, as the Loader needs.
 type servedFacts struct {
 	l         *facts.Loader
 	overrides map[string]any

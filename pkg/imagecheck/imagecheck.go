@@ -30,7 +30,8 @@ type Image struct {
 const CheckerPath = "/sw/bin/chalkd"
 
 // Facts loads the node's facts for the checker, as the image declares them. input is what a
-// command fact reads on standard input, config and oldConfig as rules see them.
+// command fact reads on standard input, config and oldConfig as rules see them. Calls arrive one
+// at a time, so an implementation need not be safe for concurrent use.
 type Facts interface {
 	Fact(name string, input map[string]any) (any, error)
 }

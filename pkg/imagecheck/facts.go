@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -18,12 +19,20 @@ import (
 	"github.com/trevex/chalkos/pkg/rules"
 )
 
+// maxFactRequest bounds a fact's request: its input holds the config twice, the next and the old,
+// with their defaults, each delivered within chalkd's 4 MiB of a message.
+const maxFactRequest = 32 << 20
+
 // ServeFacts serves f to a checker on l, in the background, until the returned function stops it.
 // A fact that cannot be loaded answers with its error, which the checker's rule reports as it
-// reports any fact it cannot load.
+// reports any fact it cannot load. It asks f for one fact at a time.
 func ServeFacts(l net.Listener, f Facts) (stop func()) {
 	mux := http.NewServeMux()
-	mux.Handle(checkv1connect.NewFactsServiceHandler(factsHandler{f}))
+	mux.Handle(checkv1connect.NewFactsServiceHandler(&factsHandler{f: f},
+		connect.WithReadMaxBytes(maxFactRequest),
+		// An oversized compressed request would be decompressed in full before being refused.
+		connect.WithCompression("gzip", nil, nil),
+	))
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	done := make(chan struct{})
 	go func() {
@@ -36,9 +45,14 @@ func ServeFacts(l net.Listener, f Facts) (stop func()) {
 	}
 }
 
-type factsHandler struct{ f Facts }
+// factsHandler serves facts one at a time: a checker may ask on several connections at once, and
+// the facts chalkd loads are not for concurrent use.
+type factsHandler struct {
+	mu sync.Mutex
+	f  Facts
+}
 
-func (h factsHandler) Fact(_ context.Context, req *connect.Request[checkv1.FactRequest]) (*connect.Response[checkv1.FactResponse], error) {
+func (h *factsHandler) Fact(_ context.Context, req *connect.Request[checkv1.FactRequest]) (*connect.Response[checkv1.FactResponse], error) {
 	input, err := decodeJSON(req.Msg.GetInput())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("the fact's input: %w", err))
@@ -47,7 +61,9 @@ func (h factsHandler) Fact(_ context.Context, req *connect.Request[checkv1.FactR
 	if !ok {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("the fact's input is no JSON object"))
 	}
+	h.mu.Lock()
 	v, err := h.f.Fact(req.Msg.GetName(), obj)
+	h.mu.Unlock()
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
