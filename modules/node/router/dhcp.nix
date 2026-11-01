@@ -402,10 +402,12 @@ in
         # Routes the prefixes the DHCPv6 servers delegate, at boot, after chalkos-dhcp, which also
         # starts it, and whenever chalkos-dhcp6-pd records or removes one. It runs as root with
         # CAP_NET_ADMIN alone and only reads the records, which every user may; the kernel removes a
-        # route whose lease ended without a renewal. A run takes 30 seconds at most.
+        # route whose lease ended without a renewal. A run takes 30 seconds at most, and a burst of
+        # leases starts it as often as it comes, without systemd's limit on starts.
         chalkos-dhcp6-routes = {
           description = "Route the prefixes the router's DHCPv6 servers delegate";
           after = [ "chalkos-dhcp.service" ];
+          unitConfig.StartLimitIntervalSec = 0;
           wantedBy = [ "multi-user.target" ];
           path = [ pkgs.iproute2 ];
           serviceConfig = {
@@ -441,7 +443,11 @@ in
     systemd.paths.chalkos-dhcp6-routes = {
       description = "Watch the prefixes the router's DHCPv6 servers delegate";
       wantedBy = [ "multi-user.target" ];
-      pathConfig.PathChanged = pdRecords;
+      pathConfig = {
+        PathChanged = pdRecords;
+        # A burst of leases triggers it as often as it comes.
+        TriggerLimitIntervalSec = 0;
+      };
     };
     # The records' directory exists before a server or the path unit looks at it.
     systemd.tmpfiles.rules = [

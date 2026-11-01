@@ -1389,6 +1389,7 @@ lib.runTests {
         routes = {
           start = lib.hasSuffix "/bin/chalkd router dhcp6-routes" routes.serviceConfig.ExecStart;
           inherit (routes) after wantedBy;
+          inherit (routes.unitConfig) StartLimitIntervalSec;
           inherit (routes.serviceConfig)
             Type
             CapabilityBoundingSet
@@ -1398,7 +1399,7 @@ lib.runTests {
           ip = lib.any (p: lib.getName p == "iproute2") routes.path;
           path = {
             inherit (edge.systemd.paths.chalkos-dhcp6-routes) wantedBy;
-            inherit (edge.systemd.paths.chalkos-dhcp6-routes.pathConfig) PathChanged;
+            inherit (edge.systemd.paths.chalkos-dhcp6-routes.pathConfig) PathChanged TriggerLimitIntervalSec;
           };
           records = lib.elem "d /var/lib/chalkos-dhcp6-pd 0755 kea kea - -" edge.systemd.tmpfiles.rules;
         };
@@ -1496,6 +1497,7 @@ lib.runTests {
       };
       routes = {
         start = true;
+        StartLimitIntervalSec = 0;
         after = [ "chalkos-dhcp.service" ];
         wantedBy = [ "multi-user.target" ];
         Type = "oneshot";
@@ -1509,6 +1511,7 @@ lib.runTests {
         path = {
           wantedBy = [ "multi-user.target" ];
           PathChanged = "/var/lib/chalkos-dhcp6-pd";
+          TriggerLimitIntervalSec = 0;
         };
         records = true;
       };
