@@ -439,6 +439,34 @@ func TestOldHashed(t *testing.T) {
 	}
 }
 
+// A delivered config whose secret values are hashed already, as a check receives it, meets the
+// rules as the config with its values does.
+func TestHashed(t *testing.T) {
+	set := compiled(t, kindSchema("Solo", false, object(nil), []any{
+		rule(`config["chalkos.dev/v1alpha1"].Secret.s.spec.data.token == oldConfig["chalkos.dev/v1alpha1"].Secret.s.spec.data.token`, "the token changes"),
+	}))
+	secret := func(token string) config.Document {
+		return config.FromObject(map[string]any{"apiVersion": config.CoreAPI, "kind": "Secret",
+			"metadata": map[string]any{"name": "s"}, "spec": map[string]any{"data": map[string]any{"token": token}}})
+	}
+	hashed := config.Redact([]config.Document{secret("test")})
+	for name, tc := range map[string]struct {
+		docs   []config.Document
+		hashed bool
+		want   int
+	}{
+		"hashed":            {hashed, true, 0},
+		"with its values":   {[]config.Document{secret("test")}, false, 0},
+		"another token":     {config.Redact([]config.Document{secret("other")}), true, 1},
+		"hashed twice over": {hashed, false, 1},
+	} {
+		failures, err := set.Evaluate(Input{Documents: tc.docs, Hashed: tc.hashed, Old: []config.Document{secret("test")}})
+		if err != nil || len(failures) != tc.want {
+			t.Errorf("%s: failures = %v, %v; want %d", name, messages(failures), err, tc.want)
+		}
+	}
+}
+
 // addonSchema is the built-in Addon kind, its objects fixed by a rule, and a rule that sees the
 // value of the Kubernetes Secrets it applies.
 func addonSchema() map[string]any {

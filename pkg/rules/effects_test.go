@@ -173,4 +173,8 @@ func TestEffectOldHashed(t *testing.T) {
 	if got, errs := dueUnits([]*EffectRule{e}, in); len(errs) > 0 || len(got) != 0 {
 		t.Errorf("hashed twice: due = %v, %v; want another Secret", got, errs)
 	}
+	in = EffectInput{Documents: config.Redact([]config.Document{secret}), Hashed: true, Old: []config.Document{secret}}
+	if got, errs := dueUnits([]*EffectRule{e}, in); len(errs) > 0 || len(got) != 1 {
+		t.Errorf("a hashed delivery: due = %v, %v; want the same Secret", got, errs)
+	}
 }

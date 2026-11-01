@@ -67,11 +67,11 @@ func CompileEffect(name, when string) (*EffectRule, error) {
 
 // EffectInput is what effects are evaluated against once a delivery is applied: the config the
 // node runs and the config it ran before, each with its schema defaults; the node's name; and the
-// node's facts after the delivery and before it. OldHashed tells that the secret values of Old
-// are hashed already, as config.Redact hashes them.
+// node's facts after the delivery and before it. Hashed and OldHashed tell that the secret values
+// of Documents and of Old are hashed already, as config.Redact hashes them.
 type EffectInput struct {
-	Documents, Old []config.Document
-	OldHashed      bool
+	Documents, Old    []config.Document
+	Hashed, OldHashed bool
 	// Node is the node's name, which effects read as node.name, as Input.Node is.
 	Node            string
 	Facts, OldFacts Facts
@@ -82,7 +82,7 @@ type EffectInput struct {
 // restarts once more than it needed to rather than run on config it has not read; errs say why,
 // one for each such effect.
 func Due(effects []*EffectRule, in EffectInput) (due []*EffectRule, errs []error) {
-	cfg, oldCfg := ConfigOf(in.Documents), configMap(objectsOf(in.Old, !in.OldHashed))
+	cfg, oldCfg := configMap(objectsOf(in.Documents, !in.Hashed)), configMap(objectsOf(in.Old, !in.OldHashed))
 	node := nodeOf(in.Node)
 	for _, e := range effects {
 		ok, err := e.evaluate(cfg, oldCfg, node, in.Facts, in.OldFacts)

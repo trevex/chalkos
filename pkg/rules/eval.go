@@ -23,7 +23,10 @@ type Facts interface {
 // Input is what rules are evaluated against: the config delivered and the config it replaces,
 // each with its schema defaults, the node's name and the node's facts.
 type Input struct {
+	// Documents are the config delivered. Hashed tells that their secret values are hashed
+	// already, as config.Redact hashes them and as a check receives them.
 	Documents []config.Document
+	Hashed    bool
 	// Old is the running image's config; nil without one, as at an install, where field rules
 	// that read oldSelf do not run and the rules of kinds see no oldDocuments. OldHashed tells
 	// that its secret values are hashed already, as a node serves its config.
@@ -71,7 +74,7 @@ func (e *FactError) Unwrap() error { return e.Err }
 // oldDocuments, a field's self and oldSelf. An error is a rule that could not be evaluated, or a
 // fact that could not be loaded, which refuses the delivery as well.
 func (s *Set) Evaluate(in Input) ([]Failure, error) {
-	next, old := objectsOf(in.Documents, true), objectsOf(in.Old, !in.OldHashed)
+	next, old := objectsOf(in.Documents, !in.Hashed), objectsOf(in.Old, !in.OldHashed)
 	cfg, oldCfg := configMap(next), configMap(old)
 	node := nodeOf(in.Node)
 	var failures []Failure
