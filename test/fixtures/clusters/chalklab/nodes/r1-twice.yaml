@@ -1,0 +1,9 @@
+# r1's BGP announcing its NAT64's prefix twice. No rule of the BGP kind compares an instance's
+# networks, so chalkctl validate accepts it; the frr output's renderer refuses it.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: bgp}
+spec:
+  asn: 64512
+  routerID: 192.0.2.1
+  networks: [{prefix: "64:ff9b::/96"}, {prefix: "64:ff9b::/96"}]

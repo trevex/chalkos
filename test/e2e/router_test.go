@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -44,9 +46,11 @@ const bgpPassword = "lab-s3cret"
 //     kernel and in BGP, the bgp-summary diagnostic lists the session, the filled frr.conf is
 //     root's with mode 0600, no unit failed, and r1, an image without the Kubernetes layer,
 //     answers Bootstrap with Unimplemented.
-//   - reload: a delivery that has r1 announce the address of its edge0 reaches r2 while the
-//     session stays up: FRR reloads, its password filled in again into a frr.conf that is still
-//     root's with mode 0600, and restarts nothing.
+//   - reload: a dry run of a delivery that has r1 announce the address of its edge0 plans FRR's
+//     reload on the frr output, and a dry run of a BGP that announces one prefix twice, which
+//     chalkctl validate accepts, is refused by the frr output's renderer. The delivery then
+//     reaches r2 while the session stays up: FRR reloads, its password filled in again into a
+//     frr.conf that is still root's with mode 0600, and restarts nothing.
 //   - nat64: from the address of its edge0, r2 asks r1's resolver for the AAAA records of
 //     ipv4only.arpa and gets those DNS64 synthesizes in the NAT64 prefix, and connects through
 //     r1's NAT64, whose empty pool4 r1 masquerades, and QEMU's user-mode network to a listener of
@@ -313,6 +317,19 @@ func TestRouterLab(t *testing.T) {
 	}
 
 	if !t.Run("reload", func(t *testing.T) {
+		// A dry run of the delivery plans FRR's reload on its output, and changes nothing.
+		plan := regexp.MustCompile(`(?m)^  (?:effects:  | {10})frr: reload frr\.service \(output frr\)$`)
+		if out, err := chalkctl(t, nodes["r1"], "announce", "apply-config", "--dry-run", "r1"); err != nil || !plan.MatchString(out) {
+			t.Fatalf("apply-config --dry-run plans no reload of FRR: %v\n%s", err, out)
+		}
+		// chalkctl validate accepts a BGP that announces one prefix twice, which the frr output's
+		// renderer alone refuses; a dry run has r1 run it.
+		if out, err := exec.Command(os.Getenv("CHALKLAB_CHALKCTL"), "validate", "r1", "--inventory", inventoryPath("twice")).CombinedOutput(); err != nil {
+			t.Fatalf("chalkctl validate of a prefix announced twice: %v\n%s", err, out)
+		}
+		if out, err := chalkctl(t, nodes["r1"], "twice", "apply-config", "--dry-run", "r1"); err == nil || !strings.Contains(out, "output frr: its renderer failed") {
+			t.Fatalf("apply-config --dry-run of a prefix announced twice: %v\n%s", err, out)
+		}
 		before, err := session("r1", "fabric")
 		if err != nil {
 			t.Fatal(err)

@@ -1,0 +1,13 @@
+# The main cluster's r1 with a BGP that announces one prefix twice, which only the frr output's
+# renderer refuses: apply-config --dry-run shows the refusal that chalkctl validate cannot.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  images:
+    router-kvm: {source: {directory: images/router-kvm}}
+  all: {files: [cluster/*.yaml]}
+  groups:
+    router: {imageName: router-kvm, files: [groups/router.yaml]}
+  nodes:
+    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-twice.yaml, nodes/r1-peer.yaml]}

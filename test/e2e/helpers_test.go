@@ -149,7 +149,8 @@ func copyTree(src, dst string) error {
 // chalklab on the upgrade image with config only that image accepts, its router r1 announcing a
 // network and with chalkd's port on its fabric link alone, its routers with their fabric link in
 // a VRF and r2's VRF in another table, r1 sending its default route while a route exists, with
-// and without that route, r1 leasing r2 an address on a macvlan, and the HA cluster.
+// and without that route, r1 leasing r2 an address on a macvlan, r1 announcing one prefix twice,
+// and the HA cluster.
 var inventories = map[string]string{
 	"base":         "chalklab/chalkos.yaml",
 	"added":        "chalklab/added.yaml",
@@ -162,6 +163,7 @@ var inventories = map[string]string{
 	"dhcp":         "chalklab/router-dhcp.yaml",
 	"default":      "chalklab/router-default.yaml",
 	"default-gone": "chalklab/router-default-gone.yaml",
+	"twice":        "chalklab/router-twice.yaml",
 	"ha":           "chalklab-ha/chalkos.yaml",
 }
 
