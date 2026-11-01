@@ -98,8 +98,8 @@ const bgpPassword = "lab-s3cret"
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials, two minutes for the VRF with
-// r1's boot, half a minute for the default route and three and a half minutes for DHCP with r1's
-// boot, about 11 minutes with the copies of the images. chalklab destroy removes the lab when the
+// r1's boot, half a minute for the default route and a minute and a quarter for DHCP with r1's
+// boot, about 9 minutes with the copies of the images. chalklab destroy removes the lab when the
 // test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
