@@ -1,0 +1,6 @@
+# A Farewell the upgrade image's output farewell refuses in its check.
+apiVersion: greeting.example.org/v1alpha1
+kind: Farewell
+metadata: {name: bye}
+spec:
+  message: stay

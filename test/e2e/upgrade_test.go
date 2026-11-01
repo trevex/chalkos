@@ -17,17 +17,19 @@ import (
 
 // TestUpgrade installs the signed test image under Secure Boot, which boots its UKI as
 // chalkos_1.efi, and upgrades it to the upgrade image, which boots from slot B as chalkos_2.efi
-// with STATE and VAR unlocked by the TPM and is found healthy. chalkctl upgrade --rollback then
-// boots the test image again from slot A as chalkos_3, with the config it ran; run again, it
-// changes nothing; and an upgrade from the inventory boots the upgrade image again as chalkos_4,
-// reusing its store in slot B. Last comes the unhealthy image, installed as chalkos_5, which never
-// becomes healthy: after its one try the node falls back to chalkos_4.efi and says so. Each image
-// is named by its root hash. The node pulls the upgrade image through a Mirror of a registry host
-// it cannot reach, whose endpoint is a registry on the host that asks for the credentials of the
-// endpoint's own Registry; the upgrade delivers the Mirror and the Registry. The upgrade to the
-// unhealthy image still streams it from its directory. The upgrade carries config only the upgrade
-// image accepts, a Farewell, and the upgrade to the unhealthy image the test image's config again:
-// the fallback boots the upgrade image with its own config, Farewell included.
+// with STATE and VAR unlocked by the TPM and is found healthy. Before that, an upgrade to the
+// upgrade image with a Farewell its renderer refuses is refused, and nothing is staged. chalkctl
+// upgrade --rollback then boots the test image again from slot A as chalkos_3, with the config
+// it ran; run again, it changes nothing; and an upgrade from the inventory boots the upgrade
+// image again as chalkos_4, reusing its store in slot B. Last comes the unhealthy image,
+// installed as chalkos_5, which never becomes healthy: after its one try the node falls back to
+// chalkos_4.efi and says so. Each image is named by its root hash. The node pulls the upgrade
+// image through a Mirror of a registry host it cannot reach, whose endpoint is a registry on
+// the host that asks for the credentials of the endpoint's own Registry; the upgrade delivers
+// the Mirror and the Registry. The upgrade to the unhealthy image still streams it from its
+// directory. The upgrade carries config only the upgrade image accepts, a Farewell, and the
+// upgrade to the unhealthy image the test image's config again: the fallback boots the upgrade
+// image with its own config, Farewell included.
 func TestUpgrade(t *testing.T) {
 	requireEnv(t, append(secureBootEnv, append(chalkdEnv, "CHALKLAB_UPGRADE_IMAGE_DIR", "CHALKLAB_UNHEALTHY_IMAGE_DIR")...)...)
 	base, nextHash, badHash := rootHash(t, "CHALKLAB_IMAGE_DIR"), rootHash(t, "CHALKLAB_UPGRADE_IMAGE_DIR"), rootHash(t, "CHALKLAB_UNHEALTHY_IMAGE_DIR")
@@ -55,6 +57,16 @@ func TestUpgrade(t *testing.T) {
 	t.Logf("installed after %v", time.Since(start).Round(time.Second))
 
 	nextImage, badImage := signedImage(t, dir, "CHALKLAB_UPGRADE_IMAGE_DIR"), signedImage(t, dir, "CHALKLAB_UNHEALTHY_IMAGE_DIR")
+	// The upgrade image checks the config with its own chalkd before it is staged: its output
+	// farewell refuses a Farewell that stays, which its schema accepts, so chalkctl's check of the
+	// config passes and the node refuses the upgrade. Nothing is staged.
+	out, err := chalkctl(t, nil, "upgrade-stay", "upgrade", "--image", nextImage, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
+	if err == nil || !strings.Contains(out, "output farewell: its check refused the rendered files") {
+		t.Fatalf("upgrade with a Farewell only the upgrade image's renderer refuses: %v", err)
+	}
+	if out, err := chalkctl(t, n, "base", "status", "chalklab"); err != nil || strings.Contains(out, "staged") {
+		t.Errorf("status after the refused upgrade: %v", err)
+	}
 	pullInventory, layers := publish(t, reg, nextImage, ociInventory{
 		base: "upgrade", out: "upgrade-oci.yaml", directory: "images/test-upgrade-metal", repo: "chalkos/test-upgrade",
 		files: "nodes/chalklab/farewell.yaml", registry: "nodes/chalklab/registry.yaml",
@@ -62,7 +74,7 @@ func TestUpgrade(t *testing.T) {
 	})
 	pinnedPrefix := mirroredGuest + "/chalkos/test-upgrade@sha256:"
 	upgraded := time.Now()
-	out, err := chalkctl(t, nil, "", "upgrade", "--inventory", pullInventory, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
+	out, err = chalkctl(t, nil, "", "upgrade", "--inventory", pullInventory, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
 	if err != nil || !strings.Contains(out, "chalklab: config 4 added, 0 removed, 0 changed\n") ||
 		!strings.Contains(out, "chalklab: installing "+nextHash[:12]+", which it pulls from "+pinnedPrefix) ||
 		!strings.Contains(out, "chalklab: installed "+nextHash[:12]+", which boots next as chalkos_2+3.efi") ||

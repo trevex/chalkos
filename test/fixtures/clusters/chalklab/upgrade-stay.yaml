@@ -1,0 +1,16 @@
+# The main cluster with chalklab on the upgrade image of the e2e upgrade test, with a Farewell
+# whose message the upgrade image's output farewell refuses in its check: config its schema and
+# chalkctl validate accept, which only the image's renderers refuse.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  images:
+    test-upgrade-metal: {source: {directory: images/test-upgrade-metal}}
+  all: {files: [cluster/*.yaml]}
+  groups:
+    test-upgrade: {imageName: test-upgrade-metal}
+  nodes:
+    chalklab:
+      groups: [test-upgrade]
+      files: [nodes/chalklab/greeting-token.yaml, nodes/chalklab/system.yaml, nodes/chalklab/greeting.yaml, nodes/chalklab/farewell-stay.yaml]

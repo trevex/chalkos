@@ -85,7 +85,8 @@ images
   # The images e2e-upgrade installs after the test image: the upgrade, which declares a Farewell
   # kind the test image does not, so its config is config the test image refuses, and one that
   # never becomes healthy, as a unit fails at every boot the way a broken service would, and falls
-  # back after one try of 30 seconds.
+  # back after one try of 30 seconds. The upgrade image's output farewell refuses a Farewell whose
+  # message is stay in its check alone, which neither its schema nor chalkctl validate do.
   upgradeImage = variantAs "test" "upgrade" (
     { lib, ... }:
     {
@@ -96,6 +97,11 @@ images
           type = lib.types.nonEmptyStr;
           description = "What the node says on leaving.";
         };
+      };
+      chalkos.outputs.farewell = {
+        inputs = [ "Farewell" ];
+        render = lib.chalkos.render.documents [ "Farewell" ];
+        check = ''! grep -rqw stay "$OUT"'';
       };
     }
   );
