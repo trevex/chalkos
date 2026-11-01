@@ -146,6 +146,7 @@ func nodeOf(name string) map[string]any {
 // evaluate runs the program with the variables given; doc is the document of a field's rule.
 func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any, facts Facts, doc string) ([]Failure, error) {
 	vars["config"], vars["oldConfig"], vars["node"] = cfg, oldCfg, node
+	vars[documentConfig] = cfg
 	var factErr error
 	bindFacts(vars, "facts", p.Facts, facts, &factErr)
 	where := p.Where()

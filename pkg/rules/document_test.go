@@ -83,3 +83,30 @@ func TestDocumentCostsOneLookup(t *testing.T) {
 		}
 	}
 }
+
+// document() reads the config whatever a rule names its own variables, so a loop or cel.bind
+// variable named config does not take the place of the config it looks documents up in.
+func TestDocumentIgnoresShadowedConfig(t *testing.T) {
+	zone := object(map[string]any{
+		"lanes": withRules(map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			rule(`self.all(config, document("Lane", config) != null)`, "a lane does not exist"),
+			rule(`cel.bind(config, {}, self.all(l, document("Lane", l) != null))`, "a bound lane does not exist")),
+	})
+	set := compiled(t, kindSchema("Lane", true, laneSpec, nil), kindSchema("Zone", true, zone, nil))
+	docs := []config.Document{
+		doc(t, "Lane", "a", `{"family": "ipv4"}`),
+		doc(t, "Zone", "ok", `{"lanes": ["a"]}`),
+		doc(t, "Zone", "missing", `{"lanes": ["c"]}`),
+	}
+	failures, err := set.Evaluate(Input{Documents: docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`Zone "missing" spec.lanes: a lane does not exist`,
+		`Zone "missing" spec.lanes: a bound lane does not exist`,
+	}
+	if got := messages(failures); !slices.Equal(got, want) {
+		t.Errorf("failures = %q, want %q", got, want)
+	}
+}

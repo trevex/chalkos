@@ -18,6 +18,11 @@ import (
 // name from a rule's text, so a rule calls it through document alone.
 const documentFunction = "@chalkos_document"
 
+// documentConfig is the variable document(kind, name) reads config from, which evaluation binds
+// to config. The parser cannot read its name either, so no loop or cel.bind variable of a rule
+// shadows it, as one named config would shadow config.
+const documentConfig = "@chalkos_config"
+
 // documents gives change rules document(kind, name): the document of the kind by that name as
 // config holds it, with its schema defaults and its secret values hashed, or null where config
 // holds none, as for a null name or a name a reference reserves. The kind is a string literal;
@@ -32,6 +37,7 @@ type documentLib struct{ apiVersions map[string]string }
 func (l documentLib) CompileOptions() []cel.EnvOption {
 	return []cel.EnvOption{
 		cel.Macros(cel.GlobalMacro("document", 2, l.expand)),
+		cel.Variable(documentConfig, cel.DynType),
 		cel.Function(documentFunction,
 			cel.Overload("chalkos_document", []*cel.Type{cel.DynType, cel.StringType, cel.StringType, cel.DynType}, cel.DynType,
 				cel.FunctionBinding(lookupDocument))),
@@ -51,7 +57,7 @@ func (l documentLib) expand(eh cel.MacroExprFactory, _ celast.Expr, args []celas
 	if !ok {
 		return nil, eh.NewError(args[0].ID(), fmt.Sprintf("document: the image declares no kind %s; it declares %s", kind, strings.Join(slices.Sorted(maps.Keys(l.apiVersions)), ", ")))
 	}
-	return eh.NewCall(documentFunction, eh.NewIdent("config"), eh.NewLiteral(types.String(apiVersion)), eh.NewLiteral(types.String(kind)), args[1]), nil
+	return eh.NewCall(documentFunction, eh.NewIdent(documentConfig), eh.NewLiteral(types.String(apiVersion)), eh.NewLiteral(types.String(kind)), args[1]), nil
 }
 
 // stringLiteral is the string e is, when it is a string literal.
