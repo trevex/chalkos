@@ -18,26 +18,38 @@ import (
 // defaults, so the hash depends on the operator's files alone and not on the schemas of the image
 // they meet.
 func Hash(docs []Document) (string, error) {
-	c, err := canonical(docs)
+	return hashJSON(canonical(docs))
+}
+
+// canonical is the form of docs Hash hashes.
+func canonical(docs []Document) ([]byte, error) {
+	return sortedJSON(docs, func(d Document) map[string]any {
+		if d.IsSecret() {
+			return hideSecretData(d.Object)
+		}
+		return d.Object
+	})
+}
+
+// sortedJSON is docs ordered by apiVersion, kind and name, each as object gives it, as one JSON
+// array. encoding/json writes map keys sorted.
+func sortedJSON(docs []Document, object func(Document) map[string]any) ([]byte, error) {
+	sorted := slices.Clone(docs)
+	SortDocuments(sorted)
+	objects := make([]any, len(sorted))
+	for i, d := range sorted {
+		objects[i] = object(d)
+	}
+	return json.Marshal(objects)
+}
+
+// hashJSON is the SHA-256, in lower-case hex, of c, the JSON a marshal returned with err.
+func hashJSON(c []byte, err error) (string, error) {
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(c)
 	return hex.EncodeToString(sum[:]), nil
-}
-
-// canonical is the form of docs Hash hashes. encoding/json writes map keys sorted.
-func canonical(docs []Document) ([]byte, error) {
-	sorted := slices.Clone(docs)
-	SortDocuments(sorted)
-	objects := make([]any, len(sorted))
-	for i, d := range sorted {
-		objects[i] = d.Object
-		if d.IsSecret() {
-			objects[i] = hideSecretData(d.Object)
-		}
-	}
-	return json.Marshal(objects)
 }
 
 // hideSecretData returns a Secret's object with each value of spec.data replaced by its SHA-256.
@@ -75,8 +87,9 @@ func hideValues(data map[string]any) map[string]any {
 // they reference, so a kind's hash changes when one of its documents does or a Secret one of them
 // references. Secrets have no entry of their own. schemas tell which fields are secretRefs.
 //
-// It hashes the documents as Redact gives them, so hashed, which tells that the secret values of
-// docs are hashed already, gives a set the hashes its documents with their values give.
+// It hashes docs as Redact gives them, an Addon's Kubernetes Secrets hidden too, which Hash keeps
+// as they are. hashed tells that docs come from Redact already; they give the same hashes as the
+// documents with their values.
 func KindHashes(docs []Document, schemas *schema.Schemas, hashed bool) (map[string]string, error) {
 	if !hashed {
 		docs = Redact(docs)
@@ -142,16 +155,5 @@ func ChangedKinds(before, after []Document, schemas *schema.Schemas) ([]string, 
 // hashRedacted is Hash of documents Redact gave: their Secrets' values are hashed already, so it
 // hashes the objects as they are, which for a set without Addons is Hash of the set before Redact.
 func hashRedacted(docs []Document) (string, error) {
-	sorted := slices.Clone(docs)
-	SortDocuments(sorted)
-	objects := make([]any, len(sorted))
-	for i, d := range sorted {
-		objects[i] = d.Object
-	}
-	c, err := json.Marshal(objects)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(c)
-	return hex.EncodeToString(sum[:]), nil
+	return hashJSON(sortedJSON(docs, func(d Document) map[string]any { return d.Object }))
 }
