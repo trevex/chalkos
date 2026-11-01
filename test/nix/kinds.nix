@@ -354,6 +354,37 @@ lib.runTests {
     expr = laneSchemas."lane.example.org_v1_Lane.json".properties.metadata.properties.name.not;
     expected.enum = [ "default" ];
   };
+  # Two kinds that reserve different names of Lane each refuse their own, and a reserved name
+  # shared with Zone appears once.
+  testReservedNamesOfTwoKindsUnite = {
+    expr =
+      (worker [
+        laneModule
+        (
+          { lib, ... }:
+          {
+            chalkos.kinds.Area = {
+              group = "area.example.org";
+              version = "v1";
+              spec.lane = lib.mkOption {
+                type = lib.chalkos.types.ref {
+                  kind = "Lane";
+                  reserved = [
+                    "none"
+                    "default"
+                  ];
+                };
+              };
+            };
+          }
+        )
+      ])
+      .system.build.chalkosKindSchemas."lane.example.org_v1_Lane.json".properties.metadata.properties.name.not;
+    expected.enum = [
+      "default"
+      "none"
+    ];
+  };
   testRefToAKindTheImageLacksFails = {
     expr = fails (
       schemasOf (worker [
