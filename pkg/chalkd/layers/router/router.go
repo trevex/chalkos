@@ -47,6 +47,9 @@ type Options struct {
 	// KeaDir is the output kea's directory, with kea-dhcp4.json for the default VRF's DHCP server
 	// and kea-dhcp4-<vrf>.json per VRF's; empty is /run/chalkos/outputs/kea.
 	KeaDir string
+	// PDDir holds the records of the prefixes Kea's DHCPv6 servers delegated; empty is
+	// /var/lib/kea/pd-routes.
+	PDDir string
 	// NAT64Dir is the output jool's directory, with a file <name>.json per NAT64 document; empty
 	// is /run/chalkos/outputs/jool.
 	NAT64Dir string
