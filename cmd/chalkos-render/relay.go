@@ -123,12 +123,33 @@ func renderDHCPRelay(in map[string]any, out string) error {
 	return nil
 }
 
+// notUnicast are the ranges DHCPRelay's rule refuses servers of, which a relay neither forwards
+// to nor from.
+var notUnicast = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("169.254.0.0/16"), netip.MustParsePrefix("224.0.0.0/3"),
+	netip.MustParsePrefix("::/8"), netip.MustParsePrefix("fe80::/10"), netip.MustParsePrefix("ff00::/8"),
+}
+
+// relayUnicast reports whether a is an address a relay forwards to or from: no zone, and outside
+// notUnicast, which holds the IPv4-mapped IPv6 addresses too.
+func relayUnicast(a netip.Addr) bool {
+	if !a.IsValid() || a.Zone() != "" {
+		return false
+	}
+	for _, p := range notUnicast {
+		if p.Contains(a) {
+			return false
+		}
+	}
+	return true
+}
+
 // relayServers are a relay's servers by family, IPv6 under true: unicast addresses, once each.
 func relayServers(servers []string) (map[bool][]netip.Addr, error) {
 	out := map[bool][]netip.Addr{}
 	for _, s := range servers {
 		a, err := netip.ParseAddr(s)
-		if err != nil || a.Zone() != "" || a.Is4In6() || !a.IsGlobalUnicast() {
+		if err != nil || !relayUnicast(a) {
 			return nil, fmt.Errorf("the server %q is no unicast address a relay forwards to", s)
 		}
 		if slices.Contains(out[a.Is6()], a) {
@@ -145,7 +166,7 @@ func relayServers(servers []string) (map[bool][]netip.Addr, error) {
 func relayAddress(d routerDocuments, network, link string, v6 bool) (netip.Addr, error) {
 	for _, a := range d.Addresses {
 		addr := a.prefix.Addr()
-		if a.network == network && addr.Is6() == v6 && !addr.Is4In6() && addr.IsGlobalUnicast() {
+		if a.network == network && addr.Is6() == v6 && relayUnicast(addr) {
 			return addr, nil
 		}
 	}
