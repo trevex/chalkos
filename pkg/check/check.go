@@ -11,6 +11,7 @@ package check
 
 import (
 	"context"
+	"errors"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -34,7 +35,7 @@ type Image struct {
 //   - Delivered are the documents as delivered, and Old the documents of the config they replace,
 //     with their defaults; nil at an install. The secret values of both are hashed.
 //   - Facts gives the node's facts for a check of the translated documents against Old, which
-//     command facts read; it loads a fact when a rule first reads it.
+//     command facts read; it loads a fact when a rule first reads it. Run requires it.
 //   - Compare are what the effects compare the config with: the config the node runs, or a
 //     baseline and what the deliveries that failed since applied.
 //   - Storage checks the config against the storage kinds' rules alone, as a config that passed
@@ -90,6 +91,9 @@ func (r *Refusal) Error() string { return r.Message }
 // With in.Storage, only the rules of the storage kinds run, and nothing renders or plans: Staged
 // is nil.
 func Run(ctx context.Context, img Image, in Input) (Result, error) {
+	if in.Facts == nil {
+		return Result{}, errors.New("the check has no facts to give the rules")
+	}
 	tr, err := Translate(in.Node, in.Delivered, img.Schemas, img.Target)
 	if err != nil {
 		return Result{}, &Refusal{Stage: StageConfig, Message: ConfigRefusal(err)}

@@ -267,3 +267,25 @@ func TestRunGivesTheTranslationWithARefusal(t *testing.T) {
 func fixed(f rules.Facts) func(next, old []config.Document) rules.Facts {
 	return func([]config.Document, []config.Document) rules.Facts { return f }
 }
+
+// With Storage, a storage kind's rule still refuses: the system disk's var volume against the one
+// STATE records.
+func TestRunChecksStorageRules(t *testing.T) {
+	img := testImage(t, `cat > "$OUT/demo.json"`)
+	in := running(t, img, &facts{})
+	recorded := map[string]any{"volumes": map[string]any{"var": map[string]any{"format": "xfs", "encryption": "none"}}}
+	in.Facts = fixed(&facts{values: map[string]any{"recorded": recorded}})
+	in.Delivered = config.Redact(parse(t, base))
+	in.Storage = true
+	res, err := Run(context.Background(), img, in)
+	if r := new(Refusal); !errors.As(err, &r) || r.Stage != StageRules || !strings.Contains(r.Message, "format ext4 instead of xfs") || len(res.Identity) == 0 {
+		t.Errorf("Run = %+v, %v; want a refusal of the system disk by its rules", res, err)
+	}
+}
+
+// Run takes no input without facts, which its rules would need.
+func TestRunRequiresFacts(t *testing.T) {
+	if _, err := Run(context.Background(), testImage(t, `true`), Input{Node: "n1", Delivered: config.Redact(parse(t, base))}); err == nil {
+		t.Error("Run without facts passed")
+	}
+}
