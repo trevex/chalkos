@@ -104,7 +104,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 		}
 		for socket, answer := range map[string]string{
 			"dhcp4.sock": `{"result": 0, "arguments": {"subnet[3221225984].assigned-addresses": [[2, "2026-11-01 10:00:00.000000"]], "subnet[3221225984].total-addresses": [[100, "2026-11-01 09:00:00.000000"]]}}`,
-			"dhcp6.sock": `{"result": 0, "arguments": {"subnet[2387838497].assigned-nas": [[1, "2026-11-01 10:00:00.000000"]], "subnet[2387838497].total-nas": [[256, "2026-11-01 09:00:00.000000"]], "subnet[2387838497].assigned-pds": [[1, "2026-11-01 10:00:00.000000"]], "subnet[2387838497].total-pds": [[256, "2026-11-01 09:00:00.000000"]]}}`,
+			"dhcp6.sock": `{"result": 0, "arguments": {"subnet[2387838497].assigned-nas": [[1, "2026-11-01 10:00:00.000000"]], "subnet[2387838497].total-nas": [[36893488147419103230, "2026-11-01 09:00:00.000000"]], "subnet[2387838497].assigned-pds": [[1, "2026-11-01 10:00:00.000000"]], "subnet[2387838497].total-pds": [[256, "2026-11-01 09:00:00.000000"]]}}`,
 		} {
 			l, err := net.Listen("unix", filepath.Join(run, "kea", socket))
 			if err != nil {
@@ -256,8 +256,8 @@ func TestStatusRouterNAT64AndResolver(t *testing.T) {
 		"  SUBNET  RANGE         LEASED  POOL\n" +
 		"  office  192.0.2.0/24  2       100\n" +
 		"dhcp6 default: running\n" +
-		"  SUBNET   RANGE            LEASED  POOL  DELEGATED  DELEGABLE\n" +
-		"  office6  2001:db8:1::/64  1       256   1          256\n" +
+		"  SUBNET   RANGE            LEASED  POOL    DELEGATED  DELEGABLE\n" +
+		"  office6  2001:db8:1::/64  1       >=2^64  1          256\n" +
 		"dhcp4 guest: not running: dial unix "
 	got := ta.stdout.String()
 	if !strings.Contains(got, want) || !strings.Contains(got, "/kea/dhcp4-guest.sock: connect: no such file or directory\ndhcp-relay default: running\ndhcp-relay guest: running\ncertificates:\n") {

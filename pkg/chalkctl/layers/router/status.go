@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -88,7 +89,7 @@ func routerStatus(h layer.Host, r *routerv1.StatusResponse) error {
 		}
 		for _, s := range d.Subnets {
 			if name == "dhcp6" {
-				fmt.Fprintf(w, "  %s\t%s\t%d\t%d\t%d\t%d\n", s.Name, s.Subnet, s.Leased, s.Pool, s.Delegated, s.Delegable)
+				fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n", s.Name, s.Subnet, dhcpCount(s.Leased), dhcpCount(s.Pool), dhcpCount(s.Delegated), dhcpCount(s.Delegable))
 			} else {
 				fmt.Fprintf(w, "  %s\t%s\t%d\t%d\n", s.Name, s.Subnet, s.Leased, s.Pool)
 			}
@@ -131,4 +132,13 @@ func bgpStatus(h layer.Host, r *routerv1.StatusResponse) error {
 		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%d\t%d\t%s\n", cmp.Or(p.Vrf, "default"), p.Name, p.Neighbor, p.State, uptime, p.PrefixesReceived, p.PrefixesSent, cmp.Or(p.Bfd, "-"))
 	}
 	return w.Flush()
+}
+
+// dhcpCount is a count of a DHCP server's status, which chalkd saturates at the largest number
+// of 64 bits when Kea counts more, as of the addresses of an IPv6 pool of /64.
+func dhcpCount(n uint64) string {
+	if n == math.MaxUint64 {
+		return ">=2^64"
+	}
+	return strconv.FormatUint(n, 10)
 }
