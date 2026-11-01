@@ -14,8 +14,7 @@
       {
         "library": "libdhcp_run_script.so",
         "parameters": {
-          "name": "/etc/kea/chalkos-dhcp6-pd",
-          "sync": true
+          "name": "/etc/kea/chalkos-dhcp6-pd"
         }
       }
     ],

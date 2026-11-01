@@ -323,10 +323,10 @@ func kea6Config(srv keaServer, subnets []servedSubnet, pdHook string) map[string
 	hooks := []any{map[string]any{"library": "libdhcp_lease_cmds.so"}}
 	if delegates {
 		// Kea routes no prefix it delegates. The hook runs pdHook, which records each delegated
-		// prefix and the link-local address that asked for it, for chalkd to route. sync asks Kea
-		// to wait for each run, so that a release does not overtake the commit before it; Kea
-		// 3.2 takes the parameter but still runs scripts without waiting.
-		hooks = append(hooks, map[string]any{"library": "libdhcp_run_script.so", "parameters": map[string]any{"name": pdHook, "sync": true}})
+		// prefix and the link-local address that asked for it, for chalkd to route. Kea runs it
+		// without waiting, so a release may overtake its commit and leave a record, whose route
+		// lasts until the lease would have ended, the subnet's lease time at most.
+		hooks = append(hooks, map[string]any{"library": "libdhcp_run_script.so", "parameters": map[string]any{"name": pdHook}})
 	}
 	dhcp6 := map[string]any{
 		"interfaces-config": map[string]any{
