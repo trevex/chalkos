@@ -192,6 +192,15 @@ read what changed; chalkctl prints the changes and the units. When the image's r
 change, the node refuses the whole config and names the remedy. See
 https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts.
 
+--diff prints what the config changes in the node's config, document by document, and checks
+nothing on the node. --dry-run has the node check the config as it checks a delivery, with its
+facts, the image's renderers and their checks, and changes nothing. It prints the diff, then the
+config the node would run, the outputs that would change, the effects the delivery would take with
+what fires each, and the storage changes. A refusal is the delivery's, and the command exits 1.
+--dry-run takes several nodes and checks them one after the other. It goes without --staged,
+--rollback, --try and the layers' payload flags. An effect whose rule compares the node's facts
+before and after the delivery is planned with the facts as they are.
+
 Each image on a node keeps its own config. --staged delivers the config for the image staged to
 boot next, as an upgrade with --no-reboot leaves it, and nothing restarts. Without --staged,
 chalkctl warns of a staged image, whose config stays as it is. A config for the running image that
@@ -240,6 +249,9 @@ const applyConfigExample = `  # Apply w1's changed network and labels.
 
   # Show what w1's config in the inventory changes on the node, changing nothing.
   chalkctl apply-config w1 --secrets secrets.age --diff
+
+  # Have w1 and w2 check their config, renderers included, and show what a delivery would do.
+  chalkctl apply-config w1 w2 --secrets secrets.age --dry-run
 
   # Deliver w1's config for the image an upgrade with --no-reboot staged.
   chalkctl apply-config w1 --secrets secrets.age --staged

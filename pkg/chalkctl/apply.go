@@ -5,6 +5,8 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -24,9 +26,11 @@ type applyConfigFlags struct {
 	node         nodeFlags
 	passwordFile string
 	staged, diff bool
-	rollback     bool
-	force        bool
-	layers       []layerFlags
+	// dryRun has the node check the config and print the delivery's plan in place of applying it.
+	dryRun   bool
+	rollback bool
+	force    bool
+	layers   []layerFlags
 	// payloadFlags names the layers' flags that ask for payloads, which --force goes with.
 	payloadFlags string
 	// try is how long the config is on trial; zero applies it for good. noConfirm leaves the
@@ -73,11 +77,11 @@ type layerFlags struct {
 func (a *app) applyConfigCommand() *cobra.Command {
 	f := applyConfigFlags{node: nodeFlags{needs: "apply-config"}}
 	cmd := a.command(&cobra.Command{
-		Use:     "apply-config <node>",
+		Use:     "apply-config <node> [<node>...]",
 		Short:   "Deliver a node's config from the inventory",
 		Long:    applyConfigLong,
 		Example: applyConfigExample,
-		Args:    cli.ExactArgs(1),
+		Args:    cli.RangeArgs(1, math.MaxInt),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.register(fs)
@@ -93,7 +97,8 @@ func (a *app) applyConfigCommand() *cobra.Command {
 		fs.BoolVar(&f.force, "force", false, "with "+f.payloadFlags+", deliver without asking whether the node is revoked")
 	}
 	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the node's image in the inventory")
-	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing")
+	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do")
+	fs.BoolVar(&f.dryRun, "dry-run", false, "have the node check the config as it checks a delivery, its renderers and facts included, print the diff and what the delivery would change, and change nothing; takes several nodes")
 	fs.BoolVar(&f.rollback, "rollback", false, "deliver the node's previous config again, the one its image ran before the last delivery, instead of the inventory's")
 	fs.DurationVar(&f.try, "try", 0, "apply the config on trial for the duration, from 10s to 24h: the node rolls it back by itself unless chalkctl confirms it over a new connection once the node is healthy")
 	fs.BoolVar(&f.noConfirm, "no-confirm", false, "with --try, leave the trial open for apply-config --confirm")
@@ -103,7 +108,14 @@ func (a *app) applyConfigCommand() *cobra.Command {
 }
 
 func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
+	if len(pos) > 1 && !f.dryRun {
+		return cli.Usagef("apply-config delivers to one node; --dry-run checks several, one after the other")
+	}
 	switch {
+	case f.dryRun:
+		if err := f.checkDryRun(); err != nil {
+			return err
+		}
 	case f.confirm:
 		return a.confirmConfig(ctx, f, pos[0])
 	case f.rollback:
@@ -120,10 +132,72 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if f.force && !f.payloads() {
 		return cli.Usagef("--force goes with %s", f.payloadFlags)
 	}
+	if f.dryRun {
+		return a.dryRunConfig(ctx, f, pos)
+	}
 	t, err := a.target(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
+	return a.deliverConfig(ctx, f, t)
+}
+
+// checkDryRun refuses what --dry-run does not go with: it checks the inventory's config for the
+// running image alone, as a delivery without a trial would deliver it.
+func (f applyConfigFlags) checkDryRun() error {
+	switch {
+	case f.staged:
+		return cli.Usagef("--dry-run checks config for the running image; --staged goes without it")
+	case f.diff:
+		return cli.Usagef("--dry-run prints the diff too; drop --diff")
+	case f.rollback || f.confirm:
+		return cli.Usagef("--dry-run checks the inventory's config; --rollback and --confirm go without it")
+	case f.try != 0 || f.noConfirm || len(f.ignoreUnits) > 0:
+		return cli.Usagef("--dry-run tries nothing; drop --try, --no-confirm and --ignore-unit")
+	case f.force || f.payloads():
+		return cli.Usagef("--dry-run checks config alone; deliver %s without it", f.payloadFlags)
+	}
+	return nil
+}
+
+// dryRunConfig has each node of names check the inventory's config as its delivery, one after
+// the other, and prints what each delivery would change. A node that refuses its config does not
+// stop the others.
+func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []string) error {
+	if len(names) > 1 && f.node.address != "" {
+		return cli.Usagef("--address reaches one node; check the nodes one by one")
+	}
+	c, err := f.node.loadCluster(ctx)
+	if err != nil {
+		return err
+	}
+	creds, err := a.loadSecretCredentials(ctx, f.node.secrets)
+	if err != nil {
+		return err
+	}
+	var refused []string
+	for _, name := range names {
+		t, err := targetIn(c, f.node.address, name, creds)
+		if err == nil {
+			err = a.deliverConfig(ctx, f, t)
+		}
+		switch {
+		case err != nil && len(names) == 1:
+			return err
+		case err != nil:
+			fmt.Fprintf(a.stderr, "chalkctl: %s: %v\n", name, err)
+			refused = append(refused, name)
+		}
+	}
+	if len(refused) > 0 {
+		return fmt.Errorf("the config of %s is refused: %s", layer.Count(len(refused), "node"), strings.Join(refused, ", "))
+	}
+	return nil
+}
+
+// deliverConfig delivers the inventory's config to the node t, or with --dry-run has the node
+// check it and prints what the delivery would change.
+func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) error {
 	for _, l := range f.layers {
 		if l.f.Requested() && !f.force && !f.diff {
 			if err := l.d.Admit(ctx, pluginTarget{t}, l.f.Does()); err != nil {
@@ -183,8 +257,10 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	}
 	changes := diffConfig(nodeDocs, d.Documents)
 	fmt.Fprintf(a.stdout, "%s: %s\n", t.name, changes.summary())
-	if f.diff {
+	if f.diff || f.dryRun {
 		changes.write(a.stdout)
+	}
+	if f.diff {
 		return nil
 	}
 	// The rules that compare the config with the node's are checked against the config the node
@@ -217,7 +293,7 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		}
 		payloads = append(payloads, p...)
 	}
-	req := &nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, Layers: payloads, Staged: f.staged}
+	req := &nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, Layers: payloads, Staged: f.staged, DryRun: f.dryRun}
 	// chalkctl's deadline starts before the node's, so it falls before it. An answer that comes
 	// after it is of no use: the node may have rolled the config back by then.
 	deadline := a.now().Add(f.try)
@@ -235,6 +311,11 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 			return a.failedTrial(ctx, conn, t, d.Version, st.Msg.ConfigVersion, deadline, err)
 		}
 		return nodeError(err, t.name)
+	}
+	if f.dryRun {
+		writePlan(a.stdout, t.name, resp.Msg)
+		a.warnDelivery(t.name, resp.Msg)
+		return nil
 	}
 	for _, c := range resp.Msg.Changes {
 		fmt.Fprintf(a.stdout, "volume %s: %s\n", c.Volume, c.Reason)
@@ -290,6 +371,40 @@ func (a *app) failedTrial(ctx context.Context, conn *client.Conn, t *target, ver
 		return fmt.Errorf("%w; %s", err, endTrialHint(t.name))
 	}
 	return err
+}
+
+// writePlan prints the plan of a dry run of the node called name: the config it would replace and
+// run, then the outputs, the effects with their actions and what fired them, and the storage
+// changes, each section "none" when it has nothing.
+func writePlan(w io.Writer, name string, resp *nodev1.ApplyConfigResponse) {
+	p := resp.GetPlan()
+	fmt.Fprintf(w, "%s: config %s → %s\n", name, cmp.Or(p.GetReplaces(), "none"), cmp.Or(p.GetVersion(), "none"))
+	section := func(label string, lines []string) {
+		if len(lines) == 0 {
+			lines = []string{"none"}
+		}
+		for i, l := range lines {
+			if i > 0 {
+				label = ""
+			}
+			fmt.Fprintf(w, "  %-10s%s\n", label, l)
+		}
+	}
+	var outputs []string
+	if len(p.GetOutputs()) > 0 {
+		outputs = []string{strings.Join(p.GetOutputs(), ", ")}
+	}
+	section("outputs:", outputs)
+	var effects []string
+	for _, e := range p.GetEffects() {
+		effects = append(effects, fmt.Sprintf("%s: %s (%s)", e.Name, strings.Join(e.Actions, ", "), strings.Join(e.FiredBy, ", ")))
+	}
+	section("effects:", effects)
+	var storage []string
+	for _, c := range resp.GetChanges() {
+		storage = append(storage, fmt.Sprintf("volume %s: %s", c.Volume, c.Reason))
+	}
+	section("storage:", storage)
 }
 
 // endTrialHint names the commands that end the node's open trial.
