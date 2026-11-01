@@ -37,6 +37,11 @@ func renderRouterNftables(port string, closed bool, in map[string]any, out strin
 		return err
 	}
 	fw.openings = append(fw.openings, dns...)
+	dhcp, err := dhcpOpenings(d)
+	if err != nil {
+		return err
+	}
+	fw.openings = append(fw.openings, dhcp...)
 	text, err := fw.ruleset()
 	if err != nil {
 		return err
@@ -1166,4 +1171,56 @@ func (o opening) lines() ([]string, error) {
 		}
 	}
 	return lines, nil
+}
+
+// dhcpOpenings are the DHCP ports of the DHCPv6 servers and of the relays on their links, in the
+// links' VRF: DHCPv6's UDP port 547 from link-local addresses on an IPv6 DHCPSubnet's link and on
+// a DHCPRelay's links with an IPv6 server, and DHCPv4's UDP port 67 on a DHCPRelay's links with
+// an IPv4 server. Kea's DHCPv4 server reads and answers on raw sockets ahead of the firewall and
+// needs none, and the servers' answers to the relay pass as replies to its requests.
+func dhcpOpenings(d routerDocuments) ([]opening, error) {
+	devices := vrfDevices(d)
+	var out []opening
+	for _, s := range d.DHCPSubnets {
+		p, err := netip.ParsePrefix(s.Spec.Subnet)
+		if err != nil || !p.Addr().Is6() || p.Addr().Is4In6() {
+			continue
+		}
+		links, vrf, err := subnetLinks(d, devices, s.Spec.Interfaces, subnetWords)
+		if err != nil {
+			return nil, fmt.Errorf("DHCPSubnet %s: %w", s.Name, err)
+		}
+		out = append(out, opening{comment: "DHCPSubnet " + s.Name, protocol: "udp", ports: []portRange{"547"},
+			interfaces: links, vrf: vrfOpening(vrf), sources: []string{"fe80::/10"}})
+	}
+	for _, r := range d.DHCPRelays {
+		links, vrf, err := subnetLinks(d, devices, r.Spec.Interfaces, relayWords)
+		if err != nil {
+			return nil, fmt.Errorf("DHCPRelay %s: %w", r.Name, err)
+		}
+		servers, err := relayServers(r.Spec.Servers)
+		if err != nil {
+			return nil, fmt.Errorf("DHCPRelay %s: %w", r.Name, err)
+		}
+		o := opening{comment: "DHCPRelay " + r.Name, protocol: "udp", interfaces: links, vrf: vrfOpening(vrf)}
+		if len(servers[false]) > 0 {
+			v4 := o
+			v4.ports, v4.sources = []portRange{"67"}, []string{"0.0.0.0/0"}
+			out = append(out, v4)
+		}
+		if len(servers[true]) > 0 {
+			v6 := o
+			v6.ports, v6.sources = []portRange{"547"}, []string{"fe80::/10"}
+			out = append(out, v6)
+		}
+	}
+	return out, nil
+}
+
+// vrfOpening is the VRF of an opening: "" for the default VRF.
+func vrfOpening(vrf string) string {
+	if vrf == defaultVRF {
+		return ""
+	}
+	return vrf
 }

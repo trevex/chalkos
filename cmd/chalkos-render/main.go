@@ -1,9 +1,9 @@
 // Command chalkos-render is the renderer of the outputs the helpers of lib.chalkos.render build,
 // and of the built-in outputs networkd, router-networkd, router-sysctl, router-nftables, frr, jool,
-// unbound and kea. chalkd runs it in the sandbox of an output: it reads the output's input as JSON
-// on standard input, {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}, and writes
-// files into $OUT, the only path it may write. A router image's build runs it once more for the
-// image's fallback ruleset.
+// unbound, kea and dhcp-relay. chalkd runs it in the sandbox of an output: it reads the output's
+// input as JSON on standard input, {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}},
+// and writes files into $OUT, the only path it may write. A router image's build runs it once more
+// for the image's fallback ruleset.
 package main
 
 import (
@@ -32,6 +32,7 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render jool
        chalkos-render unbound TRUST-ANCHOR ZONE-FILE
        chalkos-render kea PD-HOOK
+       chalkos-render dhcp-relay
 
 template executes the Go text/template TEMPLATE on the input and writes the result to $OUT/FILE;
 the template has the functions join, quote, json and default. documents writes each document of
@@ -49,7 +50,9 @@ document as $OUT/unbound.conf, with the root's trust anchor in the file TRUST-AN
 ipv4only.arpa in the file ZONE-FILE. kea writes the config of Kea's DHCPv4 and DHCPv6 servers of
 each VRF whose links DHCPSubnet documents serve as $OUT/kea-dhcp4.json and $OUT/kea-dhcp6.json for
 the default VRF and $OUT/kea-dhcp4-<vrf>.json and $OUT/kea-dhcp6-<vrf>.json for a VRF; a DHCPv6
-server whose subnets delegate prefixes runs the program PD-HOOK on their leases.`
+server whose subnets delegate prefixes runs the program PD-HOOK on their leases. dhcp-relay writes
+the config of dnsmasq's DHCP relay of each VRF whose links DHCPRelay documents relay as
+$OUT/dnsmasq-relay.conf for the default VRF and $OUT/dnsmasq-relay-<vrf>.conf for a VRF.`
 
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Getenv("OUT")); err != nil {
@@ -98,6 +101,8 @@ func run(args []string, stdin io.Reader, out string) error {
 		return renderUnbound(args[1], args[2], in, out)
 	case args[0] == "kea" && len(args) == 2:
 		return renderKea(args[1], in, out)
+	case args[0] == "dhcp-relay" && len(args) == 1:
+		return renderDHCPRelay(in, out)
 	}
 	return errUsage
 }
