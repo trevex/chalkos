@@ -111,7 +111,6 @@ func TestApplyConfigDryRunUsage(t *testing.T) {
 		want string
 	}{
 		{[]string{"n1", "n2"}, "apply-config delivers to one node; --dry-run checks several, one after the other"},
-		{[]string{"n1", "--dry-run", "--staged"}, "--dry-run checks config for the running image; --staged goes without it"},
 		{[]string{"n1", "--dry-run", "--diff"}, "--dry-run prints the diff too; drop --diff"},
 		{[]string{"n1", "--dry-run", "--rollback"}, "--dry-run checks the inventory's config; --rollback and --confirm go without it"},
 		{[]string{"n1", "--dry-run", "--confirm"}, "--dry-run checks the inventory's config; --rollback and --confirm go without it"},

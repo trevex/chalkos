@@ -97,9 +97,9 @@ func (a *app) applyConfigCommand() *cobra.Command {
 		f.payloadFlags = strings.Join(payloadFlags, " or ")
 		fs.BoolVar(&f.force, "force", false, "with "+f.payloadFlags+", deliver without asking whether the node is revoked")
 	}
-	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the node's image in the inventory")
+	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the node's image in the inventory; with --dry-run, that image checks it and nothing is kept")
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do")
-	fs.BoolVar(&f.dryRun, "dry-run", false, "have the node check the config as it checks a delivery, its renderers and facts included, print the diff and what the delivery would change, and change nothing; takes several nodes")
+	fs.BoolVar(&f.dryRun, "dry-run", false, "have the node check the config as it checks a delivery, its renderers and facts included, print the diff and what the delivery would change, and change nothing; with --staged, the staged image checks it; takes several nodes")
 	fs.BoolVar(&f.rollback, "rollback", false, "deliver the node's previous config again, the one its image ran before the last delivery, instead of the inventory's")
 	fs.DurationVar(&f.try, "try", 0, "apply the config on trial for the duration, from 10s to 24h: the node rolls it back by itself unless chalkctl confirms it over a new connection once the node is healthy")
 	fs.BoolVar(&f.noConfirm, "no-confirm", false, "with --try, leave the trial open for apply-config --confirm")
@@ -143,12 +143,11 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	return a.deliverConfig(ctx, f, t)
 }
 
-// checkDryRun refuses what --dry-run does not go with: it checks the inventory's config for the
-// running image alone, as a delivery without a trial would deliver it.
+// checkDryRun refuses what --dry-run does not go with: it checks the inventory's config, for the
+// running image or with --staged for the staged one, as a delivery without a trial would deliver
+// it.
 func (f applyConfigFlags) checkDryRun() error {
 	switch {
-	case f.staged:
-		return cli.Usagef("--dry-run checks config for the running image; --staged goes without it")
 	case f.diff:
 		return cli.Usagef("--dry-run prints the diff too; drop --diff")
 	case f.rollback || f.confirm:
@@ -363,7 +362,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		return nodeError(err, t.name)
 	}
 	if f.dryRun {
-		writePlan(a.stdout, t.name, resp.Msg)
+		writePlan(a.stdout, t.name, resp.Msg, f.staged)
 		a.warnDelivery(t.name, resp.Msg)
 		return nil
 	}
@@ -425,10 +424,16 @@ func (a *app) failedTrial(ctx context.Context, conn *client.Conn, t *target, ver
 
 // writePlan prints the plan of a dry run of the node called name: the config it would replace and
 // run, then the outputs, the effects with their actions and what fired them, and the storage
-// changes, each section "none" when it has nothing.
-func writePlan(w io.Writer, name string, resp *nodev1.ApplyConfigResponse) {
+// changes, each section "none" when it has nothing. The plan of a dry run for the staged image
+// has its config and the storage changes alone: the image renders its outputs and takes no
+// effects until it boots.
+func writePlan(w io.Writer, name string, resp *nodev1.ApplyConfigResponse, staged bool) {
 	p := resp.GetPlan()
-	fmt.Fprintf(w, "%s: config %s → %s\n", name, cmp.Or(p.GetReplaces(), "none"), cmp.Or(p.GetVersion(), "none"))
+	which := "config"
+	if staged {
+		which = "staged image's config"
+	}
+	fmt.Fprintf(w, "%s: %s %s → %s\n", name, which, cmp.Or(p.GetReplaces(), "none"), cmp.Or(p.GetVersion(), "none"))
 	section := func(label string, lines []string) {
 		if len(lines) == 0 {
 			lines = []string{"none"}
@@ -440,16 +445,18 @@ func writePlan(w io.Writer, name string, resp *nodev1.ApplyConfigResponse) {
 			fmt.Fprintf(w, "  %-10s%s\n", label, l)
 		}
 	}
-	var outputs []string
-	if len(p.GetOutputs()) > 0 {
-		outputs = []string{strings.Join(p.GetOutputs(), ", ")}
+	if !staged {
+		var outputs []string
+		if len(p.GetOutputs()) > 0 {
+			outputs = []string{strings.Join(p.GetOutputs(), ", ")}
+		}
+		section("outputs:", outputs)
+		var effects []string
+		for _, e := range p.GetEffects() {
+			effects = append(effects, fmt.Sprintf("%s: %s (%s)", e.Name, strings.Join(e.Actions, ", "), strings.Join(e.FiredBy, ", ")))
+		}
+		section("effects:", effects)
 	}
-	section("outputs:", outputs)
-	var effects []string
-	for _, e := range p.GetEffects() {
-		effects = append(effects, fmt.Sprintf("%s: %s (%s)", e.Name, strings.Join(e.Actions, ", "), strings.Join(e.FiredBy, ", ")))
-	}
-	section("effects:", effects)
 	var storage []string
 	for _, c := range resp.GetChanges() {
 		storage = append(storage, fmt.Sprintf("volume %s: %s", c.Volume, c.Reason))

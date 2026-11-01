@@ -75,7 +75,7 @@ file.
 | `--address`{ #flag-address } | string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
 | `--confirm`{ #flag-confirm } | boolean | `false` | Confirm the node's open trial once the node is healthy, so it keeps the config on trial. |
 | `--diff`{ #flag-diff } | boolean | `false` | Print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do. |
-| `--dry-run`{ #flag-dry-run } | boolean | `false` | Have the node check the config as it checks a delivery, its renderers and facts included, print the diff and what the delivery would change, and change nothing; takes several nodes. |
+| `--dry-run`{ #flag-dry-run } | boolean | `false` | Have the node check the config as it checks a delivery, its renderers and facts included, print the diff and what the delivery would change, and change nothing; with --staged, the staged image checks it; takes several nodes. |
 | `--force`{ #flag-force } | boolean | `false` | With --kubernetes-share, deliver without asking whether the node is revoked. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--ignore-unit`{ #flag-ignore-unit } | list of string | — | With --try, leave the unit out of the health check the confirmation waits for, as the image's check leaves out the units it ignores. |
@@ -85,7 +85,7 @@ file.
 | `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |
 | `--rollback`{ #flag-rollback } | boolean | `false` | Deliver the node's previous config again, the one its image ran before the last delivery, instead of the inventory's. |
 | `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
-| `--staged`{ #flag-staged } | boolean | `false` | Deliver the config for the image staged to boot next instead, checked against the node's image in the inventory. |
+| `--staged`{ #flag-staged } | boolean | `false` | Deliver the config for the image staged to boot next instead, checked against the node's image in the inventory; with --dry-run, that image checks it and nothing is kept. |
 | `--try`{ #flag-try } | duration | `0s` | Apply the config on trial for the duration, from 10s to 24h: the node rolls it back by itself unless chalkctl confirms it over a new connection once the node is healthy. |
 
 ## Examples

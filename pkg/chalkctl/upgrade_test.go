@@ -1618,10 +1618,14 @@ func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[node
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	switch {
+	case req.Msg.Staged && n.staged == "":
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no image is staged to boot next"))
+	case req.Msg.Staged && req.Msg.DryRun:
+		// The staged image checks the config and plans its version; nothing is kept.
+		plan := &nodev1.Plan{Version: versionOf(req.Msg.Config), Replaces: versionOf(n.stagedConfig)}
+		return connect.NewResponse(&nodev1.ApplyConfigResponse{Plan: plan, Changes: []*nodev1.StorageChange{{Volume: "extra", Reason: "new"}}}), nil
 	case !req.Msg.Staged:
 		n.config = req.Msg.Config
-	case n.staged == "":
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no image is staged to boot next"))
 	default:
 		n.stagedConfig = req.Msg.Config
 	}
@@ -1700,6 +1704,28 @@ func TestApplyConfigStaged(t *testing.T) {
 		if !strings.Contains(l.ta.stdout.String(), line) {
 			t.Errorf("status lacks %q:\n%s", line, l.ta.stdout)
 		}
+	}
+}
+
+// apply-config --staged --dry-run prints the diff against the staged image's config and the
+// plan the node answers with, the staged image's config and the storage changes alone, and the
+// node keeps the config it had.
+func TestApplyConfigStagedDryRun(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	l.useInventory(t, map[string]string{"w": img})
+	n := l.nodes["w1"]
+	n.staged, n.stagedRoot, n.stagedConfig = "0.2.0", rootOf(t, img), "{}"
+	if err := l.applyConfig("w1", "--staged", "--dry-run"); err != nil {
+		t.Fatal(err)
+	}
+	if n.stagedConfig != "{}" {
+		t.Errorf("w1 keeps %q for the staged image, want the config it had", n.stagedConfig)
+	}
+	want := "w1: staged image's config " + versionOf("{}") + " → " + versionOf(l.inventoryConfig("w1")) + "\n" +
+		"  storage:  volume extra: new\n"
+	if out := l.ta.stdout.String(); !strings.HasSuffix(out, want) || strings.Contains(out, "outputs:") {
+		t.Errorf("stdout = %q, want it to end with %q", out, want)
 	}
 }
 
@@ -1830,8 +1856,7 @@ func TestUpgradeDiff(t *testing.T) {
 	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
 		t.Fatal(err)
 	}
-	// The image renders its outputs at its first boot, which the run says.
-	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: config unchanged\nw1: installed ") || !strings.Contains(out, " renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs\n") {
+	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: config unchanged\nw1: installed ") || strings.Contains(out, "when it first boots") {
 		t.Errorf("output:\n%s", out)
 	}
 }
