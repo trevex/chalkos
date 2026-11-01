@@ -37,7 +37,8 @@ in
   );
 
   # The Go code, the e2e tests included, is gofmt-formatted and passes go vet and staticcheck,
-  # with the checks staticcheck.conf selects.
+  # with the checks staticcheck.conf selects; pkg/imagecheck also with the tag vmtest of its VM
+  # test.
   go-lint = chalkPkgs.chalkctl.overrideAttrs (old: {
     pname = "chalkos-go-lint";
     nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.go-tools ];
@@ -51,7 +52,9 @@ in
         exit 1
       fi
       go vet ./pkg/... ./cmd/... ./test/...
+      go vet -tags vmtest ./pkg/imagecheck
       XDG_CACHE_HOME=$TMPDIR/cache staticcheck ./pkg/... ./cmd/... ./test/...
+      XDG_CACHE_HOME=$TMPDIR/cache staticcheck -tags vmtest ./pkg/imagecheck
       runHook postBuild
     '';
     doCheck = false;
