@@ -256,13 +256,17 @@ answer it. dnsmasq keeps the same capabilities when it starts as root anywhere e
 
 ## A family's server and relay share no VRF
 
-Kea's sockets and dnsmasq's of a family bind the same port. Kea binds port 67 of each link's
-address and `ff05::1:3` on port 547, without `SO_REUSEADDR`, and dnsmasq binds the wildcard
-addresses. A Kea socket and a dnsmasq socket of a port bind side by side only when each is bound
-to the device of a different VRF, and a socket of the default VRF is bound to none. So the output
-`dhcp-relay` refuses a family that a `DHCPRelay` relays and a `DHCPSubnet` serves in one VRF, or
-when one of the two is in the default VRF. Two relays bind side by side in any two VRFs, as their
-sockets take `SO_REUSEADDR`, and so do two DHCPv6 servers. Different families never collide.
+Kea's sockets and dnsmasq's of a family use the same port, and dnsmasq binds the wildcard
+addresses. For DHCPv4, Kea binds a UDP socket to port 67 of each link's address without
+`SO_REUSEADDR`. That socket and dnsmasq's bind side by side only when each is bound to the device
+of a different VRF, and a socket of the default VRF is bound to none. For DHCPv6, Kea's sockets on
+port 547 and dnsmasq's would bind side by side. In one VRF, each would then take some of the
+link's requests, so a request could reach the relay instead of the server or the reverse.
+
+So the output `dhcp-relay` refuses a family that a `DHCPRelay` relays and a `DHCPSubnet` serves in
+one VRF, or when one of the two is in the default VRF, for both families alike. Two relays bind
+side by side in any two VRFs, as their sockets take `SO_REUSEADDR`, and so do two DHCPv6 servers.
+Different families never collide.
 
 ## chalkos-dhcp runs the servers
 
