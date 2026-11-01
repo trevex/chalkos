@@ -93,7 +93,7 @@ func (s *Server) dryRun(ctx context.Context, r applyRequest) (*connect.Response[
 	if err != nil {
 		return nil, err
 	}
-	p := check.PlanOf(d.fx.fx(), o)
+	p := check.PlanOf(d.fx.checkEffects(), o)
 	plan := &nodev1.Plan{Outputs: p.Outputs}
 	if !d.keep {
 		plan.Version, plan.Replaces = d.stored.Version, d.replaced

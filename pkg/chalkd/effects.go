@@ -195,7 +195,7 @@ func (s *Server) outcome(ctx context.Context, e *pendingEffects, states map[stri
 			log.Printf("record the facts of the delivery in the baseline of the effects: %v", err)
 		}
 	}
-	o, warnings, err := check.Due(e.fx(), check.Delivery{Node: e.node, Documents: config.Redact(e.next), Schemas: e.schemas, Outputs: states}, e.comparisons(after))
+	o, warnings, err := check.Due(e.checkEffects(), check.Delivery{Node: e.node, Documents: config.Redact(e.next), Schemas: e.schemas, Outputs: states}, e.comparisons(after))
 	if err != nil {
 		return check.Outcome{}, nil, failed(connect.CodeInternal, "%v", err)
 	}
@@ -205,8 +205,8 @@ func (s *Server) outcome(ctx context.Context, e *pendingEffects, states map[stri
 	return o, warnings, nil
 }
 
-// fx are the effects as check.Due reads them.
-func (e *pendingEffects) fx() check.Effects {
+// checkEffects are the effects as check.Due and check.PlanOf read them.
+func (e *pendingEffects) checkEffects() check.Effects {
 	return check.Effects{Defs: e.defs, Rules: e.rules}
 }
 
