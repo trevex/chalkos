@@ -218,16 +218,27 @@ spec: {hostname: n1}
 }
 
 // KindHashes of a set whose secret values are hashed already, as Redact gives it, are those of
-// the set with its values.
+// the set with its values, an Addon's too. An Addon is hashed with the values of its Kubernetes
+// Secrets hidden, which Hash keeps, so its kind hash is no Hash of its documents, and a rotated
+// value changes it.
 func TestKindHashesHashed(t *testing.T) {
 	s := imageSchemas(t)
-	docs := parseDocs(t, hashed)
+	const addon = "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: apps}\n" +
+		"spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, stringData: {p: plain}}]}\n"
+	docs := parseDocs(t, hashed+addon)
 	want, err := KindHashes(docs, s, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := KindHashes(Redact(docs), s, true)
-	if err != nil || !maps.Equal(got, want) {
+	if err != nil || !maps.Equal(got, want) || want["Addon"] == "" {
 		t.Errorf("hashed: %v, %v; with values: %v", got, err, want)
+	}
+	if h, err := Hash(parseDocs(t, addon)); err != nil || h == want["Addon"] {
+		t.Errorf("the Addon's kind hash is its Hash %s: %v", h, err)
+	}
+	rotated, err := KindHashes(parseDocs(t, hashed+strings.Replace(addon, "plain", "other", 1)), s, false)
+	if err != nil || rotated["Addon"] == want["Addon"] || rotated["Demo"] != want["Demo"] {
+		t.Errorf("rotated: %v, %v; before: %v", rotated, err, want)
 	}
 }
