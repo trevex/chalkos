@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -166,5 +167,18 @@ func TestApplyConfigStagedDryRun(t *testing.T) {
 	_, err = s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), Staged: true, DryRun: true}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "only a reinstall of") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// The warnings of the staged image's check reach the answer to apply-config --staged, a dry run's
+// too.
+func TestApplyConfigStagedWarns(t *testing.T) {
+	s, _ := stagedServer(t, fixtureSchemas(t))
+	s.CheckImage = &recording{run: s.CheckImage, answer: func(res *checkv1.Result) { res.Warnings = []string{"effect demo: cannot evaluate"} }}
+	for _, dryRun := range []bool{true, false} {
+		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, DryRun: dryRun}))
+		if err != nil || !slices.Equal(resp.Msg.GetWarnings(), []string{"effect demo: cannot evaluate"}) {
+			t.Errorf("dry run %v: warnings = %v, %v", dryRun, resp.Msg.GetWarnings(), err)
+		}
 	}
 }

@@ -43,34 +43,35 @@ type imageCheck struct {
 }
 
 // checkWithImage has the image whose store is st and whose NixOS system is system check c for the
-// node called name, on platform, and returns the config slot the image keeps for it. The checker
+// node called name, on platform, and returns the config slot the image keeps for it, with the
+// warnings of its check. The checker
 // is the image's own chalkd, which its store holds; the running chalkd reads nothing of the image
 // but its facts.json. The caller holds s.mu.
 //
 // The slot holds the documents with their Secret values, which the checker never had: chalkd puts
 // the delivered values in place of the hashes in the documents the checker gave back, with the
 // image's defaults, after making sure the hashes are those of the delivered values.
-func (s *Server) checkWithImage(ctx context.Context, st imageStore, system, platform, name string, c imageCheck) (slot.Stored, error) {
+func (s *Server) checkWithImage(ctx context.Context, st imageStore, system, platform, name string, c imageCheck) (slot.Stored, []string, error) {
 	res, err := s.runImageCheck(ctx, st, system, platform, name, c)
 	if err != nil {
-		return slot.Stored{}, err
+		return slot.Stored{}, nil, err
 	}
 	if r := res.GetRefusal(); r != nil {
-		return slot.Stored{}, s.imageRefusal(r, res.GetIdentity(), c.writing)
+		return slot.Stored{}, nil, s.imageRefusal(r, res.GetIdentity(), c.writing)
 	}
 	hashed, err := imagecheck.Decode(res.GetDocuments())
 	if err != nil {
-		return slot.Stored{}, failed(connect.CodeInternal, "the image's checker: %v", err)
+		return slot.Stored{}, nil, failed(connect.CodeInternal, "the image's checker: %v", err)
 	}
 	docs, err := config.Restore(hashed, c.delivered)
 	if err != nil {
-		return slot.Stored{}, failed(connect.CodeInternal, "the image's checker gave back other documents than it got: %v", err)
+		return slot.Stored{}, nil, failed(connect.CodeInternal, "the image's checker gave back other documents than it got: %v", err)
 	}
 	version, err := config.Hash(c.delivered)
 	if err != nil {
-		return slot.Stored{}, failed(connect.CodeInvalidArgument, "hash the config: %v", err)
+		return slot.Stored{}, nil, failed(connect.CodeInvalidArgument, "hash the config: %v", err)
 	}
-	return slot.Stored{Delivered: c.delivered, Documents: docs, Version: version, Identity: []byte(res.GetIdentity())}, nil
+	return slot.Stored{Delivered: c.delivered, Documents: docs, Version: version, Identity: []byte(res.GetIdentity())}, res.GetWarnings(), nil
 }
 
 // runImageCheck runs the checker of the image whose store is st on c and returns its result, a

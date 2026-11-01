@@ -159,7 +159,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 		}); err != nil {
 			return nil, err
 		}
-		resp := &nodev1.ApplyConfigResponse{Plan: &nodev1.Plan{Version: w.next.Version, Replaces: held}}
+		resp := &nodev1.ApplyConfigResponse{Plan: &nodev1.Plan{Version: w.next.Version, Replaces: held}, Warnings: w.warnings}
 		for _, c := range w.machine.changes {
 			resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
 		}
@@ -169,8 +169,11 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 	if err != nil {
 		return nil, err
 	}
+	var warnings []string
 	if err := s.readImage(ctx, staged, func(st imageStore, system string) error {
-		return s.writeSlot(ctx, st, system, platform, staged, docs, m.FallbackSecret)
+		var err error
+		warnings, err = s.writeSlot(ctx, st, system, platform, staged, docs, m.FallbackSecret)
+		return err
 	}); err != nil {
 		return nil, err
 	}
@@ -179,7 +182,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 	if err != nil {
 		return nil, err
 	}
-	resp := &nodev1.ApplyConfigResponse{}
+	resp := &nodev1.ApplyConfigResponse{Warnings: warnings}
 	for _, c := range storage.Changes(recorded, after) {
 		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
 	}

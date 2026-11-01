@@ -178,20 +178,26 @@ func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platfor
 	} else if !found || len(docs) == 0 {
 		return errors.New("the node holds no config to carry over to the image; upgrade with the config from an inventory, which needs the admin role")
 	}
-	if err := s.writeSlot(ctx, st, system, platform, rootHash, docs, secret); err != nil {
+	warnings, err := s.writeSlot(ctx, st, system, platform, rootHash, docs, secret)
+	if err != nil {
 		if text == "" {
 			return fmt.Errorf("the node's config does not suit the image: %w; upgrade with config the image accepts, from an inventory, which needs the admin role", plain(err))
 		}
 		return plain(err)
 	}
+	// An upgrade's answer has no warnings; the journal keeps them.
+	for _, w := range warnings {
+		log.Printf("the config of %x: %s", rootHash, w)
+	}
 	return nil
 }
 
 // slotWrite is a config slot of an image that does not run, checked and ready to be written: the
-// slot and the changes its storage makes to the machine.
+// slot, the changes its storage makes to the machine, and the warnings of the image's check.
 type slotWrite struct {
-	next    slot.Stored
-	machine machineChange
+	next     slot.Stored
+	machine  machineChange
+	warnings []string
 }
 
 // planSlot checks docs, config as delivered, for the config slot of an image that does not run,
@@ -215,7 +221,7 @@ func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform s
 	if err != nil {
 		return slotWrite{}, err
 	}
-	next, err := s.checkWithImage(ctx, st, system, platform, name, imageCheck{delivered: docs, old: running.Documents, secret: secret, image: rootHash, writing: rootHash})
+	next, warnings, err := s.checkWithImage(ctx, st, system, platform, name, imageCheck{delivered: docs, old: running.Documents, secret: secret, image: rootHash, writing: rootHash})
 	if err != nil {
 		return slotWrite{}, err
 	}
@@ -227,27 +233,28 @@ func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform s
 	if err != nil {
 		return slotWrite{}, err
 	}
-	return slotWrite{next: next, machine: mc}, nil
+	return slotWrite{next: next, machine: mc, warnings: warnings}, nil
 }
 
 // writeSlot writes docs to the config slot of an image that does not run once planSlot checked
 // them. Storage changes the image's rules accept, such as a new volume, are made now and recorded
 // in storage.json. Every boot sets up the volumes storage.json records, so the running image
 // mounts such a volume too although its config does not name it; its slot counts as removing the
-// volume only once it is written again. The caller holds s.mu.
-func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) error {
+// volume only once it is written again. It returns the warnings of the image's check. The caller
+// holds s.mu.
+func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) ([]string, error) {
 	w, err := s.planSlot(ctx, st, system, platform, rootHash, docs, secret)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := s.applyMachine(ctx, w.machine, secret); err != nil {
-		return err
+		return nil, err
 	}
 	if err := slot.Write(slot.Dir(s.Loader.Slots, rootHash), w.next); err != nil {
-		return failed(connect.CodeInternal, "store the image's config: %v", err)
+		return nil, failed(connect.CodeInternal, "store the image's config: %v", err)
 	}
 	log.Printf("the config %s of %x is stored", w.next.Version, rootHash)
-	return nil
+	return w.warnings, nil
 }
 
 // plain is err without the code a connect error carries. An upgrade's error has a code of its own.
