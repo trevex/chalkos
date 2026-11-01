@@ -26,7 +26,7 @@ func Redact(docs []Document) []Document {
 func (d Document) Hashed() map[string]any {
 	switch {
 	case d.IsSecret():
-		return hideSecretData(d.Object)
+		return hideSecretData(d.Object, hideValues)
 	case d.IsAddon():
 		return hideAddonSecrets(d.Object)
 	}

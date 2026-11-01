@@ -536,20 +536,17 @@ func writeDocuments(root string, docs []config.Document, stored bool) error {
 	return nil
 }
 
+// readDocument reads the document of a slot's JSON file.
 func readDocument(path string) (config.Document, error) {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return config.Document{}, err
 	}
-	defer f.Close()
-	dec := json.NewDecoder(f)
-	// Numbers stay json.Number, as config.Parse gives them, so no digit is rounded away.
-	dec.UseNumber()
-	var obj map[string]any
-	if err := dec.Decode(&obj); err != nil {
+	d, err := config.FromJSON(data)
+	if err != nil {
 		return config.Document{}, fmt.Errorf("%s: %w", path, err)
 	}
-	return config.FromObject(obj), nil
+	return d, nil
 }
 
 // validName tells whether s can name a file or directory in one path element, other than the

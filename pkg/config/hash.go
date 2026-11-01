@@ -25,7 +25,7 @@ func Hash(docs []Document) (string, error) {
 func canonical(docs []Document) ([]byte, error) {
 	return sortedJSON(docs, func(d Document) map[string]any {
 		if d.IsSecret() {
-			return hideSecretData(d.Object)
+			return hideSecretData(d.Object, hashValues)
 		}
 		return d.Object
 	})
@@ -52,8 +52,8 @@ func hashJSON(c []byte, err error) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// hideSecretData returns a Secret's object with each value of spec.data replaced by its SHA-256.
-func hideSecretData(obj map[string]any) map[string]any {
+// hideSecretData returns a Secret's object with the values of spec.data hidden by hide.
+func hideSecretData(obj map[string]any, hide func(map[string]any) map[string]any) map[string]any {
 	out := maps.Clone(obj)
 	spec, ok := obj["spec"].(map[string]any)
 	if !ok {
@@ -61,15 +61,15 @@ func hideSecretData(obj map[string]any) map[string]any {
 	}
 	spec = maps.Clone(spec)
 	if data, ok := spec["data"].(map[string]any); ok {
-		spec["data"] = hideValues(data)
+		spec["data"] = hide(data)
 	}
 	out["spec"] = spec
 	return out
 }
 
-// hideValues returns data with each value replaced by the hex SHA-256 of the value, a string as it
-// is and any other value as its JSON.
-func hideValues(data map[string]any) map[string]any {
+// hashValues returns data with each value replaced by the hex SHA-256 of the value, a string as it
+// is and any other value as its JSON, as Hash names a set.
+func hashValues(data map[string]any) map[string]any {
 	hidden := make(map[string]any, len(data))
 	for k, v := range data {
 		s, isString := v.(string)
@@ -79,6 +79,34 @@ func hideValues(data map[string]any) map[string]any {
 		}
 		sum := sha256.Sum256([]byte(s))
 		hidden[k] = hex.EncodeToString(sum[:])
+	}
+	return hidden
+}
+
+// hideValues returns data with each value hidden as Redact hides it: a string by its hex SHA-256,
+// as Hash replaces it, and any other value by the zero value of its JSON type, such as 0 for a
+// number. A value that is no string keeps its type, so a schema that refuses it refuses the hidden
+// document with the same message, as a schema's message of a value of the wrong type names the
+// type alone. Secret values are strings, so a document that holds another passes no check, and
+// nothing compares the zero values.
+func hideValues(data map[string]any) map[string]any {
+	hidden := make(map[string]any, len(data))
+	for k, v := range data {
+		switch v := v.(type) {
+		case string:
+			sum := sha256.Sum256([]byte(v))
+			hidden[k] = hex.EncodeToString(sum[:])
+		case bool:
+			hidden[k] = false
+		case json.Number:
+			hidden[k] = json.Number("0")
+		case []any:
+			hidden[k] = []any{}
+		case map[string]any:
+			hidden[k] = map[string]any{}
+		default:
+			hidden[k] = nil
+		}
 	}
 	return hidden
 }

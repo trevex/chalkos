@@ -98,3 +98,17 @@ func TestTranslateHashed(t *testing.T) {
 		t.Errorf("hashed %v, %s; values %v, %s", hashed.Documents, hashed.Identity, raw.Documents, raw.Identity)
 	}
 }
+
+// A Secret value that is no string fails the schema in its hashed form as it does with its value,
+// with the same message, so the image's checker, which sees hashed documents alone, refuses it.
+func TestTranslateHashedRefusesAMistypedSecret(t *testing.T) {
+	s := testSchemas(t)
+	for _, v := range []string{"12345", "true", "[a]", "{a: b}", "null"} {
+		docs := parse(t, strings.Replace(base, "token: s3cret", "token: "+v, 1))
+		_, raw := Translate("n1", docs, s, config.Target{Platform: "metal"})
+		_, hashed := Translate("n1", config.Redact(docs), s, config.Target{Platform: "metal"})
+		if raw == nil || hashed == nil || raw.Error() != hashed.Error() {
+			t.Errorf("%s: with its value %v, hashed %v", v, raw, hashed)
+		}
+	}
+}
