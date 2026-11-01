@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
@@ -148,15 +150,19 @@ func TestApplyConfigDiscardsPending(t *testing.T) {
 }
 
 // TestPendingWaitsForAnUpgrade refuses to hold or drop pending config while an upgrade runs, which
-// reads and removes it.
+// reads and removes it, and keeps the pending config the node holds.
 func TestPendingWaitsForAnUpgrade(t *testing.T) {
 	s, _ := configServer(t)
+	p := sendPending(t, s, baseConfig)
 	s.upgrading.Lock()
 	defer s.upgrading.Unlock()
-	for _, req := range []*nodev1.ApplyConfigRequest{{Config: baseConfig, Staged: true}, {Staged: true, DiscardPending: true}} {
+	for _, req := range []*nodev1.ApplyConfigRequest{{Config: strings.Replace(baseConfig, "name: first", "name: second", 1), Staged: true}, {Staged: true, DiscardPending: true}} {
 		if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(req)); connect.CodeOf(err) != connect.CodeAborted {
 			t.Errorf("%v = %v, want aborted", req, err)
 		}
+	}
+	if v := pendingVersion(t, s); v != p.Version {
+		t.Errorf("pending version = %q, want %s kept", v, p.Version)
 	}
 }
 
@@ -386,5 +392,35 @@ func TestUpgradeSucceedsWhenThePendingConfigStays(t *testing.T) {
 	}
 	if got := status(t, s).PendingConfig; got.GetVersion() != "p9" {
 		t.Errorf("status names the pending config %v, want p9", got)
+	}
+}
+
+// TestApplyConfigDiscardPendingTakesStagedAlone refuses discard_pending with any other field of a
+// delivery, and keeps the pending config.
+func TestApplyConfigDiscardPendingTakesStagedAlone(t *testing.T) {
+	s, _ := configServer(t)
+	p := sendPending(t, s, baseConfig)
+	for name, req := range map[string]*nodev1.ApplyConfigRequest{
+		"config":         {Config: baseConfig},
+		"a dry run":      {DryRun: true},
+		"a secret":       {FallbackSecret: secret},
+		"layers":         {Layers: []*anypb.Any{{}}},
+		"a certificate":  {NodeCertificate: []byte("c")},
+		"a key":          {NodeKey: []byte("k")},
+		"trust":          {Trust: []byte("t")},
+		"a trial":        {Try: durationpb.New(time.Minute)},
+		"ignored units":  {IgnoreUnits: []string{"x.service"}},
+		"without staged": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			req.DiscardPending, req.Staged = true, name != "without staged"
+			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(req))
+			if connect.CodeOf(err) != connect.CodeInvalidArgument {
+				t.Errorf("err = %v, want invalid argument", err)
+			}
+			if v := pendingVersion(t, s); v != p.Version {
+				t.Errorf("pending version = %q, want %s kept", v, p.Version)
+			}
+		})
 	}
 }
