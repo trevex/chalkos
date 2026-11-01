@@ -296,6 +296,13 @@ Both also check the image's [change rules](../../build/guard-changes.md). chalkd
 chalkctl runs those that read no facts about the node, `validate` without the node's config and
 `apply-config` with the config the node serves, so a change a rule refuses fails before it is sent.
 
+Only chalkd runs the image's renderers and their checks, and the rules that read facts, so a set
+chalkctl accepts can still be refused on delivery.
+[`chalkctl apply-config --dry-run`](../../reference/cli/chalkctl_apply-config.md) has chalkd run
+every check of a delivery and changes nothing. chalkd answers with what the delivery would do:
+the config versions, the outputs that change, the effects with what fires each, and the storage
+changes.
+
 ## chalkctl delivers a whole set at a time
 
 chalkctl delivers a node's config at install, with each [upgrade](upgrades.md) and with

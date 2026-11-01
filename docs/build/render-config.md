@@ -331,6 +331,10 @@ start of the hash of the files the node serves, `none` while it serves none. `ST
 `rendered`, `failed:` with the last failure, or `not rendered yet`. A refused delivery leaves the
 hash of the files the node still serves.
 
+`chalkctl apply-config --dry-run` renders and checks every output on the node without a delivery.
+It prints the refusal a delivery would print, or the outputs whose files would change, and records
+nothing in the status.
+
 ## The renderer runs in a sandbox
 
 chalkd runs every renderer and check as a transient unit with these limits:

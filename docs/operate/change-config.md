@@ -1,6 +1,6 @@
 ---
 title: "Change a node's config"
-description: "Deliver changed YAML to a running node with chalkctl apply-config, preview it with --diff, try it with --try and act on a refusal"
+description: "Deliver changed YAML to a running node with chalkctl apply-config, preview it with --diff and --dry-run, try it with --try and act on a refusal"
 ---
 
 # Change a node's config
@@ -70,6 +70,51 @@ one document by its kind and name:
 
 The comparison takes the documents as written, without defaults. A field that one side spells out
 and the other leaves to its default shows as changed.
+
+## Check the change on the node
+
+`--dry-run` has the node check the config as it checks a delivery, and changes nothing. The node
+runs every check of a delivery: the schemas, the change rules with its facts, and each output's
+renderer and check. `chalkctl validate` and `--diff` run no renderer, so a config they accept can
+still be refused on delivery. A dry run shows that refusal before the delivery:
+
+```console
+$ chalkctl apply-config w1 --secrets secrets.age --dry-run
+w1: config 1 added, 0 removed, 0 changed
++ TimeSync "default"
+w1: config <previous-version> → ec7ca85e562721ea1f8d0368d415bb80dc62819ba0c80857c9c444e4450aba09
+  outputs:  chrony
+  effects:  chrony: run chalkos-chrony-reload-sources (output chrony)
+            chrony-dhcp: restart chalkos-chrony-dhcp.service (rule)
+  storage:  none
+```
+
+The diff comes first, as `--diff` prints it. The plan follows:
+
+| Line | Meaning |
+| --- | --- |
+| `config <old> → <new>` | The config the node runs and the one it would run after the delivery. `none` stands for a node without config. |
+| `outputs:` | The outputs whose rendered files would change, or whose documents reference a `Secret` whose value changes. |
+| `effects:` | One line per effect the delivery would take: its actions, in the order the node takes them, and in parentheses what fires it, `output <name>`, `kind <name>` or `rule`. |
+| `storage:` | The storage changes the delivery would make, one line per volume, as a delivery prints them. |
+
+A refusal prints the error a delivery would print, and the command exits 1. A dry run leaves the
+node as it was: its config, outputs, storage and the outputs' status in `chalkctl status` stay the
+same, and no unit restarts.
+
+An effect whose `when` compares a fact after the delivery with the fact before it reads the fact as
+it is now, because nothing has changed yet. Such an effect appears only when the documents alone
+fire it.
+
+`--dry-run` checks several nodes in one command, one after the other:
+
+```sh
+chalkctl apply-config cp1 w1 --secrets secrets.age --dry-run
+```
+
+A node that refuses its config does not stop the others. The command ends with
+`the config of 1 node is refused: w1` and exits 1. `--dry-run` refuses `--staged`, `--rollback`,
+`--try` and the layers' payload flags such as `--kubernetes-share`.
 
 ## Deliver the config
 
@@ -150,7 +195,8 @@ a running node makes, and [Reset a volume](storage-volumes.md#reset-a-volume) wi
 reinstall.
 
 An image's own kinds bring their own rules and messages. `--diff` runs no rules, and `validate`
-runs none that reads node facts, so neither shows those refusals.
+runs none that reads node facts, so neither shows those refusals. `--dry-run` shows them, as
+[Check the change on the node](#check-the-change-on-the-node) describes.
 [Guard changes with rules and facts](../build/guard-changes.md) explains how image authors write
 them.
 
@@ -419,6 +465,8 @@ it runs delivered again, which removes the record as well.
   staged image. Run the command without it.
 - `--staged delivers config alone; deliver the Kubernetes share to the running image`: `--staged`
   and `--kubernetes-share` do not combine.
+- `--dry-run checks config for the running image; --staged goes without it`: a dry run checks a
+  delivery to the running image alone. Deliver to the staged image with `--staged` alone.
 - A unit that the change should have restarted did not restart. A restart effect leaves a stopped
   unit stopped, unless the effect starts it too.
   [Troubleshooting](troubleshooting.md) helps with a unit that fails after the delivery.

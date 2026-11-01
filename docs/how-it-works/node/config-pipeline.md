@@ -50,6 +50,11 @@ three that follow once it passes both. In detail, a delivery to the running imag
 
 `apply-config` prints the units the effects restarted.
 
+A dry run, `chalkctl apply-config --dry-run`, takes steps 1 and 3 and stops. It records no
+baseline and no output failure, discards the staged files and answers with the plan: the outputs
+whose files would change, and the effects of step 6 with what fires each. Effects whose `when`
+compares facts before and after the delivery see the facts as they are, since nothing changed.
+
 ## The baseline survives a failed delivery
 
 A delivery can fail after step 4, as when a restart fails. Until a delivery is applied whole, the

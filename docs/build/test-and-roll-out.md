@@ -101,10 +101,12 @@ rollbacks.
 ## Deliver changed YAML with chalkctl apply-config
 
 A change to the documents alone, such as a new `Peer`, needs no upgrade. `--diff` shows what a
-delivery changes and changes nothing:
+delivery changes in the documents. `--dry-run` has the node check the delivery, its renderers
+and their checks included, and print the effects it would take. Neither changes anything:
 
 ```sh
 chalkctl apply-config cp1 --secrets=secrets.age --diff
+chalkctl apply-config cp1 --secrets=secrets.age --dry-run
 chalkctl apply-config cp1 --secrets=secrets.age
 ```
 

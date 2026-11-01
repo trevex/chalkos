@@ -335,9 +335,10 @@ chalkctl validate
 ```
 
 The rules that read `oldSelf` run on `chalkctl apply-config`, against the node's config. Rules
-that read facts run on the node alone. A refusal that starts with `cannot check:` comes from a
-rule that cannot be evaluated or a fact that cannot be loaded. The journal of `chalkd.service`
-holds what a failed command fact wrote.
+that read facts run on the node alone; `chalkctl apply-config --dry-run` has the node run them
+without delivering the config. A refusal that starts with `cannot check:` comes from a rule that
+cannot be evaluated or a fact that cannot be loaded. The journal of `chalkd.service` holds what a
+failed command fact wrote.
 
 ## What next
 
