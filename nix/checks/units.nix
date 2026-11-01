@@ -4,6 +4,34 @@
 let
   inherit (pkgs) lib;
   inherit (checkLib) worker firewall unitCheck;
+  # setpriv's arguments that leave root with the capabilities caps alone, as a unit's
+  # CapabilityBoundingSet= does. The checks' namespaces map root alone, so a unit's own user,
+  # such as kea or dnsmasq, is no user they can run as.
+  boundTo =
+    caps:
+    "setpriv --bounding-set=-all,${
+      lib.concatMapStringsSep "," (c: "+" + lib.toLower (lib.removePrefix "CAP_" c)) caps
+    } --no-new-privs --";
+  # Binds each IPv4 and IPv6 socket to the device $BIND_DEVICE names when it is created.
+  bindDevice = pkgs.runCommandCC "bind-device.so" { } ''
+    cat >bind.c <<'C'
+    #define _GNU_SOURCE
+    #include <dlfcn.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <sys/socket.h>
+    int socket(int domain, int type, int protocol) {
+      static int (*real)(int, int, int);
+      if (!real) real = dlsym(RTLD_NEXT, "socket");
+      int fd = real(domain, type, protocol);
+      const char *dev = getenv("BIND_DEVICE");
+      if (fd >= 0 && dev && (domain == AF_INET || domain == AF_INET6))
+        setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, dev, strlen(dev) + 1);
+      return fd;
+    }
+    C
+    $CC -shared -fPIC -o $out bind.c -ldl
+  '';
 in
 {
   # The worker's VXLAN rule, chalkd kubernetes vxlan-rule as its preparation unit runs it, with its
@@ -1951,11 +1979,7 @@ in
       routesUnit = router.systemd.services.chalkos-dhcp6-routes.serviceConfig;
       # chalkos-dhcp6-routes as its unit runs it: root with the unit's capabilities alone, and no
       # longer than the unit lets it.
-      routes = "timeout ${routesUnit.TimeoutStartSec} setpriv --bounding-set=-all,${
-        lib.concatMapStringsSep "," (
-          c: "+" + lib.toLower (lib.removePrefix "CAP_" c)
-        ) routesUnit.CapabilityBoundingSet
-      } --no-new-privs -- ${routesUnit.ExecStart}";
+      routes = "timeout ${routesUnit.TimeoutStartSec} ${boundTo routesUnit.CapabilityBoundingSet} ${routesUnit.ExecStart}";
       records = router.systemd.paths.chalkos-dhcp6-routes.pathConfig.PathChanged;
       firewall = router.systemd.services.chalkos-firewall.serviceConfig.ExecStart;
       dir = router.chalkos.outputs.kea.dir;
@@ -2131,13 +2155,14 @@ in
   # an IPv4 and an IPv6 address and a client on vlan20 an IPv4 address from Kea's servers in a
   # namespace behind wan0 and vlan30, which pick the subnets by the relays' addresses on the links
   # and answer the relays, which the firewall lets in as replies to their requests. A firewall
-  # without the openings keeps the client on lan0 from both families. dnsmasq stays root in the
-  # namespace, which it does not leave with -d, and has no user nobody to look up; on a node it
-  # runs as the user dnsmasq.
+  # without the openings keeps the client on lan0 from both families. dnsmasq runs with the
+  # units' capabilities alone, as root, the namespace's only user, which it stays with --user=root;
+  # on a node it runs as the user dnsmasq with the same capabilities.
   router-dhcp-relay =
     let
       router = checkLib.router.config;
       inherit (router.systemd.services.dnsmasq-relay.serviceConfig) ExecStart;
+      relayCaps = boundTo router.systemd.services.dnsmasq-relay.serviceConfig.CapabilityBoundingSet;
       vrfStart =
         lib.replaceStrings [ "%I" ] [ "guest" ]
           router.systemd.services."dnsmasq-relay@".serviceConfig.ExecStart;
@@ -2151,26 +2176,6 @@ in
         pkgs.dhcpcd
         pkgs.procps
       ];
-      # Binds each IPv4 and IPv6 socket to the device $BIND_DEVICE names when it is created.
-      bindDevice = pkgs.runCommandCC "bind-device.so" { } ''
-        cat >bind.c <<'C'
-        #define _GNU_SOURCE
-        #include <dlfcn.h>
-        #include <stdlib.h>
-        #include <string.h>
-        #include <sys/socket.h>
-        int socket(int domain, int type, int protocol) {
-          static int (*real)(int, int, int);
-          if (!real) real = dlsym(RTLD_NEXT, "socket");
-          int fd = real(domain, type, protocol);
-          const char *dev = getenv("BIND_DEVICE");
-          if (fd >= 0 && dev && (domain == AF_INET || domain == AF_INET6))
-            setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, dev, strlen(dev) + 1);
-          return fd;
-        }
-        C
-        $CC -shared -fPIC -o $out bind.c -ldl
-      '';
     in
     unitCheck "router-dhcp-relay" tools ''
       fail() {
@@ -2256,8 +2261,8 @@ in
         sleep 0.5
         for r in "$@"; do
           case $r in
-          default) ${ExecStart} -d --user=root >relay.log 2>&1 & ;;
-          guest) env BIND_DEVICE=guest LD_PRELOAD=${bindDevice} ${vrfStart} -d --user=root >relay-guest.log 2>&1 & ;;
+          default) ${relayCaps} ${ExecStart} -d --user=root >relay.log 2>&1 & ;;
+          guest) env BIND_DEVICE=guest LD_PRELOAD=${bindDevice} ${relayCaps} ${vrfStart} -d --user=root >relay-guest.log 2>&1 & ;;
           esac
           sleep 1
         done
