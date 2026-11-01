@@ -948,7 +948,7 @@ func TestRouterLab(t *testing.T) {
 		waitFor(t, 2*time.Minute, "r2's address from r1", leased)
 		waitFor(t, 2*time.Minute, "r1's DHCPv6 server of lan with r2's lease and prefix", serving6)
 		waitFor(t, time.Minute, "r2's IPv6 address from r1", leased6)
-		waitFor(t, time.Minute, "r1's route of r2's prefix", delegated)
+		waitFor(t, 2*time.Minute, "r1's route of r2's prefix", delegated)
 		if _, err := leaseEnd(); err != nil {
 			t.Fatal(err)
 		}
@@ -967,7 +967,7 @@ func TestRouterLab(t *testing.T) {
 		waitFor(t, 5*time.Minute, "r1's DHCP server of lan after its boot", serving)
 		waitFor(t, time.Minute, "r1's DHCPv6 server of lan after its boot", serving6)
 		// r2 renews its prefix in half an hour; the route comes from r1's record of the lease.
-		waitFor(t, time.Minute, "r1's route of r2's prefix after its boot", delegated)
+		waitFor(t, 2*time.Minute, "r1's route of r2's prefix after its boot", delegated)
 		waitFor(t, 3*time.Minute, "r2's renewal at r1 after its boot", func() error {
 			end, err := leaseEnd()
 			if err != nil {
@@ -997,7 +997,7 @@ func TestRouterLab(t *testing.T) {
 			}
 			return nil
 		})
-		waitFor(t, time.Minute, "r1's route of r2's prefix to go", func() error {
+		waitFor(t, 2*time.Minute, "r1's route of r2's prefix to go", func() error {
 			out, err := chalkctl(t, nodes["r1"], "base", "node", "routes", "r1", "--table", "all", "--protocol", "dhcp-pd")
 			if err != nil || strings.Contains(out, "dhcp-pd") {
 				return fmt.Errorf("routes of r1 after the base config: %v\n%s", err, out)

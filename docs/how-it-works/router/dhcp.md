@@ -165,10 +165,12 @@ the router that asked for it, at its link-local address on the link. Kea's run_s
 loaded by a DHCPv6 server whose subnets delegate prefixes, runs `chalkos-dhcp6-pd` as the user
 `kea` on each committed, released, declined and expired lease. For a committed prefix it writes a
 record in `/var/lib/chalkos-dhcp6-pd`, named `<link>_<prefix>_<length>`, readable by every user.
-The record holds the address the request came from and when the lease ends. A release or an
-expiry removes it. `kea` owns the directory, mode 0755, but cannot write `/var/lib`, so it cannot
-put another directory in its place. Kea runs only scripts of the directory that the unit's
-`KEA_HOOK_SCRIPTS_PATH` names, which holds `chalkos-dhcp6-pd` alone.
+The record holds the address the request came from and when the lease ends. The hook writes it
+in `/var/lib/chalkos-dhcp6-pd.new` first and renames it into place, so the record appears whole
+and once. A release or an expiry removes it. `kea` owns both directories, the records' of mode
+0755, but cannot write `/var/lib`, so it cannot put another directory in their place. Kea runs
+only scripts of the directory that the unit's `KEA_HOOK_SCRIPTS_PATH` names, which holds
+`chalkos-dhcp6-pd` alone.
 
 Kea runs the script without waiting for it. A release that comes right after its commit may run
 first and leave the commit's record behind. The route of the released prefix then lasts until
@@ -176,10 +178,11 @@ the lease would have ended, the subnet's lease time at most.
 
 `chalkos-dhcp6-routes.service` runs `chalkd router dhcp6-routes` as root with `CAP_NET_ADMIN`
 alone, for 30 seconds at most, with no limit on how often it starts. A `.path` unit starts it
-whenever the records change, and a timer every minute, which routes again the prefixes of a link
-that went down and came back. It runs at boot after `chalkos-dhcp.service`, which starts it after
-each run too. It routes each record whose prefix a rendered config delegates on the record's
-link, of the pool's length, to a link-local address, while its lease lasts:
+when a record changes. A change during a run starts no other, so a timer starts the unit every
+minute as well, which also routes again the prefixes of a link that went down and came back. It
+runs at boot after `chalkos-dhcp.service`, which starts it after each run too. It routes each
+record whose prefix a rendered config delegates on the record's link, of the pool's length, to a
+link-local address, while its lease lasts:
 
 ```text
 2001:db8:100::/56 via fe80::5054:ff:fe12:3456 dev cust0 table 500 proto 65 expires 86394sec

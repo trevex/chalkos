@@ -2032,6 +2032,7 @@ in
         mkdir -p ${dir} ${nftDir} /var/lib /var/run/dhcpcd /var/db/dhcpcd /var/lib/dhcpcd
         mkdir -m 0750 /run/kea /var/lib/kea
         mkdir -m 0755 ${records}
+        mkdir -m 0700 ${records}.new
         install -m 644 ${goldens}/dhcp6.nft ${nftDir}/ruleset.nft
         ${firewall} || fail "chalkos-firewall did not load the dhcp6 example's ruleset"
         # take <file>: a config of the dhcp6 example's golden, whose hook is the image's.

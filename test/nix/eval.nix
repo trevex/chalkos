@@ -1405,7 +1405,10 @@ lib.runTests {
             inherit (edge.systemd.timers.chalkos-dhcp6-routes) wantedBy;
             inherit (edge.systemd.timers.chalkos-dhcp6-routes.timerConfig) OnBootSec OnUnitActiveSec;
           };
-          records = lib.elem "d /var/lib/chalkos-dhcp6-pd 0755 kea kea - -" edge.systemd.tmpfiles.rules;
+          records = lib.all (r: lib.elem r edge.systemd.tmpfiles.rules) [
+            "d /var/lib/chalkos-dhcp6-pd 0755 kea kea - -"
+            "d /var/lib/chalkos-dhcp6-pd.new 0700 kea kea - -"
+          ];
         };
         reconciler = {
           after = lib.all (x: lib.elem x dhcp.after) [
@@ -1490,7 +1493,10 @@ lib.runTests {
           "AF_INET"
           "AF_INET6"
         ];
-        ReadWritePaths = [ "-/var/lib/chalkos-dhcp6-pd" ];
+        ReadWritePaths = [
+          "-/var/lib/chalkos-dhcp6-pd"
+          "-/var/lib/chalkos-dhcp6-pd.new"
+        ];
         hookPath = true;
         ConditionPathExists = "/run/chalkos/outputs/kea/kea-dhcp6.json";
         vrf = {

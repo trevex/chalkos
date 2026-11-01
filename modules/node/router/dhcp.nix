@@ -23,6 +23,9 @@ let
   inherit (chalkosPackages) kea;
   dir = config.chalkos.outputs.kea.dir;
   pdRecords = "/var/lib/chalkos-dhcp6-pd";
+  # The hook writes each record here first and renames it into pdRecords, on the same file system,
+  # so that the path unit sees a record once it is whole.
+  pdRecordsNew = "/var/lib/chalkos-dhcp6-pd.new";
   # Records the prefixes a DHCPv6 server delegates, as Kea's run_script hook runs it with the hook
   # point's name and the leases' variables alone: a file per prefix, <link>_<prefix>_<length>,
   # holding the link-local address that asked for it and when its lease ends, readable by every
@@ -54,8 +57,9 @@ let
           c=LEASES6_AT''${i}_CLTT v=LEASES6_AT''${i}_VALID_LIFETIME
           [[ ''${!t:-} == IA_PD && $via =~ ^fe80:[0-9a-f:]*$ && ''${!c:-} =~ ^[0-9]+$ && ''${!v:-} =~ ^[0-9]+$ ]] || continue
           f=$(record "''${!a:-}" "''${!l:-}") || continue
-          # Written whole, then renamed, so that chalkd never reads half a record.
-          tmp=$(mktemp "$dir/.new.XXXXXX")
+          # Written whole in a directory of its own, then renamed, so that chalkd never reads half a
+          # record and the path unit sees the record once.
+          tmp=$(mktemp "${pdRecordsNew}/XXXXXX")
           echo "$via $((''${!c} + ''${!v}))" >"$tmp"
           chmod 0644 "$tmp"
           mv -f "$tmp" "$f"
@@ -230,7 +234,10 @@ let
       RuntimeDirectoryPreserve = true;
       StateDirectory = "kea";
       StateDirectoryMode = "0750";
-      ReadWritePaths = lib.optional (!v4) "-${pdRecords}";
+      ReadWritePaths = lib.optionals (!v4) [
+        "-${pdRecords}"
+        "-${pdRecordsNew}"
+      ];
       UMask = "0027";
       NoNewPrivileges = true;
       ProtectSystem = "strict";
@@ -463,6 +470,7 @@ in
     systemd.tmpfiles.rules = [
       "d /var/lib/kea 0750 kea kea - -"
       "d ${pdRecords} 0755 kea kea - -"
+      "d ${pdRecordsNew} 0700 kea kea - -"
     ];
   };
 }
