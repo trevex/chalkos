@@ -154,7 +154,9 @@ func TestCompileEffectErrors(t *testing.T) {
 }
 
 // An effect compares the config with an old one whose secret values are hashed already, as a
-// delivery that failed part way recorded it, as with the old config as delivered.
+// delivery that failed part way recorded it, as with the old config as delivered, and a delivery
+// whose secret values are hashed already as one with its values. Hashed documents that are not
+// said to be are hashed again, on either side, and compare as another Secret.
 func TestEffectOldHashed(t *testing.T) {
 	secret := config.FromObject(map[string]any{
 		"apiVersion": "chalkos.dev/v1alpha1", "kind": "Secret",
@@ -176,5 +178,9 @@ func TestEffectOldHashed(t *testing.T) {
 	in = EffectInput{Documents: config.Redact([]config.Document{secret}), Hashed: true, Old: []config.Document{secret}}
 	if got, errs := dueUnits([]*EffectRule{e}, in); len(errs) > 0 || len(got) != 1 {
 		t.Errorf("a hashed delivery: due = %v, %v; want the same Secret", got, errs)
+	}
+	in = EffectInput{Documents: config.Redact([]config.Document{secret}), Old: []config.Document{secret}}
+	if got, errs := dueUnits([]*EffectRule{e}, in); len(errs) > 0 || len(got) != 0 {
+		t.Errorf("a delivery hashed twice: due = %v, %v; want another Secret", got, errs)
 	}
 }
