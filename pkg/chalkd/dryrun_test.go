@@ -7,13 +7,16 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/outputs"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // dryRun sends text as a dry run.
@@ -114,5 +117,110 @@ func TestDryRunRefusesTheStagedImage(t *testing.T) {
 	_, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, DryRun: true}))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "a dry run checks a delivery to the running image") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// A dry run leaves the baseline an earlier delivery that failed part way recorded as it was,
+// whether it plans the delivery or refuses it, so the next delivery compares with what that
+// delivery may have changed.
+func TestDryRunLeavesTheBaseline(t *testing.T) {
+	s, _ := configServer(t)
+	earlier := `{"documents":[],"facts":{}}`
+	write(t, s.Paths.EffectsBaseline, earlier)
+	if _, err := dryRun(s, nextConfig); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, s.Paths.EffectsBaseline); got != earlier {
+		t.Errorf("baseline after a dry run = %s, want the earlier one %s", got, earlier)
+	}
+	invalid := baseConfig + "---\napiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: one}\nspec: {name: twice}\n"
+	if _, err := dryRun(s, invalid); err == nil {
+		t.Fatal("an invalid set passed the dry run")
+	}
+	if got := readFile(t, s.Paths.EffectsBaseline); got != earlier {
+		t.Errorf("baseline after a refused dry run = %s, want the earlier one %s", got, earlier)
+	}
+}
+
+// A dry run of a config that adds a volume answers with the storage change and makes none: the
+// volume is neither created nor recorded.
+func TestDryRunAddsNoVolume(t *testing.T) {
+	s, r := configServer(t)
+	r.Rules = volumeRules(s)
+	recorded := filepath.Join(s.Paths.StateDir, "storage", "storage.json")
+	before := readFile(t, recorded)
+	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret, DryRun: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := resp.Msg.Changes; len(c) != 1 || c[0].Volume != "extra" {
+		t.Errorf("changes = %v, want the new volume", c)
+	}
+	for _, c := range r.Calls {
+		for _, changes := range []string{"systemd-repart --dry-run=no", "systemd-cryptenroll", "systemctl", "mkfs", "cryptsetup luksFormat"} {
+			if strings.HasPrefix(c, changes) {
+				t.Errorf("the dry run ran %s", c)
+			}
+		}
+	}
+	if got := readFile(t, recorded); got != before {
+		t.Errorf("storage.json after a dry run = %s, want %s", got, before)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
+		t.Errorf("stored %s", v)
+	}
+}
+
+// A dry run that carries a node certificate or OS CAs checks them and keeps the certificate the
+// node serves and the OS CAs it trusts, in memory and on STATE.
+func TestDryRunKeepsTheCertificateAndTrust(t *testing.T) {
+	s, _ := configServer(t)
+	osCA, err := testOSCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := pki.NewOSCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, admin := adminOf(t, osCA)
+	renewed, err := pki.IssueNode(kubernetestest.NodeCA(t), pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(s.Paths.StateDir, "chalkd")
+	fingerprint, trusted := s.Certificate.Fingerprint(), s.Certificate.OSCA()
+	certFile, caFile := readFile(t, filepath.Join(dir, NodeCertificateFile)), readFile(t, filepath.Join(dir, CAFile))
+	for name, req := range map[string]*nodev1.ApplyConfigRequest{
+		"a node certificate": {NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(renewed.Key), DryRun: true},
+		"OS CAs":             {Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate)), DryRun: true},
+	} {
+		if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(req)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if s.Certificate.Fingerprint() != fingerprint || s.Certificate.OSCA() != trusted {
+			t.Errorf("%s: the dry run changed the certificate the node serves or the OS CAs it trusts", name)
+		}
+		if readFile(t, filepath.Join(dir, NodeCertificateFile)) != certFile || readFile(t, filepath.Join(dir, CAFile)) != caFile {
+			t.Errorf("%s: the dry run changed the certificate or the OS CAs on STATE", name)
+		}
+	}
+}
+
+// A dry run is refused while a config is on trial, as any delivery is, and leaves the trial open.
+func TestDryRunWaitsForATrial(t *testing.T) {
+	s, r := configServer(t)
+	rec := recordTrial(t, s, nextConfig)
+	r.Calls = nil
+	_, err := dryRun(s, baseConfig)
+	want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl apply-config --confirm n1, or roll it back with chalkctl apply-config --rollback n1, before another delivery"
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+	if !trialOpenOn(t, s) || len(r.Calls) != 0 {
+		t.Errorf("the refusal ended the trial or ran %v", r.Calls)
+	}
+	if v, _ := slot.Version(slotOf(t, s)); v != rec.Version {
+		t.Errorf("the node runs %s, want the config on trial", v)
 	}
 }
