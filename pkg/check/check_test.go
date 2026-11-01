@@ -97,6 +97,32 @@ func TestRunPlansTheEffects(t *testing.T) {
 	}
 }
 
+// An effect whose rule cannot be evaluated is planned all the same, and Run warns of the rule as
+// a delivery does.
+func TestRunWarnsOfARuleItCannotEvaluate(t *testing.T) {
+	img := testImage(t, `cat > "$OUT/demo.json"`)
+	when, err := rules.CompileEffect("broken", `config["demo.example.org/v1alpha1"].Demo.missing.spec.name == "x"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img.Effects.Defs["broken"] = effects.Definition{When: when.When, Restart: []string{"broken.service"}}
+	img.Effects.Rules = []*rules.EffectRule{when}
+	in := running(t, img, &facts{})
+	in.Delivered = config.Redact(parse(t, base))
+	res, err := Run(context.Background(), img, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Staged.Discard()
+	want := Plan{Effects: []PlannedEffect{{Name: "broken", FiredBy: []string{"rule"}, Actions: []string{"restart broken.service"}}}}
+	if !reflect.DeepEqual(res.Plan, want) {
+		t.Errorf("plan = %+v, want %+v", res.Plan, want)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "broken") || !strings.HasSuffix(res.Warnings[0], "taking the effect all the same") {
+		t.Errorf("warnings = %q", res.Warnings)
+	}
+}
+
 // A rotated Secret changes the state of the output whose documents reference it, though its files
 // stay the same, as the node compares the values: the hashes Run reads stand for them.
 func TestRunPlansARotatedSecret(t *testing.T) {

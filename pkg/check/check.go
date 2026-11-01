@@ -47,11 +47,13 @@ type Input struct {
 
 // Result is a config that passed: its documents with their defaults and their secret values
 // hashed, the identity they translate to, its outputs, rendered and checked, and the plan of a
-// delivery of it. The caller discards or swaps in Staged.
+// delivery of it. Warnings name the effect rules that could not be evaluated, whose effects the
+// plan takes all the same, as Due gives them. The caller discards or swaps in Staged.
 type Result struct {
 	Translated
-	Staged *outputs.Staged
-	Plan   Plan
+	Staged   *outputs.Staged
+	Plan     Plan
+	Warnings []string
 }
 
 // Stage is the step of a check that refused a config.
@@ -101,10 +103,10 @@ func Run(ctx context.Context, img Image, in Input) (Result, error) {
 		}
 		return Result{}, &Refusal{Stage: StageOutputs, Message: strings.Join(msgs, "; ")}
 	}
-	o, _, err := Due(img.Effects, Delivery{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Outputs: staged.States()}, in.Compare)
+	o, warnings, err := Due(img.Effects, Delivery{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Outputs: staged.States()}, in.Compare)
 	if err != nil {
 		staged.Discard()
 		return Result{}, err
 	}
-	return Result{Translated: tr, Staged: staged, Plan: PlanOf(img.Effects, o)}, nil
+	return Result{Translated: tr, Staged: staged, Plan: PlanOf(img.Effects, o), Warnings: warnings}, nil
 }
