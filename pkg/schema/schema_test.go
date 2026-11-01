@@ -259,7 +259,7 @@ func TestValidateSaysANameIsReserved(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = s.Validate(map[string]any{"apiVersion": "r.example.org/v1", "kind": "VRF", "metadata": map[string]any{"name": "default"}, "spec": map[string]any{}})
-	want := `VRF "default": - at '/metadata/name': the name is reserved: fields that reference a VRF take it for something that is no document`
+	want := `VRF "default": - at '/metadata/name': the name "default" is reserved: fields that reference a VRF use it for something other than a document`
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %s", err, want)
 	}
