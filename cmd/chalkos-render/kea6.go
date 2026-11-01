@@ -132,6 +132,17 @@ func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s na
 			return sub, fmt.Errorf("prefixDelegation's prefix %s overlaps the subnet %s", r.Masked(), sub.prefix)
 		}
 		sub.delegated, sub.length = r.Masked(), pd.Length
+		// A route of a delegated prefix would take the router's own address on a link of the VRF
+		// away from the link.
+		for _, a := range d.Addresses {
+			vrf, ok := d.Membership.Networks[a.network]
+			if !ok {
+				vrf = defaultVRF
+			}
+			if vrf == sub.vrf && sub.delegated.Contains(a.prefix.Addr()) {
+				return sub, fmt.Errorf("prefixDelegation's prefix %s holds %s, the address Network %s gives a link of VRF %s", sub.delegated, a.prefix.Addr(), a.network, vrf)
+			}
+		}
 	}
 	if dom := s.Spec.Domain; dom != nil && !dhcpName.MatchString(*dom) {
 		return sub, fmt.Errorf("%q is no domain", *dom)
