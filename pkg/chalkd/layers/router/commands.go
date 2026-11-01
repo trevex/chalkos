@@ -85,13 +85,14 @@ func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 		return err
 	}
 	for _, k := range kernel {
-		if k.Protocol != "dhcp-pd" || len(k.NextHops) != 1 {
+		// Only IPv6 routes are of delegated prefixes, and one of several next hops is of none.
+		if k.Protocol != "dhcp-pd" || !strings.Contains(k.Destination, ":") {
 			continue
 		}
-		hop := k.NextHops[0]
 		kept := truncated
 		for _, rt := range routes {
-			kept = kept || (rt.Prefix.String() == k.Destination && rt.Via.String() == hop.Gateway && rt.Link == hop.Interface)
+			kept = kept || (len(k.NextHops) == 1 && rt.Prefix.String() == k.Destination &&
+				rt.Via.String() == k.NextHops[0].Gateway && rt.Link == k.NextHops[0].Interface)
 		}
 		if kept {
 			continue

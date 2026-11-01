@@ -107,3 +107,29 @@ func TestDHCP6RoutesWithoutConfigs(t *testing.T) {
 		})
 	}
 }
+
+// A run removes the IPv6 routes of protocol dhcp-pd of no record, those of several next hops
+// included, and leaves IPv4 routes of the protocol alone, which no delegated prefix makes.
+func TestDHCP6RoutesRemoved(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	s, r := routerNode(t,
+		&routing.KernelRoute{Destination: "2001:db8:100::/56", Protocol: "dhcp-pd", Table: 500, NextHops: []*routing.NextHop{{Gateway: "fe80::1", Interface: "cust0", Weight: 1}, {Gateway: "fe80::2", Interface: "cust0", Weight: 1}}},
+		&routing.KernelRoute{Destination: "198.51.100.0/24", Protocol: "dhcp-pd", Table: 254, NextHops: []*routing.NextHop{{Gateway: "192.0.2.2", Interface: "lan0"}}},
+	)
+	if err := os.WriteFile(filepath.Join(s.r.KeaDir, "kea-dhcp6.json"), []byte(`{"Dhcp6": {"subnet6": [{"interface": "cust0", "pd-pools": [{"prefix": "2001:db8:100::", "prefix-len": 40, "delegated-len": 56}]}]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.r.PDDir, "cust0_2001:db8:100::_56"), []byte("fe80::1 "+strconv.FormatInt(now.Unix()+600, 10)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.r.dhcp6Routes(context.Background(), now); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"ip -6 route del 2001:db8:100::/56 table 500 proto 65",
+		"ip -6 route replace 2001:db8:100::/56 via fe80::1 dev cust0 proto 65 expires 600",
+	}
+	if !slices.Equal(r.Calls, want) {
+		t.Errorf("calls = %q, want %q", r.Calls, want)
+	}
+}
