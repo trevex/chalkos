@@ -129,12 +129,12 @@ image is staged to boot next, whether the image got it or the upgrade carried co
 An upgrade that fails before, in the image's check or while chalkd activates its boot entry,
 keeps it. An activation that fails once the UKI has its boot name can leave the image to boot
 next while the node keeps the pending config. Sending that image again without config then
-rewrites its slot with the pending config. Should the removal itself fail, chalkd logs it, the upgrade still succeeds, and status
-keeps showing the pending config until `apply-config --staged --discard` removes it. An upgrade
-that pulls its image takes the Registry and Mirror documents from the same config: the upgrade's,
-else the pending config, else the running one. A pending config holds no fallback secret, so an
-upgrade refuses one that adds an encrypted volume, and the error says to upgrade with the config
-from an inventory.
+rewrites its slot with the pending config. Should the removal itself fail, chalkd logs it, the
+upgrade still succeeds, and status keeps showing the pending config until
+`apply-config --staged --discard` removes it. An upgrade that pulls its image takes the Registry
+and Mirror documents from the same config: the upgrade's, else the pending config, else the
+running one. A pending config holds no fallback secret, so an upgrade refuses one that adds an
+encrypted volume, and the error says to upgrade with the config from an inventory.
 
 The config meets the new image's [change rules](../../build/guard-changes.md) as `apply-config`'s
 config meets the running image's. The rules compare it with the running slot's config and the
