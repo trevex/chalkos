@@ -83,8 +83,8 @@ in
     ];
 
     chalkos.outputs.router-nftables = {
-      # An output reads the kinds the image declares alone: the ports of BGPPeer, Resolver and
-      # DHCPSubnet documents on images with BGP, the resolver and DHCP.
+      # An output reads the kinds the image declares alone: the ports of BGPPeer, Resolver,
+      # DHCPSubnet and DHCPRelay documents on images with BGP, the resolver, DHCP and the relay.
       inputs = [
         "Router"
         "FirewallZone"
@@ -95,6 +95,7 @@ in
       ++ lib.optional config.chalkos.router.bgp.enable "BGPPeer"
       ++ lib.optional config.chalkos.router.resolver.enable "Resolver"
       ++ lib.optional config.chalkos.router.dhcp.enable "DHCPSubnet"
+      ++ lib.optional config.chalkos.router.dhcpRelay.enable "DHCPRelay"
       ++ [
         # The links of each VRF, which the zones and conntrack zones match.
         "VRF"

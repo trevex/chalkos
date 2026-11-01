@@ -1717,11 +1717,12 @@ The outputs router images add, and the output `networkd` of every image as route
 
 | Output | Inputs | Directory | Renderer | Check |
 | --- | --- | --- | --- | --- |
+| `dhcp-relay`{ #output-dhcp-relay } | `DHCPRelay`, `VRF`, `Network`, `DHCPSubnet`, `NAT64` | `/run/chalkos/outputs/dhcp-relay` | Command `chalkos-render dhcp-relay` | yes |
 | `frr`{ #output-frr } | `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `Network`, `VRF` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
 | `jool`{ #output-jool } | `NAT64`, `VRF`, `Network` | `/run/chalkos/outputs/jool` | Command `chalkos-render jool` | yes |
 | `kea`{ #output-kea } | `DHCPSubnet`, `VRF`, `Network`, `NAT64` | `/run/chalkos/outputs/kea` | Command `chalkos-render kea chalkos-dhcp6-pd` | yes |
 | `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `NAT64`, `VRF`, `PolicyRoute` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |
-| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGPPeer`, `Resolver`, `DHCPSubnet`, `VRF`, `Network`, `NAT64`, `PolicyRoute` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
+| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGPPeer`, `Resolver`, `DHCPSubnet`, `DHCPRelay`, `VRF`, `Network`, `NAT64`, `PolicyRoute` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
 | `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |
 | `unbound`{ #output-unbound } | `Resolver`, `VRF`, `Network` | `/run/chalkos/outputs/unbound` | Command `chalkos-render unbound root.key ipv4only.arpa.zone` | yes |
 
@@ -1797,6 +1798,7 @@ The effects router images add.
 | Effect | Fires when | Does |
 | --- | --- | --- |
 | `dhcp`{ #effect-dhcp } | One of the outputs `kea` and `networkd` changed. | Reloads `chalkos-dhcp.service`. |
+| `dhcp-relay`{ #effect-dhcp-relay } | One of the outputs `dhcp-relay` and `networkd` changed. | Reloads `chalkos-dhcp-relays.service`. |
 | `frr`{ #effect-frr } | The output `frr` changed. | Reloads `frr.service`. |
 | `jool`{ #effect-jool } | The output `jool` changed. | Reloads `chalkos-nat64.service`. |
 | `resolvers`{ #effect-resolvers } | One of the outputs `unbound` and `networkd` changed. | Reloads `chalkos-resolvers.service`. |

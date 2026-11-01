@@ -307,13 +307,181 @@ lib.runTests {
       };
     };
   };
+  # Router images take DHCPRelay documents and run dnsmasq's relays unless their modules set
+  # chalkos.router.dhcpRelay.enable to false, whose router outputs then render no example of a
+  # relay at the build, and which carry no output dhcp-relay or effect dhcp-relay, no dnsmasq, its
+  # units or user; other images never take them.
+  testRouterDHCPRelayOptional = {
+    expr =
+      let
+        relay = c: {
+          kind = c.chalkos.kinds ? DHCPRelay;
+          example = builtins.pathExists "${c.chalkos.router.examples}/dhcp-relay.yaml";
+          output = c.chalkos.outputs ? dhcp-relay;
+          effect = c.chalkos.effects ? dhcp-relay;
+          units = lib.filter (n: lib.hasPrefix "dnsmasq" n || n == "chalkos-dhcp-relays") (
+            lib.attrNames c.systemd.services
+          );
+          ids =
+            if c.users.users ? dnsmasq then
+              [
+                c.users.users.dnsmasq.uid
+                c.users.groups.dnsmasq.gid
+              ]
+            else
+              null;
+          referenced = lib.any (u: lib.hasInfix "-dnsmasq-" (u.text or "")) (lib.attrValues c.systemd.units);
+          firewallReads = lib.elem "DHCPRelay" c.chalkos.outputs.router-nftables.inputs;
+        };
+      in
+      {
+        edge = relay layered.edge-metal.config;
+        without = relay (routerWithout [ "dhcpRelay" ]);
+        node = layered.node-metal.config.chalkos.kinds ? DHCPRelay;
+        plain = layered.plain-metal.config.chalkos.kinds ? DHCPRelay;
+      };
+    expected = {
+      edge = {
+        kind = true;
+        example = true;
+        output = true;
+        effect = true;
+        units = [
+          "chalkos-dhcp-relays"
+          "dnsmasq-relay"
+          "dnsmasq-relay@"
+        ];
+        ids = [
+          332
+          332
+        ];
+        referenced = true;
+        firewallReads = true;
+      };
+      without = {
+        kind = false;
+        example = false;
+        output = false;
+        effect = false;
+        units = [ ];
+        ids = null;
+        referenced = false;
+        firewallReads = false;
+      };
+      node = false;
+      plain = false;
+    };
+  };
+  # The output dhcp-relay renders a dnsmasq config per VRF from the DHCPRelay documents, the VRFs,
+  # the Networks and, to refuse a family relayed beside Kea's servers, the DHCPSubnets, and checks
+  # each with dnsmasq --test. dnsmasq-relay runs the default VRF's relay and dnsmasq-relay@<vrf>
+  # each VRF's, bound to the VRF's device, whose index it records, as the user dnsmasq with the
+  # capabilities dnsmasq demands of a relay. chalkos-dhcp-relays starts, restarts and stops them
+  # without capabilities whenever the output dhcp-relay or networkd changes.
+  testRouterDHCPRelay = {
+    expr =
+      let
+        edge = layered.edge-metal.config;
+        relay = edge.systemd.services.dnsmasq-relay;
+        vrf = edge.systemd.services."dnsmasq-relay@";
+        relays = edge.systemd.services.chalkos-dhcp-relays;
+      in
+      {
+        inputs = edge.chalkos.outputs.dhcp-relay.inputs;
+        render = lib.hasSuffix "/bin/chalkos-render dhcp-relay" edge.chalkos.outputs.dhcp-relay.render;
+        check = lib.hasInfix "/bin/dnsmasq --test" edge.chalkos.outputs.dhcp-relay.check;
+        relay = {
+          start =
+            builtins.match "/nix/store/[^ ]*-dnsmasq-2.93/bin/dnsmasq --keep-in-foreground --log-facility=- --pid-file= --conf-file=/run/chalkos/outputs/dhcp-relay/dnsmasq-relay.conf" relay.serviceConfig.ExecStart
+            != null;
+          inherit (relay.serviceConfig)
+            User
+            AmbientCapabilities
+            CapabilityBoundingSet
+            RestrictAddressFamilies
+            ;
+          inherit (relay.unitConfig) ConditionPathExists;
+          wanted = relay.wantedBy;
+        };
+        vrfRelay = {
+          start = lib.hasSuffix "--conf-file=/run/chalkos/outputs/dhcp-relay/dnsmasq-relay-%I.conf" vrf.serviceConfig.ExecStart;
+          inherit (vrf.serviceConfig) BindNetworkInterface;
+          inherit (vrf.unitConfig) Requires;
+          records = lib.hasInfix "dnsmasq-relay-vrf-device" vrf.serviceConfig.ExecStartPre;
+        };
+        reconciler = {
+          inherit (relays) wantedBy;
+          inherit (relays.serviceConfig) Type CapabilityBoundingSet;
+          reloads = relays.serviceConfig.ExecReload == relays.serviceConfig.ExecStart;
+          stops = lib.hasSuffix " stop" relays.serviceConfig.ExecStop;
+          effect = {
+            inherit (edge.chalkos.effects.dhcp-relay) outputs reload;
+          };
+        };
+      };
+    expected = {
+      inputs = [
+        "DHCPRelay"
+        "VRF"
+        "Network"
+        "DHCPSubnet"
+        "NAT64"
+      ];
+      render = true;
+      check = true;
+      relay = {
+        start = true;
+        User = "dnsmasq";
+        AmbientCapabilities = [
+          "CAP_NET_BIND_SERVICE"
+          "CAP_NET_RAW"
+          "CAP_NET_ADMIN"
+        ];
+        CapabilityBoundingSet = [
+          "CAP_NET_BIND_SERVICE"
+          "CAP_NET_RAW"
+          "CAP_NET_ADMIN"
+        ];
+        RestrictAddressFamilies = [
+          "AF_UNIX"
+          "AF_NETLINK"
+          "AF_INET"
+          "AF_INET6"
+        ];
+        ConditionPathExists = "/run/chalkos/outputs/dhcp-relay/dnsmasq-relay.conf";
+        wanted = [ ];
+      };
+      vrfRelay = {
+        start = true;
+        BindNetworkInterface = "%I";
+        Requires = "sys-subsystem-net-devices-%i.device";
+        records = true;
+      };
+      reconciler = {
+        wantedBy = [ "multi-user.target" ];
+        Type = "oneshot";
+        CapabilityBoundingSet = [ "" ];
+        reloads = true;
+        stops = true;
+        effect = {
+          outputs = [
+            "dhcp-relay"
+            "networkd"
+          ];
+          reload = [ "chalkos-dhcp-relays.service" ];
+        };
+      };
+    };
+  };
   # The router outputs render, at the image's build, the examples all of whose documents are of
   # kinds the image accepts: every one on a router image with every feature, those without
-  # DHCPSubnet documents on one without DHCP.
+  # DHCPSubnet documents on one without DHCP, and those without DHCPRelay documents on one without
+  # the relay.
   testRouterExamples = {
     expr = {
       edge = examplesOf layered.edge-metal.config;
       withoutDHCP = examplesOf (routerWithout [ "dhcp" ]);
+      withoutDHCPRelay = examplesOf (routerWithout [ "dhcpRelay" ]);
     };
     expected = {
       edge = [
@@ -338,6 +506,17 @@ lib.runTests {
         "policy.yaml"
         "vrf.yaml"
       ];
+      withoutDHCPRelay = [
+        "dhcp.yaml"
+        "dhcp6.yaml"
+        "edge.yaml"
+        "lan.yaml"
+        "leaf.yaml"
+        "nat64.yaml"
+        "none.yaml"
+        "policy.yaml"
+        "vrf.yaml"
+      ];
     };
   };
   # The users and groups of the router's features have pinned IDs, free in NixOS's ids.nix, so an
@@ -349,17 +528,19 @@ lib.runTests {
         c = layered.edge-metal.config;
       in
       {
-        users = lib.genAttrs [ "frr" "kea" "unbound" ] (n: c.users.users.${n}.uid);
-        groups = lib.genAttrs [ "frr" "frrvty" "kea" "unbound" ] (n: c.users.groups.${n}.gid);
+        users = lib.genAttrs [ "dnsmasq" "frr" "kea" "unbound" ] (n: c.users.users.${n}.uid);
+        groups = lib.genAttrs [ "dnsmasq" "frr" "frrvty" "kea" "unbound" ] (n: c.users.groups.${n}.gid);
         unpinned = unpinned c;
       };
     expected = {
       users = {
+        dnsmasq = 332;
         frr = 329;
         kea = 328;
         unbound = 331;
       };
       groups = {
+        dnsmasq = 332;
         frr = 329;
         frrvty = 330;
         kea = 328;
@@ -565,6 +746,7 @@ lib.runTests {
           referenced = true;
           diagnostic = true;
           reads = [
+            "dhcp-relay"
             "jool"
             "kea"
             "networkd"

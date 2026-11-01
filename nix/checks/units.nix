@@ -2089,6 +2089,255 @@ in
         fi
       '';
 
+  # The dhcp-relay example's relay of the default VRF, as dnsmasq-relay.service runs it, behind the
+  # example's firewall, which opens DHCPv4 and DHCPv6 on lan0, the relay's link. A client on lan0
+  # takes an IPv4 and an IPv6 address from Kea's servers in a namespace behind wan0, which pick
+  # the subnets by the relay's addresses on lan0 and answer the relay, which the firewall lets in
+  # as replies to its requests. A firewall without the openings keeps the client from both.
+  # dnsmasq stays root in the namespace, which it does not leave with -d, and has no user nobody
+  # to look up; on a node it runs as the user dnsmasq.
+  router-dhcp-relay =
+    let
+      router = checkLib.router.config;
+      inherit (router.systemd.services.dnsmasq-relay.serviceConfig) ExecStart;
+      kea = lib.head (lib.splitString "/bin/" router.systemd.services.kea-dhcp4.serviceConfig.ExecStart);
+      firewall = router.systemd.services.chalkos-firewall.serviceConfig.ExecStart;
+      dir = router.chalkos.outputs.dhcp-relay.dir;
+      nftDir = router.chalkos.outputs.router-nftables.dir;
+      udhcpc = "${pkgs.busybox}/bin/busybox udhcpc";
+      goldens = ../../cmd/chalkos-render/testdata/router;
+    in
+    unitCheck "router-dhcp-relay" (checkLib.networkTools ++ [ pkgs.dhcpcd ]) ''
+      fail() {
+        echo "error: $*" >&2
+        cat relay.log kea-*.log >&2
+        exit 1
+      }
+      ip link set lo up
+      unshare -n sh -c 'touch client-ready; exec sleep 600' &
+      client=$!
+      unshare -n sh -c 'touch server-ready; exec sleep 600' &
+      server=$!
+      until [ -e client-ready ] && [ -e server-ready ]; do sleep 0.1; done
+      on_client() { nsenter -t "$client" -n "$@"; }
+      on_server() { nsenter -t "$server" -n "$@"; }
+      echo 1 >/proc/sys/net/ipv4/ip_forward
+      echo 1 >/proc/sys/net/ipv6/conf/all/forwarding
+      ip link add lan0 type veth peer name eth0 netns "$client"
+      ip link add wan0 type veth peer name s0 netns "$server"
+      for l in lan0 wan0; do echo 0 >"/proc/sys/net/ipv6/conf/$l/accept_dad"; done
+      ip addr add 192.0.2.1/24 dev lan0
+      ip addr add 2001:db8:1::1/64 dev lan0 nodad
+      ip addr add 203.0.113.2/24 dev wan0
+      ip addr add 2001:db8:ff::2/64 dev wan0 nodad
+      ip link set lan0 up
+      ip link set wan0 up
+      on_client ip link set lo up
+      on_client sh -c 'echo 0 >/proc/sys/net/ipv6/conf/eth0/accept_dad'
+      on_client ip link set eth0 up
+      on_server ip link set lo up
+      on_server sh -c 'echo 0 >/proc/sys/net/ipv6/conf/s0/accept_dad'
+      on_server ip addr add 203.0.113.53/24 dev s0
+      on_server ip addr add 2001:db8:ff::53/64 dev s0 nodad
+      on_server ip link set s0 up
+      on_server ip route add 192.0.2.0/24 via 203.0.113.2
+      on_server ip route add 2001:db8:1::/64 via 2001:db8:ff::2
+
+      # The central servers: Kea's DHCPv4 server on a UDP socket, as relayed requests come by
+      # unicast, and its DHCPv6 server on s0's address, which relays send to.
+      mkdir -p kea4 kea6 /var/lib
+      mkdir -m 0750 /var/lib/kea
+      cat >kea-dhcp4.json <<'JSON'
+      {"Dhcp4": {"interfaces-config": {"interfaces": ["s0"], "dhcp-socket-type": "udp", "service-sockets-max-retries": 100, "service-sockets-retry-wait-time": 100},
+        "lease-database": {"type": "memfile", "persist": false},
+        "subnet4": [{"id": 1, "subnet": "192.0.2.0/24", "pools": [{"pool": "192.0.2.100 - 192.0.2.199"}], "option-data": [{"name": "routers", "data": "192.0.2.1"}]}]}}
+      JSON
+      cat >kea-dhcp6.json <<'JSON'
+      {"Dhcp6": {"interfaces-config": {"interfaces": ["s0/2001:db8:ff::53"], "service-sockets-max-retries": 100, "service-sockets-retry-wait-time": 100},
+        "lease-database": {"type": "memfile", "persist": false},
+        "subnet6": [{"id": 1, "subnet": "2001:db8:1::/64", "pools": [{"pool": "2001:db8:1::100 - 2001:db8:1::1ff"}]}]}}
+      JSON
+      on_server env KEA_LOCKFILE_DIR=none KEA_PIDFILE_DIR="$PWD/kea4" ${kea}/bin/kea-dhcp4 -c kea-dhcp4.json >kea-dhcp4.log 2>&1 &
+      on_server env KEA_LOCKFILE_DIR=none KEA_PIDFILE_DIR="$PWD/kea6" ${kea}/bin/kea-dhcp6 -c kea-dhcp6.json >kea-dhcp6.log 2>&1 &
+
+      mkdir -p ${dir} ${nftDir} /var/run/dhcpcd /var/db/dhcpcd /var/lib/dhcpcd
+      awk '/^# dnsmasq-relay.conf$/ { take = 1; next } /^# dnsmasq-relay/ { take = 0 } take' ${goldens}/dhcp-relay.relay >${dir}/dnsmasq-relay.conf
+      grep -qx 'dhcp-relay=192.0.2.1,203.0.113.53' ${dir}/dnsmasq-relay.conf || fail "the dhcp-relay example's golden holds no relay of the default VRF"
+      install -m 644 ${goldens}/dhcp-relay.nft ${nftDir}/ruleset.nft
+      ${firewall} || fail "chalkos-firewall did not load the dhcp-relay example's ruleset"
+      ${ExecStart} -d --user=root >relay.log 2>&1 &
+      sleep 1
+
+      # leases: the addresses the client takes through the relay, of both families.
+      printf 'ipv6only\nnoipv6rs\nduid ll\ninterface eth0\n  ia_na 1\n' >dhcpcd.conf
+      leases() {
+        on_client ip addr flush dev eth0 scope global
+        rm -f /var/lib/dhcpcd/*
+        on_client ${udhcpc} -i eth0 -n -q -t 4 -T 1 -s /bin/true >/dev/null 2>&1 || true
+        on_client timeout 10 dhcpcd -f "$PWD/dhcpcd.conf" -c /bin/true -B -1 -6 eth0 >dhcpcd.log 2>&1 || true
+        on_client ip -o addr show dev eth0 scope global | awk '{print $4}' | sort | tr '\n' ' '
+      }
+      got=$(leases)
+      echo "$got" | grep -q '2001:db8:1::1[0-9a-f][0-9a-f]/128' || fail "the client took no IPv6 address through the relay: $got"
+      # udhcpc with -s /bin/true sets no address; the server's lease says it got one.
+      grep -q 'DHCP4_LEASE_ALLOC.*192.0.2.1[0-9][0-9]' kea-dhcp4.log || fail "the client took no IPv4 lease through the relay"
+
+      install -m 644 ${goldens}/none.nft ${nftDir}/ruleset.nft
+      ${firewall} || fail "chalkos-firewall did not load the none example's ruleset"
+      : >kea-dhcp4.log
+      got=$(leases)
+      if [ -n "$got" ] || grep -q DHCP4_LEASE_ALLOC kea-dhcp4.log; then
+        fail "the client took a lease through a firewall without the relay's openings: $got"
+      fi
+    '';
+
+  # chalkos-dhcp-relays, with systemctl stubbed: it runs no relay without a config, starts the relay
+  # of each rendered config once its VRF's device exists, restarts those that run, as dnsmasq reads
+  # its relays at start alone, stops and resets those without a config, names a VRF whose device
+  # does not appear within 30 seconds and a relay that does not run, and stops them all with stop.
+  router-dhcp-relay-instances =
+    let
+      inherit (checkLib.router.config.systemd.services.chalkos-dhcp-relays.serviceConfig)
+        ExecStart
+        ExecReload
+        ExecStop
+        ;
+      dir = checkLib.router.config.chalkos.outputs.dhcp-relay.dir;
+    in
+    unitCheck "router-dhcp-relay-instances" [ pkgs.gnugrep ] ''
+      fail() {
+        echo "error: $*" >&2
+        cat "$SD/log" >&2
+        exit 1
+      }
+      export SD=$PWD/sd
+      mkdir -p stub "$SD" /sys/class/net ${dir}
+      : >"$SD/log"
+      cat >stub/systemctl <<'STUB'
+      #!${pkgs.runtimeShell}
+      # systemctl as chalkos-dhcp-relays calls it, over the files of $SD: <unit>.state holds a
+      # unit's state and <unit>.sub its substate. A unit started or restarted takes the state and
+      # substate of <unit>.next, active running without. Each call is logged.
+      echo "$*" >>"$SD/log"
+      quiet= property= args=
+      for a in "$@"; do
+        case $a in
+        --quiet) quiet=1 ;;
+        --property=*) property=''${a#--property=} ;;
+        --*) ;;
+        *) args="$args $a" ;;
+        esac
+      done
+      set -- $args
+      verb=$1 unit=''${2:-}
+      state() { cat "$SD/$1.state" 2>/dev/null || echo inactive; }
+      case $verb in
+      is-active)
+        s=$(state "$unit")
+        [ -n "$quiet" ] || echo "$s"
+        [ "$s" = active ]
+        ;;
+      show)
+        case $property in
+        SubState) cat "$SD/$unit.sub" 2>/dev/null || echo dead ;;
+        *) echo "systemctl stub: no property $property" >&2; exit 1 ;;
+        esac
+        ;;
+      start | restart)
+        next=$(cat "$SD/$unit.next" 2>/dev/null || echo active running)
+        echo "''${next% *}" >"$SD/$unit.state"
+        echo "''${next#* }" >"$SD/$unit.sub"
+        ;;
+      stop) [ "$(state "$unit")" = failed ] || echo inactive >"$SD/$unit.state" ;;
+      reset-failed)
+        case $(state "$unit") in
+        failed | inactive) rm -f "$SD/$unit.state" "$SD/$unit.sub" ;;
+        esac
+        ;;
+      list-units)
+        for f in "$SD"/dnsmasq-relay.service.state "$SD"/dnsmasq-relay@*.service.state; do
+          [ -e "$f" ] || continue
+          u=''${f##*/}
+          u=''${u%.state}
+          echo "$u loaded $(state "$u") $(cat "$SD/$u.sub" 2>/dev/null || echo dead) dnsmasq"
+        done
+        ;;
+      *) echo "systemctl stub: $*" >&2; exit 2 ;;
+      esac
+      STUB
+      cat >stub/systemd-escape <<'STUB'
+      #!${pkgs.runtimeShell}
+      # systemd-escape as chalkos-dhcp-relays calls it, for names whose only character to escape
+      # is a dash.
+      t=''${1#--template=}
+      echo "''${t%%@*}@$(echo "$2" | sed 's/-/\\x2d/g')''${t#*@}"
+      STUB
+      chmod +x stub/systemctl stub/systemd-escape
+      export PATH=$PWD/stub:$PATH
+
+      unit() {
+        if [ "$1" = default ]; then echo dnsmasq-relay.service; else systemd-escape --template=dnsmasq-relay@.service "$1"; fi
+      }
+      state() { cat "$SD/$1.state" 2>/dev/null || echo inactive; }
+      config() {
+        if [ "$1" = default ]; then : >${dir}/dnsmasq-relay.conf; else : >"${dir}/dnsmasq-relay-$1.conf"; fi
+      }
+      called() { grep -qxF -- "$1" "$SD/log" || fail "$2: no call systemctl $1"; }
+      not_called() { if grep -qxF -- "$1" "$SD/log"; then fail "$2: called systemctl $1"; fi; }
+      running() { [ "$(state "$(unit "$1")")" = active ] || fail "$2: $(unit "$1") is $(state "$(unit "$1")")"; }
+
+      ${ExecStart} || fail "a run without configs failed"
+      if grep -q '^start' "$SD/log"; then fail "a run without configs started a relay"; fi
+
+      mkdir -p /sys/class/net/guest /sys/class/net/dmz-a
+      config default
+      config guest
+      config dmz-a
+      : >"$SD/log"
+      ${ExecStart} || fail "starting the relays failed"
+      [ "$(unit dmz-a)" = 'dnsmasq-relay@dmz\x2da.service' ] || fail "the stub escapes dmz-a as $(unit dmz-a)"
+      for vrf in default guest dmz-a; do
+        called "start --no-block $(unit "$vrf")" "start"
+        running "$vrf" "start"
+      done
+
+      : >"$SD/log"
+      ${ExecReload} || fail "reloading the relays failed"
+      for vrf in default guest dmz-a; do
+        called "restart --no-block $(unit "$vrf")" "reload"
+      done
+
+      # A relay without a config, a running one and a failed one, is stopped and reset; a VRF
+      # whose device does not appear and a relay that keeps restarting are named.
+      : >"$SD/log"
+      rm ${dir}/dnsmasq-relay-dmz-a.conf
+      echo failed >"$SD/dnsmasq-relay@stale.service.state"
+      config gone
+      mkdir -p /sys/class/net/stuck
+      config stuck
+      echo activating auto-restart >"$SD/$(unit stuck).next"
+      start=$SECONDS
+      if ${ExecReload} 2>err.log; then fail "a run succeeded with a VRF without a device"; fi
+      elapsed=$((SECONDS - start))
+      ((elapsed >= 30 && elapsed <= 65)) || fail "the run took $elapsed s"
+      for u in "$(unit dmz-a)" dnsmasq-relay@stale.service; do
+        called "stop $u" "a relay without a config"
+        called "reset-failed $u" "a relay without a config"
+      done
+      grep -qxF "chalkos-dhcp-relays: failed to start $(unit gone), whose VRF has no device" err.log ||
+        fail "the run did not name gone: $(cat err.log)"
+      grep -qxF "chalkos-dhcp-relays: failed to start $(unit stuck), which is activating (auto-restart)" err.log ||
+        fail "the run did not name stuck with its substate: $(cat err.log)"
+      not_called "start --no-block $(unit gone)" "a VRF without a device"
+      running guest "a run that failed for others"
+
+      : >"$SD/log"
+      ${ExecStop} || fail "stopping the relays failed"
+      for vrf in default guest stuck; do
+        called "stop $(unit "$vrf")" "stopping the relays"
+      done
+    '';
+
   # chalkos-dhcp, with systemctl stubbed: it runs no server without a config, the default VRF's
   # neither, starts the DHCPv4 or DHCPv6 server of each rendered config once the config's links and
   # its VRF's device exist, reloads those that run, restarts a VRF's server whose device networkd
