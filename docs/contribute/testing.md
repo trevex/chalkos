@@ -133,9 +133,10 @@ testVariantSetsDiskOptions = {
 
 Build checks test what an image build produces, without booting it. They live in `nix/checks/`:
 `image.nix` checks an image's files, `units.nix` runs an image's unit scripts in namespaces, and
-`repo.nix` validates the lab template and the examples. `e2e.nix` holds the end-to-end checks,
-`eval.nix` the evaluation tests, and `lib.nix` what they share. The test scripts of `units.nix`
-are `writeShellApplication` scripts, so shellcheck runs on them when they build.
+`repo.nix` validates the lab template and the examples. `units.nix` also holds `image-checker`,
+which boots one NixOS VM, as an image's checker needs systemd. `e2e.nix` holds the end-to-end
+checks, `eval.nix` the evaluation tests, and `lib.nix` what they share. The test scripts of
+`units.nix` are `writeShellApplication` scripts, so shellcheck runs on them when they build.
 
 | Check | What it checks |
 | --- | --- |
@@ -153,6 +154,7 @@ are `writeShellApplication` scripts, so shellcheck runs on them when they build.
 | `router-dhcp-relay` | A router's `dnsmasq-relay.service` and `dnsmasq-relay@<vrf>.service` and the firewall's openings of the relays, in network namespaces. |
 | `router-dhcp-relay-instances` | A router's `chalkos-dhcp-relays.service`, with stubs of `systemctl` and `systemd-escape`. |
 | `frr-credentials` | A router's `frr.service` fills its config's passwords in from its credentials, and refuses those FRR would not take. |
+| `image-checker` | An image's `chalkd check` in its sandbox on a NixOS VM, with a second store: the image's renderer and command fact run from it, a renderer's refusal comes back, the sandbox hides `/run/chalkos`, and another user reaches neither the facts socket nor the result. |
 | `rules` | The images' rules compile, their outputs render their examples and pass their checks, and a broken rule, effect, output or diagnostic fails its image. |
 | `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
 | `example-homelab` | The homelab example's image builds, and `chalkctl validate` accepts its YAML, `Rack` documents included, with it. |
@@ -225,6 +227,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | The router's VRFs: the `VRF` kind, `router-networkd`, `chalkos-vrf` | `rules`, `eval`, `eval-kinds`, `go-unit`, `router-vrf`, `router-firewall`, `e2e-router` |
 | The router's policy routing: the `PolicyRoute` kind, its chain and units | `router-policy-routing`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
 | The router's DHCP and relays: the `DHCPSubnet` and `DHCPRelay` kinds, the `kea` and `dhcp-relay` outputs, their units, `pkg/router` | `router-dhcp`, `router-dhcp6`, `router-dhcp-instances`, `router-dhcp-relay`, `router-dhcp-relay-instances`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
+| An image's checker: `pkg/imagecheck`, `chalkd check` | `image-checker`, `go-unit`, `go-lint`, `e2e-upgrade` |
 | `templates/lab` | `template-lab` |
 | `.github/workflows` | `workflows` |
 

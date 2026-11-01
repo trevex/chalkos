@@ -18,7 +18,6 @@ upgrading node on kvm to 23112865089f (v2): cp1, cp2, cp3, w1
 cp1: installing 23112865089f (v2)
 cp1: config unchanged
 cp1: installed 23112865089f (v2), which boots next as chalkos_2+3.efi
-cp1: 23112865089f (v2) renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs
 cp1: cordoned, evicted 2 pods, kept 6
 cp1: rebooting into 23112865089f (v2)
 cp1: runs 23112865089f (v2), found healthy
@@ -30,7 +29,6 @@ w1: cordoned, evicted 1 pod, kept 2
 w1: installing 23112865089f (v2)
 w1: config unchanged
 w1: installed 23112865089f (v2), which boots next as chalkos_2+3.efi
-w1: 23112865089f (v2) renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs
 w1: rebooting into 23112865089f (v2)
 w1: runs 23112865089f (v2), found healthy
 w1: uncordoned

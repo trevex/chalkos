@@ -116,10 +116,9 @@ A node that refuses its config does not stop the others, and neither does a node
 cannot check, such as one missing from the inventory, unreachable or with a config on trial. Each
 error goes to standard error with the node's name, and the command ends with a line that counts the
 two apart, such as `the config of 1 node is refused: w1; the dry run failed on 1 node: cp1`, and
-exits 1. `--dry-run` refuses `--staged`, `--diff`, `--rollback`, `--confirm`, `--try`,
-`--no-confirm`, `--ignore-unit`, `--force` and the layers' payload flags such as
-`--kubernetes-share`. It refuses `--address` with several nodes, because the address reaches one
-node.
+exits 1. `--dry-run` refuses `--diff`, `--rollback`, `--confirm`, `--try`, `--no-confirm`,
+`--ignore-unit`, `--force` and the layers' payload flags such as `--kubernetes-share`. It
+refuses `--address` with several nodes, because the address reaches one node.
 
 ## Deliver the config
 
@@ -214,9 +213,22 @@ to boot next has its own config until the node reboots into it. `--staged` deliv
 chalkctl apply-config w1 --staged --secrets secrets.age
 ```
 
-chalkctl checks the files against the node's image in the inventory, and the node checks them
-against the staged image. Nothing restarts. The command ends with
-`w1 boots config <version> with its staged image`.
+chalkctl checks the files against the node's image in the inventory. The staged image then checks
+them itself, with its own chalkd, schemas, rules and renderers, before the node keeps them.
+Nothing restarts. The command ends with `w1 boots config <version> with its staged image`.
+
+`--dry-run` with `--staged` has the staged image check the config and keeps nothing:
+
+```console
+$ chalkctl apply-config w1 --staged --secrets secrets.age --dry-run
+w1: config 1 added, 0 removed, 0 changed
++ TimeSync "default"
+w1: staged image's config <previous-version> → <version>
+  storage:  none
+```
+
+The plan has no outputs and no effects: the staged image renders its outputs and takes its
+effects when it boots.
 
 Without `--staged`, the command changes the running image's config alone and warns:
 `w1 has a staged image with its own config (version <version>); apply-config --staged updates it`.
@@ -470,8 +482,9 @@ it runs delivered again, which removes the record as well.
   staged image. Run the command without it.
 - `--staged delivers config alone; deliver the Kubernetes share to the running image`: `--staged`
   and `--kubernetes-share` do not combine.
-- `--dry-run checks config for the running image; --staged goes without it`: a dry run checks a
-  delivery to the running image alone. Deliver to the staged image with `--staged` alone.
+- `the image <hash> predates chalkd check; it cannot check its config`: the staged image, or the
+  image an upgrade installs, was built before images checked their own config. Upgrade to an image
+  built from a newer chalkos first.
 - A unit that the change should have restarted did not restart. A restart effect leaves a stopped
   unit stopped, unless the effect starts it too.
   [Troubleshooting](troubleshooting.md) helps with a unit that fails after the delivery.

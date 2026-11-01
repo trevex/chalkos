@@ -40,7 +40,7 @@ use the same tools and variables from `nix/testing/env.nix`.
 
 | Directory | What lives there |
 | --- | --- |
-| `api/` | The protobuf definitions of the node API, `api/chalkos/node/v1/node.proto`, and of each layer's API, `api/chalkos/kubernetes/v1/kubernetes.proto` and `api/chalkos/router/v1/router.proto`, and the template of their reference page. |
+| `api/` | The protobuf definitions of the node API, `api/chalkos/node/v1/node.proto`, and of each layer's API, `api/chalkos/kubernetes/v1/kubernetes.proto` and `api/chalkos/router/v1/router.proto`, and of what chalkd and an image's checker exchange, `api/chalkos/check/v1/check.proto`, and the template of their reference page. |
 | `cmd/` | Thin mains: `chalkctl`, `chalkd`, `chalklab`, `chalkbuild`, `chalkos-storage` and `docgen`. |
 | `pkg/` | The Go packages, including `pkg/api`, the code `buf generate` writes. |
 | `modules/node/` | The NixOS modules every image is built from. |

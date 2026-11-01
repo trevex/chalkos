@@ -89,11 +89,9 @@ the image. The node checks them again and keeps them for that image, so a fallba
 before with its own config. Before it sends a node anything, chalkctl prints a line of what the
 node's config changes, such as `cp1: config unchanged`.
 
-A new image's renderers live in its own store, so its outputs render at its first boot. For each
-node, chalkctl says so in a line that ends with `renders and checks any outputs it declares when
-it first boots; if one fails, the node falls back to the image it runs`. An output that fails then
-fails the boot's health check, and the node falls back to the image it ran. The run stops at that
-node and shows what the failed boot logged.
+The node has the new image check its config before it installs it, with that image's own
+renderers and their checks. A config one of them refuses refuses the upgrade of that node, and
+the run stops there. The image renders its outputs again at its first boot.
 
 [Upgrade nodes](../operate/upgrade.md) covers the run's order, downtime and
 rollbacks.
@@ -117,6 +115,8 @@ Reloaded units are not listed.
 
 After an upgrade with `--no-reboot`, the staged image keeps a config of its own.
 `chalkctl apply-config --staged` delivers to that image instead of the running one.
+`chalkctl apply-config --staged --dry-run` has the staged image check the config and changes
+nothing.
 
 ## chalkctl status shows the outputs
 

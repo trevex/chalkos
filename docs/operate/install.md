@@ -531,6 +531,13 @@ the machine never reboots into an image its firmware refuses. The installer writ
 the system disk, sets up STATE, VAR and the volumes, and adds a UEFI boot entry named `chalkos`,
 as [An install runs in fixed steps](../contribute/architecture.md#an-install-runs-in-fixed-steps) follows step by step.
 
+The installer's chalkd checks the node's config before it writes anything: against the installed
+image's schemas and rules, which it evaluates with its own CEL library. A rule that calls a
+function the installer's chalkd lacks refuses the install. The installer cannot run the installed
+image's renderers and their checks, so they first run at that image's first boot, and one that
+fails there fails the boot's health check. Build the installer from the same chalkos release as
+the image, so that both check config the same way.
+
 The boot entry the install creates goes first in the boot order, so the stick may stay in. Remove
 it before the next install elsewhere.
 

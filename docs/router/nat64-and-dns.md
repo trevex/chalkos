@@ -457,9 +457,9 @@ change, except that it runs one NAT64 with an empty `pool4` at most:
   whose routes led there. Each NAT64 now translates the traffic of its own VRF alone, so a VRF
   without one loses NAT64.
 
-`chalkctl validate` does not run the renderers, which check the rest when the new image renders
-the config at its first boot. A refusal there fails the boot, and the router falls back to the
-image it ran. Look for these before you upgrade:
+`chalkctl validate` does not run the renderers. The new image runs them when `chalkctl upgrade`
+installs it, and refuses the upgrade of a router whose config one of them refuses, so the router
+keeps booting the image it runs. Look for these before you upgrade:
 
 - Two NAT64 names whose hashes pick one /30, as
   [Keep 169.254.64.0/18 free](#keep-16925464018-free) shows. Rename one of them.

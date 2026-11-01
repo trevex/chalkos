@@ -96,21 +96,27 @@ counts then falls back to the previous image and its config. A boot that was ble
 up degraded: the output holds no files, its services read none, and `chalkctl status` names the
 output.
 
-## An upgrade renders at first boot
+## An image that does not run checks its own config
 
-A staged image's renderers live in its own store, which cannot run before that image boots. Its
-outputs are rendered and checked at its first boot, and a failure falls back as at any boot.
-[`chalkctl upgrade`](../../reference/cli/chalkctl_upgrade.md) says so for each node it installs an
-image on, in a line that ends with `renders and checks any outputs it declares when it first
-boots; if one fails, the node falls back to the image it runs`. The rules of the new image run
-before the upgrade writes anything, as [Upgrades](upgrades.md) describes.
+A staged image's renderers live in its own store. Before an upgrade writes the image's config
+slot, and for `chalkctl apply-config --staged`, the node mounts that store read-only and runs the
+image's own `chalkd check` in a transient unit, `chalkos-check.service`, with the image's store
+in place of its own. The checker runs every check of a delivery against the image's schemas,
+rules and renderers. A refusal refuses the upgrade or the delivery before the image's config slot
+is written. The image renders its outputs again at its first boot, from the same documents.
 
-The image build renders each output's examples, so a failure at first boot comes from documents
-the examples do not cover.
+The checker gets the documents with their Secret values hashed, as renderers always do, and
+asks the running chalkd for the facts its rules read. chalkd loads the facts the image
+declares, and runs their commands from the image's store. The unit runs as a user of its own,
+without capabilities, network or access to STATE, `/var` and `/run/chalkos`, within 512 MiB
+and two minutes. What its renderers and checks write to standard error is in the unit's
+journal: `chalkctl logs <node> --unit=chalkos-check.service`.
 
 An install in place renders and checks the outputs with the running image's renderers before it
 installs anything, and the boot that follows renders them again. An install from the installer
-cannot run the installed image's renderers, so that image renders its outputs at its first boot.
+checks the config with the installed image's schemas and rules, evaluated by the installer's
+chalkd, but cannot run that image's renderers, so that image renders its outputs at its first
+boot alone.
 
 ## Limits
 
@@ -121,8 +127,6 @@ cannot run the installed image's renderers, so that image renders its outputs at
 - chalkctl runs only the rules that read no facts. The others run on the node.
 - An effect's `when` compares documents as written, so a change that makes no difference to the
   unit still fires the effect, such as a value spelt another way that means the same.
-- An output of a staged image is checked at its first boot, after the upgrade wrote the image and
-  its config.
 
 ## Related pages
 

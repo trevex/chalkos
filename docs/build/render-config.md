@@ -335,6 +335,10 @@ hash of the files the node still serves.
 It prints the refusal a delivery would print, or the outputs whose files would change, and records
 nothing in the status.
 
+`chalkctl apply-config --staged --dry-run` and `chalkctl upgrade` run the renderers of the image
+the config is for, from that image's store, in `chalkos-check.service`; its journal holds what
+they write to standard error.
+
 ## The renderer runs in a sandbox
 
 chalkd runs every renderer and check as a transient unit with these limits:

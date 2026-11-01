@@ -113,7 +113,6 @@ upgrading node on metal to <new>: cp1, w1
 cp1: installing <new>
 cp1: config unchanged
 cp1: installed <new>, which boots next as chalkos_2+3.efi
-cp1: <new> renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs
 cp1: cordoned, evicted <n> pods, kept <n>
 cp1: rebooting into <new>
 cp1: runs <new>, found healthy
@@ -122,7 +121,6 @@ w1: cordoned, evicted <n> pods, kept <n>
 w1: installing <new>
 w1: config unchanged
 w1: installed <new>, which boots next as chalkos_2+3.efi
-w1: <new> renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs
 w1: rebooting into <new>
 w1: runs <new>, found healthy
 w1: uncordoned
@@ -141,8 +139,8 @@ shows its steps:
 1. `installing` starts sending the image.
 2. The config line says what the node's config changes with the image. `config unchanged` means
    the inventory gives the node the config it runs.
-3. `installed ..., which boots next as ...` names the new boot entry. The image renders its outputs
-   when it first boots, so a failing render makes the node fall back.
+3. `installed ..., which boots next as ...` names the new boot entry. The image checked the config
+   with its own renderers before the node installed it.
 4. `rebooting into` reboots the node.
 5. `runs ..., found healthy` means the boot was blessed.
 

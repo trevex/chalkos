@@ -64,7 +64,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `cmd/chalklab` | The same for `chalklab.NewCommand()`. |
 | `cmd/chalkbuild` | The same for `chalkbuild.NewCommand()`. |
 | `cmd/chalkcfg` | Runs `chalkcfg.NewCommand()` on a node. |
-| `cmd/chalkd` | Dispatches the commands the node's units run: `serve` (chalkd.service), `load-config` (chalkos-config.service), `health` (chalkos-health.service) and each layer's commands as `chalkd <layer> <command>`, such as `chalkd kubernetes prepare` (chalkos-kubernetes.service). Lists the layer plugins compiled into chalkd in `plugins.go`, and loads the credentials `serve` starts with. |
+| `cmd/chalkd` | Dispatches the commands the node's units run: `serve` (chalkd.service), `load-config` (chalkos-config.service), `health` (chalkos-health.service), `check` (an image's checker, which another image's chalkd runs) and each layer's commands as `chalkd <layer> <command>`, such as `chalkd kubernetes prepare` (chalkos-kubernetes.service). Lists the layer plugins compiled into chalkd in `plugins.go`, and loads the credentials `serve` starts with. |
 | `cmd/chalkos-networkd-schema` | Writes the spec schemas of the networkd kinds from systemd's gperf tables, for the image build. |
 | `cmd/chalkos-render` | Renders the outputs of the `lib.chalkos.render.template` and `.documents` renderers and the built-in outputs `networkd` (with `router-networkd` on router images), `router-sysctl`, `router-nftables`, `frr`, `jool` and `unbound` on a node, in an output's sandbox, and a router image's fallback ruleset and FRR config when the image is built. |
 | `cmd/chalkos-rules` | Checks an image when it is built: every rule compiles within the cost limit and reads facts the image declares, the effects act on units and outputs the image has, and every output renders its examples and passes its check. |
@@ -89,9 +89,10 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `chalkd/layers/router` | chalkd's router layer: RouterService, with the state of the node's FRR, Jool and Unbound and the kernel's routes. |
 | `chalkd/renewal` | Renews a certificate, or a set of them, once it is due, for the node certificate and a layer's own; without anything to renew it with, it logs once that the certificate is due. |
 | `chalklab` | The chalklab command tree. |
+| `check` | The pure checks of a delivery: translation, change rules, the plan of effects, and `Run`, which `chalkd check` runs for an image that checks its own config. |
 | `client` | Connections to chalkd, each with one way to verify the node: by fingerprint in maintenance mode, by the OS CA otherwise; the names chalkd's status gives certificates and trusted values. |
 | `clustersecrets` | The secrets file: the OS CA and node CA with their keys, the Kubernetes secrets, the recovery secret, the file's age encryption, the rotation of what it holds, and the lock and in-place replacement of the file, which keeps its previous version. |
-| `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. |
+| `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. It also follows a path's links within an image's store, and stops a transient unit or reads why one failed. |
 | `config` | Config documents: parsing, the rules of a set, defaults, the hash, and the translation into the identity the node applies. |
 | `config/slot` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
 | `config/withheld` | Names the kinds the node withholds from its services, Secret and Addon, without importing anything, so chalkcfg shares the list with chalkos-rules and `config`. |
@@ -101,6 +102,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `facts` | Loads the facts change rules read: files, and commands of the image's store run in a sandbox. |
 | `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads. |
 | `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |
+| `imagecheck` | Runs an image's `chalkd check` from the image's own store in a sandboxed transient unit, with the image's store over `/nix/store`, and serves it the node's facts over a Unix socket. |
 | `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
 | `install` | Installs a node in place or from the installer, step by step and repeatable: STATE, the ESP, the UEFI boot entries, wiping the target and the system region's definitions each have a file, and `parts.go` holds the steps of an install from the installer. |
 | `internal/cli` | What the command trees of chalkctl, chalklab, chalkbuild and chalkcfg share: usage errors and their exit status, the root and group commands and positional argument checks. |
@@ -155,13 +157,14 @@ Test helpers live in packages of their own:
 
 ## The node API
 
-The API is defined in three files below `api/chalkos/`: `node/v1/node.proto` holds NodeService,
+The API is defined in four files below `api/chalkos/`: `node/v1/node.proto` holds NodeService,
 which every image serves, and `kubernetes/v1/kubernetes.proto` and `router/v1/router.proto` hold
-the APIs of the Kubernetes and router layers. chalkd serves NodeService over Connect on TCP port
-50000 with mutual TLS, and mounts each compiled layer plugin's service beside it. Which client
-role may call a method, and in which mode, is one table per API: `permissions` in
-`pkg/chalkd/server.go` for NodeService, and each plugin's `Permissions`, such as that of
-`pkg/chalkd/layers/kubernetes`.
+the APIs of the Kubernetes and router layers. `check/v1/check.proto` holds what chalkd and an
+image's checker exchange, which no client calls and the API reference leaves out. chalkd serves
+NodeService over Connect on TCP port 50000 with mutual TLS, and mounts each compiled layer
+plugin's service beside it. Which client role may call a method, and in which mode, is one table
+per API: `permissions` in `pkg/chalkd/server.go` for NodeService, and each plugin's
+`Permissions`, such as that of `pkg/chalkd/layers/kubernetes`.
 
 ```go
 nodev1connect.NodeServiceInfoProcedure: {Modes: layer.AnyMode, Role: pki.RoleReader},

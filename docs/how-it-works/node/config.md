@@ -288,9 +288,9 @@ that deliver config run the same check first, each against the image the config 
   before it drains any node.
 
 chalkd checks again when the config arrives, against the schemas of the image the set is for, and
-refuses an invalid set as a whole. chalkd, not chalkctl, fills in the schemas' defaults in the set
-it keeps, so the slot on STATE holds the complete set while the files stay as short as their
-authors wrote them.
+refuses an invalid set as a whole. An image that does not run checks the set itself, with its own
+chalkd. chalkd, not chalkctl, fills in the schemas' defaults in the set it keeps, so the slot on
+STATE holds the complete set while the files stay as short as their authors wrote them.
 
 Both also check the image's [change rules](../../build/guard-changes.md). chalkd runs every rule.
 chalkctl runs those that read no facts about the node, `validate` without the node's config and

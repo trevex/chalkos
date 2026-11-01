@@ -198,12 +198,18 @@ chalkd evaluates every rule, with its facts, each time it writes a config slot a
 changes anything:
 
 - `chalkctl apply-config` for the running image, with the running image's rules;
-- `chalkctl apply-config --staged` and upgrades, with the rules of the image the slot is for;
+- `chalkctl apply-config --staged` and upgrades, with the rules of the image the slot is for,
+  which that image's own chalkd evaluates;
 - `chalkctl install`, with the rules of the image it installs.
 
-chalkd compiles every image's rules with its own CEL library. An upgrade therefore compiles the
-new image's rules before that image's chalkd runs, and refuses a slot whose rules call a function
-the running chalkd lacks.
+An image checks config for itself before it boots: the node runs the image's `chalkd check`
+with the image's store in place of its own. The image's rules therefore compile with the CEL
+library of the image's chalkd, and may call any function that chalkd has, whatever the running
+image's chalkd has.
+
+An install from the installer is the exception. The installer's chalkd evaluates the installed
+image's rules with its own CEL library, and refuses the install when a rule calls a function it
+lacks. Install with an installer of the same chalkos release as the image.
 
 chalkctl evaluates the rules that read no facts, because the facts are the node's. `chalkctl
 validate` has no running config, so it runs the rules of kinds and the rules of fields that do not
