@@ -82,7 +82,7 @@ still be refused on delivery. A dry run shows that refusal before the delivery:
 $ chalkctl apply-config w1 --secrets secrets.age --dry-run
 w1: config 1 added, 0 removed, 0 changed
 + TimeSync "default"
-w1: config <previous-version> → ec7ca85e562721ea1f8d0368d415bb80dc62819ba0c80857c9c444e4450aba09
+w1: config <previous-version> → <version>
   outputs:  chrony
   effects:  chrony: run chalkos-chrony-reload-sources (output chrony)
             chrony-dhcp: restart chalkos-chrony-dhcp.service (rule)
@@ -93,7 +93,7 @@ The diff comes first, as `--diff` prints it. The plan follows:
 
 | Line | Meaning |
 | --- | --- |
-| `config <old> → <new>` | The config the node runs and the one it would run after the delivery. `none` stands for a node without config. |
+| `config <previous-version> → <version>` | The config the node runs and the one it would run after the delivery. `none` stands for a node without config. |
 | `outputs:` | The outputs whose rendered files would change, or whose documents reference a `Secret` whose value changes. |
 | `effects:` | One line per effect the delivery would take: its actions, in the order the node takes them, and in parentheses what fires it, `output <name>`, `kind <name>` or `rule`. |
 | `storage:` | The storage changes the delivery would make, one line per volume, as a delivery prints them. |
@@ -118,7 +118,8 @@ error goes to standard error with the node's name, and the command ends with a l
 two apart, such as `the config of 1 node is refused: w1; the dry run failed on 1 node: cp1`, and
 exits 1. `--dry-run` refuses `--staged`, `--diff`, `--rollback`, `--confirm`, `--try`,
 `--no-confirm`, `--ignore-unit`, `--force` and the layers' payload flags such as
-`--kubernetes-share`.
+`--kubernetes-share`. It refuses `--address` with several nodes, because the address reaches one
+node.
 
 ## Deliver the config
 
