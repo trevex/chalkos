@@ -53,7 +53,7 @@ func TestWriteKinds(t *testing.T) {
 		"| `spec.password` | secret reference or null | `null` |  |\n",
 		"| `spec.extra` | object, any fields | — | Any fields, as `a|b`. |\n| `spec.labels` |",
 		"| `spec.mode` | `l2` | `\"l2\"` |  |\n| `spec.objects` | list of Kubernetes object | — |  |\n| `spec.password` |",
-		"| `spec.size` | integer from 1 to 100 | — |  |\n",
+		"| `spec.size` | integer from 1 to 100 | — |  |\n| `spec.source` | name of a Volume, or `none` | — |  |\n",
 		"| `spec.taints` | list of object | — |  |\n| `spec.taints[].effect` | one of `NoSchedule`, `NoExecute` | — |  |\n| `spec.taints[].key` | string | required |  |\n",
 		"### Link { #link }\n\nA systemd .link file.\n\n`apiVersion: networkd.chalkos.dev/v1alpha1`\n\n",
 		"| Field | networkd section | Keys |\n| --- | --- | --- |\n| `spec.match` | Match | `macAddress` (MACAddress), `name` (Name) |\n| `spec.sriov` | SR-IOV | `vlanId` (VLANId) |\n",

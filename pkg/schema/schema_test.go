@@ -240,3 +240,27 @@ func TestReadMetadata(t *testing.T) {
 		t.Errorf("version 7: %v", err)
 	}
 }
+
+// A name another kind's references reserve, refused by the not the kinds module adds to
+// metadata.name, says so instead of 'not' failed.
+func TestValidateSaysANameIsReserved(t *testing.T) {
+	doc := `{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"title": "VRF", "type": "object",
+		"properties": {
+			"apiVersion": {"const": "r.example.org/v1"}, "kind": {"const": "VRF"},
+			"metadata": {"type": "object", "properties": {"name": {"type": "string", "not": {"enum": ["default"]}}}, "required": ["name"]},
+			"spec": {"type": "object"}
+		},
+		"x-chalkos-kind": {"group": "r.example.org", "version": "v1", "kind": "VRF", "multiple": true}
+	}`
+	s, err := LoadFiles(map[string][]byte{"r.example.org_v1_VRF.json": []byte(doc)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.Validate(map[string]any{"apiVersion": "r.example.org/v1", "kind": "VRF", "metadata": map[string]any{"name": "default"}, "spec": map[string]any{}})
+	want := `VRF "default": - at '/metadata/name': the name is reserved: fields that reference a VRF take it for something that is no document`
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %s", err, want)
+	}
+}

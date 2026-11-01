@@ -194,7 +194,7 @@ func (s *Schemas) Validate(doc map[string]any) error {
 		if md, ok := doc["metadata"].(map[string]any); ok {
 			name, _ = md["name"].(string)
 		}
-		return fmt.Errorf("%s %q: %s", docKind, name, explain(err))
+		return fmt.Errorf("%s %q: %s", docKind, name, explain(err, docKind))
 	}
 	return nil
 }
@@ -316,18 +316,28 @@ func key(apiVersion, kind string) Kind {
 // explain renders a schema validation error as its leaf causes alone, one per line, dropping the
 // "jsonschema validation failed with ..." header the library puts on every error, and the
 // allOf/anyOf/$ref nodes that group the causes without saying anything of their own.
-func explain(err error) string {
+func explain(err error, docKind string) string {
 	verr, ok := err.(*jsonschema.ValidationError)
 	if !ok {
 		return err.Error()
 	}
 	var lines []string
 	for _, leaf := range leafCauses(verr) {
-		lines = append(lines, "- "+leaf.Error())
+		lines = append(lines, "- "+leafText(leaf, docKind))
 	}
 	// The causes come in the order the library walks maps in, which varies from run to run.
 	slices.Sort(lines)
 	return strings.Join(lines, "\n")
+}
+
+// leafText is what explain says of a failed assertion of a document of docKind. The kinds module
+// refuses the names that references to a kind reserve with a not on metadata.name, of which the
+// library says only that 'not' failed.
+func leafText(e *jsonschema.ValidationError, docKind string) string {
+	if _, ok := e.ErrorKind.(*kind.Not); ok && slices.Equal(e.InstanceLocation, []string{"metadata", "name"}) {
+		return "at '/metadata/name': the name is reserved: fields that reference a " + docKind + " take it for something that is no document"
+	}
+	return e.Error()
 }
 
 // leafCauses walks e's causes down to the assertions that actually failed. For an anyOf — the

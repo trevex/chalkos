@@ -44,6 +44,10 @@
           }
         },
         "size": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "source": {
+          "type": "string",
+          "x-chalkos-ref": { "apiVersion": "storage.chalkos.dev/v1alpha1", "kind": "Volume", "reserved": ["none"] }
+        },
         "taints": {
           "type": "array",
           "items": {

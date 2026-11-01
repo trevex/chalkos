@@ -305,6 +305,8 @@ func typeOf(root, s map[string]any) string {
 	switch {
 	case isKeyRef(s):
 		return "secret reference"
+	case s["x-chalkos-ref"] != nil:
+		return refType(asMap(s["x-chalkos-ref"]))
 	case s["x-chalkos-kubernetes-object"] == true:
 		return "Kubernetes object"
 	case s["const"] != nil:
@@ -469,6 +471,20 @@ func props(s map[string]any) map[string]any { return asMap(s["properties"]) }
 // isKeyRef tells whether s is a secretRef: an object x-chalkos-ref marks as naming a key of a
 // Secret.
 func isKeyRef(s map[string]any) bool { return asMap(s["x-chalkos-ref"])["key"] == true }
+
+// refType describes a reference to a document: the kind it names, and the names it reserves,
+// which the field takes as they are.
+func refType(ref map[string]any) string {
+	out := "name of a " + display(ref["kind"])
+	var reserved []string
+	for _, n := range asSlice(ref["reserved"]) {
+		reserved = append(reserved, "`"+display(n)+"`")
+	}
+	if len(reserved) > 0 {
+		out += ", or " + strings.Join(reserved, ", ")
+	}
+	return out
+}
 
 func asMap(v any) map[string]any {
 	m, _ := v.(map[string]any)
