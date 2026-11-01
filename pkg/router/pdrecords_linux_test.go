@@ -20,11 +20,11 @@ import (
 func TestParseKea6Pools(t *testing.T) {
 	got, err := ParseKea6Pools("access", []byte(`{"Dhcp6": {"subnet6": [
 		{"interface": "lan0", "subnet": "2001:db8:1::/64"},
-		{"interface": "cust0", "pd-pools": [{"prefix": "2001:db8:100::", "prefix-len": 40, "delegated-len": 56}]}]}}`))
+		{"interface": "cust0", "valid-lifetime": 7200, "pd-pools": [{"prefix": "2001:db8:100::", "prefix-len": 40, "delegated-len": 56}]}]}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []PDPool{{VRF: "access", Link: "cust0", Range: netip.MustParsePrefix("2001:db8:100::/40"), Length: 56}}
+	want := []PDPool{{VRF: "access", Link: "cust0", Range: netip.MustParsePrefix("2001:db8:100::/40"), Length: 56, Valid: 2 * time.Hour}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("pools = %v, want %v", got, want)
 	}
@@ -159,5 +159,21 @@ func TestReadPDRecordsLimit(t *testing.T) {
 	routes, err := ReadPDRecords(dir, pools, now)
 	if !errors.Is(err, ErrTooManyPDRecords) || len(routes) != MaxPDRecords {
 		t.Errorf("%d routes, %v", len(routes), err)
+	}
+}
+
+// A route ends with its record, and at the latest when a lease of its pool would, should a record
+// last longer.
+func TestReadPDRecordsValid(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Unix(1_800_000_000, 0)
+	writeRecords(t, dir, map[string]string{
+		"cust0_2001:db8:100::_56":     "fe80::1 " + strconv.FormatInt(now.Unix()+3600, 10) + "\n",
+		"cust0_2001:db8:100:100::_56": "fe80::1 " + strconv.FormatInt(now.Unix()+300, 10) + "\n",
+	})
+	pools := []PDPool{{VRF: "access", Link: "cust0", Range: netip.MustParsePrefix("2001:db8:100::/40"), Length: 56, Valid: 10 * time.Minute}}
+	routes, err := ReadPDRecords(dir, pools, now)
+	if err != nil || len(routes) != 2 || !routes[0].Ends.Equal(now.Add(10*time.Minute)) || !routes[1].Ends.Equal(now.Add(5*time.Minute)) {
+		t.Errorf("routes = %v, %v", routes, err)
 	}
 }

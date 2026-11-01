@@ -34,11 +34,12 @@ const (
 const PDProtocol = 65
 
 // PDPool is a range that an IPv6 subnet of a config of the output kea delegates prefixes of
-// Length from to the clients on its link, in the VRF VRF.
+// Length from to the clients on its link, in the VRF VRF, for leases of Valid at most.
 type PDPool struct {
 	VRF, Link string
 	Range     netip.Prefix
 	Length    int
+	Valid     time.Duration
 }
 
 // ParseKea6Pools reads the ranges of delegated prefixes of a DHCPv6 config of the output kea,
@@ -48,6 +49,7 @@ func ParseKea6Pools(vrf string, data []byte) ([]PDPool, error) {
 		Dhcp6 struct {
 			Subnet6 []struct {
 				Interface string `json:"interface"`
+				Valid     uint32 `json:"valid-lifetime"`
 				PDPools   []struct {
 					Prefix    string `json:"prefix"`
 					Length    int    `json:"prefix-len"`
@@ -70,7 +72,7 @@ func ParseKea6Pools(vrf string, data []byte) ([]PDPool, error) {
 			if err != nil {
 				return nil, fmt.Errorf("read Kea's config: %w", err)
 			}
-			out = append(out, PDPool{VRF: vrf, Link: s.Interface, Range: r, Length: p.Delegated})
+			out = append(out, PDPool{VRF: vrf, Link: s.Interface, Range: r, Length: p.Delegated, Valid: time.Duration(s.Valid) * time.Second})
 		}
 	}
 	return out, nil
@@ -114,7 +116,7 @@ func pdRecordName(name string) (string, netip.Prefix, bool) {
 
 // pdRoute is the route of the record of the link and the prefix that holds data, and whether it
 // is one: a link-local address and an end after now, of a prefix a pool of pools delegates on
-// the link. The route ends with the lease.
+// the link. The route ends with the lease, and at the latest when a lease of the pool would.
 func pdRoute(link string, prefix netip.Prefix, data []byte, pools []PDPool, now time.Time) (PDRoute, bool) {
 	r := PDRoute{Link: link, Prefix: prefix}
 	fields := strings.Fields(string(data))
@@ -136,6 +138,9 @@ func pdRoute(link string, prefix netip.Prefix, data []byte, pools []PDPool, now 
 	for _, p := range pools {
 		if p.Link == link && p.Length == prefix.Bits() && p.Range.Contains(prefix.Addr()) {
 			r.VRF = p.VRF
+			if p.Valid > 0 && r.Ends.After(now.Add(p.Valid)) {
+				r.Ends = now.Add(p.Valid)
+			}
 			return r, true
 		}
 	}
