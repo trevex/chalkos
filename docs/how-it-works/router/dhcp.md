@@ -26,7 +26,7 @@ then needs no local build of Kea, which the binary cache does not hold in this f
 `true` by default, decides whether a router image carries the relay. An image built with it
 `false` has no dnsmasq, no output or effect `dhcp-relay`, no relays or
 `chalkos-dhcp-relays.service`, no user `dnsmasq` and no kind `DHCPRelay`. dnsmasq comes from the
-binary cache and adds 0.7 MiB to the image's store.
+binary cache and adds about 0.3 MiB to the image's compressed store.
 
 ## The output kea renders a server per VRF
 

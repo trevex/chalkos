@@ -97,7 +97,7 @@ variants.edge = {
 | [`chalkos.router.dhcpRelay.enable`](../reference/image-options.md#chalkosrouterdhcprelayenable) | dnsmasq | `DHCPRelay` |
 
 The firewall, VRFs, policy routing and the kernel's forwarding settings run no daemon of their
-own, so every router image carries them. A metal router image with every feature takes 319 MiB of
+own, so every router image carries them. A metal router image with every feature takes 320 MiB of
 store; one without all five takes 205 MiB. FRR accounts for 97 MiB of the difference.
 
 The binary cache does not hold Kea built without its database backends, so the first build of a
