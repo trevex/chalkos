@@ -118,6 +118,11 @@ After an upgrade with `--no-reboot`, the staged image keeps a config of its own.
 `chalkctl apply-config --staged --dry-run` has the staged image check the config and changes
 nothing.
 
+Config for an image that is not installed yet can wait on the node. Without a staged image,
+`chalkctl apply-config --staged` holds the config pending, and the next upgrade gives it to the
+new image, which checks it before the node installs anything. An operator can then run that
+upgrade without the secrets file.
+
 ## chalkctl status shows the outputs
 
 `chalkctl status` shows the image a node booted and whether the boot was found healthy. It also

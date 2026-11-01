@@ -237,6 +237,47 @@ A change to the running image that adds a volume the staged image's config lacks
 Once the volume exists, the staged image's config would count as removing it. Deliver the change
 with `--staged` first, which creates the volume, then without.
 
+## Prepare config for the next upgrade
+
+A node can hold config for an image it has not installed yet, so the config and the image that
+accepts it arrive together. On a node without a staged image, `--staged` stores the config as the
+node's pending config:
+
+```console
+$ chalkctl apply-config w1 --staged --secrets secrets.age
+w1: config 1 added, 0 removed, 0 changed
+w1 holds config <version> pending, unchecked; the next upgrade checks it against its image
+```
+
+chalkctl checks the files against the node's image in the inventory, which is the image the next
+upgrade installs. The node only parses them, because it has no image to check them against yet.
+Another `--staged` replaces the pending config, and its diff compares with the pending config.
+
+The next upgrade that carries no config of its own, such as one run with an operator client file,
+gives the new image the pending config in place of the running one. The image checks it with its
+own chalkd before the node installs anything. An upgrade that carries config, run with the secrets
+file and an inventory, replaces the pending config. In both cases the node removes the pending
+config once the new image is staged to boot next. When the image refuses the pending config, the
+upgrade fails with `the pending config <version> does not suit the image: ...`, and the node keeps
+the pending config. An upgrade that fails after the check, while the node activates the image's
+boot entry, keeps it too.
+
+The node stores a pending config without the fallback secret. A pending config that adds an
+encrypted volume therefore needs an upgrade that carries the config from the inventory, which
+sends the secret along.
+
+A pending config leaves the running image alone. `apply-config` without `--staged` still delivers
+to the running image, and warns:
+`w1 holds config <version> pending for its next upgrade, which takes it in place of the running config; apply-config --staged --discard w1 drops it`.
+
+`--dry-run` with `--staged` reports that the node would hold the config pending, and stores
+nothing. `--staged --discard` removes the pending config and needs no inventory:
+
+```console
+$ chalkctl apply-config w1 --staged --discard --secrets secrets.age
+w1 dropped its pending config <version>
+```
+
 ## Check that it worked
 
 `chalkctl status` shows the config the node runs and whether it is the inventory's:
@@ -478,8 +519,13 @@ it runs delivered again, which removes the record as well.
 - `w1 runs config <version> on trial until <deadline>; ...`: a trial is open on the node. Confirm
   it or roll it back first, as [A trial holds back other changes](#a-trial-holds-back-other-changes)
   describes.
-- `no image is staged to boot next; apply the config to the running image`: `--staged` found no
-  staged image. Run the command without it.
+- `the pending config <version> does not suit the image: ...`: the image an upgrade installs
+  refused the config the node held pending. Change the files and run
+  `chalkctl apply-config --staged w1` again, or remove the pending config with
+  `--staged --discard`.
+- `the pending config <version> does not suit the image: ...; a pending config is kept without the fallback secret, ...`:
+  the pending config adds an encrypted volume, which needs the fallback secret. Upgrade with the
+  config from the inventory and the secrets file.
 - `--staged delivers config alone; deliver the Kubernetes share to the running image`: `--staged`
   and `--kubernetes-share` do not combine.
 - `the image <hash> predates chalkd check; it cannot check its config`: the staged image, or the

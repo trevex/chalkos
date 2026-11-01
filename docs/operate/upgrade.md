@@ -222,6 +222,16 @@ Without an inventory, chalkctl has no config to send. An upgrade with `--image` 
 `--address <node>=<address>`, run outside the inventory's directory, prints
 `<node>: no inventory to compare the config with; the node carries its own over` for each node.
 
+A node can hold a pending config, which `chalkctl apply-config --staged` stores on a node without
+a staged image. An upgrade that sends no config gives the new image the pending config in place of
+the running one, and the run prints
+`<node>: the image gets the pending config <version>, which it checks first`. An upgrade that
+delivers config prints `<node>: the inventory's config replaces the pending config <version>`.
+The node removes the pending config once the new image is staged to boot next. An upgrade that
+fails before that, such as one whose image refuses the pending config, keeps it.
+[Prepare config for the next upgrade](change-config.md#prepare-config-for-the-next-upgrade)
+describes how to hold config pending.
+
 An image the run leaves staged, with `--no-reboot`, keeps its own config until the node boots it.
 [Deliver config to a staged image](change-config.md#deliver-config-to-a-staged-image) changes that
 config.

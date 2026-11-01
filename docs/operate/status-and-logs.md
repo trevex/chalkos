@@ -77,6 +77,12 @@ parentheses say otherwise when they differ:
 `staged config <version> (...)`, the config that image boots with. Its parentheses name
 `chalkctl apply-config --staged w1` when it differs.
 
+A node that holds config for its next upgrade adds
+`pending config <version> (unchecked, since <time>; the next upgrade checks it against its image)`.
+The time is when the node stored the config, in RFC 3339.
+[Prepare config for the next upgrade](change-config.md#prepare-config-for-the-next-upgrade)
+explains the pending config.
+
 `previous config <version> (apply-config --rollback restores it)` names the config the running
 image ran before the last delivery.
 [Roll back a config change](change-config.md#roll-back-a-config-change) delivers it again. The line

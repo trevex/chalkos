@@ -348,6 +348,13 @@ At every boot, `chalkos-config.service` loads the slot of the image the kernel c
   [fallback](boot-and-rollback.md) or `upgrade --rollback` boots it with the config it ran.
 - `apply-config` writes the slot of the running image, and `apply-config --staged` the slot of the
   image an upgrade with `--no-reboot` staged to boot next. Nothing restarts for the staged slot.
+- `apply-config --staged` on a node without a staged image writes the pending slot
+  `/state/config/pending` instead: the documents as delivered and their version, with Secrets
+  readable by root alone, and no defaults or identity. No boot loads it, and nothing checks it
+  until the next upgrade gives it to its image. That image checks it, and the upgrade writes it
+  to the image's slot unless the upgrade carries config of its own. The upgrade removes the
+  pending slot either way, once the image is staged to boot next. The pending slot's name is no
+  root hash, so an upgrade's removal of other images' slots leaves it.
 - `apply-config` keeps the config it replaces as the slot's previous config,
   `/state/config/.<root-hash>.previous`, one level deep. `apply-config --rollback` delivers that
   config again through the same checks, storage changes and effects as any delivery, and the config
@@ -356,7 +363,8 @@ At every boot, `chalkos-config.service` loads the slot of the image the kernel c
 - An install, an upgrade and `apply-config --staged` write a slot without a previous config. An
   upgraded node therefore has no previous config until its first delivery.
 - An upgrade removes the slot of every image no UKI on the ESP boots any more, together with its
-  previous config, so a node holds at most two slots, one for each of its images.
+  previous config, so a node holds at most two image slots, one for each of its images, besides
+  a pending slot.
 
 An image whose slot is missing boots without config: `chalkos-config` fails, the health check
 fails with it, and a counted boot falls back. `chalkctl apply-config` on the running image warns
@@ -420,11 +428,11 @@ describes.
 
 The config is the image's; the machine state is the node's. The machine state is what a node keeps
 outside the slots, once for all its images: `storage.json`, the storage as applied, with the disks
-and partitions it is pinned to, and the node certificate and the OS CAs it trusts. Every write of a
-slot (install, upgrade, `apply-config` and `apply-config --staged`) checks its config against the
-[change rules](../../build/guard-changes.md) of the image the slot is for. The rules compare it with
-the running image's config and read the machine state from facts. The built-in storage kinds'
-rules take:
+and partitions it is pinned to, and the node certificate and the OS CAs it trusts. Every write of
+an image's slot (install, upgrade, `apply-config` and `apply-config --staged`) checks its config
+against the [change rules](../../build/guard-changes.md) of the image the slot is for. The rules
+compare it with the running image's config and read the machine state from facts. The built-in
+storage kinds' rules take:
 
 | Change | Takes | What carries it out |
 | --- | --- | --- |
