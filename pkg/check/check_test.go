@@ -59,7 +59,7 @@ func testImage(t *testing.T, render string) Image {
 // compares with, as Run of base on img leaves it.
 func running(t *testing.T, img Image, f rules.Facts) Input {
 	t.Helper()
-	res, err := Run(context.Background(), img, Input{Node: "n1", Delivered: config.Redact(parse(t, base)), Facts: f})
+	res, err := Run(context.Background(), img, Input{Node: "n1", Delivered: config.Redact(parse(t, base)), Facts: fixed(f)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func running(t *testing.T, img Image, f rules.Facts) Input {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Input{Node: "n1", Old: res.Documents, Facts: f, Compare: []Comparison{{
+	return Input{Node: "n1", Old: res.Documents, Facts: fixed(f), Compare: []Comparison{{
 		Documents: res.Documents, Hashed: true, Facts: f, OldFacts: f, Outputs: res.Staged.States(), Kinds: kinds,
 	}}}
 }
@@ -148,7 +148,7 @@ func TestRunPlansARotatedSecret(t *testing.T) {
 // Run returns hold the value's hash.
 func TestRunReadsNoSecretValue(t *testing.T) {
 	img := testImage(t, `cat > "$OUT/demo.json"`)
-	res, err := Run(context.Background(), img, Input{Node: "n1", Delivered: config.Redact(parse(t, base))})
+	res, err := Run(context.Background(), img, Input{Node: "n1", Delivered: config.Redact(parse(t, base)), Facts: fixed(&facts{})})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestRunRefuses(t *testing.T) {
 			f := &facts{values: map[string]any{"frozen": tc.frozen}}
 			in := running(t, img, f)
 			if tc.broken {
-				in.Facts = &facts{err: errors.New("share.json is not JSON")}
+				in.Facts = fixed(&facts{err: errors.New("share.json is not JSON")})
 			}
 			demo := img.Outputs["demo"]
 			demo.Render = script(t, tc.render)
@@ -228,4 +228,42 @@ func TestRunAsksForTheFactsRulesRead(t *testing.T) {
 			t.Errorf("a config of %d documents asked for %v", len(in.Delivered), f.asked)
 		}
 	}
+}
+
+// With Storage, Run checks the config against the storage kinds' rules alone and renders
+// nothing: a Demo's frozen name and a renderer that fails do not refuse it, and it gives the
+// translation without staged outputs.
+func TestRunChecksStorageAlone(t *testing.T) {
+	img := testImage(t, `exit 3`)
+	in := running(t, testImage(t, `cat > "$OUT/demo.json"`), &facts{values: map[string]any{"frozen": true}})
+	in.Delivered = config.Redact(parse(t, strings.Replace(base, "name: first", "name: second", 1)))
+	in.Storage = true
+	res, err := Run(context.Background(), img, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Staged != nil || len(res.Documents) != 3 || len(res.Identity) == 0 {
+		t.Errorf("result = %+v", res)
+	}
+}
+
+// A config refused by its rules or its outputs still gives its translation, whose storage a
+// caller names in the refusal; one refused by its translation gives none.
+func TestRunGivesTheTranslationWithARefusal(t *testing.T) {
+	img := testImage(t, `exit 3`)
+	in := running(t, testImage(t, `cat > "$OUT/demo.json"`), &facts{})
+	in.Delivered = config.Redact(parse(t, base))
+	res, err := Run(context.Background(), img, in)
+	if r := new(Refusal); !errors.As(err, &r) || r.Stage != StageOutputs || len(res.Identity) == 0 {
+		t.Errorf("Run = %+v, %v; want an outputs refusal with the identity", res, err)
+	}
+	in.Delivered = config.Redact(parse(t, base+"---\napiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: one}\nspec: {name: twice}\n"))
+	if res, err := Run(context.Background(), img, in); err == nil || res.Identity != nil {
+		t.Errorf("Run = %+v, %v; want a refusal without the identity", res, err)
+	}
+}
+
+// fixed gives f whatever config the check is of.
+func fixed(f rules.Facts) func(next, old []config.Document) rules.Facts {
+	return func([]config.Document, []config.Document) rules.Facts { return f }
 }

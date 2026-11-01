@@ -1303,7 +1303,7 @@ func TestApplyConfigRefusesAsTheChecker(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, checked := check.Run(context.Background(), img, check.Input{Node: "n1", Delivered: config.Redact(docs)})
+			_, checked := check.Run(context.Background(), img, check.Input{Node: "n1", Delivered: config.Redact(docs), Facts: func(_, _ []config.Document) rules.Facts { return nil }})
 			var r *check.Refusal
 			if !errors.As(checked, &r) || r.Stage != tc.stage {
 				t.Fatalf("check.Run: %v", checked)

@@ -33,15 +33,19 @@ type Image struct {
 // Input is a config to check for the node called Node:
 //   - Delivered are the documents as delivered, and Old the documents of the config they replace,
 //     with their defaults; nil at an install. The secret values of both are hashed.
-//   - Facts gives the node's facts, which it loads when a rule first reads one.
+//   - Facts gives the node's facts for a check of the translated documents against Old, which
+//     command facts read; it loads a fact when a rule first reads it.
 //   - Compare are what the effects compare the config with: the config the node runs, or a
 //     baseline and what the deliveries that failed since applied.
+//   - Storage checks the config against the storage kinds' rules alone, as a config that passed
+//     every check once is checked again for a change of the node's storage.
 type Input struct {
 	Node      string
 	Delivered []config.Document
 	Old       []config.Document
-	Facts     rules.Facts
+	Facts     func(next, old []config.Document) rules.Facts
 	Compare   []Comparison
+	Storage   bool
 }
 
 // Result is a config that passed: its documents with their defaults and their secret values
@@ -80,23 +84,34 @@ func (r *Refusal) Error() string { return r.Message }
 
 // Run checks in as img checks it: it translates in.Delivered, runs the image's change rules
 // against in.Old and every output's renderer and check, and plans the effects. A refused config
-// is a *Refusal; any other error is the image's own failure.
+// is a *Refusal; any other error is the image's own failure. A config refused after its
+// translation still gives the translation, whose storage a caller names in the refusal.
+//
+// With in.Storage, only the rules of the storage kinds run, and nothing renders or plans: Staged
+// is nil.
 func Run(ctx context.Context, img Image, in Input) (Result, error) {
 	tr, err := Translate(in.Node, in.Delivered, img.Schemas, img.Target)
 	if err != nil {
 		return Result{}, &Refusal{Stage: StageConfig, Message: ConfigRefusal(err)}
 	}
-	failures, err := Rules(img.Rules, in.Node, tr.Documents, in.Old, in.Facts)
+	set := img.Rules
+	if in.Storage {
+		set = set.Of(config.StorageAPI)
+	}
+	failures, err := Rules(set, in.Node, tr.Documents, in.Old, in.Facts(tr.Documents, in.Old))
 	if err != nil {
-		return Result{}, &Refusal{Stage: StageRules, Message: err.Error()}
+		return Result{Translated: tr}, &Refusal{Stage: StageRules, Message: err.Error()}
 	}
 	if len(failures) > 0 {
-		return Result{}, &Refusal{Stage: StageRules, Message: rules.Refusal(failures, in.Node), Failures: failures}
+		return Result{Translated: tr}, &Refusal{Stage: StageRules, Message: rules.Refusal(failures, in.Node), Failures: failures}
+	}
+	if in.Storage {
+		return Result{Translated: tr}, nil
 	}
 	staged, refused := img.Render.Render(ctx, img.Outputs, outputs.Input{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Hashed: true})
 	if len(refused) > 0 {
 		staged.Discard()
-		return Result{}, &Refusal{Stage: StageOutputs, Message: outputs.Refusal(refused)}
+		return Result{Translated: tr}, &Refusal{Stage: StageOutputs, Message: outputs.Refusal(refused)}
 	}
 	o, warnings, err := Due(img.Effects, Delivery{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Outputs: staged.States()}, in.Compare)
 	if err != nil {
