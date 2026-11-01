@@ -8,7 +8,6 @@ import (
 	"log"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"connectrpc.com/connect"
 
@@ -33,7 +32,8 @@ import (
 // An operator may upgrade, but only an admin may deliver config with the upgrade, as ApplyConfig
 // needs: config names the node's Addons, networks and volumes, and what an operator may not
 // deliver to the running image it must not deliver to the next one either. Without config the
-// node carries the running image's over.
+// node gives the image its pending config, which an admin's apply-config --staged held, or else
+// carries the running image's over.
 //
 // An image the header names in a registry is pulled by the digest it names, with the credentials
 // of the config's Registry of its host, and checked against the header as a streamed one.
@@ -42,6 +42,8 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
 	}
 	defer s.upgrading.Unlock()
+	// What an earlier upgrade's stageConfig noted never names this one's pending config.
+	s.stagedConfig = imageConfig{}
 	if err := s.refuseOnTrialLocking("an upgrade"); err != nil {
 		return nil, err
 	}
@@ -127,6 +129,10 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v", err)
 	}
 	s.recordImages(&header)
+	// The image boots next with the config stageConfig gave it, so the pending config it took or
+	// that the upgrade's config replaced goes. An image the node runs already or the known-good
+	// image kept with its config never had its slot written, and the pending config stays.
+	s.dropStagedPending(img.GetRootHash())
 	resp := &nodev1.UpgradeResponse{AlreadyInstalled: res.AlreadyInstalled, AlreadyStaged: res.AlreadyStaged, Entry: res.Entry}
 	if res.AlreadyInstalled {
 		log.Printf("%x runs already", img.GetRootHash())
@@ -158,37 +164,32 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 }
 
 // stageConfig writes the config slot of the image an upgrade installs, whose store is st with the
-// root hash, through writeSlot. The config is the one text delivers, or else the running slot's
-// documents as they were delivered. secret is the fallback secret a new encrypted volume is
-// enrolled with. It runs once the store is written to the inactive slot, before the image becomes
-// the next boot, and again for an image that boots next already.
+// root hash, through writeSlot. The config is the one text delivers, or else the node's pending
+// config, or else the running slot's documents as they were delivered, as upgradeConfig chooses.
+// secret is the fallback secret a new encrypted volume is enrolled with. Once the slot is written,
+// s.stagedConfig notes which pending config the image took or the upgrade's config replaced, which
+// Upgrade drops once the image is staged: until then the image may still fail to become the next
+// boot, and the pending config waits for the upgrade after. A refusal keeps it, for apply-config
+// --staged to replace. It runs once the store is written to the inactive slot, before the image
+// becomes the next boot, and again for an image that boots next already.
 func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platform string, rootHash []byte, text, secret string) error {
 	// ApplyConfig writes the slots and changes the machine under the same lock.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, running, found, err := s.runningSlot()
+	c, err := s.upgradeConfig(text)
 	if err != nil {
-		return plain(err)
+		return err
 	}
-	docs := running.Delivered
-	if text != "" {
-		if docs, err = config.Parse(strings.NewReader(text)); err != nil {
-			return fmt.Errorf("parse the config: %w", err)
-		}
-	} else if !found || len(docs) == 0 {
-		return errors.New("the node holds no config to carry over to the image; upgrade with the config from an inventory, which needs the admin role")
-	}
-	warnings, err := s.writeSlot(ctx, st, system, platform, rootHash, docs, secret)
+	warnings, err := s.writeSlot(ctx, st, system, platform, rootHash, c.docs, secret)
 	if err != nil {
-		if text == "" {
-			return fmt.Errorf("the node's config does not suit the image: %w; upgrade with config the image accepts, from an inventory, which needs the admin role", plain(err))
-		}
-		return plain(err)
+		return c.refused(err, s.nodeName())
 	}
 	// An upgrade's answer has no warnings; the journal keeps them.
 	for _, w := range warnings {
 		log.Printf("the config of %x: %s", rootHash, w)
 	}
+	c.docs = nil
+	s.stagedConfig = c
 	return nil
 }
 

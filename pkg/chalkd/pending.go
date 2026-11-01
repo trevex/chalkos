@@ -1,8 +1,10 @@
 package chalkd
 
 import (
+	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -79,4 +81,102 @@ func (s *Server) pendingConfig() (*nodev1.PendingConfig, error) {
 		return nil, fmt.Errorf("read when the pending config was stored: %w", err)
 	}
 	return &nodev1.PendingConfig{Version: version, Since: timestamppb.New(since)}, nil
+}
+
+// configSource is where the config an upgrade gives its image comes from.
+type configSource int
+
+const (
+	// fromUpgrade is config the upgrade carries.
+	fromUpgrade configSource = iota
+	// fromPending is the node's pending config.
+	fromPending
+	// fromRunning is the running slot's config, carried over.
+	fromRunning
+)
+
+// imageConfig is the config an upgrade gives the image it installs.
+type imageConfig struct {
+	docs []config.Document
+	from configSource
+	// pending is the version of the node's pending config, used or not; empty without one.
+	pending string
+}
+
+// upgradeConfig is the config an upgrade gives the image it installs, the first there is of:
+// text, the config the upgrade carries; the node's pending config; the running slot's documents
+// as they were delivered. The caller holds s.mu.
+func (s *Server) upgradeConfig(text string) (imageConfig, error) {
+	stored, held, err := slot.Read(slot.Pending(s.Loader.Slots))
+	if err != nil {
+		return imageConfig{}, fmt.Errorf("read the pending config: %w", err)
+	}
+	c := imageConfig{pending: stored.Version}
+	switch {
+	case text != "":
+		if c.docs, err = config.Parse(strings.NewReader(text)); err != nil {
+			return imageConfig{}, fmt.Errorf("parse the config: %w", err)
+		}
+		return c, nil
+	case held:
+		c.docs, c.from = stored.Delivered, fromPending
+		return c, nil
+	}
+	_, running, found, err := s.runningSlot()
+	if err != nil {
+		return imageConfig{}, plain(err)
+	}
+	if !found || len(running.Delivered) == 0 {
+		return imageConfig{}, errors.New("the node holds no config to carry over to the image; upgrade with the config from an inventory, which needs the admin role")
+	}
+	c.docs, c.from = running.Delivered, fromRunning
+	return c, nil
+}
+
+// noFallbackSecret ends the refusal of a config that adds an encrypted volume without the fallback
+// secret it is enrolled with: the built-in Volume rule's, which the image's checker gives, and
+// chalkd's own checkFallback's.
+const noFallbackSecret = "no fallback secret was sent"
+
+// refused is the error of an upgrade whose image refused the config c, which err says why,
+// naming where the config came from and what to do about it. name is the node's name.
+func (c imageConfig) refused(err error, name string) error {
+	switch c.from {
+	case fromUpgrade:
+		return plain(err)
+	case fromRunning:
+		return fmt.Errorf("the node's config does not suit the image: %w; upgrade with config the image accepts, from an inventory, which needs the admin role", plain(err))
+	}
+	// A pending config is kept without the fallback secret, so only an upgrade that carries config
+	// of its own can carry the secret too.
+	if strings.Contains(err.Error(), noFallbackSecret) {
+		return fmt.Errorf("the pending config %s does not suit the image: %w; a pending config is kept without the fallback secret, so upgrade with the config from an inventory, which carries the secret and needs the admin role", c.pending, plain(err))
+	}
+	return fmt.Errorf("the pending config %s does not suit the image: %w; chalkctl apply-config --staged %s replaces it, and chalkctl apply-config --staged --discard %s drops it", c.pending, plain(err), name, name)
+}
+
+// dropStagedPending removes the pending config that s.stagedConfig names: the one the image an
+// upgrade staged took, or the one the config the upgrade carried replaced. That image boots next
+// with its config now, and a later upgrade must not take the pending config. Only now, once the
+// image is staged, may it go: an upgrade that fails after the image's slot was written, as when
+// its UKI fails to activate, keeps it for the upgrade after. The image is staged already, so a
+// failure to remove it does not fail the upgrade: the journal says so, Status keeps naming the
+// pending config, and apply-config --staged --discard drops it. The caller holds s.upgrading.
+func (s *Server) dropStagedPending(rootHash []byte) {
+	c := s.stagedConfig
+	s.stagedConfig = imageConfig{}
+	if c.pending == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := slot.Remove(slot.Pending(s.Loader.Slots)); err != nil {
+		log.Printf("the pending config %s stays, although %x boots next with its config: remove it: %v", c.pending, rootHash, err)
+		return
+	}
+	if c.from == fromPending {
+		log.Printf("the pending config %s went to %x", c.pending, rootHash)
+	} else {
+		log.Printf("the pending config %s is dropped: the upgrade gave %x other config", c.pending, rootHash)
+	}
 }

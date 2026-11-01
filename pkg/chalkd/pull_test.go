@@ -81,12 +81,14 @@ func TestUpgradePullsTheImage(t *testing.T) {
 	header := pulledHeader(t, host)
 	ref := header.GetSource().GetOci().GetReference()
 	for _, tc := range []struct {
-		name, running, config, platform, want string
+		name, running, pending, config, platform, want string
 	}{
 		{name: "with the running config's Registry", running: registryConfig(host)},
 		{name: "with the delivered config's Registry", config: registryConfig(host)},
 		{name: "with the delivered config's Registry over the running one's", running: registryConfig("other.example"), config: registryConfig(host)},
 		{name: "not with the running config's Registry when the upgrade delivers config", running: registryConfig(host), config: registryConfig("other.example"), want: "plain HTTP to " + host + " is refused"},
+		{name: "with the pending config's Registry over the running one's", running: registryConfig("other.example"), pending: registryConfig(host)},
+		{name: "not with the pending config's Registry when the upgrade delivers config", pending: registryConfig(host), config: registryConfig("other.example"), want: "plain HTTP to " + host + " is refused"},
 		{name: "anonymously", running: fmt.Sprintf("apiVersion: oci.chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lab}\nspec: {host: %q, insecure: true}\n", host), want: "UNAUTHORIZED"},
 		{name: "over HTTPS alone without a Registry", want: "plain HTTP to " + host + " is refused: set insecure: true"},
 		{name: "over HTTPS alone without insecure", running: strings.Replace(registryConfig(host), "insecure: true, ", "", 1), want: "plain HTTP to " + host + " is refused: set insecure: true"},
@@ -97,7 +99,7 @@ func TestUpgradePullsTheImage(t *testing.T) {
 			if tc.platform != "" {
 				h.Image.Platform = tc.platform
 			}
-			got, err := upgradeWith(t, c, h, tc.running, tc.config)
+			got, err := upgradeWith(t, c, h, tc.running, tc.pending, tc.config)
 			if tc.want == "" && (err != nil || string(got) != "storehash treeuki") {
 				t.Errorf("upgrade = %v, received %q", err, got)
 			}
@@ -109,8 +111,9 @@ func TestUpgradePullsTheImage(t *testing.T) {
 }
 
 // upgradeWith runs an upgrade of header, which pulls its image, on a node whose running config is
-// running, delivering cfg, and returns what the installation read and the upgrade's error.
-func upgradeWith(t *testing.T, c creds, header *nodev1.UpgradeHeader, running, cfg string) ([]byte, error) {
+// running and whose pending config is pending, when given, delivering cfg, and returns what the
+// installation read and the upgrade's error.
+func upgradeWith(t *testing.T, c creds, header *nodev1.UpgradeHeader, running, pending, cfg string) ([]byte, error) {
 	t.Helper()
 	s, _ := configServer(t)
 	if running != "" {
@@ -119,6 +122,11 @@ func upgradeWith(t *testing.T, c creds, header *nodev1.UpgradeHeader, running, c
 			t.Fatal(err)
 		}
 		if err := slot.Write(slotOf(t, s), slot.Stored{Delivered: docs, Documents: docs, Version: "v1"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if pending != "" {
+		if err := slot.Write(slot.Pending(s.Loader.Slots), slot.Stored{Delivered: parseConfig(t, pending), Version: "p1"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -176,7 +184,7 @@ func TestUpgradePullsThroughAMirror(t *testing.T) {
 			strings.Replace(registryConfig("mirrored.invalid"), "insecure: true, ", "", 1) + mirrorConfig("mirrored.invalid", host, true), "UNAUTHORIZED"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := upgradeWith(t, c, tc.header, "", tc.config)
+			got, err := upgradeWith(t, c, tc.header, "", "", tc.config)
 			if tc.want == "" && (err != nil || string(got) != "storehash treeuki") {
 				t.Errorf("upgrade = %v, received %q", err, got)
 			}

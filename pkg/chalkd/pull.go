@@ -12,14 +12,16 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 // pullParts returns the stream of the store, hash tree and UKI of the image h describes, pulled
 // from ref. newPull pulls it through the Mirror with the Registry documents of the config text
-// delivers, or of the running config when text is empty. A failure to read the running config is
-// a connect error with its own code.
+// delivers, or of the pending or the running config when text is empty, as registryDocuments
+// chooses. A failure to read the pending or the running config is a connect error with its own
+// code.
 func (s *Server) pullParts(ctx context.Context, ref string, h upgrade.Header, text string) (*ociimage.Pull, error) {
 	docs, err := s.registryDocuments(ref, text)
 	if err != nil {
@@ -53,7 +55,9 @@ func newPull(ctx context.Context, ref string, h upgrade.Header, docs []config.Do
 }
 
 // registryDocuments returns the config whose Mirror and Registry documents direct the pull of
-// ref: the config text delivers, or else the running config as it was delivered.
+// ref: the config text delivers, or else the pending config, or else the running config as it
+// was delivered, in the order upgradeConfig chooses the image's config. A pending config may name
+// the registry the image comes from, and the image boots with what it names.
 func (s *Server) registryDocuments(ref, text string) ([]config.Document, error) {
 	if text != "" {
 		docs, err := config.Parse(strings.NewReader(text))
@@ -64,6 +68,13 @@ func (s *Server) registryDocuments(ref, text string) ([]config.Document, error) 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	pending, held, err := slot.Read(slot.Pending(s.Loader.Slots))
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "pull %s: read the pending config: %v", ref, err)
+	}
+	if held {
+		return pending.Delivered, nil
+	}
 	_, running, _, err := s.runningSlot()
 	if err != nil {
 		return nil, failed(connect.CodeOf(err), "pull %s: %v", ref, plain(err))

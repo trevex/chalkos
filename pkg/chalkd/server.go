@@ -175,6 +175,10 @@ type Server struct {
 	installed bool
 	// upgrading is held while an upgrade runs, which changes only the inactive slot and the ESP.
 	upgrading sync.Mutex
+	// stagedConfig is the config the running upgrade gave its image, without its documents, once
+	// stageConfig wrote the image's slot; the upgrade drops the pending config it names once the
+	// image is staged. The upgrade holds upgrading while it is set and read.
+	stagedConfig imageConfig
 	// trialTimer rolls the config on trial back at its deadline; nil without a trial. s.mu guards
 	// it.
 	trialTimer *time.Timer
