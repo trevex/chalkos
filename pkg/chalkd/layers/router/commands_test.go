@@ -86,23 +86,27 @@ func TestDHCP6RoutesOfALinkDown(t *testing.T) {
 	}
 }
 
-// Without the output kea, as in maintenance mode, or without a DHCPv6 config, a run removes no
-// route: the kernel removes the routes when their leases end.
+// Without the output kea, as in maintenance mode, a run removes no route: the kernel removes the
+// routes when their leases end. With the output but no DHCPv6 config, as once a config drops
+// the IPv6 subnets, it removes them.
 func TestDHCP6RoutesWithoutConfigs(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	kernel := &routing.KernelRoute{Destination: "2001:db8:100::/56", Protocol: "dhcp-pd", Table: 500, NextHops: []*routing.NextHop{{Gateway: "fe80::1", Interface: "cust0"}}}
-	for name, dir := range map[string]func(t *testing.T) string{
-		"no output":        func(t *testing.T) string { return filepath.Join(t.TempDir(), "kea") },
-		"no DHCPv6 config": func(t *testing.T) string { return t.TempDir() },
+	for name, c := range map[string]struct {
+		dir  func(t *testing.T) string
+		want []string
+	}{
+		"no output":        {func(t *testing.T) string { return filepath.Join(t.TempDir(), "kea") }, nil},
+		"no DHCPv6 config": {func(t *testing.T) string { return t.TempDir() }, []string{"ip -6 route del 2001:db8:100::/56 table 500 proto 65"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, r := routerNode(t, kernel)
-			s.r.KeaDir = dir(t)
+			s.r.KeaDir = c.dir(t)
 			if err := s.r.dhcp6Routes(context.Background(), now); err != nil {
 				t.Fatal(err)
 			}
-			if len(r.Calls) != 0 {
-				t.Errorf("calls = %q", r.Calls)
+			if !slices.Equal(r.Calls, c.want) {
+				t.Errorf("calls = %q, want %q", r.Calls, c.want)
 			}
 		})
 	}
