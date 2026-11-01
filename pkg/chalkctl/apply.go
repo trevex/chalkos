@@ -97,7 +97,7 @@ func (a *app) applyConfigCommand() *cobra.Command {
 		f.payloadFlags = strings.Join(payloadFlags, " or ")
 		fs.BoolVar(&f.force, "force", false, "with "+f.payloadFlags+", deliver without asking whether the node is revoked")
 	}
-	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the node's image in the inventory; with --dry-run, that image checks it and nothing is kept")
+	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, which checks it with its own chalkd after chalkctl checks it against the node's image in the inventory; with --dry-run, the staged image checks it and nothing is kept")
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "have the node check the config as it checks a delivery, its renderers and facts included, print the diff and what the delivery would change, and change nothing; with --staged, the staged image checks it; takes several nodes")
 	fs.BoolVar(&f.rollback, "rollback", false, "deliver the node's previous config again, the one its image ran before the last delivery, instead of the inventory's")
