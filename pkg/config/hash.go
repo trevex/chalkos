@@ -25,7 +25,7 @@ func Hash(docs []Document) (string, error) {
 func canonical(docs []Document) ([]byte, error) {
 	return sortedJSON(docs, func(d Document) map[string]any {
 		if d.IsSecret() {
-			return hideSecretData(d.Object, hashValues)
+			return hashSecretData(d.Object)
 		}
 		return d.Object
 	})
@@ -52,8 +52,9 @@ func hashJSON(c []byte, err error) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// hideSecretData returns a Secret's object with the values of spec.data hidden by hide.
-func hideSecretData(obj map[string]any, hide func(map[string]any) map[string]any) map[string]any {
+// hashSecretData returns a Secret's object with the values of spec.data hashed by hashValues, as
+// Hash hashes them; a spec.data that is no object stays as it is, which Hash hashes all the same.
+func hashSecretData(obj map[string]any) map[string]any {
 	out := maps.Clone(obj)
 	spec, ok := obj["spec"].(map[string]any)
 	if !ok {
@@ -61,54 +62,62 @@ func hideSecretData(obj map[string]any, hide func(map[string]any) map[string]any
 	}
 	spec = maps.Clone(spec)
 	if data, ok := spec["data"].(map[string]any); ok {
-		spec["data"] = hide(data)
+		spec["data"] = hashValues(data)
 	}
 	out["spec"] = spec
 	return out
 }
 
-// hashValues returns data with each value replaced by the hex SHA-256 of the value, a string as it
-// is and any other value as its JSON, as Hash names a set.
+// hashValues returns data with each value replaced by hashValue of it, as Hash names a set.
 func hashValues(data map[string]any) map[string]any {
 	hidden := make(map[string]any, len(data))
 	for k, v := range data {
-		s, isString := v.(string)
-		if !isString {
-			b, _ := json.Marshal(v)
-			s = string(b)
-		}
-		sum := sha256.Sum256([]byte(s))
-		hidden[k] = hex.EncodeToString(sum[:])
+		hidden[k] = hashValue(v)
 	}
 	return hidden
 }
 
-// hideValues returns data with each value hidden as Redact hides it: a string by its hex SHA-256,
-// as Hash replaces it, and any other value by the zero value of its JSON type, such as 0 for a
-// number. A value that is no string keeps its type, so a schema that refuses it refuses the hidden
-// document with the same message, as a schema's message of a value of the wrong type names the
-// type alone. Secret values are strings, so a document that holds another passes no check, and
-// nothing compares the zero values.
+// hashValue is the hex SHA-256 of v: of a string as it is, of any other value as its JSON.
+func hashValue(v any) string {
+	s, isString := v.(string)
+	if !isString {
+		b, _ := json.Marshal(v)
+		s = string(b)
+	}
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+// hideValues returns data with each value hidden by hideValue, as Redact hides a Secret's.
 func hideValues(data map[string]any) map[string]any {
 	hidden := make(map[string]any, len(data))
 	for k, v := range data {
-		switch v := v.(type) {
-		case string:
-			sum := sha256.Sum256([]byte(v))
-			hidden[k] = hex.EncodeToString(sum[:])
-		case bool:
-			hidden[k] = false
-		case json.Number:
-			hidden[k] = json.Number("0")
-		case []any:
-			hidden[k] = []any{}
-		case map[string]any:
-			hidden[k] = map[string]any{}
-		default:
-			hidden[k] = nil
-		}
+		hidden[k] = hideValue(v)
 	}
 	return hidden
+}
+
+// hideValue hides a value of a Secret as Redact does: a string by its hex SHA-256, as Hash
+// replaces it, and any other value by the zero value of its JSON type, such as 0 for a number,
+// also one Go built as an int or a float64 rather than parsed as a json.Number. A value that is no
+// string keeps its type, so a schema that refuses it refuses the hidden document with the same
+// message, as a schema's message of a value of the wrong type names the type alone. Secret values
+// are strings, so a document that holds another passes no check, and nothing compares the zero
+// values.
+func hideValue(v any) any {
+	switch v := v.(type) {
+	case string:
+		return hashValue(v)
+	case bool:
+		return false
+	case json.Number, float64, float32, int, int64, int32, uint, uint64, uint32:
+		return json.Number("0")
+	case []any:
+		return []any{}
+	case map[string]any:
+		return map[string]any{}
+	}
+	return nil
 }
 
 // KindHashes hashes the documents of each kind in docs, by kind name, together with the Secrets
@@ -181,7 +190,8 @@ func ChangedKinds(before, after []Document, schemas *schema.Schemas) ([]string, 
 }
 
 // hashRedacted is Hash of documents Redact gave: their Secrets' values are hashed already, so it
-// hashes the objects as they are, which for a set without Addons is Hash of the set before Redact.
+// hashes the objects as they are, which for a set without Addons, whose Secret values are strings,
+// is Hash of the set before Redact.
 func hashRedacted(docs []Document) (string, error) {
 	return hashJSON(sortedJSON(docs, func(d Document) map[string]any { return d.Object }))
 }

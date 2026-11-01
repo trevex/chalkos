@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"maps"
 	"reflect"
 	"slices"
@@ -240,5 +241,24 @@ func TestKindHashesHashed(t *testing.T) {
 	rotated, err := KindHashes(parseDocs(t, hashed+strings.Replace(addon, "plain", "other", 1)), s, false)
 	if err != nil || rotated["Addon"] == want["Addon"] || rotated["Demo"] != want["Demo"] {
 		t.Errorf("rotated: %v, %v; before: %v", rotated, err, want)
+	}
+}
+
+// The values of an Addon's Kubernetes Secrets are hashed whatever their type, so a change of a
+// number in stringData, which the API server takes as a string, changes the Addon's kind hash.
+func TestKindHashesSeeAnAddonsNumber(t *testing.T) {
+	s := imageSchemas(t)
+	const addon = "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: apps}\n" +
+		"spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, stringData: {port: 1}}]}\n"
+	before, err := KindHashes(parseDocs(t, addon), s, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := KindHashes(parseDocs(t, strings.Replace(addon, "port: 1", "port: 2", 1)), s, false)
+	if err != nil || after["Addon"] == before["Addon"] {
+		t.Errorf("a number's change: %v -> %v, %v; want the Addon's hash to change", before, after, err)
+	}
+	if text, _ := json.Marshal(Redact(parseDocs(t, addon))[0].Object); !strings.Contains(string(text), `"port":"`+sum("1")+`"`) {
+		t.Errorf("redacted %s, want the number hashed", text)
 	}
 }
