@@ -3,6 +3,7 @@ package chalkd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,7 +100,7 @@ func TestImageCheckRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := s.stageConfig(context.Background(), old, "/nix/store/x", "metal", newImage, baseConfig, "")
-	if err == nil || err.Error() != "the image predates chalkd check; it cannot check its config" {
+	if err == nil || err.Error() != fmt.Sprintf("the image %x predates chalkd check; it cannot check its config", newImage[:6]) {
 		t.Errorf("an image without a checker: %v", err)
 	}
 	s.CheckImage = &recording{run: s.CheckImage, answer: func(res *checkv1.Result) {

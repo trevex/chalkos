@@ -215,7 +215,7 @@ func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform s
 	if err != nil {
 		return slotWrite{}, err
 	}
-	next, err := s.checkWithImage(ctx, st, system, platform, name, imageCheck{delivered: docs, old: running.Documents, secret: secret, writing: rootHash})
+	next, err := s.checkWithImage(ctx, st, system, platform, name, imageCheck{delivered: docs, old: running.Documents, secret: secret, image: rootHash, writing: rootHash})
 	if err != nil {
 		return slotWrite{}, err
 	}

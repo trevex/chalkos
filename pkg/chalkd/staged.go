@@ -3,6 +3,7 @@ package chalkd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -220,11 +221,15 @@ func (s *Server) checkStaged(ctx context.Context, name string, next []config.Doc
 	platform := readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]
 	var refusal *checkv1.Refusal
 	if err := s.readImage(ctx, staged, func(st imageStore, system string) error {
-		res, err := s.runImageCheck(ctx, st, system, platform, name, imageCheck{delivered: held.Delivered, old: next, secret: secret, recorded: &section, storage: true})
+		res, err := s.runImageCheck(ctx, st, system, platform, name, imageCheck{delivered: held.Delivered, old: next, secret: secret, recorded: &section, storage: true, image: staged})
 		refusal = res.GetRefusal()
 		return err
 	}); err != nil {
-		return err
+		code := connect.CodeInternal
+		if ce := new(connect.Error); errors.As(err, &ce) {
+			code = ce.Code()
+		}
+		return failed(code, "check the config of the image %x staged to boot next: %v", staged[:6], plain(err))
 	}
 	if refusal == nil {
 		return nil
