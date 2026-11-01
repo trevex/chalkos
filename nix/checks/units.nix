@@ -1937,16 +1937,26 @@ in
   # MAC address in its DUID, gets its reserved address, the DNS server and the search domain; a
   # home router on cust0, in the VRF access, gets a /56, which chalkos-dhcp6-pd records and
   # chalkos-dhcp6-routes routes in access's table to the home router's link-local address. The
-  # diagnostic dhcp-leases lists both leases. A release removes the record and the route, and an
-  # ended record and one of a prefix no subnet delegates are removed. The dhcp example's
-  # firewall, which opens no DHCPv6, keeps the client from its address.
+  # diagnostic dhcp-leases lists both leases. A release removes the record and the route. The
+  # routes run as root with the unit's capabilities alone and trust no record: an ended record,
+  # one of a prefix no subnet delegates, a link to a record, a FIFO, a record too long and a
+  # records' directory that is a link route nothing, block no run and lose no file. The dhcp
+  # example's firewall, which opens no DHCPv6, keeps the client from its address.
   router-dhcp6 =
     let
       router = checkLib.router.config;
       kea6 = lib.head (lib.splitString " " router.systemd.services.kea-dhcp6.serviceConfig.ExecStart);
       inherit (router.systemd.services.kea-dhcp6.serviceConfig) Environment;
       pdHook = lib.last (lib.splitString " " router.chalkos.outputs.kea.render);
-      routes = router.systemd.services.chalkos-dhcp6-routes.serviceConfig.ExecStart;
+      routesUnit = router.systemd.services.chalkos-dhcp6-routes.serviceConfig;
+      # chalkos-dhcp6-routes as its unit runs it: root with the unit's capabilities alone, and no
+      # longer than the unit lets it.
+      routes = "timeout ${routesUnit.TimeoutStartSec} setpriv --bounding-set=-all,${
+        lib.concatMapStringsSep "," (
+          c: "+" + lib.toLower (lib.removePrefix "CAP_" c)
+        ) routesUnit.CapabilityBoundingSet
+      } --no-new-privs -- ${routesUnit.ExecStart}";
+      records = router.systemd.paths.chalkos-dhcp6-routes.pathConfig.PathChanged;
       firewall = router.systemd.services.chalkos-firewall.serviceConfig.ExecStart;
       dir = router.chalkos.outputs.kea.dir;
       nftDir = router.chalkos.outputs.router-nftables.dir;
@@ -1995,6 +2005,7 @@ in
 
         mkdir -p ${dir} ${nftDir} /var/lib /var/run/dhcpcd /var/db/dhcpcd /var/lib/dhcpcd
         mkdir -m 0750 /run/kea /var/lib/kea
+        mkdir -m 0755 ${records}
         install -m 644 ${goldens}/dhcp6.nft ${nftDir}/ruleset.nft
         ${firewall} || fail "chalkos-firewall did not load the dhcp6 example's ruleset"
         # take <file>: a config of the dhcp6 example's golden, whose hook is the image's.
@@ -2048,11 +2059,11 @@ in
         done
         cpeLL=$(on "$cpe" ip -6 -o addr show dev eth0 scope link | awk '{print $4}' | cut -d/ -f1)
         for try in $(seq 50); do
-          [ -e /var/lib/kea/pd-routes/cust0_2001:db8:100::_56 ] && break
-          [ "$try" != 50 ] || fail "chalkos-dhcp6-pd recorded no prefix: $(ls -A /var/lib/kea/pd-routes 2>&1)"
+          [ -e ${records}/cust0_2001:db8:100::_56 ] && break
+          [ "$try" != 50 ] || fail "chalkos-dhcp6-pd recorded no prefix: $(ls -A ${records} 2>&1)"
           sleep 0.1
         done
-        read -r via _ </var/lib/kea/pd-routes/cust0_2001:db8:100::_56
+        read -r via _ <${records}/cust0_2001:db8:100::_56
         [ "$via" = "$cpeLL" ] || fail "the record routes to $via, not the home router's $cpeLL"
         ${routes} || fail "chalkos-dhcp6-routes failed"
         ip -6 route show table 500 proto 65 | grep -q "^2001:db8:100::/56 via $cpeLL dev cust0 " ||
@@ -2067,17 +2078,40 @@ in
 
         on "$cpe" dhcpcd -6 -k eth0 >/dev/null 2>&1 || true
         for try in $(seq 50); do
-          [ ! -e /var/lib/kea/pd-routes/cust0_2001:db8:100::_56 ] && break
+          [ ! -e ${records}/cust0_2001:db8:100::_56 ] && break
           [ "$try" != 50 ] || fail "the release left the record"
           sleep 0.1
         done
         ${routes} || fail "chalkos-dhcp6-routes failed after the release"
         [ -z "$(ip -6 route show table 500 proto 65)" ] || fail "the release left the route: $(ip -6 route show table 500 proto 65)"
-        echo "fe80::1 $(($(date +%s) - 1))" >/var/lib/kea/pd-routes/cust0_2001:db8:100:100::_56
-        echo "fe80::1 $(($(date +%s) + 60))" >/var/lib/kea/pd-routes/cust0_2001:db9::_56
-        ${routes} || fail "chalkos-dhcp6-routes failed on stale records"
-        [ -z "$(ls -A /var/lib/kea/pd-routes)" ] || fail "stale records are left: $(ls -A /var/lib/kea/pd-routes)"
-        [ -z "$(ip -6 route show table 500 proto 65)" ] || fail "a stale record was routed"
+        # Records that route nothing: ended, of a prefix no subnet delegates, a link to a record, a
+        # FIFO, which no one writes, and a record too long.
+        later=$(($(date +%s) + 60))
+        echo "fe80::1 $(($(date +%s) - 1))" >${records}/cust0_2001:db8:100:100::_56
+        echo "fe80::1 $later" >${records}/cust0_2001:db9::_56
+        mkdir elsewhere
+        echo "fe80::1 $later" >elsewhere/cust0_2001:db8:100:200::_56
+        ln -s "$PWD/elsewhere/cust0_2001:db8:100:200::_56" ${records}/cust0_2001:db8:100:200::_56
+        mkfifo ${records}/cust0_2001:db8:100:300::_56
+        printf 'fe80::1 %s%0200d\n' "$later" 0 >${records}/cust0_2001:db8:100:400::_56
+        before=$(ls -A ${records})
+        ${routes} || fail "chalkos-dhcp6-routes failed or blocked on records that route nothing"
+        [ "$(ls -A ${records})" = "$before" ] || fail "records were removed: $(ls -A ${records})"
+        [ -e elsewhere/cust0_2001:db8:100:200::_56 ] || fail "the record a link names was removed"
+        [ -z "$(ip -6 route show table 500 proto 65)" ] ||
+          fail "a record that routes nothing was routed: $(ip -6 route show table 500 proto 65)"
+        # A records' directory that is a link to another directory is refused whole.
+        mv ${records} records.real
+        mkdir target
+        echo "fe80::1 $later" >target/cust0_2001:db8:100:500::_56
+        echo junk >target/junk
+        ln -s "$PWD/target" ${records}
+        if ${routes} 2>routes.log; then fail "chalkos-dhcp6-routes read a records' directory that is a link"; fi
+        [ "$(ls -A target)" = "$(printf 'cust0_2001:db8:100:500::_56\njunk')" ] ||
+          fail "files of the linked directory were removed: $(ls -A target)"
+        [ -z "$(ip -6 route show table 500 proto 65)" ] || fail "a record of a linked directory was routed"
+        rm ${records}
+        mv records.real ${records}
 
         # Without the opening the client gets nothing.
         install -m 644 ${goldens}/dhcp.nft ${nftDir}/ruleset.nft

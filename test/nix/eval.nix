@@ -1312,7 +1312,8 @@ lib.runTests {
   # again when they stop. chalkos-dhcp starts, reloads and stops them once the VRFs and networkd
   # are up, whenever the output kea or networkd changes, without capabilities, in the group kea,
   # which the diagnostic dhcp-leases runs in. chalkos-dhcp6-routes routes the delegated prefixes
-  # with CAP_NET_ADMIN alone, at boot and whenever a record in /var/lib/kea/pd-routes changes. The
+  # with CAP_NET_ADMIN alone, at boot and whenever a record in /var/lib/chalkos-dhcp6-pd changes,
+  # which kea writes, readable by every user, in a directory of its own in /var/lib. The
   # firewall reads the subnets for DHCPv6's port; Kea's raw sockets of DHCPv4 come before it.
   # Other images run no Kea.
   testRouterDHCP = {
@@ -1372,6 +1373,7 @@ lib.runTests {
             AmbientCapabilities
             CapabilityBoundingSet
             RestrictAddressFamilies
+            ReadWritePaths
             ;
           hookPath =
             builtins.match "KEA_HOOK_SCRIPTS_PATH=/nix/store/[^/]*-chalkos-dhcp6-pd/bin" (
@@ -1391,14 +1393,14 @@ lib.runTests {
             Type
             CapabilityBoundingSet
             RestrictAddressFamilies
-            ReadWritePaths
+            TimeoutStartSec
             ;
           ip = lib.any (p: lib.getName p == "iproute2") routes.path;
           path = {
             inherit (edge.systemd.paths.chalkos-dhcp6-routes) wantedBy;
             inherit (edge.systemd.paths.chalkos-dhcp6-routes.pathConfig) PathChanged;
           };
-          records = lib.elem "d /var/lib/kea/pd-routes 0750 kea kea - -" edge.systemd.tmpfiles.rules;
+          records = lib.elem "d /var/lib/chalkos-dhcp6-pd 0755 kea kea - -" edge.systemd.tmpfiles.rules;
         };
         reconciler = {
           after = lib.all (x: lib.elem x dhcp.after) [
@@ -1483,6 +1485,7 @@ lib.runTests {
           "AF_INET"
           "AF_INET6"
         ];
+        ReadWritePaths = [ "-/var/lib/chalkos-dhcp6-pd" ];
         hookPath = true;
         ConditionPathExists = "/run/chalkos/outputs/kea/kea-dhcp6.json";
         vrf = {
@@ -1501,11 +1504,11 @@ lib.runTests {
           "AF_UNIX"
           "AF_NETLINK"
         ];
-        ReadWritePaths = [ "-/var/lib/kea/pd-routes" ];
+        TimeoutStartSec = "30s";
         ip = true;
         path = {
           wantedBy = [ "multi-user.target" ];
-          PathChanged = "/var/lib/kea/pd-routes";
+          PathChanged = "/var/lib/chalkos-dhcp6-pd";
         };
         records = true;
       };

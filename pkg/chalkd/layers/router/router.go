@@ -49,7 +49,7 @@ type Options struct {
 	// /run/chalkos/outputs/kea.
 	KeaDir string
 	// PDDir holds the records of the prefixes Kea's DHCPv6 servers delegated; empty is
-	// /var/lib/kea/pd-routes.
+	// /var/lib/chalkos-dhcp6-pd.
 	PDDir string
 	// RelayDir is the output dhcp-relay's directory, with dnsmasq-relay.conf for the default
 	// VRF's relay and dnsmasq-relay-<vrf>.conf per VRF's; empty is

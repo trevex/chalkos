@@ -17,8 +17,7 @@ import (
 // chalkd router dhcp6-routes routes each recorded delegated prefix that a rendered DHCPv6
 // config delegates on its link to the address that asked for it, in the link's VRF, until its
 // lease ends; it removes the routes of delegated prefixes of no such record, leaves routes of
-// other protocols alone, removes the files of stale records and reads no config of a file of no
-// VRF's name.
+// other protocols alone, removes no record and reads no config of a file of no VRF's name.
 func TestDHCP6Routes(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	kernel := []*routing.KernelRoute{
@@ -57,7 +56,7 @@ func TestDHCP6Routes(t *testing.T) {
 	for i := range left {
 		left[i] = filepath.Base(left[i])
 	}
-	if !slices.Equal(left, []string{"cust0_2001:db8:100::_56", "lan1_2001:db8:300:1::_64"}) {
+	if !slices.Equal(left, []string{"bad0_2001:db8:400:1::_64", "cust0_2001:db8:100:200::_56", "cust0_2001:db8:100::_56", "lan1_2001:db8:300:1::_64"}) {
 		t.Errorf("records left = %v", left)
 	}
 }

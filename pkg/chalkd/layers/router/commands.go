@@ -33,8 +33,9 @@ func (p *Plugin) Commands() map[string]layer.Command {
 
 // dhcp6Routes routes each delegated prefix that the hook of Kea's DHCPv6 servers recorded, and
 // that a rendered config delegates on the record's link, to the address that asked for it, in
-// the link's VRF, until its lease ends; it removes the routes of protocol dhcp-pd of no such
-// record and the stale records' files. A route ip does not add or remove is named on standard
+// the link's VRF, until its lease ends, and removes the routes of protocol dhcp-pd of no such
+// record. It removes no record: the hook removes those of released and expired leases, and
+// ended records route nothing. With more records than it reads, it removes no route. A route ip does not add or remove is named on standard
 // error and left to the next run, as the next record or renewal starts one: a unit that failed
 // for a link that is down at boot would fail the boot's health check.
 func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
@@ -61,14 +62,12 @@ func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 		}
 		pools = append(pools, p...)
 	}
-	routes, stale, err := routing.ReadPDRecords(cmp.Or(r.PDDir, routing.PDRecordDir), pools, now)
-	if err != nil {
+	routes, err := routing.ReadPDRecords(cmp.Or(r.PDDir, routing.PDRecordDir), pools, now)
+	truncated := errors.Is(err, routing.ErrTooManyPDRecords)
+	if truncated {
+		fmt.Fprintf(os.Stderr, "chalkd router dhcp6-routes: %v; routing the first %d and removing no route\n", err, routing.MaxPDRecords)
+	} else if err != nil {
 		return err
-	}
-	for _, f := range stale {
-		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
 	}
 	list := r.KernelRoutes
 	if list == nil {
@@ -83,7 +82,7 @@ func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 			continue
 		}
 		hop := k.NextHops[0]
-		kept := false
+		kept := truncated
 		for _, rt := range routes {
 			kept = kept || (rt.Prefix.String() == k.Destination && rt.Via.String() == hop.Gateway && rt.Link == hop.Interface)
 		}

@@ -2,26 +2,32 @@ package router
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"net/netip"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
 
 // The routes of the prefixes Kea's DHCPv6 servers delegate. Kea routes none of them: its
-// run_script hook runs chalkos-dhcp6-pd, which records each delegated prefix in PDRecordDir as a
-// file <link>_<address>_<length> that holds the link-local address that asked for it and when its
-// lease ends, in seconds since 1970, and removes the file when the lease is released.
-// chalkd router dhcp6-routes routes each recorded prefix the rendered configs delegate on its link
-// to that address, and removes the other routes of protocol PDProtocol.
+// run_script hook runs chalkos-dhcp6-pd as the user kea, which records each delegated prefix in
+// PDRecordDir as a file <link>_<address>_<length> that holds the link-local address that asked
+// for it and when its lease ends, in seconds since 1970, and removes the file when the lease is
+// released or expires. chalkd router dhcp6-routes routes each recorded prefix the rendered configs
+// delegate on its link to that address, and removes the other routes of protocol PDProtocol. It
+// runs as root and trusts no record: it reads the directory without following links, reads
+// regular files alone and a few bytes of each, and removes no file.
 
-// PDRecordDir is the directory chalkos-dhcp6-pd records the delegated prefixes in.
-const PDRecordDir = "/var/lib/kea/pd-routes"
+// PDRecordDir is the directory chalkos-dhcp6-pd records the delegated prefixes in. The user kea
+// owns it, in a directory it cannot write, so that it cannot put another directory in its place.
+const PDRecordDir = "/var/lib/chalkos-dhcp6-pd"
+
+// MaxPDRecords is the number of records ReadPDRecords reads at most, and MaxPDRecordSize the
+// bytes of a record it reads at most; a longer record is none.
+const (
+	MaxPDRecords    = 4096
+	MaxPDRecordSize = 128
+)
 
 // PDProtocol is the protocol number of the routes of delegated prefixes, which routes lists as
 // dhcp-pd.
@@ -71,7 +77,7 @@ func ParseKea6Pools(vrf string, data []byte) ([]PDPool, error) {
 }
 
 // PDRoute is the route of a delegated prefix: to the link-local address Via on the link Link,
-// in the VRF VRF, until the prefix's lease ends.
+// in the VRF VRF, until Ends.
 type PDRoute struct {
 	VRF, Link string
 	Prefix    netip.Prefix
@@ -79,67 +85,43 @@ type PDRoute struct {
 	Ends      time.Time
 }
 
-// ReadPDRecords reads the records of delegated prefixes in dir: the routes of those whose leases
-// have not ended at now and that a pool of pools delegates on the record's link, by its range and
-// length, to a link-local address, and stale, the files of the other records, which no route
-// keeps. A missing dir holds no records; files whose names start with a dot are the hook's own,
-// half written.
-func ReadPDRecords(dir string, pools []PDPool, now time.Time) (routes []PDRoute, stale []string, err error) {
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil, nil
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".") || !e.Type().IsRegular() {
-			continue
-		}
-		path := filepath.Join(dir, e.Name())
-		r, ok := readPDRecord(path, e.Name(), pools)
-		if !ok || !r.Ends.After(now) {
-			stale = append(stale, path)
-			continue
-		}
-		routes = append(routes, r)
-	}
-	return routes, stale, nil
-}
-
-// readPDRecord reads the record of the file path, named name, and reports whether it is one of a
-// pool of pools.
-func readPDRecord(path, name string, pools []PDPool) (PDRoute, bool) {
-	var r PDRoute
-	// The link's name may hold underscores; the address and the length hold none.
+// pdRecordName reads the name of a record: the link, whose name may hold underscores, and the
+// delegated prefix.
+func pdRecordName(name string) (string, netip.Prefix, bool) {
 	i := strings.LastIndexByte(name, '_')
 	if i < 0 {
-		return r, false
+		return "", netip.Prefix{}, false
 	}
 	j := strings.LastIndexByte(name[:i], '_')
 	if j <= 0 {
-		return r, false
+		return "", netip.Prefix{}, false
 	}
 	link, address, length := name[:j], name[j+1:i], name[i+1:]
 	a, err := netip.ParseAddr(address)
 	if err != nil || !a.Is6() || a.Zone() != "" {
-		return r, false
+		return "", netip.Prefix{}, false
 	}
 	bits, err := strconv.Atoi(length)
 	if err != nil {
-		return r, false
+		return "", netip.Prefix{}, false
 	}
-	if r.Prefix, err = a.Prefix(bits); err != nil || r.Prefix.Addr() != a {
-		return r, false
+	p, err := a.Prefix(bits)
+	if err != nil || p.Addr() != a {
+		return "", netip.Prefix{}, false
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return r, false
-	}
+	return link, p, true
+}
+
+// pdRoute is the route of the record of the link and the prefix that holds data, and whether it
+// is one: a link-local address and an end after now, of a prefix a pool of pools delegates on
+// the link. The route ends with the lease.
+func pdRoute(link string, prefix netip.Prefix, data []byte, pools []PDPool, now time.Time) (PDRoute, bool) {
+	r := PDRoute{Link: link, Prefix: prefix}
 	fields := strings.Fields(string(data))
 	if len(fields) != 2 {
 		return r, false
 	}
+	var err error
 	if r.Via, err = netip.ParseAddr(fields[0]); err != nil || !r.Via.Is6() || !r.Via.IsLinkLocalUnicast() || r.Via.Zone() != "" {
 		return r, false
 	}
@@ -147,9 +129,12 @@ func readPDRecord(path, name string, pools []PDPool) (PDRoute, bool) {
 	if err != nil {
 		return r, false
 	}
-	r.Ends, r.Link = time.Unix(ends, 0), link
+	r.Ends = time.Unix(ends, 0)
+	if !r.Ends.After(now) {
+		return r, false
+	}
 	for _, p := range pools {
-		if p.Link == link && p.Length == bits && p.Range.Contains(a) {
+		if p.Link == link && p.Length == prefix.Bits() && p.Range.Contains(prefix.Addr()) {
 			r.VRF = p.VRF
 			return r, true
 		}

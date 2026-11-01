@@ -8,8 +8,10 @@
 # those without a config. A reload keeps the leases.
 #
 # Kea routes no prefix its DHCPv6 servers delegate. Their run_script hook runs chalkos-dhcp6-pd as
-# kea, which records each delegated prefix in /var/lib/kea/pd-routes; chalkos-dhcp6-routes, which
-# a change there starts, routes each to the link-local address that asked for it.
+# kea, which records each delegated prefix in /var/lib/chalkos-dhcp6-pd; chalkos-dhcp6-routes,
+# which a change there starts, routes each to the link-local address that asked for it. kea owns
+# the records' directory but cannot write /var/lib, so it cannot put another directory in its
+# place, and chalkd, which reads the records as root, removes none of them.
 {
   chalkosPackages,
   config,
@@ -20,12 +22,13 @@
 let
   inherit (chalkosPackages) kea;
   dir = config.chalkos.outputs.kea.dir;
-  pdRecords = "/var/lib/kea/pd-routes";
+  pdRecords = "/var/lib/chalkos-dhcp6-pd";
   # Records the prefixes a DHCPv6 server delegates, as Kea's run_script hook runs it with the hook
   # point's name and the leases' variables alone: a file per prefix, <link>_<prefix>_<length>,
-  # holding the link-local address that asked for it and when its lease ends, which the release
-  # of the lease removes. The values reach a file name only once they match the patterns of a
-  # link, an IPv6 address and a length; chalkd router dhcp6-routes checks them again.
+  # holding the link-local address that asked for it and when its lease ends, readable by every
+  # user, which the release or the expiry of the lease removes. The values reach a file name only
+  # once they match the patterns of a link, an IPv6 address and a length; chalkd router
+  # dhcp6-routes checks them again.
   pdHook = pkgs.writeShellApplication {
     name = "chalkos-dhcp6-pd";
     runtimeInputs = [ pkgs.coreutils ];
@@ -51,16 +54,21 @@ let
           c=LEASES6_AT''${i}_CLTT v=LEASES6_AT''${i}_VALID_LIFETIME
           [[ ''${!t:-} == IA_PD && $via =~ ^fe80:[0-9a-f:]*$ && ''${!c:-} =~ ^[0-9]+$ && ''${!v:-} =~ ^[0-9]+$ ]] || continue
           f=$(record "''${!a:-}" "''${!l:-}") || continue
-          mkdir -p "$dir"
           # Written whole, then renamed, so that chalkd never reads half a record.
           tmp=$(mktemp "$dir/.new.XXXXXX")
           echo "$via $((''${!c} + ''${!v}))" >"$tmp"
+          chmod 0644 "$tmp"
           mv -f "$tmp" "$f"
         done
         ;;
       lease6_release | lease6_decline)
         [[ ''${LEASE6_TYPE:-} == IA_PD ]] || exit 0
         if f=$(record "''${LEASE6_ADDRESS:-}" "''${LEASE6_PREFIX_LEN:-}"); then rm -f "$f"; fi
+        ;;
+      lease6_expire)
+        # An expiry names no link: the prefix's record of any link goes.
+        [[ ''${LEASE6_TYPE:-} == IA_PD && ''${LEASE6_ADDRESS:-} =~ ^[0-9a-f:]{2,39}$ && ''${LEASE6_PREFIX_LEN:-} =~ ^[0-9]{1,3}$ ]] || exit 0
+        rm -f "$dir"/*_"$LEASE6_ADDRESS"_"$LEASE6_PREFIX_LEN"
         ;;
       esac
     '';
@@ -222,6 +230,7 @@ let
       RuntimeDirectoryPreserve = true;
       StateDirectory = "kea";
       StateDirectoryMode = "0750";
+      ReadWritePaths = lib.optional (!v4) "-${pdRecords}";
       UMask = "0027";
       NoNewPrivileges = true;
       ProtectSystem = "strict";
@@ -391,8 +400,9 @@ in
           };
         };
         # Routes the prefixes the DHCPv6 servers delegate, at boot, after chalkos-dhcp, which also
-        # starts it, and whenever chalkos-dhcp6-pd records or removes one. It removes the files of
-        # ended records; the kernel removes a route whose lease ended without a renewal.
+        # starts it, and whenever chalkos-dhcp6-pd records or removes one. It runs as root with
+        # CAP_NET_ADMIN alone and only reads the records, which every user may; the kernel removes a
+        # route whose lease ended without a renewal. A run takes 30 seconds at most.
         chalkos-dhcp6-routes = {
           description = "Route the prefixes the router's DHCPv6 servers delegate";
           after = [ "chalkos-dhcp.service" ];
@@ -406,7 +416,7 @@ in
               "AF_UNIX"
               "AF_NETLINK"
             ];
-            ReadWritePaths = [ "-${pdRecords}" ];
+            TimeoutStartSec = "30s";
             NoNewPrivileges = true;
             PrivateDevices = true;
             ProtectControlGroups = true;
@@ -436,7 +446,7 @@ in
     # The records' directory exists before a server or the path unit looks at it.
     systemd.tmpfiles.rules = [
       "d /var/lib/kea 0750 kea kea - -"
-      "d ${pdRecords} 0750 kea kea - -"
+      "d ${pdRecords} 0755 kea kea - -"
     ];
   };
 }
