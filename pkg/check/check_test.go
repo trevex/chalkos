@@ -167,23 +167,28 @@ func TestRunReadsNoSecretValue(t *testing.T) {
 	}
 }
 
-// Run refuses a config at the stage that refuses it, with the message a delivery's refusal gives.
+// Run refuses a config at the stage that refuses it, with the message a delivery's refusal gives;
+// a fact a rule reads that cannot be loaded refuses it at the rules, as chalkd's evaluate does.
 func TestRunRefuses(t *testing.T) {
 	for name, tc := range map[string]struct {
-		render, next string
-		frozen       bool
-		stage        Stage
-		want         string
+		render, next   string
+		frozen, broken bool
+		stage          Stage
+		want           string
 	}{
-		"the set":      {`cat > "$OUT/demo.json"`, base + "---\napiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: one}\nspec: {name: twice}\n", false, StageConfig, `the config: two Demo documents named "one"`},
-		"a rule":       {`cat > "$OUT/demo.json"`, strings.Replace(base, "name: first", "name: second", 1), true, StageRules, `the config is refused: Demo "one" spec.name: the name stays while the demo is frozen`},
-		"a renderer":   {`exit 3`, base, false, StageOutputs, "output demo: its renderer failed (exit 3); see the node's journal"},
-		"an unchanged": {`cat > "$OUT/demo.json"`, base, true, "", ""},
+		"the set":      {`cat > "$OUT/demo.json"`, base + "---\napiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: one}\nspec: {name: twice}\n", false, false, StageConfig, `the config: two Demo documents named "one"`},
+		"a rule":       {`cat > "$OUT/demo.json"`, strings.Replace(base, "name: first", "name: second", 1), true, false, StageRules, `the config is refused: Demo "one" spec.name: the name stays while the demo is frozen`},
+		"a renderer":   {`exit 3`, base, false, false, StageOutputs, "output demo: its renderer failed (exit 3); see the node's journal"},
+		"an unchanged": {`cat > "$OUT/demo.json"`, base, true, false, "", ""},
+		"a fact":       {`cat > "$OUT/demo.json"`, strings.Replace(base, "name: first", "name: second", 1), false, true, StageRules, "cannot check: fact frozen: share.json is not JSON"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			img := testImage(t, `cat > "$OUT/demo.json"`)
 			f := &facts{values: map[string]any{"frozen": tc.frozen}}
 			in := running(t, img, f)
+			if tc.broken {
+				in.Facts = &facts{err: errors.New("share.json is not JSON")}
+			}
 			demo := img.Outputs["demo"]
 			demo.Render = script(t, tc.render)
 			img.Outputs["demo"] = demo

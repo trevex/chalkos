@@ -58,15 +58,17 @@ func testSchemas(t *testing.T) *schema.Schemas {
 	return s
 }
 
-// facts are a node's facts by name, which record the names asked for.
+// facts are a node's facts by name, which record the names asked for; err, when set, is the
+// error of every fact.
 type facts struct {
 	values map[string]any
 	asked  []string
+	err    error
 }
 
 func (f *facts) Fact(name string) (any, error) {
 	f.asked = append(f.asked, name)
-	return f.values[name], nil
+	return f.values[name], f.err
 }
 
 // parse parses YAML config documents.
