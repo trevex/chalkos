@@ -197,9 +197,11 @@ nothing on the node. --dry-run has the node check the config as it checks a deli
 facts, the image's renderers and their checks, and changes nothing. It prints the diff, then the
 config the node would run, the outputs that would change, the effects the delivery would take with
 what fires each, and the storage changes. A refusal is the delivery's, and the command exits 1.
---dry-run takes several nodes and checks them one after the other. It goes without --staged,
---rollback, --try and the layers' payload flags. An effect whose rule compares the node's facts
-before and after the delivery is planned with the facts as they are.
+--dry-run takes several nodes and checks them one after the other; its error names the nodes whose
+config is refused apart from those it could not check, such as a node on trial. It goes without
+--staged, --diff, --rollback, --confirm, --try, --no-confirm, --ignore-unit, --force and the
+layers' payload flags. An effect whose rule compares the node's facts before and after the
+delivery is planned with the facts as they are.
 
 Each image on a node keeps its own config. --staged delivers the config for the image staged to
 boot next, as an upgrade with --no-reboot leaves it, and nothing restarts. Without --staged,

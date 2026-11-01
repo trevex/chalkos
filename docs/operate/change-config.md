@@ -112,9 +112,13 @@ fire it.
 chalkctl apply-config cp1 w1 --secrets secrets.age --dry-run
 ```
 
-A node that refuses its config does not stop the others. The command ends with
-`the config of 1 node is refused: w1` and exits 1. `--dry-run` refuses `--staged`, `--rollback`,
-`--try` and the layers' payload flags such as `--kubernetes-share`.
+A node that refuses its config does not stop the others, and neither does a node the dry run
+cannot check, such as one missing from the inventory, unreachable or with a config on trial. Each
+error goes to standard error with the node's name, and the command ends with a line that counts the
+two apart, such as `the config of 1 node is refused: w1; the dry run failed on 1 node: cp1`, and
+exits 1. `--dry-run` refuses `--staged`, `--diff`, `--rollback`, `--confirm`, `--try`,
+`--no-confirm`, `--ignore-unit`, `--force` and the layers' payload flags such as
+`--kubernetes-share`.
 
 ## Deliver the config
 
