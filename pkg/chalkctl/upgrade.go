@@ -651,6 +651,9 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 		if d := r.deliveryOf(n); d != nil {
 			header.Config, header.FallbackSecret = d.Text, n.secret
 		}
+		if err := r.pendingNote(ctx, conn, name, header.Config != ""); err != nil {
+			return err
+		}
 		stream := conn.Upgrade(ctx)
 		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 			return err
@@ -676,6 +679,24 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 		r.say("%s: %s is staged already, as %s", name, img.name(), resp.Entry)
 	default:
 		r.say("%s: installed %s, which boots next as %s", name, img.name(), resp.Entry)
+	}
+	return nil
+}
+
+// pendingNote says, of a node that holds config pending, what the upgrade does with it: the image
+// gets it unless the upgrade delivers config, which replaces it. Either way the node drops it once
+// the image is staged to boot next.
+func (r *upgradeRun) pendingNote(ctx context.Context, conn *client.Conn, name string, delivers bool) error {
+	st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	if err != nil {
+		return err
+	}
+	switch p := st.Msg.PendingConfig; {
+	case p == nil:
+	case delivers:
+		r.say("%s: the inventory's config replaces the pending config %s", name, p.Version)
+	default:
+		r.say("%s: the image gets the pending config %s, which it checks first", name, p.Version)
 	}
 	return nil
 }

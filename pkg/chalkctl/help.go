@@ -210,6 +210,17 @@ boot next, as an upgrade with --no-reboot leaves it, and nothing restarts. Witho
 chalkctl warns of a staged image, whose config stays as it is. A config for the running image that
 adds storage the staged image's config lacks is refused: deliver the config with --staged first.
 
+On a node without a staged image, --staged holds the config pending for the next upgrade, in place
+of any config held before. chalkctl checks it against the node's image in the inventory; the node
+only parses it, as no image is there to check it against. The next upgrade that carries no config
+of its own, such as an operator's, gives the image the pending config in place of the running one,
+and the image checks it before the node installs anything. An upgrade that carries config replaces
+it. Either way the node drops the pending config once the image is staged to boot next; an upgrade
+that fails keeps it, and an image's refusal names it. A pending config is kept without the fallback
+secret, so an upgrade with one that adds an encrypted volume needs the config from the inventory.
+--staged --dry-run says the config would be held pending and keeps nothing. --staged --discard
+drops the pending config and needs no inventory.
+
 --rollback delivers the node's previous config again instead of the inventory's: the config the
 running image ran before the last delivery, which the node keeps. It goes through the same checks,
 storage changes and restarts as any delivery, so the image's rules may refuse it, as when the
@@ -257,8 +268,12 @@ const applyConfigExample = `  # Apply w1's changed network and labels.
   # Have w1 and w2 check their config, renderers included, and show what a delivery would do.
   chalkctl apply-config w1 w2 --secrets secrets.age --dry-run
 
-  # Deliver w1's config for the image an upgrade with --no-reboot staged.
+  # Deliver w1's config for the image an upgrade with --no-reboot staged, or without one hold it
+  # pending for w1's next upgrade.
   chalkctl apply-config w1 --secrets secrets.age --staged
+
+  # Drop the config w1 holds pending.
+  chalkctl apply-config w1 --secrets secrets.age --staged --discard
 
   # Undo w1's last config delivery.
   chalkctl apply-config w1 --secrets secrets.age --rollback
@@ -274,11 +289,12 @@ const statusLong = `Shows an installed node's status: the config it runs and whe
 gives; its platform; the image it booted, by its store's root hash and the tag and revision it
 was built from as far as the node knows them, the boot entry and whether that boot was found
 healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled back,
-with the journal of the boot that failed; a config on trial and when it rolls back; the previous
-config and image a rollback restores; whether its store is the image the inventory names for it;
-its volumes and their state; Kubernetes, with the nodes revoked in the cluster on a control plane;
-a router's BGP sessions; the certificates it serves and when they expire; the CAs it trusts; its
-clock; and the units that failed. The command needs a reader client file or the secrets file.`
+with the journal of the boot that failed; a config on trial and when it rolls back; the config it
+holds pending for its next upgrade, unchecked, and since when; the previous config and image a
+rollback restores; whether its store is the image the inventory names for it; its volumes and
+their state; Kubernetes, with the nodes revoked in the cluster on a control plane; a router's BGP
+sessions; the certificates it serves and when they expire; the CAs it trusts; its clock; and the
+units that failed. The command needs a reader client file or the secrets file.`
 
 const statusExample = `  chalkctl status cp1
 

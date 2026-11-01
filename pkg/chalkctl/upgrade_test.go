@@ -2,6 +2,7 @@ package chalkctl
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -118,6 +119,9 @@ type upgradeFake struct {
 	// config and stagedConfig are the config the node runs and the one kept for the staged image, as
 	// delivered.
 	config, stagedConfig string
+	// pending is the config the node holds pending for its next upgrade, as apply-config --staged
+	// keeps it without a staged image; empty without one.
+	pending string
 	// secret is the fallback secret the last upgrade sent.
 	secret string
 	// stagedStoreSize and stagedVeritySize are the bytes of store and hash tree staged.
@@ -246,6 +250,9 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 	}
 	st.ConfigVersion = versionOf(n.config)
 	st.Trial = n.trial
+	if n.pending != "" {
+		st.PendingConfig = &nodev1.PendingConfig{Version: versionOf(n.pending), Since: timestamppb.New(pendingSince)}
+	}
 	if n.failed != "" {
 		st.Boot.Journal = []string{"chalkd: not healthy yet: units failed: broken.service"}
 	}
@@ -326,7 +333,10 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	name, _ := testImageNames.Load(string(h.RootHash))
 	n.staged, n.stagedRoot, n.failed, n.failedRoot = name.(string), h.RootHash, "", nil
 	n.previous, n.previousRoot, n.previousConfig, n.rolledBackTo = "", nil, "", nil
-	n.stagedConfig, n.secret = header.GetConfig(), header.GetFallbackSecret()
+	// The image gets the pending config unless the upgrade carries config; either way the node
+	// drops it.
+	n.stagedConfig, n.secret = cmp.Or(header.GetConfig(), n.pending), header.GetFallbackSecret()
+	n.pending = ""
 	n.stagedStoreSize, n.stagedVeritySize = h.Store.Size, h.HashTree.Size
 	n.header = header
 	if n.alreadyStaged {
@@ -1618,8 +1628,22 @@ func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[node
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	switch {
+	case req.Msg.DiscardPending:
+		var p *nodev1.PendingConfig
+		if n.pending != "" {
+			p = &nodev1.PendingConfig{Version: versionOf(n.pending), Since: timestamppb.New(pendingSince)}
+		}
+		n.pending = ""
+		n.lab.record("%s discard pending", n.name)
+		return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: p}), nil
+	case req.Msg.Staged && n.staged == "" && req.Msg.FallbackSecret != "":
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a pending config is stored without the fallback secret"))
+	case req.Msg.Staged && n.staged == "" && req.Msg.DryRun:
+		return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: versionOf(req.Msg.Config)}}), nil
 	case req.Msg.Staged && n.staged == "":
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no image is staged to boot next"))
+		n.pending = req.Msg.Config
+		n.lab.record("%s apply-config pending", n.name)
+		return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: versionOf(n.pending), Since: timestamppb.New(pendingSince)}}), nil
 	case req.Msg.Staged && req.Msg.DryRun:
 		// The staged image checks the config and plans its version; nothing is kept.
 		plan := &nodev1.Plan{Version: versionOf(req.Msg.Config), Replaces: versionOf(n.stagedConfig)}
@@ -1675,9 +1699,6 @@ func TestApplyConfigStaged(t *testing.T) {
 	img := testUpgradeImage(t, "w", "0.2.0")
 	l.useInventory(t, map[string]string{"w": img})
 	n := l.nodes["w1"]
-	if err := l.applyConfig("w1", "--staged"); err == nil || !strings.Contains(err.Error(), "no image is staged") {
-		t.Fatalf("apply-config --staged without a staged image = %v", err)
-	}
 	n.staged, n.stagedRoot, n.stagedConfig = "0.2.0", rootOf(t, img), "{}"
 	if err := l.applyConfig("w1", "--staged"); err != nil {
 		t.Fatal(err)
@@ -1786,11 +1807,13 @@ func (n *upgradeFake) GetConfig(ctx context.Context, req *connect.Request[nodev1
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	text := n.config
-	if req.Msg.Staged {
-		if n.staged == "" {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("no image is staged to boot next"))
-		}
+	switch {
+	case req.Msg.Staged && n.staged != "":
 		text = n.stagedConfig
+	case req.Msg.Staged && n.pending != "":
+		text = n.pending
+	case req.Msg.Staged:
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no image is staged to boot next, and the node holds no pending config"))
 	}
 	docs, err := config.Parse(strings.NewReader(text))
 	if err != nil {

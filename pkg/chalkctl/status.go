@@ -60,6 +60,9 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	if s.Boot.GetStaged() != nil {
 		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", cmp.Or(s.StagedConfigVersion, "none"), t.cluster.configState(t.name, s.StagedConfigVersion, true))
 	}
+	if p := s.PendingConfig; p != nil {
+		fmt.Fprintln(a.stdout, pendingLine(p))
+	}
 	fmt.Fprintln(a.stdout, t.cluster.platformLine(t.name, s.Platform))
 	for _, line := range bootLines(s.Boot) {
 		fmt.Fprintln(a.stdout, line)
@@ -237,6 +240,12 @@ func (c *cluster) platformLine(name, reported string) string {
 		return fmt.Sprintf("platform %s, but %s; changing a node's platform is a reinstall", reported, c.declares(name, want))
 	}
 	return fmt.Sprintf("platform %s (the inventory's)", reported)
+}
+
+// pendingLine is status's line of the config a node holds pending for its next upgrade, which
+// nothing checked yet.
+func pendingLine(p *nodev1.PendingConfig) string {
+	return fmt.Sprintf("pending config %s (unchecked, since %s; the next upgrade checks it against its image)", p.GetVersion(), p.GetSince().AsTime().UTC().Format(time.RFC3339))
 }
 
 // configState says whether a slot of a node holds the config chalkctl delivers to it: the running

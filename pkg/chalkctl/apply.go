@@ -28,7 +28,9 @@ type applyConfigFlags struct {
 	passwordFile string
 	staged, diff bool
 	// dryRun has the node check the config and print the delivery's plan in place of applying it.
-	dryRun   bool
+	dryRun bool
+	// discard has the node drop its pending config, which --staged keeps without a staged image.
+	discard  bool
 	rollback bool
 	force    bool
 	layers   []layerFlags
@@ -97,7 +99,8 @@ func (a *app) applyConfigCommand() *cobra.Command {
 		f.payloadFlags = strings.Join(payloadFlags, " or ")
 		fs.BoolVar(&f.force, "force", false, "with "+f.payloadFlags+", deliver without asking whether the node is revoked")
 	}
-	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, which checks it with its own chalkd after chalkctl checks it against the node's image in the inventory; with --dry-run, the staged image checks it and nothing is kept")
+	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, which checks it with its own chalkd after chalkctl checks it against the node's image in the inventory; without a staged image, the node holds it pending, unchecked, for the next upgrade, which checks it against its image; with --dry-run, the staged image checks it and nothing is kept")
+	fs.BoolVar(&f.discard, "discard", false, "with --staged, drop the config the node holds pending for its next upgrade; needs no inventory")
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "have the node check the config as it checks a delivery, its renderers and facts included, print the diff and what the delivery would change, and change nothing; with --staged, the staged image checks it; takes several nodes")
 	fs.BoolVar(&f.rollback, "rollback", false, "deliver the node's previous config again, the one its image ran before the last delivery, instead of the inventory's")
@@ -113,6 +116,8 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		return cli.Usagef("apply-config delivers to one node; --dry-run checks several, one after the other")
 	}
 	switch {
+	case f.discard:
+		return a.discardPending(ctx, f, pos[0])
 	case f.dryRun:
 		if err := f.checkDryRun(); err != nil {
 			return err
@@ -294,10 +299,17 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	if !f.staged && st.Msg.Boot.GetStaged() != nil {
 		fmt.Fprintln(a.stderr, stagedNote(t.name, st.Msg))
 	}
-	if f.staged && st.Msg.Boot.GetStaged() == nil {
-		return namedErr{fmt.Errorf("%s: no image is staged to boot next; apply the config to the running image", t.name)}
+	if p := st.Msg.PendingConfig; !f.staged && p != nil {
+		fmt.Fprintln(a.stderr, pendingNote(t.name, p))
 	}
+	// Without a staged image, --staged holds the config pending for the next upgrade, which takes
+	// it in place of the running config: the diff compares with the pending config, or else with
+	// the running one.
+	pending := f.staged && st.Msg.Boot.GetStaged() == nil
 	nodeDocs, err := slotConfig(ctx, conn, f.staged)
+	if err == nil && pending && nodeDocs == nil {
+		nodeDocs, err = slotConfig(ctx, conn, false)
+	}
 	if err != nil {
 		return namedErr{fmt.Errorf("%s: %w", t.name, err)}
 	}
@@ -321,9 +333,13 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	if err := checkRules(c, d.documents, baseline, t.name); err != nil {
 		return refusal{namedErr{fmt.Errorf("%s: %w", t.name, err)}}
 	}
-	fallback, err := a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, "")
-	if err != nil {
-		return err
+	// A pending config is kept without the fallback secret: the upgrade that adds an encrypted
+	// volume carries it.
+	var fallback string
+	if !pending {
+		if fallback, err = a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, ""); err != nil {
+			return err
+		}
 	}
 	var payloads []*anypb.Any
 	for _, l := range f.layers {
@@ -360,6 +376,16 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 			return refusal{nodeError(err, t.name)}
 		}
 		return nodeError(err, t.name)
+	}
+	// The node answers by what it found: an image staged in between takes the config as any
+	// --staged delivery, and a pending config is named whatever chalkctl expected.
+	if p := resp.Msg.Pending; p != nil {
+		if f.dryRun {
+			fmt.Fprintf(a.stdout, "%s: no image is staged to boot next; config %s would be held pending, unchecked, for the next upgrade, which checks it against its image\n", t.name, p.Version)
+		} else {
+			fmt.Fprintf(a.stdout, "%s holds config %s pending, unchecked; the next upgrade checks it against its image\n", t.name, p.Version)
+		}
+		return nil
 	}
 	if f.dryRun {
 		writePlan(a.stdout, t.name, resp.Msg, f.staged)
@@ -627,4 +653,49 @@ func stagedNote(name string, st *nodev1.StatusResponse) string {
 		return fmt.Sprintf("%s boots the image a rollback staged next, with the config it last ran (version %s), which stays until the boot of the running image is found healthy", name, cmp.Or(st.GetStagedConfigVersion(), "none"))
 	}
 	return fmt.Sprintf("%s has a staged image with its own config (version %s); apply-config --staged updates it", name, cmp.Or(st.GetStagedConfigVersion(), "none"))
+}
+
+// pendingNote is the line apply-config prints of a node that holds config pending for its next
+// upgrade, which a delivery to the running image leaves as it is: the next upgrade without config
+// of its own takes the pending config, not the running one.
+func pendingNote(name string, p *nodev1.PendingConfig) string {
+	return fmt.Sprintf("%s holds config %s pending for its next upgrade, which takes it in place of the running config; apply-config --staged --discard %s drops it", name, p.GetVersion(), name)
+}
+
+// discardPending has the node drop the config it holds pending and says which it dropped.
+func (a *app) discardPending(ctx context.Context, f applyConfigFlags, name string) error {
+	switch {
+	case !f.staged:
+		return cli.Usagef("--discard drops the config held pending for the next image; pass --staged")
+	case f.dryRun || f.diff || f.rollback || f.confirm:
+		return cli.Usagef("--discard changes nothing but the pending config; drop --dry-run, --diff, --rollback and --confirm")
+	case f.try != 0 || f.noConfirm || len(f.ignoreUnits) > 0:
+		return cli.Usagef("--discard goes without --try, --no-confirm and --ignore-unit")
+	case f.force || f.payloads():
+		return cli.Usagef("--discard delivers nothing; drop %s", f.payloadFlags)
+	case f.passwordFile != "":
+		return cli.Usagef("--discard adds no volume, so it takes no --password-file")
+	}
+	// The node holds the config it drops, so no inventory needs to give it.
+	n := f.node
+	n.needs = ""
+	t, err := a.target(ctx, n, name)
+	if err != nil {
+		return err
+	}
+	conn, err := dialInstalled(t)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Staged: true, DiscardPending: true}))
+	if err != nil {
+		return nodeError(err, t.name)
+	}
+	if p := resp.Msg.Pending; p != nil {
+		fmt.Fprintf(a.stdout, "%s dropped its pending config %s\n", t.name, p.Version)
+		return nil
+	}
+	fmt.Fprintf(a.stdout, "%s holds no pending config\n", t.name)
+	return nil
 }
