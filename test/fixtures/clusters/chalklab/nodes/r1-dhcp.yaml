@@ -1,6 +1,8 @@
-# r1's DHCP server on dhcp0, in the VRF lan of table 400. It leases r2's dhcp0, of the MAC address
-# 52:54:00:00:02:32, the reserved address 192.0.2.10 for two minutes, so r2 renews its lease
-# every minute.
+# r1's DHCP servers on dhcp0, in the VRF lan of table 400. The DHCPv4 server leases r2's dhcp0,
+# of the MAC address 52:54:00:00:02:32, the reserved address 192.0.2.10 for two minutes, so r2
+# renews its lease every minute. The DHCPv6 server leases r2 an address of its pool and a /64 of
+# 2001:db8:d1::/56 for an hour, which r1 routes to r2 in lan's table; dhcp0's router
+# advertisements carry the Managed flag and no default route.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: NetDev
 metadata: {name: 20-dhcp0}
@@ -13,7 +15,8 @@ kind: Network
 metadata: {name: 20-dhcp0}
 spec:
   match: {name: dhcp0}
-  network: {address: [192.0.2.1/24], ipv6AcceptRA: false}
+  network: {address: [192.0.2.1/24, "2001:db8:d0::1/64"], ipv6AcceptRA: false, ipv6SendRA: true}
+  ipv6SendRA: {managed: true, routerLifetimeSec: 0}
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: VRF
@@ -32,3 +35,13 @@ spec:
   leaseTime: 2m
   reservations:
     - {mac: "52:54:00:00:02:32", address: 192.0.2.10, hostname: r2}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: DHCPSubnet
+metadata: {name: lab6}
+spec:
+  interfaces: [dhcp0]
+  subnet: 2001:db8:d0::/64
+  pools: [{first: "2001:db8:d0::100", last: "2001:db8:d0::1ff"}]
+  leaseTime: 1h
+  prefixDelegation: {prefix: "2001:db8:d1::/56", length: 64}

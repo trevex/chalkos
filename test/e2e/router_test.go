@@ -85,18 +85,21 @@ const bgpPassword = "lab-s3cret"
 //     routes ::/0 through r1 again and never learns the tracked prefix. The base inventory then
 //     brings the unconditional default back.
 //   - dhcp: a delivery gives both routers a macvlan dhcp0 on enp0s3, untagged on the lab's switch,
-//     which drops the frames of VLANs. r1's dhcp0, in the VRF lan, has a DHCP server that reserves
-//     192.0.2.10 for the MAC address of r2's dhcp0, with leases of two minutes, and r2's takes its
-//     address from DHCP. r1's status shows the server of lan running with r2's lease, r2 holds the
-//     address, and the diagnostic dhcp-leases lists the lease. After a boot of r1 the server runs
-//     again with the lease and r2 renews it there. The base inventory stops the server; networkd
-//     keeps both routers' dhcp0 devices, as it keeps every netdev, and no diagnostic deletes a
-//     link, so the phase runs last.
+//     which drops the frames of VLANs. r1's dhcp0, in the VRF lan, has a DHCPv4 server that
+//     reserves 192.0.2.10 for the MAC address of r2's dhcp0, with leases of two minutes, and a
+//     DHCPv6 server that leases an address and a /64 for an hour; r2's dhcp0 takes its addresses
+//     and a prefix from them. r1's status shows both servers of lan running with r2's leases, r2
+//     holds both addresses, r1 routes the prefix to r2 in lan's table, and the diagnostic
+//     dhcp-leases lists the IPv4 lease. After a boot of r1 both servers run again with the leases,
+//     r1 routes the prefix again before r2 renews it, and r2 renews its IPv4 lease there. The base
+//     inventory stops the servers and removes the prefix's route; networkd keeps both routers'
+//     dhcp0 devices, as it keeps every netdev, and no diagnostic deletes a link, so the phase
+//     runs last.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials, two minutes for the VRF with
-// r1's boot, half a minute for the default route and three minutes for DHCP with r1's boot,
-// about 10.5 minutes with the copies of the images. chalklab destroy removes the lab when the
+// r1's boot, half a minute for the default route and three and a half minutes for DHCP with r1's
+// boot, about 11 minutes with the copies of the images. chalklab destroy removes the lab when the
 // test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
@@ -857,6 +860,8 @@ func TestRouterLab(t *testing.T) {
 		defer func() {
 			if t.Failed() {
 				_, _ = chalkctl(t, nodes["r1"], "dhcp", "logs", "r1", "--unit", "kea-dhcp4@lan.service")
+				_, _ = chalkctl(t, nodes["r1"], "dhcp", "logs", "r1", "--unit", "kea-dhcp6@lan.service")
+				_, _ = chalkctl(t, nodes["r1"], "dhcp", "logs", "r1", "--unit", "chalkos-dhcp6-routes.service")
 				_, _ = chalkctl(t, nodes["r1"], "dhcp", "logs", "r1", "--unit", "chalkos-dhcp.service")
 				_, _ = chalkctl(t, nodes["r2"], "dhcp", "logs", "r2", "--unit", "systemd-networkd.service")
 			}
@@ -892,6 +897,41 @@ func TestRouterLab(t *testing.T) {
 			}
 			return nil
 		}
+		// serving6 is nil once r1's status shows the DHCPv6 server of lan running, with one lease of
+		// lab6's 256 pool addresses and one of its 256 prefixes, r2's.
+		serving6 := func() error {
+			out, err := chalkctl(t, nodes["r1"], "dhcp", "status", "r1")
+			if err != nil {
+				return err
+			}
+			if !regexp.MustCompile(`(?m)^dhcp6 lan: running$`).MatchString(out) || !regexp.MustCompile(`(?m)^  lab6\s+2001:db8:d0::/64\s+1\s+256\s+1\s+256$`).MatchString(out) {
+				return fmt.Errorf("status of r1 shows no running DHCPv6 server of lan with r2's leases:\n%s", out)
+			}
+			return nil
+		}
+		// leased6 is nil once r2's dhcp0 holds an address of lab6's pool.
+		leased6 := func() error {
+			out, err := chalkctl(t, nodes["r2"], "dhcp", "node", "diag", "r2", "addresses")
+			if err != nil {
+				return err
+			}
+			if !regexp.MustCompile(`(?s)"ifname":"dhcp0".*?"local":"2001:db8:d0::1[0-9a-f]{2}","prefixlen":128`).MatchString(out) {
+				return fmt.Errorf("r2's dhcp0 holds no address from DHCPv6:\n%s", out)
+			}
+			return nil
+		}
+		// delegated is nil once r1 routes a /64 of lab6's delegated prefixes in lan's table to a
+		// link-local address on dhcp0, r2's.
+		delegated := func() error {
+			out, err := chalkctl(t, nodes["r1"], "dhcp", "node", "routes", "r1", "--vrf", "lan", "--protocol", "dhcp-pd")
+			if err != nil {
+				return err
+			}
+			if !regexp.MustCompile(`(?m)^2001:db8:d1:[0-9a-f:]*/64\s+unicast\s+dhcp-pd\s+400\s+\d+\s+fe80::[0-9a-f:]+ on dhcp0$`).MatchString(out) {
+				return fmt.Errorf("r1 routes no prefix of lab6 to r2:\n%s", out)
+			}
+			return nil
+		}
 		// leaseEnd is when r1's lease of r2's address ends, as the diagnostic dhcp-leases lists it.
 		leaseEnd := func() (time.Time, error) {
 			out, err := chalkctl(t, nodes["r1"], "dhcp", "node", "diag", "r1", "dhcp-leases", "mac=52:54:00:00:02:32")
@@ -906,6 +946,9 @@ func TestRouterLab(t *testing.T) {
 		}
 		waitFor(t, 2*time.Minute, "r1's DHCP server of lan with r2's lease", serving)
 		waitFor(t, 2*time.Minute, "r2's address from r1", leased)
+		waitFor(t, 2*time.Minute, "r1's DHCPv6 server of lan with r2's lease and prefix", serving6)
+		waitFor(t, time.Minute, "r2's IPv6 address from r1", leased6)
+		waitFor(t, time.Minute, "r1's route of r2's prefix", delegated)
 		if _, err := leaseEnd(); err != nil {
 			t.Fatal(err)
 		}
@@ -922,6 +965,9 @@ func TestRouterLab(t *testing.T) {
 			t.Fatalf("reboot of r1: %v\n%s", err, out)
 		}
 		waitFor(t, 5*time.Minute, "r1's DHCP server of lan after its boot", serving)
+		waitFor(t, time.Minute, "r1's DHCPv6 server of lan after its boot", serving6)
+		// r2 renews its prefix in half an hour; the route comes from r1's record of the lease.
+		waitFor(t, time.Minute, "r1's route of r2's prefix after its boot", delegated)
 		waitFor(t, 3*time.Minute, "r2's renewal at r1 after its boot", func() error {
 			end, err := leaseEnd()
 			if err != nil {
@@ -944,10 +990,17 @@ func TestRouterLab(t *testing.T) {
 				t.Fatalf("apply-config of %s's base config: %v\n%s", name, err, out)
 			}
 		}
-		waitFor(t, time.Minute, "r1's DHCP server to stop", func() error {
+		waitFor(t, time.Minute, "r1's DHCP servers to stop", func() error {
 			out, err := chalkctl(t, nodes["r1"], "base", "status", "r1")
-			if err != nil || strings.Contains(out, "dhcp4 ") {
+			if err != nil || strings.Contains(out, "dhcp4 ") || strings.Contains(out, "dhcp6 ") {
 				return fmt.Errorf("status of r1 after the base config: %v\n%s", err, out)
+			}
+			return nil
+		})
+		waitFor(t, time.Minute, "r1's route of r2's prefix to go", func() error {
+			out, err := chalkctl(t, nodes["r1"], "base", "node", "routes", "r1", "--table", "all", "--protocol", "dhcp-pd")
+			if err != nil || strings.Contains(out, "dhcp-pd") {
+				return fmt.Errorf("routes of r1 after the base config: %v\n%s", err, out)
 			}
 			return nil
 		})

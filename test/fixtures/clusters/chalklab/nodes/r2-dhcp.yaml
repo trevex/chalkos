@@ -1,5 +1,6 @@
-# r2's dhcp0, of the MAC address r1 reserves an address for, takes its address from r1's DHCP
-# server.
+# r2's dhcp0, of the MAC address r1 reserves an address for, takes its IPv4 address from r1's
+# DHCPv4 server, and an IPv6 address and a delegated prefix from r1's DHCPv6 server, which it asks
+# without waiting for router advertisements.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: NetDev
 metadata: {name: 20-dhcp0}
@@ -12,4 +13,5 @@ kind: Network
 metadata: {name: 20-dhcp0}
 spec:
   match: {name: dhcp0}
-  network: {dhcp: ipv4, ipv6AcceptRA: false}
+  network: {dhcp: "yes", ipv6AcceptRA: false}
+  dhcpv6: {withoutRA: solicit}
