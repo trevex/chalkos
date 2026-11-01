@@ -370,7 +370,11 @@ https://trevex.github.io/chalkos/how-it-works/node/config/#chalkctl-and-chalkd-b
 The command prints a line for each node whose config is valid, with the digest of an image in a
 registry, names each node whose config is not, and warns of a node whose SystemDisk leaves STATE,
 which holds its keys and secrets, unencrypted. It reaches no node and needs no secrets file or
-client file.`
+client file.
+
+A config validate passes can still be refused on delivery: validate runs no rule that reads the
+node's facts or its running config, and none of the image's renderers or their checks. chalkctl
+apply-config --dry-run has the node run all of them, and changes nothing.`
 
 const validateExample = `  # Check every node of chalkos.yaml.
   chalkctl validate

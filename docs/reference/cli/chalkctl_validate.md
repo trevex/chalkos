@@ -21,6 +21,10 @@ registry, names each node whose config is not, and warns of a node whose SystemD
 which holds its keys and secrets, unencrypted. It reaches no node and needs no secrets file or
 client file.
 
+A config validate passes can still be refused on delivery: validate runs no rule that reads the
+node's facts or its running config, and none of the image's renderers or their checks. chalkctl
+apply-config --dry-run has the node run all of them, and changes nothing.
+
 ## Flags
 
 | Flag | Type | Default | Description |
