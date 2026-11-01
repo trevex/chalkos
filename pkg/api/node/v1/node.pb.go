@@ -1709,8 +1709,9 @@ type ApplyConfigRequest struct {
 	IgnoreUnits []string `protobuf:"bytes,9,rep,name=ignore_units,json=ignoreUnits,proto3" json:"ignore_units,omitempty"`
 	// Whether the node only checks the request: it runs every check a delivery runs, the image's
 	// renderers and their checks among them, refuses the request as the delivery would, and
-	// otherwise answers with the delivery's plan and storage changes. It changes nothing: no config,
-	// storage, layer payload, certificate or effect. Not together with staged.
+	// otherwise answers with the delivery's plan and storage changes. With try, it checks the
+	// trial's conditions too. It changes nothing: no config, storage, layer payload, certificate or
+	// effect. Not together with staged.
 	DryRun        bool `protobuf:"varint,10,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
