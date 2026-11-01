@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
@@ -51,6 +52,27 @@ const previousSuffix = ".previous"
 // Version read it as they read a slot; it does not exist while the slot keeps no previous config.
 func Previous(dir string) string {
 	return filepath.Join(filepath.Dir(dir), "."+filepath.Base(dir)+previousSuffix)
+}
+
+// Pending is the slot below root, such as /state/config, that holds the node's pending config:
+// config delivered for the next image before an upgrade installs one, which that upgrade checks
+// and writes to the image's slot. It is written and read as a slot, without defaults or an
+// identity. Its name is no root hash, so List and Retire pass it by.
+func Pending(root string) string {
+	return filepath.Join(root, "pending")
+}
+
+// Written is when the set the slot dir holds was written: the modification time of its version
+// file, which every write creates anew. It is false when the slot holds no set.
+func Written(dir string) (time.Time, bool, error) {
+	info, err := os.Stat(filepath.Join(dir, versionFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return info.ModTime(), true, nil
 }
 
 // Dir is the slot of the image whose store has the root hash, below root, such as
@@ -111,29 +133,37 @@ func Retire(root string, keep [][]byte) error {
 		delete(names, hex.EncodeToString(k))
 	}
 	for _, name := range slices.Sorted(maps.Keys(names)) {
-		dir := filepath.Join(root, name)
-		if err := checkLink(dir); err != nil {
-			return err
-		}
-		if err := os.Remove(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-		if err := os.Remove(filepath.Join(root, "."+name+".link")); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-		if err := removeLink(Previous(dir)); err != nil {
-			return err
-		}
-		// The links go to disk before the directories they named, so a power cut never leaves a
-		// link to a removed directory.
-		if err := atomicfile.SyncDir(root); err != nil {
-			return err
-		}
-		if err := removeStale(dir); err != nil {
+		if err := Remove(filepath.Join(root, name)); err != nil {
 			return err
 		}
 	}
 	return atomicfile.SyncDir(root)
+}
+
+// Remove removes the slot dir as Retire removes a slot it does not keep: its link first, with the
+// link an interrupted replace left and its previous config's, then the directories they named and
+// those interrupted writes left. A slot that does not exist is removed already. A directory where
+// its link would be is refused, as replace refuses it.
+func Remove(dir string) error {
+	root := filepath.Dir(dir)
+	if err := checkLink(dir); err != nil {
+		return err
+	}
+	if err := os.Remove(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.Remove(filepath.Join(root, "."+filepath.Base(dir)+".link")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := removeLink(Previous(dir)); err != nil {
+		return err
+	}
+	// The links go to disk before the directories they named, so a power cut never leaves a link
+	// to a removed directory.
+	if err := atomicfile.SyncDir(root); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return removeStale(dir)
 }
 
 // Write replaces the slot dir, such as /state/config/<root hash>, as a whole. The documents as
