@@ -116,6 +116,7 @@ func TestKea6PerVRF(t *testing.T) {
 				Library    string `json:"library"`
 				Parameters struct {
 					Name string `json:"name"`
+					Sync bool   `json:"sync"`
 				} `json:"parameters"`
 			} `json:"hooks-libraries"`
 			Subnets []struct {
@@ -141,7 +142,7 @@ func TestKea6PerVRF(t *testing.T) {
 	}
 	def := read("kea-dhcp6.json").Dhcp6
 	if !slices.Equal(def.Interfaces.Interfaces, []string{"lan0", "lan1"}) || def.Sockets[0].Name != "/run/kea/dhcp6.sock" || def.Leases.Name != "/var/lib/kea/dhcp6.leases" ||
-		len(def.Hooks) != 2 || def.Hooks[1].Library != "libdhcp_run_script.so" || def.Hooks[1].Parameters.Name != testPDHook || len(def.Subnets) != 2 {
+		len(def.Hooks) != 2 || def.Hooks[1].Library != "libdhcp_run_script.so" || def.Hooks[1].Parameters.Name != testPDHook || !def.Hooks[1].Parameters.Sync || len(def.Subnets) != 2 {
 		t.Fatalf("kea-dhcp6.json = %s", files["kea-dhcp6.json"])
 	}
 	if s := def.Subnets[0]; s.Interface != "lan0" || s.Valid != 3600 || s.Preferred != 3600 || s.ID != subnetID6(mustPrefix("2001:db8:1::/64")) {
