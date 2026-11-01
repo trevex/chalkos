@@ -14,8 +14,10 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/effects"
+	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -165,9 +167,19 @@ func (e *pendingEffects) oldConfig() map[string]any {
 // which say why without the values it read. The facts as they are now go to the delivery's
 // attempt in the baseline, which recordAttempt added.
 func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]outputs.State, secret string) (due, warnings []string, err error) {
+	o, warnings, err := s.outcome(ctx, e, states, secret)
+	for _, f := range o.Effects {
+		due = append(due, f.Name)
+	}
+	return due, warnings, err
+}
+
+// outcome is what due finds, with the outputs that changed and what fired each effect, as a dry
+// run's plan names them.
+func (s *Server) outcome(ctx context.Context, e *pendingEffects, states map[string]outputs.State, secret string) (check.Outcome, []string, error) {
 	after, err := s.factsFor(ctx, e.next, nil, secret)
 	if err != nil {
-		return nil, nil, err
+		return check.Outcome{}, nil, err
 	}
 	// Command facts read the old config as the rules do.
 	after.Input = map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": e.oldConfig()}
@@ -178,52 +190,33 @@ func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]o
 			log.Printf("record the facts of the delivery in the baseline of the effects: %v", err)
 		}
 	}
-	kinds, err := config.KindHashes(e.next, e.schemas, false)
+	o, warnings, err := check.Due(e.fx(), check.Delivery{Node: e.node, Documents: config.Redact(e.next), Schemas: e.schemas, Outputs: states}, e.comparisons(after))
 	if err != nil {
-		return nil, nil, failed(connect.CodeInternal, "the kinds of the delivery: %v", err)
+		return check.Outcome{}, nil, failed(connect.CodeInternal, "%v", err)
 	}
-	olds := []comparison{{docs: e.old, hashed: e.oldHashed, facts: after, oldFacts: e.before, outputs: e.outputs, kinds: e.kinds}}
+	for _, w := range warnings {
+		log.Print(w)
+	}
+	return o, warnings, nil
+}
+
+// fx are the effects as check.Due reads them.
+func (e *pendingEffects) fx() check.Effects {
+	return check.Effects{Defs: e.defs, Rules: e.rules}
+}
+
+// comparisons are the states due compares a delivery with: the config and the facts from before
+// it, and what each delivery that failed since the baseline applied, all with after, the facts as
+// they are now.
+func (e *pendingEffects) comparisons(after *facts.Loader) []check.Comparison {
+	olds := []check.Comparison{{Documents: e.old, Hashed: e.oldHashed, Facts: after, OldFacts: e.before, Outputs: e.outputs, Kinds: e.kinds}}
 	for _, a := range e.attempts {
 		docs := a.documents()
 		// Command facts read the attempt's config as the old one.
 		facts := after.For(map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": rules.HashedConfigOf(docs)})
-		olds = append(olds, comparison{docs: docs, hashed: true, facts: facts, oldFacts: a.Facts, outputs: a.Outputs, kinds: a.Kinds})
+		olds = append(olds, check.Comparison{Documents: docs, Hashed: true, Facts: facts, OldFacts: a.Facts, Outputs: a.Outputs, Kinds: a.Kinds})
 	}
-	for _, old := range olds {
-		ruled, errs := rules.Due(e.rules, rules.EffectInput{
-			Documents: e.next, Old: old.docs, OldHashed: old.hashed, Node: e.node, Facts: old.facts, OldFacts: old.oldFacts,
-		})
-		for _, err := range errs {
-			w := fmt.Sprintf("the rule of %v; taking the effect all the same", err)
-			if !slices.Contains(warnings, w) {
-				log.Print(w)
-				warnings = append(warnings, w)
-			}
-		}
-		for _, r := range ruled {
-			due = append(due, r.Name)
-		}
-		for name, d := range e.defs {
-			changedOutput := slices.ContainsFunc(d.Outputs, func(o string) bool { st, ok := states[o]; return ok && st != old.outputs[o] })
-			changedKind := slices.ContainsFunc(d.Kinds, func(k string) bool { return kinds[k] != old.kinds[k] })
-			if changedOutput || changedKind {
-				due = append(due, name)
-			}
-		}
-	}
-	slices.Sort(due)
-	return slices.Compact(due), warnings, nil
-}
-
-// comparison is a state due compares a delivery with: the old documents, hashed already or not,
-// the facts as they are now and as they were, the states of the outputs and the hashes of the
-// kinds.
-type comparison struct {
-	docs            []config.Document
-	hashed          bool
-	facts, oldFacts rules.Facts
-	outputs         map[string]outputs.State
-	kinds           map[string]string
+	return olds
 }
 
 // recordAttempt adds what the delivery of e applies to the baseline before the delivery changes
