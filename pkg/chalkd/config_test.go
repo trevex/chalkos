@@ -17,11 +17,13 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
+	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -1266,6 +1268,53 @@ func TestApplyConfigRefusesAnOutputThatFails(t *testing.T) {
 			st, err := outputs.ReadStatus(s.Loader.Render.Root)
 			if err != nil || st["demo"].Error != strings.TrimPrefix(tc.want, "output demo: ") || st["demo"].Hash == "" {
 				t.Errorf("status = %+v, %v", st, err)
+			}
+		})
+	}
+}
+
+// TestApplyConfigRefusesAsTheChecker: a set the translation refuses and an output whose renderer
+// fails refuse a delivery with the message check.Run gives the same config on the same image.
+func TestApplyConfigRefusesAsTheChecker(t *testing.T) {
+	for name, tc := range map[string]struct {
+		next  string
+		stage check.Stage
+	}{
+		"an invalid set": {baseConfig + "---\napiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: one}\nspec: {name: twice}\n", check.StageConfig},
+		"a renderer":     {strings.Replace(baseConfig, "name: first", "name: second", 1), check.StageOutputs},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := configServer(t)
+			writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `exit 3`, "")})
+			schemas, err := schema.LoadSchemas(s.Loader.Schemas)
+			if err != nil {
+				t.Fatal(err)
+			}
+			set, err := rules.Compile(schemas)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defs, err := outputs.Read(s.Loader.Outputs, s.Loader.Render.Root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			img := check.Image{Schemas: schemas, Target: config.Target{Platform: "metal"}, Rules: set, Outputs: defs, Render: s.Loader.Render}
+			docs, err := config.Parse(strings.NewReader(tc.next))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, checked := check.Run(context.Background(), img, check.Input{Node: "n1", Delivered: config.Redact(docs)})
+			var r *check.Refusal
+			if !errors.As(checked, &r) || r.Stage != tc.stage {
+				t.Fatalf("check.Run: %v", checked)
+			}
+			_, delivered := sendConfig(s, tc.next)
+			var ce *connect.Error
+			if !errors.As(delivered, &ce) {
+				t.Fatalf("the delivery: %v", delivered)
+			}
+			if ce.Message() != r.Message {
+				t.Errorf("the delivery is refused with %q, check.Run with %q", ce.Message(), r.Message)
 			}
 		})
 	}

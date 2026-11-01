@@ -3,7 +3,6 @@ package chalkd
 import (
 	"context"
 	"log"
-	"strings"
 
 	"connectrpc.com/connect"
 
@@ -36,14 +35,10 @@ func (s *Server) renderOutputs(ctx context.Context, name string, docs []config.D
 			log.Printf("record the outputs' failures: %v", err)
 		}
 	}
-	msgs := make([]string, len(failures))
-	for i, f := range failures {
-		msgs[i] = f.Error()
-	}
 	if !refuse {
-		log.Printf("%s; the delivery keeps the node's documents, so it goes ahead", strings.Join(msgs, "; "))
+		log.Printf("%s; the delivery keeps the node's documents, so it goes ahead", outputs.Refusal(failures))
 		return staged, nil
 	}
 	staged.Discard()
-	return nil, failed(connect.CodeFailedPrecondition, "%s", strings.Join(msgs, "; "))
+	return nil, failed(connect.CodeFailedPrecondition, "%s", outputs.Refusal(failures))
 }

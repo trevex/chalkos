@@ -32,6 +32,12 @@ func Translate(node string, docs []config.Document, schemas *schema.Schemas, t c
 	return Translated{Documents: set.Documents(), Identity: data}, nil
 }
 
+// ConfigRefusal is the refusal of a config set that Translate refuses with err, as a delivery and
+// Run give it.
+func ConfigRefusal(err error) string {
+	return "the config: " + err.Error()
+}
+
 // Rules returns the change rules of set that next, a config set with its defaults, does not meet
 // against old, the config it replaces; both have their secret values hashed. Rules see the node
 // called node and its facts f. An error is a rule that could not be checked, or a fact that could

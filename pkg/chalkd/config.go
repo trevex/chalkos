@@ -27,7 +27,7 @@ func configure(name, text string, schemas *schema.Schemas, t config.Target) (slo
 	}
 	c, err := translateSlot(name, docs, schemas, t)
 	if err != nil {
-		return slot.Stored{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
+		return slot.Stored{}, failed(connect.CodeInvalidArgument, "%s", check.ConfigRefusal(err))
 	}
 	return c, nil
 }

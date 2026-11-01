@@ -11,7 +11,6 @@ package check
 
 import (
 	"context"
-	"strings"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -85,7 +84,7 @@ func (r *Refusal) Error() string { return r.Message }
 func Run(ctx context.Context, img Image, in Input) (Result, error) {
 	tr, err := Translate(in.Node, in.Delivered, img.Schemas, img.Target)
 	if err != nil {
-		return Result{}, &Refusal{Stage: StageConfig, Message: "the config: " + err.Error()}
+		return Result{}, &Refusal{Stage: StageConfig, Message: ConfigRefusal(err)}
 	}
 	failures, err := Rules(img.Rules, in.Node, tr.Documents, in.Old, in.Facts)
 	if err != nil {
@@ -97,11 +96,7 @@ func Run(ctx context.Context, img Image, in Input) (Result, error) {
 	staged, refused := img.Render.Render(ctx, img.Outputs, outputs.Input{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Hashed: true})
 	if len(refused) > 0 {
 		staged.Discard()
-		msgs := make([]string, len(refused))
-		for i, f := range refused {
-			msgs[i] = f.Error()
-		}
-		return Result{}, &Refusal{Stage: StageOutputs, Message: strings.Join(msgs, "; ")}
+		return Result{}, &Refusal{Stage: StageOutputs, Message: outputs.Refusal(refused)}
 	}
 	o, warnings, err := Due(img.Effects, Delivery{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Outputs: staged.States()}, in.Compare)
 	if err != nil {

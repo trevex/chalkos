@@ -75,6 +75,17 @@ type Failure struct {
 
 func (f Failure) Error() string { return "output " + f.Output + ": " + f.Problem }
 
+// Refusal is the message a delivery whose outputs failed is refused with, as chalkd and check.Run
+// say it: each failure as its Error says it, in the order given, joined by "; ". Join gives the
+// failures as one error instead.
+func Refusal(failures []Failure) string {
+	msgs := make([]string, len(failures))
+	for i, f := range failures {
+		msgs[i] = f.Error()
+	}
+	return strings.Join(msgs, "; ")
+}
+
 // Renderer renders outputs below Root.
 type Renderer struct {
 	Root string
