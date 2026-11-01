@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -87,5 +88,67 @@ func TestCheckRefuses(t *testing.T) {
 	}
 	if res := checkWith(t, s, broken, baseConfig); !strings.HasPrefix(res.GetError(), "the image's schemas: ") {
 		t.Errorf("result = %v, want the image's error", res)
+	}
+}
+
+// refusingImage is the store of an image whose Demo kind refuses the name refuse by a rule, and
+// whose output demo of the Demo documents has a renderer that fails for the name fail.
+func refusingImage(t *testing.T, s *Server) dirStore {
+	t.Helper()
+	files := fixtureSchemas(t)
+	demo := "demo.example.org_v1alpha1_Demo.json"
+	rule := `"x-chalkos-rules": [{"rule": "self != 'refuse'", "message": "the name refuses"}],`
+	files[demo] = []byte(strings.Replace(string(files[demo]), `"name": { "type": "string", "description"`, `"name": { "type": "string", `+rule+` "description"`, 1))
+	if !strings.Contains(string(files[demo]), "the name refuses") {
+		t.Fatal("the Demo schema took no rule")
+	}
+	st := imageWith(t, s, files, "")
+	render := filepath.Join(t.TempDir(), "render")
+	write(t, render, "#!/bin/sh\n! grep -q '\"fail\"'\n")
+	if err := os.Chmod(render, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outputs, err := json.Marshal(map[string]any{"demo": map[string]any{
+		"inputs": []string{"Demo"}, "render": render, "dir": "/run/demo",
+		"user": strconv.Itoa(os.Getuid()), "group": strconv.Itoa(os.Getgid()), "mode": "0644",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/outputs.json"), string(outputs))
+	return st
+}
+
+// chalkd check refuses config by the image's rules and by its renderers, with the stage and the
+// identity of the translation; with Storage, it runs the storage kinds' rules alone and renders
+// nothing.
+func TestCheckRefusesByRulesAndOutputs(t *testing.T) {
+	s, _ := configServer(t)
+	st := refusingImage(t, s)
+	if res := checkWith(t, s, st, baseConfig); res.GetRefusal() != nil || res.GetError() != "" || len(res.GetDocuments()) == 0 {
+		t.Fatalf("result = %v, want a pass", res)
+	}
+	for name, want := range map[string]struct{ stage, message string }{
+		"refuse": {"rules", "the name refuses"},
+		"fail":   {"outputs", "output demo: its renderer failed (exit 1)"},
+	} {
+		res := checkWith(t, s, st, strings.Replace(baseConfig, "name: first", "name: "+name, 1))
+		r := res.GetRefusal()
+		if r.GetStage() != want.stage || !strings.Contains(r.GetMessage(), want.message) || res.GetIdentity() == "" {
+			t.Errorf("%s: result = %v, want a refusal of %s with the identity", name, res, want.stage)
+		}
+	}
+	docs, err := config.Parse(strings.NewReader(strings.Replace(baseConfig, "name: first", "name: refuse", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	delivered, err := imagecheck.Encode(config.Redact(docs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := imagecheck.Local{Check: s.Check}.Run(context.Background(), imagecheck.Image{Store: st.Dir(), System: "/nix/store/x"},
+		&checkv1.Input{Node: "n1", Platform: "metal", Delivered: delivered, Storage: true}, noFacts{})
+	if err != nil || res.GetRefusal() != nil || res.GetError() != "" || res.GetIdentity() == "" {
+		t.Errorf("storage alone: result = %v, %v; want a pass", res, err)
 	}
 }
