@@ -23,7 +23,9 @@ import (
 // programs. The fact's own program runs from Store, where systemd-run finds it: the running
 // system's store may lack it. A program that is a link, as a package's bin/ often holds one into
 // another package, is followed within Store first, as the running system would follow it into its
-// own store.
+// own store. The program then runs under the name of what the link leads to: systemd-run takes
+// no argv[0] apart from the program, so a fact names its program itself, not a link to a
+// multi-call binary such as kmod's lsmod.
 type Sandbox struct {
 	Store string
 }

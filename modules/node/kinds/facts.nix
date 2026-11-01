@@ -35,7 +35,10 @@ let
           Program of the image's store, with its arguments, that prints the fact as JSON. It reads
           `{"config": …, "oldConfig": …}` and its inputs as JSON on standard input, runs through
           `systemd-run` with the system read-only and no network, and must finish within 30
-          seconds with at most 1 MiB of output.
+          seconds with at most 1 MiB of output. For an image that does not run, as when a staged
+          image checks its config, chalkd follows a program that is a link and runs what the link
+          leads to under that name. Name the program itself or a script that calls it, not a link
+          to a multi-call binary such as kmod's `lsmod` or lvm2's `lvs`.
         '';
       };
       inputs = lib.mkOption {

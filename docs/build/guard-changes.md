@@ -291,6 +291,11 @@ without `CAP_SYS_MODULE`:
 A command that exits with an error, takes longer than 30 seconds, prints more than 1 MiB or prints
 no JSON refuses the delivery.
 
+A command fact names its program itself, or a script that calls it, never a link to a multi-call
+binary such as kmod's `lsmod`, lvm2's `lvs` or busybox. For an image that does not run, as when a
+staged image checks its config, chalkd follows a link within that image's store and runs what it
+leads to under that name, so `lsmod` would run as `kmod`.
+
 ## Rules compare with the running config alone
 
 - Rules compare the config with the running image's config. The one check that reads another
