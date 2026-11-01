@@ -8,7 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
+
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/imagecheck"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -134,5 +137,33 @@ func TestStagedFacts(t *testing.T) {
 	}
 	if v, err := f.Fact("share", nil); err != nil || v != nil {
 		t.Errorf("share = %v, %v; want null, as the image declares none", v, err)
+	}
+}
+
+// A dry run for the staged image has the image check the config and plans the versions and the
+// storage changes, and changes nothing: neither the machine nor the staged slot.
+func TestApplyConfigStagedDryRun(t *testing.T) {
+	s, r := stagedServer(t, fixtureSchemas(t))
+	r.Rules = volumeRules(s)
+	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), Staged: true, DryRun: true, FallbackSecret: secret}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := resp.Msg.GetPlan(); p.GetVersion() != hashOf(t, extraConfig("ext4")) || p.GetReplaces() != hashOf(t, baseConfig) || len(p.GetOutputs()) != 0 || len(p.GetEffects()) != 0 {
+		t.Errorf("plan = %v", p)
+	}
+	if c := resp.Msg.GetChanges(); len(c) != 1 || c[0].GetVolume() != "extra" {
+		t.Errorf("changes = %v, want the new volume", c)
+	}
+	if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+		t.Errorf("staged version = %q, want it unchanged", v)
+	}
+	if changed := withoutChecks(r.Calls); len(changed) != 0 {
+		t.Errorf("a dry run ran %v", changed)
+	}
+	// A refusal is a delivery's.
+	_, err = s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), Staged: true, DryRun: true}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "only a reinstall of") {
+		t.Errorf("err = %v", err)
 	}
 }

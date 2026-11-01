@@ -10,12 +10,11 @@ import (
 
 	"connectrpc.com/connect"
 
+	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/esp"
-	"github.com/trevex/chalkos/pkg/facts"
-	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -108,9 +107,11 @@ func (s *Server) readImage(ctx context.Context, rootHash []byte, read func(st im
 
 // applyStaged checks the config of a request against the image staged to boot next and keeps it in
 // that image's slot, as an upgrade that finds the image staged already does: checked by that
-// image's rules against the running slot's config and the machine, whose storage changes the rules
-// accept it makes with the request's fallback secret. Nothing the running image runs changes.
-// The caller holds s.mu.
+// image's own checker against the running slot's config, and against the machine, whose storage
+// changes the image accepts it makes with the request's fallback secret. With dry_run it checks
+// the config the same way and answers with the plan, the slot's version before and after and the
+// storage changes, and changes nothing. Nothing the running image runs changes. The caller holds
+// s.mu.
 func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if m.Config == "" || len(m.Layers) > 0 || len(m.NodeCertificate) > 0 || len(m.NodeKey) > 0 || len(m.Trust) > 0 {
 		return nil, failed(connect.CodeInvalidArgument, "a request for the staged image delivers config alone, with the fallback secret: the share, the certificates and the OS CAs are the node's")
@@ -130,15 +131,43 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 	if err != nil {
 		return nil, err
 	}
+	// A dry run plans the version the slot would hold in place of the one it holds.
+	var held string
+	if m.DryRun {
+		if held, err = slot.Version(slot.Dir(s.Loader.Slots, staged)); err != nil {
+			return nil, failed(connect.CodeInternal, "read the staged image's config slot: %v", err)
+		}
+	}
 	// The known-good image's own config, delivered again, changes nothing.
 	if knownGood {
-		return connect.NewResponse(&nodev1.ApplyConfigResponse{}), nil
+		resp := &nodev1.ApplyConfigResponse{}
+		if m.DryRun {
+			resp.Plan = &nodev1.Plan{Version: held, Replaces: held}
+		}
+		return connect.NewResponse(resp), nil
+	}
+	platform := readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]
+	// A dry run has the image check the config, as a delivery does, and stops before the machine
+	// or the slot changes.
+	if m.DryRun {
+		var w slotWrite
+		if err := s.readImage(ctx, staged, func(st imageStore, system string) error {
+			var err error
+			w, err = s.planSlot(ctx, st, system, platform, staged, docs, m.FallbackSecret)
+			return err
+		}); err != nil {
+			return nil, err
+		}
+		resp := &nodev1.ApplyConfigResponse{Plan: &nodev1.Plan{Version: w.next.Version, Replaces: held}}
+		for _, c := range w.machine.changes {
+			resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
+		}
+		return connect.NewResponse(resp), nil
 	}
 	recorded, _, err := s.recorded()
 	if err != nil {
 		return nil, err
 	}
-	platform := readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]
 	if err := s.readImage(ctx, staged, func(st imageStore, system string) error {
 		return s.writeSlot(ctx, st, system, platform, staged, docs, m.FallbackSecret)
 	}); err != nil {
@@ -166,13 +195,14 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 // operator first brings the staged slot along with chalkctl apply-config --staged, after which
 // the new volume is additive.
 //
-// The slot is checked as it would be written again once the change is made:
-//   - section is the recorded storage, and next, the config this change runs, the running config;
-//   - the rules are the running image's storage rules, from schemas, and see the node called name;
-//   - f is the delivery's facts, which its commands read for the staged slot.
+// The staged image checks its slot, as it would check it written again once the change is made:
+//   - against its own storage rules, which see the node called name;
+//   - with section, the storage this change makes, as the recorded storage, and next, the config
+//     this change runs, as the running config;
+//   - with secret, the delivery's fallback secret, for the facts that declare it.
 //
 // A write of the staged slot does not check the running slot in turn. The caller holds s.mu.
-func (s *Server) checkStaged(schemas *schema.Schemas, name string, next []config.Document, section storage.Section, f *facts.Loader) error {
+func (s *Server) checkStaged(ctx context.Context, name string, next []config.Document, section storage.Section, secret string) error {
 	staged, err := s.stagedImage()
 	if err != nil {
 		return failed(connect.CodeInternal, "find the staged image: %v", err)
@@ -187,24 +217,23 @@ func (s *Server) checkStaged(schemas *schema.Schemas, name string, next []config
 	if !found {
 		return nil
 	}
-	set, err := compileRunningRules(schemas)
-	if err != nil {
+	platform := readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]
+	var refusal *checkv1.Refusal
+	if err := s.readImage(ctx, staged, func(st imageStore, system string) error {
+		res, err := s.runImageCheck(ctx, st, system, platform, name, imageCheck{delivered: held.Delivered, old: next, secret: secret, recorded: &section, storage: true})
+		refusal = res.GetRefusal()
+		return err
+	}); err != nil {
 		return err
 	}
-	sf := f.For(factInput(held.Documents, next))
-	sf.Override("recorded", jsonValue(section))
-	failures, err := evaluate(set.Of(config.StorageAPI), name, held.Documents, next, sf)
-	if err != nil {
-		return err
-	}
-	if len(failures) == 0 {
+	if refusal == nil {
 		return nil
 	}
-	msgs := make([]string, len(failures))
-	for i, f := range failures {
-		msgs[i] = f.String()
+	saying := refusal.GetMessage()
+	if len(refusal.GetFailures()) > 0 {
+		saying = strings.Join(refusal.GetFailures(), "; ")
 	}
-	return failed(connect.CodeFailedPrecondition, "the image %x staged to boot next would refuse its own config once this config changes the storage, saying: %s; bring its config along first: run chalkctl apply-config --staged %s with the new config, then apply it to the running image", staged[:6], strings.Join(msgs, "; "), name)
+	return failed(connect.CodeFailedPrecondition, "the image %x staged to boot next would refuse its own config once this config changes the storage, saying: %s; bring its config along first: run chalkctl apply-config --staged %s with the new config, then apply it to the running image", staged[:6], saying, name)
 }
 
 // stagedVersion is the version of the config slot of the image the boot status names as staged;

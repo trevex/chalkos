@@ -111,15 +111,6 @@ func TestDryRunRefusesAsADelivery(t *testing.T) {
 	}
 }
 
-// A dry run checks a delivery to the running image alone.
-func TestDryRunRefusesTheStagedImage(t *testing.T) {
-	s, _ := configServer(t)
-	_, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, DryRun: true}))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "a dry run checks a delivery to the running image") {
-		t.Errorf("err = %v", err)
-	}
-}
-
 // A dry run leaves the baseline an earlier delivery that failed part way recorded as it was,
 // whether it plans the delivery or refuses it, so the next delivery compares with what that
 // delivery may have changed.

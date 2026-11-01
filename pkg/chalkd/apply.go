@@ -41,9 +41,6 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 	if err != nil {
 		return nil, err
 	}
-	if req.Msg.DryRun && req.Msg.Staged {
-		return nil, failed(connect.CodeInvalidArgument, "a dry run checks a delivery to the running image; this node does not check config for the staged image without keeping it")
-	}
 	// An upgrade writes its image's slot, checked against the machine, before the image is
 	// staged, so a machine change in between would escape checkStaged. TryLock never waits: the
 	// upgrade, an image rollback and a trial's deadline hold upgrading while they take s.mu.
@@ -198,7 +195,7 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	}); err != nil {
 		return nil, err
 	}
-	// The delivery's facts, loaded once for the running slot's check and the staged slot's.
+	// The delivery's facts, loaded once for the running slot's rules.
 	var loaded *facts.Loader
 	if !d.keep {
 		// The image's rules compare the config with the running slot's and the storage STATE
@@ -225,7 +222,7 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 			return nil, err
 		}
 		if len(d.machine.changes) > 0 {
-			if err := s.checkStaged(r.schemas, name, r.next.Documents, d.identity.section, loaded); err != nil {
+			if err := s.checkStaged(ctx, name, r.next.Documents, d.identity.section, m.FallbackSecret); err != nil {
 				return nil, err
 			}
 		}
