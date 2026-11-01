@@ -198,7 +198,9 @@ A node's set is valid when:
   `Addon`, `Network`, `NetDev`, `Link` and extension kinds declared with `multiple = true`);
 - every document's `apiVersion` and `kind` is one the node's image declares;
 - no two documents of a kind share a `metadata.name`;
-- every `secretRef` names a `Secret` in the set and a key that `Secret` holds;
+- every reference names a document of the set: a `lib.chalkos.types.ref` field a document of its
+  kind, unless it holds a name the field reserves, and a `secretRef` a `Secret` and a key that
+  `Secret` holds; chalkctl and chalkd report every reference that does not, one line each;
 - every `secretRef` can name the systemd credential a unit loads its value from: the key is
   printable ASCII without `/` or `:` and does not start with a dot, the `Secret`'s name and the
   key together take at most 247 bytes, and no two references share the credential

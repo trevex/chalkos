@@ -67,11 +67,11 @@ the `Secret` document, `chalkctl validate` refuses both homelab nodes:
 
 ```text
 chalkctl: the config of 2 nodes is invalid:
-node cp1: Peer "router-a" names Secret "bgp", which the config does not hold
-node w1: Peer "router-a" names Secret "bgp", which the config does not hold
+node cp1: Peer/router-a: spec.password: Secret "bgp" does not exist
+node w1: Peer/router-a: spec.password: Secret "bgp" does not exist
 ```
 
-A misspelled key gives `names key "passwort" of Secret "bgp", which it does not hold`. The
+A misspelled key gives `Peer/router-a: spec.password: Secret "bgp" has no key "passwort"`. The
 `Secret`'s name and the key become a file name on the node. They hold printable ASCII without `/`
 or `:`, and at most 247 bytes together, or chalkd refuses the set.
 

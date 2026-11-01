@@ -109,7 +109,7 @@ and the `description` of `password` are left out:
                   }
                 }
               },
-              "x-chalkos-secret-ref": true
+              "x-chalkos-ref": {"apiVersion": "chalkos.dev/v1alpha1", "kind": "Secret", "key": true}
             },
             {"type": "null"}
           ],
@@ -221,6 +221,7 @@ A field's option type decides its schema. The converter knows these types:
 | `listOf <type>`, `nonEmptyListOf <type>` | `array` of the type; the second with `minItems: 1` |
 | `attrsOf <type>`, `lazyAttrsOf <type>` | `object` whose values have the type |
 | `submodule { options = ...; }` | `object` with the submodule's options, refusing others |
+| `lib.chalkos.types.ref "<Kind>"`, `lib.chalkos.types.ref { kind = "<Kind>"; reserved = [ ... ]; }` | `string` with the pattern of a document name, and `x-chalkos-ref` with the kind's `apiVersion`, the `kind` and `reserved` |
 | `lib.chalkos.types.secretRef` | `object` holding `secretRef` with `name` and `key` |
 
 A pattern of `strMatching` is a POSIX regular expression to Nix and an ECMA-262 one to JSON
@@ -233,7 +234,7 @@ like this:
 ```text
 error: chalkos.kinds.Peer.spec.keyFile: the option type absolute path has no JSON Schema mapping. Kinds accept str,
 nonEmptyStr, strMatching, bool, int, ints.*, port, float, enum, nullOr, listOf, attrsOf,
-submodule and lib.chalkos.types.secretRef.
+submodule, lib.chalkos.types.ref and lib.chalkos.types.secretRef.
 ```
 
 ## Field rules need lib.chalkos.mkOption
@@ -251,7 +252,58 @@ instead. [Guard changes with rules and facts](guard-changes.md) covers both, and
 rule reads about the node.
 
 The `rules` argument exists only on `lib.chalkos`, which every image module gets as part of
-`lib`. `lib.chalkos.types.secretRef` comes from the same place.
+`lib`. `lib.chalkos.types.ref` and `lib.chalkos.types.secretRef` come from the same place.
+
+## A field can name a document of another kind
+
+`lib.chalkos.types.ref` declares a field that holds the name of a document of another kind, as
+`metadata.name` writes it. The field names the kind without its group: kind names are unique
+within an image, and the build fills in the `apiVersion`.
+
+```nix
+{ lib, ... }:
+{
+  chalkos.kinds.Session = {
+    group = "bgp.example.org";
+    version = "v1alpha1";
+    multiple = true;
+    spec = {
+      peer = lib.mkOption {
+        type = lib.chalkos.types.ref "Peer";
+        description = "Peer the session runs to.";
+      };
+      table = lib.mkOption {
+        type = lib.chalkos.types.ref {
+          kind = "Table";
+          reserved = [ "main" ];
+        };
+        default = "main";
+        description = "Table the session's routes go into; main is the kernel's own table.";
+      };
+    };
+  };
+}
+```
+
+The type works inside `nullOr`, `listOf`, `attrsOf` and submodules.
+
+- The image build fails when the image declares no kind of the name a reference gives.
+- chalkctl and chalkd refuse a config in which a reference names a document the config lacks.
+  They report every such reference at once, one line each, before any rule runs:
+
+  ```text
+  Session/upstream: spec.peer: Peer "router-c" does not exist
+  ```
+
+  A config that drops a document other documents name is refused the same way, with a line for
+  each document that still names it.
+- `reserved` lists names that stand for something that is no document, such as `main` here. The
+  field takes them as they are, and no document of the target kind may have such a name: a
+  `Table` named `main` is refused.
+
+A rule reads the document a reference names with `document(kind, name)`, which
+[Guard changes with rules and facts](guard-changes.md#rules-call-cels-functions-and-chalkoss)
+describes.
 
 ## A new version of a kind is a new set of documents
 
