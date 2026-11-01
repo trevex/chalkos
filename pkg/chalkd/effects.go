@@ -114,7 +114,7 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 	if e.outputs, err = s.Loader.OutputStates(old, schemas); err != nil {
 		return nil, failed(connect.CodeInternal, "the outputs the node serves: %v", err)
 	}
-	if e.kinds, err = config.KindHashes(old, schemas); err != nil {
+	if e.kinds, err = config.KindHashes(old, schemas, false); err != nil {
 		return nil, failed(connect.CodeInternal, "the kinds the node runs: %v", err)
 	}
 	before, err := s.factsFor(ctx, next, old, secret)
@@ -178,7 +178,7 @@ func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]o
 			log.Printf("record the facts of the delivery in the baseline of the effects: %v", err)
 		}
 	}
-	kinds, err := config.KindHashes(e.next, e.schemas)
+	kinds, err := config.KindHashes(e.next, e.schemas, false)
 	if err != nil {
 		return nil, nil, failed(connect.CodeInternal, "the kinds of the delivery: %v", err)
 	}
@@ -233,7 +233,7 @@ type comparison struct {
 // that compare with it too, even one of the config from before it. The attempts go with the
 // baseline once a delivery is applied whole.
 func (s *Server) recordAttempt(e *pendingEffects, states map[string]outputs.State) error {
-	kinds, err := config.KindHashes(e.next, e.schemas)
+	kinds, err := config.KindHashes(e.next, e.schemas, false)
 	if err != nil {
 		// Without them every effect on a kind the delivery holds is due.
 		log.Printf("the kinds of the delivery: %v", err)

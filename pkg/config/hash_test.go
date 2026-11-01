@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -128,7 +129,7 @@ func TestKindHashes(t *testing.T) {
 	s := imageSchemas(t)
 	hashes := func(yaml string) map[string]string {
 		t.Helper()
-		h, err := KindHashes(parseDocs(t, yaml), s)
+		h, err := KindHashes(parseDocs(t, yaml), s, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -179,11 +180,11 @@ kind: Secret
 metadata: {name: spare}
 spec: {data: {token: unused}}
 `
-	before, err := KindHashes(parseDocs(t, unreferenced), s)
+	before, err := KindHashes(parseDocs(t, unreferenced), s, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := KindHashes(parseDocs(t, strings.Replace(unreferenced, "token: unused", "token: changed", 1)), s)
+	after, err := KindHashes(parseDocs(t, strings.Replace(unreferenced, "token: unused", "token: changed", 1)), s, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,5 +214,20 @@ spec: {hostname: n1}
 	}
 	if !reflect.DeepEqual(docs[1].Hashed(), docs[1].Object) {
 		t.Errorf("the Host = %v", docs[1].Hashed())
+	}
+}
+
+// KindHashes of a set whose secret values are hashed already, as Redact gives it, are those of
+// the set with its values.
+func TestKindHashesHashed(t *testing.T) {
+	s := imageSchemas(t)
+	docs := parseDocs(t, hashed)
+	want, err := KindHashes(docs, s, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := KindHashes(Redact(docs), s, true)
+	if err != nil || !maps.Equal(got, want) {
+		t.Errorf("hashed: %v, %v; with values: %v", got, err, want)
 	}
 }

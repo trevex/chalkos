@@ -74,7 +74,13 @@ func hideValues(data map[string]any) map[string]any {
 // KindHashes hashes the documents of each kind in docs, by kind name, together with the Secrets
 // they reference, so a kind's hash changes when one of its documents does or a Secret one of them
 // references. Secrets have no entry of their own. schemas tell which fields are secretRefs.
-func KindHashes(docs []Document, schemas *schema.Schemas) (map[string]string, error) {
+//
+// It hashes the documents as Redact gives them, so hashed, which tells that the secret values of
+// docs are hashed already, gives a set the hashes its documents with their values give.
+func KindHashes(docs []Document, schemas *schema.Schemas, hashed bool) (map[string]string, error) {
+	if !hashed {
+		docs = Redact(docs)
+	}
 	secrets := map[string]Document{}
 	byKind := map[string][]Document{}
 	for _, d := range docs {
@@ -96,7 +102,7 @@ func KindHashes(docs []Document, schemas *schema.Schemas) (map[string]string, er
 				}
 			}
 		}
-		h, err := Hash(input)
+		h, err := hashRedacted(input)
 		if err != nil {
 			return nil, err
 		}
@@ -110,11 +116,11 @@ func KindHashes(docs []Document, schemas *schema.Schemas) (map[string]string, er
 // that reads a kind's documents reads the values its secretRefs name too, which the documents
 // alone do not show, so a change rule cannot tell this from config and oldConfig.
 func ChangedKinds(before, after []Document, schemas *schema.Schemas) ([]string, error) {
-	was, err := KindHashes(before, schemas)
+	was, err := KindHashes(before, schemas, false)
 	if err != nil {
 		return nil, err
 	}
-	gets, err := KindHashes(after, schemas)
+	gets, err := KindHashes(after, schemas, false)
 	if err != nil {
 		return nil, err
 	}
@@ -131,4 +137,21 @@ func ChangedKinds(before, after []Document, schemas *schema.Schemas) ([]string, 
 	}
 	slices.Sort(changed)
 	return changed, nil
+}
+
+// hashRedacted is Hash of documents Redact gave: their Secrets' values are hashed already, so it
+// hashes the objects as they are, which for a set without Addons is Hash of the set before Redact.
+func hashRedacted(docs []Document) (string, error) {
+	sorted := slices.Clone(docs)
+	SortDocuments(sorted)
+	objects := make([]any, len(sorted))
+	for i, d := range sorted {
+		objects[i] = d.Object
+	}
+	c, err := json.Marshal(objects)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(c)
+	return hex.EncodeToString(sum[:]), nil
 }
