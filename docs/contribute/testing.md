@@ -107,7 +107,9 @@ run them in isolation:
   capabilities, behind its ruleset, between clients and Kea's servers in peer namespaces. It
   proves that the relays of the default VRF and of a VRF run beside each other in either order, a
   lease of each family through the relays, the servers' answers let in as replies and that a
-  ruleset without the relay's openings keeps the client from both.
+  ruleset without the relay's openings keeps the client from both. dnsmasq runs as the
+  namespace's root, its only user, with the units' capabilities alone, so the check does not run
+  it as the user `dnsmasq`; `router-dhcp6` runs Kea and `chalkd router dhcp6-routes` the same way.
 - The `router-dhcp-relay-instances` check runs `chalkos-dhcp-relays.service` with stubs of
   `systemctl` and `systemd-escape`, as `router-dhcp-instances` does.
 
