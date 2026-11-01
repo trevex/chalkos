@@ -127,7 +127,9 @@ The pending config is the set that `chalkctl apply-config --staged` stores in
 an upgrade installs checks it as it checks any config. chalkd removes the pending config once that
 image is staged to boot next, whether the image got it or the upgrade carried config of its own.
 An upgrade that fails before, in the image's check or while chalkd activates its boot entry,
-keeps it. Should the removal itself fail, chalkd logs it, the upgrade still succeeds, and status
+keeps it. An activation that fails once the UKI has its boot name can leave the image to boot
+next while the node keeps the pending config. Sending that image again without config then
+rewrites its slot with the pending config. Should the removal itself fail, chalkd logs it, the upgrade still succeeds, and status
 keeps showing the pending config until `apply-config --staged --discard` removes it. An upgrade
 that pulls its image takes the Registry and Mirror documents from the same config: the upgrade's,
 else the pending config, else the running one. A pending config holds no fallback secret, so an
