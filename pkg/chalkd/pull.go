@@ -73,6 +73,8 @@ func (s *Server) registryDocuments(ref, text string) ([]config.Document, error) 
 		return nil, failed(connect.CodeInternal, "pull %s: read the pending config: %v", ref, err)
 	}
 	if held {
+		// chalkd has only parsed the pending config, which an admin stored; the image checks it
+		// right after the pull, before it becomes the next boot.
 		return pending.Delivered, nil
 	}
 	_, running, _, err := s.runningSlot()
