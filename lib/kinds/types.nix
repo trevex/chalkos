@@ -1,7 +1,44 @@
 # The option types of kind fields that the schema converter and the get paths recognise by name,
 # and the pattern of a document's name.
 { lib }:
-{
+rec {
+  # The name of the types ref returns, which the schema converter recognises.
+  refName = "chalkosRef";
+
+  # A reference to a document of another kind by its name: { kind; reserved ? [ ]; }, or the kind
+  # alone. The value is the name, as metadata.name writes it. The kinds module fills in the target
+  # kind's apiVersion, and refuses the reserved names, which stand for something that is no
+  # document, such as the VRF default, as names of documents of that kind.
+  ref =
+    target:
+    let
+      t = if lib.isString target then { kind = target; } else target;
+      unknown = lib.attrNames (
+        removeAttrs t [
+          "kind"
+          "reserved"
+        ]
+      );
+      reserved = t.reserved or [ ];
+      badNames = lib.filter (n: !lib.isString n || builtins.match documentName n == null) reserved;
+    in
+    if !(t ? kind) || !lib.isString t.kind then
+      throw ''lib.chalkos.types.ref: give the kind of the documents the field names, as ref "VRF" or ref { kind = "VRF"; }''
+    else if unknown != [ ] then
+      throw "lib.chalkos.types.ref ${t.kind}: ${lib.head unknown} is none of kind and reserved"
+    else if badNames != [ ] then
+      throw "lib.chalkos.types.ref ${t.kind}: the reserved name ${builtins.toJSON (lib.head badNames)} is no document name, which matches ^${documentName}$"
+    else
+      lib.types.strMatching documentName
+      // {
+        name = refName;
+        description = "name of a ${t.kind} document";
+        chalkosRef = {
+          inherit (t) kind;
+          reserved = lib.unique reserved;
+        };
+      };
+
   # A reference to a key of a Secret document. chalkd gives a granted unit the value it names as a
   # credential.
   secretRef =

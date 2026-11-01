@@ -100,6 +100,16 @@ let
     in
     if n == types.secretRef.name then
       secretRefSchema
+    else if n == types.refName then
+      {
+        type = "string";
+        pattern = "^(?:${types.documentName})$";
+        # resolveRefs adds the target's apiVersion, which only the image's kinds tell.
+        "x-chalkos-ref" = {
+          inherit (t.chalkosRef) kind;
+        }
+        // lib.optionalAttrs (t.chalkosRef.reserved != [ ]) { inherit (t.chalkosRef) reserved; };
+      }
     else if n == types.kubernetesObject.name then
       {
         type = "object";
@@ -207,7 +217,7 @@ let
       throw ''
         ${at}: the option type ${t.description} has no JSON Schema mapping. Kinds accept str,
         nonEmptyStr, strMatching, bool, int, ints.*, port, float, enum, nullOr, listOf, attrsOf,
-        submodule and lib.chalkos.types.secretRef.
+        submodule, lib.chalkos.types.ref and lib.chalkos.types.secretRef.
       '';
 
   # attrsOf and lazyAttrsOf read a submodule's options by instantiating it once, before any
@@ -348,4 +358,58 @@ rec {
       ...
     }:
     "${group}_${version}_${kind}.json";
+
+  # The references of a schema, a JSON value: every x-chalkos-ref below it, in no particular order.
+  refsOf =
+    v:
+    if lib.isAttrs v then
+      lib.optional (v ? "x-chalkos-ref") v."x-chalkos-ref"
+      ++ lib.concatMap refsOf (lib.attrValues (removeAttrs v [ "x-chalkos-ref" ]))
+    else if lib.isList v then
+      lib.concatMap refsOf v
+    else
+      [ ];
+
+  # The schemas of chalkos.kinds, by file name, as the image ships them: each reference with the
+  # apiVersion of the kind it names, and each kind's metadata.name refusing the names that
+  # references to it reserve. A reference to a kind chalkos.kinds lacks fails the evaluation and
+  # names the kind that holds it; networkd's kinds are no targets, as their schemas come from
+  # systemd's tables.
+  resolveRefs =
+    schemas:
+    let
+      byKind = lib.mapAttrs' (
+        _: s: lib.nameValuePair s."x-chalkos-kind".kind s.properties.apiVersion.const
+      ) schemas;
+      fill =
+        from: v:
+        if lib.isAttrs v then
+          lib.mapAttrs (n: x: if n == "x-chalkos-ref" then target from x else fill from x) v
+        else if lib.isList v then
+          map (fill from) v
+        else
+          v;
+      target =
+        from: r:
+        if byKind ? ${r.kind} then
+          r // { apiVersion = byKind.${r.kind}; }
+        else
+          throw "chalkos.kinds.${from}: a field references the kind ${r.kind}, which chalkos.kinds does not declare; it declares ${lib.concatStringsSep ", " (lib.sort lib.lessThan (lib.attrNames byKind))}";
+      refs = lib.concatMap refsOf (lib.attrValues schemas);
+      reservedOf =
+        kind:
+        lib.sort lib.lessThan (
+          lib.unique (lib.concatMap (r: r.reserved or [ ]) (lib.filter (r: r.kind == kind) refs))
+        );
+      refuse =
+        s:
+        let
+          names = reservedOf s."x-chalkos-kind".kind;
+        in
+        if names == [ ] then
+          s
+        else
+          lib.recursiveUpdate s { properties.metadata.properties.name.not.enum = names; };
+    in
+    lib.mapAttrs (_: s: refuse (fill s."x-chalkos-kind".kind s)) schemas;
 }

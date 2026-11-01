@@ -26,6 +26,42 @@ let
       };
     };
   withDemo = worker [ demoModule ];
+  # Zone references Lane: lane alone, reserving default, which stands for no Lane; and to in the
+  # items of rules, nullable.
+  laneModule =
+    { lib, ... }:
+    {
+      chalkos.kinds.Lane = {
+        group = "lane.example.org";
+        version = "v1";
+        multiple = true;
+      };
+      chalkos.kinds.Zone = {
+        group = "zone.example.org";
+        version = "v1";
+        multiple = true;
+        spec.lane = lib.mkOption {
+          type = lib.chalkos.types.ref {
+            kind = "Lane";
+            reserved = [ "default" ];
+          };
+          default = "default";
+        };
+        spec.rules = lib.mkOption {
+          type = lib.types.listOf (
+            lib.types.submodule {
+              options.to = lib.mkOption {
+                type = lib.types.nullOr (lib.chalkos.types.ref "Lane");
+                default = null;
+              };
+            }
+          );
+          default = [ ];
+        };
+      };
+    };
+  withLanes = worker [ laneModule ];
+  laneSchemas = withLanes.system.build.chalkosKindSchemas;
   # A unit granted the Demo kind and networkd's Network.
   grantModule = {
     systemd.services.bird = {
@@ -240,6 +276,110 @@ lib.runTests {
       kind = "Secret";
       key = true;
     };
+  };
+  # A reference is a document's name, marked with the kind it names and the names it reserves.
+  testRefSchema = {
+    expr = propOf (
+      kindTypes.ref {
+        kind = "VRF";
+        reserved = [ "default" ];
+      }
+    );
+    expected = {
+      type = "string";
+      pattern = "^(?:${kindTypes.documentName})$";
+      "x-chalkos-ref" = {
+        kind = "VRF";
+        reserved = [ "default" ];
+      };
+    };
+  };
+  testRefOfAKindAlone = {
+    expr = (propOf (kindTypes.ref "PrefixList"))."x-chalkos-ref";
+    expected.kind = "PrefixList";
+  };
+  testRefComposes = {
+    expr = (propOf (types.listOf (types.nullOr (kindTypes.ref "PrefixList")))).items.anyOf;
+    expected = [
+      (propOf (kindTypes.ref "PrefixList"))
+      { type = "null"; }
+    ];
+  };
+  testRefRefusesAReservedNameNoDocumentHas = {
+    expr =
+      fails
+        (kindTypes.ref {
+          kind = "VRF";
+          reserved = [ "Default" ];
+        }).name;
+    expected = true;
+  };
+  testRefRefusesAnUnknownAttribute = {
+    expr =
+      fails
+        (kindTypes.ref {
+          kind = "VRF";
+          reserve = [ "default" ];
+        }).name;
+    expected = true;
+  };
+  testRefNeedsAKind = {
+    expr = fails (kindTypes.ref { reserved = [ "default" ]; }).name;
+    expected = true;
+  };
+  # The image's schemas carry the apiVersion of the kind a reference names, wherever it sits.
+  testRefGetsItsTargetsAPIVersion = {
+    expr =
+      let
+        spec = laneSchemas."zone.example.org_v1_Zone.json".properties.spec.properties;
+      in
+      {
+        lane = spec.lane."x-chalkos-ref";
+        to = (lib.head spec.rules.items.properties.to.anyOf)."x-chalkos-ref";
+      };
+    expected = {
+      lane = {
+        apiVersion = "lane.example.org/v1";
+        kind = "Lane";
+        reserved = [ "default" ];
+      };
+      to = {
+        apiVersion = "lane.example.org/v1";
+        kind = "Lane";
+      };
+    };
+  };
+  # A Lane cannot be named default, which Zone's lane takes for no Lane.
+  testReservedNameRefusedAsTargetName = {
+    expr = laneSchemas."lane.example.org_v1_Lane.json".properties.metadata.properties.name.not;
+    expected.enum = [ "default" ];
+  };
+  testRefToAKindTheImageLacksFails = {
+    expr = fails (
+      schemasOf (worker [
+        (
+          { lib, ... }:
+          {
+            chalkos.kinds.Zone = {
+              group = "zone.example.org";
+              version = "v1";
+              spec.lane = lib.mkOption { type = lib.chalkos.types.ref "Lane"; };
+            };
+          }
+        )
+      ])
+    );
+    expected = true;
+  };
+  # get reads a reference as the string it is.
+  testRefGet = {
+    expr = lib.hasSuffix "get Zone a -o 'jsonpath={.spec.lane}'" (
+      withLanes.chalkos.kinds.Zone.get {
+        name = "a";
+        path = "spec.lane";
+      }
+    );
+    expected = true;
   };
   testDemoSchemaMatchesFixture = {
     expr = schema.kindSchema demo;

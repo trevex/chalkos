@@ -220,8 +220,8 @@ let
       }) cfg;
 
   # The schema of each kind of chalkos.kinds, by file name.
-  kindSchemas = lib.listToAttrs (
-    map (k: lib.nameValuePair (schema.fileName k) (schema.kindSchema k)) kinds
+  kindSchemas = schema.resolveRefs (
+    lib.listToAttrs (map (k: lib.nameValuePair (schema.fileName k) (schema.kindSchema k)) kinds)
   );
   schemas = pkgs.runCommand "chalkos-schemas" { } ''
     mkdir $out
