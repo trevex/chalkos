@@ -55,6 +55,16 @@ func Read(path string) (map[string]Definition, error) {
 	return defs, nil
 }
 
+// Parse reads the facts an image declares from the content of its facts.json, as an image that
+// does not run holds it.
+func Parse(data []byte) (map[string]Definition, error) {
+	defs := map[string]Definition{}
+	if err := json.Unmarshal(data, &defs); err != nil {
+		return nil, err
+	}
+	return defs, nil
+}
+
 // Check refuses a fact that is neither a file nor a program of the image's store with arguments,
 // that takes inputs a file does not, or keeps or hashes fields a command does not.
 func (d Definition) Check() error {

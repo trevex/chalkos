@@ -66,6 +66,13 @@ func TestRead(t *testing.T) {
 	if defs, err := Read(filepath.Join(dir, "missing.json")); err != nil || len(defs) != 0 {
 		t.Errorf("a missing file: %v, %v; want no facts", defs, err)
 	}
+	// The content of an image's facts.json reads the same, as from an image that does not run.
+	if parsed, err := Parse([]byte(`{"share": {"file": "/state/kubernetes/share.json"}, "disks": {"command": "/nix/store/x/bin/chalkos-storage facts disks", "inputs": ["fallbackSecret"]}}`)); err != nil || !reflect.DeepEqual(parsed, want) {
+		t.Errorf("Parse = %+v, %v", parsed, err)
+	}
+	if _, err := Parse([]byte(`[]`)); err == nil {
+		t.Error("Parse of no object: no error")
+	}
 }
 
 // Check accepts a file with fields and a program of the store with the fallback secret, and refuses
@@ -263,8 +270,16 @@ func TestSandboxed(t *testing.T) {
 		"--property=NoNewPrivileges=yes", "--property=RuntimeMaxSec=30",
 		"--property=ReadWritePaths=-/run/cryptsetup", "--",
 		"/nix/store/x/bin/chalkos-storage", "facts", "disks"}
-	if got := sandboxed([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}, "--property=ReadWritePaths=-/run/cryptsetup"); !slices.Equal(got, want) {
-		t.Errorf("sandboxed = %v", got)
+	if got := (Sandbox{}).command([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); !slices.Equal(got, want) {
+		t.Errorf("command = %v", got)
+	}
+	// A fact of an image that does not run: its store over /nix/store, its program run from where
+	// the store is on the node, which systemd-run finds.
+	store := "/run/chalkd/upgrade-store/nix/store"
+	want = append(slices.Clone(want[:len(want)-4]), "--property=BindReadOnlyPaths="+store+":/nix/store", "--",
+		store+"/x/bin/chalkos-storage", "facts", "disks")
+	if got := (Sandbox{Store: store}).command([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); !slices.Equal(got, want) {
+		t.Errorf("command = %v\nwant %v", got, want)
 	}
 }
 

@@ -3,6 +3,8 @@ package facts
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/trevex/chalkos/pkg/command"
 )
@@ -17,10 +19,29 @@ import (
 // disks and testing a passphrase read block devices and cryptsetup may set up a temporary
 // device-mapper mapping for a cipher the kernel crypto API lacks; cryptsetup's lock directory
 // stays writable, where it exists, for the passphrase test.
-type Sandbox struct{}
+//
+// Store, when set, is where the store of an image that does not run is on this node, as chalkd
+// mounted it: the unit sees it as its /nix/store, so a fact of that image runs that image's
+// programs. The fact's own program runs from Store, where systemd-run finds it: the running
+// system's store may lack it.
+type Sandbox struct {
+	Store string
+}
 
-func (Sandbox) Run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error) {
-	return command.Run(ctx, sandboxed(argv, "--property=ReadWritePaths=-/run/cryptsetup"), stdin, limit)
+func (s Sandbox) Run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error) {
+	return command.Run(ctx, s.command(argv), stdin, limit)
+}
+
+// command is the command line that runs argv in the sandbox.
+func (s Sandbox) command(argv []string) []string {
+	extra := []string{"--property=ReadWritePaths=-/run/cryptsetup"}
+	if s.Store != "" {
+		extra = append(extra, "--property=BindReadOnlyPaths="+s.Store+":/nix/store")
+		if rest, ok := strings.CutPrefix(argv[0], "/nix/store/"); ok {
+			argv = append([]string{filepath.Join(s.Store, rest)}, argv[1:]...)
+		}
+	}
+	return sandboxed(argv, extra...)
 }
 
 // sandboxed is the command line that runs argv in the sandbox Sandbox describes, with the extra
