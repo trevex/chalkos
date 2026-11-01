@@ -4,8 +4,8 @@
 // 	protoc        (unknown)
 // source: chalkos/check/v1/check.proto
 
-// What chalkd and an image's checker exchange when chalkd has an image that does not run check
-// config for itself: chalkd runs the image's `chalkd check` in a sandbox, writes it an Input as
+// What chalkd and an image's checker exchange when an image that does not run checks config for
+// itself: chalkd runs the image's `chalkd check` in a sandbox, writes it an Input as
 // protobuf JSON on standard input and reads a Result from its standard output, and serves it the
 // node's facts over a Unix socket through FactsService. The checker never sees a Secret's value:
 // every document carries its secret values hashed, as config.Redact hashes them.

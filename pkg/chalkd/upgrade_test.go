@@ -227,7 +227,7 @@ func (d dirStore) Dir() string { return filepath.Join(string(d), "nix", "store")
 
 // imageWith is the store of an image whose system /nix/store/x holds a checker, the schemas
 // files, the facts s declares and, when facts is not empty, the image.json facts. Its checker is
-// the test's own: s.CheckImage runs s.Check in the test's process.
+// the test's own: s.CheckImage, an imagecheck.Local, runs s.Check in the test's process.
 func imageWith(t *testing.T, s *Server, files map[string][]byte, facts string) dirStore {
 	t.Helper()
 	root := t.TempDir()
