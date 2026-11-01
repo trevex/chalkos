@@ -88,6 +88,11 @@ type Set struct {
 func Compile(s *schema.Schemas) (*Set, error) {
 	set := &Set{}
 	var errs []error
+	// Kind names are unique within an image, so document() names a kind by its name alone.
+	apiVersions := map[string]string{}
+	for _, k := range s.Kinds() {
+		apiVersions[k.Kind] = k.APIVersion
+	}
 	for _, k := range s.Kinds() {
 		raw, _ := s.Raw(k.APIVersion, k.Kind)
 		doc, _ := raw.(map[string]any)
@@ -98,7 +103,7 @@ func Compile(s *schema.Schemas) (*Set, error) {
 				errs = append(errs, fmt.Errorf("%s: rules: %w", k.Kind, err))
 			}
 			for _, r := range rules {
-				p, err := compile(k, nil, r)
+				p, err := compile(apiVersions, k, nil, r)
 				if err != nil {
 					errs = append(errs, err)
 					continue
@@ -112,7 +117,7 @@ func Compile(s *schema.Schemas) (*Set, error) {
 		errs = append(errs, err...)
 		for _, f := range fields {
 			for _, r := range f.rules {
-				p, err := compile(k, f.path, r)
+				p, err := compile(apiVersions, k, f.path, r)
 				if err != nil {
 					errs = append(errs, err)
 					continue
@@ -205,9 +210,9 @@ func decodeRules(v any) ([]Rule, error) {
 }
 
 // compile compiles a rule of the kind k, of its field at path or, with a nil path, of the kind.
-// Every rule sees config, oldConfig and node; a kind's rules documents and oldDocuments, a
-// field's self and oldSelf; and each fact it names as facts.<name>.
-func compile(k schema.Kind, path []string, r Rule) (*Program, error) {
+// Every rule sees config, oldConfig and node, and document(kind, name) over config; a kind's rules
+// documents and oldDocuments, a field's self and oldSelf; and each fact it names as facts.<name>.
+func compile(apiVersions map[string]string, k schema.Kind, path []string, r Rule) (*Program, error) {
 	p := &Program{Rule: r, Kind: k, Path: path}
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("%s: rule %q: %s", p.Where(), r.Rule, fmt.Sprintf(format, args...))
@@ -222,6 +227,9 @@ func compile(k schema.Kind, path []string, r Rule) (*Program, error) {
 		vars = append(vars, "self", "oldSelf")
 	}
 	base, err := newEnv(vars...)
+	if err == nil {
+		base, err = base.Extend(documents(apiVersions))
+	}
 	if err != nil {
 		return nil, err
 	}
