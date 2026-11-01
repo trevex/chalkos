@@ -110,3 +110,29 @@ func TestDocumentIgnoresShadowedConfig(t *testing.T) {
 		t.Errorf("failures = %q, want %q", got, want)
 	}
 }
+
+// document("Secret", name) holds the Secret's values hashed, as config does, never the values.
+func TestDocumentHashesSecrets(t *testing.T) {
+	secretSchema := kindSchema("Secret", true, object(nil), nil)
+	secretSchema["properties"].(map[string]any)["apiVersion"] = map[string]any{"const": config.CoreAPI}
+	secretSchema["x-chalkos-kind"].(map[string]any)["group"] = "chalkos.dev"
+	secretSchema["x-chalkos-kind"].(map[string]any)["version"] = "v1alpha1"
+	zone := object(map[string]any{
+		"secret": withRules(map[string]any{"type": "string"},
+			rule(`document("Secret", self).spec.data.token != "test"`, "the token is plain"),
+			rule(`document("Secret", self).spec.data.token == "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"`, "the token is not hashed")),
+	})
+	set := compiled(t, secretSchema, kindSchema("Zone", true, zone, nil))
+	docs := []config.Document{
+		config.FromObject(map[string]any{"apiVersion": config.CoreAPI, "kind": "Secret",
+			"metadata": map[string]any{"name": "s"}, "spec": map[string]any{"data": map[string]any{"token": "test"}}}),
+		doc(t, "Zone", "z", `{"secret": "s"}`),
+	}
+	failures, err := set.Evaluate(Input{Documents: docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := messages(failures); len(got) != 0 {
+		t.Errorf("failures = %q, want none", got)
+	}
+}

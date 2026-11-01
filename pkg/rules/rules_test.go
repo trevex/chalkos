@@ -64,7 +64,8 @@ func schemasOf(t *testing.T, kinds ...map[string]any) *schema.Schemas {
 		if err != nil {
 			t.Fatal(err)
 		}
-		files["t.example.org_v1_"+k["x-chalkos-kind"].(map[string]any)["kind"].(string)+".json"] = data
+		xk := k["x-chalkos-kind"].(map[string]any)
+		files[xk["group"].(string)+"_"+xk["version"].(string)+"_"+xk["kind"].(string)+".json"] = data
 	}
 	s, err := schema.LoadFiles(files)
 	if err != nil {
