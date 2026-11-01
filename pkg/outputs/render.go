@@ -24,7 +24,7 @@ import (
 // Input is what outputs render from: a node's config set, with its defaults, the schemas that
 // tell its secretRef fields, and the node's name. Hashed tells that the set's secret values are
 // hashed already, as config.Redact hashes them and as a check receives them: the renderers read
-// them so anyway, and the states hash the values of Secrets so too.
+// the hashes either way, and the states take a hashed value as its hash.
 type Input struct {
 	Node      string
 	Documents []config.Document
