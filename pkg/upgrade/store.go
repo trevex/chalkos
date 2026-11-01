@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
 	"path"
@@ -40,15 +39,6 @@ func (s Store) ReadFile(name string) ([]byte, error) {
 		return nil, err
 	}
 	return os.ReadFile(p)
-}
-
-// ReadDir lists the directory at name, an absolute path in the image.
-func (s Store) ReadDir(name string) ([]fs.DirEntry, error) {
-	p, err := command.Resolve(s.root, name)
-	if err != nil {
-		return nil, err
-	}
-	return os.ReadDir(p)
 }
 
 // Resolve is where the file at name, an absolute path in the image, is on this node, its links

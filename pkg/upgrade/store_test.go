@@ -48,7 +48,11 @@ func TestStoreFollowsTheImagesLinks(t *testing.T) {
 	root := t.TempDir()
 	writeStore(t, root)
 	s := Store{root: root, Toplevel: "/nix/store/x"}
-	entries, err := s.ReadDir(s.Toplevel + "/etc/chalkos/schemas")
+	dir, err := s.Resolve(s.Toplevel + "/etc/chalkos/schemas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) != 1 || entries[0].Name() != "a.json" {
 		t.Errorf("schemas = %v, %v", entries, err)
 	}
@@ -111,7 +115,7 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 	var toplevel string
 	l.node.CheckStore = func(s Store) error {
 		toplevel = s.Toplevel
-		if _, err := s.ReadDir(s.Toplevel + "/../x/etc/chalkos/schemas"); err != nil {
+		if _, err := s.Resolve(s.Toplevel + "/../x/etc/chalkos/schemas"); err != nil {
 			return err
 		}
 		return errors.New("the config does not suit the image")
@@ -331,7 +335,7 @@ func TestReadImage(t *testing.T) {
 	var toplevel string
 	if err := l.node.ReadImage(context.Background(), img.root, func(s Store) error {
 		toplevel = s.Toplevel
-		_, err := s.ReadDir(s.Toplevel + "/../x/etc/chalkos/schemas")
+		_, err := s.Resolve(s.Toplevel + "/../x/etc/chalkos/schemas")
 		return err
 	}); err != nil {
 		t.Fatal(err)

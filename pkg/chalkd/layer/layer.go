@@ -126,8 +126,9 @@ type ImageFacts interface {
 	// RunningFacts are the running image's facts; nil for an image without them. chalkd asks the
 	// active plugins.
 	RunningFacts() (*anypb.Any, error)
-	// SystemFacts reads the facts of an image that does not run, as an upgrade wrote its store:
-	// read takes a path within the image's system. chalkd asks every compiled plugin.
+	// SystemFacts reads an image's facts from its NixOS system: read takes a path within that
+	// system. chalkd check asks every compiled plugin, for the image it checks config for, whose
+	// system is not the one the sandbox runs.
 	SystemFacts(read func(path string) ([]byte, error)) (*anypb.Any, error)
 	// ContractFacts reads the facts of an image's contract: read takes a file name within the
 	// image's directory, as its contract layer holds it. chalkd asks every compiled plugin.
