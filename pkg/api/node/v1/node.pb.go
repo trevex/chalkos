@@ -2007,9 +2007,11 @@ func (x *ApplyConfigResponse) GetPlan() *Plan {
 // What a delivery would do, as a dry run plans it before anything changes.
 type Plan struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The version of the config the delivery would run, as StatusResponse.config_version gives it,
-	// and the version it would replace; both empty for a request without config.
-	Version  string `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	// The version of the config the delivery would run, as StatusResponse.config_version gives it;
+	// empty for a request without config.
+	Version string `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	// The version of the config the delivery would replace; empty for a request without config or
+	// a node without one.
 	Replaces string `protobuf:"bytes,2,opt,name=replaces,proto3" json:"replaces,omitempty"`
 	// Names of the image's outputs whose rendered files, or the Secrets their documents reference,
 	// would change, sorted.

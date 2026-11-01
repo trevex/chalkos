@@ -503,9 +503,11 @@ message ApplyConfigResponse {
 
 // What a delivery would do, as a dry run plans it before anything changes.
 message Plan {
-  // The version of the config the delivery would run, as StatusResponse.config_version gives it,
-  // and the version it would replace; both empty for a request without config.
+  // The version of the config the delivery would run, as StatusResponse.config_version gives it;
+  // empty for a request without config.
   string version = 1;
+  // The version of the config the delivery would replace; empty for a request without config or
+  // a node without one.
   string replaces = 2;
   // Names of the image's outputs whose rendered files, or the Secrets their documents reference,
   // would change, sorted.

@@ -779,8 +779,8 @@ What a delivery would do, as a dry run plans it before anything changes.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `version` | string | The version of the config the delivery would run, as StatusResponse.config_version gives it, and the version it would replace; both empty for a request without config. |
-| `replaces` | string |  |
+| `version` | string | The version of the config the delivery would run, as StatusResponse.config_version gives it; empty for a request without config. |
+| `replaces` | string | The version of the config the delivery would replace; empty for a request without config or a node without one. |
 | `outputs` | list of string | Names of the image's outputs whose rendered files, or the Secrets their documents reference, would change, sorted. |
 | `effects` | list of PlannedEffect | The effects the delivery would take, by name. An effect whose rule compares the node's facts after the delivery with those before it is planned with the facts as they are, which the delivery has not changed yet. |
 
