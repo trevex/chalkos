@@ -63,9 +63,10 @@ func TestRelayRefusals(t *testing.T) {
 
 // Each VRF's relays render a dnsmasq relay of their own, dnsmasq-relay-<vrf>.conf apart from the
 // default VRF's dnsmasq-relay.conf, which relays on its links alone, each family to its servers
-// from the router's first address of the family on the link, a global one for IPv6. A family
-// relays in a VRF beside another VRF's server of the family, and beside a server of the other
-// family in any VRF.
+// from the router's first address of the family on the link, a global one for IPv6, with
+// bind-dynamic, so that relays of one family in the default VRF and in another bind beside each
+// other. A family relays in a VRF beside another VRF's server of the family, and beside a server
+// of the other family in any VRF.
 func TestRelayPerVRF(t *testing.T) {
 	relay := func(name, links, servers string) any {
 		return routerDoc(t, "DHCPRelay", name, `{"interfaces": `+links+`, "servers": `+servers+`}`)
@@ -93,7 +94,7 @@ func TestRelayPerVRF(t *testing.T) {
 				got = append(got, l)
 			}
 		}
-		if !slices.Equal(got, want) || !strings.Contains(files[file], "\nport=0\n") {
+		if !slices.Equal(got, want) || !strings.Contains(files[file], "\nport=0\n") || !strings.Contains(files[file], "\nbind-dynamic\n") {
 			t.Errorf("%s = %s", file, files[file])
 		}
 	}

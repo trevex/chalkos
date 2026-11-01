@@ -2,6 +2,7 @@
 # dnsmasq's DHCP relay of the VRF guest, rendered by chalkos-render. It relays the requests of
 # the clients on its links to the servers, and serves neither DHCP nor DNS.
 port=0
+bind-dynamic
 no-resolv
 no-hosts
 quiet-dhcp
@@ -12,6 +13,7 @@ dhcp-relay=198.51.100.1,203.0.113.154
 # dnsmasq's DHCP relay of the VRF default, rendered by chalkos-render. It relays the requests of
 # the clients on its links to the servers, and serves neither DHCP nor DNS.
 port=0
+bind-dynamic
 no-resolv
 no-hosts
 quiet-dhcp

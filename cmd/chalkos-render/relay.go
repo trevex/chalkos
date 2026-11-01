@@ -102,9 +102,13 @@ func renderDHCPRelay(in map[string]any, out string) error {
 	for _, vrf := range vrfs {
 		v := byVRF[vrf]
 		var b strings.Builder
+		// bind-dynamic gives the sockets of ports 67 and 547 SO_REUSEADDR, without which the
+		// default VRF's relay, whose sockets no device binds, and a VRF's relay of the same
+		// family do not bind beside each other. Unlike bind-interfaces, it waits for links
+		// that do not exist yet.
 		fmt.Fprintf(&b, "# dnsmasq's DHCP relay of the VRF %s, rendered by chalkos-render. It relays the requests of\n"+
 			"# the clients on its links to the servers, and serves neither DHCP nor DNS.\n"+
-			"port=0\nno-resolv\nno-hosts\nquiet-dhcp\nquiet-dhcp6\n", vrf)
+			"port=0\nbind-dynamic\nno-resolv\nno-hosts\nquiet-dhcp\nquiet-dhcp6\n", vrf)
 		slices.Sort(v.links)
 		for _, l := range v.links {
 			b.WriteString("interface=" + l + "\n")
