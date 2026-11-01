@@ -121,13 +121,13 @@ func TestUpgrade(t *testing.T) {
 	if _, err := chalkctl(t, nil, "", "config", "new", "--name", "ops", "--role", "operator", "--out", operator); err != nil {
 		t.Fatal(err)
 	}
-	upgradeAsOperator := []string{"upgrade", "--image", nextImage, "--config", operator, "--nodes", "chalklab", "--address", "chalklab=" + n.addr, "--timeout", "10m"}
+	upgradeAsOperator := []string{"upgrade", "--image", nextImage, "--nodes", "chalklab", "--address", "chalklab=" + n.addr, "--timeout", "10m"}
 	out, err = chalkctl(t, n, "upgrade-stay", "apply-config", "--staged", "chalklab")
 	stay := pendingHeld.FindStringSubmatch(out)
 	if err != nil || stay == nil {
 		t.Fatalf("apply-config --staged without a staged image: %v\n%s", err, out)
 	}
-	out, err = chalkctl(t, nil, "base", upgradeAsOperator...)
+	out, err = chalkctlWith(t, nil, "base", operator, upgradeAsOperator...)
 	if err == nil || strings.Contains(out, "took the pending config") ||
 		!strings.Contains(out, "the pending config "+stay[1]+" does not suit the image: ") || !strings.Contains(out, "output farewell: its check refused the rendered files") {
 		t.Fatalf("upgrade with a pending Farewell only the upgrade image's renderer refuses: %v\n%s", err, out)
@@ -142,7 +142,7 @@ func TestUpgrade(t *testing.T) {
 	if err != nil || pending == nil || pending[1] == stay[1] {
 		t.Fatalf("apply-config --staged replacing the pending config: %v\n%s", err, out)
 	}
-	out, err = chalkctl(t, nil, "base", upgradeAsOperator...)
+	out, err = chalkctlWith(t, nil, "base", operator, upgradeAsOperator...)
 	if err != nil || !strings.Contains(out, "chalklab: installed "+nextHash[:12]+", which boots next as chalkos_4+3.efi\nchalklab: the image took the pending config "+pending[1]+", which it checked first\n") {
 		t.Fatalf("upgrade back to %s with the pending config: %v", nextHash[:12], err)
 	}

@@ -19,11 +19,15 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// chalkctlWith runs chalkctl for the node with a client file instead of the secrets file.
+// chalkctlWith runs chalkctl for the node, or for the cluster when n is nil, with a client file
+// instead of the secrets file, which chalkctl refuses beside it.
 func chalkctlWith(t *testing.T, n *node, inventory, config string, args ...string) (string, error) {
 	t.Helper()
-	args = append(args, "--inventory", inventoryPath(inventory), "--config", config, "--address", n.addr)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	args = append(args, "--inventory", inventoryPath(inventory), "--config", config)
+	if n != nil {
+		args = append(args, "--address", n.addr)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...)
 	// No secrets file is at hand.
