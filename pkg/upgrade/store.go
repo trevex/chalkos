@@ -53,6 +53,16 @@ func (s Store) ReadDir(name string) ([]fs.DirEntry, error) {
 	return os.ReadDir(p)
 }
 
+// Resolve is where the file at name, an absolute path in the image, is on this node, its links
+// followed within the image; an error that wraps fs.ErrNotExist when there is none.
+func (s Store) Resolve(name string) (string, error) {
+	return s.resolve(name)
+}
+
+// Dir is where the image's /nix/store is on this node, which a sandbox binds over its own
+// /nix/store to run the image's programs.
+func (s Store) Dir() string { return filepath.Join(s.root, "nix", "store") }
+
 // resolve finds name in the mounted store, following its symbolic links within the image: their
 // absolute targets, such as /etc's links into /nix/store, name paths of the image, not of the
 // running system.

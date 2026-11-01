@@ -46,7 +46,7 @@ func stagedServer(t *testing.T, schemas map[string][]byte) (*Server, *tooltest.R
 	if err := slot.Retire(s.Loader.Slots, [][]byte{runningImage, stagedImage}); err != nil {
 		t.Fatal(err)
 	}
-	img := imageWith(t, schemas, "")
+	img := imageWith(t, s, schemas, "")
 	s.ReadImage = func(_ context.Context, rootHash []byte, read func(imageStore, string) error) error {
 		if !bytes.Equal(rootHash, stagedImage) {
 			return errors.New("the inactive slot does not hold the image")

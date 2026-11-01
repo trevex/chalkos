@@ -259,6 +259,9 @@ func TestCommandsRefuseArguments(t *testing.T) {
 		{"load-config", []string{"x"}},
 		{"health", []string{"--wait", "0"}},
 		{"health", []string{"now"}},
+		{"check", nil},
+		{"check", []string{"--system", "/nix/store/x"}},
+		{"check", []string{"--system", "/nix/store/x", "--facts", "/run/f.sock", "now"}},
 	} {
 		if _, ok := errors.AsType[layer.UsageError](commands[tc.command](tc.args)); !ok {
 			t.Errorf("%s %q ran", tc.command, tc.args)

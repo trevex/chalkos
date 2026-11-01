@@ -158,6 +158,7 @@ let
             "serve"
             "load-config"
             "health"
+            "check"
           ])
         then
           lib.elemAt runWords 1

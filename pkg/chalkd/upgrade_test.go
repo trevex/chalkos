@@ -179,7 +179,7 @@ func TestUpgradeDeliversConfigOnlyForAdmins(t *testing.T) {
 			s.InstallImage = func(ctx context.Context, _ upgrade.Header, config, secret string, r io.Reader) (upgrade.Result, error) {
 				installed = true
 				io.Copy(io.Discard, r)
-				err := s.stageConfig(ctx, imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
+				err := s.stageConfig(ctx, imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
 				got, _ := staged(t, s)
 				version = got.Version
 				return upgrade.Result{AlreadyStaged: true, Entry: "chalkos_2+3.efi"}, err
@@ -221,16 +221,32 @@ func (d dirStore) ReadDir(name string) ([]fs.DirEntry, error) {
 	return os.ReadDir(filepath.Join(string(d), name))
 }
 
-// imageWith is the store of an image whose system /nix/store/x holds the schemas files and, when
-// facts is not empty, the image.json facts.
-func imageWith(t *testing.T, files map[string][]byte, facts string) dirStore {
+func (d dirStore) Resolve(name string) (string, error) {
+	p := filepath.Join(string(d), name)
+	_, err := os.Stat(p)
+	return p, err
+}
+
+func (d dirStore) Dir() string { return filepath.Join(string(d), "nix", "store") }
+
+// imageWith is the store of an image whose system /nix/store/x holds a checker, the schemas
+// files, the facts s declares and, when facts is not empty, the image.json facts. Its checker is
+// the test's own: s.CheckImage runs s.Check in the test's process.
+func imageWith(t *testing.T, s *Server, files map[string][]byte, facts string) dirStore {
 	t.Helper()
 	root := t.TempDir()
+	system := filepath.Join(root, "nix/store/x")
+	write(t, filepath.Join(system, "sw/bin/chalkd"), "")
 	for name, data := range files {
-		write(t, filepath.Join(root, "nix/store/x", imageSchemas, name), string(data))
+		write(t, filepath.Join(system, "etc/chalkos/schemas", name), string(data))
 	}
+	declared, err := os.ReadFile(s.Paths.Facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(system, "etc/chalkos/facts.json"), string(declared))
 	if facts != "" {
-		write(t, filepath.Join(root, "nix/store/x", k8s.ImageFile), facts)
+		write(t, filepath.Join(system, k8s.ImageFile), facts)
 	}
 	return dirStore(root)
 }
@@ -253,7 +269,7 @@ func staged(t *testing.T, s *Server) (slot.Stored, bool) {
 // with the new image's schemas.
 func TestStageConfigCarriesTheRunningConfig(t *testing.T) {
 	s, _ := configServer(t)
-	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", ""); err != nil {
+	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	got, found := staged(t, s)
@@ -272,7 +288,7 @@ func TestStageConfigCarriesTheRunningConfig(t *testing.T) {
 func TestStageConfigWritesTheDeliveredConfig(t *testing.T) {
 	s, _ := configServer(t)
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
-	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, next, ""); err != nil {
+	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, next, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := staged(t, s); got.Version != hashOf(t, next) {
@@ -304,7 +320,7 @@ func TestStageConfigRefuses(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := configServer(t)
-			err := s.stageConfig(context.Background(), imageWith(t, tc.schemas, tc.facts), "/nix/store/x", "metal", newImage, tc.config, "")
+			err := s.stageConfig(context.Background(), imageWith(t, s, tc.schemas, tc.facts), "/nix/store/x", "metal", newImage, tc.config, "")
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want one naming %q", err, tc.want)
 			}
@@ -339,14 +355,14 @@ func volumeRules(s *Server) []tooltest.Rule {
 func TestStageConfigAddsAVolume(t *testing.T) {
 	s, r := configServer(t)
 	r.Rules = volumeRules(s)
-	err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), "")
+	err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), "")
 	if err == nil || !strings.Contains(err.Error(), "no fallback secret was sent") {
 		t.Fatalf("err = %v, want the missing secret", err)
 	}
 	if _, found := staged(t, s); found || len(r.Calls) != 0 {
 		t.Fatalf("wrote the slot or ran %v", r.Calls)
 	}
-	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
+	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
 		t.Fatal(err)
 	}
 	if !contains(r.Calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
@@ -371,7 +387,7 @@ func TestStageConfigRetriedAfterTheVolume(t *testing.T) {
 	s, r := configServer(t)
 	r.Rules = volumeRules(s)
 	stage := func(secret string) error {
-		return s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret)
+		return s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret)
 	}
 	if err := stage(secret); err != nil {
 		t.Fatal(err)
@@ -403,7 +419,7 @@ func TestStageConfigRetriedAfterTheVolume(t *testing.T) {
 func TestApplyConfigNamesAVolumeAnotherImageAdded(t *testing.T) {
 	s, r := configServer(t)
 	r.Rules = volumeRules(s)
-	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
+	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
 		t.Fatal(err)
 	}
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
@@ -436,11 +452,11 @@ func TestStageConfigKeepsTheFixedFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
-	err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), kubernetestest.Image), "/nix/store/x", "metal", newImage, next, "")
+	err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), kubernetestest.Image), "/nix/store/x", "metal", newImage, next, "")
 	if err == nil || !strings.Contains(err.Error(), `changes the node's type from "worker" to "controlplane"`) {
 		t.Errorf("err = %v", err)
 	}
-	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), kubernetestest.Image), "/nix/store/x", "metal", newImage, workerConfig, ""); err != nil {
+	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), kubernetestest.Image), "/nix/store/x", "metal", newImage, workerConfig, ""); err != nil {
 		t.Errorf("the same config: %v", err)
 	}
 }
@@ -449,7 +465,7 @@ func TestStageConfigKeepsTheFixedFields(t *testing.T) {
 // no documents to carry over.
 func TestStageConfigNeedsConfig(t *testing.T) {
 	s, _ := installedServer(t, section("", ""), false)
-	err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", "")
+	err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", "")
 	if err == nil || !strings.Contains(err.Error(), "no config to carry over") || !strings.Contains(err.Error(), "which needs the admin role") {
 		t.Errorf("err = %v", err)
 	}
@@ -583,7 +599,7 @@ func TestStageConfigNamesNoOtherImageForItsOwnVolume(t *testing.T) {
 	s, r := configServer(t)
 	r.Rules = volumeRules(s)
 	stage := func(config, secret string) error {
-		return s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
+		return s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
 	}
 	if err := stage(extraConfig("ext4"), secret); err != nil {
 		t.Fatal(err)

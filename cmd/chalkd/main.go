@@ -50,7 +50,11 @@ commands:
                                    it is, and reboot after an unhealthy boot of an image the
                                    boot loader counts; failed units ignored do not count
   health --stopped                 after a wait ended before it decided, as it would have:
-                                   record the boot and reboot when that leads on`
+                                   record the boot and reboot when that leads on
+  check --system SYSTEM --facts SOCKET
+                                   check the config on standard input as the image whose NixOS
+                                   system is SYSTEM checks it, with the facts the socket serves,
+                                   and write the result to standard output`
 
 // commands are chalkd's own commands by name. Each takes the arguments after its name and fails
 // with a layer.UsageError when it does not take them. modules/node/runtime/effects.nix lists their
@@ -59,6 +63,35 @@ var commands = map[string]func(args []string) error{
 	"serve":       layer.NoArgs(serve),
 	"load-config": layer.NoArgs(loadConfig),
 	"health":      health,
+	"check":       checkConfig,
+}
+
+// checkConfig is chalkd check --system <system> --facts <socket>: the image whose NixOS system is
+// system checks the config on standard input for itself, as the chalkd of another image runs it
+// in a sandbox before the image boots, and writes the result to standard output. Only the
+// compiled layers are asked, for what the image's layer facts give config's translation: the
+// sandbox's /etc is the running system's, not this image's.
+func checkConfig(args []string) error {
+	fs := flag.NewFlagSet("check", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	system := fs.String("system", "", "")
+	socket := fs.String("facts", "", "")
+	if err := fs.Parse(args); err != nil {
+		return layer.UsageError{Err: err}
+	}
+	if fs.NArg() > 0 || *system == "" || *socket == "" {
+		return layer.UsageError{Err: errors.New("check takes --system and --facts")}
+	}
+	dir, err := os.MkdirTemp("", "chalkos-check-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	node := &chalkd.Server{Run: tool.ExecRunner{}}
+	if node.Plugins, err = layer.NewRegistry(layers.Set{}, plugins(node)...); err != nil {
+		return err
+	}
+	return node.Check(context.Background(), *system, *socket, dir, os.Stdin, os.Stdout)
 }
 
 func main() {
