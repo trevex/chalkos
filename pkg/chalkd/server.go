@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/facts"
+	"github.com/trevex/chalkos/pkg/imagecheck"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
@@ -132,6 +133,9 @@ type Server struct {
 	// ReadImage reads the store of an image in the inactive slot, as apply-config --staged checks
 	// config against it; nil mounts it from the boot disk. Tests replace it.
 	ReadImage func(ctx context.Context, rootHash []byte, read func(st imageStore, system string) error) error
+	// CheckImage runs the checker of an image that does not run; nil runs it in the sandbox of
+	// imagecheck. Tests run it in their own process.
+	CheckImage imagecheck.Runner
 	// ReactivateImage makes the image the inactive slot holds, by its root hash, boot next again,
 	// as a rollback does, calling record as upgrade.Node.Rollback does; nil re-activates it on the
 	// boot disk. Tests replace it.

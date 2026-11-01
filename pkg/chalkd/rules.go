@@ -14,9 +14,10 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// factsFor is the loader of one delivery's facts, by the facts the running image declares: they
-// read this node, whichever image the config is for. Commands read next and old as rules see them,
-// and the fallback secret when they declare it.
+// factsFor is the loader of the facts of one delivery to the running image, or of an install, by
+// the facts the running image declares. Commands read next and old as rules see them, and the
+// fallback secret when they declare it. An image that does not run gets the facts it declares
+// itself, from stagedFacts.
 func (s *Server) factsFor(ctx context.Context, next, old []config.Document, secret string) (*facts.Loader, error) {
 	defs, err := facts.Read(s.Paths.Facts)
 	if err != nil {
@@ -43,17 +44,6 @@ func compileRunningRules(schemas *schema.Schemas) (*rules.Set, error) {
 	set, err := rules.Compile(schemas)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "the running image's rules: %v", err)
-	}
-	return set, nil
-}
-
-// compileImageRules compiles the rules of the schemas of another image, which an install or an
-// upgrade brings, with the running chalkd's CEL library. Rules that do not compile refuse the
-// request.
-func compileImageRules(schemas *schema.Schemas) (*rules.Set, error) {
-	set, err := rules.Compile(schemas)
-	if err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "the image's rules: %v", err)
 	}
 	return set, nil
 }

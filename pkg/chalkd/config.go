@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -104,11 +105,18 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, con
 	if err != nil {
 		return slot.Stored{}, err
 	}
-	compile := compileRunningRules
+	// The installer checks the config of the image it installs with that image's schemas, which
+	// the header carries, and its own CEL library: it writes that image's store only after the
+	// config passed, so the image's checker cannot run yet. Rules that do not compile refuse the
+	// install.
+	var set *rules.Set
 	if s.Installer {
-		compile = compileImageRules
+		if set, err = rules.Compile(schemas); err != nil {
+			err = failed(connect.CodeInvalidArgument, "the image's rules: %v", err)
+		}
+	} else {
+		set, err = compileRunningRules(schemas)
 	}
-	set, err := compile(schemas)
 	if err != nil {
 		return slot.Stored{}, err
 	}

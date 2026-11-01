@@ -43,6 +43,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
+	"github.com/trevex/chalkos/pkg/imagecheck"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
@@ -153,6 +154,8 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
 	writeSchemas(t, s.Loader.Schemas)
 	s.Facts = storageFacts{s}
+	// An image that does not run checks its config with s's own code, in the test's process.
+	s.CheckImage = imagecheck.Local{Check: s.Check}
 	writeFacts(t, s, "")
 	writeServices(t, s, "{}")
 	writeEffects(t, s, "{}")

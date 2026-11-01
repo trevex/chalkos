@@ -217,10 +217,6 @@ func (d dirStore) ReadFile(name string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(string(d), name))
 }
 
-func (d dirStore) ReadDir(name string) ([]fs.DirEntry, error) {
-	return os.ReadDir(filepath.Join(string(d), name))
-}
-
 func (d dirStore) Resolve(name string) (string, error) {
 	p := filepath.Join(string(d), name)
 	_, err := os.Stat(p)

@@ -5,23 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"connectrpc.com/connect"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
-	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -29,7 +25,7 @@ import (
 
 // Upgrade installs the image an operator streams with the node's config for it. It checks that
 // the image is of the node's platform, whatever its variant, that it boots the store it carries
-// and, before it becomes the next boot, that the schemas in the image accept the config, but
+// and, before it becomes the next boot, that the image's own checker accepts the config, but
 // cannot tell an image to trust from another: without Secure Boot, an operator can run any image
 // as root, with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is
 // what limits upgrades to images signed for db.
@@ -161,50 +157,6 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	return connect.NewResponse(resp), nil
 }
 
-// imageSchemas is where an image holds the schemas of its kinds, below its system.
-const imageSchemas = "/etc/chalkos/schemas"
-
-// imageStore is the store of an image an upgrade wrote, read as upgrade.Store reads it: by the
-// image's own paths.
-type imageStore interface {
-	ReadFile(name string) ([]byte, error)
-	ReadDir(name string) ([]fs.DirEntry, error)
-}
-
-// imageContract reads what an image translates config with from its store: its schemas and
-// its layers' facts, whose content the image's root hash covers. system is the image's NixOS
-// system in st, and platform is the image's.
-func (s *Server) imageContract(st imageStore, system, platform string) (*schema.Schemas, config.Target, error) {
-	entries, err := st.ReadDir(system + imageSchemas)
-	if err != nil {
-		return nil, config.Target{}, fmt.Errorf("the image's schemas: %w", err)
-	}
-	files := map[string][]byte{}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		if files[e.Name()], err = st.ReadFile(system + imageSchemas + "/" + e.Name()); err != nil {
-			return nil, config.Target{}, fmt.Errorf("the image's schemas: %w", err)
-		}
-	}
-	schemas, err := schema.LoadFiles(files)
-	if err != nil {
-		return nil, config.Target{}, fmt.Errorf("the image's schemas: %w", err)
-	}
-	facts, err := imageFacts(layer.Compiled[layer.ImageFacts](s.Plugins), func(h layer.ImageFacts) (*anypb.Any, error) {
-		return h.SystemFacts(func(path string) ([]byte, error) { return st.ReadFile(system + path) })
-	})
-	if err != nil {
-		return nil, config.Target{}, err
-	}
-	t := config.Target{Platform: platform}
-	if err := s.target(facts, &t); err != nil {
-		return nil, config.Target{}, err
-	}
-	return schemas, t, nil
-}
-
 // stageConfig writes the config slot of the image an upgrade installs, whose store is st with the
 // root hash, through writeSlot. The config is the one text delivers, or else the running slot's
 // documents as they were delivered. secret is the fallback secret a new encrypted volume is
@@ -235,66 +187,66 @@ func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platfor
 	return nil
 }
 
-// writeSlot writes docs, config as delivered, to the config slot of an image that does not run,
-// whose store is st with the root hash. system is the image's NixOS system in st, platform its
-// platform and secret the fallback secret. The caller holds s.mu.
+// slotWrite is a config slot of an image that does not run, checked and ready to be written: the
+// slot and the changes its storage makes to the machine.
+type slotWrite struct {
+	next    slot.Stored
+	machine machineChange
+}
+
+// planSlot checks docs, config as delivered, for the config slot of an image that does not run,
+// whose store is st with the root hash, and changes nothing. system is the image's NixOS system in
+// st, platform its platform and secret the fallback secret. The caller holds s.mu.
 //
-// The config is checked and translated against the schemas and image.json in st, exactly as the
-// image translates it at boot, and against the machine as every slot write is. A config
-// chalkos-config could not apply would leave boot counting to fall back. writeSlot refuses:
-//   - config the image's rules refuse, such as one that changes what a node holding a share was
-//     set up for;
-//   - storage changes that take a reset or a reinstall.
-//
-// Other storage changes, such as a new volume, are made now and recorded in storage.json. Every
-// boot sets up the volumes storage.json records, so the running image mounts such a volume too
-// although its config does not name it; its slot counts as removing the volume only once it is
-// written again.
-func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) error {
+// The image checks the config itself, with its own chalkd, as it would check a delivery once it
+// runs: its schemas, its rules and its renderers, against the running slot's config and with its
+// own facts of this node. chalkd then checks the slot's storage against the machine, as for every
+// slot write. A config chalkos-config could not apply would leave boot counting to fall back.
+// planSlot refuses:
+//   - config the image refuses, such as one that changes what a node holding a share was set up
+//     for, or one a renderer of the image cannot render;
+//   - storage changes that take a reset or a reinstall, which the image's storage rules refuse.
+func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) (slotWrite, error) {
 	_, running, _, err := s.runningSlot()
 	if err != nil {
-		return err
+		return slotWrite{}, err
 	}
 	name, err := s.name()
 	if err != nil {
-		return err
+		return slotWrite{}, err
 	}
-	schemas, t, err := s.imageContract(st, system, platform)
+	next, err := s.checkWithImage(ctx, st, system, platform, name, imageCheck{delivered: docs, old: running.Documents, secret: secret, writing: rootHash})
 	if err != nil {
-		return failed(connect.CodeInvalidArgument, "%v", err)
-	}
-	next, err := translateSlot(name, docs, schemas, t)
-	if err != nil {
-		return failed(connect.CodeInvalidArgument, "the config does not suit the image: %v", err)
+		return slotWrite{}, err
 	}
 	d, err := s.parseIdentity(string(next.Identity))
 	if err != nil {
-		return err
-	}
-	// The rules are the image's, which the config is for; the facts the running image's, which
-	// read this node. The running slot is the baseline, as for ApplyConfig.
-	set, err := compileImageRules(schemas)
-	if err != nil {
-		return err
-	}
-	f, err := s.factsFor(ctx, next.Documents, running.Documents, secret)
-	if err != nil {
-		return err
-	}
-	if err := s.checkRules(set, name, next.Documents, running.Documents, f); err != nil {
-		return s.elsewhere(err, d.section, rootHash)
+		return slotWrite{}, err
 	}
 	mc, err := s.machineChanges(d.section)
 	if err != nil {
+		return slotWrite{}, err
+	}
+	return slotWrite{next: next, machine: mc}, nil
+}
+
+// writeSlot writes docs to the config slot of an image that does not run once planSlot checked
+// them. Storage changes the image's rules accept, such as a new volume, are made now and recorded
+// in storage.json. Every boot sets up the volumes storage.json records, so the running image
+// mounts such a volume too although its config does not name it; its slot counts as removing the
+// volume only once it is written again. The caller holds s.mu.
+func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) error {
+	w, err := s.planSlot(ctx, st, system, platform, rootHash, docs, secret)
+	if err != nil {
 		return err
 	}
-	if err := s.applyMachine(ctx, mc, secret); err != nil {
+	if err := s.applyMachine(ctx, w.machine, secret); err != nil {
 		return err
 	}
-	if err := slot.Write(slot.Dir(s.Loader.Slots, rootHash), next); err != nil {
+	if err := slot.Write(slot.Dir(s.Loader.Slots, rootHash), w.next); err != nil {
 		return failed(connect.CodeInternal, "store the image's config: %v", err)
 	}
-	log.Printf("the config %s of %x is stored", next.Version, rootHash)
+	log.Printf("the config %s of %x is stored", w.next.Version, rootHash)
 	return nil
 }
 

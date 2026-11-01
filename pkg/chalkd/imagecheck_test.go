@@ -1,0 +1,138 @@
+package chalkd
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
+	"github.com/trevex/chalkos/pkg/imagecheck"
+	"github.com/trevex/chalkos/pkg/outputs"
+	"github.com/trevex/chalkos/pkg/storage"
+)
+
+// recording runs the checker as run does and keeps the input of each run.
+type recording struct {
+	run    imagecheck.Runner
+	inputs []*checkv1.Input
+	// answer, when set, replaces the result.
+	answer func(*checkv1.Result)
+}
+
+func (r *recording) Run(ctx context.Context, img imagecheck.Image, in *checkv1.Input, f imagecheck.Facts) (*checkv1.Result, error) {
+	r.inputs = append(r.inputs, in)
+	res, err := r.run.Run(ctx, img, in, f)
+	if err == nil && r.answer != nil {
+		r.answer(res)
+	}
+	return res, err
+}
+
+// withOutputs gives the image of st the outputs defs, as its system's outputs.json declares them.
+func withOutputs(t *testing.T, st dirStore, defs map[string]outputs.Definition) {
+	t.Helper()
+	data, err := json.Marshal(defs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/outputs.json"), string(data))
+}
+
+// An upgrade's config is checked by the image's renderers, which the running image lacks: the
+// image refuses a Demo its renderer fails on, and its slot is not written.
+func TestStageConfigRunsTheImagesRenderers(t *testing.T) {
+	s, _ := configServer(t)
+	st := imageWith(t, s, fixtureSchemas(t), "")
+	demo := demoOutput(t, s, `grep -q second && exit 5; cat > "$OUT/demo.json"`, "")
+	demo.Dir = "/run/chalkos/outputs/demo"
+	withOutputs(t, st, map[string]outputs.Definition{"demo": demo})
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	err := s.stageConfig(context.Background(), st, "/nix/store/x", "metal", newImage, next, "")
+	if err == nil || err.Error() != "output demo: its renderer failed (exit 5); see the node's journal" {
+		t.Errorf("err = %v, want the image's renderer's refusal", err)
+	}
+	if _, found := staged(t, s); found {
+		t.Error("wrote the image's slot")
+	}
+	if err := s.stageConfig(context.Background(), st, "/nix/store/x", "metal", newImage, baseConfig, ""); err != nil {
+		t.Errorf("a Demo the renderer takes: %v", err)
+	}
+}
+
+// The checker gets the config with its secret values hashed, the delivered and the running
+// config alike, and the slot keeps the delivered values.
+func TestImageCheckGetsNoSecretValue(t *testing.T) {
+	s, _ := configServer(t)
+	rec := &recording{run: s.CheckImage}
+	s.CheckImage = rec
+	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, strings.Replace(baseConfig, "s3cret", "n3w", 1), ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.inputs) != 1 || len(rec.inputs[0].GetDelivered()) != 3 || len(rec.inputs[0].GetOld()) != 3 {
+		t.Fatalf("inputs = %v", rec.inputs)
+	}
+	for _, d := range append(rec.inputs[0].GetDelivered(), rec.inputs[0].GetOld()...) {
+		if strings.Contains(d, "s3cret") || strings.Contains(d, "n3w") {
+			t.Errorf("the checker got a secret value: %s", d)
+		}
+	}
+	got, _ := staged(t, s)
+	for _, d := range got.Documents {
+		if d.IsSecret() && d.Object["spec"].(map[string]any)["data"].(map[string]any)["token"] != "n3w" {
+			t.Errorf("the slot keeps %v, want the delivered value", d.Object)
+		}
+	}
+}
+
+// An image without a checker, as one built before chalkd check, cannot check its config and is
+// refused; so is a checker whose documents carry other secret values than were delivered.
+func TestImageCheckRefuses(t *testing.T) {
+	s, _ := configServer(t)
+	old := imageWith(t, s, fixtureSchemas(t), "")
+	if err := os.Remove(filepath.Join(string(old), "nix/store/x/sw/bin/chalkd")); err != nil {
+		t.Fatal(err)
+	}
+	err := s.stageConfig(context.Background(), old, "/nix/store/x", "metal", newImage, baseConfig, "")
+	if err == nil || err.Error() != "the image predates chalkd check; it cannot check its config" {
+		t.Errorf("an image without a checker: %v", err)
+	}
+	s.CheckImage = &recording{run: s.CheckImage, answer: func(res *checkv1.Result) {
+		for i, d := range res.Documents {
+			res.Documents[i] = strings.Replace(d, `"token":"`, `"token":"0`, 1)
+		}
+	}}
+	err = s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, baseConfig, "")
+	if err == nil || !strings.Contains(err.Error(), `the image's checker gave back other documents than it got: Secret "demo" holds other secret values than were delivered`) {
+		t.Errorf("other secret values: %v", err)
+	}
+	if _, found := staged(t, s); found {
+		t.Error("wrote the image's slot")
+	}
+}
+
+// The checker's facts are those the image declares, which chalkd loads, with an override in place
+// of what the node holds.
+func TestStagedFacts(t *testing.T) {
+	s, _ := configServer(t)
+	st := imageWith(t, s, nil, "")
+	probe := filepath.Join(t.TempDir(), "probe.json")
+	write(t, probe, `"image"`)
+	write(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/facts.json"), `{"probe": {"file": "`+probe+`"}, "recorded": {"file": "/nonexistent"}}`)
+	section := storage.Section{Fallback: "recovery-key"}
+	f, err := s.stagedFacts(context.Background(), st, "/nix/store/x", imageCheck{recorded: &section})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, err := f.Fact("probe", nil); err != nil || v != "image" {
+		t.Errorf("probe = %v, %v", v, err)
+	}
+	if v, err := f.Fact("recorded", nil); err != nil || v.(map[string]any)["fallback"] != "recovery-key" {
+		t.Errorf("recorded = %v, %v; want the override", v, err)
+	}
+	if v, err := f.Fact("share", nil); err != nil || v != nil {
+		t.Errorf("share = %v, %v; want null, as the image declares none", v, err)
+	}
+}
