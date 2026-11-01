@@ -104,6 +104,11 @@ in
       };
     };
 
+    # The image's checker: the chalkd of a node that runs another image finds it as
+    # sw/bin/chalkd of this image's system and runs its `chalkd check` on config for this image
+    # before this image boots.
+    environment.systemPackages = [ chalkd ];
+
     networking.firewall.allowedTCPPorts = [ 50000 ];
 
     environment.etc."chalkos/os-ca.crt" = lib.mkIf (osCA != null) {

@@ -49,6 +49,20 @@ let
   };
 in
 lib.runTests {
+  # Every image carries its checker, chalkd, on its system path, where the chalkd of a node that
+  # runs another image finds it as sw/bin/chalkd.
+  testImageCarriesItsChecker = {
+    expr = map (c: lib.any (p: lib.getName p == "chalkd") c.environment.systemPackages) [
+      (worker [ ])
+      layered.plain-metal.config
+      layered.edge-metal.config
+    ];
+    expected = [
+      true
+      true
+      true
+    ];
+  };
   # mkImages builds each variant on each platform, metal and kvm unless the arguments name
   # others, as <variant>-<platform>, each with its OCI layout as oci.<variant>-<platform>, and
   # one installer; without variants it builds node.
