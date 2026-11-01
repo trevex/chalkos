@@ -262,7 +262,8 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	}
 	defer conn.Close()
 	// The staged image is the node's image in the inventory, as after an upgrade without a reboot;
-	// the node checks the config against the staged image itself again, and refuses it without one.
+	// the node checks the config against the staged image itself again, and without one holds it
+	// pending, unchecked, for the next upgrade's image to check.
 	var c contract
 	if f.staged {
 		c, err = t.cluster.imageContractOf(t.name)
