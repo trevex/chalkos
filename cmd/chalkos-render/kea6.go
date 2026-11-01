@@ -224,16 +224,18 @@ func networkSpecs(byKind map[string]any) map[string]map[string]any {
 }
 
 // subnetID6 is Kea's number for the IPv6 subnet p: FNV-1a of its address and length, which
-// renderKea refuses should two subnets of a server share it; Kea takes no number 0.
+// renderKea refuses should two subnets of a server share it.
 func subnetID6(p netip.Prefix) uint32 {
 	h := fnv.New32a()
 	a := p.Addr().As16()
 	h.Write(a[:])
 	h.Write([]byte{byte(p.Bits())})
-	if id := h.Sum32(); id != 0 {
-		return id
-	}
-	return 1
+	return keaSubnetID(h.Sum32())
+}
+
+// keaSubnetID is the number of Kea's range, 1 to 4294967294, nearest to sum.
+func keaSubnetID(sum uint32) uint32 {
+	return min(max(sum, 1), 4294967294)
 }
 
 // kea6Config is the config of the DHCPv6 server srv: UDP sockets on the subnets' links, its

@@ -165,3 +165,12 @@ func TestSystemdBool(t *testing.T) {
 
 // mustPrefix parses a range of a test.
 func mustPrefix(s string) netip.Prefix { return netip.MustParsePrefix(s) }
+
+// Kea numbers subnets from 1 to 4294967294, so a hash of 0 or 4294967295 takes the nearest.
+func TestKeaSubnetID(t *testing.T) {
+	for sum, want := range map[uint32]uint32{0: 1, 1: 1, 3221225984: 3221225984, 4294967294: 4294967294, 4294967295: 4294967294} {
+		if got := keaSubnetID(sum); got != want {
+			t.Errorf("keaSubnetID(%d) = %d; want %d", sum, got, want)
+		}
+	}
+}
