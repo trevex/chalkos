@@ -2,11 +2,14 @@ package chalkctl
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/storage"
 )
 
 // apply-config --dry-run prints the diff and the node's plan of the delivery, and the node
@@ -38,18 +41,52 @@ func TestApplyConfigDryRun(t *testing.T) {
 }
 
 // --dry-run checks the nodes named one after the other: a node it cannot check does not stop the
-// others, and the command fails naming it.
+// others, and the command fails naming it apart from the nodes whose config is refused.
 func TestApplyConfigDryRunOfSeveralNodes(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
 	writeFile(t, ta.inventory, strings.Replace(testInventoryYAML, "10.0.0.11", addr, 1))
 	err := ta.run(context.Background(), []string{"apply-config", "--dry-run", "n9", "n1", "--inventory", ta.inventory})
-	if err == nil || err.Error() != "the config of 1 node is refused: n9" {
+	if err == nil || err.Error() != "the dry run failed on 1 node: n9" {
 		t.Errorf("err = %v", err)
 	}
 	if !strings.Contains(ta.stderr.String(), "chalkctl: n9: ") || !strings.Contains(ta.stdout.String(), "n1: config none → "+ta.configVersion(t)) {
 		t.Errorf("stdout = %q, stderr = %q", ta.stdout, ta.stderr)
+	}
+}
+
+// A config the node refuses on a dry run is refused, and a dry run of it alone exits with the
+// node's refusal; one of several nodes is counted apart from a node the dry run failed on.
+func TestApplyConfigDryRunRefused(t *testing.T) {
+	ta := newTestApp(t)
+	s, r := installedNode(t, ta, []byte(`{}`))
+	// The node recorded VAR as xfs, so the inventory's ext4 takes a reinstall, which the node
+	// refuses.
+	section := ta.identity(t).Storage
+	v := section.Volumes["var"]
+	v.Format = "xfs"
+	section.Volumes = map[string]storage.Volume{"var": v}
+	data, _ := json.Marshal(section)
+	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(data))
+	addr := ta.startNode(t, s)
+	writeFile(t, ta.inventory, strings.Replace(testInventoryYAML, "10.0.0.11", addr, 1))
+
+	err := ta.run(context.Background(), []string{"apply-config", "--dry-run", "n1", "--inventory", ta.inventory})
+	if err == nil || !strings.Contains(err.Error(), "only a reinstall of n1 carries it out") || strings.Contains(err.Error(), "is refused: n1") {
+		t.Errorf("err = %v, want the node's refusal", err)
+	}
+	err = ta.run(context.Background(), []string{"apply-config", "--dry-run", "n1", "n9", "--inventory", ta.inventory})
+	if err == nil || err.Error() != "the config of 1 node is refused: n1; the dry run failed on 1 node: n9" {
+		t.Errorf("err = %v", err)
+	}
+	if !strings.Contains(ta.stderr.String(), "chalkctl: n1: ") || strings.Contains(ta.stderr.String(), "n1: n1") {
+		t.Errorf("stderr = %q", ta.stderr)
+	}
+	for _, c := range r.calls {
+		if strings.HasPrefix(c, "systemctl restart") || strings.HasPrefix(c, "mkfs") {
+			t.Errorf("node ran %s", c)
+		}
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -175,7 +176,7 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 	if err != nil {
 		return err
 	}
-	var refused []string
+	var refused, failed []string
 	for _, name := range names {
 		t, err := targetIn(c, f.node.address, name, creds)
 		if err == nil {
@@ -186,13 +187,42 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 			return err
 		case err != nil:
 			fmt.Fprintf(a.stderr, "chalkctl: %s\n", namedOnce(name, err))
-			refused = append(refused, name)
+			if errors.As(err, new(refusal)) {
+				refused = append(refused, name)
+			} else {
+				failed = append(failed, name)
+			}
 		}
 	}
+	var msgs []string
 	if len(refused) > 0 {
-		return fmt.Errorf("the config of %s is refused: %s", layer.Count(len(refused), "node"), strings.Join(refused, ", "))
+		msgs = append(msgs, fmt.Sprintf("the config of %s is refused: %s", layer.Count(len(refused), "node"), strings.Join(refused, ", ")))
+	}
+	if len(failed) > 0 {
+		msgs = append(msgs, fmt.Sprintf("the dry run failed on %s: %s", layer.Count(len(failed), "node"), strings.Join(failed, ", ")))
+	}
+	if len(msgs) > 0 {
+		return errors.New(strings.Join(msgs, "; "))
 	}
 	return nil
+}
+
+// refusal is a dry run's refusal of a node's config: by the image's rules chalkctl checks, or by
+// the node's checks. A dry run that fails before the config is checked, as of a node missing from
+// the inventory, unreachable or on trial, refuses nothing.
+type refusal struct{ error }
+
+func (r refusal) Unwrap() error { return r.error }
+
+// refusedByNode reports whether the node's answer to a dry run refuses the config, as it would
+// refuse the delivery, rather than failing for the node's own reasons, such as an upgrade that
+// runs or a fault of its own.
+func refusedByNode(err error) bool {
+	switch connect.CodeOf(err) {
+	case connect.CodeInvalidArgument, connect.CodeFailedPrecondition:
+		return connect.IsWireError(err)
+	}
+	return false
 }
 
 // namedOnce is err as a line of several nodes' output names the node called name: prefixed with
@@ -284,7 +314,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		}
 	}
 	if err := checkRules(c, d.documents, baseline, t.name); err != nil {
-		return fmt.Errorf("%s: %w", t.name, err)
+		return refusal{fmt.Errorf("%s: %w", t.name, err)}
 	}
 	fallback, err := a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, "")
 	if err != nil {
@@ -320,6 +350,9 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	if err != nil {
 		if f.try > 0 {
 			return a.failedTrial(ctx, conn, t, d.Version, st.Msg.ConfigVersion, deadline, err)
+		}
+		if f.dryRun && refusedByNode(err) {
+			return refusal{nodeError(err, t.name)}
 		}
 		return nodeError(err, t.name)
 	}
