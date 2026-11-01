@@ -207,9 +207,9 @@ func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 	s, _ := stagedServer(t, fixtureSchemas(t))
 	refusal := errors.New("the config does not suit the image")
 	installErr := error(refusal)
-	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
+	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, imageConfig, error) {
 		io.Copy(io.Discard, r)
-		return upgrade.Result{}, installErr
+		return upgrade.Result{}, imageConfig{}, installErr
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
 	send := func(rootHash []byte) error {
@@ -285,9 +285,9 @@ func TestKnownGoodImageKeepsItsConfig(t *testing.T) {
 		if err := os.WriteFile(record, []byte(hex.EncodeToString(stagedImage)+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
+		s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, imageConfig, error) {
 			io.Copy(io.Discard, r)
-			return upgrade.Result{AlreadyStaged: true, Entry: "chalkos_3.efi"}, nil
+			return upgrade.Result{AlreadyStaged: true, Entry: "chalkos_3.efi"}, imageConfig{}, nil
 		}
 		conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
 		send := func(config string) error {

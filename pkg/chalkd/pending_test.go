@@ -206,7 +206,8 @@ func TestStageConfigTakesThePendingConfig(t *testing.T) {
 	s, _ := configServer(t)
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	p := sendPending(t, s, next)
-	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", ""); err != nil {
+	c, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", "")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := staged(t, s); got.Version != hashOf(t, next) {
@@ -215,7 +216,7 @@ func TestStageConfigTakesThePendingConfig(t *testing.T) {
 	if v := pendingVersion(t, s); v != p.Version {
 		t.Errorf("pending version = %q before the image is staged, want %s kept", v, p.Version)
 	}
-	if c := s.stagedConfig; c.from != fromPending || c.pending != p.Version {
+	if c.from != fromPending || c.pending != p.Version {
 		t.Errorf("staged config from %v, pending %q; want the pending config %s taken", c.from, c.pending, p.Version)
 	}
 }
@@ -226,7 +227,8 @@ func TestStageConfigOverridesThePendingConfig(t *testing.T) {
 	s, _ := configServer(t)
 	p := sendPending(t, s, strings.Replace(baseConfig, "name: first", "name: second", 1))
 	next := strings.Replace(baseConfig, "name: first", "name: third", 1)
-	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, next, ""); err != nil {
+	c, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, next, "")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := staged(t, s); got.Version != hashOf(t, next) {
@@ -235,7 +237,7 @@ func TestStageConfigOverridesThePendingConfig(t *testing.T) {
 	if v := pendingVersion(t, s); v != p.Version {
 		t.Errorf("pending version = %q before the image is staged, want %s kept", v, p.Version)
 	}
-	if c := s.stagedConfig; c.from != fromUpgrade || c.pending != p.Version {
+	if c.from != fromUpgrade || c.pending != p.Version {
 		t.Errorf("staged config from %v, pending %q; want the pending config %s replaced", c.from, c.pending, p.Version)
 	}
 }
@@ -258,7 +260,7 @@ func TestStageConfigKeepsARefusedPendingConfig(t *testing.T) {
 			s, r := configServer(t)
 			r.Rules = volumeRules(s)
 			p := sendPending(t, s, tc.config)
-			err := s.stageConfig(context.Background(), imageWith(t, s, tc.schemas, ""), "/nix/store/x", "metal", newImage, "", "")
+			c, err := s.stageConfig(context.Background(), imageWith(t, s, tc.schemas, ""), "/nix/store/x", "metal", newImage, "", "")
 			if err == nil || !strings.Contains(err.Error(), "the pending config "+p.Version+" does not suit the image: ") {
 				t.Fatalf("err = %v, want the pending config named", err)
 			}
@@ -273,7 +275,7 @@ func TestStageConfigKeepsARefusedPendingConfig(t *testing.T) {
 			if v := pendingVersion(t, s); v != p.Version {
 				t.Errorf("pending version = %q, want it kept", v)
 			}
-			if c := s.stagedConfig; c.pending != "" {
+			if c.pending != "" {
 				t.Errorf("the refused upgrade notes the pending config %s as staged", c.pending)
 			}
 		})
@@ -290,17 +292,18 @@ func upgradePending(t *testing.T, s *Server, role pki.Role, cfg string, fail err
 	// The upgrade retires the slots of images the ESP does not boot, newImage's among them, so
 	// the installation reads the slot it wrote.
 	var version string
-	s.InstallImage = func(ctx context.Context, _ upgrade.Header, config, secret string, r io.Reader) (upgrade.Result, error) {
+	s.InstallImage = func(ctx context.Context, _ upgrade.Header, config, secret string, r io.Reader) (upgrade.Result, imageConfig, error) {
 		io.Copy(io.Discard, r)
-		if err := s.stageConfig(ctx, imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret); err != nil {
-			return upgrade.Result{}, err
+		wrote, err := s.stageConfig(ctx, imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
+		if err != nil {
+			return upgrade.Result{}, imageConfig{}, err
 		}
 		got, _ := staged(t, s)
 		version = got.Version
 		if after != nil {
 			after()
 		}
-		return upgrade.Result{Entry: "chalkos_2+3.efi"}, fail
+		return upgrade.Result{Entry: "chalkos_2+3.efi"}, wrote, fail
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[role])
 	stream := conn.Upgrade(context.Background())

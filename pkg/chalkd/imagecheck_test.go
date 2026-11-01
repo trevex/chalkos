@@ -55,14 +55,14 @@ func TestStageConfigRunsTheImagesRenderers(t *testing.T) {
 	demo.Dir = "/run/chalkos/outputs/demo"
 	withOutputs(t, st, map[string]outputs.Definition{"demo": demo})
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
-	err := s.stageConfig(context.Background(), st, "/nix/store/x", "metal", newImage, next, "")
+	_, err := s.stageConfig(context.Background(), st, "/nix/store/x", "metal", newImage, next, "")
 	if err == nil || err.Error() != "output demo: its renderer failed (exit 5); see the node's journal" {
 		t.Errorf("err = %v, want the image's renderer's refusal", err)
 	}
 	if _, found := staged(t, s); found {
 		t.Error("wrote the image's slot")
 	}
-	if err := s.stageConfig(context.Background(), st, "/nix/store/x", "metal", newImage, baseConfig, ""); err != nil {
+	if _, err := s.stageConfig(context.Background(), st, "/nix/store/x", "metal", newImage, baseConfig, ""); err != nil {
 		t.Errorf("a Demo the renderer takes: %v", err)
 	}
 }
@@ -73,7 +73,7 @@ func TestImageCheckGetsNoSecretValue(t *testing.T) {
 	s, _ := configServer(t)
 	rec := &recording{run: s.CheckImage}
 	s.CheckImage = rec
-	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, strings.Replace(baseConfig, "s3cret", "n3w", 1), ""); err != nil {
+	if _, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, strings.Replace(baseConfig, "s3cret", "n3w", 1), ""); err != nil {
 		t.Fatal(err)
 	}
 	if len(rec.inputs) != 1 || len(rec.inputs[0].GetDelivered()) != 3 || len(rec.inputs[0].GetOld()) != 3 {
@@ -100,7 +100,7 @@ func TestImageCheckRefuses(t *testing.T) {
 	if err := os.Remove(filepath.Join(string(old), "nix/store/x/sw/bin/chalkd")); err != nil {
 		t.Fatal(err)
 	}
-	err := s.stageConfig(context.Background(), old, "/nix/store/x", "metal", newImage, baseConfig, "")
+	_, err := s.stageConfig(context.Background(), old, "/nix/store/x", "metal", newImage, baseConfig, "")
 	if err == nil || err.Error() != fmt.Sprintf("the image %x predates chalkd check; it cannot check its config", newImage[:6]) {
 		t.Errorf("an image without a checker: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestImageCheckRefuses(t *testing.T) {
 			res.Documents[i] = strings.Replace(d, `"token":"`, `"token":"0`, 1)
 		}
 	}}
-	err = s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, baseConfig, "")
+	_, err = s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, baseConfig, "")
 	if err == nil || !strings.Contains(err.Error(), `the image's checker gave back other documents than it got: Secret "demo" holds other secret values than were delivered`) {
 		t.Errorf("other secret values: %v", err)
 	}

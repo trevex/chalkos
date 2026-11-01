@@ -128,8 +128,9 @@ type Server struct {
 	InPlace   func(ctx context.Context, req install.Request, rootHash []byte) error
 	FromParts func(context.Context, install.PartsRequest) error
 	// InstallImage installs an upgrade's image with the config and the fallback secret the upgrade
-	// delivers; nil installs it on the boot disk. Tests replace it.
-	InstallImage func(ctx context.Context, h upgrade.Header, config, secret string, image io.Reader) (upgrade.Result, error)
+	// delivers, and returns the config it wrote to the image's slot, as installImage does; nil
+	// installs it on the boot disk. Tests replace it.
+	InstallImage func(ctx context.Context, h upgrade.Header, config, secret string, image io.Reader) (upgrade.Result, imageConfig, error)
 	// ReadImage reads the store of an image in the inactive slot, as apply-config --staged checks
 	// config against it; nil mounts it from the boot disk. Tests replace it.
 	ReadImage func(ctx context.Context, rootHash []byte, read func(st imageStore, system string) error) error
@@ -175,10 +176,6 @@ type Server struct {
 	installed bool
 	// upgrading is held while an upgrade runs, which changes only the inactive slot and the ESP.
 	upgrading sync.Mutex
-	// stagedConfig is the config the running upgrade gave its image, without its documents, once
-	// stageConfig wrote the image's slot; the upgrade drops the pending config it names once the
-	// image is staged. The upgrade holds upgrading while it is set and read.
-	stagedConfig imageConfig
 	// trialTimer rolls the config on trial back at its deadline; nil without a trial. s.mu guards
 	// it.
 	trialTimer *time.Timer

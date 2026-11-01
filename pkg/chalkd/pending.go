@@ -155,16 +155,15 @@ func (c imageConfig) refused(err error, name string) error {
 	return fmt.Errorf("the pending config %s does not suit the image: %w; chalkctl apply-config --staged %s replaces it, and chalkctl apply-config --staged --discard %s drops it", c.pending, plain(err), name, name)
 }
 
-// dropStagedPending removes the pending config that s.stagedConfig names: the one the image an
-// upgrade staged took, or the one the config the upgrade carried replaced. That image boots next
-// with its config now, and a later upgrade must not take the pending config. Only now, once the
-// image is staged, may it go: an upgrade that fails after the image's slot was written, as when
-// its UKI fails to activate, keeps it for the upgrade after. The image is staged already, so a
-// failure to remove it does not fail the upgrade: the journal says so, Status keeps naming the
-// pending config, and apply-config --staged --discard drops it. The caller holds s.upgrading.
-func (s *Server) dropStagedPending(rootHash []byte) {
-	c := s.stagedConfig
-	s.stagedConfig = imageConfig{}
+// dropStagedPending removes the pending config that c, the config stageConfig wrote to the image's
+// slot, names: the one the image an upgrade staged took, or the one the config the upgrade carried
+// replaced; c names none when no slot was written. That image boots next with its config now, and
+// a later upgrade must not take the pending config. Only now, once the image is staged, may it go:
+// an upgrade that fails after the image's slot was written, as when its UKI fails to activate,
+// keeps it for the upgrade after. The image is staged already, so a failure to remove it does not
+// fail the upgrade: the journal says so, Status keeps naming the pending config, and apply-config
+// --staged --discard drops it. The caller holds s.upgrading.
+func (s *Server) dropStagedPending(c imageConfig, rootHash []byte) {
 	if c.pending == "" {
 		return
 	}

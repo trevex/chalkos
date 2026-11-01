@@ -61,7 +61,7 @@ func TestUpgrade(t *testing.T) {
 			rebooted := make(chan struct{})
 			s.RebootNode = func() { close(rebooted) }
 			var got []byte
-			s.InstallImage = func(_ context.Context, h upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
+			s.InstallImage = func(_ context.Context, h upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, imageConfig, error) {
 				want := upgrade.Header{ImageID: "chalkos", RootHash: []byte{1, 2},
 					StoreSize: 1, VeritySize: 2, UKISize: 3, StoreSHA256: []byte{4}, VeritySHA256: []byte{5}, UKISHA256: []byte{6}}
 				if h.ImageID != want.ImageID || h.Platform != "metal" || h.Architecture != "x86-64" || h.Provenance != (upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}) ||
@@ -74,7 +74,7 @@ func TestUpgrade(t *testing.T) {
 				if err != nil {
 					t.Error(err)
 				}
-				return tc.result, tc.err
+				return tc.result, imageConfig{}, tc.err
 			}
 			addr := serve(t, s, c, c.pool)
 			conn := dial(t, addr, c.clients[pki.RoleOperator])
@@ -131,9 +131,9 @@ func TestUpgrade(t *testing.T) {
 func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
-	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, error) {
+	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, imageConfig, error) {
 		t.Error("installed the image")
-		return upgrade.Result{}, nil
+		return upgrade.Result{}, imageConfig{}, nil
 	}
 	addr := serve(t, s, c, c.pool)
 	conn := dial(t, addr, c.clients[pki.RoleOperator])
@@ -176,13 +176,13 @@ func TestUpgradeDeliversConfigOnlyForAdmins(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := configServer(t)
 			installed, version := false, ""
-			s.InstallImage = func(ctx context.Context, _ upgrade.Header, config, secret string, r io.Reader) (upgrade.Result, error) {
+			s.InstallImage = func(ctx context.Context, _ upgrade.Header, config, secret string, r io.Reader) (upgrade.Result, imageConfig, error) {
 				installed = true
 				io.Copy(io.Discard, r)
-				err := s.stageConfig(ctx, imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
+				wrote, err := s.stageConfig(ctx, imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
 				got, _ := staged(t, s)
 				version = got.Version
-				return upgrade.Result{AlreadyStaged: true, Entry: "chalkos_2+3.efi"}, err
+				return upgrade.Result{AlreadyStaged: true, Entry: "chalkos_2+3.efi"}, wrote, err
 			}
 			conn := dial(t, serve(t, s, c, c.pool), c.clients[tc.role])
 			stream := conn.Upgrade(context.Background())
@@ -265,7 +265,7 @@ func staged(t *testing.T, s *Server) (slot.Stored, bool) {
 // with the new image's schemas.
 func TestStageConfigCarriesTheRunningConfig(t *testing.T) {
 	s, _ := configServer(t)
-	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", ""); err != nil {
+	if _, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	got, found := staged(t, s)
@@ -284,7 +284,7 @@ func TestStageConfigCarriesTheRunningConfig(t *testing.T) {
 func TestStageConfigWritesTheDeliveredConfig(t *testing.T) {
 	s, _ := configServer(t)
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
-	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, next, ""); err != nil {
+	if _, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, next, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := staged(t, s); got.Version != hashOf(t, next) {
@@ -316,7 +316,7 @@ func TestStageConfigRefuses(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := configServer(t)
-			err := s.stageConfig(context.Background(), imageWith(t, s, tc.schemas, tc.facts), "/nix/store/x", "metal", newImage, tc.config, "")
+			_, err := s.stageConfig(context.Background(), imageWith(t, s, tc.schemas, tc.facts), "/nix/store/x", "metal", newImage, tc.config, "")
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want one naming %q", err, tc.want)
 			}
@@ -351,14 +351,14 @@ func volumeRules(s *Server) []tooltest.Rule {
 func TestStageConfigAddsAVolume(t *testing.T) {
 	s, r := configServer(t)
 	r.Rules = volumeRules(s)
-	err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), "")
+	_, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), "")
 	if err == nil || !strings.Contains(err.Error(), "no fallback secret was sent") {
 		t.Fatalf("err = %v, want the missing secret", err)
 	}
 	if _, found := staged(t, s); found || len(r.Calls) != 0 {
 		t.Fatalf("wrote the slot or ran %v", r.Calls)
 	}
-	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
+	if _, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
 		t.Fatal(err)
 	}
 	if !contains(r.Calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
@@ -383,7 +383,8 @@ func TestStageConfigRetriedAfterTheVolume(t *testing.T) {
 	s, r := configServer(t)
 	r.Rules = volumeRules(s)
 	stage := func(secret string) error {
-		return s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret)
+		_, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret)
+		return err
 	}
 	if err := stage(secret); err != nil {
 		t.Fatal(err)
@@ -415,7 +416,7 @@ func TestStageConfigRetriedAfterTheVolume(t *testing.T) {
 func TestApplyConfigNamesAVolumeAnotherImageAdded(t *testing.T) {
 	s, r := configServer(t)
 	r.Rules = volumeRules(s)
-	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
+	if _, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
 		t.Fatal(err)
 	}
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
@@ -448,11 +449,11 @@ func TestStageConfigKeepsTheFixedFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
-	err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), kubernetestest.Image), "/nix/store/x", "metal", newImage, next, "")
+	_, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), kubernetestest.Image), "/nix/store/x", "metal", newImage, next, "")
 	if err == nil || !strings.Contains(err.Error(), `changes the node's type from "worker" to "controlplane"`) {
 		t.Errorf("err = %v", err)
 	}
-	if err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), kubernetestest.Image), "/nix/store/x", "metal", newImage, workerConfig, ""); err != nil {
+	if _, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), kubernetestest.Image), "/nix/store/x", "metal", newImage, workerConfig, ""); err != nil {
 		t.Errorf("the same config: %v", err)
 	}
 }
@@ -461,7 +462,7 @@ func TestStageConfigKeepsTheFixedFields(t *testing.T) {
 // no documents to carry over.
 func TestStageConfigNeedsConfig(t *testing.T) {
 	s, _ := installedServer(t, section("", ""), false)
-	err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", "")
+	_, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", "")
 	if err == nil || !strings.Contains(err.Error(), "no config to carry over") || !strings.Contains(err.Error(), "which needs the admin role") {
 		t.Errorf("err = %v", err)
 	}
@@ -489,13 +490,13 @@ func TestUpgradeRetiresConfigSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord), string(data))
-	s.InstallImage = func(_ context.Context, h upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
+	s.InstallImage = func(_ context.Context, h upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, imageConfig, error) {
 		io.Copy(io.Discard, r)
 		// The refusal retires the image chalkos_3 boots.
 		if err := os.Remove(filepath.Join(s.Paths.ESP, "EFI", "Linux", "chalkos_3+3.efi")); err != nil {
 			t.Error(err)
 		}
-		return upgrade.Result{}, errors.New("the node's config does not suit the image")
+		return upgrade.Result{}, imageConfig{}, errors.New("the node's config does not suit the image")
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := conn.Upgrade(context.Background())
@@ -520,10 +521,10 @@ func TestOneUpgradeAtATime(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
 	started, release := make(chan struct{}), make(chan struct{})
-	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, error) {
+	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, imageConfig, error) {
 		close(started)
 		<-release
-		return upgrade.Result{}, nil
+		return upgrade.Result{}, imageConfig{}, nil
 	}
 	addr := serve(t, s, c, c.pool)
 	conn := dial(t, addr, c.clients[pki.RoleOperator])
@@ -576,7 +577,7 @@ func TestUpgradeSharesTheStorageLock(t *testing.T) {
 	h := upgrade.Header{ImageID: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: bytes.Repeat([]byte{2}, 32),
 		StoreSize: 1, VeritySize: 1, UKISize: 1, StoreSHA256: sum, VeritySHA256: sum, UKISHA256: sum}
 	// The fake sfdisk prints no table, which ends the upgrade.
-	if _, err := s.installImage(context.Background(), h, "", "", bytes.NewReader(nil)); err == nil {
+	if _, _, err := s.installImage(context.Background(), h, "", "", bytes.NewReader(nil)); err == nil {
 		t.Fatal("the upgrade went on without a partition table")
 	}
 	if calls == 0 {
@@ -595,7 +596,8 @@ func TestStageConfigNamesNoOtherImageForItsOwnVolume(t *testing.T) {
 	s, r := configServer(t)
 	r.Rules = volumeRules(s)
 	stage := func(config, secret string) error {
-		return s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
+		_, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
+		return err
 	}
 	if err := stage(extraConfig("ext4"), secret); err != nil {
 		t.Fatal(err)

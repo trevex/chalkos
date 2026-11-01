@@ -131,10 +131,10 @@ func upgradeWith(t *testing.T, c creds, header *nodev1.UpgradeHeader, running, p
 		}
 	}
 	var got []byte
-	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
+	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, imageConfig, error) {
 		var err error
 		got, err = io.ReadAll(r)
-		return upgrade.Result{Entry: "chalkos_2+3.efi"}, err
+		return upgrade.Result{Entry: "chalkos_2+3.efi"}, imageConfig{}, err
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
 	h := proto.Clone(header).(*nodev1.UpgradeHeader)
@@ -204,8 +204,8 @@ func TestUpgradePullsNothingForAnImageItHolds(t *testing.T) {
 	header := pulledHeader(t, host)
 	before := manifests.Load()
 	s, _ := newTestServer(t, normal, vda)
-	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, error) {
-		return upgrade.Result{AlreadyInstalled: true}, nil
+	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, imageConfig, error) {
+		return upgrade.Result{AlreadyInstalled: true}, imageConfig{}, nil
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := conn.Upgrade(context.Background())
@@ -226,9 +226,9 @@ func TestUpgradePullsNothingForAnImageItHolds(t *testing.T) {
 func TestUpgradeRefusesChunksOfAPull(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
-	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, error) {
+	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, imageConfig, error) {
 		t.Error("installed the image")
-		return upgrade.Result{}, nil
+		return upgrade.Result{}, imageConfig{}, nil
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := conn.Upgrade(context.Background())
@@ -291,9 +291,9 @@ func TestUpgradePullFailsInternallyWithoutTheRunningConfig(t *testing.T) {
 	if err := os.WriteFile(slot, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, error) {
+	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, imageConfig, error) {
 		t.Error("installed the image")
-		return upgrade.Result{}, nil
+		return upgrade.Result{}, imageConfig{}, nil
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := conn.Upgrade(context.Background())
