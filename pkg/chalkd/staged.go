@@ -111,8 +111,10 @@ func (s *Server) readImage(ctx context.Context, rootHash []byte, read func(st im
 // image's own checker against the running slot's config, and against the machine, whose storage
 // changes the image accepts it makes with the request's fallback secret. With dry_run it checks
 // the config the same way and answers with the plan, the slot's version before and after and the
-// storage changes, and changes nothing. Nothing the running image runs changes. The caller holds
-// s.mu.
+// storage changes, and changes nothing. Nothing the running image runs changes. Without an image
+// staged, the config is held pending for the next upgrade, as holdPending keeps it; a pending
+// config stays as it is while an image is staged, as after a rollback that staged the image
+// before. The caller holds s.mu.
 func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if m.Config == "" || len(m.Layers) > 0 || len(m.NodeCertificate) > 0 || len(m.NodeKey) > 0 || len(m.Trust) > 0 {
 		return nil, failed(connect.CodeInvalidArgument, "a request for the staged image delivers config alone, with the fallback secret: the share, the certificates and the OS CAs are the node's")
@@ -126,7 +128,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 		return nil, failed(connect.CodeInternal, "find the staged image: %v", err)
 	}
 	if staged == nil {
-		return nil, failed(connect.CodeFailedPrecondition, "no image is staged to boot next; apply the config to the running image")
+		return s.holdPending(m, docs)
 	}
 	knownGood, err := s.keepsKnownGood(staged, m.Config)
 	if err != nil {

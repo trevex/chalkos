@@ -92,32 +92,25 @@ func TestApplyConfigStaged(t *testing.T) {
 	}
 }
 
-// TestApplyConfigStagedRefuses refuses a staged config on a node without a staged image, one the
-// staged image does not accept, one that changes the machine's storage destructively, and one
-// that comes with node state, and keeps the staged slot as it was.
+// TestApplyConfigStagedRefuses refuses a staged config the staged image does not accept, one that
+// changes the machine's storage destructively, and one that comes with node state, and keeps the
+// staged slot as it was.
 func TestApplyConfigStagedRefuses(t *testing.T) {
 	withoutDemo := fixtureSchemas(t)
 	delete(withoutDemo, "demo.example.org_v1alpha1_Demo.json")
 	for name, tc := range map[string]struct {
-		schemas  map[string][]byte
-		req      *nodev1.ApplyConfigRequest
-		unstaged bool
-		code     connect.Code
-		want     string
+		schemas map[string][]byte
+		req     *nodev1.ApplyConfigRequest
+		code    connect.Code
+		want    string
 	}{
-		"no staged image":       {fixtureSchemas(t), &nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true}, true, connect.CodeFailedPrecondition, "no image is staged"},
-		"an unknown kind":       {withoutDemo, &nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true}, false, connect.CodeInvalidArgument, `does not accept kind "Demo"`},
-		"a VAR of another size": {fixtureSchemas(t), &nodev1.ApplyConfigRequest{Config: strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), Staged: true}, false, connect.CodeFailedPrecondition, "only a reinstall of"},
-		"no config":             {fixtureSchemas(t), &nodev1.ApplyConfigRequest{Staged: true}, false, connect.CodeInvalidArgument, "delivers config alone"},
-		"a share":               {fixtureSchemas(t), &nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, Layers: shareLayers(t, []byte("{}"))}, false, connect.CodeInvalidArgument, "delivers config alone"},
+		"an unknown kind":       {withoutDemo, &nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true}, connect.CodeInvalidArgument, `does not accept kind "Demo"`},
+		"a VAR of another size": {fixtureSchemas(t), &nodev1.ApplyConfigRequest{Config: strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), Staged: true}, connect.CodeFailedPrecondition, "only a reinstall of"},
+		"no config":             {fixtureSchemas(t), &nodev1.ApplyConfigRequest{Staged: true}, connect.CodeInvalidArgument, "delivers config alone"},
+		"a share":               {fixtureSchemas(t), &nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, Layers: shareLayers(t, []byte("{}"))}, connect.CodeInvalidArgument, "delivers config alone"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, r := stagedServer(t, tc.schemas)
-			if tc.unstaged {
-				if err := os.Remove(filepath.Join(s.Paths.ESP, "EFI", "Linux", "chalkos_3+3.efi")); err != nil {
-					t.Fatal(err)
-				}
-			}
 			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(tc.req))
 			if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want %v naming %q", err, tc.code, tc.want)

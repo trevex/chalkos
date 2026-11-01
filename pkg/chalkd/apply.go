@@ -44,11 +44,16 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 	// An upgrade writes its image's slot, checked against the machine, before the image is
 	// staged, so a machine change in between would escape checkStaged. TryLock never waits: the
 	// upgrade, an image rollback and a trial's deadline hold upgrading while they take s.mu.
-	if req.Msg.Config != "" {
+	// An upgrade reads and removes the pending config, so storing or dropping it waits for none
+	// either.
+	if req.Msg.Config != "" || req.Msg.DiscardPending {
 		if !s.upgrading.TryLock() {
 			return nil, failed(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; apply the config once it ended")
 		}
 		defer s.upgrading.Unlock()
+	}
+	if req.Msg.DiscardPending {
+		return s.discardPending(req.Msg)
 	}
 	if req.Msg.Staged {
 		return s.applyStaged(ctx, req.Msg)

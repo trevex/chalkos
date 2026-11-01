@@ -229,9 +229,10 @@ func (s *Server) runningSlot() (dir string, stored slot.Stored, found bool, err 
 }
 
 // GetConfig returns the documents a config slot keeps as they were delivered, the running
-// image's, its previous one or the staged image's, with every secret value replaced by its hash,
-// so chalkctl can show what a delivery changes. It needs the role ApplyConfig needs: names,
-// addresses and the shape of the config tell an attacker as much as the values would.
+// image's, its previous one, the staged image's or without one the pending config, with every
+// secret value replaced by its hash, so chalkctl can show what a delivery changes. It needs the
+// role ApplyConfig needs: names, addresses and the shape of the config tell an attacker as much as
+// the values would.
 func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetConfigRequest]) (*connect.Response[nodev1.GetConfigResponse], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -239,7 +240,7 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
 	}
-	running := dir
+	running, pending := dir, false
 	switch {
 	case req.Msg.Staged && req.Msg.Previous:
 		return nil, failed(connect.CodeInvalidArgument, "ask for the staged image's config or the running image's previous one, not both")
@@ -248,10 +249,12 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 		if err != nil {
 			return nil, failed(connect.CodeInternal, "find the staged image: %v", err)
 		}
-		if staged == nil {
-			return nil, failed(connect.CodeNotFound, "no image is staged to boot next")
+		// Without a staged image, the next image is the one the next upgrade installs, which
+		// boots with the pending config when there is one.
+		dir, pending = slot.Pending(s.Loader.Slots), staged == nil
+		if staged != nil {
+			dir = slot.Dir(s.Loader.Slots, staged)
 		}
-		dir = slot.Dir(s.Loader.Slots, staged)
 	case req.Msg.Previous:
 		dir = slot.Previous(dir)
 	}
@@ -271,6 +274,8 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 	switch {
 	case !found && req.Msg.Previous:
 		return nil, failed(connect.CodeNotFound, "the node keeps no previous config of the running image")
+	case !found && pending:
+		return nil, failed(connect.CodeNotFound, "no image is staged to boot next, and the node holds no pending config")
 	case !found:
 		return nil, failed(connect.CodeNotFound, "STATE holds no config for the image")
 	}

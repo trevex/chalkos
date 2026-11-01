@@ -101,6 +101,9 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 	if resp.StagedConfigVersion, err = s.stagedVersion(resp.Boot); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
+	if resp.PendingConfig, err = s.pendingConfig(); err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
+	}
 	return connect.NewResponse(resp), nil
 }
 
