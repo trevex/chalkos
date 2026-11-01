@@ -19,17 +19,19 @@ import (
 // chalkos_1.efi, and upgrades it to the upgrade image, which boots from slot B as chalkos_2.efi
 // with STATE and VAR unlocked by the TPM and is found healthy. chalkctl upgrade --rollback then
 // boots the test image again from slot A as chalkos_3, with the config it ran; run again, it
-// changes nothing. An upgrade to the upgrade image with a Farewell its renderer refuses is
-// refused, and nothing is staged; an upgrade from the inventory then boots the upgrade image
-// again as chalkos_4, reusing its store in slot B. Last comes the unhealthy image,
-// installed as chalkos_5, which never becomes healthy: after its one try the node falls back to
-// chalkos_4.efi and says so. Each image is named by its root hash. The node pulls the upgrade
-// image through a Mirror of a registry host it cannot reach, whose endpoint is a registry on
-// the host that asks for the credentials of the endpoint's own Registry; the upgrade delivers
-// the Mirror and the Registry. The upgrade to the unhealthy image still streams it from its
-// directory. The upgrade carries config only the upgrade image accepts, a Farewell, and the
-// upgrade to the unhealthy image the test image's config again: the fallback boots the upgrade
-// image with its own config, Farewell included.
+// changes nothing. apply-config --staged then holds a Farewell the upgrade image's renderer
+// refuses as the node's pending config, and an operator's upgrade to the upgrade image, which
+// takes it, is refused: nothing is staged and the pending config stays. Another apply-config
+// --staged replaces it with the inventory's config, and an operator's upgrade then boots the
+// upgrade image with it again as chalkos_4, reusing its store in slot B. Last comes the unhealthy
+// image, installed as chalkos_5, which never becomes healthy: after its one try the node falls
+// back to chalkos_4.efi and says so. Each image is named by its root hash. The node pulls the
+// upgrade image through a Mirror of a registry host it cannot reach, whose endpoint is a registry
+// on the host that asks for the credentials of the endpoint's own Registry; the first upgrade
+// delivers the Mirror and the Registry. The operator's upgrades and the upgrade to the unhealthy
+// image stream it from its directory. The first upgrade carries config only the upgrade image
+// accepts, a Farewell, and the upgrade to the unhealthy image the test image's config again: the
+// fallback boots the upgrade image with its own config, Farewell included.
 func TestUpgrade(t *testing.T) {
 	requireEnv(t, append(secureBootEnv, append(chalkdEnv, "CHALKLAB_UPGRADE_IMAGE_DIR", "CHALKLAB_UNHEALTHY_IMAGE_DIR")...)...)
 	base, nextHash, badHash := rootHash(t, "CHALKLAB_IMAGE_DIR"), rootHash(t, "CHALKLAB_UPGRADE_IMAGE_DIR"), rootHash(t, "CHALKLAB_UNHEALTHY_IMAGE_DIR")
@@ -93,8 +95,8 @@ func TestUpgrade(t *testing.T) {
 
 	// The test image is still in slot A with its UKI and config: a rollback boots it again as
 	// generation 3, counted, since the upgrade image's boot was found healthy. Run again, the
-	// rollback finds the node on the test image and changes nothing. An upgrade from the inventory
-	// undoes it: the node finds the upgrade image's store in slot B and boots it as generation 4.
+	// rollback finds the node on the test image and changes nothing. An operator's upgrade with the
+	// inventory's config held pending undoes it: the node finds the upgrade image's store in slot B and boots it as generation 4.
 	rolled := time.Now()
 	rollback := []string{"upgrade", "--rollback", "--nodes", "chalklab", "--address", "chalklab=" + n.addr, "--timeout", "10m"}
 	out, err = chalkctl(t, nil, "base", rollback...)
@@ -110,22 +112,45 @@ func TestUpgrade(t *testing.T) {
 	if err != nil || strings.Contains(out, "rolling back to") || !strings.Contains(out, "chalklab: runs "+base[:12]+", found healthy") {
 		t.Fatalf("a second rollback: %v", err)
 	}
-	// The upgrade image checks the config with its own chalkd before it is staged: its output
-	// farewell refuses a Farewell that stays, which its schema accepts, so chalkctl's check of the
-	// config passes and the node refuses the upgrade. Slot B holds the upgrade image's store
-	// already, which the node checks without writing it again; nothing is staged.
-	out, err = chalkctl(t, nil, "upgrade-stay", "upgrade", "--image", nextImage, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
-	if err == nil || !strings.Contains(out, "output farewell: its check refused the rendered files") {
-		t.Fatalf("upgrade with a Farewell only the upgrade image's renderer refuses: %v\n%s", err, out)
+	// Without a staged image, apply-config --staged holds the config pending, unchecked. An
+	// operator's upgrade, which carries no config, gives it to the upgrade image, which checks it
+	// with its own chalkd before it is staged: its output farewell refuses a Farewell that stays,
+	// which its schema accepts, so chalkctl's check of the config passes and the node refuses the
+	// upgrade, naming the pending config. Nothing is staged, and the pending config stays.
+	operator := filepath.Join(dir, "operator.json")
+	if _, err := chalkctl(t, nil, "", "config", "new", "--name", "ops", "--role", "operator", "--out", operator); err != nil {
+		t.Fatal(err)
 	}
-	if out, err := chalkctl(t, n, "base", "status", "chalklab"); err != nil || strings.Contains(out, "staged") || strings.Contains(out, "it boots next") {
+	upgradeAsOperator := []string{"upgrade", "--image", nextImage, "--config", operator, "--nodes", "chalklab", "--address", "chalklab=" + n.addr, "--timeout", "10m"}
+	out, err = chalkctl(t, n, "upgrade-stay", "apply-config", "--staged", "chalklab")
+	stay := pendingHeld.FindStringSubmatch(out)
+	if err != nil || stay == nil {
+		t.Fatalf("apply-config --staged without a staged image: %v\n%s", err, out)
+	}
+	out, err = chalkctl(t, nil, "base", upgradeAsOperator...)
+	if err == nil || !strings.Contains(out, "chalklab: the image gets the pending config "+stay[1]) ||
+		!strings.Contains(out, "the pending config "+stay[1]+" does not suit the image: ") || !strings.Contains(out, "output farewell: its check refused the rendered files") {
+		t.Fatalf("upgrade with a pending Farewell only the upgrade image's renderer refuses: %v\n%s", err, out)
+	}
+	if out, err := chalkctl(t, n, "base", "status", "chalklab"); err != nil || strings.Contains(out, "staged") || strings.Contains(out, "it boots next") || !strings.Contains(out, "pending config "+stay[1]+" (unchecked, since ") {
 		t.Errorf("status after the refused upgrade: %v\n%s", err, out)
 	}
-	out, err = chalkctl(t, nil, "", "upgrade", "--inventory", pullInventory, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
-	if err != nil || !strings.Contains(out, "chalklab: installed "+nextHash[:12]+", which boots next as chalkos_4+3.efi") {
-		t.Fatalf("upgrade back to %s: %v", nextHash[:12], err)
+	// Another apply-config --staged replaces the pending config with the inventory's, which the
+	// next operator upgrade gives the upgrade image: it boots it as chalkos_4 from slot B.
+	out, err = chalkctl(t, n, "", "apply-config", "--staged", "chalklab", "--inventory", pullInventory)
+	pending := pendingHeld.FindStringSubmatch(out)
+	if err != nil || pending == nil || pending[1] == stay[1] {
+		t.Fatalf("apply-config --staged replacing the pending config: %v\n%s", err, out)
+	}
+	out, err = chalkctl(t, nil, "base", upgradeAsOperator...)
+	if err != nil || !strings.Contains(out, "chalklab: the image gets the pending config "+pending[1]) ||
+		!strings.Contains(out, "chalklab: installed "+nextHash[:12]+", which boots next as chalkos_4+3.efi") {
+		t.Fatalf("upgrade back to %s with the pending config: %v", nextHash[:12], err)
 	}
 	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + nextHash[:16], "store_partition": "5", "state_boots": "5", "var_boots": "4"})
+	if out, err := chalkctl(t, n, "", "status", "chalklab", "--inventory", pullInventory); err != nil || !inventoryConfig.MatchString(out) || strings.Contains(out, "pending config") {
+		t.Errorf("status after the upgrade with the pending config: %v\n%s", err, out)
+	}
 	t.Logf("rolled back and upgraded again in %v", time.Since(rolled).Round(time.Second))
 
 	failed := time.Now()
@@ -151,6 +176,9 @@ func TestUpgrade(t *testing.T) {
 
 // inventoryConfig is status's line of a node that runs the config of the inventory it was given.
 var inventoryConfig = regexp.MustCompile(`(?m)^config [0-9a-f]{64} \(the inventory's\)$`)
+
+// pendingHeld is apply-config's line of a node that holds the config pending, with its version.
+var pendingHeld = regexp.MustCompile(`(?m)^chalklab holds config ([0-9a-f]{64}) pending, unchecked; the next upgrade checks it against its image$`)
 
 // replaceOnce replaces the one old in s, failing the test when s does not hold it once.
 func replaceOnce(t *testing.T, s, old, new string) string {
