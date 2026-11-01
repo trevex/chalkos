@@ -8,7 +8,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
-
 	"time"
 
 	"github.com/trevex/chalkos/pkg/command"
