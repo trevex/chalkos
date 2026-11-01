@@ -21,7 +21,7 @@ import (
 // runDir/credentials/<unit>/<secret>.<key>, readable by root alone, which the unit loads with
 // LoadCredential=secret:<that directory>. Every granted unit gets its directory, empty when it
 // references no secret, because systemd refuses to start a unit whose credential path is missing.
-// schemas tell which fields are secretRefs; nil when docs is empty.
+// schemas tell which fields are key references; nil when docs is empty.
 func WriteRuntime(runDir string, docs []config.Document, schemas *schema.Schemas, units map[string][]string) error {
 	creds, err := credentials(docs, schemas, units)
 	if err != nil {
@@ -70,7 +70,11 @@ func credentials(docs []config.Document, schemas *schema.Schemas, units map[stri
 			if d.IsSecret() || !slices.Contains(kinds, d.Kind) {
 				continue
 			}
-			for _, ref := range config.SecretRefs(d, schemas) {
+			for _, r := range config.Refs(d, schemas) {
+				ref, ok := r.Secret()
+				if !ok {
+					continue
+				}
 				if err := config.CheckCredential(ref); err != nil {
 					return nil, fmt.Errorf("%s: %w", d, err)
 				}

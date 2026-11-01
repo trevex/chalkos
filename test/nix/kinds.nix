@@ -232,6 +232,15 @@ let
   };
 in
 lib.runTests {
+  # A secretRef is a key reference to a Secret, whose apiVersion every image has.
+  testSecretRefMarker = {
+    expr = (propOf kindTypes.secretRef)."x-chalkos-ref";
+    expected = {
+      apiVersion = "chalkos.dev/v1alpha1";
+      kind = "Secret";
+      key = true;
+    };
+  };
   testDemoSchemaMatchesFixture = {
     expr = schema.kindSchema demo;
     expected = builtins.fromJSON (

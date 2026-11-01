@@ -258,7 +258,7 @@ func ruledFields(root map[string]any, path string, s map[string]any) ([]builtinR
 	if err != nil {
 		return nil, err
 	}
-	if s["x-chalkos-secret-ref"] == true || s["x-chalkos-kubernetes-object"] == true {
+	if isKeyRef(s) || s["x-chalkos-kubernetes-object"] == true {
 		return rules, nil
 	}
 	var inner [][]builtinRule

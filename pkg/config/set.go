@@ -99,7 +99,11 @@ func (s *Set) CheckRegistries() error {
 func checkSecretRefs(docs []Document, s *schema.Schemas, secrets SecretValues) error {
 	files := map[string]SecretRef{}
 	for _, d := range docs {
-		for _, ref := range SecretRefs(d, s) {
+		for _, r := range Refs(d, s) {
+			ref, ok := r.Secret()
+			if !ok {
+				continue
+			}
 			if _, ok := secrets[ref.Name]; !ok {
 				return fmt.Errorf("%s names Secret %q, which the config does not hold", d, ref.Name)
 			}

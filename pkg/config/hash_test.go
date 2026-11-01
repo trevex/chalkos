@@ -108,21 +108,19 @@ func TestHashHidesSecretValues(t *testing.T) {
 	}
 }
 
-func TestSecretRefs(t *testing.T) {
+// The Demo fixture's token, a secretRef as the converter writes one, is a key reference.
+func TestRefsOfASecretRef(t *testing.T) {
 	docs := parseDocs(t, hashed)
 	s := imageSchemas(t)
 	for _, d := range docs {
-		got := SecretRefs(d, s)
-		var want []SecretRef
+		got := Refs(d, s)
+		var want []Ref
 		if d.Kind == "Demo" && d.Name == "a" {
-			want = []SecretRef{{Name: "demo", Key: "token"}}
+			want = []Ref{{Path: "spec.token", Target: ID{APIVersion: CoreAPI, Kind: "Secret", Name: "demo"}, Key: "token"}}
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: refs = %v, want %v", d, got, want)
 		}
-	}
-	if got := SecretRefs(docs[0], nil); got != nil {
-		t.Errorf("refs without schemas = %v", got)
 	}
 }
 

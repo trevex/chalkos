@@ -172,8 +172,7 @@ func TestCheckSecretRefsFindsARealSecretRef(t *testing.T) {
 }
 
 // extraSchemaDir writes a tiny, extension-like schema to a temp directory: its "data" field is a
-// bare object, with no properties of its own, so nothing beneath it ever carries
-// x-chalkos-secret-ref.
+// bare object, with no properties of its own, so nothing beneath it ever carries x-chalkos-ref.
 func extraSchemaDir(t *testing.T) *schema.Schemas {
 	t.Helper()
 	dir := t.TempDir()

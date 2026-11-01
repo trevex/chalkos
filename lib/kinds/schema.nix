@@ -4,6 +4,7 @@
 { lib }:
 let
   types = import ./types.nix { inherit lib; };
+  api = import ./api.nix;
 
   # A value JSON carries as it is: literal expressions, paths, packages and functions only make
   # sense to Nix.
@@ -84,7 +85,12 @@ let
     };
     required = [ "secretRef" ];
     additionalProperties = false;
-    "x-chalkos-secret-ref" = true;
+    # A key reference. Secret is a core kind of every image, so its apiVersion is known here.
+    "x-chalkos-ref" = {
+      apiVersion = api.apiVersions.core;
+      kind = "Secret";
+      key = true;
+    };
   };
 
   typeSchema =

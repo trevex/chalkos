@@ -42,7 +42,7 @@
               },
               "required": ["secretRef"],
               "additionalProperties": false,
-              "x-chalkos-secret-ref": true
+              "x-chalkos-ref": { "apiVersion": "chalkos.dev/v1alpha1", "key": true, "kind": "Secret" }
             },
             { "type": "null" }
           ],

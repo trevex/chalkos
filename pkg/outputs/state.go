@@ -29,7 +29,11 @@ func (d Definition) secrets(in Input) string {
 	secrets := config.Documents(in.Documents).Secrets()
 	var lines []string
 	for _, doc := range d.documents(in) {
-		for _, ref := range config.SecretRefs(doc, in.Schemas) {
+		for _, r := range config.Refs(doc, in.Schemas) {
+			ref, isKey := r.Secret()
+			if !isKey {
+				continue
+			}
 			v, ok := secrets.Lookup(ref)
 			if !in.Hashed || !ok {
 				sum := sha256.Sum256([]byte(v))

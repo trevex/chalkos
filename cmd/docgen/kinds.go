@@ -279,7 +279,7 @@ func fields(root map[string]any, path string, s map[string]any) []row {
 // values at <name> and those of a list's items at [].
 func nested(root map[string]any, path string, s map[string]any) []row {
 	s = resolve(root, s)
-	if s["x-chalkos-secret-ref"] == true || s["x-chalkos-kubernetes-object"] == true {
+	if isKeyRef(s) || s["x-chalkos-kubernetes-object"] == true {
 		return nil
 	}
 	if _, ok := s["properties"]; ok {
@@ -303,7 +303,7 @@ func nested(root map[string]any, path string, s map[string]any) []row {
 func typeOf(root, s map[string]any) string {
 	s = resolve(root, s)
 	switch {
-	case s["x-chalkos-secret-ref"] == true:
+	case isKeyRef(s):
 		return "secret reference"
 	case s["x-chalkos-kubernetes-object"] == true:
 		return "Kubernetes object"
@@ -465,6 +465,10 @@ func text(v any) string {
 }
 
 func props(s map[string]any) map[string]any { return asMap(s["properties"]) }
+
+// isKeyRef tells whether s is a secretRef: an object x-chalkos-ref marks as naming a key of a
+// Secret.
+func isKeyRef(s map[string]any) bool { return asMap(s["x-chalkos-ref"])["key"] == true }
 
 func asMap(v any) map[string]any {
 	m, _ := v.(map[string]any)

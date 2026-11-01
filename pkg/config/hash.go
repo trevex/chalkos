@@ -122,7 +122,7 @@ func hideValue(v any) any {
 
 // KindHashes hashes the documents of each kind in docs, by kind name, together with the Secrets
 // they reference, so a kind's hash changes when one of its documents does or a Secret one of them
-// references. Secrets have no entry of their own. schemas tell which fields are secretRefs.
+// references. Secrets have no entry of their own. schemas tell which fields are key references.
 //
 // It hashes docs as Redact gives them, an Addon's Kubernetes Secrets hidden too, which Hash keeps
 // as they are. hashed tells that docs come from Redact already; they give the same hashes as the
@@ -145,7 +145,11 @@ func KindHashes(docs []Document, schemas *schema.Schemas, hashed bool) (map[stri
 		input := slices.Clone(kindDocs)
 		referenced := map[string]bool{}
 		for _, d := range kindDocs {
-			for _, ref := range SecretRefs(d, schemas) {
+			for _, r := range Refs(d, schemas) {
+				ref, ok := r.Secret()
+				if !ok {
+					continue
+				}
 				if sd, ok := secrets[ref.Name]; ok && !referenced[ref.Name] {
 					referenced[ref.Name] = true
 					input = append(input, sd)
