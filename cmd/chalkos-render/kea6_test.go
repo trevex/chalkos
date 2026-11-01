@@ -241,3 +241,41 @@ func TestKeaSameNumber(t *testing.T) {
 		t.Errorf("apart of different numbers = %v", err)
 	}
 }
+
+// A delegated range holds no static route of a Network of the VRF's links, nor a NAT64's prefix
+// in the VRF, whose routes a route of a delegated prefix would replace. A route of a wider range
+// or of another VRF, and a NAT64 of another VRF, may lie over it.
+func TestKea6DelegatesNoConfiguredRoute(t *testing.T) {
+	cpe := subnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64", "prefixDelegation": {"prefix": "2001:db8:100::/40", "length": 56}}`)
+	route := func(name, link, destination string) any {
+		return document(t, "Network", name, `{"match": {"name": "`+link+`"}, "network": {"address": ["2001:db8:9::1/64"]}, "route": [{"gateway": "2001:db8:9::2"}, {"destination": "`+destination+`", "gateway": "2001:db8:9::2"}]}`)
+	}
+	nat64 := func(vrf string) any {
+		return routerDoc(t, "NAT64", "nat64", `{"vrf": `+vrf+`, "prefix": "2001:db8:100:ff::/96", "pool4": []}`)
+	}
+	for name, c := range map[string]struct {
+		extra map[string][]any
+		want  string
+	}{
+		"a static route":           {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8:100:100::/56")}}, "DHCPSubnet cpe: prefixDelegation's prefix 2001:db8:100::/40 holds the route of 2001:db8:100:100::/56 that Network 40-lan9 gives a link of VRF default"},
+		"a static route's address": {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8:100::5")}}, "holds the route of 2001:db8:100::5/128 that Network 40-lan9 gives"},
+		"a NAT64's prefix":         {map[string][]any{"NAT64": {nat64("null")}}, "DHCPSubnet cpe: prefixDelegation's prefix 2001:db8:100::/40 holds NAT64 nat64's prefix 2001:db8:100:ff::/96 of VRF default"},
+		"a wider route":            {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8::/32")}}, ""},
+		"another VRF's route":      {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8:100:100::/56")}, "VRF": {routerDoc(t, "VRF", "lab", `{"table": 400, "interfaces": ["lan9"]}`)}}, ""},
+		"another VRF's NAT64":      {map[string][]any{"NAT64": {nat64(`"guest"`)}}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			docs := kea6Docs(t, cpe)
+			for kind, more := range c.extra {
+				docs[kind] = append(docs[kind], more...)
+			}
+			if c.want != "" {
+				refused(t, []string{"kea", testPDHook}, docs, c.want)
+				return
+			}
+			if _, err := unitFiles(t, []string{"kea", testPDHook}, docs); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

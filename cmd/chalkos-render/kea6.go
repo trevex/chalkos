@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"net/netip"
+	"slices"
 	"strings"
 )
 
@@ -143,6 +145,9 @@ func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s na
 				return sub, fmt.Errorf("prefixDelegation's prefix %s holds %s, the address Network %s gives a link of VRF %s", sub.delegated, a.prefix.Addr(), a.network, vrf)
 			}
 		}
+		if err := delegatesNoRoute(d, sub); err != nil {
+			return sub, err
+		}
 	}
 	if dom := s.Spec.Domain; dom != nil && !dhcpName.MatchString(*dom) {
 		return sub, fmt.Errorf("%q is no domain", *dom)
@@ -151,6 +156,54 @@ func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s na
 		return sub, err
 	}
 	return sub, advertised(d, units, sub)
+}
+
+// delegatesNoRoute refuses a delegated range of sub that holds a route the router makes in the
+// subnet's VRF: a static route of a Network of the VRF's links, or a NAT64's prefix. A route of a
+// delegated prefix would replace such a route of the same prefix and shadow a longer one; a
+// route of a wider range is shadowed by it instead, as it should be.
+func delegatesNoRoute(d routerDocuments, sub servedSubnet) error {
+	for _, network := range slices.Sorted(maps.Keys(d.Networks)) {
+		vrf, ok := d.Membership.Networks[network]
+		if !ok {
+			vrf = defaultVRF
+		}
+		if vrf != sub.vrf {
+			continue
+		}
+		for _, s := range oneOrMany(d.Networks[network]["route"]) {
+			sec, _ := s.(map[string]any)
+			for _, v := range oneOrMany(sec["destination"]) {
+				text, _ := v.(string)
+				text = strings.Trim(text, unitWhitespace)
+				p, err := netip.ParsePrefix(text)
+				if err != nil {
+					a, err := netip.ParseAddr(text)
+					if err != nil {
+						continue
+					}
+					p = netip.PrefixFrom(a, a.BitLen())
+				}
+				if p.Addr().Is6() && p.Bits() >= sub.delegated.Bits() && p.Overlaps(sub.delegated) {
+					return fmt.Errorf("prefixDelegation's prefix %s holds the route of %s that Network %s gives a link of VRF %s", sub.delegated, p.Masked(), network, vrf)
+				}
+			}
+		}
+	}
+	for _, n := range d.NAT64 {
+		vrf := defaultVRF
+		if n.Spec.VRF != nil {
+			vrf = *n.Spec.VRF
+		}
+		p, err := netip.ParsePrefix(n.Spec.Prefix)
+		if err != nil || vrf != sub.vrf {
+			continue
+		}
+		if p.Bits() >= sub.delegated.Bits() && p.Overlaps(sub.delegated) {
+			return fmt.Errorf("prefixDelegation's prefix %s holds NAT64 %s's prefix %s of VRF %s", sub.delegated, n.Name, p.Masked(), vrf)
+		}
+	}
+	return nil
 }
 
 // advertised refuses a subnet whose link's Network sends no router advertisements that tell its
