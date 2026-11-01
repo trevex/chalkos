@@ -37,7 +37,7 @@ const (
 )
 
 // routerKinds are the kinds of router.chalkos.dev.
-var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute", "DHCPSubnet"}
+var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute", "DHCPSubnet", "DHCPRelay"}
 
 // routerInput is the input of the router outputs for the config file path, as chalkd builds it:
 // the documents of each router kind with their schema defaults, sorted by name.
@@ -145,15 +145,16 @@ func renderedFiles(t *testing.T, args []string, input string) string {
 }
 
 // Each example of the router outputs renders its golden sysctl file, ruleset, FRR config, Jool
-// instances, Unbound config, networkd units and Kea config: no documents, a leaf that only routes,
-// a fabric edge, a LAN router, an edge with VRFs, a LAN router with policy routing, a DHCP server
-// and a router with a NAT64 alone.
+// instances, Unbound config, networkd units, Kea configs and DHCP relays: no documents, a leaf that
+// only routes, a fabric edge, a LAN router, an edge with VRFs, a LAN router with policy routing, a
+// LAN router that leases IPv4 addresses, a router with a NAT64 alone, one that leases IPv6
+// addresses and delegates prefixes and one that relays DHCP.
 func TestRouterGolden(t *testing.T) {
 	examples, err := filepath.Glob(filepath.Join(routerExamples, "*.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(examples) != 8 {
+	if len(examples) != 10 {
 		t.Fatalf("examples = %v", examples)
 	}
 	for _, path := range examples {
@@ -167,6 +168,7 @@ func TestRouterGolden(t *testing.T) {
 			golden(t, name+".unbound", renderedFiles(t, []string{"unbound", testTrustAnchor, testZoneFile}, input))
 			golden(t, name+".networkd", renderedFiles(t, []string{"router-networkd", networkFixture}, input))
 			golden(t, name+".kea", renderedFiles(t, []string{"kea", testPDHook}, input))
+			golden(t, name+".relay", renderedFiles(t, []string{"dhcp-relay"}, input))
 		})
 	}
 }

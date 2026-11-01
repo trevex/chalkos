@@ -1,0 +1,55 @@
+# A LAN router that serves DHCPv6. The office's lan0 leases addresses of a pool, the printer its
+# reserved address by MAC, and the router's DNS server and search domain; lan0's router
+# advertisements carry the Managed flag, so its clients ask the server for addresses. The
+# customers' cust0, in the VRF access, leases no addresses: each home router on it asks for a
+# /56, which the router routes to it, and the advertisements carry the OtherInformation flag.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Router
+metadata: {name: router}
+spec:
+  management: {interfaces: [lan0]}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-lan0}
+spec:
+  match: {name: lan0}
+  network: {address: ["2001:db8:1::1/64"], ipv6SendRA: true, ipv6AcceptRA: false}
+  ipv6SendRA: {managed: true}
+  ipv6Prefix: {prefix: "2001:db8:1::/64"}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-cust0}
+spec:
+  match: {name: cust0}
+  network: {address: ["2001:db8:2::1/64"], ipv6SendRA: true, ipv6AcceptRA: false}
+  ipv6SendRA: {otherInformation: true}
+  ipv6Prefix: {prefix: "2001:db8:2::/64"}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: VRF
+metadata: {name: access}
+spec: {table: 500, interfaces: [cust0]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: DHCPSubnet
+metadata: {name: office6}
+spec:
+  interfaces: [lan0]
+  subnet: 2001:db8:1::/64
+  pools: [{first: "2001:db8:1::100", last: "2001:db8:1::1ff"}]
+  dns: ["2001:db8:1::1"]
+  domain: lan.example.org
+  reservations:
+    - {mac: "52:54:00:12:34:56", address: "2001:db8:1::10", hostname: printer}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: DHCPSubnet
+metadata: {name: customers}
+spec:
+  interfaces: [cust0]
+  subnet: 2001:db8:2::/64
+  dns: ["2001:db8:2::1"]
+  leaseTime: 1d
+  prefixDelegation: {prefix: "2001:db8:100::/40", length: 56}

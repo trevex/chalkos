@@ -1,5 +1,6 @@
 # Kea's DHCP servers, kea-dhcp4 and kea-dhcp6, and kea-lfc, which cleans up their lease files,
-# with the lease commands' hook alone: the router layer keeps its leases in memfiles. Without the
+# with the lease commands' hook and the run_script hook alone: the router layer keeps its leases
+# in memfiles, and the DHCPv6 servers record the prefixes they delegate with a script. Without the
 # MySQL, PostgreSQL and Kerberos backends, the other hooks, kea-shell's Python, the manuals, the
 # command descriptions and the sample configs, it adds 8 MiB to the router image's compressed
 # store rather than 18.
@@ -31,7 +32,7 @@
       for tool in kea-shell perfdhcp kea-admin keactrl kea-dhcp-ddns kea-msg-compiler; do
         rm -f $out/bin/$tool $out/sbin/$tool
       done
-      find $out/lib/kea/hooks -type f ! -name libdhcp_lease_cmds.so -delete
+      find $out/lib/kea/hooks -type f ! -name libdhcp_lease_cmds.so ! -name libdhcp_run_script.so -delete
       rm -rf $out/share/kea/scripts $out/share/kea/api $out/etc/kea $out/include $out/lib/pkgconfig \
         $out/share/doc $out/share/man
       rmdir $out/share/kea $out/share $out/etc

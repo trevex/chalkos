@@ -256,6 +256,30 @@
             }
           ],
           "x-chalkos-networkd-key": "VLAN"
+        },
+        "ipv6SendRA": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "IPv6SendRA"
         }
       },
       "type": "object",
@@ -545,6 +569,116 @@
       },
       "type": "object",
       "x-chalkos-networkd-section": "RoutingPolicyRule"
+    },
+    "IPv6SendRA": {
+      "additionalProperties": false,
+      "properties": {
+        "managed": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Managed"
+        },
+        "otherInformation": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "OtherInformation"
+        },
+        "routerLifetimeSec": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "RouterLifetimeSec"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "IPv6SendRA"
+    },
+    "IPv6Prefix": {
+      "additionalProperties": false,
+      "properties": {
+        "prefix": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Prefix"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "IPv6Prefix"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -655,6 +789,34 @@
             }
           ],
           "x-chalkos-networkd-section": "RoutingPolicyRule"
+        },
+        "ipv6SendRA": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IPv6SendRA"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/IPv6SendRA"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "IPv6SendRA"
+        },
+        "ipv6Prefix": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IPv6Prefix"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/IPv6Prefix"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "IPv6Prefix"
         }
       },
       "type": "object"

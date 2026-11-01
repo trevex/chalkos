@@ -1,0 +1,189 @@
+# kea-dhcp6-access.json
+{
+  "Dhcp6": {
+    "control-sockets": [
+      {
+        "socket-name": "/run/kea/dhcp6-access.sock",
+        "socket-type": "unix"
+      }
+    ],
+    "hooks-libraries": [
+      {
+        "library": "libdhcp_lease_cmds.so"
+      },
+      {
+        "library": "libdhcp_run_script.so",
+        "parameters": {
+          "name": "/etc/kea/chalkos-dhcp6-pd"
+        }
+      }
+    ],
+    "interfaces-config": {
+      "interfaces": [
+        "cust0"
+      ],
+      "service-sockets-max-retries": 4294967295,
+      "service-sockets-retry-wait-time": 5000
+    },
+    "lease-database": {
+      "lfc-interval": 3600,
+      "name": "/var/lib/kea/dhcp6-access.leases",
+      "persist": true,
+      "type": "memfile"
+    },
+    "loggers": [
+      {
+        "name": "kea-dhcp6",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ],
+        "severity": "INFO"
+      },
+      {
+        "name": "kea-dhcp6.dhcp",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ],
+        "severity": "ERROR"
+      },
+      {
+        "name": "kea-dhcp6.commands",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ],
+        "severity": "WARN"
+      }
+    ],
+    "subnet6": [
+      {
+        "id": 979616295,
+        "interface": "cust0",
+        "option-data": [
+          {
+            "data": "2001:db8:2::1",
+            "name": "dns-servers"
+          }
+        ],
+        "pd-pools": [
+          {
+            "delegated-len": 56,
+            "prefix": "2001:db8:100::",
+            "prefix-len": 40
+          }
+        ],
+        "preferred-lifetime": 86400,
+        "subnet": "2001:db8:2::/64",
+        "user-context": {
+          "name": "customers"
+        },
+        "valid-lifetime": 86400
+      }
+    ]
+  }
+}
+# kea-dhcp6.json
+{
+  "Dhcp6": {
+    "control-sockets": [
+      {
+        "socket-name": "/run/kea/dhcp6.sock",
+        "socket-type": "unix"
+      }
+    ],
+    "hooks-libraries": [
+      {
+        "library": "libdhcp_lease_cmds.so"
+      }
+    ],
+    "interfaces-config": {
+      "interfaces": [
+        "lan0"
+      ],
+      "service-sockets-max-retries": 4294967295,
+      "service-sockets-retry-wait-time": 5000
+    },
+    "lease-database": {
+      "lfc-interval": 3600,
+      "name": "/var/lib/kea/dhcp6.leases",
+      "persist": true,
+      "type": "memfile"
+    },
+    "loggers": [
+      {
+        "name": "kea-dhcp6",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ],
+        "severity": "INFO"
+      },
+      {
+        "name": "kea-dhcp6.dhcp",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ],
+        "severity": "ERROR"
+      },
+      {
+        "name": "kea-dhcp6.commands",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ],
+        "severity": "WARN"
+      }
+    ],
+    "subnet6": [
+      {
+        "id": 3216929172,
+        "interface": "lan0",
+        "option-data": [
+          {
+            "data": "2001:db8:1::1",
+            "name": "dns-servers"
+          },
+          {
+            "data": "lan.example.org",
+            "name": "domain-search"
+          }
+        ],
+        "pools": [
+          {
+            "pool": "2001:db8:1::100 - 2001:db8:1::1ff"
+          }
+        ],
+        "preferred-lifetime": 43200,
+        "reservations": [
+          {
+            "hostname": "printer",
+            "hw-address": "52:54:00:12:34:56",
+            "ip-addresses": [
+              "2001:db8:1::10"
+            ]
+          }
+        ],
+        "subnet": "2001:db8:1::/64",
+        "user-context": {
+          "name": "office6"
+        },
+        "valid-lifetime": 43200
+      }
+    ]
+  }
+}

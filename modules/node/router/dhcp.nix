@@ -209,15 +209,19 @@ in
       ]
       ++ lib.optional config.chalkos.router.nat64.enable "NAT64";
       render = "${lib.getExe chalkosPackages.chalkos-render} kea ${pkgs.coreutils}/bin/true";
-      # kea-dhcp4 -t refuses a config of links the check's network namespace lacks, so it checks
-      # each config without them.
+      # kea-dhcp4 -t and kea-dhcp6 -t refuse a config of links the check's network namespace
+      # lacks, so it checks each config without them.
       check = ''
         t=$(mktemp -d)
         trap 'rm -rf "$t"' EXIT
         for f in "$OUT"/*.json; do
           [ -e "$f" ] || continue
-          ${lib.getExe pkgs.jq} '.Dhcp4["interfaces-config"].interfaces = []' "$f" >"$t/kea.json"
-          ${kea}/bin/kea-dhcp4 -t "$t/kea.json" >"$t/kea.log" 2>&1 || {
+          case $(basename "$f") in
+          kea-dhcp4*) family=dhcp4 strip='.Dhcp4["interfaces-config"].interfaces = []' ;;
+          *) family=dhcp6 strip='.Dhcp6["interfaces-config"].interfaces = [] | .Dhcp6.subnet6[] |= del(.interface)' ;;
+          esac
+          ${lib.getExe pkgs.jq} "$strip" "$f" >"$t/kea.json"
+          ${kea}/bin/kea-$family -t "$t/kea.json" >"$t/kea.log" 2>&1 || {
             cat "$t/kea.log" >&2
             exit 1
           }

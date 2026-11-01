@@ -311,7 +311,9 @@ lib.runTests {
     };
     expected = {
       edge = [
+        "dhcp-relay.yaml"
         "dhcp.yaml"
+        "dhcp6.yaml"
         "edge.yaml"
         "lan.yaml"
         "leaf.yaml"
@@ -321,6 +323,7 @@ lib.runTests {
         "vrf.yaml"
       ];
       withoutDHCP = [
+        "dhcp-relay.yaml"
         "edge.yaml"
         "lan.yaml"
         "leaf.yaml"
@@ -1133,7 +1136,7 @@ lib.runTests {
         plainKind = layered.plain-metal.config.chalkos.kinds ? DHCPSubnet;
         inputs = edge.chalkos.outputs.kea.inputs;
         render = lib.hasInfix "/bin/chalkos-render kea /nix/store/" edge.chalkos.outputs.kea.render;
-        check = lib.hasInfix "/bin/kea-dhcp4 -t" edge.chalkos.outputs.kea.check;
+        check = lib.hasInfix "/bin/kea-$family -t" edge.chalkos.outputs.kea.check;
         package = lib.hasSuffix "-kea-dhcp-3.2.0" kea;
         firewallReads = lib.elem "DHCPSubnet" edge.chalkos.outputs.router-nftables.inputs;
         user = edge.users.users.kea.isSystemUser;
