@@ -185,7 +185,7 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 		case err != nil && len(names) == 1:
 			return err
 		case err != nil:
-			fmt.Fprintf(a.stderr, "chalkctl: %s: %v\n", name, err)
+			fmt.Fprintf(a.stderr, "chalkctl: %s\n", namedOnce(name, err))
 			refused = append(refused, name)
 		}
 	}
@@ -193,6 +193,17 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 		return fmt.Errorf("the config of %s is refused: %s", layer.Count(len(refused), "node"), strings.Join(refused, ", "))
 	}
 	return nil
+}
+
+// namedOnce is err as a line of several nodes' output names the node called name: prefixed with
+// the name unless the error starts with it already, as the errors of the node's trial, of the
+// config it holds and of chalkctl's check of the image's rules do.
+func namedOnce(name string, err error) string {
+	msg := err.Error()
+	if rest, ok := strings.CutPrefix(msg, name); ok && (strings.HasPrefix(rest, ":") || strings.HasPrefix(rest, " ")) {
+		return msg
+	}
+	return name + ": " + msg
 }
 
 // deliverConfig delivers the inventory's config to the node t, or with --dry-run has the node

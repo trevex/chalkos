@@ -2,6 +2,7 @@ package chalkctl
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -69,6 +70,21 @@ func TestApplyConfigDryRunUsage(t *testing.T) {
 		err := ta.run(context.Background(), append(append([]string{"apply-config"}, tc.args...), "--inventory", ta.inventory))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("apply-config %v: %v, want %q", tc.args, err, tc.want)
+		}
+	}
+}
+
+// A line of several nodes' output names its node once, also for an error that names it already.
+func TestNamedOnce(t *testing.T) {
+	for err, want := range map[string]string{
+		"r1: the config is refused: x":      "r1: the config is refused: x",
+		"r1 runs config v2 on trial":        "r1 runs config v2 on trial",
+		"the cluster c has no node r1":      "r1: the cluster c has no node r1",
+		"r10: the config is refused: x":     "r1: r10: the config is refused: x",
+		"dial tcp 10.0.0.11:4443: no route": "r1: dial tcp 10.0.0.11:4443: no route",
+	} {
+		if got := namedOnce("r1", errors.New(err)); got != want {
+			t.Errorf("namedOnce(%q) = %q, want %q", err, got, want)
 		}
 	}
 }
