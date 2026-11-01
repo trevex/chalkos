@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -157,7 +158,7 @@ func TestSecrets(t *testing.T) {
 	}
 }
 
-func TestCheckSecretRefsFindsARealSecretRef(t *testing.T) {
+func TestCheckRefsFindsARealSecretRef(t *testing.T) {
 	docs := []Document{{APIVersion: "demo.example.org/v1alpha1", Kind: "Demo", Name: "a", Object: map[string]any{
 		"apiVersion": "demo.example.org/v1alpha1",
 		"kind":       "Demo",
@@ -165,8 +166,8 @@ func TestCheckSecretRefsFindsARealSecretRef(t *testing.T) {
 		"spec": map[string]any{"name": "a", "token": map[string]any{
 			"secretRef": map[string]any{"name": "missing", "key": "k"}}},
 	}}}
-	err := checkSecretRefs(docs, imageSchemas(t), SecretValues{})
-	if err == nil || !strings.Contains(err.Error(), `Demo "a"`) || !strings.Contains(err.Error(), `Secret "missing"`) {
+	_, err := checkRefs(docs, imageSchemas(t))
+	if err == nil || err.Error() != `Demo/a: spec.token: Secret "missing" does not exist` {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -209,7 +210,7 @@ func extraSchemaDir(t *testing.T) *schema.Schemas {
 	return s
 }
 
-func TestCheckSecretRefsIgnoresAnUnmarkedUserMapEntry(t *testing.T) {
+func TestCheckRefsIgnoresAnUnmarkedUserMapEntry(t *testing.T) {
 	docs := []Document{{APIVersion: "extra.example.org/v1", Kind: "Extra", Name: "a", Object: map[string]any{
 		"apiVersion": "extra.example.org/v1",
 		"kind":       "Extra",
@@ -217,7 +218,7 @@ func TestCheckSecretRefsIgnoresAnUnmarkedUserMapEntry(t *testing.T) {
 		"spec": map[string]any{"data": map[string]any{
 			"secretRef": map[string]any{"name": "missing", "key": "k"}}},
 	}}}
-	if err := checkSecretRefs(docs, extraSchemaDir(t), SecretValues{}); err != nil {
+	if _, err := checkRefs(docs, extraSchemaDir(t)); err != nil {
 		t.Fatalf("err = %v, want nil: the schema never marks spec.data as a secret reference", err)
 	}
 }
@@ -257,5 +258,27 @@ func TestNewSetRefusesAKeyNoCredentialCanCarry(t *testing.T) {
 	clash := minimal + secretOf("a.b", "c") + secretOf("a", "b.c") + registryOf("one.example.org", "a.b", "c") + registryOf("two.example.org", "a", "b.c")
 	if _, err := parseSet(t, clash); err == nil || !strings.Contains(err.Error(), "would both be the credential file a.b.c") {
 		t.Errorf("two references of one file: %v", err)
+	}
+}
+
+// A set keeps the references NewSet checked, as a Registry's password names its Secret's key.
+func TestSetRefs(t *testing.T) {
+	s, err := parseSet(t, minimal+secretOf("ghcr", "token")+registryOf("ghcr.io", "ghcr", "token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[ID][]Ref{{APIVersion: OCIAPI, Kind: "Registry", Name: "ghcr.io"}: {{
+		Path: "spec.password", Target: ID{APIVersion: CoreAPI, Kind: "Secret", Name: "ghcr"}, Key: "token",
+	}}}
+	if got := s.Refs(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Refs = %v, want %v", got, want)
+	}
+}
+
+// NewSet refuses a key reference to a Secret the set lacks, as checkRefs words it.
+func TestNewSetRefusesAMissingSecret(t *testing.T) {
+	_, err := parseSet(t, minimal+registryOf("ghcr.io", "ghcr", "token"))
+	if err == nil || err.Error() != `Registry/ghcr.io: spec.password: Secret "ghcr" does not exist` {
+		t.Fatalf("err = %v", err)
 	}
 }

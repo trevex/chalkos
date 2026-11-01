@@ -115,3 +115,63 @@ func TestRefsWithoutSchemas(t *testing.T) {
 		t.Errorf("Refs = %v, want none", got)
 	}
 }
+
+// laneOf is a Lane document.
+func laneOf(name string) string {
+	return "---\napiVersion: lane.example.org/v1\nkind: Lane\nmetadata: {name: " + name + "}\nspec: {}\n"
+}
+
+// zoneOf is a Zone document with the spec given in YAML flow style.
+func zoneOf(name, spec string) string {
+	return "---\napiVersion: zone.example.org/v1\nkind: Zone\nmetadata: {name: " + name + "}\nspec: " + spec + "\n"
+}
+
+func parseAll(t *testing.T, yaml string) Documents {
+	t.Helper()
+	docs, err := Parse(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	SortDocuments(docs)
+	return docs
+}
+
+// checkRefs reports every reference that does not resolve, one line each, naming the document
+// that holds it, the field, and the target.
+func TestCheckRefsReportsEveryUnresolvedReference(t *testing.T) {
+	docs := parseAll(t, zoneOf("z", "{lane: blue, lanes: [a, b], token: {secretRef: {name: s, key: nope}}}")+
+		laneOf("a")+
+		"---\napiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: s}\nspec: {data: {k: v}}\n")
+	_, err := checkRefs(docs, refSchemas(t))
+	want := `Zone/z: spec.lane: Lane "blue" does not exist
+Zone/z: spec.lanes[1]: Lane "b" does not exist
+Zone/z: spec.token: Secret "s" has no key "nope"`
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want\n%s", err, want)
+	}
+}
+
+// A set is applied whole, so removing a document others reference is refused by naming each
+// referrer.
+func TestCheckRefsNamesEachReferrerOfAMissingDocument(t *testing.T) {
+	docs := parseAll(t, zoneOf("x", "{lanes: [gone]}")+zoneOf("y", "{rules: [{to: gone}]}"))
+	_, err := checkRefs(docs, refSchemas(t))
+	want := `Zone/x: spec.lanes[0]: Lane "gone" does not exist
+Zone/y: spec.rules[0].to: Lane "gone" does not exist`
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want\n%s", err, want)
+	}
+}
+
+// checkRefs returns each document's references, by its ID; a document without any has no entry.
+func TestCheckRefsReturnsTheRefsByDocument(t *testing.T) {
+	docs := parseAll(t, zoneOf("z", "{lane: default, lanes: [a]}")+laneOf("a"))
+	refs, err := checkRefs(docs, refSchemas(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[ID][]Ref{{APIVersion: "zone.example.org/v1", Kind: "Zone", Name: "z"}: {{Path: "spec.lanes[0]", Target: lane("a")}}}
+	if !reflect.DeepEqual(refs, want) {
+		t.Errorf("refs = %v, want %v", refs, want)
+	}
+}

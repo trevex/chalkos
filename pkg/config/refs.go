@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"maps"
 	"regexp"
 	"slices"
@@ -220,4 +222,56 @@ func rawHasType(sch map[string]any, jsonType string) bool {
 		}
 	}
 	return false
+}
+
+// checkRefs returns the references of each of docs, by the document's ID, and refuses those that
+// do not resolve: a reference to a document docs lack or a key its Secret lacks, and a key
+// reference that cannot become a credential file of its own, as the node writes one for each unit
+// that reads it. It reports every such reference at once, one line each, in the order of docs and
+// of each document's references.
+func checkRefs(docs Documents, s *schema.Schemas) (map[ID][]Ref, error) {
+	have := map[ID]bool{}
+	for _, d := range docs {
+		have[d.ID()] = true
+	}
+	secrets := docs.Secrets()
+	out := map[ID][]Ref{}
+	files := map[string]SecretRef{}
+	var lines []string
+	for _, d := range docs {
+		refs := Refs(d, s)
+		if len(refs) > 0 {
+			out[d.ID()] = refs
+		}
+		for _, r := range refs {
+			at := d.ID().String() + ": " + r.Path + ": "
+			if !have[r.Target] {
+				lines = append(lines, fmt.Sprintf("%s%s %q does not exist", at, r.Target.Kind, r.Target.Name))
+				continue
+			}
+			ref, ok := r.Secret()
+			if !ok {
+				continue
+			}
+			if _, ok := secrets.Lookup(ref); !ok {
+				lines = append(lines, fmt.Sprintf("%sSecret %q has no key %q", at, ref.Name, ref.Key))
+				continue
+			}
+			if err := CheckCredential(ref); err != nil {
+				lines = append(lines, at+err.Error())
+				continue
+			}
+			// Secret a.b with key c and Secret a with key b.c share the file a.b.c.
+			name := CredentialFile(ref)
+			if other, ok := files[name]; ok && other != ref {
+				lines = append(lines, fmt.Sprintf("%skey %q of Secret %q and key %q of Secret %q would both be the credential file %s; rename one", at, ref.Key, ref.Name, other.Key, other.Name, name))
+				continue
+			}
+			files[name] = ref
+		}
+	}
+	if len(lines) > 0 {
+		return nil, errors.New(strings.Join(lines, "\n"))
+	}
+	return out, nil
 }

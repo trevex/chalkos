@@ -12,6 +12,8 @@ type Set struct {
 	docs Documents
 	// schemas are the image's, which renderers read annotations from.
 	schemas *schema.Schemas
+	// refs are each document's references, by its ID, every one of which resolves within docs.
+	refs map[ID][]Ref
 }
 
 // singletons are the kinds a set holds exactly once.
@@ -21,9 +23,9 @@ var singletons = []struct{ apiVersion, kind string }{
 
 // NewSet checks docs as a node's config against the image's schemas: each document is valid, its
 // kind is one the image accepts, kinds that are not multiple appear once, names are unique per
-// kind, the SystemDisk is present, and every secretRef names a key of a Secret in the set and a
-// credential file of its own. The Cluster and Node documents an image with Kubernetes requires
-// are its cluster's, which Documents.Cluster checks.
+// kind, the SystemDisk is present, and every reference names a document of the set, a key
+// reference a key its Secret holds and a credential file of its own. The Cluster and Node
+// documents an image with Kubernetes requires are its cluster's, which Documents.Cluster checks.
 func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 	multiple := map[string]bool{}
 	for _, k := range s.Kinds() {
@@ -58,11 +60,17 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 		}
 	}
 	SortDocuments(set.docs)
-	if err := checkSecretRefs(set.docs, s, set.docs.Secrets()); err != nil {
+	refs, err := checkRefs(set.docs, s)
+	if err != nil {
 		return nil, err
 	}
+	set.refs = refs
 	return set, nil
 }
+
+// Refs returns the references of the set's documents, by the ID of the document that holds them;
+// a document without references has no entry. Every reference resolves within the set.
+func (s *Set) Refs() map[ID][]Ref { return s.refs }
 
 // Documents returns the set's documents, ordered by apiVersion, kind and name.
 func (s *Set) Documents() Documents { return s.docs }
@@ -91,35 +99,4 @@ func (s *Set) One(kind string) (Document, bool) {
 func (s *Set) CheckRegistries() error {
 	_, err := RegistriesOf(s.docs, nil)
 	return err
-}
-
-// checkSecretRefs checks every secretRef SecretRefs finds in docs: the Secret and its key exist,
-// and the reference can become a credential file of its own, as the node writes one for each unit
-// that reads it.
-func checkSecretRefs(docs []Document, s *schema.Schemas, secrets SecretValues) error {
-	files := map[string]SecretRef{}
-	for _, d := range docs {
-		for _, r := range Refs(d, s) {
-			ref, ok := r.Secret()
-			if !ok {
-				continue
-			}
-			if _, ok := secrets[ref.Name]; !ok {
-				return fmt.Errorf("%s names Secret %q, which the config does not hold", d, ref.Name)
-			}
-			if _, ok := secrets.Lookup(ref); !ok {
-				return fmt.Errorf("%s names key %q of Secret %q, which it does not hold", d, ref.Key, ref.Name)
-			}
-			if err := CheckCredential(ref); err != nil {
-				return fmt.Errorf("%s: %w", d, err)
-			}
-			// Secret a.b with key c and Secret a with key b.c share the file a.b.c.
-			name := CredentialFile(ref)
-			if other, ok := files[name]; ok && other != ref {
-				return fmt.Errorf("%s: key %q of Secret %q and key %q of Secret %q would both be the credential file %s; rename one", d, ref.Key, ref.Name, other.Key, other.Name, name)
-			}
-			files[name] = ref
-		}
-	}
-	return nil
 }
