@@ -335,7 +335,10 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		return refusal{namedErr{fmt.Errorf("%s: %w", t.name, err)}}
 	}
 	// A pending config is kept without the fallback secret: the upgrade that adds an encrypted
-	// volume carries it.
+	// volume carries it. A staged image that goes between the Status read and the delivery, as an
+	// upgrade that fails retires it, has the node hold the config pending, which its answer names;
+	// a fallback secret sent for that image is refused by holdPending, which says no image is
+	// staged, and the delivery run again holds the config without one.
 	var fallback string
 	if !pending {
 		if fallback, err = a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, ""); err != nil {
