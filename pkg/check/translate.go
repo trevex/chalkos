@@ -20,6 +20,9 @@ type Translated struct {
 // defaults and translates them into the node's identity on the image t describes, as
 // config.Translate does. docs may hold their secret values or their hashes: the checks of secret
 // references need the Secrets' keys alone, and the documents keep what they hold.
+//
+// One check differs: a Secret value that is no string fails the schema, but Redact turns it into
+// its hash, a string, which passes. chalkd therefore translates the documents with their values.
 func Translate(node string, docs []config.Document, schemas *schema.Schemas, t config.Target) (Translated, error) {
 	set, id, err := config.Translate(node, docs, schemas, t)
 	if err != nil {
