@@ -8,7 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
-	"strings"
+
 	"time"
 
 	"github.com/trevex/chalkos/pkg/command"
@@ -72,9 +72,6 @@ const RenderUser = "chalkos-render"
 // program reads standard input from a file, and its exit status is the unit's. The units have no
 // default dependencies, which would wait for sysinit.target.
 type Sandbox struct{}
-
-// manager reaches systemd's manager without the system bus.
-const manager = "DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/systemd/private"
 
 // stopMargin is how much longer than a program's timeout chalkd waits for systemd-run, so the
 // unit's own timeout stops the program first and its result says so.
@@ -146,17 +143,10 @@ func (Sandbox) Run(ctx context.Context, p Program) error {
 	unit := "chalkos-render-" + filepath.Ext(p.Out)[1:] + ".service"
 	waitCtx, cancel := context.WithTimeout(ctx, p.Timeout+stopMargin)
 	defer cancel()
-	_, err := command.Run(waitCtx, sandboxArgs(unit, p, input), nil, command.MaxOutput, manager)
-	// What follows asks the manager about the unit, as long as it answers.
-	systemctl := func(args ...string) ([]byte, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), stopMargin)
-		defer cancel()
-		return command.Run(ctx, append([]string{"systemctl"}, args...), nil, command.MaxOutput, manager)
-	}
+	_, err := command.Run(waitCtx, sandboxArgs(unit, p, input), nil, command.MaxOutput, command.Manager)
 	if waitCtx.Err() != nil {
 		// systemd-run is gone, and the unit may run on.
-		systemctl("stop", unit)
-		systemctl("reset-failed", unit)
+		command.StopUnit(unit)
 		return fmt.Errorf("%s: %w", unit, waitCtx.Err())
 	}
 	var exit *command.Error
@@ -164,23 +154,12 @@ func (Sandbox) Run(ctx context.Context, p Program) error {
 		return err
 	}
 	// A unit that failed stays loaded, with its result, until it is reset.
-	show, serr := systemctl("show", "--property=Result", "--property=ExecMainStatus", unit)
-	systemctl("reset-failed", unit)
-	if serr != nil {
+	result, status, ok := command.FailedUnit(unit)
+	switch {
+	case !ok:
 		return &ProgramError{Status: exit.Status, Unit: unit}
-	}
-	props := map[string]string{}
-	for _, line := range strings.Split(string(show), "\n") {
-		if k, v, ok := strings.Cut(line, "="); ok {
-			props[k] = v
-		}
-	}
-	if props["Result"] == "timeout" {
+	case result == "timeout":
 		return fmt.Errorf("%s: %w", unit, context.DeadlineExceeded)
-	}
-	status := "exit " + props["ExecMainStatus"]
-	if r := props["Result"]; r != "exit-code" && r != "" {
-		status = r
 	}
 	return &ProgramError{Status: status, Unit: unit}
 }

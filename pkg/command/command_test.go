@@ -69,3 +69,55 @@ func TestResolveInStore(t *testing.T) {
 		}
 	}
 }
+
+// fakeSystemctl puts a systemctl on PATH that logs its arguments to the returned file and answers
+// show with show; with fail, it fails.
+func fakeSystemctl(t *testing.T, show string, fail bool) string {
+	t.Helper()
+	dir := t.TempDir()
+	log := filepath.Join(dir, "log")
+	script := "#!/bin/sh\necho \"$*\" >>" + log + "\n"
+	if fail {
+		script += "exit 1\n"
+	}
+	script += "[ \"$1\" = show ] && printf '%s' '" + show + "'\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	return log
+}
+
+// FailedUnit reads the unit's result and status, resets the unit, and reports a status the
+// manager does not know as unknown.
+func TestFailedUnit(t *testing.T) {
+	for show, want := range map[string][2]string{
+		"Result=exit-code\nExecMainStatus=3\n": {"exit-code", "exit 3"},
+		"Result=timeout\nExecMainStatus=0\n":   {"timeout", "timeout"},
+		"Result=signal\nExecMainStatus=9\n":    {"signal", "signal"},
+		"Result=exit-code\nExecMainStatus=\n":  {"exit-code", "unknown"},
+		"":                                     {"", "unknown"},
+	} {
+		log := fakeSystemctl(t, show, false)
+		result, status, ok := FailedUnit("u.service")
+		if !ok || result != want[0] || status != want[1] {
+			t.Errorf("%q: %s, %s, %v; want %v", show, result, status, ok, want)
+		}
+		if data, _ := os.ReadFile(log); string(data) != "show --property=Result --property=ExecMainStatus u.service\nreset-failed u.service\n" {
+			t.Errorf("systemctl ran %q", data)
+		}
+	}
+	fakeSystemctl(t, "", true)
+	if _, _, ok := FailedUnit("u.service"); ok {
+		t.Error("a manager that did not answer answered")
+	}
+}
+
+// StopUnit stops the unit and resets it, whatever the manager answers.
+func TestStopUnit(t *testing.T) {
+	log := fakeSystemctl(t, "", true)
+	StopUnit("u.service")
+	if data, _ := os.ReadFile(log); string(data) != "stop u.service\nreset-failed u.service\n" {
+		t.Errorf("systemctl ran %q", data)
+	}
+}
