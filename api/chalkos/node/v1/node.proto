@@ -442,8 +442,11 @@ message ApplyConfigRequest {
   // and keeps it in that image's config slot, changing nothing the running image runs but the
   // machine's storage. The config meets that image's change rules, compared with the running
   // slot's config and the machine as for the running image, and the storage changes they accept
-  // are made at once, with fallback_secret. It takes the config and the fallback secret alone,
-  // and an image staged.
+  // are made at once, with fallback_secret. It takes the config and the fallback secret alone.
+  // Without an image staged, chalkd parses the config and keeps it as the node's pending config,
+  // unchecked, in place of any it held: the next upgrade checks it against its image and boots
+  // that image with it, unless the upgrade carries config of its own. A pending config takes no
+  // fallback secret; the upgrade that adds an encrypted volume carries it.
   bool staged = 6;
   // Payloads of the image's layers, such as a new chalkos.kubernetes.v1.Share replacing the
   // node's, each kept by the layer whose type it is; the node refuses a payload no layer of its
@@ -465,13 +468,18 @@ message ApplyConfigRequest {
   // renderers and their checks among them, refuses the request as the delivery would, and
   // otherwise answers with the delivery's plan and storage changes. With try, it checks the
   // trial's conditions too. It changes nothing: no config, storage, layer payload, certificate or
-  // effect. Not together with staged.
+  // effect. With staged, the staged image checks the config; without an image staged, the
+  // response names the config it would hold pending, and nothing is kept.
   bool dry_run = 10;
+  // Whether chalkd drops the node's pending config, which staged without an image staged keeps.
+  // It goes with staged alone, without config. The response names the config dropped.
+  bool discard_pending = 11;
 }
 
 // The request of GetConfig.
 message GetConfigRequest {
-  // Whether the response holds the staged image's config instead of the running one's.
+  // Whether the response holds the staged image's config instead of the running one's; without
+  // an image staged, the node's pending config.
   bool staged = 1;
   // Whether the response holds the running image's previous config, which RollbackConfig delivers
   // again, instead of the one it runs. Not together with staged.
@@ -500,6 +508,19 @@ message ApplyConfigResponse {
   repeated string warnings = 3;
   // For a dry run, what the delivery would do; unset otherwise.
   Plan plan = 4;
+  // The node's pending config: the config a request with staged keeps, or for a dry run would
+  // keep, on a node without an image staged; for discard_pending, the config dropped, unset when
+  // the node held none. Unset for other requests.
+  PendingConfig pending = 5;
+}
+
+// Config a node holds for its next upgrade, kept unchecked until that upgrade checks it against
+// the image it installs.
+message PendingConfig {
+  // The config's version, as StatusResponse.config_version gives the running one's.
+  string version = 1;
+  // When the node stored it; unset for a dry run, which stores nothing.
+  google.protobuf.Timestamp since = 2;
 }
 
 // What a delivery would do, as a dry run plans it before anything changes.
@@ -646,6 +667,8 @@ message StatusResponse {
   // node refuses every other change until RollbackConfig rolls the config back, which removes the
   // record. Empty otherwise.
   string trial_error = 14;
+  // The config the node holds pending for its next upgrade, unchecked; unset without one.
+  PendingConfig pending_config = 15;
 }
 
 // A config on trial, which the node rolls back by itself at the deadline unless ConfirmConfig
@@ -846,8 +869,11 @@ message UpgradeHeader {
   // against the image's schemas and change rules as ApplyConfig does: it refuses what the rules
   // refuse, such as a storage change that takes a reset or a reinstall, or a change of a fixed
   // Kubernetes setting, makes the storage changes they accept, such as a new volume, at once, and
-  // keeps the config in the image's config slot. Empty carries the running image's config over,
-  // checked against the image the same way. Only the admin role may set it.
+  // keeps the config in the image's config slot. Empty takes the node's pending config, which
+  // ApplyConfigRequest.staged keeps, or without one carries the running image's config over,
+  // checked against the image the same way. Once the image is staged to boot next, the node
+  // drops its pending config, used or not; an upgrade that fails keeps it. Only the admin role
+  // may set it.
   string config = 3;
   // Recovery key or password enrolled on the encrypted volumes the config adds, as
   // ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is

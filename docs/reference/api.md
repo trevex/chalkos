@@ -171,11 +171,12 @@ The request of ApplyConfig: a config, or layer payloads, a node certificate or O
 | `node_key` | bytes | PEM key of node_certificate; empty keeps the node's. |
 | `trust` | bytes | The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them; empty keeps the node's. They must verify the node's certificate, the caller's and a control plane's node CA. Not together with a node certificate. |
 | `config` | string | The node's config, as InstallHeader.config holds it, checked against the running image's schemas. It replaces the node's config as a whole. Empty keeps the node's config and storage, for a request that delivers only layer payloads, a node certificate or OS CAs. |
-| `staged` | bool | Whether the config is for the image staged to boot next: chalkd checks it against that image and keeps it in that image's config slot, changing nothing the running image runs but the machine's storage. The config meets that image's change rules, compared with the running slot's config and the machine as for the running image, and the storage changes they accept are made at once, with fallback_secret. It takes the config and the fallback secret alone, and an image staged. |
+| `staged` | bool | Whether the config is for the image staged to boot next: chalkd checks it against that image and keeps it in that image's config slot, changing nothing the running image runs but the machine's storage. The config meets that image's change rules, compared with the running slot's config and the machine as for the running image, and the storage changes they accept are made at once, with fallback_secret. It takes the config and the fallback secret alone. Without an image staged, chalkd parses the config and keeps it as the node's pending config, unchecked, in place of any it held: the next upgrade checks it against its image and boots that image with it, unless the upgrade carries config of its own. A pending config takes no fallback secret; the upgrade that adds an encrypted volume carries it. |
 | `layers` | list of google.protobuf.Any | Payloads of the image's layers, such as a new chalkos.kubernetes.v1.Share replacing the node's, each kept by the layer whose type it is; the node refuses a payload no layer of its image takes. Empty keeps the layers' payloads. |
 | `try` | google.protobuf.Duration | How long the config is on trial: the node rolls it back by itself, as RollbackConfig does, unless ConfirmConfig confirms it within the duration, and a boot before that restores the config from before it. A trial takes config for the running image alone, without staged, layer payloads, a node certificate or OS CAs, and lasts at most 24 hours. The node refuses it with FAILED_PRECONDITION for a config that changes the node's storage, which a rollback cannot undo, for the config it runs already and on a node without config. Unset applies the config for good. |
 | `ignore_units` | list of string | With try, systemd units the health check that ConfirmConfig waits for leaves out, besides those the image ignores, such as demo.service: a unit that failed before the trial and is not the trial's concern. Each must be a unit name. The node keeps them with the trial. |
-| `dry_run` | bool | Whether the node only checks the request: it runs every check a delivery runs, the image's renderers and their checks among them, refuses the request as the delivery would, and otherwise answers with the delivery's plan and storage changes. With try, it checks the trial's conditions too. It changes nothing: no config, storage, layer payload, certificate or effect. Not together with staged. |
+| `dry_run` | bool | Whether the node only checks the request: it runs every check a delivery runs, the image's renderers and their checks among them, refuses the request as the delivery would, and otherwise answers with the delivery's plan and storage changes. With try, it checks the trial's conditions too. It changes nothing: no config, storage, layer payload, certificate or effect. With staged, the staged image checks the config; without an image staged, the response names the config it would hold pending, and nothing is kept. |
+| `discard_pending` | bool | Whether chalkd drops the node's pending config, which staged without an image staged keeps. It goes with staged alone, without config. The response names the config dropped. |
 
 #### ApplyConfigResponse { #message-applyconfigresponse }
 
@@ -187,8 +188,9 @@ The response of ApplyConfig: what the delivery changed on the node.
 | `restarted_units` | list of string | Units the delivery restarted, as the image's effects say. |
 | `warnings` | list of string | Why the rule of an effect could not be evaluated, without the values it read; the delivery took the effect all the same. |
 | `plan` | Plan | For a dry run, what the delivery would do; unset otherwise. |
+| `pending` | PendingConfig | The node's pending config: the config a request with staged keeps, or for a dry run would keep, on a node without an image staged; for discard_pending, the config dropped, unset when the node held none. Unset for other requests. |
 
-Field types: [StorageChange](#message-storagechange), [Plan](#message-plan).
+Field types: [StorageChange](#message-storagechange), [Plan](#message-plan), [PendingConfig](#message-pendingconfig).
 
 ### GetConfig { #method-getconfig }
 
@@ -204,7 +206,7 @@ The request of GetConfig.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `staged` | bool | Whether the response holds the staged image's config instead of the running one's. |
+| `staged` | bool | Whether the response holds the staged image's config instead of the running one's; without an image staged, the node's pending config. |
 | `previous` | bool | Whether the response holds the running image's previous config, which RollbackConfig delivers again, instead of the one it runs. Not together with staged. |
 
 #### GetConfigResponse { #message-getconfigresponse }
@@ -274,8 +276,9 @@ The response of Status: the state of an installed node.
 | `previous_config_version` | string | The version of the running image's previous config, which RollbackConfig delivers again, as config_version gives the running one's; empty while the node keeps none, as after an install or an upgrade. |
 | `trial` | ConfigTrial | The config on trial, while one is; unset otherwise. |
 | `trial_error` | string | Why the record of a config's trial cannot be read, while it cannot; trial is unset then. The node refuses every other change until RollbackConfig rolls the config back, which removes the record. Empty otherwise. |
+| `pending_config` | PendingConfig | The config the node holds pending for its next upgrade, unchecked; unset without one. |
 
-Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [ConfigTrial](#message-configtrial).
+Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [ConfigTrial](#message-configtrial), [PendingConfig](#message-pendingconfig).
 
 ### Logs { #method-logs }
 
@@ -773,6 +776,16 @@ A partition of a disk, as sysfs and the udev database describe it.
 | `uuid` | string | GPT partition UUID, in lower case. |
 | `content` | string | File system or other content blkid found, such as ext4 or crypto_LUKS. |
 
+### PendingConfig { #message-pendingconfig }
+
+Config a node holds for its next upgrade, kept unchecked until that upgrade checks it against
+the image it installs.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `version` | string | The config's version, as StatusResponse.config_version gives the running one's. |
+| `since` | google.protobuf.Timestamp | When the node stored it; unset for a dry run, which stores nothing. |
+
 ### Plan { #message-plan }
 
 What a delivery would do, as a dry run plans it before anything changes.
@@ -842,7 +855,7 @@ What an upgrade delivers: the image and, optionally, the node's config for it.
 | ----- | ---- | ----------- |
 | `image` | ImageHeader | The image to install. The node refuses another ID or platform than its own, and an image that names a boot loader: an upgrade leaves the boot loader as it is. |
 | `reboot` | bool | Whether the node reboots into the image once it is installed. |
-| `config` | string | The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it against the image's schemas and change rules as ApplyConfig does: it refuses what the rules refuse, such as a storage change that takes a reset or a reinstall, or a change of a fixed Kubernetes setting, makes the storage changes they accept, such as a new volume, at once, and keeps the config in the image's config slot. Empty carries the running image's config over, checked against the image the same way. Only the admin role may set it. |
+| `config` | string | The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it against the image's schemas and change rules as ApplyConfig does: it refuses what the rules refuse, such as a storage change that takes a reset or a reinstall, or a change of a fixed Kubernetes setting, makes the storage changes they accept, such as a new volume, at once, and keeps the config in the image's config slot. Empty takes the node's pending config, which ApplyConfigRequest.staged keeps, or without one carries the running image's config over, checked against the image the same way. Once the image is staged to boot next, the node drops its pending config, used or not; an upgrade that fails keeps it. Only the admin role may set it. |
 | `fallback_secret` | string | Recovery key or password enrolled on the encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is not none. Only the admin role may set it. |
 | `source` | ImageSource | Where the node takes the image's parts from. Absent, they follow the header as chunks; for an image in a registry, the node pulls them and the request carries nothing after the header. |
 
