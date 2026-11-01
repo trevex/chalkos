@@ -128,7 +128,7 @@ func TestUpgrade(t *testing.T) {
 		t.Fatalf("apply-config --staged without a staged image: %v\n%s", err, out)
 	}
 	out, err = chalkctl(t, nil, "base", upgradeAsOperator...)
-	if err == nil || !strings.Contains(out, "chalklab: the image gets the pending config "+stay[1]) ||
+	if err == nil || strings.Contains(out, "took the pending config") ||
 		!strings.Contains(out, "the pending config "+stay[1]+" does not suit the image: ") || !strings.Contains(out, "output farewell: its check refused the rendered files") {
 		t.Fatalf("upgrade with a pending Farewell only the upgrade image's renderer refuses: %v\n%s", err, out)
 	}
@@ -143,8 +143,7 @@ func TestUpgrade(t *testing.T) {
 		t.Fatalf("apply-config --staged replacing the pending config: %v\n%s", err, out)
 	}
 	out, err = chalkctl(t, nil, "base", upgradeAsOperator...)
-	if err != nil || !strings.Contains(out, "chalklab: the image gets the pending config "+pending[1]) ||
-		!strings.Contains(out, "chalklab: installed "+nextHash[:12]+", which boots next as chalkos_4+3.efi") {
+	if err != nil || !strings.Contains(out, "chalklab: installed "+nextHash[:12]+", which boots next as chalkos_4+3.efi\nchalklab: the image took the pending config "+pending[1]+", which it checked first\n") {
 		t.Fatalf("upgrade back to %s with the pending config: %v", nextHash[:12], err)
 	}
 	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + nextHash[:16], "store_partition": "5", "state_boots": "5", "var_boots": "4"})

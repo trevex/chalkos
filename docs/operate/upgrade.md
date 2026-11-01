@@ -224,11 +224,15 @@ Without an inventory, chalkctl has no config to send. An upgrade with `--image` 
 
 A node can hold a pending config, which `chalkctl apply-config --staged` stores on a node without
 a staged image. An upgrade that sends no config gives the new image the pending config in place of
-the running one, and the run prints
-`<node>: the image gets the pending config <version>, which it checks first`. An upgrade that
-delivers config prints `<node>: the inventory's config replaces the pending config <version>`.
-The node removes the pending config once the new image is staged to boot next. An upgrade that
-fails before that, such as one whose image refuses the pending config, keeps it.
+the running one, and an upgrade that delivers config replaces it. The node removes the pending
+config once the new image is staged to boot next. The run then prints
+`<node>: the image took the pending config <version>, which it checked first` or
+`<node>: the inventory's config replaced the pending config <version>` after the line of the
+install. An upgrade that fails before that, such as one whose image refuses the pending config,
+keeps it, and the error names it. So does an upgrade that stages the known-good image a rollback
+left: that image keeps the config it last ran, and the run prints
+`<node>: keeps the pending config <version> for a later upgrade`. A node that runs the image
+already prints nothing about its pending config.
 [Prepare config for the next upgrade](change-config.md#prepare-config-for-the-next-upgrade)
 describes how to hold config pending.
 

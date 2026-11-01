@@ -82,8 +82,9 @@ func TestApplyConfigStagedDryRunHoldsNothing(t *testing.T) {
 	}
 }
 
-// An upgrade says what it does with a node's pending config: an operator's, which carries no
-// config, gives it to the image; an admin's replaces it with the inventory's.
+// An upgrade says, once it staged the image, what it did with a node's pending config: an
+// operator's, which carries no config, gave it to the image; an admin's replaced it with the
+// inventory's.
 func TestUpgradeNamesThePendingConfig(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -94,7 +95,7 @@ func TestUpgradeNamesThePendingConfig(t *testing.T) {
 	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot", "--config", config); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if line := "w1: the image gets the pending config " + versionOf("{}") + ", which it checks first\n"; !strings.Contains(l.ta.stdout.String(), line) {
+	if line := ", which boots next as chalkos_2+3.efi\nw1: the image took the pending config " + versionOf("{}") + ", which it checked first\n"; !strings.Contains(l.ta.stdout.String(), line) {
 		t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
 	}
 	if n.stagedConfig != "{}" || n.pending != "" {
@@ -105,10 +106,40 @@ func TestUpgradeNamesThePendingConfig(t *testing.T) {
 	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if line := "w1: the inventory's config replaces the pending config " + versionOf("{}") + "\n"; !strings.Contains(l.ta.stdout.String(), line) {
+	if line := "w1: the inventory's config replaced the pending config " + versionOf("{}") + "\n"; !strings.Contains(l.ta.stdout.String(), line) {
 		t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
 	}
 	if n.stagedConfig != l.inventoryConfig("w1") || n.pending != "" {
 		t.Errorf("w1 stages %q and holds %q pending", n.stagedConfig, n.pending)
+	}
+}
+
+// An upgrade after which the node still holds its pending config says it keeps it, as for the
+// known-good image a rollback left with the config it last ran, and a failure to read the node's
+// status once the image is staged warns and costs the note alone.
+func TestUpgradeNotesAPendingConfigKept(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	l.useInventory(t, map[string]string{"w": img})
+	n := l.nodes["w1"]
+	n.pending, n.keepPending = "{}", true
+	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
+	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot", "--config", config); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if line := "w1: keeps the pending config " + versionOf("{}") + " for a later upgrade\n"; !strings.Contains(l.ta.stdout.String(), line) || strings.Contains(l.ta.stdout.String(), "took the pending config") {
+		t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
+	}
+	n.staged, n.stagedRoot, n.stagedConfig, n.header = "", nil, "", nil
+	n.keepPending, n.statusFailsOnce = false, true
+	l.ta.stdout.Reset()
+	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot", "--config", config); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: installed ") || strings.Contains(out, "pending config") {
+		t.Errorf("output names the pending config:\n%s", out)
+	}
+	if want := "chalkctl: warning: w1: cannot tell what the upgrade did with the pending config " + versionOf("{}") + ": "; !strings.Contains(l.ta.stderr.String(), want) {
+		t.Errorf("stderr lacks %q:\n%s", want, l.ta.stderr)
 	}
 }

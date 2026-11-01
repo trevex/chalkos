@@ -131,6 +131,11 @@ type upgradeFake struct {
 	// alreadyStaged makes the node answer an upgrade as one that found the image staged already,
 	// though its status did not say so, as when another run staged it in between.
 	alreadyStaged bool
+	// keepPending makes the node keep its pending config through an upgrade, as one that stages the
+	// known-good image a rollback left with the config it last ran.
+	keepPending bool
+	// statusFailsOnce makes the node fail the next Status once an upgrade staged an image.
+	statusFailsOnce bool
 	// header is the header the last upgrade sent.
 	header *nodev1.UpgradeHeader
 	// previous, previousRoot and previousConfig are the image an upgrade replaced, which the node
@@ -229,6 +234,10 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.statusFailsOnce && n.header != nil {
+		n.statusFailsOnce = false
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("status is unavailable"))
+	}
 	st := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{
 		Running: &nodev1.BootImage{RootHash: n.root, Generation: n.generation},
 		Entry:   fmt.Sprintf("chalkos_%d.efi", n.generation), Blessed: true,
@@ -336,7 +345,9 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	// The image gets the pending config unless the upgrade carries config; either way the node
 	// drops it.
 	n.stagedConfig, n.secret = cmp.Or(header.GetConfig(), n.pending), header.GetFallbackSecret()
-	n.pending = ""
+	if !n.keepPending {
+		n.pending = ""
+	}
 	n.stagedStoreSize, n.stagedVeritySize = h.Store.Size, h.HashTree.Size
 	n.header = header
 	if n.alreadyStaged {
