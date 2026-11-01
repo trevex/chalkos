@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+// What chalkd and an image's checker exchange when chalkd has an image that does not run check
+// config for itself: chalkd runs the image's `chalkd check` in a sandbox, writes it an Input as
+// protobuf JSON on standard input and reads a Result from its standard output, and serves it the
+// node's facts over a Unix socket through FactsService. The checker never sees a Secret's value:
+// every document carries its secret values hashed, as config.Redact hashes them.
+package chalkos.check.v1;
+
+option go_package = "github.com/trevex/chalkos/pkg/api/check/v1;checkv1";
+
+// FactsService serves the checker the node's facts, one fact a call, as the image declares them in
+// its own facts.json: chalkd reads files and runs commands, with the image's store in place of
+// the running one's, and gives commands the fallback secret where they declare it.
+service FactsService {
+  // Fact loads one fact for a check whose command facts read input.
+  rpc Fact(FactRequest) returns (FactResponse);
+}
+
+// Input is a config for the image to check, for the node called node on the image's platform.
+message Input {
+  string node = 1;
+  string platform = 2;
+  // The documents as delivered, before defaults, each one JSON object. A secret value that is a
+  // string is its hash; one of another JSON type keeps that type, so the image's schema refuses
+  // it as it would refuse the value.
+  repeated string delivered = 3;
+  // The documents of the config the delivered ones replace, with their defaults, each one JSON
+  // object with its secret values hashed; empty when there is none.
+  repeated string old = 4;
+  // Check the documents against the rules of the storage kinds alone, and render nothing, as
+  // for a config the image accepted once, checked again for a change of the node's storage.
+  bool storage = 5;
+}
+
+// Result is what the image's checker found. A refused config sets refusal; a config that passed
+// sets documents and identity. A config refused by the rules or the outputs sets identity too,
+// whose storage chalkd names in the refusal. error, when set, is the image's own fault: it cannot
+// check config.
+message Result {
+  Refusal refusal = 1;
+  // The delivered documents with the image's defaults, sorted, each one JSON object with its
+  // secret values hashed.
+  repeated string documents = 2;
+  // The identity the documents translate to on the image, as JSON.
+  string identity = 3;
+  // The effect rules that could not be evaluated.
+  repeated string warnings = 4;
+  string error = 5;
+}
+
+// Refusal is why the image refused the config.
+message Refusal {
+  // The check that refused it: config, rules or outputs.
+  string stage = 1;
+  // The refusal as a delivery to the image would give it.
+  string message = 2;
+  // The change rules the config does not meet, each as a refusal names it, for the stage rules.
+  repeated string failures = 3;
+}
+
+// FactRequest asks for the fact called name. input is the JSON object a command fact reads on
+// standard input: config and oldConfig as rules see them.
+message FactRequest {
+  string name = 1;
+  string input = 2;
+}
+
+// FactResponse is the fact as JSON; null for a fact the image does not declare.
+message FactResponse {
+  string value = 1;
+}

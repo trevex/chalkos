@@ -19,7 +19,7 @@ messages that fields of other messages hold are under [Messages](#messages), and
 under [Enums](#enums). proto3 fields have no defaults: a field a message leaves out reads as the
 zero value of its type, such as an empty string, false, 0 or an unset message. Of the fields whose
 type names a oneof, a message sets at most one.
-{{range .Files}}{{if eq .Package "chalkos.node.v1"}}{{template "file" .}}{{end}}{{end}}{{range .Files}}{{if ne .Package "chalkos.node.v1"}}{{template "file" .}}{{end}}{{end}}
+{{range .Files}}{{if eq .Package "chalkos.node.v1"}}{{template "file" .}}{{end}}{{end}}{{range .Files}}{{if and (ne .Package "chalkos.node.v1") (ne .Package "chalkos.check.v1")}}{{template "file" .}}{{end}}{{end}}
 Sources: `api/chalkos/node/v1/node.proto`, `api/chalkos/kubernetes/v1/kubernetes.proto` and
 `api/chalkos/router/v1/router.proto`, rendered by protoc-gen-doc with `api/markdown.tmpl`. The
 modes and roles the methods name are those of the permissions in `pkg/chalkd/server.go` and of
