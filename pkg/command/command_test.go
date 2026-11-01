@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -37,5 +40,32 @@ func TestRun(t *testing.T) {
 				t.Errorf("err = %q, want %q", err, want)
 			}
 		})
+	}
+}
+
+// ResolveInStore follows a program's links within the image's store, absolute and relative, and
+// refuses one that leads out of it.
+func TestResolveInStore(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "store")
+	if err := os.MkdirAll(filepath.Join(store, "b", "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store, "b", "bin", "x"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for link, target := range map[string]string{"a": "/nix/store/b", "r": "b/bin/../bin", "out": "/etc", "up": "../../etc"} {
+		if err := os.Symlink(target, filepath.Join(store, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, want := range map[string]string{"/nix/store/a/bin/x": "b/bin/x", "/nix/store/r/x": "b/bin/x", "/nix/store/b/bin/x": "b/bin/x"} {
+		if got, err := ResolveInStore(store, name); err != nil || got != filepath.Join(store, want) {
+			t.Errorf("%s = %s, %v", name, got, err)
+		}
+	}
+	for _, name := range []string{"/nix/store/out/passwd", "/nix/store/up/passwd", "/nix/store/b/bin/missing"} {
+		if _, err := ResolveInStore(store, name); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s: err = %v", name, err)
+		}
 	}
 }

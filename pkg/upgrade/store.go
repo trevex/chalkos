@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/command"
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -32,12 +33,9 @@ type Store struct {
 // storeMapping is the device-mapper name of the store an upgrade checks.
 const storeMapping = "chalkos-upgrade-store"
 
-// maxLinks bounds the symbolic links a path of the store follows, as the kernel's limit does.
-const maxLinks = 40
-
 // ReadFile reads the file at name, an absolute path in the image such as Toplevel+"/etc/...".
 func (s Store) ReadFile(name string) ([]byte, error) {
-	p, err := s.resolve(name)
+	p, err := command.Resolve(s.root, name)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +44,7 @@ func (s Store) ReadFile(name string) ([]byte, error) {
 
 // ReadDir lists the directory at name, an absolute path in the image.
 func (s Store) ReadDir(name string) ([]fs.DirEntry, error) {
-	p, err := s.resolve(name)
+	p, err := command.Resolve(s.root, name)
 	if err != nil {
 		return nil, err
 	}
@@ -56,48 +54,12 @@ func (s Store) ReadDir(name string) ([]fs.DirEntry, error) {
 // Resolve is where the file at name, an absolute path in the image, is on this node, its links
 // followed within the image; an error that wraps fs.ErrNotExist when there is none.
 func (s Store) Resolve(name string) (string, error) {
-	return s.resolve(name)
+	return command.Resolve(s.root, name)
 }
 
 // Dir is where the image's /nix/store is on this node, which a sandbox binds over its own
 // /nix/store to run the image's programs.
 func (s Store) Dir() string { return filepath.Join(s.root, "nix", "store") }
-
-// resolve finds name in the mounted store, following its symbolic links within the image: their
-// absolute targets, such as /etc's links into /nix/store, name paths of the image, not of the
-// running system.
-func (s Store) resolve(name string) (string, error) {
-	if !path.IsAbs(name) {
-		return "", fmt.Errorf("%s is not an absolute path of the image", name)
-	}
-	logical, rest := "/", strings.Split(path.Clean(name), "/")[1:]
-	for links := 0; len(rest) > 0; {
-		next := path.Join(logical, rest[0])
-		rest = rest[1:]
-		host := filepath.Join(s.root, filepath.FromSlash(next))
-		info, err := os.Lstat(host)
-		if err != nil {
-			return "", fmt.Errorf("%s in the image: %w", name, err)
-		}
-		if info.Mode()&fs.ModeSymlink == 0 {
-			logical = next
-			continue
-		}
-		if links++; links > maxLinks {
-			return "", fmt.Errorf("%s in the image: too many symbolic links", name)
-		}
-		target, err := os.Readlink(host)
-		if err != nil {
-			return "", err
-		}
-		if !path.IsAbs(target) {
-			target = path.Join(logical, target)
-		}
-		rest = append(strings.Split(path.Clean(target), "/")[1:], rest...)
-		logical = "/"
-	}
-	return filepath.Join(s.root, filepath.FromSlash(logical)), nil
-}
 
 // toplevel is the NixOS system a UKI's command line boots, the directory of its init=: the last
 // one before "--", as the kernel reads it, past which the arguments are init's own.

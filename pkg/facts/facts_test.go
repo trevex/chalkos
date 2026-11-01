@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -270,16 +272,51 @@ func TestSandboxed(t *testing.T) {
 		"--property=NoNewPrivileges=yes", "--property=RuntimeMaxSec=30",
 		"--property=ReadWritePaths=-/run/cryptsetup", "--",
 		"/nix/store/x/bin/chalkos-storage", "facts", "disks"}
-	if got := (Sandbox{}).command([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); !slices.Equal(got, want) {
-		t.Errorf("command = %v", got)
+	if got, err := (Sandbox{}).command([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); err != nil || !slices.Equal(got, want) {
+		t.Errorf("command = %v, %v", got, err)
 	}
 	// A fact of an image that does not run: its store over /nix/store, its program run from where
-	// the store is on the node, which systemd-run finds.
-	store := "/run/chalkd/upgrade-store/nix/store"
+	// the store is on the node, which systemd-run finds, its links followed within that store as
+	// nixpkgs' bin/ links into another package.
+	store := filepath.Join(t.TempDir(), "nix", "store")
+	for _, dir := range []string{"x/bin", "y/bin"} {
+		if err := os.MkdirAll(filepath.Join(store, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(store, "y/bin/chalkos-storage"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for link, target := range map[string]string{"x/bin/chalkos-storage": "/nix/store/y/bin/chalkos-storage", "x/bin/out": "/etc/passwd"} {
+		if err := os.Symlink(target, filepath.Join(store, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	want = append(slices.Clone(want[:len(want)-4]), "--property=BindReadOnlyPaths="+store+":/nix/store", "--",
-		store+"/x/bin/chalkos-storage", "facts", "disks")
-	if got := (Sandbox{Store: store}).command([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); !slices.Equal(got, want) {
-		t.Errorf("command = %v\nwant %v", got, want)
+		store+"/y/bin/chalkos-storage", "facts", "disks")
+	if got, err := (Sandbox{Store: store}).command([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); err != nil || !slices.Equal(got, want) {
+		t.Errorf("command = %v, %v\nwant %v", got, err, want)
+	}
+	// A link out of the image's store leads nowhere: the node's own file is no file of the image.
+	if _, err := (Sandbox{Store: store}).command([]string{"/nix/store/x/bin/out"}); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a link out of the store: err = %v", err)
+	}
+}
+
+// A command is a program of the image's store, given as a clean path: a .. would lead out of the
+// store a sandbox joins it to.
+func TestCommandInStore(t *testing.T) {
+	for cmd, ok := range map[string]bool{
+		"/nix/store/x/bin/disks":           true,
+		"/nix/store/x/../../../etc/passwd": false,
+		"/nix/store/../store/x/bin/disks":  false,
+		"/nix/store/x//bin/disks":          false,
+		"/nix/store/":                      false,
+		"/usr/bin/disks":                   false,
+	} {
+		if err := (Definition{Command: cmd}).Check(); (err == nil) != ok {
+			t.Errorf("%s: err = %v", cmd, err)
+		}
 	}
 }
 

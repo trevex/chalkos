@@ -3,8 +3,6 @@ package facts
 import (
 	"context"
 	"fmt"
-	"path/filepath"
-	"strings"
 
 	"github.com/trevex/chalkos/pkg/command"
 )
@@ -23,25 +21,35 @@ import (
 // Store, when set, is where the store of an image that does not run is on this node, as chalkd
 // mounted it: the unit sees it as its /nix/store, so a fact of that image runs that image's
 // programs. The fact's own program runs from Store, where systemd-run finds it: the running
-// system's store may lack it.
+// system's store may lack it. A program that is a link, as a package's bin/ often holds one into
+// another package, is followed within Store first, as the running system would follow it into its
+// own store.
 type Sandbox struct {
 	Store string
 }
 
 func (s Sandbox) Run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error) {
-	return command.Run(ctx, s.command(argv), stdin, limit)
+	cmd, err := s.command(argv)
+	if err != nil {
+		return nil, err
+	}
+	return command.Run(ctx, cmd, stdin, limit)
 }
 
 // command is the command line that runs argv in the sandbox.
-func (s Sandbox) command(argv []string) []string {
+func (s Sandbox) command(argv []string) ([]string, error) {
 	extra := []string{"--property=ReadWritePaths=-/run/cryptsetup"}
 	if s.Store != "" {
 		extra = append(extra, "--property=BindReadOnlyPaths="+s.Store+":/nix/store")
-		if rest, ok := strings.CutPrefix(argv[0], "/nix/store/"); ok {
-			argv = append([]string{filepath.Join(s.Store, rest)}, argv[1:]...)
+		if command.InStore(argv[0]) {
+			program, err := command.ResolveInStore(s.Store, argv[0])
+			if err != nil {
+				return nil, err
+			}
+			argv = append([]string{program}, argv[1:]...)
 		}
 	}
-	return sandboxed(argv, extra...)
+	return sandboxed(argv, extra...), nil
 }
 
 // sandboxed is the command line that runs argv in the sandbox Sandbox describes, with the extra
