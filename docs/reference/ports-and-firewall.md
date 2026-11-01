@@ -139,6 +139,9 @@ no other table of chalkos filters the router's traffic.
 | 4784 | UDP | BFD, FRR's bfdd: multi-hop control | from the address of each `BGPPeer` of `address` with `bfd`, as port 179 |
 | 53 | UDP and TCP | DNS, Unbound | from the ranges of each `Resolver`'s `allow` to the addresses of its `listen`; for a resolver with `vrf`, on the links of its VRF alone, with the VRF's device as `iifname` |
 | 67 | UDP | DHCPv4, Kea | the links of each `DHCPSubnet`'s `interfaces`, through raw sockets ahead of the table, which has no line for it; see below |
+| 547 | UDP | DHCPv6, Kea | from link-local addresses on the link of each IPv6 `DHCPSubnet`, with the VRF's device as `iifname` and the link as `sdifname` for a link of a VRF |
+| 67 | UDP | DHCPv4 relay, dnsmasq | on the links of each `DHCPRelay` with an IPv4 server, matched as above |
+| 547 | UDP | DHCPv6 relay, dnsmasq | from link-local addresses on the links of each `DHCPRelay` with an IPv6 server, matched as above |
 
 The table also accepts the loopback interface, established and related connections, ICMP and
 ICMPv6 errors and echo requests, ICMPv6 neighbour discovery, router solicitations and
@@ -154,6 +157,8 @@ no line for port 67 and a `FirewallPolicy` does not filter it. Kea's UDP socket 
 each link's address takes what the input chain accepts, which is nothing by default.
 [DHCP on a router](../how-it-works/router/dhcp.md#keas-raw-sockets-come-before-the-firewall)
 explains why.
+The relays' servers answer the address and port the relay sent from, so the table lets their
+answers in as replies; it needs no line for them.
 
 | Table | Owner | Contents |
 | --- | --- | --- |

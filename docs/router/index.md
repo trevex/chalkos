@@ -72,8 +72,9 @@ translates IPv6 to IPv4 and resolves names, and which addresses it leases.
 
     ---
 
-    Lease IPv4 addresses on the router's links from pools and reservations, give clients their
-    options and PXE clients their boot files, in each VRF.
+    Lease IPv4 and IPv6 addresses on the router's links from pools and reservations, give clients
+    their options and PXE clients their boot files, delegate IPv6 prefixes and relay DHCP to
+    other servers, in each VRF.
 
     [:octicons-arrow-right-24: Read](dhcp.md)
 

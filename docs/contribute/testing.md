@@ -89,10 +89,27 @@ run them in isolation:
   and MAC address, the lease file, and leases kept across a reload. Kea's raw sockets need no port
   of the ruleset.
 - The `router-dhcp-instances` check runs `chalkos-dhcp.service` with stubs of `systemctl` and
-  `systemd-escape`, as `router-resolvers` does. It proves that the DHCP servers start once their
-  links exist, reload, restart when their VRF is made anew and stop, and that a link that does not
-  appear within 30 seconds or a server that does not come up fails the run without touching the
-  others.
+  `systemd-escape`, as `router-resolvers` does. It proves that the DHCP servers of both families
+  start once their links exist, reload, restart when their VRF is made anew and stop, that a link
+  that does not appear within 30 seconds or a server that does not come up fails the run without
+  touching the others and that a run starts `chalkos-dhcp6-routes` after the servers.
+- The `router-dhcp6` check runs a router image's `kea-dhcp6` over the DHCPv6 example's servers of
+  the default VRF and of a VRF, the latter bound to its VRF's device, with their units'
+  capabilities, behind the example's ruleset, with dhcpcd as clients in peer namespaces. It proves
+  a reservation by MAC address with the subnet's options, a delegated prefix that
+  `chalkos-dhcp6-pd` records and `chalkd router dhcp6-routes` routes in the VRF's table, the
+  route's removal at a release and records that route nothing under the unit's capabilities:
+  ended, foreign, links, FIFOs, records too long and a linked directory. It also proves the
+  diagnostic `dhcp-leases` of both leases and that a ruleset without DHCPv6's opening keeps the
+  client from its address.
+- The `router-dhcp-relay` check runs a router image's `dnsmasq-relay.service` and
+  `dnsmasq-relay@guest.service` over the relay example's configs, with their units'
+  capabilities, behind its ruleset, between clients and Kea's servers in peer namespaces. It
+  proves that the relays of the default VRF and of a VRF run beside each other in either order, a
+  lease of each family through the relays, the servers' answers let in as replies and that a
+  ruleset without the relay's openings keeps the client from both.
+- The `router-dhcp-relay-instances` check runs `chalkos-dhcp-relays.service` with stubs of
+  `systemctl` and `systemd-escape`, as `router-dhcp-instances` does.
 
 Prefer this level for anything about partitions, firewall rules or interfaces.
 
@@ -128,6 +145,11 @@ are `writeShellApplication` scripts, so shellcheck runs on them when they build.
 | `router-policy-routing` | A router's policy routing: the example's ruleset with the kernel's rules and next-hop tables, in network namespaces. |
 | `router-nat64` | A router's `chalkos-nat64.service`, with a stub of `jool`, in network namespaces. |
 | `router-resolvers` | A router's `chalkos-resolvers.service`, with stubs of `systemctl` and `systemd-escape`. |
+| `router-dhcp` | A router's `kea-dhcp4.service` and the diagnostic `dhcp-leases`, in network namespaces. |
+| `router-dhcp6` | A router's `kea-dhcp6` servers, the records and routes of delegated prefixes and the firewall's DHCPv6 opening, in network namespaces. |
+| `router-dhcp-instances` | A router's `chalkos-dhcp.service`, with stubs of `systemctl` and `systemd-escape`. |
+| `router-dhcp-relay` | A router's `dnsmasq-relay.service` and `dnsmasq-relay@<vrf>.service` and the firewall's openings of the relays, in network namespaces. |
+| `router-dhcp-relay-instances` | A router's `chalkos-dhcp-relays.service`, with stubs of `systemctl` and `systemd-escape`. |
 | `frr-credentials` | A router's `frr.service` fills its config's passwords in from its credentials, and refuses those FRR would not take. |
 | `rules` | The images' rules compile, their outputs render their examples and pass their checks, and a broken rule, effect, output or diagnostic fails its image. |
 | `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
@@ -152,7 +174,7 @@ the nodes with the real chalkctl. Each check runs one test or a group of them:
 | `e2e-upgrade` | Under Secure Boot, an upgrade that the node pulls through a mirror endpoint, a registry the test serves, with the endpoint's credentials, that boots from slot B and is found healthy, then one streamed from a directory that never becomes healthy and falls back. | 1 |
 | `e2e-kubernetes` | A dual-stack cluster of a control plane and a worker through chalklab: networking, DNS, a private image pulled through a mirror with the node's credentials, renewals and rotations, a reboot. | 2 |
 | `e2e-kubernetes-ha` | Three control planes of an IPv6-only cluster behind a VIP: joins, failover, reinstalls and a rolling upgrade. | 3 |
-| `e2e-router` | Two routers through chalklab, peering unnumbered over BGP with BFD and a password: the session in their status, a default route and the NAT64 prefix learned, a diagnostic, a delivery FRR reloads without ending the session, the Kubernetes API unimplemented, DNS64's answer for `ipv4only.arpa`, and a connection through a NAT64 with an empty pool, in its own namespace, and QEMU's user-mode network to a listener of the test, with its session in the status and in `nat64-sessions`, a rotation of the node CA that gives both routers certificates of the new one, and both routers' session in a VRF with its table, a route imported into the default VRF, the unreachable defaults that end its table, a resolver of the VRF running before and after a change of the VRF's table, chalkd still reachable, and a policy's rules, next-hop table and chain on a router before and after its boot, and a DHCP server in a VRF that leases the other router its reserved address on a macvlan link, with the lease kept and renewed across the server's boot. | 2 |
+| `e2e-router` | Two routers through chalklab, peering unnumbered over BGP with BFD and a password: the session in their status, a default route and the NAT64 prefix learned, a diagnostic, a delivery FRR reloads without ending the session, the Kubernetes API unimplemented, DNS64's answer for `ipv4only.arpa`, and a connection through a NAT64 with an empty pool, in its own namespace, and QEMU's user-mode network to a listener of the test, with its session in the status and in `nat64-sessions`, a rotation of the node CA that gives both routers certificates of the new one, and both routers' session in a VRF with its table, a route imported into the default VRF, the unreachable defaults that end its table, a resolver of the VRF running before and after a change of the VRF's table, chalkd still reachable, and a policy's rules, next-hop table and chain on a router before and after its boot, and a DHCP server in a VRF that leases the other router its reserved address on a macvlan link, with the lease kept and renewed across the server's boot, and a DHCPv6 server there that leases it an address and a prefix, which the server's router routes to it before and after its boot. | 2 |
 
 A VM gets 2 CPUs and 2 GiB of memory unless its test asks for less, on a 16 GiB sparse disk.
 The Kubernetes test gives its control plane 2048 MiB and its worker 1024 MiB; the HA test gives
@@ -200,6 +222,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | The router's NAT64 and resolvers: their kinds, the `jool` and `unbound` outputs, their units, `pkg/router` | `router-nat64`, `router-resolvers`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `image-size`, `e2e-router` |
 | The router's VRFs: the `VRF` kind, `router-networkd`, `chalkos-vrf` | `rules`, `eval`, `eval-kinds`, `go-unit`, `router-vrf`, `router-firewall`, `e2e-router` |
 | The router's policy routing: the `PolicyRoute` kind, its chain and units | `router-policy-routing`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
+| The router's DHCP and relays: the `DHCPSubnet` and `DHCPRelay` kinds, the `kea` and `dhcp-relay` outputs, their units, `pkg/router` | `router-dhcp`, `router-dhcp6`, `router-dhcp-instances`, `router-dhcp-relay`, `router-dhcp-relay-instances`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
 | `templates/lab` | `template-lab` |
 | `.github/workflows` | `workflows` |
 

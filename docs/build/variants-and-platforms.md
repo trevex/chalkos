@@ -81,6 +81,7 @@ variants.edge = {
       chalkos.router = {
         nat64.enable = false;
         dhcp.enable = false;
+        dhcpRelay.enable = false;
       };
     }
   ];
@@ -93,10 +94,11 @@ variants.edge = {
 | [`chalkos.router.nat64.enable`](../reference/image-options.md#chalkosrouternat64enable) | Jool's kernel module and `jool` | `NAT64` |
 | [`chalkos.router.resolver.enable`](../reference/image-options.md#chalkosrouterresolverenable) | Unbound | `Resolver` |
 | [`chalkos.router.dhcp.enable`](../reference/image-options.md#chalkosrouterdhcpenable) | Kea | `DHCPSubnet` |
+| [`chalkos.router.dhcpRelay.enable`](../reference/image-options.md#chalkosrouterdhcprelayenable) | dnsmasq | `DHCPRelay` |
 
 The firewall, VRFs, policy routing and the kernel's forwarding settings run no daemon of their
 own, so every router image carries them. A metal router image with every feature takes 319 MiB of
-store; one without all four takes 205 MiB. FRR accounts for 97 MiB of the difference.
+store; one without all five takes 205 MiB. FRR accounts for 97 MiB of the difference.
 
 The binary cache does not hold Kea built without its database backends, so the first build of a
 router image with DHCP after a nixpkgs update compiles it, about 5 minutes on 16 cores.

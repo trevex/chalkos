@@ -44,6 +44,10 @@ accepted.
 DHCPv4 to the router's DHCP server reaches no rule of the chain: Kea reads it on raw sockets,
 ahead of the table, as [DHCP on a router](dhcp.md#keas-raw-sockets-come-before-the-firewall)
 describes.
+DHCPv6 to the router's DHCPv6 servers and DHCP to its relays pass the chain: it accepts UDP port
+547 from link-local addresses on each IPv6 subnet's link and on each relay's links with an IPv6
+server, and UDP port 67 on each relay's links with an IPv4 server, in the links' VRF, as
+[DHCP on a router](dhcp.md#dhcpv6-takes-udp-sockets-through-the-firewall) describes.
 The input chain of a LAN router whose node API answers on `lan0` reads:
 
 ```text

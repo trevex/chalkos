@@ -121,7 +121,8 @@ or `destination`. A port is a number or a range `"<first>-<last>"`. A policy can
 firewall accepts before it: chalkd's port on the management interfaces, pings, ICMP errors,
 neighbour discovery and established connections.
 Nor does it filter DHCPv4 on the links a `DHCPSubnet` serves: the DHCP server reads it ahead of
-the firewall.
+the firewall. DHCPv6 on an IPv6 subnet's link and DHCP on a relay's links pass openings that the
+firewall adds before the policies, as [Lease addresses with DHCP](dhcp.md) describes.
 
 ## Masquerade and forward ports
 
