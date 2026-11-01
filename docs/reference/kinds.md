@@ -405,32 +405,35 @@ A node's config may hold several, each with a name of its own. It has a [change 
 
 ### DHCPSubnet { #dhcpsubnet }
 
-A subnet the router's DHCP server leases IPv4 addresses of on its interfaces: pools and reservations, the options its clients get and the files PXE clients boot.
+A subnet the router's DHCP server leases IPv4 or IPv6 addresses of on its interfaces: pools and reservations, the options its clients get, the files PXE clients boot and, for IPv6, the prefixes it delegates to other routers.
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 10 [change rules](builtins.md#rules-dhcpsubnet).
+A node's config may hold several, each with a name of its own. It has 15 [change rules](builtins.md#rules-dhcpsubnet).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.boot` | object or null | `null` | Files PXE clients boot, by firmware; boot files are served elsewhere. null serves none. |
+| `spec.boot` | object or null | `null` | Files PXE clients of an IPv4 subnet boot, by firmware; boot files are served elsewhere. null serves none. |
 | `spec.boot.bios` | string or null | `null` | File of clients with BIOS firmware, of architecture 0 in option 93, loaded over TFTP from server. |
 | `spec.boot.ipxe` | string or null | `null` | Script or file of clients that run iPXE already, whose user class (option 77) is iPXE; they get it instead of bios and uefi, so that iPXE does not load itself again. |
 | `spec.boot.server` | string or null | `null` | IPv4 address of the TFTP server the files are on, the DHCP header's next server; needed with bios or uefi, whose firmware loads them over TFTP. null for none, as for an ipxe script of an HTTP URL alone. |
 | `spec.boot.uefi` | string or null | `null` | File of clients with x86-64 UEFI firmware, of architecture 7 or 9 in option 93, loaded over TFTP from server. |
-| `spec.dns` | list of string | `[]` | DNS servers the clients ask, IPv4 addresses. |
+| `spec.dns` | list of string | `[]` | DNS servers the clients ask, addresses of the subnet's family. |
 | `spec.domain` | string or null | `null` | Domain of the clients' names, which they also search; null gives none. |
-| `spec.gateway` | string or null | `null` | Router the clients route through, inside the subnet and neither its network nor its broadcast address; null gives them none. |
-| `spec.interfaces` | list of string | required | Links the server answers on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet. A link takes one subnet. |
-| `spec.leaseTime` | string | `"12h"` | How long a lease lasts: a number and s, m, h or d, 136 years at most. |
+| `spec.gateway` | string or null | `null` | Router the clients route through, inside an IPv4 subnet and neither its network nor its broadcast address; null gives them none. IPv6 clients learn their routers from router advertisements. |
+| `spec.interfaces` | list of string | required | Links the server answers on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet; one link for an IPv6 subnet. A link takes one subnet of each family. |
+| `spec.leaseTime` | string | `"12h"` | How long a lease lasts, and a delegated prefix: a number and s, m, h or d, 136 years at most. IPv6 clients prefer their addresses for as long. |
 | `spec.pools` | list of object | `[]` | Ranges the server leases addresses from to any client, inside the subnet, apart from each other, from the reservations and from the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone. |
 | `spec.pools[].first` | string | required | First address of the pool. |
 | `spec.pools[].last` | string | required | Last address of the pool, no lower than the first. |
+| `spec.prefixDelegation` | object or null | `null` | Prefixes the IPv6 server delegates to routers on the link that ask for one, such as a home router's LAN; the router routes each to the link-local address that asked for it, for as long as the lease lasts. null delegates none. |
+| `spec.prefixDelegation.length` | integer from 1 to 128 | required | Length of each delegated prefix, longer than the range's. |
+| `spec.prefixDelegation.prefix` | string | required | IPv6 range the delegated prefixes are taken from, apart from the subnets of the VRF. |
 | `spec.reservations` | list of object | `[]` | Clients that always get the same address, by their MAC address. |
 | `spec.reservations[].address` | string | required | Address the client always gets, inside the subnet and outside its pools, neither the router's nor the gateway's nor a DNS or boot server's. |
 | `spec.reservations[].hostname` | string or null | `null` | Name the client gets; null gives none. |
-| `spec.reservations[].mac` | string | required | MAC address of the client, in lower case. |
-| `spec.subnet` | string | required | IPv4 range the subnet's addresses are in, of 30 bits at most. |
+| `spec.reservations[].mac` | string | required | MAC address of the client, in lower case. A DHCPv6 server learns it from the client's DUID or link-local address, which not every client derives from it. |
+| `spec.subnet` | string | required | Range the subnet's addresses are in, whose family the server's is: an IPv4 range of 30 bits at most or an IPv6 range of 120 bits at most. |
 
 ### FirewallPolicy { #firewallpolicy }
 

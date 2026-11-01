@@ -1,8 +1,8 @@
 # DHCP on router images whose chalkos.router.dhcp.enable is true: the subnets the router leases
-# addresses of, one document each, which the output kea renders for the DHCPv4 server, Kea, of the
-# VRF the subnet's links are in (modules/node/router/dhcp.nix). Kea reads and answers DHCPv4 on
-# raw sockets that the firewall does not see, so a subnet names each of its links: no glob serves
-# a link by chance.
+# addresses of, one document each, which the output kea renders for Kea's DHCPv4 or DHCPv6 server
+# of the VRF the subnet's links are in (modules/node/router/dhcp.nix). Kea reads and answers
+# DHCPv4 on raw sockets that the firewall does not see, so a subnet names each of its links: no
+# glob serves a link by chance.
 #
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists, and costs
 # every string as one of 256 characters. So the rules over a subnet's reservations in pairs sit on
@@ -30,39 +30,64 @@ let
   # A file a PXE client loads: up to 127 printable ASCII characters without spaces, which the
   # 128 bytes of the DHCP header's file field hold.
   bootFile = types.strMatching "[!-~]{1,127}";
-  # The rule that the addresses of each document that ok tests, with s as the spec and c as its
-  # subnet, lie inside the subnet; one names one of them.
-  inside = what: one: ok: {
-    description = "A DHCPSubnet's ${what} inside its subnet.";
+  # The rule that each document passes ok, with s as its spec and c as its subnet; the message
+  # names the documents that fail, then says what.
+  each = description: what: ok: {
+    inherit description;
     rule = "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), ${ok})))";
-    messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(${ok})))).map(n, "DHCPSubnet " + n).join(", ") + " has ${one} outside its subnet"'';
+    messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(${ok})))).map(n, "DHCPSubnet " + n).join(", ") + " ${what}"'';
   };
+  # The rule that the addresses of each document that ok tests lie inside the subnet; one names
+  # one of them.
+  inside =
+    what: one: ok:
+    each "A DHCPSubnet's ${what} inside its subnet." "has ${one} outside its subnet" ok;
+  ipv4 = ''c.ip(0).family() == "ipv4"'';
 in
 {
   config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.dhcp.enable) {
     chalkos.kinds.DHCPSubnet = builtin groups.router // {
       multiple = true;
-      description = "A subnet the router's DHCP server leases IPv4 addresses of on its interfaces: pools and reservations, the options its clients get and the files PXE clients boot.";
+      description = "A subnet the router's DHCP server leases IPv4 or IPv6 addresses of on its interfaces: pools and reservations, the options its clients get, the files PXE clients boot and, for IPv6, the prefixes it delegates to other routers.";
       rules = [
         (inside "pools lie" "a pool" "s.pools.all(p, c.contains(ip(p.first)) && c.contains(ip(p.last)))")
         (inside "reservations lie" "a reservation" "s.reservations.all(r, c.contains(ip(r.address)))")
         (inside "gateway lies" "a gateway" "s.gateway == null || c.contains(ip(s.gateway))")
+        (each "A DHCPSubnet's DNS servers are of its subnet's family."
+          "has a DNS server of another family than its subnet"
+          "s.dns.all(a, ip(a).family() == c.ip(0).family())"
+        )
+        (each
+          "A gateway is given for IPv4 subnets alone; IPv6 clients learn their routers from router advertisements."
+          "gives a gateway to an IPv6 subnet, whose clients learn their routers from router advertisements"
+          "s.gateway == null || ${ipv4}"
+        )
+        (each "PXE boot files are given for IPv4 subnets alone." "gives PXE boot files to an IPv6 subnet"
+          "s.boot == null || ${ipv4}"
+        )
+        (each "A DHCPSubnet delegates prefixes for IPv6 alone." "delegates prefixes in an IPv4 subnet"
+          "s.prefixDelegation == null || !(${ipv4})"
+        )
+        (each "An IPv6 subnet is served on one link, the one Kea's DHCPv6 subnet names."
+          "serves an IPv6 subnet on more than one link; give each link a DHCPSubnet of its own"
+          "${ipv4} || size(s.interfaces) == 1"
+        )
       ];
       spec = {
         interfaces = mkOption {
           type = types.nonEmptyListOf interfaceName;
           example = [ "lan0" ];
-          description = "Links the server answers on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet. A link takes one subnet.";
+          description = "Links the server answers on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet; one link for an IPv6 subnet. A link takes one subnet of each family.";
         };
         subnet = lib.chalkos.mkOption {
           type = prefix;
           example = "192.0.2.0/24";
-          description = "IPv4 range the subnet's addresses are in, of 30 bits at most.";
+          description = "Range the subnet's addresses are in, whose family the server's is: an IPv4 range of 30 bits at most or an IPv6 range of 120 bits at most.";
           rules = [
             {
-              description = "A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3.";
-              rule = ''cel.bind(c, cidr(self), c.ip(0).family() == "ipv4" && c.prefix() <= 30 && !["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"].exists(r, cidr(r).contains(c.ip(0))))'';
-              messageExpression = ''"the subnet " + self + " is no IPv4 range of 30 bits at most of addresses a DHCP server leases"'';
+              description = "A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most, outside ::/8, fe80::/10 and ff00::/8.";
+              rule = ''cel.bind(c, cidr(self), c.ip(0).family() == "ipv4" ? c.prefix() <= 30 && !["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"].exists(r, cidr(r).contains(c.ip(0))) : c.prefix() <= 120 && !["::/8", "fe80::/10", "ff00::/8"].exists(r, cidr(r).contains(c.ip(0))))'';
+              messageExpression = ''"the subnet " + self + " is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases"'';
             }
           ];
         };
@@ -94,20 +119,13 @@ in
           type = types.nullOr address;
           default = null;
           example = "192.0.2.1";
-          description = "Router the clients route through, inside the subnet and neither its network nor its broadcast address; null gives them none.";
+          description = "Router the clients route through, inside an IPv4 subnet and neither its network nor its broadcast address; null gives them none. IPv6 clients learn their routers from router advertisements.";
         };
-        dns = lib.chalkos.mkOption {
+        dns = mkOption {
           type = types.listOf address;
           default = [ ];
           example = [ "192.0.2.1" ];
-          description = "DNS servers the clients ask, IPv4 addresses.";
-          rules = [
-            {
-              description = "The DNS servers are IPv4 addresses.";
-              rule = ''self.all(a, ip(a).family() == "ipv4")'';
-              messageExpression = ''"the DNS server " + self.filter(a, ip(a).family() != "ipv4")[0] + " is no IPv4 address"'';
-            }
-          ];
+          description = "DNS servers the clients ask, addresses of the subnet's family.";
         };
         domain = mkOption {
           type = types.nullOr dnsName;
@@ -119,7 +137,7 @@ in
           type = types.strMatching "[1-9][0-9]{0,5}[smhd]";
           default = "12h";
           example = "1d";
-          description = "How long a lease lasts: a number and s, m, h or d, 136 years at most.";
+          description = "How long a lease lasts, and a delegated prefix: a number and s, m, h or d, 136 years at most. IPv6 clients prefer their addresses for as long.";
         };
         reservations = lib.chalkos.mkOption {
           type = types.listOf (
@@ -128,7 +146,7 @@ in
                 mac = mkOption {
                   type = types.strMatching "[0-9a-f]{2}(:[0-9a-f]{2}){5}";
                   example = "52:54:00:12:34:56";
-                  description = "MAC address of the client, in lower case.";
+                  description = "MAC address of the client, in lower case. A DHCPv6 server learns it from the client's DUID or link-local address, which not every client derives from it.";
                 };
                 address = mkOption {
                   type = address;
@@ -156,6 +174,33 @@ in
               description = "An address is reserved once.";
               rule = "self.all(r, size(self.filter(x, ip(x.address) == ip(r.address))) == 1)";
               messageExpression = ''"the address " + self.filter(r, size(self.filter(x, ip(x.address) == ip(r.address))) > 1)[0].address + " is reserved more than once"'';
+            }
+          ];
+        };
+        prefixDelegation = lib.chalkos.mkOption {
+          type = types.nullOr (
+            types.submodule {
+              options = {
+                prefix = mkOption {
+                  type = prefix;
+                  example = "2001:db8:100::/56";
+                  description = "IPv6 range the delegated prefixes are taken from, apart from the subnets of the VRF.";
+                };
+                length = mkOption {
+                  type = types.ints.between 1 128;
+                  example = 64;
+                  description = "Length of each delegated prefix, longer than the range's.";
+                };
+              };
+            }
+          );
+          default = null;
+          description = "Prefixes the IPv6 server delegates to routers on the link that ask for one, such as a home router's LAN; the router routes each to the link-local address that asked for it, for as long as the lease lasts. null delegates none.";
+          rules = [
+            {
+              description = "Prefixes are delegated from an IPv6 range, each longer than the range.";
+              rule = ''self == null || (cidr(self.prefix).ip(0).family() == "ipv6" && !(self.length <= cidr(self.prefix).prefix()))'';
+              messageExpression = ''"prefixDelegation's prefix " + self.prefix + " is no IPv6 range shorter than " + string(self.length) + " bits"'';
             }
           ];
         };
@@ -191,7 +236,7 @@ in
             }
           );
           default = null;
-          description = "Files PXE clients boot, by firmware; boot files are served elsewhere. null serves none.";
+          description = "Files PXE clients of an IPv4 subnet boot, by firmware; boot files are served elsewhere. null serves none.";
           rules = [
             {
               description = "A boot names a file.";

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "A subnet the router's DHCP server leases IPv4 addresses of on its interfaces: pools and reservations, the options its clients get and the files PXE clients boot.",
+  "description": "A subnet the router's DHCP server leases IPv4 or IPv6 addresses of on its interfaces: pools and reservations, the options its clients get, the files PXE clients boot and, for IPv6, the prefixes it delegates to other routers.",
   "properties": {
     "apiVersion": {
       "const": "router.chalkos.dev/v1alpha1"
@@ -102,7 +102,7 @@
             }
           ],
           "default": null,
-          "description": "Files PXE clients boot, by firmware; boot files are served elsewhere. null serves none.",
+          "description": "Files PXE clients of an IPv4 subnet boot, by firmware; boot files are served elsewhere. null serves none.",
           "x-chalkos-rules": [
             {
               "description": "A boot names a file.",
@@ -126,7 +126,7 @@
         },
         "dns": {
           "default": [],
-          "description": "DNS servers the clients ask, IPv4 addresses.",
+          "description": "DNS servers the clients ask, addresses of the subnet's family.",
           "examples": [
             [
               "192.0.2.1"
@@ -136,15 +136,7 @@
             "pattern": "^(?:[0-9A-Fa-f:.]+)$",
             "type": "string"
           },
-          "type": "array",
-          "x-chalkos-rules": [
-            {
-              "description": "The DNS servers are IPv4 addresses.",
-              "messageExpression": "\"the DNS server \" + self.filter(a, ip(a).family() != \"ipv4\")[0] + \" is no IPv4 address\"",
-              "rule": "self.all(a, ip(a).family() == \"ipv4\")",
-              "takes": "refuse"
-            }
-          ]
+          "type": "array"
         },
         "domain": {
           "anyOf": [
@@ -173,13 +165,13 @@
             }
           ],
           "default": null,
-          "description": "Router the clients route through, inside the subnet and neither its network nor its broadcast address; null gives them none.",
+          "description": "Router the clients route through, inside an IPv4 subnet and neither its network nor its broadcast address; null gives them none. IPv6 clients learn their routers from router advertisements.",
           "examples": [
             "192.0.2.1"
           ]
         },
         "interfaces": {
-          "description": "Links the server answers on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet. A link takes one subnet.",
+          "description": "Links the server answers on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet; one link for an IPv6 subnet. A link takes one subnet of each family.",
           "examples": [
             [
               "lan0"
@@ -194,7 +186,7 @@
         },
         "leaseTime": {
           "default": "12h",
-          "description": "How long a lease lasts: a number and s, m, h or d, 136 years at most.",
+          "description": "How long a lease lasts, and a delegated prefix: a number and s, m, h or d, 136 years at most. IPv6 clients prefer their addresses for as long.",
           "examples": [
             "1d"
           ],
@@ -234,6 +226,50 @@
           },
           "type": "array"
         },
+        "prefixDelegation": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "length": {
+                  "description": "Length of each delegated prefix, longer than the range's.",
+                  "examples": [
+                    64
+                  ],
+                  "maximum": 128,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "prefix": {
+                  "description": "IPv6 range the delegated prefixes are taken from, apart from the subnets of the VRF.",
+                  "examples": [
+                    "2001:db8:100::/56"
+                  ],
+                  "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "length",
+                "prefix"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Prefixes the IPv6 server delegates to routers on the link that ask for one, such as a home router's LAN; the router routes each to the link-local address that asked for it, for as long as the lease lasts. null delegates none.",
+          "x-chalkos-rules": [
+            {
+              "description": "Prefixes are delegated from an IPv6 range, each longer than the range.",
+              "messageExpression": "\"prefixDelegation's prefix \" + self.prefix + \" is no IPv6 range shorter than \" + string(self.length) + \" bits\"",
+              "rule": "self == null || (cidr(self.prefix).ip(0).family() == \"ipv6\" && !(self.length <= cidr(self.prefix).prefix()))",
+              "takes": "refuse"
+            }
+          ]
+        },
         "reservations": {
           "default": [],
           "description": "Clients that always get the same address, by their MAC address.",
@@ -265,7 +301,7 @@
                 ]
               },
               "mac": {
-                "description": "MAC address of the client, in lower case.",
+                "description": "MAC address of the client, in lower case. A DHCPv6 server learns it from the client's DUID or link-local address, which not every client derives from it.",
                 "examples": [
                   "52:54:00:12:34:56"
                 ],
@@ -296,7 +332,7 @@
           ]
         },
         "subnet": {
-          "description": "IPv4 range the subnet's addresses are in, of 30 bits at most.",
+          "description": "Range the subnet's addresses are in, whose family the server's is: an IPv4 range of 30 bits at most or an IPv6 range of 120 bits at most.",
           "examples": [
             "192.0.2.0/24"
           ],
@@ -304,9 +340,9 @@
           "type": "string",
           "x-chalkos-rules": [
             {
-              "description": "A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3.",
-              "messageExpression": "\"the subnet \" + self + \" is no IPv4 range of 30 bits at most of addresses a DHCP server leases\"",
-              "rule": "cel.bind(c, cidr(self), c.ip(0).family() == \"ipv4\" && c.prefix() <= 30 && ![\"0.0.0.0/8\", \"127.0.0.0/8\", \"169.254.0.0/16\", \"224.0.0.0/3\"].exists(r, cidr(r).contains(c.ip(0))))",
+              "description": "A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most, outside ::/8, fe80::/10 and ff00::/8.",
+              "messageExpression": "\"the subnet \" + self + \" is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases\"",
+              "rule": "cel.bind(c, cidr(self), c.ip(0).family() == \"ipv4\" ? c.prefix() <= 30 && ![\"0.0.0.0/8\", \"127.0.0.0/8\", \"169.254.0.0/16\", \"224.0.0.0/3\"].exists(r, cidr(r).contains(c.ip(0))) : c.prefix() <= 120 && ![\"::/8\", \"fe80::/10\", \"ff00::/8\"].exists(r, cidr(r).contains(c.ip(0))))",
               "takes": "refuse"
             }
           ]
@@ -348,6 +384,36 @@
         "description": "A DHCPSubnet's gateway lies inside its subnet.",
         "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.gateway == null || c.contains(ip(s.gateway)))))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" has a gateway outside its subnet\"",
         "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.gateway == null || c.contains(ip(s.gateway)))))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A DHCPSubnet's DNS servers are of its subnet's family.",
+        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.dns.all(a, ip(a).family() == c.ip(0).family()))))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" has a DNS server of another family than its subnet\"",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.dns.all(a, ip(a).family() == c.ip(0).family()))))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A gateway is given for IPv4 subnets alone; IPv6 clients learn their routers from router advertisements.",
+        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.gateway == null || c.ip(0).family() == \"ipv4\")))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" gives a gateway to an IPv6 subnet, whose clients learn their routers from router advertisements\"",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.gateway == null || c.ip(0).family() == \"ipv4\")))",
+        "takes": "refuse"
+      },
+      {
+        "description": "PXE boot files are given for IPv4 subnets alone.",
+        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.boot == null || c.ip(0).family() == \"ipv4\")))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" gives PXE boot files to an IPv6 subnet\"",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.boot == null || c.ip(0).family() == \"ipv4\")))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A DHCPSubnet delegates prefixes for IPv6 alone.",
+        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.prefixDelegation == null || !(c.ip(0).family() == \"ipv4\"))))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" delegates prefixes in an IPv4 subnet\"",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.prefixDelegation == null || !(c.ip(0).family() == \"ipv4\"))))",
+        "takes": "refuse"
+      },
+      {
+        "description": "An IPv6 subnet is served on one link, the one Kea's DHCPv6 subnet names.",
+        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(c.ip(0).family() == \"ipv4\" || size(s.interfaces) == 1)))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" serves an IPv6 subnet on more than one link; give each link a DHCPSubnet of its own\"",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), c.ip(0).family() == \"ipv4\" || size(s.interfaces) == 1)))",
         "takes": "refuse"
       }
     ],

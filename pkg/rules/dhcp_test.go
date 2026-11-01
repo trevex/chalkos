@@ -10,11 +10,11 @@ import (
 )
 
 // The DHCPSubnet rules accept an office's subnet with pools, reservations, options and PXE files
-// and a subnet of reservations alone, and refuse a subnet of IPv6, of more than 30 bits or of
-// addresses no server leases, a pool, reservation or gateway outside the subnet, a DNS server of
-// IPv6, two reservations of one MAC address or of one address, a boot of no file, a boot server
-// of IPv6 and BIOS or UEFI files without a boot server. An iPXE script of an HTTP URL needs no
-// server.
+// and a subnet of reservations alone, and refuse a subnet of more than 30 bits or of addresses no
+// server leases, a pool, reservation or gateway outside the subnet, a DNS server of IPv6 in an
+// IPv4 subnet, two reservations of one MAC address or of one address, a boot of no file, a boot
+// server of IPv6 and BIOS or UEFI files without a boot server. An iPXE script of an HTTP URL needs
+// no server.
 func TestDHCPSubnetRules(t *testing.T) {
 	set, doc := routerRules(t)
 	subnet := func(name, spec string) config.Document { return doc("DHCPSubnet", name, spec) }
@@ -31,12 +31,10 @@ func TestDHCPSubnetRules(t *testing.T) {
 		{"an office", []config.Document{office}, nil},
 		{"reservations alone", []config.Document{office, subnet("lab", `{"interfaces": ["lab0"], "subnet": "198.51.100.0/30",
 			"reservations": [{"mac": "52:54:00:00:00:01", "address": "198.51.100.2"}]}`)}, nil},
-		{"an IPv6 subnet", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/64"}`)},
-			[]string{`DHCPSubnet "office" spec.subnet: the subnet 2001:db8:1::/64 is no IPv4 range of 30 bits at most of addresses a DHCP server leases`}},
 		{"a subnet of 31 bits", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/31"}`)},
-			[]string{`DHCPSubnet "office" spec.subnet: the subnet 192.0.2.0/31 is no IPv4 range of 30 bits at most of addresses a DHCP server leases`}},
+			[]string{`DHCPSubnet "office" spec.subnet: the subnet 192.0.2.0/31 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
 		{"a subnet of loopback addresses", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "127.0.0.0/24"}`)},
-			[]string{`DHCPSubnet "office" spec.subnet: the subnet 127.0.0.0/24 is no IPv4 range of 30 bits at most of addresses a DHCP server leases`}},
+			[]string{`DHCPSubnet "office" spec.subnet: the subnet 127.0.0.0/24 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
 		{"a pool outside the subnet", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/25",
 			"pools": [{"first": "192.0.2.100", "last": "192.0.2.199"}]}`)},
 			[]string{"DHCPSubnet office has a pool outside its subnet"}},
@@ -49,7 +47,7 @@ func TestDHCPSubnetRules(t *testing.T) {
 		{"a gateway outside the subnet", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "gateway": "198.51.100.1"}`)},
 			[]string{"DHCPSubnet office has a gateway outside its subnet"}},
 		{"a DNS server of IPv6", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "dns": ["192.0.2.1", "2001:db8::53"]}`)},
-			[]string{`DHCPSubnet "office" spec.dns: the DNS server 2001:db8::53 is no IPv4 address`}},
+			[]string{"DHCPSubnet office has a DNS server of another family than its subnet"}},
 		{"one MAC address twice", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24",
 			"reservations": [{"mac": "52:54:00:12:34:56", "address": "192.0.2.10"}, {"mac": "52:54:00:12:34:56", "address": "192.0.2.11"}]}`)},
 			[]string{`DHCPSubnet "office" spec.reservations: the MAC address 52:54:00:12:34:56 has more than one reservation`}},

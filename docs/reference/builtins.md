@@ -599,13 +599,18 @@ documents.filter(n, cel.bind(c, documents[n].spec.communities, cel.bind(large, c
 | 1 | — | A DHCPSubnet's pools lie inside its subnet. | `refuse` | after the table | after the table |
 | 2 | — | A DHCPSubnet's reservations lie inside its subnet. | `refuse` | after the table | after the table |
 | 3 | — | A DHCPSubnet's gateway lies inside its subnet. | `refuse` | after the table | after the table |
-| 4 | `spec.boot` | A boot names a file. | `refuse` | `self == null || self.bios != null || self.uefi != null || self.ipxe != null` | boot names no file; give bios, uefi or ipxe, or leave boot out |
-| 5 | `spec.boot` | A boot's server is an IPv4 address. | `refuse` | `self == null || self.server == null || ip(self.server).family() == "ipv4"` | boot's server is no IPv4 address |
-| 6 | `spec.boot` | A boot of BIOS or UEFI files names their server. | `refuse` | `self == null || self.server != null || (self.bios == null && self.uefi == null)` | boot's bios and uefi files load over TFTP from boot's server; give server |
-| 7 | `spec.dns` | The DNS servers are IPv4 addresses. | `refuse` | `self.all(a, ip(a).family() == "ipv4")` | `"the DNS server " + self.filter(a, ip(a).family() != "ipv4")[0] + " is no IPv4 address"` |
-| 8 | `spec.reservations` | A MAC address has one reservation. | `refuse` | `self.all(r, size(self.filter(x, x.mac == r.mac)) == 1)` | after the table |
-| 9 | `spec.reservations` | An address is reserved once. | `refuse` | `self.all(r, size(self.filter(x, ip(x.address) == ip(r.address))) == 1)` | after the table |
-| 10 | `spec.subnet` | A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3. | `refuse` | after the table | `"the subnet " + self + " is no IPv4 range of 30 bits at most of addresses a DHCP server leases"` |
+| 4 | — | A DHCPSubnet's DNS servers are of its subnet's family. | `refuse` | after the table | after the table |
+| 5 | — | A gateway is given for IPv4 subnets alone; IPv6 clients learn their routers from router advertisements. | `refuse` | after the table | after the table |
+| 6 | — | PXE boot files are given for IPv4 subnets alone. | `refuse` | after the table | after the table |
+| 7 | — | A DHCPSubnet delegates prefixes for IPv6 alone. | `refuse` | after the table | after the table |
+| 8 | — | An IPv6 subnet is served on one link, the one Kea's DHCPv6 subnet names. | `refuse` | after the table | after the table |
+| 9 | `spec.boot` | A boot names a file. | `refuse` | `self == null || self.bios != null || self.uefi != null || self.ipxe != null` | boot names no file; give bios, uefi or ipxe, or leave boot out |
+| 10 | `spec.boot` | A boot's server is an IPv4 address. | `refuse` | `self == null || self.server == null || ip(self.server).family() == "ipv4"` | boot's server is no IPv4 address |
+| 11 | `spec.boot` | A boot of BIOS or UEFI files names their server. | `refuse` | `self == null || self.server != null || (self.bios == null && self.uefi == null)` | boot's bios and uefi files load over TFTP from boot's server; give server |
+| 12 | `spec.prefixDelegation` | Prefixes are delegated from an IPv6 range, each longer than the range. | `refuse` | after the table | after the table |
+| 13 | `spec.reservations` | A MAC address has one reservation. | `refuse` | `self.all(r, size(self.filter(x, x.mac == r.mac)) == 1)` | after the table |
+| 14 | `spec.reservations` | An address is reserved once. | `refuse` | `self.all(r, size(self.filter(x, ip(x.address) == ip(r.address))) == 1)` | after the table |
+| 15 | `spec.subnet` | A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most, outside ::/8, fe80::/10 and ff00::/8. | `refuse` | after the table | after the table |
 
 Expression of rule 1:
 
@@ -643,22 +648,100 @@ Message of rule 3:
 documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.gateway == null || c.contains(ip(s.gateway)))))).map(n, "DHCPSubnet " + n).join(", ") + " has a gateway outside its subnet"
 ```
 
+Expression of rule 4:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.dns.all(a, ip(a).family() == c.ip(0).family()))))
+```
+
+Message of rule 4:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.dns.all(a, ip(a).family() == c.ip(0).family()))))).map(n, "DHCPSubnet " + n).join(", ") + " has a DNS server of another family than its subnet"
+```
+
+Expression of rule 5:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.gateway == null || c.ip(0).family() == "ipv4")))
+```
+
+Message of rule 5:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.gateway == null || c.ip(0).family() == "ipv4")))).map(n, "DHCPSubnet " + n).join(", ") + " gives a gateway to an IPv6 subnet, whose clients learn their routers from router advertisements"
+```
+
+Expression of rule 6:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.boot == null || c.ip(0).family() == "ipv4")))
+```
+
+Message of rule 6:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.boot == null || c.ip(0).family() == "ipv4")))).map(n, "DHCPSubnet " + n).join(", ") + " gives PXE boot files to an IPv6 subnet"
+```
+
+Expression of rule 7:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.prefixDelegation == null || !(c.ip(0).family() == "ipv4"))))
+```
+
+Message of rule 7:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.prefixDelegation == null || !(c.ip(0).family() == "ipv4"))))).map(n, "DHCPSubnet " + n).join(", ") + " delegates prefixes in an IPv4 subnet"
+```
+
+Expression of rule 8:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), c.ip(0).family() == "ipv4" || size(s.interfaces) == 1)))
+```
+
 Message of rule 8:
+
+```text
+documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(c.ip(0).family() == "ipv4" || size(s.interfaces) == 1)))).map(n, "DHCPSubnet " + n).join(", ") + " serves an IPv6 subnet on more than one link; give each link a DHCPSubnet of its own"
+```
+
+Expression of rule 12:
+
+```text
+self == null || (cidr(self.prefix).ip(0).family() == "ipv6" && !(self.length <= cidr(self.prefix).prefix()))
+```
+
+Message of rule 12:
+
+```text
+"prefixDelegation's prefix " + self.prefix + " is no IPv6 range shorter than " + string(self.length) + " bits"
+```
+
+Message of rule 13:
 
 ```text
 "the MAC address " + self.filter(r, size(self.filter(x, x.mac == r.mac)) > 1)[0].mac + " has more than one reservation"
 ```
 
-Message of rule 9:
+Message of rule 14:
 
 ```text
 "the address " + self.filter(r, size(self.filter(x, ip(x.address) == ip(r.address))) > 1)[0].address + " is reserved more than once"
 ```
 
-Expression of rule 10:
+Expression of rule 15:
 
 ```text
-cel.bind(c, cidr(self), c.ip(0).family() == "ipv4" && c.prefix() <= 30 && !["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"].exists(r, cidr(r).contains(c.ip(0))))
+cel.bind(c, cidr(self), c.ip(0).family() == "ipv4" ? c.prefix() <= 30 && !["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"].exists(r, cidr(r).contains(c.ip(0))) : c.prefix() <= 120 && !["::/8", "fe80::/10", "ff00::/8"].exists(r, cidr(r).contains(c.ip(0))))
+```
+
+Message of rule 15:
+
+```text
+"the subnet " + self + " is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases"
 ```
 
 #### FirewallPolicy { #rules-firewallpolicy }
