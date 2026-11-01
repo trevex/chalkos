@@ -92,6 +92,9 @@ func TestDefinitionCheck(t *testing.T) {
 		"a command with fields": {Definition{Command: lock, Fields: []string{"kind"}}, "only a file keeps fields or hashes them"},
 		"a file with inputs":    {Definition{File: "/state/x.json", Inputs: []string{FallbackSecret}}, "only a command takes inputs"},
 		"outside the store":     {Definition{Command: "/usr/bin/lock"}, `the command "/usr/bin/lock" is no program of the image's store`},
+		"arguments with paths":  {Definition{Command: lock + " --dir /var/lib/ --at /run//x"}, ""},
+		"an unclean program":    {Definition{Command: "/nix/store/x/../../usr/bin/lock --dir /var/lib/"}, `the command "/nix/store/x/../../usr/bin/lock --dir /var/lib/" is no program of the image's store`},
+		"a blank command":       {Definition{Command: " "}, `the command " " is no program of the image's store`},
 		"an unknown input":      {Definition{Command: lock, Inputs: []string{"token"}}, `there is no input "token"; the inputs are fallbackSecret`},
 	} {
 		err := tc.def.Check()

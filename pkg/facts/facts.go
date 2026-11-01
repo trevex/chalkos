@@ -75,7 +75,7 @@ func (d Definition) Check() error {
 		return errors.New("only a file keeps fields or hashes them")
 	case d.File != "" && len(d.Inputs) > 0:
 		return errors.New("only a command takes inputs")
-	case d.Command != "" && !command.InStore(d.Command):
+	case d.Command != "" && !programInStore(d.Command):
 		return fmt.Errorf("the command %q is no program of the image's store", d.Command)
 	}
 	for _, in := range d.Inputs {
@@ -84,6 +84,14 @@ func (d Definition) Check() error {
 		}
 	}
 	return nil
+}
+
+// programInStore tells whether the program a command line runs, its first word, is of the
+// image's store. The arguments are no concern of InStore: an argument such as /var/lib/ need not
+// be a clean path, and a blank command runs no program at all.
+func programInStore(cmd string) bool {
+	argv := strings.Fields(cmd)
+	return len(argv) > 0 && command.InStore(argv[0])
 }
 
 // Runner runs a command fact's program with stdin and returns what it prints, at most limit

@@ -164,7 +164,9 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectD
 	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		d := defs[name]
 		for _, p := range []struct{ what, command string }{{"renderer", d.Render}, {"check", d.Check}} {
-			if p.command != "" && !command.InStore(p.command) {
+			// InStore judges the program, the first word, alone: an argument such as /var/lib/
+			// need not be a clean path.
+			if argv := strings.Fields(p.command); p.command != "" && (len(argv) == 0 || !command.InStore(argv[0])) {
 				errs = append(errs, fmt.Errorf("output %s: the %s %q is no program of the image's store", name, p.what, p.command))
 			}
 		}

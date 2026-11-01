@@ -145,6 +145,14 @@ func TestCheckOutputs(t *testing.T) {
 	if err := check(image(t, withOutput(t, base(), render, accepts, map[string]string{"hello.yaml": hello})), &out); err != nil || !strings.HasSuffix(out.String(), "; 1 outputs render 1 examples\n") {
 		t.Fatalf("check = %q, %v", out.String(), err)
 	}
+	// The renderer's and the check's arguments are no programs: a path that is not clean passes.
+	withArgs := withOutput(t, base(), render, accepts, map[string]string{"hello.yaml": hello})
+	for _, script := range []string{"/render\"", "/check\""} {
+		withArgs["outputs.json"] = strings.Replace(withArgs["outputs.json"], script, strings.TrimSuffix(script, `"`)+` --dir /var/lib/ --at /run//x"`, 1)
+	}
+	if err := check(image(t, withArgs), &bytes.Buffer{}); err != nil {
+		t.Fatalf("check with arguments = %v", err)
+	}
 	for name, tc := range map[string]struct {
 		files map[string]string
 		want  string
@@ -165,6 +173,12 @@ func TestCheckOutputs(t *testing.T) {
 			delete(f, "examples.json")
 			return f
 		}(), `output greeting: the renderer "/bin/sh `},
+		"a renderer whose program is not clean": {func() map[string]string {
+			f := withOutput(t, base(), render, accepts, nil)
+			f["outputs.json"] = strings.Replace(f["outputs.json"], "/nix/store/", "/nix/store//", 1)
+			delete(f, "examples.json")
+			return f
+		}(), `output greeting: the renderer "/nix/store//`},
 		"an effect on no output": {func() map[string]string {
 			f := withOutput(t, base(), render, accepts, nil)
 			f["effects.json"] = `{"greeter": {"outputs": ["greting"], "restart": ["greeter.service"]}}`
