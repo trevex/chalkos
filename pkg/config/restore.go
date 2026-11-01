@@ -40,8 +40,11 @@ func Restore(hashed, delivered []Document) ([]Document, error) {
 	for i, h := range hashed {
 		k := of(h)
 		d, ok := values[k]
-		if !ok || seen[k] {
+		switch {
+		case !ok:
 			return nil, fmt.Errorf("%s is no delivered document", h)
+		case seen[k]:
+			return nil, fmt.Errorf("%s is among the checked documents twice", h)
 		}
 		seen[k] = true
 		out[i] = h

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"maps"
 	"reflect"
 	"strings"
 	"testing"
@@ -104,12 +105,40 @@ func TestRestore(t *testing.T) {
 	}{
 		"another value":    {checked, other, `Secret "demo" holds other secret values than were delivered`},
 		"not delivered":    {checked, delivered[1:], `Secret "demo" is no delivered document`},
-		"twice":            {append([]Document{checked[0]}, checked...), delivered, `Secret "demo" is no delivered document`},
+		"twice":            {append([]Document{checked[0]}, checked...), delivered, `Secret "demo" is among the checked documents twice`},
 		"missing":          {checked[1:], delivered, "documents are missing: 3 delivered, 2 checked"},
 		"an Addon's value": {checked, parseDocs(t, strings.Replace(withSecrets, "data: {k: dg==}", "data: {k: eA==}", 1)), `Addon "apps" holds other secret values than were delivered`},
 	} {
 		if _, err := Restore(tc.checked, tc.delivered); err == nil || err.Error() != tc.want {
 			t.Errorf("%s: err = %v, want %q", name, err, tc.want)
 		}
+	}
+}
+
+// Restore restores the values of a Secret in an Addon's list too, keeps a delivered Secret without
+// data without one, and refuses a checked Secret that lost its spec.
+func TestRestoreEdges(t *testing.T) {
+	delivered := parseDocs(t, withSecrets)
+	listed := parseDocs(t, strings.Replace(withSecrets, "data: {k: bGlzdA==}", "data: {k: b3RoZXI=}", 1))
+	if _, err := Restore(Redact(delivered), listed); err == nil || err.Error() != `Addon "apps" holds other secret values than were delivered` {
+		t.Errorf("another value in a list: err = %v", err)
+	}
+	got, err := Restore(Redact(delivered), delivered)
+	if err != nil || !reflect.DeepEqual(got[1].Object, delivered[1].Object) {
+		t.Errorf("the Addon with a list = %v, %v", got[1].Object, err)
+	}
+
+	empty := parseDocs(t, "apiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: s}\nspec: {}\n")
+	got, err = Restore(Redact(empty), empty)
+	if err != nil || !reflect.DeepEqual(got[0].Object, empty[0].Object) {
+		t.Errorf("a Secret without data = %v, %v", got, err)
+	}
+
+	checked := Redact(delivered)
+	obj := maps.Clone(checked[0].Object)
+	delete(obj, "spec")
+	checked[0].Object = obj
+	if _, err := Restore(checked, delivered); err == nil || err.Error() != `Secret "demo" holds other secret values than were delivered` {
+		t.Errorf("a checked Secret without spec: err = %v", err)
 	}
 }
