@@ -403,6 +403,19 @@ A node's config may hold several, each with a name of its own. It has a [change 
 | --- | --- | --- | --- |
 | `spec.communities` | list of string | required | The communities: standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers. |
 
+### DHCPRelay { #dhcprelay }
+
+Links whose clients' DHCP requests the router relays to DHCP servers elsewhere, DHCPv4 to the IPv4 servers and DHCPv6 to the IPv6 ones.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 2 [change rules](builtins.md#rules-dhcprelay).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.interfaces` | list of string | required | Links the clients ask on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address of each family the servers have, a global one for IPv6. A link takes one relay. |
+| `spec.servers` | list of string | required | Unicast addresses of the DHCP servers, which the router reaches through the links' VRF: IPv4 servers get the links' DHCPv4 requests and IPv6 servers their DHCPv6 requests. A DHCPv6 server answers relayed requests on such an address, as Kea's does on an interface given as &lt;name>/&lt;address>. |
+
 ### DHCPSubnet { #dhcpsubnet }
 
 A subnet the router's DHCP server leases IPv4 or IPv6 addresses of on its interfaces: pools and reservations, the options its clients get, the files PXE clients boot and, for IPv6, the prefixes it delegates to other routers.

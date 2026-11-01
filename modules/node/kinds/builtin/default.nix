@@ -15,5 +15,6 @@
     ./nat64.nix
     ./vrf.nix
     ./dhcp.nix
+    ./dhcp-relay.nix
   ];
 }

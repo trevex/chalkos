@@ -67,6 +67,16 @@
     '';
   };
 
+  options.chalkos.router.dhcpRelay.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Whether router images carry the DHCP relay, dnsmasq, and accept the kind DHCPRelay; only
+      with the router layer. Set it false in a variant's modules to leave dnsmasq out of its
+      images.
+    '';
+  };
+
   options.chalkos.router.examples = lib.mkOption {
     type = lib.types.path;
     internal = true;

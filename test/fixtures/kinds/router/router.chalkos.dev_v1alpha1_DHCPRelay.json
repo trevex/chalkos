@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Links whose clients' DHCP requests the router relays to DHCP servers elsewhere, DHCPv4 to the IPv4 servers and DHCPv6 to the IPv6 ones.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "DHCPRelay"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "interfaces": {
+          "description": "Links the clients ask on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address of each family the servers have, a global one for IPv6. A link takes one relay.",
+          "examples": [
+            [
+              "vlan20"
+            ]
+          ],
+          "items": {
+            "pattern": "^(?:[A-Za-z0-9_.:@-]{1,15})$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "servers": {
+          "description": "Unicast addresses of the DHCP servers, which the router reaches through the links' VRF: IPv4 servers get the links' DHCPv4 requests and IPv6 servers their DHCPv6 requests. A DHCPv6 server answers relayed requests on such an address, as Kea's does on an interface given as <name>/<address>.",
+          "examples": [
+            [
+              "198.51.100.53",
+              "2001:db8:ff::53"
+            ]
+          ],
+          "items": {
+            "pattern": "^(?:[0-9A-Fa-f:.]+)$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "x-chalkos-rules": [
+            {
+              "description": "A relay's servers are unicast addresses.",
+              "messageExpression": "\"the server \" + self.filter(a, [\"0.0.0.0/8\", \"127.0.0.0/8\", \"169.254.0.0/16\", \"224.0.0.0/3\", \"::/8\", \"fe80::/10\", \"ff00::/8\"].exists(r, cidr(r).contains(ip(a))))[0] + \" is no unicast address a relay forwards to\"",
+              "rule": "self.all(a, ![\"0.0.0.0/8\", \"127.0.0.0/8\", \"169.254.0.0/16\", \"224.0.0.0/3\", \"::/8\", \"fe80::/10\", \"ff00::/8\"].exists(r, cidr(r).contains(ip(a))))",
+              "takes": "refuse"
+            },
+            {
+              "description": "A server is named once.",
+              "messageExpression": "\"the server \" + self.filter(a, size(self.filter(x, ip(x) == ip(a))) > 1)[0] + \" is named more than once\"",
+              "rule": "self.all(a, size(self.filter(x, ip(x) == ip(a))) == 1)",
+              "takes": "refuse"
+            }
+          ]
+        }
+      },
+      "required": [
+        "interfaces",
+        "servers"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "DHCPRelay",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "DHCPRelay",
+    "multiple": true,
+    "version": "v1alpha1"
+  }
+}

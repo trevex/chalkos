@@ -60,3 +60,34 @@ func TestDHCPSubnetIPv6Rules(t *testing.T) {
 		})
 	}
 }
+
+// The DHCPRelay rules take a relay of both families and refuse a server that is no unicast
+// address, of either family, and a server named twice.
+func TestDHCPRelayRules(t *testing.T) {
+	set, doc := routerRules(t)
+	relay := func(servers string) config.Document {
+		return doc("DHCPRelay", "guests", `{"interfaces": ["vlan20"], "servers": `+servers+`}`)
+	}
+	for _, tc := range []struct {
+		name    string
+		servers string
+		want    []string
+	}{
+		{"both families", `["198.51.100.53", "2001:db8:ff::53"]`, nil},
+		{"a broadcast", `["255.255.255.255"]`, []string{`DHCPRelay "guests" spec.servers: the server 255.255.255.255 is no unicast address a relay forwards to`}},
+		{"All_DHCP_Servers", `["ff05::1:3"]`, []string{`DHCPRelay "guests" spec.servers: the server ff05::1:3 is no unicast address a relay forwards to`}},
+		{"a link-local server", `["fe80::53"]`, []string{`DHCPRelay "guests" spec.servers: the server fe80::53 is no unicast address a relay forwards to`}},
+		{"a loopback server", `["127.0.0.1"]`, []string{`DHCPRelay "guests" spec.servers: the server 127.0.0.1 is no unicast address a relay forwards to`}},
+		{"a server twice as written", `["2001:db8:ff::53", "2001:db8:ff:0::53"]`, []string{`DHCPRelay "guests" spec.servers: the server 2001:db8:ff::53 is named more than once`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failures, err := set.Evaluate(Input{Documents: []config.Document{relay(tc.servers)}, Node: "r1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := messages(failures); !slices.Equal(got, tc.want) {
+				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
+			}
+		})
+	}
+}

@@ -592,6 +592,31 @@ Message of rule 1:
 documents.filter(n, cel.bind(c, documents[n].spec.communities, cel.bind(large, c[0].indexOf(":") != c[0].lastIndexOf(":"), !c.all(x, (x.indexOf(":") != x.lastIndexOf(":")) == large)))).map(n, "CommunityList " + n).join(", ") + " holds standard and large communities; give each kind a list of its own"
 ```
 
+#### DHCPRelay { #rules-dhcprelay }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `spec.servers` | A relay's servers are unicast addresses. | `refuse` | after the table | after the table |
+| 2 | `spec.servers` | A server is named once. | `refuse` | `self.all(a, size(self.filter(x, ip(x) == ip(a))) == 1)` | after the table |
+
+Expression of rule 1:
+
+```text
+self.all(a, !["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3", "::/8", "fe80::/10", "ff00::/8"].exists(r, cidr(r).contains(ip(a))))
+```
+
+Message of rule 1:
+
+```text
+"the server " + self.filter(a, ["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3", "::/8", "fe80::/10", "ff00::/8"].exists(r, cidr(r).contains(ip(a))))[0] + " is no unicast address a relay forwards to"
+```
+
+Message of rule 2:
+
+```text
+"the server " + self.filter(a, size(self.filter(x, ip(x) == ip(a))) > 1)[0] + " is named more than once"
+```
+
 #### DHCPSubnet { #rules-dhcpsubnet }
 
 | Rule | Field | Guards | Takes | Expression | Message |
