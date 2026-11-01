@@ -76,9 +76,14 @@ func (s *Server) pendingConfig() (*nodev1.PendingConfig, error) {
 	if version == "" {
 		return nil, nil
 	}
-	since, _, err := slot.Written(dir)
+	// Status reads without s.mu, so an upgrade or a discard may remove the pending config between
+	// the two reads; it is gone then, rather than stored at the zero time.
+	since, ok, err := slot.Written(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read when the pending config was stored: %w", err)
+	}
+	if !ok {
+		return nil, nil
 	}
 	return &nodev1.PendingConfig{Version: version, Since: timestamppb.New(since)}, nil
 }
