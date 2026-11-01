@@ -36,7 +36,11 @@ func (s *Server) renderOutputs(ctx context.Context, name string, docs []config.D
 		}
 	}
 	if !refuse {
-		log.Printf("%s; the delivery keeps the node's documents, so it goes ahead", outputs.Refusal(failures))
+		if dry {
+			log.Printf("%s; a dry run of a delivery that keeps the node's documents plans it all the same", outputs.Refusal(failures))
+		} else {
+			log.Printf("%s; the delivery keeps the node's documents, so it goes ahead", outputs.Refusal(failures))
+		}
 		return staged, nil
 	}
 	staged.Discard()
