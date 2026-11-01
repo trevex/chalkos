@@ -10,6 +10,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/facts"
@@ -40,6 +41,9 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 	if err != nil {
 		return nil, err
 	}
+	if req.Msg.DryRun && req.Msg.Staged {
+		return nil, failed(connect.CodeInvalidArgument, "a dry run checks a delivery to the running image; this node does not check config for the staged image without keeping it")
+	}
 	// An upgrade writes its image's slot, checked against the machine, before the image is
 	// staged, so a machine change in between would escape checkStaged. TryLock never waits: the
 	// upgrade, an image rollback and a trial's deadline hold upgrading while they take s.mu.
@@ -68,10 +72,40 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 		}
 		r.identity, r.next, r.schemas = string(c.Identity), c, schemas
 	}
+	if req.Msg.DryRun {
+		return s.dryRun(ctx, r)
+	}
 	if try > 0 {
 		return s.applyTrial(ctx, r)
 	}
 	return s.apply(ctx, r)
+}
+
+// dryRun checks an ApplyConfig request as apply does, the trial's conditions with try, and
+// answers with what the delivery would do in place of doing it; the caller holds s.mu.
+func (s *Server) dryRun(ctx context.Context, r applyRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+	d, err := s.planDelivery(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	defer d.staged.Discard()
+	o, warnings, err := s.outcome(ctx, d.fx, d.staged.States(), d.msg.FallbackSecret)
+	if err != nil {
+		return nil, err
+	}
+	p := check.PlanOf(d.fx.fx(), o)
+	plan := &nodev1.Plan{Outputs: p.Outputs}
+	if !d.keep {
+		plan.Version, plan.Replaces = d.stored.Version, d.replaced
+	}
+	for _, e := range p.Effects {
+		plan.Effects = append(plan.Effects, &nodev1.PlannedEffect{Name: e.Name, FiredBy: e.FiredBy, Actions: e.Actions})
+	}
+	resp := &nodev1.ApplyConfigResponse{Plan: plan, Warnings: warnings}
+	for _, c := range d.machine.changes {
+		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
+	}
+	return connect.NewResponse(resp), nil
 }
 
 // apply delivers an ApplyConfig request whose config is translated; the caller holds s.mu.
@@ -208,13 +242,13 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	if !d.keep {
 		next = r.next.Documents
 	}
-	if d.fx, err = s.effectsOf(ctx, name, next, prev.Documents, r.schemas, m.FallbackSecret, false); err != nil {
+	if d.fx, err = s.effectsOf(ctx, name, next, prev.Documents, r.schemas, m.FallbackSecret, m.DryRun); err != nil {
 		return nil, err
 	}
 	// Every output renders from the delivered documents and passes its check, so a delivery a
 	// service would reject is refused whole. A delivery without config changes no document, so an
 	// output that fails does not refuse it.
-	if d.staged, err = s.renderOutputs(ctx, name, next, r.schemas, !d.keep, false); err != nil {
+	if d.staged, err = s.renderOutputs(ctx, name, next, r.schemas, !d.keep, m.DryRun); err != nil {
 		s.refused(d.fx)
 		return nil, err
 	}

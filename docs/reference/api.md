@@ -175,6 +175,7 @@ The request of ApplyConfig: a config, or layer payloads, a node certificate or O
 | `layers` | list of google.protobuf.Any | Payloads of the image's layers, such as a new chalkos.kubernetes.v1.Share replacing the node's, each kept by the layer whose type it is; the node refuses a payload no layer of its image takes. Empty keeps the layers' payloads. |
 | `try` | google.protobuf.Duration | How long the config is on trial: the node rolls it back by itself, as RollbackConfig does, unless ConfirmConfig confirms it within the duration, and a boot before that restores the config from before it. A trial takes config for the running image alone, without staged, layer payloads, a node certificate or OS CAs, and lasts at most 24 hours. The node refuses it with FAILED_PRECONDITION for a config that changes the node's storage, which a rollback cannot undo, for the config it runs already and on a node without config. Unset applies the config for good. |
 | `ignore_units` | list of string | With try, systemd units the health check that ConfirmConfig waits for leaves out, besides those the image ignores, such as demo.service: a unit that failed before the trial and is not the trial's concern. Each must be a unit name. The node keeps them with the trial. |
+| `dry_run` | bool | Whether the node only checks the request: it runs every check a delivery runs, the image's renderers and their checks among them, refuses the request as the delivery would, and otherwise answers with the delivery's plan and storage changes. It changes nothing: no config, storage, layer payload, certificate or effect. Not together with staged. |
 
 #### ApplyConfigResponse { #message-applyconfigresponse }
 
@@ -182,11 +183,12 @@ The response of ApplyConfig: what the delivery changed on the node.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `changes` | list of StorageChange | Storage changes that were applied. |
+| `changes` | list of StorageChange | Storage changes that were applied; for a dry run, those the delivery would apply. |
 | `restarted_units` | list of string | Units the delivery restarted, as the image's effects say. |
 | `warnings` | list of string | Why the rule of an effect could not be evaluated, without the values it read; the delivery took the effect all the same. |
+| `plan` | Plan | For a dry run, what the delivery would do; unset otherwise. |
 
-Field types: [StorageChange](#message-storagechange).
+Field types: [StorageChange](#message-storagechange), [Plan](#message-plan).
 
 ### GetConfig { #method-getconfig }
 
@@ -770,6 +772,29 @@ A partition of a disk, as sysfs and the udev database describe it.
 | `label` | string | GPT partition name. |
 | `uuid` | string | GPT partition UUID, in lower case. |
 | `content` | string | File system or other content blkid found, such as ext4 or crypto_LUKS. |
+
+### Plan { #message-plan }
+
+What a delivery would do, as a dry run plans it before anything changes.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `version` | string | The version of the config the delivery would run, as StatusResponse.config_version gives it, and the version it would replace; both empty for a request without config. |
+| `replaces` | string |  |
+| `outputs` | list of string | Names of the image's outputs whose rendered files, or the Secrets their documents reference, would change, sorted. |
+| `effects` | list of PlannedEffect | The effects the delivery would take, by name. An effect whose rule compares the node's facts after the delivery with those before it is planned with the facts as they are, which the delivery has not changed yet. |
+
+Field types: [PlannedEffect](#message-plannedeffect).
+
+### PlannedEffect { #message-plannedeffect }
+
+An effect a delivery would take.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | string | Name of the effect, as the image declares it. |
+| `fired_by` | list of string | What fires it: "output &lt;name>", "kind &lt;name>" or "rule". |
+| `actions` | list of string | What it does, in the order the node does it: "reload &lt;units>", "run &lt;command>", "restart &lt;units>" and "chalkd &lt;action>". |
 
 ### RegistryImage { #message-registryimage }
 

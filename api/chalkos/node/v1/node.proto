@@ -461,6 +461,11 @@ message ApplyConfigRequest {
   // the image ignores, such as demo.service: a unit that failed before the trial and is not the
   // trial's concern. Each must be a unit name. The node keeps them with the trial.
   repeated string ignore_units = 9;
+  // Whether the node only checks the request: it runs every check a delivery runs, the image's
+  // renderers and their checks among them, refuses the request as the delivery would, and
+  // otherwise answers with the delivery's plan and storage changes. It changes nothing: no config,
+  // storage, layer payload, certificate or effect. Not together with staged.
+  bool dry_run = 10;
 }
 
 // The request of GetConfig.
@@ -485,13 +490,41 @@ message GetConfigResponse {
 
 // The response of ApplyConfig: what the delivery changed on the node.
 message ApplyConfigResponse {
-  // Storage changes that were applied.
+  // Storage changes that were applied; for a dry run, those the delivery would apply.
   repeated StorageChange changes = 1;
   // Units the delivery restarted, as the image's effects say.
   repeated string restarted_units = 2;
   // Why the rule of an effect could not be evaluated, without the values it read; the delivery
   // took the effect all the same.
   repeated string warnings = 3;
+  // For a dry run, what the delivery would do; unset otherwise.
+  Plan plan = 4;
+}
+
+// What a delivery would do, as a dry run plans it before anything changes.
+message Plan {
+  // The version of the config the delivery would run, as StatusResponse.config_version gives it,
+  // and the version it would replace; both empty for a request without config.
+  string version = 1;
+  string replaces = 2;
+  // Names of the image's outputs whose rendered files, or the Secrets their documents reference,
+  // would change, sorted.
+  repeated string outputs = 3;
+  // The effects the delivery would take, by name. An effect whose rule compares the node's facts
+  // after the delivery with those before it is planned with the facts as they are, which the
+  // delivery has not changed yet.
+  repeated PlannedEffect effects = 4;
+}
+
+// An effect a delivery would take.
+message PlannedEffect {
+  // Name of the effect, as the image declares it.
+  string name = 1;
+  // What fires it: "output <name>", "kind <name>" or "rule".
+  repeated string fired_by = 2;
+  // What it does, in the order the node does it: "reload <units>", "run <command>",
+  // "restart <units>" and "chalkd <action>".
+  repeated string actions = 3;
 }
 
 // A change a delivery made to the node's storage.
