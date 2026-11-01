@@ -35,13 +35,20 @@ func (p *Plugin) Commands() map[string]layer.Command {
 // that a rendered config delegates on the record's link, to the address that asked for it, in
 // the link's VRF, until its lease ends, and removes the routes of protocol dhcp-pd of no such
 // record. It removes no record: the hook removes those of released and expired leases, and
-// ended records route nothing. With more records than it reads, it removes no route. A route ip does not add or remove is named on standard
-// error and left to the next run, as the next record or renewal starts one: a unit that failed
-// for a link that is down at boot would fail the boot's health check.
+// ended records route nothing. With more records than it reads, it removes no route, and
+// without a rendered DHCPv6 config, as in maintenance mode, it changes nothing: the kernel
+// removes the routes when their leases end. A route ip does not add or remove is named on
+// standard error and left to the next run, as the next record or renewal starts one: a unit that
+// failed for a link that is down at boot would fail the boot's health check.
 func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 	dir := cmp.Or(r.KeaDir, filepath.Join(outputs.DefaultRoot, "kea"))
 	var pools []routing.PDPool
 	files, _ := filepath.Glob(filepath.Join(dir, "kea-dhcp6*.json"))
+	// Without the output kea, as in maintenance mode, or without a server of DHCPv6, the run
+	// changes nothing: the routes end with their leases.
+	if len(files) == 0 {
+		return nil
+	}
 	for _, f := range files {
 		vrf := strings.TrimPrefix(strings.TrimSuffix(filepath.Base(f), ".json"), "kea-dhcp6")
 		vrf = cmp.Or(strings.TrimPrefix(vrf, "-"), routing.DefaultVRF)

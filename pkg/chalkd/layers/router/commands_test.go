@@ -85,3 +85,25 @@ func TestDHCP6RoutesOfALinkDown(t *testing.T) {
 		t.Errorf("the other link's prefix was not routed: %q", r.Calls)
 	}
 }
+
+// Without the output kea, as in maintenance mode, or without a DHCPv6 config, a run removes no
+// route: the kernel removes the routes when their leases end.
+func TestDHCP6RoutesWithoutConfigs(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	kernel := &routing.KernelRoute{Destination: "2001:db8:100::/56", Protocol: "dhcp-pd", Table: 500, NextHops: []*routing.NextHop{{Gateway: "fe80::1", Interface: "cust0"}}}
+	for name, dir := range map[string]func(t *testing.T) string{
+		"no output":        func(t *testing.T) string { return filepath.Join(t.TempDir(), "kea") },
+		"no DHCPv6 config": func(t *testing.T) string { return t.TempDir() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, r := routerNode(t, kernel)
+			s.r.KeaDir = dir(t)
+			if err := s.r.dhcp6Routes(context.Background(), now); err != nil {
+				t.Fatal(err)
+			}
+			if len(r.Calls) != 0 {
+				t.Errorf("calls = %q", r.Calls)
+			}
+		})
+	}
+}
