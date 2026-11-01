@@ -208,13 +208,13 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	if !d.keep {
 		next = r.next.Documents
 	}
-	if d.fx, err = s.effectsOf(ctx, name, next, prev.Documents, r.schemas, m.FallbackSecret); err != nil {
+	if d.fx, err = s.effectsOf(ctx, name, next, prev.Documents, r.schemas, m.FallbackSecret, false); err != nil {
 		return nil, err
 	}
 	// Every output renders from the delivered documents and passes its check, so a delivery a
 	// service would reject is refused whole. A delivery without config changes no document, so an
 	// output that fails does not refuse it.
-	if d.staged, err = s.renderOutputs(ctx, name, next, r.schemas, !d.keep); err != nil {
+	if d.staged, err = s.renderOutputs(ctx, name, next, r.schemas, !d.keep, false); err != nil {
 		s.refused(d.fx)
 		return nil, err
 	}

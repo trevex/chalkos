@@ -19,18 +19,22 @@ import (
 //   - unset, as for a delivery that keeps the node's documents, the outputs that passed are staged
 //     and the failures logged.
 //
-// The status records the failures either way. What renderers and checks write to standard error
-// goes to the journal alone.
-func (s *Server) renderOutputs(ctx context.Context, name string, docs []config.Document, schemas *schema.Schemas, refuse bool) (*outputs.Staged, error) {
-	staged, failures, err := s.Loader.RenderOutputs(ctx, name, docs, schemas, false)
+// The status records the failures either way, unless dry, as for a dry run, which changes
+// nothing. What renderers and checks write to standard error goes to the journal alone. The
+// renderers read docs with their secret values hashed, as they would read them in the image's
+// checker.
+func (s *Server) renderOutputs(ctx context.Context, name string, docs []config.Document, schemas *schema.Schemas, refuse, dry bool) (*outputs.Staged, error) {
+	staged, failures, err := s.Loader.RenderOutputs(ctx, name, config.Redact(docs), schemas, true)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "the running image's outputs: %v", err)
 	}
 	if len(failures) == 0 {
 		return staged, nil
 	}
-	if err := outputs.RecordFailures(s.Loader.Render.Root, failures); err != nil {
-		log.Printf("record the outputs' failures: %v", err)
+	if !dry {
+		if err := outputs.RecordFailures(s.Loader.Render.Root, failures); err != nil {
+			log.Printf("record the outputs' failures: %v", err)
+		}
 	}
 	msgs := make([]string, len(failures))
 	for i, f := range failures {

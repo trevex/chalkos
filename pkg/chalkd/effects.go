@@ -60,12 +60,13 @@ type pendingEffects struct {
 //     own failure.
 //   - While a baseline exists, as a delivery that failed part way leaves one, the rules compare
 //     with it, and with what each delivery that failed since applied. Otherwise effectsOf
-//     records old, the facts, the outputs' states and the kinds' hashes as the baseline.
+//     records old, the facts, the outputs' states and the kinds' hashes as the baseline, unless
+//     dry, as for a dry run.
 //
 // consume removes the baseline once the delivery is applied whole, and refused once it is refused
 // before it changed anything. Until then a retry, or another delivery, takes the effects of what
 // the failed delivery changed too, even one that delivers the baseline's config again.
-func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.Document, schemas *schema.Schemas, secret string) (*pendingEffects, error) {
+func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.Document, schemas *schema.Schemas, secret string, dry bool) (*pendingEffects, error) {
 	defs, err := effects.Read(s.Loader.Effects)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
@@ -124,6 +125,10 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 		return nil, err
 	}
 	e.before = before
+	// A dry run compares with the state as it is now and records nothing.
+	if dry {
+		return e, nil
+	}
 	// Every fact the rules read loads now, before anything changes. One that cannot be loaded keeps
 	// its error, which makes the rules that read it due.
 	if err := newBaseline(old, e.factNames(), before, e.outputs, e.kinds).write(s.Paths.EffectsBaseline); err != nil {
