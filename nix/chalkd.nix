@@ -8,6 +8,7 @@ callPackage ./go-module.nix { } {
     ../pkg/api
     ../pkg/atomicfile
     ../pkg/chalkd
+    ../pkg/check
     ../pkg/client
     ../pkg/clustersecrets
     ../pkg/command
