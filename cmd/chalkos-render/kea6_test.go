@@ -174,3 +174,34 @@ func TestKeaSubnetID(t *testing.T) {
 		}
 	}
 }
+
+// networkd reads router advertisements under their former names as well, IPv6PrefixDelegation=
+// in [Network] and the section [IPv6PrefixDelegation], and the unit lists them before the
+// current names, whose valid values win.
+func TestKea6FormerAdvertisementNames(t *testing.T) {
+	office := subnetDoc(t, "office6", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/64", "pools": [{"first": "2001:db8:1::100", "last": "2001:db8:1::1ff"}]}`)
+	for name, c := range map[string]struct {
+		network string
+		served  bool
+	}{
+		"former names":                   {`"ipv6PrefixDelegation": "yes"}, "ipv6PrefixDelegation": {"managed": true}`, true},
+		"former and current names":       {`"ipv6PrefixDelegation": true}, "ipv6SendRA": {"managed": true}`, true},
+		"current names win":              {`"ipv6PrefixDelegation": true, "ipv6SendRA": false}, "ipv6PrefixDelegation": {"managed": true}`, false},
+		"current flags win":              {`"ipv6SendRA": true}, "ipv6PrefixDelegation": {"managed": true}, "ipv6SendRA": {"managed": "no"}`, false},
+		"invalid current values ignored": {`"ipv6PrefixDelegation": true, "ipv6SendRA": "maybe"}, "ipv6PrefixDelegation": {"managed": true}, "ipv6SendRA": {"managed": ""}`, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			docs := map[string][]any{
+				"Network":    {document(t, "Network", "10-lan0", `{"match": {"name": "lan0"}, "network": {"address": ["2001:db8:1::1/64"], `+c.network+`}`)},
+				"DHCPSubnet": {office},
+			}
+			if c.served {
+				if _, err := unitFiles(t, []string{"kea", testPDHook}, docs); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			refused(t, []string{"kea", testPDHook}, docs, "Network 10-lan0 sends no router advertisements on lan0 with Managed=yes")
+		})
+	}
+}

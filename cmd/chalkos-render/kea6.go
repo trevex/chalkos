@@ -146,7 +146,8 @@ func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s na
 // clients to ask the DHCPv6 server: with Managed=yes for addresses, which pools and reservations
 // lease, and with Managed=yes or OtherInformation=yes for delegated prefixes and options alone.
 // networkd sends advertisements on a link whose [Network] has IPv6SendRA=yes, with the flags of
-// its [IPv6SendRA] section.
+// its [IPv6SendRA] section, and reads the former names IPv6PrefixDelegation= and
+// [IPv6PrefixDelegation] as well.
 func advertised(d routerDocuments, units []networkUnit, sub servedSubnet) error {
 	link := sub.links[0]
 	network, err := linkNetwork(units, link, "its router advertisements")
@@ -154,9 +155,10 @@ func advertised(d routerDocuments, units []networkUnit, sub servedSubnet) error 
 		return err
 	}
 	spec := d.Networks[network]
-	send := unitBool(spec, "network", "ipv6SendRA")
-	managed := unitBool(spec, "ipv6SendRA", "managed")
-	other := unitBool(spec, "ipv6SendRA", "otherInformation")
+	// The networkd output writes sections and keys in name order, the former names first.
+	send := unitBool(spec, [2]string{"network", "ipv6PrefixDelegation"}, [2]string{"network", "ipv6SendRA"})
+	managed := unitBool(spec, [2]string{"ipv6PrefixDelegation", "managed"}, [2]string{"ipv6SendRA", "managed"})
+	other := unitBool(spec, [2]string{"ipv6PrefixDelegation", "otherInformation"}, [2]string{"ipv6SendRA", "otherInformation"})
 	addresses := len(sub.pools) > 0 || len(sub.spec.Reservations) > 0
 	switch {
 	case addresses && (!send || !managed):
@@ -167,16 +169,19 @@ func advertised(d routerDocuments, units []networkUnit, sub servedSubnet) error 
 	return nil
 }
 
-// unitBool is the boolean the key of the section of a Network document's spec gives, as
-// systemd-networkd reads it: the last value that parses as a boolean, of every section of the
-// name, or false, the default of the keys it reads; systemd ignores a value that does not parse.
-func unitBool(spec map[string]any, section, key string) bool {
+// unitBool is the boolean that keys, each a section and a key of a Network document's spec, give
+// in the unit in their order, as systemd-networkd reads it: the last value that parses as a
+// boolean, of every section of the name, or false, the default of the keys it reads; systemd
+// ignores a value that does not parse.
+func unitBool(spec map[string]any, keys ...[2]string) bool {
 	b := false
-	for _, s := range oneOrMany(spec[section]) {
-		sec, _ := s.(map[string]any)
-		for _, v := range oneOrMany(sec[key]) {
-			if parsed, ok := systemdBool(v); ok {
-				b = parsed
+	for _, k := range keys {
+		for _, s := range oneOrMany(spec[k[0]]) {
+			sec, _ := s.(map[string]any)
+			for _, v := range oneOrMany(sec[k[1]]) {
+				if parsed, ok := systemdBool(v); ok {
+					b = parsed
+				}
 			}
 		}
 	}
