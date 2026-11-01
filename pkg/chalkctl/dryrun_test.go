@@ -100,6 +100,8 @@ func TestApplyConfigDryRunUsage(t *testing.T) {
 		{[]string{"n1", "n2"}, "apply-config delivers to one node; --dry-run checks several, one after the other"},
 		{[]string{"n1", "--dry-run", "--staged"}, "--dry-run checks config for the running image; --staged goes without it"},
 		{[]string{"n1", "--dry-run", "--diff"}, "--dry-run prints the diff too; drop --diff"},
+		{[]string{"n1", "--dry-run", "--rollback"}, "--dry-run checks the inventory's config; --rollback and --confirm go without it"},
+		{[]string{"n1", "--dry-run", "--confirm"}, "--dry-run checks the inventory's config; --rollback and --confirm go without it"},
 		{[]string{"n1", "--dry-run", "--try", "1m"}, "--dry-run tries nothing; drop --try, --no-confirm and --ignore-unit"},
 		{[]string{"n1", "--dry-run", "--kubernetes-share"}, "--dry-run checks config alone; deliver --kubernetes-share without it"},
 		{[]string{"n1", "n2", "--dry-run", "--address", "127.0.0.1:1"}, "--address reaches one node; check the nodes one by one"},
