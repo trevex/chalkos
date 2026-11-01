@@ -208,8 +208,8 @@ lib.runTests {
   };
   # Router images take DHCPSubnet documents and run Kea unless their modules set
   # chalkos.router.dhcp.enable to false, whose router outputs then render no example of DHCP at the
-  # build, and which carry no output kea or effect dhcp, no Kea, its units, user or package, and no
-  # diagnostic dhcp-leases; other images never take them.
+  # build, and which carry no output kea or effect dhcp, no Kea, its units, the routes' path unit,
+  # user or package, and no diagnostic dhcp-leases; other images never take them.
   testRouterDHCPOptional = {
     expr =
       let
@@ -219,9 +219,10 @@ lib.runTests {
         kea = c: {
           output = c.chalkos.outputs ? kea;
           effect = c.chalkos.effects ? dhcp;
-          units = lib.filter (n: lib.hasPrefix "kea" n || n == "chalkos-dhcp") (
-            lib.attrNames c.systemd.services
-          );
+          units = lib.filter (
+            n: lib.hasPrefix "kea" n || n == "chalkos-dhcp" || n == "chalkos-dhcp6-routes"
+          ) (lib.attrNames c.systemd.services);
+          path = c.systemd.paths ? chalkos-dhcp6-routes;
           user = c.users.users ? kea;
           # A pinned ID, so that the user moves no other user's ID.
           ids =
@@ -276,9 +277,13 @@ lib.runTests {
           effect = true;
           units = [
             "chalkos-dhcp"
+            "chalkos-dhcp6-routes"
             "kea-dhcp4"
             "kea-dhcp4@"
+            "kea-dhcp6"
+            "kea-dhcp6@"
           ];
+          path = true;
           user = true;
           ids = [
             328
@@ -292,6 +297,7 @@ lib.runTests {
           output = false;
           effect = false;
           units = [ ];
+          path = false;
           user = false;
           ids = null;
           package = false;
@@ -1115,19 +1121,27 @@ lib.runTests {
     };
   };
   # Router images accept DHCPSubnet documents, which the output kea renders into a config per VRF
-  # and checks with kea-dhcp4 -t, and run the servers of Kea without its database backends, as the
-  # user kea with raw sockets and port 67 alone: kea-dhcp4 for the default VRF, kea-dhcp4@<vrf>
-  # bound to the VRF's device, whose index it records, requiring the device without stopping with
-  # it, both reloaded by SIGHUP and started again when they stop. chalkos-dhcp starts, reloads and
-  # stops them once the VRFs and networkd are up, whenever the output kea or networkd changes,
-  # without capabilities, in the group kea, which the diagnostic dhcp-leases runs in. The firewall
-  # does not read the subnets: Kea's raw sockets come before it. Other images run no Kea.
+  # and family and checks with kea-dhcp4 -t or kea-dhcp6 -t, and run the servers of Kea without its
+  # database backends, with the lease commands' and the run_script hooks alone, as the user kea:
+  # kea-dhcp4 with raw sockets and port 67, kea-dhcp6 with port 547 alone and the directory of
+  # chalkos-dhcp6-pd, which records delegated prefixes, as that of hook scripts; one each for the
+  # default VRF, and kea-dhcp4@<vrf> and kea-dhcp6@<vrf> bound to the VRF's device, whose index
+  # they record, requiring the device without stopping with it, all reloaded by SIGHUP and started
+  # again when they stop. chalkos-dhcp starts, reloads and stops them once the VRFs and networkd
+  # are up, whenever the output kea or networkd changes, without capabilities, in the group kea,
+  # which the diagnostic dhcp-leases runs in. chalkos-dhcp6-routes routes the delegated prefixes
+  # with CAP_NET_ADMIN alone, at boot and whenever a record in /var/lib/kea/pd-routes changes. The
+  # firewall reads the subnets for DHCPv6's port; Kea's raw sockets of DHCPv4 come before it.
+  # Other images run no Kea.
   testRouterDHCP = {
     expr =
       let
         edge = layered.edge-metal.config;
         server = edge.systemd.services.kea-dhcp4;
         vrf = edge.systemd.services."kea-dhcp4@";
+        server6 = edge.systemd.services.kea-dhcp6;
+        vrf6 = edge.systemd.services."kea-dhcp6@";
+        routes = edge.systemd.services.chalkos-dhcp6-routes;
         dhcp = edge.systemd.services.chalkos-dhcp;
         kea = lib.head (lib.splitString "/bin/" server.serviceConfig.ExecStart);
       in
@@ -1135,9 +1149,12 @@ lib.runTests {
         kind = edge.chalkos.kinds ? DHCPSubnet;
         plainKind = layered.plain-metal.config.chalkos.kinds ? DHCPSubnet;
         inputs = edge.chalkos.outputs.kea.inputs;
-        render = lib.hasInfix "/bin/chalkos-render kea /nix/store/" edge.chalkos.outputs.kea.render;
+        render =
+          builtins.match ".*/bin/chalkos-render kea /nix/store/[^ ]*-chalkos-dhcp6-pd/bin/chalkos-dhcp6-pd" edge.chalkos.outputs.kea.render
+          != null;
         check = lib.hasInfix "/bin/kea-$family -t" edge.chalkos.outputs.kea.check;
         package = lib.hasSuffix "-kea-dhcp-3.2.0" kea;
+        hooks = builtins.attrNames (builtins.readDir "${kea}/lib/kea/hooks");
         firewallReads = lib.elem "DHCPSubnet" edge.chalkos.outputs.router-nftables.inputs;
         user = edge.users.users.kea.isSystemUser;
         server = {
@@ -1164,7 +1181,42 @@ lib.runTests {
           bound = vrf.unitConfig ? BindsTo;
           records =
             lib.hasInfix "kea-vrf-device" vrf.serviceConfig.ExecStartPre
-            && lib.hasSuffix " %I" vrf.serviceConfig.ExecStartPre;
+            && lib.hasSuffix " dhcp4 %I" vrf.serviceConfig.ExecStartPre;
+        };
+        server6 = {
+          start = lib.hasSuffix "/bin/kea-dhcp6 -c /run/chalkos/outputs/kea/kea-dhcp6.json" server6.serviceConfig.ExecStart;
+          inherit (server6.serviceConfig)
+            User
+            AmbientCapabilities
+            CapabilityBoundingSet
+            RestrictAddressFamilies
+            ;
+          hookPath =
+            builtins.match "KEA_HOOK_SCRIPTS_PATH=/nix/store/[^/]*-chalkos-dhcp6-pd/bin" (
+              lib.last server6.serviceConfig.Environment
+            ) != null;
+          inherit (server6.unitConfig) ConditionPathExists;
+          vrf = {
+            inherit (vrf6.serviceConfig) BindNetworkInterface;
+            records = lib.hasSuffix " dhcp6 %I" vrf6.serviceConfig.ExecStartPre;
+            inherit (vrf6.unitConfig) ConditionPathExists;
+          };
+        };
+        routes = {
+          start = lib.hasSuffix "/bin/chalkd router dhcp6-routes" routes.serviceConfig.ExecStart;
+          inherit (routes) after wantedBy;
+          inherit (routes.serviceConfig)
+            Type
+            CapabilityBoundingSet
+            RestrictAddressFamilies
+            ReadWritePaths
+            ;
+          ip = lib.any (p: lib.getName p == "iproute2") routes.path;
+          path = {
+            inherit (edge.systemd.paths.chalkos-dhcp6-routes) wantedBy;
+            inherit (edge.systemd.paths.chalkos-dhcp6-routes.pathConfig) PathChanged;
+          };
+          records = lib.elem "d /var/lib/kea/pd-routes 0750 kea kea - -" edge.systemd.tmpfiles.rules;
         };
         reconciler = {
           after = lib.all (x: lib.elem x dhcp.after) [
@@ -1196,7 +1248,11 @@ lib.runTests {
       render = true;
       check = true;
       package = true;
-      firewallReads = false;
+      hooks = [
+        "libdhcp_lease_cmds.so"
+        "libdhcp_run_script.so"
+      ];
+      firewallReads = true;
       user = true;
       server = {
         start = true;
@@ -1232,6 +1288,43 @@ lib.runTests {
         Requires = "sys-subsystem-net-devices-%i.device";
         ConditionPathExists = "/run/chalkos/outputs/kea/kea-dhcp4-%I.json";
         bound = false;
+        records = true;
+      };
+      server6 = {
+        start = true;
+        User = "kea";
+        AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
+        CapabilityBoundingSet = [ "CAP_NET_BIND_SERVICE" ];
+        RestrictAddressFamilies = [
+          "AF_UNIX"
+          "AF_NETLINK"
+          "AF_INET"
+          "AF_INET6"
+        ];
+        hookPath = true;
+        ConditionPathExists = "/run/chalkos/outputs/kea/kea-dhcp6.json";
+        vrf = {
+          BindNetworkInterface = "%I";
+          records = true;
+          ConditionPathExists = "/run/chalkos/outputs/kea/kea-dhcp6-%I.json";
+        };
+      };
+      routes = {
+        start = true;
+        after = [ "chalkos-dhcp.service" ];
+        wantedBy = [ "multi-user.target" ];
+        Type = "oneshot";
+        CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
+        RestrictAddressFamilies = [
+          "AF_UNIX"
+          "AF_NETLINK"
+        ];
+        ReadWritePaths = [ "-/var/lib/kea/pd-routes" ];
+        ip = true;
+        path = {
+          wantedBy = [ "multi-user.target" ];
+          PathChanged = "/var/lib/kea/pd-routes";
+        };
         records = true;
       };
       reconciler = {

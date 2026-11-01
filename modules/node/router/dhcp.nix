@@ -1,10 +1,15 @@
-# The router's DHCP servers: Kea's DHCPv4 server, whose config the output kea renders from the
-# DHCPSubnet documents, kea-dhcp4.json for the default VRF's and kea-dhcp4-<vrf>.json for a VRF's.
-# The default VRF's runs as kea-dhcp4.service, each VRF's as kea-dhcp4@<vrf>.service, whose
-# sockets systemd binds to the VRF's device. Kea refuses a config that names a link that does not
-# exist, and stops when a reload does, so chalkos-dhcp starts the servers once their links exist,
-# reloads them when their config or the links change, and stops those without a config. A reload
-# keeps the leases.
+# The router's DHCP servers: Kea's DHCPv4 and DHCPv6 servers, whose configs the output kea renders
+# from the DHCPSubnet documents, kea-dhcp4.json and kea-dhcp6.json for the default VRF's and
+# kea-dhcp4-<vrf>.json and kea-dhcp6-<vrf>.json for a VRF's. The default VRF's run as
+# kea-dhcp4.service and kea-dhcp6.service, each VRF's as kea-dhcp4@<vrf>.service and
+# kea-dhcp6@<vrf>.service, whose sockets systemd binds to the VRF's device. Kea refuses a config
+# that names a link that does not exist, and stops when a reload does, so chalkos-dhcp starts the
+# servers once their links exist, reloads them when their config or the links change, and stops
+# those without a config. A reload keeps the leases.
+#
+# Kea routes no prefix its DHCPv6 servers delegate. Their run_script hook runs chalkos-dhcp6-pd as
+# kea, which records each delegated prefix in /var/lib/kea/pd-routes; chalkos-dhcp6-routes, which
+# a change there starts, routes each to the link-local address that asked for it.
 {
   chalkosPackages,
   config,
@@ -15,13 +20,59 @@
 let
   inherit (chalkosPackages) kea;
   dir = config.chalkos.outputs.kea.dir;
+  pdRecords = "/var/lib/kea/pd-routes";
+  # Records the prefixes a DHCPv6 server delegates, as Kea's run_script hook runs it with the hook
+  # point's name and the leases' variables alone: a file per prefix, <link>_<prefix>_<length>,
+  # holding the link-local address that asked for it and when its lease ends, which the release
+  # of the lease removes. The values reach a file name only once they match the patterns of a
+  # link, an IPv6 address and a length; chalkd router dhcp6-routes checks them again.
+  pdHook = pkgs.writeShellApplication {
+    name = "chalkos-dhcp6-pd";
+    runtimeInputs = [ pkgs.coreutils ];
+    text = ''
+      dir=${pdRecords}
+      link=''${QUERY6_IFACE_NAME:-}
+      via=''${QUERY6_REMOTE_ADDR:-}
+      [[ $link =~ ^[A-Za-z0-9_.:@-]{1,15}$ ]] || link=
+      # The record of the prefix $1 of the length $2 on the link the request came in on.
+      record() {
+        [[ -n $link && $1 =~ ^[0-9a-f:]{2,39}$ && $2 =~ ^[0-9]{1,3}$ ]] || return 1
+        printf '%s/%s_%s_%s' "$dir" "$link" "$1" "$2"
+      }
+      case ''${1:-} in
+      leases6_committed)
+        for ((i = 0; i < ''${DELETED_LEASES6_SIZE:-0}; i++)); do
+          t=DELETED_LEASES6_AT''${i}_TYPE a=DELETED_LEASES6_AT''${i}_ADDRESS l=DELETED_LEASES6_AT''${i}_PREFIX_LEN
+          [[ ''${!t:-} == IA_PD ]] || continue
+          if f=$(record "''${!a:-}" "''${!l:-}"); then rm -f "$f"; fi
+        done
+        for ((i = 0; i < ''${LEASES6_SIZE:-0}; i++)); do
+          t=LEASES6_AT''${i}_TYPE a=LEASES6_AT''${i}_ADDRESS l=LEASES6_AT''${i}_PREFIX_LEN
+          c=LEASES6_AT''${i}_CLTT v=LEASES6_AT''${i}_VALID_LIFETIME
+          [[ ''${!t:-} == IA_PD && $via =~ ^fe80:[0-9a-f:]*$ && ''${!c:-} =~ ^[0-9]+$ && ''${!v:-} =~ ^[0-9]+$ ]] || continue
+          f=$(record "''${!a:-}" "''${!l:-}") || continue
+          mkdir -p "$dir"
+          # Written whole, then renamed, so that chalkd never reads half a record.
+          tmp=$(mktemp "$dir/.new.XXXXXX")
+          echo "$via $((''${!c} + ''${!v}))" >"$tmp"
+          mv -f "$tmp" "$f"
+        done
+        ;;
+      lease6_release | lease6_decline)
+        [[ ''${LEASE6_TYPE:-} == IA_PD ]] || exit 0
+        if f=$(record "''${LEASE6_ADDRESS:-}" "''${LEASE6_PREFIX_LEN:-}"); then rm -f "$f"; fi
+        ;;
+      esac
+    '';
+  };
   # Stops the servers without a config, then starts the server of each rendered config that does
   # not run, once its links and its VRF's device exist, and reloads those that run; with the
   # argument stop, it stops all of them. systemd binds a VRF's server's sockets to the index its
   # VRF's device had when the server started, which the server keeps in
-  # /run/kea/dhcp4-<vrf>.ifindex: a VRF that chalkos-vrf removed and networkd created anew has a new
-  # index, so its server restarts on the new device. The script waits 30 seconds at most for the
-  # links and 30 more for the servers it started, and fails naming those that are not running then.
+  # /run/kea/<family>-<vrf>.ifindex: a VRF that chalkos-vrf removed and networkd created anew has
+  # a new index, so its server restarts on the new device. The script waits 30 seconds at most for
+  # the links and 30 more for the servers it started, and fails naming those that are not running
+  # then. It then starts chalkos-dhcp6-routes, which routes the delegated prefixes of the configs.
   # systemctl and systemd-escape come from the unit's PATH.
   reconcile = pkgs.writeShellApplication {
     name = "chalkos-dhcp";
@@ -36,23 +87,25 @@ let
       started=()
       if [[ ''${1:-} != stop ]]; then
         shopt -s nullglob
-        for file in "$dir"/kea-dhcp4.json "$dir"/kea-dhcp4-*.json; do
-          # kea-dhcp4.json is no pattern, so nullglob keeps it whether it exists or not.
-          [[ -e $file ]] || continue
-          base=''${file#"$dir"/kea-dhcp4}
-          base=''${base%.json}
-          if [[ -z $base ]]; then
-            want[kea-dhcp4.service]=$file
-          else
-            want[$(systemd-escape --template=kea-dhcp4@.service "''${base#-}")]=$file
-          fi
+        for family in dhcp4 dhcp6; do
+          for file in "$dir/kea-$family.json" "$dir/kea-$family"-*.json; do
+            # kea-<family>.json is no pattern, so nullglob keeps it whether it exists or not.
+            [[ -e $file ]] || continue
+            base=''${file#"$dir/kea-$family"}
+            base=''${base%.json}
+            if [[ -z $base ]]; then
+              want[kea-$family.service]=$file
+            else
+              want[$(systemd-escape --template="kea-$family@.service" "''${base#-}")]=$file
+            fi
+          done
         done
         shopt -u nullglob
       fi
       deadline=$((SECONDS + 30))
       # The VRF of the unit $1, empty for the default VRF's.
       vrfOf() {
-        [[ $1 == kea-dhcp4@* ]] || return 0
+        [[ $1 == kea-dhcp[46]@* ]] || return 0
         systemd-escape --unescape --instance "$1"
       }
       # Waits for the links of the config $2 of the unit $1 and its VRF's device, and fails naming
@@ -60,7 +113,7 @@ let
       links() {
         local unit=$1 vrf names missing=() devices=()
         vrf=$(vrfOf "$unit")
-        if ! names=$(jq -r '.Dhcp4["interfaces-config"].interfaces[]' "$2"); then
+        if ! names=$(jq -r '(.Dhcp4 // .Dhcp6)["interfaces-config"].interfaces[]' "$2"); then
           failed+=("run $unit, whose config $2 cannot be read")
           return 1
         fi
@@ -88,15 +141,17 @@ let
             failed+=("stop $unit")
           fi
         fi
-      done < <(systemctl list-units --plain --no-legend --all kea-dhcp4.service 'kea-dhcp4@*.service')
+      done < <(systemctl list-units --plain --no-legend --all kea-dhcp4.service 'kea-dhcp4@*.service' kea-dhcp6.service 'kea-dhcp6@*.service')
       for unit in "''${!want[@]}"; do
         links "$unit" "''${want[$unit]}" || continue
         verb=reload
         if ! systemctl is-active --quiet "$unit"; then
           verb=start
         elif vrf=$(vrfOf "$unit") && [[ -n $vrf ]]; then
+          family=''${unit%%@*}
+          family=''${family#kea-}
           ifindex=$(cat "/sys/class/net/$vrf/ifindex" 2>/dev/null) || ifindex=
-          if [[ -z $ifindex || $ifindex != "$(cat "/run/kea/dhcp4-$vrf.ifindex" 2>/dev/null)" ]]; then
+          if [[ -z $ifindex || $ifindex != "$(cat "/run/kea/$family-$vrf.ifindex" 2>/dev/null)" ]]; then
             verb=restart
           fi
         fi
@@ -121,70 +176,121 @@ let
         done
         [[ $state == active ]] || failed+=("start $unit, which is $state ($(systemctl show --value --property=SubState "$unit"))")
       done
+      # The routes of the delegated prefixes follow the configs, which may delegate others now.
+      if [[ ''${1:-} != stop ]]; then
+        systemctl start --no-block chalkos-dhcp6-routes.service || failed+=("start chalkos-dhcp6-routes.service")
+      fi
       if ((''${#failed[@]} > 0)); then
         printf 'chalkos-dhcp: failed to %s\n' "''${failed[@]}" >&2
         exit 1
       fi
     '';
   };
-  # Keeps the index of the device of the VRF $1 in /run/kea/dhcp4-$1.ifindex, and fails while the
-  # VRF has no device, as unbound@ does.
+  # Keeps the index of the device of the VRF $2 in /run/kea/$1-$2.ifindex, $1 the server's family,
+  # and fails while the VRF has no device, as unbound@ does.
   recordDevice = pkgs.writeShellScript "kea-vrf-device" ''
     set -e
-    read -r ifindex <"/sys/class/net/$1/ifindex"
-    echo "$ifindex" >"$RUNTIME_DIRECTORY/dhcp4-$1.ifindex"
+    read -r ifindex <"/sys/class/net/$2/ifindex"
+    echo "$ifindex" >"$RUNTIME_DIRECTORY/$1-$2.ifindex"
   '';
-  # A server's hardening: the user kea, raw sockets, port 67, its sockets in /run/kea and its
-  # leases in /var/lib/kea, which the servers share and which outlive them. A server that stops
-  # by itself, as when a link it serves goes away, starts again every 5 seconds.
-  server = {
-    ExecReload = "${pkgs.coreutils}/bin/kill -HUP $MAINPID";
-    Restart = "on-failure";
-    RestartSec = 5;
-    User = "kea";
-    Group = "kea";
-    AmbientCapabilities = [
-      "CAP_NET_BIND_SERVICE"
-      "CAP_NET_RAW"
-    ];
-    CapabilityBoundingSet = [
-      "CAP_NET_BIND_SERVICE"
-      "CAP_NET_RAW"
-    ];
-    # Kea logs to the journal and needs no lock of a log file.
-    Environment = [ "KEA_LOCKFILE_DIR=none" ];
-    RuntimeDirectory = "kea";
-    RuntimeDirectoryMode = "0750";
-    RuntimeDirectoryPreserve = true;
-    StateDirectory = "kea";
-    StateDirectoryMode = "0750";
-    UMask = "0027";
-    NoNewPrivileges = true;
-    ProtectSystem = "strict";
-    ProtectHome = true;
-    PrivateTmp = true;
-    PrivateDevices = true;
-    ProtectKernelTunables = true;
-    ProtectKernelModules = true;
-    ProtectKernelLogs = true;
-    ProtectControlGroups = true;
-    ProtectClock = true;
-    ProtectHostname = true;
-    RestrictAddressFamilies = [
-      "AF_UNIX"
-      "AF_NETLINK"
-      "AF_INET"
-      "AF_INET6"
-      "AF_PACKET"
-    ];
-    RestrictNamespaces = true;
-    RestrictRealtime = true;
-    RestrictSUIDSGID = true;
-    LockPersonality = true;
-    MemoryDenyWriteExecute = true;
-    SystemCallArchitectures = "native";
-    SystemCallFilter = [ "@system-service" ];
-  };
+  # A server's hardening: the user kea, port 67 or 547, its sockets in /run/kea and its leases in
+  # /var/lib/kea, which the servers share and which outlive them. The DHCPv4 servers read and
+  # answer on raw sockets; the DHCPv6 servers on UDP sockets, and run chalkos-dhcp6-pd, which
+  # Kea runs only from the directory KEA_HOOK_SCRIPTS_PATH names. A server that stops by itself,
+  # as when a link it serves goes away, starts again every 5 seconds.
+  server =
+    family:
+    let
+      v4 = family == "dhcp4";
+      capabilities = [ "CAP_NET_BIND_SERVICE" ] ++ lib.optional v4 "CAP_NET_RAW";
+    in
+    {
+      ExecReload = "${pkgs.coreutils}/bin/kill -HUP $MAINPID";
+      Restart = "on-failure";
+      RestartSec = 5;
+      User = "kea";
+      Group = "kea";
+      AmbientCapabilities = capabilities;
+      CapabilityBoundingSet = capabilities;
+      # Kea logs to the journal and needs no lock of a log file.
+      Environment = [
+        "KEA_LOCKFILE_DIR=none"
+      ]
+      ++ lib.optional (!v4) "KEA_HOOK_SCRIPTS_PATH=${pdHook}/bin";
+      RuntimeDirectory = "kea";
+      RuntimeDirectoryMode = "0750";
+      RuntimeDirectoryPreserve = true;
+      StateDirectory = "kea";
+      StateDirectoryMode = "0750";
+      UMask = "0027";
+      NoNewPrivileges = true;
+      ProtectSystem = "strict";
+      ProtectHome = true;
+      PrivateTmp = true;
+      PrivateDevices = true;
+      ProtectKernelTunables = true;
+      ProtectKernelModules = true;
+      ProtectKernelLogs = true;
+      ProtectControlGroups = true;
+      ProtectClock = true;
+      ProtectHostname = true;
+      RestrictAddressFamilies = [
+        "AF_UNIX"
+        "AF_NETLINK"
+        "AF_INET"
+        "AF_INET6"
+      ]
+      ++ lib.optional v4 "AF_PACKET";
+      RestrictNamespaces = true;
+      RestrictRealtime = true;
+      RestrictSUIDSGID = true;
+      LockPersonality = true;
+      MemoryDenyWriteExecute = true;
+      SystemCallArchitectures = "native";
+      SystemCallFilter = [ "@system-service" ];
+    };
+  # The units of the servers of a family: the default VRF's and the template of a VRF's, whose
+  # sockets systemd binds to the VRF's device, as unbound@ does. Kea's DHCPv4 raw sockets read and
+  # send on the links themselves; its UDP sockets take the VRF's device to find the links'
+  # addresses.
+  servers =
+    family:
+    let
+      name = lib.toUpper (lib.removePrefix "dhcp" family);
+    in
+    {
+      "kea-${family}" = {
+        description = "Kea's DHCPv${name} server of the default VRF";
+        after = [
+          "chalkos-config.service"
+          "chalkos-firewall.service"
+          "systemd-networkd.service"
+        ];
+        # Without a rendered config, as in maintenance mode, the node runs no server.
+        unitConfig.ConditionPathExists = "${dir}/kea-${family}.json";
+        serviceConfig = server family // {
+          ExecStart = "${kea}/bin/kea-${family} -c ${dir}/kea-${family}.json";
+        };
+      };
+      "kea-${family}@" = {
+        description = "Kea's DHCPv${name} server of the VRF %I";
+        after = [
+          "sys-subsystem-net-devices-%i.device"
+          "chalkos-config.service"
+          "chalkos-firewall.service"
+          "systemd-networkd.service"
+        ];
+        unitConfig = {
+          Requires = "sys-subsystem-net-devices-%i.device";
+          ConditionPathExists = "${dir}/kea-${family}-%I.json";
+        };
+        serviceConfig = server family // {
+          ExecStartPre = "${recordDevice} ${family} %I";
+          ExecStart = "${kea}/bin/kea-${family} -c ${dir}/kea-${family}-%I.json";
+          BindNetworkInterface = "%I";
+        };
+      };
+    };
 in
 {
   config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.dhcp.enable) {
@@ -200,15 +306,15 @@ in
     users.groups.kea.gid = 328;
 
     chalkos.outputs.kea = {
-      # The VRFs and the Networks tell each link's VRF and its addresses, and the NAT64s, on
-      # images with NAT64, the links no subnet may name.
+      # The VRFs and the Networks tell each link's VRF, its addresses and its router
+      # advertisements, and the NAT64s, on images with NAT64, the links no subnet may name.
       inputs = [
         "DHCPSubnet"
         "VRF"
         "Network"
       ]
       ++ lib.optional config.chalkos.router.nat64.enable "NAT64";
-      render = "${lib.getExe chalkosPackages.chalkos-render} kea ${pkgs.coreutils}/bin/true";
+      render = "${lib.getExe chalkosPackages.chalkos-render} kea ${lib.getExe pdHook}";
       # kea-dhcp4 -t and kea-dhcp6 -t refuse a config of links the check's network namespace
       # lacks, so it checks each config without them.
       check = ''
@@ -238,81 +344,99 @@ in
       reload = [ "chalkos-dhcp.service" ];
     };
 
-    systemd.services.kea-dhcp4 = {
-      description = "Kea's DHCPv4 server of the default VRF";
-      after = [
-        "chalkos-config.service"
-        "chalkos-firewall.service"
-        "systemd-networkd.service"
-      ];
-      # Without a rendered config, as in maintenance mode, the node runs no server.
-      unitConfig.ConditionPathExists = "${dir}/kea-dhcp4.json";
-      serviceConfig = server // {
-        ExecStart = "${kea}/bin/kea-dhcp4 -c ${dir}/kea-dhcp4.json";
+    systemd.services =
+      servers "dhcp4"
+      // servers "dhcp6"
+      // {
+        # Runs the servers of the rendered configs, after networkd, which creates the links and the
+        # VRFs.
+        chalkos-dhcp = {
+          description = "Run the router's DHCP servers";
+          after = [
+            "chalkos-config.service"
+            "chalkos-vrf.service"
+            "systemd-networkd.service"
+            "chalkos-firewall.service"
+          ];
+          wantedBy = [ "multi-user.target" ];
+          path = [ config.systemd.package ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = lib.getExe reconcile;
+            ExecReload = lib.getExe reconcile;
+            ExecStop = "${lib.getExe reconcile} stop";
+            # systemctl reaches systemd over its socket, for which root needs no capability.
+            CapabilityBoundingSet = [ "" ];
+            SupplementaryGroups = [ "kea" ];
+            RestrictAddressFamilies = [ "AF_UNIX" ];
+            NoNewPrivileges = true;
+            PrivateDevices = true;
+            ProtectControlGroups = true;
+            ProtectSystem = "strict";
+            ProtectHome = true;
+            PrivateTmp = true;
+            ProtectKernelTunables = true;
+            ProtectKernelModules = true;
+            ProtectKernelLogs = true;
+            ProtectClock = true;
+            ProtectHostname = true;
+            RestrictNamespaces = true;
+            RestrictRealtime = true;
+            RestrictSUIDSGID = true;
+            LockPersonality = true;
+            MemoryDenyWriteExecute = true;
+            SystemCallArchitectures = "native";
+            SystemCallFilter = [ "@system-service" ];
+          };
+        };
+        # Routes the prefixes the DHCPv6 servers delegate, at boot, after chalkos-dhcp, which also
+        # starts it, and whenever chalkos-dhcp6-pd records or removes one. It removes the files of
+        # ended records; the kernel removes a route whose lease ended without a renewal.
+        chalkos-dhcp6-routes = {
+          description = "Route the prefixes the router's DHCPv6 servers delegate";
+          after = [ "chalkos-dhcp.service" ];
+          wantedBy = [ "multi-user.target" ];
+          path = [ pkgs.iproute2 ];
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = "${lib.getExe chalkosPackages.chalkd} router dhcp6-routes";
+            CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
+            RestrictAddressFamilies = [
+              "AF_UNIX"
+              "AF_NETLINK"
+            ];
+            ReadWritePaths = [ "-${pdRecords}" ];
+            NoNewPrivileges = true;
+            PrivateDevices = true;
+            ProtectControlGroups = true;
+            ProtectSystem = "strict";
+            ProtectHome = true;
+            PrivateTmp = true;
+            ProtectKernelTunables = true;
+            ProtectKernelModules = true;
+            ProtectKernelLogs = true;
+            ProtectClock = true;
+            ProtectHostname = true;
+            RestrictNamespaces = true;
+            RestrictRealtime = true;
+            RestrictSUIDSGID = true;
+            LockPersonality = true;
+            MemoryDenyWriteExecute = true;
+            SystemCallArchitectures = "native";
+            SystemCallFilter = [ "@system-service" ];
+          };
+        };
       };
-    };
-    # A VRF's server, whose sockets systemd binds to the VRF's device, as unbound@ does. Kea's raw
-    # sockets read and send on the links themselves; its UDP socket, which binds the links'
-    # addresses, takes the VRF's device to find them.
-    systemd.services."kea-dhcp4@" = {
-      description = "Kea's DHCPv4 server of the VRF %I";
-      after = [
-        "sys-subsystem-net-devices-%i.device"
-        "chalkos-config.service"
-        "chalkos-firewall.service"
-        "systemd-networkd.service"
-      ];
-      unitConfig = {
-        Requires = "sys-subsystem-net-devices-%i.device";
-        ConditionPathExists = "${dir}/kea-dhcp4-%I.json";
-      };
-      serviceConfig = server // {
-        ExecStartPre = "${recordDevice} %I";
-        ExecStart = "${kea}/bin/kea-dhcp4 -c ${dir}/kea-dhcp4-%I.json";
-        BindNetworkInterface = "%I";
-      };
-    };
-    # Runs the servers of the rendered configs, after networkd, which creates the links and the
-    # VRFs.
-    systemd.services.chalkos-dhcp = {
-      description = "Run the router's DHCP servers";
-      after = [
-        "chalkos-config.service"
-        "chalkos-vrf.service"
-        "systemd-networkd.service"
-        "chalkos-firewall.service"
-      ];
+    systemd.paths.chalkos-dhcp6-routes = {
+      description = "Watch the prefixes the router's DHCPv6 servers delegate";
       wantedBy = [ "multi-user.target" ];
-      path = [ config.systemd.package ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = lib.getExe reconcile;
-        ExecReload = lib.getExe reconcile;
-        ExecStop = "${lib.getExe reconcile} stop";
-        # systemctl reaches systemd over its socket, for which root needs no capability.
-        CapabilityBoundingSet = [ "" ];
-        SupplementaryGroups = [ "kea" ];
-        RestrictAddressFamilies = [ "AF_UNIX" ];
-        NoNewPrivileges = true;
-        PrivateDevices = true;
-        ProtectControlGroups = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        ProtectKernelTunables = true;
-        ProtectKernelModules = true;
-        ProtectKernelLogs = true;
-        ProtectClock = true;
-        ProtectHostname = true;
-        RestrictNamespaces = true;
-        RestrictRealtime = true;
-        RestrictSUIDSGID = true;
-        LockPersonality = true;
-        MemoryDenyWriteExecute = true;
-        SystemCallArchitectures = "native";
-        SystemCallFilter = [ "@system-service" ];
-      };
+      pathConfig.PathChanged = pdRecords;
     };
+    # The records' directory exists before a server or the path unit looks at it.
+    systemd.tmpfiles.rules = [
+      "d /var/lib/kea 0750 kea kea - -"
+      "d ${pdRecords} 0750 kea kea - -"
+    ];
   };
 }

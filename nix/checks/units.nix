@@ -1915,7 +1915,7 @@ in
       until [ -S /run/kea/dhcp4-ghost.sock ]; do sleep 0.1; done
       bash -c ${lib.escapeShellArg leases} dhcp-leases >all.tsv 2>errors.txt ||
         fail "dhcp-leases failed beside a server that does not answer: $(cat errors.txt)"
-      grep -qx 'the DHCP server of VRF ghost does not answer' errors.txt ||
+      grep -qx 'the DHCPv4 server of VRF ghost does not answer' errors.txt ||
         fail "dhcp-leases did not name the server that does not answer: $(cat errors.txt)"
       got "$(tail -n +2 all.tsv | cut -f 1-5)" "$printer"$'\n'"$other" "dhcp-leases beside a server that does not answer"
       kill "$ghost"
@@ -1931,12 +1931,170 @@ in
       kill "$kea"
     '';
 
+  # The dhcp6 example's DHCPv6 servers, the default VRF's and the VRF access's, as kea-dhcp6.service
+  # and kea-dhcp6@access.service run them, behind the example's firewall, whose openings let
+  # DHCPv6 from link-local addresses in on the servers' links. A client on lan0, of the printer's
+  # MAC address in its DUID, gets its reserved address, the DNS server and the search domain; a
+  # home router on cust0, in the VRF access, gets a /56, which chalkos-dhcp6-pd records and
+  # chalkos-dhcp6-routes routes in access's table to the home router's link-local address. The
+  # diagnostic dhcp-leases lists both leases. A release removes the record and the route, and an
+  # ended record and one of a prefix no subnet delegates are removed. The dhcp example's
+  # firewall, which opens no DHCPv6, keeps the client from its address.
+  router-dhcp6 =
+    let
+      router = checkLib.router.config;
+      kea6 = lib.head (lib.splitString " " router.systemd.services.kea-dhcp6.serviceConfig.ExecStart);
+      inherit (router.systemd.services.kea-dhcp6.serviceConfig) Environment;
+      pdHook = lib.last (lib.splitString " " router.chalkos.outputs.kea.render);
+      routes = router.systemd.services.chalkos-dhcp6-routes.serviceConfig.ExecStart;
+      firewall = router.systemd.services.chalkos-firewall.serviceConfig.ExecStart;
+      dir = router.chalkos.outputs.kea.dir;
+      nftDir = router.chalkos.outputs.router-nftables.dir;
+      leases = lib.elemAt router.chalkos.diagnostics.dhcp-leases.command 2;
+      goldens = ../../cmd/chalkos-render/testdata/router;
+    in
+    unitCheck "router-dhcp6"
+      (
+        checkLib.networkTools
+        ++ [
+          pkgs.dhcpcd
+          pkgs.jq
+        ]
+      )
+      ''
+        fail() {
+          echo "error: $*" >&2
+          cat kea-*.log >&2
+          exit 1
+        }
+        ip link set lo up
+        # The namespaces of the client on lan0 and of the home router on cust0.
+        unshare -n sh -c 'touch pc-ready; exec sleep 600' &
+        pc=$!
+        unshare -n sh -c 'touch cpe-ready; exec sleep 600' &
+        cpe=$!
+        until [ -e pc-ready ] && [ -e cpe-ready ]; do sleep 0.1; done
+        on() { local pid=$1; shift; nsenter -t "$pid" -n "$@"; }
+        ip link add access type vrf table 500
+        ip link set access up
+        ip link add lan0 type veth peer name eth0 netns "$pc"
+        ip link add cust0 type veth peer name eth0 netns "$cpe"
+        ip link set cust0 master access
+        for l in lan0:2001:db8:1::1 cust0:2001:db8:2::1; do
+          link=''${l%%:*}
+          echo 0 >"/proc/sys/net/ipv6/conf/$link/accept_dad"
+          ip addr add "''${l#*:}/64" dev "$link" nodad
+          ip link set "$link" up
+        done
+        for pid in "$pc" "$cpe"; do
+          on "$pid" ip link set lo up
+          on "$pid" sh -c 'echo 0 >/proc/sys/net/ipv6/conf/eth0/accept_dad'
+          on "$pid" ip link set eth0 up
+        done
+        on "$pc" ip link set eth0 address 52:54:00:12:34:56
+
+        mkdir -p ${dir} ${nftDir} /var/lib /var/run/dhcpcd /var/db/dhcpcd /var/lib/dhcpcd
+        mkdir -m 0750 /run/kea /var/lib/kea
+        install -m 644 ${goldens}/dhcp6.nft ${nftDir}/ruleset.nft
+        ${firewall} || fail "chalkos-firewall did not load the dhcp6 example's ruleset"
+        # take <file>: a config of the dhcp6 example's golden, whose hook is the image's.
+        take() {
+          awk -v want="# $1" '$0 == want { take = 1; next } /^# / { take = 0 } take' ${goldens}/dhcp6.kea |
+            jq --arg hook ${pdHook} '(.Dhcp6["hooks-libraries"][] | select(.library == "libdhcp_run_script.so") | .parameters.name) = $hook' >"${dir}/$1"
+          grep -q '"Dhcp6"' "${dir}/$1" || fail "the dhcp6 example's golden holds no $1"
+        }
+        take kea-dhcp6.json
+        take kea-dhcp6-access.json
+        ${lib.concatMapStrings (e: "export ${lib.escapeShellArg e}\n") Environment}
+        ${kea6} -c ${dir}/kea-dhcp6.json >kea-default.log 2>&1 &
+        ${kea6} -c ${dir}/kea-dhcp6-access.json >kea-access.log 2>&1 &
+        for s in dhcp6 dhcp6-access; do
+          for try in $(seq 100); do
+            [ -S /run/kea/$s.sock ] && break
+            [ "$try" != 100 ] || fail "Kea opened no control socket $s.sock"
+            sleep 0.1
+          done
+        done
+
+        # What a client's dhcpcd got: its DNS servers and search domains. dhcpcd runs the script
+        # with its own environment and directory, so the script names the file whole.
+        cat >bound <<SCRIPT
+        #!${pkgs.runtimeShell}
+        case \$reason in BOUND6 | REBIND6 | RENEW6) ;; *) exit 0 ;; esac
+        echo "dns=\$new_dhcp6_name_servers search=\$new_dhcp6_domain_search" >>"$PWD/got"
+        SCRIPT
+        chmod +x bound
+        # lease <pid> <ia lines>: asks for the IAs once, as the client of the namespace pid.
+        lease() {
+          local pid=$1
+          shift
+          rm -f /var/lib/dhcpcd/* got
+          printf 'ipv6only\nnoipv6rs\npersistent\nduid ll\noption dhcp6_name_servers, dhcp6_domain_search\ninterface eth0\n%s\n' "$*" >"dhcpcd-$pid.conf"
+          on "$pid" timeout 15 dhcpcd -f "$PWD/dhcpcd-$pid.conf" -c "$PWD/bound" -B -1 -6 eth0 >"dhcpcd-$pid.log" 2>&1 || true
+        }
+        lease "$pc" "  ia_na 1"
+        on "$pc" ip -6 addr show dev eth0 | grep -q 'inet6 2001:db8:1::10/128' ||
+          fail "the printer did not get its reserved address: $(cat "dhcpcd-$pc.log")"
+        [ "$(cat got)" = "dns=2001:db8:1::1 search=lan.example.org" ] || fail "the printer got $(cat got)"
+
+        # The home router keeps its prefix, so a second dhcpcd releases it below.
+        rm -f /var/lib/dhcpcd/*
+        printf 'ipv6only\nnoipv6rs\npersistent\nduid ll\ninterface eth0\n  ia_pd 2 -\n' >cpe.conf
+        on "$cpe" dhcpcd -f "$PWD/cpe.conf" -B -6 eth0 >cpe.log 2>&1 &
+        for try in $(seq 100); do
+          grep -q 'delegated prefix 2001:db8:100::/56' cpe.log && break
+          [ "$try" != 100 ] || fail "the home router got no prefix: $(cat cpe.log)"
+          sleep 0.1
+        done
+        cpeLL=$(on "$cpe" ip -6 -o addr show dev eth0 scope link | awk '{print $4}' | cut -d/ -f1)
+        for try in $(seq 50); do
+          [ -e /var/lib/kea/pd-routes/cust0_2001:db8:100::_56 ] && break
+          [ "$try" != 50 ] || fail "chalkos-dhcp6-pd recorded no prefix: $(ls -A /var/lib/kea/pd-routes 2>&1)"
+          sleep 0.1
+        done
+        read -r via _ </var/lib/kea/pd-routes/cust0_2001:db8:100::_56
+        [ "$via" = "$cpeLL" ] || fail "the record routes to $via, not the home router's $cpeLL"
+        ${routes} || fail "chalkos-dhcp6-routes failed"
+        ip -6 route show table 500 proto 65 | grep -q "^2001:db8:100::/56 via $cpeLL dev cust0 " ||
+          fail "access's table routes no prefix to the home router: $(ip -6 route show table 500)"
+
+        # listed: the leases dhcp-leases lists, without the header and their ends.
+        listed() { bash -c ${lib.escapeShellArg leases} dhcp-leases "$@" | tail -n +2 | cut -f 1-5; }
+        [ "$(listed --subnet=customers | cut -f 1-3)" = "$(printf 'access\tcustomers\t2001:db8:100::/56')" ] ||
+          fail "dhcp-leases lists no delegated prefix: $(listed)"
+        [ "$(listed --mac=52:54:00:12:34:56 --subnet=office6)" = "$(printf 'default\toffice6\t2001:db8:1::10\t52:54:00:12:34:56\tprinter')" ] ||
+          fail "dhcp-leases lists no lease of the printer: $(listed)"
+
+        on "$cpe" dhcpcd -6 -k eth0 >/dev/null 2>&1 || true
+        for try in $(seq 50); do
+          [ ! -e /var/lib/kea/pd-routes/cust0_2001:db8:100::_56 ] && break
+          [ "$try" != 50 ] || fail "the release left the record"
+          sleep 0.1
+        done
+        ${routes} || fail "chalkos-dhcp6-routes failed after the release"
+        [ -z "$(ip -6 route show table 500 proto 65)" ] || fail "the release left the route: $(ip -6 route show table 500 proto 65)"
+        echo "fe80::1 $(($(date +%s) - 1))" >/var/lib/kea/pd-routes/cust0_2001:db8:100:100::_56
+        echo "fe80::1 $(($(date +%s) + 60))" >/var/lib/kea/pd-routes/cust0_2001:db9::_56
+        ${routes} || fail "chalkos-dhcp6-routes failed on stale records"
+        [ -z "$(ls -A /var/lib/kea/pd-routes)" ] || fail "stale records are left: $(ls -A /var/lib/kea/pd-routes)"
+        [ -z "$(ip -6 route show table 500 proto 65)" ] || fail "a stale record was routed"
+
+        # Without the opening the client gets nothing.
+        install -m 644 ${goldens}/dhcp.nft ${nftDir}/ruleset.nft
+        ${firewall} || fail "chalkos-firewall did not load the dhcp example's ruleset"
+        on "$pc" ip -6 addr flush dev eth0 scope global
+        lease "$pc" "  ia_na 1"
+        if on "$pc" ip -6 addr show dev eth0 | grep -q 'inet6 2001:db8:'; then
+          fail "the client got an address through a firewall without DHCPv6's opening"
+        fi
+      '';
+
   # chalkos-dhcp, with systemctl stubbed: it runs no server without a config, the default VRF's
-  # neither, starts the server of each rendered config once the config's links and its VRF's
-  # device exist, reloads those that run, restarts a VRF's server whose device networkd made anew
-  # or that recorded none, stops and resets those without a config, names those whose links do not
-  # appear within 30 seconds or that do not run, without starting or reloading them, and stops them
-  # all with stop.
+  # neither, starts the DHCPv4 or DHCPv6 server of each rendered config once the config's links and
+  # its VRF's device exist, reloads those that run, restarts a VRF's server whose device networkd
+  # made anew or that recorded none, stops and resets those without a config, names those whose
+  # links do not appear within 30 seconds or that do not run, without starting or reloading them,
+  # starts chalkos-dhcp6-routes after the servers, and stops them all with stop.
   router-dhcp-instances =
     let
       inherit (checkLib.router.config.systemd.services.chalkos-dhcp.serviceConfig)
@@ -1974,9 +2132,11 @@ in
       done
       set -- $args
       verb=$1 unit=''${2:-}
-      vrf=
-      case $unit in kea-dhcp4@*)
-        vrf=''${unit#kea-dhcp4@}
+      vrf= family=
+      case $unit in kea-dhcp4@* | kea-dhcp6@*)
+        family=''${unit%%@*}
+        family=''${family#kea-}
+        vrf=''${unit#kea-dhcp?@}
         vrf=$(echo "''${vrf%.service}" | sed 's/\\x2d/-/g')
         ;;
       esac
@@ -1997,12 +2157,12 @@ in
         next=$(cat "$SD/$unit.next" 2>/dev/null || echo active running)
         echo "''${next% *}" >"$SD/$unit.state"
         echo "''${next#* }" >"$SD/$unit.sub"
-        [ -z "$vrf" ] || cp "/sys/class/net/$vrf/ifindex" "/run/kea/dhcp4-$vrf.ifindex"
+        [ -z "$vrf" ] || cp "/sys/class/net/$vrf/ifindex" "/run/kea/$family-$vrf.ifindex"
         ;;
       reload) [ "$(state "$unit")" = active ] ;;
       stop)
         [ "$(state "$unit")" = failed ] || echo inactive >"$SD/$unit.state"
-        [ -z "$vrf" ] || rm -f "/run/kea/dhcp4-$vrf.ifindex"
+        [ -z "$vrf" ] || rm -f "/run/kea/$family-$vrf.ifindex"
         ;;
       reset-failed)
         case $(state "$unit") in
@@ -2010,7 +2170,7 @@ in
         esac
         ;;
       list-units)
-        for f in "$SD"/kea-dhcp4.service.state "$SD"/kea-dhcp4@*.service.state; do
+        for f in "$SD"/kea-dhcp4.service.state "$SD"/kea-dhcp4@*.service.state "$SD"/kea-dhcp6.service.state "$SD"/kea-dhcp6@*.service.state; do
           [ -e "$f" ] || continue
           u=''${f##*/}
           u=''${u%.state}
@@ -2074,7 +2234,8 @@ in
       done
       # A router that serves no subnet has no config, and runs no server.
       ${ExecStart} || fail "a run without configs failed"
-      if grep -q '^start' "$SD/log"; then fail "a run without configs started a server"; fi
+      if grep -q '^start --no-block kea' "$SD/log"; then fail "a run without configs started a server"; fi
+      called "start --no-block chalkos-dhcp6-routes.service" "a run without configs"
       # Nor does a VRF's config start the default VRF's server.
       config guest vlan20
       ${ExecReload} || fail "a run with a VRF's config alone failed"
@@ -2123,6 +2284,19 @@ in
       ${ExecReload} || fail "reloading a server without its device's index failed"
       called "restart --no-block $(unit dmz-a)" "no index"
       on_device dmz-a "no index"
+
+      # A DHCPv6 config runs a server of its own beside its VRF's DHCPv4 server, which records
+      # its device's index apart, and a run starts chalkos-dhcp6-routes after the servers.
+      : >"$SD/log"
+      device vlan31
+      printf '{"Dhcp6": {"interfaces-config": {"interfaces": ["vlan31"]}}}\n' >${dir}/kea-dhcp6-dmz-a.json
+      ${ExecReload} || fail "starting a DHCPv6 server failed"
+      called 'start --no-block kea-dhcp6@dmz\x2da.service' "a DHCPv6 config"
+      called "reload $(unit dmz-a)" "a DHCPv6 config"
+      [ "$(cat /run/kea/dhcp6-dmz-a.ifindex)" = "$(cat /sys/class/net/dmz-a/ifindex)" ] ||
+        fail "the DHCPv6 server of dmz-a recorded no index of its device"
+      [ "$(grep -nxF 'start --no-block chalkos-dhcp6-routes.service' "$SD/log" | cut -d: -f1)" -gt "$(grep -nxF 'start --no-block kea-dhcp6@dmz\x2da.service' "$SD/log" | cut -d: -f1)" ] ||
+        fail "chalkos-dhcp6-routes started before the servers"
 
       # Servers without a config, a running one and a failed one, are stopped and reset, before a
       # new server starts, as when a subnet moves from old's VRF to new's.
@@ -2183,6 +2357,8 @@ in
       for vrf in default guest dmz-a late stuck; do
         called "stop $(unit "$vrf")" "stopping the unit"
       done
+      called 'stop kea-dhcp6@dmz\x2da.service' "stopping the DHCPv6 server"
+      not_called "start --no-block chalkos-dhcp6-routes.service" "stopping the servers"
     '';
 
   # frr.service fills the rendered config's password placeholders in from its credentials into

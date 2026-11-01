@@ -53,26 +53,33 @@ let
     }
     printf 'VRF\tSUBNET\tADDRESS\tMAC\tHOSTNAME\tENDS\n'
     shopt -s nullglob
-    for socket in /run/kea/dhcp4.sock /run/kea/dhcp4-*.sock; do
-      vrf=''${socket#/run/kea/dhcp4}
+    for socket in /run/kea/dhcp4.sock /run/kea/dhcp4-*.sock /run/kea/dhcp6.sock /run/kea/dhcp6-*.sock; do
+      # dhcp4.sock and dhcp6.sock are no patterns, so nullglob keeps them whether they exist or not.
+      [[ -S $socket ]] || continue
+      family=''${socket#/run/kea/dhcp}
+      family=''${family:0:1}
+      vrf=''${socket#/run/kea/dhcp"$family"}
       vrf=''${vrf%.sock}
       vrf=''${vrf#-}
       vrf=''${vrf:-default}
       if ((SECONDS >= 24)); then
-        echo "the DHCP server of VRF $vrf was not asked: the others took too long" >&2
+        echo "the DHCPv$family server of VRF $vrf was not asked: the others took too long" >&2
         continue
       fi
-      if ! config=$(ask "$socket" '{"command": "config-get"}') || ! leases=$(ask "$socket" '{"command": "lease4-get-all"}'); then
-        echo "the DHCP server of VRF $vrf does not answer" >&2
+      if ! config=$(ask "$socket" '{"command": "config-get"}') || ! leases=$(ask "$socket" "{\"command\": \"lease$family-get-all\"}"); then
+        echo "the DHCPv$family server of VRF $vrf does not answer" >&2
         continue
       fi
+      # A delegated prefix is its address and length.
       ${lib.getExe pkgs.jq} -rn --argjson c "$config" --argjson l "$leases" --arg vrf "$vrf" --arg subnet "$subnet" --arg mac "$mac" '
-        ($c.arguments.Dhcp4.subnet4 | map({key: (.id | tostring), value: .["user-context"].name}) | from_entries) as $names
+        (($c.arguments.Dhcp4.subnet4 // $c.arguments.Dhcp6.subnet6) | map({key: (.id | tostring), value: .["user-context"].name}) | from_entries) as $names
         | ($l.arguments.leases // [])[]
         | ($names[.["subnet-id"] | tostring] // "-") as $name
         | select(($subnet == "" or $name == $subnet) and ($mac == "" or .["hw-address"] == $mac))
-        | [$vrf, $name, .["ip-address"], .["hw-address"], (if (.hostname // "") == "" then "-" else .hostname end), (.cltt + .["valid-lft"] | todate)]
-        | @tsv' || echo "the DHCP server of VRF $vrf answered without its subnets or leases" >&2
+        | [$vrf, $name, (if .type == "IA_PD" then "\(.["ip-address"])/\(.["prefix-len"])" else .["ip-address"] end),
+          (if (.["hw-address"] // "") == "" then "-" else .["hw-address"] end),
+          (if (.hostname // "") == "" then "-" else .hostname end), (.cltt + .["valid-lft"] | todate)]
+        | @tsv' || echo "the DHCPv$family server of VRF $vrf answered without its subnets or leases" >&2
     done
   '';
 in
@@ -171,7 +178,7 @@ in
     };
     # Only images with DHCP run Kea.
     chalkos.diagnostics.dhcp-leases = lib.mkIf config.chalkos.router.dhcp.enable {
-      description = "The leases of the DHCP servers of every VRF, or of one subnet or MAC address: each lease's VRF, subnet, address, MAC address, host name and end, as Kea's lease commands report them.";
+      description = "The leases of the DHCPv4 and DHCPv6 servers of every VRF, or of one subnet or MAC address: each lease's VRF, subnet, address or delegated prefix, MAC address, host name and end, as Kea's lease commands report them.";
       command = [
         "${pkgs.bash}/bin/bash"
         "-c"
