@@ -218,7 +218,7 @@ a document the config lacks, and what the rules of the router kinds refuse.
 | `PolicyRoute lan: transit is the device of VRF transit; name the VRF's links, or a zone of the VRF` | Name the VRF's links in `interfaces`, or a zone that holds them. |
 | `PolicyRoute servers: the next hop 2001:db8:b::2 takes table 201, which another next hop or a rule's table takes too; give each next hop a table of its own` | Give the next hop a table that no other target uses. |
 | `PolicyRoute "lan" spec.rules: a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: {cidrs: [0.0.0.0/0]}` | Add a term to the match. |
-| `PolicyRoute "lan" spec.rules: a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address` | Keep `set` or `cidrs`, and give the other ranges a rule of their own or add them to the set. |
+| `PolicyRoute "lan" spec.rules: a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address` | Keep one of `set` and `cidrs`, or leave out an empty `source` or `destination`. |
 | `PolicyRoute/lan: spec.rules[1].match.source.set: AddressSet "guests" does not exist` | Add the `AddressSet` document, or fix the name. |
 | `PolicyRoute "lan" spec.rules: a rule has addresses or a set of another family than its own` | Drop the other family's addresses, or change the rule's `family`. |
 | `PolicyRoute "lan" spec.rules: a rule matches no packet: its family, protocol, addresses and sets leave neither IPv4 nor IPv6` | Make the rule's family, protocol, addresses and sets agree on one family. |
