@@ -52,13 +52,14 @@ func wantRefused(t *testing.T, err error, want ...string) {
 // documents alone. No VRF document is named default.
 func TestRouterVRFRefs(t *testing.T) {
 	_, err := checkRouterRefs(t,
-		routerDoc("BGP", "tenant", `{vrf: tenant, asn: 64512, routerID: 192.0.2.1, import: {ipv6: {vrfs: [lab, default]}}}`)+
+		routerDoc("BGP", "tenant", `{vrf: tenant, asn: 64512, routerID: 192.0.2.1, import: {ipv4: {vrfs: [lab4]}, ipv6: {vrfs: [lab, default]}}}`)+
 			routerDoc("BGPPeer", "up", `{vrf: tenant, address: "2001:db8::1", remoteAS: external, families: {ipv6: {}}}`)+
 			routerDoc("NAT64", "edge", `{vrf: tenant}`)+
 			routerDoc("Resolver", "r", `{vrf: tenant, listen: ["2001:db8::1"], allow: ["2001:db8::/32"]}`)+
 			routerDoc("FirewallZone", "lan", `{vrfs: [tenant, default]}`)+
 			routerDoc("PolicyRoute", "lan", `{rules: [{match: {dscp: [46]}, to: {vrf: default}}]}`))
 	wantRefused(t, err,
+		`BGP/tenant: spec.import.ipv4.vrfs[0]: VRF "lab4" does not exist`,
 		`BGP/tenant: spec.import.ipv6.vrfs[0]: VRF "lab" does not exist`,
 		`BGP/tenant: spec.vrf: VRF "tenant" does not exist`,
 		`BGPPeer/up: spec.vrf: VRF "tenant" does not exist`,
@@ -121,12 +122,16 @@ func TestRouterZoneRefs(t *testing.T) {
 // RoutingPolicy, PrefixList and CommunityList documents.
 func TestRouterBGPRefs(t *testing.T) {
 	_, err := checkRouterRefs(t,
-		routerDoc("BGP", "bgp", `{asn: 64512, routerID: 192.0.2.1, networks: [{prefix: "2001:db8::/32", policy: out}], import: {ipv6: {vrfs: [default], policy: in}}}`)+
-			routerDoc("BGPPeer", "up", `{address: "2001:db8::1", remoteAS: external, families: {ipv6: {import: in, export: out, defaultOriginate: true, defaultOriginateWhen: up}}}`)+
+		routerDoc("BGP", "bgp", `{asn: 64512, routerID: 192.0.2.1, networks: [{prefix: "2001:db8::/32", policy: out}], import: {ipv4: {policy: in4}, ipv6: {vrfs: [default], policy: in}}}`)+
+			routerDoc("BGPPeer", "up", `{address: "2001:db8::1", remoteAS: external, families: {ipv4: {import: in4, export: out4, defaultOriginate: true, defaultOriginateWhen: up4}, ipv6: {import: in, export: out, defaultOriginate: true, defaultOriginateWhen: up}}}`)+
 			routerDoc("RoutingPolicy", "p", `{terms: [{match: {prefixList: v6, communityList: drop}, then: {action: accept}}]}`))
 	wantRefused(t, err,
+		`BGP/bgp: spec.import.ipv4.policy: RoutingPolicy "in4" does not exist`,
 		`BGP/bgp: spec.import.ipv6.policy: RoutingPolicy "in" does not exist`,
 		`BGP/bgp: spec.networks[0].policy: RoutingPolicy "out" does not exist`,
+		`BGPPeer/up: spec.families.ipv4.defaultOriginateWhen: PrefixList "up4" does not exist`,
+		`BGPPeer/up: spec.families.ipv4.export: RoutingPolicy "out4" does not exist`,
+		`BGPPeer/up: spec.families.ipv4.import: RoutingPolicy "in4" does not exist`,
 		`BGPPeer/up: spec.families.ipv6.defaultOriginateWhen: PrefixList "up" does not exist`,
 		`BGPPeer/up: spec.families.ipv6.export: RoutingPolicy "out" does not exist`,
 		`BGPPeer/up: spec.families.ipv6.import: RoutingPolicy "in" does not exist`,
@@ -139,9 +144,11 @@ func TestRouterBGPRefs(t *testing.T) {
 func TestRouterSetRefs(t *testing.T) {
 	_, err := checkRouterRefs(t,
 		routerDoc("FirewallZone", "lan", `{interfaces: [eth1]}`)+
-			routerDoc("FirewallPolicy", "lan-local", `{from: lan, to: local, rules: [{source: {set: office}, destination: {cidrs: [192.0.2.0/24]}, action: accept}]}`)+
-			routerDoc("PolicyRoute", "lan", `{rules: [{match: {destination: {set: servers}}, to: {table: 100}}]}`))
+			routerDoc("FirewallPolicy", "lan-local", `{from: lan, to: local, rules: [{source: {set: office}, destination: {cidrs: [192.0.2.0/24]}, action: accept}, {source: {cidrs: [192.0.2.0/24]}, destination: {set: printers}, action: accept}]}`)+
+			routerDoc("PolicyRoute", "lan", `{rules: [{match: {destination: {set: servers}}, to: {table: 100}}, {match: {source: {set: guests}}, to: {table: 101}}]}`))
 	wantRefused(t, err,
 		`FirewallPolicy/lan-local: spec.rules[0].source.set: AddressSet "office" does not exist`,
-		`PolicyRoute/lan: spec.rules[0].match.destination.set: AddressSet "servers" does not exist`)
+		`FirewallPolicy/lan-local: spec.rules[1].destination.set: AddressSet "printers" does not exist`,
+		`PolicyRoute/lan: spec.rules[0].match.destination.set: AddressSet "servers" does not exist`,
+		`PolicyRoute/lan: spec.rules[1].match.source.set: AddressSet "guests" does not exist`)
 }
