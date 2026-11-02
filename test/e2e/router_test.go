@@ -48,9 +48,11 @@ const bgpPassword = "lab-s3cret"
 //     answers Bootstrap with Unimplemented.
 //   - reload: a dry run of a delivery that has r1 announce the address of its edge0 plans FRR's
 //     reload on the frr output, and a dry run of a BGP that announces one prefix twice, which
-//     chalkctl validate accepts, is refused by the frr output's renderer. The delivery then
-//     reaches r2 while the session stays up: FRR reloads, its password filled in again into a
-//     frr.conf that is still root's with mode 0600, and restarts nothing.
+//     chalkctl validate accepts, is refused by the frr output's renderer. A delivery whose
+//     FirewallPolicy names a zone and an AddressSet that no document declares is refused with a
+//     line for each reference. The delivery then reaches r2 while the session stays up: FRR
+//     reloads, its password filled in again into a frr.conf that is still root's with mode 0600,
+//     and restarts nothing.
 //   - nat64: from the address of its edge0, r2 asks r1's resolver for the AAAA records of
 //     ipv4only.arpa and gets those DNS64 synthesizes in the NAT64 prefix, and connects through
 //     r1's NAT64, whose empty pool4 r1 masquerades, and QEMU's user-mode network to a listener of
@@ -329,6 +331,13 @@ func TestRouterLab(t *testing.T) {
 		}
 		if out, err := chalkctl(t, nodes["r1"], "twice", "apply-config", "--dry-run", "r1"); err == nil || !strings.Contains(out, "output frr: its renderer failed") {
 			t.Fatalf("apply-config --dry-run of a prefix announced twice: %v\n%s", err, out)
+		}
+		// A FirewallPolicy that names a zone and an AddressSet the config lacks is refused with a
+		// line for each reference, at its field.
+		if out, err := chalkctl(t, nodes["r1"], "", "apply-config", "r1", "--inventory", danglingInventory(t)); err == nil ||
+			!strings.Contains(out, `FirewallPolicy/dangling: spec.from: FirewallZone "nowhere" does not exist`) ||
+			!strings.Contains(out, `FirewallPolicy/dangling: spec.rules[0].source.set: AddressSet "nosuch" does not exist`) {
+			t.Fatalf("apply-config of dangling references: %v\n%s", err, out)
 		}
 		before, err := session("r1", "fabric")
 		if err != nil {
@@ -1027,4 +1036,29 @@ func TestRouterLab(t *testing.T) {
 			}
 		}
 	})
+}
+
+// danglingInventory writes, beside the fixtures' inventories, the announce inventory with r1's
+// FirewallPolicy dangling, which names the zone nowhere and the AddressSet nosuch that no
+// document declares, and returns its path. The fixtures hold no such inventory, as their check
+// validates every one.
+func danglingInventory(t *testing.T) string {
+	t.Helper()
+	base := inventoryPath("announce")
+	dir := filepath.Dir(base)
+	policy := "apiVersion: router.chalkos.dev/v1alpha1\nkind: FirewallPolicy\nmetadata: {name: dangling}\n" +
+		"spec: {from: nowhere, to: local, rules: [{source: {set: nosuch}, action: accept}]}\n"
+	if err := os.WriteFile(filepath.Join(dir, "nodes", "r1-dangling.yaml"), []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := replaceOnce(t, string(data), "nodes/r1-peer.yaml]", "nodes/r1-peer.yaml, nodes/r1-dangling.yaml]")
+	path := filepath.Join(dir, "router-dangling.yaml")
+	if err := os.WriteFile(path, []byte(inv), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
