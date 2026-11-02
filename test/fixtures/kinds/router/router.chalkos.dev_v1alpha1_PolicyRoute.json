@@ -49,7 +49,11 @@
                   "anyOf": [
                     {
                       "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                      "type": "string"
+                      "type": "string",
+                      "x-chalkos-ref": {
+                        "apiVersion": "router.chalkos.dev/v1alpha1",
+                        "kind": "FirewallZone"
+                      }
                     },
                     {
                       "type": "null"
@@ -408,12 +412,6 @@
         "description": "A PolicyRoute's in names a zone or interfaces, one of them.",
         "messageExpression": "documents.filter(n, [dyn(documents[n].spec[\"in\"])].exists(i, i != null && (i.zone == null) == (size(i.interfaces) == 0))).map(n, \"PolicyRoute \" + n).join(\", \") + \": in names a zone or interfaces, one of them; leave in out for traffic from every link\"",
         "rule": "documents.all(n, [dyn(documents[n].spec[\"in\"])].all(i, i == null || (i.zone == null) != (size(i.interfaces) == 0)))",
-        "takes": "refuse"
-      },
-      {
-        "description": "A PolicyRoute's zone is a FirewallZone document.",
-        "messageExpression": "cel.bind(zones, ((\"router.chalkos.dev/v1alpha1\" in config && \"FirewallZone\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].FirewallZone : {}), documents.filter(n, [dyn(documents[n].spec[\"in\"])].exists(i, i != null && i.zone != null && !(i.zone in zones))).map(n, \"PolicyRoute \" + n + \" names the zone \" + documents[n].spec[\"in\"].zone).join(\", \") + \", which no FirewallZone document declares\")",
-        "rule": "cel.bind(zones, ((\"router.chalkos.dev/v1alpha1\" in config && \"FirewallZone\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].FirewallZone : {}), documents.all(n, [dyn(documents[n].spec[\"in\"])].all(i, i == null || i.zone == null || i.zone in zones)))",
         "takes": "refuse"
       },
       {

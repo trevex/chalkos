@@ -495,7 +495,6 @@ func TestRouterRefusals(t *testing.T) {
 	}{
 		"a port that is no number": {[]string{"router-nftables", "chalkd"}, nil, `"chalkd" is no TCP port of chalkd`},
 		"an unknown hash":          {[]string{"router-sysctl"}, map[string][]any{"Router": {doc("Router", "r", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l5", "conntrackMax": null, "management": {"interfaces": null}}`)}}, `ecmpHash "l5" is neither l3 nor l4`},
-		"a zone that is missing":   {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallPolicy": {rule(`{"action": "accept"}`)}}, "names the zone wan, which no FirewallZone declares"},
 		"an inverted range":        {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["90-80"], "action": "accept"}`)}}, `"90-80" is no range of ports`},
 		"port zero":                {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": [0], "action": "accept"}`)}}, "a port is a number from 1 to 65535"},
 		"a range from port zero":   {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["0-80"], "action": "accept"}`)}}, `"0-80" is no range of ports`},

@@ -214,7 +214,7 @@ a document the config lacks, and what the rules of the router kinds refuse.
 | Message | Fix |
 | --- | --- |
 | `PolicyRoute lan: in names a zone or interfaces, one of them; leave in out for traffic from every link` | Keep `zone` or `interfaces`, or drop `in`. |
-| `PolicyRoute lan names the zone dmz, which no FirewallZone document declares` | Add the zone, or name one that exists. |
+| `PolicyRoute/lan: spec.in.zone: FirewallZone "dmz" does not exist` | Add the zone, or name one that exists. |
 | `PolicyRoute lan: transit is the device of VRF transit; name the VRF's links, or a zone of the VRF` | Name the VRF's links in `interfaces`, or a zone that holds them. |
 | `PolicyRoute servers: the next hop 2001:db8:b::2 takes table 201, which another next hop or a rule's table takes too; give each next hop a table of its own` | Give the next hop a table that no other target uses. |
 | `PolicyRoute "lan" spec.rules: a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: [0.0.0.0/0]` | Add a term to the match. |

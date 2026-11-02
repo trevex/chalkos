@@ -26,7 +26,12 @@ let
     ;
   cel = import ../../../../lib/cel.nix { inherit lib; };
 
-  zoneName = types.strMatching documentName;
+  zoneRef = ref "FirewallZone";
+  # A FirewallZone document's name, or local for the router itself, which has no document.
+  localRef = ref {
+    kind = "FirewallZone";
+    reserved = [ "local" ];
+  };
   # A VRF document's name. The default VRF has no device and no table of a VRF document, so a zone
   # and a policy route name VRF documents alone.
   vrfRef = ref "VRF";
@@ -102,7 +107,7 @@ let
   place = types.submodule {
     options = {
       zone = mkOption {
-        type = types.nullOr zoneName;
+        type = types.nullOr zoneRef;
         default = null;
         description = "FirewallZone whose interfaces the connections use; excludes `interface`.";
       };
@@ -408,23 +413,20 @@ in
             messageExpression = ''documents.filter(n, documents[n].spec.from == "local").map(n, "FirewallPolicy " + n).join(", ") + " comes from local, the router itself, whose own connections the firewall accepts; a policy comes from a FirewallZone"'';
           }
           {
-            description = "A FirewallPolicy's zones are FirewallZone documents, or local for its to.";
-            rule = ''cel.bind(zones, ${delivered "FirewallZone"}, documents.all(n, (documents[n].spec.from == "local" || documents[n].spec.from in zones) && (documents[n].spec.to == "local" || documents[n].spec.to in zones)))'';
-            messageExpression = ''cel.bind(zones, ${delivered "FirewallZone"}, documents.filter(n, !((documents[n].spec.from == "local" || documents[n].spec.from in zones) && (documents[n].spec.to == "local" || documents[n].spec.to in zones))).map(n, "FirewallPolicy " + n + " names the zone " + (documents[n].spec.from == "local" || documents[n].spec.from in zones ? documents[n].spec.to : documents[n].spec.from) + ", which no FirewallZone document declares").join("; "))'';
-          }
-          {
             description = "One FirewallPolicy at most goes from a zone to another.";
             rule = ''cel.bind(pairs, documents.map(n, documents[n].spec.from + " to " + documents[n].spec.to), pairs.all(p, size(pairs.filter(q, q == p)) == 1))'';
             messageExpression = ''cel.bind(pairs, documents.map(n, documents[n].spec.from + " to " + documents[n].spec.to), "more than one FirewallPolicy goes from " + pairs.filter(p, size(pairs.filter(q, q == p)) > 1)[0] + "; give each pair of zones one policy")'';
           }
         ];
         spec = {
+          # local is the router itself, which has no FirewallZone document: a rule refuses it
+          # in from, where it would be a policy of the router's own connections.
           from = mkOption {
-            type = zoneName;
+            type = localRef;
             description = "FirewallZone the connections come from.";
           };
           to = mkOption {
-            type = zoneName;
+            type = localRef;
             description = "FirewallZone the connections go to, or `local` for connections to the router itself.";
           };
           default = mkOption {
@@ -503,11 +505,6 @@ in
             description = "out and in name a zone or an interface, one of them.";
             rule = ''documents.all(n, [documents[n].spec.out, documents[n].spec["in"]].all(p, p == null || (p.zone == null) != (p.interface == null)))'';
             messageExpression = ''documents.filter(n, ![documents[n].spec.out, documents[n].spec["in"]].all(p, p == null || (p.zone == null) != (p.interface == null))).map(n, "NATRule " + n).join(", ") + ": out and in name a zone or an interface, one of them"'';
-          }
-          {
-            description = "A NATRule's zone is a FirewallZone document.";
-            rule = ''cel.bind(zones, ${delivered "FirewallZone"}, documents.all(n, [documents[n].spec.out, documents[n].spec["in"]].all(p, p == null || p.zone == null || p.zone in zones)))'';
-            messageExpression = ''cel.bind(zones, ${delivered "FirewallZone"}, documents.filter(n, ![documents[n].spec.out, documents[n].spec["in"]].all(p, p == null || p.zone == null || p.zone in zones)).map(n, "NATRule " + n).join(", ") + " names a zone that no FirewallZone document declares")'';
           }
           {
             description = "A NATRule's interface is no VRF's device, which takes the VRF document's name; the output router-nftables also refuses a glob that matches devices alone.";
@@ -614,11 +611,6 @@ in
             messageExpression = ''documents.filter(n, [dyn(documents[n].spec["in"])].exists(i, i != null && (i.zone == null) == (size(i.interfaces) == 0))).map(n, "PolicyRoute " + n).join(", ") + ": in names a zone or interfaces, one of them; leave in out for traffic from every link"'';
           }
           {
-            description = "A PolicyRoute's zone is a FirewallZone document.";
-            rule = ''cel.bind(zones, ${delivered "FirewallZone"}, documents.all(n, [dyn(documents[n].spec["in"])].all(i, i == null || i.zone == null || i.zone in zones)))'';
-            messageExpression = ''cel.bind(zones, ${delivered "FirewallZone"}, documents.filter(n, [dyn(documents[n].spec["in"])].exists(i, i != null && i.zone != null && !(i.zone in zones))).map(n, "PolicyRoute " + n + " names the zone " + documents[n].spec["in"].zone).join(", ") + ", which no FirewallZone document declares")'';
-          }
-          {
             description = "No interface of a PolicyRoute's in is a VRF's device, which takes the VRF document's name; the outputs also refuse globs that match one.";
             rule = "cel.bind(vrfs, ${delivered "VRF"}, ${policyInterfaces "all.all(i, !(i in vrfs))"})";
             messageExpression = "cel.bind(vrfs, ${delivered "VRF"}, ${policyInterfaces ''cel.bind(i, all.filter(i, i in vrfs)[0], "PolicyRoute " + documents.filter(n, documents[n].spec["in"] != null && i in documents[n].spec["in"].interfaces)[0] + ": " + i + " is the device of VRF " + i + "; name the VRF's links, or a zone of the VRF")''})";
@@ -635,7 +627,7 @@ in
               types.submodule {
                 options = {
                   zone = mkOption {
-                    type = types.nullOr zoneName;
+                    type = types.nullOr zoneRef;
                     default = null;
                     description = "FirewallZone whose links the traffic comes in on; excludes `interfaces`.";
                   };

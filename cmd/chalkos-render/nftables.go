@@ -274,10 +274,13 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		if p.Spec.From == "local" {
 			return nil, fmt.Errorf("FirewallPolicy %s comes from local", p.Name)
 		}
-		for _, z := range []string{p.Spec.From, p.Spec.To} {
-			if _, ok := f.zones[z]; !ok && z != "local" {
-				return nil, fmt.Errorf("FirewallPolicy %s names the zone %s, which no FirewallZone declares", p.Name, z)
+		if p.Spec.To != "local" {
+			if _, err := mustGet(f.zones, "FirewallZone", p.Spec.To); err != nil {
+				return nil, fmt.Errorf("FirewallPolicy %s: %w", p.Name, err)
 			}
+		}
+		if _, err := mustGet(f.zones, "FirewallZone", p.Spec.From); err != nil {
+			return nil, fmt.Errorf("FirewallPolicy %s: %w", p.Name, err)
 		}
 	}
 	return f, nil
@@ -789,9 +792,9 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 	}
 	switch {
 	case place.Zone != nil && place.Interface == nil:
-		z, ok := f.zones[*place.Zone]
-		if !ok {
-			return "", fmt.Errorf("the zone %s is no FirewallZone", *place.Zone)
+		z, err := mustGet(f.zones, "FirewallZone", *place.Zone)
+		if err != nil {
+			return "", err
 		}
 		if len(z.links) == 0 {
 			return "", fmt.Errorf("the zone %s holds no link", *place.Zone)

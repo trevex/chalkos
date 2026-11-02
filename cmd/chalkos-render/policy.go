@@ -186,10 +186,10 @@ func (f *firewall) policyLines(d routerDocuments) ([]string, error) {
 }
 
 // policyHead matches where a PolicyRoute's traffic comes in, as prerouting sees it: the links of
-// its zone, its interfaces or, without in, every link. It refuses a zone the config lacks or
-// that holds no link, an interface that matches a VRF's device, which prerouting sees for a VRF's
-// link only after the pass that decides the mark, and a zone's link or an interface that matches
-// a NAT64's link, whose traffic Jool translates.
+// its zone, its interfaces or, without in, every link. It refuses a zone that holds no link, an
+// interface that matches a VRF's device, which prerouting sees for a VRF's link only after the
+// pass that decides the mark, and a zone's link or an interface that matches a NAT64's link, whose
+// traffic Jool translates.
 func (f *firewall) policyHead(p named[policyRouteSpec]) (string, error) {
 	what := "PolicyRoute " + p.Name
 	in := p.Spec.In
@@ -197,9 +197,9 @@ func (f *firewall) policyHead(p named[policyRouteSpec]) (string, error) {
 	case in == nil:
 		return "", nil
 	case in.Zone != nil && len(in.Interfaces) == 0:
-		z, ok := f.zones[*in.Zone]
-		if !ok {
-			return "", fmt.Errorf("%s: the zone %s is no FirewallZone", what, *in.Zone)
+		z, err := mustGet(f.zones, "FirewallZone", *in.Zone)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", what, err)
 		}
 		if len(z.links) == 0 {
 			return "", fmt.Errorf("%s: the zone %s holds no link", what, *in.Zone)

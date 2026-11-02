@@ -195,7 +195,7 @@ document:
 
 | Message | Fix |
 | --- | --- |
-| `FirewallPolicy lan-dmz names the zone dmz, which no FirewallZone document declares` | Add the zone, or name one that exists. |
+| `FirewallPolicy/lan-dmz: spec.to: FirewallZone "dmz" does not exist` | Add the zone, or name one that exists. |
 | `the interface eth1 is in more than one FirewallZone, or twice in one; give each interface one zone` | Keep the interface in one zone. |
 | `FirewallZone/guest: spec.vrfs[0]: VRF "guest" does not exist` | Add the `VRF` document, or fix the name in `vrfs`. |
 | `the VRF tenant is in more than one FirewallZone, or twice in one; give each VRF one zone` | Keep the VRF in one zone, or name its links in the zones instead. |

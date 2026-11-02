@@ -38,10 +38,10 @@ func network(t *testing.T, name, match string) config.Document {
 	return builtinDoc(t, config.NetworkdAPI, "Network", name, `{"match": `+match+`}`)
 }
 
-// The router kinds' rules accept a fabric edge's documents and a zone of a VRF, and refuse a
-// dangling zone or set, two zones of one interface or VRF, a zone of nothing, a zone's or
-// NAT rule's interface that is a VRF's device, a policy from local, two policies between one
-// pair, a set beside ranges, addresses of another family and ports without a protocol.
+// The router kinds' rules accept a fabric edge's documents and a zone of a VRF, and refuse a set
+// the config lacks, two zones of one interface or VRF, a zone of nothing, a zone's or NAT rule's
+// interface that is a VRF's device, a policy from local, two policies between one pair, a set
+// beside ranges, addresses of another family and ports without a protocol.
 func TestRouterRules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -82,8 +82,6 @@ func TestRouterRules(t *testing.T) {
 			[]string{"the interface eth2 is in more than one FirewallZone, or twice in one; give each interface one zone"}},
 		{"a policy from local", replace(edge, doc("FirewallPolicy", "out", `{"from": "local", "to": "wan"}`)),
 			[]string{"FirewallPolicy out comes from local, the router itself, whose own connections the firewall accepts; a policy comes from a FirewallZone"}},
-		{"a zone no document declares", replace(edge, doc("FirewallPolicy", "dmz-local", `{"from": "dmz", "to": "local"}`)),
-			[]string{"FirewallPolicy dmz-local names the zone dmz, which no FirewallZone document declares"}},
 		{"two policies between one pair", replace(edge, doc("FirewallPolicy", "wan-local-2", `{"from": "wan", "to": "local"}`)),
 			[]string{"more than one FirewallPolicy goes from wan to local; give each pair of zones one policy"}},
 		{"a set beside ranges", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"source": ["set:office", "2001:db8:2::/48"], "action": "accept"}]}`)),
@@ -115,8 +113,6 @@ func TestRouterRules(t *testing.T) {
 			[]string{"NATRule wan: a masquerade or snat rule names out alone, a dnat rule in alone"}},
 		{"a place of zone and interface", replace(edge, doc("NATRule", "wan", `{"type": "masquerade", "out": {"zone": "wan", "interface": "eth0"}}`)),
 			[]string{"NATRule wan: out and in name a zone or an interface, one of them"}},
-		{"a NAT zone no document declares", replace(edge, doc("NATRule", "wan", `{"type": "masquerade", "out": {"zone": "uplink"}}`)),
-			[]string{"NATRule wan names a zone that no FirewallZone document declares"}},
 		{"snat without to", replace(edge, doc("NATRule", "wan", `{"type": "snat", "out": {"zone": "wan"}}`)),
 			[]string{"NATRule wan: snat and dnat translate to the address of to, masquerade to that of the interface and has no to"}},
 		{"NAT of another family", replace(edge, doc("NATRule", "web", `{"type": "dnat", "in": {"interface": "eth0"}, "match": {"protocol": "tcp", "destinationPorts": [80]}, "to": {"address": "2001:db8::10"}}`)),

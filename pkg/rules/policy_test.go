@@ -9,11 +9,11 @@ import (
 )
 
 // The PolicyRoute rules accept a LAN router's policies into a VRF, a table and next hops, and
-// refuse an in of a zone and interfaces, a zone or set the config lacks, an in of a VRF's
-// device, an empty match, a set beside ranges, addresses of another family, ports without a
-// protocol, a to of no target or of two, a next hop of another family, the local table or a VRF's
-// as a table, a next hop's table of the kernel's or of a VRF, a next hop on lo, and a next hop's
-// table that another next hop or a rule's table takes.
+// refuse an in of a zone and interfaces, a set the config lacks, an in of a VRF's device, an
+// empty match, a set beside ranges, addresses of another family, ports without a protocol, a to
+// of no target or of two, a next hop of another family, the local table or a VRF's as a table, a
+// next hop's table of the kernel's or of a VRF, a next hop on lo, and a next hop's table that
+// another next hop or a rule's table takes.
 func TestPolicyRouteRules(t *testing.T) {
 	set, doc := routerRules(t)
 	lan := []config.Document{
@@ -54,8 +54,6 @@ func TestPolicyRouteRules(t *testing.T) {
 			[]string{"PolicyRoute lan: in names a zone or interfaces, one of them; leave in out for traffic from every link"}},
 		{"an empty in", replace(lan, route("lan", `{"in": {}, "rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]}`)),
 			[]string{"PolicyRoute lan: in names a zone or interfaces, one of them; leave in out for traffic from every link"}},
-		{"a zone the config lacks", replace(lan, route("lan", `{"in": {"zone": "dmz"}, "rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]}`)),
-			[]string{"PolicyRoute lan names the zone dmz, which no FirewallZone document declares"}},
 		{"a VRF's device", replace(lan, route("lan", `{"in": {"interfaces": ["lan0", "transit"]}, "rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]}`)),
 			[]string{"PolicyRoute lan: transit is the device of VRF transit; name the VRF's links, or a zone of the VRF"}},
 		{"an empty match", replace(lan, route("lan", `{"rules": [{"match": {}, "to": {"vrf": "transit"}}]}`)),

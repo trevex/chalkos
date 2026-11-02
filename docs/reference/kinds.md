@@ -454,12 +454,12 @@ What the router's firewall does with new connections from one zone to another, o
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 8 [change rules](builtins.md#rules-firewallpolicy).
+A node's config may hold several, each with a name of its own. It has 7 [change rules](builtins.md#rules-firewallpolicy).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.default` | one of `accept`, `drop`, `reject` | `"drop"` | What happens to a connection no rule matches; `reject` answers with an administratively prohibited error. |
-| `spec.from` | string | required | FirewallZone the connections come from. |
+| `spec.from` | name of a FirewallZone, or `local` | required | FirewallZone the connections come from. |
 | `spec.rules` | list of object | `[]` | Rules in order: the first that matches a connection decides. |
 | `spec.rules[].action` | one of `accept`, `drop`, `reject` | required | What happens to a connection the rule matches; `reject` answers with an administratively prohibited error. |
 | `spec.rules[].destination` | list of string | `[]` | Destination address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every destination. |
@@ -470,7 +470,7 @@ A node's config may hold several, each with a name of its own. It has 8 [change 
 | `spec.rules[].protocol` | one of `tcp`, `udp`, `sctp`, `icmp`, `icmpv6`, `gre`, `esp`, `ah` or null | `null` | Protocol the rule matches; null matches every protocol. `icmp` is IPv4's and `icmpv6` IPv6's. |
 | `spec.rules[].source` | list of string | `[]` | Source address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every source. In each family the rule matches the ranges of that family. |
 | `spec.rules[].sourcePorts` | list of integer from 1 to 65535 or string | `[]` | Source ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
-| `spec.to` | string | required | FirewallZone the connections go to, or `local` for connections to the router itself. |
+| `spec.to` | name of a FirewallZone, or `local` | required | FirewallZone the connections go to, or `local` for connections to the router itself. |
 
 ### FirewallZone { #firewallzone }
 
@@ -508,21 +508,21 @@ An address translation of the router, which applies whether or not any FirewallP
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 7 [change rules](builtins.md#rules-natrule).
+A node's config may hold several, each with a name of its own. It has 6 [change rules](builtins.md#rules-natrule).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.family` | one of `ipv4`, `ipv6` | `"ipv4"` | Address family the rule translates. |
 | `spec.in` | object or null | `null` | Where the connections arrive, for `dnat`. |
 | `spec.in.interface` | string or null | `null` | Interface the connections use, by name or glob, a glob being a prefix followed by `*`; excludes `zone`. |
-| `spec.in.zone` | string or null | `null` | FirewallZone whose interfaces the connections use; excludes `interface`. |
+| `spec.in.zone` | name of a FirewallZone or null | `null` | FirewallZone whose interfaces the connections use; excludes `interface`. |
 | `spec.match.destination` | list of string | `[]` | Destination address ranges of the connections; empty matches every destination. |
 | `spec.match.destinationPorts` | list of integer from 1 to 65535 or string | `[]` | Destination ports, each a port or a range `<first>-<last>`, with `protocol`; empty matches every port. |
 | `spec.match.protocol` | one of `tcp`, `udp`, `sctp` or null | `null` | Protocol of the connections; null matches every protocol. |
 | `spec.match.source` | list of string | `[]` | Source address ranges of the connections; empty matches every source. |
 | `spec.out` | object or null | `null` | Where the connections leave, for `masquerade` and `snat`. |
 | `spec.out.interface` | string or null | `null` | Interface the connections use, by name or glob, a glob being a prefix followed by `*`; excludes `zone`. |
-| `spec.out.zone` | string or null | `null` | FirewallZone whose interfaces the connections use; excludes `interface`. |
+| `spec.out.zone` | name of a FirewallZone or null | `null` | FirewallZone whose interfaces the connections use; excludes `interface`. |
 | `spec.to` | object or null | `null` | What `snat` and `dnat` translate to. |
 | `spec.to.address` | string | required | Address the rule translates to. |
 | `spec.to.port` | integer from 1 to 65535 or null | `null` | Port the rule translates to, with `match.protocol`; null keeps the port. |
@@ -534,13 +534,13 @@ Policy routing of the router: rules that send the forwarded traffic they match, 
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 15 [change rules](builtins.md#rules-policyroute).
+A node's config may hold several, each with a name of its own. It has 14 [change rules](builtins.md#rules-policyroute).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.in` | object or null | `null` | Where the traffic comes in: a zone or interfaces; null for every link. |
 | `spec.in.interfaces` | list of string | `[]` | Interfaces the traffic comes in on, by name or glob, a glob being a prefix followed by `*`; excludes `zone`. |
-| `spec.in.zone` | string or null | `null` | FirewallZone whose links the traffic comes in on; excludes `interfaces`. |
+| `spec.in.zone` | name of a FirewallZone or null | `null` | FirewallZone whose links the traffic comes in on; excludes `interfaces`. |
 | `spec.rules` | list of object | required | Rules in order: the first that matches a packet decides where it goes. |
 | `spec.rules[].match` | object | required | What the rule matches, at least one term: a rule for every packet says so, such as with `source: [0.0.0.0/0]`. |
 | `spec.rules[].match.destination` | list of string | `[]` | Destination address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every destination. |

@@ -58,7 +58,6 @@ func TestPolicyRouteRefusals(t *testing.T) {
 		want string
 	}{
 		"in of a zone and interfaces":  {policyDocs(t, "a", `{"in": {"zone": "lan", "interfaces": ["lan0"]}, `+dscp+`}`), "PolicyRoute a: in names a zone or interfaces, one of them"},
-		"a zone the config lacks":      {policyDocs(t, "a", `{"in": {"zone": "dmz", "interfaces": []}, `+dscp+`}`), "PolicyRoute a: the zone dmz is no FirewallZone"},
 		"a glob of a VRF's device":     {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["tran*"]}, `+dscp+`}`), "PolicyRoute a: tran* matches transit, the device of VRF transit"},
 		"an interface that ends a set": {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["lan0\" } accept; iifname { \"x"]}, `+dscp+`}`), "is no interface name or glob"},
 		"a glob of a NAT64's link": {func() map[string][]any {

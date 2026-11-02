@@ -92,3 +92,27 @@ func TestRouterVRFRefs(t *testing.T) {
 		t.Errorf("a VRF named default: err = %v, want the name refused as reserved", err)
 	}
 }
+
+// A FirewallPolicy, a NAT rule's place and a policy route's in name FirewallZone documents. local
+// names the router itself, which has no document, in a FirewallPolicy alone, and no FirewallZone
+// is named local.
+func TestRouterZoneRefs(t *testing.T) {
+	_, err := checkRouterRefs(t,
+		routerDoc("FirewallPolicy", "lan-wan", `{from: lan, to: wan}`)+
+			routerDoc("FirewallPolicy", "dmz-local", `{from: dmz, to: local}`)+
+			routerDoc("NATRule", "out", `{type: masquerade, out: {zone: wan}}`)+
+			routerDoc("NATRule", "web", `{type: dnat, in: {zone: local}, to: {address: 192.0.2.10}}`)+
+			routerDoc("PolicyRoute", "lan", `{in: {zone: dmz}, rules: [{match: {dscp: [46]}, to: {table: 100}}]}`)+
+			routerDoc("FirewallZone", "lan", `{interfaces: [eth1]}`))
+	wantRefused(t, err,
+		`FirewallPolicy/dmz-local: spec.from: FirewallZone "dmz" does not exist`,
+		`FirewallPolicy/lan-wan: spec.to: FirewallZone "wan" does not exist`,
+		`NATRule/out: spec.out.zone: FirewallZone "wan" does not exist`,
+		`NATRule/web: spec.in.zone: FirewallZone "local" does not exist`,
+		`PolicyRoute/lan: spec.in.zone: FirewallZone "dmz" does not exist`)
+
+	d := parseOne(t, routerDoc("FirewallZone", "local", `{interfaces: [lo]}`))
+	if err := routerSchemas(t).Validate(d.Object); err == nil || !strings.Contains(err.Error(), `the name "local" is reserved`) {
+		t.Errorf("a FirewallZone named local: err = %v, want the name refused as reserved", err)
+	}
+}

@@ -55,7 +55,11 @@
                   "anyOf": [
                     {
                       "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                      "type": "string"
+                      "type": "string",
+                      "x-chalkos-ref": {
+                        "apiVersion": "router.chalkos.dev/v1alpha1",
+                        "kind": "FirewallZone"
+                      }
                     },
                     {
                       "type": "null"
@@ -154,7 +158,11 @@
                   "anyOf": [
                     {
                       "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                      "type": "string"
+                      "type": "string",
+                      "x-chalkos-ref": {
+                        "apiVersion": "router.chalkos.dev/v1alpha1",
+                        "kind": "FirewallZone"
+                      }
                     },
                     {
                       "type": "null"
@@ -248,12 +256,6 @@
         "description": "out and in name a zone or an interface, one of them.",
         "messageExpression": "documents.filter(n, ![documents[n].spec.out, documents[n].spec[\"in\"]].all(p, p == null || (p.zone == null) != (p.interface == null))).map(n, \"NATRule \" + n).join(\", \") + \": out and in name a zone or an interface, one of them\"",
         "rule": "documents.all(n, [documents[n].spec.out, documents[n].spec[\"in\"]].all(p, p == null || (p.zone == null) != (p.interface == null)))",
-        "takes": "refuse"
-      },
-      {
-        "description": "A NATRule's zone is a FirewallZone document.",
-        "messageExpression": "cel.bind(zones, ((\"router.chalkos.dev/v1alpha1\" in config && \"FirewallZone\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].FirewallZone : {}), documents.filter(n, ![documents[n].spec.out, documents[n].spec[\"in\"]].all(p, p == null || p.zone == null || p.zone in zones)).map(n, \"NATRule \" + n).join(\", \") + \" names a zone that no FirewallZone document declares\")",
-        "rule": "cel.bind(zones, ((\"router.chalkos.dev/v1alpha1\" in config && \"FirewallZone\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].FirewallZone : {}), documents.all(n, [documents[n].spec.out, documents[n].spec[\"in\"]].all(p, p == null || p.zone == null || p.zone in zones)))",
         "takes": "refuse"
       },
       {
