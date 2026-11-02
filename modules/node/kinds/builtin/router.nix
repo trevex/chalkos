@@ -34,7 +34,7 @@ let
   };
   # A VRF document's name. The default VRF has no device and no table of a VRF document, so a zone
   # and a policy route name VRF documents alone.
-  vrfRef = ref "VRF";
+  vrfDocRef = ref "VRF";
   # Binds, for body, all to the VRFs of every FirewallZone as one list, which a rule loops over
   # rather than over each zone's VRFs: nested loops, or a loop over a list flattened in place,
   # would cost more than chalkd allows.
@@ -250,7 +250,7 @@ let
   policyTarget = types.submodule {
     options = {
       vrf = mkOption {
-        type = types.nullOr vrfRef;
+        type = types.nullOr vrfDocRef;
         default = null;
         example = "transit";
         description = "VRF document whose routing table routes the traffic; excludes `table` and `nextHop`.";
@@ -415,7 +415,7 @@ in
             description = "Interfaces of the zone, ${interfaceText}. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; the VRF itself is then in no other zone.";
           };
           vrfs = mkOption {
-            type = types.listOf vrfRef;
+            type = types.listOf vrfDocRef;
             default = [ ];
             example = [ "tenant" ];
             description = "VRF documents whose links are all in the zone, those added later included; a VRF is in one zone at most.";
