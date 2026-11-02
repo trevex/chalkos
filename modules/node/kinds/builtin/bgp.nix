@@ -15,8 +15,8 @@ let
   inherit (lib) mkOption types;
   inherit (import ./lib.nix) builtin groups;
   inherit (import ../../../../lib/kinds/types.nix { inherit lib; })
-    documentName
     peerAS
+    ref
     secretRef
     ;
   inherit (import ./router-types.nix { inherit lib; })
@@ -30,7 +30,7 @@ let
     vrfRef
     ;
 
-  name = types.strMatching documentName;
+  policyRef = ref "RoutingPolicy";
   # A number from 1 to 2^32 - 1, as AS numbers and BGP's counts are.
   positive32 = types.ints.between 1 4294967295;
   # Numbers of 16 and of 32 bits in decimal, as a community's parts are.
@@ -73,19 +73,18 @@ let
         description = "VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`.";
       };
       policy = mkOption {
-        type = types.nullOr name;
+        type = types.nullOr policyRef;
         default = null;
         description = "RoutingPolicy that decides the routes the instance takes from all of `vrfs`; null takes every route.";
       };
     };
   };
-  # Whether the RoutingPolicy p, if the config holds it, matches PrefixLists of the family f: the
-  # first it names that the config holds is of f, as the policy's other lists are by a rule of
-  # its own. It reads the config's RoutingPolicy documents as pols and its PrefixList documents
-  # as lists.
+  # Whether the RoutingPolicy p matches PrefixLists of the family f: the first it names is of f, as
+  # the policy's other lists are by a rule of its own. The reference check has found the policy
+  # and its lists, so document() returns them.
   policyOfFamily =
     p: f:
-    "(!(${p} in pols) || cel.bind(named, pols[${p}].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == ${f}))";
+    ''cel.bind(named, document("RoutingPolicy", ${p}).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document("PrefixList", named[0].match.prefixList).spec.family == ${f})'';
   # Whether the RoutingPolicy of each import and export of a peer's families, self, passes ok, a
   # function of the policy and the family. Written out per family and direction, as a loop over
   # them would cost a loop more.
@@ -154,23 +153,19 @@ let
           "ipv6"
         ]
     }].filter(u, size(u) > 0)[0]";
-  # Whether the family f's list is the config's PrefixList of the family n, when the config holds
-  # it; the rule before refuses a list it lacks. It reads the config's PrefixList documents as
-  # lists.
-  trackedOfFamily =
-    f: n:
-    "(!(${f}.defaultOriginateWhen in lists) || lists[${f}.defaultOriginateWhen].spec.family == ${n})";
+  # Whether the family f's list is a PrefixList of the family n.
+  trackedOfFamily = f: n: ''document("PrefixList", ${f}.defaultOriginateWhen).spec.family == ${n}'';
 
   # What a peer does with the routes of one address family.
   peerFamily = types.submodule {
     options = {
       import = mkOption {
-        type = types.nullOr name;
+        type = types.nullOr policyRef;
         default = null;
         description = "RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route.";
       };
       export = mkOption {
-        type = types.nullOr name;
+        type = types.nullOr policyRef;
         default = null;
         description = "RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has.";
       };
@@ -180,7 +175,7 @@ let
         description = "Whether the router sends the peer a default route of the family: whatever its own table holds, or while `defaultOriginateWhen` holds.";
       };
       defaultOriginateWhen = mkOption {
-        type = types.nullOr name;
+        type = types.nullOr (ref "PrefixList");
         default = null;
         example = "uplink";
         description = "PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole, unreachable and prohibit routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds.";
@@ -289,7 +284,7 @@ in
                     description = "Address range the router announces while its table holds a route to it.";
                   };
                   policy = mkOption {
-                    type = types.nullOr name;
+                    type = types.nullOr policyRef;
                     default = null;
                     description = "RoutingPolicy whose terms set the announcement's attributes; null announces it as it is.";
                   };
@@ -303,11 +298,6 @@ in
                 description = "A network's prefix is an address range.";
                 rule = "self.all(w, cidr(w.prefix).prefix() >= 0)";
                 message = "a network is no address range";
-              }
-              {
-                description = "A network's policy is a RoutingPolicy document.";
-                rule = "cel.bind(pols, ${delivered "RoutingPolicy"}, self.all(w, w.policy == null || w.policy in pols))";
-                messageExpression = ''cel.bind(pols, ${delivered "RoutingPolicy"}, "a network names the RoutingPolicy " + self.filter(w, w.policy != null && !(w.policy in pols))[0].policy + ", which the config does not hold")'';
               }
             ];
           };
@@ -340,14 +330,9 @@ in
                 message = "the import names a VRF twice";
               }
               {
-                description = "An import's policy is a RoutingPolicy document.";
-                rule = "cel.bind(pols, ${delivered "RoutingPolicy"}, [self.ipv4, self.ipv6].all(f, f == null || f.policy == null || f.policy in pols))";
-                messageExpression = ''cel.bind(pols, ${delivered "RoutingPolicy"}, "an import names the RoutingPolicy " + [self.ipv4, self.ipv6].filter(f, f != null && f.policy != null && !(f.policy in pols))[0].policy + ", which the config does not hold")'';
-              }
-              {
                 description = "An import's policy matches PrefixLists of its family alone.";
-                rule = "cel.bind(pols, ${delivered "RoutingPolicy"}, cel.bind(lists, ${delivered "PrefixList"}, (self.ipv4 == null || self.ipv4.policy == null || ${policyOfFamily "self.ipv4.policy" ''"ipv4"''}) && (self.ipv6 == null || self.ipv6.policy == null || ${policyOfFamily "self.ipv6.policy" ''"ipv6"''})))";
-                messageExpression = ''cel.bind(pols, ${delivered "RoutingPolicy"}, cel.bind(lists, ${delivered "PrefixList"}, "the " + (self.ipv4 == null || self.ipv4.policy == null || ${policyOfFamily "self.ipv4.policy" ''"ipv4"''} ? "ipv6" : "ipv4") + " import's RoutingPolicy matches PrefixLists of another family"))'';
+                rule = "(self.ipv4 == null || self.ipv4.policy == null || ${policyOfFamily "self.ipv4.policy" ''"ipv4"''}) && (self.ipv6 == null || self.ipv6.policy == null || ${policyOfFamily "self.ipv6.policy" ''"ipv6"''})";
+                messageExpression = ''"the " + (self.ipv4 == null || self.ipv4.policy == null || ${policyOfFamily "self.ipv4.policy" ''"ipv4"''} ? "ipv6" : "ipv4") + " import's RoutingPolicy matches PrefixLists of another family"'';
               }
             ];
           };
@@ -468,16 +453,9 @@ in
                 message = "the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route";
               }
               {
-                description = "A family's policies are RoutingPolicy documents.";
-                rule = "cel.bind(pols, ${delivered "RoutingPolicy"}, ${eachFamilyPolicy (p: _: "${p} in pols")})";
-                messageExpression = ''cel.bind(pols, ${delivered "RoutingPolicy"}, cel.bind(u, ${
-                  firstFamilyPolicy (p: _: "${p} in pols")
-                }, "the " + u[1] + " family names the RoutingPolicy " + u[0] + ", which the config does not hold"))'';
-              }
-              {
                 description = "A family's policies match PrefixLists of that family alone.";
-                rule = "cel.bind(pols, ${delivered "RoutingPolicy"}, cel.bind(lists, ${delivered "PrefixList"}, ${eachFamilyPolicy policyOfFamily}))";
-                messageExpression = ''cel.bind(pols, ${delivered "RoutingPolicy"}, cel.bind(lists, ${delivered "PrefixList"}, cel.bind(u, ${firstFamilyPolicy policyOfFamily}, "the " + u[1] + " family's RoutingPolicy " + u[0] + " matches a PrefixList of another family")))'';
+                rule = eachFamilyPolicy policyOfFamily;
+                messageExpression = ''cel.bind(u, ${firstFamilyPolicy policyOfFamily}, "the " + u[1] + " family's RoutingPolicy " + u[0] + " matches a PrefixList of another family")'';
               }
               {
                 description = "A family's defaultOriginateWhen comes with defaultOriginate.";
@@ -487,18 +465,9 @@ in
                 }, "the " + u[0] + " family names defaultOriginateWhen without defaultOriginate: true; defaultOriginateWhen says when the router sends the default route that defaultOriginate originates")'';
               }
               {
-                description = "A family's defaultOriginateWhen is a PrefixList document.";
-                rule = "cel.bind(lists, ${delivered "PrefixList"}, ${
-                  eachTracked (f: _: "${f}.defaultOriginateWhen in lists")
-                })";
-                messageExpression = ''cel.bind(lists, ${delivered "PrefixList"}, cel.bind(u, ${
-                  firstTracked (f: _: "${f}.defaultOriginateWhen in lists")
-                }, "the " + u[0] + " family's defaultOriginateWhen names the PrefixList " + u[1] + ", which the config does not hold"))'';
-              }
-              {
                 description = "A family's defaultOriginateWhen is a PrefixList of that family.";
-                rule = "cel.bind(lists, ${delivered "PrefixList"}, ${eachTracked trackedOfFamily})";
-                messageExpression = ''cel.bind(lists, ${delivered "PrefixList"}, cel.bind(u, ${firstTracked trackedOfFamily}, "the " + u[0] + " family's defaultOriginateWhen names the PrefixList " + u[1] + " of " + lists[u[1]].spec.family + "; it tracks routes of the family whose default route it sends"))'';
+                rule = eachTracked trackedOfFamily;
+                messageExpression = ''cel.bind(u, ${firstTracked trackedOfFamily}, "the " + u[0] + " family's defaultOriginateWhen names the PrefixList " + u[1] + " of " + document("PrefixList", u[1]).spec.family + "; it tracks routes of the family whose default route it sends")'';
               }
             ];
           };
@@ -606,12 +575,12 @@ in
                 options = {
                   match = {
                     prefixList = mkOption {
-                      type = types.nullOr name;
+                      type = types.nullOr (ref "PrefixList");
                       default = null;
                       description = "PrefixList the route's prefix matches; null matches every prefix.";
                     };
                     communityList = mkOption {
-                      type = types.nullOr name;
+                      type = types.nullOr (ref "CommunityList");
                       default = null;
                       description = "CommunityList one of whose communities the route carries; null matches every route.";
                     };
@@ -663,18 +632,13 @@ in
             description = "Terms in order: the first whose match holds for a route decides.";
             rules = [
               {
-                description = "A term's lists are PrefixList and CommunityList documents.";
-                rule = "cel.bind(lists, ${delivered "PrefixList"}, cel.bind(clists, ${delivered "CommunityList"}, self.all(t, (t.match.prefixList == null || t.match.prefixList in lists) && (t.match.communityList == null || t.match.communityList in clists))))";
-                messageExpression = ''cel.bind(lists, ${delivered "PrefixList"}, cel.bind(clists, ${delivered "CommunityList"}, cel.bind(m, self.filter(t, !((t.match.prefixList == null || t.match.prefixList in lists) && (t.match.communityList == null || t.match.communityList in clists)))[0].match, m.prefixList != null && !(m.prefixList in lists) ? "a term names the PrefixList " + m.prefixList + ", which the config does not hold" : "a term names the CommunityList " + m.communityList + ", which the config does not hold")))'';
-              }
-              {
                 description = "A term's asPath holds 200 characters at most.";
                 rule = "self.all(t, t.match.asPath == null || size(t.match.asPath) <= 200)";
                 message = "a term's asPath holds more than 200 characters";
               }
               {
                 description = "A RoutingPolicy's PrefixLists are of one family.";
-                rule = "cel.bind(lists, ${delivered "PrefixList"}, cel.bind(families, self.filter(t, t.match.prefixList != null && t.match.prefixList in lists).map(t, lists[t.match.prefixList].spec.family), families.all(f, f == families[0])))";
+                rule = ''cel.bind(families, self.filter(t, t.match.prefixList != null).map(t, document("PrefixList", t.match.prefixList).spec.family), families.all(f, f == families[0]))'';
                 message = "the terms match PrefixLists of both families; a policy serves the routes of one family, so give each family a policy of its own";
               }
               {

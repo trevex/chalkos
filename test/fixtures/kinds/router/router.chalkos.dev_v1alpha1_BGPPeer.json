@@ -99,7 +99,11 @@
                       "anyOf": [
                         {
                           "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                          "type": "string"
+                          "type": "string",
+                          "x-chalkos-ref": {
+                            "apiVersion": "router.chalkos.dev/v1alpha1",
+                            "kind": "PrefixList"
+                          }
                         },
                         {
                           "type": "null"
@@ -115,7 +119,11 @@
                       "anyOf": [
                         {
                           "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                          "type": "string"
+                          "type": "string",
+                          "x-chalkos-ref": {
+                            "apiVersion": "router.chalkos.dev/v1alpha1",
+                            "kind": "RoutingPolicy"
+                          }
                         },
                         {
                           "type": "null"
@@ -128,7 +136,11 @@
                       "anyOf": [
                         {
                           "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                          "type": "string"
+                          "type": "string",
+                          "x-chalkos-ref": {
+                            "apiVersion": "router.chalkos.dev/v1alpha1",
+                            "kind": "RoutingPolicy"
+                          }
                         },
                         {
                           "type": "null"
@@ -175,7 +187,11 @@
                       "anyOf": [
                         {
                           "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                          "type": "string"
+                          "type": "string",
+                          "x-chalkos-ref": {
+                            "apiVersion": "router.chalkos.dev/v1alpha1",
+                            "kind": "PrefixList"
+                          }
                         },
                         {
                           "type": "null"
@@ -191,7 +207,11 @@
                       "anyOf": [
                         {
                           "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                          "type": "string"
+                          "type": "string",
+                          "x-chalkos-ref": {
+                            "apiVersion": "router.chalkos.dev/v1alpha1",
+                            "kind": "RoutingPolicy"
+                          }
                         },
                         {
                           "type": "null"
@@ -204,7 +224,11 @@
                       "anyOf": [
                         {
                           "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                          "type": "string"
+                          "type": "string",
+                          "x-chalkos-ref": {
+                            "apiVersion": "router.chalkos.dev/v1alpha1",
+                            "kind": "RoutingPolicy"
+                          }
                         },
                         {
                           "type": "null"
@@ -247,15 +271,9 @@
               "takes": "refuse"
             },
             {
-              "description": "A family's policies are RoutingPolicy documents.",
-              "messageExpression": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4[\"import\"] == null || self.ipv4[\"import\"] in pols ? [] : [self.ipv4[\"import\"], \"ipv4\"]), (self.ipv4 == null || self.ipv4[\"export\"] == null || self.ipv4[\"export\"] in pols ? [] : [self.ipv4[\"export\"], \"ipv4\"]), (self.ipv6 == null || self.ipv6[\"import\"] == null || self.ipv6[\"import\"] in pols ? [] : [self.ipv6[\"import\"], \"ipv6\"]), (self.ipv6 == null || self.ipv6[\"export\"] == null || self.ipv6[\"export\"] in pols ? [] : [self.ipv6[\"export\"], \"ipv6\"])].filter(u, size(u) > 0)[0], \"the \" + u[1] + \" family names the RoutingPolicy \" + u[0] + \", which the config does not hold\"))",
-              "rule": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), (self.ipv4 == null || self.ipv4[\"import\"] == null || self.ipv4[\"import\"] in pols) && (self.ipv4 == null || self.ipv4[\"export\"] == null || self.ipv4[\"export\"] in pols) && (self.ipv6 == null || self.ipv6[\"import\"] == null || self.ipv6[\"import\"] in pols) && (self.ipv6 == null || self.ipv6[\"export\"] == null || self.ipv6[\"export\"] in pols))",
-              "takes": "refuse"
-            },
-            {
               "description": "A family's policies match PrefixLists of that family alone.",
-              "messageExpression": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4[\"import\"] == null || (!(self.ipv4[\"import\"] in pols) || cel.bind(named, pols[self.ipv4[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\")) ? [] : [self.ipv4[\"import\"], \"ipv4\"]), (self.ipv4 == null || self.ipv4[\"export\"] == null || (!(self.ipv4[\"export\"] in pols) || cel.bind(named, pols[self.ipv4[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\")) ? [] : [self.ipv4[\"export\"], \"ipv4\"]), (self.ipv6 == null || self.ipv6[\"import\"] == null || (!(self.ipv6[\"import\"] in pols) || cel.bind(named, pols[self.ipv6[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\")) ? [] : [self.ipv6[\"import\"], \"ipv6\"]), (self.ipv6 == null || self.ipv6[\"export\"] == null || (!(self.ipv6[\"export\"] in pols) || cel.bind(named, pols[self.ipv6[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\")) ? [] : [self.ipv6[\"export\"], \"ipv6\"])].filter(u, size(u) > 0)[0], \"the \" + u[1] + \" family's RoutingPolicy \" + u[0] + \" matches a PrefixList of another family\")))",
-              "rule": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), (self.ipv4 == null || self.ipv4[\"import\"] == null || (!(self.ipv4[\"import\"] in pols) || cel.bind(named, pols[self.ipv4[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\"))) && (self.ipv4 == null || self.ipv4[\"export\"] == null || (!(self.ipv4[\"export\"] in pols) || cel.bind(named, pols[self.ipv4[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\"))) && (self.ipv6 == null || self.ipv6[\"import\"] == null || (!(self.ipv6[\"import\"] in pols) || cel.bind(named, pols[self.ipv6[\"import\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\"))) && (self.ipv6 == null || self.ipv6[\"export\"] == null || (!(self.ipv6[\"export\"] in pols) || cel.bind(named, pols[self.ipv6[\"export\"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\")))))",
+              "messageExpression": "cel.bind(u, [(self.ipv4 == null || self.ipv4[\"import\"] == null || cel.bind(named, document(\"RoutingPolicy\", self.ipv4[\"import\"]).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document(\"PrefixList\", named[0].match.prefixList).spec.family == \"ipv4\") ? [] : [self.ipv4[\"import\"], \"ipv4\"]), (self.ipv4 == null || self.ipv4[\"export\"] == null || cel.bind(named, document(\"RoutingPolicy\", self.ipv4[\"export\"]).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document(\"PrefixList\", named[0].match.prefixList).spec.family == \"ipv4\") ? [] : [self.ipv4[\"export\"], \"ipv4\"]), (self.ipv6 == null || self.ipv6[\"import\"] == null || cel.bind(named, document(\"RoutingPolicy\", self.ipv6[\"import\"]).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document(\"PrefixList\", named[0].match.prefixList).spec.family == \"ipv6\") ? [] : [self.ipv6[\"import\"], \"ipv6\"]), (self.ipv6 == null || self.ipv6[\"export\"] == null || cel.bind(named, document(\"RoutingPolicy\", self.ipv6[\"export\"]).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document(\"PrefixList\", named[0].match.prefixList).spec.family == \"ipv6\") ? [] : [self.ipv6[\"export\"], \"ipv6\"])].filter(u, size(u) > 0)[0], \"the \" + u[1] + \" family's RoutingPolicy \" + u[0] + \" matches a PrefixList of another family\")",
+              "rule": "(self.ipv4 == null || self.ipv4[\"import\"] == null || cel.bind(named, document(\"RoutingPolicy\", self.ipv4[\"import\"]).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document(\"PrefixList\", named[0].match.prefixList).spec.family == \"ipv4\")) && (self.ipv4 == null || self.ipv4[\"export\"] == null || cel.bind(named, document(\"RoutingPolicy\", self.ipv4[\"export\"]).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document(\"PrefixList\", named[0].match.prefixList).spec.family == \"ipv4\")) && (self.ipv6 == null || self.ipv6[\"import\"] == null || cel.bind(named, document(\"RoutingPolicy\", self.ipv6[\"import\"]).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document(\"PrefixList\", named[0].match.prefixList).spec.family == \"ipv6\")) && (self.ipv6 == null || self.ipv6[\"export\"] == null || cel.bind(named, document(\"RoutingPolicy\", self.ipv6[\"export\"]).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document(\"PrefixList\", named[0].match.prefixList).spec.family == \"ipv6\"))",
               "takes": "refuse"
             },
             {
@@ -265,15 +283,9 @@
               "takes": "refuse"
             },
             {
-              "description": "A family's defaultOriginateWhen is a PrefixList document.",
-              "messageExpression": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginateWhen in lists ? [] : [\"ipv4\", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginateWhen in lists ? [] : [\"ipv6\", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], \"the \" + u[0] + \" family's defaultOriginateWhen names the PrefixList \" + u[1] + \", which the config does not hold\"))",
-              "rule": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), (self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginateWhen in lists) && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginateWhen in lists))",
-              "takes": "refuse"
-            },
-            {
               "description": "A family's defaultOriginateWhen is a PrefixList of that family.",
-              "messageExpression": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || (!(self.ipv4.defaultOriginateWhen in lists) || lists[self.ipv4.defaultOriginateWhen].spec.family == \"ipv4\") ? [] : [\"ipv4\", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || (!(self.ipv6.defaultOriginateWhen in lists) || lists[self.ipv6.defaultOriginateWhen].spec.family == \"ipv6\") ? [] : [\"ipv6\", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], \"the \" + u[0] + \" family's defaultOriginateWhen names the PrefixList \" + u[1] + \" of \" + lists[u[1]].spec.family + \"; it tracks routes of the family whose default route it sends\"))",
-              "rule": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), (self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || (!(self.ipv4.defaultOriginateWhen in lists) || lists[self.ipv4.defaultOriginateWhen].spec.family == \"ipv4\")) && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || (!(self.ipv6.defaultOriginateWhen in lists) || lists[self.ipv6.defaultOriginateWhen].spec.family == \"ipv6\")))",
+              "messageExpression": "cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || document(\"PrefixList\", self.ipv4.defaultOriginateWhen).spec.family == \"ipv4\" ? [] : [\"ipv4\", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || document(\"PrefixList\", self.ipv6.defaultOriginateWhen).spec.family == \"ipv6\" ? [] : [\"ipv6\", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], \"the \" + u[0] + \" family's defaultOriginateWhen names the PrefixList \" + u[1] + \" of \" + document(\"PrefixList\", u[1]).spec.family + \"; it tracks routes of the family whose default route it sends\")",
+              "rule": "(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || document(\"PrefixList\", self.ipv4.defaultOriginateWhen).spec.family == \"ipv4\") && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || document(\"PrefixList\", self.ipv6.defaultOriginateWhen).spec.family == \"ipv6\")",
               "takes": "refuse"
             }
           ]

@@ -62,7 +62,11 @@
                     "anyOf": [
                       {
                         "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                        "type": "string"
+                        "type": "string",
+                        "x-chalkos-ref": {
+                          "apiVersion": "router.chalkos.dev/v1alpha1",
+                          "kind": "CommunityList"
+                        }
                       },
                       {
                         "type": "null"
@@ -75,7 +79,11 @@
                     "anyOf": [
                       {
                         "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                        "type": "string"
+                        "type": "string",
+                        "x-chalkos-ref": {
+                          "apiVersion": "router.chalkos.dev/v1alpha1",
+                          "kind": "PrefixList"
+                        }
                       },
                       {
                         "type": "null"
@@ -172,12 +180,6 @@
           "type": "array",
           "x-chalkos-rules": [
             {
-              "description": "A term's lists are PrefixList and CommunityList documents.",
-              "messageExpression": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(clists, ((\"router.chalkos.dev/v1alpha1\" in config && \"CommunityList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].CommunityList : {}), cel.bind(m, self.filter(t, !((t.match.prefixList == null || t.match.prefixList in lists) && (t.match.communityList == null || t.match.communityList in clists)))[0].match, m.prefixList != null && !(m.prefixList in lists) ? \"a term names the PrefixList \" + m.prefixList + \", which the config does not hold\" : \"a term names the CommunityList \" + m.communityList + \", which the config does not hold\")))",
-              "rule": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(clists, ((\"router.chalkos.dev/v1alpha1\" in config && \"CommunityList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].CommunityList : {}), self.all(t, (t.match.prefixList == null || t.match.prefixList in lists) && (t.match.communityList == null || t.match.communityList in clists))))",
-              "takes": "refuse"
-            },
-            {
               "description": "A term's asPath holds 200 characters at most.",
               "message": "a term's asPath holds more than 200 characters",
               "rule": "self.all(t, t.match.asPath == null || size(t.match.asPath) <= 200)",
@@ -186,7 +188,7 @@
             {
               "description": "A RoutingPolicy's PrefixLists are of one family.",
               "message": "the terms match PrefixLists of both families; a policy serves the routes of one family, so give each family a policy of its own",
-              "rule": "cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), cel.bind(families, self.filter(t, t.match.prefixList != null && t.match.prefixList in lists).map(t, lists[t.match.prefixList].spec.family), families.all(f, f == families[0])))",
+              "rule": "cel.bind(families, self.filter(t, t.match.prefixList != null).map(t, document(\"PrefixList\", t.match.prefixList).spec.family), families.all(f, f == families[0]))",
               "takes": "refuse"
             },
             {

@@ -570,9 +570,9 @@ func (c *frr) checkPolicy(p named[routingPolicySpec]) error {
 			return fmt.Errorf("term %d: %s", i+1, fmt.Sprintf(format, args...))
 		}
 		if l := t.Match.PrefixList; l != nil {
-			f, ok := c.families[*l]
-			if !ok {
-				return fail("the PrefixList %s does not exist", *l)
+			f, err := mustGet(c.families, "PrefixList", *l)
+			if err != nil {
+				return fail("%v", err)
 			}
 			if have := c.policyFamily[p.Name]; have != "" && have != f {
 				return fail("it matches PrefixLists of both families")
@@ -580,8 +580,8 @@ func (c *frr) checkPolicy(p named[routingPolicySpec]) error {
 			c.policyFamily[p.Name] = f
 		}
 		if l := t.Match.CommunityList; l != nil {
-			if _, ok := c.large[*l]; !ok {
-				return fail("the CommunityList %s does not exist", *l)
+			if _, err := mustGet(c.large, "CommunityList", *l); err != nil {
+				return fail("%v", err)
 			}
 		}
 		if r := t.Match.ASPath; r != nil {
@@ -614,11 +614,10 @@ func (c *frr) checkPolicy(p named[routingPolicySpec]) error {
 	return nil
 }
 
-// policyOfFamily refuses a policy the config lacks, or one whose PrefixLists are of another
-// family than f.
+// policyOfFamily refuses a policy whose PrefixLists are of another family than f.
 func (c *frr) policyOfFamily(policy, f string) error {
-	if !slices.ContainsFunc(c.policies, func(p named[routingPolicySpec]) bool { return p.Name == policy }) {
-		return fmt.Errorf("the RoutingPolicy %s does not exist", policy)
+	if _, err := mustGet(byName(c.policies), "RoutingPolicy", policy); err != nil {
+		return err
 	}
 	if have := c.policyFamily[policy]; have != "" && have != f {
 		return fmt.Errorf("the RoutingPolicy %s matches PrefixLists of %s, not %s", policy, have, f)
@@ -666,11 +665,11 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 			return nil, fmt.Errorf("families.%s: maxPrefix 0 accepts no route", f.name)
 		}
 		if l := f.fam.DefaultOriginateWhen; l != nil {
-			switch fam, ok := c.families[*l]; {
+			switch fam, err := mustGet(c.families, "PrefixList", *l); {
 			case !f.fam.DefaultOriginate:
 				return nil, fmt.Errorf("families.%s: defaultOriginateWhen needs defaultOriginate, whose default route it sends while a route of the list exists", f.name)
-			case !ok:
-				return nil, fmt.Errorf("families.%s: defaultOriginateWhen: the PrefixList %s does not exist", f.name, *l)
+			case err != nil:
+				return nil, fmt.Errorf("families.%s: defaultOriginateWhen: %w", f.name, err)
 			case fam != f.name:
 				return nil, fmt.Errorf("families.%s: defaultOriginateWhen: the PrefixList %s is of %s", f.name, *l, fam)
 			}

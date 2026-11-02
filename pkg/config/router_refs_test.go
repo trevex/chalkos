@@ -116,3 +116,20 @@ func TestRouterZoneRefs(t *testing.T) {
 		t.Errorf("a FirewallZone named local: err = %v, want the name refused as reserved", err)
 	}
 }
+
+// A BGP instance's networks and imports, a peer's families and a policy's terms name
+// RoutingPolicy, PrefixList and CommunityList documents.
+func TestRouterBGPRefs(t *testing.T) {
+	_, err := checkRouterRefs(t,
+		routerDoc("BGP", "bgp", `{asn: 64512, routerID: 192.0.2.1, networks: [{prefix: "2001:db8::/32", policy: out}], import: {ipv6: {vrfs: [default], policy: in}}}`)+
+			routerDoc("BGPPeer", "up", `{address: "2001:db8::1", remoteAS: external, families: {ipv6: {import: in, export: out, defaultOriginate: true, defaultOriginateWhen: up}}}`)+
+			routerDoc("RoutingPolicy", "p", `{terms: [{match: {prefixList: v6, communityList: drop}, then: {action: accept}}]}`))
+	wantRefused(t, err,
+		`BGP/bgp: spec.import.ipv6.policy: RoutingPolicy "in" does not exist`,
+		`BGP/bgp: spec.networks[0].policy: RoutingPolicy "out" does not exist`,
+		`BGPPeer/up: spec.families.ipv6.defaultOriginateWhen: PrefixList "up" does not exist`,
+		`BGPPeer/up: spec.families.ipv6.export: RoutingPolicy "out" does not exist`,
+		`BGPPeer/up: spec.families.ipv6.import: RoutingPolicy "in" does not exist`,
+		`RoutingPolicy/p: spec.terms[0].match.communityList: CommunityList "drop" does not exist`,
+		`RoutingPolicy/p: spec.terms[0].match.prefixList: PrefixList "v6" does not exist`)
+}

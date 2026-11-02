@@ -332,7 +332,7 @@ A BGP instance of the router in one VRF: its AS number and router ID, how many e
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 10 [change rules](builtins.md#rules-bgp).
+A node's config may hold several, each with a name of its own. It has 8 [change rules](builtins.md#rules-bgp).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -343,16 +343,16 @@ A node's config may hold several, each with a name of its own. It has 10 [change
 | `spec.gracefulRestart` | boolean | `false` | Whether the router keeps a peer's routes while the peer restarts and asks its peers to keep its own. |
 | `spec.import` | object | `{}` | Routes the instance takes from the BGP instances of other VRFs, which the kernel installs in this VRF's table with their next hops in the other VRF. Static routes of a VRF's links are not leaked. |
 | `spec.import.ipv4` | object or null | `null` | IPv4 routes the instance takes from other VRFs' instances; null takes none. |
-| `spec.import.ipv4.policy` | string or null | `null` | RoutingPolicy that decides the routes the instance takes from all of `vrfs`; null takes every route. |
+| `spec.import.ipv4.policy` | name of a RoutingPolicy or null | `null` | RoutingPolicy that decides the routes the instance takes from all of `vrfs`; null takes every route. |
 | `spec.import.ipv4.vrfs` | list of name of a VRF, or `default` | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. |
 | `spec.import.ipv6` | object or null | `null` | IPv6 routes the instance takes from other VRFs' instances; null takes none. |
-| `spec.import.ipv6.policy` | string or null | `null` | RoutingPolicy that decides the routes the instance takes from all of `vrfs`; null takes every route. |
+| `spec.import.ipv6.policy` | name of a RoutingPolicy or null | `null` | RoutingPolicy that decides the routes the instance takes from all of `vrfs`; null takes every route. |
 | `spec.import.ipv6.vrfs` | list of name of a VRF, or `default` | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. |
 | `spec.multipath.asPathRelax` | boolean | `false` | Whether paths through different neighbouring ASes count as equal when their AS paths are equally long, as for two leaves of a fabric. |
 | `spec.multipath.ebgp` | integer from 1 to 64 | `1` | Equal paths from external peers the router installs for one prefix at most. |
 | `spec.multipath.ibgp` | integer from 1 to 64 | `1` | Equal paths from internal peers the router installs for one prefix at most. |
 | `spec.networks` | list of object | `[]` | Networks the router announces to its peers. |
-| `spec.networks[].policy` | string or null | `null` | RoutingPolicy whose terms set the announcement's attributes; null announces it as it is. |
+| `spec.networks[].policy` | name of a RoutingPolicy or null | `null` | RoutingPolicy whose terms set the announcement's attributes; null announces it as it is. |
 | `spec.networks[].prefix` | string | required | Address range the router announces while its table holds a route to it. |
 | `spec.routerID` | string | required | Router ID, in IPv4 notation, which the router's peers know it by; give an IPv6-only router one too. |
 | `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document whose instance this is; `default` for the default VRF, which holds every link no VRF holds. |
@@ -363,7 +363,7 @@ A BGP neighbour of the router, or the neighbours on a set of interfaces: where t
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 14 [change rules](builtins.md#rules-bgppeer).
+A node's config may hold several, each with a name of its own. It has 12 [change rules](builtins.md#rules-bgppeer).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -374,15 +374,15 @@ A node's config may hold several, each with a name of its own. It has 14 [change
 | `spec.families` | object | `{}` | The address families the session exchanges routes of, and how. |
 | `spec.families.ipv4` | object or null | `null` | IPv4 routes of the session; null exchanges none. |
 | `spec.families.ipv4.defaultOriginate` | boolean | `false` | Whether the router sends the peer a default route of the family: whatever its own table holds, or while `defaultOriginateWhen` holds. |
-| `spec.families.ipv4.defaultOriginateWhen` | string or null | `null` | PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole, unreachable and prohibit routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds. |
-| `spec.families.ipv4.export` | string or null | `null` | RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has. |
-| `spec.families.ipv4.import` | string or null | `null` | RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route. |
+| `spec.families.ipv4.defaultOriginateWhen` | name of a PrefixList or null | `null` | PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole, unreachable and prohibit routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds. |
+| `spec.families.ipv4.export` | name of a RoutingPolicy or null | `null` | RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has. |
+| `spec.families.ipv4.import` | name of a RoutingPolicy or null | `null` | RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route. |
 | `spec.families.ipv4.maxPrefix` | integer from 1 to 4294967295 or null | `null` | Routes the router accepts from the peer at most; past them it ends the session. null sets no limit. |
 | `spec.families.ipv6` | object or null | `null` | IPv6 routes of the session; null exchanges none. |
 | `spec.families.ipv6.defaultOriginate` | boolean | `false` | Whether the router sends the peer a default route of the family: whatever its own table holds, or while `defaultOriginateWhen` holds. |
-| `spec.families.ipv6.defaultOriginateWhen` | string or null | `null` | PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole, unreachable and prohibit routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds. |
-| `spec.families.ipv6.export` | string or null | `null` | RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has. |
-| `spec.families.ipv6.import` | string or null | `null` | RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route. |
+| `spec.families.ipv6.defaultOriginateWhen` | name of a PrefixList or null | `null` | PrefixList of the family that decides when the router sends the default route of `defaultOriginate`: while the peer's VRF holds a route the list matches, from BGP, from the kernel, such as a route from DHCP, from router advertisements or a `Network`'s `[Route]`, or a link's prefix. Blackhole, unreachable and prohibit routes do not count. The router does not announce the routes it tracks. null sends the default route whatever the table holds. |
+| `spec.families.ipv6.export` | name of a RoutingPolicy or null | `null` | RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has. |
+| `spec.families.ipv6.import` | name of a RoutingPolicy or null | `null` | RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route. |
 | `spec.families.ipv6.maxPrefix` | integer from 1 to 4294967295 or null | `null` | Routes the router accepts from the peer at most; past them it ends the session. null sets no limit. |
 | `spec.interface` | string or null | `null` | Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address` and `interfaces`. A name that reads as an address is refused. |
 | `spec.interfaces` | list of string or null | `null` | Interfaces, by name or glob, a glob being a prefix followed by `*`, with a session each, as for `interface`; a glob stands for the interfaces of the peer's VRF that the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address` and `interface`. |
@@ -624,15 +624,15 @@ What the router does with the routes of a peer's family or of a network: terms i
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 4 [change rules](builtins.md#rules-routingpolicy).
+A node's config may hold several, each with a name of its own. It has 3 [change rules](builtins.md#rules-routingpolicy).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.default` | one of `accept`, `reject` | `"reject"` | What the router does with a route no term matches. |
 | `spec.terms` | list of object | `[]` | Terms in order: the first whose match holds for a route decides. |
 | `spec.terms[].match.asPath` | string or null | `null` | Regular expression the route's AS path matches, with `_` for the start, the end or a space between two ASes; null matches every path. It holds up to 200 digits, single spaces and `_^$.*+?()|{},-`. The schema and rules check these characters alone; the output frr refuses an expression that bgpd cannot compile. |
-| `spec.terms[].match.communityList` | string or null | `null` | CommunityList one of whose communities the route carries; null matches every route. |
-| `spec.terms[].match.prefixList` | string or null | `null` | PrefixList the route's prefix matches; null matches every prefix. |
+| `spec.terms[].match.communityList` | name of a CommunityList or null | `null` | CommunityList one of whose communities the route carries; null matches every route. |
+| `spec.terms[].match.prefixList` | name of a PrefixList or null | `null` | PrefixList the route's prefix matches; null matches every prefix. |
 | `spec.terms[].then` | object | required |  |
 | `spec.terms[].then.action` | one of `accept`, `reject` | required | Whether the router takes a route the term matches. |
 | `spec.terms[].then.addCommunities` | list of string | `[]` | Communities added to the route: standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers. |

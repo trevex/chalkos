@@ -88,7 +88,11 @@
                       "anyOf": [
                         {
                           "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                          "type": "string"
+                          "type": "string",
+                          "x-chalkos-ref": {
+                            "apiVersion": "router.chalkos.dev/v1alpha1",
+                            "kind": "RoutingPolicy"
+                          }
                         },
                         {
                           "type": "null"
@@ -140,7 +144,11 @@
                       "anyOf": [
                         {
                           "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                          "type": "string"
+                          "type": "string",
+                          "x-chalkos-ref": {
+                            "apiVersion": "router.chalkos.dev/v1alpha1",
+                            "kind": "RoutingPolicy"
+                          }
                         },
                         {
                           "type": "null"
@@ -199,15 +207,9 @@
               "takes": "refuse"
             },
             {
-              "description": "An import's policy is a RoutingPolicy document.",
-              "messageExpression": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), \"an import names the RoutingPolicy \" + [self.ipv4, self.ipv6].filter(f, f != null && f.policy != null && !(f.policy in pols))[0].policy + \", which the config does not hold\")",
-              "rule": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), [self.ipv4, self.ipv6].all(f, f == null || f.policy == null || f.policy in pols))",
-              "takes": "refuse"
-            },
-            {
               "description": "An import's policy matches PrefixLists of its family alone.",
-              "messageExpression": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), \"the \" + (self.ipv4 == null || self.ipv4.policy == null || (!(self.ipv4.policy in pols) || cel.bind(named, pols[self.ipv4.policy].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\")) ? \"ipv6\" : \"ipv4\") + \" import's RoutingPolicy matches PrefixLists of another family\"))",
-              "rule": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), cel.bind(lists, ((\"router.chalkos.dev/v1alpha1\" in config && \"PrefixList\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].PrefixList : {}), (self.ipv4 == null || self.ipv4.policy == null || (!(self.ipv4.policy in pols) || cel.bind(named, pols[self.ipv4.policy].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv4\"))) && (self.ipv6 == null || self.ipv6.policy == null || (!(self.ipv6.policy in pols) || cel.bind(named, pols[self.ipv6.policy].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == \"ipv6\")))))",
+              "messageExpression": "\"the \" + (self.ipv4 == null || self.ipv4.policy == null || cel.bind(named, document(\"RoutingPolicy\", self.ipv4.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document(\"PrefixList\", named[0].match.prefixList).spec.family == \"ipv4\") ? \"ipv6\" : \"ipv4\") + \" import's RoutingPolicy matches PrefixLists of another family\"",
+              "rule": "(self.ipv4 == null || self.ipv4.policy == null || cel.bind(named, document(\"RoutingPolicy\", self.ipv4.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document(\"PrefixList\", named[0].match.prefixList).spec.family == \"ipv4\")) && (self.ipv6 == null || self.ipv6.policy == null || cel.bind(named, document(\"RoutingPolicy\", self.ipv6.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document(\"PrefixList\", named[0].match.prefixList).spec.family == \"ipv6\"))",
               "takes": "refuse"
             }
           ]
@@ -247,7 +249,11 @@
                 "anyOf": [
                   {
                     "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-                    "type": "string"
+                    "type": "string",
+                    "x-chalkos-ref": {
+                      "apiVersion": "router.chalkos.dev/v1alpha1",
+                      "kind": "RoutingPolicy"
+                    }
                   },
                   {
                     "type": "null"
@@ -276,12 +282,6 @@
               "description": "A network's prefix is an address range.",
               "message": "a network is no address range",
               "rule": "self.all(w, cidr(w.prefix).prefix() >= 0)",
-              "takes": "refuse"
-            },
-            {
-              "description": "A network's policy is a RoutingPolicy document.",
-              "messageExpression": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), \"a network names the RoutingPolicy \" + self.filter(w, w.policy != null && !(w.policy in pols))[0].policy + \", which the config does not hold\")",
-              "rule": "cel.bind(pols, ((\"router.chalkos.dev/v1alpha1\" in config && \"RoutingPolicy\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].RoutingPolicy : {}), self.all(w, w.policy == null || w.policy in pols))",
               "takes": "refuse"
             }
           ]
