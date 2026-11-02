@@ -476,6 +476,8 @@ func isKeyRef(s map[string]any) bool { return asMap(s["x-chalkos-ref"])["key"] =
 // AddressSet takes it, and the names it reserves, which the field takes as they are.
 func refType(ref map[string]any) string {
 	kind := display(ref["kind"])
+	// The first letter alone picks the article, which suits the kinds there are; a kind spoken
+	// otherwise, such as one starting with a U said as "you", would take the wrong one.
 	article := "a "
 	if kind != "" && strings.ContainsRune("AEIOU", rune(kind[0])) {
 		article = "an "
