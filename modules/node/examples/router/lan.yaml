@@ -37,7 +37,7 @@ spec:
   from: wan
   to: local
   rules:
-    - {protocol: tcp, destinationPorts: [8080], source: ["set:trusted"], action: accept}
+    - {protocol: tcp, destinationPorts: [8080], source: {set: trusted}, action: accept}
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: FirewallPolicy

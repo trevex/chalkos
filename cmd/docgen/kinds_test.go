@@ -78,6 +78,22 @@ func TestWriteKinds(t *testing.T) {
 	}
 }
 
+// A reference's type names its kind after a or an, as the kind's name is read, and the names it
+// reserves.
+func TestRefType(t *testing.T) {
+	for _, c := range []struct {
+		ref  map[string]any
+		want string
+	}{
+		{map[string]any{"kind": "VRF", "reserved": []any{"default"}}, "name of a VRF, or `default`"},
+		{map[string]any{"kind": "AddressSet"}, "name of an AddressSet"},
+	} {
+		if got := refType(c.ref); got != c.want {
+			t.Errorf("refType(%v) = %q, want %q", c.ref, got, c.want)
+		}
+	}
+}
+
 func TestWriteKindsRefusesASchemaWithoutItsKind(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "x.json"), []byte(`{"type": "object"}`), 0o644); err != nil {

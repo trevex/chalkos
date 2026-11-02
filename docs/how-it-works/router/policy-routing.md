@@ -87,8 +87,8 @@ packet came in on. That excludes the VRF device's pass and the addresses on the 
 
 The router's own traffic in a VRF, such as BGP, BFD and the VRF's resolver, therefore stays in
 the VRF however broadly a document matches. Without the line, a document without `in` and with
-`source: [0.0.0.0/0]`, or with `dscp: [48]`, the class FRR's BGP sends with, would mark the
-packets of a VRF's BGP sessions. The mark's rule at priority 900 would then route them by the
+`source: {cidrs: [0.0.0.0/0]}`, or with `dscp: [48]`, the class FRR's BGP sends with, would mark
+the packets of a VRF's BGP sessions. The mark's rule at priority 900 would then route them by the
 target table, away from the router. An address of another VRF is not local in the packet's VRF,
 so a policy may still send traffic to it.
 

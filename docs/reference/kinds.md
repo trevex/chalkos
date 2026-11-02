@@ -315,7 +315,7 @@ The kinds of `router.chalkos.dev` set how a router forwards and filters: its for
 
 ### AddressSet { #addressset }
 
-Address ranges of one family, which firewall rules name as `set:<name>`.
+Address ranges of one family, which the rules of FirewallPolicy and PolicyRoute documents name in a `source` or `destination` as `{set: <name>}`.
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
@@ -454,7 +454,7 @@ What the router's firewall does with new connections from one zone to another, o
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 7 [change rules](builtins.md#rules-firewallpolicy).
+A node's config may hold several, each with a name of its own. It has 6 [change rules](builtins.md#rules-firewallpolicy).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -462,13 +462,17 @@ A node's config may hold several, each with a name of its own. It has 7 [change 
 | `spec.from` | name of a FirewallZone, or `local` | required | FirewallZone the connections come from. |
 | `spec.rules` | list of object | `[]` | Rules in order: the first that matches a connection decides. |
 | `spec.rules[].action` | one of `accept`, `drop`, `reject` | required | What happens to a connection the rule matches; `reject` answers with an administratively prohibited error. |
-| `spec.rules[].destination` | list of string | `[]` | Destination address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every destination. |
+| `spec.rules[].destination` | object or null | `null` | Destination addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every destination. |
+| `spec.rules[].destination.cidrs` | list of string or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
+| `spec.rules[].destination.set` | name of an AddressSet or null | `null` | AddressSet whose ranges match; excludes `cidrs`. |
 | `spec.rules[].destinationPorts` | list of integer from 1 to 65535 or string | `[]` | Destination ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
 | `spec.rules[].family` | one of `ipv4`, `ipv6` or null | `null` | Address family the rule matches; null matches each family its protocol and addresses leave. |
 | `spec.rules[].icmpTypes` | list of one of `echo-request`, `echo-reply`, `destination-unreachable`, `time-exceeded`, `parameter-problem`, `packet-too-big` | `[]` | ICMP or ICMPv6 types, with the protocol `icmp` or `icmpv6`; empty matches every type. `packet-too-big` is ICMPv6's. |
 | `spec.rules[].log` | boolean | `false` | Whether the kernel logs each packet the rule matches, prefixed with the policy's name and the rule's number. |
 | `spec.rules[].protocol` | one of `tcp`, `udp`, `sctp`, `icmp`, `icmpv6`, `gre`, `esp`, `ah` or null | `null` | Protocol the rule matches; null matches every protocol. `icmp` is IPv4's and `icmpv6` IPv6's. |
-| `spec.rules[].source` | list of string | `[]` | Source address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every source. In each family the rule matches the ranges of that family. |
+| `spec.rules[].source` | object or null | `null` | Source addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every source. |
+| `spec.rules[].source.cidrs` | list of string or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
+| `spec.rules[].source.set` | name of an AddressSet or null | `null` | AddressSet whose ranges match; excludes `cidrs`. |
 | `spec.rules[].sourcePorts` | list of integer from 1 to 65535 or string | `[]` | Source ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
 | `spec.to` | name of a FirewallZone, or `local` | required | FirewallZone the connections go to, or `local` for connections to the router itself. |
 
@@ -534,7 +538,7 @@ Policy routing of the router: rules that send the forwarded traffic they match, 
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 14 [change rules](builtins.md#rules-policyroute).
+A node's config may hold several, each with a name of its own. It has 13 [change rules](builtins.md#rules-policyroute).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -542,13 +546,17 @@ A node's config may hold several, each with a name of its own. It has 14 [change
 | `spec.in.interfaces` | list of string | `[]` | Interfaces the traffic comes in on, by name or glob, a glob being a prefix followed by `*`; excludes `zone`. |
 | `spec.in.zone` | name of a FirewallZone or null | `null` | FirewallZone whose links the traffic comes in on; excludes `interfaces`. |
 | `spec.rules` | list of object | required | Rules in order: the first that matches a packet decides where it goes. |
-| `spec.rules[].match` | object | required | What the rule matches, at least one term: a rule for every packet says so, such as with `source: [0.0.0.0/0]`. |
-| `spec.rules[].match.destination` | list of string | `[]` | Destination address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every destination. |
+| `spec.rules[].match` | object | required | What the rule matches, at least one term: a rule for every packet says so, such as with `source: {cidrs: [0.0.0.0/0]}`. |
+| `spec.rules[].match.destination` | object or null | `null` | Destination addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every destination. |
+| `spec.rules[].match.destination.cidrs` | list of string or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
+| `spec.rules[].match.destination.set` | name of an AddressSet or null | `null` | AddressSet whose ranges match; excludes `cidrs`. |
 | `spec.rules[].match.destinationPorts` | list of integer from 1 to 65535 or string | `[]` | Destination ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
 | `spec.rules[].match.dscp` | list of integer from 0 to 63 | `[]` | DSCP values of the packets, each from 0 to 63; empty matches every value. |
 | `spec.rules[].match.family` | one of `ipv4`, `ipv6` or null | `null` | Address family the rule matches; null matches each family its protocol and addresses leave. |
 | `spec.rules[].match.protocol` | one of `tcp`, `udp`, `sctp`, `icmp`, `icmpv6`, `gre`, `esp`, `ah` or null | `null` | Protocol the rule matches; null matches every protocol. `icmp` is IPv4's and `icmpv6` IPv6's. |
-| `spec.rules[].match.source` | list of string | `[]` | Source address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every source. In each family the rule matches the ranges of that family. |
+| `spec.rules[].match.source` | object or null | `null` | Source addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every source. |
+| `spec.rules[].match.source.cidrs` | list of string or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
+| `spec.rules[].match.source.set` | name of an AddressSet or null | `null` | AddressSet whose ranges match; excludes `cidrs`. |
 | `spec.rules[].match.sourcePorts` | list of integer from 1 to 65535 or string | `[]` | Source ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
 | `spec.rules[].to` | object | required | Where the traffic the rule matches goes: `vrf`, `table` or `nextHop`. |
 | `spec.rules[].to.nextHop` | object or null | `null` | Router the traffic leaves through, by the default route of a table of its own; excludes `vrf` and `table`. |

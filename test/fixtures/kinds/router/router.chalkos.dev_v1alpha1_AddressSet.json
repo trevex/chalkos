@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "Address ranges of one family, which firewall rules name as `set:<name>`.",
+  "description": "Address ranges of one family, which the rules of FirewallPolicy and PolicyRoute documents name in a `source` or `destination` as `{set: <name>}`.",
   "properties": {
     "apiVersion": {
       "const": "router.chalkos.dev/v1alpha1"

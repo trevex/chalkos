@@ -39,9 +39,9 @@ metadata: {name: lan}
 spec:
   in: {zone: lan}
   rules:
-    - match: {destination: [192.0.2.0/24, "2001:db8:1::/64", "2001:db8:2::/64"]}
+    - match: {destination: {cidrs: [192.0.2.0/24, "2001:db8:1::/64", "2001:db8:2::/64"]}}
       to: {table: 254}
-    - match: {source: ["set:guests"], protocol: tcp, destinationPorts: [443]}
+    - match: {source: {set: guests}, protocol: tcp, destinationPorts: [443]}
       to: {vrf: transit}
     - match: {dscp: [46]}
       to: {vrf: transit}
@@ -91,9 +91,9 @@ metadata: {name: servers}
 spec:
   in: {interfaces: [lan0]}
   rules:
-    - match: {source: [192.0.2.32/27]}
+    - match: {source: {cidrs: [192.0.2.32/27]}}
       to: {nextHop: {address: 198.51.100.130, interface: wanb0, table: 200}}
-    - match: {source: ["2001:db8:1::20/123"]}
+    - match: {source: {cidrs: ["2001:db8:1::20/123"]}}
       to: {nextHop: {address: "2001:db8:b::2", interface: wanb0, table: 201}}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
@@ -134,10 +134,10 @@ A rule's `match` takes the terms of a `FirewallPolicy` rule:
 - `protocol`: such as `tcp`, `udp` or `sctp`.
 - `sourcePorts` and `destinationPorts`: numbers or ranges `"<first>-<last>"`, with `protocol`
   `tcp`, `udp` or `sctp`.
-- `source` and `destination`: prefixes, or `set:<name>` of an `AddressSet` alone.
+- `source` and `destination`: an `AddressSet` in `set`, or prefixes in `cidrs`, one of the two.
 
 It adds `dscp`, a list of values from 0 to 63. 46 is EF, expedited forwarding. A match needs at
-least one term. To send every packet, say so, such as with `source: [0.0.0.0/0, "::/0"]`.
+least one term. To send every packet, say so, such as with `source: {cidrs: [0.0.0.0/0, "::/0"]}`.
 
 `in` says where the traffic comes in: `zone` names a `FirewallZone` and matches its links, and
 `interfaces` names links or globs such as `vlan*`. A document without `in` matches traffic from
@@ -217,9 +217,9 @@ a document the config lacks, and what the rules of the router kinds refuse.
 | `PolicyRoute/lan: spec.in.zone: FirewallZone "dmz" does not exist` | Add the zone, or name one that exists. |
 | `PolicyRoute lan: transit is the device of VRF transit; name the VRF's links, or a zone of the VRF` | Name the VRF's links in `interfaces`, or a zone that holds them. |
 | `PolicyRoute servers: the next hop 2001:db8:b::2 takes table 201, which another next hop or a rule's table takes too; give each next hop a table of its own` | Give the next hop a table that no other target uses. |
-| `PolicyRoute "lan" spec.rules: a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: [0.0.0.0/0]` | Add a term to the match. |
-| `PolicyRoute "lan" spec.rules: a rule's source or destination holds set:<name> beside other entries; a set stands alone, so give the other ranges a rule of their own or add them to the set` | Give the other ranges a rule of their own, or add them to the set. |
-| `PolicyRoute "lan" spec.rules: a rule names an AddressSet that the config does not hold` | Add the `AddressSet` document, or fix the name. |
+| `PolicyRoute "lan" spec.rules: a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: {cidrs: [0.0.0.0/0]}` | Add a term to the match. |
+| `PolicyRoute "lan" spec.rules: a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address` | Keep `set` or `cidrs`, and give the other ranges a rule of their own or add them to the set. |
+| `PolicyRoute/lan: spec.rules[1].match.source.set: AddressSet "guests" does not exist` | Add the `AddressSet` document, or fix the name. |
 | `PolicyRoute "lan" spec.rules: a rule has addresses or a set of another family than its own` | Drop the other family's addresses, or change the rule's `family`. |
 | `PolicyRoute "lan" spec.rules: a rule matches no packet: its family, protocol, addresses and sets leave neither IPv4 nor IPv6` | Make the rule's family, protocol, addresses and sets agree on one family. |
 | `PolicyRoute "lan" spec.rules: a rule has ports without the protocol tcp, udp or sctp` | Set `protocol` to `tcp`, `udp` or `sctp`. |

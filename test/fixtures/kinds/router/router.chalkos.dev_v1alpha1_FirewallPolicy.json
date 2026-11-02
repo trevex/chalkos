@@ -61,18 +61,66 @@
                 ]
               },
               "destination": {
-                "default": [],
-                "description": "Destination address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every destination.",
-                "examples": [
-                  [
-                    "set:servers"
-                  ]
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cidrs": {
+                        "anyOf": [
+                          {
+                            "items": {
+                              "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+                              "type": "string"
+                            },
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family.",
+                        "examples": [
+                          [
+                            "2001:db8:1::/48"
+                          ]
+                        ]
+                      },
+                      "set": {
+                        "anyOf": [
+                          {
+                            "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                            "type": "string",
+                            "x-chalkos-ref": {
+                              "apiVersion": "router.chalkos.dev/v1alpha1",
+                              "kind": "AddressSet"
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "AddressSet whose ranges match; excludes `cidrs`.",
+                        "examples": [
+                          "servers"
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
                 ],
-                "items": {
-                  "pattern": "^(?:set:[a-z0-9]([-a-z0-9.]*[a-z0-9])?|[0-9A-Fa-f:.]+/[0-9]{1,3})$",
-                  "type": "string"
-                },
-                "type": "array"
+                "default": null,
+                "description": "Destination addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every destination.",
+                "examples": [
+                  {
+                    "set": "servers"
+                  }
+                ]
               },
               "destinationPorts": {
                 "default": [],
@@ -155,18 +203,68 @@
                 "description": "Protocol the rule matches; null matches every protocol. `icmp` is IPv4's and `icmpv6` IPv6's."
               },
               "source": {
-                "default": [],
-                "description": "Source address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every source. In each family the rule matches the ranges of that family.",
-                "examples": [
-                  [
-                    "2001:db8:1::/48"
-                  ]
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cidrs": {
+                        "anyOf": [
+                          {
+                            "items": {
+                              "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+                              "type": "string"
+                            },
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family.",
+                        "examples": [
+                          [
+                            "2001:db8:1::/48"
+                          ]
+                        ]
+                      },
+                      "set": {
+                        "anyOf": [
+                          {
+                            "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+                            "type": "string",
+                            "x-chalkos-ref": {
+                              "apiVersion": "router.chalkos.dev/v1alpha1",
+                              "kind": "AddressSet"
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "AddressSet whose ranges match; excludes `cidrs`.",
+                        "examples": [
+                          "servers"
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
                 ],
-                "items": {
-                  "pattern": "^(?:set:[a-z0-9]([-a-z0-9.]*[a-z0-9])?|[0-9A-Fa-f:.]+/[0-9]{1,3})$",
-                  "type": "string"
-                },
-                "type": "array"
+                "default": null,
+                "description": "Source addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every source.",
+                "examples": [
+                  {
+                    "cidrs": [
+                      "2001:db8:1::/48"
+                    ]
+                  }
+                ]
               },
               "sourcePorts": {
                 "default": [],
@@ -200,33 +298,27 @@
           "type": "array",
           "x-chalkos-rules": [
             {
-              "description": "A set:<name> is the one entry of its source or destination.",
-              "message": "a rule's source or destination holds set:<name> beside other entries; a set stands alone, so give the other ranges a rule of their own or add them to the set",
-              "rule": "cel.bind(sets, ((\"router.chalkos.dev/v1alpha1\" in config && \"AddressSet\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith(\"set:\") ? r.source[0].substring(4) : \"\"), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith(\"set:\") ? r.destination[0].substring(4) : \"\"), [r.source, r.destination].all(l, size(l) == 1 || !l.exists(a, a.startsWith(\"set:\")))))))",
-              "takes": "refuse"
-            },
-            {
-              "description": "A rule's sets are AddressSet documents.",
-              "message": "a rule names an AddressSet that the config does not hold",
-              "rule": "cel.bind(sets, ((\"router.chalkos.dev/v1alpha1\" in config && \"AddressSet\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith(\"set:\") ? r.source[0].substring(4) : \"\"), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith(\"set:\") ? r.destination[0].substring(4) : \"\"), (src == \"\" || src in sets) && (dst == \"\" || dst in sets)))))",
+              "description": "A rule's source and destination each name an AddressSet or address ranges, one of them.",
+              "message": "a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address",
+              "rule": "self.all(r, [r.source, r.destination].all(m, m == null || (m.set == null) != (m.cidrs == null)))",
               "takes": "refuse"
             },
             {
               "description": "A rule with a family has addresses and sets of that family alone.",
               "message": "a rule has addresses or a set of another family than its own",
-              "rule": "cel.bind(sets, ((\"router.chalkos.dev/v1alpha1\" in config && \"AddressSet\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith(\"set:\") ? r.source[0].substring(4) : \"\"), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith(\"set:\") ? r.destination[0].substring(4) : \"\"), r.family == null || (src != \"\" ? !(src in sets) || sets[src].spec.family == r.family : r.source.all(a, a.startsWith(\"set:\") || cidr(a).ip(0).family() == r.family)) && (dst != \"\" ? !(dst in sets) || sets[dst].spec.family == r.family : r.destination.all(a, a.startsWith(\"set:\") || cidr(a).ip(0).family() == r.family))))))",
+              "rule": "self.all(r, r.family == null || (r.source == null || (r.source.set != null ? document(\"AddressSet\", r.source.set).spec.family == r.family : r.source.cidrs == null || r.source.cidrs.all(a, cidr(a).ip(0).family() == r.family))) && (r.destination == null || (r.destination.set != null ? document(\"AddressSet\", r.destination.set).spec.family == r.family : r.destination.cidrs == null || r.destination.cidrs.all(a, cidr(a).ip(0).family() == r.family))))",
               "takes": "refuse"
             },
             {
               "description": "A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one.",
               "message": "a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6",
-              "rule": "cel.bind(sets, ((\"router.chalkos.dev/v1alpha1\" in config && \"AddressSet\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith(\"set:\") ? r.source[0].substring(4) : \"\"), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith(\"set:\") ? r.destination[0].substring(4) : \"\"), ((r.family == null || r.family == \"ipv4\") && r.protocol != \"icmpv6\" && (size(r.source) == 0 || (src != \"\" ? !(src in sets) || sets[src].spec.family == \"ipv4\" :r.source.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv4\"))) && (size(r.destination) == 0 || (dst != \"\" ? !(dst in sets) || sets[dst].spec.family == \"ipv4\" :r.destination.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv4\")))) || ((r.family == null || r.family == \"ipv6\") && r.protocol != \"icmp\" && (size(r.source) == 0 || (src != \"\" ? !(src in sets) || sets[src].spec.family == \"ipv6\" :r.source.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv6\"))) && (size(r.destination) == 0 || (dst != \"\" ? !(dst in sets) || sets[dst].spec.family == \"ipv6\" :r.destination.exists(a, !a.startsWith(\"set:\") && cidr(a).ip(0).family() == \"ipv6\"))))))))",
+              "rule": "self.all(r, ((r.family == null || r.family == \"ipv4\") && r.protocol != \"icmpv6\" && (r.source == null || (r.source.set != null ? document(\"AddressSet\", r.source.set).spec.family == \"ipv4\" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == \"ipv4\"))) && (r.destination == null || (r.destination.set != null ? document(\"AddressSet\", r.destination.set).spec.family == \"ipv4\" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == \"ipv4\")))) || ((r.family == null || r.family == \"ipv6\") && r.protocol != \"icmp\" && (r.source == null || (r.source.set != null ? document(\"AddressSet\", r.source.set).spec.family == \"ipv6\" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == \"ipv6\"))) && (r.destination == null || (r.destination.set != null ? document(\"AddressSet\", r.destination.set).spec.family == \"ipv6\" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == \"ipv6\")))))",
               "takes": "refuse"
             },
             {
               "description": "Ports go with tcp, udp or sctp, ICMP types with icmp or icmpv6, and packet-too-big with icmpv6.",
               "message": "a rule has ports without the protocol tcp, udp or sctp, or ICMP types its protocol lacks",
-              "rule": "cel.bind(sets, ((\"router.chalkos.dev/v1alpha1\" in config && \"AddressSet\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith(\"set:\") ? r.source[0].substring(4) : \"\"), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith(\"set:\") ? r.destination[0].substring(4) : \"\"), (size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.protocol in [\"tcp\", \"udp\", \"sctp\"]) && (size(r.icmpTypes) == 0 || r.protocol in [\"icmp\", \"icmpv6\"]) && !(r.protocol == \"icmp\" && \"packet-too-big\" in r.icmpTypes)))))",
+              "rule": "self.all(r, (size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.protocol in [\"tcp\", \"udp\", \"sctp\"]) && (size(r.icmpTypes) == 0 || r.protocol in [\"icmp\", \"icmpv6\"]) && !(r.protocol == \"icmp\" && \"packet-too-big\" in r.icmpTypes))",
               "takes": "refuse"
             }
           ]

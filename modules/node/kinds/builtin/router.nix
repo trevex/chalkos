@@ -4,8 +4,8 @@
 # router-nftables render (modules/node/router).
 #
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists. So a rule
-# over a policy's firewall rules sits on spec.rules, a set:<name> stands alone in its list and is
-# looked up once per list, and lists of lists are flattened before the next loop reads them.
+# over a policy's firewall rules sits on spec.rules, where document() looks up a rule's AddressSet
+# at a constant cost, and lists of lists are flattened before the next loop reads them.
 {
   config,
   lib,
@@ -14,7 +14,7 @@
 let
   inherit (lib) mkOption types;
   inherit (import ./lib.nix) builtin groups apiVersions;
-  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) documentName portRange ref;
+  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) portRange ref;
   inherit (import ./router-types.nix { inherit lib; })
     interface
     interfaceText
@@ -51,16 +51,30 @@ let
     "drop"
     "reject"
   ];
-  # A firewall rule's source or destination: address ranges, or one set:<name>.
-  addresses = types.listOf (types.strMatching "set:${documentName}|[0-9A-Fa-f:.]+/[0-9]{1,3}");
+  # A firewall rule's source or destination: an AddressSet or address ranges, one of them, which a
+  # rule of its own checks; null matches every address.
+  addresses = types.nullOr (
+    types.submodule {
+      options = {
+        set = mkOption {
+          type = types.nullOr (ref "AddressSet");
+          default = null;
+          example = "servers";
+          description = "AddressSet whose ranges match; excludes `cidrs`.";
+        };
+        cidrs = mkOption {
+          type = types.nullOr (types.nonEmptyListOf prefix);
+          default = null;
+          example = [ "2001:db8:1::/48" ];
+          description = "Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family.";
+        };
+      };
+    }
+  );
 
   # The documents of a router kind in the delivered config, by name.
   delivered = kind: cel.documents "config" apiVersions.router kind;
-  # The AddressSet the address list l names, or "" for a list of ranges.
-  setOf = l: ''(size(${l}) == 1 && ${l}[0].startsWith("set:") ? ${l}[0].substring(4) : "")'';
-  # A rule over a FirewallPolicy's firewall rules, self: `ok` holds for each firewall rule r. It
-  # sees the config's AddressSets as sets, and the AddressSets r's source and destination name, or
-  # "", as src and dst.
+  # A rule over a FirewallPolicy's firewall rules, self: `ok` holds for each firewall rule r.
   rulesRule =
     {
       description,
@@ -69,26 +83,33 @@ let
     }:
     {
       inherit description message;
-      rule = "cel.bind(sets, ${delivered "AddressSet"}, self.all(r, cel.bind(src, ${setOf "r.source"}, cel.bind(dst, ${setOf "r.destination"}, ${ok}))))";
+      rule = "self.all(r, ${ok})";
     };
-  # Whether the address list l, whose AddressSet is s, leaves the family f: it is empty, s is an
-  # AddressSet of f or one the config lacks, which has its own rule, or l holds a range of f.
+  # Whether the source or destination m leaves the family f: it is null, its AddressSet is of f,
+  # or it holds a range of f. One that names neither a set nor ranges has a rule of its own. The
+  # reference check has found the set, so document() returns it.
   leaves =
-    l: s: f:
-    ''(size(${l}) == 0 || (${s} != "" ? !(${s} in sets) || sets[${s}].spec.family == "${f}" :${l}.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "${f}")))'';
+    m: f:
+    ''(${m} == null || (${m}.set != null ? document("AddressSet", ${m}.set).spec.family == "${f}" : ${m}.cidrs == null || ${m}.cidrs.exists(a, cidr(a).ip(0).family() == "${f}")))'';
   # Whether the firewall rule r matches connections of the family f: its family, its protocol and
-  # both of its address lists leave f.
+  # both its source and its destination leave f.
   matchesFamily =
     f:
     let
       otherICMP = if f == "ipv4" then "icmpv6" else "icmp";
     in
-    ''((r.family == null || r.family == "${f}") && r.protocol != "${otherICMP}" && ${leaves "r.source" "src" f} && ${leaves "r.destination" "dst" f})'';
-  # Whether the address list l, whose AddressSet is s, is of the rule's family alone; a set the
-  # config lacks has its own rule.
+    ''((r.family == null || r.family == "${f}") && r.protocol != "${otherICMP}" && ${leaves "r.source" f} && ${leaves "r.destination" f})'';
+  # Whether the source or destination m is of the rule's family alone.
   ofFamily =
-    l: s:
-    ''(${s} != "" ? !(${s} in sets) || sets[${s}].spec.family == r.family : ${l}.all(a, a.startsWith("set:") || cidr(a).ip(0).family() == r.family))'';
+    m:
+    ''(${m} == null || (${m}.set != null ? document("AddressSet", ${m}.set).spec.family == r.family : ${m}.cidrs == null || ${m}.cidrs.all(a, cidr(a).ip(0).family() == r.family)))'';
+  # The rule that a firewall or policy routing rule's source and destination each name an
+  # AddressSet or ranges, one of them.
+  oneOfSetAndCIDRs = {
+    description = "A rule's source and destination each name an AddressSet or address ranges, one of them.";
+    ok = "[r.source, r.destination].all(m, m == null || (m.set == null) != (m.cidrs == null))";
+    message = "a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address";
+  };
 
   # Whether the names s, from matchNames, name the management interface i: they hold i, a name
   # that the glob i's prefix starts, any name for the glob `*`, or a glob whose prefix starts i,
@@ -159,15 +180,15 @@ let
     };
     source = mkOption {
       type = addresses;
-      default = [ ];
-      example = [ "2001:db8:1::/48" ];
-      description = "Source address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every source. In each family the rule matches the ranges of that family.";
+      default = null;
+      example.cidrs = [ "2001:db8:1::/48" ];
+      description = "Source addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every source.";
     };
     destination = mkOption {
       type = addresses;
-      default = [ ];
-      example = [ "set:servers" ];
-      description = "Destination address ranges, or one `set:<name>` for the ranges of an AddressSet; empty matches every destination.";
+      default = null;
+      example.set = "servers";
+      description = "Destination addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every destination.";
     };
   };
 
@@ -200,8 +221,7 @@ let
   };
 
   # A rule over a PolicyRoute's rules, self: `ok` holds for each rule p. It binds p's match to r,
-  # so that the firewall rules' CEL reads it, and sees the config's AddressSets and the sets r
-  # names as rulesRule does.
+  # so that the firewall rules' CEL reads it.
   policyRulesRule =
     {
       description,
@@ -210,7 +230,7 @@ let
     }:
     {
       inherit description message;
-      rule = "cel.bind(sets, ${delivered "AddressSet"}, self.all(p, cel.bind(r, p.match, cel.bind(src, ${setOf "r.source"}, cel.bind(dst, ${setOf "r.destination"}, ${ok})))))";
+      rule = "self.all(p, cel.bind(r, p.match, ${ok}))";
     };
   # Binds, for body, tables to the VRF documents' tables.
   vrfTables =
@@ -283,11 +303,11 @@ let
           };
         };
         example = {
-          source = [ "set:guests" ];
+          source.set = "guests";
           protocol = "tcp";
           destinationPorts = [ 443 ];
         };
-        description = "What the rule matches, at least one term: a rule for every packet says so, such as with `source: [0.0.0.0/0]`.";
+        description = "What the rule matches, at least one term: a rule for every packet says so, such as with `source: {cidrs: [0.0.0.0/0]}`.";
       };
       to = mkOption {
         type = policyTarget;
@@ -439,19 +459,10 @@ in
             default = [ ];
             description = "Rules in order: the first that matches a connection decides.";
             rules = [
-              (rulesRule {
-                description = "A set:<name> is the one entry of its source or destination.";
-                ok = ''[r.source, r.destination].all(l, size(l) == 1 || !l.exists(a, a.startsWith("set:")))'';
-                message = "a rule's source or destination holds set:<name> beside other entries; a set stands alone, so give the other ranges a rule of their own or add them to the set";
-              })
-              (rulesRule {
-                description = "A rule's sets are AddressSet documents.";
-                ok = ''(src == "" || src in sets) && (dst == "" || dst in sets)'';
-                message = "a rule names an AddressSet that the config does not hold";
-              })
+              (rulesRule oneOfSetAndCIDRs)
               (rulesRule {
                 description = "A rule with a family has addresses and sets of that family alone.";
-                ok = "r.family == null || ${ofFamily "r.source" "src"} && ${ofFamily "r.destination" "dst"}";
+                ok = "r.family == null || ${ofFamily "r.source"} && ${ofFamily "r.destination"}";
                 message = "a rule has addresses or a set of another family than its own";
               })
               (rulesRule {
@@ -471,7 +482,7 @@ in
 
       AddressSet = builtin groups.router // {
         multiple = true;
-        description = "Address ranges of one family, which firewall rules name as `set:<name>`.";
+        description = "Address ranges of one family, which the rules of FirewallPolicy and PolicyRoute documents name in a `source` or `destination` as `{set: <name>}`.";
         rules = [
           {
             description = "An AddressSet's ranges are of its family.";
@@ -650,19 +661,10 @@ in
             type = types.nonEmptyListOf policyRule;
             description = "Rules in order: the first that matches a packet decides where it goes.";
             rules = [
-              (policyRulesRule {
-                description = "A set:<name> is the one entry of its source or destination.";
-                ok = ''[r.source, r.destination].all(l, size(l) == 1 || !l.exists(a, a.startsWith("set:")))'';
-                message = "a rule's source or destination holds set:<name> beside other entries; a set stands alone, so give the other ranges a rule of their own or add them to the set";
-              })
-              (policyRulesRule {
-                description = "A rule's sets are AddressSet documents.";
-                ok = ''(src == "" || src in sets) && (dst == "" || dst in sets)'';
-                message = "a rule names an AddressSet that the config does not hold";
-              })
+              (policyRulesRule oneOfSetAndCIDRs)
               (policyRulesRule {
                 description = "A rule with a family has addresses and sets of that family alone.";
-                ok = "r.family == null || ${ofFamily "r.source" "src"} && ${ofFamily "r.destination" "dst"}";
+                ok = "r.family == null || ${ofFamily "r.source"} && ${ofFamily "r.destination"}";
                 message = "a rule has addresses or a set of another family than its own";
               })
               (policyRulesRule {
@@ -677,8 +679,8 @@ in
               })
               (policyRulesRule {
                 description = "A rule matches by one term at least.";
-                ok = "r.family != null || r.protocol != null || size(r.source) > 0 || size(r.destination) > 0 || size(r.sourcePorts) > 0 || size(r.destinationPorts) > 0 || size(r.dscp) > 0";
-                message = "a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: [0.0.0.0/0]";
+                ok = "r.family != null || r.protocol != null || r.source != null || r.destination != null || size(r.sourcePorts) > 0 || size(r.destinationPorts) > 0 || size(r.dscp) > 0";
+                message = "a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: {cidrs: [0.0.0.0/0]}";
               })
               (policyRulesRule {
                 description = "A rule's to names a VRF, a table or a next hop, one of them.";

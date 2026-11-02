@@ -38,10 +38,10 @@ func network(t *testing.T, name, match string) config.Document {
 	return builtinDoc(t, config.NetworkdAPI, "Network", name, `{"match": `+match+`}`)
 }
 
-// The router kinds' rules accept a fabric edge's documents and a zone of a VRF, and refuse a set
-// the config lacks, two zones of one interface or VRF, a zone of nothing, a zone's or NAT rule's
-// interface that is a VRF's device, a policy from local, two policies between one pair, a set
-// beside ranges, addresses of another family and ports without a protocol.
+// The router kinds' rules accept a fabric edge's documents and a zone of a VRF, and refuse two
+// zones of one interface or VRF, a zone of nothing, a zone's or NAT rule's interface that is a
+// VRF's device, a policy from local, two policies between one pair, a source of a set and ranges
+// or of neither, addresses of another family and ports without a protocol.
 func TestRouterRules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -50,9 +50,9 @@ func TestRouterRules(t *testing.T) {
 		doc("FirewallZone", "fabric", `{"interfaces": ["eth1", "eth2"]}`),
 		doc("AddressSet", "office", `{"family": "ipv6", "prefixes": ["2001:db8:1::/48"]}`),
 		doc("FirewallPolicy", "wan-local", `{"from": "wan", "to": "local", "rules": [
-			{"protocol": "tcp", "destinationPorts": [22, "8000-8100"], "source": ["set:office"], "action": "accept"},
+			{"protocol": "tcp", "destinationPorts": [22, "8000-8100"], "source": {"set": "office"}, "action": "accept"},
 			{"protocol": "icmpv6", "icmpTypes": ["packet-too-big"], "action": "accept"},
-			{"source": ["192.0.2.0/24", "2001:db8::/32"], "action": "reject", "log": true}]}`),
+			{"source": {"cidrs": ["192.0.2.0/24", "2001:db8::/32"]}, "action": "reject", "log": true}]}`),
 		doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "default": "accept"}`),
 		doc("NATRule", "wan", `{"type": "masquerade", "out": {"zone": "wan"}}`),
 		doc("NATRule", "web", `{"type": "dnat", "in": {"interface": "eth0"}, "match": {"protocol": "tcp", "destinationPorts": [80]}, "to": {"address": "192.0.2.10", "port": 8080}}`),
@@ -84,11 +84,11 @@ func TestRouterRules(t *testing.T) {
 			[]string{"FirewallPolicy out comes from local, the router itself, whose own connections the firewall accepts; a policy comes from a FirewallZone"}},
 		{"two policies between one pair", replace(edge, doc("FirewallPolicy", "wan-local-2", `{"from": "wan", "to": "local"}`)),
 			[]string{"more than one FirewallPolicy goes from wan to local; give each pair of zones one policy"}},
-		{"a set beside ranges", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"source": ["set:office", "2001:db8:2::/48"], "action": "accept"}]}`)),
-			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule's source or destination holds set:<name> beside other entries; a set stands alone, so give the other ranges a rule of their own or add them to the set`}},
-		{"a set the config lacks", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"destination": ["set:servers"], "action": "accept"}]}`)),
-			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule names an AddressSet that the config does not hold`}},
-		{"a set of one family and addresses of the other", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"source": ["set:office"], "destination": ["192.0.2.0/24"], "action": "accept"}]}`)),
+		{"a set beside ranges", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"source": {"set": "office", "cidrs": ["2001:db8:2::/48"]}, "action": "accept"}]}`)),
+			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address`}},
+		{"a source of neither", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"source": {}, "action": "accept"}]}`)),
+			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address`}},
+		{"a set of one family and addresses of the other", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"source": {"set": "office"}, "destination": {"cidrs": ["192.0.2.0/24"]}, "action": "accept"}]}`)),
 			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6`}},
 		{"ICMP types without a protocol", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"icmpTypes": ["echo-request"], "action": "accept"}]}`)),
 			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule has ports without the protocol tcp, udp or sctp, or ICMP types its protocol lacks`}},
@@ -100,10 +100,10 @@ func TestRouterRules(t *testing.T) {
 			[]string{"NATRule wan: out and in name a zone or an interface, one of them"}},
 		{"masquerade with to", replace(edge, doc("NATRule", "wan", `{"type": "masquerade", "out": {"zone": "wan"}, "to": {"address": "192.0.2.1"}}`)),
 			[]string{"NATRule wan: snat and dnat translate to the address of to, masquerade to that of the interface and has no to"}},
-		{"a family and addresses of the other", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"family": "ipv4", "source": ["set:office"], "action": "accept"}]}`)),
+		{"a family and addresses of the other", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"family": "ipv4", "source": {"set": "office"}, "action": "accept"}]}`)),
 			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule has addresses or a set of another family than its own`,
 				`FirewallPolicy "fabric-wan" spec.rules: a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6`}},
-		{"icmp with IPv6 addresses", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"protocol": "icmp", "destination": ["2001:db8::/32"], "action": "accept"}]}`)),
+		{"icmp with IPv6 addresses", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"protocol": "icmp", "destination": {"cidrs": ["2001:db8::/32"]}, "action": "accept"}]}`)),
 			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6`}},
 		{"ports without a protocol", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"destinationPorts": [53], "action": "accept"}]}`)),
 			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule has ports without the protocol tcp, udp or sctp, or ICMP types its protocol lacks`}},

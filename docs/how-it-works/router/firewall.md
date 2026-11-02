@@ -108,13 +108,13 @@ Each chain ends with a verdict, so the first jump whose interfaces match decides
 of two zones overlap, the policy of the first name takes the interface's connections.
 
 A rule matches a family when its `family`, its protocol and its addresses leave it: `icmp` is
-IPv4's, `icmpv6` IPv6's, and a list of ranges matches the ranges of each family in that family. A
-rule whose addresses hold both families renders one line for each. `reject` answers with an
-administratively prohibited error of the packet's family. A rule with `log` logs each packet it
-matches, prefixed with the policy's name and the rule's number.
+IPv4's, `icmpv6` IPv6's, and `cidrs` match the ranges of each family in that family. A rule whose
+addresses hold both families renders one line for each. `reject` answers with an administratively
+prohibited error of the packet's family. A rule with `log` logs each packet it matches, prefixed
+with the policy's name and the rule's number.
 
 An `AddressSet` holds ranges of one family as a named nftables set, `addresses-<name>`. A rule
-names it as `set:<name>`, alone in its `source` or `destination`.
+names it as `{set: <name>}` in its `source` or `destination`, in place of `cidrs`.
 
 ## NAT rules
 

@@ -58,7 +58,7 @@ metadata: {name: edge}
 spec:
   in: {interfaces: [edge0]}
   rules:
-    - match: {destination: ["2001:db8:ffff::2/128"], protocol: udp, destinationPorts: [53]}
+    - match: {destination: {cidrs: ["2001:db8:ffff::2/128"]}, protocol: udp, destinationPorts: [53]}
       to: {vrf: fabric}
     - match: {family: ipv6, dscp: [46]}
       to: {nextHop: {address: "2001:db8:fffe::2", interface: policy0, table: 300}}

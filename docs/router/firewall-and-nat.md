@@ -107,8 +107,8 @@ spec:
   from: wan
   to: local
   rules:
-    - {protocol: tcp, destinationPorts: [8080], source: ["set:monitoring"], action: accept}
-    - {protocol: tcp, destinationPorts: ["8443-8444"], source: [198.51.100.0/24, "2001:db8:3::/48"], action: accept}
+    - {protocol: tcp, destinationPorts: [8080], source: {set: monitoring}, action: accept}
+    - {protocol: tcp, destinationPorts: ["8443-8444"], source: {cidrs: [198.51.100.0/24, "2001:db8:3::/48"]}, action: accept}
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: AddressSet
@@ -116,8 +116,9 @@ metadata: {name: monitoring}
 spec: {family: ipv6, prefixes: ["2001:db8:2::/64"]}
 ```
 
-An `AddressSet` holds ranges of one family. A rule names it as `set:<name>`, alone in its `source`
-or `destination`. A port is a number or a range `"<first>-<last>"`. A policy cannot drop what the
+An `AddressSet` holds ranges of one family. A rule's `source` or `destination` names one in
+`set`, or lists address ranges in `cidrs`, one of the two; a rule without it matches every
+address. A port is a number or a range `"<first>-<last>"`. A policy cannot drop what the
 firewall accepts before it: chalkd's port on the management interfaces, pings, ICMP errors,
 neighbour discovery and established connections.
 Nor does it filter DHCPv4 on the links a `DHCPSubnet` serves: the DHCP server reads it ahead of
@@ -200,7 +201,7 @@ document:
 | `FirewallZone/guest: spec.vrfs[0]: VRF "guest" does not exist` | Add the `VRF` document, or fix the name in `vrfs`. |
 | `the VRF tenant is in more than one FirewallZone, or twice in one; give each VRF one zone` | Keep the VRF in one zone, or name its links in the zones instead. |
 | `more than one FirewallPolicy goes from lan to wan; give each pair of zones one policy` | Merge the policies' rules into one. |
-| `FirewallPolicy "wan-local" spec.rules: a rule names an AddressSet that the config does not hold` | Add the `AddressSet`, or fix the name after `set:`. |
+| `FirewallPolicy/wan-local: spec.rules[0].source.set: AddressSet "monitoring" does not exist` | Add the `AddressSet`, or fix the name in `set`. |
 | `NATRule web has addresses of another family than ipv4` | Set `family: ipv6`, or give IPv4 addresses. |
 
 [Built-ins](../reference/builtins.md#rules-router-images) lists every rule of the router kinds.

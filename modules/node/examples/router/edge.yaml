@@ -35,9 +35,9 @@ spec:
   from: wan
   to: local
   rules:
-    - {protocol: tcp, destinationPorts: [22], source: ["set:office"], action: accept, log: true}
+    - {protocol: tcp, destinationPorts: [22], source: {set: office}, action: accept, log: true}
     - {protocol: udp, sourcePorts: [123], destinationPorts: ["1024-65535"], action: accept}
-    - {source: ["192.0.2.0/24", "2001:db8:ffff::/48"], action: reject}
+    - {source: {cidrs: [192.0.2.0/24, "2001:db8:ffff::/48"]}, action: reject}
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: FirewallPolicy

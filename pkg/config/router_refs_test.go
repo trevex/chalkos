@@ -133,3 +133,15 @@ func TestRouterBGPRefs(t *testing.T) {
 		`RoutingPolicy/p: spec.terms[0].match.communityList: CommunityList "drop" does not exist`,
 		`RoutingPolicy/p: spec.terms[0].match.prefixList: PrefixList "v6" does not exist`)
 }
+
+// A firewall rule's and a policy route rule's source and destination name an AddressSet in set;
+// their cidrs reference nothing.
+func TestRouterSetRefs(t *testing.T) {
+	_, err := checkRouterRefs(t,
+		routerDoc("FirewallZone", "lan", `{interfaces: [eth1]}`)+
+			routerDoc("FirewallPolicy", "lan-local", `{from: lan, to: local, rules: [{source: {set: office}, destination: {cidrs: [192.0.2.0/24]}, action: accept}]}`)+
+			routerDoc("PolicyRoute", "lan", `{rules: [{match: {destination: {set: servers}}, to: {table: 100}}]}`))
+	wantRefused(t, err,
+		`FirewallPolicy/lan-local: spec.rules[0].source.set: AddressSet "office" does not exist`,
+		`PolicyRoute/lan: spec.rules[0].match.destination.set: AddressSet "servers" does not exist`)
+}

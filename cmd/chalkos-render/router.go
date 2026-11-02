@@ -56,11 +56,18 @@ type firewallRule struct {
 	Protocol         *string     `json:"protocol"`
 	SourcePorts      []portRange `json:"sourcePorts"`
 	DestinationPorts []portRange `json:"destinationPorts"`
-	Source           []string    `json:"source"`
-	Destination      []string    `json:"destination"`
+	Source           *addresses  `json:"source"`
+	Destination      *addresses  `json:"destination"`
 	ICMPTypes        []string    `json:"icmpTypes"`
 	Action           string      `json:"action"`
 	Log              bool        `json:"log"`
+}
+
+// addresses are a rule's source or destination: an AddressSet or address ranges, one of them; nil
+// matches every address.
+type addresses struct {
+	Set   *string  `json:"set"`
+	CIDRs []string `json:"cidrs"`
 }
 
 type addressSetSpec struct {
@@ -326,8 +333,8 @@ type policyRule struct {
 		Protocol         *string     `json:"protocol"`
 		SourcePorts      []portRange `json:"sourcePorts"`
 		DestinationPorts []portRange `json:"destinationPorts"`
-		Source           []string    `json:"source"`
-		Destination      []string    `json:"destination"`
+		Source           *addresses  `json:"source"`
+		Destination      *addresses  `json:"destination"`
 		DSCP             []int       `json:"dscp"`
 	} `json:"match"`
 	To struct {

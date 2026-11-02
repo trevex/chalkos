@@ -691,11 +691,10 @@ Message of rule 15:
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A FirewallPolicy comes from a FirewallZone, not from local. | `refuse` | `documents.all(n, documents[n].spec.from != "local")` | after the table |
 | 2 | — | One FirewallPolicy at most goes from a zone to another. | `refuse` | after the table | after the table |
-| 3 | `spec.rules` | A set:&lt;name> is the one entry of its source or destination. | `refuse` | after the table | a rule's source or destination holds set:&lt;name> beside other entries; a set stands alone, so give the other ranges a rule of their own or add them to the set |
-| 4 | `spec.rules` | A rule's sets are AddressSet documents. | `refuse` | after the table | a rule names an AddressSet that the config does not hold |
-| 5 | `spec.rules` | A rule with a family has addresses and sets of that family alone. | `refuse` | after the table | a rule has addresses or a set of another family than its own |
-| 6 | `spec.rules` | A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one. | `refuse` | after the table | a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6 |
-| 7 | `spec.rules` | Ports go with tcp, udp or sctp, ICMP types with icmp or icmpv6, and packet-too-big with icmpv6. | `refuse` | after the table | a rule has ports without the protocol tcp, udp or sctp, or ICMP types its protocol lacks |
+| 3 | `spec.rules` | A rule's source and destination each name an AddressSet or address ranges, one of them. | `refuse` | `self.all(r, [r.source, r.destination].all(m, m == null || (m.set == null) != (m.cidrs == null)))` | a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address |
+| 4 | `spec.rules` | A rule with a family has addresses and sets of that family alone. | `refuse` | after the table | a rule has addresses or a set of another family than its own |
+| 5 | `spec.rules` | A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one. | `refuse` | after the table | a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6 |
+| 6 | `spec.rules` | Ports go with tcp, udp or sctp, ICMP types with icmp or icmpv6, and packet-too-big with icmpv6. | `refuse` | after the table | a rule has ports without the protocol tcp, udp or sctp, or ICMP types its protocol lacks |
 
 Message of rule 1:
 
@@ -715,34 +714,22 @@ Message of rule 2:
 cel.bind(pairs, documents.map(n, documents[n].spec.from + " to " + documents[n].spec.to), "more than one FirewallPolicy goes from " + pairs.filter(p, size(pairs.filter(q, q == p)) > 1)[0] + "; give each pair of zones one policy")
 ```
 
-Expression of rule 3:
-
-```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), [r.source, r.destination].all(l, size(l) == 1 || !l.exists(a, a.startsWith("set:")))))))
-```
-
 Expression of rule 4:
 
 ```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), (src == "" || src in sets) && (dst == "" || dst in sets)))))
+self.all(r, r.family == null || (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == r.family : r.source.cidrs == null || r.source.cidrs.all(a, cidr(a).ip(0).family() == r.family))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == r.family : r.destination.cidrs == null || r.destination.cidrs.all(a, cidr(a).ip(0).family() == r.family))))
 ```
 
 Expression of rule 5:
 
 ```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), r.family == null || (src != "" ? !(src in sets) || sets[src].spec.family == r.family : r.source.all(a, a.startsWith("set:") || cidr(a).ip(0).family() == r.family)) && (dst != "" ? !(dst in sets) || sets[dst].spec.family == r.family : r.destination.all(a, a.startsWith("set:") || cidr(a).ip(0).family() == r.family))))))
+self.all(r, ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv4" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv4" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4")))) || ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv6" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv6" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6")))))
 ```
 
 Expression of rule 6:
 
 ```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (size(r.source) == 0 || (src != "" ? !(src in sets) || sets[src].spec.family == "ipv4" :r.source.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv4"))) && (size(r.destination) == 0 || (dst != "" ? !(dst in sets) || sets[dst].spec.family == "ipv4" :r.destination.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv4")))) || ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (size(r.source) == 0 || (src != "" ? !(src in sets) || sets[src].spec.family == "ipv6" :r.source.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv6"))) && (size(r.destination) == 0 || (dst != "" ? !(dst in sets) || sets[dst].spec.family == "ipv6" :r.destination.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv6"))))))))
-```
-
-Expression of rule 7:
-
-```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(r, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), (size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.protocol in ["tcp", "udp", "sctp"]) && (size(r.icmpTypes) == 0 || r.protocol in ["icmp", "icmpv6"]) && !(r.protocol == "icmp" && "packet-too-big" in r.icmpTypes)))))
+self.all(r, (size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.protocol in ["tcp", "udp", "sctp"]) && (size(r.icmpTypes) == 0 || r.protocol in ["icmp", "icmpv6"]) && !(r.protocol == "icmp" && "packet-too-big" in r.icmpTypes))
 ```
 
 #### FirewallZone { #rules-firewallzone }
@@ -1012,17 +999,16 @@ documents.filter(n, cel.bind(s, documents[n].spec, s.match.protocol == null && (
 | 1 | — | A PolicyRoute's in names a zone or interfaces, one of them. | `refuse` | after the table | after the table |
 | 2 | — | No interface of a PolicyRoute's in is a VRF's device, which takes the VRF document's name; the outputs also refuse globs that match one. | `refuse` | after the table | after the table |
 | 3 | — | A next hop's table is that next hop's alone: no other next hop and no rule's table takes it. | `refuse` | after the table | after the table |
-| 4 | `spec.rules` | A set:&lt;name> is the one entry of its source or destination. | `refuse` | after the table | a rule's source or destination holds set:&lt;name> beside other entries; a set stands alone, so give the other ranges a rule of their own or add them to the set |
-| 5 | `spec.rules` | A rule's sets are AddressSet documents. | `refuse` | after the table | a rule names an AddressSet that the config does not hold |
-| 6 | `spec.rules` | A rule with a family has addresses and sets of that family alone. | `refuse` | after the table | a rule has addresses or a set of another family than its own |
-| 7 | `spec.rules` | A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one. | `refuse` | after the table | a rule matches no packet: its family, protocol, addresses and sets leave neither IPv4 nor IPv6 |
-| 8 | `spec.rules` | Ports go with tcp, udp or sctp. | `refuse` | after the table | a rule has ports without the protocol tcp, udp or sctp |
-| 9 | `spec.rules` | A rule matches by one term at least. | `refuse` | after the table | a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: [0.0.0.0/0] |
-| 10 | `spec.rules` | A rule's to names a VRF, a table or a next hop, one of them. | `refuse` | after the table | a rule's to names a VRF, a table or a next hop, one of them |
-| 11 | `spec.rules` | A rule with a next hop matches packets of the next hop's family. | `refuse` | after the table | a rule's next hop is of another family than the packets the rule matches |
-| 12 | `spec.rules` | A rule's table is not 255, the kernel's local table, and no VRF's table. | `refuse` | after the table | a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table |
-| 13 | `spec.rules` | A next hop's table is none of 253, 254 and 255 and no VRF's table. | `refuse` | after the table | a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own |
-| 14 | `spec.rules` | A next hop's interface is not lo; the output router-nftables also refuses it. | `refuse` | `self.all(p, p.to.nextHop == null || p.to.nextHop.interface != "lo")` | a next hop's interface is lo, which no next hop is on; name the link the next hop is on |
+| 4 | `spec.rules` | A rule's source and destination each name an AddressSet or address ranges, one of them. | `refuse` | after the table | a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address |
+| 5 | `spec.rules` | A rule with a family has addresses and sets of that family alone. | `refuse` | after the table | a rule has addresses or a set of another family than its own |
+| 6 | `spec.rules` | A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one. | `refuse` | after the table | a rule matches no packet: its family, protocol, addresses and sets leave neither IPv4 nor IPv6 |
+| 7 | `spec.rules` | Ports go with tcp, udp or sctp. | `refuse` | after the table | a rule has ports without the protocol tcp, udp or sctp |
+| 8 | `spec.rules` | A rule matches by one term at least. | `refuse` | after the table | a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: {cidrs: [0.0.0.0/0]} |
+| 9 | `spec.rules` | A rule's to names a VRF, a table or a next hop, one of them. | `refuse` | after the table | a rule's to names a VRF, a table or a next hop, one of them |
+| 10 | `spec.rules` | A rule with a next hop matches packets of the next hop's family. | `refuse` | after the table | a rule's next hop is of another family than the packets the rule matches |
+| 11 | `spec.rules` | A rule's table is not 255, the kernel's local table, and no VRF's table. | `refuse` | after the table | a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table |
+| 12 | `spec.rules` | A next hop's table is none of 253, 254 and 255 and no VRF's table. | `refuse` | after the table | a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own |
+| 13 | `spec.rules` | A next hop's interface is not lo; the output router-nftables also refuses it. | `refuse` | `self.all(p, p.to.nextHop == null || p.to.nextHop.interface != "lo")` | a next hop's interface is lo, which no next hop is on; name the link the next hop is on |
 
 Expression of rule 1:
 
@@ -1063,58 +1049,52 @@ cel.bind(tos, documents.map(n, documents[n].spec.rules.map(p, p.to)).flatten(), 
 Expression of rule 4:
 
 ```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(p, cel.bind(r, p.match, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), [r.source, r.destination].all(l, size(l) == 1 || !l.exists(a, a.startsWith("set:"))))))))
+self.all(p, cel.bind(r, p.match, [r.source, r.destination].all(m, m == null || (m.set == null) != (m.cidrs == null))))
 ```
 
 Expression of rule 5:
 
 ```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(p, cel.bind(r, p.match, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), (src == "" || src in sets) && (dst == "" || dst in sets))))))
+self.all(p, cel.bind(r, p.match, r.family == null || (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == r.family : r.source.cidrs == null || r.source.cidrs.all(a, cidr(a).ip(0).family() == r.family))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == r.family : r.destination.cidrs == null || r.destination.cidrs.all(a, cidr(a).ip(0).family() == r.family)))))
 ```
 
 Expression of rule 6:
 
 ```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(p, cel.bind(r, p.match, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), r.family == null || (src != "" ? !(src in sets) || sets[src].spec.family == r.family : r.source.all(a, a.startsWith("set:") || cidr(a).ip(0).family() == r.family)) && (dst != "" ? !(dst in sets) || sets[dst].spec.family == r.family : r.destination.all(a, a.startsWith("set:") || cidr(a).ip(0).family() == r.family)))))))
+self.all(p, cel.bind(r, p.match, ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv4" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv4" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4")))) || ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv6" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv6" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))))))
 ```
 
 Expression of rule 7:
 
 ```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(p, cel.bind(r, p.match, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (size(r.source) == 0 || (src != "" ? !(src in sets) || sets[src].spec.family == "ipv4" :r.source.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv4"))) && (size(r.destination) == 0 || (dst != "" ? !(dst in sets) || sets[dst].spec.family == "ipv4" :r.destination.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv4")))) || ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (size(r.source) == 0 || (src != "" ? !(src in sets) || sets[src].spec.family == "ipv6" :r.source.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv6"))) && (size(r.destination) == 0 || (dst != "" ? !(dst in sets) || sets[dst].spec.family == "ipv6" :r.destination.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv6")))))))))
+self.all(p, cel.bind(r, p.match, size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.protocol in ["tcp", "udp", "sctp"]))
 ```
 
 Expression of rule 8:
 
 ```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(p, cel.bind(r, p.match, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.protocol in ["tcp", "udp", "sctp"])))))
+self.all(p, cel.bind(r, p.match, r.family != null || r.protocol != null || r.source != null || r.destination != null || size(r.sourcePorts) > 0 || size(r.destinationPorts) > 0 || size(r.dscp) > 0))
 ```
 
 Expression of rule 9:
 
 ```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(p, cel.bind(r, p.match, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), r.family != null || r.protocol != null || size(r.source) > 0 || size(r.destination) > 0 || size(r.sourcePorts) > 0 || size(r.destinationPorts) > 0 || size(r.dscp) > 0)))))
+self.all(p, cel.bind(r, p.match, (p.to.vrf == null ? 0 : 1) + (p.to.table == null ? 0 : 1) + (p.to.nextHop == null ? 0 : 1) == 1))
 ```
 
 Expression of rule 10:
 
 ```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(p, cel.bind(r, p.match, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), (p.to.vrf == null ? 0 : 1) + (p.to.table == null ? 0 : 1) + (p.to.nextHop == null ? 0 : 1) == 1)))))
+self.all(p, cel.bind(r, p.match, p.to.nextHop == null || (ip(p.to.nextHop.address).family() == "ipv4" ? ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv4" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv4" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4")))) : ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv6" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv6" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6")))))))
 ```
 
 Expression of rule 11:
 
 ```text
-cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].AddressSet : {}), self.all(p, cel.bind(r, p.match, cel.bind(src, (size(r.source) == 1 && r.source[0].startsWith("set:") ? r.source[0].substring(4) : ""), cel.bind(dst, (size(r.destination) == 1 && r.destination[0].startsWith("set:") ? r.destination[0].substring(4) : ""), p.to.nextHop == null || (ip(p.to.nextHop.address).family() == "ipv4" ? ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (size(r.source) == 0 || (src != "" ? !(src in sets) || sets[src].spec.family == "ipv4" :r.source.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv4"))) && (size(r.destination) == 0 || (dst != "" ? !(dst in sets) || sets[dst].spec.family == "ipv4" :r.destination.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv4")))) : ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (size(r.source) == 0 || (src != "" ? !(src in sets) || sets[src].spec.family == "ipv6" :r.source.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv6"))) && (size(r.destination) == 0 || (dst != "" ? !(dst in sets) || sets[dst].spec.family == "ipv6" :r.destination.exists(a, !a.startsWith("set:") && cidr(a).ip(0).family() == "ipv6"))))))))))
-```
-
-Expression of rule 12:
-
-```text
 cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(tables, v.map(n, v[n].spec.table), self.all(p, p.to.table == null || p.to.table != 255 && !(p.to.table in tables))))
 ```
 
-Expression of rule 13:
+Expression of rule 12:
 
 ```text
 cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(tables, v.map(n, v[n].spec.table), self.all(p, p.to.nextHop == null || !(p.to.nextHop.table in [253, 254, 255]) && !(p.to.nextHop.table in tables))))

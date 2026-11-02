@@ -950,7 +950,7 @@ func (f *firewall) matchLines(r firewallRule) ([]familyMatch, error) {
 	case r.Protocol != nil && *r.Protocol == "icmpv6":
 		families = slices.DeleteFunc(families, func(f string) bool { return f != "ipv6" })
 	}
-	if len(families) == 2 && len(r.Source) == 0 && len(r.Destination) == 0 {
+	if len(families) == 2 && r.Source == nil && r.Destination == nil {
 		return []familyMatch{{"", protocol}}, nil
 	}
 	var matches []familyMatch
@@ -990,28 +990,27 @@ func joinWords(parts ...string) string {
 	return strings.Join(kept, " ")
 }
 
-// addressMatch is the match of the address list l on the side dir, saddr or daddr, in the family
-// fam: of its AddressSet, or of its ranges of that family. ok is false when the list has
-// addresses but none of fam; an empty list matches every address.
-func (f *firewall) addressMatch(fam, dir string, l []string) (match string, ok bool, err error) {
-	if len(l) == 0 {
+// addressMatch is the match of the source or destination a on the side dir, saddr or daddr, in
+// the family fam: of its AddressSet, or of its ranges of that family. ok is false when a has
+// addresses but none of fam; a nil a matches every address.
+func (f *firewall) addressMatch(fam, dir string, a *addresses) (match string, ok bool, err error) {
+	switch {
+	case a == nil:
 		return "", true, nil
-	}
-	if name, isSet := strings.CutPrefix(l[0], "set:"); isSet {
-		if len(l) > 1 {
-			return "", false, fmt.Errorf("set:%s stands alone", name)
-		}
-		s, found := f.sets[name]
-		if !found {
-			return "", false, fmt.Errorf("the AddressSet %s does not exist", name)
+	case (a.Set != nil) == (len(a.CIDRs) > 0):
+		return "", false, fmt.Errorf("it names both set and cidrs, or neither")
+	case a.Set != nil:
+		s, err := mustGet(f.sets, "AddressSet", *a.Set)
+		if err != nil {
+			return "", false, err
 		}
 		if s.Family != fam {
 			return "", false, nil
 		}
-		return fmt.Sprintf("%s %s @addresses-%s", familyWords[fam], dir, name), true, nil
+		return fmt.Sprintf("%s %s @addresses-%s", familyWords[fam], dir, *a.Set), true, nil
 	}
 	var mine []string
-	for _, a := range l {
+	for _, a := range a.CIDRs {
 		p, err := netip.ParsePrefix(a)
 		if err != nil {
 			return "", false, fmt.Errorf("%q is no address range", a)

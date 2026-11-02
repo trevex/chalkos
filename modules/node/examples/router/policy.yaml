@@ -78,9 +78,9 @@ spec:
   rules:
     # Traffic between lan0 and lan1 stays in the main table. The servers' next hops would
     # otherwise take it, and their tables route nothing but the default.
-    - match: {destination: [192.0.2.0/24, "2001:db8:1::/64", "2001:db8:2::/64"]}
+    - match: {destination: {cidrs: [192.0.2.0/24, "2001:db8:1::/64", "2001:db8:2::/64"]}}
       to: {table: 254}
-    - match: {source: ["set:guests"], protocol: tcp, destinationPorts: [443]}
+    - match: {source: {set: guests}, protocol: tcp, destinationPorts: [443]}
       to: {vrf: transit}
     - match: {dscp: [46]}
       to: {vrf: transit}
@@ -91,7 +91,7 @@ metadata: {name: servers}
 spec:
   in: {interfaces: [lan0]}
   rules:
-    - match: {source: [192.0.2.32/27]}
+    - match: {source: {cidrs: [192.0.2.32/27]}}
       to: {nextHop: {address: 198.51.100.130, interface: wanb0, table: 200}}
-    - match: {source: ["2001:db8:1::20/123"]}
+    - match: {source: {cidrs: ["2001:db8:1::20/123"]}}
       to: {nextHop: {address: "2001:db8:b::2", interface: wanb0, table: 201}}

@@ -90,7 +90,7 @@ func TestPolicyRouteRefusals(t *testing.T) {
 		"a next hop's link that adds a key": {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0\nTable=1", 200)), `"wanb0\nTable=1" is no link of a next hop`},
 		"two next hops in a table":          {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 200), "b", nextHopRoute("198.51.100.131", "wanb0", 200)), "PolicyRoute b rule 1: table 200 is another next hop's"},
 		"a next hop's table as a rule's":    {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 200), "b", `{"rules": [{"match": {"dscp": [10]}, "to": {"table": 200}}]}`), "PolicyRoute b rule 1: table 200 is another next hop's"},
-		"a next hop of the other family":    {policyDocs(t, "a", `{"rules": [{"match": {"source": ["2001:db8:1::/64"]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}]}`), "PolicyRoute a rule 1: the match leaves no family, or none of its next hop"},
+		"a next hop of the other family":    {policyDocs(t, "a", `{"rules": [{"match": {"source": {"cidrs": ["2001:db8:1::/64"]}}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}]}`), "PolicyRoute a rule 1: the match leaves no family, or none of its next hop"},
 		"a family against the next hop":     {policyDocs(t, "a", `{"rules": [{"match": {"family": "ipv6"}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}]}`), "PolicyRoute a rule 1: the next hop 198.51.100.130 is of another family than ipv6"},
 		"a DSCP value above 63":             {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [64]}, "to": {"vrf": "transit"}}]}`), "PolicyRoute a rule 1: dscp 64 is no value from 0 to 63"},
 		"more than 255 tables": {func() map[string][]any {
@@ -111,7 +111,7 @@ func TestPolicyRouteRefusals(t *testing.T) {
 // a ruleset without PolicyRoute documents marks nothing.
 func TestPolicyRouteChain(t *testing.T) {
 	docs := policyDocs(t,
-		"a", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}, {"match": {"source": ["192.0.2.0/24"]}, "to": {"vrf": "transit"}}]}`,
+		"a", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}, {"match": {"source": {"cidrs": ["192.0.2.0/24"]}}, "to": {"vrf": "transit"}}]}`,
 		"b", `{"in": {"zone": "lan", "interfaces": []}, "rules": [{"match": {"dscp": [10]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}]}`)
 	ruleset := renderedFile(t, []string{"router-nftables", "50000"}, policyInput(t, docs), rulesetFile)
 	for _, want := range []string{
@@ -187,7 +187,7 @@ func TestPolicyRouteUnitRefusals(t *testing.T) {
 // are those of the VRFs alone.
 func TestPolicyRouteUnits(t *testing.T) {
 	docs := policyDocs(t,
-		"a", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}, {"match": {"source": ["192.0.2.0/24"]}, "to": {"vrf": "transit"}}]}`)
+		"a", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}, {"match": {"source": {"cidrs": ["192.0.2.0/24"]}}, "to": {"vrf": "transit"}}]}`)
 	units := func() string {
 		t.Helper()
 		return renderedFiles(t, []string{"router-networkd", networkFixture}, policyInput(t, docs))

@@ -243,9 +243,9 @@ func (f *firewall) nat64Link(i string) (string, string, bool) {
 // the next hop's family alone.
 func (f *firewall) policyMatches(r policyRule) ([]string, error) {
 	m := r.Match
-	if m.Family == nil && m.Protocol == nil && len(m.Source) == 0 && len(m.Destination) == 0 &&
+	if m.Family == nil && m.Protocol == nil && m.Source == nil && m.Destination == nil &&
 		len(m.SourcePorts) == 0 && len(m.DestinationPorts) == 0 && len(m.DSCP) == 0 {
-		return nil, fmt.Errorf("the match is empty; to match every packet, say so, such as with source: [0.0.0.0/0]")
+		return nil, fmt.Errorf("the match is empty; to match every packet, say so, such as with source: {cidrs: [0.0.0.0/0]}")
 	}
 	fr := firewallRule{Family: m.Family, Protocol: m.Protocol, SourcePorts: m.SourcePorts, DestinationPorts: m.DestinationPorts, Source: m.Source, Destination: m.Destination}
 	if h := r.To.NextHop; h != nil {

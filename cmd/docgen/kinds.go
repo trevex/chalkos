@@ -472,10 +472,15 @@ func props(s map[string]any) map[string]any { return asMap(s["properties"]) }
 // Secret.
 func isKeyRef(s map[string]any) bool { return asMap(s["x-chalkos-ref"])["key"] == true }
 
-// refType describes a reference to a document: the kind it names, and the names it reserves,
-// which the field takes as they are.
+// refType describes a reference to a document: the kind it names, after an before a vowel as
+// AddressSet takes it, and the names it reserves, which the field takes as they are.
 func refType(ref map[string]any) string {
-	out := "name of a " + display(ref["kind"])
+	kind := display(ref["kind"])
+	article := "a "
+	if kind != "" && strings.ContainsRune("AEIOU", rune(kind[0])) {
+		article = "an "
+	}
+	out := "name of " + article + kind
 	var reserved []string
 	for _, n := range asSlice(ref["reserved"]) {
 		reserved = append(reserved, "`"+display(n)+"`")
