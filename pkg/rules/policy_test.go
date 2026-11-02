@@ -9,7 +9,7 @@ import (
 )
 
 // The PolicyRoute rules accept a LAN router's policies into a VRF, a table and next hops, and
-// refuse an in of a zone and interfaces, a zone, set or VRF the config lacks, an in of a VRF's
+// refuse an in of a zone and interfaces, a zone or set the config lacks, an in of a VRF's
 // device, an empty match, a set beside ranges, addresses of another family, ports without a
 // protocol, a to of no target or of two, a next hop of another family, the local table or a VRF's
 // as a table, a next hop's table of the kernel's or of a VRF, a next hop on lo, and a next hop's
@@ -75,8 +75,6 @@ func TestPolicyRouteRules(t *testing.T) {
 			[]string{`PolicyRoute "lan" spec.rules: a rule's to names a VRF, a table or a next hop, one of them`}},
 		{"a next hop of the other family", replace(lan, route("lan", `{"rules": [{"match": {"source": ["2001:db8:1::/64"]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 202}}}]}`)),
 			[]string{`PolicyRoute "lan" spec.rules: a rule's next hop is of another family than the packets the rule matches`}},
-		{"a VRF the config lacks", replace(lan, route("lan", `{"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "guest"}}]}`)),
-			[]string{`PolicyRoute "lan" spec.rules: a rule names a VRF that no VRF document declares`}},
 		{"the local table", replace(lan, route("lan", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 255}}]}`)),
 			[]string{`PolicyRoute "lan" spec.rules: a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table`}},
 		{"a VRF's table", replace(lan, route("lan", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 100}}]}`)),

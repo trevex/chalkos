@@ -189,14 +189,15 @@ The next delivery that changes the firewall documents loads the rendered ruleset
 
 ## A refusal names the document
 
-The rules of the router kinds refuse documents that do not fit together, before chalkctl sends
-anything. Each message names the document:
+chalkctl refuses documents that do not fit together before it sends anything: a field that names
+a document the config lacks, and what the rules of the router kinds refuse. Each message names the
+document:
 
 | Message | Fix |
 | --- | --- |
 | `FirewallPolicy lan-dmz names the zone dmz, which no FirewallZone document declares` | Add the zone, or name one that exists. |
 | `the interface eth1 is in more than one FirewallZone, or twice in one; give each interface one zone` | Keep the interface in one zone. |
-| `FirewallZone guest names the VRF guest, which no VRF document declares` | Add the `VRF` document, or fix the name in `vrfs`. |
+| `FirewallZone/guest: spec.vrfs[0]: VRF "guest" does not exist` | Add the `VRF` document, or fix the name in `vrfs`. |
 | `the VRF tenant is in more than one FirewallZone, or twice in one; give each VRF one zone` | Keep the VRF in one zone, or name its links in the zones instead. |
 | `more than one FirewallPolicy goes from lan to wan; give each pair of zones one policy` | Merge the policies' rules into one. |
 | `FirewallPolicy "wan-local" spec.rules: a rule names an AddressSet that the config does not hold` | Add the `AddressSet`, or fix the name after `set:`. |

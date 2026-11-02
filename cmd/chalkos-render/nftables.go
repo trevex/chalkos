@@ -310,9 +310,9 @@ func (z zoneLinks) entries() []string {
 
 // zoneLinksOf finds where the hooks see each zone's connections. Without VRFs a zone's
 // interfaces are its in and its links, as before VRFs. It refuses a zone of no interface and no
-// VRF, a VRF no document declares or that two zones hold, an interface that matches a VRF's
-// device, which the input and forward hooks see for each of the VRF's links, and an interface
-// that may be a link of a VRF another zone holds.
+// VRF, a VRF that two zones hold, an interface that matches a VRF's device, which the input and
+// forward hooks see for each of the VRF's links, and an interface that may be a link of a VRF
+// another zone holds.
 func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, error) {
 	declared := map[string]bool{}
 	for _, v := range d.VRFs {
@@ -321,8 +321,8 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 	held := map[string]string{}
 	for _, z := range d.Zones {
 		for _, v := range z.Spec.VRFs {
-			if !declared[v] {
-				return nil, fmt.Errorf("FirewallZone %s names the VRF %q, which no VRF document declares", z.Name, v)
+			if _, err := mustGet(declared, "VRF", v); err != nil {
+				return nil, fmt.Errorf("FirewallZone %s: %w", z.Name, err)
 			}
 			if _, ok := held[v]; ok {
 				return nil, fmt.Errorf("the VRF %s is in more than one FirewallZone, or twice in one", v)

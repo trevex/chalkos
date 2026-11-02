@@ -19,16 +19,13 @@ let
   inherit (lib) mkOption types;
   inherit (import ./lib.nix) builtin groups apiVersions;
   cel = import ../../../../lib/cel.nix { inherit lib; };
-  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) portRange documentName;
+  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) portRange;
   inherit (import ./router-types.nix { inherit lib; })
     prefix
     address
-    vrfOf
-    vrfDeclared
+    vrfRef
     ;
 
-  # A VRF document's name, as a document's vrf gives it.
-  vrfName = types.strMatching documentName;
   # A NAT64's link n64-<name> is an interface's name of 15 characters.
   maxName = 11;
 
@@ -229,11 +226,10 @@ in
               rule = "documents.all(n, size(n) <= ${toString maxName})";
               messageExpression = ''documents.filter(n, size(n) > ${toString maxName}).map(n, "NAT64 " + n).join(", ") + " has a name of more than ${toString maxName} characters, which its link n64-<name> does not take as an interface's name; give it a shorter one"'';
             }
-            (vrfDeclared "NAT64")
             {
               description = "No two NAT64s of one VRF translate addresses of one prefix.";
-              rule = "documents.all(n, documents.all(m, n == m || ${vrfOf "documents[n]"} != ${vrfOf "documents[m]"} || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))";
-              messageExpression = ''documents.filter(n, documents.exists(m, n != m && ${vrfOf "documents[n]"} == ${vrfOf "documents[m]"} && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, "NAT64 " + n).join(", ") + " translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"'';
+              rule = "documents.all(n, documents.all(m, n == m || documents[n].spec.vrf != documents[m].spec.vrf || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))";
+              messageExpression = ''documents.filter(n, documents.exists(m, n != m && documents[n].spec.vrf == documents[m].spec.vrf && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, "NAT64 " + n).join(", ") + " translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"'';
             }
             {
               description = "No two NAT64s share an address of their pools.";
@@ -253,10 +249,10 @@ in
           ];
           spec = {
             vrf = mkOption {
-              type = types.nullOr vrfName;
-              default = null;
+              type = vrfRef;
+              default = "default";
               example = "tenant";
-              description = "VRF document whose links route the prefix to the NAT64 and carry its translated connections; null for the default VRF. The NAT64 runs in the network namespace nat64-<name>, which the link n64-<name> joins to the VRF.";
+              description = "VRF document whose links route the prefix to the NAT64 and carry its translated connections; `default` for the default VRF. The NAT64 runs in the network namespace nat64-<name>, which the link n64-<name> joins to the VRF.";
             };
             prefix = lib.chalkos.mkOption {
               type = prefix;
@@ -314,10 +310,9 @@ in
           rules = [
             {
               description = "One Resolver serves a VRF.";
-              rule = "cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), v.all(x, size(v.filter(y, y == x)) == 1))";
-              messageExpression = ''cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), "more than one Resolver serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one resolver")'';
+              rule = "cel.bind(v, documents.map(n, documents[n].spec.vrf), v.all(x, size(v.filter(y, y == x)) == 1))";
+              messageExpression = ''cel.bind(v, documents.map(n, documents[n].spec.vrf), "more than one Resolver serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one resolver")'';
             }
-            (vrfDeclared "Resolver")
             {
               description = "A Resolver listens on an address of a family its clients' ranges are of.";
               rule = ''documents.all(n, cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))'';
@@ -331,10 +326,10 @@ in
           ];
           spec = {
             vrf = mkOption {
-              type = types.nullOr vrfName;
-              default = null;
+              type = vrfRef;
+              default = "default";
               example = "tenant";
-              description = "VRF document on whose links the resolver answers and through whose links it sends its queries; null for the default VRF.";
+              description = "VRF document on whose links the resolver answers and through whose links it sends its queries; `default` for the default VRF.";
             };
             listen = lib.chalkos.mkOption {
               type = types.nonEmptyListOf address;

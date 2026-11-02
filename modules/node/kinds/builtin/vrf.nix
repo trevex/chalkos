@@ -64,7 +64,7 @@ let
   # expression at the product of its lists' sizes, a bound list at one list's.
   leaking =
     body:
-    ''cel.bind(bgps, ${delivered "BGP"}, cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), ${body}))))'';
+    ''cel.bind(bgps, ${delivered "BGP"}, cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), ${body}))))'';
   # The conntrack zones of the VRF documents that have one.
   zones = "documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone)";
 in

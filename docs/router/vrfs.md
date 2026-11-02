@@ -133,8 +133,8 @@ DESTINATION  TYPE         PROTOCOL  TABLE  METRIC      NEXT HOPS
 
 ## Run BGP in a VRF
 
-A router has one `BGP` document per VRF. `spec.vrf` names the VRF, and a document without it
-serves the default VRF:
+A router has one `BGP` document per VRF. `spec.vrf` names the VRF, and a document without it,
+or with `vrf: default`, serves the default VRF:
 
 ```yaml
 apiVersion: router.chalkos.dev/v1alpha1

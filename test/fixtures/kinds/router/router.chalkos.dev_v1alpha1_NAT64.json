@@ -139,20 +139,20 @@
           ]
         },
         "vrf": {
-          "anyOf": [
-            {
-              "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "VRF document whose links route the prefix to the NAT64 and carry its translated connections; null for the default VRF. The NAT64 runs in the network namespace nat64-<name>, which the link n64-<name> joins to the VRF.",
+          "default": "default",
+          "description": "VRF document whose links route the prefix to the NAT64 and carry its translated connections; `default` for the default VRF. The NAT64 runs in the network namespace nat64-<name>, which the link n64-<name> joins to the VRF.",
           "examples": [
             "tenant"
-          ]
+          ],
+          "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+          "type": "string",
+          "x-chalkos-ref": {
+            "apiVersion": "router.chalkos.dev/v1alpha1",
+            "kind": "VRF",
+            "reserved": [
+              "default"
+            ]
+          }
         }
       },
       "type": "object"
@@ -178,15 +178,9 @@
         "takes": "refuse"
       },
       {
-        "description": "A NAT64's vrf is a VRF document.",
-        "messageExpression": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, \"NAT64 \" + n + \" names the VRF \" + documents[n].spec.vrf).join(\", \") + \", which no VRF document declares; leave vrf out for the default VRF\")",
-        "rule": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))",
-        "takes": "refuse"
-      },
-      {
         "description": "No two NAT64s of one VRF translate addresses of one prefix.",
-        "messageExpression": "documents.filter(n, documents.exists(m, n != m && (documents[n].spec.vrf == null ? \"default\" : documents[n].spec.vrf) == (documents[m].spec.vrf == null ? \"default\" : documents[m].spec.vrf) && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, \"NAT64 \" + n).join(\", \") + \" translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own\"",
-        "rule": "documents.all(n, documents.all(m, n == m || (documents[n].spec.vrf == null ? \"default\" : documents[n].spec.vrf) != (documents[m].spec.vrf == null ? \"default\" : documents[m].spec.vrf) || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))",
+        "messageExpression": "documents.filter(n, documents.exists(m, n != m && documents[n].spec.vrf == documents[m].spec.vrf && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, \"NAT64 \" + n).join(\", \") + \" translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own\"",
+        "rule": "documents.all(n, documents.all(m, n == m || documents[n].spec.vrf != documents[m].spec.vrf || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))",
         "takes": "refuse"
       },
       {

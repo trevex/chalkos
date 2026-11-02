@@ -39,7 +39,7 @@ func network(t *testing.T, name, match string) config.Document {
 }
 
 // The router kinds' rules accept a fabric edge's documents and a zone of a VRF, and refuse a
-// dangling zone, set or VRF, two zones of one interface or VRF, a zone of nothing, a zone's or
+// dangling zone or set, two zones of one interface or VRF, a zone of nothing, a zone's or
 // NAT rule's interface that is a VRF's device, a policy from local, two policies between one
 // pair, a set beside ranges, addresses of another family and ports without a protocol.
 func TestRouterRules(t *testing.T) {
@@ -127,8 +127,6 @@ func TestRouterRules(t *testing.T) {
 		{"a zone of nothing", replace(edge, doc("FirewallZone", "dmz", `{}`)),
 			[]string{"FirewallZone dmz: a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"}},
 		{"a zone of interfaces and a VRF", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"interfaces": ["eth3"], "vrfs": ["tenant"]}`)), nil},
-		{"a zone of a VRF no document declares", replace(edge, doc("FirewallZone", "tenant", `{"vrfs": ["tenant"]}`)),
-			[]string{"FirewallZone tenant names the VRF tenant, which no VRF document declares"}},
 		{"a VRF in two zones", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"vrfs": ["tenant"]}`), doc("FirewallZone", "more", `{"vrfs": ["tenant"]}`)),
 			[]string{"the VRF tenant is in more than one FirewallZone, or twice in one; give each VRF one zone"}},
 		{"a zone of a VRF's device", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"interfaces": ["eth3", "tenant"]}`)),

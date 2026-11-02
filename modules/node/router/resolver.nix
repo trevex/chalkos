@@ -23,7 +23,7 @@ let
     c:
     "cel.bind(r, ${
       cel.documents c apiVersions.router "Resolver"
-    }, size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == null)))";
+    }, size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == \"default\")))";
   # Starts the resolver of each VRF with a rendered config that does not run, reloads those that
   # run and stops those without a config; with the argument stop, it stops all of them. systemd
   # binds a resolver's sockets to the index its VRF's device had when the resolver started, which

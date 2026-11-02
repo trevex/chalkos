@@ -82,7 +82,6 @@ func TestPolicyRouteRefusals(t *testing.T) {
 		}(), "PolicyRoute a: the zone core holds no link"},
 		"an empty match":                    {policyDocs(t, "a", `{"rules": [{"match": {}, "to": {"vrf": "transit"}}]}`), "PolicyRoute a rule 1: the match is empty"},
 		"two targets":                       {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit", "table": 300}}]}`), "PolicyRoute a rule 1: to names a VRF, a table or a next hop, one of them"},
-		"a VRF the config lacks":            {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "guest"}}]}`), "PolicyRoute a rule 1: the VRF guest does not exist"},
 		"the local table":                   {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 255}}]}`), "PolicyRoute a rule 1: table 255 is none a policy sends traffic to"},
 		"a VRF's table":                     {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 100}}]}`), "PolicyRoute a rule 1: table 100 is VRF transit's; name the VRF"},
 		"a next hop in main":                {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 254)), "PolicyRoute a rule 1: table 254 of the next hop is one of the kernel's"},

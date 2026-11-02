@@ -206,8 +206,9 @@ same as the rendered `0xff00ffff`. A rule that counts no packets has matched not
 
 ## Fix a refused delivery
 
-The rules of the router kinds refuse documents that do not fit together, before chalkctl sends
-anything. [The built-ins' reference](../reference/builtins.md#rules-policyroute) lists each
+chalkctl refuses documents that do not fit together before it sends anything: a field that names
+a document the config lacks, and what the rules of the router kinds refuse.
+[The built-ins' reference](../reference/builtins.md#rules-policyroute) lists each
 `PolicyRoute` rule with its expression:
 
 | Message | Fix |
@@ -224,7 +225,7 @@ anything. [The built-ins' reference](../reference/builtins.md#rules-policyroute)
 | `PolicyRoute "lan" spec.rules: a rule has ports without the protocol tcp, udp or sctp` | Set `protocol` to `tcp`, `udp` or `sctp`. |
 | `PolicyRoute "lan" spec.rules: a rule's to names a VRF, a table or a next hop, one of them` | Keep one target in `to`. |
 | `PolicyRoute "servers" spec.rules: a rule's next hop is of another family than the packets the rule matches` | Match the next hop's family, or take a next hop of the rule's family. |
-| `PolicyRoute "lan" spec.rules: a rule names a VRF that no VRF document declares` | Add the `VRF` document, or fix the name. |
+| `PolicyRoute/lan: spec.rules[1].to.vrf: VRF "transit" does not exist` | Add the `VRF` document, or fix the name. |
 | `PolicyRoute "lan" spec.rules: a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table` | Name the VRF in `vrf`, or take another table. |
 | `PolicyRoute "servers" spec.rules: a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own` | Take a table that is neither the kernel's nor a VRF's. |
 | `PolicyRoute "servers" spec.rules: a next hop's interface is lo, which no next hop is on; name the link the next hop is on` | Name the link the next hop is on in `interface`. |

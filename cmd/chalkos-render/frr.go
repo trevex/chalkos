@@ -375,8 +375,10 @@ func newInstance(g named[bgpSpec], vrfs []named[vrfSpec]) (*instance, error) {
 	b := g.Spec
 	in := &instance{name: g.Name, vrf: vrfOf(b.VRF), spec: b}
 	what := "BGP " + g.Name
-	if in.vrf != defaultVRF && !slices.ContainsFunc(vrfs, func(v named[vrfSpec]) bool { return v.Name == in.vrf }) {
-		return nil, fmt.Errorf("%s: the VRF %q has no VRF document", what, in.vrf)
+	if in.vrf != defaultVRF {
+		if _, err := mustGet(byName(vrfs), "VRF", in.vrf); err != nil {
+			return nil, fmt.Errorf("%s: %w", what, err)
+		}
 	}
 	if b.ASN == 0 {
 		return nil, fmt.Errorf("%s: asn 0 is no AS number", what)

@@ -18,13 +18,12 @@ const maxRecords = 150
 // The NAT64 and Resolver rules accept a fabric edge's documents, NAT64s of empty pools, one prefix
 // in two VRFs and resolvers of two VRFs, and refuse a name whose link n64-<name> is too long,
 // prefixes no NAT64 or DNS64 takes, two NAT64s of one prefix in one VRF or of one pool's
-// addresses, a VRF no document declares, a pool entry of IPv6, of too many addresses, of addresses
-// no connection leaves from, of link-local addresses or of the kernel's ephemeral ports, a protocol
-// named twice, two entries of one protocol's addresses and ports, two resolvers of one VRF,
-// addresses no resolver listens on or forwards to, an address, range or forwarder twice, local
-// zones twice, with records outside them or over ipv4only.arpa with DNS64, A and AAAA records of
-// other data, a record twice, more records than the rules can compare and names past 253
-// characters.
+// addresses, a pool entry of IPv6, of too many addresses, of addresses no connection leaves
+// from, of link-local addresses or of the kernel's ephemeral ports, a protocol named twice, two
+// entries of one protocol's addresses and ports, two resolvers of one VRF, addresses no resolver
+// listens on or forwards to, an address, range or forwarder twice, local zones twice, with
+// records outside them or over ipv4only.arpa with DNS64, A and AAAA records of other data, a
+// record twice, more records than the rules can compare and names past 253 characters.
 func TestNAT64Rules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -96,15 +95,11 @@ func TestNAT64Rules(t *testing.T) {
 		{"one prefix in two VRFs", replace(slices.Concat(tenant, []config.Document{doc("NAT64", "lab", `{"vrf": "tenant", "prefix": "64:ff9b::/96"}`)})...), nil},
 		{"two NAT64s of one prefix in a VRF", replace(slices.Concat(tenant, []config.Document{doc("NAT64", "lab", `{"vrf": "tenant", "prefix": "64:ff9b::/96"}`), doc("NAT64", "more", `{"vrf": "tenant", "prefix": "64:ff9b::/64"}`)})...),
 			[]string{"NAT64 lab, NAT64 more translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"}},
-		{"a VRF no document declares", replace(doc("NAT64", "lab", `{"vrf": "nosuch", "prefix": "2001:db8:64::/96"}`)),
-			[]string{"NAT64 lab names the VRF nosuch, which no VRF document declares; leave vrf out for the default VRF"}},
 		{"a link-local pool", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "169.254.64.0/30"}]}`)),
 			[]string{`NAT64 "lab" spec.pool4: the pool entry 169.254.64.0/30 holds link-local addresses, which the NAT64s' links take`}},
 		{"resolvers of two VRFs", replace(slices.Concat(tenant, []config.Document{doc("Resolver", "tenant", `{"vrf": "tenant", "listen": ["2001:db8:1::1"], "allow": ["2001:db8:1::/64"]}`)})...), nil},
 		{"two resolvers of one VRF", replace(doc("Resolver", "more", `{"listen": ["2001:db8:ffff::2"], "allow": ["2001:db8::/32"]}`)),
 			[]string{"more than one Resolver serves the VRF default; a VRF has one resolver"}},
-		{"a resolver of a VRF no document declares", replace(doc("Resolver", "resolver", `{"vrf": "nosuch", "listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"]}`)),
-			[]string{"Resolver resolver names the VRF nosuch, which no VRF document declares; leave vrf out for the default VRF"}},
 		{"two NAT64s of one pool's addresses", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "192.0.2.9/32", "ports": "1-32767"}]}`)),
 			[]string{"NAT64 edge 192.0.2.8/30, NAT64 lab 192.0.2.9/32 share addresses; give each NAT64 a pool of its own"}},
 		{"an IPv6 pool", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "2001:db8::/64"}]}`)),

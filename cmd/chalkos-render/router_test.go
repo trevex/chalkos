@@ -695,6 +695,19 @@ func TestCheckASPath(t *testing.T) {
 	}
 }
 
+// mustGet gives the target of a reference the input holds, and names one it lacks as an internal
+// error: chalkd refuses a config whose references do not resolve before it renders.
+func TestMustGet(t *testing.T) {
+	tables := map[string]uint32{"tenant": 100}
+	if got, err := mustGet(tables, "VRF", "tenant"); err != nil || got != 100 {
+		t.Errorf("mustGet(tenant) = %d, %v, want 100", got, err)
+	}
+	want := `internal error: the input holds no VRF "lab", which a reference names; chalkd checks references before it renders`
+	if _, err := mustGet(tables, "VRF", "lab"); err == nil || err.Error() != want {
+		t.Errorf("mustGet(lab) = %v, want %s", err, want)
+	}
+}
+
 // The links the Network documents name are the plain names of their [Match] sections' Name=; a
 // value whose first name starts with ! inverts all of its names, as systemd reads it, and names
 // none.
@@ -758,7 +771,6 @@ func TestJoolRefusals(t *testing.T) {
 	}{
 		"a name of 12 characters":         {[]any{nat64("abcdefghijkl", `{"prefix": "64:ff9b::/96", "pool4": []}`)}, "NAT64 abcdefghijkl: its link n64-abcdefghijkl is longer than an interface name's 15 characters; give the NAT64 a name of 11 characters at most"},
 		"a link-local pool":               {[]any{pool(`{"prefix": "169.254.64.0/30", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "169.254.64.0/30 holds link-local addresses, which the NAT64s' links take"},
-		"a VRF no document declares":      {[]any{nat64("edge", `{"vrf": "nosuch", "prefix": "64:ff9b::/96", "pool4": []}`)}, `NAT64 edge names the VRF "nosuch", which no VRF document declares`},
 		"two names of one link":           {[]any{nat64("nat282", `{"prefix": "2001:db8:282::/96", "pool4": []}`), nat64("nat8", `{"prefix": "2001:db8:8::/96", "pool4": []}`)}, "NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8"},
 		"a prefix of 95 bits":             {[]any{nat64("edge", `{"prefix": "64:ff9b::/95", "pool4": []}`)}, `NAT64 edge: the prefix "64:ff9b::/95" is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits`},
 		"an IPv4 prefix":                  {[]any{nat64("edge", `{"prefix": "192.0.2.0/24", "pool4": []}`)}, `the prefix "192.0.2.0/24" is no IPv6 range`},
@@ -911,7 +923,6 @@ func TestUnboundRefusals(t *testing.T) {
 		want string
 	}{
 		"two resolvers":                 {args, []any{routerDoc(t, "Resolver", "other", `{"listen": ["2001:db8:ffff::2"], "allow": ["2001:db8::/32"]}`), resolver("")}, "Resolver other and Resolver resolver both serve the VRF default; a VRF has one resolver"},
-		"a VRF no document declares":    {args, []any{resolver(`, "vrf": "nosuch"`)}, `Resolver resolver names the VRF "nosuch", which no VRF document declares; leave vrf out for the default VRF`},
 		"no address":                    {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": [], "allow": ["2001:db8::/32"]}`)}, "Resolver resolver: it listens on no address"},
 		"no client":                     {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": []}`)}, "Resolver resolver: it answers no client"},
 		"the unspecified address":       {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["::"], "allow": ["2001:db8::/32"]}`)}, `listen: "::" is no unicast address`},
@@ -1091,10 +1102,8 @@ func TestFRRVRFRefusals(t *testing.T) {
 	}{
 		"two BGP documents of one VRF": {map[string][]any{"BGP": {bgp("bgp", 64512, ""), bgp("other", 64513, "")}},
 			"BGP bgp and BGP other both serve the VRF default"},
-		"an instance of a VRF without its document": {map[string][]any{"BGP": {bgp("tenant", 64512, `, "vrf": "tenant"`)}},
-			`BGP tenant: the VRF "tenant" has no VRF document`},
 		"a VRF that adds a command": {withTenant(map[string][]any{"BGP": {bgp("x", 64512, `, "vrf": "tenant\nrouter bgp 64999"`)}}),
-			`the VRF "tenant\nrouter bgp 64999" has no VRF document`},
+			`internal error: the input holds no VRF "tenant\nrouter bgp 64999"`},
 		"a peer in a VRF without BGP": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("leaves", `"vrf": "tenant", "interface": "eth2"`)}}),
 			"BGPPeer leaves runs in the VRF tenant, which no BGP document serves"},
 		"an interface of a VRF's device": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "tenant"`)}}),
@@ -1522,7 +1531,6 @@ func TestVRFZoneRefusals(t *testing.T) {
 		want string
 	}{
 		"a zone of nothing":                  {with(zone("x", `{"interfaces": [], "vrfs": []}`)), "FirewallZone x: a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"},
-		"a VRF no document declares":         {with(zone("x", `{"interfaces": [], "vrfs": ["nosuch"]}`)), `FirewallZone x names the VRF "nosuch", which no VRF document declares`},
 		"a VRF in two zones":                 {with(tenant, zone("x", `{"interfaces": [], "vrfs": ["tenant"]}`)), "the VRF tenant is in more than one FirewallZone, or twice in one"},
 		"a VRF's device":                     {with(zone("x", `{"interfaces": ["ten*"], "vrfs": []}`)), "FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs"},
 		"a link of another zone's VRF":       {with(tenant, zone("x", `{"interfaces": ["eth2"], "vrfs": []}`)), "FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},

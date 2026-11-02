@@ -129,9 +129,9 @@ func (n nat64Instance) poolSet() string {
 }
 
 // nat64Instances are the NAT64 documents of d as chalkos-nat64 runs them. It refuses what
-// joolInstances refuses, a VRF no document declares, two names whose hashes pick one link, a
-// static address of a Network document in nat64Range, and a pool entry that holds a static address
-// of a Network document: the router answers its own addresses before any route to the link.
+// joolInstances refuses, two names whose hashes pick one link, a static address of a Network
+// document in nat64Range, and a pool entry that holds a static address of a Network document: the
+// router answers its own addresses before any route to the link.
 func nat64Instances(d routerDocuments) ([]nat64Instance, error) {
 	jools, err := joolInstances(d.NAT64)
 	if err != nil {
@@ -155,9 +155,14 @@ func nat64Instances(d routerDocuments) ([]nat64Instance, error) {
 	var out []nat64Instance
 	for i, doc := range d.NAT64 {
 		vrf := vrfOf(doc.Spec.VRF)
-		table, ok := tables[vrf]
-		if !ok {
-			return nil, fmt.Errorf("NAT64 %s names the VRF %q, which no VRF document declares; leave vrf out for the default VRF", doc.Name, vrf)
+		table, err := mustGet(tables, "VRF", vrf)
+		if err != nil {
+			return nil, fmt.Errorf("NAT64 %s: %w", doc.Name, err)
+		}
+		// The link's file names the default VRF by null, as chalkos-nat64 reads it.
+		var linkVRF *string
+		if vrf != defaultVRF {
+			linkVRF = &vrf
 		}
 		slot := nat64Slot(doc.Name)
 		outer, inner := nat64LinkAddresses(slot)
@@ -166,7 +171,7 @@ func nat64Instances(d routerDocuments) ([]nat64Instance, error) {
 		}
 		taken[slot] = doc.Name
 		n := nat64Instance{name: doc.Name, vrf: vrf, jool: jools[i], inner: inner.Addr(), link: nat64Link{
-			VRF: doc.Spec.VRF, Table: table, Outer: outer.String(), Inner: inner.String(), Routes: []string{},
+			VRF: linkVRF, Table: table, Outer: outer.String(), Inner: inner.String(), Routes: []string{},
 		}}
 		if len(n.jool.Pool4) == 0 {
 			own := netip.PrefixFrom(n.inner, 32).String()

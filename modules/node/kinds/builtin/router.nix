@@ -14,7 +14,7 @@
 let
   inherit (lib) mkOption types;
   inherit (import ./lib.nix) builtin groups apiVersions;
-  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) documentName portRange;
+  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) documentName portRange ref;
   inherit (import ./router-types.nix { inherit lib; })
     interface
     interfaceText
@@ -27,8 +27,9 @@ let
   cel = import ../../../../lib/cel.nix { inherit lib; };
 
   zoneName = types.strMatching documentName;
-  # A VRF document's name.
-  vrfName = types.strMatching documentName;
+  # A VRF document's name. The default VRF has no device and no table of a VRF document, so a zone
+  # and a policy route name VRF documents alone.
+  vrfRef = ref "VRF";
   # Binds, for body, all to the VRFs of every FirewallZone as one list, which a rule loops over
   # rather than over each zone's VRFs: nested loops, or a loop over a list flattened in place,
   # would cost more than chalkd allows.
@@ -224,7 +225,7 @@ let
   policyTarget = types.submodule {
     options = {
       vrf = mkOption {
-        type = types.nullOr vrfName;
+        type = types.nullOr vrfRef;
         default = null;
         example = "transit";
         description = "VRF document whose routing table routes the traffic; excludes `table` and `nextHop`.";
@@ -368,11 +369,6 @@ in
             messageExpression = ''documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, "FirewallZone " + n).join(", ") + ": a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"'';
           }
           {
-            description = "A FirewallZone's VRFs are VRF documents.";
-            rule = "cel.bind(vrfs, ${delivered "VRF"}, ${zoneVRFs "all.all(v, v in vrfs)"})";
-            messageExpression = "cel.bind(vrfs, ${delivered "VRF"}, ${zoneVRFs ''cel.bind(v, all.filter(v, !(v in vrfs))[0], "FirewallZone " + documents.filter(n, v in documents[n].spec.vrfs)[0] + " names the VRF " + v + ", which no VRF document declares")''})";
-          }
-          {
             description = "A VRF is in one FirewallZone, once.";
             rule = zoneVRFs "all.all(v, size(all.filter(w, w == v)) == 1)";
             messageExpression = zoneVRFs ''"the VRF " + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each VRF one zone"'';
@@ -394,7 +390,7 @@ in
             description = "Interfaces of the zone, ${interfaceText}. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; the VRF itself is then in no other zone.";
           };
           vrfs = mkOption {
-            type = types.listOf vrfName;
+            type = types.listOf vrfRef;
             default = [ ];
             example = [ "tenant" ];
             description = "VRF documents whose links are all in the zone, those added later included; a VRF is in one zone at most.";
@@ -702,11 +698,6 @@ in
                 ok = ''p.to.nextHop == null || (ip(p.to.nextHop.address).family() == "ipv4" ? ${matchesFamily "ipv4"} : ${matchesFamily "ipv6"})'';
                 message = "a rule's next hop is of another family than the packets the rule matches";
               })
-              {
-                description = "A rule's VRF is a VRF document.";
-                rule = "cel.bind(vrfs, ${delivered "VRF"}, self.all(p, p.to.vrf == null || p.to.vrf in vrfs))";
-                message = "a rule names a VRF that no VRF document declares";
-              }
               {
                 description = "A rule's table is not 255, the kernel's local table, and no VRF's table.";
                 rule = vrfTables "self.all(p, p.to.table == null || p.to.table != 255 && !(p.to.table in tables))";

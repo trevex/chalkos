@@ -361,7 +361,11 @@
                 "secretRef"
               ],
               "type": "object",
-              "x-chalkos-ref": { "apiVersion": "chalkos.dev/v1alpha1", "key": true, "kind": "Secret" }
+              "x-chalkos-ref": {
+                "apiVersion": "chalkos.dev/v1alpha1",
+                "key": true,
+                "kind": "Secret"
+              }
             },
             {
               "type": "null"
@@ -411,20 +415,20 @@
           "type": "boolean"
         },
         "vrf": {
-          "anyOf": [
-            {
-              "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "VRF document whose BGP instance runs the session; null for the default VRF. The peer's interfaces are links of that VRF.",
+          "default": "default",
+          "description": "VRF document whose BGP instance runs the session; `default` for the default VRF. The peer's interfaces are links of that VRF.",
           "examples": [
             "tenant"
-          ]
+          ],
+          "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+          "type": "string",
+          "x-chalkos-ref": {
+            "apiVersion": "router.chalkos.dev/v1alpha1",
+            "kind": "VRF",
+            "reserved": [
+              "default"
+            ]
+          }
         }
       },
       "required": [
@@ -453,15 +457,9 @@
         "takes": "refuse"
       },
       {
-        "description": "A BGPPeer's vrf is a VRF document.",
-        "messageExpression": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, \"BGPPeer \" + n + \" names the VRF \" + documents[n].spec.vrf).join(\", \") + \", which no VRF document declares; leave vrf out for the default VRF\")",
-        "rule": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))",
-        "takes": "refuse"
-      },
-      {
         "description": "A BGPPeer's VRF has a BGP document.",
-        "messageExpression": "cel.bind(have, cel.bind(bgps, ((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? \"default\" : bgps[n].spec.vrf))), documents.filter(n, !((documents[n].spec.vrf == null ? \"default\" : documents[n].spec.vrf) in have)).map(n, \"BGPPeer \" + n + \" runs in the VRF \" + (documents[n].spec.vrf == null ? \"default\" : documents[n].spec.vrf)).join(\", \") + \": a peer's VRF needs a BGP document, which gives the router its AS number there\")",
-        "rule": "cel.bind(have, cel.bind(bgps, ((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? \"default\" : bgps[n].spec.vrf))), documents.all(n, (documents[n].spec.vrf == null ? \"default\" : documents[n].spec.vrf) in have))",
+        "messageExpression": "cel.bind(have, cel.bind(bgps, ((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), documents.filter(n, !(documents[n].spec.vrf in have)).map(n, \"BGPPeer \" + n + \" runs in the VRF \" + documents[n].spec.vrf).join(\", \") + \": a peer's VRF needs a BGP document, which gives the router its AS number there\")",
+        "rule": "cel.bind(have, cel.bind(bgps, ((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), documents.all(n, documents[n].spec.vrf in have))",
         "takes": "refuse"
       },
       {

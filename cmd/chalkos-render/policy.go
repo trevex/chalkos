@@ -43,10 +43,10 @@ type routeTarget struct {
 
 // policyTargets are the tables of the PolicyRoute documents' targets, sorted by number, each with
 // its mark, (index+1)<<16: a VRF's table, a rule's table and a next hop's table. It checks the
-// targets as the kind's rules do: one per rule, a VRF the config declares, a table that is not
-// the local table and no VRF's, a next hop of an address, an interface's name and a table of its
-// own that is none of the kernel's tables and no VRF's. It refuses more than 255 tables, which
-// the mark's bits cannot tell apart.
+// targets as the kind's rules do: one per rule, a table that is not the local table and no VRF's,
+// a next hop of an address, an interface's name and a table of its own that is none of the
+// kernel's tables and no VRF's. It refuses more than 255 tables, which the mark's bits cannot
+// tell apart.
 func policyTargets(d routerDocuments) ([]routeTarget, error) {
 	vrfTables := map[string]uint32{}
 	tableVRF := map[uint32]string{}
@@ -71,9 +71,9 @@ func policyTargets(d routerDocuments) ([]routeTarget, error) {
 			var t routeTarget
 			switch {
 			case to.VRF != nil:
-				table, ok := vrfTables[*to.VRF]
-				if !ok {
-					return nil, fmt.Errorf("%s: the VRF %s does not exist", what, *to.VRF)
+				table, err := mustGet(vrfTables, "VRF", *to.VRF)
+				if err != nil {
+					return nil, fmt.Errorf("%s: %w", what, err)
 				}
 				t.table = table
 			case to.Table != nil:

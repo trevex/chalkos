@@ -302,109 +302,90 @@ documents.filter(n, !documents[n].spec.prefixes.all(p, cidr(p).ip(0).family() ==
 
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
-| 1 | — | One BGP document serves a VRF. | `refuse` | after the table | after the table |
-| 2 | — | A BGP's vrf is a VRF document. | `refuse` | after the table | after the table |
-| 3 | — | A BGP instance does not import its own VRF. | `refuse` | after the table | after the table |
-| 4 | — | A delivery that drops the default VRF's BGP document keeps no running BGP instance of another VRF, as FRR keeps its default instance while another runs. | `refuse` | after the table | the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's |
-| 5 | `spec.asn` | BGP keeps its AS number. | `refuse` | `self == oldSelf` | after the table |
-| 6 | `spec.import` | An import's VRFs have BGP documents. | `refuse` | after the table | after the table |
-| 7 | `spec.import` | An import names each VRF once. | `refuse` | `[self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, size(f.vrfs.filter(w, w == v)) == 1))` | the import names a VRF twice |
-| 8 | `spec.import` | An import's policy is a RoutingPolicy document. | `refuse` | after the table | after the table |
-| 9 | `spec.import` | An import's policy matches PrefixLists of its family alone. | `refuse` | after the table | after the table |
-| 10 | `spec.networks` | A network's prefix is an address range. | `refuse` | `self.all(w, cidr(w.prefix).prefix() >= 0)` | a network is no address range |
-| 11 | `spec.networks` | A network's policy is a RoutingPolicy document. | `refuse` | after the table | after the table |
-
-Expression of rule 1:
-
-```text
-cel.bind(v, documents.map(n, (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf)), v.all(x, size(v.filter(y, y == x)) == 1))
-```
+| 1 | — | One BGP document serves a VRF. | `refuse` | `cel.bind(v, documents.map(n, documents[n].spec.vrf), v.all(x, size(v.filter(y, y == x)) == 1))` | after the table |
+| 2 | — | A BGP instance does not import its own VRF. | `refuse` | after the table | after the table |
+| 3 | — | A delivery that drops the default VRF's BGP document keeps no running BGP instance of another VRF, as FRR keeps its default instance while another runs. | `refuse` | after the table | the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's |
+| 4 | `spec.asn` | BGP keeps its AS number. | `refuse` | `self == oldSelf` | after the table |
+| 5 | `spec.import` | An import's VRFs have BGP documents. | `refuse` | after the table | after the table |
+| 6 | `spec.import` | An import names each VRF once. | `refuse` | `[self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, size(f.vrfs.filter(w, w == v)) == 1))` | the import names a VRF twice |
+| 7 | `spec.import` | An import's policy is a RoutingPolicy document. | `refuse` | after the table | after the table |
+| 8 | `spec.import` | An import's policy matches PrefixLists of its family alone. | `refuse` | after the table | after the table |
+| 9 | `spec.networks` | A network's prefix is an address range. | `refuse` | `self.all(w, cidr(w.prefix).prefix() >= 0)` | a network is no address range |
+| 10 | `spec.networks` | A network's policy is a RoutingPolicy document. | `refuse` | after the table | after the table |
 
 Message of rule 1:
 
 ```text
-cel.bind(v, documents.map(n, (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf)), "more than one BGP document serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one BGP instance")
+cel.bind(v, documents.map(n, documents[n].spec.vrf), "more than one BGP document serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one BGP instance")
 ```
 
 Expression of rule 2:
 
 ```text
-cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))
+documents.all(n, cel.bind(s, documents[n].spec, [s["import"].ipv4, s["import"].ipv6].all(f, f == null || !(documents[n].spec.vrf in f.vrfs))))
 ```
 
 Message of rule 2:
 
 ```text
-cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, "BGP " + n + " names the VRF " + documents[n].spec.vrf).join(", ") + ", which no VRF document declares; leave vrf out for the default VRF")
+documents.filter(n, cel.bind(s, documents[n].spec, ![s["import"].ipv4, s["import"].ipv6].all(f, f == null || !(documents[n].spec.vrf in f.vrfs)))).map(n, "BGP " + n).join(", ") + " imports the routes of its own VRF; name other VRFs"
 ```
 
 Expression of rule 3:
 
 ```text
-documents.all(n, cel.bind(s, documents[n].spec, [s["import"].ipv4, s["import"].ipv6].all(f, f == null || !((documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf) in f.vrfs))))
+!oldDocuments.exists(n, (has(oldDocuments[n].spec.vrf) ? oldDocuments[n].spec.vrf : "default") == "default") || documents.exists(n, documents[n].spec.vrf == "default") || !documents.exists(n, documents[n].spec.vrf != "default" && oldDocuments.exists(m, (has(oldDocuments[m].spec.vrf) ? oldDocuments[m].spec.vrf : "default") == documents[n].spec.vrf))
 ```
 
-Message of rule 3:
-
-```text
-documents.filter(n, cel.bind(s, documents[n].spec, ![s["import"].ipv4, s["import"].ipv6].all(f, f == null || !((documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf) in f.vrfs)))).map(n, "BGP " + n).join(", ") + " imports the routes of its own VRF; name other VRFs"
-```
-
-Expression of rule 4:
-
-```text
-!oldDocuments.exists(n, (has(oldDocuments[n].spec.vrf) ? oldDocuments[n].spec.vrf : null) == null) || documents.exists(n, documents[n].spec.vrf == null) || !documents.exists(n, documents[n].spec.vrf != null && oldDocuments.exists(m, (has(oldDocuments[m].spec.vrf) ? oldDocuments[m].spec.vrf : null) == documents[n].spec.vrf))
-```
-
-Message of rule 5:
+Message of rule 4:
 
 ```text
 "the AS number stays " + string(oldSelf) + "; to change it, deliver the config without the BGP document, which ends the router's sessions, and then with the new AS number"
 ```
 
-Expression of rule 6:
+Expression of rule 5:
 
 ```text
-cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf))), [self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, v in have)))
+cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), [self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, v in have)))
 ```
 
-Message of rule 6:
+Message of rule 5:
 
 ```text
-cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf))), "the import names the VRF " + [self.ipv4, self.ipv6].filter(f, f != null).map(f, f.vrfs.filter(v, !(v in have))).flatten()[0] + ", which no BGP document serves; leaking takes routes from BGP alone")
+cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), "the import names the VRF " + [self.ipv4, self.ipv6].filter(f, f != null).map(f, f.vrfs.filter(v, !(v in have))).flatten()[0] + ", which no BGP document serves; leaking takes routes from BGP alone")
 ```
 
-Expression of rule 8:
+Expression of rule 7:
 
 ```text
 cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), [self.ipv4, self.ipv6].all(f, f == null || f.policy == null || f.policy in pols))
 ```
 
-Message of rule 8:
+Message of rule 7:
 
 ```text
 cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), "an import names the RoutingPolicy " + [self.ipv4, self.ipv6].filter(f, f != null && f.policy != null && !(f.policy in pols))[0].policy + ", which the config does not hold")
 ```
 
-Expression of rule 9:
+Expression of rule 8:
 
 ```text
 cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), (self.ipv4 == null || self.ipv4.policy == null || (!(self.ipv4.policy in pols) || cel.bind(named, pols[self.ipv4.policy].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4"))) && (self.ipv6 == null || self.ipv6.policy == null || (!(self.ipv6.policy in pols) || cel.bind(named, pols[self.ipv6.policy].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")))))
 ```
 
-Message of rule 9:
+Message of rule 8:
 
 ```text
 cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), "the " + (self.ipv4 == null || self.ipv4.policy == null || (!(self.ipv4.policy in pols) || cel.bind(named, pols[self.ipv4.policy].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4")) ? "ipv6" : "ipv4") + " import's RoutingPolicy matches PrefixLists of another family"))
 ```
 
-Expression of rule 11:
+Expression of rule 10:
 
 ```text
 cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), self.all(w, w.policy == null || w.policy in pols))
 ```
 
-Message of rule 11:
+Message of rule 10:
 
 ```text
 cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), "a network names the RoutingPolicy " + self.filter(w, w.policy != null && !(w.policy in pols))[0].policy + ", which the config does not hold")
@@ -415,20 +396,19 @@ cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in c
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A BGPPeer names exactly one of address, interface and interfaces. | `refuse` | after the table | after the table |
-| 2 | — | A BGPPeer's vrf is a VRF document. | `refuse` | after the table | after the table |
-| 3 | — | A BGPPeer's VRF has a BGP document. | `refuse` | after the table | after the table |
-| 4 | — | A BGPPeer's interface is no link another VRF than the peer's holds; names compare as written. | `refuse` | after the table | after the table |
-| 5 | `spec.address` | A BGPPeer's address is a unicast address. | `refuse` | after the table | `"the address " + self + " is no neighbour's: give a unicast address"` |
-| 6 | `spec.description` | A BGPPeer's description holds 80 characters at most. | `refuse` | `self == null || size(self) <= 80` | the description holds more than 80 characters |
-| 7 | `spec.families` | A BGPPeer exchanges the routes of one family at least. | `refuse` | `self.ipv4 != null || self.ipv6 != null` | the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route |
-| 8 | `spec.families` | A family's policies are RoutingPolicy documents. | `refuse` | after the table | after the table |
-| 9 | `spec.families` | A family's policies match PrefixLists of that family alone. | `refuse` | after the table | after the table |
-| 10 | `spec.families` | A family's defaultOriginateWhen comes with defaultOriginate. | `refuse` | after the table | after the table |
-| 11 | `spec.families` | A family's defaultOriginateWhen is a PrefixList document. | `refuse` | after the table | after the table |
-| 12 | `spec.families` | A family's defaultOriginateWhen is a PrefixList of that family. | `refuse` | after the table | after the table |
-| 13 | `spec.interface` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
-| 14 | `spec.interfaces` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
-| 15 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
+| 2 | — | A BGPPeer's VRF has a BGP document. | `refuse` | after the table | after the table |
+| 3 | — | A BGPPeer's interface is no link another VRF than the peer's holds; names compare as written. | `refuse` | after the table | after the table |
+| 4 | `spec.address` | A BGPPeer's address is a unicast address. | `refuse` | after the table | `"the address " + self + " is no neighbour's: give a unicast address"` |
+| 5 | `spec.description` | A BGPPeer's description holds 80 characters at most. | `refuse` | `self == null || size(self) <= 80` | the description holds more than 80 characters |
+| 6 | `spec.families` | A BGPPeer exchanges the routes of one family at least. | `refuse` | `self.ipv4 != null || self.ipv6 != null` | the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route |
+| 7 | `spec.families` | A family's policies are RoutingPolicy documents. | `refuse` | after the table | after the table |
+| 8 | `spec.families` | A family's policies match PrefixLists of that family alone. | `refuse` | after the table | after the table |
+| 9 | `spec.families` | A family's defaultOriginateWhen comes with defaultOriginate. | `refuse` | after the table | after the table |
+| 10 | `spec.families` | A family's defaultOriginateWhen is a PrefixList document. | `refuse` | after the table | after the table |
+| 11 | `spec.families` | A family's defaultOriginateWhen is a PrefixList of that family. | `refuse` | after the table | after the table |
+| 12 | `spec.interface` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
+| 13 | `spec.interfaces` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
+| 14 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
 
 Expression of rule 1:
 
@@ -445,130 +425,118 @@ documents.filter(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.in
 Expression of rule 2:
 
 ```text
-cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))
+cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), documents.all(n, documents[n].spec.vrf in have))
 ```
 
 Message of rule 2:
 
 ```text
-cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, "BGPPeer " + n + " names the VRF " + documents[n].spec.vrf).join(", ") + ", which no VRF document declares; leave vrf out for the default VRF")
+cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), documents.filter(n, !(documents[n].spec.vrf in have)).map(n, "BGPPeer " + n + " runs in the VRF " + documents[n].spec.vrf).join(", ") + ": a peer's VRF needs a BGP document, which gives the router its AS number there")
 ```
 
 Expression of rule 3:
 
 ```text
-cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf))), documents.all(n, (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf) in have))
+cel.bind(held, cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.all(n, cel.bind(s, documents[n].spec, (s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))))
 ```
 
 Message of rule 3:
 
 ```text
-cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, (bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf))), documents.filter(n, !((documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf) in have)).map(n, "BGPPeer " + n + " runs in the VRF " + (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf)).join(", ") + ": a peer's VRF needs a BGP document, which gives the router its AS number there")
+cel.bind(held, cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.filter(n, cel.bind(s, documents[n].spec, !(s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))).map(n, "BGPPeer " + n + " names the interface " + documents[n].spec.interface).join(", ") + ", which a VRF document puts in another VRF than the peer's; give the peer that VRF or the interface another")
 ```
 
 Expression of rule 4:
 
 ```text
-cel.bind(held, cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.all(n, cel.bind(s, documents[n].spec, (s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))))
-```
-
-Message of rule 4:
-
-```text
-cel.bind(held, cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.filter(n, cel.bind(s, documents[n].spec, !(s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))).map(n, "BGPPeer " + n + " names the interface " + documents[n].spec.interface).join(", ") + ", which a VRF document puts in another VRF than the peer's; give the peer that VRF or the interface another")
-```
-
-Expression of rule 5:
-
-```text
 self == null || cel.bind(a, ip(self), a != ip("0.0.0.0") && a != ip("::") && !cidr("224.0.0.0/4").contains(a) && !cidr("ff00::/8").contains(a))
 ```
 
-Expression of rule 8:
+Expression of rule 7:
 
 ```text
 cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), (self.ipv4 == null || self.ipv4["import"] == null || self.ipv4["import"] in pols) && (self.ipv4 == null || self.ipv4["export"] == null || self.ipv4["export"] in pols) && (self.ipv6 == null || self.ipv6["import"] == null || self.ipv6["import"] in pols) && (self.ipv6 == null || self.ipv6["export"] == null || self.ipv6["export"] in pols))
 ```
 
-Message of rule 8:
+Message of rule 7:
 
 ```text
 cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4["import"] == null || self.ipv4["import"] in pols ? [] : [self.ipv4["import"], "ipv4"]), (self.ipv4 == null || self.ipv4["export"] == null || self.ipv4["export"] in pols ? [] : [self.ipv4["export"], "ipv4"]), (self.ipv6 == null || self.ipv6["import"] == null || self.ipv6["import"] in pols ? [] : [self.ipv6["import"], "ipv6"]), (self.ipv6 == null || self.ipv6["export"] == null || self.ipv6["export"] in pols ? [] : [self.ipv6["export"], "ipv6"])].filter(u, size(u) > 0)[0], "the " + u[1] + " family names the RoutingPolicy " + u[0] + ", which the config does not hold"))
 ```
 
-Expression of rule 9:
+Expression of rule 8:
 
 ```text
 cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), (self.ipv4 == null || self.ipv4["import"] == null || (!(self.ipv4["import"] in pols) || cel.bind(named, pols[self.ipv4["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4"))) && (self.ipv4 == null || self.ipv4["export"] == null || (!(self.ipv4["export"] in pols) || cel.bind(named, pols[self.ipv4["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4"))) && (self.ipv6 == null || self.ipv6["import"] == null || (!(self.ipv6["import"] in pols) || cel.bind(named, pols[self.ipv6["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6"))) && (self.ipv6 == null || self.ipv6["export"] == null || (!(self.ipv6["export"] in pols) || cel.bind(named, pols[self.ipv6["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")))))
 ```
 
-Message of rule 9:
+Message of rule 8:
 
 ```text
 cel.bind(pols, (("router.chalkos.dev/v1alpha1" in config && "RoutingPolicy" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].RoutingPolicy : {}), cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4["import"] == null || (!(self.ipv4["import"] in pols) || cel.bind(named, pols[self.ipv4["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4")) ? [] : [self.ipv4["import"], "ipv4"]), (self.ipv4 == null || self.ipv4["export"] == null || (!(self.ipv4["export"] in pols) || cel.bind(named, pols[self.ipv4["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv4")) ? [] : [self.ipv4["export"], "ipv4"]), (self.ipv6 == null || self.ipv6["import"] == null || (!(self.ipv6["import"] in pols) || cel.bind(named, pols[self.ipv6["import"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")) ? [] : [self.ipv6["import"], "ipv6"]), (self.ipv6 == null || self.ipv6["export"] == null || (!(self.ipv6["export"] in pols) || cel.bind(named, pols[self.ipv6["export"]].spec.terms.filter(t, t.match.prefixList != null && t.match.prefixList in lists), size(named) == 0 || lists[named[0].match.prefixList].spec.family == "ipv6")) ? [] : [self.ipv6["export"], "ipv6"])].filter(u, size(u) > 0)[0], "the " + u[1] + " family's RoutingPolicy " + u[0] + " matches a PrefixList of another family")))
 ```
 
-Expression of rule 10:
+Expression of rule 9:
 
 ```text
 (self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginate) && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginate)
 ```
 
-Message of rule 10:
+Message of rule 9:
 
 ```text
 cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginate ? [] : ["ipv4", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginate ? [] : ["ipv6", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], "the " + u[0] + " family names defaultOriginateWhen without defaultOriginate: true; defaultOriginateWhen says when the router sends the default route that defaultOriginate originates")
 ```
 
-Expression of rule 11:
+Expression of rule 10:
 
 ```text
 cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), (self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginateWhen in lists) && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginateWhen in lists))
 ```
 
-Message of rule 11:
+Message of rule 10:
 
 ```text
 cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || self.ipv4.defaultOriginateWhen in lists ? [] : ["ipv4", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || self.ipv6.defaultOriginateWhen in lists ? [] : ["ipv6", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], "the " + u[0] + " family's defaultOriginateWhen names the PrefixList " + u[1] + ", which the config does not hold"))
 ```
 
-Expression of rule 12:
+Expression of rule 11:
 
 ```text
 cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), (self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || (!(self.ipv4.defaultOriginateWhen in lists) || lists[self.ipv4.defaultOriginateWhen].spec.family == "ipv4")) && (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || (!(self.ipv6.defaultOriginateWhen in lists) || lists[self.ipv6.defaultOriginateWhen].spec.family == "ipv6")))
 ```
 
-Message of rule 12:
+Message of rule 11:
 
 ```text
 cel.bind(lists, (("router.chalkos.dev/v1alpha1" in config && "PrefixList" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].PrefixList : {}), cel.bind(u, [(self.ipv4 == null || self.ipv4.defaultOriginateWhen == null || (!(self.ipv4.defaultOriginateWhen in lists) || lists[self.ipv4.defaultOriginateWhen].spec.family == "ipv4") ? [] : ["ipv4", self.ipv4.defaultOriginateWhen]), (self.ipv6 == null || self.ipv6.defaultOriginateWhen == null || (!(self.ipv6.defaultOriginateWhen in lists) || lists[self.ipv6.defaultOriginateWhen].spec.family == "ipv6") ? [] : ["ipv6", self.ipv6.defaultOriginateWhen])].filter(u, size(u) > 0)[0], "the " + u[0] + " family's defaultOriginateWhen names the PrefixList " + u[1] + " of " + lists[u[1]].spec.family + "; it tracks routes of the family whose default route it sends"))
 ```
 
-Expression of rule 13:
+Expression of rule 12:
 
 ```text
 self == null || [self].all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))
 ```
 
-Message of rule 13:
+Message of rule 12:
 
 ```text
 "the interface " + [self].filter(i, i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"
 ```
 
-Expression of rule 14:
+Expression of rule 13:
 
 ```text
 self == null || self.all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))
 ```
 
-Message of rule 14:
+Message of rule 13:
 
 ```text
 "the interface " + self.filter(i, i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"
 ```
 
-Expression of rule 15:
+Expression of rule 14:
 
 ```text
 self == null || self.secretRef.name.matches("^[A-Za-z0-9._-]+$") && self.secretRef.key.matches("^[A-Za-z0-9._-]+$")
@@ -849,9 +817,8 @@ cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in conf
 | 1 | — | No FirewallZone is named local, the router itself. | `refuse` | `!("local" in documents)` | a FirewallZone is named local, which is the router itself: FirewallPolicy documents name it without a document, so give the zone another name |
 | 2 | — | An interface or glob is in one FirewallZone, once; globs compare as written. | `refuse` | after the table | after the table |
 | 3 | — | A FirewallZone names an interface or a VRF. | `refuse` | `documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)` | after the table |
-| 4 | — | A FirewallZone's VRFs are VRF documents. | `refuse` | after the table | after the table |
-| 5 | — | A VRF is in one FirewallZone, once. | `refuse` | after the table | after the table |
-| 6 | — | No interface of a FirewallZone is a VRF's device, which takes the VRF document's name; the output router-nftables also refuses globs that match one. | `refuse` | after the table | after the table |
+| 4 | — | A VRF is in one FirewallZone, once. | `refuse` | after the table | after the table |
+| 5 | — | No interface of a FirewallZone is a VRF's device, which takes the VRF document's name; the output router-nftables also refuses globs that match one. | `refuse` | after the table | after the table |
 
 Expression of rule 2:
 
@@ -874,34 +841,22 @@ documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n]
 Expression of rule 4:
 
 ```text
-cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), all.all(v, v in vrfs)))
+cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), all.all(v, size(all.filter(w, w == v)) == 1))
 ```
 
 Message of rule 4:
 
 ```text
-cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), cel.bind(v, all.filter(v, !(v in vrfs))[0], "FirewallZone " + documents.filter(n, v in documents[n].spec.vrfs)[0] + " names the VRF " + v + ", which no VRF document declares")))
+cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), "the VRF " + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each VRF one zone")
 ```
 
 Expression of rule 5:
 
 ```text
-cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), all.all(v, size(all.filter(w, w == v)) == 1))
-```
-
-Message of rule 5:
-
-```text
-cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), "the VRF " + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each VRF one zone")
-```
-
-Expression of rule 6:
-
-```text
 cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, !(i in vrfs))))
 ```
 
-Message of rule 6:
+Message of rule 5:
 
 ```text
 cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(i, all.filter(i, i in vrfs)[0], "FirewallZone " + documents.filter(n, i in documents[n].spec.interfaces)[0] + ": " + i + " is the device of VRF " + i + "; name the VRF in vrfs")))
@@ -912,18 +867,17 @@ cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["rou
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A NAT64's name has 11 characters at most, as its link n64-&lt;name> is an interface's name of 15. | `refuse` | `documents.all(n, size(n) <= 11)` | after the table |
-| 2 | — | A NAT64's vrf is a VRF document. | `refuse` | after the table | after the table |
-| 3 | — | No two NAT64s of one VRF translate addresses of one prefix. | `refuse` | after the table | after the table |
-| 4 | — | No two NAT64s share an address of their pools. | `refuse` | after the table | after the table |
-| 5 | — | No NAT64's pool holds a static address a Network document gives a link, which the router answers itself. | `refuse` | after the table | after the table |
-| 6 | — | Beside NAT64s, no Network document gives a link a static address in 169.254.64.0/18, the range of the NAT64s' links. | `refuse` | after the table | after the table |
-| 7 | `spec.pool4` | A pool's entries are IPv4 ranges of 65536 addresses at most. | `refuse` | `self.all(a, cidr(a.prefix).ip(0).family() == "ipv4" && cidr(a.prefix).prefix() >= 16)` | after the table |
-| 8 | `spec.pool4` | A pool's entries hold no unspecified, loopback, multicast or broadcast address. | `refuse` | after the table | after the table |
-| 9 | `spec.pool4` | A pool's entries hold no link-local address; the NAT64s' links take 169.254.64.0/18. | `refuse` | `self.all(a, !cidr("169.254.0.0/16").contains(cidr(a.prefix).ip(0)))` | after the table |
-| 10 | `spec.pool4` | A pool entry's ports lie from 1 to 65535 and leave out the kernel's ephemeral ports, 32768 to 60999. | `refuse` | after the table | after the table |
-| 11 | `spec.pool4` | A pool entry names each protocol once. | `refuse` | `self.all(a, ["tcp", "udp", "icmp"].all(p, size(a.protocols.filter(q, q == p)) <= 1))` | a pool entry names a protocol twice |
-| 12 | `spec.pool4` | No two entries of a pool share a protocol, addresses and ports. | `refuse` | after the table | after the table |
-| 13 | `spec.prefix` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
+| 2 | — | No two NAT64s of one VRF translate addresses of one prefix. | `refuse` | after the table | after the table |
+| 3 | — | No two NAT64s share an address of their pools. | `refuse` | after the table | after the table |
+| 4 | — | No NAT64's pool holds a static address a Network document gives a link, which the router answers itself. | `refuse` | after the table | after the table |
+| 5 | — | Beside NAT64s, no Network document gives a link a static address in 169.254.64.0/18, the range of the NAT64s' links. | `refuse` | after the table | after the table |
+| 6 | `spec.pool4` | A pool's entries are IPv4 ranges of 65536 addresses at most. | `refuse` | `self.all(a, cidr(a.prefix).ip(0).family() == "ipv4" && cidr(a.prefix).prefix() >= 16)` | after the table |
+| 7 | `spec.pool4` | A pool's entries hold no unspecified, loopback, multicast or broadcast address. | `refuse` | after the table | after the table |
+| 8 | `spec.pool4` | A pool's entries hold no link-local address; the NAT64s' links take 169.254.64.0/18. | `refuse` | `self.all(a, !cidr("169.254.0.0/16").contains(cidr(a.prefix).ip(0)))` | after the table |
+| 9 | `spec.pool4` | A pool entry's ports lie from 1 to 65535 and leave out the kernel's ephemeral ports, 32768 to 60999. | `refuse` | after the table | after the table |
+| 10 | `spec.pool4` | A pool entry names each protocol once. | `refuse` | `self.all(a, ["tcp", "udp", "icmp"].all(p, size(a.protocols.filter(q, q == p)) <= 1))` | a pool entry names a protocol twice |
+| 11 | `spec.pool4` | No two entries of a pool share a protocol, addresses and ports. | `refuse` | after the table | after the table |
+| 12 | `spec.prefix` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
 
 Message of rule 1:
 
@@ -934,118 +888,106 @@ documents.filter(n, size(n) > 11).map(n, "NAT64 " + n).join(", ") + " has a name
 Expression of rule 2:
 
 ```text
-cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))
+documents.all(n, documents.all(m, n == m || documents[n].spec.vrf != documents[m].spec.vrf || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))
 ```
 
 Message of rule 2:
 
 ```text
-cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, "NAT64 " + n + " names the VRF " + documents[n].spec.vrf).join(", ") + ", which no VRF document declares; leave vrf out for the default VRF")
+documents.filter(n, documents.exists(m, n != m && documents[n].spec.vrf == documents[m].spec.vrf && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, "NAT64 " + n).join(", ") + " translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"
 ```
 
 Expression of rule 3:
 
 ```text
-documents.all(n, documents.all(m, n == m || (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf) != (documents[m].spec.vrf == null ? "default" : documents[m].spec.vrf) || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))
+cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.all(x, e.all(y, x[0] == y[0] || !(cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))))
 ```
 
 Message of rule 3:
 
 ```text
-documents.filter(n, documents.exists(m, n != m && (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf) == (documents[m].spec.vrf == null ? "default" : documents[m].spec.vrf) && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, "NAT64 " + n).join(", ") + " translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"
+cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.filter(x, e.exists(y, x[0] != y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))).map(x, "NAT64 " + x[0] + " " + x[1]).join(", ") + " share addresses; give each NAT64 a pool of its own")
 ```
 
 Expression of rule 4:
 
 ```text
-cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.all(x, e.all(y, x[0] == y[0] || !(cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))))
+cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, a.prefix)).flatten(), cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), e.all(x, statics.all(a, !cidr(x).contains(ip(a)))))))))))
 ```
 
 Message of rule 4:
 
 ```text
-cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.filter(x, e.exists(y, x[0] != y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))).map(x, "NAT64 " + x[0] + " " + x[1]).join(", ") + " share addresses; give each NAT64 a pool of its own")
+cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, a.prefix)).flatten(), cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), cel.bind(p, e.filter(x, statics.exists(a, cidr(x).contains(ip(a))))[0], "NAT64 " + documents.filter(n, documents[n].spec.pool4.exists(a, a.prefix == p))[0] + ": the pool entry " + string(cidr(p)) + " holds " + string(ip(statics.filter(a, cidr(p).contains(ip(a)))[0])) + ", an address a Network document gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through"))))))))
 ```
 
 Expression of rule 5:
 
 ```text
-cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, a.prefix)).flatten(), cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), e.all(x, statics.all(a, !cidr(x).contains(ip(a)))))))))))
+size(documents) == 0 || cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), statics.all(a, !cidr("169.254.64.0/18").contains(ip(a)))))))))
 ```
 
 Message of rule 5:
 
 ```text
-cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, a.prefix)).flatten(), cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), cel.bind(p, e.filter(x, statics.exists(a, cidr(x).contains(ip(a))))[0], "NAT64 " + documents.filter(n, documents[n].spec.pool4.exists(a, a.prefix == p))[0] + ": the pool entry " + string(cidr(p)) + " holds " + string(ip(statics.filter(a, cidr(p).contains(ip(a)))[0])) + ", an address a Network document gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through"))))))))
-```
-
-Expression of rule 6:
-
-```text
-size(documents) == 0 || cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), statics.all(a, !cidr("169.254.64.0/18").contains(ip(a)))))))))
+cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), "a Network document gives a link the address " + string(ip(statics.filter(a, cidr("169.254.64.0/18").contains(ip(a)))[0])) + ", which lies in 169.254.64.0/18, the range of the NAT64s' links; give the link another address"))))))
 ```
 
 Message of rule 6:
 
 ```text
-cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), "a Network document gives a link the address " + string(ip(statics.filter(a, cidr("169.254.64.0/18").contains(ip(a)))[0])) + ", which lies in 169.254.64.0/18, the range of the NAT64s' links; give the link another address"))))))
-```
-
-Message of rule 7:
-
-```text
 "the pool entry " + self.filter(a, !(cidr(a.prefix).ip(0).family() == "ipv4" && cidr(a.prefix).prefix() >= 16))[0].prefix + " is no IPv4 range of 16 bits or more"
 ```
 
-Expression of rule 8:
+Expression of rule 7:
 
 ```text
 self.all(a, cel.bind(c, cidr(a.prefix), c.ip(0).family() != "ipv4" || c.ip(0) != ip("0.0.0.0") && !cidr("127.0.0.0/8").contains(c.ip(0)) && !cidr("224.0.0.0/4").contains(c.ip(0)) && !c.contains(ip("255.255.255.255"))))
 ```
 
-Message of rule 8:
+Message of rule 7:
 
 ```text
 "the pool entry " + self.filter(a, !cel.bind(c, cidr(a.prefix), c.ip(0).family() != "ipv4" || c.ip(0) != ip("0.0.0.0") && !cidr("127.0.0.0/8").contains(c.ip(0)) && !cidr("224.0.0.0/4").contains(c.ip(0)) && !c.contains(ip("255.255.255.255"))))[0].prefix + " holds addresses no connection leaves from: the unspecified address, loopback, multicast or broadcast"
 ```
 
-Message of rule 9:
+Message of rule 8:
 
 ```text
 "the pool entry " + self.filter(a, cidr("169.254.0.0/16").contains(cidr(a.prefix).ip(0)))[0].prefix + " holds link-local addresses, which the NAT64s' links take"
 ```
 
-Expression of rule 10:
+Expression of rule 9:
 
 ```text
 self.all(a, cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))
 ```
 
-Message of rule 10:
+Message of rule 9:
 
 ```text
 "a pool entry takes the ports " + string(self.filter(a, !cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))[0].ports) + ", which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999"
 ```
 
-Expression of rule 12:
+Expression of rule 11:
 
 ```text
 cel.bind(e, self.map(a, ["tcp", "udp", "icmp"].filter(p, p in a.protocols).map(p, [p, a.prefix, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[0])), (type(a.ports) == int ? a.ports : int(a.ports.split("-")[1]))])).flatten(), e.all(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) <= 1))
 ```
 
-Message of rule 12:
+Message of rule 11:
 
 ```text
 cel.bind(e, self.map(a, ["tcp", "udp", "icmp"].filter(p, p in a.protocols).map(p, [p, a.prefix, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[0])), (type(a.ports) == int ? a.ports : int(a.ports.split("-")[1]))])).flatten(), cel.bind(x, e.filter(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) > 1)[0], "the pool entry " + x[1] + " shares " + x[0] + " addresses and ports with another; give each entry of a protocol addresses or ports of its own"))
 ```
 
-Expression of rule 13:
+Expression of rule 12:
 
 ```text
 cidr(self).ip(0).family() == "ipv6" && cidr(self).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self).ip(0)) && cel.bind(x, cidr(self).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) && cel.bind(a, string(cidr(self).ip(0)), cidr(a + "/72").ip(0) == cidr(a + "/64").ip(0))
 ```
 
-Message of rule 13:
+Message of rule 12:
 
 ```text
 !(cidr(self).ip(0).family() == "ipv6" && cidr(self).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self).ip(0))) ? "the prefix " + self + " is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96" : !cel.bind(x, cidr(self).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) ? "the prefix " + self + " holds link-local, multicast or unspecified addresses" : "the prefix " + self + " sets bits 64 to 71, which RFC 6052 keeps zero"
@@ -1157,10 +1099,9 @@ documents.filter(n, cel.bind(s, documents[n].spec, s.match.protocol == null && (
 | 10 | `spec.rules` | A rule matches by one term at least. | `refuse` | after the table | a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: [0.0.0.0/0] |
 | 11 | `spec.rules` | A rule's to names a VRF, a table or a next hop, one of them. | `refuse` | after the table | a rule's to names a VRF, a table or a next hop, one of them |
 | 12 | `spec.rules` | A rule with a next hop matches packets of the next hop's family. | `refuse` | after the table | a rule's next hop is of another family than the packets the rule matches |
-| 13 | `spec.rules` | A rule's VRF is a VRF document. | `refuse` | after the table | a rule names a VRF that no VRF document declares |
-| 14 | `spec.rules` | A rule's table is not 255, the kernel's local table, and no VRF's table. | `refuse` | after the table | a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table |
-| 15 | `spec.rules` | A next hop's table is none of 253, 254 and 255 and no VRF's table. | `refuse` | after the table | a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own |
-| 16 | `spec.rules` | A next hop's interface is not lo; the output router-nftables also refuses it. | `refuse` | `self.all(p, p.to.nextHop == null || p.to.nextHop.interface != "lo")` | a next hop's interface is lo, which no next hop is on; name the link the next hop is on |
+| 13 | `spec.rules` | A rule's table is not 255, the kernel's local table, and no VRF's table. | `refuse` | after the table | a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table |
+| 14 | `spec.rules` | A next hop's table is none of 253, 254 and 255 and no VRF's table. | `refuse` | after the table | a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own |
+| 15 | `spec.rules` | A next hop's interface is not lo; the output router-nftables also refuses it. | `refuse` | `self.all(p, p.to.nextHop == null || p.to.nextHop.interface != "lo")` | a next hop's interface is lo, which no next hop is on; name the link the next hop is on |
 
 Expression of rule 1:
 
@@ -1261,16 +1202,10 @@ cel.bind(sets, (("router.chalkos.dev/v1alpha1" in config && "AddressSet" in conf
 Expression of rule 13:
 
 ```text
-cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), self.all(p, p.to.vrf == null || p.to.vrf in vrfs))
-```
-
-Expression of rule 14:
-
-```text
 cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(tables, v.map(n, v[n].spec.table), self.all(p, p.to.table == null || p.to.table != 255 && !(p.to.table in tables))))
 ```
 
-Expression of rule 15:
+Expression of rule 14:
 
 ```text
 cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(tables, v.map(n, v[n].spec.table), self.all(p, p.to.nextHop == null || !(p.to.nextHop.table in [253, 254, 255]) && !(p.to.nextHop.table in tables))))
@@ -1305,189 +1240,170 @@ cel.bind(d, self.filter(e, !self.exists_one(x, cidr(x.prefix) == cidr(e.prefix) 
 
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
-| 1 | — | One Resolver serves a VRF. | `refuse` | after the table | after the table |
-| 2 | — | A Resolver's vrf is a VRF document. | `refuse` | after the table | after the table |
-| 3 | — | A Resolver listens on an address of a family its clients' ranges are of. | `refuse` | after the table | after the table |
-| 4 | — | With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64. | `refuse` | after the table | after the table |
-| 5 | `spec.allow` | The resolver's clients are address ranges. | `refuse` | `self.all(p, cidr(p).prefix() >= 0)` | a client is no address range |
-| 6 | `spec.allow` | Each range appears once. | `refuse` | `self.all(a, size(self.filter(b, cidr(b) == cidr(a))) == 1)` | after the table |
-| 7 | `spec.dns64` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
-| 8 | `spec.forwarders` | The resolver forwards to unicast addresses. | `refuse` | after the table | after the table |
-| 9 | `spec.forwarders` | Each forwarder appears once. | `refuse` | `self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)` | after the table |
-| 10 | `spec.listen` | The resolver listens on unicast addresses. | `refuse` | after the table | after the table |
-| 11 | `spec.listen` | Each address appears once. | `refuse` | `self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)` | after the table |
-| 12 | `spec.localZones` | A local zone appears once. | `refuse` | `self.all(z, size(self.filter(y, y.name == z.name)) == 1)` | after the table |
-| 13 | `spec.localZones` | A local zone's records are of the zone's name or names below it. | `refuse` | `self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))` | after the table |
-| 14 | `spec.localZones` | The names of local zones and their records hold 253 characters at most. | `refuse` | `self.all(z, size(z.name) <= 253) && self.map(z, z.records).flatten().all(r, size(r.name) <= 253)` | after the table |
-| 15 | `spec.localZones` | An A or AAAA record holds an address of its family. | `refuse` | after the table | after the table |
-| 16 | `spec.localZones` | The local zones hold 150 records at most, which the rules can compare in pairs. | `refuse` | `size(self.map(z, z.records).flatten()) <= 150` | after the table |
-| 17 | `spec.localZones` | A record appears once, as Unbound keeps one of its copies. | `refuse` | after the table | after the table |
-| 18 | `spec.localZones` | A redirect zone's records are of the zone's name, which Unbound answers for every name below it. | `refuse` | `self.all(z, z.type != "redirect" || z.records.all(r, r.name == z.name))` | after the table |
-| 19 | `spec.localZones` | A CNAME record's name holds no other record. | `refuse` | after the table | after the table |
-
-Expression of rule 1:
-
-```text
-cel.bind(v, documents.map(n, (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf)), v.all(x, size(v.filter(y, y == x)) == 1))
-```
+| 1 | — | One Resolver serves a VRF. | `refuse` | `cel.bind(v, documents.map(n, documents[n].spec.vrf), v.all(x, size(v.filter(y, y == x)) == 1))` | after the table |
+| 2 | — | A Resolver listens on an address of a family its clients' ranges are of. | `refuse` | after the table | after the table |
+| 3 | — | With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64. | `refuse` | after the table | after the table |
+| 4 | `spec.allow` | The resolver's clients are address ranges. | `refuse` | `self.all(p, cidr(p).prefix() >= 0)` | a client is no address range |
+| 5 | `spec.allow` | Each range appears once. | `refuse` | `self.all(a, size(self.filter(b, cidr(b) == cidr(a))) == 1)` | after the table |
+| 6 | `spec.dns64` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
+| 7 | `spec.forwarders` | The resolver forwards to unicast addresses. | `refuse` | after the table | after the table |
+| 8 | `spec.forwarders` | Each forwarder appears once. | `refuse` | `self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)` | after the table |
+| 9 | `spec.listen` | The resolver listens on unicast addresses. | `refuse` | after the table | after the table |
+| 10 | `spec.listen` | Each address appears once. | `refuse` | `self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)` | after the table |
+| 11 | `spec.localZones` | A local zone appears once. | `refuse` | `self.all(z, size(self.filter(y, y.name == z.name)) == 1)` | after the table |
+| 12 | `spec.localZones` | A local zone's records are of the zone's name or names below it. | `refuse` | `self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))` | after the table |
+| 13 | `spec.localZones` | The names of local zones and their records hold 253 characters at most. | `refuse` | `self.all(z, size(z.name) <= 253) && self.map(z, z.records).flatten().all(r, size(r.name) <= 253)` | after the table |
+| 14 | `spec.localZones` | An A or AAAA record holds an address of its family. | `refuse` | after the table | after the table |
+| 15 | `spec.localZones` | The local zones hold 150 records at most, which the rules can compare in pairs. | `refuse` | `size(self.map(z, z.records).flatten()) <= 150` | after the table |
+| 16 | `spec.localZones` | A record appears once, as Unbound keeps one of its copies. | `refuse` | after the table | after the table |
+| 17 | `spec.localZones` | A redirect zone's records are of the zone's name, which Unbound answers for every name below it. | `refuse` | `self.all(z, z.type != "redirect" || z.records.all(r, r.name == z.name))` | after the table |
+| 18 | `spec.localZones` | A CNAME record's name holds no other record. | `refuse` | after the table | after the table |
 
 Message of rule 1:
 
 ```text
-cel.bind(v, documents.map(n, (documents[n].spec.vrf == null ? "default" : documents[n].spec.vrf)), "more than one Resolver serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one resolver")
+cel.bind(v, documents.map(n, documents[n].spec.vrf), "more than one Resolver serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one resolver")
 ```
 
 Expression of rule 2:
 
 ```text
-cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.all(n, documents[n].spec.vrf == null || documents[n].spec.vrf in vrfs))
+documents.all(n, cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))
 ```
 
 Message of rule 2:
 
 ```text
-cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.filter(n, documents[n].spec.vrf != null && !(documents[n].spec.vrf in vrfs)).map(n, "Resolver " + n + " names the VRF " + documents[n].spec.vrf).join(", ") + ", which no VRF document declares; leave vrf out for the default VRF")
+documents.filter(n, cel.bind(s, documents[n].spec, !["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, "Resolver " + n).join(", ") + " listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"
 ```
 
 Expression of rule 3:
 
 ```text
-documents.all(n, cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))
+documents.all(n, cel.bind(s, documents[n].spec, s.dns64 == null || !s.localZones.exists(z, (z.name == "ipv4only.arpa" || z.name.endsWith(".ipv4only.arpa") || "ipv4only.arpa".endsWith("." + z.name)))))
 ```
 
 Message of rule 3:
 
 ```text
-documents.filter(n, cel.bind(s, documents[n].spec, !["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, "Resolver " + n).join(", ") + " listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"
-```
-
-Expression of rule 4:
-
-```text
-documents.all(n, cel.bind(s, documents[n].spec, s.dns64 == null || !s.localZones.exists(z, (z.name == "ipv4only.arpa" || z.name.endsWith(".ipv4only.arpa") || "ipv4only.arpa".endsWith("." + z.name)))))
-```
-
-Message of rule 4:
-
-```text
 documents.filter(n, cel.bind(s, documents[n].spec, s.dns64 != null && s.localZones.exists(z, (z.name == "ipv4only.arpa" || z.name.endsWith(".ipv4only.arpa") || "ipv4only.arpa".endsWith("." + z.name))))).map(n, "Resolver " + n).join(", ") + " has a local zone over ipv4only.arpa, which Unbound would answer before DNS64; drop the zone or DNS64"
 ```
 
-Message of rule 6:
+Message of rule 5:
 
 ```text
 "the range " + self.filter(a, size(self.filter(b, cidr(b) == cidr(a))) > 1)[0] + " appears more than once"
 ```
 
-Expression of rule 7:
+Expression of rule 6:
 
 ```text
 self == null || (cidr(self.prefix).ip(0).family() == "ipv6" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self.prefix).ip(0)) && cel.bind(x, cidr(self.prefix).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) && cel.bind(a, string(cidr(self.prefix).ip(0)), cidr(a + "/72").ip(0) == cidr(a + "/64").ip(0)))
 ```
 
-Message of rule 7:
+Message of rule 6:
 
 ```text
 !(cidr(self.prefix).ip(0).family() == "ipv6" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self.prefix).ip(0))) ? "the prefix " + self.prefix + " is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96" : !cel.bind(x, cidr(self.prefix).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) ? "the prefix " + self.prefix + " holds link-local, multicast or unspecified addresses" : "the prefix " + self.prefix + " sets bits 64 to 71, which RFC 6052 keeps zero"
 ```
 
-Expression of rule 8:
+Expression of rule 7:
 
 ```text
 self.all(a, cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))
 ```
 
-Message of rule 8:
+Message of rule 7:
 
 ```text
 "the forwarder " + self.filter(a, !cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))[0] + " is no unicast address"
 ```
 
-Message of rule 9:
+Message of rule 8:
 
 ```text
 "the forwarder " + self.filter(a, size(self.filter(b, ip(b) == ip(a))) > 1)[0] + " appears more than once"
 ```
 
-Expression of rule 10:
+Expression of rule 9:
 
 ```text
 self.all(a, cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))
 ```
 
-Message of rule 10:
+Message of rule 9:
 
 ```text
 "the address " + self.filter(a, !cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))[0] + " is no unicast address the resolver can listen on"
 ```
 
-Message of rule 11:
+Message of rule 10:
 
 ```text
 "the address " + self.filter(a, size(self.filter(b, ip(b) == ip(a))) > 1)[0] + " appears more than once"
 ```
 
-Message of rule 12:
+Message of rule 11:
 
 ```text
 "the local zone " + self.filter(z, size(self.filter(y, y.name == z.name)) > 1)[0].name + " appears more than once"
 ```
 
-Message of rule 13:
+Message of rule 12:
 
 ```text
 cel.bind(z, self.filter(z, !z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))[0], "the local zone " + z.name + " holds a record of " + z.records.filter(r, !(r.name == z.name || r.name.endsWith("." + z.name)))[0].name + ", which is outside it")
 ```
 
-Message of rule 14:
+Message of rule 13:
 
 ```text
 "the name " + (self.map(z, z.name) + self.map(z, z.records).flatten().map(r, r.name)).filter(n, size(n) > 253)[0] + " holds more than 253 characters"
 ```
 
-Expression of rule 15:
+Expression of rule 14:
 
 ```text
 self.map(z, z.records).flatten().all(r, (r.type == "A" ? ip(r.value).family() == "ipv4" : r.type != "AAAA" || cel.bind(x, ip(r.value), x.family() == "ipv6" && !cidr("::ffff:0:0/96").contains(x)) && !r.value.contains("%")))
 ```
 
-Message of rule 15:
+Message of rule 14:
 
 ```text
 cel.bind(r, self.map(z, z.records).flatten().filter(r, !(r.type == "A" ? ip(r.value).family() == "ipv4" : r.type != "AAAA" || cel.bind(x, ip(r.value), x.family() == "ipv6" && !cidr("::ffff:0:0/96").contains(x)) && !r.value.contains("%")))[0], "the " + r.type + " record of " + r.name + " holds " + r.value + ", which is no " + (r.type == "A" ? "IPv4" : "IPv6") + " address")
 ```
 
-Message of rule 16:
+Message of rule 15:
 
 ```text
 "the local zones hold " + string(size(self.map(z, z.records).flatten())) + " records, more than the 150 whose duplicates chalkd can check"
 ```
 
-Expression of rule 17:
+Expression of rule 16:
 
 ```text
 cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == "AAAA" ? ip(x.value) == ip(y.value) : x.value == y.value))) == 1))
 ```
 
-Message of rule 17:
+Message of rule 16:
 
 ```text
 cel.bind(e, self.map(z, z.records).flatten(), size(e) > 50 ? "a record appears more than once in the local zones, with one name, type and value; Unbound keeps one" : cel.bind(r, e.filter(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == "AAAA" ? ip(x.value) == ip(y.value) : x.value == y.value))) > 1)[0], "the record " + r.name + " " + r.type + " " + (r.type == "AAAA" ? string(ip(r.value)) : r.value) + " appears more than once; Unbound keeps one"))
 ```
 
-Message of rule 18:
+Message of rule 17:
 
 ```text
 cel.bind(z, self.filter(z, z.type == "redirect" && !z.records.all(r, r.name == z.name))[0], "the redirect zone " + z.name + " holds a record of " + z.records.filter(r, r.name != z.name)[0].name + "; a redirect zone's records are of its own name, which Unbound answers for every name below it")
 ```
 
-Expression of rule 19:
+Expression of rule 18:
 
 ```text
 cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, x.type != "CNAME" || size(e.filter(y, y.name == x.name)) == 1))
 ```
 
-Message of rule 19:
+Message of rule 18:
 
 ```text
 cel.bind(e, self.map(z, z.records).flatten(), e.filter(x, x.type == "CNAME" && size(e.filter(y, y.name == x.name)) > 1)[0].name + " holds a CNAME record and another record; a CNAME's name holds it alone")
@@ -1653,13 +1569,13 @@ cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, 
 Expression of rule 11:
 
 ```text
-cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.all(n, documents[n].spec.conntrackZone == null || !(n in importers) && !(n in imported))))))
+cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.all(n, documents[n].spec.conntrackZone == null || !(n in importers) && !(n in imported))))))
 ```
 
 Message of rule 11:
 
 ```text
-cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf == null ? "default" : bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + ": a VRF with a conntrack zone leaks no routes through a BGP import, as its connections would answer in another zone; drop the zone or the import"))))
+cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + ": a VRF with a conntrack zone leaks no routes through a BGP import, as its connections would answer in another zone; drop the zone or the import"))))
 ```
 
 ## Facts { #facts }
@@ -1811,7 +1727,7 @@ The effects router images add.
 `when` of `unbound-start`:
 
 ```text
-cel.bind(r, (("router.chalkos.dev/v1alpha1" in config && "Resolver" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Resolver : {}), size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == null))) != cel.bind(r, (("router.chalkos.dev/v1alpha1" in oldConfig && "Resolver" in oldConfig["router.chalkos.dev/v1alpha1"]) ? oldConfig["router.chalkos.dev/v1alpha1"].Resolver : {}), size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == null)))
+cel.bind(r, (("router.chalkos.dev/v1alpha1" in config && "Resolver" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Resolver : {}), size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == "default"))) != cel.bind(r, (("router.chalkos.dev/v1alpha1" in oldConfig && "Resolver" in oldConfig["router.chalkos.dev/v1alpha1"]) ? oldConfig["router.chalkos.dev/v1alpha1"].Resolver : {}), size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == "default")))
 ```
 
 ## Diagnostics { #diagnostics }

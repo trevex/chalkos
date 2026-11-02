@@ -50,7 +50,11 @@
           ],
           "items": {
             "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
-            "type": "string"
+            "type": "string",
+            "x-chalkos-ref": {
+              "apiVersion": "router.chalkos.dev/v1alpha1",
+              "kind": "VRF"
+            }
           },
           "type": "array"
         }
@@ -87,12 +91,6 @@
         "description": "A FirewallZone names an interface or a VRF.",
         "messageExpression": "documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, \"FirewallZone \" + n).join(\", \") + \": a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both\"",
         "rule": "documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)",
-        "takes": "refuse"
-      },
-      {
-        "description": "A FirewallZone's VRFs are VRF documents.",
-        "messageExpression": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), cel.bind(v, all.filter(v, !(v in vrfs))[0], \"FirewallZone \" + documents.filter(n, v in documents[n].spec.vrfs)[0] + \" names the VRF \" + v + \", which no VRF document declares\")))",
-        "rule": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), all.all(v, v in vrfs)))",
         "takes": "refuse"
       },
       {

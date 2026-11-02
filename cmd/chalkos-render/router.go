@@ -114,7 +114,7 @@ func (p *portRange) UnmarshalJSON(data []byte) error {
 }
 
 type bgpSpec struct {
-	// VRF is nil for the default VRF's instance.
+	// VRF names the instance's VRF document, or is default; vrfOf reads it.
 	VRF       *string `json:"vrf"`
 	ASN       uint32  `json:"asn"`
 	RouterID  string  `json:"routerID"`
@@ -146,7 +146,7 @@ type leakSpec struct {
 }
 
 type peerSpec struct {
-	// VRF is nil for a peer of the default VRF.
+	// VRF names the peer's VRF document, or is default; vrfOf reads it.
 	VRF       *string `json:"vrf"`
 	Address   *string `json:"address"`
 	Interface *string `json:"interface"`
@@ -230,7 +230,7 @@ type routingPolicySpec struct {
 }
 
 type nat64Spec struct {
-	// VRF is nil for a NAT64 of the default VRF.
+	// VRF names the NAT64's VRF document, or is default; vrfOf reads it.
 	VRF    *string     `json:"vrf"`
 	Prefix string      `json:"prefix"`
 	Pool4  []poolEntry `json:"pool4"`
@@ -243,7 +243,7 @@ type poolEntry struct {
 }
 
 type resolverSpec struct {
-	// VRF is nil for the default VRF's resolver.
+	// VRF names the resolver's VRF document, or is default; vrfOf reads it.
 	VRF        *string  `json:"vrf"`
 	Listen     []string `json:"listen"`
 	Allow      []string `json:"allow"`
@@ -817,12 +817,33 @@ func (d routerDocuments) router() routerSpec {
 	return d.Routers[0].Spec
 }
 
-// vrfOf is the VRF a document's vrf names: its name, or the default VRF's when it is null.
+// vrfOf is the VRF a document's vrf names: its name, which is default for the default VRF, or the
+// default VRF's when the input leaves it out.
 func vrfOf(v *string) string {
 	if v == nil {
 		return defaultVRF
 	}
 	return *v
+}
+
+// mustGet is the value byName holds for the document of the kind that a reference names. chalkd
+// checks every reference a kind's schema marks before it renders an output, so a name byName
+// lacks is a bug of chalkd or of the output's input, not an error of the config.
+func mustGet[V any](byName map[string]V, kind, name string) (V, error) {
+	v, ok := byName[name]
+	if !ok {
+		return v, fmt.Errorf("internal error: the input holds no %s %q, which a reference names; chalkd checks references before it renders", kind, name)
+	}
+	return v, nil
+}
+
+// byName are the specs of docs by their documents' names.
+func byName[T any](docs []named[T]) map[string]T {
+	m := make(map[string]T, len(docs))
+	for _, d := range docs {
+		m[d.Name] = d.Spec
+	}
+	return m
 }
 
 // vrfOrder sorts the default VRF before the others, which follow by name.

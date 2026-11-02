@@ -52,9 +52,8 @@ var localZoneTypes = []string{"static", "transparent", "typetransparent", "redir
 // and out/unbound-<vrf>.conf for a VRF's: the addresses it answers on and the clients it answers,
 // DNSSEC validation with the root's trust anchor in the file trustAnchor, DNS64 with the zone
 // ipv4only.arpa of the file zoneFile, the local zones, the forwarders, and the control socket. A
-// node without a Resolver gets no file and runs no Unbound. It refuses two resolvers of one VRF, a
-// VRF no document declares, and a listen address that Network documents give only to links of
-// other VRFs.
+// node without a Resolver gets no file and runs no Unbound. It refuses two resolvers of one VRF and
+// a listen address that Network documents give only to links of other VRFs.
 func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) error {
 	for _, f := range []string{trustAnchor, zoneFile} {
 		if !storeFile.MatchString(f) || filepath.Clean(f) != f {
@@ -72,8 +71,11 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 	served := map[string]string{}
 	for _, r := range d.Resolvers {
 		vrf := vrfOf(r.Spec.VRF)
-		if !declared[vrf] || !plainInterface.MatchString(vrf) {
-			return fmt.Errorf("Resolver %s names the VRF %q, which no VRF document declares; leave vrf out for the default VRF", r.Name, vrf)
+		if _, err := mustGet(declared, "VRF", vrf); err != nil {
+			return fmt.Errorf("Resolver %s: %w", r.Name, err)
+		}
+		if !plainInterface.MatchString(vrf) {
+			return fmt.Errorf("Resolver %s names the VRF %q, which is no interface's name", r.Name, vrf)
 		}
 		if other, ok := served[vrf]; ok {
 			return fmt.Errorf("Resolver %s and Resolver %s both serve the VRF %s; a VRF has one resolver", other, r.Name, vrf)

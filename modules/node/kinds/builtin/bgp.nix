@@ -27,8 +27,7 @@ let
     address
     family
     delivered
-    vrfOf
-    vrfDeclared
+    vrfRef
     ;
 
   name = types.strMatching documentName;
@@ -56,11 +55,11 @@ let
   # Whether the PrefixList entry e is the one of its list, self, that matches what it matches.
   sameEntry = "self.exists_one(x, cidr(x.prefix) == cidr(e.prefix) && x.ge == e.ge && x.le == e.le)";
 
-  # The vrf of the running BGP document of the name n, null for the default VRF; a running config
-  # of an image whose BGP had no vrf lacks the field.
-  oldVRF = n: "(has(oldDocuments[${n}].spec.vrf) ? oldDocuments[${n}].spec.vrf : null)";
+  # The vrf of the running BGP document of the name n, default for the default VRF; a running
+  # config of an image whose BGP had no vrf lacks the field.
+  oldVRF = n: ''(has(oldDocuments[${n}].spec.vrf) ? oldDocuments[${n}].spec.vrf : "default")'';
   # The VRFs the config's BGP documents serve.
-  served = "cel.bind(bgps, ${delivered "BGP"}, bgps.map(n, ${vrfOf "bgps[n]"}))";
+  served = "cel.bind(bgps, ${delivered "BGP"}, bgps.map(n, bgps[n].spec.vrf))";
   # The interfaces and globs of the config's VRF documents, as written, each as [interface, VRF].
   links = "cel.bind(v, ${delivered "VRF"}, v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten())";
   # Whether the BGPPeer spec s names no interface, or one that held gives no VRF but the peer's.
@@ -69,8 +68,7 @@ let
   leak = types.submodule {
     options = {
       vrfs = mkOption {
-        # A VRF document's name or the default VRF's, as an import names it.
-        type = types.nonEmptyListOf name;
+        type = types.nonEmptyListOf vrfRef;
         example = [ "tenant" ];
         description = "VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`.";
       };
@@ -204,27 +202,26 @@ in
         rules = [
           {
             description = "One BGP document serves a VRF.";
-            rule = "cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), v.all(x, size(v.filter(y, y == x)) == 1))";
-            messageExpression = ''cel.bind(v, documents.map(n, ${vrfOf "documents[n]"}), "more than one BGP document serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one BGP instance")'';
+            rule = "cel.bind(v, documents.map(n, documents[n].spec.vrf), v.all(x, size(v.filter(y, y == x)) == 1))";
+            messageExpression = ''cel.bind(v, documents.map(n, documents[n].spec.vrf), "more than one BGP document serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one BGP instance")'';
           }
-          (vrfDeclared "BGP")
           {
             description = "A BGP instance does not import its own VRF.";
-            rule = ''documents.all(n, cel.bind(s, documents[n].spec, [s["import"].ipv4, s["import"].ipv6].all(f, f == null || !(${vrfOf "documents[n]"} in f.vrfs))))'';
-            messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, ![s["import"].ipv4, s["import"].ipv6].all(f, f == null || !(${vrfOf "documents[n]"} in f.vrfs)))).map(n, "BGP " + n).join(", ") + " imports the routes of its own VRF; name other VRFs"'';
+            rule = ''documents.all(n, cel.bind(s, documents[n].spec, [s["import"].ipv4, s["import"].ipv6].all(f, f == null || !(documents[n].spec.vrf in f.vrfs))))'';
+            messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, ![s["import"].ipv4, s["import"].ipv6].all(f, f == null || !(documents[n].spec.vrf in f.vrfs)))).map(n, "BGP " + n).join(", ") + " imports the routes of its own VRF; name other VRFs"'';
           }
           {
             description = "A delivery that drops the default VRF's BGP document keeps no running BGP instance of another VRF, as FRR keeps its default instance while another runs.";
-            rule = "!oldDocuments.exists(n, ${oldVRF "n"} == null) || documents.exists(n, documents[n].spec.vrf == null) || !documents.exists(n, documents[n].spec.vrf != null && oldDocuments.exists(m, ${oldVRF "m"} == documents[n].spec.vrf))";
+            rule = ''!oldDocuments.exists(n, ${oldVRF "n"} == "default") || documents.exists(n, documents[n].spec.vrf == "default") || !documents.exists(n, documents[n].spec.vrf != "default" && oldDocuments.exists(m, ${oldVRF "m"} == documents[n].spec.vrf))'';
             message = "the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's";
           }
         ];
         spec = {
           vrf = mkOption {
-            type = types.nullOr name;
-            default = null;
+            type = vrfRef;
+            default = "default";
             example = "tenant";
-            description = "VRF document whose instance this is; null for the default VRF, which holds every link no VRF holds.";
+            description = "VRF document whose instance this is; `default` for the default VRF, which holds every link no VRF holds.";
           };
           asn = lib.chalkos.mkOption {
             type = positive32;
@@ -366,11 +363,10 @@ in
             rule = "documents.all(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() == 1))";
             messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() != 1)).map(n, "BGPPeer " + n).join(", ") + " names not exactly one of address, interface and interfaces; a peer is reached at an address, on an interface or on each interface of a list"'';
           }
-          (vrfDeclared "BGPPeer")
           {
             description = "A BGPPeer's VRF has a BGP document.";
-            rule = "cel.bind(have, ${served}, documents.all(n, ${vrfOf "documents[n]"} in have))";
-            messageExpression = ''cel.bind(have, ${served}, documents.filter(n, !(${vrfOf "documents[n]"} in have)).map(n, "BGPPeer " + n + " runs in the VRF " + ${vrfOf "documents[n]"}).join(", ") + ": a peer's VRF needs a BGP document, which gives the router its AS number there")'';
+            rule = "cel.bind(have, ${served}, documents.all(n, documents[n].spec.vrf in have))";
+            messageExpression = ''cel.bind(have, ${served}, documents.filter(n, !(documents[n].spec.vrf in have)).map(n, "BGPPeer " + n + " runs in the VRF " + documents[n].spec.vrf).join(", ") + ": a peer's VRF needs a BGP document, which gives the router its AS number there")'';
           }
           {
             description = "A BGPPeer's interface is no link another VRF than the peer's holds; names compare as written.";
@@ -380,10 +376,10 @@ in
         ];
         spec = {
           vrf = mkOption {
-            type = types.nullOr name;
-            default = null;
+            type = vrfRef;
+            default = "default";
             example = "tenant";
-            description = "VRF document whose BGP instance runs the session; null for the default VRF. The peer's interfaces are links of that VRF.";
+            description = "VRF document whose BGP instance runs the session; `default` for the default VRF. The peer's interfaces are links of that VRF.";
           };
           address = lib.chalkos.mkOption {
             type = types.nullOr address;

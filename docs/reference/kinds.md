@@ -332,7 +332,7 @@ A BGP instance of the router in one VRF: its AS number and router ID, how many e
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 11 [change rules](builtins.md#rules-bgp).
+A node's config may hold several, each with a name of its own. It has 10 [change rules](builtins.md#rules-bgp).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -344,10 +344,10 @@ A node's config may hold several, each with a name of its own. It has 11 [change
 | `spec.import` | object | `{}` | Routes the instance takes from the BGP instances of other VRFs, which the kernel installs in this VRF's table with their next hops in the other VRF. Static routes of a VRF's links are not leaked. |
 | `spec.import.ipv4` | object or null | `null` | IPv4 routes the instance takes from other VRFs' instances; null takes none. |
 | `spec.import.ipv4.policy` | string or null | `null` | RoutingPolicy that decides the routes the instance takes from all of `vrfs`; null takes every route. |
-| `spec.import.ipv4.vrfs` | list of string | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. |
+| `spec.import.ipv4.vrfs` | list of name of a VRF, or `default` | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. |
 | `spec.import.ipv6` | object or null | `null` | IPv6 routes the instance takes from other VRFs' instances; null takes none. |
 | `spec.import.ipv6.policy` | string or null | `null` | RoutingPolicy that decides the routes the instance takes from all of `vrfs`; null takes every route. |
-| `spec.import.ipv6.vrfs` | list of string | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. |
+| `spec.import.ipv6.vrfs` | list of name of a VRF, or `default` | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. |
 | `spec.multipath.asPathRelax` | boolean | `false` | Whether paths through different neighbouring ASes count as equal when their AS paths are equally long, as for two leaves of a fabric. |
 | `spec.multipath.ebgp` | integer from 1 to 64 | `1` | Equal paths from external peers the router installs for one prefix at most. |
 | `spec.multipath.ibgp` | integer from 1 to 64 | `1` | Equal paths from internal peers the router installs for one prefix at most. |
@@ -355,7 +355,7 @@ A node's config may hold several, each with a name of its own. It has 11 [change
 | `spec.networks[].policy` | string or null | `null` | RoutingPolicy whose terms set the announcement's attributes; null announces it as it is. |
 | `spec.networks[].prefix` | string | required | Address range the router announces while its table holds a route to it. |
 | `spec.routerID` | string | required | Router ID, in IPv4 notation, which the router's peers know it by; give an IPv6-only router one too. |
-| `spec.vrf` | string or null | `null` | VRF document whose instance this is; null for the default VRF, which holds every link no VRF holds. |
+| `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document whose instance this is; `default` for the default VRF, which holds every link no VRF holds. |
 
 ### BGPPeer { #bgppeer }
 
@@ -363,7 +363,7 @@ A BGP neighbour of the router, or the neighbours on a set of interfaces: where t
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 15 [change rules](builtins.md#rules-bgppeer).
+A node's config may hold several, each with a name of its own. It has 14 [change rules](builtins.md#rules-bgppeer).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -389,7 +389,7 @@ A node's config may hold several, each with a name of its own. It has 15 [change
 | `spec.password` | secret reference or null | `null` | Key of a Secret that holds the session's TCP MD5 password, of 80 characters at most and no white space; null for none. The Secret's name and key hold letters, digits, `.`, `_` and `-` alone. |
 | `spec.remoteAS` | one of `external`, `internal` or integer from 1 to 4294967295 | required | AS of the neighbour: a number, `external` for any AS but the router's, or `internal` for the router's own. |
 | `spec.shutdown` | boolean | `false` | Whether the router keeps the session down while the document stays. |
-| `spec.vrf` | string or null | `null` | VRF document whose BGP instance runs the session; null for the default VRF. The peer's interfaces are links of that VRF. |
+| `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document whose BGP instance runs the session; `default` for the default VRF. The peer's interfaces are links of that VRF. |
 
 ### CommunityList { #communitylist }
 
@@ -478,12 +478,12 @@ A zone of the router's firewall: interfaces and VRFs whose connections the Firew
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 6 [change rules](builtins.md#rules-firewallzone).
+A node's config may hold several, each with a name of its own. It has 5 [change rules](builtins.md#rules-firewallzone).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.interfaces` | list of string | `[]` | Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; the VRF itself is then in no other zone. |
-| `spec.vrfs` | list of string | `[]` | VRF documents whose links are all in the zone, those added later included; a VRF is in one zone at most. |
+| `spec.vrfs` | list of name of a VRF | `[]` | VRF documents whose links are all in the zone, those added later included; a VRF is in one zone at most. |
 
 ### NAT64 { #nat64 }
 
@@ -491,7 +491,7 @@ A stateful NAT64 of the router, an instance of Jool in a network namespace of it
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 13 [change rules](builtins.md#rules-nat64).
+A node's config may hold several, each with a name of its own. It has 12 [change rules](builtins.md#rules-nat64).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -500,7 +500,7 @@ A node's config may hold several, each with a name of its own. It has 13 [change
 | `spec.pool4[].prefix` | string | required | IPv4 addresses the translated connections leave from, a range of 65536 addresses at most. |
 | `spec.pool4[].protocols` | list of one of `tcp`, `udp`, `icmp` | `["tcp","udp","icmp"]` | Protocols whose connections take the addresses and ports. |
 | `spec.prefix` | string | `"64:ff9b::/96"` | IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix. |
-| `spec.vrf` | string or null | `null` | VRF document whose links route the prefix to the NAT64 and carry its translated connections; null for the default VRF. The NAT64 runs in the network namespace nat64-&lt;name>, which the link n64-&lt;name> joins to the VRF. |
+| `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document whose links route the prefix to the NAT64 and carry its translated connections; `default` for the default VRF. The NAT64 runs in the network namespace nat64-&lt;name>, which the link n64-&lt;name> joins to the VRF. |
 
 ### NATRule { #natrule }
 
@@ -534,7 +534,7 @@ Policy routing of the router: rules that send the forwarded traffic they match, 
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 16 [change rules](builtins.md#rules-policyroute).
+A node's config may hold several, each with a name of its own. It has 15 [change rules](builtins.md#rules-policyroute).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -556,7 +556,7 @@ A node's config may hold several, each with a name of its own. It has 16 [change
 | `spec.rules[].to.nextHop.interface` | string | required | Link the next hop is on, which a Network document names alone in its `[Match]` section; the route goes into that Network. |
 | `spec.rules[].to.nextHop.table` | integer from 1 to 4294967295 | required | Routing table of the next hop: a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. One next hop's alone; none of 253, 254 and 255, no VRF's table and no rule's `table`. |
 | `spec.rules[].to.table` | integer from 1 to 4294967295 or null | `null` | Routing table that routes the traffic, by number: 254 is the main table. Not 255, the kernel's local table, and no VRF's table, which `vrf` names. A destination the table has no route to takes the route it would take without the policy; excludes `vrf` and `nextHop`. |
-| `spec.rules[].to.vrf` | string or null | `null` | VRF document whose routing table routes the traffic; excludes `table` and `nextHop`. |
+| `spec.rules[].to.vrf` | name of a VRF or null | `null` | VRF document whose routing table routes the traffic; excludes `table` and `nextHop`. |
 
 ### PrefixList { #prefixlist }
 
@@ -581,7 +581,7 @@ A DNS resolver of the router in one VRF, Unbound: the addresses it answers on, w
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 19 [change rules](builtins.md#rules-resolver).
+A node's config may hold several, each with a name of its own. It has 18 [change rules](builtins.md#rules-resolver).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -599,7 +599,7 @@ A node's config may hold several, each with a name of its own. It has 19 [change
 | `spec.localZones[].records[].type` | one of `A`, `AAAA`, `CNAME`, `PTR`, `MX`, `SRV`, `TXT` | required | Type of the record. |
 | `spec.localZones[].records[].value` | string | required | Data of the record, of up to 255 printable ASCII characters other than quotes and backslashes: an address for `A` and `AAAA`, a name for `CNAME` and `PTR`, `<preference> <name>` for `MX`, `<priority> <weight> <port> <name>` for `SRV`, and text for `TXT`. |
 | `spec.localZones[].type` | one of `static`, `transparent`, `typetransparent`, `redirect`, `refuse`, `deny`, `always_nxdomain` | `"static"` | How Unbound answers names of the zone, as its `local-zone` types say: `static` answers from the records alone, `transparent` resolves the names the records lack, `typetransparent` also the types they lack, `redirect` answers every name below the zone with the zone's own records, `refuse` and `deny` refuse or drop the queries the records do not answer, and `always_nxdomain` answers that no name exists. |
-| `spec.vrf` | string or null | `null` | VRF document on whose links the resolver answers and through whose links it sends its queries; null for the default VRF. |
+| `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document on whose links the resolver answers and through whose links it sends its queries; `default` for the default VRF. |
 
 ### Router { #router }
 

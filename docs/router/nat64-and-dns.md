@@ -179,7 +179,7 @@ A router without BGP needs routes to the prefix on the clients' side, such as a 
 ## Resolve names with DNS64
 
 A `Resolver` runs a DNS resolver of the router. A VRF has one at most, and a `Resolver` without
-`vrf` serves the default VRF:
+`vrf`, or with `vrf: default`, serves the default VRF:
 
 ```yaml
 apiVersion: router.chalkos.dev/v1alpha1
