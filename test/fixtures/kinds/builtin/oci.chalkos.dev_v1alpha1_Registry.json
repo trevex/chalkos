@@ -31,7 +31,14 @@
             "ghcr.io"
           ],
           "pattern": "^(?:([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\\[[0-9A-Fa-f:.]+])(:[0-9]+)?)$",
-          "type": "string"
+          "type": "string",
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "as": "host",
+              "hint": "give one Registry per host"
+            }
+          ]
         },
         "insecure": {
           "default": false,
@@ -66,7 +73,11 @@
                 "secretRef"
               ],
               "type": "object",
-              "x-chalkos-ref": { "apiVersion": "chalkos.dev/v1alpha1", "key": true, "kind": "Secret" }
+              "x-chalkos-ref": {
+                "apiVersion": "chalkos.dev/v1alpha1",
+                "key": true,
+                "kind": "Secret"
+              }
             },
             {
               "type": "null"
@@ -108,12 +119,6 @@
     "kind": "Registry",
     "multiple": true,
     "rules": [
-      {
-        "description": "No two Registry documents name the same host.",
-        "messageExpression": "\"the Registry documents \" + documents.filter(n, documents.exists(m, m != n && documents[m].spec.host == documents[n].spec.host)).join(\", \") + \" name the same host; give one Registry per host\"",
-        "rule": "documents.all(n, documents.all(m, n == m || documents[n].spec.host != documents[m].spec.host))",
-        "takes": "refuse"
-      },
       {
         "description": "A Registry gives username and password together, or neither.",
         "messageExpression": "documents.filter(n, (documents[n].spec.username == null) != (documents[n].spec.password == null)).map(n, \"Registry \" + n).join(\", \") + \": give username and password together, or neither to pull anonymously\"",

@@ -139,6 +139,12 @@
               "rule": "facts.share == null || self == oldSelf",
               "takes": "refuse"
             }
+          ],
+          "x-chalkos-unique": [
+            {
+              "across": "list",
+              "hint": "name each family once"
+            }
           ]
         },
         "nodeCIDRMaskSizes": {

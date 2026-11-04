@@ -33,9 +33,7 @@ func TestStorageRejects(t *testing.T) {
 		"raw with mount":       {vol("data", "{format: raw, mountPoint: /srv}"), "raw volume"},
 		"swap with mount":      {vol("data", "{format: swap, mountPoint: /srv}"), "swap volume"},
 		"system disk as own":   {vol("data", "{disk: {path: /dev/vda}}"), "system disk"},
-		"shared disk":          {vol("a", "{disk: {path: /dev/vdb}}") + vol("b", "{disk: {path: /dev/vdb}}"), "same disk"},
 		"two filling":          {vol("data", "{}"), "size = null"},
-		"same mount point":     {vol("a", "{size: 1G, mountPoint: /srv}") + vol("b", "{size: 1G, mountPoint: /srv}"), "same mountPoint"},
 		"mount at var":         {vol("data", "{size: 1G, mountPoint: /var}"), "mountPoint"},
 		"reserved repart key":  {vol("data", "{size: 1G, repart: {Label: x}}"), "must not set Label"},
 		"path and selector":    {vol("data", "{disk: {path: /dev/vdb, model: x}}"), "path or selector"},
@@ -58,18 +56,16 @@ func TestStorageErrorsReadLikeNix(t *testing.T) {
 		return "---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: " + name + "}\nspec: " + spec + "\n"
 	}
 	s, err := parseSet(t, minimal+
-		vol("a", "{disk: {path: /dev/vdb}}")+vol("b", "{disk: {path: /dev/vdb}}")+vol("c", "{disk: {path: /dev/vdb}}")+
-		vol("data", "{size: 1G, mountPoint: /var}"))
+		vol("a", "{disk: {path: /dev/vdb}}")+vol("data", "{size: 1G, mountPoint: /var}")+vol("logs", "{}")+
+		vol("state", "{size: 1G}"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = s.storage("n1")
 	want := "invalid storage:\n" +
 		"- Volume data: mountPoint must be an absolute path of the characters A-Z, a-z, 0-9, ., _, - and /, other than /, /nix, /state and /var, and not below /nix or /state\n" +
-		"- Volume a and Volume b reference the same disk; a volume with a disk occupies it alone\n" +
-		"- Volume a and Volume c reference the same disk; a volume with a disk occupies it alone\n" +
-		"- Volume b and Volume c reference the same disk; a volume with a disk occupies it alone\n" +
-		"- var and Volume data have the same mountPoint /var"
+		"- Volume state: the name state is reserved\n" +
+		"- at most one volume per disk may have size = null; on the system disk these do: var, logs"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err =\n%v\nwant\n%s", err, want)
 	}

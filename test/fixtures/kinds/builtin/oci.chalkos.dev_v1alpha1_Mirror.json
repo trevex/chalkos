@@ -45,7 +45,14 @@
             "docker.io"
           ],
           "pattern": "^(?:([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\\[[0-9A-Fa-f:.]+])(:[0-9]+)?)$",
-          "type": "string"
+          "type": "string",
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "as": "host",
+              "hint": "give one Mirror per registry"
+            }
+          ]
         }
       },
       "required": [
@@ -67,14 +74,6 @@
     "group": "oci.chalkos.dev",
     "kind": "Mirror",
     "multiple": true,
-    "rules": [
-      {
-        "description": "No two Mirror documents mirror the same registry.",
-        "messageExpression": "\"the Mirror documents \" + documents.filter(n, documents.exists(m, m != n && documents[m].spec.registry == documents[n].spec.registry)).join(\", \") + \" mirror the same registry; give one Mirror per registry\"",
-        "rule": "documents.all(n, documents.all(m, n == m || documents[n].spec.registry != documents[m].spec.registry))",
-        "takes": "refuse"
-      }
-    ],
     "version": "v1alpha1"
   }
 }

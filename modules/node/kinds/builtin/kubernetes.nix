@@ -240,6 +240,13 @@ in
             );
             default = [ "ipv4" ];
             description = "Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created.";
+            # kubernetes.Cluster's validation refuses a family twice too, as it also checks the
+            # cluster file the node's units read and the secrets file's settings, which no set
+            # check sees.
+            unique = {
+              across = "list";
+              hint = "name each family once";
+            };
             rules = [
               {
                 description = "The cluster's address families stay once the node holds a Kubernetes share.";

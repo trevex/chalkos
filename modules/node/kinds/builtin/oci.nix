@@ -7,35 +7,14 @@ let
   # The closing bracket stays unescaped: POSIX ERE has no \], and a lone ] is literal in ERE,
   # ECMA-262 and Go alike.
   host = "(${dnsName}|\\[[0-9A-Fa-f:.]+])";
-  # A rule that no two documents of kind have the same spec.<field>. The message names the
-  # documents that do, and says the kind is given once per `per`.
-  uniqueBy =
-    {
-      kind,
-      field,
-      same,
-      per,
-    }:
-    {
-      description = "No two ${kind} documents ${same}.";
-      rule = "documents.all(n, documents.all(m, n == m || documents[n].spec.${field} != documents[m].spec.${field}))";
-      messageExpression = ''"the ${kind} documents " + documents.filter(n, documents.exists(m, m != n && documents[m].spec.${field} == documents[n].spec.${field})).join(", ") + " ${same}; give one ${kind} per ${per}"'';
-    };
 in
 {
   chalkos.kinds = {
     Registry = builtin groups.oci // {
       multiple = true;
       description = "The credentials and transport of an OCI registry host, with which chalkd pulls OS images and, on images that run Kubernetes, containerd pulls container images.";
-      # chalkd authenticates a pull with the Registry of the image's host, so a host has one; it
-      # sends a user and a password together, so a Registry gives both or neither.
+      # chalkd sends a user and a password together, so a Registry gives both or neither.
       rules = [
-        (uniqueBy {
-          kind = "Registry";
-          field = "host";
-          same = "name the same host";
-          per = "host";
-        })
         {
           description = "A Registry gives username and password together, or neither.";
           rule = "documents.all(n, (documents[n].spec.username == null) == (documents[n].spec.password == null))";
@@ -43,8 +22,16 @@ in
         }
       ];
       spec = {
-        host = mkOption {
+        # chalkd authenticates a pull with the Registry of the image's host, so a host has one,
+        # whichever way the documents name it: docker.io is index.docker.io, in any case.
+        # RegistriesOf checks it again for an upgrade's config, which chalkd reads before the new
+        # image's schemas check it.
+        host = lib.chalkos.mkOption {
           type = types.strMatching "${host}(:[0-9]+)?";
+          unique = {
+            as = "host";
+            hint = "give one Registry per host";
+          };
           example = "ghcr.io";
           description = "Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials, over plain HTTP when insecure is set. On images that run Kubernetes, the kubelet hands these credentials to containerd for the container images of this host, and containerd sends them to every endpoint of the host's Mirror too, over plain HTTP to an endpoint whose host is insecure. The kubelet compares the host, in lower case and with its port, case-sensitively with the image's host as the pod spec writes it, so pods name the host in lower case. An IPv6 host with credentials needs its port, 443 included, for the kubelet to match it.";
         };
@@ -68,18 +55,15 @@ in
     Mirror = builtin groups.oci // {
       multiple = true;
       description = "The mirror endpoints that chalkd and containerd try, in order, before a registry itself.";
-      # chalkd and containerd try one list of endpoints for a registry, so a registry has one.
-      rules = [
-        (uniqueBy {
-          kind = "Mirror";
-          field = "registry";
-          same = "mirror the same registry";
-          per = "registry";
-        })
-      ];
       spec = {
-        registry = mkOption {
+        # chalkd and containerd try one list of endpoints for a registry, so a registry has one,
+        # whichever way the documents name it, as for a Registry's host.
+        registry = lib.chalkos.mkOption {
           type = types.strMatching "${host}(:[0-9]+)?";
+          unique = {
+            as = "host";
+            hint = "give one Mirror per registry";
+          };
           example = "docker.io";
           description = "Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets.";
         };

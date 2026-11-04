@@ -26,38 +26,13 @@ for its row follows the table.
 
 The rules of the kinds every image accepts.
 
-#### Mirror { #rules-mirror }
-
-| Rule | Field | Guards | Takes | Expression | Message |
-| --- | --- | --- | --- | --- | --- |
-| 1 | — | No two Mirror documents mirror the same registry. | `refuse` | after the table | after the table |
-
-Expression of rule 1:
-
-```text
-documents.all(n, documents.all(m, n == m || documents[n].spec.registry != documents[m].spec.registry))
-```
-
-Message of rule 1:
-
-```text
-"the Mirror documents " + documents.filter(n, documents.exists(m, m != n && documents[m].spec.registry == documents[n].spec.registry)).join(", ") + " mirror the same registry; give one Mirror per registry"
-```
-
 #### Registry { #rules-registry }
 
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
-| 1 | — | No two Registry documents name the same host. | `refuse` | `documents.all(n, documents.all(m, n == m || documents[n].spec.host != documents[m].spec.host))` | after the table |
-| 2 | — | A Registry gives username and password together, or neither. | `refuse` | `documents.all(n, (documents[n].spec.username == null) == (documents[n].spec.password == null))` | after the table |
+| 1 | — | A Registry gives username and password together, or neither. | `refuse` | `documents.all(n, (documents[n].spec.username == null) == (documents[n].spec.password == null))` | after the table |
 
 Message of rule 1:
-
-```text
-"the Registry documents " + documents.filter(n, documents.exists(m, m != n && documents[m].spec.host == documents[n].spec.host)).join(", ") + " name the same host; give one Registry per host"
-```
-
-Message of rule 2:
 
 ```text
 documents.filter(n, (documents[n].spec.username == null) != (documents[n].spec.password == null)).map(n, "Registry " + n).join(", ") + ": give username and password together, or neither to pull anonymously"

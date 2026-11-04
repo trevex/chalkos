@@ -157,17 +157,17 @@ func (s *Set) storage(name string) (storage.Section, error) {
 }
 
 // storageErrors are the storage checks of a node's config, all reported at once and in this
-// order: each volume's own problems by volume name, then shared disks, then volumes that fill
-// the system disk, then mount points used twice. vols are ordered by name.
+// order: each volume's own problems by volume name, then volumes that fill the system disk. vols
+// are ordered by name. The set check has refused two volumes of one disk reference or one mount
+// point, and a volume's mount point is never /var, VAR's.
 func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) error {
 	var errs []string
 	add := func(format string, args ...any) { errs = append(errs, fmt.Sprintf(format, args...)) }
-	// VAR counts as a volume of the system disk, and is mounted at /var like any volume.
+	// VAR counts as a volume of the system disk.
 	var filling []string
 	if sys.Var.Size == nil {
 		filling = append(filling, "var")
 	}
-	mounts := map[string][]string{"/var": {"var"}}
 	for _, v := range vols {
 		at := "Volume " + v.name
 		if !volumeName.MatchString(v.name) || len(v.name) > 32 {
@@ -205,29 +205,9 @@ func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) e
 		if v.ref == nil && v.spec.Size == nil {
 			filling = append(filling, v.name)
 		}
-		if mp != nil {
-			mounts[*mp] = append(mounts[*mp], at)
-		}
-	}
-	for i, v := range vols {
-		for _, w := range vols[i+1:] {
-			if v.ref != nil && w.ref != nil && *v.ref == *w.ref {
-				add("Volume %s and Volume %s reference the same disk; a volume with a disk occupies it alone", v.name, w.name)
-			}
-		}
 	}
 	if len(filling) > 1 {
 		add("at most one volume per disk may have size = null; on the system disk these do: %s", strings.Join(filling, ", "))
-	}
-	paths := make([]string, 0, len(mounts))
-	for path := range mounts {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		if names := mounts[path]; len(names) > 1 {
-			add("%s have the same mountPoint %s", strings.Join(names, " and "), path)
-		}
 	}
 	if len(errs) == 0 {
 		return nil

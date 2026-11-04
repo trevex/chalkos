@@ -119,7 +119,33 @@
             }
           ],
           "default": null,
-          "description": "Disk the volume occupies on its own; null places it on the system disk."
+          "description": "Disk the volume occupies on its own; null places it on the system disk.",
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "by": [
+                {
+                  "field": "path"
+                },
+                {
+                  "field": "model"
+                },
+                {
+                  "field": "serial"
+                },
+                {
+                  "field": "wwn"
+                },
+                {
+                  "field": "size"
+                },
+                {
+                  "field": "type"
+                }
+              ],
+              "hint": "a volume with a disk occupies it alone"
+            }
+          ]
         },
         "encryption": {
           "additionalProperties": false,
@@ -163,7 +189,13 @@
             }
           ],
           "default": null,
-          "description": "Where the volume is mounted; null leaves it unmounted."
+          "description": "Where the volume is mounted; null leaves it unmounted.",
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "hint": "mount each volume at a path of its own"
+            }
+          ]
         },
         "repart": {
           "additionalProperties": {

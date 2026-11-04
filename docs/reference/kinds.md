@@ -83,7 +83,7 @@ A node's config holds at most one. It has 5 [change rules](builtins.md#rules-clu
 | `spec.extraArgs.kube-apiserver` | map of string | `{}` | Extra flags of the API server, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-controller-manager` | map of string | `{}` | Extra flags of the controller-manager, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-scheduler` | map of string | `{}` | Extra flags of the scheduler, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
-| `spec.ipFamilies` | list of one of `ipv4`, `ipv6` | `["ipv4"]` | Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created. |
+| `spec.ipFamilies` | list of one of `ipv4`, `ipv6` | `["ipv4"]` | Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created. Each item is unique within the list. |
 | `spec.nodeCIDRMaskSizes.ipv4` | integer from 1 to 128 | `24` | Prefix length of each node's part of the family's pod range. |
 | `spec.nodeCIDRMaskSizes.ipv6` | integer from 1 to 128 | `64` | Prefix length of each node's part of the family's pod range. |
 | `spec.nodeIP.timeout` | integer of at least 1 | `300` | Seconds a node waits at boot for its address. |
@@ -287,12 +287,12 @@ The mirror endpoints that chalkd and containerd try, in order, before a registry
 
 `apiVersion: oci.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has a [change rule](builtins.md#rules-mirror).
+A node's config may hold several, each with a name of its own.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.endpoints` | list of string | required | URLs of the mirror's endpoints, which chalkd and containerd try in order before the registry itself. A path is where the endpoint serves the registry API, below &lt;path>/v2 as containerd takes it. chalkd authenticates to an endpoint with the Registry of the endpoint's host, and an http:// endpoint needs that Registry to set insecure. |
-| `spec.registry` | string | required | Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. |
+| `spec.registry` | string | required | Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. Unique among the Mirror documents, compared as registry hosts. |
 
 ### Registry { #registry }
 
@@ -300,11 +300,11 @@ The credentials and transport of an OCI registry host, with which chalkd pulls O
 
 `apiVersion: oci.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 2 [change rules](builtins.md#rules-registry).
+A node's config may hold several, each with a name of its own. It has a [change rule](builtins.md#rules-registry).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.host` | string | required | Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials, over plain HTTP when insecure is set. On images that run Kubernetes, the kubelet hands these credentials to containerd for the container images of this host, and containerd sends them to every endpoint of the host's Mirror too, over plain HTTP to an endpoint whose host is insecure. The kubelet compares the host, in lower case and with its port, case-sensitively with the image's host as the pod spec writes it, so pods name the host in lower case. An IPv6 host with credentials needs its port, 443 included, for the kubelet to match it. |
+| `spec.host` | string | required | Host of a registry or of a mirror's endpoint, as image references and endpoints name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls OS images from this host with the Registry's credentials, over plain HTTP when insecure is set. On images that run Kubernetes, the kubelet hands these credentials to containerd for the container images of this host, and containerd sends them to every endpoint of the host's Mirror too, over plain HTTP to an endpoint whose host is insecure. The kubelet compares the host, in lower case and with its port, case-sensitively with the image's host as the pod spec writes it, so pods name the host in lower case. An IPv6 host with credentials needs its port, 443 included, for the kubelet to match it. Unique among the Registry documents, compared as registry hosts. |
 | `spec.insecure` | boolean | `false` | Whether chalkd and containerd reach this host over plain HTTP, with credentials and images unencrypted, and a Mirror may name an http:// endpoint on it. Without it, chalkd pulls over HTTPS alone, also from private and loopback addresses. |
 | `spec.password` | secret reference or null | `null` | Password or token of the user, from a Secret; null pulls anonymously. |
 | `spec.username` | string or null | `null` | User chalkd authenticates to the host as, with the password, and containerd too on images that run Kubernetes; null pulls anonymously. |
@@ -699,7 +699,7 @@ A node's config may hold several, each with a name of its own. It has 7 [change 
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.disk` | object or null | `null` | Disk the volume occupies on its own; null places it on the system disk. |
+| `spec.disk` | object or null | `null` | Disk the volume occupies on its own; null places it on the system disk. Unique among the Volume documents by `path`, `model`, `serial`, `wwn`, `size` and `type`. |
 | `spec.disk.model` | string or null | `null` | Glob the disk's model matches, such as `Samsung SSD 870*`. |
 | `spec.disk.path` | string or null | `null` | Path of the disk below /dev, such as /dev/disk/by-id/…; excludes the selector keys. |
 | `spec.disk.serial` | string or null | `null` | The disk's serial number. |
@@ -708,7 +708,7 @@ A node's config may hold several, each with a name of its own. It has 7 [change 
 | `spec.disk.wwn` | string or null | `null` | The disk's World Wide Name. |
 | `spec.encryption.mode` | one of `tpm2`, `none` or null | `null` | Encryption mode of the volume, over the node's; null takes the node's. |
 | `spec.format` | one of `ext4`, `xfs`, `btrfs`, `swap`, `raw` | `"ext4"` | File system of the volume; `raw` leaves a raw block device, which has no mountPoint. |
-| `spec.mountPoint` | string or null | `null` | Where the volume is mounted; null leaves it unmounted. |
+| `spec.mountPoint` | string or null | `null` | Where the volume is mounted; null leaves it unmounted. Unique among the Volume documents. |
 | `spec.repart` | map of string | `{}` | Extra repart.d keys of the volume's partition. Type, Label, Encrypt, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options. |
 | `spec.size` | string or null | `null` | Size of the volume, such as `100G`, with at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P; null fills the remaining space on its disk. |
 

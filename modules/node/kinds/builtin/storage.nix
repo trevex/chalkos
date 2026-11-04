@@ -252,8 +252,21 @@ in
         }
       ];
       spec = {
-        disk = mkOption {
+        # A volume with a disk occupies it alone: no two volumes give one disk reference, every
+        # key compared as written and a key left out equal to another left out.
+        disk = lib.chalkos.mkOption {
           type = types.nullOr diskRef;
+          unique = {
+            by = [
+              "path"
+              "model"
+              "serial"
+              "wwn"
+              "size"
+              "type"
+            ];
+            hint = "a volume with a disk occupies it alone";
+          };
           default = null;
           description = "Disk the volume occupies on its own; null places it on the system disk.";
         };
@@ -273,8 +286,9 @@ in
           default = "ext4";
           description = "File system of the volume; `raw` leaves a raw block device, which has no mountPoint.";
         };
-        mountPoint = mkOption {
+        mountPoint = lib.chalkos.mkOption {
           type = types.nullOr types.str;
+          unique.hint = "mount each volume at a path of its own";
           default = null;
           description = "Where the volume is mounted; null leaves it unmounted.";
         };

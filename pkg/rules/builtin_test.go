@@ -31,8 +31,7 @@ func TestBuiltinRulesCompile(t *testing.T) {
 		"storage.chalkos.dev/v1alpha1 SystemDisk": 1,
 		"kubernetes.chalkos.dev/v1alpha1 Node":    3,
 		"kubernetes.chalkos.dev/v1alpha1 Cluster": 5,
-		"oci.chalkos.dev/v1alpha1 Registry":       2,
-		"oci.chalkos.dev/v1alpha1 Mirror":         1,
+		"oci.chalkos.dev/v1alpha1 Registry":       1,
 	} {
 		if count[kind] != want {
 			t.Errorf("%s has %d rules, want %d", kind, count[kind], want)
@@ -40,8 +39,7 @@ func TestBuiltinRulesCompile(t *testing.T) {
 	}
 }
 
-// The Registry rules refuse two documents of one host, and a user without a password or a
-// password without a user.
+// The Registry rule refuses a user without a password or a password without a user.
 func TestRegistryRules(t *testing.T) {
 	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
 	if err != nil {
@@ -54,7 +52,6 @@ func TestRegistryRules(t *testing.T) {
 	registry := func(name, spec string) config.Document {
 		return builtinDoc(t, config.OCIAPI, "Registry", name, spec)
 	}
-	const anonymous = `{"host": "ghcr.io", "username": null, "password": null}`
 	for _, tc := range []struct {
 		name string
 		docs []config.Document
@@ -63,42 +60,8 @@ func TestRegistryRules(t *testing.T) {
 		{"one per host", []config.Document{
 			registry("a", `{"host": "ghcr.io", "username": "u", "password": {"secretRef": {"name": "s", "key": "k"}}}`),
 			registry("b", `{"host": "quay.io", "username": null, "password": null}`)}, nil},
-		{"two of one host", []config.Document{registry("b", anonymous), registry("a", anonymous)},
-			[]string{"the Registry documents a, b name the same host; give one Registry per host"}},
 		{"a user alone", []config.Document{registry("a", `{"host": "ghcr.io", "username": "u", "password": null}`)},
 			[]string{"Registry a: give username and password together, or neither to pull anonymously"}},
-	} {
-		failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "n1"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := messages(failures); !slices.Equal(got, tc.want) {
-			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
-		}
-	}
-}
-
-// The Mirror rule refuses two documents of one registry.
-func TestMirrorRules(t *testing.T) {
-	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	set, err := Compile(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mirror := func(name, registry string) config.Document {
-		return builtinDoc(t, config.OCIAPI, "Mirror", name, `{"registry": "`+registry+`", "endpoints": ["https://m.example"]}`)
-	}
-	for _, tc := range []struct {
-		name string
-		docs []config.Document
-		want []string
-	}{
-		{"one per registry", []config.Document{mirror("a", "docker.io"), mirror("b", "ghcr.io")}, nil},
-		{"two of one registry", []config.Document{mirror("b", "docker.io"), mirror("a", "docker.io")},
-			[]string{"the Mirror documents a, b mirror the same registry; give one Mirror per registry"}},
 	} {
 		failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "n1"})
 		if err != nil {

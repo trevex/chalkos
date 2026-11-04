@@ -186,7 +186,9 @@ systemd-repart does with it on an existing partition, which for most keys is not
 ## Apply the change
 
 Check the node's config offline first. `chalkctl validate` lists every storage problem of a node
-under `invalid storage:`, such as a mount point used twice or two volumes that fill one disk:
+under `invalid storage:`, such as two volumes that fill one disk. A mount point or a disk that
+two volumes share is refused before that, on a line of its own such as
+`Volume/data, Volume/logs: spec.mountPoint "/srv" is not unique; mount each volume at a path of its own`:
 
 ```sh
 chalkctl validate w1
