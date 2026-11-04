@@ -197,10 +197,14 @@ func writeKind(b *strings.Builder, k kindSchema) {
 	} else if n > 1 {
 		counts = append(counts, fmt.Sprintf("It has %d [change rules](builtins.md#rules-%s).", n, strings.ToLower(k.kind)))
 	}
+	spec := resolve(k.root, asMap(props(k.root)["spec"]))
+	// A kind's own declarations mark its spec, each a tuple of the spec's fields.
+	for _, d := range asSlice(spec["x-chalkos-unique"]) {
+		counts = append(counts, "No two documents share "+keyFields(asMap(d))+".")
+	}
 	if len(counts) > 0 {
 		b.WriteString(strings.Join(counts, " ") + "\n\n")
 	}
-	spec := resolve(k.root, asMap(props(k.root)["spec"]))
 	if isNetworkd(spec) {
 		writeSections(b, k.root, spec)
 		return
@@ -264,11 +268,15 @@ func fields(root map[string]any, path string, s map[string]any) []row {
 			rows = append(rows, inner...)
 			continue
 		}
+		desc := text(child["description"])
+		if note := uniqueNote(root, child); note != "" {
+			desc = strings.TrimSpace(desc + " " + note)
+		}
 		rows = append(rows, row{
 			path: fieldPath,
 			typ:  tableCell(typeOf(root, child)),
 			def:  tableCell(def),
-			desc: text(child["description"]),
+			desc: desc,
 		})
 		rows = append(rows, inner...)
 	}
@@ -471,6 +479,67 @@ func props(s map[string]any) map[string]any { return asMap(s["properties"]) }
 // isKeyRef tells whether s is a secretRef: an object x-chalkos-ref marks as naming a key of a
 // Secret.
 func isKeyRef(s map[string]any) bool { return asMap(s["x-chalkos-ref"])["key"] == true }
+
+// normaliserText is how a field's values compare under each normaliser.
+var normaliserText = map[string]string{
+	"ip":    "as addresses",
+	"cidr":  "as masked ranges",
+	"host":  "as registry hosts",
+	"lower": "in lower case",
+}
+
+// uniqueNote says what a field's x-chalkos-unique declares, a sentence for each declaration: the
+// values or list items that must not repeat, among all documents of the kind or within one list,
+// and the fields of the key and how they compare.
+func uniqueNote(root, s map[string]any) string {
+	kind, _ := asMap(root["x-chalkos-kind"])["kind"].(string)
+	t := s
+	for _, branch := range asSlice(s["anyOf"]) {
+		if b := resolve(root, asMap(branch)); b["type"] != "null" {
+			t = b
+		}
+	}
+	var notes []string
+	for _, d := range asSlice(s["x-chalkos-unique"]) {
+		d := asMap(d)
+		note := "Unique"
+		if t["type"] == "array" {
+			note = "Each item is unique"
+		}
+		if d["across"] == "list" {
+			note += " within the list"
+		} else {
+			note += " among the " + kind + " documents"
+		}
+		if d["by"] != nil {
+			note += " by " + keyFields(d)
+		} else if as, ok := d["as"].(string); ok {
+			note += ", compared " + normaliserText[as]
+		}
+		notes = append(notes, note+".")
+	}
+	return strings.Join(notes, " ")
+}
+
+// keyFields lists the fields of a declaration's key, each with how it compares.
+func keyFields(d map[string]any) string {
+	var fields []string
+	for _, f := range asSlice(d["by"]) {
+		f := asMap(f)
+		text := "`" + display(f["field"]) + "`"
+		if as, ok := f["as"].(string); ok {
+			text += " " + normaliserText[as]
+		}
+		fields = append(fields, text)
+	}
+	switch len(fields) {
+	case 0:
+		return ""
+	case 1:
+		return fields[0]
+	}
+	return strings.Join(fields[:len(fields)-1], ", ") + " and " + fields[len(fields)-1]
+}
 
 // refType describes a reference to a document: the kind it names, after an before a vowel as
 // AddressSet takes it, and the names it reserves, which the field takes as they are.

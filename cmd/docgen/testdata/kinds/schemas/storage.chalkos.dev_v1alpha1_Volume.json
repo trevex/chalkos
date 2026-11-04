@@ -9,6 +9,7 @@
     "spec": {
       "type": "object",
       "additionalProperties": false,
+      "x-chalkos-unique": [{ "across": "kind", "by": [{ "field": "size" }, { "field": "source", "as": "lower" }] }],
       "properties": {
         "disk": { "$ref": "#/$defs/diskRef", "description": "The disk the volume is on." },
         "encryption": {
@@ -43,7 +44,7 @@
             "x-chalkos-kubernetes-object": true
           }
         },
-        "size": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "size": { "type": "integer", "minimum": 1, "maximum": 100, "x-chalkos-unique": [{ "across": "kind" }] },
         "source": {
           "type": "string",
           "x-chalkos-ref": { "apiVersion": "storage.chalkos.dev/v1alpha1", "kind": "Volume", "reserved": ["none"] }
@@ -58,7 +59,12 @@
               "effect": { "enum": ["NoSchedule", "NoExecute"] },
               "key": { "type": "string" }
             }
-          }
+          },
+          "x-chalkos-unique": [{ "across": "list", "by": [{ "field": "key" }] }]
+        },
+        "zones": {
+          "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }],
+          "x-chalkos-unique": [{ "across": "list", "as": "ip", "hint": "name each zone once" }, { "across": "kind" }]
         }
       }
     }
