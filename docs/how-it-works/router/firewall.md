@@ -86,10 +86,10 @@ through.
 ## Zones and policies
 
 A `FirewallZone` names interfaces, by name or by a glob, a prefix followed by `*`, the one
-wildcard nftables matches. The zone `local` is the router itself and has no document. A rule
-refuses an interface or glob that two zones name as written. It does not compare globs with
-names, so `eth*` in one zone and `eth0` in another pass. A zone may also hold VRFs, as
-[Zones of VRFs](#zones-of-vrfs) describes.
+wildcard nftables matches. The zone `local` is the router itself and has no document. The
+config's uniqueness check in chalkctl and chalkd refuses an interface or glob that two zones name
+as written. It does not compare globs with names, so `eth*` in one zone and `eth0` in another
+pass. A zone may also hold VRFs, as [Zones of VRFs](#zones-of-vrfs) describes.
 
 A `FirewallPolicy` goes from a zone to another zone, to the same zone, or to `local`. Its rules
 match in order, and the first that matches decides. A connection no rule matches gets the policy's
