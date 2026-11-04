@@ -103,6 +103,14 @@ node w1: the config is refused: a node has two BGP neighbours at most
 
 A kind's message names nothing by itself, so it says which kind it is about.
 
+A value that must not repeat, among a kind's documents or within one list, needs no rule.
+Declare it with `unique` on the field or the kind, as
+[A field's values can be unique](declare-a-kind.md#a-fields-values-can-be-unique) shows.
+chalkctl and chalkd check such declarations before any rule runs, in a time that grows with the
+number of values, and name every value that repeats and where it does. A rule that compares each
+value with every other one costs two nested loops, which comes close to the limit
+[The build compiles every rule](#the-build-compiles-every-rule) describes.
+
 ## Rules read these variables
 
 Every rule compares the delivered config with the config of the slot the node boots now. That

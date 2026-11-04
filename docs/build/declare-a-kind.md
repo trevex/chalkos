@@ -239,10 +239,11 @@ submodule, lib.chalkos.types.ref and lib.chalkos.types.secretRef.
 
 ## Field rules need lib.chalkos.mkOption
 
-`lib.chalkos.mkOption` is `lib.mkOption` with one more argument, `rules`, a list of change
-rules. `lib.mkOption` takes no `rules`. Use `lib.mkOption` for a field without rules, as
+`lib.chalkos.mkOption` is `lib.mkOption` with two more arguments: `rules`, a list of change
+rules, and `unique`, which [A field's values can be unique](#a-fields-values-can-be-unique)
+describes. `lib.mkOption` takes neither. Use `lib.mkOption` for a field without rules, as
 `address` and `password` do, and `lib.chalkos.mkOption` for a field with them, as `asn` does.
-Both produce the same schema apart from `x-chalkos-rules`.
+Both produce the same schema apart from `x-chalkos-rules` and `x-chalkos-unique`.
 
 A change rule is a CEL expression that every config the node accepts makes true. In the rule,
 `self` is the field's new value and `oldSelf` its value in the config the node runs. `asn`'s rule
@@ -251,8 +252,8 @@ new neighbour. A rule over all of a kind's documents goes into `chalkos.kinds.<K
 instead. [Guard changes with rules and facts](guard-changes.md) covers both, and the facts a
 rule reads about the node.
 
-The `rules` argument exists only on `lib.chalkos`, which every image module gets as part of
-`lib`. `lib.chalkos.types.ref` and `lib.chalkos.types.secretRef` come from the same place.
+The `rules` and `unique` arguments exist only on `lib.chalkos`, which every image module gets as
+part of `lib`. `lib.chalkos.types.ref` and `lib.chalkos.types.secretRef` come from the same place.
 
 ## A field can name a document of another kind
 
@@ -304,6 +305,102 @@ The type works inside `nullOr`, `listOf`, `attrsOf` and submodules.
 A rule reads the document a reference names with `document(kind, name)`, which
 [Guard changes with rules and facts](guard-changes.md#rules-call-cels-functions-and-chalkoss)
 describes.
+
+## A field's values can be unique
+
+`unique` on `lib.chalkos.mkOption` declares values that must not repeat, and
+`chalkos.kinds.<Kind>.unique` declares tuples of spec fields that no two documents share.
+chalkctl and chalkd check every declaration with the rest of the set, before any rule runs, so
+a kind needs no rule for them. Here a `Session` takes each local port once, lists each neighbour
+once, and runs one session per peer and table:
+
+```nix
+{ lib, ... }:
+{
+  chalkos.kinds.Session = {
+    group = "bgp.example.org";
+    version = "v1alpha1";
+    multiple = true;
+    unique = [
+      {
+        by = [ "peer" "table" ];
+        hint = "give each peer one session per table";
+      }
+    ];
+    spec = {
+      peer = lib.mkOption { type = lib.chalkos.types.ref "Peer"; };
+      table = lib.mkOption {
+        type = lib.types.str;
+        default = "main";
+      };
+      port = lib.chalkos.mkOption {
+        type = lib.types.port;
+        unique = true;
+        description = "Local TCP port of the session.";
+      };
+      neighbours = lib.chalkos.mkOption {
+        type = lib.types.listOf (
+          lib.types.submodule {
+            options.address = lib.mkOption { type = lib.types.str; };
+            options.asn = lib.mkOption { type = lib.types.ints.u32; };
+          }
+        );
+        default = [ ];
+        unique = {
+          by = [
+            {
+              field = "address";
+              as = "ip";
+            }
+          ];
+          hint = "list each neighbour once";
+        };
+      };
+    };
+  };
+}
+```
+
+`unique` takes `true`, one declaration, or a list of declarations, each checked on its own. A
+declaration has these attributes:
+
+| Attribute | Meaning |
+| --- | --- |
+| `across` | `"kind"` compares the values of all the node's documents of the kind, `"list"` the items of one list. The default is `"list"` for a list with `by` and `"kind"` otherwise. |
+| `by` | The fields of a list's items, or of an object, that make up the key, each a field name or `{ field; as; }`. Without `by`, the key is the value itself, or each item of a list of values. |
+| `as` | The normaliser of a key without `by`. |
+| `hint` | What to do instead, which ends the refusal. |
+
+`unique = true` on a single value compares it across the kind's documents. On a list of values,
+it compares each item across the kind, so a value listed twice in one document is refused too.
+`chalkos.kinds.<Kind>.unique` takes a list of `{ by; hint; }`, whose `by` names fields of the
+spec and compares across the kind.
+
+A normaliser changes how a value compares. The message still shows the value as written:
+
+| `as` | Compares |
+| --- | --- |
+| `ip` | as an address, as the rules' `ip()` reads it: `2001:db8::1` equals `2001:db8:0::1`. |
+| `cidr` | as an address range with its host bits cleared, as `cidr()` reads it: `10.1.0.0/8` equals `10.0.0.0/8`. |
+| `host` | as a registry host, in lower case and with `docker.io` as `index.docker.io`. A port stays, so `ghcr.io:443` and `ghcr.io` differ. |
+| `lower` | in lower case. |
+
+A null value or a field left out takes no part. A key of several fields takes part when one of
+them holds a value, and a null field then equals another null field. A value its normaliser
+cannot read takes no part either, since the field's type or a rule refuses it.
+
+chalkctl and chalkd report every repeated value at once, one line each, sorted:
+
+```text
+Session/a, Session/b: (spec.peer, spec.table) ("router-a", "main") is not unique; give each peer one session per table
+Session/a, Session/b: spec.port 1179 is not unique
+Session/up: spec.neighbours[0].address, spec.neighbours[2].address: "2001:db8::1" is not unique; list each neighbour once
+```
+
+The image build fails on a declaration that does not fit its field: an unknown normaliser, `by`
+on a list of values, `across = "list"` on a field that is no list, a `by` field the items lack or
+one that holds a list or an object, `as` on a field that holds no strings, and a declaration on a
+`secretRef`.
 
 ## A new version of a kind is a new set of documents
 

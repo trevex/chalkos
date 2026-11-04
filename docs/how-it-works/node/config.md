@@ -205,6 +205,9 @@ A node's set is valid when:
   printable ASCII without `/` or `:` and does not start with a dot, the `Secret`'s name and the
   key together take at most 247 bytes, and no two references share the credential
   file `<secret>.<key>`, as `Secret` `a.b` with key `c` and `Secret` `a` with key `b.c` would;
+- no value repeats that a kind declares unique, among the kind's documents or within one list,
+  as [Declare a config kind](../../build/declare-a-kind.md#a-fields-values-can-be-unique)
+  describes; chalkctl and chalkd report each repeated value, one line each;
 - every document is valid against its kind's schema.
 
 Beyond the schemas, chalkctl and chalkd translate the set as the node will use it, which checks
