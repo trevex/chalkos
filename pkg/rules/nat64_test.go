@@ -19,11 +19,10 @@ const maxRecords = 150
 // in two VRFs and resolvers of two VRFs, and refuse a name whose link n64-<name> is too long,
 // prefixes no NAT64 or DNS64 takes, two NAT64s of one prefix in one VRF or of one pool's
 // addresses, a pool entry of IPv6, of too many addresses, of addresses no connection leaves
-// from, of link-local addresses or of the kernel's ephemeral ports, a protocol named twice, two
-// entries of one protocol's addresses and ports, two resolvers of one VRF, addresses no resolver
-// listens on or forwards to, an address, range or forwarder twice, local zones twice, with
-// records outside them or over ipv4only.arpa with DNS64, A and AAAA records of other data, a
-// record twice, more records than the rules can compare and names past 253 characters.
+// from, of link-local addresses or of the kernel's ephemeral ports, two entries of one protocol's
+// addresses and ports, addresses no resolver listens on or forwards to, local zones with records
+// outside them or over ipv4only.arpa with DNS64, A and AAAA records of other data, a record twice,
+// more records than the rules can compare and names past 253 characters.
 func TestNAT64Rules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -98,8 +97,6 @@ func TestNAT64Rules(t *testing.T) {
 		{"a link-local pool", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "169.254.64.0/30"}]}`)),
 			[]string{`NAT64 "lab" spec.pool4: the pool entry 169.254.64.0/30 holds link-local addresses, which the NAT64s' links take`}},
 		{"resolvers of two VRFs", replace(slices.Concat(tenant, []config.Document{doc("Resolver", "tenant", `{"vrf": "tenant", "listen": ["2001:db8:1::1"], "allow": ["2001:db8:1::/64"]}`)})...), nil},
-		{"two resolvers of one VRF", replace(doc("Resolver", "more", `{"listen": ["2001:db8:ffff::2"], "allow": ["2001:db8::/32"]}`)),
-			[]string{"more than one Resolver serves the VRF default; a VRF has one resolver"}},
 		{"two NAT64s of one pool's addresses", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "192.0.2.9/32", "ports": "1-32767"}]}`)),
 			[]string{"NAT64 edge 192.0.2.8/30, NAT64 lab 192.0.2.9/32 share addresses; give each NAT64 a pool of its own"}},
 		{"an IPv6 pool", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "2001:db8::/64"}]}`)),
@@ -112,8 +109,6 @@ func TestNAT64Rules(t *testing.T) {
 			[]string{`NAT64 "lab" spec.pool4: a pool entry takes the ports 40000, which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999`}},
 		{"an inverted range", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": "65000-61001"}]}`)),
 			[]string{`NAT64 "lab" spec.pool4: a pool entry takes the ports 65000-61001, which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999`}},
-		{"a protocol twice", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "protocols": ["tcp", "tcp"]}]}`)),
-			[]string{`NAT64 "lab" spec.pool4: a pool entry names a protocol twice`}},
 		{"a resolver on the unspecified address", replace(doc("Resolver", "resolver", `{"listen": ["::"], "allow": ["2001:db8::/32"]}`)),
 			[]string{`Resolver "resolver" spec.listen: the address :: is no unicast address the resolver can listen on`}},
 		{"a forwarder on loopback", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": ["127.0.0.53"]}`)),
@@ -122,8 +117,6 @@ func TestNAT64Rules(t *testing.T) {
 			[]string{`Resolver "resolver" spec.listen: the address ::ffff:192.0.2.1 is no unicast address the resolver can listen on`}},
 		{"a DNS64 prefix of 95 bits", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "dns64": {"prefix": "64:ff9b::/95"}}`)),
 			[]string{`Resolver "resolver" spec.dns64: the prefix 64:ff9b::/95 is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96`}},
-		{"a zone twice", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org"}, {"name": "lan.example.org", "type": "refuse"}]}`)),
-			[]string{`Resolver "resolver" spec.localZones: the local zone lan.example.org appears more than once`}},
 		{"a record outside its zone", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "records": [{"name": "xlan.example.org", "type": "A", "value": "192.0.2.1"}]}]}`)),
 			[]string{`Resolver "resolver" spec.localZones: the local zone lan.example.org holds a record of xlan.example.org, which is outside it`}},
 		{"a prefix that sets bits 64 to 71", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64:0:100::/96"}`)),
@@ -138,12 +131,6 @@ func TestNAT64Rules(t *testing.T) {
 			[]string{`NAT64 "lab" spec.pool4: the pool entry 255.255.0.0/16 holds addresses no connection leaves from: the unspecified address, loopback, multicast or broadcast`}},
 		{"two entries of one protocol's addresses and ports", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.0/30", "ports": "61001-62000", "protocols": ["tcp"]}, {"prefix": "203.0.113.1/32", "ports": 61500, "protocols": ["udp", "tcp"]}]}`)),
 			[]string{`NAT64 "lab" spec.pool4: the pool entry 203.0.113.0/30 shares tcp addresses and ports with another; give each entry of a protocol addresses or ports of its own`}},
-		{"an address twice", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1", "2001:DB8:ffff::1"], "allow": ["2001:db8::/32"]}`)),
-			[]string{`Resolver "resolver" spec.listen: the address 2001:db8:ffff::1 appears more than once`}},
-		{"a client range twice", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32", "2001:db8:0::/32"]}`)),
-			[]string{`Resolver "resolver" spec.allow: the range 2001:db8::/32 appears more than once`}},
-		{"a forwarder twice", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": ["192.0.2.53", "192.0.2.53"]}`)),
-			[]string{`Resolver "resolver" spec.forwarders: the forwarder 192.0.2.53 appears more than once`}},
 		{"an A record of IPv6", replace(resolver(record("A", "2001:db8::1"))), recordMessage("A", "2001:db8::1", "IPv4 address")},
 		{"an AAAA record of IPv4", replace(resolver(record("AAAA", "192.0.2.1"))), recordMessage("AAAA", "192.0.2.1", "IPv6 address")},
 		{"an IPv4-mapped AAAA record", replace(resolver(record("AAAA", "::ffff:192.0.2.1"))), recordMessage("AAAA", "::ffff:192.0.2.1", "IPv6 address")},

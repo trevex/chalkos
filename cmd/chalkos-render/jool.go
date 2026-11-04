@@ -310,12 +310,9 @@ func poolEntryRanges(n int, e poolEntry) ([]poolRange, error) {
 	if len(e.Protocols) == 0 {
 		return nil, fmt.Errorf("it names no protocol")
 	}
-	for i, proto := range e.Protocols {
+	for _, proto := range e.Protocols {
 		if !slices.Contains(joolProtocols, proto) {
 			return nil, fmt.Errorf("%q is none of tcp, udp and icmp", proto)
-		}
-		if slices.Contains(e.Protocols[:i], proto) {
-			return nil, fmt.Errorf("it names %s twice", proto)
 		}
 	}
 	var out []poolRange

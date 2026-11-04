@@ -49,12 +49,11 @@ let
   unicast =
     a:
     ''cel.bind(x, ip(${a}), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x))'';
-  # The rule that the addresses, or with cidr the ranges, of the field self appear once each, in
-  # whatever spelling; what names one in the message.
-  once = parse: what: {
-    description = "Each ${what} appears once.";
-    rule = "self.all(a, size(self.filter(b, ${parse}(b) == ${parse}(a))) == 1)";
-    messageExpression = ''"the ${what} " + self.filter(a, size(self.filter(b, ${parse}(b) == ${parse}(a))) > 1)[0] + " appears more than once"'';
+  # The declaration that the addresses, or with cidr the ranges, of one list appear once each, in
+  # whatever spelling.
+  once = as: hint: {
+    across = "list";
+    inherit as hint;
   };
   # The first and last port of the pool entry a, whose ports are a port or a range "<first>-<last>".
   firstPort = a: ''(type(${a}.ports) == int ? ${a}.ports : int(${a}.ports.split("-")[0]))'';
@@ -134,7 +133,11 @@ let
         default = "61001-65535";
         description = "Ports, or ICMP identifiers, of the addresses the translated connections take: a port or a range `<first>-<last>` that leaves out the kernel's ephemeral ports, 32768 to 60999, which the router's own connections take.";
       };
-      protocols = mkOption {
+      protocols = lib.chalkos.mkOption {
+        unique = {
+          across = "list";
+          hint = "name each protocol once";
+        };
         type = types.nonEmptyListOf (
           types.enum [
             "tcp"
@@ -287,11 +290,6 @@ in
                   messageExpression = ''"a pool entry takes the ports " + string(self.filter(a, !cel.bind(lo, ${firstPort "a"}, cel.bind(hi, ${lastPort "a"}, lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))[0].ports) + ", which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999"'';
                 }
                 {
-                  description = "A pool entry names each protocol once.";
-                  rule = ''self.all(a, ["tcp", "udp", "icmp"].all(p, size(a.protocols.filter(q, q == p)) <= 1))'';
-                  message = "a pool entry names a protocol twice";
-                }
-                {
                   description = "No two entries of a pool share a protocol, addresses and ports.";
                   rule = "cel.bind(e, ${poolRanges}, e.all(x, size(e.filter(y, ${sharePool "x" "y"})) <= 1))";
                   messageExpression = ''cel.bind(e, ${poolRanges}, cel.bind(x, e.filter(x, size(e.filter(y, ${sharePool "x" "y"})) > 1)[0], "the pool entry " + x[1] + " shares " + x[0] + " addresses and ports with another; give each entry of a protocol addresses or ports of its own"))'';
@@ -309,11 +307,6 @@ in
           description = "A DNS resolver of the router in one VRF, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.";
           rules = [
             {
-              description = "One Resolver serves a VRF.";
-              rule = "cel.bind(v, documents.map(n, documents[n].spec.vrf), v.all(x, size(v.filter(y, y == x)) == 1))";
-              messageExpression = ''cel.bind(v, documents.map(n, documents[n].spec.vrf), "more than one Resolver serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one resolver")'';
-            }
-            {
               description = "A Resolver listens on an address of a family its clients' ranges are of.";
               rule = ''documents.all(n, cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))'';
               messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, !["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, "Resolver " + n).join(", ") + " listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"'';
@@ -325,8 +318,9 @@ in
             }
           ];
           spec = {
-            vrf = mkOption {
+            vrf = lib.chalkos.mkOption {
               type = vrfRef;
+              unique.hint = "a VRF has one resolver";
               default = "default";
               example = "tenant";
               description = "VRF document on whose links the resolver answers and through whose links it sends its queries; `default` for the default VRF.";
@@ -341,8 +335,8 @@ in
                   rule = "self.all(a, ${unicast "a"})";
                   messageExpression = ''"the address " + self.filter(a, !${unicast "a"})[0] + " is no unicast address the resolver can listen on"'';
                 }
-                (once "ip" "address")
               ];
+              unique = once "ip" "name each address once";
             };
             allow = lib.chalkos.mkOption {
               type = types.nonEmptyListOf prefix;
@@ -354,8 +348,8 @@ in
                   rule = "self.all(p, cidr(p).prefix() >= 0)";
                   message = "a client is no address range";
                 }
-                (once "cidr" "range")
               ];
+              unique = once "cidr" "name each range once";
             };
             forwarders = lib.chalkos.mkOption {
               type = types.listOf address;
@@ -368,8 +362,8 @@ in
                   rule = "self.all(a, ${unicast "a"})";
                   messageExpression = ''"the forwarder " + self.filter(a, !${unicast "a"})[0] + " is no unicast address"'';
                 }
-                (once "ip" "forwarder")
               ];
+              unique = once "ip" "name each forwarder once";
             };
             dnssec = mkOption {
               type = types.bool;
@@ -404,12 +398,11 @@ in
               type = types.listOf localZone;
               default = [ ];
               description = "Zones the resolver answers from its own records, ${toString maxRecords} records in all at most. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers.";
+              unique = {
+                by = [ "name" ];
+                hint = "name each zone once";
+              };
               rules = [
-                {
-                  description = "A local zone appears once.";
-                  rule = "self.all(z, size(self.filter(y, y.name == z.name)) == 1)";
-                  messageExpression = ''"the local zone " + self.filter(z, size(self.filter(y, y.name == z.name)) > 1)[0].name + " appears more than once"'';
-                }
                 {
                   description = "A local zone's records are of the zone's name or names below it.";
                   rule = ''self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))'';

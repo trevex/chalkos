@@ -76,7 +76,13 @@
                   ]
                 },
                 "minItems": 1,
-                "type": "array"
+                "type": "array",
+                "x-chalkos-unique": [
+                  {
+                    "across": "list",
+                    "hint": "name each protocol once"
+                  }
+                ]
               }
             },
             "required": [
@@ -108,12 +114,6 @@
               "description": "A pool entry's ports lie from 1 to 65535 and leave out the kernel's ephemeral ports, 32768 to 60999.",
               "messageExpression": "\"a pool entry takes the ports \" + string(self.filter(a, !cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))[0].ports) + \", which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999\"",
               "rule": "self.all(a, cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))",
-              "takes": "refuse"
-            },
-            {
-              "description": "A pool entry names each protocol once.",
-              "message": "a pool entry names a protocol twice",
-              "rule": "self.all(a, [\"tcp\", \"udp\", \"icmp\"].all(p, size(a.protocols.filter(q, q == p)) <= 1))",
               "takes": "refuse"
             },
             {

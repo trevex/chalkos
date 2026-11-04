@@ -134,3 +134,31 @@ func TestCommunityWithALeadingZero(t *testing.T) {
 		t.Errorf("err = %v, want the schema's refusal of 64512:0100", err)
 	}
 }
+
+// A pool entry names each protocol once, a VRF has one resolver, and a resolver names each
+// address, client range, forwarder and local zone once, addresses and ranges in whatever spelling.
+func TestNAT64AndResolverUnique(t *testing.T) {
+	resolver := func(name, spec string) string {
+		return routerDoc("Resolver", name, `{listen: ["2001:db8:ffff::1"], allow: ["2001:db8::/32"]`+spec+`}`)
+	}
+	checkUniqueCases(t, []uniqueCase{
+		{"a protocol twice",
+			routerDoc("NAT64", "lab", `{prefix: "2001:db8:64::/96", pool4: [{prefix: 203.0.113.1/32, protocols: [udp]}, {prefix: 203.0.113.2/32, protocols: [tcp, udp, tcp]}]}`),
+			`NAT64/lab: spec.pool4[1].protocols[0], spec.pool4[1].protocols[2]: "tcp" is not unique; name each protocol once`},
+		{"two resolvers of one VRF",
+			resolver("a", "") + resolver("b", ""),
+			`Resolver/a, Resolver/b: spec.vrf "default" is not unique; a VRF has one resolver`},
+		{"an address twice",
+			routerDoc("Resolver", "r", `{listen: ["2001:db8:ffff::1", "2001:DB8:ffff::1"], allow: ["2001:db8::/32"]}`),
+			`Resolver/r: spec.listen[0], spec.listen[1]: "2001:db8:ffff::1" is not unique; name each address once`},
+		{"a client range twice",
+			routerDoc("Resolver", "r", `{listen: ["2001:db8:ffff::1"], allow: ["2001:db8::/32", "2001:db8::1/32"]}`),
+			`Resolver/r: spec.allow[0], spec.allow[1]: "2001:db8::/32" is not unique; name each range once`},
+		{"a forwarder twice",
+			resolver("r", `, forwarders: [192.0.2.53, 192.0.2.53]`),
+			`Resolver/r: spec.forwarders[0], spec.forwarders[1]: "192.0.2.53" is not unique; name each forwarder once`},
+		{"a zone twice",
+			resolver("r", `, localZones: [{name: lan.example.org}, {name: lan.example.org, type: refuse}]`),
+			`Resolver/r: spec.localZones[0].name, spec.localZones[1].name: "lan.example.org" is not unique; name each zone once`},
+	})
+}

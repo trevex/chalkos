@@ -271,7 +271,7 @@ func TestBGPOpenings(t *testing.T) {
 }
 
 // A Resolver opens DNS over UDP and TCP from its clients' ranges to the addresses it listens on,
-// and refuses an address twice and values that would add to the ruleset.
+// and refuses values that are no address or would add to the ruleset.
 func TestResolverOpenings(t *testing.T) {
 	got, err := resolverOpenings([]named[resolverSpec]{
 		{Name: "resolver", Spec: resolverSpec{Listen: []string{"2001:db8:ffff::1", "192.0.2.1"}, Allow: []string{"2001:db8::1/32", "192.0.2.0/24"}}},
@@ -295,7 +295,6 @@ func TestResolverOpenings(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 	for spec, want := range map[string]string{
-		`{"listen": ["2001:db8:ffff::1", "2001:DB8:ffff::1"], "allow": ["2001:db8::/32"]}`:            "Resolver resolver: listen: 2001:db8:ffff::1 appears twice",
 		`{"listen": ["::ffff:192.0.2.1"], "allow": ["2001:db8::/32"]}`:                                `Resolver resolver: listen: "::ffff:192.0.2.1" is no unicast address`,
 		`{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32\" } accept\n\t\tip6 saddr ::/0"]}`: "is no address range",
 	} {
@@ -781,7 +780,6 @@ func TestJoolRefusals(t *testing.T) {
 		"ephemeral ports":                 {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "1-65535", "protocols": ["tcp"]}`)}, "the ports 1-65535 take the kernel's ephemeral ports, 32768 to 60999, which Jool refuses"},
 		"port zero":                       {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "0-100", "protocols": ["tcp"]}`)}, `"0-100" is no range of ports`},
 		"no protocol":                     {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": []}`)}, "NAT64 edge: pool entry 1: it names no protocol"},
-		"a protocol twice":                {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["udp", "udp"]}`)}, "it names udp twice"},
 		"an unknown protocol":             {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["sctp"]}`)}, `"sctp" is none of tcp, udp and icmp`},
 		"two entries of one port": {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp"]},
 			{"prefix": "192.0.2.9/32", "ports": "65000-65535", "protocols": ["udp"]}`)}, "NAT64 edge: pool entry 2 shares udp addresses and ports with pool entry 1"},
@@ -915,14 +913,12 @@ func TestUnboundRefusals(t *testing.T) {
 		docs []any
 		want string
 	}{
-		"two resolvers":                 {args, []any{routerDoc(t, "Resolver", "other", `{"listen": ["2001:db8:ffff::2"], "allow": ["2001:db8::/32"]}`), resolver("")}, "Resolver other and Resolver resolver both serve the VRF default; a VRF has one resolver"},
 		"no address":                    {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": [], "allow": ["2001:db8::/32"]}`)}, "Resolver resolver: it listens on no address"},
 		"no client":                     {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": []}`)}, "Resolver resolver: it answers no client"},
 		"the unspecified address":       {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["::"], "allow": ["2001:db8::/32"]}`)}, `listen: "::" is no unicast address`},
 		"a link-local zone":             {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["fe80::1%eth0"], "allow": ["2001:db8::/32"]}`)}, `listen: "fe80::1%eth0" is no unicast address`},
 		"a loopback forwarder":          {args, []any{resolver(`, "forwarders": ["127.0.0.53"]`)}, `forwarders: "127.0.0.53" is no unicast address`},
 		"a DNS64 prefix of 95 bits":     {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/95"}`)}, `dns64: the prefix "64:ff9b::/95" is no IPv6 range`},
-		"a zone twice":                  {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": []}, {"name": "lan.example.org", "type": "refuse", "records": []}`)}, "local zone 2: lan.example.org appears twice"},
 		"a zone in capitals":            {args, []any{zone(`{"name": "Lan.example.org", "type": "static", "records": []}`)}, `"Lan.example.org" is no DNS name in lower case`},
 		"a record outside its zone":     {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "xlan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]}`)}, `lan.example.org: record 1: "xlan.example.org" is no name of the zone`},
 		"an A record of IPv6":           {args, []any{record("A", "2001:db8::1")}, `"2001:db8::1" is no IPv4 address`},
@@ -968,9 +964,6 @@ func TestUnboundRefusals(t *testing.T) {
 		"a zone below ipv4only.arpa":         {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/96"}, "localZones": [{"name": "x.ipv4only.arpa", "type": "static", "records": []}]`)}, "local zone 1: x.ipv4only.arpa overlaps ipv4only.arpa, which DNS64 answers itself"},
 		// What the rules refuse beyond Unbound's own checks.
 		"an IPv4-mapped address": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["::ffff:192.0.2.1"], "allow": ["2001:db8::/32"]}`)}, `listen: "::ffff:192.0.2.1" is no unicast address`},
-		"an address twice":       {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1", "2001:DB8:ffff::1"], "allow": ["2001:db8::/32"]}`)}, "listen: 2001:db8:ffff::1 appears twice"},
-		"a client range twice":   {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32", "2001:db8::1/32"]}`)}, "allow: 2001:db8::/32 appears twice"},
-		"a forwarder twice":      {args, []any{resolver(`, "forwarders": ["192.0.2.53", "192.0.2.53"]`)}, "forwarders: 192.0.2.53 appears twice"},
 		"a record twice": {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "AAAA", "value": "2001:db8::1", "ttl": 3600},
 			{"name": "a.lan.example.org", "type": "AAAA", "value": "2001:DB8::1", "ttl": 300}]}`)}, "lan.example.org: record 2: a.lan.example.org. AAAA 2001:db8::1 appears twice"},
 		"a record in two zones": {args, []any{zone(`{"name": "example.org", "type": "transparent", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]},

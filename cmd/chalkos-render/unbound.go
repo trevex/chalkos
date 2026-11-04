@@ -52,8 +52,9 @@ var localZoneTypes = []string{"static", "transparent", "typetransparent", "redir
 // and out/unbound-<vrf>.conf for a VRF's: the addresses it answers on and the clients it answers,
 // DNSSEC validation with the root's trust anchor in the file trustAnchor, DNS64 with the zone
 // ipv4only.arpa of the file zoneFile, the local zones, the forwarders, and the control socket. A
-// node without a Resolver gets no file and runs no Unbound. It refuses two resolvers of one VRF and
-// a listen address that Network documents give only to links of other VRFs.
+// node without a Resolver gets no file and runs no Unbound. It refuses a listen address that
+// Network documents give only to links of other VRFs; the set check has refused two resolvers of
+// one VRF.
 func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) error {
 	for _, f := range []string{trustAnchor, zoneFile} {
 		if !storeFile.MatchString(f) || filepath.Clean(f) != f {
@@ -68,7 +69,6 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 	for _, v := range d.VRFs {
 		declared[v.Name] = true
 	}
-	served := map[string]string{}
 	for _, r := range d.Resolvers {
 		vrf := vrfOf(r.Spec.VRF)
 		if _, err := mustGet(declared, "VRF", vrf); err != nil {
@@ -77,10 +77,6 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 		if !plainInterface.MatchString(vrf) {
 			return fmt.Errorf("Resolver %s names the VRF %q, which is no interface's name", r.Name, vrf)
 		}
-		if other, ok := served[vrf]; ok {
-			return fmt.Errorf("Resolver %s and Resolver %s both serve the VRF %s; a VRF has one resolver", other, r.Name, vrf)
-		}
-		served[vrf] = r.Name
 		if err := checkListenVRF(d, r, vrf); err != nil {
 			return err
 		}
@@ -181,9 +177,6 @@ func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, e
 		if err != nil {
 			return "", fmt.Errorf("local zone %d: %w", i+1, err)
 		}
-		if slices.ContainsFunc(r.LocalZones[:i], func(o localZone) bool { return o.Name == z.Name }) {
-			return "", fmt.Errorf("local zone %d: %s appears twice", i+1, z.Name)
-		}
 		// Unbound answers a local zone before DNS64 sees the query.
 		if v4 := strings.TrimSuffix(ipv4OnlyZone, "."); r.DNS64 != nil && (z.Name == v4 || strings.HasSuffix(z.Name, "."+v4) || strings.HasSuffix(v4, "."+z.Name)) {
 			return "", fmt.Errorf("local zone %d: %s overlaps %s, which DNS64 answers itself", i+1, z.Name, v4)
@@ -199,16 +192,11 @@ func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, e
 	}
 	if len(r.Forwarders) > 0 {
 		b.WriteString("forward-zone:\n  name: \".\"\n")
-		var forwarders []netip.Addr
 		for _, a := range r.Forwarders {
 			addr, err := unicastAddress(a)
 			if err != nil {
 				return "", fmt.Errorf("forwarders: %w", err)
 			}
-			if slices.Contains(forwarders, addr) {
-				return "", fmt.Errorf("forwarders: %s appears twice", addr)
-			}
-			forwarders = append(forwarders, addr)
 			fmt.Fprintf(&b, "  forward-addr: %s\n", addr)
 		}
 	}
@@ -217,7 +205,7 @@ func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, e
 }
 
 // resolverAddresses are the addresses the resolver r listens on and the ranges of the clients it
-// answers, masked, each once.
+// answers, masked, each once, as the set check has refused a repeat.
 func resolverAddresses(r resolverSpec) ([]netip.Addr, []netip.Prefix, error) {
 	if len(r.Listen) == 0 {
 		return nil, nil, fmt.Errorf("it listens on no address")
@@ -227,9 +215,6 @@ func resolverAddresses(r resolverSpec) ([]netip.Addr, []netip.Prefix, error) {
 		addr, err := unicastAddress(a)
 		if err != nil {
 			return nil, nil, fmt.Errorf("listen: %w", err)
-		}
-		if slices.Contains(listen, addr) {
-			return nil, nil, fmt.Errorf("listen: %s appears twice", addr)
 		}
 		listen = append(listen, addr)
 	}
@@ -242,11 +227,7 @@ func resolverAddresses(r resolverSpec) ([]netip.Addr, []netip.Prefix, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("allow: %q is no address range", a)
 		}
-		p = p.Masked()
-		if slices.Contains(allow, p) {
-			return nil, nil, fmt.Errorf("allow: %s appears twice", p)
-		}
-		allow = append(allow, p)
+		allow = append(allow, p.Masked())
 	}
 	if !slices.ContainsFunc(listen, func(a netip.Addr) bool {
 		return slices.ContainsFunc(allow, func(p netip.Prefix) bool { return p.Addr().Is4() == a.Is4() })

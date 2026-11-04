@@ -44,12 +44,13 @@
               "message": "a client is no address range",
               "rule": "self.all(p, cidr(p).prefix() >= 0)",
               "takes": "refuse"
-            },
+            }
+          ],
+          "x-chalkos-unique": [
             {
-              "description": "Each range appears once.",
-              "messageExpression": "\"the range \" + self.filter(a, size(self.filter(b, cidr(b) == cidr(a))) > 1)[0] + \" appears more than once\"",
-              "rule": "self.all(a, size(self.filter(b, cidr(b) == cidr(a))) == 1)",
-              "takes": "refuse"
+              "across": "list",
+              "as": "cidr",
+              "hint": "name each range once"
             }
           ]
         },
@@ -111,12 +112,13 @@
               "messageExpression": "\"the forwarder \" + self.filter(a, !cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"169.254.0.0/16\").contains(x) && !cidr(\"fe80::/10\").contains(x) && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))[0] + \" is no unicast address\"",
               "rule": "self.all(a, cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"169.254.0.0/16\").contains(x) && !cidr(\"fe80::/10\").contains(x) && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))",
               "takes": "refuse"
-            },
+            }
+          ],
+          "x-chalkos-unique": [
             {
-              "description": "Each forwarder appears once.",
-              "messageExpression": "\"the forwarder \" + self.filter(a, size(self.filter(b, ip(b) == ip(a))) > 1)[0] + \" appears more than once\"",
-              "rule": "self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)",
-              "takes": "refuse"
+              "across": "list",
+              "as": "ip",
+              "hint": "name each forwarder once"
             }
           ]
         },
@@ -139,12 +141,13 @@
               "messageExpression": "\"the address \" + self.filter(a, !cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"169.254.0.0/16\").contains(x) && !cidr(\"fe80::/10\").contains(x) && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))[0] + \" is no unicast address the resolver can listen on\"",
               "rule": "self.all(a, cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"169.254.0.0/16\").contains(x) && !cidr(\"fe80::/10\").contains(x) && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))",
               "takes": "refuse"
-            },
+            }
+          ],
+          "x-chalkos-unique": [
             {
-              "description": "Each address appears once.",
-              "messageExpression": "\"the address \" + self.filter(a, size(self.filter(b, ip(b) == ip(a))) > 1)[0] + \" appears more than once\"",
-              "rule": "self.all(a, size(self.filter(b, ip(b) == ip(a))) == 1)",
-              "takes": "refuse"
+              "across": "list",
+              "as": "ip",
+              "hint": "name each address once"
             }
           ]
         },
@@ -235,12 +238,6 @@
           "type": "array",
           "x-chalkos-rules": [
             {
-              "description": "A local zone appears once.",
-              "messageExpression": "\"the local zone \" + self.filter(z, size(self.filter(y, y.name == z.name)) > 1)[0].name + \" appears more than once\"",
-              "rule": "self.all(z, size(self.filter(y, y.name == z.name)) == 1)",
-              "takes": "refuse"
-            },
-            {
               "description": "A local zone's records are of the zone's name or names below it.",
               "messageExpression": "cel.bind(z, self.filter(z, !z.records.all(r, r.name == z.name || r.name.endsWith(\".\" + z.name)))[0], \"the local zone \" + z.name + \" holds a record of \" + z.records.filter(r, !(r.name == z.name || r.name.endsWith(\".\" + z.name)))[0].name + \", which is outside it\")",
               "rule": "self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith(\".\" + z.name)))",
@@ -282,6 +279,17 @@
               "rule": "cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, x.type != \"CNAME\" || size(e.filter(y, y.name == x.name)) == 1))",
               "takes": "refuse"
             }
+          ],
+          "x-chalkos-unique": [
+            {
+              "across": "list",
+              "by": [
+                {
+                  "field": "name"
+                }
+              ],
+              "hint": "name each zone once"
+            }
           ]
         },
         "vrf": {
@@ -298,7 +306,13 @@
             "reserved": [
               "default"
             ]
-          }
+          },
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "hint": "a VRF has one resolver"
+            }
+          ]
         }
       },
       "required": [
@@ -321,12 +335,6 @@
     "kind": "Resolver",
     "multiple": true,
     "rules": [
-      {
-        "description": "One Resolver serves a VRF.",
-        "messageExpression": "cel.bind(v, documents.map(n, documents[n].spec.vrf), \"more than one Resolver serves the VRF \" + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + \"; a VRF has one resolver\")",
-        "rule": "cel.bind(v, documents.map(n, documents[n].spec.vrf), v.all(x, size(v.filter(y, y == x)) == 1))",
-        "takes": "refuse"
-      },
       {
         "description": "A Resolver listens on an address of a family its clients' ranges are of.",
         "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, ![\"ipv4\", \"ipv6\"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, \"Resolver \" + n).join(\", \") + \" listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common\"",
