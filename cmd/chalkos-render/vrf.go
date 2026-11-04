@@ -149,7 +149,6 @@ func vrfLinks(vrfs []named[vrfSpec], links []string, byKind map[string]any) (vrf
 		return none, nil
 	}
 	var members []vrfMember
-	tables := map[uint32]string{}
 	for _, v := range vrfs {
 		what := "VRF " + v.Name
 		if v.Name == defaultVRF || len(v.Name) > 15 {
@@ -164,10 +163,6 @@ func vrfLinks(vrfs []named[vrfSpec], links []string, byKind map[string]any) (vrf
 		if t := v.Spec.Table; t == 0 || t >= 253 && t <= 255 {
 			return none, fmt.Errorf("%s: table %d is no table of a VRF; 0, 253, 254 and 255 are the kernel's", what, t)
 		}
-		if other, ok := tables[v.Spec.Table]; ok {
-			return none, fmt.Errorf("VRF %s and VRF %s both use table %d", other, v.Name, v.Spec.Table)
-		}
-		tables[v.Spec.Table] = v.Name
 		for _, i := range v.Spec.Interfaces {
 			if !interfaceName.MatchString(i) {
 				return none, fmt.Errorf("%s: %q is no interface name or glob", what, i)

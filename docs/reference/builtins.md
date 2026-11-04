@@ -690,11 +690,10 @@ Message of rule 15:
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A FirewallPolicy comes from a FirewallZone, not from local. | `refuse` | `documents.all(n, documents[n].spec.from != "local")` | after the table |
-| 2 | — | One FirewallPolicy at most goes from a zone to another. | `refuse` | after the table | after the table |
-| 3 | `spec.rules` | A rule's source and destination each name an AddressSet or address ranges, one of them. | `refuse` | `self.all(r, [r.source, r.destination].all(m, m == null || (m.set == null) != (m.cidrs == null)))` | a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address |
-| 4 | `spec.rules` | A rule with a family has addresses and sets of that family alone. | `refuse` | after the table | a rule has addresses or a set of another family than its own |
-| 5 | `spec.rules` | A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one. | `refuse` | after the table | a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6 |
-| 6 | `spec.rules` | Ports go with tcp, udp or sctp, ICMP types with icmp or icmpv6, and packet-too-big with icmpv6. | `refuse` | after the table | a rule has ports without the protocol tcp, udp or sctp, or ICMP types its protocol lacks |
+| 2 | `spec.rules` | A rule's source and destination each name an AddressSet or address ranges, one of them. | `refuse` | `self.all(r, [r.source, r.destination].all(m, m == null || (m.set == null) != (m.cidrs == null)))` | a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address |
+| 3 | `spec.rules` | A rule with a family has addresses and sets of that family alone. | `refuse` | after the table | a rule has addresses or a set of another family than its own |
+| 4 | `spec.rules` | A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one. | `refuse` | after the table | a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6 |
+| 5 | `spec.rules` | Ports go with tcp, udp or sctp, ICMP types with icmp or icmpv6, and packet-too-big with icmpv6. | `refuse` | after the table | a rule has ports without the protocol tcp, udp or sctp, or ICMP types its protocol lacks |
 
 Message of rule 1:
 
@@ -702,31 +701,19 @@ Message of rule 1:
 documents.filter(n, documents[n].spec.from == "local").map(n, "FirewallPolicy " + n).join(", ") + " comes from local, the router itself, whose own connections the firewall accepts; a policy comes from a FirewallZone"
 ```
 
-Expression of rule 2:
-
-```text
-cel.bind(pairs, documents.map(n, documents[n].spec.from + " to " + documents[n].spec.to), pairs.all(p, size(pairs.filter(q, q == p)) == 1))
-```
-
-Message of rule 2:
-
-```text
-cel.bind(pairs, documents.map(n, documents[n].spec.from + " to " + documents[n].spec.to), "more than one FirewallPolicy goes from " + pairs.filter(p, size(pairs.filter(q, q == p)) > 1)[0] + "; give each pair of zones one policy")
-```
-
-Expression of rule 4:
+Expression of rule 3:
 
 ```text
 self.all(r, r.family == null || (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == r.family : r.source.cidrs == null || r.source.cidrs.all(a, cidr(a).ip(0).family() == r.family))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == r.family : r.destination.cidrs == null || r.destination.cidrs.all(a, cidr(a).ip(0).family() == r.family))))
 ```
 
-Expression of rule 5:
+Expression of rule 4:
 
 ```text
 self.all(r, ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv4" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv4" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4")))) || ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv6" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv6" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6")))))
 ```
 
-Expression of rule 6:
+Expression of rule 5:
 
 ```text
 self.all(r, (size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.protocol in ["tcp", "udp", "sctp"]) && (size(r.icmpTypes) == 0 || r.protocol in ["icmp", "icmpv6"]) && !(r.protocol == "icmp" && "packet-too-big" in r.icmpTypes))
@@ -737,48 +724,22 @@ self.all(r, (size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.prot
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | No FirewallZone is named local, the router itself. | `refuse` | `!("local" in documents)` | a FirewallZone is named local, which is the router itself: FirewallPolicy documents name it without a document, so give the zone another name |
-| 2 | — | An interface or glob is in one FirewallZone, once; globs compare as written. | `refuse` | after the table | after the table |
-| 3 | — | A FirewallZone names an interface or a VRF. | `refuse` | `documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)` | after the table |
-| 4 | — | A VRF is in one FirewallZone, once. | `refuse` | after the table | after the table |
-| 5 | — | No interface of a FirewallZone is a VRF's device, which takes the VRF document's name; the output router-nftables also refuses globs that match one. | `refuse` | after the table | after the table |
-
-Expression of rule 2:
-
-```text
-cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, size(all.filter(j, j == i)) == 1))
-```
+| 2 | — | A FirewallZone names an interface or a VRF. | `refuse` | `documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)` | after the table |
+| 3 | — | No interface of a FirewallZone is a VRF's device, which takes the VRF document's name; the output router-nftables also refuses globs that match one. | `refuse` | after the table | after the table |
 
 Message of rule 2:
-
-```text
-cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), "the interface " + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each interface one zone")
-```
-
-Message of rule 3:
 
 ```text
 documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, "FirewallZone " + n).join(", ") + ": a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"
 ```
 
-Expression of rule 4:
-
-```text
-cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), all.all(v, size(all.filter(w, w == v)) == 1))
-```
-
-Message of rule 4:
-
-```text
-cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), "the VRF " + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each VRF one zone")
-```
-
-Expression of rule 5:
+Expression of rule 3:
 
 ```text
 cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, !(i in vrfs))))
 ```
 
-Message of rule 5:
+Message of rule 3:
 
 ```text
 cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(i, all.filter(i, i in vrfs)[0], "FirewallZone " + documents.filter(n, i in documents[n].spec.interfaces)[0] + ": " + i + " is the device of VRF " + i + "; name the VRF in vrfs")))
@@ -998,17 +959,16 @@ documents.filter(n, cel.bind(s, documents[n].spec, s.match.protocol == null && (
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A PolicyRoute's in names a zone or interfaces, one of them. | `refuse` | after the table | after the table |
 | 2 | — | No interface of a PolicyRoute's in is a VRF's device, which takes the VRF document's name; the outputs also refuse globs that match one. | `refuse` | after the table | after the table |
-| 3 | — | A next hop's table is that next hop's alone: no other next hop and no rule's table takes it. | `refuse` | after the table | after the table |
-| 4 | `spec.rules` | A rule's source and destination each name an AddressSet or address ranges, one of them. | `refuse` | after the table | a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address |
-| 5 | `spec.rules` | A rule with a family has addresses and sets of that family alone. | `refuse` | after the table | a rule has addresses or a set of another family than its own |
-| 6 | `spec.rules` | A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one. | `refuse` | after the table | a rule matches no packet: its family, protocol, addresses and sets leave neither IPv4 nor IPv6 |
-| 7 | `spec.rules` | Ports go with tcp, udp or sctp. | `refuse` | after the table | a rule has ports without the protocol tcp, udp or sctp |
-| 8 | `spec.rules` | A rule matches by one term at least. | `refuse` | after the table | a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: {cidrs: [0.0.0.0/0]} |
-| 9 | `spec.rules` | A rule's to names a VRF, a table or a next hop, one of them. | `refuse` | after the table | a rule's to names a VRF, a table or a next hop, one of them |
-| 10 | `spec.rules` | A rule with a next hop matches packets of the next hop's family. | `refuse` | after the table | a rule's next hop is of another family than the packets the rule matches |
-| 11 | `spec.rules` | A rule's table is not 255, the kernel's local table, and no VRF's table. | `refuse` | after the table | a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table |
-| 12 | `spec.rules` | A next hop's table is none of 253, 254 and 255 and no VRF's table. | `refuse` | after the table | a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own |
-| 13 | `spec.rules` | A next hop's interface is not lo; the output router-nftables also refuses it. | `refuse` | `self.all(p, p.to.nextHop == null || p.to.nextHop.interface != "lo")` | a next hop's interface is lo, which no next hop is on; name the link the next hop is on |
+| 3 | `spec.rules` | A rule's source and destination each name an AddressSet or address ranges, one of them. | `refuse` | after the table | a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address |
+| 4 | `spec.rules` | A rule with a family has addresses and sets of that family alone. | `refuse` | after the table | a rule has addresses or a set of another family than its own |
+| 5 | `spec.rules` | A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one. | `refuse` | after the table | a rule matches no packet: its family, protocol, addresses and sets leave neither IPv4 nor IPv6 |
+| 6 | `spec.rules` | Ports go with tcp, udp or sctp. | `refuse` | after the table | a rule has ports without the protocol tcp, udp or sctp |
+| 7 | `spec.rules` | A rule matches by one term at least. | `refuse` | after the table | a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: {cidrs: [0.0.0.0/0]} |
+| 8 | `spec.rules` | A rule's to names a VRF, a table or a next hop, one of them. | `refuse` | after the table | a rule's to names a VRF, a table or a next hop, one of them |
+| 9 | `spec.rules` | A rule with a next hop matches packets of the next hop's family. | `refuse` | after the table | a rule's next hop is of another family than the packets the rule matches |
+| 10 | `spec.rules` | A rule's table is not 255, the kernel's local table, and no VRF's table. | `refuse` | after the table | a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table |
+| 11 | `spec.rules` | A next hop's table is none of 253, 254 and 255 and no VRF's table. | `refuse` | after the table | a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own |
+| 12 | `spec.rules` | A next hop's interface is not lo; the output router-nftables also refuses it. | `refuse` | `self.all(p, p.to.nextHop == null || p.to.nextHop.interface != "lo")` | a next hop's interface is lo, which no next hop is on; name the link the next hop is on |
 
 Expression of rule 1:
 
@@ -1037,64 +997,52 @@ cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["rou
 Expression of rule 3:
 
 ```text
-cel.bind(tos, documents.map(n, documents[n].spec.rules.map(p, p.to)).flatten(), tos.all(a, a.nextHop == null || tos.all(b, b.table != a.nextHop.table && (b.nextHop == null || b.nextHop.table != a.nextHop.table || b.nextHop == a.nextHop))))
-```
-
-Message of rule 3:
-
-```text
-cel.bind(tos, documents.map(n, documents[n].spec.rules.map(p, p.to)).flatten(), cel.bind(a, tos.filter(a, !(a.nextHop == null || tos.all(b, b.table != a.nextHop.table && (b.nextHop == null || b.nextHop.table != a.nextHop.table || b.nextHop == a.nextHop))))[0], "PolicyRoute " + documents.filter(n, documents[n].spec.rules.exists(p, p.to == a))[0] + ": the next hop " + a.nextHop.address + " takes table " + string(a.nextHop.table) + ", which another next hop or a rule's table takes too; give each next hop a table of its own"))
+self.all(p, cel.bind(r, p.match, [r.source, r.destination].all(m, m == null || (m.set == null) != (m.cidrs == null))))
 ```
 
 Expression of rule 4:
 
 ```text
-self.all(p, cel.bind(r, p.match, [r.source, r.destination].all(m, m == null || (m.set == null) != (m.cidrs == null))))
+self.all(p, cel.bind(r, p.match, r.family == null || (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == r.family : r.source.cidrs == null || r.source.cidrs.all(a, cidr(a).ip(0).family() == r.family))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == r.family : r.destination.cidrs == null || r.destination.cidrs.all(a, cidr(a).ip(0).family() == r.family)))))
 ```
 
 Expression of rule 5:
 
 ```text
-self.all(p, cel.bind(r, p.match, r.family == null || (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == r.family : r.source.cidrs == null || r.source.cidrs.all(a, cidr(a).ip(0).family() == r.family))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == r.family : r.destination.cidrs == null || r.destination.cidrs.all(a, cidr(a).ip(0).family() == r.family)))))
+self.all(p, cel.bind(r, p.match, ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv4" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv4" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4")))) || ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv6" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv6" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))))))
 ```
 
 Expression of rule 6:
 
 ```text
-self.all(p, cel.bind(r, p.match, ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv4" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv4" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4")))) || ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv6" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv6" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))))))
+self.all(p, cel.bind(r, p.match, size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.protocol in ["tcp", "udp", "sctp"]))
 ```
 
 Expression of rule 7:
 
 ```text
-self.all(p, cel.bind(r, p.match, size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.protocol in ["tcp", "udp", "sctp"]))
+self.all(p, cel.bind(r, p.match, r.family != null || r.protocol != null || r.source != null || r.destination != null || size(r.sourcePorts) > 0 || size(r.destinationPorts) > 0 || size(r.dscp) > 0))
 ```
 
 Expression of rule 8:
 
 ```text
-self.all(p, cel.bind(r, p.match, r.family != null || r.protocol != null || r.source != null || r.destination != null || size(r.sourcePorts) > 0 || size(r.destinationPorts) > 0 || size(r.dscp) > 0))
+self.all(p, cel.bind(r, p.match, (p.to.vrf == null ? 0 : 1) + (p.to.table == null ? 0 : 1) + (p.to.nextHop == null ? 0 : 1) == 1))
 ```
 
 Expression of rule 9:
 
 ```text
-self.all(p, cel.bind(r, p.match, (p.to.vrf == null ? 0 : 1) + (p.to.table == null ? 0 : 1) + (p.to.nextHop == null ? 0 : 1) == 1))
+self.all(p, cel.bind(r, p.match, p.to.nextHop == null || (ip(p.to.nextHop.address).family() == "ipv4" ? ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv4" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv4" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4")))) : ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv6" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv6" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6")))))))
 ```
 
 Expression of rule 10:
 
 ```text
-self.all(p, cel.bind(r, p.match, p.to.nextHop == null || (ip(p.to.nextHop.address).family() == "ipv4" ? ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv4" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv4" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4")))) : ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv6" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv6" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6")))))))
-```
-
-Expression of rule 11:
-
-```text
 cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(tables, v.map(n, v[n].spec.table), self.all(p, p.to.table == null || p.to.table != 255 && !(p.to.table in tables))))
 ```
 
-Expression of rule 12:
+Expression of rule 11:
 
 ```text
 cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(tables, v.map(n, v[n].spec.table), self.all(p, p.to.nextHop == null || !(p.to.nextHop.table in [253, 254, 255]) && !(p.to.nextHop.table in tables))))
@@ -1343,14 +1291,11 @@ self.all(t, t["then"].action == "accept" || t["then"].localPref == null && t["th
 | 1 | — | A VRF is named as its device, in 15 characters at most, and not default. | `refuse` | `documents.all(n, n != "default" && size(n) <= 15)` | after the table |
 | 2 | — | A VRF's name does not start with n64-, which starts the names of the NAT64s' links. | `refuse` | `documents.all(n, !n.startsWith("n64-"))` | after the table |
 | 3 | — | A VRF's table is none of the kernel's own: 253, 254 and 255. | `refuse` | `documents.all(n, !(documents[n].spec.table in [253, 254, 255]))` | after the table |
-| 4 | — | A table belongs to one VRF. | `refuse` | `cel.bind(t, documents.map(n, documents[n].spec.table), t.all(x, size(t.filter(y, y == x)) == 1))` | after the table |
-| 5 | — | An interface or glob is in one VRF, once; globs compare as written. | `refuse` | after the table | after the table |
-| 6 | — | No VRF holds an interface of Router.spec.management.interfaces; globs match as globs. | `refuse` | after the table | after the table |
-| 7 | — | No interface of Router.spec.management.interfaces matches a VRF's device; globs match as globs. | `refuse` | after the table | after the table |
-| 8 | — | While the node API answers on every interface, a Network document names a link that no VRF holds; globs match as globs. | `refuse` | after the table | every link the Network documents name is in a VRF, and chalkd answers in the default VRF alone, on every interface while Router.spec.management.interfaces is null; keep the link you reach the router through out of every VRF |
-| 9 | — | No NetDev document creates a device of a VRF's name. | `refuse` | after the table | after the table |
-| 10 | — | A conntrack zone belongs to one VRF. | `refuse` | after the table | after the table |
-| 11 | — | A VRF with a conntrack zone neither imports routes from another VRF nor gives its routes to one, through BGP. | `refuse` | after the table | after the table |
+| 4 | — | No VRF holds an interface of Router.spec.management.interfaces; globs match as globs. | `refuse` | after the table | after the table |
+| 5 | — | No interface of Router.spec.management.interfaces matches a VRF's device; globs match as globs. | `refuse` | after the table | after the table |
+| 6 | — | While the node API answers on every interface, a Network document names a link that no VRF holds; globs match as globs. | `refuse` | after the table | every link the Network documents name is in a VRF, and chalkd answers in the default VRF alone, on every interface while Router.spec.management.interfaces is null; keep the link you reach the router through out of every VRF |
+| 7 | — | No NetDev document creates a device of a VRF's name. | `refuse` | after the table | after the table |
+| 8 | — | A VRF with a conntrack zone neither imports routes from another VRF nor gives its routes to one, through BGP. | `refuse` | after the table | after the table |
 
 Message of rule 1:
 
@@ -1370,85 +1315,55 @@ Message of rule 3:
 documents.filter(n, documents[n].spec.table in [253, 254, 255]).map(n, "VRF " + n).join(", ") + " uses table 253, 254 or 255, which the kernel keeps for the default VRF; give it another number"
 ```
 
-Message of rule 4:
-
-```text
-cel.bind(t, documents.map(n, documents[n].spec.table), "more than one VRF uses table " + string(t.filter(x, size(t.filter(y, y == x)) > 1)[0]) + "; give each VRF a table of its own")
-```
-
-Expression of rule 5:
-
-```text
-cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, size(all.filter(j, j == i)) == 1))
-```
-
-Message of rule 5:
-
-```text
-cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), "the interface " + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + " is in more than one VRF, or twice in one; give each interface one VRF")
-```
-
-Expression of rule 6:
+Expression of rule 4:
 
 ```text
 cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(api, cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), cel.bind(heldName, "^(" + held.map(i, i.replace(".", "[.]").replace("*", "[^ ]*")).join("|") + ")$", cel.bind(heldText, held.map(i, " " + i).join(""), api.all(i, !(i.matches(heldName) || i.endsWith("*") && heldText.contains(" " + i.replace("*", ""))))))))
 ```
 
-Message of rule 6:
+Message of rule 4:
 
 ```text
 cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(api, cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), cel.bind(heldName, "^(" + held.map(i, i.replace(".", "[.]").replace("*", "[^ ]*")).join("|") + ")$", cel.bind(heldText, held.map(i, " " + i).join(""), "the management interface " + api.filter(i, (i.matches(heldName) || i.endsWith("*") && heldText.contains(" " + i.replace("*", ""))))[0] + " is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"))))
 ```
 
-Expression of rule 7:
+Expression of rule 5:
 
 ```text
 cel.bind(api, cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), cel.bind(deviceText, documents.map(n, " " + n + " ").join(""), api.all(i, !deviceText.contains(" " + (i.endsWith("*") ? i.replace("*", "") : i + " ")))))
 ```
 
-Message of rule 7:
+Message of rule 5:
 
 ```text
 cel.bind(api, cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), cel.bind(deviceText, documents.map(n, " " + n + " ").join(""), cel.bind(m, api.filter(i, deviceText.contains(" " + (i.endsWith("*") ? i.replace("*", "") : i + " ")))[0], "the management interface " + m + " matches the device of VRF " + documents.filter(n, m.endsWith("*") ? n.startsWith(m.replace("*", "")) : n == m)[0] + ", and chalkd answers in the default VRF alone; name the default VRF's links")))
 ```
 
-Expression of rule 8:
+Expression of rule 6:
 
 ```text
 size(documents) == 0 || cel.bind(routers, (("router.chalkos.dev/v1alpha1" in config && "Router" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Router : {}), routers.exists(k, routers[k].spec.management.interfaces != null)) || cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), !cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")).matches("^( +(" + held.map(i, i.replace(".", "[.]").replace("*", "[^ ]*")).join("|") + "|![^ ]*))* *$"))
 ```
 
-Expression of rule 9:
+Expression of rule 7:
 
 ```text
 cel.bind(made, cel.bind(netdevs, (("networkd.chalkos.dev/v1alpha1" in config && "NetDev" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : "")).flatten()), documents.all(n, !(n in made)))
 ```
 
-Message of rule 9:
+Message of rule 7:
 
 ```text
 cel.bind(made, cel.bind(netdevs, (("networkd.chalkos.dev/v1alpha1" in config && "NetDev" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : "")).flatten()), "the VRF " + documents.filter(n, n in made)[0] + " takes the name of a device a NetDev document creates; rename the VRF or the NetDev")
 ```
 
-Expression of rule 10:
-
-```text
-cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), z.all(x, size(z.filter(y, y == x)) == 1))
-```
-
-Message of rule 10:
-
-```text
-cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), "more than one VRF uses conntrack zone " + string(z.filter(x, size(z.filter(y, y == x)) > 1)[0]) + "; give each VRF a zone of its own")
-```
-
-Expression of rule 11:
+Expression of rule 8:
 
 ```text
 cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.all(n, documents[n].spec.conntrackZone == null || !(n in importers) && !(n in imported))))))
 ```
 
-Message of rule 11:
+Message of rule 8:
 
 ```text
 cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + ": a VRF with a conntrack zone leaks no routes through a BGP import, as its connections would answer in another zone; drop the zone or the import"))))

@@ -44,9 +44,10 @@ type routeTarget struct {
 // policyTargets are the tables of the PolicyRoute documents' targets, sorted by number, each with
 // its mark, (index+1)<<16: a VRF's table, a rule's table and a next hop's table. It checks the
 // targets as the kind's rules do: one per rule, a table that is not the local table and no VRF's,
-// a next hop of an address, an interface's name and a table of its own that is none of the
-// kernel's tables and no VRF's. It refuses more than 255 tables, which the mark's bits cannot
-// tell apart.
+// a next hop of an address and an interface's name whose table is none of the kernel's tables and
+// no VRF's. A next hop's table of its own, which no other next hop and no rule's table takes, is
+// checked here alone, as its key spans the targets of every document. It refuses more than 255
+// tables, which the mark's bits cannot tell apart.
 func policyTargets(d routerDocuments) ([]routeTarget, error) {
 	vrfTables := map[string]uint32{}
 	tableVRF := map[uint32]string{}

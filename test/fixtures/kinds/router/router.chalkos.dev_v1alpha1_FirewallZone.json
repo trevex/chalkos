@@ -43,7 +43,13 @@
             "pattern": "^(?:[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*])$",
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "hint": "give each interface one zone"
+            }
+          ]
         },
         "vrfs": {
           "default": [],
@@ -61,7 +67,13 @@
               "kind": "VRF"
             }
           },
-          "type": "array"
+          "type": "array",
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "hint": "give each VRF one zone"
+            }
+          ]
         }
       },
       "type": "object"
@@ -87,21 +99,9 @@
         "takes": "refuse"
       },
       {
-        "description": "An interface or glob is in one FirewallZone, once; globs compare as written.",
-        "messageExpression": "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), \"the interface \" + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + \" is in more than one FirewallZone, or twice in one; give each interface one zone\")",
-        "rule": "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, size(all.filter(j, j == i)) == 1))",
-        "takes": "refuse"
-      },
-      {
         "description": "A FirewallZone names an interface or a VRF.",
         "messageExpression": "documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, \"FirewallZone \" + n).join(\", \") + \": a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both\"",
         "rule": "documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)",
-        "takes": "refuse"
-      },
-      {
-        "description": "A VRF is in one FirewallZone, once.",
-        "messageExpression": "cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), \"the VRF \" + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + \" is in more than one FirewallZone, or twice in one; give each VRF one zone\")",
-        "rule": "cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), all.all(v, size(all.filter(w, w == v)) == 1))",
         "takes": "refuse"
       },
       {

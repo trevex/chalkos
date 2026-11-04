@@ -268,8 +268,6 @@ func TestVRFRefusals(t *testing.T) {
 			"VRF eth1: a Network document names the link eth1, the VRF's device"},
 		"the main table": {map[string][]any{"VRF": {vrf("a", `{"table": 254}`)}, "Network": {link("eth0")}},
 			"VRF a: table 254 is no table of a VRF"},
-		"two VRFs of one table": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`), vrf("b", `{"table": 100}`)}, "Network": {link("eth0")}},
-			"VRF a and VRF b both use table 100"},
 		"a VRF named default": {map[string][]any{"VRF": {vrf("default", `{"table": 100}`)}, "Network": {link("eth0")}},
 			"VRF default: a VRF is named as its device"},
 		"a VRF of a NAT64 link's name": {map[string][]any{"VRF": {vrf("n64-a", `{"table": 100}`)}, "Network": {link("eth0")}},

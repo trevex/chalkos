@@ -38,10 +38,10 @@ func network(t *testing.T, name, match string) config.Document {
 	return builtinDoc(t, config.NetworkdAPI, "Network", name, `{"match": `+match+`}`)
 }
 
-// The router kinds' rules accept a fabric edge's documents and a zone of a VRF, and refuse two
-// zones of one interface or VRF, a zone of nothing, a zone's or NAT rule's interface that is a
-// VRF's device, a policy from local, two policies between one pair, a source of a set and ranges
-// or of neither, addresses of another family and ports without a protocol.
+// The router kinds' rules accept a fabric edge's documents and a zone of a VRF, and refuse a zone
+// of nothing, a zone's or NAT rule's interface that is a VRF's device, a policy from local, a
+// source of a set and ranges or of neither, addresses of another family and ports without a
+// protocol.
 func TestRouterRules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -78,12 +78,8 @@ func TestRouterRules(t *testing.T) {
 		{"no documents", nil, nil},
 		{"a zone named local", replace(edge, doc("FirewallZone", "local", `{"interfaces": ["lo0"]}`)),
 			[]string{"a FirewallZone is named local, which is the router itself: FirewallPolicy documents name it without a document, so give the zone another name"}},
-		{"an interface in two zones", replace(edge, doc("FirewallZone", "lan", `{"interfaces": ["eth2"]}`)),
-			[]string{"the interface eth2 is in more than one FirewallZone, or twice in one; give each interface one zone"}},
 		{"a policy from local", replace(edge, doc("FirewallPolicy", "out", `{"from": "local", "to": "wan"}`)),
 			[]string{"FirewallPolicy out comes from local, the router itself, whose own connections the firewall accepts; a policy comes from a FirewallZone"}},
-		{"two policies between one pair", replace(edge, doc("FirewallPolicy", "wan-local-2", `{"from": "wan", "to": "local"}`)),
-			[]string{"more than one FirewallPolicy goes from wan to local; give each pair of zones one policy"}},
 		{"a set beside ranges", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"source": {"set": "office", "cidrs": ["2001:db8:2::/48"]}, "action": "accept"}]}`)),
 			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address`}},
 		{"a source of neither", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"source": {}, "action": "accept"}]}`)),
@@ -92,8 +88,6 @@ func TestRouterRules(t *testing.T) {
 			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6`}},
 		{"ICMP types without a protocol", replace(edge, doc("FirewallPolicy", "fabric-wan", `{"from": "fabric", "to": "wan", "rules": [{"icmpTypes": ["echo-request"], "action": "accept"}]}`)),
 			[]string{`FirewallPolicy "fabric-wan" spec.rules: a rule has ports without the protocol tcp, udp or sctp, or ICMP types its protocol lacks`}},
-		{"an interface twice in one zone", replace(edge, doc("FirewallZone", "fabric", `{"interfaces": ["eth1", "eth1"]}`)),
-			[]string{"the interface eth1 is in more than one FirewallZone, or twice in one; give each interface one zone"}},
 		{"dnat with out", replace(edge, doc("NATRule", "web", `{"type": "dnat", "in": {"interface": "eth0"}, "out": {"interface": "eth1"}, "to": {"address": "192.0.2.10"}}`)),
 			[]string{"NATRule web: a masquerade or snat rule names out alone, a dnat rule in alone"}},
 		{"an empty place", replace(edge, doc("NATRule", "wan", `{"type": "masquerade", "out": {}}`)),
@@ -123,8 +117,6 @@ func TestRouterRules(t *testing.T) {
 		{"a zone of nothing", replace(edge, doc("FirewallZone", "dmz", `{}`)),
 			[]string{"FirewallZone dmz: a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"}},
 		{"a zone of interfaces and a VRF", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"interfaces": ["eth3"], "vrfs": ["tenant"]}`)), nil},
-		{"a VRF in two zones", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"vrfs": ["tenant"]}`), doc("FirewallZone", "more", `{"vrfs": ["tenant"]}`)),
-			[]string{"the VRF tenant is in more than one FirewallZone, or twice in one; give each VRF one zone"}},
 		{"a zone of a VRF's device", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"interfaces": ["eth3", "tenant"]}`)),
 			[]string{"FirewallZone tenant: tenant is the device of VRF tenant; name the VRF in vrfs"}},
 		{"a zone of an interface beside a VRF's name", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"interfaces": ["tenant0", "ten*"]}`)), nil},

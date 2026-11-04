@@ -65,8 +65,6 @@ let
   leaking =
     body:
     ''cel.bind(bgps, ${delivered "BGP"}, cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), ${body}))))'';
-  # The conntrack zones of the VRF documents that have one.
-  zones = "documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone)";
 in
 {
   config = lib.mkIf config.chalkos.router.enable {
@@ -90,16 +88,6 @@ in
           messageExpression = ''documents.filter(n, documents[n].spec.table in [253, 254, 255]).map(n, "VRF " + n).join(", ") + " uses table 253, 254 or 255, which the kernel keeps for the default VRF; give it another number"'';
         }
         {
-          description = "A table belongs to one VRF.";
-          rule = "cel.bind(t, documents.map(n, documents[n].spec.table), t.all(x, size(t.filter(y, y == x)) == 1))";
-          messageExpression = ''cel.bind(t, documents.map(n, documents[n].spec.table), "more than one VRF uses table " + string(t.filter(x, size(t.filter(y, y == x)) > 1)[0]) + "; give each VRF a table of its own")'';
-        }
-        {
-          description = "An interface or glob is in one VRF, once; globs compare as written.";
-          rule = "cel.bind(all, ${members}, all.all(i, size(all.filter(j, j == i)) == 1))";
-          messageExpression = ''cel.bind(all, ${members}, "the interface " + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + " is in more than one VRF, or twice in one; give each interface one VRF")'';
-        }
-        {
           description = "No VRF holds an interface of Router.spec.management.interfaces; globs match as globs.";
           rule = "cel.bind(held, ${members}, cel.bind(api, ${managed}, ${heldBy "api.all(i, !${overlapsHeld "i"})"}))";
           messageExpression = "cel.bind(held, ${members}, cel.bind(api, ${managed}, ${heldBy ''"the management interface " + api.filter(i, ${overlapsHeld "i"})[0] + " is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"''}))";
@@ -120,24 +108,23 @@ in
           messageExpression = ''cel.bind(made, ${devices}, "the VRF " + documents.filter(n, n in made)[0] + " takes the name of a device a NetDev document creates; rename the VRF or the NetDev")'';
         }
         {
-          description = "A conntrack zone belongs to one VRF.";
-          rule = "cel.bind(z, ${zones}, z.all(x, size(z.filter(y, y == x)) == 1))";
-          messageExpression = ''cel.bind(z, ${zones}, "more than one VRF uses conntrack zone " + string(z.filter(x, size(z.filter(y, y == x)) > 1)[0]) + "; give each VRF a zone of its own")'';
-        }
-        {
           description = "A VRF with a conntrack zone neither imports routes from another VRF nor gives its routes to one, through BGP.";
           rule = leaking "documents.all(n, documents[n].spec.conntrackZone == null || !(n in importers) && !(n in imported))";
           messageExpression = leaking ''documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + ": a VRF with a conntrack zone leaks no routes through a BGP import, as its connections would answer in another zone; drop the zone or the import"'';
         }
       ];
       spec = {
-        table = mkOption {
+        table = lib.chalkos.mkOption {
           type = types.ints.between 1 4294967295;
+          unique.hint = "give each VRF a table of its own";
           example = 100;
           description = "Routing table of the VRF, which no other VRF uses; not 253, 254 or 255, the kernel's tables of the default VRF. A change creates the VRF anew, which ends the sessions in it.";
         };
-        interfaces = mkOption {
+        # An interface or glob is in one VRF, once, compared as written; the output networkd
+        # refuses globs whose links overlap.
+        interfaces = lib.chalkos.mkOption {
           type = types.listOf interface;
+          unique.hint = "give each interface one VRF";
           default = [ ];
           example = [
             "eth2"
@@ -145,8 +132,9 @@ in
           ];
           description = "Links the VRF holds, ${interfaceText}; a glob stands for the links the node's Network documents name in a `[Match]` section's `Name=`. A link is named by a Network document, which gets `VRF=`, and every link of that Network is in this VRF.";
         };
-        conntrackZone = mkOption {
+        conntrackZone = lib.chalkos.mkOption {
           type = types.nullOr (types.ints.between 1 65535);
+          unique.hint = "give each VRF a zone of its own";
           default = null;
           example = 1;
           description = "Conntrack zone of the connections through the VRF's links, which no other VRF uses; null shares zone 0 with the default VRF and every VRF without one. A zone keeps the state and NAT of the VRF's connections apart from those of other VRFs with the same addresses. A VRF with a zone neither imports routes from another VRF nor gives its routes to one.";

@@ -35,11 +35,9 @@ let
   # A VRF document's name. The default VRF has no device and no table of a VRF document, so a zone
   # and a policy route name VRF documents alone.
   vrfDocRef = ref "VRF";
-  # Binds, for body, all to the VRFs of every FirewallZone as one list, which a rule loops over
-  # rather than over each zone's VRFs: nested loops, or a loop over a list flattened in place,
-  # would cost more than chalkd allows.
-  zoneVRFs = body: "cel.bind(all, documents.map(n, documents[n].spec.vrfs).flatten(), ${body})";
-  # Binds, for body, all to the interfaces of every FirewallZone as one list, as zoneVRFs does.
+  # Binds, for body, all to the interfaces of every FirewallZone as one list, which a rule loops
+  # over rather than over each zone's interfaces: nested loops, or a loop over a list flattened in
+  # place, would cost more than chalkd allows.
   zoneInterfaces =
     body: "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), ${body})";
   # The places out and in of the NATRule n.
@@ -235,16 +233,11 @@ let
   # Binds, for body, tables to the VRF documents' tables.
   vrfTables =
     body: "cel.bind(v, ${delivered "VRF"}, cel.bind(tables, v.map(n, v[n].spec.table), ${body}))";
-  # Whether a PolicyRoute's target a takes a next hop's table that no other next hop and no
-  # table target takes, inside a binding of every target to tos.
-  ownTable = "a.nextHop == null || tos.all(b, b.table != a.nextHop.table && (b.nextHop == null || b.nextHop.table != a.nextHop.table || b.nextHop == a.nextHop))";
-  # Binds, for body, all to the interfaces of every PolicyRoute's in as one list, as zoneVRFs does.
+  # Binds, for body, all to the interfaces of every PolicyRoute's in as one list, as
+  # zoneInterfaces does.
   policyInterfaces =
     body:
     ''cel.bind(all, documents.map(n, documents[n].spec["in"] == null ? [] : documents[n].spec["in"].interfaces).flatten(), ${body})'';
-  # Binds, for body, tos to the targets of every PolicyRoute's rules as one list.
-  policyTargets =
-    body: "cel.bind(tos, documents.map(n, documents[n].spec.rules.map(p, p.to)).flatten(), ${body})";
 
   # Where a PolicyRoute's rule sends the traffic it matches: a VRF, a table or a next hop.
   policyTarget = types.submodule {
@@ -278,7 +271,7 @@ let
               table = mkOption {
                 type = types.ints.between 1 4294967295;
                 example = 200;
-                description = "Routing table of the next hop: a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. One next hop's alone; none of 253, 254 and 255, no VRF's table and no rule's `table`.";
+                description = "Routing table of the next hop: a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. One next hop's alone, and no rule's `table`, which the outputs check when they render the config, at an apply or a `--dry-run` but not in `chalkctl validate`; none of 253, 254 and 255 and no VRF's table.";
               };
             };
           }
@@ -384,19 +377,9 @@ in
             message = "a FirewallZone is named local, which is the router itself: FirewallPolicy documents name it without a document, so give the zone another name";
           }
           {
-            description = "An interface or glob is in one FirewallZone, once; globs compare as written.";
-            rule = "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, size(all.filter(j, j == i)) == 1))";
-            messageExpression = ''cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), "the interface " + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each interface one zone")'';
-          }
-          {
             description = "A FirewallZone names an interface or a VRF.";
             rule = "documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)";
             messageExpression = ''documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n].spec.vrfs) == 0).map(n, "FirewallZone " + n).join(", ") + ": a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"'';
-          }
-          {
-            description = "A VRF is in one FirewallZone, once.";
-            rule = zoneVRFs "all.all(v, size(all.filter(w, w == v)) == 1)";
-            messageExpression = zoneVRFs ''"the VRF " + all.filter(v, size(all.filter(w, w == v)) > 1)[0] + " is in more than one FirewallZone, or twice in one; give each VRF one zone"'';
           }
           {
             description = "No interface of a FirewallZone is a VRF's device, which takes the VRF document's name; the output router-nftables also refuses globs that match one.";
@@ -405,8 +388,11 @@ in
           }
         ];
         spec = {
-          interfaces = mkOption {
+          # An interface or glob is in one FirewallZone, once, compared as written; the output
+          # router-nftables refuses an interface that may be a link of a VRF another zone holds.
+          interfaces = lib.chalkos.mkOption {
             type = types.listOf interface;
+            unique.hint = "give each interface one zone";
             default = [ ];
             example = [
               "eth1"
@@ -414,8 +400,9 @@ in
             ];
             description = "Interfaces of the zone, ${interfaceText}. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; the VRF itself is then in no other zone.";
           };
-          vrfs = mkOption {
+          vrfs = lib.chalkos.mkOption {
             type = types.listOf vrfDocRef;
+            unique.hint = "give each VRF one zone";
             default = [ ];
             example = [ "tenant" ];
             description = "VRF documents whose links are all in the zone, those added later included; a VRF is in one zone at most.";
@@ -432,10 +419,15 @@ in
             rule = ''documents.all(n, documents[n].spec.from != "local")'';
             messageExpression = ''documents.filter(n, documents[n].spec.from == "local").map(n, "FirewallPolicy " + n).join(", ") + " comes from local, the router itself, whose own connections the firewall accepts; a policy comes from a FirewallZone"'';
           }
+        ];
+        # One FirewallPolicy at most goes from a zone to another.
+        unique = [
           {
-            description = "One FirewallPolicy at most goes from a zone to another.";
-            rule = ''cel.bind(pairs, documents.map(n, documents[n].spec.from + " to " + documents[n].spec.to), pairs.all(p, size(pairs.filter(q, q == p)) == 1))'';
-            messageExpression = ''cel.bind(pairs, documents.map(n, documents[n].spec.from + " to " + documents[n].spec.to), "more than one FirewallPolicy goes from " + pairs.filter(p, size(pairs.filter(q, q == p)) > 1)[0] + "; give each pair of zones one policy")'';
+            by = [
+              "from"
+              "to"
+            ];
+            hint = "give each pair of zones one policy";
           }
         ];
         spec = {
@@ -625,11 +617,6 @@ in
             description = "No interface of a PolicyRoute's in is a VRF's device, which takes the VRF document's name; the outputs also refuse globs that match one.";
             rule = "cel.bind(vrfs, ${delivered "VRF"}, ${policyInterfaces "all.all(i, !(i in vrfs))"})";
             messageExpression = "cel.bind(vrfs, ${delivered "VRF"}, ${policyInterfaces ''cel.bind(i, all.filter(i, i in vrfs)[0], "PolicyRoute " + documents.filter(n, documents[n].spec["in"] != null && i in documents[n].spec["in"].interfaces)[0] + ": " + i + " is the device of VRF " + i + "; name the VRF's links, or a zone of the VRF")''})";
-          }
-          {
-            description = "A next hop's table is that next hop's alone: no other next hop and no rule's table takes it.";
-            rule = policyTargets "tos.all(a, ${ownTable})";
-            messageExpression = policyTargets ''cel.bind(a, tos.filter(a, !(${ownTable}))[0], "PolicyRoute " + documents.filter(n, documents[n].spec.rules.exists(p, p.to == a))[0] + ": the next hop " + a.nextHop.address + " takes table " + string(a.nextHop.table) + ", which another next hop or a rule's table takes too; give each next hop a table of its own")'';
           }
         ];
         spec = {

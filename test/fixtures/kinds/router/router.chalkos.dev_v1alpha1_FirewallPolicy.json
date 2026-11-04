@@ -340,7 +340,21 @@
         "from",
         "to"
       ],
-      "type": "object"
+      "type": "object",
+      "x-chalkos-unique": [
+        {
+          "across": "kind",
+          "by": [
+            {
+              "field": "from"
+            },
+            {
+              "field": "to"
+            }
+          ],
+          "hint": "give each pair of zones one policy"
+        }
+      ]
     }
   },
   "required": [
@@ -360,12 +374,6 @@
         "description": "A FirewallPolicy comes from a FirewallZone, not from local.",
         "messageExpression": "documents.filter(n, documents[n].spec.from == \"local\").map(n, \"FirewallPolicy \" + n).join(\", \") + \" comes from local, the router itself, whose own connections the firewall accepts; a policy comes from a FirewallZone\"",
         "rule": "documents.all(n, documents[n].spec.from != \"local\")",
-        "takes": "refuse"
-      },
-      {
-        "description": "One FirewallPolicy at most goes from a zone to another.",
-        "messageExpression": "cel.bind(pairs, documents.map(n, documents[n].spec.from + \" to \" + documents[n].spec.to), \"more than one FirewallPolicy goes from \" + pairs.filter(p, size(pairs.filter(q, q == p)) > 1)[0] + \"; give each pair of zones one policy\")",
-        "rule": "cel.bind(pairs, documents.map(n, documents[n].spec.from + \" to \" + documents[n].spec.to), pairs.all(p, size(pairs.filter(q, q == p)) == 1))",
         "takes": "refuse"
       }
     ],

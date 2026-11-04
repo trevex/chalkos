@@ -45,6 +45,12 @@
           "description": "Conntrack zone of the connections through the VRF's links, which no other VRF uses; null shares zone 0 with the default VRF and every VRF without one. A zone keeps the state and NAT of the VRF's connections apart from those of other VRFs with the same addresses. A VRF with a zone neither imports routes from another VRF nor gives its routes to one.",
           "examples": [
             1
+          ],
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "hint": "give each VRF a zone of its own"
+            }
           ]
         },
         "interfaces": {
@@ -60,7 +66,13 @@
             "pattern": "^(?:[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*])$",
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "hint": "give each interface one VRF"
+            }
+          ]
         },
         "table": {
           "description": "Routing table of the VRF, which no other VRF uses; not 253, 254 or 255, the kernel's tables of the default VRF. A change creates the VRF anew, which ends the sessions in it.",
@@ -69,7 +81,13 @@
           ],
           "maximum": 4294967295,
           "minimum": 1,
-          "type": "integer"
+          "type": "integer",
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "hint": "give each VRF a table of its own"
+            }
+          ]
         }
       },
       "required": [
@@ -110,18 +128,6 @@
         "takes": "refuse"
       },
       {
-        "description": "A table belongs to one VRF.",
-        "messageExpression": "cel.bind(t, documents.map(n, documents[n].spec.table), \"more than one VRF uses table \" + string(t.filter(x, size(t.filter(y, y == x)) > 1)[0]) + \"; give each VRF a table of its own\")",
-        "rule": "cel.bind(t, documents.map(n, documents[n].spec.table), t.all(x, size(t.filter(y, y == x)) == 1))",
-        "takes": "refuse"
-      },
-      {
-        "description": "An interface or glob is in one VRF, once; globs compare as written.",
-        "messageExpression": "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), \"the interface \" + all.filter(i, size(all.filter(j, j == i)) > 1)[0] + \" is in more than one VRF, or twice in one; give each interface one VRF\")",
-        "rule": "cel.bind(all, documents.map(n, documents[n].spec.interfaces).flatten(), all.all(i, size(all.filter(j, j == i)) == 1))",
-        "takes": "refuse"
-      },
-      {
         "description": "No VRF holds an interface of Router.spec.management.interfaces; globs match as globs.",
         "messageExpression": "cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(api, cel.bind(routers, ((\"router.chalkos.dev/v1alpha1\" in config && \"Router\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), cel.bind(heldName, \"^(\" + held.map(i, i.replace(\".\", \"[.]\").replace(\"*\", \"[^ ]*\")).join(\"|\") + \")$\", cel.bind(heldText, held.map(i, \" \" + i).join(\"\"), \"the management interface \" + api.filter(i, (i.matches(heldName) || i.endsWith(\"*\") && heldText.contains(\" \" + i.replace(\"*\", \"\"))))[0] + \" is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF\"))))",
         "rule": "cel.bind(held, documents.map(n, documents[n].spec.interfaces).flatten(), cel.bind(api, cel.bind(routers, ((\"router.chalkos.dev/v1alpha1\" in config && \"Router\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].Router : {}), routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten()), cel.bind(heldName, \"^(\" + held.map(i, i.replace(\".\", \"[.]\").replace(\"*\", \"[^ ]*\")).join(\"|\") + \")$\", cel.bind(heldText, held.map(i, \" \" + i).join(\"\"), api.all(i, !(i.matches(heldName) || i.endsWith(\"*\") && heldText.contains(\" \" + i.replace(\"*\", \"\"))))))))",
@@ -143,12 +149,6 @@
         "description": "No NetDev document creates a device of a VRF's name.",
         "messageExpression": "cel.bind(made, cel.bind(netdevs, ((\"networkd.chalkos.dev/v1alpha1\" in config && \"NetDev\" in config[\"networkd.chalkos.dev/v1alpha1\"]) ? config[\"networkd.chalkos.dev/v1alpha1\"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : \"\")).flatten()), \"the VRF \" + documents.filter(n, n in made)[0] + \" takes the name of a device a NetDev document creates; rename the VRF or the NetDev\")",
         "rule": "cel.bind(made, cel.bind(netdevs, ((\"networkd.chalkos.dev/v1alpha1\" in config && \"NetDev\" in config[\"networkd.chalkos.dev/v1alpha1\"]) ? config[\"networkd.chalkos.dev/v1alpha1\"].NetDev : {}), netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : (type(netdevs[n].spec.netDev) == list ? netdevs[n].spec.netDev : [netdevs[n].spec.netDev]).map(s, has(s.name) ? s.name : \"\")).flatten()), documents.all(n, !(n in made)))",
-        "takes": "refuse"
-      },
-      {
-        "description": "A conntrack zone belongs to one VRF.",
-        "messageExpression": "cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), \"more than one VRF uses conntrack zone \" + string(z.filter(x, size(z.filter(y, y == x)) > 1)[0]) + \"; give each VRF a zone of its own\")",
-        "rule": "cel.bind(z, documents.filter(n, documents[n].spec.conntrackZone != null).map(n, documents[n].spec.conntrackZone), z.all(x, size(z.filter(y, y == x)) == 1))",
         "takes": "refuse"
       },
       {

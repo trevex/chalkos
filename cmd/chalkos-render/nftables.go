@@ -214,7 +214,6 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 	if err := f.nat64LinksUnnamed(d); err != nil {
 		return nil, err
 	}
-	zoneOf := map[int]string{}
 	for _, v := range d.VRFs {
 		if v.Spec.ConntrackZone == nil {
 			continue
@@ -223,10 +222,6 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		if z < 1 || z > 65535 {
 			return nil, fmt.Errorf("VRF %s: conntrackZone %d is no zone from 1 to 65535", v.Name, z)
 		}
-		if other, ok := zoneOf[z]; ok {
-			return nil, fmt.Errorf("VRF %s and VRF %s both use conntrack zone %d", other, v.Name, z)
-		}
-		zoneOf[z] = v.Name
 		links, err := d.Membership.links(v.Name)
 		if err != nil {
 			return nil, err
@@ -313,9 +308,9 @@ func (z zoneLinks) entries() []string {
 
 // zoneLinksOf finds where the hooks see each zone's connections. Without VRFs a zone's
 // interfaces are its in and its links, as before VRFs. It refuses a zone of no interface and no
-// VRF, a VRF that two zones hold, an interface that matches a VRF's device, which the input and
-// forward hooks see for each of the VRF's links, and an interface that may be a link of a VRF
-// another zone holds.
+// VRF, an interface that matches a VRF's device, which the input and forward hooks see for each
+// of the VRF's links, and an interface that may be a link of a VRF another zone holds. The set
+// check refuses a VRF that two zones hold, so each VRF has one zone in held.
 func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, error) {
 	declared := map[string]bool{}
 	for _, v := range d.VRFs {
@@ -326,9 +321,6 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 		for _, v := range z.Spec.VRFs {
 			if _, err := mustGet(declared, "VRF", v); err != nil {
 				return nil, fmt.Errorf("FirewallZone %s: %w", z.Name, err)
-			}
-			if _, ok := held[v]; ok {
-				return nil, fmt.Errorf("the VRF %s is in more than one FirewallZone, or twice in one", v)
 			}
 			held[v] = z.Name
 		}

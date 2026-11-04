@@ -454,7 +454,7 @@ What the router's firewall does with new connections from one zone to another, o
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 6 [change rules](builtins.md#rules-firewallpolicy).
+A node's config may hold several, each with a name of its own. It has 5 [change rules](builtins.md#rules-firewallpolicy). No two documents share `from` and `to`.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -482,12 +482,12 @@ A zone of the router's firewall: interfaces and VRFs whose connections the Firew
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 5 [change rules](builtins.md#rules-firewallzone).
+A node's config may hold several, each with a name of its own. It has 3 [change rules](builtins.md#rules-firewallzone).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.interfaces` | list of string | `[]` | Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; the VRF itself is then in no other zone. |
-| `spec.vrfs` | list of name of a VRF | `[]` | VRF documents whose links are all in the zone, those added later included; a VRF is in one zone at most. |
+| `spec.interfaces` | list of string | `[]` | Interfaces of the zone, by name or glob, a glob being a prefix followed by `*`. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; the VRF itself is then in no other zone. Each item is unique among the FirewallZone documents. |
+| `spec.vrfs` | list of name of a VRF | `[]` | VRF documents whose links are all in the zone, those added later included; a VRF is in one zone at most. Each item is unique among the FirewallZone documents. |
 
 ### NAT64 { #nat64 }
 
@@ -538,7 +538,7 @@ Policy routing of the router: rules that send the forwarded traffic they match, 
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 13 [change rules](builtins.md#rules-policyroute).
+A node's config may hold several, each with a name of its own. It has 12 [change rules](builtins.md#rules-policyroute).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -562,7 +562,7 @@ A node's config may hold several, each with a name of its own. It has 13 [change
 | `spec.rules[].to.nextHop` | object or null | `null` | Router the traffic leaves through, by the default route of a table of its own; excludes `vrf` and `table`. |
 | `spec.rules[].to.nextHop.address` | string | required | Address of the router the traffic leaves through, of the family the rule matches. |
 | `spec.rules[].to.nextHop.interface` | string | required | Link the next hop is on, which a Network document names alone in its `[Match]` section; the route goes into that Network. |
-| `spec.rules[].to.nextHop.table` | integer from 1 to 4294967295 | required | Routing table of the next hop: a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. One next hop's alone; none of 253, 254 and 255, no VRF's table and no rule's `table`. |
+| `spec.rules[].to.nextHop.table` | integer from 1 to 4294967295 | required | Routing table of the next hop: a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. One next hop's alone, and no rule's `table`, which the outputs check when they render the config, at an apply or a `--dry-run` but not in `chalkctl validate`; none of 253, 254 and 255 and no VRF's table. |
 | `spec.rules[].to.table` | integer from 1 to 4294967295 or null | `null` | Routing table that routes the traffic, by number: 254 is the main table. Not 255, the kernel's local table, and no VRF's table, which `vrf` names. A destination the table has no route to takes the route it would take without the policy; excludes `vrf` and `nextHop`. |
 | `spec.rules[].to.vrf` | name of a VRF or null | `null` | VRF document whose routing table routes the traffic; excludes `table` and `nextHop`. |
 
@@ -655,13 +655,13 @@ A VRF of the router: a kernel VRF device of the document's name, its routing tab
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 11 [change rules](builtins.md#rules-vrf).
+A node's config may hold several, each with a name of its own. It has 8 [change rules](builtins.md#rules-vrf).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.conntrackZone` | integer from 1 to 65535 or null | `null` | Conntrack zone of the connections through the VRF's links, which no other VRF uses; null shares zone 0 with the default VRF and every VRF without one. A zone keeps the state and NAT of the VRF's connections apart from those of other VRFs with the same addresses. A VRF with a zone neither imports routes from another VRF nor gives its routes to one. |
-| `spec.interfaces` | list of string | `[]` | Links the VRF holds, by name or glob, a glob being a prefix followed by `*`; a glob stands for the links the node's Network documents name in a `[Match]` section's `Name=`. A link is named by a Network document, which gets `VRF=`, and every link of that Network is in this VRF. |
-| `spec.table` | integer from 1 to 4294967295 | required | Routing table of the VRF, which no other VRF uses; not 253, 254 or 255, the kernel's tables of the default VRF. A change creates the VRF anew, which ends the sessions in it. |
+| `spec.conntrackZone` | integer from 1 to 65535 or null | `null` | Conntrack zone of the connections through the VRF's links, which no other VRF uses; null shares zone 0 with the default VRF and every VRF without one. A zone keeps the state and NAT of the VRF's connections apart from those of other VRFs with the same addresses. A VRF with a zone neither imports routes from another VRF nor gives its routes to one. Unique among the VRF documents. |
+| `spec.interfaces` | list of string | `[]` | Links the VRF holds, by name or glob, a glob being a prefix followed by `*`; a glob stands for the links the node's Network documents name in a `[Match]` section's `Name=`. A link is named by a Network document, which gets `VRF=`, and every link of that Network is in this VRF. Each item is unique among the VRF documents. |
+| `spec.table` | integer from 1 to 4294967295 | required | Routing table of the VRF, which no other VRF uses; not 253, 254 or 255, the kernel's tables of the default VRF. A change creates the VRF anew, which ends the sessions in it. Unique among the VRF documents. |
 
 ## storage.chalkos.dev { #storage-chalkos-dev }
 

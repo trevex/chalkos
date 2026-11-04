@@ -31,7 +31,7 @@ metadata: {name: lan}
 spec: {interfaces: [eth1, "vlan*"]}
 ```
 
-Give each interface one zone. The rules refuse a name or glob that two zones hold, but they do
+Give each interface one zone. chalkctl refuses a name or glob that two zones hold, but it does
 not compare a glob with the names it matches: `eth*` in one zone and `eth0` in another pass, and
 the policy whose name sorts first then takes `eth0`'s connections. The zone `local` is the router
 itself and needs no document.
@@ -191,16 +191,16 @@ The next delivery that changes the firewall documents loads the rendered ruleset
 ## A refusal names the document
 
 chalkctl refuses documents that do not fit together before it sends anything: a field that names
-a document the config lacks, and what the rules of the router kinds refuse. Each message names the
-document:
+a document the config lacks, a value that two documents share where the kind takes it once, and
+what the rules of the router kinds refuse. Each message names the document:
 
 | Message | Fix |
 | --- | --- |
 | `FirewallPolicy/lan-dmz: spec.to: FirewallZone "dmz" does not exist` | Add the zone, or name one that exists. |
-| `the interface eth1 is in more than one FirewallZone, or twice in one; give each interface one zone` | Keep the interface in one zone. |
+| `FirewallZone/lan: spec.interfaces[0], FirewallZone/wan: spec.interfaces[1]: "eth1" is not unique; give each interface one zone` | Keep the interface in one zone. |
 | `FirewallZone/guest: spec.vrfs[0]: VRF "guest" does not exist` | Add the `VRF` document, or fix the name in `vrfs`. |
-| `the VRF tenant is in more than one FirewallZone, or twice in one; give each VRF one zone` | Keep the VRF in one zone, or name its links in the zones instead. |
-| `more than one FirewallPolicy goes from lan to wan; give each pair of zones one policy` | Merge the policies' rules into one. |
+| `FirewallZone/guest, FirewallZone/lan: spec.vrfs[0] "tenant" is not unique; give each VRF one zone` | Keep the VRF in one zone, or name its links in the zones instead. |
+| `FirewallPolicy/lan-wan, FirewallPolicy/web: (spec.from, spec.to) ("lan", "wan") is not unique; give each pair of zones one policy` | Merge the policies' rules into one. |
 | `FirewallPolicy/wan-local: spec.rules[0].source.set: AddressSet "monitoring" does not exist` | Add the `AddressSet`, or fix the name in `set`. |
 | `NATRule web has addresses of another family than ipv4` | Set `family: ipv6`, or give IPv4 addresses. |
 

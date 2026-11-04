@@ -11,12 +11,11 @@ import (
 )
 
 // The VRF kind's rules accept an edge with two VRFs and refuse the name default, a name past 15
-// characters, a name a NAT64's link starts with, a table of the kernel's, two VRFs of one table, an interface in two VRFs, a
-// management interface in a VRF or of a VRF's device, a node whose node API answers on every interface but whose
-// Network documents all name links of VRFs, a NetDev of a VRF's name, two VRFs of one conntrack
-// zone, and a VRF with a zone that imports routes or whose routes another VRF imports. Two VRFs'
-// members compare as written; against management interfaces and the Network documents' names,
-// globs match as globs.
+// characters, a name a NAT64's link starts with, a table of the kernel's, a management interface
+// in a VRF or of a VRF's device, a node whose node API answers on every interface but whose
+// Network documents all name links of VRFs, a NetDev of a VRF's name, and a VRF with a zone that
+// imports routes or whose routes another VRF imports. Against management interfaces and the
+// Network documents' names, globs match as globs.
 func TestVRFRules(t *testing.T) {
 	set, doc := routerRules(t)
 	networks := []config.Document{
@@ -93,10 +92,6 @@ func TestVRFRules(t *testing.T) {
 			[]string{"VRF n64-a: n64- starts the names of the NAT64s' links; give the VRF another name"}},
 		{"the main table", with(edge, doc("VRF", "lab", `{"table": 254}`)),
 			[]string{"VRF lab uses table 253, 254 or 255, which the kernel keeps for the default VRF; give it another number"}},
-		{"two VRFs of one table", with(edge, doc("VRF", "lab", `{"table": 100}`)),
-			[]string{"more than one VRF uses table 100; give each VRF a table of its own"}},
-		{"an interface in two VRFs", with(edge, doc("VRF", "lab", `{"table": 300, "interfaces": ["eth2"]}`)),
-			[]string{"the interface eth2 is in more than one VRF, or twice in one; give each interface one VRF"}},
 		{"a management interface in a VRF", with(without(edge, "Router", "router"), doc("Router", "router", `{"management": {"interfaces": ["eth0", "eth1"]}}`)),
 			[]string{"the management interface eth1 is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"}},
 		{"a management interface a VRF's glob holds", management(`["eth0", "swp2"]`), []string{"the management interface swp2" + managementHeld}},
@@ -120,8 +115,6 @@ func TestVRFRules(t *testing.T) {
 			[]string{"the VRF tenant takes the name of a device a NetDev document creates; rename the VRF or the NetDev"}},
 		{"VRFs with conntrack zones", zoned(`, "conntrackZone": 1`, `, "conntrackZone": 2`), nil},
 		{"a zoned VRF without imports", with(zoned(`, "conntrackZone": 1`, ""), bgp("internet", `"internet"`, ""), bgp("tenant", `"tenant"`, "")), nil},
-		{"two VRFs of one conntrack zone", zoned(`, "conntrackZone": 1`, `, "conntrackZone": 1`),
-			[]string{"more than one VRF uses conntrack zone 1; give each VRF a zone of its own"}},
 		{"a zoned VRF that imports", with(zoned(`, "conntrackZone": 1`, ""), importer...), zoneMessage("tenant")},
 		{"a zoned VRF that another imports", with(zoned("", `, "conntrackZone": 2`), importer...), zoneMessage("internet")},
 		{"a zoned VRF that the default VRF imports", with(zoned(`, "conntrackZone": 1`, ""), bgp("bgp", "null", `, "import": {"ipv6": {"vrfs": ["tenant"]}}`), bgp("tenant", `"tenant"`, "")), zoneMessage("tenant")},

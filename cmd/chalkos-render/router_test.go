@@ -1529,7 +1529,6 @@ func TestVRFZoneRefusals(t *testing.T) {
 		want string
 	}{
 		"a zone of nothing":                  {with(zone("x", `{"interfaces": [], "vrfs": []}`)), "FirewallZone x: a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"},
-		"a VRF in two zones":                 {with(tenant, zone("x", `{"interfaces": [], "vrfs": ["tenant"]}`)), "the VRF tenant is in more than one FirewallZone, or twice in one"},
 		"a VRF's device":                     {with(zone("x", `{"interfaces": ["ten*"], "vrfs": []}`)), "FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs"},
 		"a link of another zone's VRF":       {with(tenant, zone("x", `{"interfaces": ["eth2"], "vrfs": []}`)), "FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
 		"a glob of another zone's VRF":       {with(tenant, zone("x", `{"interfaces": ["swp1*"], "vrfs": []}`)), "FirewallZone x names swp1*, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
@@ -1612,7 +1611,6 @@ func TestConntrackZoneRefusals(t *testing.T) {
 	}{
 		"zone 0":                      {with(`, "conntrackZone": 0`, ""), "VRF guest: conntrackZone 0 is no zone from 1 to 65535"},
 		"zone 65536":                  {with(`, "conntrackZone": 65536`, ""), "VRF guest: conntrackZone 65536 is no zone from 1 to 65535"},
-		"one zone twice":              {with(`, "conntrackZone": 1`, `, "conntrackZone": 1`), "VRF guest and VRF internet both use conntrack zone 1"},
 		"links nftables cannot match": {unmatchable, "VRF guest holds the links of Network 50-lab's Name=lab[12], which nftables cannot match"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })

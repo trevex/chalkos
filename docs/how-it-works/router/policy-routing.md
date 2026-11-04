@@ -34,10 +34,12 @@ writes a line per family it matches, with the DSCP values in front, as nftables 
 ## A mark per target table
 
 A rule's target is a table: a VRF target is its VRF's table, a `table` target its table and a
-next hop its own table. The renderer sorts the distinct tables by number and gives the table at
-index `i` the mark `(i+1) << 16`. The example's tables 100, 200, 201 and 254 take the marks
-`0x10000`, `0x20000`, `0x30000` and `0x40000`. The marks use the bits `0x00ff0000`, so the
-documents can send traffic to 255 tables at most, and the renderer refuses more.
+next hop its own table. The renderer refuses a next hop's table that another next hop or a
+`table` target takes; no rule checks it, so `chalkctl validate` does not either. The renderer
+sorts the distinct tables by number and gives the table at index `i` the mark `(i+1) << 16`. The
+example's tables 100, 200, 201 and 254 take the marks `0x10000`, `0x20000`, `0x30000` and
+`0x40000`. The marks use the bits `0x00ff0000`, so the documents can send traffic to 255 tables
+at most, and the renderer refuses more.
 
 The statement `meta mark set meta mark & 0xff00ffff | 0x00010000` sets these bits and keeps every
 other bit of the mark. `nft list ruleset` prints it as `meta mark & 0xff01ffff | 0x00010000`,
