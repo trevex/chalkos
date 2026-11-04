@@ -281,9 +281,6 @@ func newFRR(d routerDocuments) (*frr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if other := c.served(in.vrf); other != nil {
-			return nil, fmt.Errorf("BGP %s and BGP %s both serve the VRF %s; a VRF has one BGP instance", other.name, g.Name, in.vrf)
-		}
 		c.instances = append(c.instances, in)
 	}
 	// FRR takes the default VRF's instance first.
@@ -300,19 +297,14 @@ func newFRR(d routerDocuments) (*frr, error) {
 		if len(l.Spec.Communities) == 0 {
 			return nil, fmt.Errorf("CommunityList %s holds no community", l.Name)
 		}
-		seen := map[string]bool{}
 		for i, v := range l.Spec.Communities {
-			v, large, err := community(v)
+			_, large, err := community(v)
 			if err != nil {
 				return nil, fmt.Errorf("CommunityList %s: %w", l.Name, err)
 			}
 			if i > 0 && large != c.large[l.Name] {
 				return nil, fmt.Errorf("CommunityList %s holds standard and large communities", l.Name)
 			}
-			if seen[v] {
-				return nil, fmt.Errorf("CommunityList %s holds %s twice", l.Name, v)
-			}
-			seen[v] = true
 			c.large[l.Name] = large
 		}
 	}
@@ -401,22 +393,17 @@ func newInstance(g named[bgpSpec], vrfs []named[vrfSpec]) (*instance, error) {
 	return in, nil
 }
 
-// checkNetworks refuses a network of an instance that is no address range, two networks of one
-// range, a default route in a VRF, whose table always holds one, and a policy of another family.
+// checkNetworks refuses a network of an instance that is no address range, a default route in a
+// VRF, whose table always holds one, and a policy of another family.
 func (c *frr) checkNetworks(in *instance) error {
-	announced := map[netip.Prefix]string{}
 	for _, n := range in.spec.Networks {
 		p, err := netip.ParsePrefix(n.Prefix)
 		if err != nil {
 			return fmt.Errorf("BGP %s: network %q is no address range", in.name, n.Prefix)
 		}
-		if other, ok := announced[p.Masked()]; ok {
-			return fmt.Errorf("BGP %s: networks %s and %s both announce %s; give each range one network", in.name, other, n.Prefix, p.Masked())
-		}
 		if p.Bits() == 0 && in.vrf != defaultVRF {
 			return fmt.Errorf("BGP %s: network %s of VRF %s would always be announced, as the VRF's table ends in an unreachable default route; use a peer family's defaultOriginate", in.name, n.Prefix, in.vrf)
 		}
-		announced[p.Masked()] = n.Prefix
 		if n.Policy != nil {
 			if err := c.policyOfFamily(*n.Policy, familyOf(p.Addr())); err != nil {
 				return fmt.Errorf("BGP %s: network %s: %w", in.name, n.Prefix, err)
@@ -426,8 +413,8 @@ func (c *frr) checkNetworks(in *instance) error {
 	return nil
 }
 
-// checkImports refuses an import of an instance that names no VRF, its own VRF, a VRF twice or one
-// that no BGP document serves, an import into or out of a VRF with a conntrack zone, and a policy
+// checkImports refuses an import of an instance that names no VRF, its own VRF or one that no BGP
+// document serves, an import into or out of a VRF with a conntrack zone, and a policy
 // of another family. Every VRF it names is then an instance's, whose name the documents' checks
 // took.
 func (c *frr) checkImports(in *instance) error {
@@ -442,13 +429,10 @@ func (c *frr) checkImports(in *instance) error {
 		if len(f.leak.VRFs) == 0 {
 			return fmt.Errorf("%s names no VRF", what)
 		}
-		seen := map[string]bool{}
 		for _, v := range f.leak.VRFs {
 			switch {
 			case v == in.vrf:
 				return fmt.Errorf("%s names its own VRF %s", what, v)
-			case seen[v]:
-				return fmt.Errorf("%s names the VRF %s twice", what, v)
 			case c.served(v) == nil:
 				return fmt.Errorf("%s names the VRF %q, which no BGP document serves", what, v)
 			}
@@ -457,7 +441,6 @@ func (c *frr) checkImports(in *instance) error {
 					return fmt.Errorf("%s names the VRF %s, and VRF %s has a conntrack zone, so the replies of leaked connections would land in another zone; drop the zone or the import", what, v, end)
 				}
 			}
-			seen[v] = true
 		}
 		if f.leak.Policy != nil {
 			if err := c.policyOfFamily(*f.leak.Policy, f.family); err != nil {
@@ -795,7 +778,9 @@ func ipWord(family string) string {
 }
 
 // prefixEntries checks a PrefixList's entries and returns each as frr.conf writes it after the
-// sequence number: its action, its masked prefix, and its ge and le.
+// sequence number: its action, its masked prefix, and its ge and le. The set check has refused
+// two entries of one prefix, ge and le, which FRR's prefix-list commands would take one for the
+// other.
 func prefixEntries(l prefixListSpec) ([]string, error) {
 	longest := map[string]int{"ipv4": 32, "ipv6": 128}[l.Family]
 	if longest == 0 {
@@ -804,10 +789,8 @@ func prefixEntries(l prefixListSpec) ([]string, error) {
 	if len(l.Entries) == 0 {
 		return nil, fmt.Errorf("it has no entries")
 	}
-	// seen holds the index of each entry by what it matches.
-	seen := map[string]int{}
 	var entries []string
-	for i, e := range l.Entries {
+	for _, e := range l.Entries {
 		p, err := netip.ParsePrefix(e.Prefix)
 		if err != nil || familyOf(p.Addr()) != l.Family {
 			return nil, fmt.Errorf("%q is no %s address range", e.Prefix, l.Family)
@@ -830,12 +813,6 @@ func prefixEntries(l prefixListSpec) ([]string, error) {
 			}
 			match += fmt.Sprintf(" le %d", *e.LE)
 		}
-		// An entry equal to an earlier one never decides, and FRR's prefix-list commands take one
-		// for the other.
-		if j, ok := seen[match]; ok {
-			return nil, fmt.Errorf("entries %d and %d both match %s; the later never decides", j+1, i+1, match)
-		}
-		seen[match] = i
 		entries = append(entries, e.Action+" "+match)
 	}
 	return entries, nil

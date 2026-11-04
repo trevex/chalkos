@@ -1,9 +1,12 @@
-# r1's BGP announcing its NAT64's prefix twice. No rule of the BGP kind compares an instance's
-# networks, so chalkctl validate accepts it; the frr output's renderer refuses it.
+# A second peer of r1's fabric session, beside nodes/r1-peer.yaml's. The session's neighbour is
+# derived from the peers' interfaces and the links they match, so no rule and no uniqueness
+# declaration compares it, and chalkctl validate accepts the config; the frr output's renderer
+# refuses two peers of one session.
 apiVersion: router.chalkos.dev/v1alpha1
-kind: BGP
-metadata: {name: bgp}
+kind: BGPPeer
+metadata: {name: again}
 spec:
-  asn: 64512
-  routerID: 192.0.2.1
-  networks: [{prefix: "64:ff9b::/96"}, {prefix: "64:ff9b::/96"}]
+  interface: enp0s3
+  remoteAS: external
+  families:
+    ipv6: {}

@@ -332,7 +332,7 @@ A BGP instance of the router in one VRF: its AS number and router ID, how many e
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 8 [change rules](builtins.md#rules-bgp).
+A node's config may hold several, each with a name of its own. It has 6 [change rules](builtins.md#rules-bgp).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -344,18 +344,18 @@ A node's config may hold several, each with a name of its own. It has 8 [change 
 | `spec.import` | object | `{}` | Routes the instance takes from the BGP instances of other VRFs, which the kernel installs in this VRF's table with their next hops in the other VRF. Static routes of a VRF's links are not leaked. |
 | `spec.import.ipv4` | object or null | `null` | IPv4 routes the instance takes from other VRFs' instances; null takes none. |
 | `spec.import.ipv4.policy` | name of a RoutingPolicy or null | `null` | RoutingPolicy that decides the routes the instance takes from all of `vrfs`; null takes every route. |
-| `spec.import.ipv4.vrfs` | list of name of a VRF, or `default` | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. |
+| `spec.import.ipv4.vrfs` | list of name of a VRF, or `default` | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. Each item is unique within the list. |
 | `spec.import.ipv6` | object or null | `null` | IPv6 routes the instance takes from other VRFs' instances; null takes none. |
 | `spec.import.ipv6.policy` | name of a RoutingPolicy or null | `null` | RoutingPolicy that decides the routes the instance takes from all of `vrfs`; null takes every route. |
-| `spec.import.ipv6.vrfs` | list of name of a VRF, or `default` | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. |
+| `spec.import.ipv6.vrfs` | list of name of a VRF, or `default` | required | VRFs whose BGP instances' routes of the family the instance takes, each once, by the names of their VRF documents or `default`. Each item is unique within the list. |
 | `spec.multipath.asPathRelax` | boolean | `false` | Whether paths through different neighbouring ASes count as equal when their AS paths are equally long, as for two leaves of a fabric. |
 | `spec.multipath.ebgp` | integer from 1 to 64 | `1` | Equal paths from external peers the router installs for one prefix at most. |
 | `spec.multipath.ibgp` | integer from 1 to 64 | `1` | Equal paths from internal peers the router installs for one prefix at most. |
-| `spec.networks` | list of object | `[]` | Networks the router announces to its peers. |
+| `spec.networks` | list of object | `[]` | Networks the router announces to its peers. Each item is unique within the list by `prefix` as masked ranges. |
 | `spec.networks[].policy` | name of a RoutingPolicy or null | `null` | RoutingPolicy whose terms set the announcement's attributes; null announces it as it is. |
 | `spec.networks[].prefix` | string | required | Address range the router announces while its table holds a route to it. |
 | `spec.routerID` | string | required | Router ID, in IPv4 notation, which the router's peers know it by; give an IPv6-only router one too. |
-| `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document whose instance this is; `default` for the default VRF, which holds every link no VRF holds. |
+| `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document whose instance this is; `default` for the default VRF, which holds every link no VRF holds. Unique among the BGP documents. |
 
 ### BGPPeer { #bgppeer }
 
@@ -401,7 +401,7 @@ A node's config may hold several, each with a name of its own. It has a [change 
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.communities` | list of string | required | The communities: standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers. |
+| `spec.communities` | list of string | required | The communities: standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers, without leading zeros. Each item is unique within the list. |
 
 ### DHCPRelay { #dhcprelay }
 
@@ -572,11 +572,11 @@ Address ranges of one family that a RoutingPolicy term matches routes against: e
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 2 [change rules](builtins.md#rules-prefixlist).
+A node's config may hold several, each with a name of its own. It has a [change rule](builtins.md#rules-prefixlist).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.entries` | list of object | required | Entries in order; a route no entry matches does not match the list. |
+| `spec.entries` | list of object | required | Entries in order; a route no entry matches does not match the list. Each item is unique within the list by `prefix` as masked ranges, `ge` and `le`. |
 | `spec.entries[].action` | one of `permit`, `deny` | `"permit"` | Whether a route the entry matches matches the list. |
 | `spec.entries[].ge` | integer from 0 to 128 or null | `null` | Shortest prefix length of a route within `prefix` that the entry matches, from the prefix's length; null matches `prefix` alone, unless `le` is given. |
 | `spec.entries[].le` | integer from 0 to 128 or null | `null` | Longest prefix length of a route within `prefix` that the entry matches; null matches `prefix` alone, unless `ge` is given. |
@@ -643,7 +643,7 @@ A node's config may hold several, each with a name of its own. It has 3 [change 
 | `spec.terms[].match.prefixList` | name of a PrefixList or null | `null` | PrefixList the route's prefix matches; null matches every prefix. |
 | `spec.terms[].then` | object | required |  |
 | `spec.terms[].then.action` | one of `accept`, `reject` | required | Whether the router takes a route the term matches. |
-| `spec.terms[].then.addCommunities` | list of string | `[]` | Communities added to the route: standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers. |
+| `spec.terms[].then.addCommunities` | list of string | `[]` | Communities added to the route: standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers, without leading zeros. |
 | `spec.terms[].then.localPref` | integer from 0 to 4294967295 or null | `null` | Local preference the route gets; null keeps it. |
 | `spec.terms[].then.med` | integer from 0 to 4294967295 or null | `null` | Multi-exit discriminator the route gets; null keeps it. |
 | `spec.terms[].then.prepend` | integer from 1 to 10 or null | `null` | How often the router puts its own AS number in front of the route's AS path; null puts none. |

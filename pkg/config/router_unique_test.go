@@ -96,3 +96,41 @@ func TestFirewallUnique(t *testing.T) {
 			`FirewallPolicy/a, FirewallPolicy/b: (spec.from, spec.to) ("wan", "local") is not unique; give each pair of zones one policy`},
 	})
 }
+
+// A VRF has one BGP instance, an import names each VRF once, a BGP instance announces a range
+// once in whatever spelling, a PrefixList's entries match apart, a null ge or le equal to
+// another's, and a CommunityList names each community once.
+func TestBGPUnique(t *testing.T) {
+	bgp := func(name, spec string) string {
+		return routerDoc("BGP", name, `{asn: 64512, routerID: 192.0.2.1`+spec+`}`)
+	}
+	checkUniqueCases(t, []uniqueCase{
+		{"two instances of the default VRF",
+			bgp("a", "") + bgp("b", ""),
+			`BGP/a, BGP/b: spec.vrf "default" is not unique; a VRF has one BGP instance`},
+		{"an import of one VRF twice",
+			routerDoc("VRF", "tenant", `{table: 100}`) + bgp("a", `, import: {ipv6: {vrfs: [tenant, tenant]}}`),
+			`BGP/a: spec.import.ipv6.vrfs[0], spec.import.ipv6.vrfs[1]: "tenant" is not unique; name each VRF once`},
+		{"two networks of one range",
+			bgp("a", `, networks: [{prefix: 192.0.2.0/24}, {prefix: 192.0.2.1/24}]`),
+			`BGP/a: spec.networks[0].prefix, spec.networks[1].prefix: "192.0.2.0/24" is not unique; give each range one network`},
+		{"two entries that match alike",
+			routerDoc("PrefixList", "edge", `{family: ipv6, entries: [{prefix: "2001:db8:ffff::/48", le: 128}, {prefix: "2001:db8:ffff::/48", ge: 64, le: 128}, {prefix: "2001:db8:ffff::1/48", le: 128, action: deny}]}`),
+			`PrefixList/edge: (spec.entries[0].prefix, spec.entries[0].ge, spec.entries[0].le), (spec.entries[2].prefix, spec.entries[2].ge, spec.entries[2].le): ("2001:db8:ffff::/48", null, 128) is not unique; the later never decides; drop one`},
+		{"a community twice",
+			routerDoc("CommunityList", "c", `{communities: ["64512:100", "64512:200", "64512:100"]}`),
+			`CommunityList/c: spec.communities[0], spec.communities[2]: "64512:100" is not unique; name each community once`},
+	})
+}
+
+// A community has one spelling, without leading zeros, so that two of one value compare equal as
+// written.
+func TestCommunityWithALeadingZero(t *testing.T) {
+	docs, err := Parse(strings.NewReader(minimal + routerDoc("CommunityList", "c", `{communities: ["64512:0100"]}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewSet(docs, routerImageSchemas(t)); err == nil || !strings.Contains(err.Error(), "communities") {
+		t.Errorf("err = %v, want the schema's refusal of 64512:0100", err)
+	}
+}

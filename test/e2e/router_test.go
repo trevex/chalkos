@@ -324,13 +324,13 @@ func TestRouterLab(t *testing.T) {
 		if out, err := chalkctl(t, nodes["r1"], "announce", "apply-config", "--dry-run", "r1"); err != nil || !plan.MatchString(out) {
 			t.Fatalf("apply-config --dry-run plans no reload of FRR: %v\n%s", err, out)
 		}
-		// chalkctl validate accepts a BGP that announces one prefix twice, which the frr output's
-		// renderer alone refuses; a dry run has r1 run it.
+		// chalkctl validate accepts two peers of one session, which the frr output's renderer
+		// alone refuses; a dry run has r1 run it.
 		if out, err := exec.Command(os.Getenv("CHALKLAB_CHALKCTL"), "validate", "r1", "--inventory", inventoryPath("twice")).CombinedOutput(); err != nil {
-			t.Fatalf("chalkctl validate of a prefix announced twice: %v\n%s", err, out)
+			t.Fatalf("chalkctl validate of two peers of one session: %v\n%s", err, out)
 		}
 		if out, err := chalkctl(t, nodes["r1"], "twice", "apply-config", "--dry-run", "r1"); err == nil || !strings.Contains(out, "output frr: its renderer failed") {
-			t.Fatalf("apply-config --dry-run of a prefix announced twice: %v\n%s", err, out)
+			t.Fatalf("apply-config --dry-run of two peers of one session: %v\n%s", err, out)
 		}
 		// A FirewallPolicy that names a zone and an AddressSet the config lacks is refused with a
 		// line for each reference, at its field.

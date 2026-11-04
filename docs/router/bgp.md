@@ -242,7 +242,7 @@ delivery is refused when the output `frr` finds one that bgpd would not compile,
 
 `prepend: 2` puts the router's AS in front of the path twice. A `CommunityList` holds standard
 communities, `<AS>:<value>`, or large ones, `<AS>:<value>:<value>`, not both, and each community
-once. A term that rejects sets nothing.
+once. A community's numbers have no leading zeros. A term that rejects sets nothing.
 
 The order of terms and entries gives their sequence numbers in FRR's config. A term or entry put
 before others renumbers those after it, and the reload rewrites them.

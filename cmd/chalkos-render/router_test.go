@@ -598,8 +598,6 @@ func TestFRRRefusals(t *testing.T) {
 		"a router ID of no host":               {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "0.0.0.0"}`)}}, `routerID "0.0.0.0" is no IPv4 unicast address`},
 		"a broadcast router ID":                {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "255.255.255.255"}`)}}, `routerID "255.255.255.255" is no IPv4 unicast address`},
 		"a multicast router ID":                {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "224.0.0.5"}`)}}, `routerID "224.0.0.5" is no IPv4 unicast address`},
-		"two networks of one prefix":           {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24"}, {"prefix": "192.0.2.1/24"}`)}}, "networks 192.0.2.0/24 and 192.0.2.1/24 both announce 192.0.2.0/24"},
-		"a community twice":                    {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["1:1", "01:1"]}`)}}, "CommunityList c holds 1:1 twice"},
 		"a link-local address":                 {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "fe80::1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `address "fe80::1" is no neighbour address`},
 		"an IPv4-mapped address":               {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "::ffff:192.0.2.9", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `address "::ffff:192.0.2.9" is no neighbour address`},
 		"a loopback address":                   {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "127.0.0.1", "remoteAS": "external", "families": {"ipv4": {}}}`)}}, `address "127.0.0.1" is no neighbour address`},
@@ -609,9 +607,6 @@ func TestFRRRefusals(t *testing.T) {
 		// a description to every reader.
 		"a description that holds a placeholder": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "x password @secret_bgp.fabric@", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
 		"a router ID of five parts":              {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1.1"}`)}}, `routerID "192.0.2.1.1" is no IPv4 unicast address`},
-		// mgmtd refuses a prefix-list entry equal to another of its list.
-		"two equal entries":                {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.1/24", "action": "permit"}, {"prefix": "192.0.2.0/24", "action": "deny"}`)}}, "entries 1 and 2 both match 192.0.2.0/24"},
-		"two equal entries with ge and le": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv6", `{"prefix": "2001:db8::/32", "action": "permit"}, {"prefix": "2001:db8::/32", "ge": 48, "le": 64, "action": "permit"}, {"prefix": "2001:db8::/32", "ge": 48, "le": 64, "action": "permit"}`)}}, "entries 2 and 3 both match 2001:db8::/32 ge 48 le 64"},
 		// AS paths bgpd's regcomp refuses, which would leave the term matching no route.
 		"an AS path with a parenthesis too many": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1)"}, "then": {"action": "accept"}}`)}}, `asPath "1)" is no regular expression`},
 		"an AS path that starts with a star":     {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "*1"}, "then": {"action": "accept"}}`)}}, `asPath "*1" is no regular expression`},
@@ -1098,8 +1093,6 @@ func TestFRRVRFRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"two BGP documents of one VRF": {map[string][]any{"BGP": {bgp("bgp", 64512, ""), bgp("other", 64513, "")}},
-			"BGP bgp and BGP other both serve the VRF default"},
 		"a VRF that adds a command": {withTenant(map[string][]any{"BGP": {bgp("x", 64512, `, "vrf": "tenant\nrouter bgp 64999"`)}}),
 			`internal error: the input holds no VRF "tenant\nrouter bgp 64999"`},
 		"a peer in a VRF without BGP": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("leaves", `"vrf": "tenant", "interface": "eth2"`)}}),
@@ -1125,8 +1118,6 @@ func TestFRRVRFRefusals(t *testing.T) {
 			`BGP bgp: import.ipv6 names the VRF "tenant", which no BGP document serves`},
 		"an import that adds a command": {map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["x\n neighbor 192.0.2.9 remote-as 64999"]}}`)}},
 			`names the VRF "x\n neighbor 192.0.2.9 remote-as 64999", which no BGP document serves`},
-		"an import of one VRF twice": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["tenant", "tenant"]}}`), bgp("tenant", 64512, `, "vrf": "tenant"`)}}),
-			"BGP bgp: import.ipv6 names the VRF tenant twice"},
 		"an import's policy of the other family": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv4": {"vrfs": ["tenant"], "policy": "from"}}`), bgp("tenant", 64512, `, "vrf": "tenant"`)},
 			"PrefixList": {v6}, "RoutingPolicy": {from}}),
 			"BGP bgp: import.ipv4: the RoutingPolicy from matches PrefixLists of ipv6, not ipv4"},

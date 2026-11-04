@@ -302,64 +302,56 @@ documents.filter(n, !documents[n].spec.prefixes.all(p, cidr(p).ip(0).family() ==
 
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
-| 1 | — | One BGP document serves a VRF. | `refuse` | `cel.bind(v, documents.map(n, documents[n].spec.vrf), v.all(x, size(v.filter(y, y == x)) == 1))` | after the table |
-| 2 | — | A BGP instance does not import its own VRF. | `refuse` | after the table | after the table |
-| 3 | — | A delivery that drops the default VRF's BGP document keeps no running BGP instance of another VRF, as FRR keeps its default instance while another runs. | `refuse` | after the table | the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's |
-| 4 | `spec.asn` | BGP keeps its AS number. | `refuse` | `self == oldSelf` | after the table |
-| 5 | `spec.import` | An import's VRFs have BGP documents. | `refuse` | after the table | after the table |
-| 6 | `spec.import` | An import names each VRF once. | `refuse` | `[self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, size(f.vrfs.filter(w, w == v)) == 1))` | the import names a VRF twice |
-| 7 | `spec.import` | An import's policy matches PrefixLists of its family alone. | `refuse` | after the table | after the table |
-| 8 | `spec.networks` | A network's prefix is an address range. | `refuse` | `self.all(w, cidr(w.prefix).prefix() >= 0)` | a network is no address range |
+| 1 | — | A BGP instance does not import its own VRF. | `refuse` | after the table | after the table |
+| 2 | — | A delivery that drops the default VRF's BGP document keeps no running BGP instance of another VRF, as FRR keeps its default instance while another runs. | `refuse` | after the table | the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's |
+| 3 | `spec.asn` | BGP keeps its AS number. | `refuse` | `self == oldSelf` | after the table |
+| 4 | `spec.import` | An import's VRFs have BGP documents. | `refuse` | after the table | after the table |
+| 5 | `spec.import` | An import's policy matches PrefixLists of its family alone. | `refuse` | after the table | after the table |
+| 6 | `spec.networks` | A network's prefix is an address range. | `refuse` | `self.all(w, cidr(w.prefix).prefix() >= 0)` | a network is no address range |
 
-Message of rule 1:
-
-```text
-cel.bind(v, documents.map(n, documents[n].spec.vrf), "more than one BGP document serves the VRF " + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + "; a VRF has one BGP instance")
-```
-
-Expression of rule 2:
+Expression of rule 1:
 
 ```text
 documents.all(n, cel.bind(s, documents[n].spec, [s["import"].ipv4, s["import"].ipv6].all(f, f == null || !(documents[n].spec.vrf in f.vrfs))))
 ```
 
-Message of rule 2:
+Message of rule 1:
 
 ```text
 documents.filter(n, cel.bind(s, documents[n].spec, ![s["import"].ipv4, s["import"].ipv6].all(f, f == null || !(documents[n].spec.vrf in f.vrfs)))).map(n, "BGP " + n).join(", ") + " imports the routes of its own VRF; name other VRFs"
 ```
 
-Expression of rule 3:
+Expression of rule 2:
 
 ```text
 !oldDocuments.exists(n, (has(oldDocuments[n].spec.vrf) ? oldDocuments[n].spec.vrf : "default") == "default") || documents.exists(n, documents[n].spec.vrf == "default") || !documents.exists(n, documents[n].spec.vrf != "default" && oldDocuments.exists(m, (has(oldDocuments[m].spec.vrf) ? oldDocuments[m].spec.vrf : "default") == documents[n].spec.vrf))
 ```
 
-Message of rule 4:
+Message of rule 3:
 
 ```text
 "the AS number stays " + string(oldSelf) + "; to change it, deliver the config without the BGP document, which ends the router's sessions, and then with the new AS number"
 ```
 
-Expression of rule 5:
+Expression of rule 4:
 
 ```text
 cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), [self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, v in have)))
 ```
 
-Message of rule 5:
+Message of rule 4:
 
 ```text
 cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), "the import names the VRF " + [self.ipv4, self.ipv6].filter(f, f != null).map(f, f.vrfs.filter(v, !(v in have))).flatten()[0] + ", which no BGP document serves; leaking takes routes from BGP alone")
 ```
 
-Expression of rule 7:
+Expression of rule 5:
 
 ```text
 (self.ipv4 == null || self.ipv4.policy == null || cel.bind(named, document("RoutingPolicy", self.ipv4.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document("PrefixList", named[0].match.prefixList).spec.family == "ipv4")) && (self.ipv6 == null || self.ipv6.policy == null || cel.bind(named, document("RoutingPolicy", self.ipv6.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document("PrefixList", named[0].match.prefixList).spec.family == "ipv6"))
 ```
 
-Message of rule 7:
+Message of rule 5:
 
 ```text
 "the " + (self.ipv4 == null || self.ipv4.policy == null || cel.bind(named, document("RoutingPolicy", self.ipv4.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document("PrefixList", named[0].match.prefixList).spec.family == "ipv4") ? "ipv6" : "ipv4") + " import's RoutingPolicy matches PrefixLists of another family"
@@ -1053,7 +1045,6 @@ cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A PrefixList's entries are of its family, with ge and le from the prefix length to the family's longest prefix, ge no more than le. | `refuse` | after the table | after the table |
-| 2 | `spec.entries` | A PrefixList's entries match apart: no two have one prefix, ge and le. | `refuse` | `self.all(e, self.exists_one(x, cidr(x.prefix) == cidr(e.prefix) && x.ge == e.ge && x.le == e.le))` | after the table |
 
 Expression of rule 1:
 
@@ -1065,12 +1056,6 @@ Message of rule 1:
 
 ```text
 documents.filter(n, cel.bind(s, documents[n].spec, !s.entries.all(e, cel.bind(c, cidr(e.prefix), cel.bind(max, s.family == "ipv4" ? 32 : 128, c.ip(0).family() == s.family && (e.ge == null || e.ge >= c.prefix() && e.ge <= max) && (e.le == null || e.le >= c.prefix() && e.le <= max) && (e.ge == null || e.le == null || e.ge <= e.le)))))).map(n, "PrefixList " + n).join(", ") + " has an entry of another family, or a ge or le outside its range: both lie from the prefix length to 32 for IPv4 or 128 for IPv6, and ge no higher than le"
-```
-
-Message of rule 2:
-
-```text
-cel.bind(d, self.filter(e, !self.exists_one(x, cidr(x.prefix) == cidr(e.prefix) && x.ge == e.ge && x.le == e.le))[0], "two entries match " + string(cidr(d.prefix)) + (d.ge != null ? " ge " + string(d.ge) : "") + (d.le != null ? " le " + string(d.le) : "") + ", and the later never decides; drop one")
 ```
 
 #### Resolver { #rules-resolver }

@@ -120,7 +120,13 @@
                         }
                       },
                       "minItems": 1,
-                      "type": "array"
+                      "type": "array",
+                      "x-chalkos-unique": [
+                        {
+                          "across": "list",
+                          "hint": "name each VRF once"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -176,7 +182,13 @@
                         }
                       },
                       "minItems": 1,
-                      "type": "array"
+                      "type": "array",
+                      "x-chalkos-unique": [
+                        {
+                          "across": "list",
+                          "hint": "name each VRF once"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -198,12 +210,6 @@
               "description": "An import's VRFs have BGP documents.",
               "messageExpression": "cel.bind(have, cel.bind(bgps, ((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), \"the import names the VRF \" + [self.ipv4, self.ipv6].filter(f, f != null).map(f, f.vrfs.filter(v, !(v in have))).flatten()[0] + \", which no BGP document serves; leaking takes routes from BGP alone\")",
               "rule": "cel.bind(have, cel.bind(bgps, ((\"router.chalkos.dev/v1alpha1\" in config && \"BGP\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), [self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, v in have)))",
-              "takes": "refuse"
-            },
-            {
-              "description": "An import names each VRF once.",
-              "message": "the import names a VRF twice",
-              "rule": "[self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, size(f.vrfs.filter(w, w == v)) == 1))",
               "takes": "refuse"
             },
             {
@@ -284,6 +290,18 @@
               "rule": "self.all(w, cidr(w.prefix).prefix() >= 0)",
               "takes": "refuse"
             }
+          ],
+          "x-chalkos-unique": [
+            {
+              "across": "list",
+              "by": [
+                {
+                  "as": "cidr",
+                  "field": "prefix"
+                }
+              ],
+              "hint": "give each range one network"
+            }
           ]
         },
         "routerID": {
@@ -308,7 +326,13 @@
             "reserved": [
               "default"
             ]
-          }
+          },
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "hint": "a VRF has one BGP instance"
+            }
+          ]
         }
       },
       "required": [
@@ -331,12 +355,6 @@
     "kind": "BGP",
     "multiple": true,
     "rules": [
-      {
-        "description": "One BGP document serves a VRF.",
-        "messageExpression": "cel.bind(v, documents.map(n, documents[n].spec.vrf), \"more than one BGP document serves the VRF \" + v.filter(x, size(v.filter(y, y == x)) > 1)[0] + \"; a VRF has one BGP instance\")",
-        "rule": "cel.bind(v, documents.map(n, documents[n].spec.vrf), v.all(x, size(v.filter(y, y == x)) == 1))",
-        "takes": "refuse"
-      },
       {
         "description": "A BGP instance does not import its own VRF.",
         "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, ![s[\"import\"].ipv4, s[\"import\"].ipv6].all(f, f == null || !(documents[n].spec.vrf in f.vrfs)))).map(n, \"BGP \" + n).join(\", \") + \" imports the routes of its own VRF; name other VRFs\"",

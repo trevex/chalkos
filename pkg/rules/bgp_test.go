@@ -11,11 +11,11 @@ import (
 
 // The BGP kinds' rules accept a fabric edge's documents and refuse a peer with two ways to reach
 // it or with no family, peers without BGP, lists of another family than a peer's family, a policy
-// of both families, ge and le outside their range, entries that match alike, a list of both kinds
-// of community, a rejecting term that sets attributes, an AS path or a description too long, a
-// neighbour address that is no unicast address, an interface named like an address, a password
-// whose Secret names no credential, and a defaultOriginateWhen without defaultOriginate or of a
-// list of the other family.
+// of both families, ge and le outside their range, a list of both kinds of community, a rejecting
+// term that sets attributes, an AS path or a description too long, a neighbour address that is no
+// unicast address, an interface named like an address, a password whose Secret names no
+// credential, and a defaultOriginateWhen without defaultOriginate or of a list of the other
+// family.
 func TestBGPRules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -66,8 +66,6 @@ func TestBGPRules(t *testing.T) {
 			[]string{`RoutingPolicy "from-fabric" spec.terms: the terms match PrefixLists of both families; a policy serves the routes of one family, so give each family a policy of its own`}},
 		{"an AS path past 200 characters", replace(edge, doc("RoutingPolicy", "to-fabric", `{"terms": [{"match": {"prefixList": "edge", "asPath": "`+strings.Repeat("_64512", 34)+`"}, "then": {"action": "accept"}}]}`)),
 			[]string{`RoutingPolicy "to-fabric" spec.terms: a term's asPath holds more than 200 characters`}},
-		{"two entries that match alike", replace(edge, doc("PrefixList", "edge", `{"family": "ipv6", "entries": [{"prefix": "2001:db8:ffff::/48", "le": 128}, {"prefix": "2001:db8:ffff::1/48", "le": 128, "action": "deny"}]}`)),
-			[]string{`PrefixList "edge" spec.entries: two entries match 2001:db8:ffff::/48 le 128, and the later never decides; drop one`}},
 		{"entries that differ in ge", replace(edge, doc("PrefixList", "edge", `{"family": "ipv6", "entries": [{"prefix": "2001:db8:ffff::/48", "le": 128}, {"prefix": "2001:db8:ffff::/48", "ge": 64, "le": 128}]}`)), nil},
 		{"a multicast neighbour", replace(edge, doc("BGPPeer", "upstream", `{"address": "ff02::1", "remoteAS": 64496, "families": {"ipv6": {}}}`)),
 			[]string{`BGPPeer "upstream" spec.address: the address ff02::1 is no neighbour's: give a unicast address`}},
@@ -201,9 +199,9 @@ func TestBGPSchemas(t *testing.T) {
 }
 
 // The BGP kinds' rules per VRF accept a BGP document per VRF that imports another VRF's routes,
-// and peers in each, and refuse two documents of one VRF, an instance that imports its own VRF, an
-// import of a VRF without BGP, of one VRF twice or through a policy of the other family, a peer
-// in a VRF without BGP, and a peer's interface that another VRF holds.
+// and peers in each, and refuse an instance that imports its own VRF, an import of a VRF without
+// BGP or through a policy of the other family, a peer in a VRF without BGP, and a peer's
+// interface that another VRF holds.
 func TestBGPPerVRF(t *testing.T) {
 	set, doc := routerRules(t)
 	// eth0 stays out of every VRF, as the VRF kind's rules want of a node whose node API answers
@@ -236,16 +234,10 @@ func TestBGPPerVRF(t *testing.T) {
 		want []string
 	}{
 		{"an instance per VRF", base, nil},
-		{"two instances of one VRF", replace(base, doc("BGP", "other", `{"vrf": "tenant", "asn": 64513, "routerID": "192.0.2.2"}`)),
-			[]string{"more than one BGP document serves the VRF tenant; a VRF has one BGP instance"}},
-		{"two instances of the default VRF", replace(base, doc("BGP", "other", `{"asn": 64513, "routerID": "192.0.2.2"}`)),
-			[]string{"more than one BGP document serves the VRF default; a VRF has one BGP instance"}},
 		{"an instance that imports its own VRF", replace(base, doc("BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1", "import": {"ipv6": {"vrfs": ["default", "tenant"]}}}`)),
 			[]string{"BGP tenant imports the routes of its own VRF; name other VRFs"}},
 		{"an import of a VRF without BGP", replace(base, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "import": {"ipv4": {"vrfs": ["lab"]}}}`)),
 			[]string{`BGP "bgp" spec.import: the import names the VRF lab, which no BGP document serves; leaking takes routes from BGP alone`}},
-		{"an import of one VRF twice", replace(base, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "import": {"ipv6": {"vrfs": ["tenant", "tenant"]}}}`)),
-			[]string{`BGP "bgp" spec.import: the import names a VRF twice`}},
 		{"an import's policy of the other family", replace(base, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "import": {"ipv4": {"vrfs": ["tenant"], "policy": "from-tenant"}}}`)),
 			[]string{`BGP "bgp" spec.import: the ipv4 import's RoutingPolicy matches PrefixLists of another family`}},
 		{"a peer in a VRF without BGP", replace(base, doc("VRF", "lab", `{"table": 200, "interfaces": ["eth3"]}`),

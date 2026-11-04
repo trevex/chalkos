@@ -196,13 +196,13 @@ no daemon takes, and a value outside a command's range, such as `le 129`. It doe
 the daemons would refuse when they apply it, such as a route-map that names a missing list.
 
 At boot, FRR's mgmtd applies the prefix lists, route-maps and static routes of the config in one
-transaction, so one value it refuses would leave all of them out. The schemas, the rules and the
-renderer therefore refuse the values FRR's daemons refuse. The renderer checks again what the
-schemas and rules check, should a document bypass them, and more:
+transaction, so one value it refuses would leave all of them out. The schemas, the rules, the
+config's uniqueness check and the renderer therefore refuse the values FRR's daemons refuse. The
+uniqueness check refuses two entries of a PrefixList with one prefix, `ge` and `le`, one
+community twice in a CommunityList and two networks of one range, before any rule runs. The
+renderer checks again what the schemas and rules check, should a document bypass them, and more:
 
 - a `ge` or `le` outside the prefix's length and the family's longest prefix, or a `ge` above `le`;
-- two entries of a PrefixList with one prefix, `ge` and `le`, one community twice in a
-  CommunityList and two networks of one range;
 - a community with a part above 65535 in a standard community, or above 4294967295 in a large
   one;
 - a policy whose PrefixLists are of both families, and a peer's or network's policy of another
