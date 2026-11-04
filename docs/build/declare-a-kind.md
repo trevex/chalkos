@@ -399,8 +399,8 @@ Session/up: spec.neighbours[0].address, spec.neighbours[2].address: "2001:db8::1
 
 The image build fails on a declaration that does not fit its field: an unknown normaliser, `by`
 on a list of values, `across = "list"` on a field that is no list, a `by` field the items lack or
-one that holds a list or an object, `as` on a field that holds no strings, and a declaration on a
-`secretRef`.
+one that holds a list or an object, `as` on a field that may hold a value other than a string (an
+`enum` of strings holds strings only), and a declaration on a `secretRef`.
 
 ## A new version of a kind is a new set of documents
 

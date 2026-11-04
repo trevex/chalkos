@@ -247,6 +247,17 @@ let
         type = types.nullOr types.ints.u8;
         default = null;
       };
+      port = mkOption {
+        type = types.nullOr kindTypes.portRange;
+        default = null;
+      };
+      proto = mkOption {
+        type = types.enum [
+          "TCP"
+          "udp"
+        ];
+        default = "udp";
+      };
       tags = mkOption {
         type = types.listOf types.str;
         default = [ ];
@@ -503,6 +514,44 @@ lib.runTests {
       ]
     ];
   };
+  # An enum of strings takes a normaliser, on the field and on a field of by.
+  testUniqueNormalisesAnEnumOfStrings = {
+    expr = [
+      (uniqueOf (types.nullOr (
+        types.enum [
+          "A"
+          "b"
+        ]
+      )) { as = "lower"; })
+      (uniqueOf (types.listOf reservation) {
+        by = [
+          {
+            field = "proto";
+            as = "lower";
+          }
+        ];
+      })
+    ];
+    expected = [
+      [
+        {
+          across = "kind";
+          as = "lower";
+        }
+      ]
+      [
+        {
+          across = "list";
+          by = [
+            {
+              field = "proto";
+              as = "lower";
+            }
+          ];
+        }
+      ]
+    ];
+  };
   # With by, a list's items compare within the list by default, each declaration on its own; a
   # field name is a field without a normaliser, and a null as and hint are left out.
   testUniqueByOnAList = {
@@ -652,7 +701,7 @@ lib.runTests {
         {
           type = types.listOf reservation;
           unique.by = [ "serial" ];
-          refusal = "by names serial, which is no field of the items of x, whose fields are address, ge, mac, tags";
+          refusal = "by names serial, which is no field of the items of x, whose fields are address, ge, mac, port, proto, tags";
         }
         {
           type = types.listOf reservation;
@@ -684,6 +733,16 @@ lib.runTests {
         }
         {
           type = types.listOf reservation;
+          unique.by = [
+            {
+              field = "port";
+              as = "lower";
+            }
+          ];
+          refusal = "port holds values other than strings too, which a normaliser cannot read";
+        }
+        {
+          type = types.listOf reservation;
           unique = true;
           refusal = "the items of x are objects; give by, the fields that make up the key";
         }
@@ -701,6 +760,16 @@ lib.runTests {
           type = types.ints.u32;
           unique.as = "lower";
           refusal = "a normaliser reads strings, and x is none";
+        }
+        {
+          type = types.nullOr kindTypes.portRange;
+          unique.as = "lower";
+          refusal = "a normaliser reads strings alone, and x may hold other values too";
+        }
+        {
+          type = types.listOf kindTypes.peerAS;
+          unique.as = "lower";
+          refusal = "a normaliser reads strings alone, and the items of x may hold other values too";
         }
         {
           type = types.str;

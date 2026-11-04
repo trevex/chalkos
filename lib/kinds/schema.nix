@@ -260,13 +260,16 @@ let
       "array"
       "object"
     ]);
-  # Whether the field's values may be strings, the values normalisers read.
-  takesStrings =
+  # The branches a value of the schema s may take, its anyOf flattened, other than null.
+  valueBranches =
     s:
-    let
-      t = nonNull s;
-    in
-    (t.type or null) == "string" || lib.any (b: (b.type or null) == "string") (t.anyOf or [ ]);
+    lib.filter (b: b != { type = "null"; }) (
+      if s ? anyOf then lib.concatMap valueBranches s.anyOf else [ s ]
+    );
+  isStringBranch = b: (b.type or null) == "string" || (b ? enum && lib.all lib.isString b.enum);
+  # Whether some or all of the field's values are strings, the values normalisers read.
+  takesStrings = s: lib.any isStringBranch (valueBranches s);
+  takesOnlyStrings = s: lib.all isStringBranch (valueBranches s);
 
   # The declarations of the value `of`, a field or a kind's spec, whose schema is s, from the
   # unique declared at `at`: each with its scope, across, filled in, its by fields as { field;
@@ -305,6 +308,8 @@ let
           fail "by names ${m.field}, a list, an object or a secretRef, which a key cannot hold"
         else if as != null && !takesStrings field then
           fail "${m.field} holds no strings, which a normaliser reads"
+        else if as != null && !takesOnlyStrings field then
+          fail "${m.field} holds values other than strings too, which a normaliser cannot read"
         else if as != null && !lib.elem as normalisers then
           fail (unknownNormaliser as)
         else
@@ -360,6 +365,8 @@ let
           fail "as goes on each field of by"
         else if as != null && !takesStrings item then
           fail "a normaliser reads strings, and ${what} ${are} none"
+        else if as != null && !takesOnlyStrings item then
+          fail "a normaliser reads strings alone, and ${what} may hold other values too"
         else if hint != null && !lib.isString hint then
           fail "hint is a string"
         else if as != null && !lib.elem as normalisers then
