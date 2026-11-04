@@ -56,6 +56,43 @@ let
     };
   };
 
+  # A kind's tuple of spec fields that no two documents share; the schema converter checks the
+  # fields and normalisers against the kind's spec.
+  uniqueModule = {
+    options = {
+      by = lib.mkOption {
+        type = lib.types.nonEmptyListOf (
+          lib.types.either lib.types.nonEmptyStr (
+            lib.types.submodule {
+              options = {
+                field = lib.mkOption {
+                  type = lib.types.nonEmptyStr;
+                  description = "Name of a field of the spec.";
+                };
+                as = lib.mkOption {
+                  type = lib.types.nullOr lib.types.str;
+                  default = null;
+                  description = "Normaliser the field's value compares through: `ip`, `cidr`, `host` or `lower`; null compares it as it is.";
+                };
+              };
+            }
+          )
+        );
+        example = [
+          "from"
+          "to"
+        ];
+        description = "Fields of the spec whose values together no two documents share.";
+      };
+      hint = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "give each pair of zones one policy";
+        description = "What to do instead, which ends the refusal.";
+      };
+    };
+  };
+
   # The files of the image chalkos-rules checks, laid out as it reads them; units holds every
   # systemd unit of the image, the upstream ones among them.
   rulesImage = pkgs.linkFarm "chalkos-rules-image" {
@@ -121,7 +158,8 @@ let
             `description`, `default` and `example` carry over. A field declares change rules with
             `lib.chalkos.mkOption { …; rules = [ { rule = "self == oldSelf"; message = "…"; } ]; }`,
             in the shape of `rules`, where `self` is the field's new value and `oldSelf` its value in
-            the running config.
+            the running config. `lib.chalkos.mkOption`'s `unique` declares values that must not
+            repeat, among the node's documents of the kind or within one list.
           '';
         };
         rules = lib.mkOption {
@@ -141,6 +179,26 @@ let
             the documents of the kind in the delivered config and in the running one; `config`,
             `oldConfig`, `node.name` and `facts` are as for every rule. A rule that is false
             refuses the config, or says it takes a reset or a reinstall.
+          '';
+        };
+        unique = lib.mkOption {
+          type = lib.types.listOf (lib.types.submodule uniqueModule);
+          default = [ ];
+          example = lib.literalExpression ''
+            [
+              {
+                by = [ "from" "to" ];
+                hint = "give each pair of zones one policy";
+              }
+            ]
+          '';
+          description = ''
+            Tuples of the spec's fields that no two of the node's documents of the kind share.
+            chalkctl and chalkd refuse a config in which two documents hold the same values in
+            all of `by`'s fields. A field of `by` is a field name or `{ field; as; }`, where `as`
+            normalises the value before the comparison: `ip`, `cidr`, `host` or `lower`. `hint`
+            ends the refusal with what to do instead. A single field's values, and those of list
+            items, are declared unique with `lib.chalkos.mkOption`'s `unique`.
           '';
         };
         dir = lib.mkOption {
@@ -215,6 +273,7 @@ let
           multiple
           spec
           rules
+          unique
           description
           ;
       }) cfg;

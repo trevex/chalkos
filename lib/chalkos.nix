@@ -21,14 +21,24 @@ in
   types = { inherit (kindTypes) ref secretRef; };
 
   # lib.mkOption, for a field of a kind, with the field's change rules: each { rule; message or
-  # messageExpression; takes ? "refuse"; description ? null; }, as a kind's rules are.
+  # messageExpression; takes ? "refuse"; description ? null; }, as a kind's rules are; and the
+  # values that must not repeat: true, or one or a list of { across ? "kind" or "list"; by ? [
+  # field or { field; as ? null; } ]; as ? null; hint ? null; }. The schema converter checks
+  # unique against the field's type.
   mkOption =
     {
       rules ? [ ],
+      unique ? false,
       ...
     }@args:
-    lib.mkOption (removeAttrs args [ "rules" ])
-    // lib.optionalAttrs (rules != [ ]) { "x-chalkos-rules" = rules; };
+    lib.mkOption (
+      removeAttrs args [
+        "rules"
+        "unique"
+      ]
+    )
+    // lib.optionalAttrs (rules != [ ]) { "x-chalkos-rules" = rules; }
+    // lib.optionalAttrs (unique != false) { "x-chalkos-unique" = unique; };
 
   render = {
     # A Go text/template, which writes the file named as the template less .tmpl; a missing or

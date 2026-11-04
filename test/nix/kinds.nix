@@ -217,6 +217,7 @@ let
         multiple
         spec
         rules
+        unique
         description
         ;
     };
@@ -233,6 +234,49 @@ let
     }).properties.spec;
   # The schema of a single option of the given type.
   propOf = type: (specOf { x = mkOption { inherit type; }; }).properties.x;
+  # The x-chalkos-unique of a field of the type given, declared with unique.
+  uniqueOf =
+    type: unique:
+    (specOf { x = libChalkos.mkOption { inherit type unique; }; }).properties.x."x-chalkos-unique";
+  # A list item with fields of each shape a key may and may not hold.
+  reservation = types.submodule {
+    options = {
+      mac = mkOption { type = types.strMatching "[0-9a-f:]+"; };
+      address = mkOption { type = types.nullOr types.str; };
+      ge = mkOption {
+        type = types.nullOr types.ints.u8;
+        default = null;
+      };
+      tags = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+      };
+    };
+  };
+  # An image with the kind Pair, whose spec has from and to, and the kind-level unique given.
+  pairWith =
+    unique:
+    worker [
+      (
+        { lib, ... }:
+        {
+          chalkos.kinds.Pair = {
+            group = "pair.example.org";
+            version = "v1";
+            multiple = true;
+            spec = {
+              from = lib.mkOption { type = lib.types.str; };
+              to = lib.mkOption { type = lib.types.str; };
+              tags = lib.mkOption {
+                type = lib.types.listOf lib.types.str;
+                default = [ ];
+              };
+            };
+            inherit unique;
+          };
+        }
+      )
+    ];
 
   demo = {
     kind = "Demo";
@@ -411,6 +455,282 @@ lib.runTests {
       }
     );
     expected = true;
+  };
+  # unique = true compares a field's values across the kind's documents, also where it may be
+  # null, and marks the field beside its anyOf.
+  testUniqueOnAScalar = {
+    expr = [
+      (uniqueOf types.ints.u32 true)
+      (specOf {
+        x = libChalkos.mkOption {
+          type = types.nullOr types.ints.u32;
+          default = null;
+          unique = true;
+        };
+      }).properties.x
+    ];
+    expected = [
+      [ { across = "kind"; } ]
+      {
+        anyOf = [
+          (propOf types.ints.u32)
+          { type = "null"; }
+        ];
+        default = null;
+        "x-chalkos-unique" = [ { across = "kind"; } ];
+      }
+    ];
+  };
+  # Without by, a list's items compare across the kind unless across says list; as and hint carry
+  # over.
+  testUniqueOnAListOfValues = {
+    expr = [
+      (uniqueOf (types.listOf types.str) { })
+      (uniqueOf (types.nonEmptyListOf types.str) {
+        across = "list";
+        as = "ip";
+        hint = "name each server once";
+      })
+    ];
+    expected = [
+      [ { across = "kind"; } ]
+      [
+        {
+          across = "list";
+          as = "ip";
+          hint = "name each server once";
+        }
+      ]
+    ];
+  };
+  # With by, a list's items compare within the list by default, each declaration on its own; a
+  # field name is a field without a normaliser, and a null as and hint are left out.
+  testUniqueByOnAList = {
+    expr = uniqueOf (types.listOf reservation) [
+      {
+        by = [
+          {
+            field = "mac";
+            as = "lower";
+          }
+        ];
+      }
+      {
+        by = [
+          "address"
+          {
+            field = "ge";
+            as = null;
+          }
+        ];
+        hint = null;
+      }
+      {
+        across = "kind";
+        by = [ "mac" ];
+        hint = "reserve each MAC once";
+      }
+    ];
+    expected = [
+      {
+        across = "list";
+        by = [
+          {
+            field = "mac";
+            as = "lower";
+          }
+        ];
+      }
+      {
+        across = "list";
+        by = [
+          { field = "address"; }
+          { field = "ge"; }
+        ];
+      }
+      {
+        across = "kind";
+        by = [ { field = "mac"; } ];
+        hint = "reserve each MAC once";
+      }
+    ];
+  };
+  # An object, here one that may be null, compares by its fields across the kind.
+  testUniqueByOnAnObject = {
+    expr = uniqueOf (types.nullOr reservation) {
+      by = [
+        "mac"
+        "ge"
+      ];
+    };
+    expected = [
+      {
+        across = "kind";
+        by = [
+          { field = "mac"; }
+          { field = "ge"; }
+        ];
+      }
+    ];
+  };
+  # A list within list items carries its own declaration, which chalkd applies to each such list.
+  testUniqueWithinListItems = {
+    expr =
+      (propOf (
+        types.listOf (
+          types.submodule {
+            options.protocols = libChalkos.mkOption {
+              type = types.listOf types.str;
+              unique.across = "list";
+            };
+          }
+        )
+      )).items.properties.protocols."x-chalkos-unique";
+    expected = [ { across = "list"; } ];
+  };
+  # A kind's unique marks its spec, with its fields as by's.
+  testKindUnique = {
+    expr =
+      (pairWith [
+        {
+          by = [
+            "from"
+            {
+              field = "to";
+              as = "lower";
+            }
+          ];
+          hint = "give each pair one document";
+        }
+      ])
+      .system.build.chalkosKindSchemas."pair.example.org_v1_Pair.json".properties.spec."x-chalkos-unique";
+    expected = [
+      {
+        across = "kind";
+        by = [
+          { field = "from"; }
+          {
+            field = "to";
+            as = "lower";
+          }
+        ];
+        hint = "give each pair one document";
+      }
+    ];
+  };
+  testKindWithoutUniqueHasNoMarker = {
+    expr =
+      (pairWith [ ]).system.build.chalkosKindSchemas."pair.example.org_v1_Pair.json".properties.spec
+        ? "x-chalkos-unique";
+    expected = false;
+  };
+  # Each declaration chalkd could not check, or would check against values the field never holds,
+  # fails the evaluation.
+  testUniqueRefusesBadDeclarations = {
+    expr = map (x: fails (uniqueOf x.type x.unique)) [
+      {
+        type = types.listOf types.str;
+        unique.as = "mac";
+      }
+      {
+        type = types.listOf types.str;
+        unique.by = [ "x" ];
+      }
+      {
+        type = types.str;
+        unique.across = "list";
+      }
+      {
+        type = types.str;
+        unique.across = "node";
+      }
+      {
+        type = types.listOf reservation;
+        unique.by = [ "serial" ];
+      }
+      {
+        type = types.listOf reservation;
+        unique.by = [ "tags" ];
+      }
+      {
+        type = types.listOf reservation;
+        unique.by = [ ];
+      }
+      {
+        type = types.listOf reservation;
+        unique = {
+          by = [ "mac" ];
+          as = "lower";
+        };
+      }
+      {
+        type = types.listOf reservation;
+        unique.by = [
+          {
+            field = "ge";
+            as = "ip";
+          }
+        ];
+      }
+      {
+        type = types.listOf reservation;
+        unique = true;
+      }
+      {
+        type = types.nullOr kindTypes.secretRef;
+        unique = true;
+      }
+      {
+        type = types.listOf kindTypes.secretRef;
+        unique = true;
+      }
+      {
+        type = types.ints.u32;
+        unique.as = "lower";
+      }
+      {
+        type = types.str;
+        unique.scope = "kind";
+      }
+      {
+        type = types.str;
+        unique.hint = 1;
+      }
+      {
+        type = types.attrsOf types.str;
+        unique = true;
+      }
+      {
+        type = types.listOf (types.listOf types.str);
+        unique.across = "list";
+      }
+      {
+        type = types.str;
+        unique = "kind";
+      }
+    ];
+    expected = lib.genList (_: true) 18;
+  };
+  testKindUniqueRefusesBadDeclarations = {
+    expr = map (u: fails (schemasOf (pairWith u))) [
+      [ { by = [ "nope" ]; } ]
+      [ { by = [ "tags" ]; } ]
+      [
+        {
+          by = [
+            {
+              field = "from";
+              as = "upper";
+            }
+          ];
+        }
+      ]
+    ];
+    expected = [
+      true
+      true
+      true
+    ];
   };
   testDemoSchemaMatchesFixture = {
     expr = schema.kindSchema demo;

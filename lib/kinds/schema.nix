@@ -231,9 +231,165 @@ let
   # misspelt message, reach the schema, where the rules check refuses them.
   ruleSchema = r: lib.filterAttrs (_: v: v != null) ({ takes = "refuse"; } // r);
 
+  # The normalisers a key's values compare through, which chalkd implements: ip and cidr as the
+  # rules' ip() and cidr() compare, host as registry hosts compare, lower in lower case.
+  normalisers = [
+    "cidr"
+    "host"
+    "ip"
+    "lower"
+  ];
+
+  # The schema s without its null branch, as nullOr writes it.
+  nonNull =
+    s:
+    let
+      others = lib.filter (b: b != { type = "null"; }) (s.anyOf or [ ]);
+    in
+    if s ? anyOf && lib.length others == 1 then lib.head others else s;
+  isSecretRef = s: (s."x-chalkos-ref".key or false) == true;
+  isObject = s: (s.type or null) == "object" && s ? properties;
+  # A value a key compares: neither a list nor an object, and no secretRef.
+  isScalar =
+    s:
+    let
+      t = nonNull s;
+    in
+    !isSecretRef t
+    && !(lib.elem (t.type or null) [
+      "array"
+      "object"
+    ]);
+  # Whether the field's values may be strings, the values normalisers read.
+  takesStrings =
+    s:
+    let
+      t = nonNull s;
+    in
+    (t.type or null) == "string" || lib.any (b: (b.type or null) == "string") (t.anyOf or [ ]);
+
+  # The x-chalkos-unique of the value `of`, a field or a kind's spec, whose schema is s, from the
+  # unique declared at `at`: each declaration with its scope, across, filled in, its by fields as
+  # { field; as; }, and the attributes left null dropped, so Go reads one shape. A declaration
+  # that chalkd could not check, or would check against values the field never holds, fails the
+  # evaluation and names where it is declared.
+  uniqueSchema =
+    at: of: s: unique:
+    let
+      decls =
+        if unique == true then
+          [ { } ]
+        else if lib.isAttrs unique then
+          [ unique ]
+        else if lib.isList unique then
+          unique
+        else
+          throw "${at} is true, a declaration or a list of declarations";
+      t = nonNull s;
+      isList = (t.type or null) == "array";
+      item = if isList then nonNull t.items else t;
+      what = if isList then "the items of ${of}" else of;
+      are = if isList then "are" else "is";
+      fail = msg: throw "${at}: ${msg}";
+      normaliser =
+        a:
+        if lib.elem a normalisers then
+          a
+        else
+          fail "the normaliser ${builtins.toJSON a} is none of ${lib.concatStringsSep ", " normalisers}";
+      member =
+        f:
+        let
+          m = if lib.isString f then { field = f; } else f;
+          extra = lib.attrNames (
+            removeAttrs m [
+              "field"
+              "as"
+            ]
+          );
+          field = item.properties.${m.field} or null;
+          as = m.as or null;
+        in
+        if !lib.isAttrs m || !lib.isString (m.field or null) then
+          fail "by takes field names or { field; as; }"
+        else if extra != [ ] then
+          fail "${lib.head extra} of by's ${m.field} is none of field and as"
+        else if field == null then
+          fail "by names ${m.field}, which is no field of ${what}, whose fields are ${lib.concatStringsSep ", " (lib.attrNames item.properties)}"
+        else if !isScalar field then
+          fail "by names ${m.field}, a list, an object or a secretRef, which a key cannot hold"
+        else if as != null && !takesStrings field then
+          fail "${m.field} holds no strings, which a normaliser reads"
+        else
+          { inherit (m) field; } // lib.optionalAttrs (as != null) { as = normaliser as; };
+      declaration =
+        d:
+        let
+          extra = lib.attrNames (
+            removeAttrs d [
+              "across"
+              "by"
+              "as"
+              "hint"
+            ]
+          );
+          by = d.by or null;
+          as = d.as or null;
+          hint = d.hint or null;
+          across = d.across or (if isList && by != null then "list" else "kind");
+        in
+        if !lib.isAttrs d then
+          fail "a declaration is an attribute set { across; by; as; hint; }"
+        else if extra != [ ] then
+          fail "${lib.head extra} is none of across, by, as and hint"
+        else if isSecretRef t || isSecretRef item then
+          fail "a secretRef names a key of a Secret, which is no value to compare"
+        else if (t.type or null) == "object" && !isObject t then
+          fail "${of} is a map, whose keys are unique already"
+        else if isList && (item.type or null) == "array" then
+          fail "${of} is a list of lists"
+        else if
+          !lib.elem across [
+            "kind"
+            "list"
+          ]
+        then
+          fail "across is kind or list, not ${builtins.toJSON across}"
+        else if across == "list" && !isList then
+          fail "across = \"list\" compares the items of a list, and ${of} is none"
+        else if by == null && !isScalar item then
+          fail "${what} ${are} ${
+            if isList then "objects" else "an object"
+          }; give by, the fields that make up the key"
+        else if by != null && !isObject item then
+          fail "by names fields of objects, and ${what} ${are} none; leave by out to compare the values themselves"
+        else if by != null && (!lib.isList by || by == [ ]) then
+          fail "by is a list of one field or more"
+        else if by != null && as != null then
+          fail "as goes on each field of by"
+        else if as != null && !takesStrings item then
+          fail "a normaliser reads strings, and ${what} ${are} none"
+        else if hint != null && !lib.isString hint then
+          fail "hint is a string"
+        else
+          {
+            inherit across;
+          }
+          // lib.optionalAttrs (by != null) { by = map member by; }
+          // lib.optionalAttrs (as != null) { as = normaliser as; }
+          // lib.optionalAttrs (hint != null) { inherit hint; };
+    in
+    map declaration decls;
+
   optionSchema =
     at: opt:
-    typeSchema at (opt.type or (throw "${at} declares no type"))
+    let
+      s = typeSchema at (opt.type or (throw "${at} declares no type"));
+    in
+    s
+    // lib.optionalAttrs (opt ? "x-chalkos-unique") {
+      "x-chalkos-unique" = uniqueSchema "${at}.unique" at s opt."x-chalkos-unique";
+    }
     // lib.optionalAttrs (lib.isString (opt.description or null)) { inherit (opt) description; }
     // lib.optionalAttrs (opt ? default && isPlain opt.default && !leaksNamePlaceholder opt.default) {
       inherit (opt) default;
@@ -327,7 +483,8 @@ rec {
     }
     // lib.optionalAttrs (description != null) { inherit description; };
 
-  # The schema of a kind whose spec is declared with options.
+  # The schema of a kind whose spec is declared with options. The kind's unique, tuples of its
+  # spec's fields that no two documents share, marks the spec, as a field's marks the field.
   kindSchema =
     {
       kind,
@@ -336,8 +493,13 @@ rec {
       multiple,
       spec,
       rules ? [ ],
+      unique ? [ ],
       description ? null,
     }:
+    let
+      at = "chalkos.kinds.${kind}";
+      specSchema = groupSchema "${at}.spec" spec;
+    in
     envelope {
       inherit
         kind
@@ -347,7 +509,11 @@ rec {
         rules
         description
         ;
-      spec = groupSchema "chalkos.kinds.${kind}.spec" spec;
+      spec =
+        specSchema
+        // lib.optionalAttrs (unique != [ ]) {
+          "x-chalkos-unique" = uniqueSchema "${at}.unique" "${at}.spec" specSchema unique;
+        };
     };
 
   fileName =
