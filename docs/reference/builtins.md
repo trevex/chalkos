@@ -505,7 +505,6 @@ documents.filter(n, cel.bind(c, documents[n].spec.communities, cel.bind(large, c
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `spec.servers` | A relay's servers are unicast addresses. | `refuse` | after the table | after the table |
-| 2 | `spec.servers` | A server is named once. | `refuse` | `self.all(a, size(self.filter(x, ip(x) == ip(a))) == 1)` | after the table |
 
 Expression of rule 1:
 
@@ -517,12 +516,6 @@ Message of rule 1:
 
 ```text
 "the server " + self.filter(a, ["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3", "::/8", "fe80::/10", "ff00::/8"].exists(r, cidr(r).contains(ip(a))))[0] + " is no unicast address a relay forwards to"
-```
-
-Message of rule 2:
-
-```text
-"the server " + self.filter(a, size(self.filter(x, ip(x) == ip(a))) > 1)[0] + " is named more than once"
 ```
 
 #### DHCPSubnet { #rules-dhcpsubnet }
@@ -541,9 +534,7 @@ Message of rule 2:
 | 10 | `spec.boot` | A boot's server is an IPv4 address. | `refuse` | `self == null || self.server == null || ip(self.server).family() == "ipv4"` | boot's server is no IPv4 address |
 | 11 | `spec.boot` | A boot of BIOS or UEFI files names their server. | `refuse` | `self == null || self.server != null || (self.bios == null && self.uefi == null)` | boot's bios and uefi files load over TFTP from boot's server; give server |
 | 12 | `spec.prefixDelegation` | Prefixes are delegated from an IPv6 range, each longer than the range. | `refuse` | after the table | after the table |
-| 13 | `spec.reservations` | A MAC address has one reservation. | `refuse` | `self.all(r, size(self.filter(x, x.mac == r.mac)) == 1)` | after the table |
-| 14 | `spec.reservations` | An address is reserved once. | `refuse` | `self.all(r, size(self.filter(x, ip(x.address) == ip(r.address))) == 1)` | after the table |
-| 15 | `spec.subnet` | A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most, outside ::/8, fe80::/10 and ff00::/8. | `refuse` | after the table | after the table |
+| 13 | `spec.subnet` | A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most, outside ::/8, fe80::/10 and ff00::/8. | `refuse` | after the table | after the table |
 
 Expression of rule 1:
 
@@ -653,25 +644,13 @@ Message of rule 12:
 "prefixDelegation's prefix " + self.prefix + " is no IPv6 range shorter than " + string(self.length) + " bits"
 ```
 
-Message of rule 13:
-
-```text
-"the MAC address " + self.filter(r, size(self.filter(x, x.mac == r.mac)) > 1)[0].mac + " has more than one reservation"
-```
-
-Message of rule 14:
-
-```text
-"the address " + self.filter(r, size(self.filter(x, ip(x.address) == ip(r.address))) > 1)[0].address + " is reserved more than once"
-```
-
-Expression of rule 15:
+Expression of rule 13:
 
 ```text
 cel.bind(c, cidr(self), c.ip(0).family() == "ipv4" ? c.prefix() <= 30 && !["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"].exists(r, cidr(r).contains(c.ip(0))) : c.prefix() <= 120 && !["::/8", "fe80::/10", "ff00::/8"].exists(r, cidr(r).contains(c.ip(0))))
 ```
 
-Message of rule 15:
+Message of rule 13:
 
 ```text
 "the subnet " + self + " is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases"

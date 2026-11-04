@@ -409,12 +409,12 @@ Links whose clients' DHCP requests the router relays to DHCP servers elsewhere, 
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 2 [change rules](builtins.md#rules-dhcprelay).
+A node's config may hold several, each with a name of its own. It has a [change rule](builtins.md#rules-dhcprelay).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.interfaces` | list of string | required | Links the clients ask on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address of each family the servers have, a global one for IPv6. A link takes one relay. |
-| `spec.servers` | list of string | required | Unicast addresses of the DHCP servers, which the router reaches through the links' VRF: IPv4 servers get the links' DHCPv4 requests and IPv6 servers their DHCPv6 requests. A DHCPv6 server answers relayed requests on such an address, as Kea's does on an interface given as &lt;name>/&lt;address>. |
+| `spec.interfaces` | list of string | required | Links the clients ask on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address of each family the servers have, a global one for IPv6. A link takes one relay. Each item is unique among the DHCPRelay documents. |
+| `spec.servers` | list of string | required | Unicast addresses of the DHCP servers, which the router reaches through the links' VRF: IPv4 servers get the links' DHCPv4 requests and IPv6 servers their DHCPv6 requests. A DHCPv6 server answers relayed requests on such an address, as Kea's does on an interface given as &lt;name>/&lt;address>. Each item is unique within the list, compared as addresses. |
 
 ### DHCPSubnet { #dhcpsubnet }
 
@@ -422,7 +422,7 @@ A subnet the router's DHCP server leases IPv4 or IPv6 addresses of on its interf
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 15 [change rules](builtins.md#rules-dhcpsubnet).
+A node's config may hold several, each with a name of its own. It has 13 [change rules](builtins.md#rules-dhcpsubnet).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -442,7 +442,7 @@ A node's config may hold several, each with a name of its own. It has 15 [change
 | `spec.prefixDelegation` | object or null | `null` | Prefixes the IPv6 server delegates to routers on the link that ask for one, such as a home router's LAN; the router routes each to the link-local address that asked for it, for as long as the lease lasts. null delegates none. |
 | `spec.prefixDelegation.length` | integer from 1 to 128 | required | Length of each delegated prefix, longer than the range's. |
 | `spec.prefixDelegation.prefix` | string | required | IPv6 range the delegated prefixes are taken from, apart from the subnets of the VRF. |
-| `spec.reservations` | list of object | `[]` | Clients that always get the same address, by their MAC address. |
+| `spec.reservations` | list of object | `[]` | Clients that always get the same address, by their MAC address. Each item is unique within the list by `mac` in lower case. Each item is unique within the list by `address` as addresses. |
 | `spec.reservations[].address` | string | required | Address the client always gets, inside the subnet and outside its pools, neither the router's nor the gateway's nor a DNS or boot server's. |
 | `spec.reservations[].hostname` | string or null | `null` | Name the client gets; null gives none. |
 | `spec.reservations[].mac` | string | required | MAC address of the client, in lower case. A DHCPv6 server learns it from the client's DUID or link-local address, which not every client derives from it. |

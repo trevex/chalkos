@@ -11,8 +11,9 @@ import (
 // The output dhcp-relay: the config of dnsmasq's DHCP relay of each VRF whose links DHCPRelay
 // documents relay, which forwards the DHCPv4 and DHCPv6 requests of the clients on the links to
 // the relays' servers through the VRF's table. The renderer checks what the kind's rules cannot:
-// one VRF per relay, one relay per link, the router's address of each family the servers have on
-// each link, which the servers tell the link by, and that dnsmasq's sockets bind beside Kea's.
+// one VRF per relay, the router's address of each family the servers have on each link, which
+// the servers tell the link by, and that dnsmasq's sockets bind beside Kea's. The set check has
+// refused a link that two relays name.
 
 // relayFile is the file renderDHCPRelay writes for the default VRF's relay; a VRF's gets
 // dnsmasq-relay-<vrf>.conf.
@@ -50,7 +51,6 @@ func renderDHCPRelay(in map[string]any, out string) error {
 		return err
 	}
 	devices := vrfDevices(d)
-	relayed := map[string]string{}
 	// families are the relays that relay each family in each VRF, by Kea's server of the same.
 	families := map[keaServer]string{}
 	byVRF := map[string]*relayVRF{}
@@ -69,10 +69,6 @@ func renderDHCPRelay(in map[string]any, out string) error {
 			byVRF[vrf] = v
 		}
 		for _, l := range links {
-			if other, ok := relayed[l]; ok {
-				return fmt.Errorf("DHCPRelay %s and DHCPRelay %s both relay %s; a link takes one relay", other, r.Name, l)
-			}
-			relayed[l] = r.Name
 			v.links = append(v.links, l)
 			network, err := linkNetwork(units, l, "its addresses")
 			if err != nil {
@@ -144,16 +140,14 @@ func relayUnicast(a netip.Addr) bool {
 	return true
 }
 
-// relayServers are a relay's servers by family, IPv6 under true: unicast addresses, once each.
+// relayServers are a relay's servers by family, IPv6 under true: unicast addresses, once each, as
+// the set check has refused a repeat.
 func relayServers(servers []string) (map[bool][]netip.Addr, error) {
 	out := map[bool][]netip.Addr{}
 	for _, s := range servers {
 		a, err := netip.ParseAddr(s)
 		if err != nil || !relayUnicast(a) {
 			return nil, fmt.Errorf("the server %q is no unicast address a relay forwards to", s)
-		}
-		if slices.Contains(out[a.Is6()], a) {
-			return nil, fmt.Errorf("the server %s is named more than once", a)
 		}
 		out[a.Is6()] = append(out[a.Is6()], a)
 	}

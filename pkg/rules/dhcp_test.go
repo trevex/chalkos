@@ -12,9 +12,8 @@ import (
 // The DHCPSubnet rules accept an office's subnet with pools, reservations, options and PXE files
 // and a subnet of reservations alone, and refuse a subnet of more than 30 bits or of addresses no
 // server leases, a pool, reservation or gateway outside the subnet, a DNS server of IPv6 in an
-// IPv4 subnet, two reservations of one MAC address or of one address, a boot of no file, a boot
-// server of IPv6 and BIOS or UEFI files without a boot server. An iPXE script of an HTTP URL needs
-// no server.
+// IPv4 subnet, a boot of no file, a boot server of IPv6 and BIOS or UEFI files without a boot
+// server. An iPXE script of an HTTP URL needs no server.
 func TestDHCPSubnetRules(t *testing.T) {
 	set, doc := routerRules(t)
 	subnet := func(name, spec string) config.Document { return doc("DHCPSubnet", name, spec) }
@@ -48,12 +47,6 @@ func TestDHCPSubnetRules(t *testing.T) {
 			[]string{"DHCPSubnet office has a gateway outside its subnet"}},
 		{"a DNS server of IPv6", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "dns": ["192.0.2.1", "2001:db8::53"]}`)},
 			[]string{"DHCPSubnet office has a DNS server of another family than its subnet"}},
-		{"one MAC address twice", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24",
-			"reservations": [{"mac": "52:54:00:12:34:56", "address": "192.0.2.10"}, {"mac": "52:54:00:12:34:56", "address": "192.0.2.11"}]}`)},
-			[]string{`DHCPSubnet "office" spec.reservations: the MAC address 52:54:00:12:34:56 has more than one reservation`}},
-		{"one address twice", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24",
-			"reservations": [{"mac": "52:54:00:12:34:56", "address": "192.0.2.10"}, {"mac": "52:54:00:12:34:57", "address": "192.0.2.10"}]}`)},
-			[]string{`DHCPSubnet "office" spec.reservations: the address 192.0.2.10 is reserved more than once`}},
 		{"a boot of no file", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "boot": {"server": "192.0.2.5"}}`)},
 			[]string{`DHCPSubnet "office" spec.boot: boot names no file; give bios, uefi or ipxe, or leave boot out`}},
 		{"a boot server of IPv6", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "boot": {"server": "2001:db8::5", "uefi": "ipxe.efi"}}`)},

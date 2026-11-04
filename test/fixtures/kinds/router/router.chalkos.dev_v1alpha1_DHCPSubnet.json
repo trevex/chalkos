@@ -316,18 +316,26 @@
             "type": "object"
           },
           "type": "array",
-          "x-chalkos-rules": [
+          "x-chalkos-unique": [
             {
-              "description": "A MAC address has one reservation.",
-              "messageExpression": "\"the MAC address \" + self.filter(r, size(self.filter(x, x.mac == r.mac)) > 1)[0].mac + \" has more than one reservation\"",
-              "rule": "self.all(r, size(self.filter(x, x.mac == r.mac)) == 1)",
-              "takes": "refuse"
+              "across": "list",
+              "by": [
+                {
+                  "as": "lower",
+                  "field": "mac"
+                }
+              ],
+              "hint": "keep one reservation of the MAC address"
             },
             {
-              "description": "An address is reserved once.",
-              "messageExpression": "\"the address \" + self.filter(r, size(self.filter(x, ip(x.address) == ip(r.address))) > 1)[0].address + \" is reserved more than once\"",
-              "rule": "self.all(r, size(self.filter(x, ip(x.address) == ip(r.address))) == 1)",
-              "takes": "refuse"
+              "across": "list",
+              "by": [
+                {
+                  "as": "ip",
+                  "field": "address"
+                }
+              ],
+              "hint": "reserve each address once"
             }
           ]
         },

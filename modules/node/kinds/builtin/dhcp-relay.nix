@@ -18,8 +18,10 @@ in
       multiple = true;
       description = "Links whose clients' DHCP requests the router relays to DHCP servers elsewhere, DHCPv4 to the IPv4 servers and DHCPv6 to the IPv6 ones.";
       spec = {
-        interfaces = mkOption {
+        # A link takes one relay, and a relay names it once.
+        interfaces = lib.chalkos.mkOption {
           type = types.nonEmptyListOf interfaceName;
+          unique.hint = "a link takes one relay";
           example = [ "vlan20" ];
           description = "Links the clients ask on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address of each family the servers have, a global one for IPv6. A link takes one relay.";
         };
@@ -36,12 +38,12 @@ in
               rule = ''self.all(a, !["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3", "::/8", "fe80::/10", "ff00::/8"].exists(r, cidr(r).contains(ip(a))))'';
               messageExpression = ''"the server " + self.filter(a, ["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3", "::/8", "fe80::/10", "ff00::/8"].exists(r, cidr(r).contains(ip(a))))[0] + " is no unicast address a relay forwards to"'';
             }
-            {
-              description = "A server is named once.";
-              rule = "self.all(a, size(self.filter(x, ip(x) == ip(a))) == 1)";
-              messageExpression = ''"the server " + self.filter(a, size(self.filter(x, ip(x) == ip(a))) > 1)[0] + " is named more than once"'';
-            }
           ];
+          unique = {
+            across = "list";
+            as = "ip";
+            hint = "name each server once";
+          };
         };
       };
     };

@@ -5,12 +5,12 @@
 # glob serves a link by chance.
 #
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists, and costs
-# every string as one of 256 characters. So the rules over a subnet's reservations in pairs sit on
-# spec.reservations, the rules over its pools and reservations against the subnet loop over the
-# documents and one list, and a pool is two addresses rather than a string to split. Whether a
-# pool's first address comes before its last, and whether a reservation lies outside the pools,
-# takes an order of addresses that CEL lacks; the output kea refuses both, as it refuses what spans
-# documents.
+# every string as one of 256 characters. So the rules over a subnet's pools and reservations
+# against the subnet loop over the documents and one list, and a pool is two addresses rather
+# than a string to split; the reservations' MAC addresses and addresses are declared unique.
+# Whether a pool's first address comes before its last, and whether a reservation lies outside
+# the pools, takes an order of addresses that CEL lacks; the output kea refuses both, as it
+# refuses what spans documents.
 {
   config,
   lib,
@@ -164,16 +164,26 @@ in
           );
           default = [ ];
           description = "Clients that always get the same address, by their MAC address.";
-          rules = [
+          # A MAC address has one reservation, and an address is reserved once, in whatever
+          # spelling.
+          unique = [
             {
-              description = "A MAC address has one reservation.";
-              rule = "self.all(r, size(self.filter(x, x.mac == r.mac)) == 1)";
-              messageExpression = ''"the MAC address " + self.filter(r, size(self.filter(x, x.mac == r.mac)) > 1)[0].mac + " has more than one reservation"'';
+              by = [
+                {
+                  field = "mac";
+                  as = "lower";
+                }
+              ];
+              hint = "keep one reservation of the MAC address";
             }
             {
-              description = "An address is reserved once.";
-              rule = "self.all(r, size(self.filter(x, ip(x.address) == ip(r.address))) == 1)";
-              messageExpression = ''"the address " + self.filter(r, size(self.filter(x, ip(x.address) == ip(r.address))) > 1)[0].address + " is reserved more than once"'';
+              by = [
+                {
+                  field = "address";
+                  as = "ip";
+                }
+              ];
+              hint = "reserve each address once";
             }
           ];
         };

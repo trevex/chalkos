@@ -162,3 +162,28 @@ func TestNAT64AndResolverUnique(t *testing.T) {
 			`Resolver/r: spec.localZones[0].name, spec.localZones[1].name: "lan.example.org" is not unique; name each zone once`},
 	})
 }
+
+// A subnet reserves a MAC address once and an address once, in whatever spelling, a relay names
+// each server once in whatever spelling, and a link takes one relay, named once.
+func TestDHCPUnique(t *testing.T) {
+	subnet := func(reservations string) string {
+		return routerDoc("DHCPSubnet", "office", `{interfaces: [lan0], subnet: 192.0.2.0/24, reservations: [`+reservations+`]}`)
+	}
+	checkUniqueCases(t, []uniqueCase{
+		{"one MAC address twice",
+			subnet(`{mac: "52:54:00:12:34:56", address: 192.0.2.10}, {mac: "52:54:00:12:34:56", address: 192.0.2.11}`),
+			`DHCPSubnet/office: spec.reservations[0].mac, spec.reservations[1].mac: "52:54:00:12:34:56" is not unique; keep one reservation of the MAC address`},
+		{"one address twice",
+			routerDoc("DHCPSubnet", "office", `{interfaces: [lan0], subnet: "2001:db8:1::/64", reservations: [{mac: "52:54:00:12:34:56", address: "2001:db8:1::10"}, {mac: "52:54:00:12:34:57", address: "2001:db8:1:0::10"}]}`),
+			`DHCPSubnet/office: spec.reservations[0].address, spec.reservations[1].address: "2001:db8:1::10" is not unique; reserve each address once`},
+		{"a server twice",
+			routerDoc("DHCPRelay", "guests", `{interfaces: [lan0], servers: ["2001:db8:ff::53", "2001:db8:ff:0::53"]}`),
+			`DHCPRelay/guests: spec.servers[0], spec.servers[1]: "2001:db8:ff::53" is not unique; name each server once`},
+		{"a link of two relays",
+			routerDoc("DHCPRelay", "guests", `{interfaces: [lan0, lan1], servers: [198.51.100.53]}`) + routerDoc("DHCPRelay", "office", `{interfaces: [lan1], servers: [198.51.100.54]}`),
+			`DHCPRelay/guests: spec.interfaces[1], DHCPRelay/office: spec.interfaces[0]: "lan1" is not unique; a link takes one relay`},
+		{"a link twice in one relay",
+			routerDoc("DHCPRelay", "guests", `{interfaces: [lan0, lan0], servers: [198.51.100.53]}`),
+			`DHCPRelay/guests: spec.interfaces[0], spec.interfaces[1]: "lan0" is not unique; a link takes one relay`},
+	})
+}

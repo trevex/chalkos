@@ -374,7 +374,8 @@ before chalkctl sends anything:
 ``DHCPSubnet "office": - at '/spec/interfaces/0': 'lan*' does not match pattern '^(?:[A-Za-z0-9_.:@-]{1,15})$'``.
 Name each link instead.
 
-The rules of `DHCPSubnet` and `DHCPRelay` refuse documents at the same point.
+The rules of `DHCPSubnet` and `DHCPRelay` refuse documents at the same point, and so does the
+check of the values the kinds take once, such as a reservation's MAC address.
 [The built-ins' reference](../reference/builtins.md#rules-dhcpsubnet) lists each rule with its
 expression:
 
@@ -391,9 +392,10 @@ expression:
 | `DHCPSubnet office6 serves an IPv6 subnet on more than one link; give each link a DHCPSubnet of its own` | Name one link. |
 | `DHCPSubnet "customers" spec.prefixDelegation: prefixDelegation's prefix 2001:db8:100::/56 is no IPv6 range shorter than 56 bits` | Give an IPv6 range and a longer `length`. |
 | `DHCPRelay "office" spec.servers: the server ff05::1:3 is no unicast address a relay forwards to` | Name the servers by their unicast addresses. |
-| `DHCPRelay "office" spec.servers: the server 2001:db8:ff::53 is named more than once` | Name each server once. |
-| `DHCPSubnet "office" spec.reservations: the MAC address 52:54:00:12:34:56 has more than one reservation` | Keep one reservation of the MAC address. |
-| `DHCPSubnet "office" spec.reservations: the address 192.0.2.10 is reserved more than once` | Reserve each address once. |
+| `DHCPRelay/office: spec.servers[0], spec.servers[1]: "2001:db8:ff::53" is not unique; name each server once` | Name each server once. |
+| `DHCPRelay/guests: spec.interfaces[0], DHCPRelay/office: spec.interfaces[1]: "lan0" is not unique; a link takes one relay` | Relay the link in one document, and name it once there. |
+| `DHCPSubnet/office: spec.reservations[0].mac, spec.reservations[2].mac: "52:54:00:12:34:56" is not unique; keep one reservation of the MAC address` | Keep one reservation of the MAC address. |
+| `DHCPSubnet/office: spec.reservations[1].address, spec.reservations[3].address: "192.0.2.10" is not unique; reserve each address once` | Reserve each address once. |
 | `DHCPSubnet "office" spec.boot: boot names no file; give bios, uefi or ipxe, or leave boot out` | Give a file, or drop `boot`. |
 | `DHCPSubnet "office" spec.boot: boot's server is no IPv4 address` | Give the TFTP server's IPv4 address. |
 | `DHCPSubnet "office" spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server` | Give the TFTP server's address in `server`. |
@@ -431,7 +433,6 @@ fails the delivery, and `chalkctl logs r1` shows the reason on a line that start
 | `DHCPSubnet customers: prefixDelegation's prefix 2001:db8:100::/40 holds NAT64 edge's prefix 2001:db8:100:ff::/96 of VRF access` | Delegate from a range apart from the NAT64's prefix. |
 | `the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer` | Delegate from smaller ranges or delegate shorter prefixes, so that all subnets together delegate 65 536 prefixes at most. |
 | `DHCPRelay office: Network 10-lan0 gives lan0 no static global IPv6 address, which the relay forwards its clients' requests from` | Give the link a static address of each family the relay's servers have. |
-| `DHCPRelay office and DHCPRelay guests both relay lan0; a link takes one relay` | Relay the link in one document. |
 | `DHCPRelay office relays DHCPv4 in VRF default and DHCPSubnet lab serves DHCPv4 in VRF lab; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one` | Relay and serve the family in two VRFs other than the default one. |
 
 ## Limits

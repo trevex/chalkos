@@ -37,7 +37,13 @@
             "type": "string"
           },
           "minItems": 1,
-          "type": "array"
+          "type": "array",
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "hint": "a link takes one relay"
+            }
+          ]
         },
         "servers": {
           "description": "Unicast addresses of the DHCP servers, which the router reaches through the links' VRF: IPv4 servers get the links' DHCPv4 requests and IPv6 servers their DHCPv6 requests. A DHCPv6 server answers relayed requests on such an address, as Kea's does on an interface given as <name>/<address>.",
@@ -59,12 +65,13 @@
               "messageExpression": "\"the server \" + self.filter(a, [\"0.0.0.0/8\", \"127.0.0.0/8\", \"169.254.0.0/16\", \"224.0.0.0/3\", \"::/8\", \"fe80::/10\", \"ff00::/8\"].exists(r, cidr(r).contains(ip(a))))[0] + \" is no unicast address a relay forwards to\"",
               "rule": "self.all(a, ![\"0.0.0.0/8\", \"127.0.0.0/8\", \"169.254.0.0/16\", \"224.0.0.0/3\", \"::/8\", \"fe80::/10\", \"ff00::/8\"].exists(r, cidr(r).contains(ip(a))))",
               "takes": "refuse"
-            },
+            }
+          ],
+          "x-chalkos-unique": [
             {
-              "description": "A server is named once.",
-              "messageExpression": "\"the server \" + self.filter(a, size(self.filter(x, ip(x) == ip(a))) > 1)[0] + \" is named more than once\"",
-              "rule": "self.all(a, size(self.filter(x, ip(x) == ip(a))) == 1)",
-              "takes": "refuse"
+              "across": "list",
+              "as": "ip",
+              "hint": "name each server once"
             }
           ]
         }

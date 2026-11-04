@@ -31,9 +31,9 @@ func relayDocs(t *testing.T, relays []any, subnets ...any) map[string][]any {
 
 // The relay renderer refuses what the schema and the rules refuse, should a document bypass them,
 // and what spans documents: a glob, a VRF's device, links of two VRFs, a link of no Network or
-// without the router's address of a server's family, a global one for IPv6, a link of two
-// relays, a server that is no unicast address or named twice, and a family relayed and served
-// in one VRF, or in two of which one is the default.
+// without the router's address of a server's family, a global one for IPv6, a server that is no
+// unicast address, and a family relayed and served in one VRF, or in two of which one is the
+// default.
 func TestRelayRefusals(t *testing.T) {
 	relay := func(name, links, servers string) any {
 		return routerDoc(t, "DHCPRelay", name, `{"interfaces": `+links+`, "servers": `+servers+`}`)
@@ -50,9 +50,7 @@ func TestRelayRefusals(t *testing.T) {
 		"a link of no Network":    {[]any{relay("office", `["lan9"]`, `["198.51.100.53"]`)}, nil, "no Network document matches lan9 by Name= alone, so the renderer cannot find its addresses; give the link one"},
 		"no IPv6 address":         {[]any{relay("office", `["lan1"]`, `["2001:db8:ff::53"]`)}, nil, "DHCPRelay office: Network 11-lan1 gives lan1 no static global IPv6 address, which the relay forwards its clients' requests from"},
 		"no IPv4 address":         {[]any{relay("office", `["lan4"]`, `["198.51.100.53"]`)}, nil, "Network 14-lan4 gives lan4 no static IPv4 address"},
-		"a link of two relays":    {[]any{office, relay("other", `["lan0"]`, `["198.51.100.54"]`)}, nil, "DHCPRelay office and DHCPRelay other both relay lan0; a link takes one relay"},
 		"a multicast server":      {[]any{relay("office", `["lan0"]`, `["ff05::1:3"]`)}, nil, `DHCPRelay office: the server "ff05::1:3" is no unicast address a relay forwards to`},
-		"a server twice":          {[]any{relay("office", `["lan0"]`, `["2001:db8:ff::53", "2001:db8:ff:0::53"]`)}, nil, "the server 2001:db8:ff::53 is named more than once"},
 		"a server in 0.0.0.0/8":   {[]any{relay("office", `["lan0"]`, `["0.1.2.3"]`)}, nil, `DHCPRelay office: the server "0.1.2.3" is no unicast address a relay forwards to`},
 		"a server in 240.0.0.0/4": {[]any{relay("office", `["lan0"]`, `["240.0.0.1"]`)}, nil, `the server "240.0.0.1" is no unicast address a relay forwards to`},
 		"a server in ::/8":        {[]any{relay("office", `["lan0"]`, `["::102:304"]`)}, nil, `the server "::102:304" is no unicast address a relay forwards to`},
