@@ -24,8 +24,9 @@ var singletons = []struct{ apiVersion, kind string }{
 // NewSet checks docs as a node's config against the image's schemas: each document is valid, its
 // kind is one the image accepts, kinds that are not multiple appear once, names are unique per
 // kind, the SystemDisk is present, and every reference names a document of the set, a key
-// reference a key its Secret holds and a credential file of its own. The Cluster and Node
-// documents an image with Kubernetes requires are its cluster's, which Documents.Cluster checks.
+// reference a key its Secret holds and a credential file of its own, and no value repeats that
+// the schemas declare unique. The Cluster and Node documents an image with Kubernetes requires are
+// its cluster's, which Documents.Cluster checks.
 func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 	multiple := map[string]bool{}
 	for _, k := range s.Kinds() {
@@ -65,6 +66,9 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 		return nil, err
 	}
 	set.refs = refs
+	if err := checkUnique(set.docs, s); err != nil {
+		return nil, err
+	}
 	return set, nil
 }
 
