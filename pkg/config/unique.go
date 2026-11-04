@@ -198,7 +198,15 @@ func checkUnique(docs Documents, s *schema.Schemas) error {
 		decl uniqueDecl
 		occs []occurrence
 	}
-	groups := map[string]*group{}
+	// A group is a key among the values the i-th declaration of a schema node compares: the node's
+	// values in every document of the kind, or across "list" those of one list alone, which name
+	// and path pick out.
+	type groupID struct {
+		apiVersion, kind, field string
+		i                       int
+		name, path, key         string
+	}
+	groups := map[groupID]*group{}
 	var lines []string
 	for _, d := range docs {
 		walkDocument(d, s, func(n node) bool {
@@ -212,15 +220,14 @@ func checkUnique(docs Documents, s *schema.Schemas) error {
 				return true
 			}
 			for i, decl := range decls {
-				// A declaration compares the values of one schema node, the same in every document
-				// of the kind, and across "list" those of one list alone.
-				scope := d.APIVersion + " " + d.Kind + " " + n.field + " " + strconv.Itoa(i)
+				scope := groupID{apiVersion: d.APIVersion, kind: d.Kind, field: n.field, i: i}
 				if decl.Across == "list" {
-					scope += " " + d.Name + " " + n.path
+					scope.name, scope.path = d.Name, n.path
 				}
 				keys, occs := occurrences(d.ID(), n, decl)
 				for j, k := range keys {
-					id := scope + "\x00" + k
+					id := scope
+					id.key = k
 					g := groups[id]
 					if g == nil {
 						g = &group{decl: decl}
