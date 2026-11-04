@@ -271,7 +271,7 @@ let
               table = mkOption {
                 type = types.ints.between 1 4294967295;
                 example = 200;
-                description = "Routing table of the next hop: a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. One next hop's alone, and no rule's `table`, which the outputs check when they render the config, at an apply or a `--dry-run` but not in `chalkctl validate`; none of 253, 254 and 255 and no VRF's table.";
+                description = "Routing table of the next hop: a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. It is none of 253, 254 and 255 and no VRF's table. No other next hop and no rule's `table` may name it either, which the outputs check when they render the config, at an apply or a `--dry-run`, and `chalkctl validate` does not.";
               };
             };
           }
