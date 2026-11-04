@@ -45,6 +45,8 @@ func walkDocument(d Document, schemas *schema.Schemas, visit func(node) bool) {
 // such as a nullable field's, before its branch, and both with the same path. A key or index the
 // schema says nothing about is left alone, however it is shaped.
 func walk(defs map[string]any, n node, visit func(node) bool) {
+	// visit sees the definition in place of a node with $ref, so a marker such as x-chalkos-unique
+	// counts only on the definition. The kinds converter emits no $ref; networkd's sections do.
 	n.sch = followRef(defs, n.sch)
 	if !visit(n) {
 		return
@@ -94,7 +96,7 @@ func fieldPath(path, name string) string {
 	return path + "." + name
 }
 
-// followRef resolves a local "$ref": "#/$defs/Name", as the converter emits for a repeated
+// followRef resolves a local "$ref": "#/$defs/Name", as the networkd schemas emit for each
 // section, to the definition it names.
 func followRef(defs map[string]any, sch map[string]any) map[string]any {
 	for {
