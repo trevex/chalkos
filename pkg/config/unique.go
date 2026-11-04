@@ -143,8 +143,8 @@ func (o occurrence) shown() string {
 
 // occurrences are the keys of the node n holds under decl, with the encoding each compares by:
 // the node's value, or each item of a list. A key whose members are all null or left out takes
-// no part, nor does one with a value its normaliser cannot read, which the schema or a rule
-// refuses already; a null member of a tuple compares equal to another null.
+// no part, nor does one with a value its normaliser cannot read, which the field's type or a rule
+// has to refuse; a null member of a tuple compares equal to another null.
 func occurrences(doc ID, n node, decl uniqueDecl) (keys []string, occs []occurrence) {
 	type at struct {
 		v    any
