@@ -268,35 +268,20 @@ let
     in
     (t.type or null) == "string" || lib.any (b: (b.type or null) == "string") (t.anyOf or [ ]);
 
-  # The x-chalkos-unique of the value `of`, a field or a kind's spec, whose schema is s, from the
-  # unique declared at `at`: each declaration with its scope, across, filled in, its by fields as
-  # { field; as; }, and the attributes left null dropped, so Go reads one shape. A declaration
-  # that chalkd could not check, or would check against values the field never holds, fails the
-  # evaluation and names where it is declared.
-  uniqueSchema =
+  # The declarations of the value `of`, a field or a kind's spec, whose schema is s, from the
+  # unique declared at `at`: each with its scope, across, filled in, its by fields as { field;
+  # as; }, and the attributes left null dropped, so Go reads one shape. A declaration that chalkd
+  # could not check, or would check against values the field never holds, is instead the refusal
+  # that names where it is declared.
+  uniqueDeclarations =
     at: of: s: unique:
     let
-      decls =
-        if unique == true then
-          [ { } ]
-        else if lib.isAttrs unique then
-          [ unique ]
-        else if lib.isList unique then
-          unique
-        else
-          throw "${at} is true, a declaration or a list of declarations";
       t = nonNull s;
       isList = (t.type or null) == "array";
       item = if isList then nonNull t.items else t;
       what = if isList then "the items of ${of}" else of;
       are = if isList then "are" else "is";
-      fail = msg: throw "${at}: ${msg}";
-      normaliser =
-        a:
-        if lib.elem a normalisers then
-          a
-        else
-          fail "the normaliser ${builtins.toJSON a} is none of ${lib.concatStringsSep ", " normalisers}";
+      fail = msg: "${at}: ${msg}";
       member =
         f:
         let
@@ -320,8 +305,12 @@ let
           fail "by names ${m.field}, a list, an object or a secretRef, which a key cannot hold"
         else if as != null && !takesStrings field then
           fail "${m.field} holds no strings, which a normaliser reads"
+        else if as != null && !lib.elem as normalisers then
+          fail (unknownNormaliser as)
         else
-          { inherit (m) field; } // lib.optionalAttrs (as != null) { as = normaliser as; };
+          { inherit (m) field; } // lib.optionalAttrs (as != null) { inherit as; };
+      unknownNormaliser =
+        a: "the normaliser ${builtins.toJSON a} is none of ${lib.concatStringsSep ", " normalisers}";
       declaration =
         d:
         let
@@ -337,6 +326,8 @@ let
           as = d.as or null;
           hint = d.hint or null;
           across = d.across or (if isList && by != null then "list" else "kind");
+          members = if lib.isList by then map member by else [ ];
+          refused = lib.findFirst lib.isString null members;
         in
         if !lib.isAttrs d then
           fail "a declaration is an attribute set { across; by; as; hint; }"
@@ -371,15 +362,40 @@ let
           fail "a normaliser reads strings, and ${what} ${are} none"
         else if hint != null && !lib.isString hint then
           fail "hint is a string"
+        else if as != null && !lib.elem as normalisers then
+          fail (unknownNormaliser as)
+        else if refused != null then
+          refused
         else
           {
             inherit across;
           }
-          // lib.optionalAttrs (by != null) { by = map member by; }
-          // lib.optionalAttrs (as != null) { as = normaliser as; }
+          // lib.optionalAttrs (by != null) { by = members; }
+          // lib.optionalAttrs (as != null) { inherit as; }
           // lib.optionalAttrs (hint != null) { inherit hint; };
     in
-    map declaration decls;
+    if unique == true then
+      [ (declaration { }) ]
+    else if lib.isAttrs unique then
+      [ (declaration unique) ]
+    else if lib.isList unique then
+      map declaration unique
+    else
+      [ "${at} is true, a declaration or a list of declarations" ];
+
+  # The first refusal among a unique's declarations, or null when chalkd can check them all.
+  uniqueRefusal =
+    at: of: s: unique:
+    lib.findFirst lib.isString null (uniqueDeclarations at of s unique);
+
+  # The x-chalkos-unique of a unique's declarations, failing the evaluation with their first
+  # refusal.
+  uniqueSchema =
+    at: of: s: unique:
+    let
+      refusal = uniqueRefusal at of s unique;
+    in
+    if refusal != null then throw refusal else uniqueDeclarations at of s unique;
 
   optionSchema =
     at: opt:
@@ -433,6 +449,8 @@ let
       // lib.optionalAttrs (required != [ ]) { inherit required; };
 in
 rec {
+  inherit uniqueRefusal;
+
   # The schema of a whole document of a kind, around the schema of its spec. The kind's rules
   # over its documents go into x-chalkos-kind, where a kind without rules has none, and its
   # description, the sentence that says what its documents are for, is the schema's.

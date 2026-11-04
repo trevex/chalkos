@@ -625,113 +625,167 @@ lib.runTests {
     expected = false;
   };
   # Each declaration chalkd could not check, or would check against values the field never holds,
-  # fails the evaluation.
-  testUniqueRefusesBadDeclarations = {
-    expr = map (x: fails (uniqueOf x.type x.unique)) [
-      {
-        type = types.listOf types.str;
-        unique.as = "mac";
-      }
-      {
-        type = types.listOf types.str;
-        unique.by = [ "x" ];
-      }
-      {
-        type = types.str;
-        unique.across = "list";
-      }
-      {
-        type = types.str;
-        unique.across = "node";
-      }
-      {
-        type = types.listOf reservation;
-        unique.by = [ "serial" ];
-      }
-      {
-        type = types.listOf reservation;
-        unique.by = [ "tags" ];
-      }
-      {
-        type = types.listOf reservation;
-        unique.by = [ ];
-      }
-      {
-        type = types.listOf reservation;
-        unique = {
-          by = [ "mac" ];
-          as = "lower";
-        };
-      }
-      {
-        type = types.listOf reservation;
-        unique.by = [
-          {
-            field = "ge";
-            as = "ip";
-          }
-        ];
-      }
-      {
-        type = types.listOf reservation;
-        unique = true;
-      }
-      {
-        type = types.nullOr kindTypes.secretRef;
-        unique = true;
-      }
-      {
-        type = types.listOf kindTypes.secretRef;
-        unique = true;
-      }
-      {
-        type = types.ints.u32;
-        unique.as = "lower";
-      }
-      {
-        type = types.str;
-        unique.scope = "kind";
-      }
-      {
-        type = types.str;
-        unique.hint = 1;
-      }
-      {
-        type = types.attrsOf types.str;
-        unique = true;
-      }
-      {
-        type = types.listOf (types.listOf types.str);
-        unique.across = "list";
-      }
-      {
-        type = types.str;
-        unique = "kind";
-      }
-    ];
-    expected = lib.genList (_: true) 18;
-  };
-  testKindUniqueRefusesBadDeclarations = {
-    expr = map (u: fails (schemasOf (pairWith u))) [
-      [ { by = [ "nope" ]; } ]
-      [ { by = [ "tags" ]; } ]
-      [
+  # fails the evaluation, by the refusal meant for it rather than one an earlier check throws.
+  testUniqueRefusesBadDeclarations =
+    let
+      cases = [
         {
-          by = [
+          type = types.listOf types.str;
+          unique.as = "mac";
+          refusal = ''the normaliser "mac" is none of cidr, host, ip, lower'';
+        }
+        {
+          type = types.listOf types.str;
+          unique.by = [ "x" ];
+          refusal = "by names fields of objects, and the items of x are none; leave by out to compare the values themselves";
+        }
+        {
+          type = types.str;
+          unique.across = "list";
+          refusal = ''across = "list" compares the items of a list, and x is none'';
+        }
+        {
+          type = types.str;
+          unique.across = "node";
+          refusal = ''across is kind or list, not "node"'';
+        }
+        {
+          type = types.listOf reservation;
+          unique.by = [ "serial" ];
+          refusal = "by names serial, which is no field of the items of x, whose fields are address, ge, mac, tags";
+        }
+        {
+          type = types.listOf reservation;
+          unique.by = [ "tags" ];
+          refusal = "by names tags, a list, an object or a secretRef, which a key cannot hold";
+        }
+        {
+          type = types.listOf reservation;
+          unique.by = [ ];
+          refusal = "by is a list of one field or more";
+        }
+        {
+          type = types.listOf reservation;
+          unique = {
+            by = [ "mac" ];
+            as = "lower";
+          };
+          refusal = "as goes on each field of by";
+        }
+        {
+          type = types.listOf reservation;
+          unique.by = [
             {
-              field = "from";
-              as = "upper";
+              field = "ge";
+              as = "ip";
             }
           ];
+          refusal = "ge holds no strings, which a normaliser reads";
         }
-      ]
-    ];
-    expected = [
-      true
-      true
-      true
-    ];
-  };
+        {
+          type = types.listOf reservation;
+          unique = true;
+          refusal = "the items of x are objects; give by, the fields that make up the key";
+        }
+        {
+          type = types.nullOr kindTypes.secretRef;
+          unique = true;
+          refusal = "a secretRef names a key of a Secret, which is no value to compare";
+        }
+        {
+          type = types.listOf kindTypes.secretRef;
+          unique = true;
+          refusal = "a secretRef names a key of a Secret, which is no value to compare";
+        }
+        {
+          type = types.ints.u32;
+          unique.as = "lower";
+          refusal = "a normaliser reads strings, and x is none";
+        }
+        {
+          type = types.str;
+          unique.scope = "kind";
+          refusal = "scope is none of across, by, as and hint";
+        }
+        {
+          type = types.str;
+          unique.hint = 1;
+          refusal = "hint is a string";
+        }
+        {
+          type = types.attrsOf types.str;
+          unique = true;
+          refusal = "x is a map, whose keys are unique already";
+        }
+        {
+          type = types.listOf (types.listOf types.str);
+          unique.across = "list";
+          refusal = "x is a list of lists";
+        }
+        {
+          type = types.str;
+          unique = "kind";
+          at = "x.unique is true, a declaration or a list of declarations";
+        }
+      ];
+    in
+    {
+      expr = map (x: {
+        fails = fails (uniqueOf x.type x.unique);
+        refusal = schema.uniqueRefusal "x.unique" "x" (propOf x.type) x.unique;
+      }) cases;
+      expected = map (x: {
+        fails = true;
+        refusal = x.at or "x.unique: ${x.refusal}";
+      }) cases;
+    };
+  testKindUniqueRefusesBadDeclarations =
+    let
+      cases = [
+        {
+          unique = [ { by = [ "nope" ]; } ];
+          refusal = "by names nope, which is no field of chalkos.kinds.Pair.spec, whose fields are from, tags, to";
+        }
+        {
+          unique = [ { by = [ "tags" ]; } ];
+          refusal = "by names tags, a list, an object or a secretRef, which a key cannot hold";
+        }
+        {
+          unique = [
+            {
+              by = [
+                {
+                  field = "from";
+                  as = "upper";
+                }
+              ];
+            }
+          ];
+          refusal = ''the normaliser "upper" is none of cidr, host, ip, lower'';
+        }
+      ];
+      # Pair's spec, as pairWith declares it.
+      pairSpec = specOf {
+        from = mkOption { type = types.str; };
+        to = mkOption { type = types.str; };
+        tags = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+        };
+      };
+    in
+    {
+      expr = map (x: {
+        fails = fails (schemasOf (pairWith x.unique));
+        refusal =
+          schema.uniqueRefusal "chalkos.kinds.Pair.unique" "chalkos.kinds.Pair.spec" pairSpec
+            x.unique;
+      }) cases;
+      expected = map (x: {
+        fails = true;
+        refusal = "chalkos.kinds.Pair.unique: ${x.refusal}";
+      }) cases;
+    };
   testDemoSchemaMatchesFixture = {
     expr = schema.kindSchema demo;
     expected = builtins.fromJSON (
