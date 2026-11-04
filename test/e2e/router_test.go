@@ -329,7 +329,9 @@ func TestRouterLab(t *testing.T) {
 		if out, err := exec.Command(os.Getenv("CHALKLAB_CHALKCTL"), "validate", "r1", "--inventory", inventoryPath("twice")).CombinedOutput(); err != nil {
 			t.Fatalf("chalkctl validate of two peers of one session: %v\n%s", err, out)
 		}
-		if out, err := chalkctl(t, nodes["r1"], "twice", "apply-config", "--dry-run", "r1"); err == nil || !strings.Contains(out, "output frr: its renderer failed") {
+		if out, err := chalkctl(t, nodes["r1"], "twice", "apply-config", "--dry-run", "r1"); err == nil ||
+			!strings.Contains(out, "output frr: its renderer failed") ||
+			!strings.Contains(out, "BGPPeer again and BGPPeer fabric both name enp0s3 in the VRF default") {
 			t.Fatalf("apply-config --dry-run of two peers of one session: %v\n%s", err, out)
 		}
 		// A FirewallPolicy that names a zone and an AddressSet the config lacks is refused with a
