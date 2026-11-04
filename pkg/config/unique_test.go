@@ -11,7 +11,7 @@ import (
 )
 
 // poolSchema is an extension kind as the kinds module writes it, with a uniqueness declaration of
-// each shape: a number and a nullable number across the kind, with a hint; list items across the
+// each shape: an integer with a hint and two nullable numbers across the kind; list items across the
 // kind; list items within the list, normalised as addresses, ranges and lower case; a registry
 // host across the kind; list items keyed by one field and by a tuple with nullable members, two
 // declarations on one list; a list within list items, and a field of list items across the kind;
@@ -30,6 +30,7 @@ const poolSchema = `{
 				"from": {"type": "string", "default": "a"},
 				"to": {"type": "string", "default": "b"},
 				"table": {"type": "integer", "x-chalkos-unique": [{"across": "kind", "hint": "give each pool a table of its own"}]},
+				"weight": {"anyOf": [{"type": "number"}, {"type": "null"}], "default": null, "x-chalkos-unique": [{"across": "kind"}]},
 				"zone": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": null, "x-chalkos-unique": [{"across": "kind"}]},
 				"interfaces": {"type": "array", "default": [], "items": {"type": "string"}, "x-chalkos-unique": [{"across": "kind"}]},
 				"servers": {"type": "array", "default": [], "items": {"type": "string"}, "x-chalkos-unique": [{"across": "list", "as": "ip"}]},
@@ -137,6 +138,9 @@ func TestCheckUnique(t *testing.T) {
 			`Pool/a: (spec.entries[0].prefix, spec.entries[0].ge, spec.entries[0].le), (spec.entries[1].prefix, spec.entries[1].ge, spec.entries[1].le): ("10.0.0.0/8", null, null) is not unique`},
 		{"a list within list items is one list each", poolOf("a", "pools: [{protocols: [tcp]}, {protocols: [tcp, udp, udp]}]"),
 			`Pool/a: spec.pools[1].protocols[1], spec.pools[1].protocols[2]: "udp" is not unique`},
+		{"fractions apart", poolOf("a", "weight: 0.5") + poolOf("b", "weight: 0.25"), ""},
+		{"fractions compare as numbers", poolOf("a", "weight: 0.5") + poolOf("b", "weight: 5e-1"),
+			"Pool/a, Pool/b: spec.weight 0.5 is not unique"},
 		{"a field of list items across the kind", poolOf("a", "pools: [{name: x}, {name: y}]") + poolOf("b", "pools: [{name: z}, {name: x}]"),
 			`Pool/a: spec.pools[0].name, Pool/b: spec.pools[1].name: "x" is not unique`},
 		{"an object by its fields", poolOf("a", "disk: {path: /dev/vdb}") + poolOf("b", "disk: {path: /dev/vdb}") + poolOf("c", "disk: {path: /dev/vdb, model: m}") + poolOf("d", "disk: null") + poolOf("e", "disk: null"),

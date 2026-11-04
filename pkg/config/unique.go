@@ -80,26 +80,28 @@ func decodeUnique(v any) ([]uniqueDecl, error) {
 	return decls, nil
 }
 
-// keyOf is the form v compares in: normalised with as, which takes strings alone, and a number
-// as the exact rational it is, so that 100 and 1e2 compare equal. ok is false for a value the
-// normaliser cannot read.
-func keyOf(v any, as string) (key any, ok bool) {
+// keyOf is the form v compares in, tagged so that no two kinds of value share an encoding:
+// normalised with as, which takes strings alone, and a number as the exact rational it is, so
+// that 100 and 1e2 compare equal and 0.5 and 0.25 apart. ok is false for a value the normaliser
+// cannot read.
+func keyOf(v any, as string) (key [2]any, ok bool) {
 	if v == nil {
-		return nil, true
+		return [2]any{"value", nil}, true
 	}
 	if as != "" {
 		s, isString := v.(string)
 		if !isString {
-			return nil, false
+			return key, false
 		}
-		return normalisers[as](s)
+		n, ok := normalisers[as](s)
+		return [2]any{"value", n}, ok
 	}
 	if n, isNumber := v.(json.Number); isNumber {
 		if r, ok := new(big.Rat).SetString(string(n)); ok {
-			return json.Number(r.RatString()), true
+			return [2]any{"number", r.RatString()}, true
 		}
 	}
-	return v, true
+	return [2]any{"value", v}, true
 }
 
 // occurrence is a key where a document holds it: the paths of its members and their values as
@@ -158,11 +160,11 @@ func occurrences(doc ID, n node, decl uniqueDecl) (keys []string, occs []occurre
 	}
 	for _, x := range values {
 		o := occurrence{doc: doc}
-		var key []any
+		var key [][2]any
 		usable, given := true, false
 		if len(decl.By) == 0 {
 			k, ok := keyOf(x.v, decl.As)
-			o.paths, o.values, key = []string{x.path}, []any{x.v}, []any{k}
+			o.paths, o.values, key = []string{x.path}, []any{x.v}, [][2]any{k}
 			usable, given = ok, x.v != nil
 		} else {
 			obj, _ := x.v.(map[string]any)
@@ -177,7 +179,11 @@ func occurrences(doc ID, n node, decl uniqueDecl) (keys []string, occs []occurre
 		if !usable || !given {
 			continue
 		}
-		data, _ := json.Marshal(key)
+		// The values are as Parse and FromJSON decode them, which JSON always encodes.
+		data, err := json.Marshal(key)
+		if err != nil {
+			panic(fmt.Sprintf("%s: %s: encoding a unique key: %v", doc, x.path, err))
+		}
 		keys, occs = append(keys, string(data)), append(occs, o)
 	}
 	return keys, occs
