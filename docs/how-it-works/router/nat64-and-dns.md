@@ -322,10 +322,11 @@ remote-control:
 The renderer parses every value of the document before it writes it: addresses and ranges as
 addresses, names against a pattern of lower-case labels and record data by type. A record stands
 between single quotes and a TXT record's text between double quotes, so a value that holds a
-quote, a backslash or anything but printable ASCII is refused. It also refuses two resolvers of
-one VRF, a VRF that no `VRF` document declares, and a `listen` address that `Network` documents
-give only to links of other VRFs, whose queries the resolver would never receive. An address from
-DHCP passes. The output reads `Resolver`, `VRF` and `Network`, and its check runs
+quote, a backslash or anything but printable ASCII is refused. It also refuses a VRF that no
+`VRF` document declares and a `listen` address that `Network` documents give only to links of
+other VRFs, whose queries the resolver would never receive. An address from DHCP passes. Two
+resolvers of one VRF never reach the renderer, because the config's uniqueness check in chalkctl
+and chalkd refuses them. The output reads `Resolver`, `VRF` and `Network`, and its check runs
 `unbound-checkconf` on each rendered file in the output's sandbox, so a value that Unbound refuses
 refuses the delivery before it changes anything.
 
