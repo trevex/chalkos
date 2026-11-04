@@ -387,7 +387,7 @@ A normaliser changes how a value compares. The message still shows the value as 
 
 A null value or a field left out takes no part. A key of several fields takes part when one of
 them holds a value, and a null field then equals another null field. A value its normaliser
-cannot read takes no part either, since the field's type or a rule refuses it.
+cannot read takes no part either; give the field a type or a rule that refuses such values.
 
 chalkctl and chalkd report every repeated value at once, one line each, sorted:
 
