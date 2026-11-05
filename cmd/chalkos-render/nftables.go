@@ -197,10 +197,12 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		}
 		// The input hook sees the VRF's device for each of its links, while chalkd listens in
 		// the default VRF alone. The devices are those of the VRF documents and of the Networks'
-		// own VRF=, which the VRF's rules cannot see, so the check is the renderer's alone.
-		for _, i := range m {
+		// own VRF=, which the VRF's rules cannot see, so the check is the renderer's alone. Only a
+		// Router document sets management interfaces, so d.Routers holds it.
+		for j, i := range m {
 			if dev, ok := vrfDeviceMatch(i, devices); ok {
-				return nil, fmt.Errorf("Router: the management interface %s matches %s, the device of VRF %s, and chalkd answers in the default VRF alone; name the default VRF's links", i, dev, dev)
+				return nil, refuse("Router", d.Routers[0].Name, fmt.Sprintf("spec.management.interfaces[%d]", j),
+					"the management interface %s matches %s, the device of VRF %s, and chalkd answers in the default VRF alone; name the default VRF's links", i, dev, dev)
 			}
 		}
 	}
@@ -235,15 +237,16 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		}
 	}
 	for _, n := range d.NAT {
-		for _, place := range []*natPlace{n.Spec.In, n.Spec.Out} {
-			if place != nil && place.Interface != nil {
+		for _, place := range natPlaces(n.Spec) {
+			if place.Interface != nil {
 				if err := checkInterfaces("NATRule "+n.Name, []string{*place.Interface}); err != nil {
 					return nil, err
 				}
 				// Prerouting and postrouting translate by the links, never by a VRF's device: an
 				// interface that matches a device and no link translates nothing.
 				if dev, ok := onlyDevice(d, devices, *place.Interface); ok {
-					return nil, fmt.Errorf("NATRule %s: %s matches no link, only %s, the device of VRF %s; name the VRF's links or a zone of the VRF", n.Name, *place.Interface, dev, dev)
+					return nil, refuse("NATRule", n.Name, place.path+".interface",
+						"%s matches no link, only %s, the device of VRF %s; name the VRF's links or a zone of the VRF", *place.Interface, dev, dev)
 				}
 			}
 		}
@@ -279,6 +282,25 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		}
 	}
 	return f, nil
+}
+
+// placeAt is a NATRule's place with its field's path in the document, which a refusal of the
+// place names.
+type placeAt struct {
+	*natPlace
+	path string
+}
+
+// natPlaces are the places a NATRule sets, in and out, with their paths.
+func natPlaces(n natSpec) []placeAt {
+	var out []placeAt
+	if n.In != nil {
+		out = append(out, placeAt{n.In, "spec.in"})
+	}
+	if n.Out != nil {
+		out = append(out, placeAt{n.Out, "spec.out"})
+	}
+	return out
 }
 
 // zoneLinks are where the hooks see a zone's connections. The input and forward hooks see a
@@ -335,9 +357,10 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 			}
 		}
 		var zl zoneLinks
-		for _, i := range z.Spec.Interfaces {
+		for j, i := range z.Spec.Interfaces {
+			at := fmt.Sprintf("spec.interfaces[%d]", j)
 			if dev, ok := vrfDeviceMatch(i, devices); ok {
-				return nil, fmt.Errorf("%s: %s matches %s, the device of VRF %s; name the VRF in vrfs", what, i, dev, dev)
+				return nil, refuse("FirewallZone", z.Name, at, "%s matches %s, the device of VRF %s; name the VRF in vrfs", i, dev, dev)
 			}
 			vrfs, err := d.Membership.interfaceVRFs(i)
 			if err != nil {
@@ -350,7 +373,7 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 				}
 				if other, ok := held[v]; ok {
 					if other != z.Name {
-						return nil, fmt.Errorf("%s names %s, which may be a link of VRF %s, which FirewallZone %s holds; give each link one zone", what, i, v, other)
+						return nil, refuse("FirewallZone", z.Name, at, "%s names %s, which may be a link of VRF %s, which FirewallZone %s holds; give each link one zone", what, i, v, other)
 					}
 					// The device of the zone's own VRF covers its links.
 					continue
@@ -424,9 +447,9 @@ func (f *firewall) nat64LinksUnnamed(d routerDocuments) error {
 		return "", "", false
 	}
 	for _, z := range d.Zones {
-		for _, i := range z.Spec.Interfaces {
+		for j, i := range z.Spec.Interfaces {
 			if link, n, ok := match(i); ok {
-				return fmt.Errorf("FirewallZone %s: %s matches %s, the link of NAT64 %s, which no zone holds; name other links", z.Name, i, link, n)
+				return refuse("FirewallZone", z.Name, fmt.Sprintf("spec.interfaces[%d]", j), "%s matches %s, the link of NAT64 %s, which no zone holds; name other links", i, link, n)
 			}
 		}
 	}
@@ -440,12 +463,12 @@ func (f *firewall) nat64LinksUnnamed(d routerDocuments) error {
 		return slices.ContainsFunc(d.Membership.Members, func(m vrfMember) bool { return globsOverlap(i, m.glob) })
 	}
 	for _, r := range d.NAT {
-		for _, place := range []*natPlace{r.Spec.In, r.Spec.Out} {
-			if place == nil || place.Interface == nil {
+		for _, place := range natPlaces(r.Spec) {
+			if place.Interface == nil {
 				continue
 			}
 			if link, n, ok := match(*place.Interface); ok && !other(*place.Interface) {
-				return fmt.Errorf("NATRule %s: %s matches no link but %s, the link of NAT64 %s, which no NAT rule translates; name other links", r.Name, *place.Interface, link, n)
+				return refuse("NATRule", r.Name, place.path+".interface", "%s matches no link but %s, the link of NAT64 %s, which no NAT rule translates; name other links", *place.Interface, link, n)
 			}
 		}
 	}
@@ -701,7 +724,7 @@ func (f *firewall) forward(b *strings.Builder) {
 func (f *firewall) translation(b *strings.Builder) error {
 	var dst, src []string
 	for _, n := range f.nat {
-		line, err := f.natLine(n.Spec)
+		line, err := f.natLine(n)
 		if err != nil {
 			return within("NATRule "+n.Name, err)
 		}
@@ -769,16 +792,18 @@ func (f *firewall) nat64Lines() []string {
 }
 
 // natLine renders a NATRule. The NATRule's rules check its place, to, family and ports; natLine
-// guards what would panic or add syntax to the ruleset.
-func (f *firewall) natLine(n natSpec) (string, error) {
+// guards what would panic or add syntax to the ruleset. It refuses a zone without links, which
+// would translate nothing, and a to.address in a NAT64's pool.
+func (f *firewall) natLine(doc named[natSpec]) (string, error) {
+	n := doc.Spec
 	family, ok := familyWords[n.Family]
 	if !ok {
 		return "", internalErrorf("family %q is neither ipv4 nor ipv6", n.Family)
 	}
 	parts := []string{"meta nfproto " + n.Family}
-	place, dir := n.Out, "oifname"
+	place, dir, at := n.Out, "oifname", "spec.out"
 	if n.Type == "dnat" {
-		place, dir = n.In, "iifname"
+		place, dir, at = n.In, "iifname", "spec.in"
 	}
 	switch {
 	case place == nil:
@@ -789,7 +814,7 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 			return "", err
 		}
 		if len(z.links) == 0 {
-			return "", fmt.Errorf("the zone %s holds no link", *place.Zone)
+			return "", refuse("NATRule", doc.Name, at+".zone", "the zone %s holds no link", *place.Zone)
 		}
 		parts = append(parts, dir+" "+interfaceSet(z.links))
 	case place.Interface != nil:
@@ -809,7 +834,7 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 			return "", err
 		}
 		if n.Type == "dnat" && side.dir == "daddr" {
-			if err := f.nat64Destinations(elements); err != nil {
+			if err := f.nat64Destinations(doc.Name, elements); err != nil {
 				return "", err
 			}
 		}
@@ -836,7 +861,7 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 		for _, x := range f.nat64 {
 			for _, p := range x.pools {
 				if p.Contains(a) {
-					return "", fmt.Errorf("to.address %s lies in %s, the pool of NAT64 %s, whose addresses belong to the NAT64 whole; translate to an address outside the pool", a, p, x.name)
+					return "", refuse("NATRule", doc.Name, "spec.to.address", "to.address %s lies in %s, the pool of NAT64 %s, whose addresses belong to the NAT64 whole; translate to an address outside the pool", a, p, x.name)
 				}
 			}
 		}
@@ -854,10 +879,11 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 	return strings.Join(parts, " "), nil
 }
 
-// nat64Destinations refuses a destination range of a dnat rule that lies in a NAT64's prefix or
-// explicit pool, whose connections the dstnat chain accepts before any rule.
-func (f *firewall) nat64Destinations(ranges []string) error {
-	for _, r := range ranges {
+// nat64Destinations refuses a destination range of the dnat rule rule that lies in a NAT64's
+// prefix or explicit pool, whose connections the dstnat chain accepts before any rule. ranges are
+// the rule's match.destination, masked, in its order.
+func (f *firewall) nat64Destinations(rule string, ranges []string) error {
+	for i, r := range ranges {
 		d := netip.MustParsePrefix(r)
 		for _, x := range f.nat64 {
 			held := slices.Clone(x.pools)
@@ -866,7 +892,7 @@ func (f *firewall) nat64Destinations(ranges []string) error {
 			}
 			for _, p := range held {
 				if p.Bits() <= d.Bits() && p.Contains(d.Addr()) {
-					return fmt.Errorf("match.destination %s lies in %s of NAT64 %s, whose connections the firewall accepts before any NATRule; match a range outside it", d, p, x.name)
+					return refuse("NATRule", rule, fmt.Sprintf("spec.match.destination[%d]", i), "match.destination %s lies in %s of NAT64 %s, whose connections the firewall accepts before any NATRule; match a range outside it", d, p, x.name)
 				}
 			}
 		}
@@ -1127,7 +1153,7 @@ func (o opening) lines() ([]string, error) {
 			for _, a := range side.ranges {
 				p, err := netip.ParsePrefix(a)
 				if err != nil {
-					return nil, fmt.Errorf("%q is no address range", a)
+					return nil, internalErrorf("%q is no address range", a)
 				}
 				if p.Addr().Is4() == (fam == "ipv4") {
 					mine = append(mine, p.Masked().String())

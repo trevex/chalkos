@@ -113,20 +113,26 @@ func (t policyTables) of(r policyRule) (uint32, error) {
 // of one table or of one NextHop. The schemas and rules keep the targets' tables apart: a VRF's
 // and a NextHop's table are their own, and a rule's table is neither. NextHop documents that no
 // rule names take no mark. It refuses more than 255 tables, which the mark's bits cannot tell
-// apart, a count that spans every document.
+// apart, a count that spans every document: the refusal names the rule whose target is the 256th
+// table, in the order of the documents and their rules, and counts them all.
 func policyTargets(d routerDocuments, t policyTables) ([]routeTarget, error) {
 	tables := map[uint32]bool{}
+	// past and pastRule name the rule whose target is the 256th table, if any.
+	past, pastRule := "", -1
 	for _, p := range d.PolicyRoutes {
 		for i, r := range p.Spec.Rules {
 			table, err := t.of(r)
 			if err != nil {
 				return nil, within(fmt.Sprintf("PolicyRoute %s rule %d", p.Name, i+1), err)
 			}
+			if !tables[table] && len(tables) == 255 && pastRule < 0 {
+				past, pastRule = p.Name, i
+			}
 			tables[table] = true
 		}
 	}
-	if len(tables) > 255 {
-		return nil, fmt.Errorf("the PolicyRoute documents send traffic to %d tables, more than the 255 their marks tell apart", len(tables))
+	if pastRule >= 0 {
+		return nil, refuse("PolicyRoute", past, fmt.Sprintf("spec.rules[%d].to", pastRule), "the PolicyRoute documents send traffic to %d tables, more than the 255 their marks tell apart", len(tables))
 	}
 	targets := make([]routeTarget, 0, len(tables))
 	for i, table := range slices.Sorted(maps.Keys(tables)) {
@@ -202,11 +208,11 @@ func (f *firewall) policyHead(p named[policyRouteSpec]) (string, error) {
 			return "", within(what, err)
 		}
 		if len(z.links) == 0 {
-			return "", fmt.Errorf("%s: the zone %s holds no link", what, *in.Zone)
+			return "", refuse("PolicyRoute", p.Name, "spec.in.zone", "the zone %s holds no link", *in.Zone)
 		}
 		for _, l := range z.links {
 			if link, n, ok := f.nat64Link(l); ok {
-				return "", fmt.Errorf("%s: the zone %s holds %s, which matches %s, the link of NAT64 %s, whose traffic Jool translates; name the zone's other links in interfaces", what, *in.Zone, l, link, n)
+				return "", refuse("PolicyRoute", p.Name, "spec.in.zone", "the zone %s holds %s, which matches %s, the link of NAT64 %s, whose traffic Jool translates; name the zone's other links in interfaces", *in.Zone, l, link, n)
 			}
 		}
 		return "iifname " + interfaceSet(z.links), nil
@@ -214,12 +220,13 @@ func (f *firewall) policyHead(p named[policyRouteSpec]) (string, error) {
 		if err := checkInterfaces(what, in.Interfaces); err != nil {
 			return "", err
 		}
-		for _, i := range in.Interfaces {
+		for j, i := range in.Interfaces {
+			at := fmt.Sprintf("spec.in.interfaces[%d]", j)
 			if dev, ok := vrfDeviceMatch(i, f.vrfDevices); ok {
-				return "", fmt.Errorf("%s: %s matches %s, the device of VRF %s; name the VRF's links or a zone of the VRF", what, i, dev, dev)
+				return "", refuse("PolicyRoute", p.Name, at, "%s matches %s, the device of VRF %s; name the VRF's links or a zone of the VRF", i, dev, dev)
 			}
 			if link, n, ok := f.nat64Link(i); ok {
-				return "", fmt.Errorf("%s: %s matches %s, the link of NAT64 %s, whose traffic Jool translates; name other links", what, i, link, n)
+				return "", refuse("PolicyRoute", p.Name, at, "%s matches %s, the link of NAT64 %s, whose traffic Jool translates; name other links", i, link, n)
 			}
 		}
 		return "iifname " + interfaceSet(in.Interfaces), nil
@@ -305,7 +312,7 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 		return nil, err
 	}
 	if slices.ContainsFunc(units, func(u networkUnit) bool { return u.name == policyUnit }) {
-		return nil, fmt.Errorf("Network %s takes the name of the policy routing's unit; rename the document", policyUnit)
+		return nil, refuse("Network", policyUnit, "metadata.name", "Network %s takes the name of the policy routing's unit; rename the document", policyUnit)
 	}
 	networks, _ := docs["Network"].([]any)
 	networks = slices.Clone(networks)
@@ -336,7 +343,7 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 	}
 	lo, err := loNetwork(units)
 	if err != nil {
-		return nil, within(policyDocuments(d), err)
+		return nil, err
 	}
 	if lo == "" {
 		spec := map[string]any{"match": map[string]any{"name": "lo"}}
@@ -352,12 +359,12 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 		add(lo, "route", unreachable)
 	}
 	for _, h := range tables.hops {
-		link, err := soleNetwork(units, h.link)
+		link, err := soleNetwork(units, h.link, "NextHop", h.name, "spec.interface")
 		if err != nil {
-			return nil, within("NextHop "+h.name, err)
+			return nil, err
 		}
 		if link == "" {
-			return nil, fmt.Errorf("NextHop %s is on %s, which no Network document names; give the link one, which gets the next hop's route", h.name, h.link)
+			return nil, refuse("NextHop", h.name, "spec.interface", "NextHop %s is on %s, which no Network document names; give the link one, which gets the next hop's route", h.name, h.link)
 		}
 		add(link, "route", []any{map[string]any{
 			"gateway": h.address.String(),
@@ -369,56 +376,34 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 	return out, nil
 }
 
-// policyDocuments names the documents whose sections go into the Network of lo: the PolicyRoute
-// documents with rules, whose targets' rules go there, and the NextHop documents, whose tables'
-// unreachable defaults do, as "PolicyRoute a, b and NextHop c".
-func policyDocuments(d routerDocuments) string {
-	var routes, hops []string
-	for _, p := range d.PolicyRoutes {
-		if len(p.Spec.Rules) > 0 {
-			routes = append(routes, p.Name)
-		}
-	}
-	for _, h := range d.NextHops {
-		hops = append(hops, h.Name)
-	}
-	var parts []string
-	if len(routes) > 0 {
-		parts = append(parts, "PolicyRoute "+strings.Join(routes, ", "))
-	}
-	if len(hops) > 0 {
-		parts = append(parts, "NextHop "+strings.Join(hops, ", "))
-	}
-	return strings.Join(parts, " and ")
-}
-
 // loNetwork is the Network document of byKind that networkd picks for lo, "" when the unit of the
 // policy routing holds its sections. Without a Network that matches lo by its Name= alone, that
 // unit joins the units as networkd sorts them, so that a Network of other [Match] keys refuses
 // only when it sorts before the unit, which it may shadow, or when its Name= matches lo, which the
-// unit may shadow.
+// unit may shadow. A refusal names the Network; a device named lo is a VRF's of that name.
 func loNetwork(units []networkUnit) (string, error) {
 	if slices.ContainsFunc(units, func(u networkUnit) bool { return !u.narrowed && u.match.matches("lo") }) {
-		return soleNetwork(units, "lo")
+		return soleNetwork(units, "lo", "VRF", "lo", "metadata.name")
 	}
 	own := networkUnit{name: policyUnit, match: nameMatch{words: []nameWord{{glob: "lo", text: "lo"}}}}
 	units = append(slices.Clone(units), own)
 	slices.SortStableFunc(units, func(a, b networkUnit) int { return strings.Compare(a.name+".network", b.name+".network") })
-	if _, err := soleNetwork(units, "lo"); err != nil {
+	if _, err := soleNetwork(units, "lo", "VRF", "lo", "metadata.name"); err != nil {
 		return "", err
 	}
 	for _, u := range units {
 		if u.narrowed && len(u.match.words) > 0 && u.match.matches("lo") {
-			return "", fmt.Errorf("Network %s may match lo by other [Match] keys; name lo in a Network that its Name= alone matches", u.name)
+			return "", refuse("Network", u.name, "spec.match", "Network %s may match lo by other [Match] keys; name lo in a Network that its Name= alone matches", u.name)
 		}
 	}
 	return "", nil
 }
 
 // soleNetwork is the Network document networkd picks for the link, "" when none matches it. It
-// refuses a VRF's device, a Network that other [Match] keys may keep from the link, and one whose
-// Name= may match other links, which would get what the link gets.
-func soleNetwork(units []networkUnit, link string) (string, error) {
+// refuses a VRF's device, as a refusal of the field path of the document kind/name that names the
+// link, a Network that other [Match] keys may keep from the link, and one whose Name= may match
+// other links, which would get what the link gets, both as refusals of the Network.
+func soleNetwork(units []networkUnit, link, kind, name, path string) (string, error) {
 	cs := candidates(units, link)
 	if len(cs) == 0 {
 		return "", nil
@@ -426,13 +411,13 @@ func soleNetwork(units []networkUnit, link string) (string, error) {
 	u := cs[0]
 	switch {
 	case u.device:
-		return "", fmt.Errorf("%s is the device of VRF %s, which gets no next hop", link, link)
+		return "", refuse(kind, name, path, "%s is the device of VRF %s, which gets no next hop", link, link)
 	case u.narrowed:
-		return "", fmt.Errorf("Network %s may match %s by other [Match] keys; name %s in a Network that its Name= alone matches", u.name, link, link)
+		return "", refuse("Network", u.name, "spec.match", "Network %s may match %s by other [Match] keys; name %s in a Network that its Name= alone matches", u.name, link, link)
 	}
 	for _, w := range u.match.positives() {
 		if w.glob != link {
-			return "", fmt.Errorf("Network %s matches %s and other links, which would take its policy routing too; give %s a Network of its own", u.name, link, link)
+			return "", refuse("Network", u.name, "spec.match.name", "Network %s matches %s and other links, which would take its policy routing too; give %s a Network of its own", u.name, link, link)
 		}
 	}
 	return u.name, nil

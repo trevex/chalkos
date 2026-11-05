@@ -63,14 +63,14 @@ func TestPolicyRouteRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"a VRF's device":               {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["lan0", "transit"]}, `+dscp+`}`), "PolicyRoute a: transit matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF"},
-		"a glob of a VRF's device":     {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["tran*"]}, `+dscp+`}`), "PolicyRoute a: tran* matches transit, the device of VRF transit"},
+		"a VRF's device":               {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["lan0", "transit"]}, `+dscp+`}`), "PolicyRoute/a: spec.in.interfaces[1]: transit matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF"},
+		"a glob of a VRF's device":     {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["tran*"]}, `+dscp+`}`), "PolicyRoute/a: spec.in.interfaces[0]: tran* matches transit, the device of VRF transit"},
 		"an interface that ends a set": {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["lan0\" } accept; iifname { \"x"]}, `+dscp+`}`), `internal error: PolicyRoute a: "lan0\" } accept; iifname { \"x" is no interface name or glob`},
 		"a glob of a NAT64's link": {func() map[string][]any {
 			d := policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["n64-*"]}, `+dscp+`}`)
 			d["NAT64"] = []any{routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": []}`)}
 			return d
-		}(), "PolicyRoute a: n64-* matches n64-edge, the link of NAT64 edge"},
+		}(), "PolicyRoute/a: spec.in.interfaces[0]: n64-* matches n64-edge, the link of NAT64 edge"},
 		"a zone of a NAT64's link": {func() map[string][]any {
 			d := policyDocs(t, "a", `{"in": {"zone": "core", "interfaces": []}, `+dscp+`}`)
 			d["VRF"] = append(d["VRF"], routerDoc(t, "VRF", "core", `{"table": 400, "interfaces": ["n*"]}`))
@@ -78,13 +78,13 @@ func TestPolicyRouteRefusals(t *testing.T) {
 			d["FirewallZone"] = append(d["FirewallZone"], routerDoc(t, "FirewallZone", "core", `{"interfaces": [], "vrfs": ["core"]}`))
 			d["NAT64"] = []any{routerDoc(t, "NAT64", "edge", `{"vrf": "core", "prefix": "64:ff9b::/96", "pool4": []}`)}
 			return d
-		}(), "PolicyRoute a: the zone core holds n*, which matches n64-edge, the link of NAT64 edge"},
+		}(), "PolicyRoute/a: spec.in.zone: the zone core holds n*, which matches n64-edge, the link of NAT64 edge"},
 		"a zone without links": {func() map[string][]any {
 			d := policyDocs(t, "a", `{"in": {"zone": "core", "interfaces": []}, `+dscp+`}`)
 			d["VRF"] = append(d["VRF"], routerDoc(t, "VRF", "core", `{"table": 400, "interfaces": []}`))
 			d["FirewallZone"] = append(d["FirewallZone"], routerDoc(t, "FirewallZone", "core", `{"interfaces": [], "vrfs": ["core"]}`))
 			return d
-		}(), "PolicyRoute a: the zone core holds no link"},
+		}(), "PolicyRoute/a: spec.in.zone: the zone core holds no link"},
 		"no target":         {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {}}]}`), "internal error: PolicyRoute a rule 1: to names no target"},
 		"table 0":           {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 0}}]}`), "internal error: PolicyRoute a rule 1: table 0 is no table"},
 		"a missing NextHop": {policyDocs(t, "a", nextHopRoute("b6")), `internal error: PolicyRoute a rule 1: the input holds no NextHop "b6", which a reference names`},
@@ -104,7 +104,7 @@ func TestPolicyRouteRefusals(t *testing.T) {
 				rules = append(rules, `{"match": {"dscp": [46]}, "to": {"table": `+strconv.Itoa(1000+i)+`}}`)
 			}
 			return policyDocs(t, "a", `{"rules": [`+strings.Join(rules, ", ")+`]}`)
-		}(), "send traffic to 256 tables, more than the 255 their marks tell apart"},
+		}(), "PolicyRoute/a: spec.rules[255].to: the PolicyRoute documents send traffic to 256 tables, more than the 255 their marks tell apart"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, nft, c.docs, c.want) })
 	}
@@ -165,43 +165,43 @@ func TestPolicyRouteUnitRefusals(t *testing.T) {
 			d := policyDocs(t, "a", nextHopRoute("b4"))
 			d["NextHop"] = []any{hopDoc(t, "b4", "198.51.100.130", "wanc0", 200)}
 			return d
-		}(), "NextHop b4 is on wanc0, which no Network document names"},
+		}(), "NextHop/b4: spec.interface: NextHop b4 is on wanc0, which no Network document names"},
 		"a link without a Network of a NextHop no rule names": {func() map[string][]any {
 			d := policyDocs(t, "a", dscp)
 			d["NextHop"] = []any{hopDoc(t, "b4", "198.51.100.130", "wanc0", 200)}
 			return d
-		}(), "NextHop b4 is on wanc0, which no Network document names"},
+		}(), "NextHop/b4: spec.interface: NextHop b4 is on wanc0, which no Network document names"},
 		"a Network of the NextHop's link and others": {func() map[string][]any {
 			d := policyDocs(t, "a", nextHopRoute("b4"))
 			d["Network"][1] = document(t, "Network", "21-wanb", `{"match": {"name": "wan*"}}`)
 			return d
-		}(), "NextHop b4: Network 21-wanb matches wanb0 and other links, which would take its policy routing too"},
+		}(), "Network/21-wanb: spec.match.name: Network 21-wanb matches wanb0 and other links, which would take its policy routing too"},
 		"a Network of lo by other keys": {func() map[string][]any {
 			d := withoutHops(policyDocs(t, "a", dscp))
 			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
 			return d
-		}(), "PolicyRoute a: Network 05-loopback may match lo by other [Match] keys"},
+		}(), "Network/05-loopback: spec.match: Network 05-loopback may match lo by other [Match] keys"},
 		"a Network of lo by other keys, PolicyRoutes and a NextHop": {func() map[string][]any {
 			d := policyDocs(t, "a", dscp, "b", `{"rules": []}`, "c", dscp)
 			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
 			return d
-		}(), "PolicyRoute a, c and NextHop b4: Network 05-loopback may match lo by other [Match] keys"},
+		}(), "Network/05-loopback: spec.match: Network 05-loopback may match lo by other [Match] keys"},
 		"a Network of lo by other keys and a NextHop alone": {func() map[string][]any {
 			d := policyDocs(t)
 			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
 			return d
-		}(), "NextHop b4: Network 05-loopback may match lo by other [Match] keys"},
+		}(), "Network/05-loopback: spec.match: Network 05-loopback may match lo by other [Match] keys"},
 		"a Network of other keys alone before the unit": {func() map[string][]any {
 			d := withoutHops(policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 300}}]}`))
 			delete(d, "VRF")
 			d["Network"] = append(d["Network"], document(t, "Network", "00-nic", `{"match": {"macAddress": "02:00:00:00:00:01"}}`))
 			return d
-		}(), "PolicyRoute a: Network 00-nic may match lo by other [Match] keys"},
+		}(), "Network/00-nic: spec.match: Network 00-nic may match lo by other [Match] keys"},
 		"a Network of the unit's name": {func() map[string][]any {
 			d := policyDocs(t, "a", dscp)
 			d["Network"] = append(d["Network"], document(t, "Network", "00-policy-routing", `{"match": {"name": "dummy0"}}`))
 			return d
-		}(), "Network 00-policy-routing takes the name of the policy routing's unit"},
+		}(), "Network/00-policy-routing: metadata.name: Network 00-policy-routing takes the name of the policy routing's unit"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, networkd, c.docs, c.want) })
 	}
