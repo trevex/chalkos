@@ -942,6 +942,39 @@ Message of rule 5:
 documents.filter(n, cel.bind(s, documents[n].spec, s.match.protocol == null && (size(s.match.destinationPorts) > 0 || s.to != null && s.to.port != null))).map(n, "NATRule " + n).join(", ") + ": ports need match.protocol"
 ```
 
+#### NextHop { #rules-nexthop }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `spec.address` | A NextHop's address is a unicast address: not unspecified, loopback, multicast, broadcast or IPv4-mapped IPv6. | `refuse` | after the table | after the table |
+| 2 | `spec.interface` | A NextHop's interface is not lo. | `refuse` | `self != "lo"` | the interface is lo, which no next hop is on; name the link the next hop is on |
+| 3 | `spec.table` | A NextHop's table is none of 253, 254 and 255, the kernel's own. | `refuse` | `!(self in [253, 254, 255])` | the table is 253, 254 or 255, the kernel's own; give the NextHop a table of its own |
+| 4 | `spec.table` | A NextHop's table is no VRF's table. | `refuse` | after the table | after the table |
+
+Expression of rule 1:
+
+```text
+cel.bind(x, ip(self), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && x != ip("255.255.255.255") && !cidr("::ffff:0:0/96").contains(x))
+```
+
+Message of rule 1:
+
+```text
+"the next hop " + self + " is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4"
+```
+
+Expression of rule 4:
+
+```text
+cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(tables, v.map(n, v[n].spec.table), !(self in tables)))
+```
+
+Message of rule 4:
+
+```text
+cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), "the table is that of VRF " + v.filter(n, v[n].spec.table == self)[0] + "; give the NextHop a table of its own")
+```
+
 #### PolicyRoute { #rules-policyroute }
 
 | Rule | Field | Guards | Takes | Expression | Message |

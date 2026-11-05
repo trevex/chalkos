@@ -923,6 +923,7 @@ lib.runTests {
         "FirewallPolicy"
         "FirewallZone"
         "NATRule"
+        "NextHop"
         "PolicyRoute"
         "Router"
         "VRF"

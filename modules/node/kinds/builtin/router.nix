@@ -683,6 +683,55 @@ in
           };
         };
       };
+
+      NextHop = builtin groups.router // {
+        multiple = true;
+        description = "A next hop of policy routing: the router at an address on one of the node's links, and a routing table of its own that holds a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. PolicyRoute rules name it in `to.nextHop`; the rules that name one NextHop share its table, its route and its mark.";
+        spec = {
+          address = lib.chalkos.mkOption {
+            type = address;
+            example = "198.51.100.1";
+            description = "Address of the router the traffic leaves through: a unicast address, link-local ones included, and no IPv4-mapped IPv6 address. The rules that name the NextHop match packets of its family.";
+            rules = [
+              {
+                description = "A NextHop's address is a unicast address: not unspecified, loopback, multicast, broadcast or IPv4-mapped IPv6.";
+                rule = nextHopAddress "self";
+                messageExpression = ''"the next hop " + self + " is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4"'';
+              }
+            ];
+          };
+          interface = lib.chalkos.mkOption {
+            type = interfaceName;
+            example = "wanb0";
+            description = "Link the next hop is on, which a Network document names alone in its `[Match]` section; the route through the next hop goes into that Network.";
+            rules = [
+              {
+                description = "A NextHop's interface is not lo.";
+                rule = ''self != "lo"'';
+                message = "the interface is lo, which no next hop is on; name the link the next hop is on";
+              }
+            ];
+          };
+          table = lib.chalkos.mkOption {
+            type = types.ints.between 1 4294967295;
+            unique.hint = "give each NextHop a table of its own";
+            example = 200;
+            description = "Routing table of the next hop, which no other NextHop uses: none of 253, 254 and 255, the kernel's own, no VRF's table and no PolicyRoute rule's `table`.";
+            rules = [
+              {
+                description = "A NextHop's table is none of 253, 254 and 255, the kernel's own.";
+                rule = "!(self in [253, 254, 255])";
+                message = "the table is 253, 254 or 255, the kernel's own; give the NextHop a table of its own";
+              }
+              {
+                description = "A NextHop's table is no VRF's table.";
+                rule = vrfTables "!(self in tables)";
+                messageExpression = ''cel.bind(v, ${delivered "VRF"}, "the table is that of VRF " + v.filter(n, v[n].spec.table == self)[0] + "; give the NextHop a table of its own")'';
+              }
+            ];
+          };
+        };
+      };
     };
   };
 }

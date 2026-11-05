@@ -532,6 +532,20 @@ A node's config may hold several, each with a name of its own. It has 5 [change 
 | `spec.to.port` | integer from 1 to 65535 or null | `null` | Port the rule translates to, with `match.protocol`; null keeps the port. |
 | `spec.type` | one of `masquerade`, `snat`, `dnat` | required | `masquerade` translates the source of a leaving connection to the address of the interface it leaves through, `snat` to `to.address`, and `dnat` the destination of an arriving connection to `to.address`. |
 
+### NextHop { #nexthop }
+
+A next hop of policy routing: the router at an address on one of the node's links, and a routing table of its own that holds a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. PolicyRoute rules name it in `to.nextHop`; the rules that name one NextHop share its table, its route and its mark.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 4 [change rules](builtins.md#rules-nexthop).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.address` | IP address | required | Address of the router the traffic leaves through: a unicast address, link-local ones included, and no IPv4-mapped IPv6 address. The rules that name the NextHop match packets of its family. |
+| `spec.interface` | string | required | Link the next hop is on, which a Network document names alone in its `[Match]` section; the route through the next hop goes into that Network. |
+| `spec.table` | integer from 1 to 4294967295 | required | Routing table of the next hop, which no other NextHop uses: none of 253, 254 and 255, the kernel's own, no VRF's table and no PolicyRoute rule's `table`. Unique among the NextHop documents. |
+
 ### PolicyRoute { #policyroute }
 
 Policy routing of the router: rules that send the forwarded traffic they match, coming in on a zone's links, on interfaces or on any link, to a VRF's routing table, another table or a next hop, whatever its destination's route. The first rule that matches decides; documents apply in the order of their names.

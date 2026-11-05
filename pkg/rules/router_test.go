@@ -54,6 +54,8 @@ func TestRouterSchemaFormats(t *testing.T) {
 			`NATRule "x": - at '/spec/match/source/0': '10.0.0.0/33' is not valid cidr: an address range is an address, a slash and a prefix length of at most 32 for IPv4 or 128 for IPv6`},
 		{"NATRule", `{"type": "masquerade", "out": {"interface": "eth0"}, "match": {"source": ["10.0.0.1"]}}`, "is not valid cidr"},
 		{"AddressSet", `{"family": "ipv6", "prefixes": ["2001:db8::/129"]}`, "is not valid cidr"},
+		{"NextHop", `{"address": "fe80::1", "interface": "wanb0", "table": 200}`, ""},
+		{"NextHop", `{"address": "fe80::1%wanb0", "interface": "wanb0", "table": 200}`, "is not valid ip"},
 		{"FirewallPolicy", `{"from": "wan", "to": "local", "rules": [{"protocol": "tcp", "destinationPorts": [22, "8000-8100", "1-65535", "443-443"], "action": "accept"}]}`, ""},
 		{"FirewallPolicy", `{"from": "wan", "to": "local", "rules": [{"protocol": "tcp", "destinationPorts": ["9-1"], "action": "accept"}]}`,
 			`FirewallPolicy "x": - at '/spec/rules/0/destinationPorts/0': '9-1' is not valid port-range: a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last`},

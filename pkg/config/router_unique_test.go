@@ -80,6 +80,15 @@ func TestVRFUnique(t *testing.T) {
 	})
 }
 
+// A NextHop's table is its own.
+func TestNextHopUnique(t *testing.T) {
+	checkUniqueCases(t, []uniqueCase{
+		{"two NextHops of one table",
+			routerDoc("NextHop", "a", `{address: 198.51.100.1, interface: wana0, table: 200}`) + routerDoc("NextHop", "b", `{address: 203.0.113.1, interface: wanb0, table: 200}`),
+			`NextHop/a, NextHop/b: spec.table 200 is not unique; give each NextHop a table of its own`},
+	})
+}
+
 // An interface or glob is in one FirewallZone, once, as is a VRF, and one FirewallPolicy at most
 // goes from a zone to another, local included.
 func TestFirewallUnique(t *testing.T) {
