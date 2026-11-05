@@ -176,6 +176,11 @@ func TestPolicyRouteUnitRefusals(t *testing.T) {
 			d["Network"][1] = document(t, "Network", "21-wanb", `{"match": {"name": "wan*"}}`)
 			return d
 		}(), "Network/21-wanb: spec.match.name: Network 21-wanb matches wanb0 and other links, which would take its policy routing too"},
+		"a Network word of the NextHop's link and others": {func() map[string][]any {
+			d := policyDocs(t, "a", nextHopRoute("b4"))
+			d["Network"][1] = document(t, "Network", "21-wanb", `{"match": [{"name": ["wanb0", "wan*"]}]}`)
+			return d
+		}(), "Network/21-wanb: spec.match[0].name[1]: Network 21-wanb matches wanb0 and other links, which would take its policy routing too"},
 		"a Network of lo by other keys": {func() map[string][]any {
 			d := withoutHops(policyDocs(t, "a", dscp))
 			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))

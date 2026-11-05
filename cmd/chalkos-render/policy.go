@@ -417,7 +417,7 @@ func soleNetwork(units []networkUnit, link, kind, name, path string) (string, er
 	}
 	for _, w := range u.match.positives() {
 		if w.glob != link {
-			return "", refuse("Network", u.name, "spec.match.name", "Network %s matches %s and other links, which would take its policy routing too; give %s a Network of its own", u.name, link, link)
+			return "", refuse("Network", u.name, cmp.Or(w.path, "spec.match"), "Network %s matches %s and other links, which would take its policy routing too; give %s a Network of its own", u.name, link, link)
 		}
 	}
 	return u.name, nil
