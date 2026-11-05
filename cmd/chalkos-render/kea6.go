@@ -7,6 +7,8 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 // The DHCPv6 part of the output kea: Kea's DHCPv6 server of each VRF whose links IPv6 DHCPSubnet
@@ -49,7 +51,7 @@ func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s na
 				vrf = defaultVRF
 			}
 			if vrf == sub.vrf && sub.delegated.Contains(a.prefix.Addr()) {
-				return sub, refuse("DHCPSubnet", sub.name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds %s, the address Network %s gives a link of VRF %s", sub.delegated, a.prefix.Addr(), a.network, vrf)
+				return sub, refusals.Errorf("DHCPSubnet", sub.name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds %s, the address Network %s gives a link of VRF %s", sub.delegated, a.prefix.Addr(), a.network, vrf)
 			}
 		}
 		if err := delegatesNoRoute(d, sub); err != nil {
@@ -89,7 +91,7 @@ func delegatesNoRoute(d routerDocuments, sub servedSubnet) error {
 					p = netip.PrefixFrom(a, a.BitLen())
 				}
 				if p.Addr().Is6() && p.Bits() >= sub.delegated.Bits() && p.Overlaps(sub.delegated) {
-					return refuse("DHCPSubnet", sub.name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds the route of %s that Network %s gives a link of VRF %s", sub.delegated, p.Masked(), network, vrf)
+					return refusals.Errorf("DHCPSubnet", sub.name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds the route of %s that Network %s gives a link of VRF %s", sub.delegated, p.Masked(), network, vrf)
 				}
 			}
 		}
@@ -104,7 +106,7 @@ func delegatesNoRoute(d routerDocuments, sub servedSubnet) error {
 			continue
 		}
 		if p.Bits() >= sub.delegated.Bits() && p.Overlaps(sub.delegated) {
-			return refuse("DHCPSubnet", sub.name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds NAT64 %s's prefix %s of VRF %s", sub.delegated, n.Name, p.Masked(), vrf)
+			return refusals.Errorf("DHCPSubnet", sub.name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds NAT64 %s's prefix %s of VRF %s", sub.delegated, n.Name, p.Masked(), vrf)
 		}
 	}
 	return nil
@@ -131,9 +133,9 @@ func advertised(d routerDocuments, units []networkUnit, sub servedSubnet) error 
 	addresses := len(sub.pools) > 0 || len(sub.spec.Reservations) > 0
 	switch {
 	case addresses && (!send || !managed):
-		return refuse("DHCPSubnet", sub.name, at, "Network %s sends no router advertisements on %s with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA", network, link)
+		return refusals.Errorf("DHCPSubnet", sub.name, at, "Network %s sends no router advertisements on %s with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA", network, link)
 	case !send || (!managed && !other):
-		return refuse("DHCPSubnet", sub.name, at, "Network %s sends no router advertisements on %s with Managed=yes or OtherInformation=yes, which tell its clients to ask the DHCPv6 server; give it ipv6SendRA: true in network and otherInformation: true in ipv6SendRA", network, link)
+		return refusals.Errorf("DHCPSubnet", sub.name, at, "Network %s sends no router advertisements on %s with Managed=yes or OtherInformation=yes, which tell its clients to ask the DHCPv6 server; give it ipv6SendRA: true in network and otherInformation: true in ipv6SendRA", network, link)
 	}
 	return nil
 }
@@ -327,7 +329,7 @@ func delegableWithin(byServer map[keaServer][]servedSubnet) error {
 			total += 1 << bits
 		}
 		if total > maxDelegated {
-			return refuse("DHCPSubnet", s.name, "spec.prefixDelegation.length", "the DHCPSubnet documents delegate more than %d prefixes, the most the router routes; delegate fewer", maxDelegated)
+			return refusals.Errorf("DHCPSubnet", s.name, "spec.prefixDelegation.length", "the DHCPSubnet documents delegate more than %d prefixes, the most the router routes; delegate fewer", maxDelegated)
 		}
 	}
 	return nil

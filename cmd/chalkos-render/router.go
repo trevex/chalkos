@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 // The documents of the router layer's kinds, as the outputs router-sysctl and router-nftables read
@@ -590,7 +592,7 @@ func parseNameMatch(network string, spec map[string]any) (nameMatch, error) {
 			}
 			for _, w := range words {
 				if strings.Contains(w, `\`) {
-					return m, refuse("Network", network, at, "Name= holds %q, whose backslash networkd reads as an escape; name the links without one", w)
+					return m, refusals.Errorf("Network", network, at, "Name= holds %q, whose backslash networkd reads as an escape; name the links without one", w)
 				}
 				if !systemdIfname(w) {
 					continue
@@ -601,7 +603,7 @@ func parseNameMatch(network string, spec map[string]any) (nameMatch, error) {
 				}
 				word.glob = goGlob(w)
 				if _, err := path.Match(word.glob, ""); err != nil || bracketHolds(w, '[') {
-					return m, refuse("Network", network, at, "Name= holds %q, which is no glob the renderer can match as networkd does", word.text)
+					return m, refusals.Errorf("Network", network, at, "Name= holds %q, which is no glob the renderer can match as networkd does", word.text)
 				}
 				m.words = append(m.words, word)
 			}
@@ -885,7 +887,7 @@ func internalErrorf(format string, args ...any) error {
 // "internal error:" in front, as "internal error: <what>: ...", a refusal, which names its
 // document and field already, stays as it is, and any other error reads "<what>: ...".
 func within(what string, err error) error {
-	if r, ok := err.(*refusal); ok {
+	if r, ok := err.(*refusals.Error); ok {
 		return r
 	}
 	if e, ok := err.(*internalError); ok {

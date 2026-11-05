@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 // The VRF documents: each link's VRF, which the outputs frr and router-nftables read, and the
@@ -58,11 +60,11 @@ func (m vrfMembership) linkVRF(link string) (string, error) {
 	vrf := unitVRF(cs[0])
 	for _, u := range cs[1:] {
 		if other := unitVRF(u); other != vrf {
-			return "", refuse("Network", u.name, "spec.match", "Network %s and Network %s may each be the first to match %s, which puts it in VRF %s or in VRF %s", cs[0].name, u.name, link, vrf, other)
+			return "", refusals.Errorf("Network", u.name, "spec.match", "Network %s and Network %s may each be the first to match %s, which puts it in VRF %s or in VRF %s", cs[0].name, u.name, link, vrf, other)
 		}
 	}
 	if last := cs[len(cs)-1]; last.narrowed && vrf != defaultVRF {
-		return "", refuse("Network", last.name, "spec.match", "networkd puts %s in VRF %s only if the other [Match] keys of Network %s match it; give the link a Network that matches it by Name= alone", link, vrf, last.name)
+		return "", refusals.Errorf("Network", last.name, "spec.match", "networkd puts %s in VRF %s only if the other [Match] keys of Network %s match it; give the link a Network that matches it by Name= alone", link, vrf, last.name)
 	}
 	return vrf, nil
 }
@@ -77,7 +79,7 @@ func (m vrfMembership) links(vrf string) ([]string, error) {
 			continue
 		}
 		if mem.text == "" || !interfaceName.MatchString(mem.text) {
-			return nil, refuse("Network", mem.network, mem.path, "VRF %s holds the links of Network %s's Name=%s, which nftables cannot match; name them by a name or a prefix and *", vrf, mem.network, mem.text)
+			return nil, refusals.Errorf("Network", mem.network, mem.path, "VRF %s holds the links of Network %s's Name=%s, which nftables cannot match; name them by a name or a prefix and *", vrf, mem.network, mem.text)
 		}
 		globs = append(globs, mem.text)
 	}
@@ -165,7 +167,7 @@ func vrfLinks(vrfs []named[vrfSpec], links []string, byKind map[string]any) (vrf
 			return none, internalErrorf("%s: table 0 is no table of a VRF", what)
 		}
 		if slices.Contains(links, v.Name) {
-			return none, refuse("VRF", v.Name, "metadata.name", "a Network document names the link %s, the VRF's device", v.Name)
+			return none, refusals.Errorf("VRF", v.Name, "metadata.name", "a Network document names the link %s, the VRF's device", v.Name)
 		}
 		for j, i := range v.Spec.Interfaces {
 			if !interfaceName.MatchString(i) {
@@ -177,7 +179,7 @@ func vrfLinks(vrfs []named[vrfSpec], links []string, byKind map[string]any) (vrf
 	for _, m := range members {
 		for _, v := range vrfs {
 			if ok, _ := path.Match(m.glob, v.Name); ok {
-				return none, refuse("VRF", m.vrf, m.path, "VRF %s's %s covers the device of VRF %s", m.vrf, m.glob, v.Name)
+				return none, refusals.Errorf("VRF", m.vrf, m.path, "VRF %s's %s covers the device of VRF %s", m.vrf, m.glob, v.Name)
 			}
 		}
 	}
@@ -198,14 +200,14 @@ func vrfLinks(vrfs []named[vrfSpec], links []string, byKind map[string]any) (vrf
 	for _, v := range vrfs {
 		if u, own := candidates(units, v.Name)[0], vrfUnitPrefix+v.Name; u.name != own {
 			if u.narrowed {
-				return none, refuse("Network", u.name, "metadata.name", "Network %s may match the device of VRF %s before %s, should its other [Match] keys match it; rename it to sort after %s", u.name, v.Name, own, own)
+				return none, refusals.Errorf("Network", u.name, "metadata.name", "Network %s may match the device of VRF %s before %s, should its other [Match] keys match it; rename it to sort after %s", u.name, v.Name, own, own)
 			}
-			return none, refuse("Network", u.name, "metadata.name", "Network %s matches the device of VRF %s before %s; rename it to sort after %s", u.name, v.Name, own, own)
+			return none, refusals.Errorf("Network", u.name, "metadata.name", "Network %s matches the device of VRF %s before %s; rename it to sort after %s", u.name, v.Name, own, own)
 		}
 	}
 	for _, m := range members {
 		if cs := candidates(units, m.glob); m.network == "" && isLiteral(m.glob) && (len(cs) == 0 || cs[len(cs)-1].narrowed) {
-			return none, refuse("VRF", m.vrf, m.path, "VRF %s names the interface %s, which no Network document's [Match] Name= matches without other [Match] keys; VRF= reaches a link through its Network document, so give it one", m.vrf, m.glob)
+			return none, refusals.Errorf("VRF", m.vrf, m.path, "VRF %s names the interface %s, which no Network document's [Match] Name= matches without other [Match] keys; VRF= reaches a link through its Network document, so give it one", m.vrf, m.glob)
 		}
 	}
 	networks, err := firstNetworks(units, members)
@@ -322,16 +324,16 @@ func checkVRFMembers(members []vrfMember) error {
 				if !isLiteral(link) {
 					link = b.glob
 				}
-				return refuse("VRF", b.vrf, b.path, "the link %s is in VRF %s and in VRF %s", link, a.vrf, b.vrf)
+				return refusals.Errorf("VRF", b.vrf, b.path, "the link %s is in VRF %s and in VRF %s", link, a.vrf, b.vrf)
 			case a.network == "" && b.network == "":
-				return refuse("VRF", b.vrf, b.path, "VRF %s's %s and VRF %s's %s may hold one link", a.vrf, a.glob, b.vrf, b.glob)
+				return refusals.Errorf("VRF", b.vrf, b.path, "VRF %s's %s and VRF %s's %s may hold one link", a.vrf, a.glob, b.vrf, b.glob)
 			case a.network == "" || b.network == "":
 				if a.network == "" {
 					a, b = b, a
 				}
-				return refuse("Network", a.network, a.vrfPath, "Network %s gives its links VRF=%s, but VRF %s holds them", a.network, a.vrf, b.vrf)
+				return refusals.Errorf("Network", a.network, a.vrfPath, "Network %s gives its links VRF=%s, but VRF %s holds them", a.network, a.vrf, b.vrf)
 			default:
-				return refuse("Network", b.network, b.path, "Network %s gives VRF=%s and Network %s VRF=%s to links both may match", a.network, a.vrf, b.network, b.vrf)
+				return refusals.Errorf("Network", b.network, b.path, "Network %s gives VRF=%s and Network %s VRF=%s to links both may match", a.network, a.vrf, b.network, b.vrf)
 			}
 		}
 	}
@@ -356,7 +358,7 @@ func firstNetworks(units []networkUnit, members []vrfMember) (map[string]string,
 		if other, ok := networks[u.name]; ok && other != m.vrf {
 			in := []string{other, m.vrf}
 			slices.Sort(in)
-			return refuse("Network", u.name, "spec.match", "Network %s matches links of %s; the links of one Network are in one VRF", u.name, vrfList(in))
+			return refusals.Errorf("Network", u.name, "spec.match", "Network %s matches links of %s; the links of one Network are in one VRF", u.name, vrfList(in))
 		}
 		networks[u.name] = m.vrf
 		return nil
@@ -419,7 +421,7 @@ func shadowsVRF(units []networkUnit, u networkUnit, m vrfMember, after bool) err
 		if owner.narrowed {
 			when = "the other [Match] keys of Network " + m.network + " do not"
 		}
-		return refuse("Network", u.name, "spec.match", "Network %s matches %s when %s, and networkd then does not apply %s's VRF=%s to %s; give %s VRF=%s", u.name, links, when, m.network, m.vrf, them, u.name, m.vrf)
+		return refusals.Errorf("Network", u.name, "spec.match", "Network %s matches %s when %s, and networkd then does not apply %s's VRF=%s to %s; give %s VRF=%s", u.name, links, when, m.network, m.vrf, them, u.name, m.vrf)
 	}
 	first, applies := "is the first", "never applies"
 	if u.narrowed {
@@ -430,7 +432,7 @@ func shadowsVRF(units []networkUnit, u networkUnit, m vrfMember, after bool) err
 	if owner.narrowed {
 		fix = fmt.Sprintf("give %s VRF=%s or drop %s's VRF=", u.name, m.vrf, m.network)
 	}
-	return refuse("Network", u.name, "spec.match", "Network %s %s to match %s, so networkd %s Network %s's VRF=%s to %s; %s", u.name, first, links, applies, m.network, m.vrf, them, fix)
+	return refusals.Errorf("Network", u.name, "spec.match", "Network %s %s to match %s, so networkd %s Network %s's VRF=%s to %s; %s", u.name, first, links, applies, m.network, m.vrf, them, fix)
 }
 
 // shadowed reports whether units before one of Name= m match every link that m's words share
@@ -453,7 +455,7 @@ func checkNetworkVRFs(units []networkUnit, members []vrfMember, networks map[str
 			continue
 		}
 		if u.vrf != "" && u.vrf != vrf {
-			return refuse("Network", u.name, u.vrfPath, "Network %s gives its links VRF=%s, but VRF %s holds them", u.name, u.vrf, vrf)
+			return refusals.Errorf("Network", u.name, u.vrfPath, "Network %s gives its links VRF=%s, but VRF %s holds them", u.name, u.vrf, vrf)
 		}
 		for _, w := range u.match.positives() {
 			if slices.ContainsFunc(members, func(m vrfMember) bool { return m.vrf == vrf && globContains(m.glob, w.glob) }) {
@@ -461,9 +463,9 @@ func checkNetworkVRFs(units []networkUnit, members []vrfMember, networks map[str
 			}
 			switch {
 			case len(u.match.words) == 0:
-				return refuse("Network", u.name, "spec.match", "Network %s matches by its other [Match] keys alone, as its Name= holds no word networkd takes, so it may match links of VRF %s and links outside it; name its links", u.name, vrf)
+				return refusals.Errorf("Network", u.name, "spec.match", "Network %s matches by its other [Match] keys alone, as its Name= holds no word networkd takes, so it may match links of VRF %s and links outside it; name its links", u.name, vrf)
 			case w.text == "":
-				return refuse("Network", u.name, "spec.match", "Network %s matches every link its Name= does not negate, links of VRF %s and links outside it; name its links", u.name, vrf)
+				return refusals.Errorf("Network", u.name, "spec.match", "Network %s matches every link its Name= does not negate, links of VRF %s and links outside it; name its links", u.name, vrf)
 			case isLiteral(w.glob):
 				in := []string{"", vrf}
 				for _, m := range members {
@@ -472,9 +474,9 @@ func checkNetworkVRFs(units []networkUnit, members []vrfMember, networks map[str
 					}
 				}
 				slices.Sort(in)
-				return refuse("Network", u.name, "spec.match", "Network %s matches links of %s; the links of one Network are in one VRF", u.name, vrfList(in))
+				return refusals.Errorf("Network", u.name, "spec.match", "Network %s matches links of %s; the links of one Network are in one VRF", u.name, vrfList(in))
 			default:
-				return refuse("Network", u.name, w.path, "Network %s's Name=%s may match links of VRF %s and links outside it; name its links", u.name, w.text, vrf)
+				return refusals.Errorf("Network", u.name, w.path, "Network %s's Name=%s may match links of VRF %s and links outside it; name its links", u.name, w.text, vrf)
 			}
 		}
 	}
@@ -511,7 +513,7 @@ func networkVRF(name string, spec map[string]any) (string, string, error) {
 			}
 			value, ok := v.(string)
 			if !ok || !plainInterface.MatchString(value) || vrf != "" && value != vrf {
-				return "", "", refuse("Network", name, itemPath(values, section["vrf"], vi), "VRF= names one VRF by its name, not %q", fmt.Sprint(v))
+				return "", "", refusals.Errorf("Network", name, itemPath(values, section["vrf"], vi), "VRF= names one VRF by its name, not %q", fmt.Sprint(v))
 			}
 			vrf, at = value, itemPath(values, section["vrf"], vi)
 		}
@@ -563,7 +565,7 @@ func withVRFUnits(vrfs []named[vrfSpec], networks map[string]string, byKind map[
 				return nil, err
 			}
 			if v, ok := strings.CutPrefix(name, vrfUnitPrefix); ok && isVRF(v) {
-				return nil, refuse(kind, name, "metadata.name", "%s %s takes the name of VRF %s's units; rename the document", kind, name, v)
+				return nil, refusals.Errorf(kind, name, "metadata.name", "%s %s takes the name of VRF %s's units; rename the document", kind, name, v)
 			}
 			if kind != "NetDev" {
 				continue
@@ -574,7 +576,7 @@ func withVRFUnits(vrfs []named[vrfSpec], networks map[string]string, byKind map[
 				for ni, n := range oneOrMany(section["name"]) {
 					if device, _ := n.(string); isVRF(device) {
 						at := itemPath(itemPath("spec.netDev", spec["netDev"], si)+".name", section["name"], ni)
-						return nil, refuse("NetDev", name, at, "NetDev %s creates the device %s, which VRF %s creates; rename the VRF or the NetDev", name, device, device)
+						return nil, refusals.Errorf("NetDev", name, at, "NetDev %s creates the device %s, which VRF %s creates; rename the VRF or the NetDev", name, device, device)
 					}
 				}
 			}
@@ -637,7 +639,7 @@ func withNAT64Units(vrfs []named[vrfSpec], nat64 []named[nat64Spec], byKind, doc
 		for _, d := range existing {
 			doc, _ := d.(map[string]any)
 			if name, _ := documentName("Network", doc); name == unit {
-				return nil, refuse("Network", name, "metadata.name", "Network %s takes the name of NAT64 %s's unit; rename the document", name, n.Name)
+				return nil, refusals.Errorf("Network", name, "metadata.name", "Network %s takes the name of NAT64 %s's unit; rename the document", name, n.Name)
 			}
 		}
 		netdevs, _ := byKind["NetDev"].([]any)
@@ -650,7 +652,7 @@ func withNAT64Units(vrfs []named[vrfSpec], nat64 []named[nat64Spec], byKind, doc
 				for ni, device := range oneOrMany(section["name"]) {
 					if device == link {
 						at := itemPath(itemPath("spec.netDev", spec["netDev"], si)+".name", section["name"], ni)
-						return nil, refuse("NetDev", name, at, "NetDev %s creates the device %s, the link of NAT64 %s; give the device another name", name, link, n.Name)
+						return nil, refusals.Errorf("NetDev", name, at, "NetDev %s creates the device %s, the link of NAT64 %s; give the device another name", name, link, n.Name)
 					}
 				}
 			}
@@ -666,9 +668,9 @@ func withNAT64Units(vrfs []named[vrfSpec], nat64 []named[nat64Spec], byKind, doc
 		link, own := nat64LinkPrefix+n.Name, nat64UnitPrefix+n.Name
 		if u := candidates(units, link)[0]; u.name != own {
 			if u.narrowed {
-				return nil, refuse("Network", u.name, "metadata.name", "Network %s may match the link %s of NAT64 %s before %s, should its other [Match] keys match it; rename it to sort after %s", u.name, link, n.Name, own, own)
+				return nil, refusals.Errorf("Network", u.name, "metadata.name", "Network %s may match the link %s of NAT64 %s before %s, should its other [Match] keys match it; rename it to sort after %s", u.name, link, n.Name, own, own)
 			}
-			return nil, refuse("Network", u.name, "metadata.name", "Network %s matches the link %s of NAT64 %s before %s; rename it to sort after %s", u.name, link, n.Name, own, own)
+			return nil, refusals.Errorf("Network", u.name, "metadata.name", "Network %s matches the link %s of NAT64 %s before %s; rename it to sort after %s", u.name, link, n.Name, own, own)
 		}
 	}
 	out := maps.Clone(docs)
@@ -751,12 +753,12 @@ func checkPeerDevices(p named[peerSpec], devices []string) error {
 	s := p.Spec
 	if s.Interface != nil {
 		if dev, ok := vrfDeviceMatch(*s.Interface, devices); ok {
-			return refuse("BGPPeer", p.Name, "spec.interface", "interface %s is the device of VRF %s", dev, dev)
+			return refusals.Errorf("BGPPeer", p.Name, "spec.interface", "interface %s is the device of VRF %s", dev, dev)
 		}
 	}
 	for i, glob := range s.Interfaces {
 		if dev, ok := vrfDeviceMatch(glob, devices); ok {
-			return refuse("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", i), "%s matches %s, the device of VRF %s", glob, dev, dev)
+			return refusals.Errorf("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", i), "%s matches %s, the device of VRF %s", glob, dev, dev)
 		}
 	}
 	return nil

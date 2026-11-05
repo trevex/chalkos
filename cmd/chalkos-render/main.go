@@ -19,6 +19,8 @@ import (
 	"strings"
 	"text/template"
 	"text/template/parse"
+
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 const usage = `usage: chalkos-render template TEMPLATE FILE
@@ -56,15 +58,15 @@ each VRF whose links DHCPRelay documents relay as $OUT/dnsmasq-relay.conf for th
 $OUT/dnsmasq-relay-<vrf>.conf for a VRF. Every command prints a config it refuses as
 {"refusals": [{"kind": …, "name": …, "path": …, "message": …}]} on standard output, and fails.`
 
-// main runs the renderer. A config it refuses, a *refusal, it prints as a report of refusals on
-// standard output for chalkd to report, and on standard error too, for the journal and for a run
-// by hand; any other error, an internal one or one of its command line, goes to standard error
-// alone, where chalkd shows it to no one but the node's journal, since it can echo the documents.
-// Either fails the renderer, so that a build that runs it, as the router's fallback ruleset's
-// does, fails too.
+// main runs the renderer. A config it refuses, a *refusals.Error, it prints as a report of
+// refusals on standard output for chalkd to report, and on standard error too, for the journal
+// and for a run by hand; any other error, an internal one or one of its command line, goes to
+// standard error alone, where chalkd shows it to no one but the node's journal, since it can echo
+// the documents. Either fails the renderer, so that a build that runs it, as the router's fallback
+// ruleset's does, fails too.
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Getenv("OUT")); err != nil {
-		var r *refusal
+		var r *refusals.Error
 		if errors.As(err, &r) {
 			printRefusal(os.Stdout, r)
 		}
@@ -164,7 +166,7 @@ var funcs = template.FuncMap{
 	// refuse refuses the config: it stops the template with the refusal of the field at path of
 	// the document kind/name, which chalkd reports as it reports a rule's.
 	"refuse": func(kind, name, path, message string) (string, error) {
-		return "", refuse(kind, name, path, "%s", message)
+		return "", refusals.Errorf(kind, name, path, "%s", message)
 	},
 }
 

@@ -57,6 +57,21 @@ func (r Refusal) Where() string {
 	return r.Kind + "/" + r.Name + ": " + r.Path
 }
 
+// An Error is a refusal as a Go error, as a program's checks return it. A check names the
+// document and field where it refuses, and the code around it passes the error on unchanged, so
+// every program that shares the check refuses with the same refusal, which chalkd reports once.
+// Its text is the refusal's String.
+type Error struct{ Refusal }
+
+func (e *Error) Error() string { return e.String() }
+
+// Errorf is the Error of the field at path, such as spec.interfaces or spec.terms[0].match, of
+// the document kind/name, with the message format gives. The message says what is wrong and how
+// to fix it.
+func Errorf(kind, name, path, format string, args ...any) error {
+	return &Error{Refusal{Kind: kind, Name: name, Path: path, Message: fmt.Sprintf(format, args...)}}
+}
+
 var (
 	// kind is a kind's name, as a kind's schema declares it.
 	kind = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)

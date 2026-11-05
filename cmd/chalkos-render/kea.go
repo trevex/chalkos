@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 // The output kea: the config of Kea's DHCPv4 and DHCPv6 servers of each VRF whose links
@@ -129,7 +131,7 @@ func renderKea(pdHook string, in map[string]any, out string) error {
 		}
 		for _, l := range sub.links {
 			if other, ok := served[family][l]; ok {
-				return refuse("DHCPSubnet", s.Name, interfacePath(s.Spec.Interfaces, l), "DHCPSubnet %s and DHCPSubnet %s both serve %s; a link takes one subnet of each family", other, s.Name, l)
+				return refusals.Errorf("DHCPSubnet", s.Name, interfacePath(s.Spec.Interfaces, l), "DHCPSubnet %s and DHCPSubnet %s both serve %s; a link takes one subnet of each family", other, s.Name, l)
 			}
 			served[family][l] = s.Name
 		}
@@ -181,12 +183,12 @@ func apart(a, b servedSubnet) error {
 				if q != b.prefix {
 					at = "spec.prefixDelegation.prefix"
 				}
-				return refuse("DHCPSubnet", b.name, at, "DHCPSubnet %s and DHCPSubnet %s overlap in VRF %s: %s and %s", a.name, b.name, a.vrf, p, q)
+				return refusals.Errorf("DHCPSubnet", b.name, at, "DHCPSubnet %s and DHCPSubnet %s overlap in VRF %s: %s and %s", a.name, b.name, a.vrf, p, q)
 			}
 		}
 	}
 	if a.id == b.id {
-		return refuse("DHCPSubnet", b.name, "spec.subnet", "DHCPSubnet %s and DHCPSubnet %s get the same number %d in Kea; change one subnet's range", a.name, b.name, a.id)
+		return refusals.Errorf("DHCPSubnet", b.name, "spec.subnet", "DHCPSubnet %s and DHCPSubnet %s get the same number %d in Kea; change one subnet's range", a.name, b.name, a.id)
 	}
 	return nil
 }
@@ -269,14 +271,14 @@ func ownApart(s named[dhcpSubnetSpec], own []netip.Addr, what string) ([][2]neti
 		first, last := netip.MustParseAddr(p.First), netip.MustParseAddr(p.Last)
 		for _, o := range own {
 			if !o.Less(first) && !last.Less(o) {
-				return nil, refuse("DHCPSubnet", s.Name, fmt.Sprintf("spec.pools[%d]", i), "the pool %s-%s holds %s, %s", first, last, o, what)
+				return nil, refusals.Errorf("DHCPSubnet", s.Name, fmt.Sprintf("spec.pools[%d]", i), "the pool %s-%s holds %s, %s", first, last, o, what)
 			}
 		}
 		pools = append(pools, [2]netip.Addr{first, last})
 	}
 	for i, r := range s.Spec.Reservations {
 		if a := netip.MustParseAddr(r.Address); slices.Contains(own, a) {
-			return nil, refuse("DHCPSubnet", s.Name, fmt.Sprintf("spec.reservations[%d].address", i), "the reservation of %s, %s, is %s", r.MAC, a, what)
+			return nil, refusals.Errorf("DHCPSubnet", s.Name, fmt.Sprintf("spec.reservations[%d].address", i), "the reservation of %s, %s, is %s", r.MAC, a, what)
 		}
 	}
 	return pools, nil
@@ -304,11 +306,11 @@ func subnetLinks(d routerDocuments, devices []string, kind, name string, interfa
 		}
 		at := fmt.Sprintf("spec.interfaces[%d]", j)
 		if slices.Contains(devices, i) {
-			return nil, "", refuse(kind, name, at, "%s is the device of VRF %s; name the VRF's links", i, i)
+			return nil, "", refusals.Errorf(kind, name, at, "%s is the device of VRF %s; name the VRF's links", i, i)
 		}
 		for _, n := range d.NAT64 {
 			if i == nat64LinkPrefix+n.Name {
-				return nil, "", refuse(kind, name, at, "%s is the link of NAT64 %s", i, n.Name)
+				return nil, "", refusals.Errorf(kind, name, at, "%s is the link of NAT64 %s", i, n.Name)
 			}
 		}
 		links = appendNew(links, i)
@@ -321,12 +323,12 @@ func subnetLinks(d routerDocuments, devices []string, kind, name string, interfa
 			return nil, "", err
 		}
 		if vrf != "" && v != vrf {
-			return nil, "", refuse(kind, name, interfacePath(interfaces, l), "its links are in VRF %s and VRF %s; %s", vrf, v, oneVRF)
+			return nil, "", refusals.Errorf(kind, name, interfacePath(interfaces, l), "its links are in VRF %s and VRF %s; %s", vrf, v, oneVRF)
 		}
 		vrf = v
 	}
 	if vrf != defaultVRF && !slices.ContainsFunc(d.VRFs, func(v named[vrfSpec]) bool { return v.Name == vrf }) {
-		return nil, "", refuse(kind, name, "spec.interfaces", "its links are in the VRF %q, which no VRF document declares", vrf)
+		return nil, "", refusals.Errorf(kind, name, "spec.interfaces", "its links are in the VRF %q, which no VRF document declares", vrf)
 	}
 	return links, vrf, nil
 }
@@ -344,7 +346,7 @@ func interfacePath(interfaces []string, link string) string {
 func linkNetwork(units []networkUnit, kind, name, path, link, why string) (string, error) {
 	cs := candidates(units, link)
 	if len(cs) == 0 || cs[0].narrowed {
-		return "", refuse(kind, name, path, "no Network document matches %s by Name= alone, so the renderer cannot find %s; give the link one", link, why)
+		return "", refusals.Errorf(kind, name, path, "no Network document matches %s by Name= alone, so the renderer cannot find %s; give the link one", link, why)
 	}
 	return cs[0].name, nil
 }
@@ -368,7 +370,7 @@ func ownAddresses(d routerDocuments, units []networkUnit, sub servedSubnet, why 
 			}
 		}
 		if !found {
-			return nil, refuse("DHCPSubnet", sub.name, at, "Network %s gives %s no static address in the subnet %s, %s", network, l, sub.prefix, why)
+			return nil, refusals.Errorf("DHCPSubnet", sub.name, at, "Network %s gives %s no static address in the subnet %s, %s", network, l, sub.prefix, why)
 		}
 	}
 	return own, nil

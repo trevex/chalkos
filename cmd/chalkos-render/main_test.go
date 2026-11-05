@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 const peers = `{"node": {"name": "cp1"}, "documents": {"Peer": [
@@ -53,7 +55,7 @@ func TestTemplateRefuse(t *testing.T) {
 	tmpl := filepath.Join(t.TempDir(), "bird.conf.tmpl")
 	os.WriteFile(tmpl, []byte(`{{ range .documents.Peer }}{{ if .spec.description }}{{ refuse "Peer" .metadata.name "spec.description" "bird takes no description" }}{{ end }}{{ end }}`), 0o644)
 	_, err := render(t, []string{"template", tmpl, "bird.conf"}, peers)
-	var r *refusal
+	var r *refusals.Error
 	if !errors.As(err, &r) || r.Error() != "Peer/b: spec.description: bird takes no description" {
 		t.Fatalf("refused with %v", err)
 	}
@@ -63,10 +65,10 @@ func TestTemplateRefuse(t *testing.T) {
 // spaces; one outside the format prints nowhere, so main reports it on standard error alone.
 func TestPrintRefusal(t *testing.T) {
 	var w strings.Builder
-	if !printRefusal(&w, refuse("BGPPeer", "fabric", "spec.interfaces", "two\nlines\u009b\u202e").(*refusal)) {
+	if !printRefusal(&w, refusals.Errorf("BGPPeer", "fabric", "spec.interfaces", "two\nlines\u009b\u202e").(*refusals.Error)) {
 		t.Fatal("a refusal was not printed")
 	}
-	if printRefusal(&w, refuse("BGPPeer", "Not A Name", "spec", "x").(*refusal)) {
+	if printRefusal(&w, refusals.Errorf("BGPPeer", "Not A Name", "spec", "x").(*refusals.Error)) {
 		t.Error("a refusal outside the format was printed")
 	}
 	want := `{"refusals":[{"kind":"BGPPeer","name":"fabric","path":"spec.interfaces","message":"two lines  "}]}` + "\n"

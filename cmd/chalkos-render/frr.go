@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 // frrFile is the file renderFRR writes.
@@ -339,7 +341,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 		for _, n := range ns {
 			key := vrf + " " + n.name
 			if other, ok := owner[key]; ok {
-				return nil, refuse("BGPPeer", p.Name, peerField(p.Spec), "BGPPeer %s and BGPPeer %s both name %s in the VRF %s; give each session one peer", other, p.Name, n.name, vrf)
+				return nil, refusals.Errorf("BGPPeer", p.Name, peerField(p.Spec), "BGPPeer %s and BGPPeer %s both name %s in the VRF %s; give each session one peer", other, p.Name, n.name, vrf)
 			}
 			owner[key] = p.Name
 			sessions[n.name] = p.Name
@@ -354,7 +356,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 	}
 	for _, p := range d.Peers {
 		if peer, ok := sessions[peerGroupPrefix+p.Name]; ok {
-			return nil, refuse("BGPPeer", p.Name, "metadata.name", "BGPPeer %s names %s%s, the peer group of BGPPeer %s; rename the document or the interface", peer, peerGroupPrefix, p.Name, p.Name)
+			return nil, refusals.Errorf("BGPPeer", p.Name, "metadata.name", "BGPPeer %s names %s%s, the peer group of BGPPeer %s; rename the document or the interface", peer, peerGroupPrefix, p.Name, p.Name)
 		}
 	}
 	if err := c.prepends(); err != nil {
@@ -502,7 +504,7 @@ func (c *frr) prepends() error {
 		case 1:
 			c.prependAS[p.Name] = asns[0]
 		default:
-			return refuse("RoutingPolicy", p.Name, fmt.Sprintf("spec.terms[%d].then.prepend", first), "RoutingPolicy %s prepends the AS number, and BGP instances of AS %d and %d use it; give each AS a policy of its own", p.Name, asns[0], asns[1])
+			return refusals.Errorf("RoutingPolicy", p.Name, fmt.Sprintf("spec.terms[%d].then.prepend", first), "RoutingPolicy %s prepends the AS number, and BGP instances of AS %d and %d use it; give each AS a policy of its own", p.Name, asns[0], asns[1])
 		}
 	}
 	return nil
@@ -538,7 +540,7 @@ func (c *frr) checkPolicy(p named[routingPolicySpec]) error {
 				return internalErrorf("%s: asPath %q holds more than digits, single spaces and _^$.*+?()|{},-", term, *r)
 			}
 			if err := checkASPath(*r); err != nil {
-				return refuse("RoutingPolicy", p.Name, fmt.Sprintf("spec.terms[%d].match.asPath", i), "asPath %q is no regular expression bgpd compiles: %v", *r, err)
+				return refusals.Errorf("RoutingPolicy", p.Name, fmt.Sprintf("spec.terms[%d].match.asPath", i), "asPath %q is no regular expression bgpd compiles: %v", *r, err)
 			}
 		}
 		th := t.Then
@@ -619,7 +621,7 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 			return nil, err
 		}
 		if linkIn != vrf {
-			return nil, refuse("BGPPeer", p.Name, "spec.interface", "interface %s is in the VRF %s, not in the peer's VRF %s", *s.Interface, linkIn, vrf)
+			return nil, refusals.Errorf("BGPPeer", p.Name, "spec.interface", "interface %s is in the VRF %s, not in the peer's VRF %s", *s.Interface, linkIn, vrf)
 		}
 		return []neighbour{{name: *s.Interface, onLink: true}}, nil
 	}
@@ -657,13 +659,13 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 		// an address would name either. The BGPPeer's rules refuse an interface named like an
 		// address that the peer writes out; a glob's links are the renderer's to see.
 		if _, err := netip.ParseAddr(link); err == nil {
-			return nil, refuse("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", slices.Index(s.Interfaces, globs[0])), "interface %q is an address, which FRR cannot tell from a neighbour's", link)
+			return nil, refusals.Errorf("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", slices.Index(s.Interfaces, globs[0])), "interface %q is an address, which FRR cannot tell from a neighbour's", link)
 		}
 		ns = append(ns, neighbour{name: link, onLink: true})
 	}
 	for i, glob := range s.Interfaces {
 		if own[glob] == 0 && other[glob] > 0 {
-			return nil, refuse("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", i), "%s matches no link of VRF %s, only links of other VRFs", glob, vrf)
+			return nil, refusals.Errorf("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", i), "%s matches no link of VRF %s, only links of other VRFs", glob, vrf)
 		}
 	}
 	return ns, nil

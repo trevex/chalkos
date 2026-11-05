@@ -6,6 +6,8 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 // The output dhcp-relay: the config of dnsmasq's DHCP relay of each VRF whose links DHCPRelay
@@ -171,7 +173,7 @@ func relayAddress(d routerDocuments, relay, path, network, link string, v6 bool)
 	if v6 {
 		family = "global IPv6"
 	}
-	return netip.Addr{}, refuse("DHCPRelay", relay, path, "Network %s gives %s no static %s address, which the relay forwards its clients' requests from", network, link, family)
+	return netip.Addr{}, refusals.Errorf("DHCPRelay", relay, path, "Network %s gives %s no static %s address, which the relay forwards its clients' requests from", network, link, family)
 }
 
 // relaysBesideServers refuses a family that DHCPRelay documents relay and DHCPSubnet documents
@@ -202,7 +204,7 @@ func relaysBesideServers(d routerDocuments, devices []string, families map[keaSe
 			if v6 {
 				version = 6
 			}
-			return refuse("DHCPSubnet", s.Name, "spec.interfaces", "DHCPRelay %s relays DHCPv%d in VRF %s and DHCPSubnet %s serves DHCPv%d in VRF %s; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one", relay, version, k.vrf, s.Name, version, vrf)
+			return refusals.Errorf("DHCPSubnet", s.Name, "spec.interfaces", "DHCPRelay %s relays DHCPv%d in VRF %s and DHCPSubnet %s serves DHCPv%d in VRF %s; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one", relay, version, k.vrf, s.Name, version, vrf)
 		}
 	}
 	return nil

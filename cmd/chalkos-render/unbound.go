@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/dns"
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 // unboundFile is the file renderUnbound writes for the default VRF's resolver; a VRF's resolver
@@ -113,7 +114,7 @@ func checkListenVRF(d routerDocuments, r named[resolverSpec], vrf string) error 
 			}
 		}
 		if !mine && len(others) > 0 {
-			return refuse("Resolver", r.Name, fmt.Sprintf("spec.listen[%d]", i), "the address %s of listen belongs to links of %s alone, so the resolver of VRF %s never receives its queries; listen on an address of the VRF's links", a, strings.Join(others, " and "), vrf)
+			return refusals.Errorf("Resolver", r.Name, fmt.Sprintf("spec.listen[%d]", i), "the address %s of listen belongs to links of %s alone, so the resolver of VRF %s never receives its queries; listen on an address of the VRF's links", a, strings.Join(others, " and "), vrf)
 		}
 	}
 	return nil
@@ -276,11 +277,11 @@ func localZoneLines(resolver string, zone int, z localZone, seen renderedRecords
 		}
 		key := fmt.Sprintf("%s. %s %s", r.Name, r.Type, value)
 		if seen.keys[key] {
-			return nil, refuse("Resolver", resolver, fmt.Sprintf("spec.localZones[%d].records[%d]", zone, i), "%s appears twice; Unbound keeps one, so drop the other", key)
+			return nil, refusals.Errorf("Resolver", resolver, fmt.Sprintf("spec.localZones[%d].records[%d]", zone, i), "%s appears twice; Unbound keeps one, so drop the other", key)
 		}
 		seen.keys[key] = true
 		if t, ok := seen.types[r.Name]; ok && (t == "CNAME" || r.Type == "CNAME") {
-			return nil, refuse("Resolver", resolver, fmt.Sprintf("spec.localZones[%d].records[%d]", zone, i), "%s holds a CNAME record and another record; a CNAME's name holds it alone", r.Name)
+			return nil, refusals.Errorf("Resolver", resolver, fmt.Sprintf("spec.localZones[%d].records[%d]", zone, i), "%s holds a CNAME record and another record; a CNAME's name holds it alone", r.Name)
 		}
 		seen.types[r.Name] = r.Type
 		lines = append(lines, fmt.Sprintf("local-data: '%s. %d IN %s %s'", r.Name, r.TTL, r.Type, value))

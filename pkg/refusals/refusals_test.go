@@ -1,6 +1,8 @@
 package refusals
 
 import (
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -97,5 +99,18 @@ func TestStringWithoutPath(t *testing.T) {
 	}
 	if got := (Refusal{Kind: "Demo", Name: "one", Path: "spec.x"}).Where(); got != "Demo/one: spec.x" {
 		t.Errorf("Where = %q", got)
+	}
+}
+
+// Errorf is a refusal as an error, which reads as the refusal does and which errors.As finds
+// through a wrapping error.
+func TestErrorf(t *testing.T) {
+	err := fmt.Errorf("render: %w", Errorf("VRF", "tenant", "spec.interfaces[0]", "%s covers the device of VRF %s", "t*", "tenant"))
+	var e *Error
+	if !errors.As(err, &e) || e.Refusal != (Refusal{Kind: "VRF", Name: "tenant", Path: "spec.interfaces[0]", Message: "t* covers the device of VRF tenant"}) {
+		t.Fatalf("errors.As(%v) = %+v", err, e)
+	}
+	if want := "VRF/tenant: spec.interfaces[0]: t* covers the device of VRF tenant"; e.Error() != want {
+		t.Errorf("Error() = %q, want %q", e.Error(), want)
 	}
 }
