@@ -146,6 +146,41 @@ in
       images."images/node-metal" = homelab.packages.${pkgs.stdenv.hostPlatform.system}.node-metal;
     };
 
+  # The homelab's validator bgp-peers refuses router-c with the report validate-config.md shows,
+  # reads the addresses of a list of [Network] sections, of [Address] sections and without a
+  # prefix length, and accepts every Peer when a Network takes its address by DHCP.
+  example-homelab-bgp-peers =
+    pkgs.runCommand "chalkos-example-homelab-bgp-peers"
+      {
+        nativeBuildInputs = [ pkgs.jq ];
+        validator = ../../examples/homelab/extensions/bgp-peers.jq;
+        page = ../../docs/build/validate-config.md;
+      }
+      ''
+        peer='{"kind": "Peer", "metadata": {"name": "router-c"}, "spec": {"address": "10.0.1.1"}}'
+        network() { echo "{\"kind\": \"Network\", \"metadata\": {\"name\": \"10-uplink\"}, \"spec\": $1}"; }
+        expect() {
+          got=$(echo "[$(network "$1"), $peer]" | jq -c -f $validator)
+          if [ "$got" != "$2" ]; then
+            echo "error: with the Network spec $1, bgp-peers printed $got, not $2" >&2
+            exit 1
+          fi
+        }
+        refusal() {
+          echo "{\"refusals\":[{\"kind\":\"Peer\",\"name\":\"router-c\",\"path\":\"spec.address\",\"message\":\"10.0.1.1 lies on no subnet of the node's addresses, $1; bird reaches a neighbour on a link of its own alone\"}]}"
+        }
+        documented=$(grep '^{"refusals": \[{"kind": "Peer", "name": "router-c"' $page | jq -c .)
+        test -n "$documented"
+        expect '{"network": {"address": ["10.0.0.11/24"], "gateway": "10.0.0.1"}}' "$documented"
+        expect '{"network": [{"address": "10.0.0.11/24"}, {"dns": "10.0.0.1"}]}' "$(refusal 10.0.0.11/24)"
+        expect '{"address": [{"address": "10.0.0.11/24"}]}' "$(refusal 10.0.0.11/24)"
+        expect '{"network": {"address": "10.0.0.11"}}' "$(refusal 10.0.0.11/32)"
+        expect '{"network": {"address": ["10.0.1.11/24"]}}' '{"refusals":[]}'
+        expect '{"network": {"dhcp": "yes"}}' '{"refusals":[]}'
+        expect '{"network": {"address": ["10.0.0.11/24"], "dhcp": "ipv4"}}' '{"refusals":[]}'
+        touch $out
+      '';
+
   # The GitHub workflows pass actionlint, with shellcheck for their scripts.
   workflows =
     pkgs.runCommand "chalkos-workflows"
