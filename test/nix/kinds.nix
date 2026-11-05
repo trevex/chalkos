@@ -2012,6 +2012,39 @@ lib.runTests {
     expr = withDemo.users.users.chalkos-render.isSystemUser;
     expected = true;
   };
+  # An image with validators and no outputs has the user and the tmpfs too, since its validators
+  # run in the renderers' sandbox below the outputs' root; one with neither has none.
+  testValidatorsRunWithoutOutputs =
+    let
+      image =
+        validators:
+        withBird (
+          { lib, ... }:
+          {
+            chalkos.outputs = lib.mkForce { };
+            chalkos.validators = validators;
+          }
+        );
+      only = image {
+        v.inputs = [ "Demo" ];
+        v.program = "/nix/store/x-validate/bin/validate";
+      };
+      neither = image { };
+    in
+    {
+      expr = {
+        user = only.users.users ? chalkos-render;
+        tmpfs = only.fileSystems ? "/run/chalkos/outputs";
+        neitherUser = neither.users.users ? chalkos-render;
+        neitherTmpfs = neither.fileSystems ? "/run/chalkos/outputs";
+      };
+      expected = {
+        user = true;
+        tmpfs = true;
+        neitherUser = false;
+        neitherTmpfs = false;
+      };
+    };
   # The outputs' files are on a tmpfs of their own, with room for each output's files twice and
   # one more: the built-in outputs', and those of an extension.
   testOutputsTmpfs = {
