@@ -817,15 +817,23 @@ func TestJoolRefusals(t *testing.T) {
 }
 
 // Jool's instance takes no protocol the schema does not: a pool entry renders an entry per
-// protocol of Jool's own words, whatever else the document names.
+// protocol of Jool's own words, whatever else the document names, and an entry of none of them is
+// an internal error, not an entry the pool drops.
 func TestJoolProtocols(t *testing.T) {
-	got, err := joolInstances([]named[nat64Spec]{{Name: "edge", Spec: nat64Spec{Prefix: "64:ff9b::/96", Pool4: []poolEntry{{Prefix: "192.0.2.8/30", Ports: "61001-65535", Protocols: []string{"icmp", "tcp\", \"mark\": \"1", "tcp"}}}}}})
+	instances := func(protocols ...string) ([]joolInstance, error) {
+		return joolInstances([]named[nat64Spec]{{Name: "edge", Spec: nat64Spec{Prefix: "64:ff9b::/96", Pool4: []poolEntry{{Prefix: "192.0.2.8/30", Ports: "61001-65535", Protocols: protocols}}}}})
+	}
+	got, err := instances("icmp", "tcp\", \"mark\": \"1", "tcp")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []joolPool4{{"TCP", "192.0.2.8/30", "61001-65535"}, {"ICMP", "192.0.2.8/30", "61001-65535"}}
 	if !slices.Equal(got[0].Pool4, want) {
 		t.Errorf("pool4 = %v, want %v", got[0].Pool4, want)
+	}
+	const refusal = "internal error: NAT64 edge: pool entry 1 names no protocol Jool takes"
+	if _, err := instances("tcp\", \"mark\": \"1"); err == nil || !strings.HasPrefix(err.Error(), refusal) {
+		t.Errorf("err = %v, want %q", err, refusal)
 	}
 }
 

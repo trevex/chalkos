@@ -243,11 +243,16 @@ func joolInstances(docs []named[nat64Spec]) ([]joolInstance, error) {
 					return nil, fmt.Errorf("%s shares addresses with the pool of NAT64 %s; give each NAT64 a pool of its own", at, o.Name)
 				}
 			}
-			// An entry per protocol, in Jool's order. The schema takes no other protocol.
+			// An entry per protocol, in Jool's order. The schema takes no other protocol; an entry
+			// of none would drop out, and a pool of no entries masquerade on the link's address.
+			before := len(inst.Pool4)
 			for _, proto := range joolProtocols {
 				if slices.Contains(e.Protocols, proto) {
 					inst.Pool4 = append(inst.Pool4, joolPool4{Protocol: strings.ToUpper(proto), Prefix: prefix.String(), PortRange: fmt.Sprintf("%d-%d", first, last)})
 				}
+			}
+			if len(inst.Pool4) == before {
+				return nil, internalErrorf("%s names no protocol Jool takes", at)
 			}
 			mine = append(mine, prefix)
 		}
