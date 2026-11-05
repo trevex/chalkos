@@ -42,8 +42,10 @@ three that follow once it passes both. In detail, a delivery to the running imag
 2. chalkd records the effects' baseline, unless one exists: the running slot's config, the facts
    the effects' `when` rules read and the hash of each output's files.
 3. chalkd renders every output from the new documents into a staging directory below
-   `/run/chalkos/outputs/.staging`, then runs each output's check. A renderer or check that fails
-   refuses the delivery, and nothing on the node has changed.
+   `/run/chalkos/outputs/.staging`, then runs each output's check. A renderer that reports
+   refusals, or a renderer or check that fails, refuses the delivery, and nothing on the node has
+   changed. The refusal shows what the renderers reported, each refusal once, and names any other
+   failed output with its exit status.
 4. chalkd writes the config slot, the storage and the node's identity.
 5. chalkd swaps each output's link to its staged files.
 6. chalkd takes the effects whose outputs or kinds changed, or whose `when` holds.

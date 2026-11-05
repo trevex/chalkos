@@ -75,10 +75,13 @@ let
             devices or network, on a read-only system without STATE, `/var`, or the config,
             credentials and Kubernetes keys chalkd writes below `/run/chalkos`, and must finish
             within 30 seconds; the files may take 16 MiB, and hold no links. The same documents
-            must give the same files: chalkd renders every output again at boot.
-            `lib.chalkos.render.template`, `.jq` and `.documents` build the common renderers;
-            `lib.chalkos.render.template` renders a Go template, in which a key a document lacks,
-            or that holds null, prints as nothing.
+            must give the same files: chalkd renders every output again at boot. It refuses a
+            config by printing `{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]}`
+            on standard output, which chalkd reports as it reports a rule's refusal; anything else
+            it prints there fails it. `lib.chalkos.render.template`, `.jq` and `.documents` build
+            the common renderers; `lib.chalkos.render.template` renders a Go template, in which a
+            key a document lacks, or that holds null, prints as nothing, and whose `refuse`
+            function refuses.
           '';
         };
         check = lib.mkOption {

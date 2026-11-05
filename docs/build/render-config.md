@@ -139,7 +139,7 @@ protocol bgp 'router-b' {
 ```
 
 The template reads the input as `.node.name` and `.documents.<Kind>`. Besides Go's own functions
-it has four more:
+it has five more:
 
 | Function | Result |
 | --- | --- |
@@ -147,6 +147,7 @@ it has four more:
 | `quote <value>` | The value as a double-quoted string with Go's escapes. |
 | `json <value>` | The value as JSON. |
 | `default <fallback> <value>` | `<fallback>` when the value is missing, null, empty or false; the value otherwise. |
+| `refuse <kind> <name> <path> <message>` | Stops the render and refuses the config, as [A renderer refuses a config](#a-renderer-refuses-a-config) shows. |
 
 A key that a document lacks, or that holds null, prints as nothing, so `{{ .spec.password }}`
 prints nothing for `router-b`. A key below a missing one, such as `.spec.missing.name`, fails the
@@ -227,7 +228,52 @@ chalkos.outputs.peers-yaml = {
   address: 10.0.0.2
 ```
 
-The program may write any number of files and directories into `$OUT`, but no links.
+The program may write any number of files and directories into `$OUT`, but no links. Its
+standard output is reserved for refusals: anything it prints there that is not a report of
+refusals fails the render.
+
+## A renderer refuses a config
+
+A schema and the change rules check what a document's fields hold. A renderer can check more,
+such as what several documents mean together. It refuses a config by printing a report of
+refusals on standard output, one JSON object:
+
+```json
+{"refusals": [{"kind": "Peer", "name": "router-c", "path": "spec.asn", "message": "the AS number is the router's own, 64512; give the peer's"}]}
+```
+
+- `kind` and `name` name the document. `name` takes the form of a document name.
+- `path` names the field, as written in the document, such as `spec.asn` or
+  `spec.neighbors[0].address`, without spaces or colons.
+- `message` says what is wrong and how to fix it, on one line.
+
+Any refusal refuses the delivery, whether the renderer then exits with 0 or not. An empty
+report, `{"refusals": []}`, or no output refuses nothing. chalkd reports each refusal after
+`the config is refused:`, as it reports a rule's refusal, and reports a refusal that several
+outputs print once:
+
+```text
+the config is refused: Peer/router-c: spec.asn: the AS number is the router's own, 64512; give the peer's
+```
+
+A report that does not take this form fails the render as the renderer's own error, as does more
+than 64 KiB of output. A refusal can quote any value of the documents. It cannot carry a secret's
+value, because the renderer never reads one.
+
+A template refuses with `refuse`. This line of `bird.conf.tmpl` would refuse a peer of the
+router's own AS number:
+
+```text
+{{ if eq (print .spec.asn) "64512" }}{{ refuse "Peer" .metadata.name "spec.asn" "the AS number is the router's own, 64512; give the peer's" }}{{ end }}
+```
+
+A program that `render` names prints the report itself, and a script made by
+`pkgs.writeShellScript` can print it with `echo` or `jq`. A jq renderer cannot refuse: what the
+program prints is the output's file. Its `error` fails the render, with the message in the
+node's journal alone.
+
+A check refuses the rendered files by failing, as [The check refuses a bad
+file](#the-check-refuses-a-bad-file) shows. Its standard output goes nowhere.
 
 ## The renderer must be pure
 
@@ -311,13 +357,14 @@ Build the image. The build renders each example and runs the check, so a broken 
 here and names the output and the example file.
 
 After `chalkctl apply-config`, a render or check that fails refuses the delivery, and nothing on
-the node changes. The error names the output and the exit status:
+the node changes. A renderer's refusal shows as `the config is refused:` and the refusals. Any
+other failure names the output and the exit status:
 
 ```text
 output bird-conf: its check refused the rendered files (exit 1); see the node's journal
 ```
 
-The message leaves out what the program printed, because a program can echo the documents it
+That message leaves out what the program printed, because a program can echo the documents it
 read. Each program runs as a transient unit, `chalkos-render-<n>.service`. Its journal holds the
 program's standard error, and the journal of `chalkd.service` names the unit beside the failure:
 
