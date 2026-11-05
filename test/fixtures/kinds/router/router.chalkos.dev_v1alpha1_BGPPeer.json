@@ -36,15 +36,15 @@
             }
           ],
           "default": null,
-          "description": "Unicast address of the neighbour; excludes `interface` and `interfaces`.",
+          "description": "Unicast address of the neighbour beyond the router, neither loopback, link-local nor IPv4-mapped; excludes `interface` and `interfaces`.",
           "examples": [
             "2001:db8:ffff::2"
           ],
           "x-chalkos-rules": [
             {
-              "description": "A BGPPeer's address is a unicast address.",
-              "messageExpression": "\"the address \" + self + \" is no neighbour's: give a unicast address\"",
-              "rule": "self == null || cel.bind(a, ip(self), a != ip(\"0.0.0.0\") && a != ip(\"::\") && !cidr(\"224.0.0.0/4\").contains(a) && !cidr(\"ff00::/8\").contains(a))",
+              "description": "A BGPPeer's address is a unicast address beyond the router: not unspecified, loopback, link-local, multicast, broadcast or IPv4-mapped IPv6.",
+              "messageExpression": "\"the address \" + self + \" is no neighbour's: give a unicast address beyond the router, neither loopback, link-local nor IPv4-mapped; a neighbour on a link takes interface or interfaces\"",
+              "rule": "self == null || cel.bind(x, ip(self), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"169.254.0.0/16\").contains(x) && !cidr(\"fe80::/10\").contains(x) && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && x != ip(\"255.255.255.255\") && !cidr(\"::ffff:0:0/96\").contains(x))",
               "takes": "refuse"
             }
           ]
@@ -77,7 +77,7 @@
         },
         "extendedNextHop": {
           "default": false,
-          "description": "Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). FRR negotiates it on sessions of `interface` and `interfaces` whatever this says.",
+          "description": "Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). A peer at an IPv6 address that exchanges IPv4 routes needs it. FRR negotiates it on sessions of `interface` and `interfaces` whatever this says.",
           "type": "boolean"
         },
         "families": {
@@ -475,9 +475,9 @@
         "takes": "refuse"
       },
       {
-        "description": "A BGPPeer's interface is no link another VRF than the peer's holds; names compare as written.",
-        "messageExpression": "cel.bind(held, cel.bind(v, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.filter(n, cel.bind(s, documents[n].spec, !(s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))).map(n, \"BGPPeer \" + n + \" names the interface \" + documents[n].spec.interface).join(\", \") + \", which a VRF document puts in another VRF than the peer's; give the peer that VRF or the interface another\")",
-        "rule": "cel.bind(held, cel.bind(v, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.all(n, cel.bind(s, documents[n].spec, (s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))))",
+        "description": "A BGPPeer at an IPv6 address that exchanges IPv4 routes has extendedNextHop.",
+        "messageExpression": "documents.filter(n, !(documents[n].spec.address == null || documents[n].spec.families.ipv4 == null || documents[n].spec.extendedNextHop || ip(documents[n].spec.address).family() == \"ipv4\")).map(n, \"BGPPeer \" + n + \" exchanges IPv4 routes at the IPv6 address \" + documents[n].spec.address).join(\", \") + \" without extendedNextHop: true; the routes' next hops are IPv6 addresses, which a session carries with extendedNextHop alone\"",
+        "rule": "documents.all(n, (documents[n].spec.address == null || documents[n].spec.families.ipv4 == null || documents[n].spec.extendedNextHop || ip(documents[n].spec.address).family() == \"ipv4\"))",
         "takes": "refuse"
       }
     ],

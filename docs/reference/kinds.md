@@ -332,7 +332,7 @@ A BGP instance of the router in one VRF: its AS number and router ID, how many e
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 6 [change rules](builtins.md#rules-bgp).
+A node's config may hold several, each with a name of its own. It has 8 [change rules](builtins.md#rules-bgp).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -354,7 +354,7 @@ A node's config may hold several, each with a name of its own. It has 6 [change 
 | `spec.networks` | list of object | `[]` | Networks the router announces to its peers. Each item is unique within the list by `prefix` as masked ranges. |
 | `spec.networks[].policy` | name of a RoutingPolicy or null | `null` | RoutingPolicy whose terms set the announcement's attributes; null announces it as it is. |
 | `spec.networks[].prefix` | address range | required | Address range the router announces while its table holds a route to it. |
-| `spec.routerID` | string | required | Router ID, in IPv4 notation, which the router's peers know it by; give an IPv6-only router one too. |
+| `spec.routerID` | string | required | Router ID, an IPv4 address other than 0.0.0.0, a multicast address and 255.255.255.255, which the router's peers know it by; give an IPv6-only router one too. |
 | `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document whose instance this is; `default` for the default VRF, which holds every link no VRF holds. Unique among the BGP documents. |
 
 ### BGPPeer { #bgppeer }
@@ -367,10 +367,10 @@ A node's config may hold several, each with a name of its own. It has 12 [change
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.address` | IP address or null | `null` | Unicast address of the neighbour; excludes `interface` and `interfaces`. |
+| `spec.address` | IP address or null | `null` | Unicast address of the neighbour beyond the router, neither loopback, link-local nor IPv4-mapped; excludes `interface` and `interfaces`. |
 | `spec.bfd` | boolean | `false` | Whether the router checks the session's link with BFD, at the timers of the BGP document, and ends the session when BFD finds it down. |
 | `spec.description` | string or null | `null` | What the neighbour is, in up to 80 printable ASCII characters other than `@`, with a single space between two words. |
-| `spec.extendedNextHop` | boolean | `false` | Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). FRR negotiates it on sessions of `interface` and `interfaces` whatever this says. |
+| `spec.extendedNextHop` | boolean | `false` | Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). A peer at an IPv6 address that exchanges IPv4 routes needs it. FRR negotiates it on sessions of `interface` and `interfaces` whatever this says. |
 | `spec.families` | object | `{}` | The address families the session exchanges routes of, and how. |
 | `spec.families.ipv4` | object or null | `null` | IPv4 routes of the session; null exchanges none. |
 | `spec.families.ipv4.defaultOriginate` | boolean | `false` | Whether the router sends the peer a default route of the family: whatever its own table holds, or while `defaultOriginateWhen` holds. |
@@ -632,7 +632,7 @@ What the router does with the routes of a peer's family or of a network: terms i
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 3 [change rules](builtins.md#rules-routingpolicy).
+A node's config may hold several, each with a name of its own. It has 4 [change rules](builtins.md#rules-routingpolicy).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

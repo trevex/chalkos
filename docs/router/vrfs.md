@@ -168,10 +168,10 @@ spec:
 Each instance has its own AS number, router ID, multipath, BFD timers, graceful restart and
 networks. It announces a network while its VRF's table holds a route to it. The unreachable
 default routes would match a default route among a VRF instance's `networks` at all times, so the
-output `frr` refuses one:
+rules refuse one:
 
 ```text
-BGP tenant: network ::/0 of VRF tenant would always be announced, as the VRF's table ends in an unreachable default route; use a peer family's defaultOriginate
+chalkctl: r1: the config is refused: BGP tenant announces the network ::/0 in VRF tenant, which would always be announced, as a VRF's table ends in an unreachable default route; use a peer family's defaultOriginate
 ```
 
 Send a VRF's peers a default route with `defaultOriginate` in the peer's family instead.
@@ -203,8 +203,10 @@ spec:
 A peer's VRF needs a `BGP` document. A peer's `interfaces` stand for links of its VRF, so `swp*`
 in `tenant` runs a session on `swp1` and one on `swp2`. In the default VRF, a glob matches the
 links that no VRF holds. A peer's `interface` is a link of its own VRF, and a link that no
-`Network` names is in the default VRF. The firewall accepts the BGP and BFD ports of a VRF's peer
-on the links of that VRF, and those of a peer of `address` from that address in its VRF alone.
+`Network` names is in the default VRF. The output `frr` checks a peer's links against its VRF
+when the router renders its config, and `chalkctl validate` does not. The firewall accepts the
+BGP and BFD ports of a VRF's peer on the links of that VRF, and those of a peer of `address` from
+that address in its VRF alone.
 
 ## Import routes from another VRF
 
@@ -434,6 +436,7 @@ refuse what networkd, FRR or nftables would apply otherwise than the documents s
 | `NetDev 20-dummy creates the device tenant, which VRF tenant creates; rename the VRF or the NetDev` | Rename the VRF, or the device in the `NetDev`'s `Name=`. |
 | `BGPPeer leaves: interfaces: swp* matches no link of VRF default, only links of other VRFs` | Give the peer the VRF of its links. |
 | `BGPPeer x: interface tenant is the device of VRF tenant` | Name the VRF's links, not its device. |
+| `BGPPeer x: interface eth2 is in the VRF tenant, not in the peer's VRF default` | Give the peer the VRF of its link, or name a link of the peer's VRF. |
 | `FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs` | Put the VRF into the zone's `vrfs`, or name its links. |
 | `FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone` | Take the VRF out of the other zone's `vrfs` and name its links in each zone, or drop the link here. |
 | `FirewallZone tenant: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *` | Write the `Network`'s `Name=` as names or a prefix and `*`. |

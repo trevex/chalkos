@@ -83,8 +83,8 @@ When the VRF's table has no route for a destination, the kernel's lookup goes on
 table. Without these routes, a VRF's traffic would follow the default VRF's routes and
 leave through its links. FRR reads the metric as distance 255, so a default route of BGP or of a
 member's `Network` wins over them. A default route among a VRF instance's `networks` would match
-them at all times, so the output `frr` refuses one and points to a peer family's
-`defaultOriginate` instead.
+them at all times, so the rules refuse one and point to a peer family's `defaultOriginate`
+instead.
 
 The `Network` documents of the VRF's links get `VRF=` in a `[Network]` section:
 
@@ -195,7 +195,9 @@ the kernel's VRFs itself, so an instance whose VRF networkd has not created yet 
 A peer's `interfaces` expand only over the links of the peer's VRF, as the membership rules above
 find them. For a peer of the default VRF, those are the links of no VRF. The renderer refuses a
 glob that matches links of other VRFs alone, a peer's `interface` that lies in another VRF and a
-peer that names a VRF's device, on which bgpd runs no session.
+peer that names a VRF's device, on which bgpd runs no session. It sees the VRF of a link as
+networkd puts it there, by the `VRF` documents and the `Network` documents' own `VRF=`, so the
+BGP kinds' rules leave these checks to it, and `chalkctl validate` does not run them.
 
 A route-map's `set as-path prepend` repeats an AS number, and one route-map serves every instance
 that names its policy. The renderer prepends the AS number of the instances that use the policy,

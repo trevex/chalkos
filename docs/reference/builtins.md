@@ -279,10 +279,12 @@ documents.filter(n, !documents[n].spec.prefixes.all(p, cidr(p).ip(0).family() ==
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A BGP instance does not import its own VRF. | `refuse` | after the table | after the table |
 | 2 | — | A delivery that drops the default VRF's BGP document keeps no running BGP instance of another VRF, as FRR keeps its default instance while another runs. | `refuse` | after the table | the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's |
-| 3 | `spec.asn` | BGP keeps its AS number. | `refuse` | `self == oldSelf` | after the table |
-| 4 | `spec.import` | An import's VRFs have BGP documents. | `refuse` | after the table | after the table |
-| 5 | `spec.import` | An import's policy matches PrefixLists of its family alone. | `refuse` | after the table | after the table |
-| 6 | `spec.networks` | A network's prefix is an address range. | `refuse` | `self.all(w, cidr(w.prefix).prefix() >= 0)` | a network is no address range |
+| 3 | — | A BGP instance of a VRF other than the default one announces no default route among its networks. | `refuse` | after the table | after the table |
+| 4 | `spec.asn` | BGP keeps its AS number. | `refuse` | `self == oldSelf` | after the table |
+| 5 | `spec.import` | An import's VRFs have BGP documents. | `refuse` | after the table | after the table |
+| 6 | `spec.import` | An import's policy matches PrefixLists of its family alone. | `refuse` | after the table | after the table |
+| 7 | `spec.networks` | A network's policy matches PrefixLists of the network's family alone. | `refuse` | after the table | after the table |
+| 8 | `spec.routerID` | A router ID is an IPv4 unicast address: not 0.0.0.0, multicast or 255.255.255.255. | `refuse` | after the table | after the table |
 
 Expression of rule 1:
 
@@ -302,34 +304,70 @@ Expression of rule 2:
 !oldDocuments.exists(n, (has(oldDocuments[n].spec.vrf) ? oldDocuments[n].spec.vrf : "default") == "default") || documents.exists(n, documents[n].spec.vrf == "default") || !documents.exists(n, documents[n].spec.vrf != "default" && oldDocuments.exists(m, (has(oldDocuments[m].spec.vrf) ? oldDocuments[m].spec.vrf : "default") == documents[n].spec.vrf))
 ```
 
+Expression of rule 3:
+
+```text
+documents.all(n, (documents[n].spec.vrf == "default" || documents[n].spec.networks.all(w, cidr(w.prefix).prefix() > 0)))
+```
+
 Message of rule 3:
 
 ```text
-"the AS number stays " + string(oldSelf) + "; to change it, deliver the config without the BGP document, which ends the router's sessions, and then with the new AS number"
-```
-
-Expression of rule 4:
-
-```text
-cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), [self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, v in have)))
+documents.filter(n, !(documents[n].spec.vrf == "default" || documents[n].spec.networks.all(w, cidr(w.prefix).prefix() > 0))).map(n, "BGP " + n + " announces the network " + documents[n].spec.networks.filter(w, cidr(w.prefix).prefix() == 0)[0].prefix + " in VRF " + documents[n].spec.vrf).join(", ") + ", which would always be announced, as a VRF's table ends in an unreachable default route; use a peer family's defaultOriginate"
 ```
 
 Message of rule 4:
 
 ```text
-cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), "the import names the VRF " + [self.ipv4, self.ipv6].filter(f, f != null).map(f, f.vrfs.filter(v, !(v in have))).flatten()[0] + ", which no BGP document serves; leaking takes routes from BGP alone")
+"the AS number stays " + string(oldSelf) + "; to change it, deliver the config without the BGP document, which ends the router's sessions, and then with the new AS number"
 ```
 
 Expression of rule 5:
 
 ```text
-(self.ipv4 == null || self.ipv4.policy == null || cel.bind(named, document("RoutingPolicy", self.ipv4.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document("PrefixList", named[0].match.prefixList).spec.family == "ipv4")) && (self.ipv6 == null || self.ipv6.policy == null || cel.bind(named, document("RoutingPolicy", self.ipv6.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document("PrefixList", named[0].match.prefixList).spec.family == "ipv6"))
+cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), [self.ipv4, self.ipv6].all(f, f == null || f.vrfs.all(v, v in have)))
 ```
 
 Message of rule 5:
 
 ```text
+cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), bgps.map(n, bgps[n].spec.vrf)), "the import names the VRF " + [self.ipv4, self.ipv6].filter(f, f != null).map(f, f.vrfs.filter(v, !(v in have))).flatten()[0] + ", which no BGP document serves; leaking takes routes from BGP alone")
+```
+
+Expression of rule 6:
+
+```text
+(self.ipv4 == null || self.ipv4.policy == null || cel.bind(named, document("RoutingPolicy", self.ipv4.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document("PrefixList", named[0].match.prefixList).spec.family == "ipv4")) && (self.ipv6 == null || self.ipv6.policy == null || cel.bind(named, document("RoutingPolicy", self.ipv6.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document("PrefixList", named[0].match.prefixList).spec.family == "ipv6"))
+```
+
+Message of rule 6:
+
+```text
 "the " + (self.ipv4 == null || self.ipv4.policy == null || cel.bind(named, document("RoutingPolicy", self.ipv4.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document("PrefixList", named[0].match.prefixList).spec.family == "ipv4") ? "ipv6" : "ipv4") + " import's RoutingPolicy matches PrefixLists of another family"
+```
+
+Expression of rule 7:
+
+```text
+self.all(w, w.policy == null || cel.bind(named, document("RoutingPolicy", w.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document("PrefixList", named[0].match.prefixList).spec.family == cidr(w.prefix).ip(0).family()))
+```
+
+Message of rule 7:
+
+```text
+cel.bind(w, self.filter(w, w.policy != null && !cel.bind(named, document("RoutingPolicy", w.policy).spec.terms.filter(t, t.match.prefixList != null), size(named) == 0 || document("PrefixList", named[0].match.prefixList).spec.family == cidr(w.prefix).ip(0).family()))[0], "the RoutingPolicy " + w.policy + " of the network " + w.prefix + " matches PrefixLists of another family")
+```
+
+Expression of rule 8:
+
+```text
+cel.bind(a, ip(self), a != ip("0.0.0.0") && !cidr("224.0.0.0/4").contains(a) && a != ip("255.255.255.255"))
+```
+
+Message of rule 8:
+
+```text
+"the router ID " + self + " is no IPv4 unicast address; give one that is neither 0.0.0.0, multicast nor 255.255.255.255"
 ```
 
 #### BGPPeer { #rules-bgppeer }
@@ -338,8 +376,8 @@ Message of rule 5:
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A BGPPeer names exactly one of address, interface and interfaces. | `refuse` | after the table | after the table |
 | 2 | — | A BGPPeer's VRF has a BGP document. | `refuse` | after the table | after the table |
-| 3 | — | A BGPPeer's interface is no link another VRF than the peer's holds; names compare as written. | `refuse` | after the table | after the table |
-| 4 | `spec.address` | A BGPPeer's address is a unicast address. | `refuse` | after the table | `"the address " + self + " is no neighbour's: give a unicast address"` |
+| 3 | — | A BGPPeer at an IPv6 address that exchanges IPv4 routes has extendedNextHop. | `refuse` | after the table | after the table |
+| 4 | `spec.address` | A BGPPeer's address is a unicast address beyond the router: not unspecified, loopback, link-local, multicast, broadcast or IPv4-mapped IPv6. | `refuse` | after the table | after the table |
 | 5 | `spec.description` | A BGPPeer's description holds 80 characters at most. | `refuse` | `self == null || size(self) <= 80` | the description holds more than 80 characters |
 | 6 | `spec.families` | A BGPPeer exchanges the routes of one family at least. | `refuse` | `self.ipv4 != null || self.ipv6 != null` | the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route |
 | 7 | `spec.families` | A family's policies match PrefixLists of that family alone. | `refuse` | after the table | after the table |
@@ -376,19 +414,25 @@ cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP"
 Expression of rule 3:
 
 ```text
-cel.bind(held, cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.all(n, cel.bind(s, documents[n].spec, (s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))))
+documents.all(n, (documents[n].spec.address == null || documents[n].spec.families.ipv4 == null || documents[n].spec.extendedNextHop || ip(documents[n].spec.address).family() == "ipv4"))
 ```
 
 Message of rule 3:
 
 ```text
-cel.bind(held, cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten()), documents.filter(n, cel.bind(s, documents[n].spec, !(s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf)))).map(n, "BGPPeer " + n + " names the interface " + documents[n].spec.interface).join(", ") + ", which a VRF document puts in another VRF than the peer's; give the peer that VRF or the interface another")
+documents.filter(n, !(documents[n].spec.address == null || documents[n].spec.families.ipv4 == null || documents[n].spec.extendedNextHop || ip(documents[n].spec.address).family() == "ipv4")).map(n, "BGPPeer " + n + " exchanges IPv4 routes at the IPv6 address " + documents[n].spec.address).join(", ") + " without extendedNextHop: true; the routes' next hops are IPv6 addresses, which a session carries with extendedNextHop alone"
 ```
 
 Expression of rule 4:
 
 ```text
-self == null || cel.bind(a, ip(self), a != ip("0.0.0.0") && a != ip("::") && !cidr("224.0.0.0/4").contains(a) && !cidr("ff00::/8").contains(a))
+self == null || cel.bind(x, ip(self), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && x != ip("255.255.255.255") && !cidr("::ffff:0:0/96").contains(x))
+```
+
+Message of rule 4:
+
+```text
+"the address " + self + " is no neighbour's: give a unicast address beyond the router, neither loopback, link-local nor IPv4-mapped; a neighbour on a link takes interface or interfaces"
 ```
 
 Expression of rule 7:
@@ -1152,17 +1196,24 @@ cel.bind(was, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in oldConfig && "
 
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `spec.terms` | A term's asPath holds 200 characters at most. | `refuse` | `self.all(t, t.match.asPath == null || size(t.match.asPath) <= 200)` | a term's asPath holds more than 200 characters |
-| 2 | `spec.terms` | A RoutingPolicy's PrefixLists are of one family. | `refuse` | after the table | the terms match PrefixLists of both families; a policy serves the routes of one family, so give each family a policy of its own |
-| 3 | `spec.terms` | A term that rejects sets nothing. | `refuse` | after the table | a term that rejects routes sets local preference, MED, communities or a prepend, which no route it rejects keeps; drop them or accept |
+| 1 | `spec.terms` | A RoutingPolicy holds 6000 terms at most. | `refuse` | `size(self) <= 6000` | after the table |
+| 2 | `spec.terms` | A term's asPath holds 200 characters at most. | `refuse` | `self.all(t, t.match.asPath == null || size(t.match.asPath) <= 200)` | a term's asPath holds more than 200 characters |
+| 3 | `spec.terms` | A RoutingPolicy's PrefixLists are of one family. | `refuse` | after the table | the terms match PrefixLists of both families; a policy serves the routes of one family, so give each family a policy of its own |
+| 4 | `spec.terms` | A term that rejects sets nothing. | `refuse` | after the table | a term that rejects routes sets local preference, MED, communities or a prepend, which no route it rejects keeps; drop them or accept |
 
-Expression of rule 2:
+Message of rule 1:
+
+```text
+"the policy holds " + string(size(self)) + " terms; its route-map numbers them 10, 20 and on below the default's 65535, which leaves room for 6000"
+```
+
+Expression of rule 3:
 
 ```text
 cel.bind(families, self.filter(t, t.match.prefixList != null).map(t, document("PrefixList", t.match.prefixList).spec.family), families.all(f, f == families[0]))
 ```
 
-Expression of rule 3:
+Expression of rule 4:
 
 ```text
 self.all(t, t["then"].action == "accept" || t["then"].localPref == null && t["then"].med == null && size(t["then"].addCommunities) == 0 && size(t["then"].removeCommunities) == 0 && t["then"].prepend == null)

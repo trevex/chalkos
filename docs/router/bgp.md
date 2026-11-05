@@ -64,7 +64,8 @@ network's `policy` sets the attributes of its announcement, as a term of
 [a routing policy](#filter-routes-with-policies) does. Two networks of one range are refused.
 
 `routerID` is required. BGP names a router by an IPv4 address, which need not be one of its own,
-so give an IPv6-only router one too.
+so give an IPv6-only router one too. The rules refuse `0.0.0.0`, a multicast address and
+`255.255.255.255`.
 
 ## Peer on the fabric's links
 
@@ -142,9 +143,11 @@ spec:
 one of `address`, `interface` and `interfaces`, and one family at least. A family without
 `import` accepts every route, and one without `export` sends every route the router has.
 
-The address is a unicast address beyond the router. A link-local address is refused, as a
-neighbour on a link takes `interface` or `interfaces`. A peer at an IPv6 address that exchanges
-IPv4 routes needs `extendedNextHop: true`. A session that two peers name is refused.
+The address is a unicast address beyond the router. The rules refuse a loopback, multicast or
+broadcast address and an IPv4-mapped IPv6 address such as `::ffff:203.0.113.254`; give an IPv4
+neighbour its IPv4 address. A link-local address is refused too, as a neighbour on a link takes
+`interface` or `interfaces`. A peer at an IPv6 address that exchanges IPv4 routes needs
+`extendedNextHop: true`. A session that two peers name is refused.
 
 ## Filter routes with policies
 
@@ -191,7 +194,8 @@ A `PrefixList` entry without `ge` or `le` matches its prefix alone. `le: 128` al
 routes within `2001:db8::/32` up to `/128`. Both `ge` and `le` lie from the prefix's length to the
 family's longest prefix, and `ge` is no higher than `le`. Two entries with the same prefix, `ge`
 and `le` are refused, because the later one never decides. The PrefixLists of a policy are of one
-family, and a peer's family takes policies of its own family alone.
+family, and a peer's family and a network take policies of their own family alone. A policy holds
+6000 terms at most.
 
 A term may set attributes of the routes it accepts. The transit's policies keep its blackholed
 routes out, prefer the routes of its own AS and tag the rest. They announce the router's IPv4

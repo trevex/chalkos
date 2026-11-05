@@ -5,7 +5,9 @@
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists. So the
 # rules over a peer's families sit on spec.families and those over an instance's networks and
 # imports on spec.networks and spec.import, where the one document is self, and loop over a
-# policy's terms alone.
+# policy's terms alone. What depends on the links networkd puts in each VRF, on more than one peer
+# or policy, or on how bgpd compiles an AS path, the output frr checks: a peer's interface of
+# another VRF or of a VRF's device, a session two peers name and an AS path bgpd refuses.
 {
   config,
   lib,
@@ -42,6 +44,15 @@ let
   communityText = "standard communities `<AS>:<value>` of 16-bit numbers, or large ones `<AS>:<value>:<value>` of 32-bit numbers, without leading zeros";
   # An octet of an IPv4 address in decimal, without leading zeros.
   octet = "25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9]";
+  # Whether the address a is one a peer's address may be: a unicast address beyond the router. It
+  # is none of the unspecified, loopback, multicast and broadcast addresses and no link-local
+  # address, as a neighbour on a link takes interface or interfaces. It is no IPv4-mapped IPv6
+  # address either, which stands for an IPv4 neighbour that a session reaches at its IPv4
+  # address; refusing the mapped range whole keeps out a mapped loopback or multicast address,
+  # which the IPv4 ranges below do not match.
+  neighbourAddress =
+    a:
+    ''cel.bind(x, ip(${a}), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && x != ip("255.255.255.255") && !cidr("::ffff:0:0/96").contains(x))'';
   # A name of an interface that reads as an address: four numbers with dots, or hex digits and dots
   # with two colons at least.
   addressLike = "^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$";
@@ -56,12 +67,19 @@ let
   # The vrf of the running BGP document of the name n, default for the default VRF; a running
   # config of an image whose BGP had no vrf lacks the field.
   oldVRF = n: ''(has(oldDocuments[${n}].spec.vrf) ? oldDocuments[${n}].spec.vrf : "default")'';
+  # Whether the BGP spec s runs in the default VRF or announces no default route. Every other
+  # VRF's table ends in an unreachable default route, which a network of length 0 would match at
+  # all times.
+  noDefaultNetwork =
+    s: ''(${s}.vrf == "default" || ${s}.networks.all(w, cidr(w.prefix).prefix() > 0))'';
   # The VRFs the config's BGP documents serve.
   served = "cel.bind(bgps, ${delivered "BGP"}, bgps.map(n, bgps[n].spec.vrf))";
-  # The interfaces and globs of the config's VRF documents, as written, each as [interface, VRF].
-  links = "cel.bind(v, ${delivered "VRF"}, v.map(n, v[n].spec.interfaces.map(i, [i, n])).flatten())";
-  # Whether the BGPPeer spec s names no interface, or one that held gives no VRF but the peer's.
-  ownLink = "(s.interface == null || held.all(h, h[0] != s.interface || h[1] == s.vrf))";
+  # Whether the BGPPeer spec s carries its IPv4 routes with next hops its session can: a peer at an
+  # IPv6 address that exchanges IPv4 routes sends them with IPv6 next hops, which the session
+  # carries with extended next hops alone. FRR negotiates them on a link's session by itself.
+  nextHopFits =
+    s:
+    ''(${s}.address == null || ${s}.families.ipv4 == null || ${s}.extendedNextHop || ip(${s}.address).family() == "ipv4")'';
   # What a BGP instance imports of one family from other VRFs' instances.
   leak = types.submodule {
     options = {
@@ -129,6 +147,8 @@ let
           "ipv6"
         ]
     }].filter(u, size(u) > 0)[0]";
+  # Whether the RoutingPolicy of the network w matches PrefixLists of the network's family.
+  networkPolicy = w: policyOfFamily "${w}.policy" "cidr(${w}.prefix).ip(0).family()";
   # Whether the defaultOriginateWhen of each of a peer's families, self, that gives one passes ok,
   # a function of the family's field and the family's name as a CEL string. Written out per
   # family, as a loop over them would cost a loop more.
@@ -207,6 +227,11 @@ in
             rule = ''!oldDocuments.exists(n, ${oldVRF "n"} == "default") || documents.exists(n, documents[n].spec.vrf == "default") || !documents.exists(n, documents[n].spec.vrf != "default" && oldDocuments.exists(m, ${oldVRF "m"} == documents[n].spec.vrf))'';
             message = "the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's";
           }
+          {
+            description = "A BGP instance of a VRF other than the default one announces no default route among its networks.";
+            rule = "documents.all(n, ${noDefaultNetwork "documents[n].spec"})";
+            messageExpression = ''documents.filter(n, !${noDefaultNetwork "documents[n].spec"}).map(n, "BGP " + n + " announces the network " + documents[n].spec.networks.filter(w, cidr(w.prefix).prefix() == 0)[0].prefix + " in VRF " + documents[n].spec.vrf).join(", ") + ", which would always be announced, as a VRF's table ends in an unreachable default route; use a peer family's defaultOriginate"'';
+          }
         ];
         spec = {
           vrf = lib.chalkos.mkOption {
@@ -228,10 +253,17 @@ in
               }
             ];
           };
-          routerID = mkOption {
+          routerID = lib.chalkos.mkOption {
             type = types.strMatching "(${octet})([.](${octet})){3}";
             example = "192.0.2.1";
-            description = "Router ID, in IPv4 notation, which the router's peers know it by; give an IPv6-only router one too.";
+            description = "Router ID, an IPv4 address other than 0.0.0.0, a multicast address and 255.255.255.255, which the router's peers know it by; give an IPv6-only router one too.";
+            rules = [
+              {
+                description = "A router ID is an IPv4 unicast address: not 0.0.0.0, multicast or 255.255.255.255.";
+                rule = ''cel.bind(a, ip(self), a != ip("0.0.0.0") && !cidr("224.0.0.0/4").contains(a) && a != ip("255.255.255.255"))'';
+                messageExpression = ''"the router ID " + self + " is no IPv4 unicast address; give one that is neither 0.0.0.0, multicast nor 255.255.255.255"'';
+              }
+            ];
           };
           multipath = {
             ebgp = mkOption {
@@ -302,9 +334,9 @@ in
             };
             rules = [
               {
-                description = "A network's prefix is an address range.";
-                rule = "self.all(w, cidr(w.prefix).prefix() >= 0)";
-                message = "a network is no address range";
+                description = "A network's policy matches PrefixLists of the network's family alone.";
+                rule = "self.all(w, w.policy == null || ${networkPolicy "w"})";
+                messageExpression = ''cel.bind(w, self.filter(w, w.policy != null && !${networkPolicy "w"})[0], "the RoutingPolicy " + w.policy + " of the network " + w.prefix + " matches PrefixLists of another family")'';
               }
             ];
           };
@@ -356,9 +388,9 @@ in
             messageExpression = ''cel.bind(have, ${served}, documents.filter(n, !(documents[n].spec.vrf in have)).map(n, "BGPPeer " + n + " runs in the VRF " + documents[n].spec.vrf).join(", ") + ": a peer's VRF needs a BGP document, which gives the router its AS number there")'';
           }
           {
-            description = "A BGPPeer's interface is no link another VRF than the peer's holds; names compare as written.";
-            rule = "cel.bind(held, ${links}, documents.all(n, cel.bind(s, documents[n].spec, ${ownLink})))";
-            messageExpression = ''cel.bind(held, ${links}, documents.filter(n, cel.bind(s, documents[n].spec, !${ownLink})).map(n, "BGPPeer " + n + " names the interface " + documents[n].spec.interface).join(", ") + ", which a VRF document puts in another VRF than the peer's; give the peer that VRF or the interface another")'';
+            description = "A BGPPeer at an IPv6 address that exchanges IPv4 routes has extendedNextHop.";
+            rule = "documents.all(n, ${nextHopFits "documents[n].spec"})";
+            messageExpression = ''documents.filter(n, !${nextHopFits "documents[n].spec"}).map(n, "BGPPeer " + n + " exchanges IPv4 routes at the IPv6 address " + documents[n].spec.address).join(", ") + " without extendedNextHop: true; the routes' next hops are IPv6 addresses, which a session carries with extendedNextHop alone"'';
           }
         ];
         spec = {
@@ -372,12 +404,12 @@ in
             type = types.nullOr address;
             default = null;
             example = "2001:db8:ffff::2";
-            description = "Unicast address of the neighbour; excludes `interface` and `interfaces`.";
+            description = "Unicast address of the neighbour beyond the router, neither loopback, link-local nor IPv4-mapped; excludes `interface` and `interfaces`.";
             rules = [
               {
-                description = "A BGPPeer's address is a unicast address.";
-                rule = ''self == null || cel.bind(a, ip(self), a != ip("0.0.0.0") && a != ip("::") && !cidr("224.0.0.0/4").contains(a) && !cidr("ff00::/8").contains(a))'';
-                messageExpression = ''"the address " + self + " is no neighbour's: give a unicast address"'';
+                description = "A BGPPeer's address is a unicast address beyond the router: not unspecified, loopback, link-local, multicast, broadcast or IPv4-mapped IPv6.";
+                rule = "self == null || ${neighbourAddress "self"}";
+                messageExpression = ''"the address " + self + " is no neighbour's: give a unicast address beyond the router, neither loopback, link-local nor IPv4-mapped; a neighbour on a link takes interface or interfaces"'';
               }
             ];
           };
@@ -429,7 +461,7 @@ in
           extendedNextHop = mkOption {
             type = types.bool;
             default = false;
-            description = "Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). FRR negotiates it on sessions of `interface` and `interfaces` whatever this says.";
+            description = "Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). A peer at an IPv6 address that exchanges IPv4 routes needs it. FRR negotiates it on sessions of `interface` and `interfaces` whatever this says.";
           };
           families = lib.chalkos.mkOption {
             type = types.submodule {
@@ -644,6 +676,11 @@ in
             default = [ ];
             description = "Terms in order: the first whose match holds for a route decides.";
             rules = [
+              {
+                description = "A RoutingPolicy holds 6000 terms at most.";
+                rule = "size(self) <= 6000";
+                messageExpression = ''"the policy holds " + string(size(self)) + " terms; its route-map numbers them 10, 20 and on below the default's 65535, which leaves room for 6000"'';
+              }
               {
                 description = "A term's asPath holds 200 characters at most.";
                 rule = "self.all(t, t.match.asPath == null || size(t.match.asPath) <= 200)";

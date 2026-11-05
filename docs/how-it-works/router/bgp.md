@@ -307,7 +307,7 @@ of `frrvty`, the group of FRR's sockets, and need a reader.
 
 - FRR announces a network of `BGP.spec.networks` only while the router's table holds a route to
   it, whatever the policy says. A VRF's table always holds a default route, the unreachable one
-  that ends it, so the renderer refuses a default route among a VRF instance's networks. A peer
+  that ends it, so the rules refuse a default route among a VRF instance's networks. A peer
   family's `defaultOriginate` sends one instead.
 - zebra prefers a route the kernel holds from elsewhere over BGP's path to the same prefix, and
   then installs none of BGP's. A default route that networkd takes from router advertisements on
@@ -315,8 +315,6 @@ of `frrvty`, the group of FRR's sockets, and need a reader.
   lets it in.
 - FRR negotiates the extended next hop on sessions of `interface` and `interfaces` whatever
   `extendedNextHop` says.
-- The rules do not compare a network's policy with the network's family. The renderer refuses a
-  network whose policy matches PrefixLists of another family.
 - A peer's `interfaces` match the names of `Network` documents, not the links that exist, and a
   `Network` that matches links by anything but `Name=` names none.
 - The AS number rule compares a `BGP` document with the running one of the same name. A `BGP`

@@ -10,12 +10,13 @@ import (
 )
 
 // The BGP kinds' rules accept a fabric edge's documents and refuse a peer with two ways to reach
-// it or with no family, peers without BGP, lists of another family than a peer's family, a policy
-// of both families, ge and le outside their range, a list of both kinds of community, a rejecting
-// term that sets attributes, an AS path or a description too long, a neighbour address that is no
-// unicast address, an interface named like an address, a password whose Secret names no
-// credential, and a defaultOriginateWhen without defaultOriginate or of a list of the other
-// family.
+// it or with no family, peers without BGP, lists of another family than a peer's family or a
+// network's, a policy of both families or of more than 6000 terms, ge and le outside their range,
+// a list of both kinds of community, a rejecting term that sets attributes, an AS path or a
+// description too long, a router ID or a neighbour address that is no unicast address, IPv4
+// routes at an IPv6 address without extended next hops, an interface named like an address, a
+// password whose Secret names no credential, and a defaultOriginateWhen without defaultOriginate
+// or of a list of the other family.
 func TestBGPRules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -67,10 +68,14 @@ func TestBGPRules(t *testing.T) {
 		{"an AS path past 200 characters", replace(edge, doc("RoutingPolicy", "to-fabric", `{"terms": [{"match": {"prefixList": "edge", "asPath": "`+strings.Repeat("_64512", 34)+`"}, "then": {"action": "accept"}}]}`)),
 			[]string{`RoutingPolicy "to-fabric" spec.terms: a term's asPath holds more than 200 characters`}},
 		{"entries that differ in ge", replace(edge, doc("PrefixList", "edge", `{"family": "ipv6", "entries": [{"prefix": "2001:db8:ffff::/48", "le": 128}, {"prefix": "2001:db8:ffff::/48", "ge": 64, "le": 128}]}`)), nil},
-		{"a multicast neighbour", replace(edge, doc("BGPPeer", "upstream", `{"address": "ff02::1", "remoteAS": 64496, "families": {"ipv6": {}}}`)),
-			[]string{`BGPPeer "upstream" spec.address: the address ff02::1 is no neighbour's: give a unicast address`}},
-		{"an unspecified neighbour", replace(edge, doc("BGPPeer", "upstream", `{"address": "0.0.0.0", "remoteAS": 64496, "families": {"ipv4": {}}}`)),
-			[]string{`BGPPeer "upstream" spec.address: the address 0.0.0.0 is no neighbour's: give a unicast address`}},
+		{"IPv4 routes at an IPv6 address", replace(edge, doc("BGPPeer", "upstream", `{"address": "2001:db8::9", "remoteAS": 64496, "families": {"ipv4": {}, "ipv6": {}}}`)),
+			[]string{"BGPPeer upstream exchanges IPv4 routes at the IPv6 address 2001:db8::9 without extendedNextHop: true; the routes' next hops are IPv6 addresses, which a session carries with extendedNextHop alone"}},
+		{"IPv4 routes at an IPv6 address with extended next hops", replace(edge, doc("BGPPeer", "upstream", `{"address": "2001:db8::9", "remoteAS": 64496, "extendedNextHop": true, "families": {"ipv4": {}}}`)), nil},
+		{"a network's policy of the other family", replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "192.0.2.0/24", "policy": "to-fabric"}]}`)),
+			[]string{`BGP "bgp" spec.networks: the RoutingPolicy to-fabric of the network 192.0.2.0/24 matches PrefixLists of another family`}},
+		{"6000 terms", replace(edge, doc("RoutingPolicy", "from-fabric", `{"terms": [`+strings.Repeat(`{"then": {"action": "accept"}}, `, 5999)+`{"then": {"action": "accept"}}]}`)), nil},
+		{"6001 terms", replace(edge, doc("RoutingPolicy", "from-fabric", `{"terms": [`+strings.Repeat(`{"then": {"action": "accept"}}, `, 6000)+`{"then": {"action": "accept"}}]}`)),
+			[]string{`RoutingPolicy "from-fabric" spec.terms: the policy holds 6001 terms; its route-map numbers them 10, 20 and on below the default's 65535, which leaves room for 6000`}},
 		{"an interface named as an address", replace(edge, doc("BGPPeer", "upstream", `{"interface": "198.51.100.1", "remoteAS": 64496, "families": {"ipv4": {}}}`)),
 			[]string{`BGPPeer "upstream" spec.interface: the interface 198.51.100.1 is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface`}},
 		{"interfaces named as addresses", replace(edge, doc("BGPPeer", "fabric", `{"interfaces": ["eth1", "fe80::1"], "remoteAS": "external", "families": {"ipv6": {}}}`)),
@@ -112,6 +117,36 @@ func TestBGPRules(t *testing.T) {
 			}
 		})
 	}
+	// A router ID is an IPv4 unicast address: neither unspecified, multicast nor the broadcast
+	// address, which the schema's pattern takes.
+	for _, id := range []string{"0.0.0.0", "224.0.0.5", "239.255.255.255", "255.255.255.255"} {
+		t.Run("a router ID of "+id, func(t *testing.T) {
+			failures, err := set.Evaluate(Input{Documents: replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "`+id+`"}`)), Node: "r1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{`BGP "bgp" spec.routerID: the router ID ` + id + ` is no IPv4 unicast address; give one that is neither 0.0.0.0, multicast nor 255.255.255.255`}
+			if got := messages(failures); !slices.Equal(got, want) {
+				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+			}
+		})
+	}
+	// A neighbour of address is a unicast address beyond the router: of neither family
+	// unspecified, loopback, link-local or multicast, not IPv4's broadcast and no IPv4-mapped IPv6
+	// address, which stands for an IPv4 neighbour. The peer exchanges IPv6 routes, so the rule of
+	// extended next hops passes.
+	for _, address := range []string{"0.0.0.0", "::", "127.0.0.1", "::1", "169.254.0.1", "fe80::1", "224.0.0.1", "ff02::1", "255.255.255.255", "::ffff:198.51.100.1", "::ffff:127.0.0.1"} {
+		t.Run("a neighbour at "+address, func(t *testing.T) {
+			failures, err := set.Evaluate(Input{Documents: replace(edge, doc("BGPPeer", "upstream", `{"address": "`+address+`", "remoteAS": 64496, "families": {"ipv6": {}}}`)), Node: "r1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{`BGPPeer "upstream" spec.address: the address ` + address + ` is no neighbour's: give a unicast address beyond the router, neither loopback, link-local nor IPv4-mapped; a neighbour on a link takes interface or interfaces`}
+			if got := messages(failures); !slices.Equal(got, want) {
+				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+			}
+		})
+	}
 }
 
 // BGP keeps its AS number; a delivery without the BGP document lets the next one take another.
@@ -134,8 +169,8 @@ func TestBGPKeepsItsAS(t *testing.T) {
 	}
 }
 
-// The rules refuse the config with the error of ip() or cidr() for a neighbour's address or a
-// network that is none.
+// The rules refuse the config with the error of ip() for a neighbour's address that is none,
+// which the schema's format refuses before them.
 func TestBGPRulesReadAddresses(t *testing.T) {
 	set, doc := routerRules(t)
 	bgp := doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1"}`)
@@ -144,9 +179,7 @@ func TestBGPRulesReadAddresses(t *testing.T) {
 		docs []config.Document
 		want string
 	}{
-		{"a network that is no address range", []config.Document{doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "2001:db8::/129"}]}`)},
-			`cannot check: BGP "bgp" spec.networks: a rule cannot be evaluated: ` + errNotCIDR},
-		{"a neighbour address that is none", []config.Document{bgp, doc("BGPPeer", "upstream", `{"address": "198.51.100.300", "remoteAS": 64496, "families": {"ipv4": {}}}`)},
+		{"a neighbour address that is none", []config.Document{bgp, doc("BGPPeer", "upstream", `{"address": "198.51.100.300", "remoteAS": 64496, "families": {"ipv6": {}}}`)},
 			`cannot check: BGPPeer "upstream" spec.address: a rule cannot be evaluated: ` + errNotIP},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -200,8 +233,9 @@ func TestBGPSchemas(t *testing.T) {
 
 // The BGP kinds' rules per VRF accept a BGP document per VRF that imports another VRF's routes,
 // and peers in each, and refuse an instance that imports its own VRF, an import of a VRF without
-// BGP or through a policy of the other family, a peer in a VRF without BGP, and a peer's
-// interface that another VRF holds.
+// BGP or through a policy of the other family, a peer in a VRF without BGP, and a default-route
+// network outside the default VRF. A peer's interface of another VRF is the output frr's to
+// refuse.
 func TestBGPPerVRF(t *testing.T) {
 	set, doc := routerRules(t)
 	// eth0 stays out of every VRF, as the VRF kind's rules want of a node whose node API answers
@@ -243,10 +277,13 @@ func TestBGPPerVRF(t *testing.T) {
 		{"a peer in a VRF without BGP", replace(base, doc("VRF", "lab", `{"table": 200, "interfaces": ["eth3"]}`),
 			doc("BGPPeer", "lab", `{"vrf": "lab", "interface": "eth3", "remoteAS": "external", "families": {"ipv6": {}}}`)),
 			[]string{"BGPPeer lab runs in the VRF lab: a peer's VRF needs a BGP document, which gives the router its AS number there"}},
-		{"a peer's interface in another VRF", replace(base, doc("BGPPeer", "fabric", `{"interface": "eth2", "remoteAS": "external", "families": {"ipv6": {}}}`)),
-			[]string{"BGPPeer fabric names the interface eth2, which a VRF document puts in another VRF than the peer's; give the peer that VRF or the interface another"}},
-		{"a peer of the default VRF on an interface no VRF holds", replace(base, doc("BGPPeer", "fabric", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)), nil},
-		{"a peer's interfaces in another VRF are no literal interface", replace(base, doc("BGPPeer", "fabric", `{"interfaces": ["eth2"], "remoteAS": "external", "families": {"ipv6": {}}}`)), nil},
+		// The output frr refuses a peer's interface of another VRF, as networkd puts the link there.
+		{"a peer's interface in another VRF", replace(base, doc("BGPPeer", "fabric", `{"interface": "eth2", "remoteAS": "external", "families": {"ipv6": {}}}`)), nil},
+		{"a default-route network in a VRF", replace(base, doc("BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "2001:db8:100::/40"}, {"prefix": "::/0"}]}`)),
+			[]string{"BGP tenant announces the network ::/0 in VRF tenant, which would always be announced, as a VRF's table ends in an unreachable default route; use a peer family's defaultOriginate"}},
+		{"an IPv4 default-route network with host bits in a VRF", replace(base, doc("BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "10.0.0.0/0"}]}`)),
+			[]string{"BGP tenant announces the network 10.0.0.0/0 in VRF tenant, which would always be announced, as a VRF's table ends in an unreachable default route; use a peer family's defaultOriginate"}},
+		{"a default-route network in the default VRF", replace(base, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "0.0.0.0/0"}, {"prefix": "::/0"}]}`)), nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
