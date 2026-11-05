@@ -1,14 +1,14 @@
 ---
 title: "Extension API"
-description: "The options and lib.chalkos helpers that an extension declares kinds, facts, outputs, effects and diagnostics with"
+description: "The options and lib.chalkos helpers that an extension declares kinds, facts, outputs, validators, effects and diagnostics with"
 ---
 
 # Extension API
 
 This page is for authors of extensions, the NixOS modules that declare config kinds of their
-own, read a node's documents in a service, react when they change, and give operators
-diagnostics. It lists the options the node modules give an extension and the helpers of
-`lib.chalkos`. The Build pages show them at work, from
+own, read a node's documents in a service, check them with programs, react when they change, and
+give operators diagnostics. It lists the options the node modules give an extension and the
+helpers of `lib.chalkos`. The Build pages show them at work, from
 [Declare a config kind](../build/declare-a-kind.md) to
 [Add a diagnostic](../build/add-a-diagnostic.md).
 
@@ -112,6 +112,29 @@ The options within each, by their path below `chalkos.facts`:
 | `<name>.hashOthers`{ #chalkosfactshashothers } | boolean | `false` | Keep the other keys of the file's JSON object too, each as the hex SHA-256 of its value, so rules see whether a value changed but not what it holds, as of a file of private keys. |
 | `<name>.inputs`{ #chalkosfactsinputs } | list of `fallbackSecret` | `[ ]` | Delivery inputs the command receives besides the config: `fallbackSecret`, the fallback secret delivered with it. |
 
+## Validators { #validators }
+
+The programs that check a node's documents at each delivery, before the outputs render.
+
+### `chalkos.validators` { #chalkosvalidators }
+
+Type: map of submodule · Default: `{ }` · Declared in: [modules/node/runtime/validators.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/validators.nix)
+
+Programs that check a node's documents for what the kinds' schemas and change rules do not
+see, such as what several documents mean together, by a name of the validator's own. chalkd
+runs every validator before a delivery changes anything, after the change rules and before
+the outputs render, and refuses the delivery when one refuses it or fails. The image checks
+its own config with them too, as an upgrade does before it stages the image.
+`chalkctl validate` does not run them: they are programs of the image.
+
+The options within each, by their path below `chalkos.validators`:
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `<name>.examples`{ #chalkosvalidatorsexamples } | path or null | `null` | Directory of config files, YAML or JSON, each one example of a node's documents. The image's build runs the validator on each, and fails when it fails or refuses one. Example: `./examples` |
+| `<name>.inputs`{ #chalkosvalidatorsinputs } | non-empty (list of string) | required | Config kinds, by name as for a grant, whose documents the validator reads. Example: `[ "Peer" ]` |
+| `<name>.program`{ #chalkosvalidatorsprogram } | command, package or lib.chalkos.validate value | required | Program of the image's store, with its arguments, that checks the documents. chalkd runs it as `<program> validate <name>`. It reads one JSON array on standard input: the documents of the kinds of `inputs`, sorted by kind and name, with their schema defaults and without any Secret's values. It refuses a config by printing `{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]}` on standard output, which chalkd reports as it reports a rule's refusal; it prints nothing, or no refusal, for a config it accepts. Exit status 0 means it ran; any other status, or anything else printed on standard output, fails it, which refuses the config too. It runs in the renderers' sandbox, may write no path but `/tmp`, and must finish within 30 seconds. `lib.chalkos.validate.jq` builds a validator from a jq program, whose output is the report. Example: `lib.chalkos.validate.jq ./peers.jq` |
+
 ## Outputs { #outputs }
 
 The files a node renders from its documents at each delivery.
@@ -212,8 +235,8 @@ The options within each, by their path below `chalkos.diagnostics`:
 ## lib.chalkos { #lib-chalkos }
 
 Every image's NixOS modules get `lib.chalkos` as part of `lib`. It holds the type and the
-`mkOption` of an extension kind's fields, the renderers of `chalkos.outputs.<name>.render`
-and the common effects.
+`mkOption` of an extension kind's fields, the renderers of `chalkos.outputs.<name>.render`, the
+validators of `chalkos.validators.<name>.program` and the common effects.
 
 | Helper | Arguments | Result |
 | --- | --- | --- |
@@ -223,6 +246,7 @@ and the common effects.
 | `lib.chalkos.render.template` | a path ending in `.tmpl` | Renderer of a Go `text/template` into one file, named as the template less `.tmpl`; a missing or null key prints as nothing. |
 | `lib.chalkos.render.jq` | a path ending in `.jq` | Renderer of a jq program into one file, named as the program less `.jq`; a string is written raw. |
 | `lib.chalkos.render.documents` | a list of kind names | Renderer of the documents of those kinds as they are, each as `<Kind>/<name>.json`. |
+| `lib.chalkos.validate.jq` | a path to a jq program | Validator that runs the jq program on the array of documents; what the program outputs is the report of refusals. |
 | `lib.chalkos.restartOn` | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that restarts the units when one of the outputs, the documents of one of the kinds or a value of a Secret they reference changed. |
 | `lib.chalkos.reloadOn` | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that reloads the units when one of the outputs, the documents of one of the kinds or a value of a Secret they reference changed. |
 

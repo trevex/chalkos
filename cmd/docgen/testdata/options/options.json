@@ -313,6 +313,25 @@
     "readOnly": false,
     "type": "attribute set of (submodule)"
   },
+  "chalkos.validators": {
+    "declarations": [
+      {
+        "name": "modules/node/runtime/validators.nix",
+        "url": "https://example.org/modules/node/runtime/validators.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "{ }"
+    },
+    "description": "Validators.",
+    "loc": [
+      "chalkos",
+      "validators"
+    ],
+    "readOnly": false,
+    "type": "attribute set of (submodule)"
+  },
   "chalkos.outputs": {
     "declarations": [
       {

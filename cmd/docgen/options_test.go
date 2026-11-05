@@ -70,6 +70,8 @@ func TestWriteOptions(t *testing.T) {
 				"\n### `chalkos.kinds` { #chalkoskinds }\n",
 				"\n### `systemd.services.<name>.chalkos.kinds` { #systemdserviceschalkoskinds }\n",
 				"\n## Facts { #facts }\n\n",
+				"\n## Validators { #validators }\n\n",
+				"\n### `chalkos.validators` { #chalkosvalidators }\n",
 				"\n## Outputs { #outputs }\n\n",
 				"\n## Effects { #effects }\n\n",
 				"\n## Diagnostics { #diagnostics }\n\n",

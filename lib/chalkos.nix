@@ -1,7 +1,8 @@
 # lib.chalkos, which every image's NixOS modules get as part of lib: the types of extension kinds'
-# fields, the renderers of chalkos.outputs and the common effects. It holds no store paths, since
-# lib does not depend on pkgs: a renderer is a value that chalkos.outputs.<name>.render turns into
-# its program's command.
+# fields, the renderers of chalkos.outputs, the validators of chalkos.validators and the common
+# effects. It holds no store paths, since lib does not depend on pkgs: a renderer is a value that
+# chalkos.outputs.<name>.render turns into its program's command, as a validator is for
+# chalkos.validators.<name>.program.
 { lib }:
 let
   kindTypes = import ./kinds/types.nix { inherit lib; };
@@ -52,6 +53,11 @@ in
     jq = path: { jq = path; };
     # The documents of kinds as they are, each as <Kind>/<name>.json.
     documents = kinds: { documents = kinds; };
+  };
+
+  validate = {
+    # A jq program that reads the array of documents and makes the report of refusals.
+    jq = path: { jq = path; };
   };
 
   restartOn = effectOn "restart";

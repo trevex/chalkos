@@ -141,6 +141,9 @@ let
     };
 
   outputs = config.chalkos.outputs;
+  # Whether chalkd runs programs on the node's documents: renderers and checks, or validators,
+  # which run in the same sandbox and keep their files below the outputs' root.
+  runsPrograms = outputs != { } || config.chalkos.validators != { };
   # Where chalkd renders the outputs, outputs.DefaultRoot.
   outputsRoot = "/run/chalkos/outputs";
   # Why chalkd may not replace dir, the dir of the output name, with a link, or null. As in
@@ -246,21 +249,22 @@ in
     system.build.chalkosOutputExamples = pkgs.writeText "chalkos-output-examples.json" examplesJSON;
     environment.etc."chalkos/outputs.json".text = outputsJSON;
 
-    # The unprivileged user chalkd runs renderers and checks as. Users are fixed when the image is
-    # built, so it exists when chalkos-config renders at boot.
-    users = lib.mkIf (outputs != { }) {
+    # The unprivileged user chalkd runs renderers, checks and validators as. Users are fixed when
+    # the image is built, so it exists when chalkos-config renders at boot.
+    users = lib.mkIf runsPrograms {
       users.chalkos-render = {
         isSystemUser = true;
         group = "chalkos-render";
-        description = "chalkos output renderers";
+        description = "chalkos output renderers and validators";
       };
       groups.chalkos-render = { };
     };
-    # The outputs' files, those the node serves and those a render stages, on a tmpfs of their
-    # own, so a renderer that writes without end fills it and not /run. An output's files may
-    # take 16 MiB, chalkd's MaxSize, and each output may have both, with room for one more: the
-    # standard output of the renderer that runs, which LimitFSIZE bounds to MaxSize as well.
-    fileSystems = lib.mkIf (outputs != { }) {
+    # The outputs' files, those the node serves and those a render stages, and the validators'
+    # empty directories, on a tmpfs of their own, so a renderer that writes without end fills it
+    # and not /run. An output's files may take 16 MiB, chalkd's MaxSize, and each output may have
+    # both, with room for one more: the standard output of the program that runs, a renderer's
+    # or a validator's, which LimitFSIZE bounds to MaxSize as well.
+    fileSystems = lib.mkIf runsPrograms {
       ${outputsRoot} = {
         device = "tmpfs";
         fsType = "tmpfs";

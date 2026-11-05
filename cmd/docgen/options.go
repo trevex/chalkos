@@ -59,6 +59,7 @@ var imagePages = []optionPage{
 		sections: []optionSection{
 			{"Kinds", "kinds", "The config kinds an image accepts, and the kinds a unit reads.", []string{"chalkos.kinds", "systemd.services.<name>.chalkos.kinds"}},
 			{"Facts", "facts", "The values a node reads at a delivery, which change rules and effects compare.", []string{"chalkos.facts"}},
+			{"Validators", "validators", "The programs that check a node's documents at each delivery, before the outputs render.", []string{"chalkos.validators"}},
 			{"Outputs", "outputs", "The files a node renders from its documents at each delivery.", []string{"chalkos.outputs"}},
 			{"Effects", "effects", "What a delivery does to units when outputs, documents or facts change.", []string{"chalkos.effects"}},
 			{"Diagnostics", "diagnostics", "The read-only commands a client of the node API runs on a node with chalkctl node diag.", []string{"chalkos.diagnostics"}},

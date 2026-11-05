@@ -84,6 +84,7 @@ let
   servicesOf = etcJSON "services.json";
   effectsOf = etcJSON "effects.json";
   outputsOf = etcJSON "outputs.json";
+  validatorsOf = etcJSON "validators.json";
   grantOf =
     kinds:
     worker [
@@ -1618,6 +1619,105 @@ lib.runTests {
         documents = [ "documents Peer Link" ];
         jq = true;
         package = true;
+      };
+    };
+  # A validator reaches chalkd with its input kinds and its program's command: a command as it is,
+  # a package as its path, and a jq program of lib.chalkos.validate as a wrapper of the store.
+  testValidatorsReachChalkd =
+    let
+      config = withBird (
+        { pkgs, ... }:
+        {
+          chalkos.validators = {
+            c = {
+              inputs = [ "Demo" ];
+              program = "/nix/store/x-validate/bin/validate --strict";
+            };
+            p = {
+              inputs = [
+                "Demo"
+                "Network"
+              ];
+              program = pkgs.writeShellScript "v" "true";
+            };
+            j = {
+              inputs = [ "Demo" ];
+              program = libChalkos.validate.jq (builtins.toFile "demo.jq" "{refusals: []}");
+            };
+          };
+        }
+      );
+      validators = validatorsOf config;
+    in
+    {
+      expr = {
+        c = validators.c;
+        inputs = validators.p.inputs;
+        package = lib.hasPrefix "/nix/store/" validators.p.program;
+        jq = lib.hasSuffix "-chalkos-validate-jq-j" validators.j.program;
+        value = libChalkos.validate.jq "x.jq";
+      };
+      expected = {
+        c = {
+          inputs = [ "Demo" ];
+          program = "/nix/store/x-validate/bin/validate --strict";
+        };
+        inputs = [
+          "Demo"
+          "Network"
+        ];
+        package = true;
+        jq = true;
+        value.jq = "x.jq";
+      };
+    };
+  # A validator of a kind the image does not declare, of Secret documents, of no kind, of a name
+  # that is not plain, or whose program is no command or lib.chalkos value fails the evaluation.
+  testValidatorsRefused =
+    let
+      refused =
+        v:
+        fails (
+          validatorsOf (withBird {
+            chalkos.validators = v;
+          })
+        );
+      program = "/nix/store/x-validate/bin/validate";
+    in
+    {
+      expr = {
+        unknown = refused {
+          v.inputs = [ "Nope" ];
+          v.program = program;
+        };
+        secret = refused {
+          v.inputs = [ "Secret" ];
+          v.program = program;
+        };
+        none = refused {
+          v.inputs = [ ];
+          v.program = program;
+        };
+        name = refused {
+          "Demo.check".inputs = [ "Demo" ];
+          "Demo.check".program = program;
+        };
+        value = refused {
+          v.inputs = [ "Demo" ];
+          v.program.python = "x.py";
+        };
+        accepted = refused {
+          v.inputs = [ "Demo" ];
+          v.program = program;
+        };
+      };
+      expected = {
+        unknown = true;
+        secret = true;
+        none = true;
+        name = true;
+        value = true;
+        accepted = false;
       };
     };
   # An attribute set that is none of lib.chalkos's renderers, or a mix of more than one, fails the

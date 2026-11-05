@@ -101,6 +101,8 @@ let
     "effects.json" = config.system.build.chalkosEffects;
     "outputs.json" = config.system.build.chalkosOutputs;
     "examples.json" = config.system.build.chalkosOutputExamples;
+    "validators.json" = config.system.build.chalkosValidators;
+    "validator-examples.json" = config.system.build.chalkosValidatorExamples;
     "diagnostics.json" = config.system.build.chalkosDiagnostics;
     units = config.environment.etc."systemd/system".source;
   };

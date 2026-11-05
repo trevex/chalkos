@@ -2,8 +2,8 @@
 ## lib.chalkos { #lib-chalkos }
 
 Every image's NixOS modules get `lib.chalkos` as part of `lib`. It holds the type and the
-`mkOption` of an extension kind's fields, the renderers of `chalkos.outputs.<name>.render`
-and the common effects.
+`mkOption` of an extension kind's fields, the renderers of `chalkos.outputs.<name>.render`, the
+validators of `chalkos.validators.<name>.program` and the common effects.
 
 | Helper | Arguments | Result |
 | --- | --- | --- |
@@ -13,5 +13,6 @@ and the common effects.
 | `lib.chalkos.render.template` | a path ending in `.tmpl` | Renderer of a Go `text/template` into one file, named as the template less `.tmpl`; a missing or null key prints as nothing. |
 | `lib.chalkos.render.jq` | a path ending in `.jq` | Renderer of a jq program into one file, named as the program less `.jq`; a string is written raw. |
 | `lib.chalkos.render.documents` | a list of kind names | Renderer of the documents of those kinds as they are, each as `<Kind>/<name>.json`. |
+| `lib.chalkos.validate.jq` | a path to a jq program | Validator that runs the jq program on the array of documents; what the program outputs is the report of refusals. |
 | `lib.chalkos.restartOn` | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that restarts the units when one of the outputs, the documents of one of the kinds or a value of a Secret they reference changed. |
 | `lib.chalkos.reloadOn` | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that reloads the units when one of the outputs, the documents of one of the kinds or a value of a Secret they reference changed. |
