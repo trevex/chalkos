@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/dns"
 )
 
 // unboundFile is the file renderUnbound writes for the default VRF's resolver; a VRF's resolver
@@ -41,11 +42,8 @@ const ipv4OnlyZone = "ipv4only.arpa."
 // and of characters that need no quoting.
 var storeFile = regexp.MustCompile(`^(/[A-Za-z0-9+._-]+)+$`)
 
-// dnsName is a name in lower case without the root's dot, as the schema takes local zones' and
-// records' names.
-var dnsName = regexp.MustCompile(`^([a-z0-9_]([-a-z0-9_]{0,61}[a-z0-9])?\.)*[a-z0-9_]([-a-z0-9_]{0,61}[a-z0-9])?$`)
-
-// localZoneTypes are the local zone types the schema takes, which Unbound names alike.
+// localZoneTypes are the local zone types the schema takes, which Unbound names alike and its
+// config holds unquoted.
 var localZoneTypes = []string{"static", "transparent", "typetransparent", "redirect", "refuse", "deny", "always_nxdomain"}
 
 // renderUnbound writes Unbound's config of each Resolver, out/unbound.conf for the default VRF's
@@ -70,12 +68,11 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 		declared[v.Name] = true
 	}
 	for _, r := range d.Resolvers {
+		// The VRF names a file and a control socket. A VRF document's name holds the characters
+		// decodeKind takes alone.
 		vrf := vrfOf(r.Spec.VRF)
 		if _, err := mustGet(declared, "VRF", vrf); err != nil {
 			return within("Resolver "+r.Name, err)
-		}
-		if !plainInterface.MatchString(vrf) {
-			return fmt.Errorf("Resolver %s names the VRF %q, which is no interface's name", r.Name, vrf)
 		}
 		if err := checkListenVRF(d, r, vrf); err != nil {
 			return err
@@ -177,10 +174,6 @@ func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, e
 		if err != nil {
 			return "", within(fmt.Sprintf("local zone %d", i+1), err)
 		}
-		// Unbound answers a local zone before DNS64 sees the query.
-		if v4 := strings.TrimSuffix(ipv4OnlyZone, "."); r.DNS64 != nil && (z.Name == v4 || strings.HasSuffix(z.Name, "."+v4) || strings.HasSuffix(v4, "."+z.Name)) {
-			return "", fmt.Errorf("local zone %d: %s overlaps %s, which DNS64 answers itself", i+1, z.Name, v4)
-		}
 		for _, l := range lines {
 			b.WriteString("  " + l + "\n")
 		}
@@ -193,7 +186,7 @@ func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, e
 	if len(r.Forwarders) > 0 {
 		b.WriteString("forward-zone:\n  name: \".\"\n")
 		for _, a := range r.Forwarders {
-			addr, err := unicastAddress(a)
+			addr, err := resolverAddress(a)
 			if err != nil {
 				return "", within("forwarders", err)
 			}
@@ -205,44 +198,43 @@ func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, e
 }
 
 // resolverAddresses are the addresses the resolver r listens on and the ranges of the clients it
-// answers, masked, each once, as the set check has refused a repeat.
+// answers, masked, each once, as the set check has refused a repeat. Unbound's config and the
+// firewall's ruleset write them as netip prints them. It guards, with an internal error, an empty
+// listen or allow, for which the firewall would open port 53 on every address of the router or to
+// every client.
 func resolverAddresses(r resolverSpec) ([]netip.Addr, []netip.Prefix, error) {
 	if len(r.Listen) == 0 {
-		return nil, nil, fmt.Errorf("it listens on no address")
+		return nil, nil, internalErrorf("listen names no address, so the firewall would accept DNS on every address of the router")
+	}
+	if len(r.Allow) == 0 {
+		return nil, nil, internalErrorf("allow names no range, so the firewall would accept DNS from every client")
 	}
 	var listen []netip.Addr
 	for _, a := range r.Listen {
-		addr, err := unicastAddress(a)
+		addr, err := resolverAddress(a)
 		if err != nil {
 			return nil, nil, within("listen", err)
 		}
 		listen = append(listen, addr)
 	}
-	if len(r.Allow) == 0 {
-		return nil, nil, fmt.Errorf("it answers no client")
-	}
 	var allow []netip.Prefix
 	for _, a := range r.Allow {
 		p, err := netip.ParsePrefix(a)
 		if err != nil {
-			return nil, nil, fmt.Errorf("allow: %q is no address range", a)
+			return nil, nil, internalErrorf("allow: %q is no address range", a)
 		}
 		allow = append(allow, p.Masked())
-	}
-	if !slices.ContainsFunc(listen, func(a netip.Addr) bool {
-		return slices.ContainsFunc(allow, func(p netip.Prefix) bool { return p.Addr().Is4() == a.Is4() })
-	}) {
-		return nil, nil, fmt.Errorf("it listens on no address of a family its clients' ranges are of, so it would answer no one")
 	}
 	return listen, allow, nil
 }
 
-// unicastAddress is a, if it is an address a resolver listens on or sends to: no unspecified,
-// link-local, loopback, multicast or IPv4-mapped address, and no zone.
-func unicastAddress(a string) (netip.Addr, error) {
+// resolverAddress is the address a of a resolver's listen or forwarders. It guards, with an
+// internal error, a value that is no address without a zone: netip takes a zone of any
+// characters, which the config would then hold.
+func resolverAddress(a string) (netip.Addr, error) {
 	addr, err := netip.ParseAddr(a)
-	if err != nil || addr.Zone() != "" || addr.IsUnspecified() || addr.IsLinkLocalUnicast() || addr.IsLoopback() || addr.IsMulticast() || addr.Is4In6() {
-		return netip.Addr{}, fmt.Errorf("%q is no unicast address", a)
+	if err != nil || addr.Zone() != "" {
+		return netip.Addr{}, internalErrorf("%q is no address without a zone", a)
 	}
 	return addr, nil
 }
@@ -254,28 +246,25 @@ type renderedRecords struct {
 	types map[string]string
 }
 
-// localZoneLines are Unbound's local-zone line of z and a local-data line per record. A record
-// renders between single quotes, so a TXT record's text stands between double quotes. It refuses
-// a record that seen holds, a CNAME record of a name that holds another record, and a record below
-// a redirect zone's own name, and adds its records to seen.
+// localZoneLines are Unbound's local-zone line of z and a local-data line per record, and adds
+// z's records to seen. It refuses a record that seen holds and a CNAME record of a name that
+// holds another record, in any zone, which the rules leave to the renderer, as they would compare
+// the records in pairs. A zone's name stands between double quotes, and a record between single
+// quotes with a TXT record's text between double quotes; it guards, with an internal error, names
+// and data that would end those quotes, start a comment or add a line, and a type the config
+// would hold unquoted.
 func localZoneLines(z localZone, seen renderedRecords) ([]string, error) {
-	if !dnsName.MatchString(z.Name) || len(z.Name) > 253 {
-		return nil, fmt.Errorf("%q is no DNS name in lower case without the root's dot", z.Name)
+	if !dns.IsName(z.Name) {
+		return nil, internalErrorf("%q is no DNS name in lower case without the root's dot", z.Name)
 	}
 	if !slices.Contains(localZoneTypes, z.Type) {
-		return nil, fmt.Errorf("%s: type %q is none of %s", z.Name, z.Type, strings.Join(localZoneTypes, ", "))
+		return nil, internalErrorf("%s: type %q is none of %s", z.Name, z.Type, strings.Join(localZoneTypes, ", "))
 	}
 	lines := []string{fmt.Sprintf("local-zone: \"%s.\" %s", z.Name, z.Type)}
 	for i, r := range z.Records {
 		at := fmt.Sprintf("%s: record %d", z.Name, i+1)
-		if !dnsName.MatchString(r.Name) || len(r.Name) > 253 || (r.Name != z.Name && !strings.HasSuffix(r.Name, "."+z.Name)) {
-			return nil, fmt.Errorf("%s: %q is no name of the zone", at, r.Name)
-		}
-		if z.Type == "redirect" && r.Name != z.Name {
-			return nil, fmt.Errorf("%s: %s is no name of the redirect zone's own, which Unbound answers for every name below it", at, r.Name)
-		}
-		if r.TTL > 2147483647 {
-			return nil, fmt.Errorf("%s: ttl %d is past 2147483647", at, r.TTL)
+		if !dns.IsName(r.Name) {
+			return nil, internalErrorf("%s: %q is no DNS name in lower case without the root's dot", at, r.Name)
 		}
 		value, err := recordValue(r.Type, r.Value)
 		if err != nil {
@@ -283,7 +272,7 @@ func localZoneLines(z localZone, seen renderedRecords) ([]string, error) {
 		}
 		key := fmt.Sprintf("%s. %s %s", r.Name, r.Type, value)
 		if seen.keys[key] {
-			return nil, fmt.Errorf("%s: %s appears twice", at, key)
+			return nil, fmt.Errorf("%s: %s appears twice; Unbound keeps one, so drop the other", at, key)
 		}
 		seen.keys[key] = true
 		if t, ok := seen.types[r.Name]; ok && (t == "CNAME" || r.Type == "CNAME") {
@@ -295,51 +284,19 @@ func localZoneLines(z localZone, seen renderedRecords) ([]string, error) {
 	return lines, nil
 }
 
-// recordValue is the data of a record of type t as Unbound's local-data takes it, refusing what
-// no record of the type holds.
+// recordValue is the data v of a record of type t as Unbound's local-data takes it: an address as
+// netip prints it, a name with the root's dot, and a TXT record's text between double quotes. It
+// guards, with an internal error, data that dns.IsRecordData refuses, as the rules do.
 func recordValue(t, v string) (string, error) {
-	name := func(s string) (string, error) {
-		if !dnsName.MatchString(s) || len(s) > 253 {
-			return "", fmt.Errorf("%q is no DNS name in lower case without the root's dot", s)
-		}
-		return s + ".", nil
-	}
-	// numbers are the numbers of s, n of them, which are what, and the name that follows them.
-	numbers := func(s string, n int, what string) ([]string, string, error) {
-		f := strings.Split(s, " ")
-		if len(f) != n+1 {
-			return nil, "", fmt.Errorf("%q is not %s and a name, a single space apart", s, what)
-		}
-		for _, x := range f[:n] {
-			if u, err := strconv.ParseUint(x, 10, 16); err != nil || strconv.FormatUint(u, 10) != x {
-				return nil, "", fmt.Errorf("%q is no number from 0 to 65535", x)
-			}
-		}
-		target, err := name(f[n])
-		return f[:n], target, err
+	if !dns.IsRecordData(t, v) {
+		return "", internalErrorf("%q is no %s record's data", v, t)
 	}
 	switch t {
 	case "A", "AAAA":
-		a, err := netip.ParseAddr(v)
-		if err != nil || a.Zone() != "" || a.Is4() != (t == "A") || a.Is4In6() {
-			return "", fmt.Errorf("%q is no %s address", v, map[string]string{"A": "IPv4", "AAAA": "IPv6"}[t])
-		}
-		return a.String(), nil
-	case "CNAME", "PTR":
-		return name(v)
-	case "MX", "SRV":
-		n := map[string]int{"MX": 1, "SRV": 3}[t]
-		what := map[string]string{"MX": "a preference", "SRV": "a priority, a weight, a port"}[t]
-		nums, target, err := numbers(v, n, what)
-		if err != nil {
-			return "", err
-		}
-		return strings.Join(append(nums, target), " "), nil
+		return netip.MustParseAddr(v).String(), nil
 	case "TXT":
-		if v == "" || len(v) > 255 || strings.ContainsAny(v, "\"'\\") || strings.IndexFunc(v, func(r rune) bool { return r < ' ' || r > '~' }) >= 0 {
-			return "", fmt.Errorf("%q is no text of 1 to 255 printable characters without quotes or backslashes", v)
-		}
 		return `"` + v + `"`, nil
 	}
-	return "", fmt.Errorf("type %q is none of A, AAAA, CNAME, PTR, MX, SRV and TXT", t)
+	// CNAME, PTR, MX and SRV end in a name, after the numbers of MX and SRV.
+	return v + ".", nil
 }

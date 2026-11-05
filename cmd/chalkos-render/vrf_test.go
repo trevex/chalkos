@@ -393,6 +393,9 @@ func TestNAT64Units(t *testing.T) {
 		"Network 00-n64-edge takes the name of NAT64 edge's unit; rename the document")
 	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "NetDev": {document(t, "NetDev", "10-dummy", `{"netDev": {"kind": "dummy", "name": "n64-edge"}}`)}},
 		"NetDev 10-dummy creates the device n64-edge, the link of NAT64 edge; give the device another name")
+	// The NAT64's rules refuse a name whose link is longer than an interface's name.
+	refused(t, args, map[string][]any{"NAT64": {nat64("abcdefghijkl")}},
+		"internal error: NAT64 abcdefghijkl: its link n64-abcdefghijkl is no interface name of 15 characters; chalkd checks the config against the schemas and rules before it renders")
 	// A .netdev of the unit's name is another file than the unit's .network.
 	if _, err := unitFiles(t, args, map[string][]any{"NAT64": {nat64("edge")}, "NetDev": {document(t, "NetDev", "00-n64-edge", `{"netDev": {"kind": "dummy", "name": "d0"}}`)}}); err != nil {
 		t.Errorf("a NetDev of the unit's name: %v", err)

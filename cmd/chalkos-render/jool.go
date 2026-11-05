@@ -32,9 +32,6 @@ const ownPorts = "61001-65535"
 // mainTable is the kernel's main routing table, the default VRF's.
 const mainTable = 254
 
-// linkLocal4 are IPv4's link-local addresses, of which nat64Range is part.
-var linkLocal4 = netip.MustParsePrefix("169.254.0.0/16")
-
 // The kernel's ephemeral ports, which the router's own connections take and Jool refuses in a
 // pool.
 const (
@@ -129,22 +126,12 @@ func (n nat64Instance) poolSet() string {
 }
 
 // nat64Instances are the NAT64 documents of d as chalkos-nat64 runs them. It refuses what
-// joolInstances refuses, two names whose hashes pick one link, a static address of a Network
-// document in nat64Range, and a pool entry that holds a static address of a Network document: the
-// router answers its own addresses before any route to the link.
+// joolInstances refuses and two names whose hashes pick one link. The rules refuse a pool entry
+// that holds a static address of a Network document and a static address in nat64Range.
 func nat64Instances(d routerDocuments) ([]nat64Instance, error) {
 	jools, err := joolInstances(d.NAT64)
 	if err != nil {
 		return nil, err
-	}
-	if len(d.NAT64) > 0 {
-		// The address alone counts: a link of 169.254.0.1/16 passes, since the routes to the
-		// NAT64s' /30s are more specific than its on-link prefix.
-		for _, a := range d.Addresses {
-			if nat64Range.Contains(a.prefix.Addr()) {
-				return nil, fmt.Errorf("Network %s gives a link the address %s, which lies in %s, the range of the NAT64s' links; give the link another address", a.network, a.prefix.Addr(), nat64Range)
-			}
-		}
 	}
 	tables := map[string]uint32{defaultVRF: mainTable}
 	for _, v := range d.VRFs {
@@ -179,20 +166,13 @@ func nat64Instances(d routerDocuments) ([]nat64Instance, error) {
 				n.jool.Pool4 = append(n.jool.Pool4, joolPool4{Protocol: strings.ToUpper(proto), Prefix: own, PortRange: ownPorts})
 			}
 		} else {
-			// The check ignores VRFs on purpose: it refuses an address of a link in another VRF
-			// too, which costs a pool nothing it needs.
+			// Each prefix of the pool once, as the entries of its protocols repeat it.
 			for _, e := range n.jool.Pool4 {
 				p := netip.MustParsePrefix(e.Prefix)
-				if slices.Contains(n.pools, p) {
-					continue
+				if !slices.Contains(n.pools, p) {
+					n.pools = append(n.pools, p)
+					n.link.Routes = append(n.link.Routes, p.String())
 				}
-				for _, a := range d.Addresses {
-					if p.Contains(a.prefix.Addr()) {
-						return nil, fmt.Errorf("NAT64 %s: the pool entry %s holds %s, an address Network %s gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through", doc.Name, p, a.prefix.Addr(), a.network)
-					}
-				}
-				n.pools = append(n.pools, p)
-				n.link.Routes = append(n.link.Routes, p.String())
 			}
 		}
 		out = append(out, n)
@@ -217,20 +197,16 @@ func nat64LinkAddresses(s int) (outer, inner netip.Prefix) {
 	return netip.PrefixFrom(first.Next(), 30), netip.PrefixFrom(first.Next().Next(), 30)
 }
 
-// poolRange is the addresses and ports of a pool entry, the entry's number, for one protocol.
-type poolRange struct {
-	entry       int
-	protocol    string
-	prefix      netip.Prefix
-	first, last int
-}
-
 // joolInstances are Jool's instances of the NAT64 documents, an empty pool4 left empty. They refuse
-// what the schemas and rules refuse, and two entries of one pool that share an address, a protocol
-// and a port.
+// two NAT64s of one VRF whose prefixes overlap and two NAT64s whose pools share an address, which
+// the rules leave to the renderer, as they would compare the documents in pairs. They guard, with
+// an internal error, what jool file check passes and the kernel refuses once chalkos-nat64 loads
+// the instance: a name whose link is longer than an interface's name, and what nat64Prefix and
+// poolEntryRange guard.
 func joolInstances(docs []named[nat64Spec]) ([]joolInstance, error) {
 	var out []joolInstance
-	// The prefixes, with their VRFs, and the pools of the documents before the one at hand.
+	// The prefixes, with their VRFs, and the pools' prefixes of the documents before the one at
+	// hand.
 	type vrfPrefix struct {
 		name, vrf string
 		prefix    netip.Prefix
@@ -239,9 +215,10 @@ func joolInstances(docs []named[nat64Spec]) ([]joolInstance, error) {
 	var pools []named[netip.Prefix]
 	for _, n := range docs {
 		what := "NAT64 " + n.Name
-		// A document's name holds no character an interface's name lacks, so only its length fails.
+		// chalkos-nat64 creates the link n64-<name>, whose name the kernel refuses past 15
+		// characters. decodeKind has refused every character an interface's name lacks.
 		if link := nat64LinkPrefix + n.Name; !plainInterface.MatchString(link) {
-			return nil, fmt.Errorf("%s: its link %s is longer than an interface name's 15 characters; give the NAT64 a name of %d characters at most", what, link, 15-len(nat64LinkPrefix))
+			return nil, internalErrorf("%s: its link %s is longer than an interface name's 15 characters", what, link)
 		}
 		p, err := nat64Prefix(n.Spec.Prefix)
 		if err != nil {
@@ -250,108 +227,76 @@ func joolInstances(docs []named[nat64Spec]) ([]joolInstance, error) {
 		vrf := vrfOf(n.Spec.VRF)
 		for _, o := range prefixes {
 			if o.vrf == vrf && o.prefix.Overlaps(p) {
-				return nil, fmt.Errorf("%s and NAT64 %s both translate addresses of %s in VRF %s", what, o.name, p, vrf)
+				return nil, fmt.Errorf("%s and NAT64 %s both translate addresses of %s in VRF %s; give each NAT64 of a VRF a prefix of its own", what, o.name, p, vrf)
 			}
 		}
 		inst := joolInstance{Instance: n.Name, Framework: "netfilter", Global: joolGlobal{Pool6: p.String()}, Pool4: []joolPool4{}}
-		var ranges []poolRange
+		var mine []netip.Prefix
 		for i, e := range n.Spec.Pool4 {
 			at := fmt.Sprintf("%s: pool entry %d", what, i+1)
-			r, err := poolEntryRanges(i+1, e)
+			prefix, first, last, err := poolEntryRange(e)
 			if err != nil {
 				return nil, within(at, err)
 			}
 			for _, o := range pools {
-				if o.Spec.Overlaps(r[0].prefix) {
-					return nil, fmt.Errorf("%s shares addresses with the pool of NAT64 %s", at, o.Name)
+				if o.Spec.Overlaps(prefix) {
+					return nil, fmt.Errorf("%s shares addresses with the pool of NAT64 %s; give each NAT64 a pool of its own", at, o.Name)
 				}
 			}
-			for _, x := range r {
-				for _, y := range ranges {
-					if x.protocol == y.protocol && x.prefix.Overlaps(y.prefix) && x.first <= y.last && y.first <= x.last {
-						return nil, fmt.Errorf("%s shares %s addresses and ports with pool entry %d", at, x.protocol, y.entry)
-					}
+			// An entry per protocol, in Jool's order. The schema takes no other protocol.
+			for _, proto := range joolProtocols {
+				if slices.Contains(e.Protocols, proto) {
+					inst.Pool4 = append(inst.Pool4, joolPool4{Protocol: strings.ToUpper(proto), Prefix: prefix.String(), PortRange: fmt.Sprintf("%d-%d", first, last)})
 				}
-				inst.Pool4 = append(inst.Pool4, joolPool4{Protocol: strings.ToUpper(x.protocol), Prefix: x.prefix.String(), PortRange: fmt.Sprintf("%d-%d", x.first, x.last)})
 			}
-			ranges = append(ranges, r...)
+			mine = append(mine, prefix)
 		}
 		prefixes = append(prefixes, vrfPrefix{n.Name, vrf, p})
-		for _, x := range ranges {
-			pools = append(pools, named[netip.Prefix]{n.Name, x.prefix})
+		for _, x := range mine {
+			pools = append(pools, named[netip.Prefix]{n.Name, x})
 		}
 		out = append(out, inst)
 	}
 	return out, nil
 }
 
-// poolEntryRanges are the addresses and ports of pool entry n, one per protocol in Jool's order:
-// an IPv4 range of 65536 addresses at most without unspecified, loopback, multicast or broadcast
-// addresses, and ports from 1 to 65535 outside the kernel's ephemeral ports.
-func poolEntryRanges(n int, e poolEntry) ([]poolRange, error) {
+// poolEntryRange is the prefix, masked, and the first and last port of the pool entry e. It guards,
+// with an internal error, a prefix that is no IPv4 range of 65536 addresses at most, which the
+// firewall's sets and the link's routes take as IPv4 and for which Jool's kernel module would add
+// an entry per address, and ports of the kernel's ephemeral range, 32768 to 60999, which the
+// module refuses in a namespace that keeps that range.
+func poolEntryRange(e poolEntry) (netip.Prefix, int, int, error) {
 	p, err := netip.ParsePrefix(e.Prefix)
 	if err != nil || !p.Addr().Is4() || p.Bits() < 16 {
-		return nil, fmt.Errorf("%q is no IPv4 range of 16 bits or more", e.Prefix)
+		return netip.Prefix{}, 0, 0, internalErrorf("%q is no IPv4 range of 16 bits or more", e.Prefix)
 	}
-	p = p.Masked()
-	if a := p.Addr(); a.IsUnspecified() || a.IsLoopback() || a.IsMulticast() || p.Contains(netip.AddrFrom4([4]byte{255, 255, 255, 255})) {
-		return nil, fmt.Errorf("%s holds addresses no connection leaves from", p)
-	}
-	if p.Overlaps(linkLocal4) {
-		return nil, fmt.Errorf("%s holds link-local addresses, which the NAT64s' links take", p)
-	}
-	first, last, err := portBounds(e.Ports)
-	if err != nil {
-		return nil, err
-	}
+	first, last := e.Ports.bounds()
 	if last >= ephemeralFirst && first <= ephemeralLast {
-		return nil, fmt.Errorf("the ports %s take the kernel's ephemeral ports, %d to %d, which Jool refuses", e.Ports, ephemeralFirst, ephemeralLast)
+		return netip.Prefix{}, 0, 0, internalErrorf("the ports %s take the kernel's ephemeral ports, %d to %d, which Jool refuses", e.Ports, ephemeralFirst, ephemeralLast)
 	}
-	if len(e.Protocols) == 0 {
-		return nil, fmt.Errorf("it names no protocol")
-	}
-	for _, proto := range e.Protocols {
-		if !slices.Contains(joolProtocols, proto) {
-			return nil, fmt.Errorf("%q is none of tcp, udp and icmp", proto)
-		}
-	}
-	var out []poolRange
-	for _, proto := range joolProtocols {
-		if slices.Contains(e.Protocols, proto) {
-			out = append(out, poolRange{entry: n, protocol: proto, prefix: p, first: first, last: last})
-		}
-	}
-	return out, nil
+	return p.Masked(), first, last, nil
 }
 
-// portBounds are the first and last port of a port or a range "<first>-<last>".
-func portBounds(p portRange) (int, int, error) {
-	first, last, isRange := strings.Cut(string(p), "-")
+// bounds are the first and last port of p, which UnmarshalJSON has read as a port or a range
+// "<first>-<last>" from 1 to 65535 that runs forwards.
+func (p portRange) bounds() (first, last int) {
+	a, b, isRange := strings.Cut(string(p), "-")
 	if !isRange {
-		last = first
+		b = a
 	}
-	a, errA := strconv.Atoi(first)
-	b, errB := strconv.Atoi(last)
-	if errA != nil || errB != nil || a < 1 || a > b || b > 65535 {
-		return 0, 0, fmt.Errorf("the ports %q are no port or range from 1 to 65535", p)
-	}
-	return a, b, nil
+	first, _ = strconv.Atoi(a)
+	last, _ = strconv.Atoi(b)
+	return first, last
 }
 
-// nat64Prefix is a NAT64 prefix as RFC 6052 gives them, masked: an IPv6 range of 32, 40, 48, 56,
-// 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are
-// zero.
+// nat64Prefix is the NAT64 or DNS64 prefix s, masked. It guards, with an internal error, a prefix
+// that Jool's kernel module or Unbound refuses, and that Unbound's config would read as syntax: no
+// IPv6 range, a length other than RFC 6052's, and bits 64 to 71 set. The rules refuse those, and
+// prefixes of IPv4-mapped, link-local, multicast or unspecified addresses, first.
 func nat64Prefix(s string) (netip.Prefix, error) {
 	p, err := netip.ParsePrefix(s)
-	if err != nil || !p.Addr().Is6() || p.Addr().Is4In6() || !slices.Contains(nat64Lengths, p.Bits()) {
-		return netip.Prefix{}, fmt.Errorf("the prefix %q is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits", s)
+	if err != nil || !p.Addr().Is6() || !slices.Contains(nat64Lengths, p.Bits()) || p.Masked().Addr().As16()[8] != 0 {
+		return netip.Prefix{}, internalErrorf("the prefix %q is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero", s)
 	}
-	p = p.Masked()
-	if a := p.Addr(); a.IsLinkLocalUnicast() || a.IsMulticast() || a.IsUnspecified() {
-		return netip.Prefix{}, fmt.Errorf("the prefix %s holds link-local, multicast or unspecified addresses", p)
-	}
-	if p.Addr().As16()[8] != 0 {
-		return netip.Prefix{}, fmt.Errorf("the prefix %s sets bits 64 to 71, which RFC 6052 keeps zero", p)
-	}
-	return p, nil
+	return p.Masked(), nil
 }

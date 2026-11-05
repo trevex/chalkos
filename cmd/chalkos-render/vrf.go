@@ -622,8 +622,9 @@ func withNAT64Units(vrfs []named[vrfSpec], nat64 []named[nat64Spec], byKind, doc
 	networks = slices.Clone(networks)
 	for _, n := range nat64 {
 		link, unit := nat64LinkPrefix+n.Name, nat64UnitPrefix+n.Name
+		// The NAT64's rules keep its name to 11 characters, so the link's name is an interface's.
 		if !plainInterface.MatchString(link) {
-			return nil, fmt.Errorf("NAT64 %s: its link %s is no interface name of 15 characters", n.Name, link)
+			return nil, internalErrorf("NAT64 %s: its link %s is no interface name of 15 characters", n.Name, link)
 		}
 		existing, _ := byKind["Network"].([]any)
 		for _, d := range existing {

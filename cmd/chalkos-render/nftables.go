@@ -128,7 +128,7 @@ func resolverOpenings(resolvers []named[resolverSpec]) ([]opening, error) {
 		// The input hook sees a packet from a VRF's link with the VRF's device as iifname.
 		if vrf := vrfOf(r.Spec.VRF); vrf != defaultVRF {
 			if !plainInterface.MatchString(vrf) {
-				return nil, fmt.Errorf("%s: the VRF %q is no VRF's name", what, vrf)
+				return nil, internalErrorf("%s: the VRF %q is no VRF's name", what, vrf)
 			}
 			o.vrf = vrf
 		}

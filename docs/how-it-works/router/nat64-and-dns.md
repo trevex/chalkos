@@ -83,29 +83,32 @@ renderer takes the FNV-1a hash of the NAT64's name modulo 4096, so the /30 depen
 alone: `edge` takes `169.254.96.240/30` and `guest` `169.254.111.204/30`. The outer end takes the
 /30's first host and the inner end its second. A NAT64 keeps its addresses while other NAT64s come
 and go, and nothing moves another NAT64's link. Two names whose hashes pick one /30 are refused,
-the later name in the message. While the node has a NAT64, the rules and the renderer also
-refuse a static address of a `Network` document in `169.254.64.0/18`.
+the later name in the message. While the node has a NAT64, the rules also refuse a static
+address of a `Network` document in `169.254.64.0/18`.
 
-`jool file check`, the output's check, reads a file's syntax and bounds alone. The renderer parses
-every value and refuses what Jool's kernel module or the link would refuse once the instance
-loads:
+The rules refuse what one document says wrong: a name of more than 11 characters, as the link
+`n64-<name>` is an interface name of 15; a prefix of another length than RFC 6052's, one whose
+bits 64 to 71 are set, or one of IPv4-mapped, link-local, multicast or unspecified addresses; a
+pool entry wider than a /16, of addresses no connection leaves from, of link-local addresses,
+which the NAT64s' links take, or of ports in the kernel's ephemeral range, 32768 to 60999; and
+two entries of one pool that share an address, a protocol and a port. They also refuse a pool
+entry that holds an address a `Network` document gives a link, and a static address of a
+`Network` document in `169.254.64.0/18`. They read a link's static addresses from `Address=` in
+the `[Network]` and `[Address]` sections and `ServerAddress=` in `[DHCPServer]`. Naming the
+`Network` of each address would cost the rules a loop more than chalkd allows, so their messages
+leave it out. The rules also refuse a `VRF` whose name starts with `n64-`, which the NAT64s' links
+take.
 
-- a name of more than 11 characters, as the link `n64-<name>` is an interface name of 15;
-- a prefix of another length than RFC 6052's, or one whose bits 64 to 71 are set;
-- two NAT64s of one VRF whose prefixes overlap;
-- ports of the kernel's ephemeral range, 32768 to 60999, which Jool refuses for any address;
-- a pool entry of link-local addresses, which the NAT64s' links take;
-- a pool entry that holds an address a `Network` document gives a link;
-- two entries of one pool that share an address, a protocol and a port, and two NAT64s whose
-  pools share an address;
-- a VRF that no `VRF` document declares.
+The renderer refuses what compares the NAT64s in pairs, which would cost the rules more than
+chalkd allows: two NAT64s of one VRF whose prefixes overlap, two NAT64s whose pools share an
+address, and two names whose hashes pick one /30. `chalkctl validate` does not run these checks;
+a delivery and `chalkctl apply-config --dry-run` do.
 
-The rules refuse each of these too, so `chalkctl validate` reports them; two names of one /30
-are the renderer's alone. The rules read a link's static addresses from `Address=` in the
-`[Network]` and `[Address]` sections and `ServerAddress=` in `[DHCPServer]`, as the renderer
-does. Naming the `Network` of each address would cost the rules a loop more than chalkd allows,
-so their messages leave it out, while the renderer's name it. The rules also refuse a `VRF` whose
-name starts with `n64-`, which the NAT64s' links take.
+`jool file check`, the output's check, reads a file's syntax and bounds alone. The renderer
+guards, with an internal error, what that check passes and the kernel would refuse once the
+instance loads: a name too long for the link, a prefix of another length than RFC 6052's or with
+bits 64 to 71 set, a pool entry that is no IPv4 range of 16 bits or more, and ports of the
+ephemeral range. The rules refuse each of these first, so a checked config never fails a guard.
 
 The output's inputs are `NAT64`, `VRF` and `Network`, so a change of a VRF's table changes
 `.veth` too.
@@ -319,22 +322,28 @@ remote-control:
   control-interface: /run/unbound-guest/unbound.ctl
 ```
 
-The renderer parses every value of the document before it writes it: addresses and ranges as
-addresses, names against a pattern of lower-case labels and record data by type. A record stands
-between single quotes and a TXT record's text between double quotes, so a value that holds a
-quote, a backslash or anything but printable ASCII is refused. It also refuses a VRF that no
-`VRF` document declares and a `listen` address that `Network` documents give only to links of
-other VRFs, whose queries the resolver would never receive. An address from DHCP passes. Two
-resolvers of one VRF never reach the renderer, because the config's uniqueness check in chalkctl
-and chalkd refuses them. The output reads `Resolver`, `VRF` and `Network`, and its check runs
+The rules refuse what Unbound would load and answer wrongly, or not answer at all: a `listen` or
+forwarder address that is no unicast address, `listen` and `allow` of no family in common, a
+record outside its zone or of data that is not of its type, a `redirect` zone's record below its
+own name, and a zone over `ipv4only.arpa` with DNS64. The rules' `isDNSName()` and
+`isRecordData()` and the renderer read names and record data with one implementation, the Go
+package `pkg/dns`.
+
+The renderer refuses what compares the records in pairs, which would cost the rules more than
+chalkd allows: a duplicate record, which Unbound keeps one copy of, and a CNAME beside another
+record of its name, in any zone. It also refuses a `listen` address that `Network` documents give
+only to links of other VRFs, whose queries the resolver would never receive. An address from DHCP
+passes. `chalkctl validate` does not run these checks; a delivery and
+`chalkctl apply-config --dry-run` do. Two resolvers of one VRF never reach the renderer, because
+the config's uniqueness check in chalkctl and chalkd refuses them.
+
+A zone's name stands between double quotes, a record between single quotes and a TXT record's
+text between double quotes. The renderer guards, with an internal error, a name, record or
+address that would end a quote, start a comment or add a line, a zone type it writes unquoted, and
+an empty `listen` or `allow`, for which the firewall would accept DNS on every address or from
+every client. The output reads `Resolver`, `VRF` and `Network`, and its check runs
 `unbound-checkconf` on each rendered file in the output's sandbox, so a value that Unbound refuses
 refuses the delivery before it changes anything.
-
-The rules refuse local zones that Unbound would load and answer wrongly: a duplicate record,
-which Unbound keeps one copy of, a CNAME beside another record of its name, a `redirect` zone's
-record below its own name, and a zone over `ipv4only.arpa` with DNS64. The rules compare the
-records in pairs, so the zones hold 150 records at most, which keeps the comparison within
-chalkd's cost limit for rules.
 
 ## A delivery reloads Unbound and keeps its cache
 
@@ -456,7 +465,9 @@ sessions show who connects where.
   router does not hold.
 - A NAT64 whose prefix changes, or which is renamed, loses its sessions.
 - The rules do not compare a resolver's DNS64 prefix with the NAT64s' prefixes.
-- The local zones hold 150 records at most.
+- `chalkctl validate` does not report two NAT64s of one VRF whose prefixes overlap, two NAT64s
+  whose pools share an address, a record twice or a CNAME beside another record. The renderers
+  refuse them at a delivery and at `chalkctl apply-config --dry-run`.
 - `chalkos-nat64.service` and `chalkos-resolvers.service` are units of the boot. When one fails
   on an upgrade's first boot, the health check fails and the node falls back to its previous
   image.

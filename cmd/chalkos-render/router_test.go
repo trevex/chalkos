@@ -270,8 +270,9 @@ func TestBGPOpenings(t *testing.T) {
 	}
 }
 
-// A Resolver opens DNS over UDP and TCP from its clients' ranges to the addresses it listens on,
-// and refuses values that are no address or would add to the ruleset.
+// A Resolver opens DNS over UDP and TCP from its clients' ranges to the addresses it listens on.
+// It guards, with an internal error, values that would add to the ruleset and an empty listen or
+// allow, which would open the port wider.
 func TestResolverOpenings(t *testing.T) {
 	got, err := resolverOpenings([]named[resolverSpec]{
 		{Name: "resolver", Spec: resolverSpec{Listen: []string{"2001:db8:ffff::1", "192.0.2.1"}, Allow: []string{"2001:db8::1/32", "192.0.2.0/24"}}},
@@ -291,12 +292,14 @@ func TestResolverOpenings(t *testing.T) {
 	if err != nil || len(got) != 2 || got[0].vrf != "guest" || got[1].vrf != "guest" {
 		t.Errorf("resolverOpenings of a VRF's resolver = %+v, %v", got, err)
 	}
-	if _, err := resolverOpenings([]named[resolverSpec]{{Name: "bad", Spec: resolverSpec{VRF: ptr("a b"), Listen: []string{"2001:db8:3::1"}, Allow: []string{"2001:db8:3::/64"}}}}); err == nil || !strings.Contains(err.Error(), `Resolver bad: the VRF "a b" is no VRF's name`) {
+	if _, err := resolverOpenings([]named[resolverSpec]{{Name: "bad", Spec: resolverSpec{VRF: ptr("a b"), Listen: []string{"2001:db8:3::1"}, Allow: []string{"2001:db8:3::/64"}}}}); err == nil || !strings.Contains(err.Error(), `internal error: Resolver bad: the VRF "a b" is no VRF's name`) {
 		t.Errorf("err = %v", err)
 	}
 	for spec, want := range map[string]string{
-		`{"listen": ["::ffff:192.0.2.1"], "allow": ["2001:db8::/32"]}`:                                `Resolver resolver: listen: "::ffff:192.0.2.1" is no unicast address`,
-		`{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32\" } accept\n\t\tip6 saddr ::/0"]}`: "is no address range",
+		`{"listen": ["fe80::1%eth0\" } accept"], "allow": ["2001:db8::/32"]}`:                         `internal error: Resolver resolver: listen: "fe80::1%eth0\" } accept" is no address without a zone`,
+		`{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32\" } accept\n\t\tip6 saddr ::/0"]}`: `internal error: Resolver resolver: allow: "2001:db8::/32\" } accept\n\t\tip6 saddr ::/0" is no address range`,
+		`{"listen": [], "allow": ["2001:db8::/32"]}`:                                                  "internal error: Resolver resolver: listen names no address, so the firewall would accept DNS on every address of the router",
+		`{"listen": ["2001:db8:ffff::1"], "allow": []}`:                                               "internal error: Resolver resolver: allow names no range, so the firewall would accept DNS from every client",
 	} {
 		refused(t, []string{"router-nftables", "50000"}, map[string][]any{"Resolver": {routerDoc(t, "Resolver", "resolver", spec)}}, want)
 	}
@@ -761,86 +764,68 @@ func TestJoolMasks(t *testing.T) {
 	}
 }
 
-// The Jool renderer refuses what the schemas and rules refuse, should a document bypass them, and
-// what Jool refuses when it loads an instance.
+// The Jool renderer refuses what the rules leave to it, as they would compare the NAT64 documents
+// in pairs: two NAT64s of one VRF whose prefixes overlap, two NAT64s whose pools share an address
+// and two names whose hashes pick one link. It guards, with an internal error, what jool file check
+// passes and the kernel refuses once chalkos-nat64 loads an instance, and values that would add to
+// the JSON Jool reads, were it written by hand.
 func TestJoolRefusals(t *testing.T) {
 	nat64 := func(name, spec string) any { return routerDoc(t, "NAT64", name, spec) }
 	pool := func(entries string) any { return nat64("edge", `{"prefix": "64:ff9b::/96", "pool4": [`+entries+`]}`) }
+	tenant := func(name, prefix string) any {
+		return nat64(name, `{"vrf": "tenant", "prefix": "`+prefix+`", "pool4": []}`)
+	}
+	const notPrefix = "is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero; chalkd checks the config against the schemas and rules before it renders"
 	for name, c := range map[string]struct {
 		docs []any
 		want string
 	}{
-		"a name of 12 characters":         {[]any{nat64("abcdefghijkl", `{"prefix": "64:ff9b::/96", "pool4": []}`)}, "NAT64 abcdefghijkl: its link n64-abcdefghijkl is longer than an interface name's 15 characters; give the NAT64 a name of 11 characters at most"},
-		"a link-local pool":               {[]any{pool(`{"prefix": "169.254.64.0/30", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "169.254.64.0/30 holds link-local addresses, which the NAT64s' links take"},
-		"two names of one link":           {[]any{nat64("nat282", `{"prefix": "2001:db8:282::/96", "pool4": []}`), nat64("nat8", `{"prefix": "2001:db8:8::/96", "pool4": []}`)}, "NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8"},
-		"a prefix of 95 bits":             {[]any{nat64("edge", `{"prefix": "64:ff9b::/95", "pool4": []}`)}, `NAT64 edge: the prefix "64:ff9b::/95" is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits`},
-		"an IPv4 prefix":                  {[]any{nat64("edge", `{"prefix": "192.0.2.0/24", "pool4": []}`)}, `the prefix "192.0.2.0/24" is no IPv6 range`},
-		"an IPv4-mapped prefix":           {[]any{nat64("edge", `{"prefix": "::ffff:0:0/96", "pool4": []}`)}, `the prefix "::ffff:0:0/96" is no IPv6 range`},
-		"bits 64 to 71 set":               {[]any{nat64("edge", `{"prefix": "2001:db8:0:0:ff00::/96", "pool4": []}`)}, "the prefix 2001:db8:0:0:ff00::/96 sets bits 64 to 71, which RFC 6052 keeps zero"},
-		"a multicast prefix":              {[]any{nat64("edge", `{"prefix": "ff0e::/96", "pool4": []}`)}, "the prefix ff0e::/96 holds link-local, multicast or unspecified addresses"},
-		"a link-local prefix":             {[]any{nat64("edge", `{"prefix": "fe80::/64", "pool4": []}`)}, "the prefix fe80::/64 holds link-local, multicast or unspecified addresses"},
-		"the unspecified prefix":          {[]any{nat64("edge", `{"prefix": "::/96", "pool4": []}`)}, "the prefix ::/96 holds link-local, multicast or unspecified addresses"},
-		"two NAT64s of one prefix":        {[]any{nat64("a", `{"prefix": "64:ff9b::/96", "pool4": []}`), nat64("b", `{"prefix": "64:ff9b::/64", "pool4": []}`)}, "NAT64 b and NAT64 a both translate addresses of 64:ff9b::/64 in VRF default"},
-		"an IPv6 pool":                    {[]any{pool(`{"prefix": "2001:db8::/64", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `NAT64 edge: pool entry 1: "2001:db8::/64" is no IPv4 range of 16 bits or more`},
-		"a pool of a /15":                 {[]any{pool(`{"prefix": "198.18.0.0/15", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `"198.18.0.0/15" is no IPv4 range of 16 bits or more`},
-		"a pool of the unspecified range": {[]any{pool(`{"prefix": "0.0.0.0/16", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "0.0.0.0/16 holds addresses no connection leaves from"},
-		"a pool of multicast":             {[]any{pool(`{"prefix": "224.0.0.0/24", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "224.0.0.0/24 holds addresses no connection leaves from"},
-		"a pool of the broadcast address": {[]any{pool(`{"prefix": "255.255.255.255/32", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "255.255.255.255/32 holds addresses no connection leaves from"},
-		"ephemeral ports":                 {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "1-65535", "protocols": ["tcp"]}`)}, "the ports 1-65535 take the kernel's ephemeral ports, 32768 to 60999, which Jool refuses"},
-		"port zero":                       {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "0-100", "protocols": ["tcp"]}`)}, `"0-100" is no range of ports`},
-		"no protocol":                     {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": []}`)}, "NAT64 edge: pool entry 1: it names no protocol"},
-		"an unknown protocol":             {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["sctp"]}`)}, `"sctp" is none of tcp, udp and icmp`},
-		"two entries of one port": {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp"]},
-			{"prefix": "192.0.2.9/32", "ports": "65000-65535", "protocols": ["udp"]}`)}, "NAT64 edge: pool entry 2 shares udp addresses and ports with pool entry 1"},
+		"two names of one link": {[]any{nat64("nat282", `{"prefix": "2001:db8:282::/96", "pool4": []}`), nat64("nat8", `{"prefix": "2001:db8:8::/96", "pool4": []}`)},
+			"NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8"},
+		"two NAT64s of one prefix": {[]any{nat64("a", `{"prefix": "64:ff9b::/96", "pool4": []}`), nat64("b", `{"prefix": "64:ff9b::/96", "pool4": []}`)},
+			"NAT64 b and NAT64 a both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own"},
+		"a prefix within another's": {[]any{nat64("a", `{"prefix": "64:ff9b::/96", "pool4": []}`), nat64("b", `{"prefix": "64:ff9b::/64", "pool4": []}`)},
+			"NAT64 b and NAT64 a both translate addresses of 64:ff9b::/64 in VRF default; give each NAT64 of a VRF a prefix of its own"},
+		"two NAT64s of one prefix in a VRF": {[]any{tenant("a", "64:ff9b::/96"), tenant("b", "64:ff9b::/64")},
+			"NAT64 b and NAT64 a both translate addresses of 64:ff9b::/64 in VRF tenant; give each NAT64 of a VRF a prefix of its own"},
 		"two NAT64s of one pool's address": {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}`),
-			nat64("lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "192.0.2.10/32", "ports": "1-1000", "protocols": ["udp"]}]}`)}, "NAT64 lab: pool entry 1 shares addresses with the pool of NAT64 edge"},
+			nat64("lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "192.0.2.10/32", "ports": "1-1000", "protocols": ["udp"]}]}`)},
+			"NAT64 lab: pool entry 1 shares addresses with the pool of NAT64 edge; give each NAT64 a pool of its own"},
+		// What jool file check passes and the kernel refuses once chalkos-nat64 loads the instance.
+		"a name of 12 characters": {[]any{nat64("abcdefghijkl", `{"prefix": "64:ff9b::/96", "pool4": []}`)},
+			"internal error: NAT64 abcdefghijkl: its link n64-abcdefghijkl is longer than an interface name's 15 characters; chalkd checks the config against the schemas and rules before it renders"},
+		"a prefix of 95 bits": {[]any{nat64("edge", `{"prefix": "64:ff9b::/95", "pool4": []}`)}, `internal error: NAT64 edge: the prefix "64:ff9b::/95" ` + notPrefix},
+		"an IPv4 prefix":      {[]any{nat64("edge", `{"prefix": "192.0.2.0/24", "pool4": []}`)}, `internal error: NAT64 edge: the prefix "192.0.2.0/24" ` + notPrefix},
+		"bits 64 to 71 set":   {[]any{nat64("edge", `{"prefix": "2001:db8:0:0:ff00::/96", "pool4": []}`)}, `internal error: NAT64 edge: the prefix "2001:db8:0:0:ff00::/96" ` + notPrefix},
+		"an IPv6 pool":        {[]any{pool(`{"prefix": "2001:db8::/64", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: pool entry 1: "2001:db8::/64" is no IPv4 range of 16 bits or more`},
+		"a pool of a /15":     {[]any{pool(`{"prefix": "198.18.0.0/15", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: pool entry 1: "198.18.0.0/15" is no IPv4 range of 16 bits or more`},
+		"ephemeral ports":     {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "1-65535", "protocols": ["tcp"]}`)}, "internal error: NAT64 edge: pool entry 1: the ports 1-65535 take the kernel's ephemeral ports, 32768 to 60999, which Jool refuses"},
+		"one ephemeral port":  {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": 40000, "protocols": ["icmp"]}`)}, "internal error: NAT64 edge: pool entry 1: the ports 40000 take the kernel's ephemeral ports"},
+		"port zero":           {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "0-100", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: "0-100" is no range of ports`},
+		"an inverted range":   {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "65535-61001", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: "65535-61001" is no range of ports`},
 		// Values that would add to the JSON Jool reads, were it written by hand.
-		"a prefix that adds a key":   {[]any{nat64("edge", `{"prefix": "64:ff9b::/96\", \"framework\": \"iptables", "pool4": []}`)}, "is no IPv6 range"},
-		"a pool that adds an entry":  {[]any{pool(`{"prefix": "192.0.2.8/30\"}, {\"prefix\": \"198.51.100.0/24", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "is no IPv4 range"},
-		"ports that add a key":       {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535\", \"mark\": \"1", "protocols": ["tcp"]}`)}, "is no range of ports"},
-		"a protocol that adds a key": {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp\", \"mark\": \"1"]}`)}, "is none of tcp, udp and icmp"},
-		"a name that adds a key":     {[]any{nat64("e\", \"x", `{"prefix": "64:ff9b::/96", "pool4": []}`)}, "is no document name"},
-		"a prefix of a line break":   {[]any{nat64("edge", `{"prefix": "64:ff9b::/96\n", "pool4": []}`)}, "is no IPv6 range"},
-		"a pool that ends the list":  {[]any{pool(`{"prefix": "192.0.2.8/30\"}]}", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "is no IPv4 range"},
-		"ports of a backslash":       {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535\\", "protocols": ["tcp"]}`)}, "is no range of ports"},
-		"a protocol of a line break": {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp\n"]}`)}, "is none of tcp, udp and icmp"},
+		"a prefix that adds a key":  {[]any{nat64("edge", `{"prefix": "64:ff9b::/96\", \"framework\": \"iptables", "pool4": []}`)}, "internal error: NAT64 edge: the prefix"},
+		"a pool that adds an entry": {[]any{pool(`{"prefix": "192.0.2.8/30\"}, {\"prefix\": \"198.51.100.0/24", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "is no IPv4 range"},
+		"ports that add a key":      {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535\", \"mark\": \"1", "protocols": ["tcp"]}`)}, "is no range of ports"},
+		"a name that adds a key":    {[]any{nat64("e\", \"x", `{"prefix": "64:ff9b::/96", "pool4": []}`)}, "internal error: a NAT64 document: \"e\\\", \\\"x\" is no document name"},
+		"a prefix of a line break":  {[]any{nat64("edge", `{"prefix": "64:ff9b::/96\n", "pool4": []}`)}, "internal error: NAT64 edge: the prefix"},
+		"a pool that ends the list": {[]any{pool(`{"prefix": "192.0.2.8/30\"}]}", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "is no IPv4 range"},
+		"ports of a backslash":      {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535\\", "protocols": ["tcp"]}`)}, "is no range of ports"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"jool"}, map[string][]any{"NAT64": c.docs}, c.want) })
 	}
 }
 
-// A pool entry that holds an address a Network document gives a link is refused: the replies to
-// it are the router's own.
-func TestJoolPoolOfALink(t *testing.T) {
-	wan := document(t, "Network", "20-wan", `{"match": {"name": "eth0"}, "network": {"address": ["192.0.2.9/24"]}}`)
-	nat64 := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}]}`)
-	refused(t, []string{"jool"}, map[string][]any{"NAT64": {nat64}, "Network": {wan}},
-		"NAT64 edge: the pool entry 192.0.2.8/30 holds 192.0.2.9, an address Network 20-wan gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through")
-	section := document(t, "Network", "20-wan", `{"match": {"name": "eth0"}, "address": [{"address": "192.0.2.10"}]}`)
-	refused(t, []string{"jool"}, map[string][]any{"NAT64": {nat64}, "Network": {section}}, "holds 192.0.2.10, an address Network 20-wan gives a link")
-	// A value of spaces around the address, and the address of a DHCP server, are the link's too.
-	spaced := document(t, "Network", "20-wan", `{"match": {"name": "eth0"}, "network": {"address": [" 192.0.2.9/24 "]}}`)
-	refused(t, []string{"jool"}, map[string][]any{"NAT64": {nat64}, "Network": {spaced}}, "holds 192.0.2.9, an address Network 20-wan gives a link")
-	server := document(t, "Network", "20-wan", `{"match": {"name": "eth0"}, "dhcpServer": {"serverAddress": "192.0.2.11/24"}}`)
-	refused(t, []string{"jool"}, map[string][]any{"NAT64": {nat64}, "Network": {server}}, "holds 192.0.2.11, an address Network 20-wan gives a link")
-}
-
-// A static address of a link in the NAT64s' links' range is refused beside a NAT64: the router
-// would route that link's traffic to a NAT64 or a NAT64's to that link. Without NAT64 documents
-// the range is free.
-func TestJoolLinkRange(t *testing.T) {
-	nat64 := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": []}`)
-	for _, a := range []string{"169.254.96.241/30", "169.254.100.1/24"} {
-		lan := document(t, "Network", "30-lan", `{"match": {"name": "eth1"}, "network": {"address": ["`+a+`"]}}`)
-		refused(t, []string{"jool"}, map[string][]any{"NAT64": {nat64}, "Network": {lan}},
-			"Network 30-lan gives a link the address "+strings.Split(a, "/")[0]+", which lies in 169.254.64.0/18, the range of the NAT64s' links; give the link another address")
-		input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": map[string][]any{"Network": {lan}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := render(t, []string{"jool"}, string(input)); err != nil {
-			t.Errorf("%s without NAT64s: %v", a, err)
-		}
+// Jool's instance takes no protocol the schema does not: a pool entry renders an entry per
+// protocol of Jool's own words, whatever else the document names.
+func TestJoolProtocols(t *testing.T) {
+	got, err := joolInstances([]named[nat64Spec]{{Name: "edge", Spec: nat64Spec{Prefix: "64:ff9b::/96", Pool4: []poolEntry{{Prefix: "192.0.2.8/30", Ports: "61001-65535", Protocols: []string{"icmp", "tcp\", \"mark\": \"1", "tcp"}}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []joolPool4{{"TCP", "192.0.2.8/30", "61001-65535"}, {"ICMP", "192.0.2.8/30", "61001-65535"}}
+	if !slices.Equal(got[0].Pool4, want) {
+		t.Errorf("pool4 = %v, want %v", got[0].Pool4, want)
 	}
 }
 
@@ -906,8 +891,11 @@ func TestNAT64Links(t *testing.T) {
 	}
 }
 
-// The Unbound renderer refuses what the schemas and rules refuse, should a document bypass them,
-// what unbound-checkconf refuses, and values that would add to Unbound's config.
+// The Unbound renderer refuses what the rules leave to it, as they would compare the records in
+// pairs: a record twice and a CNAME record beside another record of its name, in any zone. It
+// guards, with an internal error, values that Unbound's config would read as syntax, a zone type
+// it writes unquoted, and an empty listen or allow, which would open the firewall wider; the
+// output's unbound-checkconf refuses the rest of what Unbound cannot load.
 func TestUnboundRefusals(t *testing.T) {
 	resolver := func(more string) any {
 		return routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": [], "dnssec": true, "dns64": null`+more+`}`)
@@ -916,76 +904,76 @@ func TestUnboundRefusals(t *testing.T) {
 	record := func(typ, value string) any {
 		return zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "` + typ + `", "value": ` + strconv.Quote(value) + `, "ttl": 3600}]}`)
 	}
+	// data is the internal error of a record whose data is not of its type.
+	data := func(typ, value string) string {
+		return "internal error: Resolver resolver: local zone 1: lan.example.org: record 1: " + strconv.Quote(value) + " is no " + typ + " record's data; chalkd checks the config against the schemas and rules before it renders"
+	}
 	args := []string{"unbound", testTrustAnchor, testZoneFile}
 	for name, c := range map[string]struct {
 		args []string
 		docs []any
 		want string
 	}{
-		"no address":                    {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": [], "allow": ["2001:db8::/32"]}`)}, "Resolver resolver: it listens on no address"},
-		"no client":                     {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": []}`)}, "Resolver resolver: it answers no client"},
-		"the unspecified address":       {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["::"], "allow": ["2001:db8::/32"]}`)}, `listen: "::" is no unicast address`},
-		"a link-local zone":             {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["fe80::1%eth0"], "allow": ["2001:db8::/32"]}`)}, `listen: "fe80::1%eth0" is no unicast address`},
-		"a loopback forwarder":          {args, []any{resolver(`, "forwarders": ["127.0.0.53"]`)}, `forwarders: "127.0.0.53" is no unicast address`},
-		"a DNS64 prefix of 95 bits":     {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/95"}`)}, `dns64: the prefix "64:ff9b::/95" is no IPv6 range`},
-		"a zone in capitals":            {args, []any{zone(`{"name": "Lan.example.org", "type": "static", "records": []}`)}, `"Lan.example.org" is no DNS name in lower case`},
-		"a record outside its zone":     {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "xlan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]}`)}, `lan.example.org: record 1: "xlan.example.org" is no name of the zone`},
-		"an A record of IPv6":           {args, []any{record("A", "2001:db8::1")}, `"2001:db8::1" is no IPv4 address`},
-		"an IPv4-mapped AAAA record":    {args, []any{record("AAAA", "::ffff:192.0.2.1")}, `"::ffff:192.0.2.1" is no IPv6 address`},
-		"an MX record without a name":   {args, []any{record("MX", "10")}, `"10" is not a preference and a name, a single space apart`},
-		"an SRV record of a big port":   {args, []any{record("SRV", "0 1 65536 mail.lan.example.org")}, `"65536" is no number from 0 to 65535`},
-		"a TXT record of a backslash":   {args, []any{record("TXT", `a\b`)}, "is no text of 1 to 255 printable characters without quotes or backslashes"},
-		"an unknown record type":        {args, []any{record("NS", "ns.lan.example.org")}, `type "NS" is none of A, AAAA, CNAME, PTR, MX, SRV and TXT`},
-		"an unknown zone type":          {args, []any{zone(`{"name": "lan.example.org", "type": "inform", "records": []}`)}, `type "inform" is none of static`},
-		"a relative trust anchor":       {[]string{"unbound", "root.key", testZoneFile}, []any{resolver("")}, `"root.key" is no absolute path`},
-		"a trust anchor with a dot dot": {[]string{"unbound", "/etc/../root.key", testZoneFile}, []any{resolver("")}, `"/etc/../root.key" is no absolute path`},
-		// Values Unbound would read as further options.
-		"an address that adds an option":     {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1\n  interface: 0.0.0.0"], "allow": ["2001:db8::/32"]}`)}, "is no unicast address"},
-		"a client that adds an option":       {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32 allow\naccess-control: ::/0"]}`)}, "is no address range"},
-		"a zone that adds an option":         {args, []any{zone(`{"name": "lan.example.org.\" static\n  local-zone: \"x", "type": "static", "records": []}`)}, "is no DNS name"},
-		"a zone type that adds an option":    {args, []any{zone(`{"name": "lan.example.org", "type": "static\n  verbosity: 5", "records": []}`)}, "is none of static"},
-		"an A record that adds data":         {args, []any{record("A", "192.0.2.1'\n  local-data: 'b.lan.example.org. A 192.0.2.2")}, "is no IPv4 address"},
-		"a TXT record that ends the quote":   {args, []any{record("TXT", "x' \n  include: '/etc/passwd")}, "is no text of 1 to 255 printable characters"},
-		"a TXT record of a line break":       {args, []any{record("TXT", "a\nb")}, "is no text of 1 to 255 printable characters"},
-		"a CNAME that adds data":             {args, []any{record("CNAME", "b.lan.example.org.'\n  local-data: 'c")}, "is no DNS name"},
-		"a trust anchor that adds an option": {[]string{"unbound", "/etc/root.key\"\n  include: \"/etc/passwd", testZoneFile}, []any{resolver("")}, "is no absolute path"},
-		"a trust anchor of a hash":           {[]string{"unbound", "/etc/root.key#x", testZoneFile}, []any{resolver("")}, "is no absolute path"},
-		"a zone that adds a server option":   {args, []any{zone(`{"name": "lan.example.org\nserver:\n  do-not-query-localhost: no", "type": "static", "records": []}`)}, "is no DNS name"},
-		"a zone of a hash":                   {args, []any{zone(`{"name": "lan.example.org#x", "type": "static", "records": []}`)}, "is no DNS name"},
-		"a TXT record that adds a server":    {args, []any{record("TXT", "x\"'\nserver:\n  do-not-query-localhost: no")}, "is no text of 1 to 255 printable characters"},
-		"a TXT record of a quote":            {args, []any{record("TXT", `say "hi"`)}, "is no text of 1 to 255 printable characters"},
-		"a TXT record of a single quote":     {args, []any{record("TXT", "it's")}, "is no text of 1 to 255 printable characters"},
-		"a TXT record past 255 characters":   {args, []any{record("TXT", strings.Repeat("x", 256))}, "is no text of 1 to 255 printable characters"},
-		"an AAAA record of a hash":           {args, []any{record("AAAA", "2001:db8::1 # x")}, "is no IPv6 address"},
-		"an MX record that adds a server":    {args, []any{record("MX", "10 mail.lan.example.org.'\nserver:\n  do-not-query-localhost: no")}, "is not a preference and a name"},
-		"an MX record of a leading zero":     {args, []any{record("MX", "010 mail.lan.example.org")}, `"010" is no number from 0 to 65535`},
-		"an SRV record of two spaces":        {args, []any{record("SRV", "0 1  993 mail.lan.example.org")}, "is not a priority, a weight, a port and a name, a single space apart"},
-		"a PTR in capitals":                  {args, []any{record("PTR", "Mail.lan.example.org")}, "is no DNS name"},
-		"a CNAME of the root's dot":          {args, []any{record("CNAME", "mail.lan.example.org.")}, "is no DNS name"},
-		"a forwarder that adds a server":     {args, []any{resolver(`, "forwarders": ["192.0.2.53\nserver:\n  do-not-query-localhost: no"]`)}, "is no unicast address"},
-		"a client of a hash":                 {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32#x"]}`)}, "is no address range"},
-		"a DNS64 prefix that adds an option": {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/96\nserver:\n  do-not-query-localhost: no"}`)}, "is no IPv6 range"},
-		"a link-local address":               {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["fe80::1"], "allow": ["2001:db8::/32"]}`)}, `listen: "fe80::1" is no unicast address`},
-		"a link-local forwarder":             {args, []any{resolver(`, "forwarders": ["169.254.0.53"]`)}, `forwarders: "169.254.0.53" is no unicast address`},
-		"a link-local DNS64":                 {args, []any{resolver(`, "dns64": {"prefix": "fe80::/96"}`)}, "the prefix fe80::/96 holds link-local, multicast or unspecified addresses"},
-		"ipv4only.arpa as a zone":            {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/96"}, "localZones": [{"name": "ipv4only.arpa", "type": "static", "records": []}]`)}, "local zone 1: ipv4only.arpa overlaps ipv4only.arpa, which DNS64 answers itself"},
-		"a zone above ipv4only.arpa":         {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/96"}, "localZones": [{"name": "arpa", "type": "static", "records": []}]`)}, "local zone 1: arpa overlaps ipv4only.arpa, which DNS64 answers itself"},
-		"a zone below ipv4only.arpa":         {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/96"}, "localZones": [{"name": "x.ipv4only.arpa", "type": "static", "records": []}]`)}, "local zone 1: x.ipv4only.arpa overlaps ipv4only.arpa, which DNS64 answers itself"},
-		// What the rules refuse beyond Unbound's own checks.
-		"an IPv4-mapped address": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["::ffff:192.0.2.1"], "allow": ["2001:db8::/32"]}`)}, `listen: "::ffff:192.0.2.1" is no unicast address`},
 		"a record twice": {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "AAAA", "value": "2001:db8::1", "ttl": 3600},
-			{"name": "a.lan.example.org", "type": "AAAA", "value": "2001:DB8::1", "ttl": 300}]}`)}, "lan.example.org: record 2: a.lan.example.org. AAAA 2001:db8::1 appears twice"},
+			{"name": "a.lan.example.org", "type": "AAAA", "value": "2001:DB8::1", "ttl": 300}]}`)}, "Resolver resolver: local zone 1: lan.example.org: record 2: a.lan.example.org. AAAA 2001:db8::1 appears twice; Unbound keeps one, so drop the other"},
 		"a record in two zones": {args, []any{zone(`{"name": "example.org", "type": "transparent", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]},
-			{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]}`)}, "lan.example.org: record 1: a.lan.example.org. A 192.0.2.1 appears twice"},
-		"a redirect zone's record below it": {args, []any{zone(`{"name": "lan.example.org", "type": "redirect", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]}`)},
-			"lan.example.org: record 1: a.lan.example.org is no name of the redirect zone's own"},
+			{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]}`)}, "Resolver resolver: local zone 2: lan.example.org: record 1: a.lan.example.org. A 192.0.2.1 appears twice; Unbound keeps one, so drop the other"},
 		"a CNAME beside another record": {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600},
-			{"name": "a.lan.example.org", "type": "CNAME", "value": "r1.lan.example.org", "ttl": 3600}]}`)}, "lan.example.org: record 2: a.lan.example.org holds a CNAME record and another record"},
+			{"name": "a.lan.example.org", "type": "CNAME", "value": "r1.lan.example.org", "ttl": 3600}]}`)}, "Resolver resolver: local zone 1: lan.example.org: record 2: a.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone"},
 		"two CNAMEs of one name": {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "CNAME", "value": "r1.lan.example.org", "ttl": 3600},
 			{"name": "a.lan.example.org", "type": "CNAME", "value": "r2.lan.example.org", "ttl": 3600}]}`)}, "lan.example.org: record 2: a.lan.example.org holds a CNAME record and another record"},
 		"a CNAME in two zones": {args, []any{zone(`{"name": "example.org", "type": "transparent", "records": [{"name": "a.lan.example.org", "type": "CNAME", "value": "r1.lan.example.org", "ttl": 3600}]},
-			{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "TXT", "value": "x", "ttl": 3600}]}`)}, "lan.example.org: record 1: a.lan.example.org holds a CNAME record and another record"},
-		"listen and allow of other families": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["192.0.2.0/24"]}`)}, "Resolver resolver: it listens on no address of a family its clients' ranges are of"},
+			{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "TXT", "value": "x", "ttl": 3600}]}`)}, "local zone 2: lan.example.org: record 1: a.lan.example.org holds a CNAME record and another record"},
+		// The files of the image that the config names between quotes.
+		"a relative trust anchor":            {[]string{"unbound", "root.key", testZoneFile}, []any{resolver("")}, `"root.key" is no absolute path`},
+		"a trust anchor with a dot dot":      {[]string{"unbound", "/etc/../root.key", testZoneFile}, []any{resolver("")}, `"/etc/../root.key" is no absolute path`},
+		"a trust anchor that adds an option": {[]string{"unbound", "/etc/root.key\"\n  include: \"/etc/passwd", testZoneFile}, []any{resolver("")}, "is no absolute path"},
+		"a trust anchor of a hash":           {[]string{"unbound", "/etc/root.key#x", testZoneFile}, []any{resolver("")}, "is no absolute path"},
+		// What would open the firewall wider.
+		"no address": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": [], "allow": ["2001:db8::/32"]}`)},
+			"internal error: Resolver resolver: listen names no address, so the firewall would accept DNS on every address of the router"},
+		"no client": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": []}`)},
+			"internal error: Resolver resolver: allow names no range, so the firewall would accept DNS from every client"},
+		// Values Unbound's config would read as syntax, and a zone type it writes unquoted.
+		"an address with a zone": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["fe80::1%eth0"], "allow": ["2001:db8::/32"]}`)},
+			`internal error: Resolver resolver: listen: "fe80::1%eth0" is no address without a zone`},
+		"an address that adds an option": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1\n  interface: 0.0.0.0"], "allow": ["2001:db8::/32"]}`)}, "is no address without a zone"},
+		"a client that adds an option":   {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32 allow\naccess-control: ::/0"]}`)}, "internal error: Resolver resolver: allow:"},
+		"a client of a hash":             {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32#x"]}`)}, "is no address range"},
+		"a forwarder that adds a server": {args, []any{resolver(`, "forwarders": ["192.0.2.53\nserver:\n  do-not-query-localhost: no"]`)}, "internal error: Resolver resolver: forwarders:"},
+		"a DNS64 prefix of 95 bits": {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/95"}`)},
+			`internal error: Resolver resolver: dns64: the prefix "64:ff9b::/95" is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero`},
+		"a DNS64 prefix that adds an option": {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/96\nserver:\n  do-not-query-localhost: no"}`)}, "internal error: Resolver resolver: dns64: the prefix"},
+		"a zone in capitals": {args, []any{zone(`{"name": "Lan.example.org", "type": "static", "records": []}`)},
+			`internal error: Resolver resolver: local zone 1: "Lan.example.org" is no DNS name in lower case without the root's dot`},
+		"a zone that adds an option":       {args, []any{zone(`{"name": "lan.example.org.\" static\n  local-zone: \"x", "type": "static", "records": []}`)}, "is no DNS name"},
+		"a zone that adds a server option": {args, []any{zone(`{"name": "lan.example.org\nserver:\n  do-not-query-localhost: no", "type": "static", "records": []}`)}, "is no DNS name"},
+		"a zone of a hash":                 {args, []any{zone(`{"name": "lan.example.org#x", "type": "static", "records": []}`)}, "is no DNS name"},
+		"an unknown zone type": {args, []any{zone(`{"name": "lan.example.org", "type": "inform", "records": []}`)},
+			`internal error: Resolver resolver: local zone 1: lan.example.org: type "inform" is none of static`},
+		"a zone type that adds an option": {args, []any{zone(`{"name": "lan.example.org", "type": "static\n  verbosity: 5", "records": []}`)}, "is none of static"},
+		"a record's name that adds data": {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org. 1 IN A 192.0.2.9'\n  local-data: 'b.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]}`)},
+			"internal error: Resolver resolver: local zone 1: lan.example.org: record 1: \"a.lan.example.org. 1 IN A 192.0.2.9'\\n  local-data: 'b.lan.example.org\" is no DNS name"},
+		"an A record of IPv6":              {args, []any{record("A", "2001:db8::1")}, data("A", "2001:db8::1")},
+		"an IPv4-mapped AAAA record":       {args, []any{record("AAAA", "::ffff:192.0.2.1")}, data("AAAA", "::ffff:192.0.2.1")},
+		"an A record that adds data":       {args, []any{record("A", "192.0.2.1'\n  local-data: 'b.lan.example.org. A 192.0.2.2")}, data("A", "192.0.2.1'\n  local-data: 'b.lan.example.org. A 192.0.2.2")},
+		"an AAAA record of a hash":         {args, []any{record("AAAA", "2001:db8::1 # x")}, data("AAAA", "2001:db8::1 # x")},
+		"a CNAME that adds data":           {args, []any{record("CNAME", "b.lan.example.org.'\n  local-data: 'c")}, data("CNAME", "b.lan.example.org.'\n  local-data: 'c")},
+		"a CNAME of the root's dot":        {args, []any{record("CNAME", "mail.lan.example.org.")}, data("CNAME", "mail.lan.example.org.")},
+		"a PTR in capitals":                {args, []any{record("PTR", "Mail.lan.example.org")}, data("PTR", "Mail.lan.example.org")},
+		"an MX record without a name":      {args, []any{record("MX", "10")}, data("MX", "10")},
+		"an MX record that adds a server":  {args, []any{record("MX", "10 mail.lan.example.org.'\nserver:\n  do-not-query-localhost: no")}, data("MX", "10 mail.lan.example.org.'\nserver:\n  do-not-query-localhost: no")},
+		"an MX record of a leading zero":   {args, []any{record("MX", "010 mail.lan.example.org")}, data("MX", "010 mail.lan.example.org")},
+		"an SRV record of a big port":      {args, []any{record("SRV", "0 1 65536 mail.lan.example.org")}, data("SRV", "0 1 65536 mail.lan.example.org")},
+		"an SRV record of two spaces":      {args, []any{record("SRV", "0 1  993 mail.lan.example.org")}, data("SRV", "0 1  993 mail.lan.example.org")},
+		"a TXT record of a backslash":      {args, []any{record("TXT", `a\b`)}, data("TXT", `a\b`)},
+		"a TXT record that ends the quote": {args, []any{record("TXT", "x' \n  include: '/etc/passwd")}, data("TXT", "x' \n  include: '/etc/passwd")},
+		"a TXT record of a line break":     {args, []any{record("TXT", "a\nb")}, data("TXT", "a\nb")},
+		"a TXT record that adds a server":  {args, []any{record("TXT", "x\"'\nserver:\n  do-not-query-localhost: no")}, data("TXT", "x\"'\nserver:\n  do-not-query-localhost: no")},
+		"a TXT record of a quote":          {args, []any{record("TXT", `say "hi"`)}, data("TXT", `say "hi"`)},
+		"a TXT record of a single quote":   {args, []any{record("TXT", "it's")}, data("TXT", "it's")},
+		"a TXT record past 255 characters": {args, []any{record("TXT", strings.Repeat("x", 256))}, data("TXT", strings.Repeat("x", 256))},
+		"an unknown record type":           {args, []any{record("NS", "ns.lan.example.org")}, data("NS", "ns.lan.example.org")},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, c.args, map[string][]any{"Resolver": c.docs}, c.want) })
 	}

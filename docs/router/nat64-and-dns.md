@@ -106,9 +106,16 @@ spec:
 
 A node may hold several `NAT64` documents, each with a prefix and a pool of its own. A NAT64's
 name has 11 characters at most, because its link `n64-<name>` is an interface name, which has 15.
-Prefixes are 32, 40, 48, 56, 64 or 96 bits long, as RFC 6052 gives them. Two NAT64s of one VRF
-whose prefixes overlap are refused, and so are two NAT64s whose pools share an address. Two
-entries of one pool that share an address, a protocol and a port are refused too.
+Prefixes are 32, 40, 48, 56, 64 or 96 bits long, as RFC 6052 gives them. Two entries of one pool
+that share an address, a protocol and a port are refused. The output `jool` refuses two NAT64s of
+one VRF whose prefixes overlap and two NAT64s whose pools share an address. It checks when the
+router renders its config, at a delivery or at `chalkctl apply-config --dry-run`, and
+`chalkctl validate` does not. [Fix a refused delivery](#fix-a-refused-delivery) shows where its
+message appears:
+
+```text
+NAT64 lab and NAT64 edge both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own
+```
 
 A delivery that changes a NAT64's pool keeps its connections. One that changes its prefix, or
 renames it, replaces the translator, and the connections it carried end.
@@ -349,10 +356,8 @@ chalkctl apply-config r1 --secrets secrets.age
 
 The delivery applies the NAT64s and reloads the resolvers, which keep their caches. A `Resolver`
 added starts its resolver, and one removed stops it. The rules check the documents before
-chalkctl sends anything. The renderers' checks against the `Network` documents run on the
-router, and a refusal there fails the delivery with
-`output jool: its renderer failed (exit 1); see the node's journal`. `chalkctl logs r1` then
-shows the message on a line that starts with `chalkos-render:`.
+chalkctl sends anything. The renderers' checks run on the router, as
+[Fix a refused delivery](#fix-a-refused-delivery) describes.
 
 `chalkctl status` shows the NAT64s and the resolvers after the BGP sessions:
 
@@ -440,6 +445,30 @@ diagnostic runs in the NAT64's network namespace, so an instance that does not r
 
 Both diagnostics need an operator client: `nat64-sessions` shows who connects where. The status
 needs a reader.
+
+## Fix a refused delivery
+
+The rules check each document and what one document's fields say of another's. The renderers of
+the outputs `jool` and `unbound` compare the NAT64s and the records in pairs, and check the
+`listen` addresses against the `Network` documents, when the router renders its config, before
+the delivery changes anything. `chalkctl validate` does not run them;
+`chalkctl apply-config --dry-run` does. A renderer's refusal fails the delivery with a message
+for each output that refused, such as:
+
+```text
+output jool: its renderer failed (exit 1); see the node's journal
+```
+
+`chalkctl logs r1` shows the reason on a line that starts with `chalkos-render:`:
+
+| Message | Fix |
+| --- | --- |
+| `NAT64 lab and NAT64 edge both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own` | Give one of the NAT64s another prefix, or move it to another VRF. |
+| `NAT64 lab: pool entry 1 shares addresses with the pool of NAT64 edge; give each NAT64 a pool of its own` | Split the addresses between the pools. |
+| `NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8` | Rename the NAT64 you are adding. |
+| `Resolver resolver: local zone 1: lan.example.org: record 2: a.lan.example.org. AAAA 2001:db8::1 appears twice; Unbound keeps one, so drop the other` | Drop one of the records. |
+| `Resolver resolver: local zone 1: lan.example.org: record 2: www.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone` | Drop the other records of the name, or the CNAME record. |
+| `Resolver guest: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-mgmt in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links` | Listen on an address of the resolver's VRF. |
 
 ## Upgrade a router whose NAT64 ran beside its links
 
