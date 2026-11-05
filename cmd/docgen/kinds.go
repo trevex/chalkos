@@ -364,10 +364,23 @@ func typeOf(root, s map[string]any) string {
 			return "object, any fields"
 		}
 		return "object"
-	case "string", "boolean", "number", "null":
+	case "string":
+		if format, _ := s["format"].(string); formatNames[format] != "" {
+			return formatNames[format]
+		}
+		return t
+	case "boolean", "number", "null":
 		return t
 	}
 	return "any"
+}
+
+// formatNames name the strings of the formats the kinds' schemas assert, as pkg/schema checks
+// them.
+var formatNames = map[string]string{
+	"ip":         "IP address",
+	"cidr":       "address range",
+	"port-range": "range of ports",
 }
 
 // rangeOf describes the bounds of an integer schema.

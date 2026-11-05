@@ -80,6 +80,26 @@ func TestWriteKinds(t *testing.T) {
 	}
 }
 
+// A string of a format the kinds' schemas assert is named by what it holds; another format reads
+// as a string.
+func TestTypeOfFormats(t *testing.T) {
+	for _, c := range []struct {
+		schema map[string]any
+		want   string
+	}{
+		{map[string]any{"type": "string", "format": "ip"}, "IP address"},
+		{map[string]any{"type": "string", "format": "cidr"}, "address range"},
+		{map[string]any{"type": "array", "items": map[string]any{"type": "string", "format": "cidr"}}, "list of address range"},
+		{map[string]any{"anyOf": []any{map[string]any{"type": "integer", "minimum": 1, "maximum": 65535}, map[string]any{"type": "string", "format": "port-range"}}}, "integer from 1 to 65535 or range of ports"},
+		{map[string]any{"anyOf": []any{map[string]any{"type": "string", "format": "ip"}, map[string]any{"type": "null"}}}, "IP address or null"},
+		{map[string]any{"type": "string", "format": "email"}, "string"},
+	} {
+		if got := typeOf(nil, c.schema); got != c.want {
+			t.Errorf("typeOf(%v) = %q, want %q", c.schema, got, c.want)
+		}
+	}
+}
+
 // A reference's type names its kind after a or an, as the kind's name is read, and the names it
 // reserves.
 func TestRefType(t *testing.T) {
