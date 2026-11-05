@@ -245,6 +245,37 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+// ValidName, Reserved and SafeMountPoint are the rules config holds Volume documents to and
+// Validate holds a section to.
+func TestNameAndMountPointRules(t *testing.T) {
+	for name, want := range map[string]bool{
+		"data": true, "a": true, "0": true, "a-b": true, strings.Repeat("a", 32): true,
+		strings.Repeat("a", 33): false, "": false, "-a": false, "a-": false, "a.b": false, "Data": false, "a_b": false,
+	} {
+		if ValidName(name) != want {
+			t.Errorf("ValidName(%q) = %v, want %v", name, !want, want)
+		}
+	}
+	for _, name := range []string{"esp", "store", "store-verity", "state", "var", "system"} {
+		if !Reserved(name) {
+			t.Errorf("Reserved(%q) = false", name)
+		}
+	}
+	if Reserved("data") {
+		t.Error(`Reserved("data") = true`)
+	}
+	for p, want := range map[string]bool{
+		"/srv/My_data-2.0": true, "/var/lib/longhorn": true, "/srv/.hidden": true, "/srv/..x": true,
+		"": false, "srv": false, "/": false, "/nix": false, "/nix/store/x": false, "/state": false, "/state/x": false,
+		"/var": false, "/srv/": false, "/srv//x": false, "/srv/./x": false, "/srv/../nix": false, "/srv/my data": false,
+		`/srv/a\b`: false, "/srv/a\nb": false, "/srv/a:b": false, "/srv/dätä": false,
+	} {
+		if SafeMountPoint(p) != want {
+			t.Errorf("SafeMountPoint(%q) = %v, want %v", p, !want, want)
+		}
+	}
+}
+
 func TestWriteDefinitionsValidates(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "disks")
 	s, err := ReadSection(writeSection(t, sectionJSON))

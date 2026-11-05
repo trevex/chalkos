@@ -237,8 +237,8 @@ var (
 	validName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$`)
 	// validDefinitionFile is a repart.d file name: no path, no hidden file.
 	validDefinitionFile = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*\.conf$`)
-	// validMountPoint keeps mount points free of characters that change a unit file's meaning.
-	validMountPoint = regexp.MustCompile(`^(/[A-Za-z0-9._-]+)+$`)
+	// mountPointPattern keeps mount points free of characters that change a unit file's meaning.
+	mountPointPattern = regexp.MustCompile(`^(/[A-Za-z0-9._-]+)+$`)
 )
 
 // reservedNames are the labels of the system region and VAR, and the system disk's name. A
@@ -251,14 +251,41 @@ var reservedNames = []string{"esp", "store", "store-verity", "state", VarVolume,
 // or below /nix and /state.
 var forbiddenMountPoints = []string{"/", "/nix", "/state", "/var"}
 
+// ValidName tells whether name may name a volume, its partition's label and its own disk: at most
+// 32 lower-case letters, digits and dashes, starting and ending with a letter or digit.
+func ValidName(name string) bool { return validName.MatchString(name) }
+
+// Reserved tells whether name is taken by the image: a label of the system region, VAR's, or the
+// system disk's name. Every section holds VAR, but no Volume document may be called var.
+func Reserved(name string) bool { return slices.Contains(reservedNames, name) }
+
+// SafeMountPoint tells whether a volume other than VAR may be mounted at p: an absolute path of
+// A-Z, a-z, 0-9, ., _ and -, without . or .. as a component, other than /, /nix, /state and /var,
+// and not below /nix or /state. The path goes verbatim into the volume's mount unit.
+func SafeMountPoint(p string) bool {
+	if !mountPointPattern.MatchString(p) || slices.Contains(forbiddenMountPoints, p) ||
+		strings.HasPrefix(p, "/nix/") || strings.HasPrefix(p, "/state/") {
+		return false
+	}
+	for _, part := range strings.Split(p, "/") {
+		if part == "." || part == ".." {
+			return false
+		}
+	}
+	return true
+}
+
 // Validate checks a section the node did not render itself, as the node's config checks it:
 // names and labels that are safe in paths and unit names, no reserved labels, definition
 // files that stay in their directory, and mount points that are unique and safe in unit files.
+// config checks the Volume documents with ValidName, Reserved and SafeMountPoint before it renders
+// a section from them; Validate holds an identity's section, which chalkd receives or another
+// slot recorded, to the same rules.
 func (s Section) Validate() error {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 	for _, name := range slices.Sorted(maps.Keys(s.Disks)) {
-		if !validName.MatchString(name) {
+		if !ValidName(name) {
 			add("disk name %q must match %s", name, validName)
 			continue
 		}
@@ -271,7 +298,7 @@ func (s Section) Validate() error {
 	mounts := map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(s.Volumes)) {
 		v := s.Volumes[name]
-		if !validName.MatchString(name) {
+		if !ValidName(name) {
 			add("volume name %q must match %s", name, validName)
 			continue
 		}
@@ -282,7 +309,7 @@ func (s Section) Validate() error {
 			if v.Disk != SystemDisk || v.MountPoint != "/var" {
 				add("VAR must be on the system disk and mounted at /var")
 			}
-		} else if slices.Contains(reservedNames, name) {
+		} else if Reserved(name) {
 			add("volume name %s is reserved", name)
 		}
 		if _, ok := s.Disks[v.Disk]; !ok {
@@ -295,7 +322,7 @@ func (s Section) Validate() error {
 			add("volumes %s and %s have the same mount point %s", other, name, v.MountPoint)
 		}
 		mounts[v.MountPoint] = name
-		if name != VarVolume && !safeMountPoint(v.MountPoint) {
+		if name != VarVolume && !SafeMountPoint(v.MountPoint) {
 			add("volume %s: mount point %q must be an absolute path of A-Z, a-z, 0-9, ., _ and -, other than /, /nix, /state and /var, and not below /nix or /state", name, v.MountPoint)
 		}
 	}
@@ -303,17 +330,4 @@ func (s Section) Validate() error {
 		return fmt.Errorf("invalid storage section: %s", strings.Join(problems, "; "))
 	}
 	return nil
-}
-
-func safeMountPoint(p string) bool {
-	if !validMountPoint.MatchString(p) || slices.Contains(forbiddenMountPoints, p) ||
-		strings.HasPrefix(p, "/nix/") || strings.HasPrefix(p, "/state/") {
-		return false
-	}
-	for _, part := range strings.Split(p, "/") {
-		if part == "." || part == ".." {
-			return false
-		}
-	}
-	return true
 }

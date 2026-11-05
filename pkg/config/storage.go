@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"maps"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -12,30 +11,6 @@ import (
 )
 
 var reservedRepartKeys = []string{"Type", "Label", "Encrypt", "Format", "SizeMinBytes", "SizeMaxBytes", "MountPoint"}
-
-// Labels the system region and VAR use, and the system disk's name. A volume on the system disk
-// with one of them would share its link below /dev/disk/chalk-boot with a partition of the image;
-// a volume with its own disk named like the system disk would replace its entry.
-var reservedNames = []string{"esp", "store", "store-verity", "state", storage.VarVolume, storage.SystemDisk}
-
-var (
-	volumeName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
-	// Mount points go verbatim into unit files, where spaces, newlines or backslashes would
-	// change their meaning.
-	mountPath = regexp.MustCompile(`^(/[A-Za-z0-9._-]+)+$`)
-)
-
-func validMountPoint(p string) bool {
-	if !mountPath.MatchString(p) || slices.Contains([]string{"/", "/nix", "/state", "/var"}, p) {
-		return false
-	}
-	for _, part := range strings.Split(p, "/") {
-		if part == "." || part == ".." {
-			return false
-		}
-	}
-	return !strings.HasPrefix(p, "/nix/") && !strings.HasPrefix(p, "/state/")
-}
 
 // definition renders a repart.d definition as installed nodes hold it: keys in name
 // order, the typed ones replacing the passthrough, and = in a key escaped.
@@ -159,7 +134,9 @@ func (s *Set) storage(name string) (storage.Section, error) {
 // storageErrors are the storage checks of a node's config, all reported at once and in this
 // order: each volume's own problems by volume name, then volumes that fill the system disk. vols
 // are ordered by name. The set check has refused two volumes of one disk reference or one mount
-// point, and a volume's mount point is never /var, VAR's.
+// point, and a volume's mount point is never /var, VAR's. Names and mount points are held to
+// storage.ValidName, storage.Reserved and storage.SafeMountPoint, the rules Section.Validate holds
+// a section chalkd receives to, so the section rendered here passes it.
 func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) error {
 	var errs []string
 	add := func(format string, args ...any) { errs = append(errs, fmt.Sprintf(format, args...)) }
@@ -170,14 +147,14 @@ func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) e
 	}
 	for _, v := range vols {
 		at := "Volume " + v.name
-		if !volumeName.MatchString(v.name) || len(v.name) > 32 {
+		if !storage.ValidName(v.name) {
 			add("%s: the name must match [a-z0-9]([a-z0-9-]*[a-z0-9])? and have at most 32 characters", at)
 		}
-		if slices.Contains(reservedNames, v.name) {
+		if storage.Reserved(v.name) {
 			add("%s: the name %s is reserved", at, v.name)
 		}
 		mp := v.spec.MountPoint
-		if mp != nil && !validMountPoint(*mp) {
+		if mp != nil && !storage.SafeMountPoint(*mp) {
 			add("%s: mountPoint must be an absolute path of the characters A-Z, a-z, 0-9, ., _, - and /, other than /, /nix, /state and /var, and not below /nix or /state", at)
 		}
 		if v.spec.Format == formatRaw && mp != nil {
