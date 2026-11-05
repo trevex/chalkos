@@ -39,6 +39,12 @@ The options within each, by their path below `chalkos.kinds`:
 | `<name>.rules.*.rule`{ #chalkoskindsrulesrule } | non-empty string | required | CEL expression that is true for every change the node accepts. Example: `"self == oldSelf"` |
 | `<name>.rules.*.takes`{ #chalkoskindsrulestakes } | one of `refuse`, `reset`, `reinstall` | `"refuse"` | What a change the rule refuses needs: `refuse` cannot be made, `reset` takes `chalkctl storage reset`, `reinstall` a reinstall of the node. |
 | `<name>.spec`{ #chalkoskindsspec } | map of any | `{ }` | Option declarations of the document's `spec`, as under a module's `options`. They are converted into the kind's JSON Schema: an option without a default is required, and `description`, `default` and `example` carry over. A field declares change rules with `lib.chalkos.mkOption { …; rules = [ { rule = "self == oldSelf"; message = "…"; } ]; }`, in the shape of `rules`, where `self` is the field's new value and `oldSelf` its value in the running config. `lib.chalkos.mkOption`'s `unique` declares values that must not repeat, among the node's documents of the kind or within one list. |
+| `<name>.specRules`{ #chalkoskindsspecrules } | list of submodule | `[ ]` | Change rules of each document's spec, in the shape of `rules`. `self` is the spec of one delivered document and `oldSelf` the spec of the running config's document of the same name, as for a field's rules; `config`, `oldConfig`, `node.name` and `facts` are as for every rule. A rule here compares the fields of one document, a list with another list among them, at the cost of a loop less than the same rule over `documents`. Its message starts with the kind, the document's name and `spec`. |
+| `<name>.specRules.*.description`{ #chalkoskindsspecrulesdescription } | string or null | `null` | One sentence on what the rule guards, which the reference pages show; the node never reads it. Example: `"A Peer keeps its AS number."` |
+| `<name>.specRules.*.message`{ #chalkoskindsspecrulesmessage } | string or null | `null` | Why a change is refused and what to do instead. |
+| `<name>.specRules.*.messageExpression`{ #chalkoskindsspecrulesmessageexpression } | string or null | `null` | CEL expression that yields the message, with the rule's variables; `message` is used when it fails. Example: `"\"the rack moves from \" + oldSelf + \" to \" + self"` |
+| `<name>.specRules.*.rule`{ #chalkoskindsspecrulesrule } | non-empty string | required | CEL expression that is true for every change the node accepts. Example: `"self == oldSelf"` |
+| `<name>.specRules.*.takes`{ #chalkoskindsspecrulestakes } | one of `refuse`, `reset`, `reinstall` | `"refuse"` | What a change the rule refuses needs: `refuse` cannot be made, `reset` takes `chalkctl storage reset`, `reinstall` a reinstall of the node. |
 | `<name>.unique`{ #chalkoskindsunique } | list of submodule | `[ ]` | Tuples of the spec's fields that no two of the node's documents of the kind share. chalkctl and chalkd refuse a config in which two documents hold the same values in all of `by`'s fields. A field of `by` is a field name or `{ field; as; }`, where `as` normalises the value before the comparison: `ip`, `cidr`, `host` or `lower`. `hint` ends the refusal with what to do instead. A single field's values, and those of list items, are declared unique with `lib.chalkos.mkOption`'s `unique`. Example: `[ { by = [ "from" "to" ]; hint = "give each pair of zones one policy"; } ]` |
 | `<name>.unique.*.by`{ #chalkoskindsuniqueby } | non-empty (list of (non-empty string or (submodule))) | required | Fields of the spec whose values together no two documents share. Example: `[ "from" "to" ]` |
 | `<name>.unique.*.hint`{ #chalkoskindsuniquehint } | string or null | `null` | What to do instead, which ends the refusal. Example: `"give each pair of zones one policy"` |
@@ -57,6 +63,17 @@ Example of `<name>.spec`:
 {
   asn = lib.mkOption { type = lib.types.ints.u32; description = "Local AS number."; };
 }
+```
+
+Example of `<name>.specRules`:
+
+```nix
+[
+  {
+    rule = "self.neighbours.all(n, n.address != document(\"Peer\", self.peer).spec.address)";
+    message = "a neighbour has the peer's own address; list the peer's neighbours alone";
+  }
+]
 ```
 
 ### `systemd.services.<name>.chalkos.kinds` { #systemdserviceschalkoskinds }

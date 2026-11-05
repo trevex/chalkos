@@ -111,6 +111,34 @@ number of values, and name every value that repeats and where it does. A rule th
 value with every other one costs two nested loops, which comes close to the limit
 [The build compiles every rule](#the-build-compiles-every-rule) describes.
 
+## A spec rule sees one document whole
+
+A rule that compares fields of one document goes into
+[`chalkos.kinds.<name>.specRules`](../reference/extension-api.md#chalkoskindsspecrules). Its `self`
+is the spec of one delivered document and `oldSelf` the spec of the running config's document of
+the same name, so it runs as a field's rule does, once for each document. The `Session` of
+[A field's values can be unique](declare-a-kind.md#a-fields-values-can-be-unique) keeps its
+neighbours off its peer's address:
+
+```nix
+chalkos.kinds.Session.specRules = [
+  {
+    description = "A Session's neighbours leave out its peer's address.";
+    rule = ''self.neighbours.all(n, n.address != document("Peer", self.peer).spec.address)'';
+    message = "a neighbour has the peer's own address; list the peer's neighbours alone";
+  }
+];
+```
+
+A spec rule's message starts like a field rule's, with the kind, the document's name and `spec`:
+`Session "up" spec: a neighbour has the peer's own address; list the peer's neighbours alone`.
+
+The same check as a kind rule loops over `documents` around the loop over the neighbours. A kind
+rule that compares two lists of each document, such as each reservation of a subnet with each of
+its pools, therefore costs three nested loops, which exceeds the limit that
+[The build compiles every rule](#the-build-compiles-every-rule) describes. As a spec rule it costs
+two.
+
 ## Rules read these variables
 
 Every rule compares the delivered config with the config of the slot the node boots now. That
@@ -118,8 +146,8 @@ config is the baseline also when the delivered config is for another image, as i
 
 | Variable | Rules | Value |
 | --- | --- | --- |
-| `self` | a field's | The field's value in the delivered document, with the schema's defaults filled in. |
-| `oldSelf` | a field's | The field's value in the running config's document of the same kind and name; for a kind a node holds once, its document whatever its name. |
+| `self` | a field's or a spec's | The field's value, or the spec, in the delivered document, with the schema's defaults filled in. |
+| `oldSelf` | a field's or a spec's | The field's value, or the spec, in the running config's document of the same kind and name; for a kind a node holds once, its document whatever its name. |
 | `documents` | a kind's | The delivered documents of the kind, by name. |
 | `oldDocuments` | a kind's | The running config's documents of the kind, by name. |
 | `config` | every | The whole delivered config by apiVersion, kind and name: `config["bgp.example.org/v1alpha1"].Peer["router-a"]`. |
@@ -332,7 +360,8 @@ leads to under that name, so `lsmod` would run as `kmod`.
 chalkos's own kinds guard changes the same way.
 [Built-ins](../reference/builtins.md#change-rules) lists their rules and the
 [facts](../reference/builtins.md#facts) that they and the built-in effects read: those of every
-image and those that images with Kubernetes add.
+image and those that images with Kubernetes add. The router's `DHCPSubnet` checks its pools and
+reservations against each other with spec rules.
 
 The storage kinds read three facts. `recorded` is the storage section STATE records. `disks`
 says, for each volume with a disk of its own, whether its disk is pinned and plugged in, and what

@@ -519,7 +519,9 @@ rec {
     // lib.optionalAttrs (description != null) { inherit description; };
 
   # The schema of a kind whose spec is declared with options. The kind's unique, tuples of its
-  # spec's fields that no two documents share, marks the spec, as a field's marks the field.
+  # spec's fields that no two documents share, marks the spec, as a field's marks the field, and
+  # so do its specRules, the rules of each document's spec, as a field's rules mark the field: the
+  # rules engine binds self to the spec of one document at a time.
   kindSchema =
     {
       kind,
@@ -528,6 +530,7 @@ rec {
       multiple,
       spec,
       rules ? [ ],
+      specRules ? [ ],
       unique ? [ ],
       description ? null,
     }:
@@ -548,7 +551,8 @@ rec {
         specSchema
         // lib.optionalAttrs (unique != [ ]) {
           "x-chalkos-unique" = uniqueSchema "${at}.unique" "${at}.spec" specSchema unique;
-        };
+        }
+        // lib.optionalAttrs (specRules != [ ]) { "x-chalkos-rules" = map ruleSchema specRules; };
     };
 
   fileName =

@@ -217,6 +217,7 @@ let
         multiple
         spec
         rules
+        specRules
         unique
         description
         ;
@@ -2262,6 +2263,44 @@ lib.runTests {
           takes = "reinstall";
         }
       ];
+      host = false;
+    };
+  };
+  # A kind's specRules reach its spec's x-chalkos-rules, as a field's rules reach the field; a kind
+  # without them has none there, and they add no rule to x-chalkos-kind.
+  testSpecRulesReachTheSpec = {
+    expr =
+      let
+        schemas =
+          (worker [
+            demoModule
+            {
+              chalkos.kinds.Demo.specRules = [
+                {
+                  rule = "self.token == null || self.token == oldSelf.token";
+                  message = "the token stays";
+                  description = "A Demo keeps its token.";
+                }
+              ];
+            }
+          ]).system.build.chalkosKindSchemas;
+        demo = schemas."demo.example.org_v1alpha1_Demo.json";
+      in
+      {
+        spec = demo.properties.spec."x-chalkos-rules";
+        kind = demo."x-chalkos-kind" ? rules;
+        host = schemas."chalkos.dev_v1alpha1_Host.json".properties.spec ? "x-chalkos-rules";
+      };
+    expected = {
+      spec = [
+        {
+          rule = "self.token == null || self.token == oldSelf.token";
+          message = "the token stays";
+          takes = "refuse";
+          description = "A Demo keeps its token.";
+        }
+      ];
+      kind = false;
       host = false;
     };
   };

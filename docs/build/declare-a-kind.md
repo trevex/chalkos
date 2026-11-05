@@ -249,8 +249,9 @@ A change rule is a CEL expression that every config the node accepts makes true.
 `self` is the field's new value and `oldSelf` its value in the config the node runs. `asn`'s rule
 `self == oldSelf` keeps a `Peer`'s AS number once the node runs it, because a new AS number is a
 new neighbour. A rule over all of a kind's documents goes into `chalkos.kinds.<Kind>.rules`
-instead. [Guard changes with rules and facts](guard-changes.md) covers both, and the facts a
-rule reads about the node.
+instead, and a rule that compares fields of one document into `chalkos.kinds.<Kind>.specRules`.
+[Guard changes with rules and facts](guard-changes.md) covers all three, and the facts a rule
+reads about the node.
 
 The `rules` and `unique` arguments exist only on `lib.chalkos`, which every image module gets as
 part of `lib`. `lib.chalkos.types.ref` and `lib.chalkos.types.secretRef` come from the same place.

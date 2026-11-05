@@ -169,6 +169,41 @@ func TestFieldRules(t *testing.T) {
 	}
 }
 
+// A rule of the spec, which chalkos.kinds.<name>.specRules declares, binds self to one document's
+// spec and oldSelf to the running document's of the same name, and its message names the
+// document and spec. It compares two lists of a document within the cost limit, where the same
+// comparison over documents, a loop more, exceeds it.
+func TestSpecRules(t *testing.T) {
+	ranges := `self.pools.all(p, self.reserved.all(r, r < p.first || r > p.last))`
+	spec := withRules(object(map[string]any{
+		"pools":    map[string]any{"type": "array"},
+		"reserved": map[string]any{"type": "array"},
+	}), rule(ranges, "", "messageExpression", `"a reserved number lies in a pool of " + string(size(self.pools))`),
+		rule("size(self.pools) >= size(oldSelf.pools)", "a Demo keeps its pools", "takes", "reset"))
+	set := compiled(t, kindSchema("Demo", true, spec, nil))
+	old := []config.Document{doc(t, "Demo", "a", `{"pools": [{"first": 1, "last": 9}, {"first": 20, "last": 29}], "reserved": []}`)}
+	next := []config.Document{
+		doc(t, "Demo", "a", `{"pools": [{"first": 1, "last": 9}], "reserved": [5]}`),
+		doc(t, "Demo", "b", `{"pools": [{"first": 1, "last": 9}], "reserved": [10]}`),
+	}
+	failures, err := set.Evaluate(Input{Documents: next, Old: old})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{`Demo "a" spec: a reserved number lies in a pool of 1`, `Demo "a" spec: a Demo keeps its pools`}
+	if got := messages(failures); !slices.Equal(got, want) {
+		t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if failures[1].Takes != Reset || !slices.Equal(failures[1].Path, []string{"spec"}) {
+		t.Errorf("failure = %+v, want spec's rule that takes a reset", failures[1])
+	}
+	overDocuments := `documents.all(n, cel.bind(s, documents[n].spec, ` + strings.ReplaceAll(ranges, "self.", "s.") + `))`
+	_, err = Compile(schemasOf(t, kindSchema("Demo", true, object(nil), []any{rule(overDocuments, "a reserved number lies in a pool")})))
+	if err == nil || !strings.Contains(err.Error(), "more than the limit of 10000000") {
+		t.Errorf("the rule over documents compiles: %v", err)
+	}
+}
+
 // A kind's rules see the documents of the kind by name, and every rule the whole config by
 // apiVersion, kind and name, Secret values hashed.
 func TestKindRulesAndConfig(t *testing.T) {

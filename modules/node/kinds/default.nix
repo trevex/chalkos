@@ -181,6 +181,26 @@ let
             refuses the config, or says it takes a reset or a reinstall.
           '';
         };
+        specRules = lib.mkOption {
+          type = lib.types.listOf (lib.types.submodule ruleModule);
+          default = [ ];
+          example = lib.literalExpression ''
+            [
+              {
+                rule = "self.neighbours.all(n, n.address != document(\"Peer\", self.peer).spec.address)";
+                message = "a neighbour has the peer's own address; list the peer's neighbours alone";
+              }
+            ]
+          '';
+          description = ''
+            Change rules of each document's spec, in the shape of `rules`. `self` is the spec of
+            one delivered document and `oldSelf` the spec of the running config's document of the
+            same name, as for a field's rules; `config`, `oldConfig`, `node.name` and `facts` are
+            as for every rule. A rule here compares the fields of one document, a list with
+            another list among them, at the cost of a loop less than the same rule over
+            `documents`. Its message starts with the kind, the document's name and `spec`.
+          '';
+        };
         unique = lib.mkOption {
           type = lib.types.listOf (lib.types.submodule uniqueModule);
           default = [ ];
@@ -273,6 +293,7 @@ let
           multiple
           spec
           rules
+          specRules
           unique
           description
           ;
