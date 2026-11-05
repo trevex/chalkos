@@ -247,12 +247,14 @@ func writeDocuments(kinds []string, in map[string]any, out string) error {
 	return nil
 }
 
-// documentName is the name of doc, a document of kind, which names a file of its own.
+// documentName is the name of doc, a document of kind, which names a file of its own. Every
+// kind's schema holds metadata.name to a pattern without / or a leading dot, so a name that would
+// leave the output's directory is an internal error.
 func documentName(kind string, doc map[string]any) (string, error) {
 	meta, _ := doc["metadata"].(map[string]any)
 	name, _ := meta["name"].(string)
 	if name == "" || strings.ContainsAny(name, "/\x00") || name == "." || name == ".." {
-		return "", fmt.Errorf("a %s document has no name to name its file by", kind)
+		return "", internalErrorf("a %s document has no name to name its file by", kind)
 	}
 	return name, nil
 }

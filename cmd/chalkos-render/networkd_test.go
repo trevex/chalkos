@@ -108,24 +108,29 @@ func TestNetworkdWithoutDocuments(t *testing.T) {
 	}
 }
 
-// A document that bypassed validation renders no value that spans lines, no section or key the
-// schema does not annotate, and no kind whose schema the image lacks.
+// A document that bypassed the schemas renders no value that spans lines and no section or key the
+// schema does not annotate; each is an internal error. A kind whose schema the image lacks is the
+// image's fault, and its error names the schema.
 func TestNetworkdRefusesWhatTheSchemasRefuse(t *testing.T) {
+	const checked = "; chalkd checks the config against the schemas and rules before it renders"
 	for name, c := range map[string]struct {
 		kind, spec, want string
 	}{
-		"a value that spans lines": {"Network", `{"match": {"name": "a\nb"}}`, "Network a: Match.Name: a value cannot span lines"},
-		"an object as a value":     {"Network", `{"match": {"name": {"x": 1}}}`, "is not a string, number or boolean"},
-		"an unannotated section":   {"Network", `{"bogus": {"foo": "bar"}}`, "spec.bogus has no x-chalkos-networkd-section annotation"},
-		"an unannotated key":       {"Network", `{"match": {"bogus": "x"}}`, "Match.bogus has no x-chalkos-networkd-key annotation"},
-		"a kind without a schema":  {"Link", `{"link": {"name": "x"}}`, "the image's networkd schema"},
+		"a value that spans lines": {"Network", `{"match": {"name": "a\nb"}}`, "internal error: Network a: Match.Name: a value cannot span lines" + checked},
+		"an object as a value":     {"Network", `{"match": {"name": {"x": 1}}}`, "internal error: Network a: Match.Name: map[x:1] is not a string, number or boolean" + checked},
+		"an unannotated section":   {"Network", `{"bogus": {"foo": "bar"}}`, "internal error: Network a: spec.bogus has no x-chalkos-networkd-section annotation" + checked},
+		"an unannotated key":       {"Network", `{"match": {"bogus": "x"}}`, "internal error: Network a: Match.bogus has no x-chalkos-networkd-key annotation" + checked},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := networkd(t, networkFixture, map[string][]any{c.kind: {document(t, c.kind, "a", c.spec)}})
-			if err == nil || !strings.Contains(err.Error(), c.want) {
+			if err == nil || err.Error() != c.want {
 				t.Errorf("err = %v, want %q", err, c.want)
 			}
 		})
+	}
+	_, err := networkd(t, networkFixture, map[string][]any{"Link": {document(t, "Link", "a", `{"link": {"name": "x"}}`)}})
+	if err == nil || !strings.HasPrefix(err.Error(), "the image's networkd schema: ") {
+		t.Errorf("err = %v, want the image's networkd schema", err)
 	}
 }
 

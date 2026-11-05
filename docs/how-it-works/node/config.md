@@ -302,7 +302,9 @@ chalkctl runs those that read no facts about the node, `validate` without the no
 `apply-config` with the config the node serves, so a change a rule refuses fails before it is sent.
 
 Only chalkd runs the image's renderers and their checks, and the rules that read facts, so a set
-chalkctl accepts can still be refused on delivery.
+chalkctl accepts can still be refused on delivery. A renderer repeats a check of the schemas or
+rules only where a bad value would break its output, such as a line break in a networkd unit's
+value. Such a check fails with `internal error: ...`, which a checked config never causes.
 [`chalkctl apply-config --dry-run`](../../reference/cli/chalkctl_apply-config.md) has chalkd run
 every check of a delivery and changes nothing. chalkd answers with what the delivery would do:
 the config versions, the outputs that change, the effects with what fires each, and the storage

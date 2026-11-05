@@ -73,10 +73,10 @@ func renderUnit(what string, doc, raw map[string]any) (string, error) {
 	for yamlName, v := range spec {
 		prop, _ := specProps[yamlName].(map[string]any)
 		name, _ := prop["x-chalkos-networkd-section"].(string)
-		// The schema rejects a spec property that lacks this annotation, but a document that
-		// bypassed validation must not render as an empty systemd section name.
+		// The schema refuses a spec property that lacks this annotation; a document that bypassed
+		// it must not render as an empty systemd section name.
 		if name == "" {
-			return "", fmt.Errorf("%s: spec.%s has no x-chalkos-networkd-section annotation", what, yamlName)
+			return "", internalErrorf("%s: spec.%s has no x-chalkos-networkd-section annotation", what, yamlName)
 		}
 		def := sectionDef(defs, prop)
 		for _, body := range oneOrMany(v) {
@@ -101,12 +101,12 @@ func renderUnit(what string, doc, raw map[string]any) (string, error) {
 			// As for the section name: a key with no annotation fails rather than render as an
 			// empty systemd key.
 			if key == "" {
-				return "", fmt.Errorf("%s: %s.%s has no x-chalkos-networkd-key annotation", what, sec.name, yamlKey)
+				return "", internalErrorf("%s: %s.%s has no x-chalkos-networkd-key annotation", what, sec.name, yamlKey)
 			}
 			for _, v := range oneOrMany(v) {
 				value, err := unitValue(v)
 				if err != nil {
-					return "", fmt.Errorf("%s: %s.%s: %w", what, sec.name, key, err)
+					return "", within(fmt.Sprintf("%s: %s.%s", what, sec.name, key), err)
 				}
 				lines = append(lines, [2]string{key, value})
 			}
@@ -121,11 +121,14 @@ func renderUnit(what string, doc, raw map[string]any) (string, error) {
 	return b.String(), nil
 }
 
+// unitValue is v as a unit file writes it. The networkd schemas take a string without line
+// breaks, an integer or a boolean alone; a line break would end the key and let the rest set keys
+// or sections of its own, so it stays a guard.
 func unitValue(v any) (string, error) {
 	switch v := v.(type) {
 	case string:
 		if strings.ContainsAny(v, "\n\r") {
-			return "", fmt.Errorf("a value cannot span lines")
+			return "", internalErrorf("a value cannot span lines")
 		}
 		return v, nil
 	case bool:
@@ -134,7 +137,7 @@ func unitValue(v any) (string, error) {
 	case json.Number:
 		return v.String(), nil
 	default:
-		return "", fmt.Errorf("%v is not a string, number or boolean", v)
+		return "", internalErrorf("%v is not a string, number or boolean", v)
 	}
 }
 
