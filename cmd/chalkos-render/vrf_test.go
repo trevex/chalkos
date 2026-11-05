@@ -208,7 +208,7 @@ func TestVRFRefusals(t *testing.T) {
 		"a Network of a VRF and none": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["eth1"]}`)}, "Network": {net("20-both", `{"match": {"name": "eth1 eth2"}}`)}},
 			"Network 20-both matches links of no VRF and VRF a"},
 		"a Network's VRF= of another VRF": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["eth1"]}`)}, "Network": {net("20-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "b"}}`)}},
-			"Network 20-eth1 gives its links VRF=b, but VRF a holds them"},
+			"Network/20-eth1: spec.network.vrf: Network 20-eth1 gives its links VRF=b, but VRF a holds them"},
 		"a Network of a VRF member and other links, before the VRF= naming it": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100}`)}, "Network": {net("10-a", `{"match": {"name": "eth1 eth2"}}`), net("20-b", `{"match": {"name": "eth1"}, "network": {"vrf": "tenant"}}`)}},
 			"Network 10-a is the first to match eth1, so networkd never applies Network 20-b's VRF=tenant to it"},
 		"a Network of a VRF member and other links, after the VRF= naming it": {map[string][]any{"VRF": {vrf("tenant", `{"table": 100}`)}, "Network": {net("20-b", `{"match": {"name": "eth1"}, "network": {"vrf": "tenant"}}`), net("10-a", `{"match": {"name": "eth1 eth2"}}`)}},

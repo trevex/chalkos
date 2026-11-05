@@ -117,9 +117,9 @@ func (m vrfMembership) interfaceVRFs(i string) ([]string, error) {
 // of the Network document network, whose own VRF= names the VRF. text is the glob as the
 // document gives it, and path the field that holds it, which a refusal of the member names: the
 // VRF document's spec.interfaces[i], or the Network document's value of Name=, spec.match for a
-// Name= of negated words alone.
+// Name= of negated words alone. vrfPath is the field of a Network's VRF=.
 type vrfMember struct {
-	vrf, glob, text, network, path string
+	vrf, glob, text, network, path, vrfPath string
 }
 
 // networkUnit is a .network unit as networkd picks it for a link: the first one by file name
@@ -188,7 +188,7 @@ func vrfLinks(vrfs []named[vrfSpec], links []string, byKind map[string]any) (vrf
 	for _, u := range units {
 		if u.vrf != "" {
 			for _, w := range u.match.positives() {
-				members = append(members, vrfMember{vrf: u.vrf, glob: w.glob, text: w.text, network: u.name, path: cmp.Or(w.path, "spec.match")})
+				members = append(members, vrfMember{vrf: u.vrf, glob: w.glob, text: w.text, network: u.name, path: cmp.Or(w.path, "spec.match"), vrfPath: u.vrfPath})
 			}
 		}
 	}
@@ -329,7 +329,7 @@ func checkVRFMembers(members []vrfMember) error {
 				if a.network == "" {
 					a, b = b, a
 				}
-				return refuse("Network", a.network, a.path, "Network %s gives its links VRF=%s, but VRF %s holds them", a.network, a.vrf, b.vrf)
+				return refuse("Network", a.network, a.vrfPath, "Network %s gives its links VRF=%s, but VRF %s holds them", a.network, a.vrf, b.vrf)
 			default:
 				return refuse("Network", b.network, b.path, "Network %s gives VRF=%s and Network %s VRF=%s to links both may match", a.network, a.vrf, b.network, b.vrf)
 			}
